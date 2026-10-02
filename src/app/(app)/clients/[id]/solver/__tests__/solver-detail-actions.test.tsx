@@ -185,3 +185,61 @@ describe("SolverDetailActions — disabled", () => {
     }
   });
 });
+
+describe("SolverDetailActions — keyboard focus", () => {
+  it("opening the Add menu focuses its first enabled item", () => {
+    setup();
+    const add = screen.getByRole("button", { name: "+ Add" });
+    add.focus();
+    fireEvent.click(add);
+    expect(screen.getByRole("button", { name: "Income" })).toHaveFocus();
+  });
+
+  it("Escape returns focus to + Add", () => {
+    setup();
+    const add = screen.getByRole("button", { name: "+ Add" });
+    add.focus();
+    fireEvent.click(add);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(add).toHaveFocus();
+  });
+
+  it("a pick returns focus to the anchor", () => {
+    setup();
+    const edit = screen.getByRole("button", { name: "Edit" });
+    edit.focus();
+    fireEvent.click(edit);
+    fireEvent.click(screen.getByRole("option", { name: /Salary/ }));
+    expect(edit).toHaveFocus();
+  });
+
+  it("an Add pick returns focus to + Add", () => {
+    setup();
+    const add = screen.getByRole("button", { name: "+ Add" });
+    add.focus();
+    fireEvent.click(add);
+    fireEvent.click(screen.getByRole("button", { name: "Expense" }));
+    expect(add).toHaveFocus();
+  });
+
+  it("tabbing out of the menu closes it without stealing focus back", () => {
+    setup();
+    const add = screen.getByRole("button", { name: "+ Add" });
+    add.focus();
+    fireEvent.click(add);
+    const outside = document.createElement("button");
+    document.body.appendChild(outside);
+    // jsdom omits relatedTarget on a real focus move; a browser supplies it.
+    fireEvent.blur(screen.getByRole("button", { name: "Income" }), { relatedTarget: outside });
+    outside.focus();
+    expect(screen.queryByRole("button", { name: "Expense" })).not.toBeInTheDocument();
+    expect(outside).toHaveFocus();
+    outside.remove();
+  });
+
+  it("the picker keeps its own autofocused search", () => {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("searchbox")).toHaveFocus();
+  });
+});

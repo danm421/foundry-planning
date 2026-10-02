@@ -8,6 +8,7 @@ import type { ChangesPanelChange } from "@/components/scenario/changes-panel";
 import type { EditorFocus } from "@/lib/scenario/change-editor-target";
 import type { ToggleGroup } from "@/engine/scenario/types";
 import type { InventoryItem } from "@/lib/scenario/plan-inventory";
+import type { ClientData } from "@/engine/types";
 import { useScenarioWriteListener } from "@/hooks/scenario-write-listener";
 
 vi.mock("next/navigation", () => ({
@@ -15,8 +16,10 @@ vi.mock("next/navigation", () => ({
 }));
 
 const TARGET_ID_FOR_STUB = "11111111-2222-3333-4444-555555555555";
-const { loadChangeEditorPropsMock, makeStubView, openCreateMock } = vi.hoisted(() => ({
+const { loadChangeEditorPropsMock, makeStubView, openCreateMock, notYetReady } = vi.hoisted(() => ({
   openCreateMock: vi.fn(),
+  // Mutable so a test can open a type the catalog still holds back.
+  notYetReady: new Set<string>(),
   loadChangeEditorPropsMock: vi.fn(),
   // Light stand-in for a Details view in focus mode: shows the focus it was
   // mounted with and a props marker, and exposes both onFocusClose outcomes.
@@ -40,6 +43,12 @@ const { loadChangeEditorPropsMock, makeStubView, openCreateMock } = vi.hoisted((
           >
             stub write
           </button>
+          <button
+            type="button"
+            onClick={() => onWrite?.({ targetKind: "plan_settings", targetId: "client-uuid", op: "edit" })}
+          >
+            stub write settings
+          </button>
           <button type="button" onClick={() => onFocusClose?.("failed")}>
             stub failed
           </button>
@@ -62,7 +71,14 @@ vi.mock("@/components/income-expenses-view", () => ({ default: makeStubView("inc
 vi.mock("@/components/balance-sheet-view", () => ({ default: makeStubView("net-worth") }));
 vi.mock("@/components/techniques-view", () => ({ default: makeStubView("techniques") }));
 vi.mock("@/components/family-view", () => ({ default: makeStubView("family") }));
+vi.mock("@/lib/scenario/plan-detail-catalog", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("@/lib/scenario/plan-detail-catalog")>();
+  return { ...orig, NOT_YET_READY: notYetReady };
+});
 vi.mock("@/components/wills-panel", () => ({ default: makeStubView("wills") }));
+vi.mock("@/app/(app)/clients/[id]/details/assumptions/assumptions-client", () => ({
+  default: makeStubView("assumptions"),
+}));
 vi.mock("@/components/scenario/scenario-mode-wrapper", () => ({
   useScenarioModeUI: () => ({ openCreate: openCreateMock }),
   ScenarioModeWrapper: ({ children }: { children: unknown }) => children,
@@ -117,12 +133,16 @@ const INVENTORY: InventoryItem[] = [
   item({ typeKey: "account", id: "a-1", label: "Joint brokerage" }),
 ];
 
+const emptyTree = (over: Record<string, unknown> = {}) =>
+  ({ accounts: [], transfers: [], rothConversions: [], savingsRules: [], ...over }) as unknown as ClientData;
+
 function renderTab(
   changes: ChangesPanelChange[],
   {
     permission = "edit" as "edit" | "view",
     toggleGroups = [] as ToggleGroup[],
     inventory = [] as InventoryItem[],
+    planTree = emptyTree(),
     panelOverrides = {} as Partial<PanelData>,
   } = {},
 ) {
@@ -134,6 +154,7 @@ function renderTab(
         clientId={CLIENT_ID}
         panel={makePanel({ changes, toggleGroups, ...panelOverrides })}
         inventory={inventory}
+        planTree={planTree}
         willGrantors={["client", "spouse"]}
         onOpenSolverTab={onOpenSolverTab}
         onTargetsWritten={onTargetsWritten}
@@ -169,6 +190,8 @@ function deferred<T>() {
 beforeEach(() => {
   loadChangeEditorPropsMock.mockReset();
   openCreateMock.mockReset();
+  notYetReady.clear();
+  for (const k of ["business", "tax_rates", "growth_inflation", "savings_withdrawals"]) notYetReady.add(k);
   fetchMock.mockReset();
 });
 
@@ -189,6 +212,7 @@ describe("SolverChangesTab", () => {
         clientId={CLIENT_ID}
         panel={null}
         inventory={[]}
+        planTree={emptyTree()}
         willGrantors={[]}
         onOpenSolverTab={vi.fn()}
         onTargetsWritten={vi.fn()}
@@ -442,7 +466,6 @@ describe("SolverChangesTab — opening a Details editor", () => {
     ["client_deduction", "add"],
     ["client_tax_adjustment", "edit"],
     ["withdrawal_strategy", "edit"],
-    ["entity", "edit"],
   ] as const)("a %s %s explains it can't be edited here — no link, no load", (targetKind, opType) => {
     renderTab([makeChange({ targetKind, opType })]);
 
@@ -566,32 +589,104 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
     expect(loadChangeEditorPropsMock).not.toHaveBeenCalled();
   });
 
-  it("Delete of an account lists its dependents before confirming", async () => {
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ transfers: [{ id: "t1", name: "Annual sweep" }], rothConversions: [{ id: "r1", name: "Ladder" }] }),
+  describe("delete confirm lists what the scenario remove cascades through", () => {
+    const ACCOUNT_INV = [
+      item({ typeKey: "account", id: "a-1", label: "Joint brokerage" }),
+      item({ typeKey: "savings_rule", id: "r-1", label: "401(k) — Pat" }),
+    ];
+    const pickAccount = () => {
+      fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+      fireEvent.click(screen.getByRole("option", { name: /Joint brokerage/ }));
+    };
+
+    it("an account with a savings rule and a Roth conversion sourced only from it lists both", () => {
+      renderTab([], {
+        inventory: ACCOUNT_INV,
+        planTree: emptyTree({
+          accounts: [{ id: "a-1" }],
+          savingsRules: [{ id: "r-1", accountId: "a-1" }, { id: "r-2", accountId: "a-other" }],
+          rothConversions: [
+            { id: "rc-1", name: "Ladder", sourceAccountIds: ["a-1"], destinationAccountId: "a-roth" },
+            { id: "rc-2", name: "Spread", sourceAccountIds: ["a-1", "a-2"], destinationAccountId: "a-roth" },
+          ],
+        }),
+      });
+      pickAccount();
+      expect(screen.getByText(/Savings rule · 401\(k\) — Pat/)).toBeInTheDocument();
+      expect(screen.getByText(/Roth Conversion · Ladder/)).toBeInTheDocument();
+      // Still has another source, so it survives.
+      expect(screen.queryByText(/Spread/)).not.toBeInTheDocument();
+      expect(screen.getByText(/also remove 2 linked items/)).toBeInTheDocument();
     });
-    renderTab([], { inventory: INVENTORY });
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    fireEvent.click(screen.getByRole("option", { name: /Joint brokerage/ }));
-    expect(await screen.findByText(/Annual sweep/)).toBeInTheDocument();
-    expect(screen.getByText(/Ladder/)).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith(`/api/clients/${CLIENT_ID}/accounts/a-1/dependents`);
+
+    it("a transfer touching the account is listed; the source tree is left untouched", () => {
+      const tree = emptyTree({
+        accounts: [{ id: "a-1" }],
+        transfers: [{ id: "t-1", name: "Annual sweep", sourceAccountId: "a-1", targetAccountId: "a-2" }],
+      });
+      renderTab([], { inventory: ACCOUNT_INV, planTree: tree });
+      pickAccount();
+      expect(screen.getByText(/Transfer · Annual sweep/)).toBeInTheDocument();
+      expect(tree.transfers).toHaveLength(1);
+    });
+
+    it("an account the scenario added (it exists only in the scenario tree) works the same", () => {
+      renderTab([], {
+        inventory: ACCOUNT_INV,
+        planTree: emptyTree({
+          accounts: [{ id: "a-1", name: "Scenario-only" }],
+          transfers: [{ id: "t-9", name: "Fund it", sourceAccountId: "a-2", targetAccountId: "a-1" }],
+        }),
+      });
+      pickAccount();
+      expect(screen.getByText(/Transfer · Fund it/)).toBeInTheDocument();
+    });
+
+    it("an account with no dependents shows no list, and never calls the network", () => {
+      renderTab([], { inventory: ACCOUNT_INV, planTree: emptyTree({ accounts: [{ id: "a-1" }] }) });
+      pickAccount();
+      expect(screen.queryByText(/linked item/)).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Remove" })).toBeEnabled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 
-  it("a failed dependents lookup still lets the advisor confirm", async () => {
-    fetchMock.mockResolvedValueOnce({ ok: false, json: async () => ({}) });
-    renderTab([], { inventory: INVENTORY });
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    fireEvent.click(screen.getByRole("option", { name: /Joint brokerage/ }));
-    expect(await screen.findByRole("button", { name: "Remove" })).toBeEnabled();
-  });
-
-  it("a non-account delete never asks for dependents", () => {
+  it("a non-account delete lists nothing", () => {
     renderTab([], { inventory: INVENTORY });
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.queryByText(/linked item/)).not.toBeInTheDocument();
+  });
+
+  it("a delete says Removing in every loading state and never Opening the editor", async () => {
+    const load = deferred<unknown>();
+    loadChangeEditorPropsMock.mockReturnValue(load.promise);
+    renderTab([], { inventory: INVENTORY });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Removing Side income…");
+    expect(screen.queryByText("Opening the editor…")).not.toBeInTheDocument();
+    load.resolve({ page: "income-expenses", props: { clientId: CLIENT_ID } });
+    await screen.findByTestId("view-income-expenses");
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+    expect(screen.queryByText("Opening the editor…")).not.toBeInTheDocument();
+  });
+
+  it("an Assumptions write is re-addressed to the tab the editor opened on", async () => {
+    notYetReady.delete("savings_withdrawals");
+    loadChangeEditorPropsMock.mockResolvedValue({ page: "assumptions", props: { clientId: CLIENT_ID } });
+    const { onTargetsWritten } = renderTab([], {
+      inventory: [item({ typeKey: "savings_withdrawals", id: "withdrawal", label: "Savings & withdrawals" })],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("option", { name: /Savings & withdrawals/ }));
+    await screen.findByTestId("view-assumptions");
+    fireEvent.click(screen.getByRole("button", { name: "stub write settings" }));
+    expect(onTargetsWritten).toHaveBeenCalledWith(
+      [{ targetKind: "plan_settings", targetId: "withdrawal", op: "edit" }],
+      "Savings & withdrawals",
+    );
   });
 
   it("a delete shows a status strip while the view runs", async () => {
@@ -634,14 +729,13 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
     );
   });
 
-  it("editing a trust stays on the explain-only path", () => {
-    renderTab([], {
-      inventory: [item({ typeKey: "trust", id: "t1", label: "Family Trust" })],
-    });
+  it("editing a trust opens the family view with an edit focus", async () => {
+    loadChangeEditorPropsMock.mockResolvedValue({ page: "family", props: { clientId: CLIENT_ID } });
+    renderTab([], { inventory: [item({ typeKey: "trust", id: "t1", label: "Family Trust" })] });
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.click(screen.getByRole("option", { name: /Family Trust/ }));
-    expect(screen.getByRole("status")).toHaveTextContent(UNSUPPORTED_MESSAGE);
-    expect(loadChangeEditorPropsMock).not.toHaveBeenCalled();
+    const view = await screen.findByTestId("view-family");
+    expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ intent: "edit", kind: "entity", id: "t1" });
   });
 
   it("view-only advisors see no toolbar", () => {
@@ -657,6 +751,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
           clientId={CLIENT_ID}
           panel={null}
           inventory={INVENTORY}
+          planTree={emptyTree()}
           willGrantors={[]}
           onOpenSolverTab={vi.fn()}
           onTargetsWritten={vi.fn()}

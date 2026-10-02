@@ -324,6 +324,24 @@ describe("useScenarioWriter — batched edits", () => {
     expect(refreshSpy).not.toHaveBeenCalled();
   });
 
+  // The edits that landed before the failure are saved, so the page must show them.
+  it("a partly-landed batch refreshes once, then reports the failure", async () => {
+    setUrl(`scenario=${SCENARIO_ID}`);
+    fetchSpy
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) });
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID));
+
+    const res = await result.current.submit([CLIENT_EDIT, PLAN_SETTINGS_EDIT], {
+      url: `/api/clients/${CLIENT_ID}`,
+      method: "PUT",
+      body: { lifeExpectancy: 96 },
+    });
+
+    expect(res.ok).toBe(false);
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+  });
+
   // `baseFallback` is the base-mode equivalent of the WHOLE batch, not of one
   // edit — for life expectancy the PUT route does the same fan-out server-side.
   // One PUT per edit would re-assert the horizon the route already owns.

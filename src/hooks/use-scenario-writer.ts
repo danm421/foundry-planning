@@ -150,7 +150,11 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
             body: JSON.stringify(body),
           },
         );
-        if (!res.ok) return res;
+        if (!res.ok) {
+          // Edits before this one are saved: refresh so the page shows them.
+          if (last && !baseFallback.skipRefresh) router.refresh();
+          return res;
+        }
         last = res;
         // Announced per edit, as it lands: a batch that stops partway still
         // reconciles the edits that did.

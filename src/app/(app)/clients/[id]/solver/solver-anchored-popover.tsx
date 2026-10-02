@@ -3,17 +3,28 @@
 // The Add menu's and the Edit/Delete picker's shared shell: a `document.body`
 // portal, `position: fixed` under its anchor (flipping up / clamping at a
 // viewport edge), closed by an outside mousedown, Escape, a page scroll or a
-// resize. Same placement rules as `SolverSolvePopover`; the solver's left
-// column is `overflow-y-auto`, so an in-flow box would be clipped by it.
+// resize. The solver's left column is `overflow-y-auto`, so an in-flow box
+// would be clipped by it.
+//
+// Keyboard: the portal sits at the end of `<body>`, so on open focus moves to
+// the first enabled control (unless something inside already took it — the
+// picker's autofocused search), leaving the popover by Tab closes it, and
+// closing hands focus back to the anchor when it was inside.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
 const GAP = 4; // px between anchor and popover
 const MARGIN = 8; // px viewport inset
 
+type Anchor = HTMLElement | RefObject<HTMLElement | null>;
+
+// A ref is read only inside effects and handlers, never during render.
+const anchorEl = (anchor: Anchor): HTMLElement | null => ("current" in anchor ? anchor.current : anchor);
+
 interface Props {
-  anchor: HTMLElement;
+  /** The trigger the popover hangs off: the element, or a ref to it. */
+  anchor: Anchor;
   /** Accessible name of the popover's dialog. */
   label: string;
   onClose: () => void;
@@ -25,11 +36,30 @@ interface Props {
 export function SolverAnchoredPopover({ anchor, label, onClose, className = "w-64", children }: Props) {
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  // True while focus is inside the panel, so unmount knows whether to give it back.
+  const hadFocusRef = useRef(false);
 
   useEffect(() => {
     const panel = panelRef.current;
     if (!panel) return;
-    const a = anchor.getBoundingClientRect();
+    if (!panel.contains(document.activeElement)) {
+      // A control marked `data-autofocus` (DialogShell's convention) is the entry point.
+      (
+        panel.querySelector<HTMLElement>("[data-autofocus]") ??
+        panel.querySelector<HTMLElement>("button:not([disabled]), input:not([disabled])")
+      )?.focus({ preventScroll: true });
+    }
+    return () => {
+      if (hadFocusRef.current) anchorEl(anchor)?.focus({ preventScroll: true });
+    };
+  }, [anchor]);
+
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const trigger = anchorEl(anchor);
+    if (!trigger) return;
+    const a = trigger.getBoundingClientRect();
     const p = panel.getBoundingClientRect();
     let left = a.left;
     if (left + p.width > window.innerWidth - MARGIN) left = a.right - p.width;
@@ -46,7 +76,7 @@ export function SolverAnchoredPopover({ anchor, label, onClose, className = "w-6
       const t = e.target as Node;
       if (panelRef.current?.contains(t)) return;
       // The anchor's own click toggles the popover; closing here would reopen it.
-      if (anchor.contains(t)) return;
+      if (anchorEl(anchor)?.contains(t)) return;
       onClose();
     };
     const onEsc = (e: KeyboardEvent) => {
@@ -76,6 +106,17 @@ export function SolverAnchoredPopover({ anchor, label, onClose, className = "w-6
       ref={panelRef}
       role="dialog"
       aria-label={label}
+      onFocus={() => {
+        hadFocusRef.current = true;
+      }}
+      onBlur={(e) => {
+        const to = e.relatedTarget as Node | null;
+        // A null target is the window losing focus, not the advisor tabbing away.
+        if (!to || e.currentTarget.contains(to)) return;
+        hadFocusRef.current = false;
+        // The anchor's own click toggles the popover; closing here would reopen it.
+        if (!anchorEl(anchor)?.contains(to)) onClose();
+      }}
       style={{
         position: "fixed",
         top: coords?.top ?? -9999,

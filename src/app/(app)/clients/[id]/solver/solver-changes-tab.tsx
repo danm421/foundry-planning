@@ -24,9 +24,11 @@
 import { useState } from "react";
 import { useScenarioModeUI } from "@/components/scenario/scenario-mode-wrapper";
 import { ChangesPanel, type ChangesPanelChange } from "@/components/scenario/changes-panel";
+import { labelFor } from "@/components/scenario/changes-panel-leaf-row";
+import type { ClientData } from "@/engine/types";
 import { useClientAccess } from "@/components/client-access-provider";
 import { resolveEffectiveToggleState } from "@/engine/scenario/applyChanges";
-import { resolveChangeEditor, type CreateVariant } from "@/lib/scenario/change-editor-target";
+import { focusRowId, resolveChangeEditor, type CreateVariant } from "@/lib/scenario/change-editor-target";
 import { detailEditorTarget, detailType, type DetailTypeKey } from "@/lib/scenario/plan-detail-catalog";
 import type { InventoryItem, WillGrantor } from "@/lib/scenario/plan-inventory";
 import type { ScenarioWriteEvent } from "@/hooks/scenario-write-listener";
@@ -43,6 +45,8 @@ interface Props {
   panel: PanelData | null;
   /** Every plan detail the toolbar can edit or delete, from the persisted plan. */
   inventory: InventoryItem[];
+  /** The scenario's persisted plan: what a delete would cascade through. */
+  planTree: ClientData;
   /** Grantors with no will in the persisted plan: who "Will" may be added for. */
   willGrantors: readonly WillGrantor[];
   /** Every scenario write the editor makes, with the name of what was edited. */
@@ -55,6 +59,7 @@ export function SolverChangesTab({
   clientId,
   panel,
   inventory,
+  planTree,
   willGrantors,
   onTargetsWritten,
   onOpenSolverTab,
@@ -117,27 +122,11 @@ export function SolverChangesTab({
       onOpenSolverTab(target.tab);
       return;
     }
-    openEditor(target, changeLabel(change));
+    openEditor(target, labelFor(change, panel?.targetNames[`${change.targetKind}:${change.targetId}`], change.label));
   }
 
   function openEditor(target: EditorHostTarget, label: string) {
     setEditing((prev) => ({ target, label, seq: (prev?.seq ?? 0) + 1 }));
-  }
-
-  // The clicked row's name, as the list shows it: rename, then the effective
-  // tree's name, then the add payload's name; the inventory covers the rest.
-  function changeLabel(change: ChangesPanelChange): string {
-    const payloadName =
-      typeof change.payload === "object" && change.payload !== null && "name" in change.payload
-        ? String((change.payload as { name: unknown }).name).trim()
-        : "";
-    return (
-      change.label?.trim() ||
-      panel?.targetNames[`${change.targetKind}:${change.targetId}`] ||
-      payloadName ||
-      inventory.find((i) => i.id === change.targetId)?.label ||
-      "this change"
-    );
   }
 
   return (
@@ -150,22 +139,14 @@ export function SolverChangesTab({
           onAdd={(key: DetailTypeKey, variant?: CreateVariant) =>
             openEditor(detailEditorTarget(key, { intent: "create", variant }), detailType(key).label)
           }
-          onEdit={(item) =>
-            openEditor(
-              // Ruling F-I3: every trust-dialog tab saves its own diff alone, so
-              // editing a trust stays on the explain-only path until its editor is fixed.
-              item.typeKey === "trust"
-                ? { surface: "unsupported" }
-                : detailEditorTarget(item.typeKey, { intent: "edit", id: item.id }),
-              item.label,
-            )
-          }
+          onEdit={(item) => openEditor(detailEditorTarget(item.typeKey, { intent: "edit", id: item.id }), item.label)}
           onDelete={setConfirming}
         />
       )}
       {confirming && (
         <SolverDeleteConfirm
-          clientId={clientId}
+          tree={planTree}
+          inventory={inventory}
           item={confirming}
           scenarioName={panel.scenarioName}
           onCancel={() => setConfirming(null)}
@@ -183,7 +164,7 @@ export function SolverChangesTab({
           target={editing.target}
           label={editing.label}
           onDone={() => setEditing(null)}
-          onWrite={(event) => onTargetsWritten([event], editing.label)}
+          onWrite={(event) => onTargetsWritten([hostEvent(event, editing.target)], editing.label)}
         />
       )}
       <ChangesPanel
@@ -202,4 +183,14 @@ export function SolverChangesTab({
       />
     </>
   );
+}
+
+/**
+ * A plan_settings write carries the client id, but the draft levers it replaces
+ * are keyed on the Assumptions tab the editor was opened on, so the event is
+ * re-addressed to that focus id.
+ */
+function hostEvent(event: ScenarioWriteEvent, target: EditorHostTarget): ScenarioWriteEvent {
+  if (event.targetKind !== "plan_settings" || target.surface !== "details") return event;
+  return { ...event, targetId: focusRowId(target.focus) ?? event.targetId };
 }

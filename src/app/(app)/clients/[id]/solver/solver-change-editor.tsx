@@ -22,7 +22,7 @@
 // The views are loaded with next/dynamic so five large Details views stay out
 // of the Solver's initial bundle.
 
-import { startTransition, useEffect, useState, type ReactNode } from "react";
+import { createContext, startTransition, useContext, useEffect, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { focusRowId, type ChangeEditorTarget, type EditorFocus } from "@/lib/scenario/change-editor-target";
@@ -30,7 +30,14 @@ import type { FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 import { ScenarioWriteListener, type ScenarioWriteEvent } from "@/hooks/scenario-write-listener";
 import { loadChangeEditorProps, type ChangeEditorViewProps } from "./change-editor-actions";
 
-const LoadingLine = () => <HostStrip role="status">Opening the editor…</HostStrip>;
+// While a delete runs the host shows its own "Removing {label}…" strip, in every
+// loading state; the views' lazy-load fallbacks then render nothing, so the
+// advisor never sees "Opening the editor…" for a delete.
+const RemovingCtx = createContext(false);
+const LoadingLine = () => {
+  const removing = useContext(RemovingCtx);
+  return removing ? null : <HostStrip role="status">Opening the editor…</HostStrip>;
+};
 
 const IncomeExpensesView = dynamic(() => import("@/components/income-expenses-view"), {
   loading: LoadingLine,
@@ -132,55 +139,61 @@ function DetailsChangeEditor({
     setState({ status: "unavailable", href: detailsHref(clientId, scenarioId, target, lifeInsurance) });
   }
 
-  switch (state.status) {
-    case "loading":
-      return <LoadingLine />;
-    case "error":
-      return (
-        <HostStrip role="alert" onDismiss={onDone}>
-          <span className="text-crit">Couldn&apos;t open this editor.</span>
-          <button
-            type="button"
-            onClick={() => {
-              setState({ status: "loading" });
-              setAttempt((n) => n + 1);
-            }}
-            className={HOST_STRIP_ACTION_CLASS}
-          >
-            Try again
-          </button>
-        </HostStrip>
-      );
-    case "failed":
-      return (
-        <HostStrip role="alert" onDismiss={onDone}>
-          <span className="text-crit">Couldn&apos;t remove {label}.</span>
-        </HostStrip>
-      );
-    case "unavailable":
-      return (
-        <HostStrip role="status" onDismiss={onDone}>
-          <span>Not editable from the Solver.</span>
-          <Link
-            href={state.href}
-            className={HOST_STRIP_ACTION_CLASS}
-          >
-            Edit this on the Details page
-          </Link>
-        </HostStrip>
-      );
-    case "unsupported":
-      return <UnsupportedStrip onDismiss={onDone} />;
-    case "open":
-      return (
-        <>
-          {focus.intent === "delete" && <HostStrip role="status">Removing {label}…</HostStrip>}
-          <ScenarioWriteListener value={onWrite ?? null}>
-            {renderView(state.loaded, focus, onFocusClose)}
-          </ScenarioWriteListener>
-        </>
-      );
+  const deleting = focus.intent === "delete";
+
+  function stateView(): ReactNode {
+    switch (state.status) {
+      case "loading":
+        return deleting ? <HostStrip role="status">Removing {label}…</HostStrip> : <LoadingLine />;
+      case "error":
+        return (
+          <HostStrip role="alert" onDismiss={onDone}>
+            <span className="text-crit">Couldn&apos;t open this editor.</span>
+            <button
+              type="button"
+              onClick={() => {
+                setState({ status: "loading" });
+                setAttempt((n) => n + 1);
+              }}
+              className={HOST_STRIP_ACTION_CLASS}
+            >
+              Try again
+            </button>
+          </HostStrip>
+        );
+      case "failed":
+        return (
+          <HostStrip role="alert" onDismiss={onDone}>
+            <span className="text-crit">Couldn&apos;t remove {label}.</span>
+          </HostStrip>
+        );
+      case "unavailable":
+        return (
+          <HostStrip role="status" onDismiss={onDone}>
+            <span>Not editable from the Solver.</span>
+            <Link
+              href={state.href}
+              className={HOST_STRIP_ACTION_CLASS}
+            >
+              Edit this on the Details page
+            </Link>
+          </HostStrip>
+        );
+      case "unsupported":
+        return <UnsupportedStrip onDismiss={onDone} />;
+      case "open":
+        return (
+          <>
+            {deleting && <HostStrip role="status">Removing {label}…</HostStrip>}
+            <ScenarioWriteListener value={onWrite ?? null}>
+              {renderView(state.loaded, focus, onFocusClose)}
+            </ScenarioWriteListener>
+          </>
+        );
+    }
   }
+
+  return <RemovingCtx.Provider value={deleting}>{stateView()}</RemovingCtx.Provider>;
 }
 
 /** Ruling F-I2: no link — the Details page's editor has the same bug. */

@@ -323,7 +323,7 @@ function RenameEditor({
   );
 }
 
-function labelFor(
+export function labelFor(
   change: ScenarioChange,
   targetName: string | undefined,
   customLabel: string | null | undefined,

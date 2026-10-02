@@ -82,6 +82,7 @@ import {
 } from "./solver-tab-icons";
 import { SolverChangesTab } from "./solver-changes-tab";
 import { useDraftReconciliation } from "./use-draft-reconciliation";
+import { DraftReconciliationNotice } from "./draft-reconciliation-notice";
 import { buildPlanInventory, grantorsWithoutWill } from "@/lib/scenario/plan-inventory";
 import type { PanelData } from "@/lib/scenario/load-panel-data";
 
@@ -1654,26 +1655,12 @@ export function LiveSolverWorkspace({
 
         {activeTab === "changes" && (
           <>
-            {draftNotice && (
-              <div
-                role="status"
-                className="mb-2 flex items-center gap-2 rounded-lg border border-hair bg-card px-3 py-2 text-[12px] text-ink-2"
-              >
-                <span className="min-w-0 flex-1">{draftNotice}</span>
-                <button
-                  type="button"
-                  onClick={dismissDraftNotice}
-                  aria-label="Dismiss"
-                  className="shrink-0 rounded px-1 text-ink-3 hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-                >
-                  ×
-                </button>
-              </div>
-            )}
+            <DraftReconciliationNotice notice={draftNotice} onDismiss={dismissDraftNotice} />
             <SolverChangesTab
               clientId={clientId}
               panel={changesPanel ?? null}
               inventory={inventory}
+              planTree={initialSourceClientData}
               willGrantors={willGrantors}
               onTargetsWritten={onTargetsWritten}
               onOpenSolverTab={setActiveTab}
