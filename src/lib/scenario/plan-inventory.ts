@@ -45,6 +45,21 @@ export interface InventoryItem {
   draftRef?: { accountId?: string; person?: "client" | "spouse"; livingExpense?: boolean };
 }
 
+export type WillGrantor = "client" | "spouse";
+
+/**
+ * The grantors the Add menu may offer "Will" for: those with no will in the
+ * scenario's tree. The spouse counts only when the household has one — the
+ * Solver's own test for that is a `role: "spouse"` family member.
+ */
+export function grantorsWithoutWill(tree: ClientData): WillGrantor[] {
+  const hasWill = new Set((tree.wills ?? []).map((w) => w.grantor));
+  const hasSpouse =
+    !!tree.client.spouseName || (tree.familyMembers ?? []).some((m) => m.role === "spouse");
+  const grantors: WillGrantor[] = hasSpouse ? ["client", "spouse"] : ["client"];
+  return grantors.filter((g) => !hasWill.has(g));
+}
+
 const fullName = (m: { firstName: string; lastName?: string | null }) =>
   [m.firstName, m.lastName].filter(Boolean).join(" ");
 

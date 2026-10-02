@@ -10,6 +10,8 @@
 // - no argument → the editor closed (cancel, save, delete…) → `onDone()`
 //   unmounts everything. The view's own save already refreshed the route, and
 //   the Solver re-derives from the fresh scenario tree.
+// - "failed" → the editor opened and the save or delete did not land → unmount
+//   the view and say so, instead of closing as if the change had been made.
 // - "unavailable" → the Details page itself wouldn't open this row here
 //   (Ruling T4-unavailable) → unmount the view, show a link to that page.
 // - "unsupported" → the row's editor is known to write the base plan inside a
@@ -25,6 +27,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { focusRowId, type ChangeEditorTarget, type EditorFocus } from "@/lib/scenario/change-editor-target";
 import type { FocusCloseOutcome } from "@/hooks/use-focus-close-once";
+import { ScenarioWriteListener, type ScenarioWriteEvent } from "@/hooks/scenario-write-listener";
 import { loadChangeEditorProps, type ChangeEditorViewProps } from "./change-editor-actions";
 
 const LoadingLine = () => <HostStrip role="status">Opening the editor…</HostStrip>;
@@ -40,6 +43,10 @@ const TechniquesView = dynamic(() => import("@/components/techniques-view"), {
 });
 const FamilyView = dynamic(() => import("@/components/family-view"), { loading: LoadingLine });
 const WillsPanel = dynamic(() => import("@/components/wills-panel"), { loading: LoadingLine });
+const AssumptionsClient = dynamic(
+  () => import("@/app/(app)/clients/[id]/details/assumptions/assumptions-client"),
+  { loading: LoadingLine },
+);
 
 // Shared by the "Try again" button and the fallback Details-page link below —
 // both are a `HostStrip`'s one inline action.
@@ -56,14 +63,19 @@ interface Props {
   clientId: string;
   scenarioId: string;
   target: EditorHostTarget;
+  /** What the editor is about, in the advisor's words: "Removing {label}…". */
+  label: string;
   /** The editor closed normally, or the advisor dismissed a message. */
   onDone: () => void;
+  /** Every scenario write the mounted view reports. */
+  onWrite?: (event: ScenarioWriteEvent) => void;
 }
 
 type HostState =
   | { status: "loading" }
   | { status: "error" }
   | { status: "open"; loaded: ChangeEditorViewProps }
+  | { status: "failed" }
   | { status: "unavailable"; href: string }
   | { status: "unsupported" };
 
@@ -76,7 +88,9 @@ function DetailsChangeEditor({
   clientId,
   scenarioId,
   target,
+  label,
   onDone,
+  onWrite,
 }: Props & { target: DetailsEditorTarget }) {
   const { page, focus } = target;
   const [state, setState] = useState<HostState>({ status: "loading" });
@@ -107,6 +121,10 @@ function DetailsChangeEditor({
       setState({ status: "unsupported" });
       return;
     }
+    if (outcome === "failed") {
+      setState({ status: "failed" });
+      return;
+    }
     const lifeInsurance =
       state.status === "open" &&
       state.loaded.page === "net-worth" &&
@@ -133,6 +151,12 @@ function DetailsChangeEditor({
           </button>
         </HostStrip>
       );
+    case "failed":
+      return (
+        <HostStrip role="alert" onDismiss={onDone}>
+          <span className="text-crit">Couldn&apos;t remove {label}.</span>
+        </HostStrip>
+      );
     case "unavailable":
       return (
         <HostStrip role="status" onDismiss={onDone}>
@@ -148,7 +172,14 @@ function DetailsChangeEditor({
     case "unsupported":
       return <UnsupportedStrip onDismiss={onDone} />;
     case "open":
-      return renderView(state.loaded, focus, onFocusClose);
+      return (
+        <>
+          {focus.intent === "delete" && <HostStrip role="status">Removing {label}…</HostStrip>}
+          <ScenarioWriteListener value={onWrite ?? null}>
+            {renderView(state.loaded, focus, onFocusClose)}
+          </ScenarioWriteListener>
+        </>
+      );
   }
 }
 
@@ -164,13 +195,13 @@ function UnsupportedStrip({ onDismiss }: { onDismiss: () => void }) {
   );
 }
 
-/** The loaded Details view in focus mode, keyed by the focus it reads at mount. */
+/** The loaded Details view in focus mode, keyed by the whole focus it reads at mount. */
 function renderView(
   loaded: ChangeEditorViewProps,
   focus: EditorFocus,
   onFocusClose: (outcome?: FocusCloseOutcome) => void,
 ): ReactNode {
-  const key = `${focus.kind}:${focusRowId(focus) ?? "new"}`;
+  const key = JSON.stringify(focus);
   switch (loaded.page) {
     case "income-expenses":
       return <IncomeExpensesView key={key} {...loaded.props} focus={focus} onFocusClose={onFocusClose} />;
@@ -182,6 +213,8 @@ function renderView(
       return <FamilyView key={key} {...loaded.props} focus={focus} onFocusClose={onFocusClose} />;
     case "wills":
       return <WillsPanel key={key} {...loaded.props} focus={focus} onFocusClose={onFocusClose} />;
+    case "assumptions":
+      return <AssumptionsClient key={key} {...loaded.props} focus={focus} onFocusClose={onFocusClose} />;
   }
 }
 

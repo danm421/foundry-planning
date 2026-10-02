@@ -81,6 +81,8 @@ import {
   ChangesIcon,
 } from "./solver-tab-icons";
 import { SolverChangesTab } from "./solver-changes-tab";
+import { useDraftReconciliation } from "./use-draft-reconciliation";
+import { buildPlanInventory, grantorsWithoutWill } from "@/lib/scenario/plan-inventory";
 import type { PanelData } from "@/lib/scenario/load-panel-data";
 
 function growthForType(type: QuickAddType, d: { taxable: number; retirement: number; cash: number }): number {
@@ -1099,6 +1101,20 @@ export function LiveSolverWorkspace({
     setEditNonce((n) => n + 1); // a per-field reset is an edit → Scenario stale
   }, []);
 
+  // The Changes tab's Add / Edit / Delete list the PERSISTED scenario plan (never
+  // the working tree, which carries unsaved levers) and, once a write lands,
+  // drop the draft levers it replaced.
+  const inventory = useMemo(
+    () => buildPlanInventory(initialSourceClientData, baseGifts, clientId),
+    [initialSourceClientData, baseGifts, clientId],
+  );
+  const willGrantors = useMemo(() => grantorsWithoutWill(initialSourceClientData), [initialSourceClientData]);
+  const { notice: draftNotice, dismissNotice: dismissDraftNotice, onTargetsWritten } = useDraftReconciliation({
+    inventory,
+    mutations,
+    clearMutations,
+  });
+
   const handleSolveStart = useCallback(
     (
       target: SolveLeverKey,
@@ -1637,11 +1653,32 @@ export function LiveSolverWorkspace({
         )}
 
         {activeTab === "changes" && (
-          <SolverChangesTab
-            clientId={clientId}
-            panel={changesPanel ?? null}
-            onOpenSolverTab={setActiveTab}
-          />
+          <>
+            {draftNotice && (
+              <div
+                role="status"
+                className="mb-2 flex items-center gap-2 rounded-lg border border-hair bg-card px-3 py-2 text-[12px] text-ink-2"
+              >
+                <span className="min-w-0 flex-1">{draftNotice}</span>
+                <button
+                  type="button"
+                  onClick={dismissDraftNotice}
+                  aria-label="Dismiss"
+                  className="shrink-0 rounded px-1 text-ink-3 hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+            <SolverChangesTab
+              clientId={clientId}
+              panel={changesPanel ?? null}
+              inventory={inventory}
+              willGrantors={willGrantors}
+              onTargetsWritten={onTargetsWritten}
+              onOpenSolverTab={setActiveTab}
+            />
+          </>
         )}
           </div>
         </div>

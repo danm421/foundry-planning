@@ -427,6 +427,23 @@ describe("useScenarioWriter — write listener", () => {
     expect(listener).toHaveBeenCalledWith({ targetKind: "income", targetId: "i1", op: "edit" });
   });
 
+  // A partly-landed batch must still reconcile the edits that landed.
+  it("notifies per edit as each lands: edit 1 ok, edit 2 fails → listener called once, for edit 1", async () => {
+    setUrl(`scenario=${SCENARIO_ID}`);
+    fetchSpy
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) });
+    const listener = vi.fn();
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID), {
+      wrapper: wrapperFor(listener),
+    });
+    const second = { ...edit, targetKind: "plan_settings" as const, targetId: "ps1" };
+    const res = await result.current.submit([edit, second], fallback);
+    expect(res.ok).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith({ targetKind: "income", targetId: "i1", op: "edit" });
+  });
+
   it("does not notify when the write fails", async () => {
     setUrl(`scenario=${SCENARIO_ID}`);
     fetchSpy.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });

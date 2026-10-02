@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { ClientData } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
-import { buildPlanInventory } from "../plan-inventory";
+import { buildPlanInventory, grantorsWithoutWill } from "../plan-inventory";
 import { DETAIL_GROUP_ORDER, DETAIL_TYPES, detailType } from "../plan-detail-catalog";
 
 const raw = {
@@ -233,5 +233,39 @@ describe("buildPlanInventory", () => {
     expect(byGroup).toEqual([...byGroup].sort((a, b) => a[0] - b[0] || a[1] - b[1]));
     const expenses = byType("expense").map((i) => i.label);
     expect(expenses).toEqual([...expenses].sort((a, b) => a.localeCompare(b)));
+  });
+});
+
+describe("grantorsWithoutWill", () => {
+  const tree = (over: Record<string, unknown>) =>
+    ({ client: { firstName: "Pat" }, wills: [], familyMembers: [], ...over }) as unknown as ClientData;
+  const spouse = { id: "f1", role: "spouse", firstName: "Sam" };
+
+  it("a household with a spouse and no wills offers both grantors", () => {
+    expect(grantorsWithoutWill(tree({ familyMembers: [spouse] }))).toEqual(["client", "spouse"]);
+  });
+
+  it("drops a grantor who already has a will", () => {
+    const wills = [{ id: "w1", grantor: "client", bequests: [] }];
+    expect(grantorsWithoutWill(tree({ familyMembers: [spouse], wills }))).toEqual(["spouse"]);
+  });
+
+  it("never offers the spouse when the household has none", () => {
+    expect(grantorsWithoutWill(tree({}))).toEqual(["client"]);
+  });
+
+  it("recognises a spouse by name when the family list lacks one", () => {
+    expect(grantorsWithoutWill(tree({ client: { firstName: "Pat", spouseName: "Sam" } }))).toEqual([
+      "client",
+      "spouse",
+    ]);
+  });
+
+  it("is empty once every grantor has a will", () => {
+    const wills = [
+      { id: "w1", grantor: "client", bequests: [] },
+      { id: "w2", grantor: "spouse", bequests: [] },
+    ];
+    expect(grantorsWithoutWill(tree({ familyMembers: [spouse], wills }))).toEqual([]);
   });
 });

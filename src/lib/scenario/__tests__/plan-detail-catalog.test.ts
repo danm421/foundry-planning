@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import {
   DETAIL_TYPES,
   DETAIL_GROUP_ORDER,
   detailType,
   detailEditorTarget,
+  NOT_YET_READY,
 } from "../plan-detail-catalog";
 
 describe("plan detail catalog", () => {
@@ -53,5 +55,31 @@ describe("plan detail catalog", () => {
       kind: "expense",
       id: "e1",
     });
+  });
+});
+
+describe("will variants", () => {
+  it("name the two grantors Client and the co-client label, never Spouse", () => {
+    expect(detailType("will").variants).toEqual([
+      { value: "client", label: "Client" },
+      { value: "spouse", label: CO_CLIENT_LABEL },
+    ]);
+  });
+});
+
+describe("NOT_YET_READY", () => {
+  it("lists only real catalog keys", () => {
+    const keys = new Set(DETAIL_TYPES.map((t) => t.key));
+    for (const k of NOT_YET_READY) expect(keys.has(k)).toBe(true);
+  });
+
+  it("holds the types whose workstream is still open", () => {
+    expect([...NOT_YET_READY].sort()).toEqual(
+      [
+        "business", "note_receivable", "life_policy", "disability_policy", "gift_series",
+        "family_member", "external_beneficiary", "reinvestment", "deduction", "tax_adjustment",
+        "tax_rates", "growth_inflation", "savings_withdrawals",
+      ].sort(),
+    );
   });
 });

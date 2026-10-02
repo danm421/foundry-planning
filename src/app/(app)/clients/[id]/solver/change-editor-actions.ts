@@ -20,11 +20,13 @@ import { loadNetWorthViewProps } from "@/app/(app)/clients/[id]/details/net-wort
 import { loadTechniquesViewProps } from "@/app/(app)/clients/[id]/details/techniques/load-view-props";
 import { loadFamilyViewProps } from "@/app/(app)/clients/[id]/details/family/load-view-props";
 import { loadWillsViewProps } from "@/app/(app)/clients/[id]/details/wills/load-view-props";
+import { loadAssumptionsViewProps } from "@/app/(app)/clients/[id]/details/assumptions/load-view-props";
 import type { IncomeExpensesViewProps } from "@/components/income-expenses-view";
 import type { BalanceSheetViewProps } from "@/components/balance-sheet-view";
 import type { TechniquesViewProps } from "@/components/techniques-view";
 import type { FamilyViewProps } from "@/components/family-view";
 import type { WillsPanelProps } from "@/components/wills-panel";
+import type { AssumptionsClientProps } from "@/app/(app)/clients/[id]/details/assumptions/assumptions-client";
 
 /** One Details view's props — never the page's sibling data (banners, firmId). */
 export type ChangeEditorViewProps =
@@ -32,14 +34,15 @@ export type ChangeEditorViewProps =
   | { page: "net-worth"; props: BalanceSheetViewProps }
   | { page: "techniques"; props: TechniquesViewProps }
   | { page: "family"; props: FamilyViewProps }
-  | { page: "wills"; props: WillsPanelProps };
+  | { page: "wills"; props: WillsPanelProps }
+  | { page: "assumptions"; props: AssumptionsClientProps };
 
 // A server action is a public endpoint: check the shape before any query (a
 // non-uuid id would otherwise reach Postgres as a 22P02).
 const INPUT = z.object({
   clientId: z.string().uuid(),
   scenarioId: z.string().uuid(),
-  page: z.enum(["income-expenses", "net-worth", "techniques", "family", "wills"]),
+  page: z.enum(["income-expenses", "net-worth", "techniques", "family", "wills", "insurance", "assumptions"]),
 });
 
 /**
@@ -70,6 +73,12 @@ export async function loadChangeEditorProps(
       return { page: input.page, props: (await loadFamilyViewProps(input.clientId, input.scenarioId)).props };
     case "wills":
       return { page: input.page, props: okProps(await loadWillsViewProps(input.clientId, input.scenarioId)) };
+    case "assumptions":
+      return { page: input.page, props: okProps(await loadAssumptionsViewProps(input.clientId, input.scenarioId)) };
+    case "insurance":
+      // The Insurance loader arrives with its own task; the catalog marks
+      // insurance types not ready until then, so nothing asks for it yet.
+      throw new Error("Not available yet");
   }
 }
 

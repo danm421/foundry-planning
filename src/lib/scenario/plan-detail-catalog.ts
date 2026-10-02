@@ -13,6 +13,7 @@ import type {
   EditorFocus,
   FocusKind,
 } from "./change-editor-target";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 export type DetailGroup =
   | "Cash flow"
@@ -71,7 +72,7 @@ const ACCOUNT_VARIANTS: { value: CreateVariant; label: string }[] = [
 
 const WILL_VARIANTS: { value: CreateVariant; label: string }[] = [
   { value: "client", label: "Client" },
-  { value: "spouse", label: "Spouse" },
+  { value: "spouse", label: CO_CLIENT_LABEL },
 ];
 
 type Flags = Pick<DetailType, "add" | "edit" | "delete">;
@@ -130,6 +131,17 @@ export const DETAIL_TYPES: readonly DetailType[] = [
 
   row("client_info", "People", "Client info", "family", "client", EDIT_ONLY),
 ];
+
+// Types whose Details editor still has an open workstream: the Add menu and the
+// picker show them greyed ("Coming in this release") and they open nothing.
+// Each workstream's task deletes its keys here; the last one leaves it empty.
+export const NOT_YET_READY: ReadonlySet<DetailTypeKey> = new Set<DetailTypeKey>([
+  "business", "note_receivable",
+  "life_policy", "disability_policy",
+  "gift_series", "family_member", "external_beneficiary", "reinvestment",
+  "deduction", "tax_adjustment",
+  "tax_rates", "growth_inflation", "savings_withdrawals",
+]);
 
 // The three Assumptions singletons always focus their own tab, whatever id the caller passes.
 export const SINGLETON_FOCUS_ID: Partial<Record<DetailTypeKey, string>> = {

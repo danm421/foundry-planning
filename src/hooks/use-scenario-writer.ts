@@ -152,11 +152,15 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
         );
         if (!res.ok) return res;
         last = res;
+        // Announced per edit, as it lands: a batch that stops partway still
+        // reconciles the edits that did.
+        onWrite?.({
+          targetKind: e.targetKind,
+          targetId: e.targetId ?? (typeof e.entity?.id === "string" ? e.entity.id : null),
+          op: e.op,
+        });
       }
       if (last && !baseFallback.skipRefresh) router.refresh();
-      for (const e of edits) {
-        onWrite?.({ targetKind: e.targetKind, targetId: e.targetId ?? (typeof e.entity?.id === "string" ? e.entity.id : null), op: e.op });
-      }
       // Only reachable for an empty batch, which no caller passes. "Nothing to
       // write" is a success, and answering with an ok Response keeps every
       // caller's `res.ok` read honest without widening the return to nullable.

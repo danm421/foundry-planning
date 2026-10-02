@@ -6,6 +6,14 @@
 // base case has no scenario_change rows to show, so it gets a quiet empty
 // state instead.
 //
+// The toolbar above the list adds, edits and deletes any plan detail, not only
+// the ones the scenario already changed: Add and Edit open the Details page's
+// own editor in place, Delete asks first (SolverDeleteConfirm) and then opens
+// the same host, which runs the view's delete and reports back. Every write the
+// view makes is reported up through `onTargetsWritten` so the Solver can drop
+// the draft levers that write replaced. The base case gets the toolbar greyed
+// out and a way to create a scenario: nothing here ever writes the base plan.
+//
 // Clicking a change's title opens where it's edited (resolveChangeEditor):
 // a Solver tab (Stress, Retirement) switches the left pane; a Details page
 // opens that row's own editor in place (SolverChangeEditor), which also
@@ -14,12 +22,18 @@
 // view-only advisor, stay plain text.
 
 import { useState } from "react";
+import { useScenarioModeUI } from "@/components/scenario/scenario-mode-wrapper";
 import { ChangesPanel, type ChangesPanelChange } from "@/components/scenario/changes-panel";
 import { useClientAccess } from "@/components/client-access-provider";
 import { resolveEffectiveToggleState } from "@/engine/scenario/applyChanges";
-import { resolveChangeEditor } from "@/lib/scenario/change-editor-target";
+import { resolveChangeEditor, type CreateVariant } from "@/lib/scenario/change-editor-target";
+import { detailEditorTarget, detailType, type DetailTypeKey } from "@/lib/scenario/plan-detail-catalog";
+import type { InventoryItem, WillGrantor } from "@/lib/scenario/plan-inventory";
+import type { ScenarioWriteEvent } from "@/hooks/scenario-write-listener";
 import type { PanelData } from "@/lib/scenario/load-panel-data";
 import { SolverChangeEditor, type EditorHostTarget } from "./solver-change-editor";
+import { SolverDetailActions } from "./solver-detail-actions";
+import { SolverDeleteConfirm } from "./solver-delete-confirm";
 import type { InputTab } from "./report-tab-link";
 
 interface Props {
@@ -27,22 +41,63 @@ interface Props {
   /** Server-loaded panel data for the active scenario, or null on the base
    *  case (or a scenario id that failed to resolve — see loadPanelData). */
   panel: PanelData | null;
+  /** Every plan detail the toolbar can edit or delete, from the persisted plan. */
+  inventory: InventoryItem[];
+  /** Grantors with no will in the persisted plan: who "Will" may be added for. */
+  willGrantors: readonly WillGrantor[];
+  /** Every scenario write the editor makes, with the name of what was edited. */
+  onTargetsWritten: (events: ScenarioWriteEvent[], label: string) => void;
   /** Switches the Solver's left pane to the tab that edits a change. */
   onOpenSolverTab: (tab: InputTab) => void;
 }
 
-export function SolverChangesTab({ clientId, panel, onOpenSolverTab }: Props) {
+export function SolverChangesTab({
+  clientId,
+  panel,
+  inventory,
+  willGrantors,
+  onTargetsWritten,
+  onOpenSolverTab,
+}: Props) {
   const { permission } = useClientAccess();
+  const { openCreate } = useScenarioModeUI();
   const canEdit = permission === "edit";
   // `seq` remounts the editor on every click, so re-opening the same change
-  // (or replacing a message) always starts a fresh load.
-  const [editing, setEditing] = useState<{ target: EditorHostTarget; seq: number } | null>(null);
+  // (or replacing a message) always starts a fresh load. `label` names what the
+  // editor is about, for its own messages and for the draft-reconciliation notice.
+  const [editing, setEditing] = useState<{ target: EditorHostTarget; seq: number; label: string } | null>(null);
+  // A delete waits here for the advisor's confirmation before it reaches the host.
+  const [confirming, setConfirming] = useState<InventoryItem | null>(null);
 
   if (!panel) {
     return (
-      <div className="rounded-lg border border-hair bg-card p-6 text-center text-[12px] text-ink-3">
-        Pick a scenario to see its changes.
-      </div>
+      <>
+        {canEdit && (
+          <div className="mb-3">
+            <SolverDetailActions
+              inventory={inventory}
+              disabled
+              willGrantors={willGrantors}
+              onAdd={() => {}}
+              onEdit={() => {}}
+              onDelete={() => {}}
+            />
+            <div className="flex items-center gap-3 text-[12px] text-ink-3">
+              <span>Add, edit and delete work inside a scenario.</span>
+              <button
+                type="button"
+                onClick={openCreate}
+                className="h-7 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[12px] text-ink-2 hover:border-hair focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+              >
+                Create scenario
+              </button>
+            </div>
+          </div>
+        )}
+        <div className="rounded-lg border border-hair bg-card p-6 text-center text-[12px] text-ink-3">
+          Pick a scenario to see its changes.
+        </div>
+      </>
     );
   }
 
@@ -62,18 +117,73 @@ export function SolverChangesTab({ clientId, panel, onOpenSolverTab }: Props) {
       onOpenSolverTab(target.tab);
       return;
     }
-    setEditing((prev) => ({ target, seq: (prev?.seq ?? 0) + 1 }));
+    openEditor(target, changeLabel(change));
+  }
+
+  function openEditor(target: EditorHostTarget, label: string) {
+    setEditing((prev) => ({ target, label, seq: (prev?.seq ?? 0) + 1 }));
+  }
+
+  // The clicked row's name, as the list shows it: rename, then the effective
+  // tree's name, then the add payload's name; the inventory covers the rest.
+  function changeLabel(change: ChangesPanelChange): string {
+    const payloadName =
+      typeof change.payload === "object" && change.payload !== null && "name" in change.payload
+        ? String((change.payload as { name: unknown }).name).trim()
+        : "";
+    return (
+      change.label?.trim() ||
+      panel?.targetNames[`${change.targetKind}:${change.targetId}`] ||
+      payloadName ||
+      inventory.find((i) => i.id === change.targetId)?.label ||
+      "this change"
+    );
   }
 
   return (
     <>
+      {canEdit && (
+        <SolverDetailActions
+          inventory={inventory}
+          disabled={false}
+          willGrantors={willGrantors}
+          onAdd={(key: DetailTypeKey, variant?: CreateVariant) =>
+            openEditor(detailEditorTarget(key, { intent: "create", variant }), detailType(key).label)
+          }
+          onEdit={(item) =>
+            openEditor(
+              // Ruling F-I3: every trust-dialog tab saves its own diff alone, so
+              // editing a trust stays on the explain-only path until its editor is fixed.
+              item.typeKey === "trust"
+                ? { surface: "unsupported" }
+                : detailEditorTarget(item.typeKey, { intent: "edit", id: item.id }),
+              item.label,
+            )
+          }
+          onDelete={setConfirming}
+        />
+      )}
+      {confirming && (
+        <SolverDeleteConfirm
+          clientId={clientId}
+          item={confirming}
+          scenarioName={panel.scenarioName}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            openEditor(detailEditorTarget(confirming.typeKey, { intent: "delete", id: confirming.id }), confirming.label);
+            setConfirming(null);
+          }}
+        />
+      )}
       {editing && (
         <SolverChangeEditor
           key={editing.seq}
           clientId={clientId}
           scenarioId={panel.scenarioId}
           target={editing.target}
+          label={editing.label}
           onDone={() => setEditing(null)}
+          onWrite={(event) => onTargetsWritten([event], editing.label)}
         />
       )}
       <ChangesPanel

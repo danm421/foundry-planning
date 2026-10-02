@@ -7,12 +7,16 @@ import type { PanelData } from "@/lib/scenario/load-panel-data";
 import type { ChangesPanelChange } from "@/components/scenario/changes-panel";
 import type { EditorFocus } from "@/lib/scenario/change-editor-target";
 import type { ToggleGroup } from "@/engine/scenario/types";
+import type { InventoryItem } from "@/lib/scenario/plan-inventory";
+import { useScenarioWriteListener } from "@/hooks/scenario-write-listener";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
 }));
 
-const { loadChangeEditorPropsMock, makeStubView } = vi.hoisted(() => ({
+const TARGET_ID_FOR_STUB = "11111111-2222-3333-4444-555555555555";
+const { loadChangeEditorPropsMock, makeStubView, openCreateMock } = vi.hoisted(() => ({
+  openCreateMock: vi.fn(),
   loadChangeEditorPropsMock: vi.fn(),
   // Light stand-in for a Details view in focus mode: shows the focus it was
   // mounted with and a props marker, and exposes both onFocusClose outcomes.
@@ -24,11 +28,21 @@ const { loadChangeEditorPropsMock, makeStubView } = vi.hoisted(() => ({
       marker,
     }: {
       focus?: EditorFocus;
-      onFocusClose?: (outcome?: "unavailable" | "unsupported") => void;
+      onFocusClose?: (outcome?: "unavailable" | "unsupported" | "failed") => void;
       marker?: string;
     }) {
+      const onWrite = useScenarioWriteListener();
       return (
         <div data-testid={`view-${page}`} data-focus={JSON.stringify(focus)} data-marker={marker}>
+          <button
+            type="button"
+            onClick={() => onWrite?.({ targetKind: "income", targetId: TARGET_ID_FOR_STUB, op: "remove" })}
+          >
+            stub write
+          </button>
+          <button type="button" onClick={() => onFocusClose?.("failed")}>
+            stub failed
+          </button>
           <button type="button" onClick={() => onFocusClose?.()}>
             stub close
           </button>
@@ -49,6 +63,12 @@ vi.mock("@/components/balance-sheet-view", () => ({ default: makeStubView("net-w
 vi.mock("@/components/techniques-view", () => ({ default: makeStubView("techniques") }));
 vi.mock("@/components/family-view", () => ({ default: makeStubView("family") }));
 vi.mock("@/components/wills-panel", () => ({ default: makeStubView("wills") }));
+vi.mock("@/components/scenario/scenario-mode-wrapper", () => ({
+  useScenarioModeUI: () => ({ openCreate: openCreateMock }),
+  ScenarioModeWrapper: ({ children }: { children: unknown }) => children,
+}));
+const fetchMock = vi.fn();
+vi.stubGlobal("fetch", fetchMock);
 
 const CLIENT_ID = "c1";
 const UNSUPPORTED_MESSAGE =
@@ -85,24 +105,42 @@ function makePanel(overrides: Partial<PanelData> = {}): PanelData {
   };
 }
 
+const item = (over: Partial<InventoryItem> & Pick<InventoryItem, "typeKey" | "id" | "label">): InventoryItem => ({
+  key: `${over.typeKey}:${over.id}`,
+  canEdit: true,
+  canDelete: true,
+  ...over,
+});
+const INVENTORY: InventoryItem[] = [
+  item({ typeKey: "income", id: TARGET_ID, label: "Side income" }),
+  item({ typeKey: "income", id: "i-salary", label: "Salary" }),
+  item({ typeKey: "account", id: "a-1", label: "Joint brokerage" }),
+];
+
 function renderTab(
   changes: ChangesPanelChange[],
   {
     permission = "edit" as "edit" | "view",
     toggleGroups = [] as ToggleGroup[],
+    inventory = [] as InventoryItem[],
+    panelOverrides = {} as Partial<PanelData>,
   } = {},
 ) {
   const onOpenSolverTab = vi.fn();
+  const onTargetsWritten = vi.fn();
   render(
     <ClientAccessProvider value={{ permission, access: "own" }}>
       <SolverChangesTab
         clientId={CLIENT_ID}
-        panel={makePanel({ changes, toggleGroups })}
+        panel={makePanel({ changes, toggleGroups, ...panelOverrides })}
+        inventory={inventory}
+        willGrantors={["client", "spouse"]}
         onOpenSolverTab={onOpenSolverTab}
+        onTargetsWritten={onTargetsWritten}
       />
     </ClientAccessProvider>,
   );
-  return { onOpenSolverTab };
+  return { onOpenSolverTab, onTargetsWritten };
 }
 
 function makeGroup(overrides: Partial<ToggleGroup> = {}): ToggleGroup {
@@ -130,6 +168,8 @@ function deferred<T>() {
 
 beforeEach(() => {
   loadChangeEditorPropsMock.mockReset();
+  openCreateMock.mockReset();
+  fetchMock.mockReset();
 });
 
 describe("SolverChangesTab", () => {
@@ -144,7 +184,16 @@ describe("SolverChangesTab", () => {
   });
 
   it("shows a quiet empty state on the base case (panel === null)", () => {
-    render(<SolverChangesTab clientId={CLIENT_ID} panel={null} onOpenSolverTab={vi.fn()} />);
+    render(
+      <SolverChangesTab
+        clientId={CLIENT_ID}
+        panel={null}
+        inventory={[]}
+        willGrantors={[]}
+        onOpenSolverTab={vi.fn()}
+        onTargetsWritten={vi.fn()}
+      />,
+    );
     expect(screen.getByText("Pick a scenario to see its changes.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^group$/i })).not.toBeInTheDocument();
   });
@@ -451,5 +500,184 @@ describe("SolverChangesTab — opening a Details editor", () => {
 
     await waitFor(() => expect(screen.queryByText(UNSUPPORTED_MESSAGE)).not.toBeInTheDocument());
     expect(await screen.findByTestId("view-income-expenses")).toBeInTheDocument();
+  });
+});
+
+
+describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
+  it("Add → Expense mounts the income-expenses view with a create focus", async () => {
+    loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
+    renderTab([], { inventory: INVENTORY });
+    fireEvent.click(screen.getByRole("button", { name: "+ Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "Expense" }));
+    const view = await screen.findByTestId("view-income-expenses");
+    expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ intent: "create", kind: "expense" });
+    expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, "income-expenses");
+  });
+
+  it("Add → Account → Retirement carries the variant", async () => {
+    loadChangeEditorPropsMock.mockResolvedValue({ page: "net-worth", props: { clientId: CLIENT_ID } });
+    renderTab([], { inventory: INVENTORY });
+    fireEvent.click(screen.getByRole("button", { name: "+ Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "Account" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retirement" }));
+    const view = await screen.findByTestId("view-net-worth");
+    expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({
+      intent: "create",
+      kind: "account",
+      variant: "retirement",
+    });
+  });
+
+  it("Edit → search → pick mounts an edit focus for that row", async () => {
+    loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
+    renderTab([], { inventory: INVENTORY });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "salary" } });
+    fireEvent.click(screen.getByRole("option", { name: /Salary/ }));
+    const view = await screen.findByTestId("view-income-expenses");
+    expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({
+      intent: "edit",
+      kind: "income",
+      id: "i-salary",
+    });
+  });
+
+  it("Delete asks first, then mounts a delete focus", async () => {
+    loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
+    renderTab([], { inventory: INVENTORY, panelOverrides: { scenarioName: "Retire early" } });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
+    expect(
+      screen.getByText("Remove Side income from Retire early? You can switch it back on in the list below."),
+    ).toBeInTheDocument();
+    expect(loadChangeEditorPropsMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    const view = await screen.findByTestId("view-income-expenses");
+    expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ intent: "delete", kind: "income", id: TARGET_ID });
+  });
+
+  it("cancelling the delete confirm mounts nothing", () => {
+    renderTab([], { inventory: INVENTORY });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByText(/^Remove Side income/)).not.toBeInTheDocument();
+    expect(loadChangeEditorPropsMock).not.toHaveBeenCalled();
+  });
+
+  it("Delete of an account lists its dependents before confirming", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ transfers: [{ id: "t1", name: "Annual sweep" }], rothConversions: [{ id: "r1", name: "Ladder" }] }),
+    });
+    renderTab([], { inventory: INVENTORY });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("option", { name: /Joint brokerage/ }));
+    expect(await screen.findByText(/Annual sweep/)).toBeInTheDocument();
+    expect(screen.getByText(/Ladder/)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(`/api/clients/${CLIENT_ID}/accounts/a-1/dependents`);
+  });
+
+  it("a failed dependents lookup still lets the advisor confirm", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, json: async () => ({}) });
+    renderTab([], { inventory: INVENTORY });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("option", { name: /Joint brokerage/ }));
+    expect(await screen.findByRole("button", { name: "Remove" })).toBeEnabled();
+  });
+
+  it("a non-account delete never asks for dependents", () => {
+    renderTab([], { inventory: INVENTORY });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("a delete shows a status strip while the view runs", async () => {
+    loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
+    renderTab([], { inventory: INVENTORY });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    await screen.findByTestId("view-income-expenses");
+    expect(screen.getByRole("status")).toHaveTextContent("Removing Side income…");
+  });
+
+  it("a failed delete shows an inline error with Dismiss", async () => {
+    loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
+    renderTab([], { inventory: INVENTORY });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    await screen.findByTestId("view-income-expenses");
+
+    fireEvent.click(screen.getByRole("button", { name: "stub failed" }));
+
+    expect(screen.queryByTestId("view-income-expenses")).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Couldn't remove Side income.");
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("reports a write the view announces, with the editor's label", async () => {
+    loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
+    const { onTargetsWritten } = renderTab([], { inventory: INVENTORY });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
+    await screen.findByTestId("view-income-expenses");
+    fireEvent.click(screen.getByRole("button", { name: "stub write" }));
+    expect(onTargetsWritten).toHaveBeenCalledWith(
+      [{ targetKind: "income", targetId: TARGET_ID, op: "remove" }],
+      "Side income",
+    );
+  });
+
+  it("editing a trust stays on the explain-only path", () => {
+    renderTab([], {
+      inventory: [item({ typeKey: "trust", id: "t1", label: "Family Trust" })],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("option", { name: /Family Trust/ }));
+    expect(screen.getByRole("status")).toHaveTextContent(UNSUPPORTED_MESSAGE);
+    expect(loadChangeEditorPropsMock).not.toHaveBeenCalled();
+  });
+
+  it("view-only advisors see no toolbar", () => {
+    renderTab([], { permission: "view", inventory: INVENTORY });
+    expect(screen.queryByRole("button", { name: "+ Add" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+  });
+
+  it("the base case shows the disabled toolbar and Create scenario", () => {
+    render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <SolverChangesTab
+          clientId={CLIENT_ID}
+          panel={null}
+          inventory={INVENTORY}
+          willGrantors={[]}
+          onOpenSolverTab={vi.fn()}
+          onTargetsWritten={vi.fn()}
+        />
+      </ClientAccessProvider>,
+    );
+    for (const name of ["+ Add", "Edit", "Delete"]) {
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+    }
+    expect(screen.getByText("Add, edit and delete work inside a scenario.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Create scenario" }));
+    expect(openCreateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("clicking a change to edit it reports writes with that change's name", async () => {
+    loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
+    const { onTargetsWritten } = renderTab([makeChange()], { inventory: INVENTORY });
+    fireEvent.click(screen.getByRole("button", { name: "Edit Side income" }));
+    await screen.findByTestId("view-income-expenses");
+    fireEvent.click(screen.getByRole("button", { name: "stub write" }));
+    expect(onTargetsWritten).toHaveBeenCalledTimes(1);
+    expect(onTargetsWritten.mock.calls[0][1]).toBe("Side income");
   });
 });
