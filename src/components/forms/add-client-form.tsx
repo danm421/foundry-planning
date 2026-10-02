@@ -13,6 +13,8 @@ import { CheckCircleIcon } from "@/components/icons";
 import { StateSelect } from "@/components/state-select";
 import { AgeYearField } from "./age-year-field";
 import { birthYearFromDob } from "@/lib/age-year";
+import { planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
+import type { ScenarioEdit } from "@/hooks/use-scenario-writer";
 
 export interface ClientFormInitial {
   id: string;
@@ -312,20 +314,37 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
       // Edit-mode PUT doesn't accept crmHouseholdId in the body; strip it.
       if (isEdit) delete body.crmHouseholdId;
 
-      const res = isEdit
-        ? await writer.submit(
+      // A scenario save moves the plan horizon with life expectancy, the way the
+      // Solver's Retirement tab does: client.planEndAge + plan_settings.planEndYear.
+      // Base mode's PUT derives both server-side, so its body is untouched.
+      const horizon = isEdit ? planHorizonFromLifeExpectancy(body) : null;
+      const edits: ScenarioEdit[] = isEdit
+        ? [
             {
               op: "edit",
               targetKind: "client",
               targetId: effectiveClientId!,
-              desiredFields: body,
+              desiredFields: { ...body, ...(horizon ? { planEndAge: horizon.planEndAge } : {}) },
             },
-            {
-              url: `/api/clients/${effectiveClientId}`,
-              method: "PUT",
-              body,
-            },
-          )
+            ...(horizon
+              ? [
+                  {
+                    op: "edit" as const,
+                    targetKind: "plan_settings" as const,
+                    targetId: effectiveClientId!,
+                    desiredFields: { planEndYear: horizon.planEndYear },
+                  },
+                ]
+              : []),
+          ]
+        : [];
+
+      const res = isEdit
+        ? await writer.submit(edits, {
+            url: `/api/clients/${effectiveClientId}`,
+            method: "PUT",
+            body,
+          })
         : await fetch("/api/clients", {
             method: "POST",
             headers: { "Content-Type": "application/json" },

@@ -62,7 +62,55 @@ describe("AddClientForm — base mode (no ?scenario= in URL)", () => {
 });
 
 describe("AddClientForm — scenario mode (?scenario=<sid> in URL)", () => {
-  it("edit mode POSTs unified /changes route with op=edit, targetKind=client, targetId, desiredFields", async () => {
+  const CHANGES_URL = "/api/clients/client-123/scenarios/scen-456/changes";
+
+  function requests() {
+    return fetchMock.mock.calls.map(([url, init]) => ({
+      url: url as string,
+      method: (init as RequestInit).method,
+      body: JSON.parse((init as RequestInit).body as string),
+    }));
+  }
+
+  it("a life-expectancy change posts the client edit then the plan_settings edit, both to /changes", async () => {
+    mockSearch = "scenario=scen-456";
+    render(<AddClientForm mode="edit" initial={SAMPLE_CLIENT} />);
+
+    fireEvent.change(screen.getByLabelText("Retirement Age (age)"), {
+      target: { value: "67" },
+    });
+    fireEvent.change(screen.getByLabelText("Life Expectancy (age)"), {
+      target: { value: "90" },
+    });
+    fireEvent.submit(document.getElementById("add-client-form")!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    const reqs = requests();
+    // The whole request list: no /clients/<id> PUT, no /plan-settings call.
+    expect(reqs.map((r) => [r.url, r.method])).toEqual([
+      [CHANGES_URL, "POST"],
+      [CHANGES_URL, "POST"],
+    ]);
+    const [clientEdit, settingsEdit] = reqs.map((r) => r.body);
+    expect(clientEdit.op).toBe("edit");
+    expect(clientEdit.targetKind).toBe("client");
+    expect(clientEdit.targetId).toBe("client-123");
+    expect(clientEdit.desiredFields.retirementAge).toBe(67);
+    expect(clientEdit.desiredFields.lifeExpectancy).toBe(90);
+    expect(clientEdit.desiredFields.firstName).toBe("Cooper");
+    // DOB 1975 + LE 90 = 2065; no spouse, so the client's own death ends the plan.
+    expect(clientEdit.desiredFields.planEndAge).toBe(90);
+    expect(settingsEdit).toEqual({
+      op: "edit",
+      targetKind: "plan_settings",
+      targetId: "client-123",
+      desiredFields: { planEndYear: 2065 },
+    });
+    expect(refreshMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("a save that leaves life expectancy alone still posts a consistent pair (it collapses server-side)", async () => {
     mockSearch = "scenario=scen-456";
     render(<AddClientForm mode="edit" initial={SAMPLE_CLIENT} />);
 
@@ -71,20 +119,31 @@ describe("AddClientForm — scenario mode (?scenario=<sid> in URL)", () => {
     });
     fireEvent.submit(document.getElementById("add-client-form")!);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
 
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("/api/clients/client-123/scenarios/scen-456/changes");
-    expect(init.method).toBe("POST");
+    const [clientEdit, settingsEdit] = requests().map((r) => r.body);
+    expect(clientEdit.targetKind).toBe("client");
+    expect(clientEdit.desiredFields.lifeExpectancy).toBe(92);
+    expect(clientEdit.desiredFields.planEndAge).toBe(92);
+    expect(settingsEdit.targetKind).toBe("plan_settings");
+    expect(settingsEdit.desiredFields).toEqual({ planEndYear: 2067 });
+  });
 
-    const body = JSON.parse(init.body as string);
-    expect(body.op).toBe("edit");
-    expect(body.targetKind).toBe("client");
-    expect(body.targetId).toBe("client-123");
-    expect(body.desiredFields).toBeDefined();
-    expect(body.desiredFields.retirementAge).toBe(67);
-    expect(body.desiredFields.firstName).toBe("Cooper");
-    expect(refreshMock).toHaveBeenCalledTimes(1);
+  it("the last-to-die spouse sets the horizon", async () => {
+    mockSearch = "scenario=scen-456";
+    render(
+      <AddClientForm
+        mode="edit"
+        initial={{ ...SAMPLE_CLIENT, spouseName: "Pat", spouseDob: "1980-01-01", spouseLifeExpectancy: 95 }}
+      />,
+    );
+    fireEvent.submit(document.getElementById("add-client-form")!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const [clientEdit, settingsEdit] = requests().map((r) => r.body);
+    // Spouse dies 1980+95 = 2075; client born 1975 -> plan-end age 100.
+    expect(clientEdit.desiredFields.planEndAge).toBe(100);
+    expect(settingsEdit.desiredFields).toEqual({ planEndYear: 2075 });
   });
 });
 

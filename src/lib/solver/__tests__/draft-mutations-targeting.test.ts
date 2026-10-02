@@ -69,6 +69,20 @@ describe("draftMutationsTargeting", () => {
     expect(draftMutationsTargeting(ms, { kind: "client", id: "c1" })).toEqual(ms.slice(0, 2));
   });
 
+  it("a client-dialog life-expectancy save drops the LE levers; its plan_settings horizon write drops nothing", () => {
+    const ms: SolverMutation[] = [
+      { kind: "life-expectancy", person: "client", age: 88 },
+      { kind: "life-expectancy", person: "spouse", age: 90 },
+      { kind: "surplus-allocation", spendPct: 50, saveAccountId: null, spendAllUntilRetirement: false },
+    ];
+    // The dialog's batch: a `client` edit, then a `plan_settings` edit addressed to the client id.
+    const dropped = [
+      { kind: "client" as const, id: "c1" },
+      { kind: "plan_settings" as const, id: "c1" },
+    ].flatMap((t) => draftMutationsTargeting(ms, t));
+    expect(dropped).toEqual(ms.slice(0, 2));
+  });
+
   it("matches entity upsert and flow overrides by entityId", () => {
     const ms: SolverMutation[] = [
       { kind: "entity-upsert", id: "t1", value: null },
