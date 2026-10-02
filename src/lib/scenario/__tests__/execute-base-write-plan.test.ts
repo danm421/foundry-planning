@@ -853,6 +853,24 @@ describe("collectClientRefs", () => {
     expect(collectClientRefs(plan).accountIds).toEqual(["acc-picked", "acc-edit", "acc-legacy"]);
   });
 
+  // roth_conversion_sources.account_id is a GLOBAL FK written by the Roth child
+  // writer (which remaps same-batch ids), so a crafted source id is checked.
+  it("collects a Roth conversion's source accounts from inserts and updates, skipping same-batch accounts", () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        { kind: "account", targetId: "ira-syn", raw: { id: "ira-syn" } },
+        {
+          kind: "roth_conversion",
+          targetId: "rc-syn",
+          raw: { sourceAccountIds: ["ira-syn", "acc-src"], destinationAccountId: "roth-1" },
+        },
+      ],
+      updates: [{ kind: "roth_conversion", id: "rc-1", set: { sourceAccountIds: ["acc-edit"] } }],
+    };
+    expect(collectClientRefs(plan).accountIds).toEqual(["acc-src", "acc-edit"]);
+  });
+
   // will_bequests.{account_id, entity_id, liability_id} are GLOBAL FKs, written
   // by the will child writer / updater: collect exactly those, skipping a row
   // this batch creates (remapped in the txn). Recipients carry no FK.

@@ -499,17 +499,20 @@ export async function writeTransferChildren(
 // ── RothConversion children ────────────────────────────────────────────────
 
 /** Inserts rothConversionSources rows from raw.sourceAccountIds
- *  (RothConversion.sourceAccountIds — an array of account uuid strings). */
+ *  (RothConversion.sourceAccountIds — an array of account uuid strings). A
+ *  source the same batch added (a scenario IRA converted from) is remapped to
+ *  the id the DB minted; `collectClientRefs` skips those ids on that promise. */
 export async function writeRothConversionChildren(
   tx: PromoteTx,
   parentId: string,
   raw: Record<string, unknown>,
+  ctx: ChildWriterCtx,
 ): Promise<void> {
   const sourceAccountIds = (raw.sourceAccountIds as string[] | undefined) ?? [];
   for (let i = 0; i < sourceAccountIds.length; i++) {
     const values = coerceForTable(rothConversionSources, {
       rothConversionId: parentId,
-      accountId: sourceAccountIds[i],
+      accountId: remapId(sourceAccountIds[i], ctx),
       sortOrder: i,
     });
     await tx.insert(rothConversionSources).values(values as never);

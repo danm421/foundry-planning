@@ -144,10 +144,13 @@ export async function promoteScenarioToBase(args: PromoteArgs): Promise<PromoteR
     );
     if (!salaryCheck.ok) throw new PromoteError("invalid_ref", salaryCheck.reason);
 
-    // Same guard for the people and trusts that owners and beneficiary
-    // designations name (account_owners, liability_owners,
-    // beneficiary_designations — all GLOBAL FKs), excluding ids this batch
-    // creates. Also outside the transaction, for the same reason as above.
+    // Same guard for the people, trusts, accounts and liabilities that child
+    // rows name: owners and beneficiary designations (account_owners,
+    // liability_owners, beneficiary_designations), reinvestment picks
+    // (reinvestment_accounts), Roth conversion sources (roth_conversion_sources)
+    // and will bequests (will_bequests) — all GLOBAL FKs — excluding ids this
+    // batch creates. See `collectClientRefs`. Also outside the transaction, for
+    // the same reason as above.
     const refCheck = await assertRefsInClient(clientId, collectClientRefs(plan));
     if (!refCheck.ok) throw new PromoteError("invalid_ref", refCheck.reason);
 

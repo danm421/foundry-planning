@@ -379,10 +379,11 @@ export interface ClientRefs {
  * PURE. Every family member, external beneficiary and entity named by an
  * `owners` or `beneficiaries` array in the plan's inserts and updates, every
  * account a reinvestment picks (`reinvestmentPicksKey`: the picks, or a legacy
- * `accountIds`; never the unstored union beside the picks), and every account,
- * entity and liability a will's bequests name. Those land in `account_owners`,
- * `liability_owners`, `beneficiary_designations`, `reinvestment_accounts` and
- * `will_bequests`, whose foreign keys are GLOBAL, and the scenario changes
+ * `accountIds`; never the unstored union beside the picks), every source
+ * account a Roth conversion names, and every account, entity and liability a
+ * will's bequests name. Those land in `account_owners`, `liability_owners`,
+ * `beneficiary_designations`, `reinvestment_accounts`, `roth_conversion_sources`
+ * and `will_bequests`, whose foreign keys are GLOBAL, and the scenario changes
  * route validates nothing — so without a check a crafted id could attach
  * another firm's person, trust, account or liability to this client's rows.
  *
@@ -391,7 +392,8 @@ export interface ClientRefs {
  * `db`-scoped read outside that transaction could never find them.
  *
  * INVARIANT: every consumer of a skipped id must remap it through `idRemap`
- * (the account, liability, reinvestment and will child writers do). A consumer that
+ * (the account, liability, reinvestment, Roth conversion and will child writers
+ * do). A consumer that
  * writes the raw id lets a crafted add whose targetId is another firm's real
  * row smuggle that id past this guard.
  */
@@ -419,6 +421,11 @@ export function collectClientRefs(plan: BaseWritePlan): ClientRefs {
     if (kind === "reinvestment") {
       const picksKey = reinvestmentPicksKey(payload);
       for (const id of (picksKey ? (payload[picksKey] as unknown[] | null) : null) ?? []) {
+        add("accountIds", id);
+      }
+    }
+    if (kind === "roth_conversion") {
+      for (const id of (payload.sourceAccountIds as unknown[] | undefined) ?? []) {
         add("accountIds", id);
       }
     }

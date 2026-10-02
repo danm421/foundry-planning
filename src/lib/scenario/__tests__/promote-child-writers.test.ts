@@ -725,7 +725,7 @@ describe("writeRothConversionChildren", () => {
     const raw = {
       sourceAccountIds: ["acct-a", "acct-b"],
     };
-    await writeRothConversionChildren(tx as never, "rc-id", raw);
+    await writeRothConversionChildren(tx as never, "rc-id", raw, makeCtx());
     expect(inserted).toHaveLength(2);
     const rcIds = inserted.map((r) => (r.values as Record<string, unknown>).rothConversionId);
     expect(rcIds).toEqual(["rc-id", "rc-id"]);
@@ -739,8 +739,24 @@ describe("writeRothConversionChildren", () => {
 
   it("skips when sourceAccountIds is empty", async () => {
     const { tx, inserted } = makeTx();
-    await writeRothConversionChildren(tx as never, "rc2", { sourceAccountIds: [] });
+    await writeRothConversionChildren(tx as never, "rc2", { sourceAccountIds: [] }, makeCtx());
     expect(inserted).toHaveLength(0);
+  });
+
+  // A scenario that adds an IRA and converts from it: the source is the IRA's
+  // synthetic id, which only exists once this batch has inserted it.
+  it("remaps a same-batch synthetic source account via ctx.idRemap", async () => {
+    const { tx, inserted } = makeTx();
+    await writeRothConversionChildren(
+      tx as never,
+      "rc3",
+      { sourceAccountIds: ["ira-syn", "base-ira"] },
+      makeCtx(new Map([["ira-syn", "db-ira"]])),
+    );
+    expect(inserted.map((r) => (r.values as Record<string, unknown>).accountId)).toEqual([
+      "db-ira",
+      "base-ira",
+    ]);
   });
 });
 
