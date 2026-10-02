@@ -55,8 +55,40 @@ describe("AddClientForm — base mode (no ?scenario= in URL)", () => {
     expect(url).toBe("/api/clients/client-123");
     expect(init.method).toBe("PUT");
     const body = JSON.parse(init.body as string);
-    expect(body.retirementAge).toBe(67);
-    expect(body.firstName).toBe("Cooper");
+    // The whole body: no planEndAge (the PUT derives the horizon server-side).
+    expect(body).toEqual({
+      retirementAge: 67,
+      retirementMonth: 1,
+      lifeExpectancy: 92,
+      filingStatus: "married_joint",
+      email: null,
+      phone: null,
+      mobile: null,
+      addressLine1: null,
+      addressLine2: null,
+      city: null,
+      state: null,
+      postalCode: null,
+      country: null,
+      firstName: "Cooper",
+      lastName: "Sample",
+      dateOfBirth: "1975-04-12",
+      spouseName: null,
+      spouseLastName: null,
+      spouseDob: null,
+      spouseRetirementAge: null,
+      spouseRetirementMonth: null,
+      spouseLifeExpectancy: null,
+      spouseEmail: null,
+      spousePhone: null,
+      spouseMobile: null,
+      spouseAddressLine1: null,
+      spouseAddressLine2: null,
+      spouseCity: null,
+      spouseState: null,
+      spousePostalCode: null,
+      spouseCountry: null,
+    });
     expect(refreshMock).toHaveBeenCalledTimes(1);
   });
 });
@@ -110,23 +142,58 @@ describe("AddClientForm — scenario mode (?scenario=<sid> in URL)", () => {
     expect(refreshMock).toHaveBeenCalledTimes(1);
   });
 
-  it("a save that leaves life expectancy alone still posts a consistent pair (it collapses server-side)", async () => {
+  it("an unrelated edit posts only the client edit: no planEndAge, no plan_settings", async () => {
     mockSearch = "scenario=scen-456";
     render(<AddClientForm mode="edit" initial={SAMPLE_CLIENT} />);
 
-    fireEvent.change(screen.getByLabelText("Retirement Age (age)"), {
-      target: { value: "67" },
-    });
+    fireEvent.change(screen.getByLabelText(/First Name/i), { target: { value: "Coop" } });
+    fireEvent.submit(document.getElementById("add-client-form")!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
+
+    const reqs = requests();
+    expect(reqs).toHaveLength(1);
+    expect(reqs[0].body.targetKind).toBe("client");
+    expect(reqs[0].body.desiredFields.firstName).toBe("Coop");
+    expect(reqs[0].body.desiredFields).not.toHaveProperty("planEndAge");
+  });
+
+  it("a date-of-birth change posts both edits", async () => {
+    mockSearch = "scenario=scen-456";
+    render(<AddClientForm mode="edit" initial={SAMPLE_CLIENT} />);
+
+    fireEvent.change(screen.getByLabelText(/Date of Birth/i), { target: { value: "1976-04-12" } });
     fireEvent.submit(document.getElementById("add-client-form")!);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-
     const [clientEdit, settingsEdit] = requests().map((r) => r.body);
     expect(clientEdit.targetKind).toBe("client");
-    expect(clientEdit.desiredFields.lifeExpectancy).toBe(92);
     expect(clientEdit.desiredFields.planEndAge).toBe(92);
     expect(settingsEdit.targetKind).toBe("plan_settings");
-    expect(settingsEdit.desiredFields).toEqual({ planEndYear: 2067 });
+    expect(settingsEdit.desiredFields).toEqual({ planEndYear: 2068 });
+  });
+
+  it("a failed plan_settings edit shows the error, and a retry re-posts both edits", async () => {
+    mockSearch = "scenario=scen-456";
+    fetchMock.mockReset();
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "client-123" }) })
+      .mockResolvedValueOnce({ ok: false, json: async () => ({ error: "Horizon rejected" }) })
+      .mockResolvedValue({ ok: true, json: async () => ({ id: "client-123" }) });
+    render(<AddClientForm mode="edit" initial={SAMPLE_CLIENT} />);
+
+    fireEvent.change(screen.getByLabelText("Life Expectancy (age)"), { target: { value: "90" } });
+    fireEvent.submit(document.getElementById("add-client-form")!);
+
+    expect(await screen.findByText("Horizon rejected")).toBeTruthy();
+    expect(requests().map((r) => r.body.targetKind)).toEqual(["client", "plan_settings"]);
+
+    fireEvent.submit(document.getElementById("add-client-form")!);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(requests().map((r) => r.body.targetKind)).toEqual([
+      "client", "plan_settings", "client", "plan_settings",
+    ]);
   });
 
   it("the last-to-die spouse sets the horizon", async () => {
@@ -137,6 +204,8 @@ describe("AddClientForm — scenario mode (?scenario=<sid> in URL)", () => {
         initial={{ ...SAMPLE_CLIENT, spouseName: "Pat", spouseDob: "1980-01-01", spouseLifeExpectancy: 95 }}
       />,
     );
+    fireEvent.change(screen.getByLabelText("Co-client Life Expectancy (age)"), { target: { value: "95" } });
+    fireEvent.change(screen.getByLabelText("Co-client Date of Birth"), { target: { value: "1980-01-02" } });
     fireEvent.submit(document.getElementById("add-client-form")!);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));

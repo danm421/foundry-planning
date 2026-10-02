@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
-import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useScenarioWriter, type ScenarioEdit } from "@/hooks/use-scenario-writer";
 import { useTabAutoSave, type SaveResult } from "@/lib/use-tab-auto-save";
 import TabAutoSaveIndicator from "../tab-auto-save-indicator";
 import { CrmHouseholdPicker } from "@/components/crm-household-picker";
@@ -14,7 +14,6 @@ import { StateSelect } from "@/components/state-select";
 import { AgeYearField } from "./age-year-field";
 import { birthYearFromDob } from "@/lib/age-year";
 import { planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
-import type { ScenarioEdit } from "@/hooks/use-scenario-writer";
 
 export interface ClientFormInitial {
   id: string;
@@ -294,6 +293,18 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
     return householdId;
   }
 
+  // Did a plan-horizon input change since the dialog opened? The spouse's
+  // initial life expectancy is what the form displays: 95 when none is stored.
+  function horizonTouched(body: Record<string, string | number | null | undefined>): boolean {
+    const hadSpouse = Boolean(initial?.spouseName || initial?.spouseDob);
+    return (
+      body.dateOfBirth !== toDateInput(initial?.dateOfBirth) ||
+      body.lifeExpectancy !== initial?.lifeExpectancy ||
+      (body.spouseDob ?? null) !== (toDateInput(initial?.spouseDob) || null) ||
+      (body.spouseLifeExpectancy ?? null) !== (hadSpouse ? (initial?.spouseLifeExpectancy ?? 95) : null)
+    );
+  }
+
   async function saveCore(formEl: HTMLFormElement): Promise<SaveResult & { recordId?: string }> {
     try {
       // Resolve the household id for the planning POST.
@@ -314,10 +325,12 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
       // Edit-mode PUT doesn't accept crmHouseholdId in the body; strip it.
       if (isEdit) delete body.crmHouseholdId;
 
-      // A scenario save moves the plan horizon with life expectancy, the way the
-      // Solver's Retirement tab does: client.planEndAge + plan_settings.planEndYear.
+      // A scenario save moves the plan horizon ONLY when a horizon input (either
+      // person's birth date or life expectancy) differs from what the dialog
+      // opened with, like the Solver's `leTouched`. Otherwise an unrelated edit
+      // would write the LE-derived horizon over a scenario's own plan end year.
       // Base mode's PUT derives both server-side, so its body is untouched.
-      const horizon = isEdit ? planHorizonFromLifeExpectancy(body) : null;
+      const horizon = isEdit && horizonTouched(body) ? planHorizonFromLifeExpectancy(body) : null;
       const edits: ScenarioEdit[] = isEdit
         ? [
             {
@@ -329,11 +342,11 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
             ...(horizon
               ? [
                   {
-                    op: "edit" as const,
-                    targetKind: "plan_settings" as const,
+                    op: "edit",
+                    targetKind: "plan_settings",
                     targetId: effectiveClientId!,
                     desiredFields: { planEndYear: horizon.planEndYear },
-                  },
+                  } satisfies ScenarioEdit,
                 ]
               : []),
           ]
