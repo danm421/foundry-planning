@@ -619,7 +619,6 @@ type FocusTarget =
   | { dialog: "create_business" }
   | { dialog: "delete"; kind: "account" | "liability"; id: string };
 
-
 /**
  * The dialog the page's own click opens for the focused row — or null when
  * focus mode opens none, or "unsupported" for a create with no scenario-aware
@@ -872,7 +871,6 @@ export default function BalanceSheetView({
   const [addCategory, setAddCategory] = useState<AccountCategory | null>(() =>
     focusTarget?.dialog === "create_account" ? focusTarget.category : null,
   );
-
 
   const [editingAccount, setEditingAccount] = useState<AccountRow | null>(() =>
     focusTarget?.dialog === "account" ? focusTarget.row : null,

@@ -23,8 +23,9 @@ export type FocusCloseOutcome = "unavailable" | "unsupported" | "failed";
  * `onFocusClose()` if it found a row to open, or `onFocusClose(outcome)` if it
  * didn't. `found` is what the view found for the focus, snapshotted at mount:
  * the row it opened (any object), `"unsupported"`, or null ("unavailable" —
- * e.g. the row no longer exists, or the view has no editor for that kind). A ref guards the single call against firing again
- * on a later re-render, such as after a save clears the target.
+ * e.g. the row no longer exists, or the view has no editor for that kind). A
+ * ref guards the single call against firing again on a later re-render, such
+ * as after a save clears the target.
  *
  * Call this unconditionally, before any early return the view takes for
  * focus mode — like every other hook, it must run in the same order on
