@@ -19,6 +19,7 @@ import {
   identifyFinalDeceased,
 } from "@/engine/death-event";
 import { computeGrossEstate } from "@/engine/death-event/estate-tax";
+import { applyLtcEvent } from "@/engine/ltc-event";
 import type {
   ClientData,
   DrainAttribution,
@@ -484,12 +485,16 @@ export function deriveSpineData(args: {
 }): SpineData {
   const { tree, withResult, asOf } = args;
   const { client, planSettings } = tree;
-  const { planStartYear, planEndYear } = planSettings;
+  const { planStartYear } = planSettings;
   const anchorYear = args.pairRowYear ?? planStartYear;
   const anchorMode: BalanceMode = args.pairRowMode ?? "boy";
 
-  const firstDeathYear = computeFirstDeathYear(client, planStartYear, planEndYear);
-  const finalDeathYear = computeFinalDeathYear(client, planStartYear, planEndYear);
+  // The projection this spine reads ran the LTC pre-pass; derive death years
+  // from the same care-adjusted client and horizon (care can push a death past
+  // the plan's end year) or the stages land on the wrong year.
+  const { client: deathClient, planSettings: { planEndYear } } = applyLtcEvent(tree).data;
+  const firstDeathYear = computeFirstDeathYear(deathClient, planStartYear, planEndYear);
+  const finalDeathYear = computeFinalDeathYear(deathClient, planStartYear, planEndYear);
 
   // ── "historical": no death events in the window ─────────────────────────────
   if (firstDeathYear === null && finalDeathYear === null) {
@@ -507,7 +512,7 @@ export function deriveSpineData(args: {
 
   // ── "two-grantor" ─────────────────────────────────────────────────────────
   if (hasSpouse && firstDeathYear !== null && finalDeathYear !== null && firstDeathYear !== finalDeathYear) {
-    const firstDeceasedRole = identifyDeceased(client, firstDeathYear);
+    const firstDeceasedRole = identifyDeceased(deathClient, firstDeathYear);
     const finalDeceasedRole = identifyFinalDeceased(client, firstDeceasedRole);
 
     // Resolve names via FamilyMember list (fallback to ClientInfo fields)
@@ -694,8 +699,8 @@ export function deriveSpineData(args: {
       // surviving grantor is by checking which principal died before the plan start.
       const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
       const spouseBirthYear = parseInt((client.spouseDob as string).slice(0, 4), 10);
-      const clientDeathYear = clientBirthYear + (client.lifeExpectancy ?? 95);
-      const spouseDeathYear = spouseBirthYear + (client.spouseLifeExpectancy ?? 95);
+      const clientDeathYear = clientBirthYear + (deathClient.lifeExpectancy ?? 95);
+      const spouseDeathYear = spouseBirthYear + (deathClient.spouseLifeExpectancy ?? 95);
       const clientDead = clientDeathYear < planStartYear;
       const spouseDead = spouseDeathYear < planStartYear;
 
@@ -709,7 +714,7 @@ export function deriveSpineData(args: {
         // Both in-window but only the final death lands in the window
         // (first death is post-plan-end). Use identifyFinalDeceased.
         const firstDeceasedRole = firstDeathYear != null
-          ? identifyDeceased(client, firstDeathYear)
+          ? identifyDeceased(deathClient, firstDeathYear)
           : null;
         const finalDeceasedRole = identifyFinalDeceased(client, firstDeceasedRole);
         survivorName =

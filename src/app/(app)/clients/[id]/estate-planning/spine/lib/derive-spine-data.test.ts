@@ -457,6 +457,48 @@ describe("deriveSpineData", () => {
   });
 });
 
+/** twoGrantorFixture with one person in care. Death falls in the last care
+ *  year: birth year + startAge + years − 1. */
+function withCare(person: "client" | "spouse", startAge: number, years: number): ClientData {
+  return {
+    ...twoGrantorFixture(),
+    ltcEvents: [{
+      id: "3f1c2d7e-8a1b-4c5d-9e0f-112233445566", name: "LTC",
+      livingExpenseCutPct: null, homeSale: null, includePolicies: true,
+      people: [{ person, startAge, years, careSetting: "custom", annualCost: 50_000, costInflation: 0 }],
+    }],
+  };
+}
+
+describe("deriveSpineData — an LTC scenario", () => {
+  it("an LTC scenario's first death is the care death year, not the plan's", () => {
+    const tree = withCare("client", 70, 2);
+    const withResult = runProjectionWithEvents(tree);
+    const data = deriveSpineData({ tree, withResult, asOf: "split" });
+    if (data.kind !== "two-grantor") throw new Error("expected two-grantor");
+    expect(data.firstDeath.year).toBe(2041); // 1970 + 70 + 2 − 1, not 1970 + 78
+  });
+
+  it("names the spouse in care as the first death when care moves her death ahead", () => {
+    // Linda's care runs 2042–2043, so she now dies before Tom's 2048.
+    const tree = withCare("spouse", 70, 2);
+    const withResult = runProjectionWithEvents(tree);
+    const data = deriveSpineData({ tree, withResult, asOf: "split" });
+    if (data.kind !== "two-grantor") throw new Error("expected two-grantor");
+    expect(data.firstDeath).toMatchObject({ year: 2043, deceasedName: "Linda" });
+    expect(data.secondDeath).toMatchObject({ year: 2048, deceasedName: "Tom" });
+  });
+
+  it("keeps the second death when care pushes it past the plan's end year", () => {
+    // Linda's care runs 2059–2061; the pre-pass stretches the plan from 2060 to 2061.
+    const tree = withCare("spouse", 87, 3);
+    const withResult = runProjectionWithEvents(tree);
+    const data = deriveSpineData({ tree, withResult, asOf: "split" });
+    if (data.kind !== "two-grantor") throw new Error(`expected two-grantor, got ${data.kind}`);
+    expect(data.secondDeath).toMatchObject({ year: 2061, deceasedName: "Linda" });
+  });
+});
+
 describe("deriveSpineData — Phase C plumbing", () => {
   it("attaches drainAttributions arrays at first and second death (two-grantor)", () => {
     const tree = twoGrantorFixture();
