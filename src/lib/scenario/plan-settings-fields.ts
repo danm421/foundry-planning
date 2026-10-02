@@ -86,6 +86,8 @@ export function planSettingsEngineToColumns(set: Record<string, unknown>): Recor
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(set)) {
     if (key === "priorTaxableGifts") {
+      // Nothing to promote for an unset pair (a Forge proposal can store null).
+      if (value == null) continue;
       const gifts = value as { client: number; spouse: number };
       out.priorTaxableGiftsClient = gifts.client;
       out.priorTaxableGiftsSpouse = gifts.spouse;

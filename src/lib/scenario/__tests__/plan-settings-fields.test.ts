@@ -42,4 +42,12 @@ describe("planSettingsEngineToColumns", () => {
       priorTaxableGifts: { client: 1, spouse: 2 }, flatStateRate: 0.05 })).toEqual({
       outOfHouseholdDniRate: 0.37, priorTaxableGiftsClient: 1, priorTaxableGiftsSpouse: 2, flatStateRate: 0.05 });
   });
+
+  // A Forge `propose_changes` can store `priorTaxableGifts: null`; reading
+  // `.client` off it threw, and promote returned 500.
+  it.each([null, undefined])("skips a %s priorTaxableGifts instead of throwing", (value) => {
+    expect(planSettingsEngineToColumns({ priorTaxableGifts: value, flatStateRate: 0.05 })).toEqual({
+      flatStateRate: 0.05,
+    });
+  });
 });
