@@ -28,6 +28,7 @@ import type { TechniquesViewProps } from "@/components/techniques-view";
 import type { FamilyViewProps } from "@/components/family-view";
 import type { WillsPanelProps } from "@/components/wills-panel";
 import type { InsurancePanelProps } from "@/components/insurance-panel";
+import type { DisabilityPanelProps } from "@/components/disability-panel";
 import type { AssumptionsClientProps } from "@/app/(app)/clients/[id]/details/assumptions/assumptions-client";
 
 /** One Details view's props — never the page's sibling data (banners, firmId). */
@@ -37,7 +38,7 @@ export type ChangeEditorViewProps =
   | { page: "techniques"; props: TechniquesViewProps }
   | { page: "family"; props: FamilyViewProps }
   | { page: "wills"; props: WillsPanelProps }
-  | { page: "insurance"; props: InsurancePanelProps }
+  | { page: "insurance"; props: InsurancePanelProps; disabilityProps: DisabilityPanelProps }
   | { page: "assumptions"; props: AssumptionsClientProps };
 
 // A server action is a public endpoint: check the shape before any query (a
@@ -79,9 +80,16 @@ export async function loadChangeEditorProps(
     case "assumptions":
       return { page: input.page, props: okProps(await loadAssumptionsViewProps(input.clientId, input.scenarioId)) };
     case "insurance":
-      // Life policies only: the page's disability panel has no Solver editor yet.
-      return { page: input.page, props: okProps(await loadInsuranceViewProps(input.clientId, input.scenarioId)) };
+      return insuranceProps(await loadInsuranceViewProps(input.clientId, input.scenarioId));
   }
+}
+
+/** Both of the Insurance page's panels: life policies and disability policies. */
+function insuranceProps(
+  result: Awaited<ReturnType<typeof loadInsuranceViewProps>>,
+): Extract<ChangeEditorViewProps, { page: "insurance" }> {
+  if (result.status !== "ok") throw new Error("This plan has no base case");
+  return { page: "insurance", props: result.props, disabilityProps: result.disabilityProps };
 }
 
 /** The view props of a loader's "ok" result; any early return is a failure here. */

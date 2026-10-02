@@ -25,6 +25,7 @@
  */
 
 import { useState } from "react";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import DialogShell from "@/components/dialog-shell";
 import { DisabilityCoverageTimeline } from "@/components/disability-coverage-timeline";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
@@ -357,6 +358,10 @@ export type DisabilityPolicyDialogProps = BaseProps &
   ({ mode: "create" } | { mode: "edit"; policy: DisabilityPolicy });
 
 export default function DisabilityPolicyDialog(props: DisabilityPolicyDialogProps) {
+  const writer = useScenarioWriter(props.clientId);
+  // Minted once per create dialog, so a retry after a lost response re-sends the
+  // SAME id instead of adding a second policy. Edits have none to mint.
+  const [newId] = useState(() => (props.mode === "create" ? crypto.randomUUID() : null));
   const [form, setForm] = useState<DisabilityFormValues>(() =>
     props.mode === "edit" ? policyToForm(props.policy) : PRIVATE_POLICY_DEFAULTS,
   );
@@ -404,17 +409,35 @@ export default function DisabilityPolicyDialog(props: DisabilityPolicyDialogProp
     if (errors.length > 0) return;
     setSaving(true);
     setSaveError(null);
-    const url =
-      props.mode === "edit"
-        ? `/api/clients/${props.clientId}/disability-policies/${props.policy.id}`
-        : `/api/clients/${props.clientId}/disability-policies`;
     let ok = false;
     try {
-      const res = await fetch(url, {
-        method: props.mode === "edit" ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(disabilityPolicyBody(form)),
-      });
+      // Inside a scenario the same save is a `disability_policy` change in the
+      // ENGINE's shape (nested layers), not the flat wire body; an edit's
+      // `desiredFields` leave out `id`, which is the target, not a field.
+      const policy = formToPolicy(form, props.mode === "edit" ? props.policy.id : newId!);
+      const { id, ...engineFields } = policy;
+      const res = await writer.submit(
+        props.mode === "edit"
+          ? {
+              op: "edit",
+              targetKind: "disability_policy",
+              targetId: id,
+              desiredFields: engineFields,
+            }
+          : {
+              op: "add",
+              targetKind: "disability_policy",
+              entity: { ...policy },
+            },
+        {
+          url:
+            props.mode === "edit"
+              ? `/api/clients/${props.clientId}/disability-policies/${props.policy.id}`
+              : `/api/clients/${props.clientId}/disability-policies`,
+          method: props.mode === "edit" ? "PATCH" : "POST",
+          body: disabilityPolicyBody(form),
+        },
+      );
       ok = res.ok;
     } catch {
       ok = false;
@@ -435,9 +458,12 @@ export default function DisabilityPolicyDialog(props: DisabilityPolicyDialogProp
     setSaveError(null);
     let ok = false;
     try {
-      const res = await fetch(
-        `/api/clients/${props.clientId}/disability-policies/${props.policy.id}`,
-        { method: "DELETE" },
+      const res = await writer.submit(
+        { op: "remove", targetKind: "disability_policy", targetId: props.policy.id },
+        {
+          url: `/api/clients/${props.clientId}/disability-policies/${props.policy.id}`,
+          method: "DELETE",
+        },
       );
       ok = res.ok;
     } catch {

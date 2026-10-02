@@ -144,17 +144,18 @@ describe("loadChangeEditorProps — assumptions and insurance", () => {
     await expect(loadChangeEditorProps(CLIENT_ID, SCENARIO_ID, "assumptions")).rejects.toThrow();
   });
 
-  it("insurance → the life-policy panel's props only, dropping the disability panel's", async () => {
+  it("insurance → both panels' props: the life-policy panel's and the disability panel's", async () => {
     const props = { clientId: CLIENT_ID, marker: "insurance" };
+    const disabilityProps = { clientId: CLIENT_ID, marker: "disability" };
     vi.mocked(loadInsuranceViewProps).mockResolvedValue({
       status: "ok",
       props,
-      disabilityProps: { clientId: CLIENT_ID },
+      disabilityProps,
     } as never);
 
     const result = await loadChangeEditorProps(CLIENT_ID, SCENARIO_ID, "insurance");
 
-    expect(result).toEqual({ page: "insurance", props });
+    expect(result).toEqual({ page: "insurance", props, disabilityProps });
     expect(requireClientEditAccess).toHaveBeenCalledWith(CLIENT_ID);
     expect(loadInsuranceViewProps).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID);
   });

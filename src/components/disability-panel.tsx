@@ -12,6 +12,11 @@
  * Everything the check reads — the two coverage switches, the covered-earnings
  * mode, the benefit-period mode — is edited in the dialog, which sends the
  * whole form. See `disability-policy-dialog.tsx` for why.
+ *
+ * Inside a scenario every write goes through `useScenarioWriter` as a
+ * `disability_policy` change instead. Both inline keys are TOP-LEVEL engine
+ * fields, so a one-key edit is a whole edit: unlike a nested `shortTerm` /
+ * `longTerm` object, it carries nothing a second quick commit could revert.
  */
 
 import { useMemo, useState } from "react";
@@ -19,6 +24,10 @@ import { useRouter } from "next/navigation";
 import { useClientAccess } from "@/components/client-access-provider";
 import { InlineAmount } from "@/components/forms/inline-amount";
 import { usePendingEdits } from "@/hooks/use-pending-edits";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
+import { useFocusDelete } from "@/hooks/use-focus-delete";
+import { focusRowId, isEditFocus, type EditorFocus } from "@/lib/scenario/change-editor-target";
 import DisabilityPolicyDialog, {
   coveredEarningsFor,
   formToPolicy,
@@ -52,6 +61,36 @@ export interface DisabilityPanelProps {
   inflationRate: number;
   planEndYear: number;
   client: ClientInfo;
+  /**
+   * Focus mode, for the Solver's Changes tab: open the dialog this panel opens
+   * for one disability policy (an edit or delete of a listed policy, or a
+   * `disability_policy` create), alone and with no page chrome. Read once at
+   * mount; remount to switch rows.
+   */
+  focus?: EditorFocus;
+  /**
+   * Called once when focus mode ends. The host must UNMOUNT the panel then:
+   * clearing `focus` on a still-mounted panel falls through to the full page.
+   * No argument = the editor closed; an outcome = it never opened or the
+   * delete did not land.
+   */
+  onFocusClose?: (outcome?: FocusCloseOutcome) => void;
+}
+
+type DialogState = { mode: "create" } | { mode: "edit"; policy: DisabilityPolicy };
+
+/** The focused policy's action, or null when this panel offers no editor for the
+ *  row (another kind, a missing id). */
+type FocusTarget = DialogState | { mode: "delete"; policyId: string };
+
+function findFocusTarget(focus: EditorFocus, policies: DisabilityPolicy[]): FocusTarget | null {
+  if (focus.kind !== "disability_policy") return null;
+  if (focus.intent === "create") return { mode: "create" };
+  const id = focusRowId(focus);
+  const policy = policies.find((p) => p.id === id);
+  if (!policy) return null;
+  if (focus.intent === "delete") return { mode: "delete", policyId: policy.id };
+  return isEditFocus(focus) ? { mode: "edit", policy } : null;
 }
 
 /**
@@ -154,10 +193,16 @@ export default function DisabilityPanel(props: DisabilityPanelProps) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
   const router = useRouter();
+  const writer = useScenarioWriter(props.clientId);
+  const { focus, onFocusClose } = props;
 
-  const [dialogState, setDialogState] = useState<
-    { mode: "create" } | { mode: "edit"; policy: DisabilityPolicy } | null
-  >(null);
+  // Focus mode's row, snapshotted at mount. Null means this panel offers no
+  // editor for it.
+  const [focusFound] = useState(() =>
+    focus && canEdit ? findFocusTarget(focus, props.policies) : null,
+  );
+  const focusDialog = focusFound && focusFound.mode !== "delete" ? focusFound : null;
+  const [dialogState, setDialogState] = useState<DialogState | null>(focusDialog);
   const [choosingInsured, setChoosingInsured] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -177,42 +222,75 @@ export default function DisabilityPanel(props: DisabilityPanelProps) {
     optimistic: Partial<DisabilityEditRow>,
   ): Promise<boolean> {
     return pending.apply(policyId, optimistic, async () => {
-      const res = await fetch(
-        `/api/clients/${props.clientId}/disability-policies/${policyId}`,
+      // `patch` keys are engine field names already, so the scenario edit and
+      // the base PATCH body are the same object.
+      const res = await writer.submit(
+        { op: "edit", targetKind: "disability_policy", targetId: policyId, desiredFields: patch },
         {
+          url: `/api/clients/${props.clientId}/disability-policies/${policyId}`,
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(patch),
+          body: patch,
         },
       );
-      if (res.ok) {
-        router.refresh();
-        return true;
-      }
+      if (res.ok) return true;
       setError("Could not save that change. Please try again.");
       return false;
     });
   }
 
+  // Focus mode's delete: the dialog's own delete, with no prompt. Its in-flight
+  // flag keeps `useFocusCloseOnce` quiet until the delete has landed.
+  const focusDeleting = useFocusDelete(
+    focusFound?.mode === "delete"
+      ? async () => {
+          const policyId = focusFound.policyId;
+          const res = await writer.submit(
+            { op: "remove", targetKind: "disability_policy", targetId: policyId },
+            {
+              url: `/api/clients/${props.clientId}/disability-policies/${policyId}`,
+              method: "DELETE",
+            },
+          );
+          return res.ok;
+        }
+      : null,
+    onFocusClose,
+  );
+  // Focus mode hands control back once its dialog is gone: cancel, save, delete.
+  useFocusCloseOnce(focus, focusFound, dialogState !== null || focusDeleting, onFocusClose);
+
   async function addWorkplaceCoverage(insured: "client" | "spouse") {
     setChoosingInsured(false);
     setError(null);
-    const res = await fetch(`/api/clients/${props.clientId}/disability-policies`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // WORKPLACE_DEFAULTS comes from the schema module so the API and this
-      // screen cannot drift on what "typical" means. It carries
-      // `stdMonthlyMax: null` — uncapped — and that null must reach the column.
-      body: JSON.stringify({ ...WORKPLACE_DEFAULTS, insured }),
-    });
+    // WORKPLACE_DEFAULTS comes from the schema module so the API and this
+    // screen cannot drift on what "typical" means. It carries
+    // `stdMonthlyMax: null` — uncapped — and that null must reach the column.
+    //
+    // Inside a scenario the id is minted here and the policy is built locally,
+    // because the writer answers with the change row, not the new policy. The
+    // dialog then opens as an EDIT of that id, so saving it can never add a
+    // second copy.
+    const localPolicy = writer.scenarioActive
+      ? formToPolicy(
+          { ...WORKPLACE_DEFAULTS, insured, coveredEarningsAmount: null, ltdBenefitPeriodYears: null },
+          crypto.randomUUID(),
+        )
+      : null;
+    const res = await writer.submit(
+      { op: "add", targetKind: "disability_policy", entity: localPolicy ? { ...localPolicy } : undefined },
+      {
+        url: `/api/clients/${props.clientId}/disability-policies`,
+        method: "POST",
+        body: { ...WORKPLACE_DEFAULTS, insured },
+      },
+    );
     if (!res.ok) {
       // An alert() plus an early return is invisible to a test and to a screen
       // reader. The failure belongs in component state.
       setError("Could not add coverage. Please try again.");
       return;
     }
-    const { policy } = (await res.json()) as { policy: DisabilityPolicy };
-    router.refresh();
+    const policy = localPolicy ?? ((await res.json()) as { policy: DisabilityPolicy }).policy;
     setDialogState({ mode: "edit", policy });
   }
 
@@ -232,6 +310,29 @@ export default function DisabilityPanel(props: DisabilityPanelProps) {
       clientName: props.clientFirstName,
       spouseName: props.spouseFirstName,
     });
+
+  const dialogElement = canEdit && dialogState !== null && (
+    <DisabilityPolicyDialog
+      {...dialogState}
+      clientId={props.clientId}
+      clientFirstName={props.clientFirstName}
+      spouseFirstName={props.spouseFirstName}
+      currentSalaryByPerson={props.currentSalaryByPerson}
+      currentYear={props.currentYear}
+      planStartYear={props.planStartYear}
+      inflationRate={props.inflationRate}
+      planEndYear={props.planEndYear}
+      client={props.client}
+      onClose={() => setDialogState(null)}
+      onSaved={() => {
+        setDialogState(null);
+        router.refresh();
+      }}
+    />
+  );
+
+  // Focus mode shows the focused policy's dialog alone: no page, no table.
+  if (focus) return <>{dialogElement}</>;
 
   return (
     <div className="flex flex-col gap-4">
@@ -454,25 +555,7 @@ export default function DisabilityPanel(props: DisabilityPanelProps) {
         </table>
       )}
 
-      {canEdit && dialogState !== null && (
-        <DisabilityPolicyDialog
-          {...dialogState}
-          clientId={props.clientId}
-          clientFirstName={props.clientFirstName}
-          spouseFirstName={props.spouseFirstName}
-          currentSalaryByPerson={props.currentSalaryByPerson}
-          currentYear={props.currentYear}
-          planStartYear={props.planStartYear}
-          inflationRate={props.inflationRate}
-          planEndYear={props.planEndYear}
-          client={props.client}
-          onClose={() => setDialogState(null)}
-          onSaved={() => {
-            setDialogState(null);
-            router.refresh();
-          }}
-        />
-      )}
+      {dialogElement}
     </div>
   );
 }

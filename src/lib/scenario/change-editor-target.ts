@@ -121,6 +121,7 @@ const DETAILS_PAGE_BY_KIND: Partial<Record<TargetKind, DetailsEditorPage>> = {
   gift: "family",
   external_beneficiary: "family",
   will: "wills",
+  disability_policy: "insurance",
   client_deduction: "assumptions",
   client_tax_adjustment: "assumptions",
   withdrawal_strategy: "assumptions",

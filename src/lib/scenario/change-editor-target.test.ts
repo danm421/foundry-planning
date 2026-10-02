@@ -45,6 +45,7 @@ describe("resolveChangeEditor", () => {
     ["client", "family"],
     ["gift", "family"],
     ["will", "wills"],
+    ["disability_policy", "insurance"],
     ["client_deduction", "assumptions"],
     ["client_tax_adjustment", "assumptions"],
     ["withdrawal_strategy", "assumptions"],

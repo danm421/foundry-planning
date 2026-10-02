@@ -115,7 +115,7 @@ describe("InsurancePanel focus mode", () => {
     await waitFor(() => expect(u.onFocusClose).toHaveBeenCalledWith("failed"));
   });
 
-  it("is unavailable for an id that is not a listed policy (a disability policy reaches here this way)", async () => {
+  it("is unavailable for a disability policy (the host opens DisabilityPanel for those)", async () => {
     await expectUnavailable(renderFocused({ kind: "disability_policy", id: "d-1" }));
   });
 

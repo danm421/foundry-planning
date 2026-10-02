@@ -22,8 +22,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import type { ClientData, ClientInfo, DisabilityPolicy, Income } from "@/engine/types";
 
+let searchParams = new URLSearchParams();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
+  useSearchParams: () => searchParams,
+  usePathname: () => "/clients/c1/details/insurance",
 }));
 
 import DisabilityPanel, {
@@ -133,6 +136,7 @@ function lastRequest() {
 }
 
 beforeEach(() => {
+  searchParams = new URLSearchParams();
   global.fetch = vi.fn().mockResolvedValue({
     ok: true,
     json: async () => ({ policy: { ...WORKPLACE, id: "d1" } }),
@@ -712,5 +716,123 @@ describe("DisabilityPanel", () => {
         /Benefits are taxable when the employer pays the premium, and tax-free when you pay it with after-tax dollars\./i,
       ),
     ).toBeInTheDocument();
+  });
+});
+
+// R1: inside a scenario every write the panel makes is a scenario change. These
+// pin the WHOLE request list, so a stray base call cannot hide behind a match.
+describe("DisabilityPanel inside a scenario", () => {
+  const CHANGES = "POST /api/clients/c1/scenarios/scn-1/changes";
+
+  beforeEach(() => {
+    searchParams = new URLSearchParams("scenario=scn-1");
+  });
+
+  const requests = () =>
+    fetchMock().mock.calls.map(([url, init]) => ({
+      line: `${init.method} ${url}`,
+      body: JSON.parse(init.body),
+    }));
+
+  it("an inline premium edit is ONE disability_policy edit of the top-level key", async () => {
+    renderPanel("edit");
+    fireEvent.click(screen.getByRole("button", { name: "Edit amount for Group disability premium" }));
+    const input = screen.getByRole("textbox", { name: "Amount for Group disability premium" });
+    fireEvent.change(input, { target: { value: "1200" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(fetchMock().mock.calls.length).toBe(1));
+    expect(requests()).toEqual([
+      {
+        line: CHANGES,
+        body: {
+          op: "edit",
+          targetKind: "disability_policy",
+          targetId: "d1",
+          desiredFields: { annualPremium: 1200 },
+        },
+      },
+    ]);
+  });
+
+  it("two quick inline edits each carry only their own key (top-level keys, so nothing stale to revert)", async () => {
+    renderPanel("edit");
+    fireEvent.click(screen.getByRole("button", { name: "Edit annual increase for Group disability" }));
+    const cola = screen.getByRole("textbox", { name: "Annual increase for Group disability" });
+    fireEvent.change(cola, { target: { value: "3" } });
+    fireEvent.keyDown(cola, { key: "Enter" });
+    await waitFor(() => expect(fetchMock().mock.calls.length).toBe(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit amount for Group disability premium" }));
+    const premium = screen.getByRole("textbox", { name: "Amount for Group disability premium" });
+    fireEvent.change(premium, { target: { value: "1200" } });
+    fireEvent.keyDown(premium, { key: "Enter" });
+    await waitFor(() => expect(fetchMock().mock.calls.length).toBe(2));
+
+    expect(requests().map((r) => r.line)).toEqual([CHANGES, CHANGES]);
+    expect(requests()[0].body.desiredFields).toEqual({ colaRate: 0.03 });
+    expect(requests()[1].body.desiredFields).toEqual({ annualPremium: 1200 });
+  });
+
+  it("Add workplace coverage is ONE add of the engine policy, and the dialog opens on it as an EDIT", async () => {
+    renderPanel("edit", { policies: [], spouseFirstName: null });
+    fireEvent.click(screen.getByRole("button", { name: /add workplace coverage/i }));
+
+    expect(await screen.findByRole("dialog", { name: "Edit disability policy" })).toBeInTheDocument();
+    expect(requests().map((r) => r.line)).toEqual([CHANGES]);
+    const { body } = requests()[0];
+    expect(body.op).toBe("add");
+    expect(body.targetKind).toBe("disability_policy");
+    expect(body.entity).toMatchObject({
+      name: "Group disability",
+      insured: "client",
+      shortTerm: { eliminationDays: 7, benefitPct: 0.6, durationWeeks: 13, monthlyMax: null },
+      longTerm: {
+        eliminationDays: 90,
+        benefitPct: 0.6,
+        monthlyMax: 10_000,
+        benefitPeriod: { mode: "to_age", age: 65 },
+      },
+    });
+    expect(body.entity).not.toHaveProperty("hasShortTerm");
+
+    // Saving that dialog edits the policy just added — it must not add a second.
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(fetchMock().mock.calls.length).toBe(2));
+    expect(requests().map((r) => r.body.op)).toEqual(["add", "edit"]);
+    expect(requests()[1].body.targetId).toBe(body.entity.id);
+    expect(requests()[1].body).not.toHaveProperty("entity");
+  });
+
+  it("reopening the new policy's dialog does not add it again", async () => {
+    renderPanel("edit", { policies: [], spouseFirstName: null });
+    fireEvent.click(screen.getByRole("button", { name: /add workplace coverage/i }));
+    await screen.findByRole("dialog", { name: "Edit disability policy" });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(requests().map((r) => r.body.op)).toEqual(["add"]);
+  });
+
+  it("the dialog's save and remove stay inside the scenario", async () => {
+    renderPanel("edit");
+    fireEvent.click(screen.getByRole("button", { name: "Edit Group disability" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(fetchMock().mock.calls.length).toBe(1));
+    expect(requests().map((r) => r.line)).toEqual([CHANGES]);
+    expect(requests()[0].body.op).toBe("edit");
+    expect(requests()[0].body.desiredFields).not.toHaveProperty("id");
+  });
+});
+
+describe("DisabilityPanel in base mode", () => {
+  it("an inline premium edit still PATCHes the base route", async () => {
+    renderPanel("edit");
+    fireEvent.click(screen.getByRole("button", { name: "Edit amount for Group disability premium" }));
+    const input = screen.getByRole("textbox", { name: "Amount for Group disability premium" });
+    fireEvent.change(input, { target: { value: "1200" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(fetchMock().mock.calls.length).toBe(1));
+    const req = lastRequest();
+    expect(`${req.method} ${req.url}`).toBe("PATCH /api/clients/c1/disability-policies/d1");
+    expect(req.body).toEqual({ annualPremium: 1200 });
   });
 });

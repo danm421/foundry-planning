@@ -83,6 +83,7 @@ vi.mock("@/lib/scenario/plan-detail-catalog", async (importOriginal) => {
 });
 vi.mock("@/components/wills-panel", () => ({ default: makeStubView("wills") }));
 vi.mock("@/components/insurance-panel", () => ({ default: makeStubView("insurance") }));
+vi.mock("@/components/disability-panel", () => ({ default: makeStubView("disability") }));
 vi.mock("@/app/(app)/clients/[id]/details/assumptions/assumptions-client", () => ({
   default: makeStubView("assumptions"),
 }));
@@ -442,6 +443,22 @@ describe("SolverChangesTab — opening a Details editor", () => {
     expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ kind: "account", id: TARGET_ID });
     expect(loadChangeEditorPropsMock.mock.calls.map((c) => c[2])).toEqual(["net-worth", "insurance"]);
     expect(screen.queryByTestId("view-net-worth")).not.toBeInTheDocument();
+  });
+
+  it("a disability change opens the disability panel on the Insurance page's props", async () => {
+    loadChangeEditorPropsMock.mockResolvedValue({
+      page: "insurance",
+      props: { clientId: CLIENT_ID },
+      disabilityProps: { clientId: CLIENT_ID },
+    });
+    renderTab([makeChange({ targetKind: "disability_policy" })]);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Edit / }));
+
+    const view = await screen.findByTestId("view-disability");
+    expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ kind: "disability_policy", id: TARGET_ID });
+    expect(loadChangeEditorPropsMock.mock.calls.map((c) => c[2])).toEqual(["insurance"]);
+    expect(screen.queryByTestId("view-insurance")).not.toBeInTheDocument();
   });
 
   it("an unavailable life policy links to the Insurance page in this scenario", async () => {
