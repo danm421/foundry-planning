@@ -126,6 +126,10 @@ export const NESTED_ONLY_KINDS = new Set<TargetKind>([
   "will_bequest_recipient",
 ]);
 
+/** Array kinds that exist only inside a scenario — no base table, never
+ *  promoted. `ltc_event` (the long-term care stress test) is the first. */
+export const SCENARIO_ONLY_KINDS: ReadonlySet<TargetKind> = new Set<TargetKind>(["ltc_event"]);
+
 export const PROMOTE_TABLE_REGISTRY: Partial<Record<TargetKind, RegistryEntry>> = {
   account: {
     table: accounts,

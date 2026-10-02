@@ -317,6 +317,7 @@ export const TARGET_KIND_TO_FIELD: Record<TargetKind, keyof ClientData | null> =
   will: "wills",
   entity: "entities",
   disability_policy: "disabilityPolicies",
+  ltc_event: "ltcEvents",
   // Singletons: handled specially (not a list) — see SINGLETON_KIND_TO_FIELD
   client: null,
   plan_settings: null,

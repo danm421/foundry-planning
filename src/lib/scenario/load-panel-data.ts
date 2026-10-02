@@ -136,6 +136,7 @@ export function buildTargetNames(
   put("client_deduction", tree.deductions as unknown as ReadonlyArray<{ id: string }>);
   put("client_tax_adjustment", tree.taxAdjustments as unknown as ReadonlyArray<{ id: string }>);
   put("disability_policy", tree.disabilityPolicies ?? []);
+  put("ltc_event", tree.ltcEvents);
 
   if (clientFirstName) names[`client:${clientId}`] = clientFirstName;
   return names;

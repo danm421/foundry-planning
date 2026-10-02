@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { TARGET_KIND_TO_FIELD } from "@/engine/scenario/applyChanges";
-import { PROMOTE_TABLE_REGISTRY, NESTED_ONLY_KINDS } from "../promote-table-registry";
+import {
+  PROMOTE_TABLE_REGISTRY,
+  NESTED_ONLY_KINDS,
+  SCENARIO_ONLY_KINDS,
+} from "../promote-table-registry";
 
 describe("PROMOTE_TABLE_REGISTRY", () => {
   it("registers a childUpdater for expense (dedicated-account rewrites on edit)", () => {
@@ -34,6 +38,7 @@ describe("PROMOTE_TABLE_REGISTRY", () => {
     for (const [kind, field] of Object.entries(TARGET_KIND_TO_FIELD)) {
       if (field === null) continue; // singletons + nested-only
       if (NESTED_ONLY_KINDS.has(kind as never)) continue;
+      if (SCENARIO_ONLY_KINDS.has(kind as never)) continue;
       expect(
         PROMOTE_TABLE_REGISTRY[kind as keyof typeof PROMOTE_TABLE_REGISTRY],
       ).toBeDefined();

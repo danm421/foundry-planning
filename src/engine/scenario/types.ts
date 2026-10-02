@@ -28,6 +28,7 @@ export type TargetKind =
   | "liability"
   | "life_insurance_cash_value_schedule"
   | "life_insurance_policy"
+  | "ltc_event"
   | "plan_settings"
   | "reinvestment"
   | "relocation"

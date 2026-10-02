@@ -382,6 +382,83 @@ d("scenario_changes writer route", () => {
     });
   });
 
+  // The LTC event has no Details form to shape it, so the route validates the
+  // whole payload against `ltcEventSchema` before it reaches the writer.
+  describe("ltc_event writes", () => {
+    async function post(body: Record<string, unknown>) {
+      return route.POST(
+        makeReq("http://test.local/changes", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+        { params: Promise.resolve({ id: COOPER_CLIENT_ID, sid: scenarioId }) },
+      );
+    }
+
+    async function rowsFor(targetId: string) {
+      const { scenarioChanges } = schema;
+      const { and, eq } = drizzleOrm;
+      return dbMod.db
+        .select()
+        .from(scenarioChanges)
+        .where(and(eq(scenarioChanges.scenarioId, scenarioId), eq(scenarioChanges.targetId, targetId)));
+    }
+
+    // A fresh id per test: target_id is a uuid column, and concurrent runs on
+    // the shared dev DB must not collide.
+    const makeEvent = () => ({
+      id: randomUUID(),
+      name: "Long-term care — John 85–87",
+      people: [{ person: "client", startAge: 85, years: 3, careSetting: "nursing_private", annualCost: 129_575, costInflation: 0.05 }],
+      livingExpenseCutPct: 1,
+      homeSale: null,
+      includePolicies: true,
+    });
+
+    beforeEach(() => {
+      vi.mocked(helpers.requireOrgId).mockResolvedValue(COOPER_FIRM_ID);
+    });
+
+    it("rejects an add whose event fails the schema (no one in care) with 400", async () => {
+      const event = makeEvent();
+      const res = await post({ op: "add", targetKind: "ltc_event", entity: { ...event, people: [] } });
+
+      expect(res.status).toBe(400);
+      expect(await rowsFor(event.id)).toHaveLength(0);
+    });
+
+    it("stores a valid add as an ltc_event change and returns 200", async () => {
+      const event = makeEvent();
+      const res = await post({ op: "add", targetKind: "ltc_event", entity: event });
+
+      expect(res.status).toBe(200);
+      const rows = await rowsFor(event.id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].targetKind).toBe("ltc_event");
+      expect(rows[0].opType).toBe("add");
+      expect(rows[0].payload).toEqual(event);
+    });
+
+    it("rejects an edit op with 400 — edits re-save the whole event as an add", async () => {
+      const event = makeEvent();
+      expect((await post({ op: "add", targetKind: "ltc_event", entity: event })).status).toBe(200);
+
+      const res = await post({
+        op: "edit",
+        targetKind: "ltc_event",
+        targetId: event.id,
+        desiredFields: { people: [] },
+      });
+
+      expect(res.status).toBe(400);
+      const rows = await rowsFor(event.id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].opType).toBe("add");
+      expect(rows[0].payload).toEqual(event);
+    });
+  });
+
   it("DELETE returns 400 when search params are missing", async () => {
     vi.mocked(helpers.requireOrgId).mockResolvedValue(COOPER_FIRM_ID);
 

@@ -37,6 +37,7 @@ import {
   revertChange,
 } from "@/lib/scenario/changes-writer";
 import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
+import { ltcEventSchema } from "@/lib/schemas/ltc-event";
 import type { OpType, TargetKind } from "@/engine/scenario/types";
 
 // All writable TargetKind values, derived from the runtime lookup maps so the
@@ -101,6 +102,23 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     // `toggleGroupId` passes through as sent: omitted (undefined) means "didn't
     // say" and a re-save keeps the row's group; null unlinks (Ruling F-I1).
     const body = parsed.data;
+
+    // The LTC event is validated whole — it has no Details form to shape it.
+    if (body.op === "add" && body.targetKind === "ltc_event") {
+      const ltc = ltcEventSchema.safeParse(body.entity);
+      if (!ltc.success) {
+        return NextResponse.json({ error: ltc.error.flatten() }, { status: 400 });
+      }
+    }
+    // An edit would merge an unvalidated partial payload into the stored
+    // event. The UI never sends one: it saves an edit by re-posting the whole
+    // event as an `add`, which the writer upserts.
+    if (body.op === "edit" && body.targetKind === "ltc_event") {
+      return NextResponse.json(
+        { error: "ltc_event changes are saved whole with op \"add\"" },
+        { status: 400 },
+      );
+    }
 
     // When the change is assigned to a toggle group, verify the group belongs
     // to this scenario. 400 (not 404) mirrors the [cid] PATCH posture — the

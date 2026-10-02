@@ -23,6 +23,7 @@ import type {
   TargetKind,
 } from "@/engine/scenario/types";
 import type { BaseWritePlan } from "./promote-to-base-types";
+import { SCENARIO_ONLY_KINDS } from "./promote-table-registry";
 import { isEstateFlowGiftDraft } from "./apply-gift-overlays";
 import { planSettingsEngineToColumns } from "./plan-settings-fields";
 import { withReinvestmentTargets } from "./reinvestment-picks";
@@ -91,6 +92,8 @@ export function scenarioChangesToBaseWrites(
 
   // 2. Map each active change.
   for (const c of active) {
+    // Scenario-only kinds (the LTC stress test) never reach the base plan.
+    if (SCENARIO_ONLY_KINDS.has(c.targetKind)) continue;
     if (c.opType === "add") {
       const series = seriesDraft(c.targetKind, c.payload);
       if (series) {
