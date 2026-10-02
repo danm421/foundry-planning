@@ -333,12 +333,21 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   const tableRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
 
+  // runProjection expands the LTC event itself (care rows, home sale,
+  // care-shortened lifespan, possibly a later plan end). Read the same expanded
+  // tree for row names, the year range and the age column, so the report
+  // matches the projection. Never feed it back to runProjection.
+  const ltcTree = useMemo(
+    () => (clientData ? applyLtcEvent(clientData).data : null),
+    [clientData]
+  );
+
   // ── Year-range slider state ────────────────────────────────────────────────
 
   const planStartYear =
     clientData?.planSettings.planStartYear ?? new Date().getFullYear();
   const planEndYear =
-    clientData?.planSettings.planEndYear ?? planStartYear + 50;
+    ltcTree?.planSettings.planEndYear ?? planStartYear + 50;
 
   const clientRetirementYear = useMemo(() => {
     if (!clientData?.client.dateOfBirth || !clientData?.client.retirementAge) {
@@ -737,18 +746,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     }
   }
 
-  // Rows the LTC pre-pass creates inside runProjection (care cost, home sale)
-  // must be named here too, or they count in totals but vanish from drill-downs.
-  const nameTree = useMemo(
-    () => (clientData ? applyLtcEvent(clientData).data : null),
-    [clientData]
-  );
-
   // expensesByType: segment key → array of expense IDs with that type
   const expensesByType: Record<string, string[]> = {};
   const expenseNames: Record<string, string> = {};
-  if (clientData && nameTree) {
-    for (const exp of nameTree.expenses) {
+  if (clientData && ltcTree) {
+    for (const exp of ltcTree.expenses) {
       expenseNames[exp.id] = exp.name;
       const segmentKey = Object.entries(EXPENSE_SEGMENT_TO_TYPE).find(
         ([, t]) => t === exp.type
@@ -781,7 +783,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     // creates for it (technique-acct-<txn.id>), which never appears in
     // clientData.accounts — so it needs its own drill-list entry, mirroring
     // the account loop above.
-    for (const txn of nameTree.assetTransactions ?? []) {
+    for (const txn of ltcTree.assetTransactions ?? []) {
       if (txn.type !== "buy" || txn.assetCategory !== "real_estate") continue;
       if ((txn.annualPropertyTax ?? 0) <= 0) continue;
       const synthId = `synth-proptax-technique-acct-${txn.id}`;
@@ -809,7 +811,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     techniqueIncomeIds.length = 0;
     techniqueExpenseIds.length = 0;
 
-    for (const txn of nameTree.assetTransactions ?? []) {
+    for (const txn of ltcTree.assetTransactions ?? []) {
       if (txn.type === "sell") {
         // Surplus as income (may not exist if deficit)
         const proceedsKey = `technique-proceeds:${txn.id}`;
@@ -1275,8 +1277,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       }),
       col("ages", "Age(s)", (r) => r.ages, (info) => {
         const ages = info.getValue() as ProjectionYear["ages"];
-        const clientLE = clientData?.client.lifeExpectancy ?? 95;
-        const spouseLE = clientData?.client.spouseLifeExpectancy ?? 95;
+        const clientLE = ltcTree?.client.lifeExpectancy ?? 95;
+        const spouseLE = ltcTree?.client.spouseLifeExpectancy ?? 95;
         const clientStr = ages.client > clientLE ? "—" : String(ages.client);
         if (ages.spouse == null) return clientStr;
         const spouseStr = ages.spouse > spouseLE ? "—" : String(ages.spouse);

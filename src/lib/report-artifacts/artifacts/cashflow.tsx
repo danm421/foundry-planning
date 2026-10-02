@@ -52,6 +52,10 @@ async function fetchCashflowData(
   const scenarioParam = opts.scenarioId ?? "base";
   const { effectiveTree } = await loadEffectiveTree(clientId, firmId, scenarioParam, {});
   const allYears = runProjection(effectiveTree);
+  // runProjection expands the LTC event itself (home sale, care-shortened
+  // lifespan). The sections read the same expanded tree so their proceeds and
+  // ages match the projection. Never feed it back to runProjection.
+  const ltcTree = applyLtcEvent(effectiveTree).data;
 
   const yearStart = opts.yearStart ?? allYears[0]?.year ?? 0;
   const yearEnd = opts.yearEnd ?? allYears[allYears.length - 1]?.year ?? yearStart;
@@ -62,11 +66,11 @@ async function fetchCashflowData(
     scenarioLabel: opts.scenarioId ? `Scenario ${opts.scenarioId}` : "Base Case",
     yearRange: [yearStart, yearEnd],
     sections: {
-      base: buildBaseSection(years, effectiveTree),
-      income: buildIncomeSection(years, effectiveTree),
-      expenses: buildExpensesSection(years, effectiveTree),
-      withdrawals: buildWithdrawalsSection(years, effectiveTree),
-      assets: buildAssetsSection(years, effectiveTree),
+      base: buildBaseSection(years, ltcTree),
+      income: buildIncomeSection(years, ltcTree),
+      expenses: buildExpensesSection(years, ltcTree),
+      withdrawals: buildWithdrawalsSection(years, ltcTree),
+      assets: buildAssetsSection(years, ltcTree),
     },
   };
 
@@ -100,10 +104,7 @@ function liquidPortfolioTotal(y: ProjectionYear): number {
 function buildBaseSection(years: ProjectionYear[], c: ClientData): CashflowSection {
   // Mirrors the Level-0 columns of the on-screen cashflow table — see
   // cashflow-report.tsx around the `if (!level)` branch.
-  // The LTC pre-pass inside runProjection adds a home-sale transaction; expand
-  // the tree the same way, or its proceeds drop out of Other Inflows.
-  const nameTree = applyLtcEvent(c).data;
-  const techniqueIncomeIds = (nameTree.assetTransactions ?? [])
+  const techniqueIncomeIds = (c.assetTransactions ?? [])
     .filter((t) => t.type === "sell")
     .map((t) => `technique-proceeds:${t.id}`);
 
