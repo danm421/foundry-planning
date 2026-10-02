@@ -24,6 +24,7 @@ import {
 import type { OpType, TargetKind } from "@/engine/scenario/types";
 import type { PlanSettings } from "@/engine/types";
 import { ForbiddenError } from "@/lib/authz";
+import { stableStringify } from "@/lib/compute-cache/hash";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { ltcEventSchema } from "@/lib/schemas/ltc-event";
 import { loadEffectiveTree } from "./loader";
@@ -114,7 +115,7 @@ async function lookupBaseEntity(
  * (Drizzle decimals) are normalized to numbers before comparison so the diff
  * doesn't mis-fire on `"250000.00"` vs `250000`.
  */
-function buildFieldDiff(
+export function buildFieldDiff(
   desiredFields: Record<string, unknown>,
   baseEntity: BaseEntity | undefined,
 ): Record<string, { from: unknown; to: unknown }> {
@@ -147,8 +148,12 @@ export function priorToValues(payload: unknown): Record<string, unknown> {
 
 /**
  * Robust equality for diff: normalizes numeric strings (Drizzle decimals come
- * back as strings like `"250000.00"`) to numbers before comparing. Falls back
- * to JSON.stringify for nested structures.
+ * back as strings like `"250000.00"`) to numbers before comparing. Nested
+ * structures compare canonically (`stableStringify`: key order ignored, array
+ * order kept, nested numbers to 6 decimals) — an editor and the loader build
+ * the same object in different key orders (the life-policy dialog's
+ * `lifeInsurance` vs `loadPolicies`), and a key-order-sensitive compare stored
+ * an edit on every unchanged save.
  */
 function valuesEqual(a: unknown, b: unknown): boolean {
   // null and undefined both mean "no value" to a diff — a base `null` and a
@@ -169,9 +174,13 @@ function valuesEqual(a: unknown, b: unknown): boolean {
   ) {
     return true;
   }
-  // Structural fallback for objects/arrays.
+  // Structural fallback for objects/arrays. Only objects go through
+  // `stableStringify`: it also rounds numbers to 6 decimals, which a top-level
+  // rate must not inherit.
   try {
-    return JSON.stringify(a) === JSON.stringify(b);
+    return typeof a === "object" && typeof b === "object"
+      ? stableStringify(a) === stableStringify(b)
+      : JSON.stringify(a) === JSON.stringify(b);
   } catch {
     return false;
   }
