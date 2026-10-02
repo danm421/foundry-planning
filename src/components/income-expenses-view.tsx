@@ -1907,10 +1907,11 @@ export default function IncomeExpensesView({
   //                   inline; reachable now that every group does.
   //
   //   Scenario mode → the whole pruned effective row with the patch on top.
-  //                   `applyEntityEdit` merges a save's fields into whatever
-  //                   the scenario already had, rather than replacing the
-  //                   stored diff wholesale: edits merge; a field reverts
-  //                   when it is saved at its base value.
+  //                   `applyEntityEdit` merges it into the scenario's existing
+  //                   edit, so every unchanged field resends its
+  //                   scenario-effective value and merges as a no-op while the
+  //                   patch lands on top. Edits merge; a field reverts when it
+  //                   is saved at its base value.
   //
   // Both optimistically update the list with the WHOLE patch and restore the
   // whole pre-edit row on failure. `usePendingEdits` deliberately isn't used:

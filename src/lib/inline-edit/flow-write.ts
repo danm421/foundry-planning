@@ -1,22 +1,18 @@
 // src/lib/inline-edit/flow-write.ts
 //
 // Write payloads for the Cash Flow board's inline amount editor. Same
-// deliberate asymmetry as `account-write.ts` — do NOT "simplify" the scenario
-// payload to match the base one:
+// asymmetry as `account-write.ts`:
 //
 //   Base mode     -> only the changed key. Safe because all three PUT routes
 //                    apply a partial update (`incomes-writes.ts` /
 //                    `expenses-writes.ts` spread `p.x !== undefined && {x}`;
 //                    the savings-rules route does the same inline).
 //
-//   Scenario mode -> the whole effective row. `applyEntityEdit` upserts with
-//                    `set: { payload: diff }`, a wholesale replace, and
-//                    `buildFieldDiff` only emits keys the caller sent. A narrow
-//                    `{ annualAmount }` write against an income whose endYear
-//                    was overridden in that scenario DELETES the endYear
-//                    override — silently. Sending the whole row makes the new
-//                    payload "every override this scenario already had, plus the
-//                    amount", because the diff is taken against the BASE tree.
+//   Scenario mode -> the whole effective row. `applyEntityEdit` merges it into
+//                    the scenario's existing edit and diffs the result against
+//                    the BASE tree, so each unchanged field resends its current
+//                    scenario-effective value and merges as a no-op, while the
+//                    new amount lands on top.
 //
 // The source for that whole row is the EFFECTIVE ENGINE ROW, not the
 // `IncomeView` / `ExpenseView` / `SavingsRuleView` the drawer hydrates from.
@@ -24,8 +20,9 @@
 // ones real producers override: `ExpenseView` has no
 // `endsAtMedicareEligibilityOwner`, `SavingsRuleView` no
 // `fundFromExpenseReduction` (written by the Solver), `IncomeView` no
-// `isSelfEmployment`. Diffing the engine row can't miss a field by construction,
-// and can't drift when the engine type gains one.
+// `isSelfEmployment`. Sending the engine row resends every field at its
+// effective value by construction, and can't drift when the engine type gains
+// one.
 //
 // `applyEntityEdit` merges a save's fields into whatever the scenario already
 // had, rather than replacing the stored diff wholesale: edits merge; a field

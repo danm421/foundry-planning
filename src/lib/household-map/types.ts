@@ -164,8 +164,9 @@ export interface HouseholdMapProps {
   // The Map renders SCENARIO-EFFECTIVE data (`loadEffectiveTree(..., scenario)`),
   // so its editors must hydrate from the same tree. Fetching the base-case
   // list-GETs instead would seed the forms with base values, and since a
-  // scenario-mode save REPLACES the change payload wholesale, every untouched
-  // field would overwrite that scenario's override. These rows come from the
+  // scenario-mode save merges every field the form sends into the scenario's
+  // edit (a field saved at its base value reverts), every untouched field would
+  // overwrite that scenario's override. These rows come from the
   // exact `effectiveTree` the cards are built from, keyed by id, so an edit
   // made inside a scenario round-trips the scenario's own numbers.
   // Consequence: this feature does ZERO client-side data fetching.
@@ -207,10 +208,10 @@ export interface HouseholdMapProps {
    * Present for exactly the ids that have a hydration entry above — the
    * income/expense/savings rows the Map is allowed to write.
    *
-   * Why the WHOLE field set and not just the changed field: `applyEntityEdit`
-   * merges a save's fields into whatever the scenario already had, rather than
-   * replacing the stored diff wholesale: edits merge; a field reverts when it
-   * is saved at its base value.
+   * The WHOLE field set, every field at its scenario-effective value:
+   * `applyEntityEdit` merges a save's fields into whatever the scenario already
+   * had, so each unchanged field merges as a no-op and only the edited one
+   * moves. Edits merge; a field reverts when it is saved at its base value.
    *
    * Why the raw engine row and not `IncomeView`/`ExpenseView`/`SavingsRuleView`:
    * those three are strict SUBSETS of the engine rows, and the gaps are
@@ -245,10 +246,9 @@ export interface HouseholdMapProps {
    * The scenario-effective `client` singleton, pruned by
    * `pruneScenarioFields`, for the Goals board's life-expectancy editor.
    *
-   * Same rule as `flowScenarioFields` and for the same reason: `applyEntityEdit`
-   * merges a save's fields into whatever the scenario already had, rather than
-   * replacing the stored diff wholesale: edits merge; a field reverts when it
-   * is saved at its base value.
+   * Same rule as `flowScenarioFields`: every field at its scenario-effective
+   * value, so the unchanged ones merge as no-ops. Edits merge; a field reverts
+   * when it is saved at its base value.
    */
   clientScenarioFields: Record<string, unknown>;
   /**

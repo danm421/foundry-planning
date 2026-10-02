@@ -8,6 +8,7 @@ import {
   applyEntityEdit,
   applyEntityAdd,
   applyEntityRemove,
+  priorToValues,
   revertChange,
   type ApplyEntityEditArgs,
 } from "../changes-writer";
@@ -410,6 +411,60 @@ describe.skipIf(!HAS_DB)("changes-writer", () => {
     it("null and undefined compare equal, so a null save of an absent field is no diff", async () => {
       await edit({ annualAmount: 300000, notes: null });
       expect(Object.keys((await editRow())[0].payload as object)).toEqual(["annualAmount"]);
+    });
+
+    it("a save naming a different toggle group moves the merged row there", async () => {
+      const [g1, g2] = await db.insert(scenarioToggleGroups).values([
+        { scenarioId, name: "G1", defaultOn: true, orderIndex: 0 },
+        { scenarioId, name: "G2", defaultOn: true, orderIndex: 1 },
+      ]).returning();
+      await edit({ annualAmount: 300000 }, { toggleGroupId: g1.id });
+      await edit({ name: "Renamed salary" }, { toggleGroupId: g2.id });
+      const rows = await editRow();
+      expect(rows).toHaveLength(1);
+      expect(Object.keys(rows[0].payload as object).sort()).toEqual(["annualAmount", "name"]);
+      expect(rows[0].toggleGroupId).toBe(g2.id);
+    });
+
+    it("priorToValues skips a stored entry that has no `to` key, keeping null and 0", () => {
+      // JSON drops an `undefined` `to`, leaving `{from: X}` — that entry is not a
+      // prior value and must not merge back in as `undefined`.
+      expect(priorToValues({
+        lost: { from: 1 },
+        cleared: { from: 1, to: null },
+        zeroed: { from: 1, to: 0 },
+      })).toStrictEqual({ cleared: null, zeroed: 0 });
+    });
+
+    it("a client-singleton merge drops a stored key the singleton doesn't carry", async () => {
+      const [c] = await db
+        .select({ lifeExpectancy: clients.lifeExpectancy })
+        .from(clients)
+        .where(eq(clients.id, COOPER_CLIENT_ID));
+      // An older row written before the singleton filter carried `email`.
+      await db.insert(scenarioChanges).values({
+        scenarioId,
+        opType: "edit",
+        targetKind: "client",
+        targetId: COOPER_CLIENT_ID,
+        payload: {
+          lifeExpectancy: { from: c.lifeExpectancy, to: c.lifeExpectancy + 1 },
+          email: { from: null, to: "old@example.com" },
+        },
+      });
+      const editClient = (lifeExpectancy: number) =>
+        applyEntityEdit({ scenarioId, firmId: COOPER_FIRM_ID, targetKind: "client",
+          targetId: COOPER_CLIENT_ID, desiredFields: { lifeExpectancy } });
+      const clientRows = () => db.select().from(scenarioChanges).where(and(
+        eq(scenarioChanges.scenarioId, scenarioId),
+        eq(scenarioChanges.targetKind, "client"),
+      ));
+
+      await editClient(c.lifeExpectancy + 2);
+      expect(Object.keys((await clientRows())[0].payload as object)).toEqual(["lifeExpectancy"]);
+      // Back at base, nothing is left — the stray key can't block the delete.
+      await editClient(c.lifeExpectancy);
+      expect(await clientRows()).toHaveLength(0);
     });
   });
 

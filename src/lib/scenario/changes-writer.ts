@@ -128,12 +128,16 @@ function buildFieldDiff(
  * The `to` side of a stored edit payload — what earlier saves set. Used to
  * merge a prior edit's fields into a new one's `desiredFields` before
  * diffing against base, so a second partial save doesn't wipe the first's.
+ * An entry with no `to` key (JSON drops an `undefined` `to`, leaving
+ * `{from: X}`) carries no prior value and is skipped; `to: null` and `to: 0`
+ * are real values and are kept.
  */
 export function priorToValues(payload: unknown): Record<string, unknown> {
   if (typeof payload !== "object" || payload === null) return {};
   return Object.fromEntries(
-    Object.entries(payload as Record<string, { to?: unknown } | undefined>)
-      .map(([k, v]) => [k, v?.to]),
+    Object.entries(payload as Record<string, unknown>)
+      .filter(([, v]) => typeof v === "object" && v !== null && "to" in v)
+      .map(([k, v]) => [k, (v as { to: unknown }).to]),
   );
 }
 
@@ -220,15 +224,17 @@ export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> 
 
   // Singleton edits: the shared client form posts contact-info fields
   // (email/address/spouse*) that aren't on the engine's `ClientInfo` singleton
-  // and so aren't scenario-overlayable. Drop any desiredField the base
-  // singleton doesn't carry — otherwise they diff as `from: undefined`,
-  // bloat the change payload, and block the idempotent revert below.
-  const editableFields =
+  // and so aren't scenario-overlayable. Drop any field the base singleton
+  // doesn't carry — otherwise they diff as `from: undefined`, bloat the change
+  // payload, and block the idempotent revert below. Applied to the MERGED map
+  // in `runEdit`, so such a key stored on an older edit row is dropped too
+  // rather than persisting forever.
+  const keepEditable = (fields: Record<string, unknown>) =>
     SINGLETON_KIND_TO_FIELD[targetKind] != null && baseEntity != null
       ? Object.fromEntries(
-          Object.entries(desiredFields).filter(([k]) => k in baseEntity),
+          Object.entries(fields).filter(([k]) => k in baseEntity),
         )
-      : desiredFields;
+      : fields;
 
   // The load + delete/upsert sequence below reads the base tree and then
   // either deletes a stale edit row (if desired matches base) or upserts a
@@ -236,11 +242,17 @@ export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> 
   // against concurrent writers on the same target. When the caller passes an
   // open transaction, enroll in it instead of opening a nested one.
   const runEdit = async (tx: Tx) => {
-    // Transaction-scoped advisory lock on this target, held until the
-    // transaction commits or rolls back. `FOR UPDATE` can't lock a row that
-    // doesn't exist yet (the first save of a target has none), so without
-    // this a second racing partial save could still read a stale (or
-    // missing) prior edit and merge over an incomplete view of it.
+    // Two locks guard the merge, each against a different race:
+    //  - This transaction-scoped advisory lock (held until commit/rollback)
+    //    serializes `applyEntityEdit` saves of one target. The first save of
+    //    a target has no edit row for `FOR UPDATE` to lock, so without it two
+    //    racing partial saves could each read "no prior edit" and the second
+    //    upsert would drop the first's fields.
+    //  - `FOR UPDATE` on the existing edit row (below) serializes against
+    //    writers that don't take the advisory lock — `revertChange` and
+    //    `applyEntityRemove` delete that row. Without the row lock, a delete
+    //    committed between our read and our upsert would be silently undone
+    //    by the upsert re-inserting the merged prior fields.
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtext(${`${scenarioId}:${targetKind}:${targetId}`}))`,
     );
@@ -302,9 +314,10 @@ export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> 
           eq(scenarioChanges.targetId, targetId),
           eq(scenarioChanges.opType, "edit"),
         ),
-      );
+      )
+      .for("update");
     const diff = buildFieldDiff(
-      { ...priorToValues(existingEdit?.payload), ...editableFields },
+      keepEditable({ ...priorToValues(existingEdit?.payload), ...desiredFields }),
       baseEntity,
     );
 

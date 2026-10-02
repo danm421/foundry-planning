@@ -4,11 +4,11 @@
 // row or singleton down to the field set a `scenario_changes` edit may send.
 //
 // Dropping `undefined` is load-bearing, not tidying. The engine's loaders write
-// `x ?? undefined` for every absent optional column. `valuesEqual(null, undefined)`
-// is true (edits merge; a field reverts when it is saved at its base value), so
-// that case is safe either way now — but a base value that is NOT null still
-// diffs an unpruned `undefined` as a change, which then vanishes in
-// `JSON.stringify` — writing "no value" over a real base value. `null` is NOT
+// `x ?? undefined` for every absent optional column. Against a base `null` an
+// unpruned `undefined` is harmless — `valuesEqual(null, undefined)` is true, so
+// it never diffs. Against a base value that is NOT null it diffs as a change,
+// which then vanishes in `JSON.stringify` — writing "no value" over a real base
+// value. `null` is NOT
 // pruned: it is a real stored value ("this person has no spouse LE on record"),
 // and dropping it would silently stop the scenario overriding it.
 //

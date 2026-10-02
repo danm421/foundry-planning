@@ -1,7 +1,6 @@
 // src/lib/inline-edit/account-write.ts
 //
-// The Map's two write payloads are DELIBERATELY asymmetric. Do not "simplify"
-// the scenario one to match the base one.
+// The Map's two write payloads are asymmetric.
 //
 //   Base mode    -> only the changed keys. Safe because the PUT route's
 //                   partial account update (`accounts-writes.ts`) spreads
@@ -9,13 +8,10 @@
 //
 //   Scenario mode -> the entire *view* row (`AccountRow`) — see CAVEAT below,
 //                   this is NOT the entire persisted account. `applyEntityEdit`
-//                   upserts via `onConflictDoUpdate` with `set: { payload: diff }`,
-//                   a wholesale replace, and `buildFieldDiff` only emits keys
-//                   the caller actually sent. A narrow { value } write against
-//                   an account whose growthSource was overridden in that
-//                   scenario DELETES the growth override — silently; the number
-//                   just reverts to base on the next render. Sending the whole
-//                   view row is what prevents that.
+//                   merges a save's fields into the scenario's existing edit,
+//                   so the unchanged fields of the view row resend their
+//                   current scenario-effective values and merge as no-ops; a
+//                   field sent at its base value drops out of the diff.
 //
 //   CAVEAT — `AccountRow` is a strict SUBSET of the persisted account. Three
 //   other producers write scenario overrides for `targetKind: "account"`
@@ -27,11 +23,8 @@
 //       `businessType`, `distributionPolicyPercent`, `businessTaxTreatment`,
 //       `custodian`, `accountNumberLast4`, `deriveFromHoldings`.
 //   None of those fields exist on `AccountRow`, so `buildScenarioDesiredFields`
-//   cannot emit them. A Map inline VALUE edit on an account that also carries
-//   one of those scenario overrides will STILL silently clobber it — the same
-//   failure mode this module exists to prevent, just at a layer this view
-//   can't see into. Widening hydration to close this gap is a product
-//   decision and is not made by this module.
+//   cannot emit them. Because edits merge, a Map inline VALUE edit leaves
+//   those overrides as they were stored.
 //
 // `applyEntityEdit` merges a save's fields into whatever the scenario already
 // had, rather than replacing the stored diff wholesale: edits merge; a field
