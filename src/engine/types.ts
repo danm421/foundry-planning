@@ -1265,6 +1265,11 @@ export interface Expense {
   suspended?: SuspensionWindow | null;
   /** LTC living-expense cut. See `ScaleWindow` and `itemProrationGate`. */
   scaleWindows?: ScaleWindow[] | null;
+  /** Per-year amount of this row that counts as a §213 medical expense
+   *  (before the 7.5%-of-AGI floor). Written by the LTC pre-pass on care-cost
+   *  rows; Phase 2 subtracts policy benefits. Summed by
+   *  `medicalDeductibleForYear` into `YearTaxInput.medicalExpenses`. */
+  medicalDeductibleByYear?: Record<number, number> | null;
 }
 
 export interface ExtraPayment {
