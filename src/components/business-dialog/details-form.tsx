@@ -9,11 +9,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { useRouter } from "next/navigation";
 import type { AccountOwner } from "@/engine/ownership";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import { OwnershipEditor } from "@/components/forms/ownership-editor";
+import { useScenarioWriter, type ScenarioEdit } from "@/hooks/use-scenario-writer";
+import { mapBusinessTypeToSubType } from "@/lib/schemas/accounts-business";
 import {
   fieldLabelClassName,
   inputBaseClassName,
@@ -75,7 +76,7 @@ const BusinessDetailsForm = forwardRef<BusinessFormAutoSaveHandle, BusinessDetai
     },
     ref,
   ) {
-    const router = useRouter();
+    const writer = useScenarioWriter(clientId);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -103,6 +104,9 @@ const BusinessDetailsForm = forwardRef<BusinessFormAutoSaveHandle, BusinessDetai
       editing?.owners && editing.owners.length > 0 ? editing.owners : defaultOwners(familyMembers),
     );
     const [effectiveId, setEffectiveId] = useState<string | null>(editing?.id ?? null);
+    // Ids minted for a scenario create, held so a retry after a half-landed batch
+    // re-adds the SAME rows instead of a second business.
+    const mintedIdsRef = useRef<{ business: string; cash: string } | null>(null);
 
     const nameInputRef = useRef<HTMLInputElement | null>(null);
     useEffect(() => {
@@ -179,13 +183,72 @@ const BusinessDetailsForm = forwardRef<BusinessFormAutoSaveHandle, BusinessDetai
       setError(null);
       try {
         const targetId = effectiveId;
-        const url = targetId
-          ? `/api/clients/${clientId}/accounts/${targetId}`
-          : `/api/clients/${clientId}/accounts`;
-        const res = await fetch(url, {
+        const body = buildBody();
+        // Scenario writes merge per top-level field, so a blank growth rate is
+        // left out rather than sent as null (growthSource already says "default").
+        const { growthRate, ...bodyWithoutGrowth } = body;
+        const fields: Record<string, unknown> =
+          growthRate === null ? bodyWithoutGrowth : body;
+
+        let edits: ScenarioEdit[];
+        let savedId = targetId;
+        if (targetId) {
+          edits = [{ op: "edit", targetKind: "account", targetId, desiredFields: fields }];
+        } else {
+          mintedIdsRef.current ??= {
+            business: crypto.randomUUID(),
+            cash: crypto.randomUUID(),
+          };
+          const ids = mintedIdsRef.current;
+          savedId = ids.business;
+          edits = [
+            {
+              op: "add",
+              targetKind: "account",
+              entity: {
+                id: ids.business,
+                ...fields,
+                subType: mapBusinessTypeToSubType(businessType),
+                flowMode: "annual",
+              },
+            },
+            // Mirrors the default-checking child `createAccountForClient`
+            // provisions for a new top-level business. Children inherit
+            // ownership through parentAccountId, so it carries no owners.
+            {
+              op: "add",
+              targetKind: "account",
+              entity: {
+                id: ids.cash,
+                name: `${body.name} — Cash`,
+                category: "cash",
+                subType: "checking",
+                value: 0,
+                basis: 0,
+                rothValue: 0,
+                growthRate: null,
+                rmdEnabled: false,
+                growthSource: "default",
+                turnoverPct: 0,
+                annualPropertyTax: 0,
+                propertyTaxGrowthRate: 0.03,
+                propertyTaxGrowthSource: "custom",
+                titlingType: "jtwros",
+                flowMode: "annual",
+                parentAccountId: ids.business,
+                isDefaultChecking: true,
+                owners: [],
+              },
+            },
+          ];
+        }
+
+        const res = await writer.submit(edits, {
+          url: targetId
+            ? `/api/clients/${clientId}/accounts/${targetId}`
+            : `/api/clients/${clientId}/accounts`,
           method: targetId ? "PUT" : "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(buildBody()),
+          body,
         });
         if (!res.ok) {
           const json = (await res.json().catch(() => ({}))) as { error?: string };
@@ -193,12 +256,20 @@ const BusinessDetailsForm = forwardRef<BusinessFormAutoSaveHandle, BusinessDetai
           setError(msg);
           return { ok: false as const, error: msg };
         }
-        const saved = (await res.json()) as BusinessAccount;
+        // A scenario write answers `{ ok }`, not the row: build the saved object
+        // from what was sent. Base mode returns the saved row.
+        const saved = writer.scenarioActive
+          ? ({
+              ...editing,
+              ...body,
+              id: savedId,
+              subType: editing?.subType ?? mapBusinessTypeToSubType(businessType),
+            } as unknown as BusinessAccount)
+          : ((await res.json()) as BusinessAccount);
         const wasFirstCreate = !effectiveId;
         if (wasFirstCreate) setEffectiveId(saved.id);
         baselineRef.current = currentSerialized;
         onAutoSaved?.(saved, wasFirstCreate ? "create" : "edit");
-        router.refresh();
         return { ok: true as const, recordId: saved.id, account: saved };
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error";
@@ -208,7 +279,7 @@ const BusinessDetailsForm = forwardRef<BusinessFormAutoSaveHandle, BusinessDetai
         setLoading(false);
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [canSave, effectiveId, clientId, currentSerialized, router, onAutoSaved]);
+    }, [canSave, effectiveId, clientId, currentSerialized, writer.submit, writer.scenarioActive, onAutoSaved]);
 
     async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
       e.preventDefault();

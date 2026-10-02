@@ -154,4 +154,23 @@ describe("overlayAccountMeta (F11)", () => {
     );
     expect(map.get("a1")!.countsTowardAum).toBe(false);
   });
+
+  it("overlays a scenario edit of a business's notes", () => {
+    const map = overlayAccountMeta([baseRow({ notes: "old" })], [
+      {
+        targetKind: "account",
+        opType: "edit",
+        targetId: "a1",
+        payload: { notes: { from: "old", to: "new" } },
+      },
+    ]);
+    expect(map.get("a1")!.notes).toBe("new");
+  });
+
+  it("carries a scenario-added account's notes", () => {
+    const map = overlayAccountMeta([], [
+      { targetKind: "account", opType: "add", targetId: "n1", payload: { id: "n1", notes: "hello" } },
+    ]);
+    expect(map.get("n1")!.notes).toBe("hello");
+  });
 });

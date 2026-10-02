@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { fieldLabelClassName, textareaClassName } from "@/components/forms/input-styles";
 import type { BusinessAccount } from "./types";
 
@@ -11,6 +12,7 @@ export interface BusinessNotesTabProps {
 }
 
 export default function BusinessNotesTab({ clientId, business, hidden }: BusinessNotesTabProps) {
+  const writer = useScenarioWriter(clientId);
   // Derived-state reset: track which business id owns the current notes value.
   const [notes, setNotes] = useState(business.notes ?? "");
   const [ownedById, setOwnedById] = useState(business.id);
@@ -33,11 +35,14 @@ export default function BusinessNotesTab({ clientId, business, hidden }: Busines
     if (notes === savedRef.current) return;
     setSavingError(null);
     try {
-      const res = await fetch(`/api/clients/${clientId}/accounts/${business.id}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ notes }),
-      });
+      const res = await writer.submit(
+        { op: "edit", targetKind: "account", targetId: business.id, desiredFields: { notes } },
+        {
+          url: `/api/clients/${clientId}/accounts/${business.id}`,
+          method: "PUT",
+          body: { notes },
+        },
+      );
       if (!res.ok) {
         const json = (await res.json().catch(() => ({}))) as { error?: string };
         setSavingError(json.error ?? "Failed to save notes");

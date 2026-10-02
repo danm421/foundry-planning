@@ -59,3 +59,27 @@ export const AddBusinessInputSchema = z.object({
 
 export type AddBusinessInput = z.infer<typeof AddBusinessInputSchema>;
 export type BusinessOwnerRow = z.infer<typeof BusinessOwnerRowSchema>;
+
+/** Map the business-type enum to the analogous `account_sub_type` value so
+ *  accounts.sub_type stays consistent with category-specific UIs that filter
+ *  on it. `other` business types fall through to the generic `other` sub-type.
+ *  Lives here, not in the db-bound accounts-writes, so the client-side business
+ *  form can derive the same sub-type for a scenario add. */
+export function mapBusinessTypeToSubType(
+  bt: "sole_prop" | "partnership" | "s_corp" | "c_corp" | "llc" | "other",
+): "sole_proprietorship" | "partnership" | "s_corp" | "c_corp" | "llc" | "other" {
+  switch (bt) {
+    case "sole_prop":
+      return "sole_proprietorship";
+    case "partnership":
+      return "partnership";
+    case "s_corp":
+      return "s_corp";
+    case "c_corp":
+      return "c_corp";
+    case "llc":
+      return "llc";
+    default:
+      return "other";
+  }
+}

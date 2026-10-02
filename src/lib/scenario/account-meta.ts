@@ -58,6 +58,7 @@ const META_KEYS: ReadonlyArray<StringMetaKey> = [
   "annualPropertyTax",
   "propertyTaxGrowthRate",
   "propertyTaxGrowthSource",
+  "notes",
 ];
 
 /** Boolean meta keys — coerced separately from META_KEYS, whose String()

@@ -22,8 +22,8 @@
 //     honoring a client-supplied subType for business rows). The merge is
 //     load-bearing: validateOwnersShape below requires numeric percents, and the
 //     create schema's superRefine only *validates* business — it does NOT derive
-//     subType or coerce owners. mapBusinessTypeToSubType is copied here (it is NOT
-//     exported from the route).
+//     subType or coerce owners. mapBusinessTypeToSubType is shared from
+//     schemas/accounts-business (the client form derives the same sub-type).
 //   • UPDATE uses MASS-ASSIGN-STRIP + SPREAD, NOT a zod whitelist. The PUT route
 //     is a permissive "update any column" endpoint: it strips the 4 identity
 //     fields (id/clientId/createdAt/updatedAt) then spreads `...accountUpdate`
@@ -72,35 +72,12 @@ import {
 } from "@/lib/ownership";
 import { accountCreateSchema } from "@/lib/schemas/accounts";
 import { validateInheritedIraFields } from "@/lib/accounts/inherited-ira";
-import { AddBusinessInputSchema } from "@/lib/schemas/accounts-business";
+import { AddBusinessInputSchema, mapBusinessTypeToSubType } from "@/lib/schemas/accounts-business";
 import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
 import { baseCaseScenarioId } from "./base-case";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
 
 type AccountRow = typeof accounts.$inferSelect;
-
-/** Map the business-type enum to the analogous `account_sub_type` value so
- *  accounts.sub_type stays consistent with category-specific UIs that filter
- *  on it. `other` business types fall through to the generic `other` sub-type.
- *  Copied verbatim from the POST route (it is NOT exported there). */
-function mapBusinessTypeToSubType(
-  bt: "sole_prop" | "partnership" | "s_corp" | "c_corp" | "llc" | "other",
-): "sole_proprietorship" | "partnership" | "s_corp" | "c_corp" | "llc" | "other" {
-  switch (bt) {
-    case "sole_prop":
-      return "sole_proprietorship";
-    case "partnership":
-      return "partnership";
-    case "s_corp":
-      return "s_corp";
-    case "c_corp":
-      return "c_corp";
-    case "llc":
-      return "llc";
-    default:
-      return "other";
-  }
-}
 
 export async function createAccountForClient(args: {
   clientId: string;

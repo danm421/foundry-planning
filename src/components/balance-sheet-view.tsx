@@ -268,8 +268,8 @@ export interface BalanceSheetViewProps {
    *   editor for this row — it's gone, its kind isn't edited here, it's a
    *   life-insurance policy (edited on Insurance), it's a business's sub-row
    *   whose business isn't listed, or the advisor has view-only access.
-   * - `"unsupported"`: nothing was opened, because the row is a household
-   *   business, whose BusinessDialog would save to the base plan.
+   * - `"unsupported"`: nothing was opened, because the row's editor has no
+   *   scenario-aware path yet (a note receivable's create).
    */
   onFocusClose?: (outcome?: FocusCloseOutcome) => void;
 }
@@ -593,22 +593,24 @@ function AddAssetMenu({ onPick }: { onPick: (cat: AccountCategory) => void }) {
 /** The focused row, tagged with the dialog the page opens for it. */
 type FocusTarget =
   | { dialog: "account"; row: AccountRow }
+  | { dialog: "business"; row: AccountRow }
   | { dialog: "liability"; row: LiabilityRow }
   // A create opens the empty dialog; a delete runs the page's delete on the row
   // with no dialog at all.
   | { dialog: "create_account"; category: AccountCategory }
   | { dialog: "create_liability" }
+  | { dialog: "create_business" }
   | { dialog: "delete"; kind: "account" | "liability"; id: string };
 
 
 /**
  * The dialog the page's own click opens for the focused row — or null when
- * focus mode opens none, or "unsupported" for a listed business (see below).
- * A business's sub-account or sub-liability is listed only inside its
+ * focus mode opens none, or "unsupported" for a create with no scenario-aware
+ * editor (a note receivable). A business's sub-account or sub-liability is listed only inside its
  * business's row group; a policy click goes to the Insurance page; legacy
  * notes_receivable accounts aren't listed. Every other account
  * opens the account dialog — Assets rows, 529s and the Out of Estate panel
- * alike — except the listed businesses themselves (see below).
+ * alike — except the listed businesses themselves, which open BusinessDialog.
  */
 function findFocusRow(
   focus: EditorFocus,
@@ -634,8 +636,7 @@ function findFocusRow(
     if (focus.kind === "liability") return { dialog: "create_liability" };
     if (focus.kind === "note_receivable" || focus.variant === "note_receivable") return "unsupported";
     if (focus.kind !== "account") return null;
-    // A business create stays unsupported until its dialog saves through the scenario writer.
-    if (focus.variant === "business") return "unsupported";
+    if (focus.variant === "business") return { dialog: "create_business" };
     const category = CREATE_CATEGORIES.find((c) => c === focus.variant);
     return category ? { dialog: "create_account", category } : null;
   }
@@ -658,10 +659,8 @@ function findFocusRow(
     case "account": {
       const row = accounts.find((a) => a.id === focus.id);
       if (!row || !accountIsListed(row)) return null;
-      // The page edits it in BusinessDialog, whose saves bypass the scenario writer
-      // (future-work "Business dialog saves to the BASE plan") — never open it
-      // here (Rulings T4b-business, F-I2).
-      if (isListedBusiness(row)) return "unsupported";
+      // A listed business is edited in BusinessDialog, as its row click opens it.
+      if (isListedBusiness(row)) return { dialog: "business", row };
       return { dialog: "account", row };
     }
     case "liability": {
@@ -844,7 +843,7 @@ export default function BalanceSheetView({
 
   // Focus mode's row, snapshotted at mount. Null means the page offers no editor
   // for it (see `findFocusRow`) or there's no edit access; "unsupported" means
-  // it does, but that editor would write the base plan. The editing state
+  // it does, but that editor has no scenario-aware path yet. The editing state
   // below is seeded exactly as that row's click sets it.
   const [focusFound] = useState(() =>
     focus && canEdit ? findFocusRow(focus, accounts, liabilities, accountInEstate) : null,
@@ -870,8 +869,12 @@ export default function BalanceSheetView({
   const [editingNote, setEditingNote] = useState<NoteReceivable | null>(null);
   const [deletingNote, setDeletingNote] = useState<NoteReceivable | null>(null);
 
-  const [editingBusiness, setEditingBusiness] = useState<BusinessAccount | null>(null);
-  const [businessDialogOpen, setBusinessDialogOpen] = useState(false);
+  const [editingBusiness, setEditingBusiness] = useState<BusinessAccount | null>(() =>
+    focusTarget?.dialog === "business" ? accountRowToBusinessAccount(focusTarget.row) : null,
+  );
+  const [businessDialogOpen, setBusinessDialogOpen] = useState(
+    () => focusTarget?.dialog === "business" || focusTarget?.dialog === "create_business",
+  );
   const [addLiabilityOpen, setAddLiabilityOpen] = useState(() => focusTarget?.dialog === "create_liability");
   // When "+ Add sub-account" / "+ Add sub-liability" fires from inside the
   // Business dialog's Assets tab, capture the business id so the freshly-opened

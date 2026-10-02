@@ -6,8 +6,8 @@
  * would open for that row, seeded with that row, and hand control back through
  * `onFocusClose` whenever that dialog goes away (cancel, save, delete) or never
  * could open — the row is missing, its kind isn't edited here, or the page
- * itself offers no editor for it ("unavailable") — or its editor is known to
- * write the base plan inside a scenario ("unsupported": a household business).
+ * itself offers no editor for it ("unavailable") — or the row's kind has no
+ * scenario-aware editor yet ("unsupported": a note receivable).
  */
 
 import { StrictMode } from "react";
@@ -66,8 +66,7 @@ const BROKERAGE: AccountRow = {
   owners: CLIENT_OWNS,
 };
 
-/** A top-level, household-owned business. The page edits it in BusinessDialog,
- *  whose saves bypass the scenario writer, so focus mode reports it unavailable. */
+/** A top-level, household-owned business, which the page edits in BusinessDialog. */
 const BUSINESS: AccountRow = {
   id: "acct-biz",
   name: "Acme Widgets LLC",
@@ -219,6 +218,15 @@ describe("BalanceSheetView focus mode — which dialog opens", () => {
     expectNoPageChrome();
   });
 
+  it("a top-level household business → BusinessDialog, pre-filled with that row", () => {
+    renderFocused({ kind: "account", id: "acct-biz" });
+
+    expect(screen.getByRole("dialog", { name: "Edit Business" })).toBeTruthy();
+    expect((document.getElementById("biz-name") as HTMLInputElement).value).toBe("Acme Widgets LLC");
+    expect(screen.queryByRole("dialog", { name: "Edit Account" })).toBeNull();
+    expectNoPageChrome();
+  });
+
   it("a business's sub-account → the account dialog, as its row group opens it", () => {
     renderFocused({ kind: "account", id: "acct-biz-cash" });
 
@@ -286,16 +294,9 @@ describe("BalanceSheetView focus mode — unavailable", () => {
   });
 });
 
-// Ruling F-I2: rows whose editor is known to write the base plan inside a
-// scenario report "unsupported" — the host shows no Details-page link, as the
-// page carries the same bug.
-describe("BalanceSheetView focus mode — unsupported", () => {
-  // BusinessDialog's Details and Notes saves PUT the base account, bypassing the
-  // scenario — from the Solver that would overwrite the base plan.
-  it("a top-level household business → unsupported, never BusinessDialog", async () => {
-    await expectNothingOpened(renderFocused({ kind: "account", id: "acct-biz" }), "unsupported");
-  });
-
+// "unsupported" (a note receivable's create, below) is reserved for editors with
+// no scenario-aware path yet; a household business is no longer one of them.
+describe("BalanceSheetView focus mode — household business", () => {
   it("without edit permission a household business is unavailable, like every row", async () => {
     await expectUnavailable(renderFocused({ kind: "account", id: "acct-biz" }, vi.fn(), "view"));
   });
@@ -408,11 +409,24 @@ describe("BalanceSheetView focus mode — create intent", () => {
     expect(onFocusClose).toHaveBeenCalledTimes(1);
   });
 
-  it.each([
-    { label: "a business", focus: { intent: "create" as const, kind: "account" as const, variant: "business" as const } },
-    { label: "a note receivable", focus: { intent: "create" as const, kind: "note_receivable" as const } },
-  ])("$label create → unsupported until its dialog is scenario-aware", async ({ focus }) => {
-    await expectNothingOpened(renderFocused(focus), "unsupported");
+  it("a business create opens the empty Add Business dialog and closes on cancel", async () => {
+    const { onFocusClose } = renderFocused({ intent: "create", kind: "account", variant: "business" });
+
+    expect(await screen.findByRole("dialog", { name: "Add Business" })).toBeTruthy();
+    expect((document.getElementById("biz-name") as HTMLInputElement).value).toBe("");
+    expect(onFocusClose).not.toHaveBeenCalled();
+
+    fireEvent.click(dialog("Add Business").getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledWith());
+    expect(onFocusClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("a note-receivable create → unsupported until its dialog is scenario-aware", async () => {
+    await expectNothingOpened(
+      renderFocused({ intent: "create", kind: "note_receivable" }),
+      "unsupported",
+    );
   });
 
   it("a life-insurance create → unavailable, as the Insurance page owns it", async () => {
@@ -424,6 +438,7 @@ describe("BalanceSheetView focus mode — delete intent", () => {
   it.each([
     { label: "account", focus: { intent: "delete" as const, kind: "account" as const, id: "acct-taxable" }, targetKind: "account", targetId: "acct-taxable" },
     { label: "liability", focus: { intent: "delete" as const, kind: "liability" as const, id: "liab-mortgage" }, targetKind: "liability", targetId: "liab-mortgage" },
+    { label: "household business", focus: { intent: "delete" as const, kind: "account" as const, id: "acct-biz" }, targetKind: "account", targetId: "acct-biz" },
   ])("removes the $label with no prompt, then closes", async ({ focus, targetKind, targetId }) => {
     submit.mockResolvedValue({ ok: true, status: 204 });
     const { onFocusClose, container } = renderFocused(focus);
