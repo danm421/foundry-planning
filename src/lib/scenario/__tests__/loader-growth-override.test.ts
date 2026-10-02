@@ -75,11 +75,22 @@ function makeCtx(taxableRate: string, resolvedInflationRate: number): Resolution
   };
 }
 
-function makeTree(inflationRate: number): ClientData {
+/** A loaded tree whose taxable default is `taxableRate`: its view-only
+ *  `defaultGrowthTaxable` and its default-sourced base brokerage account both
+ *  carry it, so a test can tell which load the scenario was built on. */
+function makeTree(taxableRate: number): ClientData {
   return {
     client: { dateOfBirth: "1970-01-01", retirementAge: 65, planEndAge: 95, lifeExpectancy: 90 },
-    planSettings: { planStartYear: 2026, planEndYear: 2060, inflationRate, flatStateRate: 0.05 },
-    accounts: [],
+    planSettings: {
+      planStartYear: 2026,
+      planEndYear: 2060,
+      inflationRate: 0.025,
+      flatStateRate: 0.05,
+      defaultGrowthTaxable: taxableRate,
+    },
+    accounts: [
+      { id: "base-brokerage", name: "Base Brokerage", category: "taxable", growthRate: taxableRate, owners: [] },
+    ],
     incomes: [],
     expenses: [],
     savingsRules: [],
@@ -96,8 +107,10 @@ function makeTree(inflationRate: number): ClientData {
 // the same 2.5% resolved inflation, whatever raw rate the scenario typed.
 const baseCtx = makeCtx("0.07", 0.025);
 const overrideCtx = makeCtx("0.09", 0.025);
-const baseTree = makeTree(0.025);
-const overrideTree = makeTree(0.025);
+const baseTree = makeTree(0.07);
+const overrideTree = makeTree(0.09);
+const baseBrokerageGrowth = (tree: ClientData) =>
+  tree.accounts.find((a) => a.id === "base-brokerage")!.growthRate;
 
 const planSettingsEdit = (
   payload: Record<string, unknown>,
@@ -169,6 +182,8 @@ describe("loadEffectiveTree — per-scenario growth & inflation override", () =>
     expect(resolutionContext).toBe(baseCtx);
     expect(effectiveTree.planSettings.flatStateRate).toBe(0.06);
     expect(effectiveTree.accounts.find((a) => a.id === "added-1")!.growthRate).toBeCloseTo(0.07, 10);
+    expect(baseBrokerageGrowth(effectiveTree)).toBe(0.07);
+    expect(effectiveTree.planSettings.defaultGrowthTaxable).toBe(0.07);
   });
 
   it("loads the base and an override, and builds the scenario on the override", async () => {
@@ -185,6 +200,10 @@ describe("loadEffectiveTree — per-scenario growth & inflation override", () =>
       planSettingsOverride: { defaultGrowthTaxable: 0.09, inflationRate: 0.05 },
     });
     expect(resolutionContext).toBe(overrideCtx);
+    // The scenario is built on the OVERRIDE tree: its base rows carry the
+    // override load's resolved growth, and its settings the override's values.
+    expect(baseBrokerageGrowth(effectiveTree)).toBe(0.09);
+    expect(effectiveTree.planSettings.defaultGrowthTaxable).toBe(0.09);
     // An added account resolves against the scenario's growth defaults.
     expect(effectiveTree.accounts.find((a) => a.id === "added-1")!.growthRate).toBeCloseTo(0.09, 10);
     // Growth keys are stripped before the overlay: the raw 5% never overwrites
@@ -204,5 +223,6 @@ describe("loadEffectiveTree — per-scenario growth & inflation override", () =>
     expect(loadClientDataWithContext).toHaveBeenCalledTimes(1);
     expect(resolutionContext).toBe(baseCtx);
     expect(effectiveTree.accounts.find((a) => a.id === "added-1")!.growthRate).toBeCloseTo(0.07, 10);
+    expect(baseBrokerageGrowth(effectiveTree)).toBe(0.07);
   });
 });

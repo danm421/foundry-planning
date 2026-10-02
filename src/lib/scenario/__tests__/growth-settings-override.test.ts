@@ -63,6 +63,17 @@ describe("growthSettingsOverride", () => {
     expect(growthSettingsOverride(changes, { g: true }, groups)).toEqual({ inflationRate: 0.04 });
   });
 
+  it("ignores an edit whose group is on but requires a group that is off", () => {
+    const groups: ToggleGroup[] = [
+      group("a", false),
+      { ...group("b", true), requiresGroupId: "a" },
+    ];
+    const changes = [ps("x", { defaultGrowthTaxable: 0.09 }, 0, "b")];
+    expect(growthSettingsOverride(changes, {}, groups)).toEqual({});
+    // Control: switching the parent on lets the child's edit through.
+    expect(growthSettingsOverride(changes, { a: true }, groups)).toEqual({ defaultGrowthTaxable: 0.09 });
+  });
+
   it("returns {} when no edit carries a growth key", () => {
     expect(growthSettingsOverride([ps("a", { flatStateRate: 0.04 }, 0)], {}, [])).toEqual({});
   });
