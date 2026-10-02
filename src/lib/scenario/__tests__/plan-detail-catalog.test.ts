@@ -78,6 +78,6 @@ describe("NOT_YET_READY", () => {
   });
 
   it("holds the types whose workstream is still open", () => {
-    expect([...NOT_YET_READY].sort()).toEqual(["note_receivable", "gift_series"].sort());
+    expect([...NOT_YET_READY].sort()).toEqual(["note_receivable"]);
   });
 });

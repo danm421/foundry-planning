@@ -118,6 +118,9 @@ interface Props {
   scenarioName?: string | null;
   /** Base-plan gifts loaded from DB, seeded into the estate planning tab. */
   baseGifts: EstateFlowGift[];
+  /** Which of `baseGifts`' recurring gifts are the scenario's own `gift`
+   *  changes. Only those are listed in the Changes tab (they alone open). */
+  overlayGiftSeriesIds?: string[];
   /** Blended dedicated-pool return stats per education goalId (from the plan MC
    *  data), driving the Education report's per-goal POS gauge. Optional — the
    *  panel falls back to a neutral per-goal default when absent. */
@@ -205,6 +208,7 @@ export function LiveSolverWorkspace({
   retirementDefaultMix,
   scenarioName,
   baseGifts,
+  overlayGiftSeriesIds,
   educationReturnStats,
   educationSeed,
   initialReportLayout,
@@ -1106,8 +1110,14 @@ export function LiveSolverWorkspace({
   // the working tree, which carries unsaved levers) and, once a write lands,
   // drop the draft levers it replaced.
   const inventory = useMemo(
-    () => buildPlanInventory(initialSourceClientData, baseGifts, clientId),
-    [initialSourceClientData, baseGifts, clientId],
+    () =>
+      buildPlanInventory(
+        initialSourceClientData,
+        baseGifts,
+        clientId,
+        new Set(overlayGiftSeriesIds),
+      ),
+    [initialSourceClientData, baseGifts, overlayGiftSeriesIds, clientId],
   );
   const willGrantors = useMemo(() => grantorsWithoutWill(initialSourceClientData), [initialSourceClientData]);
   const { notice: draftNotice, dismissNotice: dismissDraftNotice, onTargetsWritten } = useDraftReconciliation({

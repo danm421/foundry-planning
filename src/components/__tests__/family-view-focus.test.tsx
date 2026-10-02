@@ -104,6 +104,10 @@ const SERIES: GiftSeriesLite = {
   useCrummeyPowers: false,
 };
 
+/** A recurring gift the scenario's own `gift` change made — the only kind of
+ *  series the Solver opens. SERIES above is a real `gift_series` row. */
+const OVERLAY_SERIES: GiftSeriesLite = { ...SERIES, id: "series-ov", annualAmount: 7000, overlay: true };
+
 const PROPS: FamilyViewProps = {
   clientId: CLIENT_ID,
   primary: {
@@ -138,7 +142,7 @@ const PROPS: FamilyViewProps = {
   initialAccounts: [],
   initialDesignations: [],
   initialGifts: [GIFT],
-  initialGiftSeries: [SERIES],
+  initialGiftSeries: [SERIES, OVERLAY_SERIES],
   annualExclusionByYear: { 2026: 19000, 2027: 19000 },
   planStartYear: 2026,
   scenarioId: SCENARIO_ID,
@@ -320,19 +324,43 @@ describe("FamilyView focus mode — unavailable", () => {
   });
 });
 
-// Ruling F-I2: rows whose editor is known to write the base plan inside a
-// scenario report "unsupported" — the host shows no Details-page link, as the
-// page carries the same bug.
-describe("FamilyView focus mode — unsupported", () => {
-  // A series a change points at is that change's overlay row, and the series
-  // dialog PATCHes `gift_series` by id alone — a base series' id rewrites the
-  // base plan. (The one-time side of the same kind opens: see above.)
-  it("a gift series → unsupported, even though the row is there", async () => {
+// A series in the scenario's own `gift_series` partition is edited only by the
+// Details page (a partition write), so the Solver offers no link to it. An
+// overlay series — the scenario's own `gift` change — opens.
+describe("FamilyView focus mode — recurring gifts", () => {
+  it("an overlay series → the Edit gift dialog, pre-filled with that series, and nothing else", () => {
+    renderFocused({ kind: "gift", id: "series-ov" });
+
+    const gift = dialog("Edit gift");
+    expect((gift.getByLabelText(/amount/i, { selector: "input" }) as HTMLInputElement).value).toMatch(/7,?000/);
+    expectNoPageChrome();
+  });
+
+  it("saving an overlay series writes ONE scenario gift add under its id, never the series route", async () => {
+    const { onFocusClose } = renderFocused({ kind: "gift", id: "series-ov" });
+
+    fireEvent.click(dialog("Edit gift").getByRole("button", { name: "Save gift" }));
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith();
+    expect(scenarioChangeBodies()).toEqual([
+      expect.objectContaining({
+        op: "add",
+        targetKind: "gift",
+        entity: expect.objectContaining({ kind: "series", id: "series-ov" }),
+      }),
+    ]);
+    // The whole request list: nothing but that one change POST reaches a write.
+    const writes = fetchMock.mock.calls.filter(([, init]) => init?.method && init.method !== "GET");
+    expect(writes).toHaveLength(1);
+  });
+
+  it("a partition series → unsupported, even though the row is there", async () => {
     await expectNothingOpened(renderFocused({ kind: "gift", id: "series-1" }), "unsupported");
   });
 
-  it("without edit permission a gift series is unavailable, like every row", async () => {
-    await expectUnavailable(renderFocused({ kind: "gift", id: "series-1" }, vi.fn(), "view"));
+  it("without edit permission an overlay series is unavailable, like every row", async () => {
+    await expectUnavailable(renderFocused({ kind: "gift", id: "series-ov" }, vi.fn(), "view"));
   });
 });
 
@@ -658,7 +686,20 @@ describe("FamilyView focus mode — create and delete intents", () => {
     expect(scenarioChangeBodies()).toEqual([]);
   });
 
-  it("delete of a gift series → unsupported, no write", async () => {
+  it("delete of an overlay series removes it with a scenario change, no series route, then closes", async () => {
+    const { onFocusClose, container } = renderFocused({ intent: "delete", kind: "gift", id: "series-ov" });
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith();
+    expect(scenarioChangeBodies()).toEqual([
+      expect.objectContaining({ op: "remove", targetKind: "gift", targetId: "series-ov" }),
+    ]);
+    const writes = fetchMock.mock.calls.filter(([, init]) => init?.method && init.method !== "GET");
+    expect(writes).toHaveLength(1);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("delete of a partition series → unsupported, no write", async () => {
     await expectNothingOpened(renderFocused({ intent: "delete", kind: "gift", id: "series-1" }), "unsupported");
     expect(scenarioChangeBodies()).toEqual([]);
   });

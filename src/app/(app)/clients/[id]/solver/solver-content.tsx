@@ -1,6 +1,6 @@
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection } from "@/engine";
-import { loadGiftDrafts } from "@/lib/estate/load-gift-drafts";
+import { loadGiftDraftState } from "@/lib/estate/load-gift-drafts";
 import { db } from "@/db";
 import { modelPortfolios, modelPortfolioAllocations, scenarios } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -78,7 +78,7 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
     ? runProjection(sourceTree)
     : baseProjection;
 
-  const [modelPortfolioRows, allocationRows, baseGifts, reportLayout] = await Promise.all([
+  const [modelPortfolioRows, allocationRows, giftState, reportLayout] = await Promise.all([
     db
       .select({ id: modelPortfolios.id, name: modelPortfolios.name })
       .from(modelPortfolios)
@@ -92,7 +92,7 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
       .from(modelPortfolioAllocations)
       .innerJoin(modelPortfolios, eq(modelPortfolioAllocations.modelPortfolioId, modelPortfolios.id))
       .where(eq(modelPortfolios.firmId, firmId)),
-    loadGiftDrafts(clientId, firmId, source),
+    loadGiftDraftState(clientId, firmId, source),
     loadReportLayout(userId),
   ]);
 
@@ -215,7 +215,8 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
       categoryGrowthDefaults={categoryGrowthDefaults}
       retirementDefaultMix={retirementDefaultMix}
       scenarioName={scenarioName}
-      baseGifts={baseGifts}
+      baseGifts={giftState.drafts}
+      overlayGiftSeriesIds={giftState.overlaySeriesIds}
       educationReturnStats={educationReturnStats}
       educationSeed={educationSeed}
       initialReportLayout={reportLayout}

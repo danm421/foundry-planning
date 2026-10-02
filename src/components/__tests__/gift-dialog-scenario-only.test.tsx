@@ -163,6 +163,14 @@ const baseSeries: GiftSeriesLite = {
   useCrummeyPowers: false,
 };
 
+/** A recurring series that exists only as the scenario's own `gift` change. */
+const OVERLAY_SERIES_ID = "6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b";
+const overlaySeries: GiftSeriesLite = {
+  ...baseSeries,
+  id: OVERLAY_SERIES_ID,
+  overlay: true,
+};
+
 describe("GiftDialog — gift writes follow the active scenario", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -233,50 +241,138 @@ describe("GiftDialog — gift writes follow the active scenario", () => {
     }
   });
 
-  it("one-time → recurring inside a scenario writes a real series row and strips the gift with a `remove` change", async () => {
+  it("one-time → recurring inside a scenario is ONE `gift` add under the gift's id — no series row, no remove", async () => {
     const fetchMock = vi
       .spyOn(global, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({ id: "gs-new" }), { status: 201 }));
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
     const onRemovedGift = vi.fn();
+    const onSavedSeries = vi.fn();
 
     render(
-      <GiftDialog {...baseProps} editingGift={baseGift} onRemovedGift={onRemovedGift} />,
+      <GiftDialog
+        {...baseProps}
+        editingGift={baseGift}
+        onRemovedGift={onRemovedGift}
+        onSavedSeries={onSavedSeries}
+      />,
     );
-    // One-time → Recurring moves the gift between two tables that are
-    // scenario-scoped in DIFFERENT ways, so the two halves land differently:
-    //
-    //  1. `gift_series` is partitioned, so the replacement is a REAL row in
-    //     this scenario's partition — not a change row, which the series GET
-    //     could not see and the promote could not carry.
-    //  2. `gifts` is overlaid, so the original must be stripped with a
-    //     `remove` change. A base DELETE would erase it from the base plan;
-    //     doing nothing (the old behaviour) left the one-time gift beside its
-    //     own recurring replacement — counted twice.
+    // A recurring gift inside a scenario is a `gift` change whose payload is a
+    // series draft — the only form `applyGiftOverlays` projects and promote
+    // carries. The draft keeps the gift's id, so the add strips and replaces
+    // the one-time row; a `remove` on that id would delete the add itself.
     fireEvent.click(screen.getByText("Recurring"));
     fireEvent.click(screen.getByText("Save gift"));
-    await waitFor(() => expect(fetchMock.mock.calls).toHaveLength(2));
+    await waitFor(() => expect(onSavedSeries).toHaveBeenCalled());
 
-    await waitFor(() => expect(onRemovedGift).toHaveBeenCalledWith(BASE_GIFT_ID));
+    // The WHOLE request list: exactly one call.
+    expect(fetchMock.mock.calls).toHaveLength(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe("/api/clients/c1/scenarios/s1/changes");
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.op).toBe("add");
+    expect(body.targetKind).toBe("gift");
+    expect(body.entity).toMatchObject({ kind: "series", id: BASE_GIFT_ID });
+    expect(onRemovedGift).toHaveBeenCalledWith(BASE_GIFT_ID);
+    expect(onSavedSeries).toHaveBeenCalledWith(
+      expect.objectContaining({ id: BASE_GIFT_ID, overlay: true }),
+    );
+  });
 
-    const [seriesUrl, seriesInit] = fetchMock.mock.calls[0];
-    expect(String(seriesUrl)).toBe("/api/clients/c1/gifts/series?scenario=s1");
-    expect((seriesInit as RequestInit).method).toBe("POST");
+  it("a NEW recurring gift inside a scenario is a `gift` add alone — never POST /gifts/series", async () => {
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const onSavedSeries = vi.fn();
 
-    const [removeUrl, removeInit] = fetchMock.mock.calls[1];
-    expect(String(removeUrl)).toBe("/api/clients/c1/scenarios/s1/changes");
-    expect(JSON.parse((removeInit as RequestInit).body as string)).toEqual({
-      op: "remove",
-      targetKind: "gift",
-      targetId: BASE_GIFT_ID,
+    render(<GiftDialog {...baseProps} onSavedSeries={onSavedSeries} />);
+    fireEvent.change(screen.getByTestId("recipient"), { target: { value: `entity:${BASE_TRUST_ID}` } });
+    fireEvent.click(screen.getByText("Recurring"));
+    fireEvent.change(screen.getByLabelText(/amount/i, { selector: "input" }), { target: { value: "19000" } });
+    fireEvent.click(screen.getByText("Add gift"));
+    await waitFor(() => expect(onSavedSeries).toHaveBeenCalled());
+
+    expect(fetchMock.mock.calls).toHaveLength(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe("/api/clients/c1/scenarios/s1/changes");
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body).toMatchObject({ op: "add", targetKind: "gift" });
+    expect(body.entity).toMatchObject({
+      kind: "series",
+      annualAmount: 19000,
+      recipient: { kind: "entity", id: BASE_TRUST_ID },
     });
+    expect(onSavedSeries).toHaveBeenCalledWith(
+      expect.objectContaining({ id: body.entity.id, overlay: true, annualAmount: 19000 }),
+    );
+  });
 
-    // The base `gifts` row itself is never DELETEd from inside a scenario.
+  it("edits an overlay series as a `gift` add under its own id — never PATCH /gifts/series/<id>", async () => {
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const onSavedSeries = vi.fn();
+
+    render(
+      <GiftDialog {...baseProps} editingSeries={overlaySeries} onSavedSeries={onSavedSeries} />,
+    );
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() => expect(onSavedSeries).toHaveBeenCalled());
+
+    expect(fetchMock.mock.calls).toHaveLength(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe("/api/clients/c1/scenarios/s1/changes");
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body).toMatchObject({ op: "add", targetKind: "gift" });
+    expect(body.entity).toMatchObject({ kind: "series", id: OVERLAY_SERIES_ID, startYear: 2026, endYear: 2030 });
+    expect(onSavedSeries).toHaveBeenCalledWith(
+      expect.objectContaining({ id: OVERLAY_SERIES_ID, overlay: true }),
+    );
+  });
+
+  it("an overlay series switched to one-time is the same add, with no series DELETE", async () => {
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const onRemovedSeries = vi.fn();
+
+    render(
+      <GiftDialog {...baseProps} editingSeries={overlaySeries} onRemovedSeries={onRemovedSeries} />,
+    );
+    fireEvent.click(screen.getByText("One-time"));
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() => expect(onRemovedSeries).toHaveBeenCalledWith(OVERLAY_SERIES_ID));
+
+    expect(fetchMock.mock.calls).toHaveLength(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe("/api/clients/c1/scenarios/s1/changes");
+    expect(JSON.parse((init as RequestInit).body as string).entity).toMatchObject({
+      kind: "cash-once",
+      id: OVERLAY_SERIES_ID,
+    });
     for (const call of fetchMock.mock.calls) {
-      expect((call[1] as RequestInit | undefined)?.method).not.toBe("DELETE");
+      expect((call[1] as RequestInit).method).not.toBe("DELETE");
     }
   });
 
-  it("recurring → one-time inside a scenario deletes the series row it replaced", async () => {
+  it("a partition series (no overlay mark) saved in place PATCHes only its own scenario-scoped row", async () => {
+    const fetchMock = vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({ id: BASE_SERIES_ID, grantor: "client", recipientEntityId: BASE_TRUST_ID, startYear: 2026, endYear: 2030, annualAmount: "19000", amountMode: "fixed", inflationAdjust: false, useCrummeyPowers: false }),
+        { status: 200 },
+      ),
+    );
+    const onSavedSeries = vi.fn();
+
+    render(<GiftDialog {...baseProps} editingSeries={baseSeries} onSavedSeries={onSavedSeries} />);
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() => expect(onSavedSeries).toHaveBeenCalled());
+
+    expect(fetchMock.mock.calls).toHaveLength(1);
+    expect(String(fetchMock.mock.calls[0][0])).toBe(`/api/clients/c1/gifts/series/${BASE_SERIES_ID}?scenario=s1`);
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe("PATCH");
+  });
+
+  it("recurring → one-time on a PARTITION series deletes the series row it replaced", async () => {
     const fetchMock = vi
       .spyOn(global, "fetch")
       .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
@@ -289,10 +385,9 @@ describe("GiftDialog — gift writes follow the active scenario", () => {
         onRemovedSeries={onRemovedSeries}
       />,
     );
-    // The other direction. The stale row is a real `gift_series` row in this
-    // scenario's partition, so it has to be DELETEd — skipping it (the old
-    // behaviour) orphaned the series beside its own one-time replacement, and
-    // promoting the scenario copied the orphan into the base plan.
+    // The stale row is a real `gift_series` row in this scenario's partition,
+    // so it has to be DELETEd — skipping it orphaned the series beside its own
+    // one-time replacement, and promoting the scenario copied it into base.
     fireEvent.click(screen.getByText("One-time"));
     fireEvent.click(screen.getByText("Save gift"));
     await waitFor(() => expect(fetchMock.mock.calls).toHaveLength(2));
@@ -304,6 +399,35 @@ describe("GiftDialog — gift writes follow the active scenario", () => {
     expect(String(delUrl)).toBe(`/api/clients/c1/gifts/series/${BASE_SERIES_ID}?scenario=s1`);
     expect((delInit as RequestInit).method).toBe("DELETE");
     await waitFor(() => expect(onRemovedSeries).toHaveBeenCalledWith(BASE_SERIES_ID));
+  });
+
+  it("base mode: a new recurring gift still POSTs /gifts/series, and an edit still PATCHes it", async () => {
+    searchParams = new URLSearchParams("");
+    const seriesRow = { id: "gs-x", grantor: "client", recipientEntityId: BASE_TRUST_ID, startYear: 2026, endYear: 2030, annualAmount: "19000", amountMode: "fixed", inflationAdjust: false, useCrummeyPowers: false };
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockImplementation(async () => new Response(JSON.stringify(seriesRow), { status: 200 }));
+
+    const created = vi.fn();
+    const { unmount } = render(<GiftDialog {...baseProps} onSavedSeries={created} />);
+    fireEvent.change(screen.getByTestId("recipient"), { target: { value: `entity:${BASE_TRUST_ID}` } });
+    fireEvent.click(screen.getByText("Recurring"));
+    fireEvent.change(screen.getByLabelText(/amount/i, { selector: "input" }), { target: { value: "19000" } });
+    fireEvent.click(screen.getByText("Add gift"));
+    await waitFor(() => expect(created).toHaveBeenCalled());
+    expect(fetchMock.mock.calls).toHaveLength(1);
+    expect(String(fetchMock.mock.calls[0][0])).toBe("/api/clients/c1/gifts/series?scenario=s1");
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe("POST");
+    unmount();
+
+    fetchMock.mockClear();
+    const edited = vi.fn();
+    render(<GiftDialog {...baseProps} editingSeries={baseSeries} onSavedSeries={edited} />);
+    fireEvent.click(screen.getByText("Save gift"));
+    await waitFor(() => expect(edited).toHaveBeenCalled());
+    expect(fetchMock.mock.calls).toHaveLength(1);
+    expect(String(fetchMock.mock.calls[0][0])).toBe(`/api/clients/c1/gifts/series/${BASE_SERIES_ID}?scenario=s1`);
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe("PATCH");
   });
 
   it("a shape change with no scenario active still creates the replacement then deletes the original", async () => {

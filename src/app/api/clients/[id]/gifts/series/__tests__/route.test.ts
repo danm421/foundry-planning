@@ -898,4 +898,53 @@ d("gift_series CRUD", () => {
     expect(row.valuationDiscount).not.toBeNull();
     expect(Number(row.valuationDiscount)).toBeCloseTo(0.45, 4);
   });
+
+  it("15. PATCH/DELETE with ?scenario= touch only that partition; a wrong-partition id is a 404", async () => {
+    const { clientId, entityId, scenarioId: baseScenarioId } = await setupClient();
+    const { db } = dbMod;
+    const { giftSeries, scenarios } = schema;
+    const [alt] = await db
+      .insert(scenarios)
+      .values({ clientId, name: "What-if", isBaseCase: false })
+      .returning();
+    const [baseRow] = await db
+      .insert(giftSeries)
+      .values({
+        clientId,
+        scenarioId: baseScenarioId,
+        grantor: "client",
+        recipientEntityId: entityId,
+        startYear: 2026,
+        endYear: 2030,
+        annualAmount: "18000",
+        inflationAdjust: false,
+        useCrummeyPowers: false,
+      })
+      .returning();
+
+    // The base row's id aimed at the alt partition: nothing there, so 404 and
+    // the base plan's row is untouched.
+    const ctx = { params: Promise.resolve({ id: clientId, seriesId: baseRow.id }) };
+    const url = `http://localhost/api/clients/${clientId}/gifts/series/${baseRow.id}?scenario=${alt.id}`;
+    const patchRes = await PATCH(
+      new Request(url, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ annualAmount: 99999 }) }) as never,
+      ctx,
+    );
+    expect(patchRes.status).toBe(404);
+    const delRes = await DELETE(new Request(url, { method: "DELETE" }) as never, ctx);
+    expect(delRes.status).toBe(404);
+
+    const [after] = await db
+      .select()
+      .from(giftSeries)
+      .where(drizzleOrm.eq(giftSeries.id, baseRow.id));
+    expect(after?.annualAmount).toBe("18000.00");
+
+    // Base mode (no param) still reaches the base-case row, as before.
+    const baseRes = await PATCH(
+      makePatchReq(clientId, baseRow.id, { annualAmount: 20000 }) as never,
+      ctx,
+    );
+    expect(baseRes.status).toBe(200);
+  });
 });

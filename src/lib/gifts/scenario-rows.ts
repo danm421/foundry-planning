@@ -188,6 +188,10 @@ export function profileGiftSeriesRowToDraft(s: GiftSeriesLite): EstateFlowGift {
  * from both lists, then each `add` payload is appended to whichever list its
  * draft kind belongs to.
  *
+ * A series built from an `add` is marked `overlay`: it exists only as a
+ * `scenario_changes` row, so its edit and delete are `gift` changes, while an
+ * unmarked series is a real `gift_series` row in the scenario's partition.
+ *
  * Base rows are kept in their DB shape rather than round-tripped through a
  * draft: `giftRowToDraft` drops business-interest gifts, which this page does
  * render.
@@ -206,7 +210,10 @@ export function overlayScenarioGiftRows(
     ],
     series: [
       ...baseSeries.filter((s) => !targeted.has(s.id)),
-      ...adds.map(giftDraftToSeriesRow).filter((s): s is GiftSeriesLite => s !== null),
+      ...adds.flatMap((a) => {
+        const row = giftDraftToSeriesRow(a);
+        return row ? [{ ...row, overlay: true as const }] : [];
+      }),
     ],
   };
 }

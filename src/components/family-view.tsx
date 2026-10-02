@@ -155,6 +155,10 @@ export type GiftSeriesLite = {
   /** See `Gift.valuationDiscount`. */
   valuationDiscount: number | null;
   useCrummeyPowers: boolean;
+  /** True for a series that exists only as a scenario's `gift` change (see
+   *  `overlayScenarioGiftRows`). Absent for a real `gift_series` row — a base
+   *  series, or a copy in the scenario's own partition. */
+  overlay?: true;
 };
 
 export type ExternalBeneficiary = {
@@ -306,7 +310,8 @@ export interface FamilyViewProps {
    *   external beneficiary (its editor can write the base plan even inside a
    *   scenario).
    * - `"unsupported"`: nothing was opened, because the row is a recurring gift
-   *   series, whose editor can write the base plan even inside a scenario.
+   *   series in the scenario's own `gift_series` partition, which only the
+   *   Details page edits (an overlay series, a `gift` change, does open).
    */
   onFocusClose?: (outcome?: FocusCloseOutcome) => void;
 }
@@ -393,15 +398,17 @@ type FocusTarget =
   | { kind: "client" }
   | { kind: "entity"; row: Entity }
   | { kind: "gift"; row: Gift }
+  | { kind: "series"; row: GiftSeriesLite }
   | { kind: "member"; row: FamilyMember }
   | { kind: "external"; row: ExternalBeneficiary }
   // A create opens the empty dialog; a delete runs the page's delete on the row
   // with no dialog at all.
   | { kind: "create"; of: "gift" | "member" | "external" }
-  | { kind: "delete"; of: "entity" | "gift" | "member" | "external"; id: string };
+  | { kind: "delete"; of: "entity" | "gift" | "series" | "member" | "external"; id: string };
 
 /** The row the page's own click would open for `focus`, null when the page
- *  offers no editor for it, or "unsupported" for a gift series (see below). */
+ *  offers no editor for it, or "unsupported" for a series in the scenario's own
+ *  `gift_series` partition (see below). */
 function findFocusRow(
   focus: EditorFocus,
   rows: {
@@ -441,10 +448,13 @@ function findFocusRow(
         return byId(rows.members) ? { kind: "delete", of: "member", id: focus.id } : null;
       case "external_beneficiary":
         return byId(rows.externals) ? { kind: "delete", of: "external", id: focus.id } : null;
-      // One-time gifts only; a series' delete is not scenario-safe (see "gift" below).
-      case "gift":
+      // A one-time gift, or an overlay series (see "gift" below).
+      case "gift": {
         if (byId(rows.gifts)) return { kind: "delete", of: "gift", id: focus.id };
-        return byId(rows.giftSeries) ? "unsupported" : null;
+        const series = byId(rows.giftSeries);
+        if (!series) return null;
+        return series.overlay ? { kind: "delete", of: "series", id: focus.id } : "unsupported";
+      }
       default:
         return null;
     }
@@ -463,15 +473,17 @@ function findFocusRow(
       const row = byId(rows.entities);
       return row ? { kind: "entity", row } : null;
     }
-    // One-time gifts only. A series a change points at is always that `gift`
-    // change's overlay row (the scenario's own series never becomes a change),
-    // and the series dialog PATCHes/DELETEs `gift_series` by id alone — when
-    // the overlay re-uses a base series' id, that rewrites the base plan
-    // (Rulings T4d-series, F-I2).
+    // A one-time gift, or a recurring one the scenario's own `gift` change made
+    // (an overlay series): both save and delete as `gift` changes. A series that
+    // is a real `gift_series` row in the scenario's partition is unsupported —
+    // the Solver's list never offers one, and a stale link must not open an
+    // editor that writes outside the scenario's changes.
     case "gift": {
       const row = byId(rows.gifts);
       if (row) return { kind: "gift", row };
-      return byId(rows.giftSeries) ? "unsupported" : null;
+      const series = byId(rows.giftSeries);
+      if (!series) return null;
+      return series.overlay ? { kind: "series", row: series } : "unsupported";
     }
     case "external_beneficiary": {
       const row = byId(rows.externals);
@@ -648,7 +660,10 @@ export default function FamilyView({
   // The gift dialog's own state lives in GiftsSection; this tracks whether the
   // focused one is still up.
   const [giftFocusOpen, setGiftFocusOpen] = useState(
-    () => focusTarget?.kind === "gift" || (focusTarget?.kind === "create" && focusTarget.of === "gift"),
+    () =>
+      focusTarget?.kind === "gift" ||
+      focusTarget?.kind === "series" ||
+      (focusTarget?.kind === "create" && focusTarget.of === "gift"),
   );
 
   const profileInitial: ClientFormInitial = {
@@ -795,6 +810,14 @@ export default function FamilyView({
             return member ? performMemberDelete(member) : false;
           }
           if (of === "external") return (await performExternalDelete(id)) === null;
+          if (of === "series") {
+            const series = giftSeriesState.find((x) => x.id === id);
+            if (!series) return false;
+            const res = await removeSeries(writer, clientId, scenarioId, series);
+            if (!res.ok) return false;
+            setGiftSeriesState((prev) => prev.filter((x) => x.id !== id));
+            return true;
+          }
           const res = await removeGift(writer, clientId, id);
           if (!res.ok) return false;
           setGiftsState((prev) => prev.filter((g) => g.id !== id));
@@ -995,6 +1018,13 @@ export default function FamilyView({
           <GiftsSection
             {...giftsSectionProps}
             focusGift={focusTarget.row}
+            onFocusDialogClose={() => setGiftFocusOpen(false)}
+          />
+        )}
+        {focusTarget?.kind === "series" && (
+          <GiftsSection
+            {...giftsSectionProps}
+            focusSeries={focusTarget.row}
             onFocusDialogClose={() => setGiftFocusOpen(false)}
           />
         )}
@@ -1409,6 +1439,28 @@ function removeGift(
   });
 }
 
+// A recurring gift deletes by where it lives. An overlay series exists only as
+// the scenario's `gift` change, so its delete is a `remove` change. A series
+// that is a real `gift_series` row is PARTITIONED — this list only shows the
+// active scenario's — so the series route, scoped by `?scenario=`, already IS
+// the scenario-correct delete (a `remove` change would leave the row alive: back
+// on reload, and copied into base on promote). In base mode there are no
+// overlay rows, so the route is the one call.
+function removeSeries(
+  writer: ReturnType<typeof useScenarioWriter>,
+  clientId: string,
+  scenarioId: string,
+  series: GiftSeriesLite,
+): Promise<Response> {
+  const direct = {
+    url: `/api/clients/${clientId}/gifts/series/${series.id}?scenario=${scenarioId}`,
+    method: "DELETE" as const,
+  };
+  return series.overlay
+    ? writer.submit(giftScenarioRemove(series.id), direct)
+    : writer.submitDirect(direct);
+}
+
 function GiftsSection(props: {
   clientId: string;
   members: FamilyMember[];
@@ -1435,6 +1487,9 @@ function GiftsSection(props: {
   /** Focus mode: open the dialog on this gift, as its Edit button does, and
    *  render only the dialog. */
   focusGift?: Gift;
+  /** Focus mode: open the dialog on this overlay series, as its Edit button
+   *  does, and render only the dialog. */
+  focusSeries?: GiftSeriesLite;
   /** Focus mode: open the empty dialog, as `+ Add gift` does, and render only
    *  the dialog. */
   focusCreate?: boolean;
@@ -1444,7 +1499,7 @@ function GiftsSection(props: {
   const writer = useScenarioWriter(props.clientId);
   const [adding, setAdding] = useState(() => props.focusCreate === true);
   const [editingGift, setEditingGift] = useState<Gift | null>(() => props.focusGift ?? null);
-  const [editingSeries, setEditingSeries] = useState<GiftSeriesLite | null>(null);
+  const [editingSeries, setEditingSeries] = useState<GiftSeriesLite | null>(() => props.focusSeries ?? null);
 
   const recipientLabel = (
     ids: { entity?: string | null; family?: string | null; external?: string | null },
@@ -1475,17 +1530,9 @@ function GiftsSection(props: {
     const res = await removeGift(writer, props.clientId, id);
     if (res.ok) props.onChangeGifts(props.gifts.filter((x) => x.id !== id));
   }
-  // A series deletes the SAME way in both modes. `gift_series` carries a real
-  // `scenario_id` — this list only ever shows the active scenario's series — so
-  // the direct DELETE already IS the scenario-correct delete. A `remove` change
-  // would leave the row alive: back on reload, copied into the base plan by
-  // `copyGiftSeriesToBase` on promote, and gone only from the projection.
-  async function deleteSeries(id: string) {
-    const res = await writer.submitDirect({
-      url: `/api/clients/${props.clientId}/gifts/series/${id}?scenario=${props.scenarioId}`,
-      method: "DELETE",
-    });
-    if (res.ok) props.onChangeSeries(props.series.filter((x) => x.id !== id));
+  async function deleteSeries(series: GiftSeriesLite) {
+    const res = await removeSeries(writer, props.clientId, props.scenarioId, series);
+    if (res.ok) props.onChangeSeries(props.series.filter((x) => x.id !== series.id));
   }
 
   const dialogOpen = adding || editingGift != null || editingSeries != null;
@@ -1529,7 +1576,7 @@ function GiftsSection(props: {
     />
   ) : null;
 
-  if (props.focusGift || props.focusCreate) return giftDialogNode;
+  if (props.focusGift || props.focusSeries || props.focusCreate) return giftDialogNode;
 
   return (
     <section className="mt-6 rounded-lg border border-hair bg-card p-4">
@@ -1599,7 +1646,7 @@ function GiftsSection(props: {
                   {props.canEdit && (
                     <>
                       <button type="button" onClick={() => { setEditingSeries(s); setEditingGift(null); setAdding(false); }} className="mr-3 text-xs text-accent-ink hover:underline">Edit</button>
-                      <button type="button" onClick={() => deleteSeries(s.id)} className="text-xs text-crit hover:underline">Delete</button>
+                      <button type="button" onClick={() => deleteSeries(s)} className="text-xs text-crit hover:underline">Delete</button>
                     </>
                   )}
                 </td>

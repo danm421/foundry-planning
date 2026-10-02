@@ -34,3 +34,37 @@ it("no gift changes is identity", () => {
   const out = applyGiftOverlays(t, [], 0.025);
   expect(out).toBe(t);
 });
+
+// A recurring gift made inside a scenario is a `gift` add carrying a series
+// draft. This is the form the scenario's projection reads, so an edit of it (an
+// add on the same id) must replace the fanned-out events, not stack on them.
+const seriesDraft = (annualAmount: number, endYear: number) => ({
+  kind: "series", id: "s-new", startYear: 2030, endYear, annualAmount,
+  amountMode: "fixed", inflationAdjust: false, grantor: "client",
+  recipient: { kind: "entity", id: "t1" }, crummey: false,
+});
+
+it("a series-shaped gift add projects one gift event per year of the series", () => {
+  const out = applyGiftOverlays(tree(), [ch("add", "s-new", seriesDraft(19000, 2032))], 0.025);
+  const fanned = out.giftEvents.filter((e) => (e as { seriesId?: string }).seriesId === "s-new");
+  expect(fanned.map((e) => e.year)).toEqual([2030, 2031, 2032]);
+  expect(fanned.every((e) => (e as { amount: number }).amount === 19000)).toBe(true);
+  // The base gift beside it is untouched.
+  expect(out.giftEvents.some((e) => (e as { sourceGiftId?: string }).sourceGiftId === "base-g")).toBe(true);
+});
+
+it("editing a series is an add on the same id: the new events replace the old", () => {
+  const t = tree();
+  t.giftEvents = [
+    ...t.giftEvents,
+    ...[2030, 2031, 2032, 2033].map((year) => ({
+      kind: "cash", year, amount: 1000, grantor: "client", useCrummeyPowers: false, seriesId: "s-new",
+    })),
+  ] as unknown as typeof t.giftEvents;
+  const out = applyGiftOverlays(t, [ch("add", "s-new", seriesDraft(25000, 2031))], 0.025);
+  const fanned = out.giftEvents.filter((e) => (e as { seriesId?: string }).seriesId === "s-new");
+  expect(fanned.map((e) => [e.year, (e as { amount: number }).amount])).toEqual([
+    [2030, 25000],
+    [2031, 25000],
+  ]);
+});

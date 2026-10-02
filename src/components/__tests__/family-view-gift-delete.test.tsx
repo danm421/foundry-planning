@@ -122,6 +122,14 @@ const SERIES: GiftSeriesLite = {
   useCrummeyPowers: false,
 } as unknown as GiftSeriesLite;
 
+/** A recurring series that exists only as the scenario's own `gift` change. */
+const OVERLAY_SERIES: GiftSeriesLite = {
+  ...SERIES,
+  id: "gs-overlay",
+  annualAmount: 7000,
+  overlay: true,
+};
+
 function baseProps() {
   return {
     clientId: CLIENT_ID,
@@ -156,11 +164,11 @@ function writeCalls(): Array<{ url: string; method: string; body: unknown }> {
     .filter((c) => c.method !== "GET");
 }
 
-async function renderPage() {
+async function renderPage(series: GiftSeriesLite[] = [SERIES]) {
   await act(async () => {
     render(
       <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
-        <FamilyView {...baseProps()} />
+        <FamilyView {...baseProps()} initialGiftSeries={series} />
       </ClientAccessProvider>,
     );
   });
@@ -249,5 +257,22 @@ describe("FamilyView — deleting a gift follows the active scenario", () => {
     for (const c of writeCalls()) expect(c.url).not.toContain("/scenarios/");
 
     await waitFor(() => expect(screen.queryByText("$19,000/yr")).toBeNull());
+  });
+
+  it("deletes an overlay series as a scenario `remove` change — never the series route", async () => {
+    searchParams = new URLSearchParams("scenario=scn-1");
+    const [, deleteSeriesBtn] = await renderPage([OVERLAY_SERIES]);
+    await act(async () => { fireEvent.click(deleteSeriesBtn); });
+    await waitFor(() => expect(writeCalls()).toHaveLength(1));
+
+    // The WHOLE write list: one `remove` on the gift change, nothing else.
+    expect(writeCalls()).toEqual([
+      {
+        url: `/api/clients/${CLIENT_ID}/scenarios/scn-1/changes`,
+        method: "POST",
+        body: { op: "remove", targetKind: "gift", targetId: "gs-overlay" },
+      },
+    ]);
+    await waitFor(() => expect(screen.queryByText("$7,000/yr")).toBeNull());
   });
 });

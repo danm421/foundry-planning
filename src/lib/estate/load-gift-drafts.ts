@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { clients, scenarios, gifts, giftSeries } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { loadActiveGiftChanges } from "@/lib/scenario/changes";
-import { overlayGiftDrafts } from "@/lib/scenario/apply-gift-overlays";
+import { overlayGiftDrafts, partitionGiftChanges } from "@/lib/scenario/apply-gift-overlays";
 import {
   giftRowToDraft,
   giftSeriesRowToDraft,
@@ -23,6 +23,17 @@ export async function loadGiftDrafts(
   firmId: string,
   scenarioId: string,
 ): Promise<EstateFlowGift[]> {
+  return (await loadGiftDraftState(clientId, firmId, scenarioId)).drafts;
+}
+
+/** `loadGiftDrafts` plus which recurring gifts are the scenario's own `gift`
+ *  changes rather than rows of its `gift_series` partition. Only the former
+ *  open in the Solver's Changes tab. */
+export async function loadGiftDraftState(
+  clientId: string,
+  firmId: string,
+  scenarioId: string,
+): Promise<{ drafts: EstateFlowGift[]; overlaySeriesIds: string[] }> {
   const scenarioRows = await db
     .select({ id: scenarios.id, isBaseCase: scenarios.isBaseCase })
     .from(scenarios)
@@ -32,7 +43,7 @@ export async function loadGiftDrafts(
     scenarioId === "base"
       ? scenarioRows.find((s) => s.isBaseCase)
       : scenarioRows.find((s) => s.id === scenarioId);
-  if (!resolved) return [];
+  if (!resolved) return { drafts: [], overlaySeriesIds: [] };
 
   const [giftRows, giftSeriesRows, giftChanges] = await Promise.all([
     db.select().from(gifts).where(eq(gifts.clientId, clientId)).orderBy(asc(gifts.year), asc(gifts.createdAt)),
@@ -40,11 +51,15 @@ export async function loadGiftDrafts(
     loadActiveGiftChanges(resolved.id),
   ]);
 
-  return overlayGiftDrafts(
+  const drafts = overlayGiftDrafts(
     [
       ...giftRows.map(giftRowToDraft).filter((g): g is EstateFlowGift => g !== null),
       ...giftSeriesRows.map((r) => giftSeriesRowToDraft(r)),
     ],
     giftChanges,
   );
+  const overlaySeriesIds = partitionGiftChanges(giftChanges)
+    .adds.filter((a) => a.kind === "series")
+    .map((a) => a.id);
+  return { drafts, overlaySeriesIds };
 }

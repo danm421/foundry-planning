@@ -67,6 +67,10 @@ export function buildPlanInventory(
   tree: ClientData,
   gifts: EstateFlowGift[],
   clientId: string,
+  /** Ids of recurring gifts the scenario's own `gift` changes made. Only these
+   *  open in the Solver: a series in the scenario's `gift_series` partition has
+   *  no Solver editor, and a listed row must open. */
+  overlaySeriesIds: ReadonlySet<string> = new Set(),
 ): InventoryItem[] {
   const out: InventoryItem[] = [];
   const add = (
@@ -172,6 +176,7 @@ export function buildPlanInventory(
   for (const g of gifts) {
     const to = recipientNames.get(g.recipient.id) ?? "recipient";
     if (g.kind === "series") {
+      if (!overlaySeriesIds.has(g.id)) continue;
       add("gift_series", g.id, `Recurring gift to ${to} · ${g.startYear}–${g.endYear}`);
     } else {
       add("gift", g.id, `Gift to ${to} · ${g.year}`);

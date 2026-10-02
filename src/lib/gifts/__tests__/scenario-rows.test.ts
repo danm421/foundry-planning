@@ -293,6 +293,34 @@ describe("overlayScenarioGiftRows", () => {
     expect(series.map((s) => s.id)).toEqual(["base-s", "new-s"]);
   });
 
+  it("marks only the series built from a `gift` add as an overlay row", () => {
+    const { series } = overlayScenarioGiftRows(
+      [],
+      [baseSeries],
+      [ch("add", "new-s", {
+        kind: "series", id: "new-s", startYear: 2028, endYear: 2032,
+        annualAmount: 20000, amountMode: "fixed", inflationAdjust: false,
+        grantor: "client", recipient: { kind: "entity", id: "slat-1" }, crummey: false,
+      })],
+    );
+    expect(series.find((s) => s.id === "base-s")?.overlay).toBeUndefined();
+    expect(series.find((s) => s.id === "new-s")?.overlay).toBe(true);
+  });
+
+  it("an add on a partition series' own id replaces it with an overlay row", () => {
+    const { series } = overlayScenarioGiftRows(
+      [],
+      [baseSeries],
+      [ch("add", "base-s", {
+        kind: "series", id: "base-s", startYear: 2027, endYear: 2040,
+        annualAmount: 25000, amountMode: "fixed", inflationAdjust: false,
+        grantor: "spouse", recipient: { kind: "family_member", id: "fm1" }, crummey: true,
+      })],
+    );
+    expect(series).toHaveLength(1);
+    expect(series[0]).toMatchObject({ id: "base-s", endYear: 2040, overlay: true });
+  });
+
   it("drops a base gift the scenario removed", () => {
     const { gifts } = overlayScenarioGiftRows([baseGift], [baseSeries], [ch("remove", "base-g", null)]);
     expect(gifts).toEqual([]);

@@ -83,7 +83,7 @@ const gifts = [
   { kind: "series", id: "g2", startYear: 2028, endYear: 2032, annualAmount: 1, amountMode: "fixed", inflationAdjust: false, grantor: "client", recipient: { kind: "entity", id: "t1" }, crummey: false },
 ] as unknown as EstateFlowGift[];
 
-const items = buildPlanInventory(tree, gifts, "client-1");
+const items = buildPlanInventory(tree, gifts, "client-1", new Set(["g2"]));
 const byType = (k: string) => items.filter((i) => i.typeKey === k);
 const ids = (k: string) => byType(k).map((i) => i.id);
 
@@ -128,6 +128,15 @@ describe("buildPlanInventory", () => {
       id: "g2",
       label: "Recurring gift to Family Trust · 2028–2032",
     });
+  });
+
+  it("lists a recurring gift only when the scenario's own `gift` change made it", () => {
+    // A partition series (the scenario's cloned copy) has no Solver editor, so
+    // listing it would be a row that cannot be opened.
+    expect(ids("gift_series")).toEqual(["g2"]);
+    const none = buildPlanInventory(tree, gifts, "client-1");
+    expect(none.filter((i) => i.typeKey === "gift_series")).toEqual([]);
+    expect(none.filter((i) => i.typeKey === "gift").map((i) => i.id)).toEqual(["g1"]);
   });
 
   it("lists every entity under trust, not only trusts", () => {

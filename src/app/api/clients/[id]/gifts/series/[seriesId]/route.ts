@@ -6,6 +6,7 @@ import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { resolveScenarioId } from "@/lib/scenario/resolve-scenario-param";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { parseBody } from "@/lib/schemas/common";
 import { giftSeriesUpdateSchema } from "@/lib/schemas/gift-series";
@@ -22,6 +23,18 @@ export async function PATCH(
     const { orgId: callerOrg } = await requireOrgAndUser();
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
+
+    // `gift_series` is partitioned by `scenario_id`: the write lands in the
+    // partition `?scenario=` names (the base case's when absent), never in
+    // whichever partition happens to hold the id. A foreign or unknown scenario
+    // resolves to nothing and 404s before any write.
+    const scenarioId = await resolveScenarioId(
+      id,
+      new URL(request.url).searchParams.get("scenario"),
+    );
+    if (!scenarioId) {
+      return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
+    }
 
     const parsed = await parseBody(giftSeriesUpdateSchema, request);
     if (!parsed.ok) return parsed.response;
@@ -132,7 +145,13 @@ export async function PATCH(
         ...(d.notes !== undefined && { notes: d.notes ?? null }),
         updatedAt: new Date(),
       })
-      .where(and(eq(giftSeries.id, seriesId), eq(giftSeries.clientId, id)))
+      .where(
+        and(
+          eq(giftSeries.id, seriesId),
+          eq(giftSeries.clientId, id),
+          eq(giftSeries.scenarioId, scenarioId),
+        ),
+      )
       .returning();
 
     if (!updated) {
@@ -159,7 +178,7 @@ export async function PATCH(
 
 // DELETE /api/clients/[id]/gifts/series/[seriesId] — remove a gift_series row
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string; seriesId: string }> },
 ) {
   try {
@@ -168,9 +187,27 @@ export async function DELETE(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
+    // `gift_series` is partitioned by `scenario_id`: the write lands in the
+    // partition `?scenario=` names (the base case's when absent), never in
+    // whichever partition happens to hold the id. A foreign or unknown scenario
+    // resolves to nothing and 404s before any write.
+    const scenarioId = await resolveScenarioId(
+      id,
+      new URL(request.url).searchParams.get("scenario"),
+    );
+    if (!scenarioId) {
+      return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
+    }
+
     const [deleted] = await db
       .delete(giftSeries)
-      .where(and(eq(giftSeries.id, seriesId), eq(giftSeries.clientId, id)))
+      .where(
+        and(
+          eq(giftSeries.id, seriesId),
+          eq(giftSeries.clientId, id),
+          eq(giftSeries.scenarioId, scenarioId),
+        ),
+      )
       .returning();
 
     if (!deleted) {
