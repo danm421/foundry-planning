@@ -259,6 +259,31 @@ describe("list_scenarios", () => {
     expect(serialized).not.toContain("1962-05-04");
   });
 
+  it("names a single growth-key edit by its label, still with no values", async () => {
+    dbRows.current = [{ id: "s1", name: "Retire Early", isBaseCase: false }];
+    loadPanelData.mockResolvedValue({
+      scenarioId: "s1",
+      scenarioName: "Retire Early",
+      changes: [
+        {
+          id: "c10", scenarioId: "s1", opType: "edit", targetKind: "plan_settings", targetId: "client-1",
+          payload: { defaultGrowthTaxable: { from: 0.06, to: 0.071 } },
+          toggleGroupId: null, orderIndex: 0, updatedAt: new Date("2026-01-01"), enabled: true, label: null,
+        },
+      ],
+      toggleGroups: [],
+      cascadeWarnings: [],
+      targetNames: { "plan_settings:client-1": "Plan settings" },
+    });
+    const out = (await byName("list_scenarios").run(
+      { clientId: "c1", scenarioId: "s1" },
+      principal,
+    )) as Record<string, unknown>;
+    const detail = out.detail as { changes: Array<{ description: string }> };
+    expect(detail.changes[0].description).toBe("Changed Default growth — taxable on Plan settings.");
+    expect(JSON.stringify(out)).not.toContain("7.1");
+  });
+
   it("rejects when the caller cannot access the household", async () => {
     verifyClientAccessFor.mockResolvedValue({ ok: false, permission: "view", firmId: "org_1", access: "none" });
     await expect(byName("list_scenarios").run({ clientId: "c1" }, principal)).rejects.toThrow(DENIED_MESSAGE);

@@ -2,7 +2,7 @@ import type { ScenarioChange } from "@/engine/scenario/types";
 import type { ChangeRow } from "../types";
 import type { KindSpec } from "./specs";
 import type { ResolveContext } from "./resolve";
-import { nameFor, fieldLabel, fmtFieldValue } from "./format";
+import { nameFor, fieldLabel as defaultLabel, fmtFieldValue as defaultValue } from "./format";
 
 export interface DescribeContext {
   targetNames: Record<string, string>;
@@ -25,10 +25,18 @@ export function removeRow(area: ChangeRow["area"], name: string, detail: string[
   return { area, what: name, op: "remove", before: "In plan", after: "Removed", detail };
 }
 
+/** How an edit's field names and values read; a kind with its own vocabulary
+ *  (plan settings) passes its own. */
+export interface EditFormat {
+  label: (field: string) => string;
+  value: (field: string, v: unknown) => string;
+}
+
 export function editRow(
   c: ScenarioChange,
   spec: KindSpec,
   name: string,
+  { label: fieldLabel, value: fmtFieldValue }: EditFormat = { label: defaultLabel, value: defaultValue },
 ): ChangeRow {
   const payload = (c.payload ?? {}) as EditPayload;
   const fields = Object.keys(payload);

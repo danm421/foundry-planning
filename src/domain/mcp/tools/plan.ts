@@ -9,7 +9,7 @@ import {
   refFromString,
   type EstateCompareRef,
 } from "@/lib/scenario/scenario-from-search-params";
-import { describeChangeUnit } from "@/lib/scenario/scenario-change-describe";
+import { describeChangeUnit, describeFieldLabel } from "@/lib/scenario/scenario-change-describe";
 import { visibleChangeFields } from "@/lib/scenario/hidden-change-fields";
 import type { ScenarioChange } from "@/engine/scenario/types";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
@@ -76,7 +76,7 @@ function describeChange(
     const fields = Object.keys(visible);
     if (fields.length === 1) {
       const name = targetNames[`${c.targetKind}:${c.targetId}`] ?? `${c.targetKind} ${c.targetId.slice(0, 6)}`;
-      return `Changed ${fields[0]} on ${name}.`;
+      return `Changed ${describeFieldLabel(c.targetKind, fields[0])} on ${name}.`;
     }
   }
   return describeChangeUnit({ kind: "single", change: c }, targetNames);

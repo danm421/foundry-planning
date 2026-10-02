@@ -19,8 +19,7 @@ import { treeMilestones, withdrawalRowsForDisplay } from "./scenario-milestones"
 import { resolveInflationRate } from "@/lib/inflation";
 import { amortizeLiability } from "@/engine/liabilities";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
-import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
-import { growthSettingsOverride, storedInflationRate } from "@/lib/scenario/growth-settings-override";
+import { storedInflationRate } from "@/lib/scenario/growth-settings-override";
 import { planSettingsEngineToFormProps } from "@/lib/scenario/view-adapters";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 import { getLatestTaxReturn } from "@/lib/tax-returns/store";
@@ -76,8 +75,7 @@ export async function loadAssumptionsViewProps(
     allocationRows,
     assetClassRows,
     riskProfileRows,
-    { effectiveTree, resolutionContext },
-    scenarioGrowthOverride,
+    { effectiveTree, resolutionContext, growthOverride },
   ] = await Promise.all([
     db
       .select()
@@ -95,14 +93,6 @@ export async function loadAssumptionsViewProps(
       .from(clientRiskProfiles)
       .where(and(eq(clientRiskProfiles.clientId, id), eq(clientRiskProfiles.firmId, firmId))),
     loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
-    // The scenario's own growth & inflation values, for the stored custom
-    // inflation rate below (the tree only carries the resolved one). Same
-    // inputs as `loadEffectiveTree`'s own override, so the two agree.
-    scenarioParam
-      ? Promise.all([loadScenarioChanges(scenarioParam), loadScenarioToggleGroups(scenarioParam)]).then(
-          ([changes, groups]) => growthSettingsOverride(changes, {}, groups),
-        )
-      : Promise.resolve({}),
   ]);
 
   const riskLevel = riskProfileRows[0]?.compositeLevel ?? clientRow.riskTolerance;
@@ -143,7 +133,7 @@ export async function loadAssumptionsViewProps(
     ? planSettingsEngineToFormProps(
         effectiveTree.planSettings,
         effectiveTree.client,
-        storedInflationRate(String(settings.inflationRate), scenarioGrowthOverride),
+        storedInflationRate(String(settings.inflationRate), growthOverride ?? {}),
       )
     : null;
   const storedCapitalLossLt = scenarioSettings

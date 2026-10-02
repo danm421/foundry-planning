@@ -280,7 +280,7 @@ describe("GrowthInflationForm — inside a scenario", () => {
     fireEvent.change(document.getElementById("defaultGrowthTaxable")!, { target: { value: "5000" } });
     await settleAutosave();
 
-    await waitFor(() => expect(screen.getByText(/defaultGrowthTaxable must be a number/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Default growth — taxable must be between/i)).toBeInTheDocument());
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

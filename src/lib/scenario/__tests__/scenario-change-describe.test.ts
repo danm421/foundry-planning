@@ -166,7 +166,7 @@ describe("describeChangeUnit — growth & inflation settings", () => {
     expect(settingsEdit({ inflationRate: { from: 0.025, to: 0.03 } })).toContain("Inflation rate");
     expect(settingsEdit({ inflationRate: { from: 0.025, to: 0.03 } })).toContain("2.5% → 3%");
     expect(settingsEdit({ inflationRateSource: { from: "asset_class", to: "custom" } })).toContain(
-      "Inflation source on Plan settings: asset_class → custom",
+      "Inflation source on Plan settings: Asset class → Custom",
     );
   });
 
@@ -191,5 +191,9 @@ describe("describeChangeUnit — growth & inflation settings", () => {
 
   it("leaves a key it has no label for as the raw key", () => {
     expect(settingsEdit({ flatFederalRate: { from: 0.22, to: 0.24 } })).toContain("flatFederalRate");
+  });
+
+  it("prints a toggle as On / Off", () => {
+    expect(settingsEdit({ medicarePremiumInflationEnabled: { from: true, to: false } })).toContain("On → Off");
   });
 });

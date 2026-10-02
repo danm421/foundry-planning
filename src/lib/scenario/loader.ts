@@ -33,7 +33,11 @@ import { withSynthesizedEntityChecking } from "@/lib/entities/entity-checking";
 import { resolveRefYears } from "@/lib/year-refs";
 import { applyGiftOverlays } from "./apply-gift-overlays";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "./changes";
-import { growthSettingsOverride, stripGrowthSettingsKeys } from "./growth-settings-override";
+import {
+  growthSettingsOverride,
+  stripGrowthSettingsKeys,
+  type GrowthSettingsOverride,
+} from "./growth-settings-override";
 
 /**
  * Walks an `add` change's raw payload through the matching resolver so the
@@ -74,6 +78,10 @@ export interface LoadEffectiveTreeResult {
    *  Optional because `applyScenarioChangesWithRefs` (used directly in some
    *  tests) does not always have one. */
   resolutionContext?: ResolutionContext;
+  /** The growth & inflation values this scenario sets (see
+   *  `growthSettingsOverride`). Present only when it sets any, so a scenario
+   *  without growth edits is shaped exactly as before. */
+  growthOverride?: GrowthSettingsOverride;
 }
 
 /**
@@ -444,7 +452,11 @@ export const loadEffectiveTree = cache(
       };
     }
 
-    return { ...result, resolutionContext };
+    return {
+      ...result,
+      resolutionContext,
+      ...(Object.keys(override).length > 0 && { growthOverride: override }),
+    };
   },
 );
 

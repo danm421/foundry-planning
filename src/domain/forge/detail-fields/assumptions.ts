@@ -220,7 +220,7 @@ export const ASSUMPTIONS_ENTITIES: readonly DetailEntity[] = [
         key: "inflationRate",
         label: "Custom",
         kind: "rate",
-        nullable: true,
+        nullable: false,
         defaultValue: 0.03,
         notes: "Sent only when inflationRateSource is 'custom'; ignored otherwise (the resolved asset-class rate applies).",
       },

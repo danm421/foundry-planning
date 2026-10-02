@@ -53,3 +53,49 @@ describe("relocation describer", () => {
     expect(row.after).toBe("Removed");
   });
 });
+
+describe("plan_settings describer — growth & inflation", () => {
+  const PORTFOLIO = "7f3a91c2-0000-4000-8000-0000000000ab";
+  const gctx = {
+    targetNames: {},
+    resolve: buildResolveContext({
+      ...EMPTY_RESOLVE_DATA,
+      modelPortfoliosById: { [PORTFOLIO]: { name: "Balanced 60/40", rate: 0.06 } },
+    }),
+  };
+  const edit = (payload: Record<string, { from: unknown; to: unknown }>) =>
+    describeChange(ch({ targetKind: "plan_settings", targetId: "client-1", payload }), gctx);
+
+  it("a default-growth rate change reads by name, in percents", () => {
+    const row = edit({ defaultGrowthTaxable: { from: 0.06, to: 0.07 } });
+    expect(row.what).toBe("Default growth — taxable");
+    expect(row.before).toBe("6%");
+    expect(row.after).toBe("7%");
+  });
+
+  it("a source change prints words, not enum tokens", () => {
+    const row = edit({ growthSourceCash: { from: "custom", to: "inflation" } });
+    expect(row.what).toBe("Growth source — cash");
+    expect(row.before).toBe("Custom");
+    expect(row.after).toBe("Inflation");
+  });
+
+  it("a portfolio switch names the portfolio, never its uuid", () => {
+    const row = edit({ modelPortfolioIdTaxable: { from: null, to: PORTFOLIO } });
+    expect(row.what).toBe("Model portfolio — taxable");
+    expect(row.before).toBe("None");
+    expect(row.after).toBe("Balanced 60/40");
+    expect(JSON.stringify(row)).not.toContain(PORTFOLIO);
+  });
+
+  it("a multi-field edit labels each field's detail line", () => {
+    const row = edit({
+      inflationRate: { from: 0.025, to: 0.03 },
+      medicarePremiumInflationEnabled: { from: true, to: false },
+    });
+    expect(row.detail).toEqual([
+      "Inflation rate: 2.5% → 3%",
+      "Medicare premium inflation: On → Off",
+    ]);
+  });
+});

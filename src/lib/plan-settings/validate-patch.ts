@@ -3,6 +3,7 @@
 // same reason in both modes. The benchmark-portfolio firm check needs the DB
 // and stays in the route.
 import { isUSPSStateCode } from "@/lib/usps-states";
+import { GROWTH_FIELD_LABELS } from "@/lib/scenario/growth-field-labels";
 
 // Mirrors `dependentOverrideEnum` in the schema; the schema module is not
 // imported because this file ships in the client bundle with the autosave hook.
@@ -33,10 +34,10 @@ const AMOUNT_KEYS = [
 
 // Mirror `growthSourceEnum` and `inflationRateSourceEnum` in the schema, for the
 // same reason as `COVERAGE_VALUES`.
-const GROWTH_SOURCE_VALUES: readonly unknown[] = [
+export const GROWTH_SOURCE_VALUES: readonly unknown[] = [
   "default", "model_portfolio", "ticker_portfolio", "custom", "asset_mix", "inflation", "holdings",
 ];
-const INFLATION_SOURCE_VALUES: readonly unknown[] = ["asset_class", "custom"];
+export const INFLATION_SOURCE_VALUES: readonly unknown[] = ["asset_class", "custom"];
 
 const GROWTH_SOURCE_KEYS = [
   "growthSourceTaxable",
@@ -91,7 +92,8 @@ export function validatePlanSettingsPatch(body: Record<string, unknown>): string
     if (value === undefined) continue;
     const blank = value === null || (typeof value === "string" && value.trim() === "");
     const n = blank ? null : finiteNumber(value);
-    if (n === null || Math.abs(n) >= 10) return `${key} must be a number`;
+    if (n === null) return `${key} must be a number`;
+    if (Math.abs(n) >= 10) return `${GROWTH_FIELD_LABELS[key] ?? key} must be between -1000% and 1000%`;
   }
 
   for (const key of RATE_KEYS) {

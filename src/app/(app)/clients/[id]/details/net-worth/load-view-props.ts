@@ -211,7 +211,28 @@ export async function loadNetWorthViewProps(
           firmInflationAc ? { geometricReturn: firmInflationAc.geometricReturn } : null,
           clientInflationOverride,
         );
-  const growthSettings = scenarioGrowth ? { ...settings, ...scenarioGrowth } : settings;
+  const growthSettings = scenarioGrowth && settings
+    ? {
+        ...settings,
+        // Only the keys the category defaults read; the rest of the form props
+        // (the resolved `inflationRate` among them) must not overlay the row.
+        growthSourceTaxable: scenarioGrowth.growthSourceTaxable ?? settings.growthSourceTaxable,
+        modelPortfolioIdTaxable: scenarioGrowth.modelPortfolioIdTaxable,
+        defaultGrowthTaxable: scenarioGrowth.defaultGrowthTaxable,
+        growthSourceCash: scenarioGrowth.growthSourceCash ?? settings.growthSourceCash,
+        modelPortfolioIdCash: scenarioGrowth.modelPortfolioIdCash,
+        defaultGrowthCash: scenarioGrowth.defaultGrowthCash,
+        growthSourceRetirement: scenarioGrowth.growthSourceRetirement ?? settings.growthSourceRetirement,
+        modelPortfolioIdRetirement: scenarioGrowth.modelPortfolioIdRetirement,
+        defaultGrowthRetirement: scenarioGrowth.defaultGrowthRetirement,
+        growthSourceRealEstate: scenarioGrowth.growthSourceRealEstate ?? settings.growthSourceRealEstate,
+        defaultGrowthRealEstate: scenarioGrowth.defaultGrowthRealEstate,
+        growthSourceBusiness: scenarioGrowth.growthSourceBusiness ?? settings.growthSourceBusiness,
+        defaultGrowthBusiness: scenarioGrowth.defaultGrowthBusiness,
+        growthSourceLifeInsurance: scenarioGrowth.growthSourceLifeInsurance ?? settings.growthSourceLifeInsurance,
+        defaultGrowthLifeInsurance: scenarioGrowth.defaultGrowthLifeInsurance,
+      }
+    : settings;
 
   // Build milestones for MilestoneYearPicker in the savings sub-form
   const planStartYear = settings?.planStartYear ?? new Date().getFullYear();

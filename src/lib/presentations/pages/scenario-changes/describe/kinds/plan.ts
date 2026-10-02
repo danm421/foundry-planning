@@ -1,7 +1,13 @@
 import { USPS_STATE_NAMES, isUSPSStateCode } from "@/lib/usps-states";
 import { editRow, addRow, removeRow } from "../generic";
-import { nameFor } from "../format";
+import { nameFor, fieldLabel, fmtFieldValue } from "../format";
 import { toNum } from "../labels";
+import {
+  GROWTH_FIELD_LABELS,
+  GROWTH_PERCENT_KEYS,
+  growthEnumLabel,
+  isGrowthModelPortfolioKey,
+} from "@/lib/scenario/growth-field-labels";
 import { SPEC } from "../specs";
 import { DESCRIBERS, simpleDescriber, type Describer } from "../registry";
 
@@ -22,8 +28,26 @@ const client: Describer = (c, ctx) => {
   return row;
 };
 
+/** A fraction as a percent to two decimals ("7%", "2.5%", "3.25%"); `pct`'s one
+ *  decimal would turn 0.07 into "7.0%" and 3.25% into "3.3%". */
+const ratePct = (v: unknown): string => {
+  const n = toNum(v);
+  return n == null ? "—" : `${Number((n * 100).toFixed(2))}%`;
+};
+
+/** Growth & Inflation keys read by name, rates as percents, enum choices as
+ *  words and a portfolio by its name — never a raw key, fraction or uuid. */
 const planSettings: Describer = (c, ctx) =>
-  editRow(c, { ...SPEC.plan_settings }, nameFor(c, ctx.targetNames) ?? "Plan assumption");
+  editRow(c, { ...SPEC.plan_settings }, nameFor(c, ctx.targetNames) ?? "Plan assumption", {
+    label: (f) => GROWTH_FIELD_LABELS[f] ?? fieldLabel(f),
+    value: (f, v) => {
+      if (isGrowthModelPortfolioKey(f)) {
+        return v == null ? "None" : (ctx.resolve.modelPortfolio(String(v))?.name ?? "A model portfolio");
+      }
+      if (GROWTH_PERCENT_KEYS.has(f)) return ratePct(v);
+      return growthEnumLabel(f, v) ?? fmtFieldValue(f, v);
+    },
+  });
 
 const familyMember = simpleDescriber({
   area: "Plan & Assumptions", noun: "family member", whatMode: "name",

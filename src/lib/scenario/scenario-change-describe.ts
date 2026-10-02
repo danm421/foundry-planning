@@ -1,58 +1,29 @@
 import type { ScenarioChange } from "@/engine/scenario/types";
 import { visibleChangeFields } from "./hidden-change-fields";
+import {
+  GROWTH_FIELD_LABELS,
+  GROWTH_PERCENT_KEYS,
+  growthEnumLabel,
+  isGrowthModelPortfolioKey,
+} from "./growth-field-labels";
 
 export type ChangeUnit =
   | { kind: "single"; change: ScenarioChange & { enabled: boolean } }
   | { kind: "group"; groupName: string; changes: Array<ScenarioChange & { enabled: boolean }> };
 
-const GROWTH_CATEGORIES = [
-  ["Taxable", "taxable"],
-  ["Cash", "cash"],
-  ["Retirement", "retirement"],
-  ["RealEstate", "real estate"],
-  ["Business", "business"],
-  ["LifeInsurance", "life insurance"],
-] as const;
-
-/** Plain names for the Growth & Inflation keys of a `plan_settings` edit; any
- *  other key prints as itself. */
-const PLAN_SETTINGS_LABELS: Record<string, string> = {
-  inflationRateSource: "Inflation source",
-  inflationRate: "Inflation rate",
-  taxInflationRate: "Tax inflation rate",
-  ssWageGrowthRate: "Social Security wage growth",
-  medicarePremiumInflationRate: "Medicare premium inflation rate",
-  medicarePremiumInflationEnabled: "Medicare premium inflation",
-  ...Object.fromEntries(
-    GROWTH_CATEGORIES.flatMap(([key, name]) => [
-      [`defaultGrowth${key}`, `Default growth — ${name}`],
-      [`growthSource${key}`, `Growth source — ${name}`],
-    ]),
-  ),
-  ...Object.fromEntries(
-    GROWTH_CATEGORIES.slice(0, 3).map(([key, name]) => [`modelPortfolioId${key}`, `Model portfolio — ${name}`]),
-  ),
-};
-
-/** Keys whose values are fractions and read as percents. */
-const PERCENT_KEYS: ReadonlySet<string> = new Set([
-  "inflationRate",
-  "taxInflationRate",
-  "ssWageGrowthRate",
-  "medicarePremiumInflationRate",
-  ...GROWTH_CATEGORIES.map(([key]) => `defaultGrowth${key}`),
-]);
-
-function fieldLabel(targetKind: string, field: string): string {
-  return (targetKind === "plan_settings" && PLAN_SETTINGS_LABELS[field]) || field;
+/** The readable name of an edited field: a name, never a value. */
+export function describeFieldLabel(targetKind: string, field: string): string {
+  return (targetKind === "plan_settings" && GROWTH_FIELD_LABELS[field]) || field;
 }
 
 /** One side of a field change. A model portfolio is a bare uuid, so it reads as
  *  "set" / "none"; a percent key is a fraction. */
 function fmtFieldVal(targetKind: string, field: string, v: unknown): string {
   if (targetKind === "plan_settings") {
-    if (field.startsWith("modelPortfolioId")) return v == null ? "none" : "a model portfolio";
-    if (PERCENT_KEYS.has(field) && typeof v === "number") return `${Number((v * 100).toFixed(4))}%`;
+    if (isGrowthModelPortfolioKey(field)) return v == null ? "none" : "a model portfolio";
+    if (GROWTH_PERCENT_KEYS.has(field) && typeof v === "number") return `${Number((v * 100).toFixed(4))}%`;
+    const label = growthEnumLabel(field, v);
+    if (label) return label;
   }
   return fmtVal(v);
 }
@@ -97,9 +68,9 @@ export function describeChangeUnit(unit: ChangeUnit, targetNames: Record<string,
     if (fields.length === 1) {
       const f = fields[0];
       const { from, to } = payload[f];
-      return `Changed ${fieldLabel(c.targetKind, f)} on ${name}: ${fmtFieldVal(c.targetKind, f, from)} → ${fmtFieldVal(c.targetKind, f, to)}.`;
+      return `Changed ${describeFieldLabel(c.targetKind, f)} on ${name}: ${fmtFieldVal(c.targetKind, f, from)} → ${fmtFieldVal(c.targetKind, f, to)}.`;
     }
-    return `Changed ${fields.length} fields on ${name}: ${fields.map((f) => fieldLabel(c.targetKind, f)).join(", ")}.`;
+    return `Changed ${fields.length} fields on ${name}: ${fields.map((f) => describeFieldLabel(c.targetKind, f)).join(", ")}.`;
   }
   // group
   const names = unit.changes.map((c) => nameFor(c, targetNames));

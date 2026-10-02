@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { validatePlanSettingsPatch } from "../validate-patch";
+import { validatePlanSettingsPatch, GROWTH_SOURCE_VALUES, INFLATION_SOURCE_VALUES } from "../validate-patch";
+import { growthSourceEnum, inflationRateSourceEnum } from "@/db/schema";
 
 describe("validatePlanSettingsPatch", () => {
   it("accepts an empty patch and in-range values, as numbers or decimal strings", () => {
@@ -91,8 +92,12 @@ describe("validatePlanSettingsPatch", () => {
     );
 
     it("refuses a rate the 5,4 decimal column cannot hold", () => {
-      expect(validatePlanSettingsPatch({ defaultGrowthTaxable: 10 })).toMatch(/defaultGrowthTaxable/);
-      expect(validatePlanSettingsPatch({ inflationRate: "-12" })).toMatch(/inflationRate/);
+      expect(validatePlanSettingsPatch({ defaultGrowthTaxable: 10 })).toBe(
+        "Default growth — taxable must be between -1000% and 1000%",
+      );
+      expect(validatePlanSettingsPatch({ inflationRate: "-12" })).toBe(
+        "Inflation rate must be between -1000% and 1000%",
+      );
     });
 
     it.each([
@@ -108,5 +113,12 @@ describe("validatePlanSettingsPatch", () => {
     it("leaves an absent key alone", () => {
       expect(validatePlanSettingsPatch({ residenceState: "CA" })).toBeNull();
     });
+  });
+
+  // The validator mirrors the schema enums (it ships in the client bundle and
+  // cannot import the schema); this pins the two copies together.
+  it("lists exactly the schema's growth and inflation source values", () => {
+    expect([...GROWTH_SOURCE_VALUES].sort()).toEqual([...growthSourceEnum.enumValues].sort());
+    expect([...INFLATION_SOURCE_VALUES].sort()).toEqual([...inflationRateSourceEnum.enumValues].sort());
   });
 });
