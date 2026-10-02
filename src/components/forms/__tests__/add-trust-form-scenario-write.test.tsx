@@ -581,6 +581,58 @@ describe("AddTrustForm — gift reads and writes follow the active scenario", ()
 });
 
 // ---------------------------------------------------------------------------
+// Income + remainder beneficiaries — base-only inside a scenario
+// ---------------------------------------------------------------------------
+
+// `beneficiary_designation` is a nested kind with no scenario overlay, so the
+// save skips the designations PUT inside a scenario. The rows used to stay fully
+// editable and the edit was dropped while the save reported success.
+describe("AddTrustForm — trust beneficiaries inside a scenario", () => {
+  beforeEach(() => {
+    searchParams = new URLSearchParams("");
+    refreshMock.mockClear();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const beneficiaryWrites = (m: FetchMock) =>
+    m.mock.calls.filter(([u]) => String(u).includes("/beneficiaries"));
+
+  it("SCENARIO MODE: both lists are read-only under the base-only note, and a save sends no designations", async () => {
+    searchParams = new URLSearchParams(`scenario=${SCENARIO_ID}`);
+    const fetchMock = installFetch([]);
+    const { container } = render(<AddTrustForm {...props("details", trust())} />);
+
+    const note = screen.getByText("Available on the base plan.");
+    const lists = note.nextElementSibling as HTMLElement;
+    expect(within(lists).getAllByRole("button", { name: /add beneficiary/i })).toHaveLength(2);
+    for (const add of within(lists).getAllByRole("button", { name: /add beneficiary/i })) {
+      expect(add).toBeDisabled();
+    }
+
+    submitForm(container);
+    await waitFor(() => expect(urlsOf(fetchMock)).toContain(changesUrl));
+    expect(beneficiaryWrites(fetchMock)).toEqual([]);
+  });
+
+  it("BASE MODE: the lists stay editable and a save still PUTs the designations", async () => {
+    const fetchMock = installFetch([]);
+    const { container } = render(<AddTrustForm {...props("details", trust())} />);
+
+    expect(screen.queryByText("Available on the base plan.")).toBeNull();
+    for (const add of screen.getAllByRole("button", { name: /add beneficiary/i })) {
+      expect(add).toBeEnabled();
+    }
+
+    submitForm(container);
+    await waitFor(() =>
+      expect(findCall(fetchMock, (u, init) => u.endsWith(`/entities/${TRUST_ID}/beneficiaries`) && init.method === "PUT")).toBeDefined(),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Draft builders — the merge the scenario `add` depends on
 // ---------------------------------------------------------------------------
 

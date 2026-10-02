@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, forwardRef, useImper
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { AssetMixTab, type AssetClassOption } from "./asset-mix-tab";
+import { BasePlanOnly } from "@/components/base-plan-only";
 import { HoldingsTab } from "./holdings-tab";
 import { BENEFICIARY_REQUIRED_MESSAGE } from "@/lib/accounts/is-529";
 import { setAccountDeriveFromHoldings } from "@/lib/investments/holdings-client";
@@ -3047,21 +3048,25 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       {/* Asset Mix tab */}
       {!lockTab && showAssetMixTab && assetClasses && (
         <div className={activeTab === "asset_mix" ? "" : "hidden"}>
-          <AssetMixTab
-            assetClasses={assetClasses}
-            inheritedPortfolioName={
-              growthSource === "model_portfolio" && modelPortfolioId
-                ? modelPortfolios?.find((mp) => mp.id === modelPortfolioId)?.name
-                : growthSource === "ticker_portfolio" && tickerPortfolioId
-                  ? fundPortfolios?.find((fp) => fp.id === tickerPortfolioId)?.name
-                  : growthSource === "default" && catDefaultSource?.portfolioName
-                    ? catDefaultSource.portfolioName
-                    : undefined
-            }
-            allocations={customAllocations}
-            onChange={setCustomAllocations}
-            derivedFromHoldings={drivenByHoldings}
-          />
+          {/* Base-only inside a scenario: allocations have no scenario column,
+              so every save path skips their PUT there. */}
+          <BasePlanOnly readOnly={writer.scenarioActive} noteClassName="mb-3">
+            <AssetMixTab
+              assetClasses={assetClasses}
+              inheritedPortfolioName={
+                growthSource === "model_portfolio" && modelPortfolioId
+                  ? modelPortfolios?.find((mp) => mp.id === modelPortfolioId)?.name
+                  : growthSource === "ticker_portfolio" && tickerPortfolioId
+                    ? fundPortfolios?.find((fp) => fp.id === tickerPortfolioId)?.name
+                    : growthSource === "default" && catDefaultSource?.portfolioName
+                      ? catDefaultSource.portfolioName
+                      : undefined
+              }
+              allocations={customAllocations}
+              onChange={setCustomAllocations}
+              derivedFromHoldings={drivenByHoldings}
+            />
+          </BasePlanOnly>
         </div>
       )}
 
@@ -3164,12 +3169,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       {/* Income & Guarantees tab — annuity accounts only (Task 9) */}
       {!lockTab && category === "annuity" && (
         <div className={activeTab === "annuity" ? "" : "hidden"}>
-          {writer.scenarioActive && (
-            <p className="mb-3 rounded bg-warn/10 px-3 py-2 text-xs text-warn">
-              Contract terms are part of the base plan — edits here aren&apos;t saved
-              while you&apos;re viewing a scenario.
-            </p>
-          )}
           {annuityLoad === "failed" ? (
             <div role="alert" className="rounded border border-crit/30 bg-crit/10 px-3 py-3 text-sm text-crit">
               <p className="font-medium">This contract could not be loaded.</p>
@@ -3189,19 +3188,22 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           ) : annuityLoad === "loading" ? (
             <p className="text-sm text-ink-3">Loading the contract&hellip;</p>
           ) : (
-            <AnnuityTab
-              value={annuityContractResolved}
-              onChange={(next) => {
-                annuityUserEditedRef.current = true;
-                setAnnuityContract(next);
-              }}
-              accountValue={annuityAccountValue}
-              milestones={milestones}
-              clientFirstName={clientFirstName}
-              spouseFirstName={spouseFirstName}
-              ownerBirthYear={annuityOwnerBirthYear}
-              growthRate={annuityGrowthRate}
-            />
+            // Base-only inside a scenario: `saveAnnuityContract` skips the PUT there.
+            <BasePlanOnly readOnly={writer.scenarioActive} noteClassName="mb-3">
+              <AnnuityTab
+                value={annuityContractResolved}
+                onChange={(next) => {
+                  annuityUserEditedRef.current = true;
+                  setAnnuityContract(next);
+                }}
+                accountValue={annuityAccountValue}
+                milestones={milestones}
+                clientFirstName={clientFirstName}
+                spouseFirstName={spouseFirstName}
+                ownerBirthYear={annuityOwnerBirthYear}
+                growthRate={annuityGrowthRate}
+              />
+            </BasePlanOnly>
           )}
         </div>
       )}

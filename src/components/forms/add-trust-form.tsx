@@ -7,6 +7,7 @@ import { deriveIsIrrevocable, type TrustSubType } from "@/lib/entities/trust";
 import { defaultIsGrantorFor } from "@/lib/trust-defaults";
 import type { Designation, Entity, ExternalBeneficiary, FamilyMember } from "../family-view";
 import BeneficiaryRowList, { type BeneficiaryRow } from "./beneficiary-row-list";
+import { BasePlanOnly } from "@/components/base-plan-only";
 import { splitEvenly } from "./auto-split-percentages";
 import TrustEndsSelect, { type TrustEnds } from "./trust-ends-select";
 import { CurrencyInput } from "../currency-input";
@@ -970,31 +971,35 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
           </div>
 
           {/* Income + Remainder Beneficiaries — side-by-side when both visible.
-              Income is hidden for revocable trusts; remainder falls back to full width. */}
-          <div className={`mt-4 grid gap-4 ${showDistributionAndIncome ? "grid-cols-2" : "grid-cols-1"}`}>
-            {showDistributionAndIncome && (
+              Income is hidden for revocable trusts; remainder falls back to full width.
+              Base-only inside a scenario: designations have no overlay, so the
+              save skips them there (see `saveAsyncImpl`). */}
+          <BasePlanOnly readOnly={scenarioWriter.scenarioActive} noteClassName="mt-4">
+            <div className={`mt-4 grid gap-4 ${showDistributionAndIncome ? "grid-cols-2" : "grid-cols-1"}`}>
+              {showDistributionAndIncome && (
+                <BeneficiaryRowList
+                  tier="income"
+                  allowEntities={false}
+                  rows={incomeRows}
+                  onChange={setIncomeRows}
+                  members={members}
+                  externals={externals}
+                  entities={[]}
+                  household={household}
+                />
+              )}
               <BeneficiaryRowList
-                tier="income"
-                allowEntities={false}
-                rows={incomeRows}
-                onChange={setIncomeRows}
+                tier="remainder"
+                allowEntities={true}
+                rows={remainderRows}
+                onChange={setRemainderRows}
                 members={members}
                 externals={externals}
-                entities={[]}
+                entities={entities.filter((e) => e.id !== editing?.id)}
                 household={household}
               />
-            )}
-            <BeneficiaryRowList
-              tier="remainder"
-              allowEntities={true}
-              rows={remainderRows}
-              onChange={setRemainderRows}
-              members={members}
-              externals={externals}
-              entities={entities.filter((e) => e.id !== editing?.id)}
-              household={household}
-            />
-          </div>
+            </div>
+          </BasePlanOnly>
 
           {/* Distribution Policy (hidden for revocable) */}
           {showDistributionAndIncome && (
