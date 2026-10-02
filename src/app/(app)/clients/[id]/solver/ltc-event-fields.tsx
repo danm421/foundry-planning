@@ -94,6 +94,7 @@ export function LtcEventFields({
     sellingCostPct: DEFAULT_SELLING_COST_PCT,
   });
 
+  const lastProjectedYear = projectionYears.at(-1)?.year ?? tree.planSettings.planEndYear;
   const preview = event.homeSale ? homeSalePreview(projectionYears, tree, event.homeSale) : null;
 
   return (
@@ -215,7 +216,10 @@ export function LtcEventFields({
                   key={`sale-${event.homeSale.saleYear}`}
                   label="Sale year"
                   value={event.homeSale.saleYear}
-                  onCommit={(saleYear) => setSale({ saleYear })}
+                  onCommit={(saleYear) =>
+                    // A year outside the projection has no figures and the sale never runs.
+                    setSale({ saleYear: clamp(saleYear, tree.planSettings.planStartYear, lastProjectedYear) })
+                  }
                 />
               </div>
               <div role="radiogroup" aria-label="Price used for the sale" className="flex gap-4 text-[12px] text-ink">
@@ -265,7 +269,7 @@ export function LtcEventFields({
                 </div>
                 <div className="flex justify-between gap-4">
                   <dt>Mortgage left</dt>
-                  <dd className="tabular">{money.format(preview.mortgageLeft)}</dd>
+                  <dd className="tabular">{preview.mortgageLeft == null ? "—" : money.format(preview.mortgageLeft)}</dd>
                 </div>
                 <div className="flex justify-between gap-4">
                   <dt>Selling costs</dt>

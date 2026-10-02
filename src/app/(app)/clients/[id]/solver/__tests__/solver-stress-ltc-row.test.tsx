@@ -96,6 +96,20 @@ describe("LtcStressRow (draft)", () => {
     expect(valueNextTo(/Estimated cash to the household/)).toBe("$940,000 before tax");
   });
 
+  it("a sale year past the last projected year is pulled back to it, with real figures", () => {
+    render(<Harness base={plan} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /long-term care/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /sell the home/i }));
+    // The couple's plan runs to 2067 (Jane outlives the care), so that is the last projected year.
+    const year = screen.getByLabelText(/sale year/i) as HTMLInputElement;
+    fireEvent.change(year, { target: { value: "2090" } });
+    fireEvent.blur(year);
+    expect(screen.getByText(/Projected value in 2067/)).toBeTruthy();
+    expect(valueNextTo(/^Mortgage left$/)).not.toBe("—");
+    expect(valueNextTo(/Estimated cash to the household/)).toMatch(/^\$[\d,]+ before tax$/);
+    expect(screen.queryByText(/Projected value in 2090/)).toBeNull();
+  });
+
   it("on the base case, Add as change is disabled and says why", () => {
     render(<Harness base={plan} />);
     fireEvent.click(screen.getByRole("checkbox", { name: /long-term care/i }));

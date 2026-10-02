@@ -28,4 +28,15 @@ describe("homeSalePreview", () => {
     expect(p.mortgageLeft).toBe(0);
     expect(p.cashToHousehold).toBe(940_000);
   });
+
+  it("a sale year outside the projection: mortgage and cash are unknown, not $0", () => {
+    const tree = buildClientData({ liabilities: [] });
+    const years = runProjection(tree);
+    const past = years[years.length - 1].year + 1;
+    const p = homeSalePreview(years, tree, {
+      accountId: "acct-home", saleYear: past, price: { mode: "custom", amount: 1_000_000 }, sellingCostPct: 0.06,
+    });
+    expect(p.mortgageLeft).toBeNull();
+    expect(p.cashToHousehold).toBeNull();
+  });
 });

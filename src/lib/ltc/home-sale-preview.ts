@@ -8,14 +8,18 @@ export function homeSalePreview(
   years: ProjectionYear[],
   tree: ClientData,
   sale: LtcHomeSale,
-): { projectedValue: number | null; mortgageLeft: number; sellingCosts: number; cashToHousehold: number | null } {
+): { projectedValue: number | null; mortgageLeft: number | null; sellingCosts: number; cashToHousehold: number | null } {
   const y = years.find((p) => p.year === sale.saleYear);
   const projectedValue = y?.accountLedgers[sale.accountId]?.beginningValue ?? null;
-  const mortgageLeft = tree.liabilities
-    .filter((l) => l.linkedPropertyId === sale.accountId)
-    .reduce((sum, l) => sum + (y?.liabilityBalancesBoY[l.id] ?? 0), 0);
+  // A year the projection does not run has no balances to read: the mortgage is
+  // unknown, which is not the same as $0.
+  const mortgageLeft = y
+    ? tree.liabilities
+        .filter((l) => l.linkedPropertyId === sale.accountId)
+        .reduce((sum, l) => sum + (y.liabilityBalancesBoY[l.id] ?? 0), 0)
+    : null;
   const price = sale.price.mode === "custom" ? sale.price.amount : projectedValue;
-  if (price == null) return { projectedValue, mortgageLeft, sellingCosts: 0, cashToHousehold: null };
+  if (price == null || mortgageLeft == null) return { projectedValue, mortgageLeft, sellingCosts: 0, cashToHousehold: null };
   const sellingCosts = price * sale.sellingCostPct;
   return { projectedValue, mortgageLeft, sellingCosts, cashToHousehold: price - sellingCosts - mortgageLeft };
 }
