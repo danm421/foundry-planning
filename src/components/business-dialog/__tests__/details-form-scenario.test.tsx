@@ -108,11 +108,48 @@ describe("BusinessDetailsForm — scenario mode", () => {
         businessType: "llc",
         businessTaxTreatment: "qbi",
         distributionPolicyPercent: 0.4,
-        growthSource: "default",
       },
     });
-    // A blank growth rate is OMITTED, not sent as null.
+    // Growth was not touched, so neither growth key is sent: the edit is diffed
+    // against the RESOLVED rate, and a blank would record a change nobody made.
     expect("growthRate" in list[0].body.desiredFields).toBe(false);
+    expect("growthSource" in list[0].body.desiredFields).toBe(false);
+  });
+
+  it("clearing a custom rate sends growthRate: null beside growthSource: default", async () => {
+    const { ref } = renderForm({ ...EXISTING, growthRate: 0.11, growthSource: "custom" } as BusinessAccount);
+    type("biz-growth", "");
+    await act(async () => {
+      await ref.current!.saveAsync();
+    });
+
+    const [only] = calls();
+    expect(only.body.desiredFields).toMatchObject({ growthSource: "default", growthRate: null });
+  });
+
+  it("a business created in the scenario and then cleared sends the clear to its minted id", async () => {
+    const { ref } = renderForm();
+    type("biz-name", "New Co");
+    type("biz-growth", "11");
+    await act(async () => {
+      await ref.current!.saveAsync();
+    });
+    const bizId = calls()[0].body.entity.id as string;
+    expect(calls()[0].body.entity).toMatchObject({ growthSource: "custom", growthRate: 0.11 });
+
+    fetchMock.mockClear();
+    type("biz-growth", "");
+    await act(async () => {
+      await ref.current!.saveAsync();
+    });
+    const [edit] = calls();
+    // The changes writer folds this into the add row's payload, so the stale 11%
+    // must be overwritten with null — omitting it would leave the add at 11%.
+    expect(edit.body).toMatchObject({
+      op: "edit",
+      targetId: bizId,
+      desiredFields: { growthSource: "default", growthRate: null },
+    });
   });
 
   it("an add posts the business and its default-checking child as two scenario adds", async () => {

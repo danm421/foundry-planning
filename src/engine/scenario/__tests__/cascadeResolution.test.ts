@@ -1,7 +1,7 @@
 // src/engine/scenario/__tests__/cascadeResolution.test.ts
 import { describe, it, expect } from "vitest";
 import { resolveCascades } from "../cascadeResolution";
-import type { ClientData, Account, Transfer, SavingsRule, BeneficiaryRef, Will } from "@/engine/types";
+import type { ClientData, Account, Liability, Transfer, SavingsRule, BeneficiaryRef, Will } from "@/engine/types";
 import type { StockOptionPlan } from "@/engine/equity/types";
 import type { TargetKind } from "../types";
 
@@ -130,6 +130,58 @@ describe("resolveCascades — accounts → stockOptionPlans", () => {
     const t: ClientData = tree({ stockOptionPlans: [plan("a-keep")] });
     const warnings = resolveCascades(t, []);
     expect(t.stockOptionPlans).toHaveLength(1);
+    expect(warnings).toEqual([]);
+  });
+});
+
+describe("resolveCascades — accounts → child accounts and liabilities (parentAccountId)", () => {
+  // Base deletes a business with `parent_account_id … ON DELETE SET NULL`: its
+  // children move to the top level and stay. A scenario remove must do the same,
+  // or they keep pointing at a business that's gone — hidden on Net Worth while
+  // still in the projection.
+  const business = { id: "biz", name: "Acme LLC", category: "business" } as Account;
+  const cash = { id: "biz-cash", name: "Acme LLC — Cash", category: "cash", parentAccountId: "biz" } as Account;
+  const loan = { id: "biz-loan", name: "Acme line of credit", parentAccountId: "biz" } as Liability;
+
+  it("clears parentAccountId on a removed business's child account and child liability", () => {
+    const t: ClientData = tree({
+      accounts: [{ ...cash }, { id: "other", name: "Other", parentAccountId: "biz-2" } as Account],
+      liabilities: [{ ...loan }, { id: "mortgage", name: "Mortgage", parentAccountId: null } as Liability],
+    });
+    const removed = [{ kind: "account" as TargetKind, id: business.id, causedByChangeId: "ch1" }];
+    const warnings = resolveCascades(t, removed);
+
+    expect(t.accounts.map((a) => [a.id, a.parentAccountId])).toEqual([
+      ["biz-cash", null],
+      ["other", "biz-2"],
+    ]);
+    expect(t.liabilities.map((l) => [l.id, l.parentAccountId])).toEqual([
+      ["biz-loan", null],
+      ["mortgage", null],
+    ]);
+    expect(warnings).toEqual([
+      {
+        kind: "parent_account_cleared",
+        message: "Account biz-cash moved to the top level — its business biz was removed",
+        causedByChangeId: "ch1",
+        affectedEntityId: "biz-cash",
+        affectedEntityLabel: "Account · Acme LLC — Cash",
+      },
+      {
+        kind: "parent_account_cleared",
+        message: "Liability biz-loan moved to the top level — its business biz was removed",
+        causedByChangeId: "ch1",
+        affectedEntityId: "biz-loan",
+        affectedEntityLabel: "Liability · Acme line of credit",
+      },
+    ]);
+  });
+
+  it("keeps the children of a business that was not removed", () => {
+    const t: ClientData = tree({ accounts: [{ ...cash }], liabilities: [{ ...loan }] });
+    const warnings = resolveCascades(t, [{ kind: "account", id: "a-other", causedByChangeId: "ch1" }]);
+    expect(t.accounts[0].parentAccountId).toBe("biz");
+    expect(t.liabilities[0].parentAccountId).toBe("biz");
     expect(warnings).toEqual([]);
   });
 });

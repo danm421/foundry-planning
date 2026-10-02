@@ -34,6 +34,7 @@ import { withSynthesizedDisabilityPremiums } from "@/lib/insurance-policies/disa
 import { withSynthesizedEntityChecking } from "@/lib/entities/entity-checking";
 import { resolveRefYears } from "@/lib/year-refs";
 import { applyGiftOverlays } from "./apply-gift-overlays";
+import { reResolveEditedAccountGrowth } from "./account-growth-edits";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "./changes";
 import {
   growthSettingsOverride,
@@ -166,6 +167,20 @@ export function applyScenarioChangesWithRefs(
             lifeInsurance: resolvePostPayoutPortfolio(a.lifeInsurance, resolutionContext.resolver),
           }
         : a,
+    );
+  }
+
+  // The same for an account edit of a growth input — a growth source, portfolio
+  // or rate: re-resolve its growth, or the engine keeps the base account's rate
+  // (or reads the form's `growthRate: null` as zero). Active edits only, so a
+  // switched-off group changes nothing; no such edit → the same accounts.
+  if (resolutionContext) {
+    effectiveTree.accounts = reResolveEditedAccountGrowth(
+      effectiveTree.accounts,
+      nonGiftChanges,
+      toggleState,
+      groups,
+      resolutionContext,
     );
   }
 

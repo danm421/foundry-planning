@@ -181,6 +181,31 @@ export function resolveCascades(
     tree.stockOptionPlans = remaining;
   }
 
+  // Child accounts and liabilities of a removed account — a business's cash
+  // account, its line of credit. Base deletes the business with
+  // `parent_account_id … ON DELETE SET NULL`: the children stay and move to the
+  // top level. Do the same here. Left pointing at a parent the scenario removed,
+  // the Net Worth page hides them while the projection still counts them.
+  if (removedAccountIds.size > 0) {
+    const release = (
+      label: "Account" | "Liability",
+      row: { id: string; name: string; parentAccountId?: string | null },
+    ) => {
+      const parent = row.parentAccountId;
+      if (!parent || !removedAccountIds.has(parent)) return;
+      warnings.push({
+        kind: "parent_account_cleared",
+        message: `${label} ${row.id} moved to the top level — its business ${parent} was removed`,
+        causedByChangeId: removedAccountToCause.get(parent)!,
+        affectedEntityId: row.id,
+        affectedEntityLabel: `${label} · ${row.name}`,
+      });
+      row.parentAccountId = null;
+    };
+    for (const acct of tree.accounts ?? []) release("Account", acct);
+    for (const liability of tree.liabilities ?? []) release("Liability", liability);
+  }
+
   // family_member removal — drop matching BeneficiaryRefs from each account.
   // The engine falls back to "estate" when an account has no remaining
   // designations, so dropping is the right cleanup (no synthetic estate ref

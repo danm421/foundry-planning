@@ -80,6 +80,7 @@ export interface CascadeWarning {
     | "savings_rule_dropped"
     | "equity_plan_dropped"
     | "equity_destination_cleared"
+    | "parent_account_cleared"
     | "beneficiary_reassigned"
     | "will_bequest_dropped"
     | "external_beneficiary_unreferenced";

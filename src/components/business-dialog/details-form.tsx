@@ -107,6 +107,9 @@ const BusinessDetailsForm = forwardRef<BusinessFormAutoSaveHandle, BusinessDetai
     // Ids minted for a scenario create, held so a retry after a half-landed batch
     // re-adds the SAME rows instead of a second business.
     const mintedIdsRef = useRef<{ business: string; cash: string } | null>(null);
+    // The growth field as last saved (or opened), so a scenario edit can tell
+    // whether the advisor touched it.
+    const savedGrowthPctRef = useRef(growthRatePct);
 
     const nameInputRef = useRef<HTMLInputElement | null>(null);
     useEffect(() => {
@@ -184,15 +187,20 @@ const BusinessDetailsForm = forwardRef<BusinessFormAutoSaveHandle, BusinessDetai
       try {
         const targetId = effectiveId;
         const body = buildBody();
-        // Scenario writes merge per top-level field, so a blank growth rate is
-        // left out rather than sent as null (growthSource already says "default").
-        const { growthRate, ...bodyWithoutGrowth } = body;
-        const fields: Record<string, unknown> =
-          growthRate === null ? bodyWithoutGrowth : body;
 
         let edits: ScenarioEdit[];
         let savedId = targetId;
         if (targetId) {
+          // Growth goes only when the field changed since the last save. The
+          // edit is diffed against the RESOLVED rate, so an untouched blank (or a
+          // stored rate beside a "default" source) would record a change nobody
+          // made. A cleared rate goes as null, so the scenario — or the add row
+          // this edit folds into — stops using the old one.
+          const fields: Record<string, unknown> = { ...body };
+          if (growthRatePct === savedGrowthPctRef.current) {
+            delete fields.growthRate;
+            delete fields.growthSource;
+          }
           edits = [{ op: "edit", targetKind: "account", targetId, desiredFields: fields }];
         } else {
           mintedIdsRef.current ??= {
@@ -207,7 +215,7 @@ const BusinessDetailsForm = forwardRef<BusinessFormAutoSaveHandle, BusinessDetai
               targetKind: "account",
               entity: {
                 id: ids.business,
-                ...fields,
+                ...body,
                 subType: mapBusinessTypeToSubType(businessType),
                 flowMode: "annual",
               },
@@ -269,6 +277,7 @@ const BusinessDetailsForm = forwardRef<BusinessFormAutoSaveHandle, BusinessDetai
         const wasFirstCreate = !effectiveId;
         if (wasFirstCreate) setEffectiveId(saved.id);
         baselineRef.current = currentSerialized;
+        savedGrowthPctRef.current = growthRatePct;
         onAutoSaved?.(saved, wasFirstCreate ? "create" : "edit");
         return { ok: true as const, recordId: saved.id, account: saved };
       } catch (err) {
@@ -279,7 +288,7 @@ const BusinessDetailsForm = forwardRef<BusinessFormAutoSaveHandle, BusinessDetai
         setLoading(false);
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [canSave, effectiveId, clientId, currentSerialized, writer.submit, writer.scenarioActive, onAutoSaved]);
+    }, [canSave, effectiveId, clientId, currentSerialized, growthRatePct, writer.submit, writer.scenarioActive, onAutoSaved]);
 
     async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
       e.preventDefault();

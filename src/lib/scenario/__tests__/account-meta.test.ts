@@ -174,4 +174,15 @@ describe("overlayAccountMeta (F11)", () => {
     ]);
     expect(map.get("n1")!.notes).toBe("hello");
   });
+
+  it("overlays the stored growth rate, so Edit Business opens on the scenario's rate", () => {
+    const map = overlayAccountMeta([baseRow({ id: "b1", growthRate: "0.0800" }), baseRow({ id: "b2" })], [
+      { targetKind: "account", opType: "edit", targetId: "b1", payload: { growthRate: { from: 0.08, to: null } } },
+      { targetKind: "account", opType: "edit", targetId: "b2", payload: { growthRate: { from: 0.05, to: 0.11 } } },
+      { targetKind: "account", opType: "add", targetId: "b3", payload: { id: "b3", growthRate: 0.07 } },
+    ]);
+    expect(map.get("b1")!.growthRate).toBeNull();
+    expect(map.get("b2")!.growthRate).toBe("0.11");
+    expect(map.get("b3")!.growthRate).toBe("0.07");
+  });
 });

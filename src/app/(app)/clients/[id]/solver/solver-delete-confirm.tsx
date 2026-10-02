@@ -9,11 +9,14 @@
 // the list is computed from that on a COPY of the scenario's persisted plan.
 // The base-table `/dependents` route would miss a scenario-added account and a
 // scenario-added transfer, and it keys Roth conversions by destination only.
+// Some cascades keep the linked row and clear only its link (`KEPT_KINDS`);
+// those are listed apart and never counted as removed.
 
 import { useMemo } from "react";
 import DialogShell from "@/components/dialog-shell";
 import type { ClientData } from "@/engine/types";
 import { resolveCascades } from "@/engine/scenario/cascadeResolution";
+import type { CascadeWarning } from "@/engine/scenario/types";
 import type { InventoryItem } from "@/lib/scenario/plan-inventory";
 import { detailType } from "@/lib/scenario/plan-detail-catalog";
 
@@ -30,20 +33,26 @@ export interface SolverDeleteConfirmProps {
 
 const ACCOUNT_BACKED = new Set<InventoryItem["typeKey"]>(["account", "business", "life_policy"]);
 
+/** Cascades that keep the linked row and clear only its link to the removed one:
+ *  a stock-option plan loses its destination brokerage; a business's child
+ *  account or debt moves to the top level. */
+const KEPT_KINDS = new Set<CascadeWarning["kind"]>(["equity_destination_cleared", "parent_account_cleared"]);
+
 export function SolverDeleteConfirm({ tree, inventory, item, scenarioName, onConfirm, onCancel }: SolverDeleteConfirmProps) {
-  const dropped = useMemo(
-    () =>
-      ACCOUNT_BACKED.has(item.typeKey)
-        ? resolveCascades(structuredClone(tree), [{ kind: "account", id: item.id, causedByChangeId: item.id }]).map(
-            (w) => {
-              const named = inventory.find((i) => i.id === w.affectedEntityId);
-              // "Savings rule · <id>" -> "Savings rule · 401(k) — Pat" when we know the name.
-              return named ? `${w.affectedEntityLabel.split(" · ")[0]} · ${named.label}` : w.affectedEntityLabel;
-            },
-          )
-        : [],
-    [tree, inventory, item],
-  );
+  const { dropped, kept } = useMemo(() => {
+    const warnings = ACCOUNT_BACKED.has(item.typeKey)
+      ? resolveCascades(structuredClone(tree), [{ kind: "account", id: item.id, causedByChangeId: item.id }])
+      : [];
+    const label = (w: CascadeWarning) => {
+      const named = inventory.find((i) => i.id === w.affectedEntityId);
+      // "Savings rule · <id>" -> "Savings rule · 401(k) — Pat" when we know the name.
+      return named ? `${w.affectedEntityLabel.split(" · ")[0]} · ${named.label}` : w.affectedEntityLabel;
+    };
+    return {
+      dropped: warnings.filter((w) => !KEPT_KINDS.has(w.kind)).map(label),
+      kept: warnings.filter((w) => KEPT_KINDS.has(w.kind)).map(label),
+    };
+  }, [tree, inventory, item]);
 
   return (
     <DialogShell
@@ -66,6 +75,19 @@ export function SolverDeleteConfirm({ tree, inventory, item, scenarioName, onCon
           </p>
           <ul className="mt-2 list-disc space-y-0.5 pl-5 text-[13px] text-ink-2">
             {dropped.map((label, i) => (
+              <li key={i}>{label}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {kept.length > 0 && (
+        <div className="mt-3 rounded-md border border-hair-2 bg-card-2 p-3">
+          <p className="text-[13px] font-medium text-ink-2">
+            {`${kept.length === 1 ? "This linked item stays" : `These ${kept.length} linked items stay`} in the plan, no longer linked to it:`}
+          </p>
+          <ul className="mt-2 list-disc space-y-0.5 pl-5 text-[13px] text-ink-2">
+            {kept.map((label, i) => (
               <li key={i}>{label}</li>
             ))}
           </ul>

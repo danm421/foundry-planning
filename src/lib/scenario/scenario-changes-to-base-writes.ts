@@ -36,7 +36,9 @@ import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
  *  ON DELETE CASCADE (taking the grants with it) and
  *  `destination_account_id`'s ON DELETE SET NULL. Emitting a base write here
  *  would be a second, redundant delete of a row that is already gone — and
- *  there is no equity TargetKind to name it with. */
+ *  there is no equity TargetKind to name it with. `parent_account_cleared` is
+ *  null for the same reason: `parent_account_id`'s ON DELETE SET NULL already
+ *  releases a deleted business's children. */
 const CASCADE_KIND_TO_TARGET: Record<CascadeWarning["kind"], TargetKind | null> = {
   transfer_dropped: "transfer",
   reinvestment_dropped: "reinvestment",
@@ -47,6 +49,7 @@ const CASCADE_KIND_TO_TARGET: Record<CascadeWarning["kind"], TargetKind | null> 
   external_beneficiary_unreferenced: null,
   equity_plan_dropped: null,
   equity_destination_cleared: null,
+  parent_account_cleared: null,
 };
 
 /** The `EstateFlowGift` behind a `gift` add when — and only when — it is a
