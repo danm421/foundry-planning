@@ -83,6 +83,10 @@ export interface AccountRow {
    * "self" (which would overwrite a persisted "family" on the next save). */
   hsaCoverage?: "self" | "family" | null;
   growthRate: string | null;
+  /** The STORED `growth_rate` column (the meta row), where `growthRate` above is
+   *  the RESOLVED rate. Only Edit Business reads it — see
+   *  `accountRowToBusinessAccount`. Never written back: it is not a field. */
+  storedGrowthRate?: string | null;
   rmdEnabled?: boolean | null;
   /** Advisor-set AUM flag, hydrated from `accounts.counts_toward_aum` via
    *  AccountMeta so the edit form round-trips it instead of silently clearing
@@ -452,9 +456,18 @@ function accountRowToBusinessAccount(a: AccountRow): BusinessAccount {
     subType: a.subType,
     value: Number(a.value),
     basis: Number(a.basis),
-    // The row's growthRate is the RESOLVED rate; the form shows a rate only
-    // when it is the business's own (custom) one, else blank = plan default.
-    growthRate: a.growthSource === "custom" && a.growthRate !== null ? Number(a.growthRate) : null,
+    // The form shows the business's own rate, blank only when the projection
+    // uses the plan default. That is `resolveAccountFromRaw`'s business rule: a
+    // STORED rate is honoured whatever growthSource says — a legacy row keeps
+    // "default" beside its rate — so the stored rate decides. A row with none
+    // (a scenario custom rate the diff dropped, a caller with no meta) falls
+    // back to the resolved rate when the source is custom.
+    growthRate:
+      a.storedGrowthRate != null
+        ? Number(a.storedGrowthRate)
+        : a.growthSource === "custom" && a.growthRate !== null
+          ? Number(a.growthRate)
+          : null,
     growthSource: a.growthSource,
     rmdEnabled: a.rmdEnabled ?? false,
     priorYearEndValue: a.priorYearEndValue !== null && a.priorYearEndValue !== undefined

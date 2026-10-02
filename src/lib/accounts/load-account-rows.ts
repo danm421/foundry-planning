@@ -39,6 +39,7 @@ export async function loadAccountMetaRows(clientId: string, baseScenarioId: stri
       propertyTaxGrowthRate: accounts.propertyTaxGrowthRate,
       propertyTaxGrowthSource: accounts.propertyTaxGrowthSource,
       notes: accounts.notes,
+      growthRate: accounts.growthRate,
       countsTowardAum: accounts.countsTowardAum,
       source: accounts.source,
       plaidItemId: accounts.plaidItemId,
@@ -204,6 +205,8 @@ export function buildAccountRows({
       flowMode: a.flowMode,
       // From meta, not from `a` — the engine Account type never carries notes.
       notes: meta?.notes ?? null,
+      // The stored rate, beside the resolved `growthRate` above.
+      storedGrowthRate: meta?.growthRate ?? null,
       grantorFamilyMemberId: a.education529?.grantorFamilyMemberId ?? null,
       grantorName: a.education529?.grantorName ?? null,
       beneficiaryFamilyMemberId: a.education529?.beneficiaryFamilyMemberId ?? null,

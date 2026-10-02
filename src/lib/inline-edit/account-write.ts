@@ -69,6 +69,9 @@ const NON_WRITABLE_KEYS = new Set<keyof AccountRow>([
   // — it would only ever diff as `{from: undefined, to: …}` and bloat the
   // payload. (Controller resolution R10.)
   "ownerEntityId",
+  // The stored growth_rate column, read only by Edit Business. Writing it back
+  // would diff in as `{from: undefined, to: …}` on every business edit.
+  "storedGrowthRate",
 ]);
 
 export function buildBasePayload(patch: AccountPatch): Record<string, unknown> {

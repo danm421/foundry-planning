@@ -15,6 +15,7 @@ const baseRow = (over: Partial<AccountMeta> = {}): AccountMeta => ({
   propertyTaxGrowthRate: null,
   propertyTaxGrowthSource: null,
   notes: null,
+  growthRate: null,
   countsTowardAum: false,
   ...over,
 });

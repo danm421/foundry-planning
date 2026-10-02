@@ -37,6 +37,10 @@ export interface AccountMeta {
   propertyTaxGrowthSource: string | null;
   /** Free-text notes — only a business's Notes tab writes them today. */
   notes: string | null;
+  /** The STORED `growth_rate` column, not the resolved rate the engine account
+   *  carries. The business dialog needs it: a business's stored rate drives its
+   *  projection whatever `growthSource` says (`resolveAccountFromRaw`). */
+  growthRate: string | null;
   /** Advisor-set AUM flag. Boolean, not string|null — it must not go through
    *  the String() coercion the other meta keys use. */
   countsTowardAum: boolean;
@@ -101,6 +105,7 @@ function emptyMeta(): Omit<AccountMeta, "id"> {
     propertyTaxGrowthRate: null,
     propertyTaxGrowthSource: null,
     notes: null,
+    growthRate: null,
     countsTowardAum: false,
   };
 }

@@ -16,6 +16,7 @@ function meta(overrides: Partial<AccountMeta> & { id: string }): AccountMeta {
     propertyTaxGrowthRate: null,
     propertyTaxGrowthSource: null,
     notes: null,
+    growthRate: null,
     countsTowardAum: false,
     ...overrides,
   };
@@ -63,6 +64,22 @@ describe("buildAccountRows — business fields", () => {
     expect(row.notes).toBe("Buy-sell signed 2024");
   });
 
+  it("forwards the business's STORED growth rate, which the resolved row rate cannot show", () => {
+    // A legacy row: growth_source defaulted to "default" with no backfill, yet
+    // the projection honours its stored 8% (resolveAccountFromRaw's business
+    // rule). The resolved rate alone can't tell a stored 8% from a plan default.
+    const [row] = buildAccountRows({
+      ...args,
+      accounts: [business({ growthRate: 0.08 })],
+      accountMetaById: new Map([
+        ["biz-1", meta({ id: "biz-1", growthSource: "default", growthRate: "0.0800" })],
+      ]),
+    });
+
+    expect(row.growthSource).toBe("default");
+    expect(row.storedGrowthRate).toBe("0.0800");
+  });
+
   it("leaves a null distribution null and a missing notes row null", () => {
     const [row] = buildAccountRows({
       ...args,
@@ -72,5 +89,6 @@ describe("buildAccountRows — business fields", () => {
 
     expect(row.distributionPolicyPercent).toBeNull();
     expect(row.notes).toBeNull();
+    expect(row.storedGrowthRate).toBeNull();
   });
 });

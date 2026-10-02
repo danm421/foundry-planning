@@ -17,6 +17,7 @@ function meta(overrides: Partial<AccountMeta> & { id: string }): AccountMeta {
     propertyTaxGrowthRate: null,
     propertyTaxGrowthSource: null,
     notes: null,
+    growthRate: null,
     countsTowardAum: false,
     ...overrides,
   };
