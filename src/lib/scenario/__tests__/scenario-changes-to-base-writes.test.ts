@@ -7,6 +7,7 @@ import {
   collectExternalSalaryIncomeIds,
 } from "../scenario-changes-to-base-writes";
 import type { BaseWritePlan } from "../promote-to-base-types";
+import { withSynthesizedEntityChecking } from "@/lib/entities/entity-checking";
 
 const minimalClientData = (): ClientData => ({
   client: {
@@ -309,6 +310,85 @@ describe("scenarioChangesToBaseWrites — reinvestment cascade targets", () => {
     expect(reinvestmentDeletes(plan)).toEqual([]);
     // The add itself is written exactly as stored.
     expect(plan.inserts).toEqual([{ kind: "reinvestment", targetId: "ri-new", raw: add.payload }]);
+  });
+
+  // A group is a live reference that base re-expands on every load, so an
+  // account the scenario adds joins every reinvestment whose group it matches.
+  // Base deleting an account deletes only its `reinvestment_accounts` row; the
+  // reinvestment then re-expands. The plan must not delete what base keeps.
+  describe("scenario-added accounts", () => {
+    const addAccount = (id: string, category: string, toggleGroupId: string | null = null): ScenarioChange => ({
+      ...baseChange,
+      id: `ch-add-${id}`,
+      opType: "add",
+      targetKind: "account",
+      targetId: id,
+      payload: { id, name: id, category, value: 0 },
+      toggleGroupId,
+    });
+    const yearEdit = editRi({ year: { from: 2035, to: 2040 } });
+
+    it.each([
+      ["cash", ["a-cash"], ["a-cash"]],
+      ["all-liquid", ["a-cash", "a-ira", "a-brokerage"], ["a-cash", "a-ira", "a-brokerage"]],
+    ])(
+      "a %s-group reinvestment whose accounts are all replaced is not deleted, edited or not",
+      (key, union, removed) => {
+        const tree = treeWith([], [key], union);
+        const changes = [addAccount("a-new", "cash"), ...removed.map(removeAccount)];
+        const unchanged = scenarioChangesToBaseWrites(tree, changes, [], {});
+        const edited = scenarioChangesToBaseWrites(tree, [...changes, yearEdit], [], {});
+        expect(reinvestmentDeletes(unchanged)).toEqual([]);
+        expect(reinvestmentDeletes(edited)).toEqual([]);
+        // The edit writes only what it stores; the base load re-expands the group.
+        expect(edited.updates).toEqual([{ kind: "reinvestment", id: "ri-1", set: { year: 2040 } }]);
+        expect(unchanged.updates).toEqual([]);
+      },
+    );
+
+    it("a custom-group reinvestment whose only member the scenario removes is deleted", () => {
+      const plan = scenarioChangesToBaseWrites(
+        treeWith([], ["grp-1"], ["a-cash"]),
+        [addAccount("a-new", "cash"), removeAccount("a-cash")],
+        [],
+        {},
+        new Map([["grp-1", ["a-cash"]]]),
+      );
+      expect(reinvestmentDeletes(plan)).toEqual(["ri-1"]);
+    });
+
+    it("with no account added, a cash-group reinvestment losing its only account is deleted as before", () => {
+      const plan = scenarioChangesToBaseWrites(treeWith([], ["cash"], ["a-cash"]), [removeAccount("a-cash")], [], {});
+      expect(reinvestmentDeletes(plan)).toEqual(["ri-1"]);
+    });
+
+    it("an account added in a switched-off toggle group does not count", () => {
+      const group: ToggleGroup = {
+        id: "g1", scenarioId: "s1", name: "G", defaultOn: true, requiresGroupId: null, orderIndex: 0,
+      } as ToggleGroup;
+      const plan = scenarioChangesToBaseWrites(
+        treeWith([], ["cash"], ["a-cash"]),
+        [addAccount("a-cash2", "cash", "g1"), removeAccount("a-cash")],
+        [group],
+        { g1: false },
+      );
+      expect(reinvestmentDeletes(plan)).toEqual(["ri-1"]);
+    });
+
+    // Promote is handed the base load's tree, which carries a synthesized
+    // checking account per entity that lacks one; the scenario load's tree does
+    // not. A synthesized account is no group member in base, so it must not keep
+    // a reinvestment alive here that the scenario's projection drops.
+    it.each([
+      ["unchanged", [addAccount("a-new", "taxable")]],
+      ["with an unrelated edit", [yearEdit]],
+    ])("a synthesized entity checking account keeps no cash-group reinvestment alive (%s)", (_label, more) => {
+      const tree = treeWith([], ["cash"], ["a-cash"]);
+      tree.entities = [{ id: "e1", name: "Trust" }] as unknown as ClientData["entities"];
+      const synthesized = withSynthesizedEntityChecking(tree);
+      const plan = scenarioChangesToBaseWrites(synthesized, [...more, removeAccount("a-cash")], [], {});
+      expect(reinvestmentDeletes(plan)).toEqual(["ri-1"]);
+    });
   });
 });
 

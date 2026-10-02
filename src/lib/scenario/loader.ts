@@ -135,9 +135,10 @@ export function applyScenarioChangesWithRefs(
   resolutionContext?: ResolutionContext,
 ): LoadEffectiveTreeResult {
   const giftChanges = changes.filter((c) => c.targetKind === "gift");
-  // Each reinvestment add / edit names its picks and groups; the cascade inside
-  // applyScenarioChanges reads the union, so hand it the real one.
-  const nonGiftChanges = withReinvestmentTargets(
+  // Each reinvestment add / edit names its picks and groups, and an added account
+  // joins the groups it matches; the cascade inside applyScenarioChanges reads
+  // the union, so hand it the real one.
+  const { changes: nonGiftChanges, tree: treeWithTargets } = withReinvestmentTargets(
     changes.filter((c) => c.targetKind !== "gift"),
     treeForChanges,
     toggleState,
@@ -145,7 +146,7 @@ export function applyScenarioChangesWithRefs(
     resolutionContext?.accountGroupMembersById ?? new Map(),
   );
   const { effectiveTree, warnings } = applyScenarioChanges(
-    treeForChanges,
+    treeWithTargets,
     nonGiftChanges,
     toggleState,
     groups,

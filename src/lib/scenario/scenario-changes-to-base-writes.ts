@@ -132,14 +132,11 @@ export function scenarioChangesToBaseWrites(
 
   // 3. Reuse the engine to compute cascade drops, then turn each into a delete.
   // The cascade reads each reinvestment's union, which an add / edit does not
-  // carry, so it gets the same pre-pass the scenario load runs. Only the cascade
-  // does: the writes above stay exactly what the changes store.
-  const { warnings } = applyScenarioChanges(
-    baseTree,
-    withReinvestmentTargets(changes, baseTree, toggleState, groups, customGroupMembersById),
-    toggleState,
-    groups,
-  );
+  // carry and an added account can grow, so it gets the same pre-pass the
+  // scenario load runs. Only the cascade does: the writes above stay exactly
+  // what the changes store, and base re-expands the groups on its next load.
+  const withTargets = withReinvestmentTargets(changes, baseTree, toggleState, groups, customGroupMembersById);
+  const { warnings } = applyScenarioChanges(withTargets.tree, withTargets.changes, toggleState, groups);
   for (const w of warnings) {
     const kind = CASCADE_KIND_TO_TARGET[w.kind];
     if (!kind) continue;

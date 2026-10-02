@@ -24,6 +24,7 @@ import type { AllocationMap } from "@/lib/projection/reinvestment-sold-fraction"
 import { expandReinvestmentTargets } from "@/lib/projection/expand-reinvestment-targets";
 import { resolveReinvestments } from "@/lib/projection/resolve-reinvestments";
 import type { AccountCategory } from "@/lib/account-groups/liquid-filter";
+import { withSynthesizedEntityChecking } from "@/lib/entities/entity-checking";
 
 const assetClasses = [
   {
@@ -615,8 +616,10 @@ describe("applyScenarioChangesWithRefs — reinvestment re-resolution", () => {
           removeAccount("a-cash"),
           edit({ pickedAccountIds: { from: ["a-cash"], to: ["a-ira"] } }, "g1"),
         ];
-        expect(withReinvestmentTargets(changes, pickedBase(["a-cash"]), { g1: false }, [group as never], new Map()))
-          .toBe(changes);
+        const base = pickedBase(["a-cash"]);
+        const out = withReinvestmentTargets(changes, base, { g1: false }, [group as never], new Map());
+        expect(out.changes).toBe(changes);
+        expect(out.tree).toBe(base);
       });
 
       it("a re-point in a switched-off toggle group does not count", () => {
@@ -629,6 +632,147 @@ describe("applyScenarioChangesWithRefs — reinvestment re-resolution", () => {
         );
         expect(reinvestments).toEqual([]);
         expect(dropped(warnings)).toEqual(["ri-1"]);
+      });
+    });
+
+    // A group is a live reference: the base load re-expands it over the plan's
+    // accounts every time. So a scenario that adds an account takes it into
+    // every reinvestment whose group it matches — the same whether or not the
+    // scenario also edits that reinvestment, and the same as base after promote.
+    describe("scenario-added accounts join grouped reinvestments", () => {
+      const run = (
+        base: ClientData,
+        changes: ScenarioChange[],
+        toggles = {},
+        groups: never[] = [],
+        ctx = makeResolutionContext(),
+      ) => {
+        const { effectiveTree, warnings } = applyScenarioChangesWithRefs(base, changes, toggles, groups, ctx);
+        return {
+          reinvestments: effectiveTree.reinvestments ?? [],
+          dropped: warnings.filter((w) => w.kind === "reinvestment_dropped").map((w) => w.affectedEntityId),
+        };
+      };
+      const addAccount = (id: string, category: string, toggleGroupId: string | null = null): ScenarioChange => ({
+        id: `ch-add-${id}`,
+        scenarioId: "scn1",
+        opType: "add",
+        targetKind: "account",
+        targetId: id,
+        payload: { id, name: id, category, value: 0, basis: 0, growthRate: 0, owners: [] },
+        toggleGroupId,
+        orderIndex: 0,
+      });
+      const grouped = (picks: string[], groupKeys: string[]) => {
+        const t = tree();
+        t.reinvestments = [baseReinvestment(t, picks, groupKeys)];
+        return t;
+      };
+      const yearEdit = (toggleGroupId: string | null = null) =>
+        edit({ year: { from: 2035, to: 2040 } }, toggleGroupId);
+      const offGroup = { id: "g1", scenarioId: "scn1", name: "G", defaultOn: true, requiresGroupId: null, orderIndex: 0 };
+      const sorted = (ids: string[]) => [...ids].sort();
+
+      it.each([
+        ["all-liquid", ["a-brokerage", "a-cash", "a-ira", "a-new"]],
+        ["cash", ["a-cash", "a-ira", "a-new"]],
+      ])("an unchanged %s-group reinvestment takes in a matching added account, edited or not", (key, expected) => {
+        const base = grouped(["a-ira"], [key]);
+        const [unchanged] = run(base, [addAccount("a-new", "cash")]).reinvestments;
+        const [edited] = run(base, [addAccount("a-new", "cash"), yearEdit()]).reinvestments;
+        expect(sorted(unchanged.accountIds)).toEqual(expected);
+        // An unrelated edit moves the year and nothing else.
+        expect(edited.year).toBe(2040);
+        expect({ ...edited, year: unchanged.year }).toStrictEqual(unchanged);
+      });
+
+      it("the only cash account replaced: the unchanged cash-group reinvestment is kept on the new one", () => {
+        const { reinvestments, dropped } = run(grouped([], ["cash"]), [
+          addAccount("a-cash2", "cash"),
+          removeAccount("a-cash"),
+        ]);
+        expect(reinvestments.map((r) => r.accountIds)).toEqual([["a-cash2"]]);
+        expect(dropped).toEqual([]);
+      });
+
+      it("a scenario-added group reinvestment takes in an account the same scenario adds", () => {
+        const add = addReinvestmentChange();
+        add.payload = { ...(add.payload as object), accountIds: [], pickedAccountIds: [], groupKeys: ["cash"] };
+        const [ri] = run(tree(), [addAccount("a-new", "cash"), add]).reinvestments;
+        expect(sorted(ri.accountIds)).toEqual(["a-cash", "a-new"]);
+      });
+
+      it("a custom-group member the scenario removed is not re-added", () => {
+        const base = tree();
+        base.reinvestments = [
+          { ...baseReinvestment(base, [], ["grp-1"]), accountIds: ["a-cash", "a-brokerage"] },
+        ];
+        const ctx = makeResolutionContext();
+        ctx.accountGroupMembersById = new Map([["grp-1", ["a-cash", "a-brokerage"]]]);
+        const { reinvestments } = run(base, [addAccount("a-new", "cash"), removeAccount("a-cash")], {}, [], ctx);
+        expect(reinvestments.map((r) => r.accountIds)).toEqual([["a-brokerage"]]);
+      });
+
+      it("a custom group's member that is no account of the plan stays out", () => {
+        const base = tree();
+        base.reinvestments = [{ ...baseReinvestment(base, [], ["grp-1"]), accountIds: ["a-cash"] }];
+        const ctx = makeResolutionContext();
+        ctx.accountGroupMembersById = new Map([["grp-1", ["a-cash", "a-gone"]]]);
+        const { reinvestments } = run(base, [addAccount("a-new", "cash")], {}, [], ctx);
+        expect(reinvestments.map((r) => r.accountIds)).toEqual([["a-cash"]]);
+      });
+
+      it.each([
+        ["unchanged", [] as ScenarioChange[]],
+        ["with an unrelated edit", [yearEdit()]],
+      ])("an account added in a switched-off toggle group expands nothing (%s)", (_label, more) => {
+        const [ri] = run(
+          grouped([], ["cash"]),
+          [addAccount("a-new", "cash", "g1"), ...more],
+          { g1: false },
+          [offGroup as never],
+        ).reinvestments;
+        expect(ri.accountIds).toEqual(["a-cash"]);
+      });
+
+      describe("the pre-pass itself", () => {
+        it("hands back the very same changes and tree when the scenario adds no account", () => {
+          const base = grouped([], ["cash"]);
+          const changes = [removeAccount("a-ira")];
+          const out = withReinvestmentTargets(changes, base, {}, [], new Map());
+          expect(out.changes).toBe(changes);
+          expect(out.tree).toBe(base);
+        });
+
+        it("leaves the tree as it was when the only change is a reinvestment edit", () => {
+          const base = grouped([], ["cash"]);
+          expect(withReinvestmentTargets([yearEdit()], base, {}, [], new Map()).tree).toBe(base);
+        });
+
+        it("hands back the very same changes and tree when the only account add is switched off", () => {
+          const base = grouped([], ["cash"]);
+          const changes = [addAccount("a-new", "cash", "g1")];
+          const out = withReinvestmentTargets(changes, base, { g1: false }, [offGroup as never], new Map());
+          expect(out.changes).toBe(changes);
+          expect(out.tree).toBe(base);
+        });
+
+        // The base load expands groups over the stored accounts, before
+        // `withSynthesizedEntityChecking` adds an entity's default checking
+        // account; the scenario load hands the pre-pass that unsynthesized tree,
+        // the promote planner the synthesized one. Both must expand alike.
+        it("expands the same over a tree with synthesized entity checking as over one without", () => {
+          const plain = grouped([], ["cash"]);
+          plain.entities = [{ id: "e1", name: "Trust" }] as unknown as ClientData["entities"];
+          const synthesized = withSynthesizedEntityChecking(plain);
+          expect(synthesized.accounts.map((a) => a.id)).toContain("entity-checking-e1");
+          const changes = [addAccount("a-new", "taxable"), yearEdit()];
+          const fromPlain = withReinvestmentTargets(changes, plain, {}, [], new Map());
+          const fromSynthesized = withReinvestmentTargets(changes, synthesized, {}, [], new Map());
+          expect(fromSynthesized.changes).toEqual(fromPlain.changes);
+          expect(fromSynthesized.tree.reinvestments).toEqual(fromPlain.tree.reinvestments);
+          expect(fromPlain.tree.reinvestments![0].accountIds).toEqual(["a-cash"]);
+        });
       });
     });
   });
