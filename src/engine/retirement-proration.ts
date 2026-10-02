@@ -10,7 +10,7 @@
 // legacy "full year before, full year on/after" behavior, so existing plans
 // are unaffected.
 
-import type { ClientInfo, SuspensionWindow } from "./types";
+import type { ClientInfo, ScaleWindow, SuspensionWindow } from "./types";
 
 type RetirementRef =
   | "client_retirement"
@@ -99,6 +99,19 @@ function isSuspended(window: SuspensionWindow | null | undefined, year: number):
   return window.throughYear == null || year <= window.throughYear;
 }
 
+/** Product of the factors of every window containing `year` (1 when none). */
+export function scaleFactorFor(
+  windows: ScaleWindow[] | null | undefined,
+  year: number,
+): number {
+  if (!windows) return 1;
+  let factor = 1;
+  for (const w of windows) {
+    if (year >= w.startYear && year <= w.endYear) factor *= w.factor;
+  }
+  return factor;
+}
+
 /**
  * Combined inclusion + multiplier for any time-windowed item that may have
  * retirement-linked start/end refs. Returns:
@@ -119,6 +132,7 @@ export function itemProrationGate(
     startYearRef?: string | null;
     endYearRef?: string | null;
     suspended?: SuspensionWindow | null;
+    scaleWindows?: ScaleWindow[] | null;
   },
   year: number,
   client: ClientInfo,
@@ -129,12 +143,16 @@ export function itemProrationGate(
   // in its retirement year must not keep the prorated slice
   // `endInclusionAndFactor` would otherwise hand back.
   if (isSuspended(item.suspended, year)) return { include: false, factor: 0 };
+  // A scale window is a dent where a suspension is a hole: same window, part
+  // of the amount. A factor of 0 is a hole.
+  const scale = scaleFactorFor(item.scaleWindows, year);
+  if (scale <= 0) return { include: false, factor: 0 };
   const endCheck = endInclusionAndFactor(item.endYearRef, year, item.endYear, client);
   if (!endCheck.included) return { include: false, factor: 0 };
   const startFactor = startProrationFactor(item.startYearRef, year, client);
   // At most one of endCheck.factor and startFactor will be < 1 in any given
   // year — they apply to opposite boundaries of the same item.
-  return { include: true, factor: endCheck.factor * startFactor };
+  return { include: true, factor: endCheck.factor * startFactor * scale };
 }
 
 /**

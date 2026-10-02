@@ -7,7 +7,7 @@
 // quietly compounding into the portfolio. From the retirement year onward the
 // stored percentage applies unchanged.
 
-import { firstRetirementYear, itemProrationGate } from "./retirement-proration";
+import { firstRetirementYear, itemProrationGate, scaleFactorFor } from "./retirement-proration";
 import type { ClientInfo, Expense, PlanSettings } from "./types";
 
 export function effectiveSurplusSpendPct(
@@ -52,6 +52,9 @@ export function absorbingLivingRow(
     if (!isAbsorbingLivingRow(e)) continue;
     if (e.ownerEntityId != null || e.ownerAccountId != null) continue;
     if (!itemProrationGate(e, year, client).include) continue;
+    // A row the LTC stress cuts this year spends only its scaled floor —
+    // absorbing would spend the household's leftover and undo the cut.
+    if (scaleFactorFor(e.scaleWindows, year) < 1) continue;
     if (winner == null || e.startYear < winner.startYear) winner = e;
   }
   return winner;

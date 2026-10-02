@@ -1101,6 +1101,16 @@ export interface SuspensionWindow {
   throughYear: number | null;
 }
 
+/** Years in which a row costs a fraction of its normal amount. `factor` 0
+ *  behaves like a suspension. Written by the LTC pre-pass (living-expense
+ *  cut); the writer merges overlapping care years first, so windows on one
+ *  row never overlap. */
+export interface ScaleWindow {
+  startYear: number;
+  endYear: number;
+  factor: number;
+}
+
 export interface Income {
   id: string;
   type: "salary" | "social_security" | "business" | "deferred" | "capital_gains" | "trust" | "other";
@@ -1253,6 +1263,8 @@ export interface Expense {
    *  Today's only writer is waiver of premium on a disability policy whose
    *  stress-test event has an end year. */
   suspended?: SuspensionWindow | null;
+  /** LTC living-expense cut. See `ScaleWindow` and `itemProrationGate`. */
+  scaleWindows?: ScaleWindow[] | null;
 }
 
 export interface ExtraPayment {
