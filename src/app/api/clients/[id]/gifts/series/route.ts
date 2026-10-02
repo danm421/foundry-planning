@@ -1,67 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { scenarios, entities, familyMembers, externalBeneficiaries, giftSeries } from "@/db/schema";
+import { entities, familyMembers, externalBeneficiaries, giftSeries } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { parseBody } from "@/lib/schemas/common";
 import { giftSeriesSchema } from "@/lib/schemas/gift-series";
-import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { getBaseCaseScenarioId, resolveScenarioId } from "@/lib/scenario/resolve-scenario-param";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
-
-async function getBaseCaseScenarioId(
-  clientId: string,
-): Promise<string | null> {
-  const a = await verifyClientAccess(clientId);
-  if (!a.ok) return null;
-
-  // LIMIT 2 to surface the "multiple base scenarios" data-integrity bug loudly
-  // rather than silently picking an arbitrary one.
-  const baseScenarios = await db
-    .select()
-    .from(scenarios)
-    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)))
-    .limit(2);
-
-  if (baseScenarios.length > 1) {
-    throw new Error(
-      `Multiple base scenarios for client ${clientId}: invariant violated`,
-    );
-  }
-  return baseScenarios[0]?.id ?? null;
-}
-
-// Resolve the scenario partition a gift_series read/write should land in.
-// gift_series carries a real scenario_id (it is NOT an overlay TargetKind), so a
-// series created while a scenario is active must be written to THAT scenario or
-// the loader (which filters giftSeries.scenarioId = scenario.id) drops it.
-// `null`/`"base"` resolve to the base case; any other value must be a scenario
-// belonging to a client in THIS firm (the innerJoin enforces firm scope), so a
-// foreign or unknown id returns undefined and the caller 404s instead of
-// touching another firm's data.
-async function resolveScenarioId(
-  clientId: string,
-  requested: string | null,
-): Promise<string | null | undefined> {
-  if (requested == null || requested === "base") {
-    return getBaseCaseScenarioId(clientId);
-  }
-  const a = await verifyClientAccess(clientId);
-  if (!a.ok) return undefined;
-  const [scenario] = await db
-    .select({ id: scenarios.id })
-    .from(scenarios)
-    .where(
-      and(
-        eq(scenarios.id, requested),
-        eq(scenarios.clientId, clientId),
-      ),
-    );
-  return scenario?.id;
-}
 
 // GET /api/clients/[id]/gifts/series — list gift_series rows for base-case scenario
 export async function GET(

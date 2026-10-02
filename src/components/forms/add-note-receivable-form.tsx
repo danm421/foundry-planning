@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
+import { useScenarioState } from "@/hooks/use-scenario-state";
 import type { SaveResult } from "@/lib/use-tab-auto-save";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { resolveMilestone } from "@/lib/milestones";
@@ -30,6 +31,12 @@ const MONTH_NAMES = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+
+/** Notes receivable live in their own table, not in scenario_changes, so they
+ *  have no scenario-aware write path yet. Inside a scenario every note write
+ *  is refused with this message rather than landing silently on the base plan. */
+export const NOTES_SCENARIO_BLOCKED_MSG =
+  "Notes receivable can't be changed inside a scenario yet. Switch to the base plan to edit them.";
 
 export interface NoteReceivableFormInitial {
   id: string;
@@ -100,6 +107,8 @@ const AddNoteReceivableForm = forwardRef<
   ref,
 ) {
   const router = useRouter();
+  const { scenarioId } = useScenarioState(clientId);
+  const scenarioBlocked = scenarioId != null;
   const isEdit = mode === "edit" && !!initial;
   const currentYear = new Date().getFullYear();
 
@@ -108,8 +117,8 @@ const AddNoteReceivableForm = forwardRef<
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    onSubmitStateChange?.({ canSubmit: !loading, loading });
-  }, [loading, onSubmitStateChange]);
+    onSubmitStateChange?.({ canSubmit: !loading && !scenarioBlocked, loading });
+  }, [loading, scenarioBlocked, onSubmitStateChange]);
 
   // ── Form state ───────────────────────────────────────────────────────────
   const [name, setName] = useState(initial?.name ?? "");
@@ -300,6 +309,7 @@ const AddNoteReceivableForm = forwardRef<
   }
 
   async function saveCore(): Promise<SaveResult & { recordId?: string }> {
+    if (scenarioBlocked) return { ok: false, error: NOTES_SCENARIO_BLOCKED_MSG };
     if (!canSave) {
       return { ok: false, error: "Required fields missing or invalid." };
     }
@@ -350,8 +360,8 @@ const AddNoteReceivableForm = forwardRef<
   const isDirty = JSON.stringify(buildBody()) !== lastSavedSnapshotRef.current;
 
   useEffect(() => {
-    onAutoSaveStateChange?.({ isDirty, canSave });
-  }, [isDirty, canSave, onAutoSaveStateChange]);
+    onAutoSaveStateChange?.({ isDirty: isDirty && !scenarioBlocked, canSave });
+  }, [isDirty, canSave, scenarioBlocked, onAutoSaveStateChange]);
 
   useImperativeHandle(
     ref,
@@ -505,6 +515,12 @@ const AddNoteReceivableForm = forwardRef<
           Extra Payments
         </button>
       </nav>
+
+      {scenarioBlocked && (
+        <p className="rounded-md border border-hair bg-card-2/60 px-3 py-3 text-sm text-ink-3">
+          {NOTES_SCENARIO_BLOCKED_MSG}
+        </p>
+      )}
 
       {error && (
         <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">

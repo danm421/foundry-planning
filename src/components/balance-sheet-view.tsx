@@ -17,7 +17,7 @@ import { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOptio
 import type { FundPortfolioOption } from "@/lib/investments/load-fund-portfolio-options";
 import { type AssetClassOption } from "./forms/asset-mix-tab";
 import { LiabilityFormInitial } from "./forms/add-liability-form";
-import type { NoteReceivableFormInitial } from "./forms/add-note-receivable-form";
+import { NOTES_SCENARIO_BLOCKED_MSG, type NoteReceivableFormInitial } from "./forms/add-note-receivable-form";
 import { computeAmortizationSchedule, calcOriginalBalance } from "@/lib/loan-math";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 import { inheritedIraRowFields } from "@/lib/accounts/inherited-ira";
@@ -1111,6 +1111,13 @@ export default function BalanceSheetView({
   }
 
   async function performNoteDelete(id: string) {
+    // Notes have no scenario-aware delete yet; a bare DELETE would remove the
+    // base plan's note from inside a scenario.
+    if (writer.scenarioActive) {
+      alert(NOTES_SCENARIO_BLOCKED_MSG);
+      setDeletingNote(null);
+      return;
+    }
     const res = await fetch(`/api/clients/${clientId}/notes-receivable/${id}`, {
       method: "DELETE",
     });
