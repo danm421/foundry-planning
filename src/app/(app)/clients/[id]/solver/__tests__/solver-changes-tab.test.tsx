@@ -237,6 +237,28 @@ describe("SolverChangesTab — which rows open", () => {
     expect(screen.getByRole("button", { name: "Edit Side income" })).toBeInTheDocument();
   });
 
+  // Browser pass C read a missing pencil on a Solver-added business and whole
+  // life policy as "can't open". Both are `account` adds and both open (the
+  // title is the Edit button), and every row renders the Rename pencil — it is
+  // only revealed on hover/focus, so a screenshot shows it on the hovered row.
+  it("Solver-added business, its cash account and a whole-life policy are all openable, with a pencil", () => {
+    renderTab([
+      makeChange({ id: "c-biz", targetId: "biz-1", targetKind: "account", payload: { name: "ZZ Biz C", category: "business" } }),
+      makeChange({
+        id: "c-cash",
+        targetId: "cash-1",
+        targetKind: "account",
+        payload: { name: "ZZ Biz C — Cash", category: "cash", parentAccountId: "biz-1" },
+      }),
+      makeChange({ id: "c-wl", targetId: "wl-1", targetKind: "account", payload: { name: "ZZ Whole Life", category: "life_insurance" } }),
+      makeChange({ id: "c-ltd", targetId: "ltd-1", targetKind: "disability_policy", payload: { name: "ZZ LTD Policy" } }),
+    ]);
+    for (const name of ["ZZ Biz C", "ZZ Biz C — Cash", "ZZ Whole Life", "ZZ LTD Policy"]) {
+      expect(screen.getByRole("button", { name: `Edit ${name}` })).toBeInTheDocument();
+    }
+    expect(screen.getAllByRole("button", { name: "Rename change" })).toHaveLength(4);
+  });
+
   it("a removed change has nothing to open", () => {
     renderTab([makeChange({ opType: "remove" })]);
     expect(screen.queryByRole("button", { name: /^Edit / })).not.toBeInTheDocument();
