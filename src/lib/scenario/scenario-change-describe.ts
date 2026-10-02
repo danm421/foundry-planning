@@ -1,4 +1,5 @@
 import type { ScenarioChange } from "@/engine/scenario/types";
+import { POLICY_TYPE_LABEL } from "@/lib/presentations/pages/life-insurance-summary/aggregate";
 import { visibleChangeFields } from "./hidden-change-fields";
 import {
   GROWTH_FIELD_LABELS,
@@ -17,15 +18,9 @@ export function describeFieldLabel(targetKind: string, field: string): string {
   return (targetKind === "plan_settings" && GROWTH_FIELD_LABELS[field]) || field;
 }
 
-const POLICY_TYPE_LABEL: Record<string, string> = {
-  term: "Term",
-  whole: "Whole life",
-  universal: "Universal",
-  variable: "Variable",
-};
-
 const money = (v: unknown) => (typeof v === "number" ? `$${Math.round(v).toLocaleString()}` : "—");
-const policyType = (v: unknown) => (typeof v === "string" ? (POLICY_TYPE_LABEL[v] ?? v) : "—");
+const policyType = (v: unknown) =>
+  typeof v === "string" ? ((POLICY_TYPE_LABEL as Record<string, string>)[v] ?? v) : "—";
 
 // The headline terms of a life policy, in reading order.
 const POLICY_HEADLINES: Array<[key: string, label: string, fmt: (v: unknown) => string]> = [
@@ -41,16 +36,20 @@ const POLICY_HEADLINES: Array<[key: string, label: string, fmt: (v: unknown) => 
  * basis, payer…). Never the raw object.
  */
 export function describeLifeInsuranceDiff(from: unknown, to: unknown): string {
+  return `Policy: ${lifeInsuranceDiffBody(from, to)}`;
+}
+
+function lifeInsuranceDiffBody(from: unknown, to: unknown): string {
   const obj = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
   const a = obj(from);
   const b = obj(to);
-  if (!b) return "Policy: removed";
-  if (!a) return `Policy: added (${policyType(b.policyType)}, ${money(b.faceValue)} face value)`;
+  if (!b) return "removed";
+  if (!a) return `added (${policyType(b.policyType)}, ${money(b.faceValue)} face value)`;
   const moved = POLICY_HEADLINES.filter(([k]) => JSON.stringify(a[k]) !== JSON.stringify(b[k])).map(
     ([k, label, fmt]) => `${label} ${fmt(a[k])} → ${fmt(b[k])}`,
   );
-  if (moved.length > 0) return `Policy: ${moved.join(" · ")}`;
-  return "Policy: other terms changed";
+  if (moved.length > 0) return moved.join(" · ");
+  return "other terms changed";
 }
 
 /** One side of a field change. A model portfolio is a bare uuid, so it reads as
@@ -106,7 +105,7 @@ export function describeChangeUnit(unit: ChangeUnit, targetNames: Record<string,
       const f = fields[0];
       const { from, to } = payload[f];
       if (f === "lifeInsurance") {
-        return `Changed policy terms on ${name}: ${describeLifeInsuranceDiff(from, to).replace(/^Policy: /, "")}.`;
+        return `Changed policy terms on ${name}: ${lifeInsuranceDiffBody(from, to)}.`;
       }
       return `Changed ${describeFieldLabel(c.targetKind, f)} on ${name}: ${fmtFieldVal(c.targetKind, f, from)} → ${fmtFieldVal(c.targetKind, f, to)}.`;
     }

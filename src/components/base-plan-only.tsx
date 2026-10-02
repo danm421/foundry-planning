@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 
 /** What a base-only control says inside a scenario. */
-export const BASE_PLAN_ONLY_NOTE = "Available on the base plan.";
+const BASE_PLAN_ONLY_NOTE = "Available on the base plan.";
 
 /**
  * Some editors write tables with no scenario column (Medicare coverage,

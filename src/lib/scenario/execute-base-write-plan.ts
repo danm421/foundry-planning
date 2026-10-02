@@ -141,16 +141,16 @@ function orderInserts(inserts: readonly PlannedInsert[]): PlannedInsert[] {
     ranked.filter((i) => i.kind === "account").map((i) => [i.targetId, i]),
   );
   const out: PlannedInsert[] = [];
-  const placed = new Set<PlannedInsert>();
-  const place = (ins: PlannedInsert, path: Set<PlannedInsert>) => {
-    if (placed.has(ins) || path.has(ins)) return; // path: a malformed cycle stops here
+  const seen = new Set<PlannedInsert>(); // also stops a malformed parent cycle
+  const place = (ins: PlannedInsert) => {
+    if (seen.has(ins)) return;
+    seen.add(ins);
     const parentId = ins.kind === "account" ? ins.raw.parentAccountId : undefined;
     const parent = typeof parentId === "string" ? accountsById.get(parentId) : undefined;
-    if (parent) place(parent, new Set(path).add(ins));
-    placed.add(ins);
+    if (parent) place(parent);
     out.push(ins);
   };
-  for (const ins of ranked) place(ins, new Set());
+  for (const ins of ranked) place(ins);
   return out;
 }
 
