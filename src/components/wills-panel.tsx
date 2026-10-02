@@ -8,7 +8,7 @@ import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 import { useClientAccess } from "@/components/client-access-provider";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
-import type { EditorFocus } from "@/lib/scenario/change-editor-target";
+import { isEditFocus, type EditorFocus } from "@/lib/scenario/change-editor-target";
 // Local copy — `BUSINESS_ENTITY_TYPES` was removed from `in-estate-weights.ts`
 // in the business-as-asset migration. This UI is being phased out separately;
 // keep the gate inline until then.
@@ -259,7 +259,8 @@ function findFocusWill(
   wills: WillsPanelWill[],
   primary: WillsPanelPrimary,
 ): WillsPanelWill | null {
-  if (focus.kind !== "will") return null;
+  // Only an edit focus opens a row here; create and delete are not built yet.
+  if (focus.kind !== "will" || !isEditFocus(focus)) return null;
   const will = wills.find((w) => w.id === focus.id);
   if (!will) return null;
   if (will.grantor === "spouse" && !primary.spouseName) return null;

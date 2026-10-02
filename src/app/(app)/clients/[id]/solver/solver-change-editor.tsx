@@ -23,7 +23,7 @@
 import { startTransition, useEffect, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import type { ChangeEditorTarget, EditorFocus } from "@/lib/scenario/change-editor-target";
+import { focusRowId, type ChangeEditorTarget, type EditorFocus } from "@/lib/scenario/change-editor-target";
 import type { FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 import { loadChangeEditorProps, type ChangeEditorViewProps } from "./change-editor-actions";
 
@@ -110,7 +110,7 @@ function DetailsChangeEditor({
     const lifeInsurance =
       state.status === "open" &&
       state.loaded.page === "net-worth" &&
-      state.loaded.props.accounts.some((a) => a.id === focus.id && a.category === "life_insurance");
+      state.loaded.props.accounts.some((a) => a.id === focusRowId(focus) && a.category === "life_insurance");
     setState({ status: "unavailable", href: detailsHref(clientId, scenarioId, target, lifeInsurance) });
   }
 
@@ -170,7 +170,7 @@ function renderView(
   focus: EditorFocus,
   onFocusClose: (outcome?: FocusCloseOutcome) => void,
 ): ReactNode {
-  const key = `${focus.kind}:${focus.id}`;
+  const key = `${focus.kind}:${focusRowId(focus) ?? "new"}`;
   switch (loaded.page) {
     case "income-expenses":
       return <IncomeExpensesView key={key} {...loaded.props} focus={focus} onFocusClose={onFocusClose} />;
@@ -200,7 +200,7 @@ function detailsHref(
   let path: string = page;
   if (lifeInsurance) {
     path = "insurance";
-    query.set("policy", focus.id);
+    query.set("policy", focusRowId(focus) ?? "");
   }
   query.set("scenario", scenarioId);
   return `/clients/${clientId}/details/${path}?${query.toString()}`;

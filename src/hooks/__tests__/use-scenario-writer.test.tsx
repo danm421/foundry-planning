@@ -9,7 +9,9 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import type { ReactNode } from "react";
 import { useScenarioWriter } from "../use-scenario-writer";
+import { ScenarioWriteListener, type ScenarioWriteEvent } from "../scenario-write-listener";
 
 const CLIENT_ID = "client-123";
 const SCENARIO_ID = "scen-456";
@@ -396,5 +398,58 @@ describe("useScenarioWriter — scenarioActive flag", () => {
     setUrl(`scenario=${SCENARIO_ID}`);
     const { result } = renderHook(() => useScenarioWriter(CLIENT_ID));
     expect(result.current.scenarioActive).toBe(true);
+  });
+});
+
+describe("useScenarioWriter — write listener", () => {
+  const edit = {
+    op: "edit" as const,
+    targetKind: "income" as const,
+    targetId: "i1",
+    desiredFields: {},
+  };
+  const fallback = { url: "/x", method: "PATCH" as const };
+
+  function wrapperFor(listener: (e: ScenarioWriteEvent) => void) {
+    return function Wrapper({ children }: { children: ReactNode }) {
+      return <ScenarioWriteListener value={listener}>{children}</ScenarioWriteListener>;
+    };
+  }
+
+  it("notifies the listener after a successful scenario write", async () => {
+    setUrl(`scenario=${SCENARIO_ID}`);
+    const listener = vi.fn();
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID), {
+      wrapper: wrapperFor(listener),
+    });
+    await result.current.submit(edit, fallback);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith({ targetKind: "income", targetId: "i1", op: "edit" });
+  });
+
+  it("does not notify when the write fails", async () => {
+    setUrl(`scenario=${SCENARIO_ID}`);
+    fetchSpy.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+    const listener = vi.fn();
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID), {
+      wrapper: wrapperFor(listener),
+    });
+    await result.current.submit(edit, fallback);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("notifies for submitDirect only when given a target", async () => {
+    setUrl(`scenario=${SCENARIO_ID}`);
+    const listener = vi.fn();
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID), {
+      wrapper: wrapperFor(listener),
+    });
+    await result.current.submitDirect({ url: "/g", method: "DELETE" });
+    expect(listener).not.toHaveBeenCalled();
+    await result.current.submitDirect(
+      { url: "/g", method: "DELETE" },
+      { targetKind: "gift", targetId: "g1", op: "remove" },
+    );
+    expect(listener).toHaveBeenCalledWith({ targetKind: "gift", targetId: "g1", op: "remove" });
   });
 });

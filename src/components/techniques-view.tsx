@@ -19,7 +19,7 @@ import type { ClientMilestones, YearRef } from "@/lib/milestones";
 import { YEAR_REF_LABELS } from "@/lib/milestones";
 import { formatReinvestmentScope } from "@/lib/solver/technique-summaries";
 import { USPS_STATE_NAMES, type USPSStateCode } from "@/lib/usps-states";
-import type { EditorFocus } from "@/lib/scenario/change-editor-target";
+import { isEditFocus, type EditorFocus } from "@/lib/scenario/change-editor-target";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -989,6 +989,8 @@ function findFocusRow(
     "rothConversions" | "transfers" | "relocations" | "assetTransactions"
   >,
 ): FocusTarget | null {
+  // Only an edit focus opens a row here; create and delete are not built yet.
+  if (!isEditFocus(focus)) return null;
   const byId = <T extends { id: string }>(list: T[]) => list.find((r) => r.id === focus.id);
   switch (focus.kind) {
     case "roth_conversion": {

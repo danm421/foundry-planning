@@ -22,12 +22,55 @@ export type DetailsEditorPage =
   | "net-worth"
   | "techniques"
   | "family"
-  | "wills";
+  | "wills"
+  | "insurance"
+  | "assumptions";
 
-export interface EditorFocus {
-  kind: TargetKind;
+/** A focus kind: a scenario TargetKind, or a partitioned table's pseudo-kind. */
+export type FocusKind = TargetKind | "note_receivable";
+
+export type CreateVariant =
+  | "taxable"
+  | "cash"
+  | "retirement"
+  | "annuity"
+  | "real_estate"
+  | "stock_options"
+  | "education_savings"
+  | "business"
+  | "note_receivable"
+  | "life_insurance"
+  | "client"
+  | "spouse";
+
+// Assumptions singletons use `kind: "plan_settings"` with `id` set to the
+// Assumptions tab id ("tax-rates" | "growth-inflation" | "withdrawal").
+export interface EditFocus {
+  intent?: "edit";
+  kind: FocusKind;
   id: string;
   field?: string;
+}
+export interface DeleteFocus {
+  intent: "delete";
+  kind: FocusKind;
+  id: string;
+}
+export interface CreateFocus {
+  intent: "create";
+  kind: FocusKind;
+  variant?: CreateVariant;
+}
+export type EditorFocus = EditFocus | DeleteFocus | CreateFocus;
+
+/** The row id a focus names, or null for a create. */
+export function focusRowId(focus: EditorFocus): string | null {
+  return focus.intent === "create" ? null : focus.id;
+}
+
+/** True for a focus that edits (intent absent or "edit"). */
+export function isEditFocus(focus: EditorFocus): focus is EditFocus {
+  return focus.intent === undefined || focus.intent === "edit";
 }
 
 export type ChangeEditorTarget =

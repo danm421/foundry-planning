@@ -32,6 +32,7 @@
 import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioState } from "@/hooks/use-scenario-state";
+import { useScenarioWriteListener, type ScenarioWriteEvent } from "@/hooks/scenario-write-listener";
 import type { TargetKind } from "@/engine/scenario/types";
 
 export interface ScenarioEdit {
@@ -90,8 +91,11 @@ export interface UseScenarioWriter {
    *
    * Identical to what `submit` does in base mode, refresh included, so a
    * surface that moves onto it keeps its base-mode behaviour unchanged.
+   *
+   * `target`, when given, is announced to the write listener after a
+   * successful request — a direct write has no edit to derive it from.
    */
-  submitDirect: (request: BaseFallback) => Promise<Response>;
+  submitDirect: (request: BaseFallback, target?: ScenarioWriteEvent) => Promise<Response>;
   /** True when `?scenario=<sid>` is set, i.e. submits go through the unified route. */
   scenarioActive: boolean;
 }
@@ -99,9 +103,10 @@ export interface UseScenarioWriter {
 export function useScenarioWriter(clientId: string): UseScenarioWriter {
   const { scenarioId } = useScenarioState(clientId);
   const router = useRouter();
+  const onWrite = useScenarioWriteListener();
 
   const submitDirect = useCallback(
-    async (request: BaseFallback): Promise<Response> => {
+    async (request: BaseFallback, target?: ScenarioWriteEvent): Promise<Response> => {
       const init: RequestInit = { method: request.method };
       if (request.body !== undefined) {
         init.headers = { "Content-Type": "application/json" };
@@ -109,9 +114,10 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
       }
       const res = await fetch(request.url, init);
       if (res.ok && !request.skipRefresh) router.refresh();
+      if (res.ok && target) onWrite?.(target);
       return res;
     },
-    [router],
+    [router, onWrite],
   );
 
   const submit = useCallback(
@@ -148,12 +154,15 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
         last = res;
       }
       if (last && !baseFallback.skipRefresh) router.refresh();
+      for (const e of edits) {
+        onWrite?.({ targetKind: e.targetKind, targetId: e.targetId ?? (typeof e.entity?.id === "string" ? e.entity.id : null), op: e.op });
+      }
       // Only reachable for an empty batch, which no caller passes. "Nothing to
       // write" is a success, and answering with an ok Response keeps every
       // caller's `res.ok` read honest without widening the return to nullable.
       return last ?? new Response(null, { status: 204 });
     },
-    [scenarioId, clientId, router, submitDirect],
+    [scenarioId, clientId, router, submitDirect, onWrite],
   );
 
   return { submit, submitDirect, scenarioActive: scenarioId != null };

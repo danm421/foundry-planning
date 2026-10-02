@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   resolveChangeEditor,
+  focusRowId,
+  isEditFocus,
   type ChangeEditorInput,
   type DetailsEditorPage,
 } from "./change-editor-target";
@@ -342,5 +344,20 @@ describe("resolveChangeEditor", () => {
         ),
       ).toBeNull();
     });
+  });
+});
+
+describe("focus intents", () => {
+  it("treats an absent or explicit edit intent as an edit", () => {
+    expect(isEditFocus({ kind: "income", id: "i1" })).toBe(true);
+    expect(isEditFocus({ intent: "edit", kind: "income", id: "i1" })).toBe(true);
+    expect(isEditFocus({ intent: "delete", kind: "income", id: "i1" })).toBe(false);
+    expect(isEditFocus({ intent: "create", kind: "income" })).toBe(false);
+  });
+
+  it("names the row a focus targets, or null for a create", () => {
+    expect(focusRowId({ kind: "income", id: "i1" })).toBe("i1");
+    expect(focusRowId({ intent: "delete", kind: "income", id: "i2" })).toBe("i2");
+    expect(focusRowId({ intent: "create", kind: "income" })).toBeNull();
   });
 });

@@ -32,7 +32,7 @@ import type { IncomeTaxType } from "@/engine/tax-adjustments";
 import type { AccountOwner } from "@/engine/ownership";
 import { SocialSecurityCard } from "./social-security-card";
 import { SocialSecurityDialog } from "./social-security-dialog";
-import type { EditorFocus } from "@/lib/scenario/change-editor-target";
+import { isEditFocus, type EditorFocus } from "@/lib/scenario/change-editor-target";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useClientAccess } from "./client-access-provider";
 import Row from "@/components/income-expenses/row";
@@ -1783,6 +1783,8 @@ function findFocusRow(
   expenses: Expense[],
   savingsRules: SavingsRule[],
 ): FocusTarget | null {
+  // Only an edit focus opens a row here; create and delete are not built yet.
+  if (!isEditFocus(focus)) return null;
   switch (focus.kind) {
     case "income": {
       const row = incomes.find((i) => i.id === focus.id);

@@ -10,8 +10,10 @@ import { useEffect, useRef } from "react";
  * - `"unsupported"`: the row is there, but its editor is known to write the
  *   base plan (or revert the scenario's change) inside a scenario (Ruling
  *   F-I2). The host explains, with no link — the page has the same bug.
+ * - `"failed"`: the editor opened and the save or delete did not land. The host
+ *   says so rather than closing as if the change had been made.
  */
-export type FocusCloseOutcome = "unavailable" | "unsupported";
+export type FocusCloseOutcome = "unavailable" | "unsupported" | "failed";
 
 /**
  * Hands focus mode control back to the Solver's Changes tab host exactly

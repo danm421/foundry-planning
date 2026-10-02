@@ -52,7 +52,7 @@ import {
 } from "@/lib/inline-edit/liability-write";
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import type { CategoryDefaultRateMap } from "@/lib/investments/category-default-rates";
-import type { EditorFocus } from "@/lib/scenario/change-editor-target";
+import { isEditFocus, type EditorFocus } from "@/lib/scenario/change-editor-target";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options" | "education_savings";
 
@@ -583,6 +583,8 @@ function findFocusRow(
   const underListedBusiness = (parentAccountId: string) =>
     isListedBusiness(accounts.find((a) => a.id === parentAccountId));
 
+  // Only an edit focus opens a row here; create and delete are not built yet.
+  if (!isEditFocus(focus)) return null;
   switch (focus.kind) {
     case "account": {
       const row = accounts.find((a) => a.id === focus.id);

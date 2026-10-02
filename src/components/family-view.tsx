@@ -24,7 +24,7 @@ import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember, AssetsTabBusiness } from "./forms/assets-tab";
 import type { AccountOwner } from "@/engine/ownership";
 import { ageOnDate, birthYearFromDob, yearForAge } from "@/lib/age-year";
-import type { EditorFocus } from "@/lib/scenario/change-editor-target";
+import { isEditFocus, type EditorFocus } from "@/lib/scenario/change-editor-target";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -389,6 +389,8 @@ function findFocusRow(
   focus: EditorFocus,
   rows: { clientId: string; entities: Entity[]; gifts: Gift[]; giftSeries: GiftSeriesLite[] },
 ): FocusTarget | "unsupported" | null {
+  // Only an edit focus opens a row here; create and delete are not built yet.
+  if (!isEditFocus(focus)) return null;
   const byId = <T extends { id: string }>(list: T[]) => list.find((r) => r.id === focus.id) ?? null;
   switch (focus.kind) {
     // The profile dialog. (Horizon and retirement-age changes open the Solver's
