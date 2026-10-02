@@ -53,6 +53,7 @@ import {
 } from "./ira-basis";
 import { synthesizeDisabilityBenefits } from "./disability-benefits";
 import { expandLinkedIncomes } from "./linked-income";
+import { applyLtcEvent } from "./ltc-event";
 import { computeExpenses } from "./expenses";
 import { computeLiabilities } from "./liabilities";
 import { isHeldFlatLiability } from "./liability-kind";
@@ -490,6 +491,10 @@ function foldLifeInsurancePayoutsIntoIncome(
 }
 
 export function runProjection(data: ClientData, options?: ProjectionOptions): ProjectionYear[] {
+  // Long-term care stress (scenario-only `ltc_event`): expand into ordinary
+  // rows FIRST. The destructure below must see the care-adjusted client and
+  // plan horizon — see src/engine/ltc-event.ts.
+  data = applyLtcEvent(data).data;
   const { client, planSettings } = data;
   const years: ProjectionYear[] = [];
 
@@ -9592,7 +9597,10 @@ export function runProjectionWithEvents(
   const giftValueAtYear = buildGiftValueAtYear(years, data.accounts);
   const giftLedger = computeGiftLedger({
     planStartYear: data.planSettings.planStartYear,
-    planEndYear: data.planSettings.planEndYear,
+    // `data` is the raw input: an LTC event can extend the horizon inside
+    // runProjection only, so cover every year it actually ran. Without one the
+    // projection never passes planEndYear, so this is planEndYear as before.
+    planEndYear: Math.max(data.planSettings.planEndYear, years[years.length - 1]?.year ?? 0),
     hasSpouse: data.client.spouseDob != null,
     priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
     gifts: data.gifts ?? [],

@@ -275,7 +275,11 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
       breakdown.push({ ...skeleton, skipped: "orphaned" });
       continue;
     }
-    if (accountBalances[sourceAccountId] === undefined) {
+    // A second sale of an account an earlier sale THIS year already sold off
+    // (e.g. a Techniques sale and the LTC home sale in one year) finds nothing
+    // to sell. Its balance is 0, not undefined, so without this it would pay
+    // the linked loans a second time, or book an override price as proceeds.
+    if (accountBalances[sourceAccountId] === undefined || removedAccountIds.includes(sourceAccountId)) {
       breakdown.push({ ...skeleton, skipped: "no-source-balance" });
       continue;
     }

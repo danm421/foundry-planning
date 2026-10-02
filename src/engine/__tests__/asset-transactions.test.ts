@@ -586,6 +586,31 @@ describe("applyAssetSales — partial sales on existing accounts", () => {
     // basis still pro-rates to fraction (no overrideBasis)
     expect(result.breakdown[0].basis).toBeCloseTo(80_000, 2);
   });
+
+  it("a second full sale of an account sold earlier the same year finds nothing to sell", () => {
+    const first: AssetTransaction = {
+      id: "first", name: "First", type: "sell", year: 2030, accountId: "rental-1",
+    };
+    // An override price on the second sale would otherwise be booked as proceeds,
+    // and the linked mortgage paid off a second time.
+    const second: AssetTransaction = {
+      id: "second", name: "Second", type: "sell", year: 2030, accountId: "rental-1", overrideSaleValue: 450_000,
+    };
+    const accountBalances: Record<string, number> = { "rental-1": 500_000, checking: 0 };
+    const basisMap: Record<string, number> = { "rental-1": 300_000, checking: 0 };
+    const result = applyAssetSales({
+      sales: [first, second],
+      accounts: [rentalProperty],
+      liabilities: [mortgage],
+      accountBalances, basisMap,
+      accountLedgers: { "rental-1": makeLedger(500_000), checking: makeLedger(0) },
+      year: 2030, defaultCheckingId: "checking", filingStatus: "married_joint",
+    });
+    expect(result.breakdown.map((b) => b.skipped)).toEqual([undefined, "no-source-balance"]);
+    expect(result.removedLiabilityIds).toEqual(["mort-1"]);
+    expect(result.capitalGains).toBeCloseTo(200_000, 2); // the first sale's gain only
+    expect(accountBalances.checking).toBeCloseTo(300_000, 2); // 500k − 200k mortgage, once
+  });
 });
 
 describe("applyAssetSales — source resolution", () => {
