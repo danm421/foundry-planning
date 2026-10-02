@@ -70,6 +70,7 @@ export interface SellAccountFractionResult {
   /** Raw signed capital gain (saleValue − transactionCosts − basis), before any
    *  exclusion or §165(c) disallowance. Negative when sold below basis. */
   capitalGain: number;
+  /** Sum of EVERY loan linked to the property, paid off on a full sale; 0 on a partial one. */
   mortgagePaidOff: number;
   /** Set when this sale fully drained the account (fraction ≥ 1 or residual < $1). */
   removedAccountId?: string;
@@ -117,17 +118,18 @@ export function sellAccountFraction(
   // Net proceeds after costs
   let netProceeds = saleValue - transactionCosts;
 
-  // Pay off linked mortgage only on full sales. Partial real-estate sales
+  // Pay off every linked loan only on full sales. Partial real-estate sales
   // route net proceeds to checking; the mortgage continues amortizing.
   let mortgagePaidOff = 0;
   const removedLiabilityIds: string[] = [];
   if (fraction >= 1) {
-    const linkedMortgage = liabilities.find((l) => l.linkedPropertyId === accountId);
-    if (linkedMortgage) {
-      const mortgageBalance = linkedMortgage.balance;
-      netProceeds -= mortgageBalance;
-      mortgagePaidOff = mortgageBalance;
-      removedLiabilityIds.push(linkedMortgage.id);
+    // EVERY loan secured by the property is paid from the proceeds — a
+    // mortgage and a HELOC on one house are both due at closing.
+    for (const linked of liabilities) {
+      if (linked.linkedPropertyId !== accountId) continue;
+      netProceeds -= linked.balance;
+      mortgagePaidOff += linked.balance;
+      removedLiabilityIds.push(linked.id);
     }
   }
 

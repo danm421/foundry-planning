@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   applyAssetSales,
   applyAssetPurchases,
+  sellAccountFraction,
   _resetSyntheticIdCounter,
   DEFAULT_PROPERTY_TAX_GROWTH,
 } from "../asset-transactions";
@@ -904,5 +905,36 @@ describe("applyAssetPurchases — property tax", () => {
   it("ignores a zero or negative amount", () => {
     const { newAccounts } = run(buyHome({ annualPropertyTax: 0 }));
     expect(newAccounts[0].annualPropertyTax).toBeUndefined();
+  });
+});
+
+describe("sellAccountFraction — every linked loan", () => {
+  const heloc: Liability = { ...mortgage, id: "heloc-1", name: "HELOC", balance: 40_000 };
+
+  function sell(fraction: number) {
+    return sellAccountFraction({
+      accountId: "rental-1",
+      fraction,
+      liabilities: [{ ...mortgage, balance: 200_000 }, heloc],
+      accountBalances: { "rental-1": 500_000 },
+      basisMap: { "rental-1": 300_000 },
+      accountLedgers: { "rental-1": makeLedger(500_000) },
+      saleLabel: "Asset sale: Rental",
+      saleId: "sale-1",
+      transactionCostPct: 0.06,
+    });
+  }
+
+  it("a full sale pays off the mortgage AND the HELOC", () => {
+    const r = sell(1);
+    expect(r.mortgagePaidOff).toBe(240_000);
+    expect(r.removedLiabilityIds.sort()).toEqual(["heloc-1", "mort-1"]);
+    expect(r.netProceeds).toBe(500_000 - 30_000 - 240_000);
+  });
+
+  it("a partial sale still pays off nothing", () => {
+    const r = sell(0.5);
+    expect(r.mortgagePaidOff).toBe(0);
+    expect(r.removedLiabilityIds).toEqual([]);
   });
 });

@@ -1436,7 +1436,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const boy = sched ? scheduleBoYBalance(sched, year) : liab.balance;
       liabilityBalancesBoY[liab.id] = boy;
       // Keep liab.balance aligned with BoY so applyAssetSales (which reads
-      // linkedMortgage.balance) pays off the correct amount.
+      // each linked loan's balance) pays off the correct amount.
       liab.balance = boy;
     }
 
