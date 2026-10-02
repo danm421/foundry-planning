@@ -983,12 +983,23 @@ export async function describeProposedWrite(
     if (call.name === "promote_to_base") {
       const scenarioId = str(call.args.scenarioId);
       if (!scenarioId) return base;
-      const { effectiveTree: baseTree } = await loadEffectiveTree(ctx.clientId, ctx.firmId, "base", {});
+      const { effectiveTree: baseTree, resolutionContext } = await loadEffectiveTree(
+        ctx.clientId,
+        ctx.firmId,
+        "base",
+        {},
+      );
       const [changes, groups] = await Promise.all([
         loadScenarioChanges(scenarioId),
         loadScenarioToggleGroups(scenarioId),
       ]);
-      const plan = scenarioChangesToBaseWrites(baseTree, changes, groups, {});
+      const plan = scenarioChangesToBaseWrites(
+        baseTree,
+        changes,
+        groups,
+        {},
+        resolutionContext?.accountGroupMembersById,
+      );
       const lines: string[] = [
         ...plan.inserts.map((w) => `ADD ${w.kind}`),
         // A recurring series is a `gift` change that is promoted into

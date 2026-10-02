@@ -199,6 +199,119 @@ describe("scenarioChangesToBaseWrites", () => {
   });
 });
 
+// The promote planner reuses the engine cascade to decide which base rows to
+// delete, so it must hand that cascade each reinvestment's real targets: an edit
+// carries only its picks and groups, never the union the cascade reads.
+describe("scenarioChangesToBaseWrites — reinvestment cascade targets", () => {
+  /** Checking (cash), an IRA, a brokerage (taxable), and one base reinvestment
+   *  shaped as `loadClientData` builds it. */
+  const treeWith = (picks: string[], groupKeys: string[] = [], accountIds = picks): ClientData => ({
+    ...minimalClientData(),
+    accounts: [
+      { id: "a-cash", name: "Checking", category: "cash", value: 100 } as never,
+      { id: "a-ira", name: "IRA", category: "retirement", value: 100 } as never,
+      { id: "a-brokerage", name: "Brokerage", category: "taxable", value: 100 } as never,
+    ],
+    reinvestments: [
+      {
+        id: "ri-1",
+        name: "Switch",
+        pickedAccountIds: picks,
+        groupKeys,
+        accountIds,
+        year: 2035,
+        newGrowthRate: 0.05,
+        realizeTaxesOnSwitch: false,
+        soldFractionByAccount: {},
+      },
+    ],
+  });
+  const editRi = (payload: Record<string, unknown>): ScenarioChange => ({
+    ...baseChange, id: "ch-ri", opType: "edit", targetKind: "reinvestment", targetId: "ri-1", payload,
+  });
+  const removeAccount = (id: string): ScenarioChange => ({
+    ...baseChange, id: `ch-rm-${id}`, opType: "remove", targetKind: "account", targetId: id, payload: null, orderIndex: 1,
+  });
+  const reinvestmentDeletes = (plan: BaseWritePlan) =>
+    plan.removes.filter((r) => r.kind === "reinvestment").map((r) => r.id);
+
+  it("a re-point off an account the scenario removes deletes no reinvestment", () => {
+    const plan = scenarioChangesToBaseWrites(
+      treeWith(["a-cash"]),
+      [editRi({ pickedAccountIds: { from: ["a-cash"], to: ["a-ira"] } }), removeAccount("a-cash")],
+      [],
+      {},
+    );
+    expect(plan.removes).toContainEqual({ kind: "account", id: "a-cash", cascade: false });
+    expect(reinvestmentDeletes(plan)).toEqual([]);
+  });
+
+  it("a group re-point off the removed account's group deletes no reinvestment", () => {
+    const plan = scenarioChangesToBaseWrites(
+      treeWith([], ["taxable"], ["a-brokerage"]),
+      [editRi({ groupKeys: { from: ["taxable"], to: ["cash"] } }), removeAccount("a-brokerage")],
+      [],
+      {},
+    );
+    expect(reinvestmentDeletes(plan)).toEqual([]);
+  });
+
+  it("a re-point onto a custom group reads that group's members", () => {
+    const plan = scenarioChangesToBaseWrites(
+      treeWith(["a-cash"]),
+      [
+        editRi({ pickedAccountIds: { from: ["a-cash"], to: [] }, groupKeys: { from: [], to: ["grp-1"] } }),
+        removeAccount("a-cash"),
+      ],
+      [],
+      {},
+      new Map([["grp-1", ["a-ira"]]]),
+    );
+    expect(reinvestmentDeletes(plan)).toEqual([]);
+  });
+
+  it("a re-point onto an account the scenario removes deletes the reinvestment", () => {
+    const plan = scenarioChangesToBaseWrites(
+      treeWith(["a-cash"]),
+      [editRi({ pickedAccountIds: { from: ["a-cash"], to: ["a-ira"] } }), removeAccount("a-ira")],
+      [],
+      {},
+    );
+    expect(plan.removes).toContainEqual({ kind: "reinvestment", id: "ri-1", cascade: true });
+  });
+
+  it("a legacy row re-saved with picks (its leftover accountIds stale) deletes no reinvestment", () => {
+    const plan = scenarioChangesToBaseWrites(
+      treeWith(["a-cash"]),
+      [
+        editRi({
+          accountIds: { from: ["a-cash"], to: ["a-cash"] },
+          pickedAccountIds: { from: ["a-cash"], to: ["a-ira"] },
+        }),
+        removeAccount("a-cash"),
+      ],
+      [],
+      {},
+    );
+    expect(reinvestmentDeletes(plan)).toEqual([]);
+  });
+
+  it("an edit folded into a scenario add (its union stale) deletes nothing for that add", () => {
+    const add: ScenarioChange = {
+      ...baseChange,
+      id: "ch-add",
+      opType: "add",
+      targetKind: "reinvestment",
+      targetId: "ri-new",
+      payload: { id: "ri-new", name: "New", accountIds: ["a-cash"], pickedAccountIds: ["a-ira"], groupKeys: [] },
+    };
+    const plan = scenarioChangesToBaseWrites(treeWith(["a-brokerage"]), [add, removeAccount("a-cash")], [], {});
+    expect(reinvestmentDeletes(plan)).toEqual([]);
+    // The add itself is written exactly as stored.
+    expect(plan.inserts).toEqual([{ kind: "reinvestment", targetId: "ri-new", raw: add.payload }]);
+  });
+});
+
 describe("scenarioChangesToBaseWrites — the gift_series section", () => {
   // A solver-style recurring series. `gift_series` is scenario-PARTITIONED and
   // is not a TargetKind, so a series-shaped `gift` add cannot go to the

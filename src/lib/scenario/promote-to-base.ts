@@ -92,7 +92,7 @@ export async function promoteScenarioToBase(args: PromoteArgs): Promise<PromoteR
 
   // 1. Capture target tree + raw overlay + current base tree (all via module db,
   //    before the write transaction).
-  const [{ effectiveTree: baseTree }, changes, groups] = await Promise.all([
+  const [{ effectiveTree: baseTree, resolutionContext }, changes, groups] = await Promise.all([
     loadEffectiveTree(clientId, firmId, "base", {}),
     loadScenarioChanges(scenarioId),
     loadScenarioToggleGroups(scenarioId),
@@ -113,7 +113,13 @@ export async function promoteScenarioToBase(args: PromoteArgs): Promise<PromoteR
   let deletedScenarioCount = 0;
   let notes = { kept: 0, dropped: 0 };
   try {
-    const plan = scenarioChangesToBaseWrites(baseTree, changes, groups, toggleState);
+    const plan = scenarioChangesToBaseWrites(
+      baseTree,
+      changes,
+      groups,
+      toggleState,
+      resolutionContext?.accountGroupMembersById,
+    );
 
     // Tenant guard: expense_dedicated_accounts.account_id is a GLOBAL FK (no
     // tenant column), so every dedicated-account id not satisfied by an

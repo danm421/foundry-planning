@@ -25,6 +25,7 @@ import type {
 import type { BaseWritePlan } from "./promote-to-base-types";
 import { isEstateFlowGiftDraft } from "./apply-gift-overlays";
 import { planSettingsEngineToColumns } from "./plan-settings-fields";
+import { withReinvestmentTargets } from "./reinvestment-picks";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
 /** CascadeWarning.kind → the TargetKind whose base row must be deleted. The two
@@ -70,6 +71,9 @@ export function scenarioChangesToBaseWrites(
   changes: ScenarioChange[],
   groups: ToggleGroup[],
   toggleState: ToggleState,
+  /** The base load's custom account-group members (`ResolutionContext`), so the
+   *  cascade below expands a reinvestment's custom groups as the scenario load does. */
+  customGroupMembersById: Map<string, string[]> = new Map(),
 ): BaseWritePlan {
   const plan: BaseWritePlan = {
     inserts: [],
@@ -127,7 +131,15 @@ export function scenarioChangesToBaseWrites(
   }
 
   // 3. Reuse the engine to compute cascade drops, then turn each into a delete.
-  const { warnings } = applyScenarioChanges(baseTree, changes, toggleState, groups);
+  // The cascade reads each reinvestment's union, which an add / edit does not
+  // carry, so it gets the same pre-pass the scenario load runs. Only the cascade
+  // does: the writes above stay exactly what the changes store.
+  const { warnings } = applyScenarioChanges(
+    baseTree,
+    withReinvestmentTargets(changes, baseTree, toggleState, groups, customGroupMembersById),
+    toggleState,
+    groups,
+  );
   for (const w of warnings) {
     const kind = CASCADE_KIND_TO_TARGET[w.kind];
     if (!kind) continue;

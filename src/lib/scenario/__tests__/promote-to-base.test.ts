@@ -15,6 +15,9 @@ const h = vi.hoisted(() => ({
   transaction: vi.fn(),
   /** The account ids this client owns — what an `accounts` read finds. */
   ownAccountIds: [] as string[],
+  /** The base load's custom account-group members, and what the planner got. */
+  groupMembers: new Map<string, string[]>([["grp-1", ["acc-own"]]]),
+  plannerArgs: [] as unknown[],
 }));
 
 vi.mock("@/db", async () => {
@@ -37,7 +40,10 @@ vi.mock("@/db", async () => {
   };
 });
 vi.mock("@/lib/scenario/loader", () => ({
-  loadEffectiveTree: async () => ({ effectiveTree: {} }),
+  loadEffectiveTree: async () => ({
+    effectiveTree: {},
+    resolutionContext: { accountGroupMembersById: h.groupMembers },
+  }),
 }));
 vi.mock("@/lib/scenario/changes", () => ({
   loadScenarioChanges: async () => [],
@@ -47,7 +53,10 @@ vi.mock("@/lib/scenario/snapshot", () => ({ createSnapshot: async () => ({ id: "
 vi.mock("@/lib/audit", () => ({ recordAudit: async () => undefined }));
 vi.mock("../scenario-changes-to-base-writes", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../scenario-changes-to-base-writes")>()),
-  scenarioChangesToBaseWrites: () => h.plan,
+  scenarioChangesToBaseWrites: (...args: unknown[]) => {
+    h.plannerArgs = args;
+    return h.plan;
+  },
 }));
 
 import { promoteScenarioToBase } from "../promote-to-base";
@@ -168,5 +177,15 @@ describe("promoteScenarioToBase tenant guard — reinvestment account picks", ()
     });
     await promoteScenarioToBase(ARGS);
     expect(h.transaction).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The planner reruns the engine cascade, which must see a reinvestment's custom
+// groups expanded the way the scenario load expands them.
+describe("promoteScenarioToBase — the planner's inputs", () => {
+  it("hands the planner the base load's custom group members", async () => {
+    h.plan = planAddingPolicyFor("fm-syn");
+    await promoteScenarioToBase(ARGS);
+    expect(h.plannerArgs[4]).toBe(h.groupMembers);
   });
 });

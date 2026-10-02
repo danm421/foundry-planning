@@ -15,6 +15,7 @@
 
 import { describe, it, expect } from "vitest";
 import { applyScenarioChangesWithRefs } from "../loader";
+import { withReinvestmentTargets } from "../reinvestment-picks";
 import { createGrowthSourceResolver } from "@/lib/projection/resolve-growth-source";
 import type { ResolutionContext } from "@/lib/projection/resolve-entity";
 import type { ClientData, Reinvestment } from "@/engine/types";
@@ -443,6 +444,16 @@ describe("applyScenarioChangesWithRefs — reinvestment re-resolution", () => {
       toggleGroupId,
       orderIndex: 0,
     });
+    const removeAccount = (id: string): ScenarioChange => ({
+      id: `ch-rm-${id}`,
+      scenarioId: "scn1",
+      opType: "remove",
+      targetKind: "account",
+      targetId: id,
+      payload: null,
+      toggleGroupId: null,
+      orderIndex: 1,
+    });
     const effective = (base: ClientData, changes: ScenarioChange[], toggles = {}, groups: never[] = []) =>
       applyScenarioChangesWithRefs(base, changes, toggles, groups, makeResolutionContext()).effectiveTree
         .reinvestments![0];
@@ -513,6 +524,111 @@ describe("applyScenarioChangesWithRefs — reinvestment re-resolution", () => {
         ]);
         expect(ri.pickedAccountIds).toEqual(["a-cash"]);
         expect([...ri.accountIds].sort()).toEqual(["a-brokerage", "a-cash"]);
+      });
+    });
+
+    // A custom group's members come from the base load's member map, which
+    // knows nothing of the scenario — a member the scenario removed must stay
+    // out of the union, as the cascade already took it out.
+    it("a custom-group member the scenario removed stays out", () => {
+      const base = tree();
+      base.reinvestments = [
+        { ...baseReinvestment(base, [], ["grp-1"]), accountIds: ["a-cash", "a-brokerage"] },
+      ];
+      const ctx = makeResolutionContext();
+      ctx.accountGroupMembersById = new Map([["grp-1", ["a-cash", "a-brokerage"]]]);
+      const { effectiveTree } = applyScenarioChangesWithRefs(base, [removeAccount("a-cash")], {}, [], ctx);
+      expect(effectiveTree.reinvestments![0].accountIds).toEqual(["a-brokerage"]);
+    });
+
+    // The engine cascade (run inside `applyScenarioChanges`) trims removed
+    // accounts from `accountIds` and drops a reinvestment left with none. An edit
+    // carries only picks and groups, so the cascade must be handed the targets
+    // the edit means — not the base union it leaves behind.
+    describe("the cascade sees the real targets", () => {
+      const run = (base: ClientData, changes: ScenarioChange[], toggles = {}, groups: never[] = []) => {
+        const { effectiveTree, warnings } = applyScenarioChangesWithRefs(
+          base, changes, toggles, groups, makeResolutionContext(),
+        );
+        return { reinvestments: effectiveTree.reinvestments ?? [], warnings };
+      };
+      const pickedBase = (picks: string[], groupKeys: string[] = []) => {
+        const t = tree();
+        t.reinvestments = [baseReinvestment(t, picks, groupKeys)];
+        return t;
+      };
+      const dropped = (warnings: { kind: string; affectedEntityId: string }[]) =>
+        warnings.filter((w) => w.kind === "reinvestment_dropped").map((w) => w.affectedEntityId);
+
+      it("re-pointed off an account the scenario then removes, it is kept on its new target", () => {
+        const { reinvestments, warnings } = run(pickedBase(["a-cash"]), [
+          edit({ pickedAccountIds: { from: ["a-cash"], to: ["a-ira"] } }),
+          removeAccount("a-cash"),
+        ]);
+        expect(reinvestments.map((r) => r.accountIds)).toEqual([["a-ira"]]);
+        expect(dropped(warnings)).toEqual([]);
+      });
+
+      it("re-pointed from one group to another, then the old group's account removed, it is kept", () => {
+        const { reinvestments, warnings } = run(pickedBase([], ["taxable"]), [
+          edit({ groupKeys: { from: ["taxable"], to: ["cash"] } }),
+          removeAccount("a-brokerage"),
+        ]);
+        expect(reinvestments.map((r) => r.accountIds)).toEqual([["a-cash"]]);
+        expect(dropped(warnings)).toEqual([]);
+      });
+
+      it("re-pointed onto an account the scenario then removes, it is dropped with a warning", () => {
+        const { reinvestments, warnings } = run(pickedBase(["a-cash"]), [
+          edit({ pickedAccountIds: { from: ["a-cash"], to: ["a-ira"] } }),
+          removeAccount("a-ira"),
+        ]);
+        expect(reinvestments).toEqual([]);
+        expect(dropped(warnings)).toEqual(["ri-1"]);
+      });
+
+      it("an edit folded into a scenario add (whose old union is stale) is kept on its new target", () => {
+        const add = addReinvestmentChange();
+        // The add was saved on the checking account; a later edit re-pointed it
+        // at the IRA, merging the new picks over the add row's stale union.
+        add.payload = { ...(add.payload as object), accountIds: ["a-cash"], pickedAccountIds: ["a-ira"], groupKeys: [] };
+        const { reinvestments, warnings } = run(tree(), [add, removeAccount("a-cash")]);
+        expect(reinvestments.map((r) => r.accountIds)).toEqual([["a-ira"]]);
+        expect(dropped(warnings)).toEqual([]);
+      });
+
+      it("a legacy row re-saved with picks (its leftover accountIds stale) is kept on its new target", () => {
+        const { reinvestments, warnings } = run(pickedBase(["a-cash"]), [
+          edit({
+            accountIds: { from: ["a-cash"], to: ["a-cash"] },
+            pickedAccountIds: { from: ["a-cash"], to: ["a-ira"] },
+          }),
+          removeAccount("a-cash"),
+        ]);
+        expect(reinvestments.map((r) => r.accountIds)).toEqual([["a-ira"]]);
+        expect(dropped(warnings)).toEqual([]);
+      });
+
+      it("hands back the very same changes when no active one is a reinvestment add or edit", () => {
+        const group = { id: "g1", scenarioId: "scn1", name: "G", defaultOn: true, requiresGroupId: null, orderIndex: 0 };
+        const changes = [
+          removeAccount("a-cash"),
+          edit({ pickedAccountIds: { from: ["a-cash"], to: ["a-ira"] } }, "g1"),
+        ];
+        expect(withReinvestmentTargets(changes, pickedBase(["a-cash"]), { g1: false }, [group as never], new Map()))
+          .toBe(changes);
+      });
+
+      it("a re-point in a switched-off toggle group does not count", () => {
+        const group = { id: "g1", scenarioId: "scn1", name: "G", defaultOn: true, requiresGroupId: null, orderIndex: 0 };
+        const { reinvestments, warnings } = run(
+          pickedBase(["a-cash"]),
+          [edit({ pickedAccountIds: { from: ["a-cash"], to: ["a-ira"] } }, "g1"), removeAccount("a-cash")],
+          { g1: false },
+          [group as never],
+        );
+        expect(reinvestments).toEqual([]);
+        expect(dropped(warnings)).toEqual(["ri-1"]);
       });
     });
   });

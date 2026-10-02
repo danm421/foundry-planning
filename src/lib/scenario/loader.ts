@@ -32,7 +32,7 @@ import { withSynthesizedDisabilityPremiums } from "@/lib/insurance-policies/disa
 import { withSynthesizedEntityChecking } from "@/lib/entities/entity-checking";
 import { resolveRefYears } from "@/lib/year-refs";
 import { applyGiftOverlays } from "./apply-gift-overlays";
-import { withExpandedReinvestmentTargets, withLegacyReinvestmentPicks } from "./reinvestment-picks";
+import { withReinvestmentTargets } from "./reinvestment-picks";
 import { reResolveEditedAccountGrowth } from "./account-growth-edits";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "./changes";
 import {
@@ -135,9 +135,15 @@ export function applyScenarioChangesWithRefs(
   resolutionContext?: ResolutionContext,
 ): LoadEffectiveTreeResult {
   const giftChanges = changes.filter((c) => c.targetKind === "gift");
-  const nonGiftChanges = changes
-    .filter((c) => c.targetKind !== "gift")
-    .map(withLegacyReinvestmentPicks);
+  // Each reinvestment add / edit names its picks and groups; the cascade inside
+  // applyScenarioChanges reads the union, so hand it the real one.
+  const nonGiftChanges = withReinvestmentTargets(
+    changes.filter((c) => c.targetKind !== "gift"),
+    treeForChanges,
+    toggleState,
+    groups,
+    resolutionContext?.accountGroupMembersById ?? new Map(),
+  );
   const { effectiveTree, warnings } = applyScenarioChanges(
     treeForChanges,
     nonGiftChanges,
@@ -204,16 +210,6 @@ export function applyScenarioChangesWithRefs(
   const giftNormalized = applyGiftOverlays(refResolved, giftChanges, giftCpi);
 
   if (resolutionContext && giftNormalized.reinvestments) {
-    // The editors write a reinvestment's picks and groups, never the union the
-    // engine reads (`accountIds`), so recompute it from the effective picks,
-    // groups and accounts before resolving turnover per account: removing a
-    // group drops its members. Runs on the effective tree, so a change in a
-    // switched-off toggle group is already gone.
-    giftNormalized.reinvestments = withExpandedReinvestmentTargets(
-      giftNormalized.reinvestments,
-      giftNormalized.accounts,
-      resolutionContext.accountGroupMembersById ?? new Map(),
-    );
     giftNormalized.reinvestments = resolveReinvestments(giftNormalized.reinvestments, {
       resolver: resolutionContext.resolver,
       accountBaseAllocByAccountId:
