@@ -6,6 +6,7 @@ import {
   expenseEngineToView,
   incomeEngineToView,
   liabilityEngineToView,
+  planSettingsEngineToFormProps,
   planSettingsEngineToView,
   savingsRuleEngineToView,
 } from "../view-adapters";
@@ -466,6 +467,61 @@ describe("view-adapters", () => {
       expect(view.outOfHouseholdRate).toBeNull();
       expect(view.estateAdminExpenses).toBe("0");
       expect(view.flatStateEstateRate).toBe("0");
+    });
+  });
+
+  describe("planSettingsEngineToFormProps", () => {
+    const base: EnginePlanSettings = {
+      flatFederalRate: 0.22,
+      flatStateRate: 0.05,
+      inflationRate: 0.03,
+      planStartYear: 2026,
+      planEndYear: 2060,
+    };
+
+    it("reads the scenario's tax-rate, surplus and prior-gift values as the form's strings", () => {
+      const props = planSettingsEngineToFormProps(
+        {
+          ...base,
+          probateCostRate: 0.04,
+          outOfHouseholdRate: 0.3,
+          pvDiscountRate: 0.05,
+          priorTaxableGifts: { client: 100000, spouse: 0 },
+          capitalLossCarryforwardShortTerm: 2500,
+          surplusSpendPct: 0.4,
+          surplusSaveAccountId: "acct-1",
+          surplusSpendAllUntilRetirement: true,
+        },
+        { coveredByWorkplacePlan: "yes", spouseCoveredByWorkplacePlan: "no" },
+      );
+      expect(props).toMatchObject({
+        flatFederalRate: "0.22",
+        probateCostRate: "0.04",
+        outOfHouseholdDniRate: "0.3",
+        pvDiscountRate: "0.05",
+        priorTaxableGiftsClient: "100000",
+        priorTaxableGiftsSpouse: "0",
+        capitalLossCarryforwardSt: "2500",
+        surplusSpendPct: "0.4",
+        surplusSaveAccountId: "acct-1",
+        surplusSpendAllUntilRetirement: true,
+        coveredByWorkplacePlan: "yes",
+        spouseCoveredByWorkplacePlan: "no",
+      });
+    });
+
+    it("leaves a null column's box empty and defaults the optional rest like the DB does", () => {
+      const props = planSettingsEngineToFormProps(base, {});
+      expect(props).toMatchObject({
+        pvDiscountRate: "",
+        lifetimeExemptionCap: "",
+        capitalLossCarryforwardLt: "",
+        outOfHouseholdDniRate: "0.37",
+        surplusSpendPct: "0",
+        surplusSaveAccountId: null,
+        coveredByWorkplacePlan: "auto",
+        taxEngineMode: "flat",
+      });
     });
   });
 });

@@ -141,7 +141,7 @@ export const NOT_YET_READY: ReadonlySet<DetailTypeKey> = new Set<DetailTypeKey>(
   "business", "note_receivable",
   "life_policy", "disability_policy",
   "gift_series", "family_member", "external_beneficiary", "reinvestment",
-  "tax_rates", "growth_inflation", "savings_withdrawals",
+  "growth_inflation",
 ]);
 
 // The three Assumptions singletons always focus their own tab, whatever id the caller passes.

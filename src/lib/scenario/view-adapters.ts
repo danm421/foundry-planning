@@ -27,6 +27,7 @@ import type {
   EntitySummary,
 } from "@/engine/types";
 import { controllingEntity, type AccountOwner } from "@/engine/ownership";
+import type { AssumptionsSettings } from "@/app/(app)/clients/[id]/details/assumptions/assumptions-client";
 
 // ── Income ────────────────────────────────────────────────────────────────────
 
@@ -429,5 +430,63 @@ export function planSettingsEngineToView(s: EnginePlanSettings): PlanSettingsVie
     irdTaxRate: String(s.irdTaxRate ?? 0),
     probateCostRate: String(s.probateCostRate ?? 0),
     outOfHouseholdRate: s.outOfHouseholdRate != null ? String(s.outOfHouseholdRate) : null,
+  };
+}
+
+/** The Assumptions editors' `settings` prop, read off a scenario's effective
+ *  plan settings and client. The loader's base path builds the same shape from
+ *  the DB row; this one is for a scenario, whose values only exist on the tree.
+ *  Defaults mirror the DB columns' (a null column is an empty box). The
+ *  capital-loss tax-return autofill is the loader's, not this adapter's. */
+export function planSettingsEngineToFormProps(
+  s: EnginePlanSettings,
+  client: Pick<ClientInfo, "coveredByWorkplacePlan" | "spouseCoveredByWorkplacePlan">,
+): AssumptionsSettings {
+  const optional = (n: number | null | undefined) => (n != null ? String(n) : "");
+  return {
+    flatFederalRate: String(s.flatFederalRate),
+    flatStateRate: String(s.flatStateRate),
+    estateAdminExpenses: String(s.estateAdminExpenses ?? 0),
+    flatStateEstateRate: String(s.flatStateEstateRate ?? 0),
+    residenceState: s.residenceState ?? null,
+    irdTaxRate: String(s.irdTaxRate ?? 0),
+    probateCostRate: String(s.probateCostRate ?? 0),
+    pvDiscountRate: optional(s.pvDiscountRate),
+    inflationRate: String(s.inflationRate),
+    inflationRateSource: s.inflationRateSource ?? "asset_class",
+    planStartYear: s.planStartYear,
+    planEndYear: s.planEndYear,
+    defaultGrowthTaxable: String(s.defaultGrowthTaxable ?? 0),
+    defaultGrowthCash: String(s.defaultGrowthCash ?? 0),
+    defaultGrowthRetirement: String(s.defaultGrowthRetirement ?? 0),
+    defaultGrowthRealEstate: String(s.defaultGrowthRealEstate ?? 0),
+    defaultGrowthBusiness: String(s.defaultGrowthBusiness ?? 0),
+    defaultGrowthLifeInsurance: String(s.defaultGrowthLifeInsurance ?? 0),
+    growthSourceTaxable: s.growthSourceTaxable,
+    growthSourceCash: s.growthSourceCash,
+    growthSourceRetirement: s.growthSourceRetirement,
+    growthSourceRealEstate: s.growthSourceRealEstate,
+    growthSourceBusiness: s.growthSourceBusiness,
+    growthSourceLifeInsurance: s.growthSourceLifeInsurance,
+    modelPortfolioIdTaxable: s.modelPortfolioIdTaxable,
+    modelPortfolioIdCash: s.modelPortfolioIdCash,
+    modelPortfolioIdRetirement: s.modelPortfolioIdRetirement,
+    taxEngineMode: s.taxEngineMode ?? "flat",
+    taxInflationRate: optional(s.taxInflationRate),
+    lifetimeExemptionCap: optional(s.lifetimeExemptionCap),
+    ssWageGrowthRate: optional(s.ssWageGrowthRate),
+    medicarePremiumInflationRate: String(s.medicarePremiumInflationRate ?? 0.03),
+    medicarePremiumInflationEnabled: s.medicarePremiumInflationEnabled ?? true,
+    outOfHouseholdDniRate: String(s.outOfHouseholdRate ?? 0.37),
+    priorTaxableGiftsClient: String(s.priorTaxableGifts?.client ?? 0),
+    priorTaxableGiftsSpouse: String(s.priorTaxableGifts?.spouse ?? 0),
+    capitalLossCarryforwardSt: optional(s.capitalLossCarryforwardShortTerm),
+    capitalLossCarryforwardLt: optional(s.capitalLossCarryforwardLongTerm),
+    capitalLossCarryforwardLtSourceYear: null,
+    surplusSpendPct: String(s.surplusSpendPct ?? 0),
+    surplusSaveAccountId: s.surplusSaveAccountId ?? null,
+    surplusSpendAllUntilRetirement: s.surplusSpendAllUntilRetirement ?? false,
+    coveredByWorkplacePlan: client.coveredByWorkplacePlan ?? "auto",
+    spouseCoveredByWorkplacePlan: client.spouseCoveredByWorkplacePlan ?? "auto",
   };
 }

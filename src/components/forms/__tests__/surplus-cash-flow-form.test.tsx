@@ -4,8 +4,12 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import SurplusCashFlowForm from "../surplus-cash-flow-form";
 import { ClientAccessProvider } from "@/components/client-access-provider";
 
+const nav = vi.hoisted(() => ({ params: new URLSearchParams() }));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
+  useSearchParams: () => nav.params,
+  usePathname: () => "/clients/client-1/details/assumptions",
 }));
 
 function renderForm(spendAll: boolean) {
@@ -35,6 +39,7 @@ function lastBody() {
 }
 
 beforeEach(() => {
+  nav.params = new URLSearchParams();
   vi.useFakeTimers({ shouldAdvanceTime: true });
   global.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) })) as
     unknown as typeof fetch;
@@ -97,5 +102,53 @@ describe("SurplusCashFlowForm — autosave", () => {
     fireEvent.change(select, { target: { value: "" } });
     await settleAutosave();
     await waitFor(() => expect(lastBody().surplusSaveAccountId).toBeNull());
+  });
+});
+
+describe("SurplusCashFlowForm — inside a scenario", () => {
+  const CHANGES_URL = "/api/clients/client-1/scenarios/scn-1/changes";
+  const urls = () =>
+    (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0] as string);
+
+  beforeEach(() => {
+    nav.params = new URLSearchParams("scenario=scn-1");
+  });
+
+  it("posts one plan_settings scenario edit and never PUTs /plan-settings", async () => {
+    renderForm(false);
+    fireEvent.change(document.getElementById("surplusSpendPct")!, { target: { value: "40" } });
+    await settleAutosave();
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(urls()).toEqual([CHANGES_URL]);
+    expect(lastBody()).toEqual({
+      op: "edit",
+      targetKind: "plan_settings",
+      targetId: "client-1",
+      desiredFields: { surplusSpendPct: 0.4 },
+    });
+  });
+
+  it("keeps the save-to account an id string and a cleared one null", async () => {
+    renderForm(false);
+    const select = document.getElementById("surplusSaveAccountId")!;
+    fireEvent.change(select, { target: { value: "acct-1" } });
+    await settleAutosave();
+    await waitFor(() => expect(lastBody().desiredFields).toEqual({ surplusSaveAccountId: "acct-1" }));
+
+    fireEvent.change(select, { target: { value: "" } });
+    await settleAutosave();
+    await waitFor(() => expect(lastBody().desiredFields).toEqual({ surplusSaveAccountId: null }));
+    expect(urls().every((u) => u === CHANGES_URL)).toBe(true);
+  });
+
+  it("sends an explicit false when the spend-all box is unchecked", async () => {
+    renderForm(true);
+    fireEvent.click(screen.getByLabelText(/spend all surplus until retirement/i));
+    await settleAutosave();
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(urls()).toEqual([CHANGES_URL]);
+    expect(lastBody().desiredFields).toEqual({ surplusSpendAllUntilRetirement: false });
   });
 });

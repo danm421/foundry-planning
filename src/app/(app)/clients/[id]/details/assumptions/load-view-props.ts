@@ -19,6 +19,7 @@ import { treeMilestones, withdrawalRowsForDisplay } from "./scenario-milestones"
 import { resolveInflationRate } from "@/lib/inflation";
 import { amortizeLiability } from "@/engine/liabilities";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { planSettingsEngineToFormProps } from "@/lib/scenario/view-adapters";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 import { getLatestTaxReturn } from "@/lib/tax-returns/store";
 import { parseRowFacts } from "@/lib/tax-returns/db";
@@ -126,7 +127,14 @@ export async function loadAssumptionsViewProps(
   // above). Best-effort — a missing/unreadable return must never break this
   // page; it just means no autofill hint is shown. Runs concurrently with the
   // firmInflationAc lookup below (independent queries).
-  const needsCapitalLossAutofill = settings.capitalLossCarryforwardLt == null;
+  // In a scenario the stored value is the scenario's, read off the tree.
+  const scenarioSettings = scenarioParam
+    ? planSettingsEngineToFormProps(effectiveTree.planSettings, effectiveTree.client)
+    : null;
+  const storedCapitalLossLt = scenarioSettings
+    ? scenarioSettings.capitalLossCarryforwardLt
+    : (settings.capitalLossCarryforwardLt ?? "");
+  const needsCapitalLossAutofill = storedCapitalLossLt === "";
 
   const [taxReturnAutofill, [firmInflationAc]] = await Promise.all([
     needsCapitalLossAutofill
@@ -153,7 +161,7 @@ export async function loadAssumptionsViewProps(
       .where(and(eq(assetClasses.firmId, firmId), eq(assetClasses.slug, "inflation"))),
   ]);
 
-  let capitalLossCarryforwardLtDefault = settings.capitalLossCarryforwardLt ?? "";
+  let capitalLossCarryforwardLtDefault = storedCapitalLossLt;
   let capitalLossCarryforwardLtSourceYear: number | null = null;
   if (taxReturnAutofill) {
     capitalLossCarryforwardLtDefault = taxReturnAutofill.default;
@@ -314,7 +322,13 @@ export async function loadAssumptionsViewProps(
       scenarioName,
       riskLevel,
       filingStatus: clientRow.filingStatus,
-      settings: {
+      settings: scenarioSettings
+        ? {
+            ...scenarioSettings,
+            capitalLossCarryforwardLt: capitalLossCarryforwardLtDefault,
+            capitalLossCarryforwardLtSourceYear,
+          }
+        : {
         flatFederalRate: String(settings.flatFederalRate),
         flatStateRate: String(settings.flatStateRate),
         estateAdminExpenses: String(settings.estateAdminExpenses),

@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useScenarioState } from "@/hooks/use-scenario-state";
+import { useScenarioWriter, type ScenarioEdit } from "@/hooks/use-scenario-writer";
+import { formPatchToScenarioFields } from "@/lib/scenario/plan-settings-fields";
+import { validatePlanSettingsPatch } from "@/lib/plan-settings/validate-patch";
 
 export type AutosaveState = "idle" | "saving" | "saved" | "error";
 
@@ -17,9 +21,21 @@ const DEBOUNCE_MS = 600;
  * the settings the advisor actually changed — two forms editing different
  * settings can never clobber each other's columns, and a half-typed value can
  * be withheld by passing `undefined` rather than writing a NaN.
+ *
+ * Inside a scenario (`?scenario=`) the same patch is validated here, translated
+ * to engine keys, and written as scenario changes instead — the PUT route only
+ * ever writes the base case. `current` supplies the prior-gift pair the
+ * translation needs because the form sends one side at a time.
  */
-export function usePlanSettingsAutosave(clientId: string) {
+export function usePlanSettingsAutosave(
+  clientId: string,
+  opts?: { current?: { priorTaxableGifts: { client: number; spouse: number } } },
+) {
   const router = useRouter();
+  const { scenarioId } = useScenarioState(clientId);
+  const { submit } = useScenarioWriter(clientId);
+  const giftsClient = opts?.current?.priorTaxableGifts.client ?? 0;
+  const giftsSpouse = opts?.current?.priorTaxableGifts.spouse ?? 0;
   const [state, setState] = useState<AutosaveState>("idle");
   const [error, setError] = useState<string | null>(null);
   const pending = useRef<Record<string, unknown>>({});
@@ -33,11 +49,33 @@ export function usePlanSettingsAutosave(clientId: string) {
     setState("saving");
     setError(null);
     try {
-      const res = await fetch(`/api/clients/${clientId}/plan-settings`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      let res: Response;
+      if (scenarioId) {
+        const invalid = validatePlanSettingsPatch(body);
+        if (invalid) throw new Error(invalid);
+        const fields = formPatchToScenarioFields(body, {
+          priorTaxableGifts: { client: giftsClient, spouse: giftsSpouse },
+        });
+        const edits: ScenarioEdit[] = [];
+        if (Object.keys(fields.planSettings).length > 0) {
+          edits.push({ targetKind: "plan_settings", op: "edit", targetId: clientId, desiredFields: fields.planSettings });
+        }
+        if (Object.keys(fields.client).length > 0) {
+          edits.push({ targetKind: "client", op: "edit", targetId: clientId, desiredFields: fields.client });
+        }
+        // The writer refreshes the page itself once the batch lands.
+        res = await submit(edits, { url: "", method: "PUT" });
+        if (res.ok) {
+          setState("saved");
+          return;
+        }
+      } else {
+        res = await fetch(`/api/clients/${clientId}/plan-settings`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      }
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
         throw new Error(json.error ?? "Failed to save");
@@ -55,7 +93,7 @@ export function usePlanSettingsAutosave(clientId: string) {
       setError(err instanceof Error ? err.message : "Unknown error");
       setState("error");
     }
-  }, [clientId, router]);
+  }, [clientId, router, scenarioId, submit, giftsClient, giftsSpouse]);
 
   // Held in a ref so `save` and the unmount flush stay stable — a changing
   // `flush` identity in a dep array would fire the cleanup mid-edit.

@@ -188,9 +188,13 @@ export function SolverChangesTab({
 /**
  * A plan_settings write carries the client id, but the draft levers it replaces
  * are keyed on the Assumptions tab the editor was opened on, so the event is
- * re-addressed to that focus id.
+ * re-addressed to that focus id. The Tax Rates tab also writes the client's
+ * workplace-coverage fields as a `client` edit; that is part of the same
+ * settings save, so it is re-addressed too rather than superseding the
+ * retirement-age and life-expectancy levers a `client` write would.
  */
 function hostEvent(event: ScenarioWriteEvent, target: EditorHostTarget): ScenarioWriteEvent {
-  if (event.targetKind !== "plan_settings" || target.surface !== "details") return event;
-  return { ...event, targetId: focusRowId(target.focus) ?? event.targetId };
+  if (target.surface !== "details" || target.focus.kind !== "plan_settings") return event;
+  if (event.targetKind !== "plan_settings" && event.targetKind !== "client") return event;
+  return { ...event, targetKind: "plan_settings", targetId: focusRowId(target.focus) ?? event.targetId };
 }

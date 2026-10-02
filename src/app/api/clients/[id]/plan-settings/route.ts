@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { modelPortfolios, scenarios, planSettings, clients, dependentOverrideEnum } from "@/db/schema";
+import { modelPortfolios, scenarios, planSettings, clients } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
-import { isUSPSStateCode } from "@/lib/usps-states";
+import { validatePlanSettingsPatch } from "@/lib/plan-settings/validate-patch";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
@@ -136,140 +136,9 @@ export async function PUT(
       }
     }
 
-    if (typeof planStartYear === "number") {
-      const currentYear = new Date().getFullYear();
-      if (planStartYear < currentYear) {
-        return NextResponse.json(
-          { error: `Plan start year cannot be before current year (${currentYear})` },
-          { status: 400 }
-        );
-      }
-    }
-
-    if (typeof estateAdminExpenses === "number" && estateAdminExpenses < 0) {
-      return NextResponse.json(
-        { error: "estateAdminExpenses must be non-negative" },
-        { status: 400 },
-      );
-    }
-
-    if (typeof flatStateEstateRate === "number" &&
-        (flatStateEstateRate < 0 || flatStateEstateRate > 1)) {
-      return NextResponse.json(
-        { error: "flatStateEstateRate must be between 0 and 1" },
-        { status: 400 },
-      );
-    }
-
-    if (residenceState !== undefined && residenceState !== null) {
-      if (!isUSPSStateCode(residenceState)) {
-        return NextResponse.json(
-          { error: "residenceState must be a USPS 2-letter code for a US state or DC (or null)" },
-          { status: 400 },
-        );
-      }
-    }
-
-    if (typeof irdTaxRate === "number" &&
-        (irdTaxRate < 0 || irdTaxRate > 1)) {
-      return NextResponse.json(
-        { error: "irdTaxRate must be between 0 and 1" },
-        { status: 400 },
-      );
-    }
-
-    if (typeof probateCostRate === "number" &&
-        (probateCostRate < 0 || probateCostRate > 1)) {
-      return NextResponse.json(
-        { error: "probateCostRate must be between 0 and 1" },
-        { status: 400 },
-      );
-    }
-
-    if (typeof pvDiscountRate === "number" &&
-        (pvDiscountRate < 0 || pvDiscountRate > 1)) {
-      return NextResponse.json(
-        { error: "pvDiscountRate must be between 0 and 1" },
-        { status: 400 },
-      );
-    }
-
-    if (typeof outOfHouseholdDniRate === "number" &&
-        (outOfHouseholdDniRate < 0 || outOfHouseholdDniRate > 1)) {
-      return NextResponse.json(
-        { error: "outOfHouseholdDniRate must be between 0 and 1" },
-        { status: 400 },
-      );
-    }
-
-    if (typeof priorTaxableGiftsClient === "number" && priorTaxableGiftsClient < 0) {
-      return NextResponse.json(
-        { error: "priorTaxableGiftsClient must be non-negative" },
-        { status: 400 },
-      );
-    }
-    if (typeof priorTaxableGiftsSpouse === "number" && priorTaxableGiftsSpouse < 0) {
-      return NextResponse.json(
-        { error: "priorTaxableGiftsSpouse must be non-negative" },
-        { status: 400 },
-      );
-    }
-
-    if (capitalLossCarryforwardSt != null) {
-      const n = Number(capitalLossCarryforwardSt);
-      if (!Number.isFinite(n) || n < 0) {
-        return NextResponse.json(
-          { error: "capitalLossCarryforwardSt must be a non-negative number" },
-          { status: 400 },
-        );
-      }
-    }
-    if (capitalLossCarryforwardLt != null) {
-      const n = Number(capitalLossCarryforwardLt);
-      if (!Number.isFinite(n) || n < 0) {
-        return NextResponse.json(
-          { error: "capitalLossCarryforwardLt must be a non-negative number" },
-          { status: 400 },
-        );
-      }
-    }
-
-    if (lifetimeExemptionCap != null) {
-      const cap = Number(lifetimeExemptionCap);
-      if (!Number.isFinite(cap) || cap < 0) {
-        return NextResponse.json(
-          { error: "lifetimeExemptionCap must be a non-negative number" },
-          { status: 400 },
-        );
-      }
-    }
-
-    if (typeof surplusSpendPct === "number" &&
-        (surplusSpendPct < 0 || surplusSpendPct > 1)) {
-      return NextResponse.json(
-        { error: "surplusSpendPct must be between 0 and 1" },
-        { status: 400 },
-      );
-    }
-
-    if (typeof medicarePremiumInflationRate === "number" &&
-        (medicarePremiumInflationRate < 0 || medicarePremiumInflationRate > 1)) {
-      return NextResponse.json(
-        { error: "medicarePremiumInflationRate must be between 0 and 1" },
-        { status: 400 },
-      );
-    }
-
-    for (const [field, value] of [
-      ["coveredByWorkplacePlan", coveredByWorkplacePlan],
-      ["spouseCoveredByWorkplacePlan", spouseCoveredByWorkplacePlan],
-    ] as const) {
-      if (value !== undefined && !dependentOverrideEnum.enumValues.includes(value)) {
-        return NextResponse.json(
-          { error: `${field} must be 'auto', 'yes', or 'no'` },
-          { status: 400 },
-        );
-      }
+    const invalid = validatePlanSettingsPatch(body);
+    if (invalid) {
+      return NextResponse.json({ error: invalid }, { status: 400 });
     }
 
     // coveredByWorkplacePlan / spouseCoveredByWorkplacePlan live on `clients`

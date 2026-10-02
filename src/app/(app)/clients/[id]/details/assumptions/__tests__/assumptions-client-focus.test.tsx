@@ -343,13 +343,137 @@ describe("AssumptionsClient focus mode — Savings & Withdrawals tab", () => {
   });
 });
 
+/** The autosave debounces ~600ms before it sends; wait past it. */
+async function waitForAutosave() {
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled(), { timeout: 3000 });
+}
+
+describe("AssumptionsClient focus mode — Tax Rates tab", () => {
+  it("plan_settings 'tax-rates' renders the form in a dialog titled with the scenario", () => {
+    const { onFocusClose } = renderFocused({ kind: "plan_settings", id: "tax-rates" });
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Tax Rates — Plan B")).toBeTruthy();
+    expect(dialog.querySelector("#residenceState")).not.toBeNull();
+    expect(onFocusClose).not.toHaveBeenCalled();
+  });
+
+  it("a rate edit posts exactly one plan_settings scenario edit, never /plan-settings", async () => {
+    renderFocused({ kind: "plan_settings", id: "tax-rates" });
+
+    fireEvent.change(document.getElementById("probateCostRate")!, { target: { value: "4" } });
+    await waitForAutosave();
+
+    expectOnlyScenarioWrite();
+    expect(lastRequest()).toMatchObject({
+      method: "POST",
+      body: {
+        op: "edit",
+        targetKind: "plan_settings",
+        targetId: "c-1",
+        desiredFields: { probateCostRate: 0.04 },
+      },
+    });
+  });
+
+  it("a workplace-coverage edit posts a client scenario edit, never /plan-settings", async () => {
+    renderFocused({ kind: "plan_settings", id: "tax-rates" });
+
+    fireEvent.change(document.getElementById("coveredByWorkplacePlan")!, { target: { value: "yes" } });
+    await waitForAutosave();
+
+    expectOnlyScenarioWrite();
+    expect(lastRequest().body).toEqual({
+      op: "edit",
+      targetKind: "client",
+      targetId: "c-1",
+      desiredFields: { coveredByWorkplacePlan: "yes" },
+    });
+  });
+
+  it("closing the dialog hands control back with no outcome, once", async () => {
+    const { onFocusClose } = renderFocused({ kind: "plan_settings", id: "tax-rates" });
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith();
+  });
+});
+
+describe("AssumptionsClient focus mode — Savings & Withdrawals writes", () => {
+  it("a surplus edit posts exactly one plan_settings scenario edit, never /plan-settings", async () => {
+    renderFocused({ kind: "plan_settings", id: "withdrawal" });
+
+    fireEvent.change(document.getElementById("surplusSpendPct")!, { target: { value: "40" } });
+    await waitForAutosave();
+
+    expectOnlyScenarioWrite();
+    expect(lastRequest()).toMatchObject({
+      method: "POST",
+      body: {
+        op: "edit",
+        targetKind: "plan_settings",
+        targetId: "c-1",
+        desiredFields: { surplusSpendPct: 0.4 },
+      },
+    });
+  });
+
+  // The dialog holds `WithdrawalStrategySection`'s own modals. One Escape must
+  // close only the innermost, or the advisor loses the focused editor (and
+  // control goes back to the Solver) mid-edit.
+  it("Escape inside the inner withdrawal dialog closes only that dialog", async () => {
+    const { onFocusClose } = renderFocused({ kind: "plan_settings", id: "withdrawal" });
+
+    fireEvent.click(screen.getByRole("button", { name: "+ Add" }));
+    expect(screen.getByRole("heading", { name: "Add Withdrawal Entry" })).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Add Withdrawal Entry" })).toBeNull());
+    expect(screen.getByRole("dialog", { name: "Savings & Withdrawals — Plan B" })).toBeTruthy();
+    expect(onFocusClose).not.toHaveBeenCalled();
+
+    // With nothing nested, the next Escape closes the shell as before.
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+  });
+
+  it("Escape on the delete confirmation closes only the confirmation", async () => {
+    const { onFocusClose } = renderFocused({ kind: "plan_settings", id: "withdrawal" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Fidelity Brokerage" }));
+    expect(screen.getByText("Delete Withdrawal Entry")).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByText("Delete Withdrawal Entry")).toBeNull());
+    expect(screen.getByRole("dialog", { name: "Savings & Withdrawals — Plan B" })).toBeTruthy();
+    expect(onFocusClose).not.toHaveBeenCalled();
+  });
+
+  it("Escape with the confirmation stacked over the edit dialog peels one layer", async () => {
+    renderFocused({ kind: "plan_settings", id: "withdrawal" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Fidelity Brokerage" }));
+    expect(screen.getByRole("heading", { name: "Edit Withdrawal Entry" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Delete…" }));
+    expect(screen.getByText("Delete Withdrawal Entry")).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByText("Delete Withdrawal Entry")).toBeNull());
+    expect(screen.getByRole("heading", { name: "Edit Withdrawal Entry" })).toBeTruthy();
+  });
+});
+
 describe("AssumptionsClient focus mode — nothing to open", () => {
   it.each([
     ["a deduction that isn't there", { kind: "client_deduction", id: "gone" }],
     ["a tax adjustment that isn't there", { kind: "client_tax_adjustment", id: "gone" }],
     ["a withdrawal entry that isn't there", { kind: "withdrawal_strategy", id: "gone" }],
     ["a delete of a row that isn't there", { intent: "delete", kind: "client_deduction", id: "gone" }],
-    ["the Tax Rates tab (Task 14)", { kind: "plan_settings", id: "tax-rates" }],
     ["the Growth & Inflation tab (Task 15)", { kind: "plan_settings", id: "growth-inflation" }],
     ["a kind this page doesn't edit", { kind: "account", id: "acct-1" }],
   ] as [string, EditorFocus][])("%s → unavailable", async (_name, focus) => {

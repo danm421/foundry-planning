@@ -216,18 +216,35 @@ describe("resolveChangeEditor", () => {
       ).toEqual({ surface: "solver-tab", tab: "stress_test" });
     });
 
-    it("non-stress fields only -> null", () => {
+    const assumptions = (id: string) => ({
+      surface: "details",
+      page: "assumptions",
+      focus: { kind: "plan_settings", id },
+    });
+    const settingsEdit = (payload: Record<string, unknown>) =>
+      resolveChangeEditor(change({ targetKind: "plan_settings", payload }));
+
+    it("a surplus field -> the Assumptions Savings & Withdrawals tab", () => {
+      expect(settingsEdit({ surplusSpendPct: { from: 0, to: 0.5 } })).toEqual(assumptions("withdrawal"));
+    });
+
+    it("a growth field -> the Assumptions Growth & Inflation tab", () => {
+      expect(settingsEdit({ defaultGrowthCash: { from: 0.01, to: 0.02 } })).toEqual(
+        assumptions("growth-inflation"),
+      );
+    });
+
+    it("any other non-stress field -> the Assumptions Tax Rates tab", () => {
+      expect(settingsEdit({ flatStateRate: { from: 0.05, to: 0.06 } })).toEqual(assumptions("tax-rates"));
+      expect(settingsEdit({ priorTaxableGifts: { from: null, to: { client: 1, spouse: 0 } } })).toEqual(
+        assumptions("tax-rates"),
+      );
+    });
+
+    it("a growth key outranks a surplus key sharing the row", () => {
       expect(
-        resolveChangeEditor(
-          change({
-            targetKind: "plan_settings",
-            payload: {
-              surplusSpendPct: { from: 0, to: 0.5 },
-              filingStatus: { from: "single", to: "married" },
-            },
-          }),
-        ),
-      ).toBeNull();
+        settingsEdit({ surplusSpendPct: { from: 0, to: 0.5 }, inflationRate: { from: 0.02, to: 0.03 } }),
+      ).toEqual(assumptions("growth-inflation"));
     });
 
     it("an empty-object payload -> null", () => {

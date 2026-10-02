@@ -223,8 +223,6 @@ export default function TaxRatesForm({
 }: TaxRatesFormProps) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
-  const { save, state, error, retry } = usePlanSettingsAutosave(clientId);
-
   const [mode, setMode] = useState<"flat" | "bracket">(initialMode);
   // One control now, not two: residence drives both the income-tax and the
   // estate engine, and mirroring it across two selects was the page's most
@@ -250,6 +248,17 @@ export default function TaxRatesForm({
     capitalLossCarryforwardLt,
     coveredByWorkplacePlan,
     spouseCoveredByWorkplacePlan,
+  });
+
+  // The prior-gift pair is one engine value, so a scenario write of one side
+  // needs the other's latest typed amount.
+  const { save, state, error, retry } = usePlanSettingsAutosave(clientId, {
+    current: {
+      priorTaxableGifts: {
+        client: Number(values.priorTaxableGiftsClient) || 0,
+        spouse: Number(values.priorTaxableGiftsSpouse) || 0,
+      },
+    },
   });
 
   /** Show the raw keystrokes immediately; queue the converted value only when

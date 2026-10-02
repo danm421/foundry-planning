@@ -7,11 +7,17 @@ import type { USPSStateCode } from "@/lib/usps-states";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
+const nav = vi.hoisted(() => ({ params: new URLSearchParams() }));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
-  useSearchParams: () => ({ get: vi.fn(() => null), toString: () => "" }),
+  useSearchParams: () => nav.params,
   usePathname: () => "/clients/test-client/details",
 }));
+
+beforeEach(() => {
+  nav.params = new URLSearchParams();
+});
 
 // ── Fixture ───────────────────────────────────────────────────────────────────
 
@@ -429,5 +435,102 @@ describe("TaxRatesForm — capital-loss carryforward field help", () => {
     const describedBy = badge.getAttribute("aria-describedby");
     expect(describedBy).toBeTruthy();
     expect(document.getElementById(describedBy!)?.textContent).toBeTruthy();
+  });
+});
+
+describe("TaxRatesForm — inside a scenario", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  const CHANGES_URL = "/api/clients/test-client-id/scenarios/scn-1/changes";
+
+  beforeEach(() => {
+    nav.params = new URLSearchParams("scenario=scn-1");
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const urls = () => fetchMock.mock.calls.map((c) => c[0] as string);
+
+  it("a tax-rate edit posts one plan_settings scenario edit and never PUTs /plan-settings", async () => {
+    renderForm();
+    fireEvent.change(document.getElementById("flatStateRate")!, { target: { value: "6" } });
+    await settleAutosave();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(urls()).toEqual([CHANGES_URL]);
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+    expect(bodyOf(fetchMock)).toEqual({
+      op: "edit",
+      targetKind: "plan_settings",
+      targetId: "test-client-id",
+      desiredFields: { flatStateRate: 0.06 },
+    });
+  });
+
+  it("writes engine key names for the renamed settings", async () => {
+    renderForm();
+    fireEvent.change(document.getElementById("outOfHouseholdDniRate")!, { target: { value: "30" } });
+    await settleAutosave();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(bodyOf(fetchMock).desiredFields).toEqual({ outOfHouseholdRate: 0.3 });
+  });
+
+  it("workplace coverage goes to a client edit, with no plan_settings call", async () => {
+    renderForm({ hasSpouse: true });
+    fireEvent.change(document.getElementById("coveredByWorkplacePlan")!, { target: { value: "yes" } });
+    await settleAutosave();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(urls()).toEqual([CHANGES_URL]);
+    expect(bodyOf(fetchMock)).toEqual({
+      op: "edit",
+      targetKind: "client",
+      targetId: "test-client-id",
+      desiredFields: { coveredByWorkplacePlan: "yes" },
+    });
+  });
+
+  it("a rate and a coverage edit in one burst are two scenario edits, in order, and nothing else", async () => {
+    renderForm({ hasSpouse: true });
+    fireEvent.change(document.getElementById("irdTaxRate")!, { target: { value: "35" } });
+    fireEvent.change(document.getElementById("spouseCoveredByWorkplacePlan")!, { target: { value: "no" } });
+    await settleAutosave();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(urls()).toEqual([CHANGES_URL, CHANGES_URL]);
+    expect(bodyOf(fetchMock, 0)).toMatchObject({ targetKind: "plan_settings", desiredFields: { irdTaxRate: 0.35 } });
+    expect(bodyOf(fetchMock, 1)).toMatchObject({
+      targetKind: "client",
+      desiredFields: { spouseCoveredByWorkplacePlan: "no" },
+    });
+  });
+
+  it("a prior-gift edit sends the pair, keeping the other side's current amount", async () => {
+    renderForm({ hasSpouse: true, priorTaxableGiftsClient: "100000", priorTaxableGiftsSpouse: "0" });
+    fireEvent.change(document.getElementById("priorTaxableGiftsSpouse")!, { target: { value: "250000" } });
+    await settleAutosave();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(urls()).toEqual([CHANGES_URL]);
+    expect(bodyOf(fetchMock).desiredFields).toEqual({
+      priorTaxableGifts: { client: 100000, spouse: 250000 },
+    });
+  });
+
+  it("an out-of-range rate is refused before submitting, and the error is shown", async () => {
+    renderForm();
+    fireEvent.change(document.getElementById("flatStateRate")!, { target: { value: "150" } });
+    await settleAutosave();
+
+    await waitFor(() =>
+      expect(screen.getByText(/flatStateRate must be between 0 and 1/)).toBeInTheDocument(),
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

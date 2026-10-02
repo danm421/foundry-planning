@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import MilestoneYearPicker from "./milestone-year-picker";
 import { HelpTip } from "@/components/help-tip";
@@ -107,6 +107,23 @@ function WithdrawalDialog({
   const [error, setError] = useState<string | null>(null);
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+
+  // Esc closes this dialog. It is marked `data-dialog-surface` so a `DialogShell`
+  // around it (the Solver's focused Savings & Withdrawals dialog) leaves Esc to
+  // this innermost layer, and it steps aside for a surface stacked above it (the
+  // delete confirmation) — one Esc, one layer.
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      const surfaces = document.querySelectorAll("[data-dialog-surface]");
+      if (surfaces[surfaces.length - 1] !== surfaceRef.current) return;
+      onOpenChange(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onOpenChange]);
 
   const wdDefaultRefs = !isEdit ? defaultWithdrawalRefs() : null;
   const [startYearRef, setStartYearRef] = useState<YearRef | null>(
@@ -203,7 +220,11 @@ function WithdrawalDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/70" onClick={() => onOpenChange(false)} />
-      <div className="relative z-10 w-full max-w-lg rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-card p-6 shadow-xl">
+      <div
+        ref={surfaceRef}
+        data-dialog-surface=""
+        className="relative z-10 w-full max-w-lg rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-card p-6 shadow-xl"
+      >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-ink">
             {isEdit ? "Edit Withdrawal Entry" : "Add Withdrawal Entry"}

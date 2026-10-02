@@ -16,6 +16,7 @@
 // the Retirement-tab branches.
 
 import type { OpType, TargetKind } from "@/engine/scenario/types";
+import { GROWTH_SETTINGS_KEYS } from "@/lib/scenario/growth-settings-override";
 
 export type DetailsEditorPage =
   | "income-expenses"
@@ -206,11 +207,23 @@ function payloadFields(payload: unknown): string[] | null {
   return Object.keys(payload as Record<string, unknown>);
 }
 
+// The settings `SurplusCashFlowForm` saves; they live on the Assumptions page's
+// "Savings & Withdrawals" tab, whose focus id is "withdrawal".
+const SURPLUS_FIELDS = new Set([
+  "surplusSpendPct",
+  "surplusSaveAccountId",
+  "surplusSpendAllUntilRetirement",
+]);
+const GROWTH_FIELDS: ReadonlySet<string> = new Set(GROWTH_SETTINGS_KEYS);
+
 // Ruling T4d-horizon: a payload containing planEndYear -> the Retirement tab,
 // ahead of the stress check. Otherwise ANY stress field -> the Stress tab
 // (Ruling F-M2: the Solver folds every plan_settings edit into one row per
-// scenario, so a stress lever often shares it with other settings); anything
-// else (no stress field, empty, or non-object) -> null.
+// scenario, so a stress lever often shares it with other settings). What is
+// left opens on the Assumptions page, on the tab that owns the first
+// recognised key: growth keys -> "growth-inflation", surplus keys ->
+// "withdrawal", anything else -> "tax-rates". An empty or non-object payload
+// has nothing to open (null).
 function resolvePlanSettingsTarget(payload: unknown): ChangeEditorTarget {
   const fields = payloadFields(payload);
   if (!fields || fields.length === 0) return null;
@@ -223,5 +236,10 @@ function resolvePlanSettingsTarget(payload: unknown): ChangeEditorTarget {
     return { surface: "solver-tab", tab: "stress_test" };
   }
 
-  return null;
+  const id = fields.some((f) => GROWTH_FIELDS.has(f))
+    ? "growth-inflation"
+    : fields.some((f) => SURPLUS_FIELDS.has(f))
+      ? "withdrawal"
+      : "tax-rates";
+  return { surface: "details", page: "assumptions", focus: { kind: "plan_settings", id } };
 }

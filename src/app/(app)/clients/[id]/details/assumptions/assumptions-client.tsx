@@ -135,12 +135,11 @@ export interface AssumptionsClientProps {
    * view by the focus. Renders only the editor the focus names, over nothing:
    * - a `client_deduction` / `client_tax_adjustment` / `withdrawal_strategy`
    *   edit, create or delete → that list's own form (a delete runs silently);
-   * - `plan_settings` with id `"withdrawal"` → that tab, in a dialog.
-   * Anything else reports `"unavailable"`; the Tax Rates and Growth &
-   * Inflation tabs write the BASE plan settings whatever the scenario. So does
-   * `SurplusCashFlowForm`, inside the "withdrawal" dialog, which PUTs base
-   * `/plan-settings` until Task 14 — why `savings_withdrawals` stays in
-   * `NOT_YET_READY`.
+   * - `plan_settings` with id `"withdrawal"` or `"tax-rates"` → that tab, in a
+   *   dialog; both save through `usePlanSettingsAutosave`, which writes the
+   *   scenario when one is active.
+   * Anything else reports `"unavailable"` (Growth & Inflation is not wired
+   * yet).
    */
   focus?: EditorFocus;
   /**
@@ -154,6 +153,10 @@ export interface AssumptionsClientProps {
 
 /** Stable "found" marker for the singleton dialog (a fresh `{}` per render would re-run the close hook's effect). */
 const SINGLETON_FOUND = {};
+
+/** The Assumptions singletons a focus can open as a dialog. */
+const SINGLETON_TABS = ["tax-rates", "withdrawal"] as const;
+type SingletonTab = (typeof SINGLETON_TABS)[number];
 
 /** The focus kinds whose list opens its own editor, as that list's focus mode. */
 const ROW_FOCUS_KINDS = ["client_deduction", "client_tax_adjustment", "withdrawal_strategy"] as const;
@@ -194,17 +197,46 @@ export default function AssumptionsClient({
   const [rowFocusKind] = useState<RowFocusKind | null>(() =>
     focus && canEdit ? (ROW_FOCUS_KINDS.find((k) => k === focus.kind) ?? null) : null,
   );
-  const [withdrawalFocus] = useState(
-    () => !!focus && canEdit && focus.kind === "plan_settings" && focusRowId(focus) === "withdrawal",
-  );
-  const [withdrawalDialogOpen, setWithdrawalDialogOpen] = useState(withdrawalFocus);
+  const [singletonTab] = useState<SingletonTab | null>(() => {
+    if (!focus || !canEdit || focus.kind !== "plan_settings") return null;
+    return SINGLETON_TABS.find((t) => t === focusRowId(focus)) ?? null;
+  });
+  const [singletonDialogOpen, setSingletonDialogOpen] = useState(singletonTab !== null);
   // Reports "unavailable" for every focus no editor opens for (a row kind
   // handed to its list does not come through here), and closes the dialog's.
   useFocusCloseOnce(
     rowFocusKind ? undefined : focus,
-    withdrawalFocus ? SINGLETON_FOUND : null,
-    withdrawalDialogOpen,
+    singletonTab ? SINGLETON_FOUND : null,
+    singletonDialogOpen,
     onFocusClose,
+  );
+
+  const taxRatesTab = (
+    <TaxRatesForm
+      clientId={clientId}
+      flatFederalRate={settings.flatFederalRate}
+      flatStateRate={settings.flatStateRate}
+      estateAdminExpenses={settings.estateAdminExpenses}
+      flatStateEstateRate={settings.flatStateEstateRate}
+      residenceState={settings.residenceState}
+      irdTaxRate={settings.irdTaxRate}
+      probateCostRate={settings.probateCostRate}
+      pvDiscountRate={settings.pvDiscountRate}
+      lifetimeExemptionCap={settings.lifetimeExemptionCap}
+      outOfHouseholdDniRate={settings.outOfHouseholdDniRate}
+      priorTaxableGiftsClient={settings.priorTaxableGiftsClient}
+      priorTaxableGiftsSpouse={settings.priorTaxableGiftsSpouse}
+      coveredByWorkplacePlan={settings.coveredByWorkplacePlan}
+      spouseCoveredByWorkplacePlan={settings.spouseCoveredByWorkplacePlan}
+      capitalLossCarryforwardSt={settings.capitalLossCarryforwardSt}
+      capitalLossCarryforwardLt={settings.capitalLossCarryforwardLt}
+      capitalLossCarryforwardLtSourceYear={settings.capitalLossCarryforwardLtSourceYear}
+      filingStatus={filingStatus}
+      hasSpouse={Boolean(spouseFirstName)}
+      clientFirstName={clientFirstName}
+      spouseFirstName={spouseFirstName}
+      initialMode={settings.taxEngineMode}
+    />
   );
 
   const withdrawalTab = (
@@ -271,16 +303,16 @@ export default function AssumptionsClient({
         />
       );
     }
-    if (!withdrawalDialogOpen) return null;
-    const label = ASSUMPTIONS_TABS.find((t) => t.id === "withdrawal")!.label;
+    if (!singletonDialogOpen || !singletonTab) return null;
+    const label = ASSUMPTIONS_TABS.find((t) => t.id === singletonTab)!.label;
     return (
       <DialogShell
         open
-        onOpenChange={(open) => !open && setWithdrawalDialogOpen(false)}
+        onOpenChange={(open) => !open && setSingletonDialogOpen(false)}
         title={scenarioName ? `${label} — ${scenarioName}` : label}
         size="lg"
       >
-        {withdrawalTab}
+        {singletonTab === "tax-rates" ? taxRatesTab : withdrawalTab}
       </DialogShell>
     );
   }
@@ -296,33 +328,7 @@ export default function AssumptionsClient({
       <AssumptionsSubtabs tabs={ASSUMPTIONS_TABS} activeTab={activeTab} onTabChange={handleTabChange} />
 
       <div className="rounded-lg border border-hair bg-card p-6">
-        {activeTab === "tax-rates" && (
-          <TaxRatesForm
-            clientId={clientId}
-            flatFederalRate={settings.flatFederalRate}
-            flatStateRate={settings.flatStateRate}
-            estateAdminExpenses={settings.estateAdminExpenses}
-            flatStateEstateRate={settings.flatStateEstateRate}
-            residenceState={settings.residenceState}
-            irdTaxRate={settings.irdTaxRate}
-            probateCostRate={settings.probateCostRate}
-            pvDiscountRate={settings.pvDiscountRate}
-            lifetimeExemptionCap={settings.lifetimeExemptionCap}
-            outOfHouseholdDniRate={settings.outOfHouseholdDniRate}
-            priorTaxableGiftsClient={settings.priorTaxableGiftsClient}
-            priorTaxableGiftsSpouse={settings.priorTaxableGiftsSpouse}
-            coveredByWorkplacePlan={settings.coveredByWorkplacePlan}
-            spouseCoveredByWorkplacePlan={settings.spouseCoveredByWorkplacePlan}
-            capitalLossCarryforwardSt={settings.capitalLossCarryforwardSt}
-            capitalLossCarryforwardLt={settings.capitalLossCarryforwardLt}
-            capitalLossCarryforwardLtSourceYear={settings.capitalLossCarryforwardLtSourceYear}
-            filingStatus={filingStatus}
-            hasSpouse={Boolean(spouseFirstName)}
-            clientFirstName={clientFirstName}
-            spouseFirstName={spouseFirstName}
-            initialMode={settings.taxEngineMode}
-          />
-        )}
+        {activeTab === "tax-rates" && taxRatesTab}
         {activeTab === "growth-inflation" && (
           <GrowthInflationForm
             clientId={clientId}

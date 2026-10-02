@@ -49,6 +49,12 @@ const { loadChangeEditorPropsMock, makeStubView, openCreateMock, notYetReady } =
           >
             stub write settings
           </button>
+          <button
+            type="button"
+            onClick={() => onWrite?.({ targetKind: "client", targetId: "client-uuid", op: "edit" })}
+          >
+            stub write client
+          </button>
           <button type="button" onClick={() => onFocusClose?.("failed")}>
             stub failed
           </button>
@@ -191,7 +197,7 @@ beforeEach(() => {
   loadChangeEditorPropsMock.mockReset();
   openCreateMock.mockReset();
   notYetReady.clear();
-  for (const k of ["business", "tax_rates", "growth_inflation", "savings_withdrawals"]) notYetReady.add(k);
+  for (const k of ["business", "growth_inflation"]) notYetReady.add(k);
   fetchMock.mockReset();
 });
 
@@ -234,10 +240,8 @@ describe("SolverChangesTab — which rows open", () => {
     expect(screen.queryByRole("button", { name: /^Edit / })).not.toBeInTheDocument();
   });
 
-  it("a plan_settings change with no editor (not stress, not horizon) is not openable", () => {
-    renderTab([
-      makeChange({ opType: "edit", targetKind: "plan_settings", payload: { inflationRate: 0.03 } }),
-    ]);
+  it("a plan_settings change with an empty payload has no editor and is not openable", () => {
+    renderTab([makeChange({ opType: "edit", targetKind: "plan_settings", payload: {} })]);
     expect(screen.queryByRole("button", { name: /^Edit / })).not.toBeInTheDocument();
   });
 
@@ -685,7 +689,6 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
   });
 
   it("an Assumptions write is re-addressed to the tab the editor opened on", async () => {
-    notYetReady.delete("savings_withdrawals");
     loadChangeEditorPropsMock.mockResolvedValue({ page: "assumptions", props: { clientId: CLIENT_ID } });
     const { onTargetsWritten } = renderTab([], {
       inventory: [item({ typeKey: "savings_withdrawals", id: "withdrawal", label: "Savings & withdrawals" })],
@@ -697,6 +700,21 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
     expect(onTargetsWritten).toHaveBeenCalledWith(
       [{ targetKind: "plan_settings", targetId: "withdrawal", op: "edit" }],
       "Savings & withdrawals",
+    );
+  });
+
+  it("a workplace-coverage client write from the Tax Rates dialog is addressed to that tab", async () => {
+    loadChangeEditorPropsMock.mockResolvedValue({ page: "assumptions", props: { clientId: CLIENT_ID } });
+    const { onTargetsWritten } = renderTab([], {
+      inventory: [item({ typeKey: "tax_rates", id: "tax-rates", label: "Tax rates" })],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("option", { name: /Tax rates/ }));
+    await screen.findByTestId("view-assumptions");
+    fireEvent.click(screen.getByRole("button", { name: "stub write client" }));
+    expect(onTargetsWritten).toHaveBeenCalledWith(
+      [{ targetKind: "plan_settings", targetId: "tax-rates", op: "edit" }],
+      "Tax rates",
     );
   });
 
