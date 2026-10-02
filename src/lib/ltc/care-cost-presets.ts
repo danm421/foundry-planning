@@ -1,4 +1,4 @@
-import type { CareSetting } from "@/engine/types";
+import type { CareSetting, LtcCarePerson } from "@/engine/types";
 
 /** CareScout 2025 Cost of Care Survey, US national medians
  *  (carescout.com/cost-of-care, fetched 2026-10-01). Annual dollars. */
@@ -29,4 +29,19 @@ export const DEFAULT_CARE_YEARS = 3;
 
 export function presetAnnualCost(setting: CareSetting): number | null {
   return setting === "custom" ? null : LTC_CARE_COST_PRESETS.annual[setting];
+}
+
+/** A newly ticked person in care: a private nursing room on the defaults. */
+export function defaultCarePerson(
+  person: LtcCarePerson["person"],
+  startAge: number = DEFAULT_CARE_START_AGE,
+): LtcCarePerson {
+  return {
+    person,
+    startAge,
+    years: DEFAULT_CARE_YEARS,
+    careSetting: "nursing_private",
+    annualCost: presetAnnualCost("nursing_private")!,
+    costInflation: DEFAULT_CARE_INFLATION,
+  };
 }

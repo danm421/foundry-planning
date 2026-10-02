@@ -4,10 +4,13 @@ import { useState } from "react";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
 import type { ChangesPanelChange } from "@/components/scenario/changes-panel";
+import { useClientAccess } from "@/components/client-access-provider";
+import { resolveLtcEvent } from "@/engine/ltc-event";
 import { defaultLtcEvent } from "@/lib/ltc/default-ltc-event";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { StressRow } from "./solver-stress-fields";
-import { LtcEventFields } from "./ltc-event-fields";
+import { LtcEventFields, LtcWarnings } from "./ltc-event-fields";
+import { saveLtcEvent } from "./save-ltc-event";
 
 export const LTC_HINT =
   "Puts one or both clients into paid long-term care at the age you choose. They die at the end of their care. Optionally cut living expenses during care and sell the home to help pay for it.";
@@ -28,6 +31,7 @@ export function LtcStressRow(props: {
   onEditOnChangesTab(changeId: string): void;
 }) {
   const event = props.tree.ltcEvents?.[0] ?? null;
+  const canEdit = useClientAccess().permission === "edit";
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
 
@@ -36,15 +40,10 @@ export function LtcStressRow(props: {
     setSaving(true);
     setSaveError(false);
     try {
-      const res = await fetch(`/api/clients/${props.clientId}/scenarios/${props.scenarioId}/changes`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ op: "add", targetKind: "ltc_event", entity: event }),
-      });
-      if (!res.ok) throw new Error(String(res.status));
-      // Stale-draft rule: the saved row is now the truth. A draft left behind
-      // would overwrite it on the next re-derive.
-      props.onResetField(["stress-ltc"]);
+      await saveLtcEvent(props.clientId, props.scenarioId, event);
+      // The workspace drops the draft once the refreshed change list carries the
+      // saved event (stale-draft rule) — not here, which would leave the row
+      // open for a second Add before that list arrives.
       props.onSaved();
     } catch {
       setSaveError(true);
@@ -54,7 +53,11 @@ export function LtcStressRow(props: {
   }
 
   if (props.savedChange) {
-    const name = (props.savedChange.payload as { name?: string } | null)?.name ?? "Long-term care";
+    const { id, enabled, payload } = props.savedChange;
+    const name = (payload as { name?: string } | null)?.name ?? "Long-term care";
+    // Switched on, the working tree carries the saved event: show what the
+    // engine had to drop. Switched off, nothing of it applies.
+    const warnings = enabled ? (resolveLtcEvent(props.tree)?.warnings ?? []) : [];
     return (
       <div className="border-t border-hair pt-4">
         <div className="flex items-center gap-2">
@@ -63,15 +66,21 @@ export function LtcStressRow(props: {
         </div>
         <p className="mt-2 text-[12px] text-ink-2">
           {name}
-          {!props.savedChange.enabled && <span className="text-ink-3"> (switched off)</span>}
+          {!enabled && <span className="text-ink-3"> (switched off)</span>}
         </p>
         <p className="mt-1 text-[11px] text-ink-3">Saved in this scenario as its own change.</p>
+        {warnings.length > 0 && (
+          <div className="mt-1 space-y-1">
+            <LtcWarnings warnings={warnings} tree={props.tree} />
+          </div>
+        )}
         <button
           type="button"
-          onClick={() => props.onEditOnChangesTab(props.savedChange!.id)}
+          onClick={() => props.onEditOnChangesTab(id)}
           className="mt-2 text-[12px] font-medium text-accent hover:text-accent-ink hover:underline"
         >
-          Edit on Changes tab
+          {/* A switched-off change opens no editor there, only its on/off switch. */}
+          {enabled ? "Edit on Changes tab" : "Switch it on in the Changes tab"}
         </button>
       </div>
     );
@@ -100,7 +109,7 @@ export function LtcStressRow(props: {
             <button
               type="button"
               onClick={addAsChange}
-              disabled={props.scenarioId === null || saving}
+              disabled={props.scenarioId === null || !canEdit || saving}
               className="rounded border border-hair px-2.5 py-1 text-[12px] font-medium text-ink hover:border-accent disabled:opacity-50"
             >
               Add as change

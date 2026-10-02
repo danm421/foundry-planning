@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { runProjection } from "@/engine/projection";
 import { buildClientData, baseClient, basePlanSettings } from "@/engine/__tests__/fixtures";
 import type { ClientData } from "@/engine/types";
 import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
 import type { ChangesPanelChange } from "@/components/scenario/changes-panel";
+import { ClientAccessProvider } from "@/components/client-access-provider";
 import { LtcStressRow } from "../solver-stress-ltc-row";
 
 afterEach(() => {
@@ -110,6 +111,46 @@ describe("LtcStressRow (draft)", () => {
     expect(screen.queryByText(/Projected value in 2090/)).toBeNull();
   });
 
+  it("a second out-of-range sale year is pulled back too — the box never disagrees with the figures", () => {
+    render(<Harness base={plan} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /long-term care/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /sell the home/i }));
+    for (let i = 0; i < 2; i++) {
+      const year = screen.getByLabelText(/sale year/i) as HTMLInputElement;
+      fireEvent.change(year, { target: { value: "2090" } });
+      fireEvent.blur(year);
+      expect((screen.getByLabelText(/sale year/i) as HTMLInputElement).value).toBe("2067");
+    }
+    expect(screen.getByText(/Projected value in 2067/)).toBeTruthy();
+  });
+
+  it("when nobody's care falls in the plan, the cut and the sale show no figures and say why", () => {
+    render(<Harness base={plan} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /long-term care/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /cut living expenses/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /sell the home/i }));
+    expect(screen.getByText(/Estimated cash to the household/)).toBeTruthy();
+    const age = screen.getByLabelText(/starts at age/i);
+    fireEvent.change(age, { target: { value: "40" } });
+    fireEvent.blur(age);
+    // The engine drops the sale and the cut with nobody in care: no figures for them.
+    expect(screen.queryByText(/Projected value in/)).toBeNull();
+    expect(screen.queryByText(/Estimated cash to the household/)).toBeNull();
+    const fieldsetOf = (name: RegExp) => screen.getByRole("checkbox", { name }).closest("fieldset")!;
+    expect(within(fieldsetOf(/cut living expenses/i)).getByText(/already passed/i)).toBeTruthy();
+    expect(within(fieldsetOf(/sell the home/i)).getByText(/already passed/i)).toBeTruthy();
+  });
+
+  it("a view-only advisor can't Add as change", () => {
+    render(
+      <ClientAccessProvider value={{ permission: "view", access: "shared" }}>
+        <Harness base={plan} scenarioId="s1" />
+      </ClientAccessProvider>,
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: /long-term care/i }));
+    expect((screen.getByRole("button", { name: /add as change/i }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("on the base case, Add as change is disabled and says why", () => {
     render(<Harness base={plan} />);
     fireEvent.click(screen.getByRole("checkbox", { name: /long-term care/i }));
@@ -131,7 +172,7 @@ const saved = (enabled: boolean): ChangesPanelChange => ({
 } as ChangesPanelChange);
 
 describe("LtcStressRow (saved)", () => {
-  it("Add as change POSTs the event, then drops the draft and refreshes", async () => {
+  it("Add as change POSTs the event and refreshes; the workspace, not the row, drops the draft", async () => {
     const fetchMock = vi.spyOn(global, "fetch").mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
     const onSaved = vi.fn();
     const onResetField = vi.fn();
@@ -146,7 +187,10 @@ describe("LtcStressRow (saved)", () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/clients/c1/scenarios/s1/changes");
     expect(JSON.parse(String((init as RequestInit).body))).toEqual({ op: "add", targetKind: "ltc_event", entity: savedEvent });
-    expect(onResetField).toHaveBeenCalledWith(["stress-ltc"]); // stale-draft rule
+    // Dropping the draft here, before the refreshed change list arrives, left a
+    // window to re-tick and add a second event. The workspace drops it once the
+    // saved change is in the list (live-solver-workspace.test.tsx).
+    expect(onResetField).not.toHaveBeenCalled();
   });
 
   it("a saved event shows a read-only summary and Edit on Changes tab — no second Add", () => {
@@ -168,6 +212,32 @@ describe("LtcStressRow (saved)", () => {
     );
     expect(screen.getByText(/switched off/i)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /add as change/i })).toBeNull();
+    // A switched-off change opens no editor, so the link doesn't promise one.
+    expect(screen.queryByRole("button", { name: /edit on changes tab/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /switch it on in the changes tab/i })).toBeTruthy();
+  });
+
+  // I3 / R34 — the engine drops the parts of a saved event it can't apply; the
+  // saved row says which, while the event is on.
+  const homeGone = { ...savedEvent, homeSale: { accountId: "gone", saleYear: 2055, price: { mode: "projected" as const }, sellingCostPct: 0.06 } };
+  const savedWith = (enabled: boolean): ChangesPanelChange => ({ ...saved(enabled), payload: homeGone });
+
+  it("a saved event that is ON shows the engine's warnings", () => {
+    const tree = { ...plan, ltcEvents: [homeGone] };
+    render(
+      <LtcStressRow tree={tree} projectionYears={[]} scenarioId="s1" scenarioName="With care" clientId="c1"
+        savedChange={savedWith(true)} onChange={vi.fn()} onResetField={vi.fn()} onSaved={vi.fn()} onEditOnChangesTab={vi.fn()} />,
+    );
+    expect(screen.getByRole("status").textContent).toBe("The home picked for the sale is no longer in this plan.");
+  });
+
+  it("a saved event that is switched OFF shows no warnings", () => {
+    // Off, the scenario doesn't apply the event, so the tree carries none.
+    render(
+      <LtcStressRow tree={plan} projectionYears={[]} scenarioId="s1" scenarioName="With care" clientId="c1"
+        savedChange={savedWith(false)} onChange={vi.fn()} onResetField={vi.fn()} onSaved={vi.fn()} onEditOnChangesTab={vi.fn()} />,
+    );
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("a failed save says so and keeps the draft", async () => {

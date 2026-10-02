@@ -1,31 +1,18 @@
 import type { ClientData, LtcEvent } from "@/engine/types";
-import {
-  DEFAULT_CARE_INFLATION,
-  DEFAULT_CARE_START_AGE,
-  DEFAULT_CARE_YEARS,
-  presetAnnualCost,
-} from "./care-cost-presets";
+import { birthYearFromDob } from "@/lib/age-year";
+import { DEFAULT_CARE_START_AGE, defaultCarePerson } from "./care-cost-presets";
 import { ltcEventName } from "./ltc-event-name";
 
 /** The event a fresh toggle creates: the client, a private nursing room. */
 export function defaultLtcEvent(tree: ClientData): LtcEvent {
-  const birthYear = parseInt(String(tree.client.dateOfBirth).slice(0, 4), 10);
-  const ageAtStart = tree.planSettings.planStartYear - birthYear;
-  const startAge = Number.isFinite(ageAtStart)
-    ? Math.max(DEFAULT_CARE_START_AGE, ageAtStart)
-    : DEFAULT_CARE_START_AGE;
+  const birthYear = birthYearFromDob(tree.client.dateOfBirth);
+  const startAge =
+    birthYear == null
+      ? DEFAULT_CARE_START_AGE
+      : Math.max(DEFAULT_CARE_START_AGE, tree.planSettings.planStartYear - birthYear);
   const base: Omit<LtcEvent, "name"> = {
     id: crypto.randomUUID(),
-    people: [
-      {
-        person: "client",
-        startAge,
-        years: DEFAULT_CARE_YEARS,
-        careSetting: "nursing_private",
-        annualCost: presetAnnualCost("nursing_private")!,
-        costInflation: DEFAULT_CARE_INFLATION,
-      },
-    ],
+    people: [defaultCarePerson("client", startAge)],
     livingExpenseCutPct: null,
     homeSale: null,
     includePolicies: true,

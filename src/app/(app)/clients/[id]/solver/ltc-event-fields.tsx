@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type {
   CareSetting,
   ClientData,
@@ -11,34 +12,21 @@ import type {
 import { resolveLtcEvent, type LtcWarning } from "@/engine/ltc-event";
 import {
   CARE_SETTING_LABELS,
-  DEFAULT_CARE_INFLATION,
-  DEFAULT_CARE_START_AGE,
-  DEFAULT_CARE_YEARS,
   DEFAULT_SELLING_COST_PCT,
+  defaultCarePerson,
   presetAnnualCost,
 } from "@/lib/ltc/care-cost-presets";
 import { ltcEventName, ltcPersonFirstName } from "@/lib/ltc/ltc-event-name";
 import { homeSalePreview } from "@/lib/ltc/home-sale-preview";
+import { exactCurrency } from "@/lib/presentations/format";
 import { DollarField, PercentField, SelectField, YearField } from "./solver-stress-fields";
 
-const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const SETTING_OPTIONS = (Object.keys(CARE_SETTING_LABELS) as CareSetting[]).map((value) => ({
   value,
   label: CARE_SETTING_LABELS[value],
 }));
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 const CHECKBOX = "h-4 w-4 accent-accent";
-
-function newPerson(person: "client" | "spouse"): LtcCarePerson {
-  return {
-    person,
-    startAge: DEFAULT_CARE_START_AGE,
-    years: DEFAULT_CARE_YEARS,
-    careSetting: "nursing_private",
-    annualCost: presetAnnualCost("nursing_private")!,
-    costInflation: DEFAULT_CARE_INFLATION,
-  };
-}
 
 function warningText(w: LtcWarning, tree: ClientData): string | null {
   switch (w.kind) {
@@ -66,11 +54,23 @@ export function LtcEventFields({
   projectionYears: ProjectionYear[];
   onChange(next: LtcEvent): void;
 }) {
+  // Bumped on every sale-year commit so the uncontrolled box remounts even when
+  // the clamp lands on the year already saved (its value-key would not change).
+  const [saleYearCommits, setSaleYearCommits] = useState(0);
   const commit = (patch: Partial<Omit<LtcEvent, "id" | "name">>) => {
     const next = { ...event, ...patch };
     onChange({ ...next, name: ltcEventName(next, tree.client) });
   };
   const resolution = resolveLtcEvent({ ...tree, ltcEvents: [event] });
+  // With nobody's care in the plan the engine applies nothing — no cut, no
+  // sale. The cut and the sale say why, in the same words as the warnings.
+  const notApplied =
+    resolution && resolution.people.length === 0
+      ? resolution.warnings
+          .filter((w) => w.kind === "start_before_plan" || w.kind === "missing_dob")
+          .map((w) => warningText(w, tree))
+          .join(" ")
+      : null;
   const who: ("client" | "spouse")[] = tree.client.spouseDob ? ["client", "spouse"] : ["client"];
   const homes = tree.accounts.filter((a) => a.category === "real_estate");
 
@@ -96,6 +96,7 @@ export function LtcEventFields({
 
   const lastProjectedYear = projectionYears.at(-1)?.year ?? tree.planSettings.planEndYear;
   const preview = event.homeSale ? homeSalePreview(projectionYears, tree, event.homeSale) : null;
+  const notAppliedNote = notApplied ? <p className="mt-1 text-[11px] text-ink-3">{notApplied}</p> : null;
 
   return (
     <div className="space-y-4">
@@ -113,7 +114,7 @@ export function LtcEventFields({
                 className={CHECKBOX}
                 checked={p !== null}
                 disabled={isOnlyPerson}
-                onChange={(e) => setPerson(person, e.target.checked ? newPerson(person) : null)}
+                onChange={(e) => setPerson(person, e.target.checked ? defaultCarePerson(person) : null)}
               />
               <span className="text-[12px] font-medium text-ink">{first} needs care</span>
             </label>
@@ -188,6 +189,7 @@ export function LtcEventFields({
             <p className="mt-1 text-[11px] text-ink-3">
               100% stops living expenses during care. Use less when a spouse is still at home.
             </p>
+            {notAppliedNote}
           </div>
         )}
       </fieldset>
@@ -213,13 +215,14 @@ export function LtcEventFields({
                   onCommit={(accountId) => setSale({ accountId })}
                 />
                 <YearField
-                  key={`sale-${event.homeSale.saleYear}`}
+                  key={`sale-${event.homeSale.saleYear}-${saleYearCommits}`}
                   label="Sale year"
                   value={event.homeSale.saleYear}
-                  onCommit={(saleYear) =>
+                  onCommit={(saleYear) => {
                     // A year outside the projection has no figures and the sale never runs.
-                    setSale({ saleYear: clamp(saleYear, tree.planSettings.planStartYear, lastProjectedYear) })
-                  }
+                    setSale({ saleYear: clamp(saleYear, tree.planSettings.planStartYear, lastProjectedYear) });
+                    setSaleYearCommits((n) => n + 1);
+                  }}
                 />
               </div>
               <div role="radiogroup" aria-label="Price used for the sale" className="flex gap-4 text-[12px] text-ink">
@@ -260,41 +263,49 @@ export function LtcEventFields({
                   onCommit={(d) => setSale({ sellingCostPct: clamp(d, 0, 0.2) })}
                 />
               </div>
-              <dl className="space-y-1 rounded border border-hair p-3 text-[12px] text-ink">
-                <div className="flex justify-between gap-4">
-                  <dt>Projected value in {event.homeSale.saleYear}</dt>
-                  <dd className="tabular">
-                    {preview.projectedValue == null ? "—" : money.format(preview.projectedValue)}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt>Mortgage left</dt>
-                  <dd className="tabular">{preview.mortgageLeft == null ? "—" : money.format(preview.mortgageLeft)}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt>Selling costs</dt>
-                  <dd className="tabular">{money.format(preview.sellingCosts)}</dd>
-                </div>
-                <div className="flex justify-between gap-4 font-medium">
-                  <dt>Estimated cash to the household</dt>
-                  <dd className="tabular">
-                    {preview.cashToHousehold == null ? "—" : `${money.format(preview.cashToHousehold)} before tax`}
-                  </dd>
-                </div>
-              </dl>
+              {notAppliedNote ?? (
+                <dl className="space-y-1 rounded border border-hair p-3 text-[12px] text-ink">
+                  <div className="flex justify-between gap-4">
+                    <dt>Projected value in {event.homeSale.saleYear}</dt>
+                    <dd className="tabular">
+                      {preview.projectedValue == null ? "—" : exactCurrency(preview.projectedValue)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt>Mortgage left</dt>
+                    <dd className="tabular">{preview.mortgageLeft == null ? "—" : exactCurrency(preview.mortgageLeft)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt>Selling costs</dt>
+                    <dd className="tabular">{preview.sellingCosts == null ? "—" : exactCurrency(preview.sellingCosts)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 font-medium">
+                    <dt>Estimated cash to the household</dt>
+                    <dd className="tabular">
+                      {preview.cashToHousehold == null ? "—" : `${exactCurrency(preview.cashToHousehold)} before tax`}
+                    </dd>
+                  </div>
+                </dl>
+              )}
             </div>
           )}
         </fieldset>
       )}
 
-      {resolution?.warnings.map((w, i) => {
-        const text = warningText(w, tree);
-        return text ? (
-          <p key={i} role="status" className="text-[11px] text-crit">
-            {text}
-          </p>
-        ) : null;
-      })}
+      <LtcWarnings warnings={resolution?.warnings ?? []} tree={tree} />
     </div>
   );
+}
+
+/** The engine's warnings, one sentence each. Also shown by the Stress row for a
+ *  saved event, so both say the same thing. */
+export function LtcWarnings({ warnings, tree }: { warnings: LtcWarning[]; tree: ClientData }) {
+  return warnings.map((w, i) => {
+    const text = warningText(w, tree);
+    return text ? (
+      <p key={i} role="status" className="text-[11px] text-crit">
+        {text}
+      </p>
+    ) : null;
+  });
 }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import DialogShell from "@/components/dialog-shell";
 import type { ClientData, LtcEvent, ProjectionYear } from "@/engine/types";
 import { LtcEventFields } from "./ltc-event-fields";
+import { saveLtcEvent } from "./save-ltc-event";
 
 export function LtcEventDialog(props: {
   clientId: string;
@@ -19,17 +20,11 @@ export function LtcEventDialog(props: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(false);
 
-  // The changes route upserts a whole-event add; an `edit` is refused by design.
   async function save() {
     setSaving(true);
     setError(false);
     try {
-      const res = await fetch(`/api/clients/${props.clientId}/scenarios/${props.scenarioId}/changes`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ op: "add", targetKind: "ltc_event", entity: draft }),
-      });
-      if (!res.ok) throw new Error(String(res.status));
+      await saveLtcEvent(props.clientId, props.scenarioId, draft);
       router.refresh();
       props.onDone();
     } catch {

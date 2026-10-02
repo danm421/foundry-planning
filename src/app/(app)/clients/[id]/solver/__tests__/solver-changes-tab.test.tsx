@@ -856,12 +856,16 @@ describe("SolverChangesTab — LTC event", () => {
   const ltcChange = () =>
     makeChange({ id: "c-ltc", targetKind: "ltc_event", targetId: ltcEvent.id, payload: ltcEvent });
 
-  function renderWithPending(onInitialOpenConsumed: () => void, initialOpenChangeId: string | null) {
+  function renderWithPending(
+    onInitialOpenConsumed: () => void,
+    initialOpenChangeId: string | null,
+    panel: PanelData | null = makePanel({ changes: [ltcChange()] }),
+  ) {
     render(
       <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
         <SolverChangesTab
           clientId={CLIENT_ID}
-          panel={makePanel({ changes: [ltcChange()] })}
+          panel={panel}
           inventory={[]}
           planTree={buildClientData()}
           willGrantors={[]}
@@ -878,6 +882,20 @@ describe("SolverChangesTab — LTC event", () => {
     const consumed = vi.fn();
     renderWithPending(consumed, "c-ltc");
     expect(screen.getByText("Long-term care event")).toBeInTheDocument();
+    expect(consumed).toHaveBeenCalledTimes(1);
+  });
+
+  it("a pending id for a SWITCHED-OFF change opens nothing and is still consumed", () => {
+    const consumed = vi.fn();
+    renderWithPending(consumed, "c-ltc", makePanel({ changes: [{ ...ltcChange(), enabled: false }] }));
+    expect(screen.queryByText("Long-term care event")).not.toBeInTheDocument();
+    expect(consumed).toHaveBeenCalledTimes(1);
+  });
+
+  it("a pending id is consumed even with no scenario panel", () => {
+    const consumed = vi.fn();
+    renderWithPending(consumed, "c-ltc", null);
+    expect(screen.queryByText("Long-term care event")).not.toBeInTheDocument();
     expect(consumed).toHaveBeenCalledTimes(1);
   });
 

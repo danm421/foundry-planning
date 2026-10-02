@@ -1479,13 +1479,14 @@ describe("LiveSolverWorkspace — long-term care draft vs a saved event", () => 
   it("shows the life-expectancy hint for a person in care", async () => {
     seedLtcDraft(85);
     render(<LiveSolverWorkspace {...withPlanStart} />);
-    expect(await screen.findByText("Set by the long-term care stress test.")).toBeTruthy();
+    // Cooper (1965) in care at 85 for 3 years: 2050–2052.
+    expect(await screen.findByText("Set to 87 (2052) by the long-term care stress test.")).toBeTruthy();
   });
 
   it("shows no hint when the person's care would start before the plan (the test sets nothing)", async () => {
     seedLtcDraft(50); // 1965 + 50 = 2015, before the 2026 plan start
     render(<LiveSolverWorkspace {...withPlanStart} />);
     await screen.findByText(/restored/i);
-    expect(screen.queryByText("Set by the long-term care stress test.")).toBeNull();
+    expect(screen.queryByText(/by the long-term care stress test/)).toBeNull();
   });
 });

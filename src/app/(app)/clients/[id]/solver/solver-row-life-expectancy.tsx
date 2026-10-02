@@ -1,6 +1,7 @@
 "use client";
 
 import type { ClientData } from "@/engine";
+import type { ResolvedCarePerson } from "@/engine/ltc-event";
 import {
   mutationKey,
   type SolverMutation,
@@ -21,7 +22,7 @@ interface Props {
   onChange(m: SolverMutation): void;
   onResetField?: (keys: SolverMutationKey[]) => void;
   /** People whose life expectancy a long-term care event is setting. */
-  ltcPeople?: ("client" | "spouse")[];
+  ltcPeople?: ResolvedCarePerson[];
 }
 
 export function SolverRowLifeExpectancy({
@@ -43,6 +44,13 @@ export function SolverRowLifeExpectancy({
   const spouseMinLE = ageFromDob(workingClient.spouseDob);
   const clientBirthYear = birthYearFromDob(workingClient.dateOfBirth);
   const spouseBirthYear = birthYearFromDob(workingClient.spouseDob);
+  // The row shows the plan's own value; care overrides it in the projection.
+  const ltcHint = (person: SolverPerson): string | null => {
+    const p = ltcPeople?.find((x) => x.person === person);
+    return p
+      ? `Set to ${p.startAge + p.years - 1} (${p.endYear}) by the long-term care stress test.`
+      : null;
+  };
 
   return (
     <div className="space-y-2.5">
@@ -62,7 +70,7 @@ export function SolverRowLifeExpectancy({
             onChange({ kind: "life-expectancy", person: "client", age: v })
           }
           onResetField={onResetField}
-          ltcHint={ltcPeople?.includes("client")}
+          ltcHint={ltcHint("client")}
         />
         {showSpouse ? (
           <Editable
@@ -79,7 +87,7 @@ export function SolverRowLifeExpectancy({
               onChange({ kind: "life-expectancy", person: "spouse", age: v })
             }
             onResetField={onResetField}
-            ltcHint={ltcPeople?.includes("spouse")}
+            ltcHint={ltcHint("spouse")}
           />
         ) : null}
       </div>
@@ -114,7 +122,7 @@ function Editable({
   birthYear: number | null;
   onCommit: (v: number) => void;
   onResetField?: (keys: SolverMutationKey[]) => void;
-  ltcHint?: boolean;
+  ltcHint: string | null;
 }) {
   return (
     <div>
@@ -153,7 +161,7 @@ function Editable({
           }
         />
       </SolverFieldActions>
-      {ltcHint && <p className="text-[11px] text-ink-3">Set by the long-term care stress test.</p>}
+      {ltcHint && <p className="text-[11px] text-ink-3">{ltcHint}</p>}
     </div>
   );
 }

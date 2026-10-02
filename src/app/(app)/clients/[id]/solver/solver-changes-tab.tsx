@@ -17,7 +17,9 @@
 // Clicking a change's title opens where it's edited (resolveChangeEditor):
 // a Solver tab (Stress, Retirement) switches the left pane; a Details page
 // opens that row's own editor in place (SolverChangeEditor), which also
-// explains a change whose editor can't be used inside a scenario. Rows with
+// explains a change whose editor can't be used inside a scenario; the
+// long-term care event, which has no Details page, opens its own dialog here
+// (LtcEventDialog) — also on arrival from the Stress row's link. Rows with
 // nowhere to open, rows in a switched-off toggle group, and every row for a
 // view-only advisor, stay plain text.
 
@@ -86,10 +88,11 @@ export function SolverChangesTab({
   // The LTC event has no Details page; its dialog is mounted here, not in the host.
   const [ltcEditing, setLtcEditing] = useState<{ event: LtcEvent; seq: number } | null>(null);
 
-  // One-shot open on arrival, then tell the workspace the pending id is spent.
+  // One-shot open on arrival, then tell the workspace the pending id is spent —
+  // always, even with no panel, so a stale id can't linger and open later.
   useEffect(() => {
-    if (!panel || !initialOpenChangeId) return;
-    const change = panel.changes.find((c) => c.id === initialOpenChangeId);
+    if (!initialOpenChangeId) return;
+    const change = panel?.changes.find((c) => c.id === initialOpenChangeId);
     if (change && canEdit && isApplied(change)) openChange(change);
     onInitialOpenConsumed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot open on arrival
