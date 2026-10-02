@@ -450,8 +450,8 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
     },
     // disabilityPolicies has a clientId column and no scenarioId, so a write
     // through these routes lands in the one base row set. A scenario overlays
-    // that set through `disability_policy` scenario changes, which never touch
-    // this table. Stays false: Statement Chat refuses to identity-match a
+    // that set through `disability_policy` scenario changes, which reach this
+    // table only when the scenario is promoted. Stays false: Statement Chat refuses to identity-match a
     // scenarioScoped entity (`loadExistingRows`), and with no scenario column
     // there are no other scenarios' rows to mis-match.
     scenarioScoped: false,

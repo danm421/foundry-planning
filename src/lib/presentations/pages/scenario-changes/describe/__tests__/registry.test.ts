@@ -39,7 +39,7 @@ describe("insurance describers", () => {
     expect(row.what).toBe("+ Group disability");
     const d = row.detail.join(" ");
     expect(d).toContain("STD 60% · 13 wks");
-    expect(d).toContain("LTD 60% to 65");
+    expect(d).toContain("LTD 60% to age 65");
   });
 
   it("formats an edited coverage layer instead of printing a dash", () => {
@@ -51,6 +51,42 @@ describe("insurance describers", () => {
     expect(row.what).toBe("Group disability · Short term");
     expect(row.before).toBe("STD 60% · 13 wks");
     expect(row.after).toBe("None");
+  });
+
+  // The stored token for the second person must never reach a client page.
+  it("names the insured person on an edit instead of printing the stored token", () => {
+    const row = describeChange(ch({
+      targetKind: "disability_policy", targetId: "dp1", opType: "edit",
+      payload: { insured: { from: "client", to: "spouse" } },
+    }), named);
+    expect(row.before).toBe("Client");
+    expect(row.after).toBe("Co-client");
+  });
+
+  it("names a life-insurance account's insured person on an account edit", () => {
+    const row = describeChange(ch({
+      targetKind: "account", opType: "edit",
+      payload: { insuredPerson: { from: "spouse", to: "joint" } },
+    }), ctx);
+    expect(row.before).toBe("Co-client");
+    expect(row.after).toBe("Joint");
+  });
+
+  it("formats money and rate edits instead of printing bare numbers", () => {
+    const premium = describeChange(ch({
+      targetKind: "disability_policy", targetId: "dp1", opType: "edit",
+      payload: { annualPremium: { from: 1200, to: 900 } },
+    }), named);
+    expect(premium.what).toBe("Group disability · Annual premium");
+    expect(premium.before).toBe("$1.2k");
+    expect(premium.after).toBe("$900");
+
+    const cola = describeChange(ch({
+      targetKind: "disability_policy", targetId: "dp1", opType: "edit",
+      payload: { colaRate: { from: 0, to: 0.03 } },
+    }), named);
+    expect(cola.before).toBe("0%");
+    expect(cola.after).toBe("3%");
   });
 
   it("moves life insurance policies to the Insurance area", () => {

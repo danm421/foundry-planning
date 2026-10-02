@@ -1,8 +1,12 @@
+import type { DisabilityPolicy } from "@/engine/types";
+import { benefitPeriodText } from "@/lib/insurance-policies/disability-labels";
 import { addRow, removeRow, editRow } from "../generic";
 import { nameFor } from "../format";
-import { money, joinSegments, toNum } from "../labels";
+import { money, pct, joinSegments, toNum } from "../labels";
 import { SPEC } from "../specs";
 import { DESCRIBERS, simpleDescriber, type Describer } from "../registry";
+
+type BenefitPeriod = NonNullable<DisabilityPolicy["longTerm"]>["benefitPeriod"];
 
 type Layer = Record<string, unknown>;
 
@@ -23,23 +27,16 @@ function shortTermLabel(v: unknown): string | null {
   return joinSegments([`STD ${benefitPct(l.benefitPct)}`, weeks != null ? `${weeks} wks` : null]);
 }
 
+const PERIOD_MODES = new Set<unknown>(["to_age", "to_ssnra", "years", "lifetime"]);
+
+/** The Insurance panel's own wording ("to age 65"), so one policy reads the
+ *  same on both surfaces. Null for a period the shared helper cannot word. */
 function benefitPeriodLabel(v: unknown): string | null {
   const p = asLayer(v);
-  switch (p?.mode) {
-    case "to_age":
-      return `to ${toNum(p.age) ?? "—"}`;
-    case "years":
-      return `for ${toNum(p.years) ?? "—"} yrs`;
-    case "to_ssnra":
-      return "to full retirement age";
-    case "lifetime":
-      return "for life";
-    default:
-      return null;
-  }
+  return p && PERIOD_MODES.has(p.mode) ? benefitPeriodText(p as unknown as BenefitPeriod) : null;
 }
 
-/** "LTD 60% to 65" — null when the policy has no long-term layer. */
+/** "LTD 60% to age 65" — null when the policy has no long-term layer. */
 function longTermLabel(v: unknown): string | null {
   const l = asLayer(v);
   if (!l) return null;
@@ -47,11 +44,15 @@ function longTermLabel(v: unknown): string | null {
   return `LTD ${benefitPct(l.benefitPct)}${period ? ` ${period}` : ""}`;
 }
 
-/** The coverage layers are objects, which the generic edit formatter prints as
- *  "—". Pre-format them; an absent layer reads "None". */
-const LAYER_LABEL: Record<string, (v: unknown) => string | null> = {
-  shortTerm: shortTermLabel,
-  longTerm: longTermLabel,
+/** Fields the generic edit formatter would print badly: the coverage layers
+ *  are objects (it prints "—"), and money and rates are bare numbers (900,
+ *  0.03). Pre-format them; an absent layer reads "None". */
+const EDIT_FORMAT: Record<string, (v: unknown) => string> = {
+  shortTerm: (v) => shortTermLabel(v) ?? "None",
+  longTerm: (v) => longTermLabel(v) ?? "None",
+  annualPremium: money,
+  coveredEarningsAmount: money,
+  colaRate: pct,
 };
 
 const disabilityPolicy: Describer = (c, ctx) => {
@@ -61,8 +62,8 @@ const disabilityPolicy: Describer = (c, ctx) => {
     const diff = (c.payload ?? {}) as Record<string, { from: unknown; to: unknown }>;
     const shown = Object.fromEntries(
       Object.entries(diff).map(([field, d]) => {
-        const fmt = LAYER_LABEL[field];
-        return [field, fmt ? { from: fmt(d?.from) ?? "None", to: fmt(d?.to) ?? "None" } : d];
+        const fmt = EDIT_FORMAT[field];
+        return [field, fmt ? { from: fmt(d?.from), to: fmt(d?.to) } : d];
       }),
     );
     return editRow({ ...c, payload: shown }, { ...SPEC.disability_policy }, name);

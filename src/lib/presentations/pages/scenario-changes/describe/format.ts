@@ -75,9 +75,10 @@ export function fmtValue(v: unknown): string {
  *
  * Matched on the WHOLE field name, the way `domain/forge/row-lines.ts` scopes
  * its own owner map, so `ownerEntityId` / `ownerAccountId` — ids, not enums —
- * keep falling through to fmtValue and print as themselves.
+ * keep falling through to fmtValue and print as themselves. `insured` is a
+ * disability policy's person and `insuredPerson` a life-insurance account's.
  */
-const PERSON_ENUM_FIELDS = new Set(["owner", "grantor"]);
+const PERSON_ENUM_FIELDS = new Set(["owner", "grantor", "insured", "insuredPerson"]);
 
 /**
  * fmtValue, plus the humanisations that need to know WHICH field they are
