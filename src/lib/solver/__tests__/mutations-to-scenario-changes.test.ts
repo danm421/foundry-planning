@@ -570,6 +570,50 @@ describe("mutationsToScenarioChanges — technique upserts", () => {
   });
 });
 
+// A reinvestment's `accountIds` is derived — its picks plus every member of its
+// groups, recomputed on each scenario load — so an edit names the picks and the
+// groups and never the union. A union stored without the picks would read back
+// as a legacy pick list, turning the groups' members into one-by-one picks.
+describe("mutationsToScenarioChanges — reinvestment upserts", () => {
+  const ri = {
+    id: "ri-1",
+    name: "Switch",
+    pickedAccountIds: ["acc-ira"],
+    groupKeys: ["taxable"],
+    accountIds: ["acc-ira", "acc-brokerage"],
+    year: 2035,
+    newGrowthRate: 0.05,
+    realizeTaxesOnSwitch: false,
+    soldFractionByAccount: {},
+  };
+
+  it("an edit that drops a group names the groups, not the union", () => {
+    const src = { ...makeSource(), reinvestments: [ri] };
+    const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
+      { kind: "reinvestment-upsert", id: "ri-1", value: { ...ri, groupKeys: [], accountIds: ["acc-ira"] } },
+    ]);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].opType).toBe("edit");
+    expect(drafts[0].payload).toEqual({ groupKeys: { from: ["taxable"], to: [] } });
+  });
+
+  it("a re-save whose union only came back in another order is no edit", () => {
+    const src = { ...makeSource(), reinvestments: [ri] };
+    const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
+      { kind: "reinvestment-upsert", id: "ri-1", value: { ...ri, accountIds: ["acc-brokerage", "acc-ira"] } },
+    ]);
+    expect(drafts).toHaveLength(0);
+  });
+
+  it("an add keeps the union, which the cascade reads before the overlay recomputes it", () => {
+    const drafts = mutationsToScenarioChanges(makeSource(), CLIENT_ID, [
+      { kind: "reinvestment-upsert", id: "ri-1", value: ri },
+    ]);
+    expect(drafts[0].opType).toBe("add");
+    expect(drafts[0].payload).toEqual(ri);
+  });
+});
+
 describe("mutationsToScenarioChanges — stress overrides → plan_settings", () => {
   it("coalesces every stressor into ONE plan_settings edit (no unique-index collision)", () => {
     const src = {

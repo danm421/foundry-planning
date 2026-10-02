@@ -50,6 +50,7 @@ import {
   writeTransferChildren,
   writeRothConversionChildren,
   writeReinvestmentChildren,
+  updateReinvestmentChildren,
   writeWillChildren,
   updateWillChildren,
   writeGiftChildren,
@@ -151,7 +152,12 @@ export const PROMOTE_TABLE_REGISTRY: Partial<Record<TargetKind, RegistryEntry>> 
   },
   withdrawal_strategy: { table: withdrawalStrategies },
   transfer: { table: transfers, childWriter: writeTransferChildren },
-  reinvestment: { table: reinvestments, childWriter: writeReinvestmentChildren },
+  // The picks live in reinvestment_accounts and the groups in reinvestment_groups.
+  reinvestment: {
+    table: reinvestments,
+    childWriter: writeReinvestmentChildren,
+    childUpdater: updateReinvestmentChildren,
+  },
   asset_transaction: { table: assetTransactions },
   roth_conversion: { table: rothConversions, childWriter: writeRothConversionChildren },
   client_deduction: { table: clientDeductions },

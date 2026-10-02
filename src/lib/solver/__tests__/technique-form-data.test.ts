@@ -3,9 +3,10 @@ import {
   coerceAssetTransactionDraft,
   toRothConversionInitialData,
   toAssetTransactionInitialData,
+  toReinvestmentInitialData,
 } from "../technique-form-data";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
-import type { AssetTransaction } from "@/engine/types";
+import type { AssetTransaction, Reinvestment } from "@/engine/types";
 
 describe("coerceAssetTransactionDraft", () => {
   it("coerces string numeric fields to numbers and drops nulls", () => {
@@ -92,5 +93,35 @@ describe("toRothConversionInitialData", () => {
     expect(out.fillUpBracket).toBeNull();
     expect(out.startYear).toBe(2030);
     expect(out.endYear).toBe(2035);
+  });
+});
+
+// The Solver's Techniques tab opens the same reinvestment form as the Details
+// page, so it must hand it the same thing: the accounts picked one by one, never
+// their union with the groups' members (which the form would show as picks).
+describe("toReinvestmentInitialData", () => {
+  const reinvestment = (over: Partial<Reinvestment> = {}): Reinvestment => ({
+    id: "ri-1",
+    name: "Switch",
+    accountIds: ["acc-ira", "acc-brokerage"],
+    pickedAccountIds: ["acc-ira"],
+    groupKeys: ["taxable"],
+    year: 2035,
+    newGrowthRate: 0.05,
+    realizeTaxesOnSwitch: false,
+    soldFractionByAccount: {},
+    ...over,
+  });
+
+  it("opens on the picks, not the union", () => {
+    const data = toReinvestmentInitialData(reinvestment());
+    expect(data.pickedAccountIds).toEqual(["acc-ira"]);
+    expect(data.groupKeys).toEqual(["taxable"]);
+  });
+
+  it("reads a reinvestment with no picks key off its accountIds", () => {
+    const { pickedAccountIds: _omit, ...legacy } = reinvestment({ groupKeys: [] });
+    void _omit;
+    expect(toReinvestmentInitialData(legacy).pickedAccountIds).toEqual(["acc-ira", "acc-brokerage"]);
   });
 });

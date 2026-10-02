@@ -53,6 +53,8 @@ import {
   securityAssetClassWeightRow,
   tickerPortfolioAccountRow,
   FIXTURE_ACCOUNT_ID_1,
+  FIXTURE_ACCOUNT_ID_2,
+  FIXTURE_SCENARIO_ID,
   FIXTURE_FAMILY_MEMBER_ID,
   FIXTURE_PORTFOLIO_ID,
 } from "./fixtures/sample-rows";
@@ -99,6 +101,8 @@ type DbState = {
   expenseScheduleOverrides: unknown[];
   savingsScheduleOverrides: unknown[];
   trustSplitInterestDetails: unknown[];
+  reinvestments: unknown[];
+  reinvestmentAccounts: unknown[];
   reinvestmentGroups: unknown[];
   accountGroups: unknown[];
   accountGroupMembers: unknown[];
@@ -145,6 +149,8 @@ const dbState: DbState = {
   expenseScheduleOverrides: [],
   savingsScheduleOverrides: [],
   trustSplitInterestDetails: [],
+  reinvestments: [],
+  reinvestmentAccounts: [],
   reinvestmentGroups: [],
   accountGroups: [],
   accountGroupMembers: [],
@@ -206,6 +212,8 @@ vi.mock("@/db", async () => {
     if (t === schema.expenseScheduleOverrides || n === "expense_schedule_overrides") return dbState.expenseScheduleOverrides;
     if (t === schema.savingsScheduleOverrides || n === "savings_schedule_overrides") return dbState.savingsScheduleOverrides;
     if (t === schema.trustSplitInterestDetails || n === "trust_split_interest_details") return dbState.trustSplitInterestDetails;
+    if (t === schema.reinvestments || n === "reinvestments") return dbState.reinvestments;
+    if (t === schema.reinvestmentAccounts || n === "reinvestment_accounts") return dbState.reinvestmentAccounts;
     if (t === schema.reinvestmentGroups || n === "reinvestment_groups") return dbState.reinvestmentGroups;
     if (t === schema.accountGroups || n === "account_groups") return dbState.accountGroups;
     if (t === schema.accountGroupMembers || n === "account_group_members") return dbState.accountGroupMembers;
@@ -796,6 +804,49 @@ describe("loadClientData — business sales", () => {
     expect(sale).toBeDefined();
     expect(sale!.businessAccountId).toBeUndefined();
     expect(sale!.accountId).toBe("acct-1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reinvestment targets — the individual picks beside the expanded union
+// ---------------------------------------------------------------------------
+
+describe("loadClientData — reinvestment targets", () => {
+  /** Picks the cash account one by one, plus the whole "taxable" group. */
+  function seedGroupedReinvestment() {
+    seedValidFixture();
+    dbState.reinvestments = [
+      {
+        id: "ri-1",
+        clientId: FIXTURE_CLIENT_ID,
+        scenarioId: FIXTURE_SCENARIO_ID,
+        name: "Switch",
+        year: 2035,
+        yearRef: null,
+        targetType: "custom",
+        modelPortfolioId: null,
+        customGrowthRate: "0.05",
+        customPctOrdinaryIncome: null,
+        customPctLtCapitalGains: null,
+        customPctQualifiedDividends: null,
+        customPctTaxExempt: null,
+        realizeTaxesOnSwitch: false,
+      },
+    ];
+    dbState.reinvestmentAccounts = [{ id: "ra-1", reinvestmentId: "ri-1", accountId: FIXTURE_ACCOUNT_ID_2 }];
+    dbState.reinvestmentGroups = [{ reinvestmentId: "ri-1", groupKey: "taxable" }];
+  }
+
+  // The engine reads the union; the editors read and write the picks, so a
+  // scenario edit compares picks with picks instead of picks with the union.
+  it("carries the individual picks beside the union the engine reads", async () => {
+    seedGroupedReinvestment();
+
+    const [ri] = (await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID)).reinvestments!;
+
+    expect(ri.pickedAccountIds).toEqual([FIXTURE_ACCOUNT_ID_2]);
+    expect(ri.groupKeys).toEqual(["taxable"]);
+    expect([...ri.accountIds].sort()).toEqual([FIXTURE_ACCOUNT_ID_1, FIXTURE_ACCOUNT_ID_2].sort());
   });
 });
 

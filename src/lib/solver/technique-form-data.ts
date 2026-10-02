@@ -121,14 +121,16 @@ export function toAssetTransactionInitialData(
 
 /** Engine Reinvestment → the form's initial-data shape. Solver drafts aren't
  *  persisted, so the form can't re-fetch the detail fields (modelPortfolioId /
- *  custom percents) — carry them through from the in-memory engine object. */
+ *  custom percents) — carry them through from the in-memory engine object.
+ *  The form gets the picks, never `accountIds` (their union with the groups'
+ *  members), exactly as the Details loader hands it. */
 export function toReinvestmentInitialData(
   ri: Reinvestment,
 ): ReinvestmentInitialData {
   return {
     id: ri.id,
     name: ri.name,
-    accountIds: ri.accountIds,
+    pickedAccountIds: ri.pickedAccountIds ?? ri.accountIds,
     groupKeys: ri.groupKeys ?? [],
     year: ri.year,
     yearRef: ri.yearRef ?? null,

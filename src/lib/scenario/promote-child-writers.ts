@@ -518,27 +518,71 @@ export async function writeRothConversionChildren(
 
 // ── Reinvestment children ──────────────────────────────────────────────────
 
-/** Inserts reinvestmentAccounts (from raw.accountIds) and reinvestmentGroups
- *  (from raw.groupKeys — Reinvestment.groupKeys). */
+/** Where a reinvestment payload keeps its one-by-one picks: `pickedAccountIds`,
+ *  or — on a change written before that key existed — `accountIds`. Never the
+ *  union `accountIds` beside a picks key: base stores the picks alone (the
+ *  reinvestments route's `accountIds`), and loading re-expands the groups. */
+function reinvestmentPicksKey(raw: Record<string, unknown>): "pickedAccountIds" | "accountIds" | null {
+  if ("pickedAccountIds" in raw) return "pickedAccountIds";
+  return "accountIds" in raw ? "accountIds" : null;
+}
+
+async function insertReinvestmentPicks(
+  tx: PromoteTx,
+  parentId: string,
+  picks: unknown,
+  ctx: ChildWriterCtx,
+): Promise<void> {
+  for (const accountId of (picks as string[] | null | undefined) ?? []) {
+    const values = coerceForTable(reinvestmentAccounts, {
+      reinvestmentId: parentId,
+      accountId: remapId(accountId, ctx),
+    });
+    await tx.insert(reinvestmentAccounts).values(values as never);
+  }
+}
+
+async function insertReinvestmentGroups(
+  tx: PromoteTx,
+  parentId: string,
+  groupKeys: unknown,
+): Promise<void> {
+  for (const groupKey of (groupKeys as string[] | null | undefined) ?? []) {
+    // reinvestmentGroups has a composite PK (reinvestmentId, groupKey); no
+    // auto-generated id column — coerceForTable drops non-column keys cleanly.
+    await tx.insert(reinvestmentGroups).values({ reinvestmentId: parentId, groupKey } as never);
+  }
+}
+
+/** Inserts reinvestmentAccounts (from the picks — see `reinvestmentPicksKey`)
+ *  and reinvestmentGroups (from raw.groupKeys — Reinvestment.groupKeys). */
 export async function writeReinvestmentChildren(
   tx: PromoteTx,
   parentId: string,
   raw: Record<string, unknown>,
+  ctx: ChildWriterCtx,
 ): Promise<void> {
-  const accountIds = (raw.accountIds as string[] | undefined) ?? [];
-  for (const accountId of accountIds) {
-    const values = coerceForTable(reinvestmentAccounts, {
-      reinvestmentId: parentId,
-      accountId,
-    });
-    await tx.insert(reinvestmentAccounts).values(values as never);
-  }
+  const picksKey = reinvestmentPicksKey(raw);
+  await insertReinvestmentPicks(tx, parentId, picksKey && raw[picksKey], ctx);
+  await insertReinvestmentGroups(tx, parentId, raw.groupKeys);
+}
 
-  const groupKeys = (raw.groupKeys as string[] | undefined) ?? [];
-  for (const groupKey of groupKeys) {
-    // reinvestmentGroups has a composite PK (reinvestmentId, groupKey); no
-    // auto-generated id column — coerceForTable drops non-column keys cleanly.
-    await tx.insert(reinvestmentGroups).values({ reinvestmentId: parentId, groupKey } as never);
+/** Rewrites a reinvestment's picks and / or groups after an EDIT, each only when
+ *  the edit's `set` names it — exactly as the reinvestments route's PUT does. */
+export async function updateReinvestmentChildren(
+  tx: PromoteTx,
+  parentId: string,
+  set: Record<string, unknown>,
+  ctx: ChildWriterCtx,
+): Promise<void> {
+  const picksKey = reinvestmentPicksKey(set);
+  if (picksKey) {
+    await tx.delete(reinvestmentAccounts).where(eq(reinvestmentAccounts.reinvestmentId, parentId));
+    await insertReinvestmentPicks(tx, parentId, set[picksKey], ctx);
+  }
+  if ("groupKeys" in set) {
+    await tx.delete(reinvestmentGroups).where(eq(reinvestmentGroups.reinvestmentId, parentId));
+    await insertReinvestmentGroups(tx, parentId, set.groupKeys);
   }
 }
 

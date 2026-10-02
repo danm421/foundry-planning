@@ -24,8 +24,6 @@ import type {
   ToggleState,
 } from "@/engine/scenario/types";
 import { resolveReinvestments } from "@/lib/projection/resolve-reinvestments";
-import { expandReinvestmentTargets } from "@/lib/projection/expand-reinvestment-targets";
-import type { AccountCategory } from "@/lib/account-groups/liquid-filter";
 import { reResolveInflationGrowth } from "@/lib/projection/resolve-inflation-growth";
 import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expense";
 import { withSynthesizedPolicyIncome } from "@/lib/insurance-policies/policy-income";
@@ -34,6 +32,7 @@ import { withSynthesizedDisabilityPremiums } from "@/lib/insurance-policies/disa
 import { withSynthesizedEntityChecking } from "@/lib/entities/entity-checking";
 import { resolveRefYears } from "@/lib/year-refs";
 import { applyGiftOverlays } from "./apply-gift-overlays";
+import { withExpandedReinvestmentTargets, withLegacyReinvestmentPicks } from "./reinvestment-picks";
 import { reResolveEditedAccountGrowth } from "./account-growth-edits";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "./changes";
 import {
@@ -136,7 +135,9 @@ export function applyScenarioChangesWithRefs(
   resolutionContext?: ResolutionContext,
 ): LoadEffectiveTreeResult {
   const giftChanges = changes.filter((c) => c.targetKind === "gift");
-  const nonGiftChanges = changes.filter((c) => c.targetKind !== "gift");
+  const nonGiftChanges = changes
+    .filter((c) => c.targetKind !== "gift")
+    .map(withLegacyReinvestmentPicks);
   const { effectiveTree, warnings } = applyScenarioChanges(
     treeForChanges,
     nonGiftChanges,
@@ -203,24 +204,15 @@ export function applyScenarioChangesWithRefs(
   const giftNormalized = applyGiftOverlays(refResolved, giftChanges, giftCpi);
 
   if (resolutionContext && giftNormalized.reinvestments) {
-    // A scenario add / edit writes the form's raw picks — `groupKeys` plus the
-    // individually picked accounts — so expand the groups into `accountIds`
-    // (the field the engine reads) before resolving turnover per account. Runs
-    // on the effective tree, so a change in a switched-off toggle group is
-    // already gone and never expands.
-    const accountCategoryById = new Map(
-      giftNormalized.accounts.map((a) => [a.id, a.category as AccountCategory]),
-    );
-    giftNormalized.reinvestments = giftNormalized.reinvestments.map((r) =>
-      r.groupKeys?.length
-        ? {
-            ...r,
-            accountIds: expandReinvestmentTargets(r.accountIds, r.groupKeys, {
-              accountCategoryById,
-              customGroupMembersById: resolutionContext.accountGroupMembersById ?? new Map(),
-            }),
-          }
-        : r,
+    // The editors write a reinvestment's picks and groups, never the union the
+    // engine reads (`accountIds`), so recompute it from the effective picks,
+    // groups and accounts before resolving turnover per account: removing a
+    // group drops its members. Runs on the effective tree, so a change in a
+    // switched-off toggle group is already gone.
+    giftNormalized.reinvestments = withExpandedReinvestmentTargets(
+      giftNormalized.reinvestments,
+      giftNormalized.accounts,
+      resolutionContext.accountGroupMembersById ?? new Map(),
     );
     giftNormalized.reinvestments = resolveReinvestments(giftNormalized.reinvestments, {
       resolver: resolutionContext.resolver,

@@ -13,7 +13,7 @@ describe("PROMOTE_TABLE_REGISTRY", () => {
   // to a silent `updatedAt` no-op: promoting a trust dissolve would leave the
   // base will still paying to the trust the same promote deleted, and
   // `will_bequest_recipients.recipientId` carries no FK to clean the orphan up.
-  it.each(["will", "liability", "expense", "savings_rule", "account"] as const)(
+  it.each(["will", "liability", "expense", "savings_rule", "account", "reinvestment"] as const)(
     "registers a childUpdater for %s, which has a childWriter",
     (kind) => {
       expect(PROMOTE_TABLE_REGISTRY[kind]?.childWriter).toBeTypeOf("function");

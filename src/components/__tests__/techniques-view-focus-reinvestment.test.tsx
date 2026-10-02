@@ -33,7 +33,7 @@ const PROPS: TechniquesViewProps = {
     {
       id: "ri-1",
       name: "Glide Path Switch",
-      accountIds: ["acc-brokerage"],
+      pickedAccountIds: ["acc-brokerage"],
       groupKeys: [],
       year: 2031,
       yearRef: null,
@@ -108,7 +108,7 @@ describe("reinvestment focus — inside a scenario", () => {
       op: "edit",
       targetKind: "reinvestment",
       targetId: "ri-1",
-      desiredFields: { modelPortfolioId: "mp-2", accountIds: ["acc-brokerage"] },
+      desiredFields: { modelPortfolioId: "mp-2", pickedAccountIds: ["acc-brokerage"] },
     });
   });
 

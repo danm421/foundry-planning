@@ -894,8 +894,6 @@ const loadClientDataCached = cache(
 
     // ── Build ClientData ────────────────────────────────────────────────────
 
-    // Convert Drizzle decimal strings to numbers for the engine
-
     // Group-target expansion context (live group reference). Default keys
     // expand from account category; custom UUIDs from their liquid members.
     const accountCategoryById = new Map<string, AccountCategory>(
@@ -909,6 +907,8 @@ const loadClientDataCached = cache(
       list.push(m.accountId);
       customGroupMembersById.set(m.accountGroupId, list);
     }
+
+    // Convert Drizzle decimal strings to numbers for the engine
 
     const resolutionCtx: ResolutionContext = {
       resolver,
@@ -1452,6 +1452,8 @@ const loadClientDataCached = cache(
         id: r.id,
         name: r.name,
         accountIds,
+        // The picks alone, for the editors (view-only; see `Reinvestment`).
+        pickedAccountIds: individualAccountIds,
         groupKeys,
         year: resolvedStart(r.yearRef ?? null, r.year),
         // Resolved fields — (re)computed by resolveReinvestments below.

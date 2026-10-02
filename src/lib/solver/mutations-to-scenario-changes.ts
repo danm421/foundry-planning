@@ -551,14 +551,21 @@ export function mutationsToScenarioChanges(
         break;
       }
       case "reinvestment-upsert": {
+        // `accountIds` is derived — the picks plus the groups' members, which
+        // the scenario overlay recomputes — so an EDIT of a draft that carries
+        // its picks leaves the union out of the diff. A union stored without
+        // the picks would read back as a legacy pick list. An add keeps it: the
+        // cascade reads it before the overlay recomputes it.
+        const existing = (source.reinvestments ?? []).find((r) => r.id === m.id);
+        const diffPicksOnly = existing && m.value?.pickedAccountIds !== undefined;
         pushTechniqueUpsert(
           nonClientDrafts,
           "reinvestment",
-          (source.reinvestments ?? []).find((r) => r.id === m.id) as
+          (diffPicksOnly ? { ...existing, accountIds: undefined } : existing) as
             | Record<string, unknown>
             | undefined,
           m.id,
-          m.value as Record<string, unknown> | null,
+          (diffPicksOnly ? { ...m.value, accountIds: undefined } : m.value) as Record<string, unknown> | null,
         );
         break;
       }

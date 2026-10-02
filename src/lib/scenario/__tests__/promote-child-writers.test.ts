@@ -9,6 +9,8 @@ import {
   liabilityOwners,
   lifeInsuranceCashValueSchedule,
   lifeInsurancePolicies,
+  reinvestmentAccounts,
+  reinvestmentGroups,
   savingsRuleSalaryIncomes,
   willBequests,
   willResiduaryRecipients,
@@ -26,6 +28,7 @@ import {
   writeTransferChildren,
   writeRothConversionChildren,
   writeReinvestmentChildren,
+  updateReinvestmentChildren,
   writeWillChildren,
   updateWillChildren,
   updateLiabilityChildren,
@@ -746,7 +749,7 @@ describe("writeReinvestmentChildren", () => {
   it("writes reinvestment accounts from accountIds", async () => {
     const { tx, inserted } = makeTx();
     const raw = { accountIds: ["acc1", "acc2"] };
-    await writeReinvestmentChildren(tx as never, "ri-id", raw);
+    await writeReinvestmentChildren(tx as never, "ri-id", raw, makeCtx());
     expect(inserted).toHaveLength(2);
     for (const row of inserted) {
       expect((row.values as Record<string, unknown>).reinvestmentId).toBe("ri-id");
@@ -759,7 +762,7 @@ describe("writeReinvestmentChildren", () => {
   it("writes reinvestment groups from groupKeys", async () => {
     const { tx, inserted } = makeTx();
     const raw = { groupKeys: ["all-liquid", "retirement"] };
-    await writeReinvestmentChildren(tx as never, "ri2", raw);
+    await writeReinvestmentChildren(tx as never, "ri2", raw, makeCtx());
     expect(inserted).toHaveLength(2);
     for (const row of inserted) {
       expect((row.values as Record<string, unknown>).reinvestmentId).toBe("ri2");
@@ -772,14 +775,80 @@ describe("writeReinvestmentChildren", () => {
   it("writes both accounts and groups", async () => {
     const { tx, inserted } = makeTx();
     const raw = { accountIds: ["acc3"], groupKeys: ["taxable"] };
-    await writeReinvestmentChildren(tx as never, "ri3", raw);
+    await writeReinvestmentChildren(tx as never, "ri3", raw, makeCtx());
     expect(inserted).toHaveLength(2);
   });
 
   it("skips when no accountIds or groupKeys", async () => {
     const { tx, inserted } = makeTx();
-    await writeReinvestmentChildren(tx as never, "ri4", {});
+    await writeReinvestmentChildren(tx as never, "ri4", {}, makeCtx());
     expect(inserted).toHaveLength(0);
+  });
+});
+
+// A scenario reinvestment carries `accountIds` (the union the engine reads) AND
+// `pickedAccountIds` (the accounts picked one by one). Base stores the PICKS in
+// reinvestment_accounts and the groups in reinvestment_groups — exactly what
+// the reinvestments route writes for the same form — never the union, or a
+// group's members would become permanent one-by-one picks.
+describe("reinvestment children — individual picks", () => {
+  const values = (inserted: { table: unknown; values: unknown }[], table: unknown, key: string) =>
+    rowsIn(inserted, table).map((r) => r[key]);
+
+  it("an add writes the picks, not the union", async () => {
+    const { tx, inserted } = makeTx();
+    const raw = { pickedAccountIds: ["acc-ira"], accountIds: ["acc-ira", "acc-brokerage"], groupKeys: ["taxable"] };
+    await writeReinvestmentChildren(tx as never, "ri-id", raw, makeCtx());
+    expect(values(inserted, reinvestmentAccounts, "accountId")).toEqual(["acc-ira"]);
+    expect(values(inserted, reinvestmentGroups, "groupKey")).toEqual(["taxable"]);
+  });
+
+  it("an add picking an account the same promote creates writes that account's new id", async () => {
+    const { tx, inserted } = makeTx();
+    await writeReinvestmentChildren(
+      tx as never,
+      "ri-id",
+      { pickedAccountIds: ["syn-acc"], accountIds: ["syn-acc"] },
+      makeCtx(new Map([["syn-acc", "db-acc"]])),
+    );
+    expect(values(inserted, reinvestmentAccounts, "accountId")).toEqual(["db-acc"]);
+  });
+
+  it("an edit replaces the picks and the groups", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    await updateReinvestmentChildren(
+      tx as never,
+      "ri-1",
+      { pickedAccountIds: ["acc-cash"], groupKeys: [] },
+      makeCtx(),
+    );
+    expect(deleted.map((d) => d.where)).toEqual([
+      eq(reinvestmentAccounts.reinvestmentId, "ri-1"),
+      eq(reinvestmentGroups.reinvestmentId, "ri-1"),
+    ]);
+    expect(values(inserted, reinvestmentAccounts, "accountId")).toEqual(["acc-cash"]);
+    expect(values(inserted, reinvestmentGroups, "groupKey")).toEqual([]);
+  });
+
+  it("an edit of the groups alone leaves the picks alone", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    await updateReinvestmentChildren(tx as never, "ri-1", { groupKeys: ["cash"] }, makeCtx());
+    expect(deleted.map((d) => d.table)).toEqual([reinvestmentGroups]);
+    expect(values(inserted, reinvestmentGroups, "groupKey")).toEqual(["cash"]);
+    expect(rowsIn(inserted, reinvestmentAccounts)).toEqual([]);
+  });
+
+  it("an edit touching neither leaves both alone", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    await updateReinvestmentChildren(tx as never, "ri-1", { name: "Renamed" }, makeCtx());
+    expect(deleted).toEqual([]);
+    expect(inserted).toEqual([]);
+  });
+
+  it("a legacy edit carrying only accountIds writes them as the picks", async () => {
+    const { tx, inserted } = makeTx();
+    await updateReinvestmentChildren(tx as never, "ri-1", { accountIds: ["acc-cash"] }, makeCtx());
+    expect(values(inserted, reinvestmentAccounts, "accountId")).toEqual(["acc-cash"]);
   });
 });
 

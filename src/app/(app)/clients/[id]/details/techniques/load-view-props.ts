@@ -15,8 +15,6 @@ import { buildBusinessSaleOptions } from "@/lib/techniques/sell-source-options";
 import { buildClientMilestones } from "@/lib/milestones";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { controllingFamilyMember } from "@/engine/ownership";
-import { expandReinvestmentTargets } from "@/lib/projection/expand-reinvestment-targets";
-import type { AccountCategory } from "@/lib/account-groups/liquid-filter";
 
 export type TechniquesViewPropsResult =
   | { status: "ok"; props: TechniquesViewProps }
@@ -140,38 +138,27 @@ export async function loadTechniquesViewProps(
     })),
   }));
 
-  // The effective tree's `accountIds` is the UNION of the individual picks and
-  // the accounts the groups expand to. The form needs the picks alone — it
-  // shows the groups as groups and saves both fields — so drop the expanded
-  // members, using the same expansion the projection does.
-  const accountCategoryById = new Map(
-    accountRows.map((a) => [a.id, a.category as AccountCategory]),
-  );
-  const customGroupMembersById = loadedTree.resolutionContext?.accountGroupMembersById ?? new Map();
   // Scenario overlays can store a decimal as a string.
   const toNumberOrNull = (v: number | string | null | undefined) => (v == null ? null : Number(v));
-  const reinvestmentProps = reinvestmentRows.map((r) => {
-    const groupKeys = r.groupKeys ?? [];
-    const groupMembers = new Set(
-      expandReinvestmentTargets([], groupKeys, { accountCategoryById, customGroupMembersById }),
-    );
-    return {
-      id: r.id,
-      name: r.name,
-      accountIds: r.accountIds.filter((id) => !groupMembers.has(id)),
-      groupKeys,
-      year: r.year,
-      yearRef: r.yearRef ?? null,
-      targetType: r.targetType ?? "model_portfolio",
-      realizeTaxesOnSwitch: r.realizeTaxesOnSwitch,
-      modelPortfolioId: r.modelPortfolioId ?? null,
-      customGrowthRate: toNumberOrNull(r.customGrowthRate),
-      customPctOrdinaryIncome: toNumberOrNull(r.customPctOrdinaryIncome),
-      customPctLtCapitalGains: toNumberOrNull(r.customPctLtCapitalGains),
-      customPctQualifiedDividends: toNumberOrNull(r.customPctQualifiedDividends),
-      customPctTaxExempt: toNumberOrNull(r.customPctTaxExempt),
-    };
-  });
+  const reinvestmentProps = reinvestmentRows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    // The picks alone: the form shows the groups as groups. `accountIds` is the
+    // union with the groups' members, so it stands in only for a reinvestment
+    // that carries no picks.
+    pickedAccountIds: r.pickedAccountIds ?? r.accountIds,
+    groupKeys: r.groupKeys ?? [],
+    year: r.year,
+    yearRef: r.yearRef ?? null,
+    targetType: r.targetType ?? "model_portfolio",
+    realizeTaxesOnSwitch: r.realizeTaxesOnSwitch,
+    modelPortfolioId: r.modelPortfolioId ?? null,
+    customGrowthRate: toNumberOrNull(r.customGrowthRate),
+    customPctOrdinaryIncome: toNumberOrNull(r.customPctOrdinaryIncome),
+    customPctLtCapitalGains: toNumberOrNull(r.customPctLtCapitalGains),
+    customPctQualifiedDividends: toNumberOrNull(r.customPctQualifiedDividends),
+    customPctTaxExempt: toNumberOrNull(r.customPctTaxExempt),
+  }));
 
   const transactionProps = transactionRows.map((tx) => ({
     id: tx.id,

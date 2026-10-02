@@ -42,7 +42,8 @@ export interface TransferRow {
 export interface ReinvestmentRow {
   id: string;
   name: string;
-  accountIds: string[];
+  /** The accounts picked one by one — not the members `groupKeys` expand to. */
+  pickedAccountIds: string[];
   groupKeys: string[];
   year: number;
   yearRef: string | null;
@@ -593,7 +594,7 @@ function ReinvestmentsTable({
       </div>
       <ol className="divide-y divide-hair">
         {rows.map((r, idx) => {
-          const accountCount = r.accountIds.length;
+          const accountCount = r.pickedAccountIds.length;
           const groupCount = r.groupKeys.length;
           const targetLabel = r.targetType === "model_portfolio" ? "Model" : "Custom";
           return (

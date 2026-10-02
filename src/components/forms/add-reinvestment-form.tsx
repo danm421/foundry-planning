@@ -10,6 +10,7 @@ import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import type { Reinvestment } from "@/engine/types";
 import { isLiquid, type AccountCategory } from "@/lib/account-groups/liquid-filter";
 import { DEFAULT_GROUP_KEYS, DEFAULT_NAMES } from "@/lib/account-groups/resolver";
+import { expandReinvestmentTargets } from "@/lib/projection/expand-reinvestment-targets";
 
 /**
  * Shape passed in when editing. The Techniques loader and the solver's draft
@@ -22,14 +23,16 @@ import { DEFAULT_GROUP_KEYS, DEFAULT_NAMES } from "@/lib/account-groups/resolver
 export interface ReinvestmentInitialData {
   id: string;
   name: string;
-  accountIds: string[];
+  /** The accounts picked one by one — never the members `groupKeys` expand to. */
+  pickedAccountIds: string[];
   groupKeys?: string[];
   year: number;
   yearRef: string | null;
   targetType: "model_portfolio" | "custom";
   realizeTaxesOnSwitch: boolean;
-  // Detail fields — provided by the draft path; omitted by the DB path. Decimal
-  // fractions (engine-shaped), matching the `Reinvestment` resolution inputs.
+  // Detail fields — every caller supplies them (see above); left undefined they
+  // are backfilled in base mode. Decimal fractions (engine-shaped), matching the
+  // `Reinvestment` resolution inputs.
   modelPortfolioId?: string | null;
   customGrowthRate?: number | null;
   customPctOrdinaryIncome?: number | null;
@@ -160,8 +163,8 @@ export default function AddReinvestmentForm({
   );
 
   const [name, setName] = useState(initialData?.name ?? "");
-  const [accountIds, setAccountIds] = useState<string[]>(
-    initialData?.accountIds ?? [],
+  const [pickedAccountIds, setPickedAccountIds] = useState<string[]>(
+    initialData?.pickedAccountIds ?? [],
   );
   const [year, setYear] = useState(initialData?.year ?? new Date().getFullYear());
   const [yearRef, setYearRef] = useState<YearRef | null>(
@@ -274,7 +277,7 @@ export default function AddReinvestmentForm({
   }, [clientId]);
 
   function toggleAccount(accountId: string) {
-    setAccountIds((ids) =>
+    setPickedAccountIds((ids) =>
       ids.includes(accountId)
         ? ids.filter((id) => id !== accountId)
         : [...ids, accountId],
@@ -324,7 +327,7 @@ export default function AddReinvestmentForm({
     setError(null);
 
     // ── Client-side validation ─────────────────────────────────────────────
-    if (accountIds.length === 0 && selectedGroupKeys.length === 0) {
+    if (pickedAccountIds.length === 0 && selectedGroupKeys.length === 0) {
       setError("Select at least one account or group.");
       return;
     }
@@ -365,7 +368,7 @@ export default function AddReinvestmentForm({
 
     setSubmitting(true);
     try {
-      const body = {
+      const fields = {
         name,
         year,
         yearRef,
@@ -378,73 +381,72 @@ export default function AddReinvestmentForm({
         customPctQualifiedDividends: customRealization?.customPctQualifiedDividends ?? null,
         customPctTaxExempt: customRealization?.customPctTaxExempt ?? null,
         realizeTaxesOnSwitch,
-        accountIds,
         groupKeys: selectedGroupKeys,
       };
+      // What the engine reads: the picks plus every member of the picked groups.
+      const unionAccountIds = expandReinvestmentTargets(pickedAccountIds, selectedGroupKeys, {
+        accountCategoryById: liquidCategoryById,
+        customGroupMembersById,
+      });
 
       // ── Draft mode ────────────────────────────────────────────────────────
       // When a caller provides `onSubmitDraft`, emit the assembled engine object
       // and skip persistence entirely. `newGrowthRate` and `soldFractionByAccount`
       // are intentional placeholders — the solver server re-resolves them.
       if (onSubmitDraft) {
-        const { expandReinvestmentTargets } = await import(
-          "@/lib/projection/expand-reinvestment-targets"
-        );
-        const unionAccountIds = expandReinvestmentTargets(
-          body.accountIds,
-          selectedGroupKeys,
-          {
-            accountCategoryById: liquidCategoryById as Map<string, AccountCategory>,
-            customGroupMembersById,
-          },
-        );
         const technique: Reinvestment = {
           id: initialData?.id ?? makeId(),
-          name: body.name,
+          name: fields.name,
           accountIds: unionAccountIds,
+          pickedAccountIds,
           groupKeys: selectedGroupKeys,
-          year: body.year,
-          realizeTaxesOnSwitch: body.realizeTaxesOnSwitch,
+          year: fields.year,
+          realizeTaxesOnSwitch: fields.realizeTaxesOnSwitch,
           newGrowthRate: 0,
           soldFractionByAccount: {},
-          targetType: body.targetType,
-          ...(body.modelPortfolioId != null ? { modelPortfolioId: body.modelPortfolioId } : {}),
-          ...(body.customGrowthRate != null ? { customGrowthRate: body.customGrowthRate } : {}),
-          ...(body.customPctOrdinaryIncome != null ? { customPctOrdinaryIncome: body.customPctOrdinaryIncome } : {}),
-          ...(body.customPctLtCapitalGains != null ? { customPctLtCapitalGains: body.customPctLtCapitalGains } : {}),
-          ...(body.customPctQualifiedDividends != null ? { customPctQualifiedDividends: body.customPctQualifiedDividends } : {}),
-          ...(body.customPctTaxExempt != null ? { customPctTaxExempt: body.customPctTaxExempt } : {}),
-          ...(body.yearRef != null ? { yearRef: body.yearRef } : {}),
+          targetType: fields.targetType,
+          ...(fields.modelPortfolioId != null ? { modelPortfolioId: fields.modelPortfolioId } : {}),
+          ...(fields.customGrowthRate != null ? { customGrowthRate: fields.customGrowthRate } : {}),
+          ...(fields.customPctOrdinaryIncome != null ? { customPctOrdinaryIncome: fields.customPctOrdinaryIncome } : {}),
+          ...(fields.customPctLtCapitalGains != null ? { customPctLtCapitalGains: fields.customPctLtCapitalGains } : {}),
+          ...(fields.customPctQualifiedDividends != null ? { customPctQualifiedDividends: fields.customPctQualifiedDividends } : {}),
+          ...(fields.customPctTaxExempt != null ? { customPctTaxExempt: fields.customPctTaxExempt } : {}),
+          ...(fields.yearRef != null ? { yearRef: fields.yearRef } : {}),
         };
         onSubmitDraft(technique);
         onSaved();
         return;
       }
 
+      // A scenario change names the picks and the groups, so an edit diffs picks
+      // against the base row's picks; the overlay recomputes the union. An add
+      // also carries the union, which the cascade reads before that. The base
+      // routes store the picks as `accountIds`.
+      const baseBody = { ...fields, accountIds: pickedAccountIds };
       const res = initialData
         ? await writer.submit(
             {
               op: "edit",
               targetKind: "reinvestment",
               targetId: initialData.id,
-              desiredFields: body,
+              desiredFields: { ...fields, pickedAccountIds },
             },
             {
               url: `/api/clients/${clientId}/reinvestments`,
               method: "PUT",
-              body: { reinvestmentId: initialData.id, ...body },
+              body: { reinvestmentId: initialData.id, ...baseBody },
             },
           )
         : await writer.submit(
             {
               op: "add",
               targetKind: "reinvestment",
-              entity: { id: makeId(), ...body },
+              entity: { id: makeId(), ...fields, pickedAccountIds, accountIds: unionAccountIds },
             },
             {
               url: `/api/clients/${clientId}/reinvestments`,
               method: "POST",
-              body,
+              body: baseBody,
             },
           );
 
@@ -747,7 +749,7 @@ export default function AddReinvestmentForm({
                   <SelectorButton
                     key={a.id}
                     label={a.name}
-                    selected={accountIds.includes(a.id)}
+                    selected={pickedAccountIds.includes(a.id)}
                     onToggle={() => toggleAccount(a.id)}
                   />
                 ))}

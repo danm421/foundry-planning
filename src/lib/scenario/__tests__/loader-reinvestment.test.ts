@@ -20,6 +20,9 @@ import type { ResolutionContext } from "@/lib/projection/resolve-entity";
 import type { ClientData, Reinvestment } from "@/engine/types";
 import type { ScenarioChange } from "@/engine/scenario/types";
 import type { AllocationMap } from "@/lib/projection/reinvestment-sold-fraction";
+import { expandReinvestmentTargets } from "@/lib/projection/expand-reinvestment-targets";
+import { resolveReinvestments } from "@/lib/projection/resolve-reinvestments";
+import type { AccountCategory } from "@/lib/account-groups/liquid-filter";
 
 const assetClasses = [
   {
@@ -387,6 +390,130 @@ describe("applyScenarioChangesWithRefs — reinvestment re-resolution", () => {
         makeResolutionContext(),
       );
       expect(effectiveTree.reinvestments![0].accountIds).toEqual(["a-brokerage"]);
+    });
+  });
+
+  // The base load keeps a reinvestment's one-by-one picks (`pickedAccountIds`)
+  // beside the engine's `accountIds` — the picks UNIONED with every member its
+  // groups expand to. The editors write the picks and the groups, never the
+  // union, so the overlay recomputes the union from the effective picks and
+  // groups: removing a group drops its members, and nothing else moves.
+  describe("individual picks", () => {
+    const tree = (): ClientData => {
+      const t = baseTree();
+      t.accounts = [
+        { id: "a-brokerage", category: "taxable" },
+        { id: "a-cash", category: "cash" },
+        { id: "a-ira", category: "retirement" },
+      ] as unknown as ClientData["accounts"];
+      return t;
+    };
+    /** A base reinvestment exactly as `loadClientData` builds it: the picks,
+     *  the groups, and `accountIds` expanded from both over the base accounts. */
+    const baseReinvestment = (t: ClientData, picks: string[], groupKeys: string[]): Reinvestment =>
+      ({
+        id: "ri-1",
+        name: "Switch",
+        pickedAccountIds: picks,
+        groupKeys,
+        accountIds: expandReinvestmentTargets(picks, groupKeys, {
+          accountCategoryById: new Map(t.accounts.map((a) => [a.id, a.category as AccountCategory])),
+          customGroupMembersById: new Map(),
+        }),
+        year: 2035,
+        newGrowthRate: 0,
+        soldFractionByAccount: {},
+        realizeTaxesOnSwitch: false,
+        yearRef: null,
+        targetType: "model_portfolio",
+        modelPortfolioId: "mp-conservative",
+      }) as Reinvestment;
+    const groupedBase = () => {
+      const t = tree();
+      t.reinvestments = [baseReinvestment(t, ["a-ira"], ["taxable"])];
+      return t;
+    };
+    const edit = (payload: Record<string, unknown>, toggleGroupId: string | null = null): ScenarioChange => ({
+      id: "ch-edit",
+      scenarioId: "scn1",
+      opType: "edit",
+      targetKind: "reinvestment",
+      targetId: "ri-1",
+      payload,
+      toggleGroupId,
+      orderIndex: 0,
+    });
+    const effective = (base: ClientData, changes: ScenarioChange[], toggles = {}, groups: never[] = []) =>
+      applyScenarioChangesWithRefs(base, changes, toggles, groups, makeResolutionContext()).effectiveTree
+        .reinvestments![0];
+
+    it("an unchanged scenario carries the base reinvestment exactly as base does", () => {
+      const base = groupedBase();
+      const [expected] = resolveReinvestments(base.reinvestments!, {
+        resolver: makeResolutionContext().resolver,
+        accountBaseAllocByAccountId: makeResolutionContext().accountBaseAllocByAccountId!,
+      });
+      expect(effective(base, [])).toStrictEqual(expected);
+    });
+
+    it("removing a group drops that group's members, keeping the picks", () => {
+      // The edit the Details form saves: only the groups changed.
+      const ri = effective(groupedBase(), [edit({ groupKeys: { from: ["taxable"], to: [] } })]);
+      expect(ri.accountIds).toEqual(["a-ira"]);
+      expect(ri.pickedAccountIds).toEqual(["a-ira"]);
+    });
+
+    it("changing only the picks keeps the group's members", () => {
+      const ri = effective(groupedBase(), [edit({ pickedAccountIds: { from: ["a-ira"], to: ["a-cash"] } })]);
+      expect([...ri.accountIds].sort()).toEqual(["a-brokerage", "a-cash"]);
+    });
+
+    it("a group removal in a switched-off toggle group changes nothing", () => {
+      const group = { id: "g1", scenarioId: "scn1", name: "G", defaultOn: true, requiresGroupId: null, orderIndex: 0 };
+      const ri = effective(
+        groupedBase(),
+        [edit({ groupKeys: { from: ["taxable"], to: [] } }, "g1")],
+        { g1: false },
+        [group as never],
+      );
+      expect([...ri.accountIds].sort()).toEqual(["a-brokerage", "a-ira"]);
+      expect(ri.groupKeys).toEqual(["taxable"]);
+    });
+
+    it("a picked account the scenario removed is not added back from the picks", () => {
+      const base = tree();
+      base.reinvestments = [baseReinvestment(base, ["a-cash", "a-ira"], [])];
+      const removeCash: ScenarioChange = {
+        id: "ch-rm",
+        scenarioId: "scn1",
+        opType: "remove",
+        targetKind: "account",
+        targetId: "a-cash",
+        payload: null,
+        toggleGroupId: null,
+        orderIndex: 1,
+      };
+      expect(effective(base, [removeCash]).accountIds).toEqual(["a-ira"]);
+    });
+
+    // Change rows written before the picks key existed carry the picks in
+    // `accountIds`. They must keep meaning what they meant.
+    describe("legacy rows with only accountIds", () => {
+      it("a legacy add targets its accountIds as the picks", () => {
+        const add = addReinvestmentChange();
+        add.payload = { ...(add.payload as object), accountIds: ["a-ira"], groupKeys: ["cash"] };
+        const ri = effective(tree(), [add]);
+        expect(ri.pickedAccountIds).toEqual(["a-ira"]);
+        expect([...ri.accountIds].sort()).toEqual(["a-cash", "a-ira"]);
+      });
+
+      it("a legacy edit's accountIds replace the base picks", () => {
+        const ri = effective(groupedBase(), [
+          edit({ accountIds: { from: ["a-ira", "a-brokerage"], to: ["a-cash"] } }),
+        ]);
+        expect(ri.pickedAccountIds).toEqual(["a-cash"]);
+        expect([...ri.accountIds].sort()).toEqual(["a-brokerage", "a-cash"]);
+      });
     });
   });
 });

@@ -117,7 +117,7 @@ describe("AddReinvestmentForm — draft mode", () => {
         initialData={{
           id: "ri-1",
           name: "Shift mix",
-          accountIds: ["acc-taxable"],
+          pickedAccountIds: ["acc-taxable"],
           year: 2030,
           yearRef: null,
           targetType: "model_portfolio",
@@ -143,7 +143,7 @@ describe("AddReinvestmentForm — draft mode", () => {
 const EDIT_ROW = {
   id: "ri-1",
   name: "Shift mix",
-  accountIds: ["acc-taxable"],
+  pickedAccountIds: ["acc-taxable"],
   groupKeys: [] as string[],
   year: 2030,
   yearRef: null,
@@ -272,5 +272,95 @@ describe("AddReinvestmentForm — base mode", () => {
     const put = nonGroupCalls().find(([, init]) => (init as { method?: string })?.method === "PUT")!;
     expect(String(put[0])).toBe("/api/clients/client-123/reinvestments");
     expect(bodyOf(put)).toMatchObject({ reinvestmentId: "ri-1", modelPortfolioId: "mp-2" });
+  });
+});
+
+// A reinvestment targets accounts picked one by one PLUS whole groups. The
+// engine reads their union, but the form reads and writes the picks alone
+// (`pickedAccountIds`): the scenario writer diffs an edit against the base
+// row's picks, so sending the union would record a change nobody made.
+describe("AddReinvestmentForm — individual picks vs groups", () => {
+  // Picks the brokerage one by one, plus the whole cash group (the checking account).
+  const GROUPED_ROW = { ...EDIT_ROW, pickedAccountIds: ["acc-taxable"], groupKeys: ["cash"] };
+  const pressed = (name: RegExp) => screen.getByRole("button", { name }).getAttribute("aria-pressed");
+
+  it("opens with only the picks selected, not the group's members", async () => {
+    renderEdit(GROUPED_ROW);
+    await screen.findByLabelText(/model portfolio/i);
+
+    expect(pressed(/Joint Brokerage/i)).toBe("true");
+    expect(pressed(/^Checking$/i)).toBe("false");
+    expect(pressed(/^Cash$/i)).toBe("true");
+  });
+
+  it("a scenario edit saves the picks and the groups, never the union", async () => {
+    searchParamsMock = new URLSearchParams("scenario=scn-1");
+    const { onSaved } = renderEdit(GROUPED_ROW);
+    await screen.findByLabelText(/model portfolio/i);
+
+    fireEvent.submit(document.getElementById("reinvestment-form")!);
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+
+    const { desiredFields } = bodyOf(nonGroupCalls()[0]);
+    expect(desiredFields.pickedAccountIds).toEqual(["acc-taxable"]);
+    expect(desiredFields.groupKeys).toEqual(["cash"]);
+    expect(desiredFields).not.toHaveProperty("accountIds");
+  });
+
+  it("a scenario add carries the picks and the union the engine reads", async () => {
+    searchParamsMock = new URLSearchParams("scenario=scn-1");
+    const onSaved = vi.fn();
+    render(
+      <AddReinvestmentForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        modelPortfolios={MODEL_PORTFOLIOS}
+        onClose={() => {}}
+        onSaved={onSaved}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Joint Brokerage/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Cash$/i }));
+    fireEvent.submit(document.getElementById("reinvestment-form")!);
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+
+    const { entity } = bodyOf(nonGroupCalls()[0]);
+    expect(entity.pickedAccountIds).toEqual(["acc-taxable"]);
+    expect(entity.groupKeys).toEqual(["cash"]);
+    expect([...entity.accountIds].sort()).toEqual(["acc-cash", "acc-taxable"]);
+  });
+
+  it("base mode still PUTs the picks as accountIds, exactly as before", async () => {
+    const { onSaved } = renderEdit(GROUPED_ROW);
+    await screen.findByLabelText(/model portfolio/i);
+
+    fireEvent.submit(document.getElementById("reinvestment-form")!);
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+
+    const body = bodyOf(nonGroupCalls()[0]);
+    expect(body.accountIds).toEqual(["acc-taxable"]);
+    expect(body.groupKeys).toEqual(["cash"]);
+    expect(body).not.toHaveProperty("pickedAccountIds");
+  });
+
+  it("a solver draft carries the picks beside the union", async () => {
+    const onSubmitDraft = vi.fn();
+    render(
+      <AddReinvestmentForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        modelPortfolios={MODEL_PORTFOLIOS}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={onSubmitDraft}
+        initialData={GROUPED_ROW}
+      />,
+    );
+    fireEvent.submit(document.getElementById("reinvestment-form")!);
+    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalledTimes(1));
+
+    const technique = onSubmitDraft.mock.calls[0][0];
+    expect(technique.pickedAccountIds).toEqual(["acc-taxable"]);
+    expect([...technique.accountIds].sort()).toEqual(["acc-cash", "acc-taxable"]);
   });
 });

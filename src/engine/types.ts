@@ -1388,6 +1388,12 @@ export interface Reinvestment {
    *  so the form can round-trip the selection and the solver-draft path can
    *  persist the live group reference. */
   groupKeys?: string[];
+  /** View/round-trip metadata: the accounts picked one by one, WITHOUT the
+   *  members `groupKeys` expand to. Engine math NEVER reads this — `accountIds`
+   *  is the union of these picks and the groups' members. The editors read and
+   *  write this, so a scenario edit compares picks with picks and removing a
+   *  group drops its members when the union is recomputed. */
+  pickedAccountIds?: string[];
 }
 
 export type RothConversionType =

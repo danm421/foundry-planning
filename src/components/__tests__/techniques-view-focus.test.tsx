@@ -114,7 +114,7 @@ const PROPS: TechniquesViewProps = {
     {
       id: "ri-1",
       name: "Glide Path Switch",
-      accountIds: ["acc-brokerage"],
+      pickedAccountIds: ["acc-brokerage"],
       groupKeys: [],
       year: 2031,
       yearRef: null,
@@ -303,6 +303,7 @@ describe("TechniquesView focus mode — closing", () => {
   // A normal close carries no outcome at all — not even an explicit undefined.
   it.each([
     { kind: "roth_conversion" as const, id: "rc-1", title: "Edit Roth Conversion" },
+    { kind: "reinvestment" as const, id: "ri-1", title: "Edit Reinvestment" },
     { kind: "relocation" as const, id: "rl-1", title: "Edit Relocation" },
     { kind: "asset_transaction" as const, id: "tx-sell", title: "Edit Transaction" },
   ])("cancelling the $kind form calls onFocusClose()", ({ kind, id, title }) => {

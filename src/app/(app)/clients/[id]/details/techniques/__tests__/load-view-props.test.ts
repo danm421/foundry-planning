@@ -1,9 +1,9 @@
 // The Techniques page's loader reads reinvestments from the SCENARIO's effective
 // tree and hands the form everything it needs to open on the scenario's values
 // (no base-only fetch): the raw portfolio / rate / realization inputs, the group
-// keys, and `accountIds` as the INDIVIDUAL picks only — the members a group
-// expands to are left out, so a save writes the picks and the group as the user
-// chose them. Mocked at the DB / loader boundary.
+// keys, and the INDIVIDUAL picks (`pickedAccountIds`) — never the union with the
+// groups' members, so a save writes the picks and the groups as the user chose
+// them. Mocked at the DB / loader boundary.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const CLIENT_ID = "11111111-1111-4111-8111-111111111111";
@@ -47,7 +47,7 @@ const reinvestment = (over: Record<string, unknown> = {}) => ({
   customPctQualifiedDividends: null, customPctTaxExempt: null, ...over,
 });
 
-function mountTree(reinvestments: unknown[], groupMembers: Record<string, string[]> = {}) {
+function mountTree(reinvestments: unknown[]) {
   vi.mocked(loadEffectiveTree).mockResolvedValue({
     effectiveTree: {
       client: { firstName: "Cooper", spouseName: null },
@@ -61,10 +61,7 @@ function mountTree(reinvestments: unknown[], groupMembers: Record<string, string
       reinvestments,
     },
     warnings: [],
-    resolutionContext: {
-      resolver: { resolvePortfolio: () => ({ geoReturn: 0.05 }) },
-      accountGroupMembersById: new Map(Object.entries(groupMembers)),
-    },
+    resolutionContext: { resolver: { resolvePortfolio: () => ({ geoReturn: 0.05 }) } },
   } as never);
 }
 
@@ -115,32 +112,37 @@ describe("loadTechniquesViewProps — reinvestments", () => {
     expect(row.customGrowthRate).toBeNull();
   });
 
-  it("lists only the individual picks, dropping the accounts a default group expands to", async () => {
+  it("hands the form the picks, never the union with the groups' members", async () => {
     mountTree([
-      reinvestment({ accountIds: ["a-brokerage", "a-brokerage-2", "a-ira"], groupKeys: ["taxable"] }),
+      reinvestment({
+        pickedAccountIds: ["a-ira"],
+        groupKeys: ["taxable"],
+        accountIds: ["a-ira", "a-brokerage", "a-brokerage-2"],
+      }),
     ]);
     const [row] = await reinvestmentProps();
-    expect(row.accountIds).toEqual(["a-ira"]);
+    expect(row.pickedAccountIds).toEqual(["a-ira"]);
     expect(row.groupKeys).toEqual(["taxable"]);
   });
 
-  it("drops the accounts a custom group expands to", async () => {
-    mountTree(
-      [reinvestment({ accountIds: ["a-cash", "a-ira"], groupKeys: ["grp-1"] })],
-      { "grp-1": ["a-cash"] },
-    );
-    expect((await reinvestmentProps())[0].accountIds).toEqual(["a-ira"]);
+  it("keeps a pick that a picked group also covers", async () => {
+    mountTree([
+      reinvestment({ pickedAccountIds: ["a-brokerage"], groupKeys: ["taxable"], accountIds: ["a-brokerage", "a-brokerage-2"] }),
+    ]);
+    expect((await reinvestmentProps())[0].pickedAccountIds).toEqual(["a-brokerage"]);
   });
 
   it("keeps a group-only reinvestment's empty pick list empty", async () => {
-    mountTree([reinvestment({ accountIds: ["a-brokerage", "a-brokerage-2"], groupKeys: ["taxable"] })]);
-    expect((await reinvestmentProps())[0].accountIds).toEqual([]);
+    mountTree([
+      reinvestment({ pickedAccountIds: [], groupKeys: ["taxable"], accountIds: ["a-brokerage", "a-brokerage-2"] }),
+    ]);
+    expect((await reinvestmentProps())[0].pickedAccountIds).toEqual([]);
   });
 
-  it("leaves a reinvestment with no groups untouched", async () => {
+  it("reads a reinvestment with no picks key off its accountIds", async () => {
     mountTree([reinvestment({ accountIds: ["a-cash", "a-ira"], groupKeys: undefined })]);
     const [row] = await reinvestmentProps();
-    expect(row.accountIds).toEqual(["a-cash", "a-ira"]);
+    expect(row.pickedAccountIds).toEqual(["a-cash", "a-ira"]);
     expect(row.groupKeys).toEqual([]);
   });
 });
