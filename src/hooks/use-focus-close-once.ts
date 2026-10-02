@@ -7,9 +7,10 @@ import { useEffect, useRef } from "react";
  * - `"unavailable"`: the page itself offers no editor for the row here — it's
  *   gone, its kind isn't edited here, the advisor has view-only access… The
  *   host links to the Details page.
- * - `"unsupported"`: the row is there, but its editor is known to write the
- *   base plan (or revert the scenario's change) inside a scenario (Ruling
- *   F-I2). The host explains, with no link — the page has the same bug.
+ * - `"unsupported"`: nothing was opened, because the row's editor has no
+ *   scenario-aware path yet (Ruling F-I2) — each view's `onFocusClose` doc
+ *   names its rows (e.g. a note receivable's create). The host explains, with
+ *   no link: the Details page has no such path either.
  * - `"failed"`: the editor opened and the save or delete did not land. The host
  *   says so rather than closing as if the change had been made.
  */

@@ -16,6 +16,7 @@ const INVENTORY: InventoryItem[] = [
   item({ typeKey: "social_security", id: "ss1", label: "Social Security", canDelete: false }),
   item({ typeKey: "account", id: "a1", label: "Joint brokerage" }),
   item({ typeKey: "business", id: "b1", label: "Acme LLC" }),
+  item({ typeKey: "note_receivable", id: "n1", label: "Loan to Sam" }),
 ];
 
 function setup(props: Partial<React.ComponentProps<typeof SolverDetailActions>> = {}) {
@@ -109,11 +110,18 @@ describe("SolverDetailActions — Add menu", () => {
   it("a type whose workstream is open is greyed, titled, and does nothing", () => {
     const { onAdd } = setup();
     fireEvent.click(screen.getByRole("button", { name: "+ Add" }));
-    const business = screen.getByRole("button", { name: "Business" });
-    expect(business).toBeDisabled();
-    expect(business).toHaveAttribute("title", "Coming in this release");
-    fireEvent.click(business);
+    const note = screen.getByRole("button", { name: "Note receivable" });
+    expect(note).toBeDisabled();
+    expect(note).toHaveAttribute("title", "Coming in this release");
+    fireEvent.click(note);
     expect(onAdd).not.toHaveBeenCalled();
+  });
+
+  it("Business is ready: it adds", () => {
+    const { onAdd } = setup();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "Business" }));
+    expect(onAdd).toHaveBeenCalledWith("business");
   });
 
   it("Escape closes the menu", () => {
@@ -162,7 +170,7 @@ describe("SolverDetailActions — Edit and Delete pickers", () => {
   it("an item of a type still in progress is greyed and cannot be picked", () => {
     const { onEdit } = setup();
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    const opt = screen.getByRole("option", { name: /Acme LLC/ });
+    const opt = screen.getByRole("option", { name: /Loan to Sam/ });
     expect(opt).toBeDisabled();
     expect(opt).toHaveAttribute("title", "Coming in this release");
     fireEvent.click(opt);

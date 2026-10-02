@@ -66,31 +66,66 @@ export async function assertScenarioRouteScope(
   return { kind: "ok", scenario };
 }
 
+type ScenarioOnlyLookup = { kind: "miss"; response: NextResponse } | { kind: "ok"; found: boolean };
+
+/**
+ * The `add` row through which `targetId` exists in `scenarioId`, or null. The
+ * scenario is scoped to the client and firm first (via
+ * `assertScenarioRouteScope`), so a foreign scenario id never reaches the
+ * `scenario_changes` read. A scope miss comes back as the 404 response to
+ * return as-is.
+ */
+async function findScenarioAdd(
+  clientId: string,
+  scenarioId: string,
+  firmId: string,
+  targetKind: "entity" | "account",
+  targetId: string,
+): Promise<{ kind: "miss"; response: NextResponse } | { kind: "ok"; add: { payload: unknown } | null }> {
+  const scope = await assertScenarioRouteScope(clientId, scenarioId, firmId);
+  if (scope.kind === "miss") return scope;
+  const [row] = await db
+    .select({ payload: scenarioChanges.payload })
+    .from(scenarioChanges)
+    .where(
+      and(
+        eq(scenarioChanges.scenarioId, scenarioId),
+        eq(scenarioChanges.targetKind, targetKind),
+        eq(scenarioChanges.targetId, targetId),
+        eq(scenarioChanges.opType, "add"),
+      ),
+    );
+  return { kind: "ok", add: row ?? null };
+}
+
 /**
  * Whether `entityId` is a trust that exists only in `scenarioId` — a
- * `scenario_changes` add row, with no base `entities` row. The scenario is
- * scoped to the client and firm first (via `assertScenarioRouteScope`), so a
- * foreign scenario id never reaches the `scenario_changes` read. A scope miss
- * comes back as the 404 response to return as-is.
+ * `scenario_changes` add row, with no base `entities` row.
  */
 export async function findScenarioOnlyEntity(
   clientId: string,
   scenarioId: string,
   firmId: string,
   entityId: string,
-): Promise<{ kind: "miss"; response: NextResponse } | { kind: "ok"; found: boolean }> {
-  const scope = await assertScenarioRouteScope(clientId, scenarioId, firmId);
-  if (scope.kind === "miss") return scope;
-  const [row] = await db
-    .select({ id: scenarioChanges.id })
-    .from(scenarioChanges)
-    .where(
-      and(
-        eq(scenarioChanges.scenarioId, scenarioId),
-        eq(scenarioChanges.targetKind, "entity"),
-        eq(scenarioChanges.targetId, entityId),
-        eq(scenarioChanges.opType, "add"),
-      ),
-    );
-  return { kind: "ok", found: !!row };
+): Promise<ScenarioOnlyLookup> {
+  const lookup = await findScenarioAdd(clientId, scenarioId, firmId, "entity", entityId);
+  return lookup.kind === "miss" ? lookup : { kind: "ok", found: lookup.add !== null };
+}
+
+/**
+ * Whether `accountId` is a top-level business that exists only in `scenarioId`
+ * — a `scenario_changes` add row, with no base `accounts` row. Any other
+ * scenario-added account is not found: per-year schedules are a top-level
+ * business's alone.
+ */
+export async function findScenarioOnlyBusiness(
+  clientId: string,
+  scenarioId: string,
+  firmId: string,
+  accountId: string,
+): Promise<ScenarioOnlyLookup> {
+  const lookup = await findScenarioAdd(clientId, scenarioId, firmId, "account", accountId);
+  if (lookup.kind === "miss") return lookup;
+  const added = (lookup.add?.payload ?? null) as { category?: unknown; parentAccountId?: unknown } | null;
+  return { kind: "ok", found: added?.category === "business" && added.parentAccountId == null };
 }

@@ -138,7 +138,7 @@ export const DETAIL_TYPES: readonly DetailType[] = [
 // picker show them greyed ("Coming in this release") and they open nothing.
 // Each workstream's task deletes its keys here; the last one leaves it empty.
 export const NOT_YET_READY: ReadonlySet<DetailTypeKey> = new Set<DetailTypeKey>([
-  "business", "note_receivable",
+  "note_receivable",
   "gift_series", "family_member", "external_beneficiary", "reinvestment",
 ]);
 

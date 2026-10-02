@@ -242,6 +242,33 @@ describe("BusinessDetailsForm — scenario mode", () => {
     expect(onAutoSaved).toHaveBeenLastCalledWith(expect.objectContaining({ id: bizId }), "edit");
   });
 
+  it("a retry after a half-landed add re-posts the SAME two ids — never a second business", async () => {
+    // The business add lands; its default-checking child is rejected.
+    fetchMock
+      .mockImplementationOnce(async () => ({ ok: true, status: 200, json: async () => ({ ok: true }) }))
+      .mockImplementationOnce(async () => ({ ok: false, status: 500, json: async () => ({ error: "boom" }) }));
+    const { ref } = renderForm();
+    type("biz-name", "New Co");
+
+    let first: Awaited<ReturnType<BusinessFormAutoSaveHandle["saveAsync"]>> | undefined;
+    await act(async () => {
+      first = await ref.current!.saveAsync();
+    });
+    expect(first).toEqual({ ok: false, error: "boom" });
+
+    await act(async () => {
+      await ref.current!.saveAsync();
+    });
+
+    const list = calls();
+    expect(list.map((c) => c.url)).toEqual([SCENARIO_URL, SCENARIO_URL, SCENARIO_URL, SCENARIO_URL]);
+    expect(list.map((c) => c.body.op)).toEqual(["add", "add", "add", "add"]);
+    const ids = list.map((c) => c.body.entity.id as string);
+    expect(ids[2]).toBe(ids[0]); // the business
+    expect(ids[3]).toBe(ids[1]); // its cash child
+    expect(ids[0]).not.toBe(ids[1]);
+  });
+
   it("a rejected change reports the error and does not flip to edit mode", async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: "nope" }) });
     const { ref, onAutoSaved } = renderForm();

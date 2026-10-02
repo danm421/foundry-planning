@@ -13,15 +13,19 @@ import { flowOverrideBulkSchema } from "@/lib/schemas/flow-overrides";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import { findScenarioOnlyBusiness } from "@/lib/scenario/route-scope";
 
 export const dynamic = "force-dynamic";
+
+const SCENARIO_ONLY_MESSAGE =
+  "Per-year schedules aren't available for a business that exists only in this scenario.";
 
 // Per-year flow overrides only apply to top-level business accounts
 // (category='business', parent_account_id IS NULL). The engine reads these
 // when `accounts.flowMode === 'schedule'`. Any other account shape is rejected
 // at the API boundary so bad client code can't write rows that the engine
 // would silently ignore.
-async function authorize(clientId: string, accountId: string) {
+async function authorize(clientId: string, accountId: string, scenarioId: string | null) {
   const firmId = await requireOrgId();
   const a = await verifyClientAccess(clientId);
   if (!a.ok) {
@@ -31,7 +35,16 @@ async function authorize(clientId: string, accountId: string) {
     .select()
     .from(accounts)
     .where(and(eq(accounts.id, accountId), eq(accounts.clientId, clientId)));
-  if (!account) return { error: "Account not found", status: 404 as const };
+  if (!account) {
+    // A business that exists only in the open scenario has no base row and no
+    // per-year schedule.
+    if (scenarioId) {
+      const only = await findScenarioOnlyBusiness(clientId, scenarioId, a.firmId, accountId);
+      if (only.kind === "miss") return { response: only.response };
+      if (only.found) return { scenarioOnly: true as const };
+    }
+    return { error: "Account not found", status: 404 as const };
+  }
   if (account.category !== "business" || account.parentAccountId !== null) {
     return {
       error: "Flow overrides apply only to top-level business accounts",
@@ -55,7 +68,9 @@ export async function GET(
   try {
     const { id, accountId } = await params;
     const scenarioId = new URL(req.url).searchParams.get("scenarioId");
-    const auth = await authorize(id, accountId);
+    const auth = await authorize(id, accountId, scenarioId);
+    if ("response" in auth && auth.response) return auth.response;
+    if ("scenarioOnly" in auth) return NextResponse.json({ overrides: [] });
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
@@ -112,7 +127,11 @@ export async function PUT(
     const callerOrg = await requireOrgId();
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
-    const auth = await authorize(id, accountId);
+    const auth = await authorize(id, accountId, scenarioId);
+    if ("response" in auth && auth.response) return auth.response;
+    if ("scenarioOnly" in auth) {
+      return NextResponse.json({ error: SCENARIO_ONLY_MESSAGE }, { status: 400 });
+    }
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
