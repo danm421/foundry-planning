@@ -38,6 +38,7 @@ export async function loadAccountMetaRows(clientId: string, baseScenarioId: stri
       annualPropertyTax: accounts.annualPropertyTax,
       propertyTaxGrowthRate: accounts.propertyTaxGrowthRate,
       propertyTaxGrowthSource: accounts.propertyTaxGrowthSource,
+      notes: accounts.notes,
       countsTowardAum: accounts.countsTowardAum,
       source: accounts.source,
       plaidItemId: accounts.plaidItemId,
@@ -103,6 +104,10 @@ type EngineAccountLike = Parameters<typeof controllingEntity>[0] & {
   owners?: AccountRow["owners"];
   titlingType?: AccountRow["titlingType"];
   parentAccountId?: string | null;
+  businessType?: AccountRow["businessType"];
+  businessTaxTreatment?: AccountRow["businessTaxTreatment"];
+  distributionPolicyPercent?: number | null;
+  flowMode?: AccountRow["flowMode"];
   beneficiaries?: AccountRow["beneficiaries"];
   education529?: {
     grantorFamilyMemberId?: string | null;
@@ -191,6 +196,14 @@ export function buildAccountRows({
       owners: a.owners,
       titlingType: a.titlingType,
       parentAccountId: a.parentAccountId ?? null,
+      // Business-only; null/undefined on every other category.
+      businessType: a.businessType ?? null,
+      businessTaxTreatment: a.businessTaxTreatment ?? null,
+      distributionPolicyPercent:
+        a.distributionPolicyPercent == null ? null : String(a.distributionPolicyPercent),
+      flowMode: a.flowMode,
+      // From meta, not from `a` — the engine Account type never carries notes.
+      notes: meta?.notes ?? null,
       grantorFamilyMemberId: a.education529?.grantorFamilyMemberId ?? null,
       grantorName: a.education529?.grantorName ?? null,
       beneficiaryFamilyMemberId: a.education529?.beneficiaryFamilyMemberId ?? null,

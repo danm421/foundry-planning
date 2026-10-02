@@ -114,6 +114,15 @@ export interface AccountRow {
   /** Parent business account id when this account is a sub-asset of a
    *  top-level business. Null for top-level accounts. */
   parentAccountId?: string | null;
+  /** Business-only (top-level business accounts); null/undefined elsewhere.
+   *  Hydrated so Edit Business opens on the saved values, not its defaults. */
+  businessType?: BusinessAccount["businessType"];
+  businessTaxTreatment?: BusinessAccount["businessTaxTreatment"];
+  /** Fraction (0-1) as a string, like the other numeric row fields. */
+  distributionPolicyPercent?: string | null;
+  flowMode?: BusinessAccount["flowMode"];
+  /** Free-text notes (the business dialog's Notes tab). */
+  notes?: string | null;
   /** 529 / education_savings only — grantor/beneficiary/Roth-rollover fields.
    *  Null/undefined for every other category. No account_owners rows are
    *  written for this category; these fields are authoritative instead. */
@@ -443,7 +452,10 @@ function accountRowToBusinessAccount(a: AccountRow): BusinessAccount {
     subType: a.subType,
     value: Number(a.value),
     basis: Number(a.basis),
-    growthRate: a.growthRate !== null ? Number(a.growthRate) : 0,
+    // The row's growthRate is the RESOLVED rate; the form shows a rate only
+    // when it is the business's own (custom) one, else blank = plan default.
+    growthRate: a.growthSource === "custom" && a.growthRate !== null ? Number(a.growthRate) : null,
+    growthSource: a.growthSource,
     rmdEnabled: a.rmdEnabled ?? false,
     priorYearEndValue: a.priorYearEndValue !== null && a.priorYearEndValue !== undefined
       ? Number(a.priorYearEndValue)
@@ -451,6 +463,12 @@ function accountRowToBusinessAccount(a: AccountRow): BusinessAccount {
     owners: a.owners ?? [],
     titlingType: a.titlingType ?? "jtwros",
     parentAccountId: a.parentAccountId ?? null,
+    businessType: a.businessType ?? null,
+    businessTaxTreatment: a.businessTaxTreatment ?? null,
+    distributionPolicyPercent:
+      a.distributionPolicyPercent != null ? Number(a.distributionPolicyPercent) : null,
+    flowMode: a.flowMode,
+    notes: a.notes ?? null,
   } as BusinessAccount;
 }
 

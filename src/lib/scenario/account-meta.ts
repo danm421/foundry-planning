@@ -35,6 +35,8 @@ export interface AccountMeta {
   annualPropertyTax: string | null;
   propertyTaxGrowthRate: string | null;
   propertyTaxGrowthSource: string | null;
+  /** Free-text notes — only a business's Notes tab writes them today. */
+  notes: string | null;
   /** Advisor-set AUM flag. Boolean, not string|null — it must not go through
    *  the String() coercion the other meta keys use. */
   countsTowardAum: boolean;
@@ -97,6 +99,7 @@ function emptyMeta(): Omit<AccountMeta, "id"> {
     annualPropertyTax: null,
     propertyTaxGrowthRate: null,
     propertyTaxGrowthSource: null,
+    notes: null,
     countsTowardAum: false,
   };
 }
