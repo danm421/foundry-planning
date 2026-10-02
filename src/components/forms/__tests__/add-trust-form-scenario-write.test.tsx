@@ -16,7 +16,7 @@
 // reads it. `use-scenario-writer` is deliberately NOT mocked — mocking it
 // would leave the branch these tests exist to pin untested.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 
 // ---------------------------------------------------------------------------
 // Mocks — declared before the component import
@@ -401,6 +401,43 @@ describe("AddTrustForm — gift reads and writes follow the active scenario", ()
     // The optimistic list filter must NOT have run — the row is still deletable.
     expect(screen.getByLabelText("Delete")).toBeInTheDocument();
     expect(giftWrites(fetchMock)).toHaveLength(1);
+  });
+
+  // ── Transfers-tab create, through the composed dialog ───────────────────
+
+  it("SCENARIO MODE: a cash gift saved from the Transfers tab posts the scenario change — no nested form", async () => {
+    // The transfer modals used to render INSIDE `<form id="add-trust-form">`,
+    // so a real browser answered their Save with a native submit of the trust
+    // form: a GET navigation that dropped `?scenario=` and saved nothing.
+    // jsdom never performs that navigation, so the structural assertion is
+    // the ratchet; the request assertion pins the scenario write it unblocks.
+    searchParams = new URLSearchParams(`scenario=${SCENARIO_ID}`);
+    const fetchMock = installFetch([]);
+
+    render(<AddTrustForm {...props("transfers", trust())} />);
+    await screen.findByText(/No transfers recorded yet/i);
+    fireEvent.click(screen.getByRole("button", { name: /add transfer/i }));
+    fireEvent.click(screen.getByRole("button", { name: /cash gift/i }));
+    const dialog = await waitFor(() => screen.getByRole("dialog", { name: /cash gift/i }));
+
+    expect(document.querySelectorAll("form form")).toHaveLength(0);
+    const save = within(dialog).getByRole("button", { name: /^Save$/i });
+    expect((save as HTMLButtonElement).form?.id).toBe("transfer-cash-form");
+
+    fireEvent.change(within(dialog).getByPlaceholderText(/e\.g\. 10,000/i), {
+      target: { value: "18000" },
+    });
+    fireEvent.click(save);
+
+    await waitFor(() => expect(giftWrites(fetchMock)).toHaveLength(1));
+    const [url, init] = giftWrites(fetchMock)[0];
+    expect(String(url)).toBe(changesUrl);
+    expect((init as RequestInit).method).toBe("POST");
+    expect(JSON.parse((init as RequestInit).body as string)).toMatchObject({
+      op: "add",
+      targetKind: "gift",
+      entity: { kind: "cash-once", amount: 18000, recipient: { kind: "entity", id: TRUST_ID } },
+    });
   });
 
   it("BASE MODE: deleting a one-time transfer still DELETEs the base gift route", async () => {
