@@ -33,9 +33,9 @@
 //   can't see into. Widening hydration to close this gap is a product
 //   decision and is not made by this module.
 //
-// Making applyEntityEdit merge instead was considered and rejected: replace is
-// how reverting a field works (resend it at its base value, it drops out of the
-// diff), so merging would break partial reverts app-wide.
+// `applyEntityEdit` merges a save's fields into whatever the scenario already
+// had, rather than replacing the stored diff wholesale: edits merge; a field
+// reverts when it is saved at its base value.
 import { parseGrowthSourceSelection } from "@/components/forms/growth-rate-field";
 import type { AccountRow } from "@/components/balance-sheet-view";
 

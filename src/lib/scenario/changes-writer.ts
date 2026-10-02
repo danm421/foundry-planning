@@ -12,7 +12,7 @@
 // scenario-bearing tables, so this writer is the *only* sanctioned path for
 // non-base mutations.
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { scenarioChanges, scenarios } from "@/db/schema";
 import {
@@ -125,11 +125,29 @@ function buildFieldDiff(
 }
 
 /**
+ * The `to` side of a stored edit payload — what earlier saves set. Used to
+ * merge a prior edit's fields into a new one's `desiredFields` before
+ * diffing against base, so a second partial save doesn't wipe the first's.
+ */
+export function priorToValues(payload: unknown): Record<string, unknown> {
+  if (typeof payload !== "object" || payload === null) return {};
+  return Object.fromEntries(
+    Object.entries(payload as Record<string, { to?: unknown } | undefined>)
+      .map(([k, v]) => [k, v?.to]),
+  );
+}
+
+/**
  * Robust equality for diff: normalizes numeric strings (Drizzle decimals come
  * back as strings like `"250000.00"`) to numbers before comparing. Falls back
  * to JSON.stringify for nested structures.
  */
 function valuesEqual(a: unknown, b: unknown): boolean {
+  // null and undefined both mean "no value" to a diff — a base `null` and a
+  // merged-away `undefined` (an absent field in `priorToValues`/`desiredFields`)
+  // must compare equal, or an unset field would diff in as a change instead of
+  // just not appearing in the merge.
+  if (a == null && b == null) return true;
   if (a === b) return true;
   // Numeric normalization: "250000.00" === 250000
   const aNum = typeof a === "string" ? Number(a) : a;
@@ -211,14 +229,22 @@ export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> 
           Object.entries(desiredFields).filter(([k]) => k in baseEntity),
         )
       : desiredFields;
-  const diff = buildFieldDiff(editableFields, baseEntity);
 
   // The load + delete/upsert sequence below reads the base tree and then
   // either deletes a stale edit row (if desired matches base) or upserts a
-  // new diff. Wrapping in a transaction keeps the read-modify-write atomic
+  // merged diff. Wrapping in a transaction keeps the read-modify-write atomic
   // against concurrent writers on the same target. When the caller passes an
   // open transaction, enroll in it instead of opening a nested one.
   const runEdit = async (tx: Tx) => {
+    // Transaction-scoped advisory lock on this target, held until the
+    // transaction commits or rolls back. `FOR UPDATE` can't lock a row that
+    // doesn't exist yet (the first save of a target has none), so without
+    // this a second racing partial save could still read a stale (or
+    // missing) prior edit and merge over an incomplete view of it.
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`${scenarioId}:${targetKind}:${targetId}`}))`,
+    );
+
     const [existingAdd] = await tx
       .select()
       .from(scenarioChanges)
@@ -262,6 +288,25 @@ export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> 
         );
       return;
     }
+
+    // Merge this save's fields over whatever an earlier partial save already
+    // set, so two saves of different fields (e.g. two tabs of a dialog)
+    // compose into one row instead of the second wiping the first.
+    const [existingEdit] = await tx
+      .select()
+      .from(scenarioChanges)
+      .where(
+        and(
+          eq(scenarioChanges.scenarioId, scenarioId),
+          eq(scenarioChanges.targetKind, targetKind),
+          eq(scenarioChanges.targetId, targetId),
+          eq(scenarioChanges.opType, "edit"),
+        ),
+      );
+    const diff = buildFieldDiff(
+      { ...priorToValues(existingEdit?.payload), ...editableFields },
+      baseEntity,
+    );
 
     // Idempotent revert: if every desired value matches base, drop any
     // existing edit row for this target.

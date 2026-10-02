@@ -7,12 +7,10 @@
 //   Base mode     -> only the changed keys. Safe because the liabilities PUT
 //                    route applies a partial update.
 //
-//   Scenario mode -> the whole view row. `applyEntityEdit` upserts with
-//                    `set: { payload: diff }`, a wholesale replace, and
-//                    `buildFieldDiff` only emits keys the caller sent. A narrow
-//                    `{ balance }` write against a liability whose interest
-//                    rate was overridden in that scenario DELETES that
-//                    override — silently.
+//   Scenario mode -> the whole view row. `applyEntityEdit` merges a save's
+//                    fields into whatever the scenario already had, rather
+//                    than replacing the stored diff wholesale: edits merge; a
+//                    field reverts when it is saved at its base value.
 //
 // No `growthRate`-style null exception applies here: liabilities carry no
 // derived-null field. `pruneScenarioFields` drops `undefined` and preserves

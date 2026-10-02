@@ -27,12 +27,9 @@
 // `account-write.ts`. The singletons themselves are pruned by the shared
 // `pruneScenarioFields` (`@/lib/inline-edit/scenario-fields`) with NO strip set: unlike a flow
 // row, a `client` / `planSettings` singleton has no key that must be withheld.
-// `applyEntityEdit` upserts with `set: { payload: diff }`, a
-// wholesale replace, and `buildFieldDiff` only emits keys the caller sent. A
-// narrow `{ lifeExpectancy }` write against a scenario that ALSO overrides
-// `retirementAge` (exactly what the Solver writes) would delete the retirement
-// override — silently. Diffing the whole effective singleton against base makes
-// the new payload "every override this scenario already had, plus this one".
+// `applyEntityEdit` merges a save's fields into whatever the scenario already
+// had, rather than replacing the stored diff wholesale: edits merge; a field
+// reverts when it is saved at its base value.
 
 import { planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
 import type { LifeExpectancyOwner } from "./goals";

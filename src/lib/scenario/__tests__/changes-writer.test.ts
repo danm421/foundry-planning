@@ -9,6 +9,7 @@ import {
   applyEntityAdd,
   applyEntityRemove,
   revertChange,
+  type ApplyEntityEditArgs,
 } from "../changes-writer";
 
 const COOPER_CLIENT_ID = "877a9532-f8ea-49b0-9db7-aadd64fab82a";
@@ -350,6 +351,65 @@ describe.skipIf(!HAS_DB)("changes-writer", () => {
         );
 
       expect(rows).toHaveLength(0);
+    });
+  });
+
+  describe("merge semantics", () => {
+    async function editRow() {
+      const rows = await db.select().from(scenarioChanges).where(and(
+        eq(scenarioChanges.scenarioId, scenarioId),
+        eq(scenarioChanges.targetId, COOPER_SALARY_INCOME_ID),
+        eq(scenarioChanges.opType, "edit"),
+      ));
+      return rows;
+    }
+    const edit = (desiredFields: Record<string, unknown>, extra: Partial<ApplyEntityEditArgs> = {}) =>
+      applyEntityEdit({ scenarioId, firmId: COOPER_FIRM_ID, targetKind: "income",
+        targetId: COOPER_SALARY_INCOME_ID, desiredFields, ...extra });
+
+    it("two partial saves compose into one row", async () => {
+      await edit({ annualAmount: 300000 });
+      await edit({ name: "Renamed salary" });
+      const rows = await editRow();
+      expect(rows).toHaveLength(1);
+      expect(Object.keys(rows[0].payload as object).sort()).toEqual(["annualAmount", "name"]);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((rows[0].payload as any).annualAmount.to).toBe(300000);
+    });
+
+    it("saving one field back to base drops just that field", async () => {
+      await edit({ annualAmount: 300000, name: "Renamed salary" });
+      await edit({ annualAmount: COOPER_SALARY_BASE_AMOUNT });
+      const rows = await editRow();
+      expect(Object.keys(rows[0].payload as object)).toEqual(["name"]);
+    });
+
+    it("saving every field back to base deletes the row", async () => {
+      await edit({ name: "Renamed salary" });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const baseName = ((await editRow())[0].payload as any).name.from;
+      await edit({ name: baseName });
+      expect(await editRow()).toHaveLength(0);
+    });
+
+    it("a merge keeps the row's toggle group when the save doesn't name one", async () => {
+      const [g] = await db.insert(scenarioToggleGroups)
+        .values({ scenarioId, name: "G", defaultOn: true, orderIndex: 0 }).returning();
+      await edit({ annualAmount: 300000 }, { toggleGroupId: g.id });
+      await edit({ name: "Renamed salary" });
+      expect((await editRow())[0].toggleGroupId).toBe(g.id);
+    });
+
+    it("two concurrent partial saves both survive", async () => {
+      await Promise.all([edit({ annualAmount: 300000 }), edit({ name: "Renamed salary" })]);
+      const rows = await editRow();
+      expect(rows).toHaveLength(1);
+      expect(Object.keys(rows[0].payload as object).sort()).toEqual(["annualAmount", "name"]);
+    });
+
+    it("null and undefined compare equal, so a null save of an absent field is no diff", async () => {
+      await edit({ annualAmount: 300000, notes: null });
+      expect(Object.keys((await editRow())[0].payload as object)).toEqual(["annualAmount"]);
     });
   });
 

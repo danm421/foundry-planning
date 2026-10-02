@@ -208,12 +208,9 @@ export interface HouseholdMapProps {
    * income/expense/savings rows the Map is allowed to write.
    *
    * Why the WHOLE field set and not just the changed field: `applyEntityEdit`
-   * stores `payload: diff` through `onConflictDoUpdate`, a wholesale replace, and
-   * `buildFieldDiff` only emits keys the caller actually sent. A narrow
-   * `{ annualAmount }` write against a flow that ALSO carries an endYear override
-   * in that scenario deletes the endYear override — silently; the year just
-   * reverts to base on the next render. Sending everything makes the new payload
-   * "every override this scenario already had, plus the new amount".
+   * merges a save's fields into whatever the scenario already had, rather than
+   * replacing the stored diff wholesale: edits merge; a field reverts when it
+   * is saved at its base value.
    *
    * Why the raw engine row and not `IncomeView`/`ExpenseView`/`SavingsRuleView`:
    * those three are strict SUBSETS of the engine rows, and the gaps are
@@ -248,10 +245,10 @@ export interface HouseholdMapProps {
    * The scenario-effective `client` singleton, pruned by
    * `pruneScenarioFields`, for the Goals board's life-expectancy editor.
    *
-   * Same rule as `flowScenarioFields` and for the same reason: a scenario edit's
-   * payload is a wholesale replace, so it must carry every field this scenario
-   * already overrides. A narrow `{ lifeExpectancy }` write against a scenario the
-   * Solver built ("retire at 62") would delete the `retirementAge` override.
+   * Same rule as `flowScenarioFields` and for the same reason: `applyEntityEdit`
+   * merges a save's fields into whatever the scenario already had, rather than
+   * replacing the stored diff wholesale: edits merge; a field reverts when it
+   * is saved at its base value.
    */
   clientScenarioFields: Record<string, unknown>;
   /**

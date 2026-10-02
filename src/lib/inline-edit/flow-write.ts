@@ -27,9 +27,9 @@
 // `isSelfEmployment`. Diffing the engine row can't miss a field by construction,
 // and can't drift when the engine type gains one.
 //
-// Making `applyEntityEdit` merge instead was considered and rejected app-wide:
-// replace is how reverting a field works (resend it at its base value, it drops
-// out of the diff), so merging would break partial reverts everywhere.
+// `applyEntityEdit` merges a save's fields into whatever the scenario already
+// had, rather than replacing the stored diff wholesale: edits merge; a field
+// reverts when it is saved at its base value.
 
 import { pruneScenarioFields } from "./scenario-fields";
 import type { YearRef } from "@/lib/milestones";
