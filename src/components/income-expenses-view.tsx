@@ -222,10 +222,12 @@ export interface IncomeExpensesViewProps {
    * Not derivable here. `initialIncomes` / `initialExpenses` are
    * `incomeEngineToView` / `expenseEngineToView` output — strict subsets of the
    * engine types — and the fields they drop (`isSelfEmployment`,
-   * `endsAtMedicareEligibilityOwner`) are ones real producers override. A
-   * scenario edit's payload is stored as a WHOLESALE REPLACE, so a key missing
-   * from `desiredFields` doesn't just go unwritten: the scenario's existing
-   * override for it is deleted. `lib/inline-edit/flow-write.ts` owns the rule.
+   * `endsAtMedicareEligibilityOwner`) are ones real producers override.
+   * Scenario edits merge: `applyEntityEdit` folds a save's fields into the
+   * scenario's existing edit, so a key missing from `desiredFields` keeps its
+   * existing override, every resent field at its scenario-effective value
+   * merges as a no-op, and a field reverts only when it is saved at its base
+   * value. `lib/inline-edit/flow-write.ts` owns the rule.
    *
    * A row with no entry here refuses its inline write — see `saveIncomeField`.
    */

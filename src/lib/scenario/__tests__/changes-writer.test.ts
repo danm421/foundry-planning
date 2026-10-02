@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, scenarios, scenarioChanges, scenarioToggleGroups } from "@/db/schema";
+import { clients, planSettings, scenarios, scenarioChanges, scenarioToggleGroups } from "@/db/schema";
 import {
   applyEntityEdit,
   applyEntityAdd,
@@ -17,6 +17,19 @@ const COOPER_CLIENT_ID = "877a9532-f8ea-49b0-9db7-aadd64fab82a";
 const COOPER_FIRM_ID = "org_3CitTEIe8PJa1BVYw7LnEjkiP9r";
 const COOPER_SALARY_INCOME_ID = "d99f3ccb-8eb5-44f9-ae81-f52fb2694458";
 const COOPER_SALARY_BASE_AMOUNT = 250000;
+
+// Pure — no DB, so it lives outside the live-DB block below and runs anywhere.
+describe("priorToValues", () => {
+  it("skips a stored entry that has no `to` key, keeping null and 0", () => {
+    // JSON drops an `undefined` `to`, leaving `{from: X}` — that entry is not a
+    // prior value and must not merge back in as `undefined`.
+    expect(priorToValues({
+      lost: { from: 1 },
+      cleared: { from: 1, to: null },
+      zeroed: { from: 1, to: 0 },
+    })).toStrictEqual({ cleared: null, zeroed: 0 });
+  });
+});
 
 // Skip when DB is unreachable. The test depends on Cooper Sample fixture data
 // existing in the dev Neon branch.
@@ -426,16 +439,6 @@ describe.skipIf(!HAS_DB)("changes-writer", () => {
       expect(rows[0].toggleGroupId).toBe(g2.id);
     });
 
-    it("priorToValues skips a stored entry that has no `to` key, keeping null and 0", () => {
-      // JSON drops an `undefined` `to`, leaving `{from: X}` — that entry is not a
-      // prior value and must not merge back in as `undefined`.
-      expect(priorToValues({
-        lost: { from: 1 },
-        cleared: { from: 1, to: null },
-        zeroed: { from: 1, to: 0 },
-      })).toStrictEqual({ cleared: null, zeroed: 0 });
-    });
-
     it("a client-singleton merge drops a stored key the singleton doesn't carry", async () => {
       const [c] = await db
         .select({ lifeExpectancy: clients.lifeExpectancy })
@@ -465,6 +468,73 @@ describe.skipIf(!HAS_DB)("changes-writer", () => {
       // Back at base, nothing is left — the stray key can't block the delete.
       await editClient(c.lifeExpectancy);
       expect(await clientRows()).toHaveLength(0);
+    });
+
+    describe("plan_settings stress overrides", () => {
+      // The Stress-test keys are optional engine `PlanSettings` keys the base
+      // loader never sets, so they are absent from the base singleton. The
+      // Solver's save-as-new path writes them straight into a plan_settings
+      // edit row (save-scenario inserts it without going through the writer).
+      const MARKET_SHOCK = { year: 2030, drawdownPct: 0.3 };
+      const SS_HAIRCUT = { pct: 0.2, startYear: 2033 };
+      const TAX_RATE_STRESS = { points: 0.03, startYear: 2030 };
+
+      async function basePlanEndYear(): Promise<number> {
+        const [ps] = await db
+          .select({ planEndYear: planSettings.planEndYear })
+          .from(planSettings)
+          .innerJoin(scenarios, eq(scenarios.id, planSettings.scenarioId))
+          .where(and(eq(planSettings.clientId, COOPER_CLIENT_ID), eq(scenarios.isBaseCase, true)));
+        return ps.planEndYear;
+      }
+      const editPlanSettings = (desiredFields: Record<string, unknown>) =>
+        applyEntityEdit({ scenarioId, firmId: COOPER_FIRM_ID, targetKind: "plan_settings",
+          targetId: COOPER_CLIENT_ID, desiredFields });
+      const planSettingsRows = () => db.select().from(scenarioChanges).where(and(
+        eq(scenarioChanges.scenarioId, scenarioId),
+        eq(scenarioChanges.targetKind, "plan_settings"),
+      ));
+
+      it("a planEndYear save keeps the stress overrides already on the row", async () => {
+        const planEndYear = (await basePlanEndYear()) + 1;
+        await db.insert(scenarioChanges).values({
+          scenarioId,
+          opType: "edit",
+          targetKind: "plan_settings",
+          targetId: COOPER_CLIENT_ID,
+          payload: {
+            marketShock: { from: null, to: MARKET_SHOCK },
+            ssBenefitHaircut: { from: null, to: SS_HAIRCUT },
+          },
+        });
+
+        await editPlanSettings({ planEndYear });
+
+        const rows = await planSettingsRows();
+        expect(rows).toHaveLength(1);
+        expect(Object.keys(rows[0].payload as object).sort())
+          .toEqual(["marketShock", "planEndYear", "ssBenefitHaircut"]);
+        expect(rows[0].payload).toMatchObject({
+          marketShock: { to: MARKET_SHOCK },
+          ssBenefitHaircut: { to: SS_HAIRCUT },
+          planEndYear: { to: planEndYear },
+        });
+      });
+
+      it("a new stress override is written into an existing plan_settings row", async () => {
+        const planEndYear = (await basePlanEndYear()) + 1;
+        await editPlanSettings({ planEndYear });
+        await editPlanSettings({ taxRateStress: TAX_RATE_STRESS });
+
+        const rows = await planSettingsRows();
+        expect(rows).toHaveLength(1);
+        expect(Object.keys(rows[0].payload as object).sort())
+          .toEqual(["planEndYear", "taxRateStress"]);
+        expect(rows[0].payload).toMatchObject({
+          planEndYear: { to: planEndYear },
+          taxRateStress: { to: TAX_RATE_STRESS },
+        });
+      });
     });
   });
 

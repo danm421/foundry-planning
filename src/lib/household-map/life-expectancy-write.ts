@@ -133,8 +133,9 @@ export function buildLifeExpectancyClientFields(
  * already overrides, plus the new `planEndYear`.
  *
  * Returns null when the horizon can't be derived — the caller then skips the
- * second write entirely rather than posting a no-op that would still replace the
- * scenario's existing plan_settings payload.
+ * second write entirely: with no new `planEndYear` there is nothing to change,
+ * and since edits merge, skipping it leaves the scenario's existing
+ * plan_settings overrides exactly as they are.
  */
 export function buildLifeExpectancyPlanSettingsFields(
   planSettingsFields: Record<string, unknown>,

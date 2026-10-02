@@ -20,6 +20,7 @@ import {
   TARGET_KIND_TO_FIELD,
 } from "@/engine/scenario/applyChanges";
 import type { OpType, TargetKind } from "@/engine/scenario/types";
+import type { PlanSettings } from "@/engine/types";
 import { ForbiddenError } from "@/lib/authz";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "./loader";
@@ -187,6 +188,24 @@ function keepGroupUnlessSaid(
   return toggleGroupId === undefined ? {} : { toggleGroupId };
 }
 
+/**
+ * Overlayable singleton keys the base singleton does not carry, so `k in
+ * baseEntity` can't vouch for them. For `plan_settings` these are the optional
+ * Stress-test keys on the engine's `PlanSettings` (`src/engine/types.ts`) —
+ * `loadClientData` never sets them, and the Solver writes them into a
+ * scenario's plan_settings edit. Without this list, the next save of any other
+ * plan_settings field (e.g. `planEndYear`) would drop them from the merge.
+ */
+const OPTIONAL_SINGLETON_KEYS: Partial<Record<TargetKind, readonly string[]>> = {
+  plan_settings: [
+    "marketShock",
+    "ssBenefitHaircut",
+    "disabilityEvent",
+    "taxRateStress",
+    "livingExpenseInflationOverride",
+  ] satisfies readonly (keyof PlanSettings)[],
+};
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -224,15 +243,19 @@ export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> 
 
   // Singleton edits: the shared client form posts contact-info fields
   // (email/address/spouse*) that aren't on the engine's `ClientInfo` singleton
-  // and so aren't scenario-overlayable. Drop any field the base singleton
-  // doesn't carry — otherwise they diff as `from: undefined`, bloat the change
-  // payload, and block the idempotent revert below. Applied to the MERGED map
-  // in `runEdit`, so such a key stored on an older edit row is dropped too
-  // rather than persisting forever.
+  // and so aren't scenario-overlayable. Drop any field that is neither on the
+  // base singleton nor in `OPTIONAL_SINGLETON_KEYS` — otherwise they diff as
+  // `from: undefined`, bloat the change payload, and block the idempotent
+  // revert below. Applied to the MERGED map in `runEdit` (prior row + this
+  // save), so such a key stored on an older edit row is dropped too rather
+  // than persisting forever.
+  const optionalKeys: readonly string[] = OPTIONAL_SINGLETON_KEYS[targetKind] ?? [];
   const keepEditable = (fields: Record<string, unknown>) =>
     SINGLETON_KIND_TO_FIELD[targetKind] != null && baseEntity != null
       ? Object.fromEntries(
-          Object.entries(fields).filter(([k]) => k in baseEntity),
+          Object.entries(fields).filter(
+            ([k]) => k in baseEntity || optionalKeys.includes(k),
+          ),
         )
       : fields;
 

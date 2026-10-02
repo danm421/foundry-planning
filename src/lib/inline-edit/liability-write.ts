@@ -1,8 +1,7 @@
 // src/lib/inline-edit/liability-write.ts
 //
 // Write payloads for the Net Worth page's inline liability cells. Same
-// deliberate asymmetry as `account-write.ts` and `flow-write.ts` — do NOT
-// "simplify" the scenario payload to match the base one:
+// base/scenario asymmetry as `account-write.ts` and `flow-write.ts`:
 //
 //   Base mode     -> only the changed keys. Safe because the liabilities PUT
 //                    route applies a partial update.
