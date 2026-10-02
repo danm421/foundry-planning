@@ -101,6 +101,26 @@ describe("disability dialog in a scenario", () => {
     });
   });
 
+  it("trims the name and nulls a stale covered-earnings amount outside manual mode, like the base body", async () => {
+    const onSaved = vi.fn();
+    const stale = { ...POLICY, name: "  Group disability  ", coveredEarningsAmount: 150_000 };
+    render(<DisabilityPolicyDialog {...props({ onSaved, policy: stale })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    const { desiredFields } = JSON.parse(calls()[0][1].body!);
+    expect(desiredFields.name).toBe("Group disability");
+    expect(desiredFields.coveredEarningsAmount).toBeNull();
+  });
+
+  it("keeps the covered-earnings amount in manual mode", async () => {
+    const onSaved = vi.fn();
+    const manual = { ...POLICY, coveredEarningsMode: "manual" as const, coveredEarningsAmount: 150_000 };
+    render(<DisabilityPolicyDialog {...props({ onSaved, policy: manual })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(JSON.parse(calls()[0][1].body!).desiredFields.coveredEarningsAmount).toBe(150_000);
+  });
+
   it("create sends an add whose entity is the engine policy, with a minted id and nested layers", async () => {
     const onSaved = vi.fn();
     render(<DisabilityPolicyDialog {...props({ mode: "create", policy: undefined, onSaved })} />);

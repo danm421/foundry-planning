@@ -20,7 +20,6 @@
  */
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useClientAccess } from "@/components/client-access-provider";
 import { InlineAmount } from "@/components/forms/inline-amount";
 import { usePendingEdits } from "@/hooks/use-pending-edits";
@@ -192,7 +191,6 @@ function coverageWarning(c: ResolvedCoverage): { tone: "crit" | "warn"; text: st
 export default function DisabilityPanel(props: DisabilityPanelProps) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
-  const router = useRouter();
   const writer = useScenarioWriter(props.clientId);
   const { focus, onFocusClose } = props;
 
@@ -204,6 +202,9 @@ export default function DisabilityPanel(props: DisabilityPanelProps) {
   const focusDialog = focusFound && focusFound.mode !== "delete" ? focusFound : null;
   const [dialogState, setDialogState] = useState<DialogState | null>(focusDialog);
   const [choosingInsured, setChoosingInsured] = useState(false);
+  // True while a workplace add is in flight: a second click would add a second
+  // policy, and both pay benefits.
+  const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const rows: DisabilityEditRow[] = useMemo(
@@ -260,8 +261,10 @@ export default function DisabilityPanel(props: DisabilityPanelProps) {
   useFocusCloseOnce(focus, focusFound, dialogState !== null || focusDeleting, onFocusClose);
 
   async function addWorkplaceCoverage(insured: "client" | "spouse") {
+    if (adding) return;
     setChoosingInsured(false);
     setError(null);
+    setAdding(true);
     // WORKPLACE_DEFAULTS comes from the schema module so the API and this
     // screen cannot drift on what "typical" means. It carries
     // `stdMonthlyMax: null` — uncapped — and that null must reach the column.
@@ -276,22 +279,26 @@ export default function DisabilityPanel(props: DisabilityPanelProps) {
           crypto.randomUUID(),
         )
       : null;
-    const res = await writer.submit(
-      { op: "add", targetKind: "disability_policy", entity: localPolicy ? { ...localPolicy } : undefined },
-      {
-        url: `/api/clients/${props.clientId}/disability-policies`,
-        method: "POST",
-        body: { ...WORKPLACE_DEFAULTS, insured },
-      },
-    );
-    if (!res.ok) {
-      // An alert() plus an early return is invisible to a test and to a screen
-      // reader. The failure belongs in component state.
-      setError("Could not add coverage. Please try again.");
-      return;
+    try {
+      const res = await writer.submit(
+        { op: "add", targetKind: "disability_policy", entity: localPolicy ? { ...localPolicy } : undefined },
+        {
+          url: `/api/clients/${props.clientId}/disability-policies`,
+          method: "POST",
+          body: { ...WORKPLACE_DEFAULTS, insured },
+        },
+      );
+      if (!res.ok) {
+        // An alert() plus an early return is invisible to a test and to a screen
+        // reader. The failure belongs in component state.
+        setError("Could not add coverage. Please try again.");
+        return;
+      }
+      const policy = localPolicy ?? ((await res.json()) as { policy: DisabilityPolicy }).policy;
+      setDialogState({ mode: "edit", policy });
+    } finally {
+      setAdding(false);
     }
-    const policy = localPolicy ?? ((await res.json()) as { policy: DisabilityPolicy }).policy;
-    setDialogState({ mode: "edit", policy });
   }
 
   function startWorkplaceAdd() {
@@ -324,10 +331,8 @@ export default function DisabilityPanel(props: DisabilityPanelProps) {
       planEndYear={props.planEndYear}
       client={props.client}
       onClose={() => setDialogState(null)}
-      onSaved={() => {
-        setDialogState(null);
-        router.refresh();
-      }}
+      // No refresh here: `writer.submit` refreshed when the save landed.
+      onSaved={() => setDialogState(null)}
     />
   );
 
@@ -343,6 +348,7 @@ export default function DisabilityPanel(props: DisabilityPanelProps) {
             <button
               type="button"
               className="rounded-[var(--radius-sm)] bg-accent px-3 h-9 text-[13px] font-medium text-accent-on hover:bg-accent-ink"
+              disabled={adding}
               onClick={startWorkplaceAdd}
             >
               Add workplace coverage

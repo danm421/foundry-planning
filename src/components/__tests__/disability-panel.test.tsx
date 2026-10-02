@@ -23,8 +23,9 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import type { ClientData, ClientInfo, DisabilityPolicy, Income } from "@/engine/types";
 
 let searchParams = new URLSearchParams();
+const refreshMock = vi.fn();
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
+  useRouter: () => ({ refresh: refreshMock }),
   useSearchParams: () => searchParams,
   usePathname: () => "/clients/c1/details/insurance",
 }));
@@ -136,6 +137,7 @@ function lastRequest() {
 }
 
 beforeEach(() => {
+  refreshMock.mockClear();
   searchParams = new URLSearchParams();
   global.fetch = vi.fn().mockResolvedValue({
     ok: true,
@@ -803,13 +805,53 @@ describe("DisabilityPanel inside a scenario", () => {
     expect(requests()[1].body).not.toHaveProperty("entity");
   });
 
-  it("reopening the new policy's dialog does not add it again", async () => {
-    renderPanel("edit", { policies: [], spouseFirstName: null });
+  it("reopening the new policy's dialog after the refresh edits it — never a second add", async () => {
+    const view = renderPanel("edit", { policies: [], spouseFirstName: null });
     fireEvent.click(screen.getByRole("button", { name: /add workplace coverage/i }));
     await screen.findByRole("dialog", { name: "Edit disability policy" });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(requests().map((r) => r.body.op)).toEqual(["add"]);
+    const entity = requests()[0].body.entity as DisabilityPolicy;
+
+    // The refresh lands: the posted policy is now a listed row.
+    view.rerender(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <DisabilityPanel {...makeProps({ policies: [entity], spouseFirstName: null })} />
+      </ClientAccessProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit Group disability" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(fetchMock().mock.calls.length).toBe(2));
+
+    expect(requests().map((r) => r.body.op)).toEqual(["add", "edit"]);
+    expect(requests()[1].body.targetId).toBe(entity.id);
+  });
+
+  it("a second click while the add runs sends no second request", async () => {
+    let release!: () => void;
+    global.fetch = vi.fn().mockReturnValue(
+      new Promise((resolve) => {
+        release = () => resolve({ ok: true, json: async () => ({ ok: true }) });
+      }),
+    ) as never;
+    renderPanel("edit", { policies: [], spouseFirstName: null });
+    const button = screen.getByRole("button", { name: /add workplace coverage/i });
+    fireEvent.click(button);
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(fetchMock().mock.calls.length).toBe(1);
+    release();
+    await screen.findByRole("dialog", { name: "Edit disability policy" });
+    expect(button).not.toBeDisabled();
+    expect(fetchMock().mock.calls.length).toBe(1);
+  });
+
+  it("a dialog save refreshes the page exactly once", async () => {
+    renderPanel("edit");
+    fireEvent.click(screen.getByRole("button", { name: "Edit Group disability" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(refreshMock).toHaveBeenCalledTimes(1);
   });
 
   it("the dialog's save and remove stay inside the scenario", async () => {
@@ -834,5 +876,25 @@ describe("DisabilityPanel in base mode", () => {
     const req = lastRequest();
     expect(`${req.method} ${req.url}`).toBe("PATCH /api/clients/c1/disability-policies/d1");
     expect(req.body).toEqual({ annualPremium: 1200 });
+  });
+
+  it("an inline annual-increase edit still PATCHes the base route", async () => {
+    renderPanel("edit");
+    fireEvent.click(screen.getByRole("button", { name: "Edit annual increase for Group disability" }));
+    const input = screen.getByRole("textbox", { name: "Annual increase for Group disability" });
+    fireEvent.change(input, { target: { value: "3" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(fetchMock().mock.calls.length).toBe(1));
+    const req = lastRequest();
+    expect(`${req.method} ${req.url}`).toBe("PATCH /api/clients/c1/disability-policies/d1");
+    expect(req.body).toEqual({ colaRate: 0.03 });
+  });
+
+  it("a dialog save refreshes the page exactly once", async () => {
+    renderPanel("edit");
+    fireEvent.click(screen.getByRole("button", { name: "Edit Group disability" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(refreshMock).toHaveBeenCalledTimes(1);
   });
 });

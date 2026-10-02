@@ -414,7 +414,17 @@ export default function DisabilityPolicyDialog(props: DisabilityPolicyDialogProp
       // Inside a scenario the same save is a `disability_policy` change in the
       // ENGINE's shape (nested layers), not the flat wire body; an edit's
       // `desiredFields` leave out `id`, which is the target, not a field.
-      const policy = formToPolicy(form, props.mode === "edit" ? props.policy.id : newId!);
+      // Normalised the way `disabilityPolicyBody` is, so a scenario change
+      // promoted to base writes the row a base save would have.
+      const policy = formToPolicy(
+        {
+          ...form,
+          name: form.name.trim(),
+          coveredEarningsAmount:
+            form.coveredEarningsMode === "manual" ? form.coveredEarningsAmount : null,
+        },
+        props.mode === "edit" ? props.policy.id : newId!,
+      );
       const { id, ...engineFields } = policy;
       const res = await writer.submit(
         props.mode === "edit"
