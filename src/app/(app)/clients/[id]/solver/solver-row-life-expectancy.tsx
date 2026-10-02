@@ -20,6 +20,8 @@ interface Props {
   workingClient: ClientData["client"];
   onChange(m: SolverMutation): void;
   onResetField?: (keys: SolverMutationKey[]) => void;
+  /** People whose life expectancy a long-term care event is setting. */
+  ltcPeople?: ("client" | "spouse")[];
 }
 
 export function SolverRowLifeExpectancy({
@@ -27,6 +29,7 @@ export function SolverRowLifeExpectancy({
   workingClient,
   onChange,
   onResetField,
+  ltcPeople,
 }: Props) {
   const showSpouse = baseClient.spouseLifeExpectancy != null;
 
@@ -59,6 +62,7 @@ export function SolverRowLifeExpectancy({
             onChange({ kind: "life-expectancy", person: "client", age: v })
           }
           onResetField={onResetField}
+          ltcHint={ltcPeople?.includes("client")}
         />
         {showSpouse ? (
           <Editable
@@ -75,6 +79,7 @@ export function SolverRowLifeExpectancy({
               onChange({ kind: "life-expectancy", person: "spouse", age: v })
             }
             onResetField={onResetField}
+            ltcHint={ltcPeople?.includes("spouse")}
           />
         ) : null}
       </div>
@@ -94,6 +99,7 @@ function Editable({
   birthYear,
   onCommit,
   onResetField,
+  ltcHint,
 }: {
   id: string;
   /** Accessible name — stays fully qualified ("Cooper's Life Expectancy"). */
@@ -108,6 +114,7 @@ function Editable({
   birthYear: number | null;
   onCommit: (v: number) => void;
   onResetField?: (keys: SolverMutationKey[]) => void;
+  ltcHint?: boolean;
 }) {
   return (
     <div>
@@ -146,6 +153,7 @@ function Editable({
           }
         />
       </SolverFieldActions>
+      {ltcHint && <p className="text-[11px] text-ink-3">Set by the long-term care stress test.</p>}
     </div>
   );
 }

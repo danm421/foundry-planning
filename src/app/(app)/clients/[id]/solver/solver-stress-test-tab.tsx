@@ -36,6 +36,7 @@ interface Props {
   scenarioId: string | null;
   scenarioName: string | null;
   savedLtcChange: ChangesPanelChange | null;
+  hasLtcDraft?: boolean;
   onLtcSaved: () => void;
   onEditLtcOnChangesTab: (changeId: string) => void;
 }
@@ -65,6 +66,7 @@ export function SolverStressTestTab({
   scenarioId,
   scenarioName,
   savedLtcChange,
+  hasLtcDraft,
   onLtcSaved,
   onEditLtcOnChangesTab,
 }: Props) {
@@ -301,6 +303,7 @@ export function SolverStressTestTab({
         scenarioName={scenarioName}
         clientId={clientId}
         savedChange={savedLtcChange}
+        hasDraft={hasLtcDraft}
         onChange={onChange}
         onResetField={onResetField}
         onSaved={onLtcSaved}

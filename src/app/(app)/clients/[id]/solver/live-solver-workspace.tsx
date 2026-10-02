@@ -281,6 +281,11 @@ export function LiveSolverWorkspace({
   const baseSavable = useMemo(() => partitionBaseSavableMutations(mutations), [mutations]);
 
   const [activeTab, setActiveTab] = useState<InputTab>("retirement");
+  // Reads the change list, so a switched-off saved event still counts. The
+  // Changes tab opens this row (consumed in Task 14).
+  const savedLtcChange =
+    changesPanel?.changes.find((c) => c.targetKind === "ltc_event" && c.opType === "add") ?? null;
+  const [pendingOpenChangeId, setPendingOpenChangeId] = useState<string | null>(null);
 
   // Inputs pane collapsed? Starts open and we remember the advisor's choice
   // across sessions. Read from localStorage after mount (not in the initializer)
@@ -1482,6 +1487,7 @@ export function LiveSolverWorkspace({
                   workingClient={workingTree.client}
                   onChange={pushMutation}
                   onResetField={clearMutations}
+                  ltcPeople={(workingTree.ltcEvents?.[0]?.people ?? []).map((p) => p.person)}
                 />
               </div>
               <SolverRowLivingExpenseScale
@@ -1631,9 +1637,13 @@ export function LiveSolverWorkspace({
             clientId={clientId}
             scenarioId={isScenarioSource ? initialSource : null}
             scenarioName={scenarioName ?? null}
-            savedLtcChange={null}
+            savedLtcChange={savedLtcChange}
+            hasLtcDraft={mutationMap.has("stress-ltc")}
             onLtcSaved={() => router.refresh()}
-            onEditLtcOnChangesTab={() => setActiveTab("changes")}
+            onEditLtcOnChangesTab={(id) => {
+              setPendingOpenChangeId(id);
+              setActiveTab("changes");
+            }}
           />
         )}
 

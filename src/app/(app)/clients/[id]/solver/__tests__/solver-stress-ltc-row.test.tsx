@@ -7,9 +7,13 @@ import { runProjection } from "@/engine/projection";
 import { buildClientData, baseClient, basePlanSettings } from "@/engine/__tests__/fixtures";
 import type { ClientData } from "@/engine/types";
 import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
+import type { ChangesPanelChange } from "@/components/scenario/changes-panel";
 import { LtcStressRow } from "../solver-stress-ltc-row";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 function Harness({ base, scenarioId = null }: { base: ClientData; scenarioId?: string | null }) {
   const [muts, setMuts] = useState<SolverMutation[]>([]);
@@ -98,5 +102,89 @@ describe("LtcStressRow (draft)", () => {
     const btn = screen.getByRole("button", { name: /add as change/i }) as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
     expect(screen.getByText(/Pick or create a scenario first/)).toBeTruthy();
+  });
+});
+
+const savedEvent = {
+  id: "3f1c2d7e-8a1b-4c5d-9e0f-112233445566",
+  name: "Long-term care — John 85–87",
+  people: [{ person: "client" as const, startAge: 85, years: 3, careSetting: "nursing_private" as const, annualCost: 129_575, costInflation: 0.05 }],
+  livingExpenseCutPct: null, homeSale: null, includePolicies: true,
+};
+const saved = (enabled: boolean): ChangesPanelChange => ({
+  id: "chg-1", scenarioId: "s1", opType: "add", targetKind: "ltc_event", targetId: savedEvent.id,
+  payload: savedEvent, toggleGroupId: null, orderIndex: 0, updatedAt: new Date(), enabled, label: null,
+} as ChangesPanelChange);
+
+describe("LtcStressRow (saved)", () => {
+  it("Add as change POSTs the event, then drops the draft and refreshes", async () => {
+    const fetchMock = vi.spyOn(global, "fetch").mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const onSaved = vi.fn();
+    const onResetField = vi.fn();
+    const tree = applyMutations(plan, [{ kind: "stress-ltc", value: savedEvent }]);
+    render(
+      <LtcStressRow tree={tree} projectionYears={runProjection(tree)} scenarioId="s1" scenarioName="With care"
+        clientId="c1" savedChange={null} onChange={vi.fn()} onResetField={onResetField}
+        onSaved={onSaved} onEditOnChangesTab={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /add as change/i }));
+    await vi.waitFor(() => expect(onSaved).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/clients/c1/scenarios/s1/changes");
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({ op: "add", targetKind: "ltc_event", entity: savedEvent });
+    expect(onResetField).toHaveBeenCalledWith(["stress-ltc"]); // stale-draft rule
+  });
+
+  it("a saved event shows a read-only summary and Edit on Changes tab — no second Add", () => {
+    const onEdit = vi.fn();
+    render(
+      <LtcStressRow tree={plan} projectionYears={[]} scenarioId="s1" scenarioName="With care" clientId="c1"
+        savedChange={saved(true)} onChange={vi.fn()} onResetField={vi.fn()} onSaved={vi.fn()} onEditOnChangesTab={onEdit} />,
+    );
+    expect(screen.getByText("Long-term care — John 85–87")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /add as change/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /edit on changes tab/i }));
+    expect(onEdit).toHaveBeenCalledWith("chg-1");
+  });
+
+  it("a SWITCHED-OFF saved event still shows as saved (switched off) — no second Add", () => {
+    render(
+      <LtcStressRow tree={plan} projectionYears={[]} scenarioId="s1" scenarioName="With care" clientId="c1"
+        savedChange={saved(false)} onChange={vi.fn()} onResetField={vi.fn()} onSaved={vi.fn()} onEditOnChangesTab={vi.fn()} />,
+    );
+    expect(screen.getByText(/switched off/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /add as change/i })).toBeNull();
+  });
+
+  it("a failed save says so and keeps the draft", async () => {
+    vi.spyOn(global, "fetch").mockResolvedValue(new Response("{}", { status: 400 }));
+    const onResetField = vi.fn();
+    const tree = applyMutations(plan, [{ kind: "stress-ltc", value: savedEvent }]);
+    render(
+      <LtcStressRow tree={tree} projectionYears={runProjection(tree)} scenarioId="s1" scenarioName="With care"
+        clientId="c1" savedChange={null} onChange={vi.fn()} onResetField={onResetField} onSaved={vi.fn()} onEditOnChangesTab={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /add as change/i }));
+    expect(await screen.findByText(/couldn.t save/i)).toBeTruthy();
+    expect(onResetField).not.toHaveBeenCalled();
+  });
+
+  // R22 part 3: a leftover draft must never outlive a saved event, on or off.
+  it.each([true, false])("a stale draft is reset when a saved event exists (enabled: %s)", (enabled) => {
+    const onResetField = vi.fn();
+    render(
+      <LtcStressRow tree={plan} projectionYears={[]} scenarioId="s1" scenarioName="With care" clientId="c1"
+        savedChange={saved(enabled)} hasDraft onChange={vi.fn()} onResetField={onResetField} onSaved={vi.fn()} onEditOnChangesTab={vi.fn()} />,
+    );
+    expect(onResetField).toHaveBeenCalledWith(["stress-ltc"]);
+  });
+
+  it("does not reset anything when a saved event exists but there is no draft", () => {
+    const onResetField = vi.fn();
+    render(
+      <LtcStressRow tree={plan} projectionYears={[]} scenarioId="s1" scenarioName="With care" clientId="c1"
+        savedChange={saved(true)} hasDraft={false} onChange={vi.fn()} onResetField={onResetField} onSaved={vi.fn()} onEditOnChangesTab={vi.fn()} />,
+    );
+    expect(onResetField).not.toHaveBeenCalled();
   });
 });
