@@ -1,5 +1,6 @@
 import type { ClientData, Income, ProjectionYear } from "@/engine";
 import { controllingFamilyMember } from "@/engine/ownership";
+import { applyLtcEvent } from "@/engine/ltc-event";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
 
 export interface CashFlowLineItem {
@@ -49,6 +50,10 @@ function sum(items: CashFlowLineItem[]): number {
 
 /** Build id→name maps from the working client data (mirrors cashflow-report.tsx). */
 export function buildNameMaps(clientData: ClientData) {
+  // Rows the LTC pre-pass creates inside runProjection (care cost, home sale)
+  // must be named here too, or they count in totals but vanish from drill-downs.
+  const nameTree = applyLtcEvent(clientData).data;
+
   const incomeNames: Record<string, string> = {};
   for (const inc of clientData.incomes ?? []) {
     if (inc.type === "business" && inc.ownerEntityId != null) continue;
@@ -66,7 +71,7 @@ export function buildNameMaps(clientData: ClientData) {
   for (const liab of clientData.liabilities ?? []) liabilityNames[liab.id] = liab.name;
 
   const expenseNames: Record<string, string> = {};
-  for (const exp of clientData.expenses ?? []) expenseNames[exp.id] = exp.name;
+  for (const exp of nameTree.expenses ?? []) expenseNames[exp.id] = exp.name;
   for (const acc of clientData.accounts ?? []) {
     if (acc.category === "real_estate" && (acc.annualPropertyTax ?? 0) > 0) {
       expenseNames[`synth-proptax-${acc.id}`] = `Property Tax – ${acc.name}`;
@@ -76,7 +81,7 @@ export function buildNameMaps(clientData: ClientData) {
   // creates for it (technique-acct-<txn.id>), which never appears in
   // clientData.accounts — so it needs its own name-map entry, mirroring the
   // account loop above.
-  for (const txn of clientData.assetTransactions ?? []) {
+  for (const txn of nameTree.assetTransactions ?? []) {
     if (txn.type === "buy" && txn.assetCategory === "real_estate" && (txn.annualPropertyTax ?? 0) > 0) {
       expenseNames[`synth-proptax-technique-acct-${txn.id}`] = `Property Tax – ${txn.assetName ?? txn.name}`;
     }
@@ -84,7 +89,7 @@ export function buildNameMaps(clientData: ClientData) {
   expenseNames["medicarePremiums"] = "Medicare Premiums";
 
   const otherInflowNames: Record<string, string> = {};
-  for (const txn of clientData.assetTransactions ?? []) {
+  for (const txn of nameTree.assetTransactions ?? []) {
     otherInflowNames[`technique-proceeds:${txn.id}`] = `Net Proceeds: ${txn.name}`;
   }
   for (const acc of clientData.accounts ?? []) {
@@ -105,7 +110,7 @@ export function buildNameMaps(clientData: ClientData) {
   }
 
   const expenseTypeById: Record<string, string> = {};
-  for (const exp of clientData.expenses ?? []) expenseTypeById[exp.id] = exp.type;
+  for (const exp of nameTree.expenses ?? []) expenseTypeById[exp.id] = exp.type;
 
   const incomeTypeById: Record<string, Income["type"]> = {};
   for (const inc of clientData.incomes ?? []) incomeTypeById[inc.id] = inc.type;

@@ -26,6 +26,7 @@ import {
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear, AccountLedger } from "@/engine";
 import { isFullyEntityOwned } from "@/engine/ownership";
+import { applyLtcEvent } from "@/engine/ltc-event";
 import {
   liquidBucketWeights,
   liquidPortfolioAdditions,
@@ -736,11 +737,18 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     }
   }
 
+  // Rows the LTC pre-pass creates inside runProjection (care cost, home sale)
+  // must be named here too, or they count in totals but vanish from drill-downs.
+  const nameTree = useMemo(
+    () => (clientData ? applyLtcEvent(clientData).data : null),
+    [clientData]
+  );
+
   // expensesByType: segment key → array of expense IDs with that type
   const expensesByType: Record<string, string[]> = {};
   const expenseNames: Record<string, string> = {};
-  if (clientData) {
-    for (const exp of clientData.expenses) {
+  if (clientData && nameTree) {
+    for (const exp of nameTree.expenses) {
       expenseNames[exp.id] = exp.name;
       const segmentKey = Object.entries(EXPENSE_SEGMENT_TO_TYPE).find(
         ([, t]) => t === exp.type
@@ -773,7 +781,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     // creates for it (technique-acct-<txn.id>), which never appears in
     // clientData.accounts — so it needs its own drill-list entry, mirroring
     // the account loop above.
-    for (const txn of clientData.assetTransactions ?? []) {
+    for (const txn of nameTree.assetTransactions ?? []) {
       if (txn.type !== "buy" || txn.assetCategory !== "real_estate") continue;
       if ((txn.annualPropertyTax ?? 0) <= 0) continue;
       const synthId = `synth-proptax-technique-acct-${txn.id}`;
@@ -801,7 +809,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     techniqueIncomeIds.length = 0;
     techniqueExpenseIds.length = 0;
 
-    for (const txn of clientData.assetTransactions ?? []) {
+    for (const txn of nameTree.assetTransactions ?? []) {
       if (txn.type === "sell") {
         // Surplus as income (may not exist if deficit)
         const proceedsKey = `technique-proceeds:${txn.id}`;

@@ -8,6 +8,7 @@ import { PDF_THEME } from "@/components/pdf/theme";
 import type { ReportArtifact, FetchDataResult, RenderPdfInput, CsvFile, ChartImage as ChartImageType } from "../types";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection } from "@/engine";
+import { applyLtcEvent } from "@/engine/ltc-event";
 import { liquidPortfolioBoy } from "@/engine/portfolio-snapshot";
 import type { ProjectionYear, ClientData } from "@/engine";
 import { serializeCsv } from "../csv";
@@ -99,7 +100,10 @@ function liquidPortfolioTotal(y: ProjectionYear): number {
 function buildBaseSection(years: ProjectionYear[], c: ClientData): CashflowSection {
   // Mirrors the Level-0 columns of the on-screen cashflow table — see
   // cashflow-report.tsx around the `if (!level)` branch.
-  const techniqueIncomeIds = (c.assetTransactions ?? [])
+  // The LTC pre-pass inside runProjection adds a home-sale transaction; expand
+  // the tree the same way, or its proceeds drop out of Other Inflows.
+  const nameTree = applyLtcEvent(c).data;
+  const techniqueIncomeIds = (nameTree.assetTransactions ?? [])
     .filter((t) => t.type === "sell")
     .map((t) => `technique-proceeds:${t.id}`);
 
