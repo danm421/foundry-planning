@@ -19,7 +19,7 @@ import { resolveAccountFromRaw, type ResolutionContext } from "@/lib/projection/
 import type { ScenarioChange, ToggleGroup } from "@/engine/scenario/types";
 import type { Account, ClientData } from "@/engine/types";
 
-function makeCtx(): ResolutionContext {
+function makeCtx(accountRawGrowthById?: ResolutionContext["accountRawGrowthById"]): ResolutionContext {
   const resolver = createGrowthSourceResolver({
     planSettings: {
       growthSourceTaxable: "default",
@@ -39,7 +39,7 @@ function makeCtx(): ResolutionContext {
       defaultGrowthLifeInsurance: "0.03",
       inflationAssetClassId: null,
     },
-    // One model portfolio: 8%, all ordinary income.
+    // mp-1: 8%, all ordinary income. mp-2 and ticker tp-1: 6%, all long-term gains.
     assetClasses: [
       {
         id: "ac-1",
@@ -49,13 +49,25 @@ function makeCtx(): ResolutionContext {
         pctQualifiedDividends: "0",
         pctTaxExempt: "0",
       },
+      {
+        id: "ac-2",
+        geometricReturn: "0.06",
+        pctOrdinaryIncome: "0",
+        pctLtCapitalGains: "1",
+        pctQualifiedDividends: "0",
+        pctTaxExempt: "0",
+      },
     ],
-    modelPortfolios: [{ id: "mp-1" }],
-    modelPortfolioAllocations: [{ portfolioId: "mp-1", assetClassId: "ac-1", weight: "1" }],
+    modelPortfolios: [{ id: "mp-1" }, { id: "mp-2" }],
+    modelPortfolioAllocations: [
+      { portfolioId: "mp-1", assetClassId: "ac-1", weight: "1" },
+      { portfolioId: "mp-2", assetClassId: "ac-2", weight: "1" },
+    ],
+    tickerPortfolioAllocations: [{ tickerPortfolioId: "tp-1", assetClassId: "ac-2", weight: "1" }],
     accountAssetAllocations: [],
     clientCmaOverrides: [],
   });
-  return { resolver, resolvedInflationRate: 0.025, ownersByAccountId: new Map() };
+  return { resolver, resolvedInflationRate: 0.025, ownersByAccountId: new Map(), accountRawGrowthById };
 }
 
 /** Base accounts as `loadClientData` resolves them: a custom 9% brokerage and a
@@ -199,5 +211,121 @@ describe("applyScenarioChangesWithRefs — an account edit of a growth input re-
     const { effectiveTree } = applyScenarioChangesWithRefs(tree(), [valueEdit], {}, [], makeCtx());
     expect(resolveAccountFromRaw).not.toHaveBeenCalled();
     expect(effectiveTree.accounts).toEqual(applyScenarioChanges(tree(), [valueEdit], {}, []).effectiveTree.accounts);
+  });
+});
+
+describe("applyScenarioChangesWithRefs — a PARTIAL growth edit keeps the stored inputs the engine account drops", () => {
+  // The engine account carries no ticker portfolio, turnover, realization
+  // overrides or property-tax source, so a writer that sends only what changed
+  // (Forge's `propose_changes`) must not lose them on re-resolve.
+  type Raw = Parameters<typeof resolveAccountFromRaw>[0];
+  const raw = (over: Partial<Raw> & Pick<Raw, "id" | "category" | "growthSource">): Raw => ({
+    name: over.id,
+    subType: "individual",
+    value: 100_000,
+    basis: 100_000,
+    growthRate: null,
+    turnoverPct: null,
+    annualPropertyTax: 0,
+    propertyTaxGrowthRate: 0,
+    rmdEnabled: false,
+    isDefaultChecking: false,
+    modelPortfolioId: null,
+    tickerPortfolioId: null,
+    overridePctOi: null,
+    overridePctLtCg: null,
+    overridePctQdiv: null,
+    overridePctTaxExempt: null,
+    priorYearEndValue: null,
+    insuredPerson: null,
+    titlingType: "jtwros",
+    owners: [],
+    ...over,
+  });
+  // Stored turnover 25% and a 40% ordinary-income override on each.
+  const stored = { turnoverPct: "0.25", overridePctOi: "0.4" };
+  const ROWS = [
+    raw({ id: "tkr", category: "taxable", growthSource: "ticker_portfolio", tickerPortfolioId: "tp-1", ...stored }),
+    raw({ id: "mpa", category: "taxable", growthSource: "model_portfolio", modelPortfolioId: "mp-1", ...stored }),
+    raw({ id: "cst", category: "taxable", growthSource: "custom", growthRate: "0.09", modelPortfolioId: "mp-1", ...stored }),
+    raw({
+      id: "home",
+      category: "real_estate",
+      subType: "primary_residence",
+      growthSource: "custom",
+      growthRate: "0.04",
+      annualPropertyTax: 12_000,
+      propertyTaxGrowthRate: "0.03",
+      propertyTaxGrowthSource: "inflation",
+    }),
+  ];
+
+  /** The base tree and context `loadClientData` builds from those rows. */
+  function base() {
+    const ctx = makeCtx(
+      new Map(
+        ROWS.map((r) => [
+          r.id,
+          {
+            tickerPortfolioId: r.tickerPortfolioId,
+            turnoverPct: r.turnoverPct,
+            overridePctOi: r.overridePctOi,
+            overridePctLtCg: r.overridePctLtCg,
+            overridePctQdiv: r.overridePctQdiv,
+            overridePctTaxExempt: r.overridePctTaxExempt,
+            propertyTaxGrowthSource: r.propertyTaxGrowthSource ?? null,
+          },
+        ]),
+      ),
+    );
+    return { ctx, tree: { ...tree(), accounts: ROWS.map((r) => resolveAccountFromRaw(r, ctx)) } as ClientData };
+  }
+  const run = (targetId: string, payload: Record<string, { from: unknown; to: unknown }>) => {
+    const { ctx, tree: t } = base();
+    const before = account(t, targetId);
+    const after = account(applyScenarioChangesWithRefs(t, [change({ targetId, payload })], {}, [], ctx).effectiveTree, targetId);
+    return { before, after };
+  };
+
+  it("a turnover-only edit of a ticker account keeps its ticker rate and realization", () => {
+    const { before, after } = run("tkr", { turnoverPct: { from: undefined, to: "0.5" } });
+    expect(before.growthRate).toBeCloseTo(0.06); // the control: tp-1, not the 7% default
+    expect(after.growthRate).toBeCloseTo(0.06);
+    expect(after.realization).toEqual({ ...before.realization, turnoverPct: 0.5 });
+  });
+
+  it("a growth-source-only edit keeps the stored turnover and overrides", () => {
+    const { after } = run("cst", { growthSource: { from: "custom", to: "model_portfolio" } });
+    expect(after.growthRate).toBeCloseTo(0.08);
+    expect(after.realization).toMatchObject({ pctOrdinaryIncome: 0.4, turnoverPct: 0.25 });
+  });
+
+  it("a portfolio-only edit keeps the stored turnover and overrides", () => {
+    const { after } = run("mpa", { modelPortfolioId: { from: "mp-1", to: "mp-2" } });
+    expect(after.growthRate).toBeCloseTo(0.06);
+    expect(after.realization).toEqual({
+      pctOrdinaryIncome: 0.4,
+      pctLtCapitalGains: 1,
+      pctQualifiedDividends: 0,
+      pctTaxExempt: 0,
+      turnoverPct: 0.25,
+    });
+  });
+
+  it("a property-tax-rate-only edit keeps an inflation-linked property tax on inflation", () => {
+    const { before, after } = run("home", { propertyTaxGrowthRate: { from: 0.025, to: "0.05" } });
+    expect(before.propertyTaxGrowthRate).toBeCloseTo(0.025);
+    expect(after.propertyTaxGrowthRate).toBeCloseTo(0.025);
+  });
+
+  it("the account form's full key set resolves exactly as it says", () => {
+    const { after } = run("mpa", {
+      modelPortfolioId: { from: "mp-1", to: "mp-2" },
+      growthRate: { from: 0.08, to: null },
+      turnoverPct: { from: undefined, to: "0.1" },
+      overridePctOi: { from: undefined, to: "0.3" },
+    });
+    expect(after.growthRate).toBeCloseTo(0.06);
+    expect(after.realization).toMatchObject({ pctOrdinaryIncome: 0.3, pctLtCapitalGains: 1, turnoverPct: 0.1 });
   });
 });

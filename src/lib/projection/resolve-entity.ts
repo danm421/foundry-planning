@@ -54,6 +54,12 @@ export interface ResolutionContext {
    *  reinvestment's `groupKeys` into `accountIds` (default group keys expand
    *  from the effective accounts' categories instead). */
   accountGroupMembersById?: Map<string, string[]>;
+  /** Per-account RAW growth inputs the engine `Account` does not carry, keyed by
+   *  account id. Populated by `loadClientData` from the raw rows; the scenario
+   *  overlay lays an account edit over them to re-resolve its growth
+   *  (`reResolveEditedAccountGrowth`), so an edit that names only some inputs
+   *  keeps the stored rest. */
+  accountRawGrowthById?: Map<string, AccountRawGrowth>;
 }
 
 type Numericish = string | number | null | undefined;
@@ -129,6 +135,20 @@ type RawAccount = {
   rothRolloverStartYear?: number | null;
   rothRolloverAccountId?: string | null;
 };
+
+/** The raw growth inputs `resolveAccountFromRaw` reads that the engine
+ *  `Account` it returns drops. (It keeps `growthSource` and `modelPortfolioId`
+ *  as view-only passthroughs, and `growthRate` resolved.) */
+export type AccountRawGrowth = Pick<
+  RawAccount,
+  | "tickerPortfolioId"
+  | "turnoverPct"
+  | "overridePctOi"
+  | "overridePctLtCg"
+  | "overridePctQdiv"
+  | "overridePctTaxExempt"
+  | "propertyTaxGrowthSource"
+>;
 
 export function resolveAccountFromRaw(
   raw: RawAccount,

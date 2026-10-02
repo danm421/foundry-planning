@@ -76,10 +76,10 @@ describe("buildScenarioDesiredFields", () => {
   });
 
   // Controller resolution R9. `growthRate: null` is not a rate of zero, it is
-  // the view saying it carries no rate — but the engine cannot tell the
-  // difference. Sending it makes `projection.ts` compute
-  // `currentBalance * null === 0`, so the account's growth is zero for the
-  // ENTIRE projection, silently, and nothing re-resolves an `edit` op.
+  // the view saying it carries no rate. Sent, it records a growth change nobody
+  // made, and the scenario loader's `reResolveEditedAccountGrowth` resolves it
+  // as "no stored rate" — so a custom rate falls to the category default.
+  // (Before that re-resolve, it zeroed the account's growth outright.)
   //
   // These four cases are deliberately paired. The "omits" cases alone are
   // vacuous — a function that dropped `growthRate` unconditionally would pass
@@ -243,6 +243,18 @@ describe("buildScenarioDesiredFields", () => {
     );
   });
 
+  it("an inline value edit of a business with notes sends no `notes` — only the Notes tab writes them", () => {
+    // The engine tree has no `notes`, so an echoed one diffs as
+    // `notes: {from: undefined, to: …}`: a change nobody made, which also
+    // blocks the idempotent revert.
+    const fields = buildScenarioDesiredFields(
+      row({ id: "biz-1", name: "Acme LLC", category: "business", subType: "llc", notes: "Buy-sell signed 2024" }),
+      { value: "750000" },
+    );
+    expect(fields.value).toBe("750000");
+    expect(fields).not.toHaveProperty("notes");
+  });
+
   // The subtlest judgement call in this module: `owner` (singular) is the
   // DERIVED display string (client/spouse/joint) and must be stripped, while
   // `owners` (plural) is the PERSISTED ownership relation and must survive
@@ -297,10 +309,9 @@ describe("owner writes", () => {
 describe("the null rule — growthRate is the documented exception", () => {
   it("strips a null growthRate from the scenario payload", () => {
     // null here means ABSENCE (the rate is derived). Emitting it makes the
-    // diff `growthRate: {from: n, to: null}`, applyEdit writes null onto the
-    // resolved engine account, and projection.ts computes
-    // `currentBalance * null === 0` — the account's growth is zero for the
-    // ENTIRE projection, silently, with nothing to repair it.
+    // diff `growthRate: {from: n, to: null}` — a change nobody made — which
+    // `reResolveEditedAccountGrowth` resolves as "no stored rate", dropping a
+    // custom rate to the category default.
     const out = buildScenarioDesiredFields(row({ growthRate: null }), { value: "1" });
     expect(out).not.toHaveProperty("growthRate");
   });

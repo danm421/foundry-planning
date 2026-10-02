@@ -72,6 +72,10 @@ const NON_WRITABLE_KEYS = new Set<keyof AccountRow>([
   // The stored growth_rate column, read only by Edit Business. Writing it back
   // would diff in as `{from: undefined, to: …}` on every business edit.
   "storedGrowthRate",
+  // The business dialog's Notes tab is the only notes writer. The engine tree
+  // has no `notes`, so an echoed one diffs as `{from: undefined, to: …}` — a
+  // change nobody made, which also blocks the idempotent revert.
+  "notes",
 ]);
 
 export function buildBasePayload(patch: AccountPatch): Record<string, unknown> {
@@ -110,28 +114,26 @@ export function buildScenarioDesiredFields(
   // merge so no caller can reintroduce it.
   if (row.category === "stock_options") delete merged.value;
 
-  // NEVER emit `growthRate: null`. `AccountRow.growthRate` is null for every
-  // account whose rate is DERIVED (model_portfolio, ticker_portfolio,
-  // asset_mix, default, inflation) — null means "this view carries no rate",
-  // an ABSENCE, not a value of zero.
+  // NEVER emit `growthRate: null`. Null here means "this view carries no rate"
+  // — an ABSENCE, not a value.
   //
-  // Emitting it is not cosmetic. The diff becomes
-  // `growthRate: {from: <number>, to: null}`; `coerceEditValue` passes null
-  // through untouched (`typeof null !== "string"`); `applyEdit` writes it onto
-  // the RESOLVED engine account; and `projection.ts` then computes
-  // `currentBalance * null === 0` and hits `if (growth === 0) continue`. The
-  // account's growth is zero for the entire projection, silently. Nothing
-  // repairs it — `resolveAddPayload` gates re-resolution on `opType === "add"`,
-  // so `edit` ops never get it. Proven with a controlled engine probe; see
-  // controller resolution R9.
+  // Emitting it is not cosmetic. The changes writer diffs it against the
+  // RESOLVED rate, so it records `growthRate: {from: <number>, to: null}`, a
+  // growth change nobody made. `applyEdit` lays the null on the resolved
+  // account, and the scenario loader's `reResolveEditedAccountGrowth` then
+  // resolves it as "no stored rate": harmless for a derived source
+  // (model_portfolio, ticker_portfolio, asset_mix, default, inflation), but a
+  // custom rate — or a business / real-estate / life-insurance stored rate —
+  // falls to the category default. (Before that re-resolve existed the null
+  // reached `projection.ts` as-is and zeroed the account's growth for the whole
+  // projection — controller resolution R9.)
   //
-  // Omitting the key leaves `applyEdit` untouching `growthRate`, so the
-  // effective tree keeps its correctly-resolved base number.
+  // Omitting the key leaves the rate as the scenario already has it.
   //
-  // NOTE FOR THE GROWTH-SOURCE EDITOR: this makes a value edit safe, but it
-  // does NOT make a scenario growth-SOURCE switch correct — nothing re-resolves
-  // an edit, so switching to a different portfolio leaves the old resolved
-  // rate. To change the rate in a scenario you must send a real number here.
+  // A growth-SOURCE switch needs no rate here: `reResolveEditedAccountGrowth`
+  // re-resolves every edit of a growth input (source, portfolio, ticker,
+  // rate…), so the new source's rate follows. Only "custom" needs a number,
+  // and that arrives when the advisor commits one.
   if (merged.growthRate == null) delete merged.growthRate;
 
   return merged;

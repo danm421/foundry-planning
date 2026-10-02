@@ -99,6 +99,7 @@ import {
   resolveIncomeFromRaw,
   resolveExpenseFromRaw,
   resolveSavingsRuleFromRaw,
+  type AccountRawGrowth,
   type ResolutionContext,
 } from "./resolve-entity";
 import { type AllocationMap } from "./reinvestment-sold-fraction";
@@ -865,7 +866,20 @@ const loadClientDataCached = cache(
     // pins growthRate to the inflation rate iff `growthSource === "inflation"`.
     const accountGrowthFromInflation = new Set<string>();
     const accountPropertyTaxFromInflation = new Set<string>();
+    // The raw growth inputs the engine `Account` drops, so a scenario edit that
+    // names only some of them re-resolves on the stored rest
+    // (`reResolveEditedAccountGrowth`).
+    const accountRawGrowthById = new Map<string, AccountRawGrowth>();
     for (const account of accountRows) {
+      accountRawGrowthById.set(account.id, {
+        tickerPortfolioId: account.tickerPortfolioId,
+        turnoverPct: account.turnoverPct,
+        overridePctOi: account.overridePctOi,
+        overridePctLtCg: account.overridePctLtCg,
+        overridePctQdiv: account.overridePctQdiv,
+        overridePctTaxExempt: account.overridePctTaxExempt,
+        propertyTaxGrowthSource: account.propertyTaxGrowthSource,
+      });
       const gs = account.growthSource ?? "default";
       if (gs === "inflation") accountGrowthFromInflation.add(account.id);
       if (account.propertyTaxGrowthSource === "inflation") {
@@ -929,6 +943,7 @@ const loadClientDataCached = cache(
       accountGrowthFromInflation,
       accountPropertyTaxFromInflation,
       accountGroupMembersById: customGroupMembersById,
+      accountRawGrowthById,
     };
 
     const mappedAccounts = accountRows.map((a) => {

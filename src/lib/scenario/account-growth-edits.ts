@@ -30,10 +30,16 @@ const ACCOUNT_GROWTH_KEYS = [
 
 /**
  * Re-resolve the growth of every account an ACTIVE edit changed a growth input
- * of, from the account as the scenario has it: the base account (which keeps its
- * raw `growthSource` and `modelPortfolioId`, and the rate the edit was diffed
- * against) with the edit's `to` values on top. Only the resolved growth fields
- * are replaced, so the edit's other fields stand.
+ * of, from the account as the scenario has it, with the edit's `to` values on
+ * top (`applyEdit` has laid them on already):
+ * - the inputs the engine account drops (ticker portfolio, turnover, realization
+ *   overrides, property-tax source) come from the stored row,
+ *   `ResolutionContext.accountRawGrowthById`, so an edit naming only some of
+ *   them (Forge's `propose_changes` sends only what changed) keeps the rest;
+ * - `growthSource` and `modelPortfolioId` are the engine account's raw
+ *   passthroughs, and `growthRate` its resolved rate — the very value the
+ *   changes writer diffed the edit against, so an omitted rate means that one.
+ * Only the resolved growth fields are replaced, so the edit's other fields stand.
  *
  * Active means what `applyScenarioChanges` means, so an edit in a switched-off
  * group changes nothing. An edit of a scenario-added account is skipped:
@@ -66,7 +72,7 @@ export function reResolveEditedAccountGrowth(
 
   return accounts.map((a) => {
     if (!ids.has(a.id)) return a;
-    const resolved = resolveAccountFromRaw(a as never, ctx);
+    const resolved = resolveAccountFromRaw({ ...ctx.accountRawGrowthById?.get(a.id), ...a } as never, ctx);
     return {
       ...a,
       growthRate: resolved.growthRate,
