@@ -25,7 +25,7 @@ import {
   buildAssetTxResolveData,
   buildBaseResolveData,
   buildReinvestmentEnrichmentDeps,
-  hasReinvestmentChange,
+  hasModelPortfolioChange,
 } from "@/lib/scenario/scenario-changes-resolve";
 import type { InvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
@@ -59,11 +59,12 @@ export async function loadScenarioChangesContext(
   // fallbacks.
   let resolve = buildBaseResolveData(clientData);
 
-  // Reinvestment enrichment: surface the NEW model portfolio (name + resolved
-  // growth rate) the switched accounts grow at. Gated on a reinvestment change
+  // Model-portfolio enrichment (reinvestments, and growth changes that switch a
+  // category's portfolio): surface the NEW model portfolio (name + resolved
+  // growth rate) the switched accounts grow at. Gated on such a change
   // so the catalog query only loads when it can matter. Non-fatal: the
   // describer degrades to a blended-rate-only line.
-  if (hasReinvestmentChange(changes)) {
+  if (hasModelPortfolioChange(changes)) {
     try {
       const catalog = await getInvestmentCatalog();
       const portfolioNamesById = Object.fromEntries(

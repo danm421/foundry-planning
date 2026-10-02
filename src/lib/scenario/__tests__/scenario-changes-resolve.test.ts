@@ -6,10 +6,14 @@ import {
   buildAssetTxResolveData,
   buildReinvestmentEnrichmentDeps,
   hasReinvestmentChange,
+  hasModelPortfolioChange,
+  planSettingsPortfolioIds,
   applyReinvestmentEnrichment,
   type ReinvestmentEnrichmentDeps,
 } from "../scenario-changes-resolve";
 import type { Reinvestment } from "@/engine/types";
+import { describeChange } from "@/lib/presentations/pages/scenario-changes/describe";
+import { buildResolveContext } from "@/lib/presentations/pages/scenario-changes/describe/resolve";
 
 /** Minimal ClientData fixture exercising every collection buildBaseResolveData reads. */
 function fixtureTree(overrides: Partial<ClientData> = {}): ClientData {
@@ -304,5 +308,49 @@ describe("applyReinvestmentEnrichment", () => {
     expect(r.accountsById).toBe(base.accountsById);
     expect(r.recipientsById["entity:ent-1"]).toBe("Family Trust");
     expect(base.modelPortfoliosById).toEqual({});
+  });
+});
+
+describe("growth changes that switch a model portfolio", () => {
+  const switchTaxable = change({
+    opType: "edit",
+    targetKind: "plan_settings",
+    targetId: "client-1",
+    payload: {
+      modelPortfolioIdTaxable: { from: "mp-old", to: "mp-new" },
+      defaultGrowthTaxable: { from: 0.06, to: 0.07 },
+    },
+  });
+
+  it("collects both sides of every modelPortfolioId* key, and nothing else", () => {
+    expect([...planSettingsPortfolioIds([switchTaxable])].sort()).toEqual(["mp-new", "mp-old"]);
+    expect(planSettingsPortfolioIds([change({ targetKind: "income" })]).size).toBe(0);
+  });
+
+  it("asks for the portfolio catalog, without a reinvestment", () => {
+    expect(hasModelPortfolioChange([switchTaxable])).toBe(true);
+    expect(hasModelPortfolioChange([change({ targetKind: "income" })])).toBe(false);
+  });
+
+  it("puts the portfolio's name in the resolve data, and the describer prints it", () => {
+    const deps = buildReinvestmentEnrichmentDeps(
+      [switchTaxable],
+      { "mp-new": "Balanced 60/40", "mp-old": "Aggressive", "mp-other": "Unrelated" },
+      [],
+    );
+    expect(deps.modelPortfolioNamesById).toEqual({ "mp-new": "Balanced 60/40", "mp-old": "Aggressive" });
+
+    const resolve = buildResolveContext(applyReinvestmentEnrichment(buildBaseResolveData(fixtureTree()), deps));
+    const row = describeChange(
+      change({
+        opType: "edit",
+        targetKind: "plan_settings",
+        targetId: "client-1",
+        payload: { modelPortfolioIdTaxable: { from: "mp-old", to: "mp-new" } },
+      }),
+      { targetNames: {}, resolve },
+    );
+    expect(row.before).toBe("Aggressive");
+    expect(row.after).toBe("Balanced 60/40");
   });
 });

@@ -14,6 +14,7 @@
 
 import type { ClientData, ProjectionYear, Reinvestment } from "@/engine/types";
 import type { ScenarioChange } from "@/engine/scenario/types";
+import { GROWTH_SETTINGS_KEYS } from "./growth-settings-override";
 import {
   EMPTY_RESOLVE_DATA,
   type ResolveContextData,
@@ -68,6 +69,30 @@ export function buildBaseResolveData(tree: ClientData): ResolveContextData {
  *  from the model-portfolio / base-allocation enrichment). */
 export function hasReinvestmentChange(changes: ScenarioChange[]): boolean {
   return changes.some((c) => c.targetKind === "reinvestment");
+}
+
+const PORTFOLIO_KEYS: readonly string[] = GROWTH_SETTINGS_KEYS.filter((k) => k.startsWith("modelPortfolioId"));
+
+/** The model-portfolio ids a `plan_settings` edit moves between: both sides of
+ *  every `modelPortfolioId*` key (the report prints "from → to"). */
+export function planSettingsPortfolioIds(changes: ScenarioChange[]): Set<string> {
+  const ids = new Set<string>();
+  for (const c of changes) {
+    if (c.targetKind !== "plan_settings" || c.opType !== "edit") continue;
+    const payload = (c.payload ?? {}) as Record<string, { from?: unknown; to?: unknown } | null>;
+    for (const key of PORTFOLIO_KEYS) {
+      for (const side of [payload[key]?.from, payload[key]?.to]) {
+        if (typeof side === "string" && side) ids.add(side);
+      }
+    }
+  }
+  return ids;
+}
+
+/** True when the report will name a model portfolio: a reinvestment, or a
+ *  growth change that switches a category's portfolio. */
+export function hasModelPortfolioChange(changes: ScenarioChange[]): boolean {
+  return hasReinvestmentChange(changes) || planSettingsPortfolioIds(changes).size > 0;
 }
 
 /**
@@ -168,7 +193,8 @@ export function applyReinvestmentEnrichment(
  *  - `reinvestments`     — the effective tree's already-resolved reinvestments,
  *                          which carry the blended `newGrowthRate` per portfolio.
  *
- * Scoped to the portfolios referenced by reinvestment changes so the enrichment
+ * Scoped to the portfolios referenced by reinvestment changes (and the growth
+ * changes' portfolio switches) so the enrichment
  * map stays small. Base-allocation maps are left empty (the describer renders
  * the new-portfolio line without the "before" mix). Never throws.
  */
@@ -194,6 +220,11 @@ export function buildReinvestmentEnrichmentDeps(
     if (name != null) modelPortfolioNamesById[pid] = name;
     const rate = rateByPortfolio.get(pid);
     if (rate != null) modelPortfolioRatesById[pid] = rate;
+  }
+  // A growth change names the portfolios it moves between.
+  for (const pid of planSettingsPortfolioIds(changes)) {
+    const name = portfolioNamesById[pid];
+    if (name != null) modelPortfolioNamesById[pid] = name;
   }
 
   return {

@@ -66,6 +66,16 @@ describe("loadScenarioChangesContext", () => {
     expect(args.getInvestmentCatalog).toHaveBeenCalledTimes(1);
   });
 
+  it("loads the catalog for a growth change that switches a portfolio, and names it", async () => {
+    loadScenarioChanges.mockResolvedValue([
+      { ...CHANGE, opType: "edit", targetKind: "plan_settings", payload: { modelPortfolioIdCash: { from: null, to: "p1" } } },
+    ]);
+    const getInvestmentCatalog = vi.fn(async () => ({ portfolios: [{ id: "p1", name: "Growth" }] }) as never);
+    const sc = await loadScenarioChangesContext({ ...args, getInvestmentCatalog });
+    expect(getInvestmentCatalog).toHaveBeenCalledTimes(1);
+    expect(sc.resolve?.modelPortfoliosById.p1.name).toBe("Growth");
+  });
+
   it("degrades the reinvestment enrichment, never the whole context, when the catalog fails", async () => {
     loadScenarioChanges.mockResolvedValue([REINVEST]);
     const failing = { ...args, getInvestmentCatalog: vi.fn(async () => { throw new Error("catalog down"); }) };
