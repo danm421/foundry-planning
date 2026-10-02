@@ -385,7 +385,7 @@ type FocusTarget =
   | { kind: "gift"; row: Gift }
   // A create opens the empty dialog; a delete runs the page's delete on the row
   // with no dialog at all.
-  | { kind: "create"; of: "entity" | "gift" }
+  | { kind: "create"; of: "gift" }
   | { kind: "delete"; of: "entity" | "gift"; id: string };
 
 /** The row the page's own click would open for `focus`, null when the page
@@ -395,11 +395,13 @@ function findFocusRow(
   rows: { clientId: string; entities: Entity[]; gifts: Gift[]; giftSeries: GiftSeriesLite[] },
 ): FocusTarget | "unsupported" | null {
   const byId = <T extends { id: string }>(list: T[]) => list.find((r) => r.id === focusRowId(focus)) ?? null;
-  // The page adds trusts of any type through the empty EntityDialog, and gifts
-  // through the empty GiftDialog. Members and external beneficiaries stay out
-  // until their editors write the scenario.
+  // Gifts add through the empty GiftDialog. A trust add is unsupported:
+  // EntityDialog always renders AddTrustForm, whose `saveAsyncImpl` refuses
+  // every create while a scenario is active. Members and external beneficiaries
+  // stay out until their editors write the scenario.
   if (focus.intent === "create") {
-    return focus.kind === "entity" || focus.kind === "gift" ? { kind: "create", of: focus.kind } : null;
+    if (focus.kind === "entity") return "unsupported";
+    return focus.kind === "gift" ? { kind: "create", of: "gift" } : null;
   }
   if (focus.intent === "delete") {
     switch (focus.kind) {
@@ -510,9 +512,7 @@ export default function FamilyView({
   const [membersEdit, setMembersEdit] = useState(false);
   const [claimedAsDependentError, setClaimedAsDependentError] = useState<string | null>(null);
 
-  const [entityDialogOpen, setEntityDialogOpen] = useState(
-    () => focusTarget?.kind === "entity" || (focusTarget?.kind === "create" && focusTarget.of === "entity"),
-  );
+  const [entityDialogOpen, setEntityDialogOpen] = useState(() => focusTarget?.kind === "entity");
   const [editingEntity, setEditingEntity] = useState<Entity | undefined>(() =>
     focusTarget?.kind === "entity" ? focusTarget.row : undefined,
   );

@@ -28,6 +28,10 @@ describe("plan detail catalog", () => {
     }
   });
 
+  it("trust / entity has no Add: its create form refuses to save inside a scenario", () => {
+    expect(detailType("trust")).toMatchObject({ add: false, edit: true, delete: true });
+  });
+
   it("routes a create with its variant", () => {
     expect(detailEditorTarget("account", { intent: "create", variant: "cash" })).toEqual({
       surface: "details",

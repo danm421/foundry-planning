@@ -259,7 +259,7 @@ type FocusWill = { grantor: WillGrantor; deleteWillId?: string };
 /** The section the page shows for `focus`, or null when the page shows none.
  *  The page renders one section per grantor — the co-client's only when there
  *  is one — holding that grantor's FIRST will. A create opens the grantor's
- *  section (empty, or holding the will it already has); its save does the add. */
+ *  section, empty; its save does the add. */
 function findFocusWill(
   focus: EditorFocus,
   wills: WillsPanelWill[],
@@ -269,7 +269,9 @@ function findFocusWill(
   if (focus.intent === "create") {
     const grantor = focus.variant;
     if (grantor !== "client" && grantor !== "spouse") return null;
-    return grantor === "spouse" && !primary.spouseName ? null : { grantor };
+    if (grantor === "spouse" && !primary.spouseName) return null;
+    // A grantor with a will already has it on the page; its save would edit, not add.
+    return wills.some((w) => w.grantor === grantor) ? null : { grantor };
   }
   const will = wills.find((w) => w.id === focus.id);
   if (!will) return null;
@@ -564,7 +566,9 @@ export default function WillsPanel(props: WillsPanelProps) {
                       disabled={saving}
                       onClick={async () => {
                         if (!confirm("Delete this will and all its bequests?")) return;
-                        await deleteWill(g, will.id);
+                        // Focus mode has no empty section to fall back to: a
+                        // delete that landed hands control back.
+                        if ((await deleteWill(g, will.id)) && focus) setFocusOpen(false);
                       }}
                       className="rounded-md border border-red-800 bg-red-900/20 px-3 py-1.5 text-sm text-red-300 hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-50"
                     >

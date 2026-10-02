@@ -411,17 +411,10 @@ describe("FamilyView focus mode — create and delete intents", () => {
     return { ...utils, onFocusClose };
   }
 
-  it("create entity opens the empty Add Trust dialog alone, and cancel closes", () => {
-    const { onFocusClose } = renderFocused({ intent: "create", kind: "entity" });
-
-    expect(screen.getByRole("dialog", { name: "Add Trust" })).toBeTruthy();
-    expect(inputValue("trust-name")).not.toBe(TRUST.name);
-    expectNoPageChrome();
-    expect(onFocusClose).not.toHaveBeenCalled();
-
-    fireEvent.click(dialog("Add Trust").getByRole("button", { name: "Cancel" }));
-    expect(onFocusClose).toHaveBeenCalledTimes(1);
-    expect(onFocusClose).toHaveBeenCalledWith();
+  // EntityDialog always renders AddTrustForm, whose save refuses every create
+  // inside a scenario, so the Solver never offers it; this is the safety net.
+  it("create entity → unsupported, nothing rendered", async () => {
+    await expectNothingOpened(renderFocused({ intent: "create", kind: "entity" }), "unsupported");
   });
 
   it("create gift opens the empty Add a gift dialog alone, and cancel closes", () => {
@@ -434,6 +427,22 @@ describe("FamilyView focus mode — create and delete intents", () => {
     fireEvent.click(dialog("Add a gift").getByRole("button", { name: "Cancel" }));
     expect(onFocusClose).toHaveBeenCalledTimes(1);
     expect(onFocusClose).toHaveBeenCalledWith();
+  });
+
+  it("create gift saves a scenario gift add, then closes with no outcome", async () => {
+    const { onFocusClose } = renderFocused({ intent: "create", kind: "gift" });
+    const gift = dialog("Add a gift");
+
+    fireEvent.change(gift.getByTestId("recipient"), { target: { value: "family_member:fm-child" } });
+    fireEvent.change(gift.getByLabelText(/amount/i, { selector: "input" }), { target: { value: "10000" } });
+    fireEvent.click(gift.getByRole("button", { name: "Add gift" }));
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith();
+    expect(scenarioChangeBodies()).toEqual([
+      expect.objectContaining({ op: "add", targetKind: "gift", entity: expect.objectContaining({ amount: 10000 }) }),
+    ]);
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
   });
 
   it.each(["family_member", "external_beneficiary", "client"] as const)(
@@ -476,6 +485,7 @@ describe("FamilyView focus mode — create and delete intents", () => {
     expect(scenarioChangeBodies()).toEqual([
       expect.objectContaining({ op: "remove", targetKind: "gift", targetId: "gift-1" }),
     ]);
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
     expect(container).toBeEmptyDOMElement();
     confirmSpy.mockRestore();
   });

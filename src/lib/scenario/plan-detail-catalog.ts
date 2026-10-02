@@ -109,7 +109,9 @@ export const DETAIL_TYPES: readonly DetailType[] = [
   }),
   row("disability_policy", "Insurance", "Disability policy", "insurance", "disability_policy"),
 
-  row("trust", "Estate", "Trust / entity", "family", "entity"),
+  // No Add: EntityDialog always renders AddTrustForm, whose `saveAsyncImpl`
+  // refuses every create while a scenario is active.
+  row("trust", "Estate", "Trust / entity", "family", "entity", { add: false, edit: true, delete: true }),
   row("gift", "Estate", "Gift (one-time)", "family", "gift"),
   // The gift Add opens GiftDialog, which picks one-time vs recurring inside.
   row("gift_series", "Estate", "Recurring gift", "family", "gift", { add: false, edit: true, delete: true }),

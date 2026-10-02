@@ -350,7 +350,55 @@ describe("WillsPanel focus mode — create and delete intents", () => {
     expect(onFocusClose).toHaveBeenCalledWith();
   });
 
-  it("create for the co-client with no co-client on file, or with no variant → unavailable", async () => {
+  it("create saves the new will as a scenario add, and the section stays open until Done", async () => {
+    const { onFocusClose } = renderFocused({ intent: "create", kind: "will", variant: "client" }, { props: NO_WILLS });
+    fireEvent.click(within(editWillDialog()).getByRole("button", { name: "+ Add bequest" }));
+    const bequest = within(screen.getByRole("dialog", { name: "New bequest" }));
+    fireEvent.change(bequest.getByLabelText("Asset or debt"), { target: { value: "asset:acct-1" } });
+
+    fireEvent.click(bequest.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(scenarioChangeBodies()).toHaveLength(1));
+    expect(scenarioChangeBodies()[0]).toMatchObject({
+      op: "add",
+      targetKind: "will",
+      entity: expect.objectContaining({ grantor: "client" }),
+    });
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
+    expect(onFocusClose).not.toHaveBeenCalled();
+  });
+
+  it("create on a grantor who already has a will → unavailable (its save would edit, not add)", async () => {
+    await expectUnavailable(renderFocused({ intent: "create", kind: "will", variant: "client" }));
+  });
+
+  it("Delete will inside the focused dialog closes it once the delete lands", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { onFocusClose } = renderFocused({ kind: "will", id: "will-client" });
+
+    fireEvent.click(within(editWillDialog()).getByRole("button", { name: "Delete will" }));
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith();
+    expect(scenarioChangeBodies()).toEqual([
+      expect.objectContaining({ op: "remove", targetKind: "will", targetId: "will-client" }),
+    ]);
+    confirmSpy.mockRestore();
+  });
+
+  it("Delete will that fails keeps the dialog open and shows the error", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    fetchMock.mockImplementation(async () => ({ ok: false, status: 500, json: async () => ({}) }));
+    const { onFocusClose } = renderFocused({ kind: "will", id: "will-client" });
+
+    fireEvent.click(within(editWillDialog()).getByRole("button", { name: "Delete will" }));
+
+    await waitFor(() => expect(within(editWillDialog()).getByText(/HTTP 500/)).toBeTruthy());
+    expect(onFocusClose).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it("create for the co-client with no co-client on file → unavailable", async () => {
     const noSpouse: WillsPanelProps = { ...NO_WILLS, primary: { ...PROPS.primary, spouseName: null } };
     await expectUnavailable(renderFocused({ intent: "create", kind: "will", variant: "spouse" }, { props: noSpouse }));
   });

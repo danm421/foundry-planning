@@ -404,6 +404,47 @@ describe("TechniquesView focus mode — create and delete intents", () => {
     expect(onFocusClose).toHaveBeenCalledWith();
   });
 
+  describe("saving a create writes a scenario add", () => {
+    beforeEach(() => submit.mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: "new" }) }));
+
+    async function expectAddedAndClosed(onFocusClose: ReturnType<typeof vi.fn>, targetKind: string) {
+      await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+      expect(onFocusClose).toHaveBeenCalledWith();
+      expect(submit).toHaveBeenCalledTimes(1);
+      expect(submit).toHaveBeenCalledWith(
+        expect.objectContaining({ op: "add", targetKind }),
+        expect.anything(),
+      );
+    }
+
+    it("relocation", async () => {
+      const { onFocusClose } = renderFocused({ intent: "create", kind: "relocation" });
+      fireEvent.submit(document.getElementById("relocation-form") as HTMLFormElement);
+      await expectAddedAndClosed(onFocusClose, "relocation");
+    });
+
+    it("roth conversion", async () => {
+      const { onFocusClose } = renderFocused({ intent: "create", kind: "roth_conversion" });
+      fireEvent.change(screen.getByPlaceholderText("e.g., Roth Conversion 1"), { target: { value: "Conv A" } });
+      fireEvent.change(screen.getByLabelText(/Fixed Amount/i), { target: { value: "10000" } });
+      fireEvent.click(screen.getByRole("button", { name: /\+ Add/i }));
+      fireEvent.click(screen.getByRole("button", { name: "Add Conversion" }));
+      await expectAddedAndClosed(onFocusClose, "roth_conversion");
+    });
+
+    it("transfer", async () => {
+      const { onFocusClose } = renderFocused({ intent: "create", kind: "transfer" });
+      fireEvent.submit(screen.getByRole("heading", { name: "Add Transfer" }).closest("form") as HTMLFormElement);
+      await expectAddedAndClosed(onFocusClose, "transfer");
+    });
+
+    it("asset transaction", async () => {
+      const { onFocusClose } = renderFocused({ intent: "create", kind: "asset_transaction" });
+      fireEvent.submit(document.getElementById("asset-transaction-form") as HTMLFormElement);
+      await expectAddedAndClosed(onFocusClose, "asset_transaction");
+    });
+  });
+
   // Its form backfills from a base-only GET until the reinvestment task lands.
   it("create reinvestment → unsupported, nothing rendered", async () => {
     const utils = renderFocused({ intent: "create", kind: "reinvestment" });
