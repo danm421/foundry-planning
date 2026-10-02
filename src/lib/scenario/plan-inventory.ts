@@ -81,8 +81,10 @@ export function buildPlanInventory(
     if (!e?.entityType || !["llc", "s_corp", "c_corp", "partnership", "other"].includes(e.entityType)) {
       return false;
     }
-    if (e.owners == null) return true;
-    return e.owners.reduce((sum, o) => sum + (o.percent ?? 0), 0) >= 0.9999;
+    // The view's entities keep family-member owner rows only; none left = undefined.
+    const family = e.owners?.filter((o) => o.kind === "family_member");
+    if (!family?.length) return true;
+    return family.reduce((sum, o) => sum + (o.percent ?? 0), 0) >= 0.9999;
   };
   const accountInEstate = (a: ClientData["accounts"][number]) =>
     a.category !== "education_savings" &&

@@ -178,6 +178,30 @@ describe("buildPlanInventory", () => {
     expect(ids("liability").sort()).toEqual(["l-ok", "l1"]);
   });
 
+  it("treats a business entity owned 60% by family and 40% by a trust as out of estate", () => {
+    const t = {
+      ...tree,
+      entities: [
+        { id: "e-mix", name: "Mixed LLC", entityType: "llc", includeInPortfolio: false, isGrantor: false,
+          owners: [
+            { kind: "family_member", familyMemberId: "f-c", percent: 0.6 },
+            { kind: "entity", entityId: "t1", percent: 0.4 },
+          ] },
+      ],
+      accounts: [
+        { id: "m-biz", name: "Mixed", category: "business", owners: [{ kind: "entity", entityId: "e-mix", percent: 1 }] },
+        { id: "m-sub", name: "Mixed sub", category: "real_estate", parentAccountId: "m-biz", owners: [] },
+      ],
+      liabilities: [],
+    } as unknown as ClientData;
+    // m-biz is not in estate (family share < 100%), so it is not a listed business:
+    // its in-estate sub-account is refused by the view.
+    expect(buildPlanInventory(t, [], "c").map((i) => i.id)).not.toContain("m-sub");
+    // With only the family owner row the entity is fully family-owned and the sub is listed.
+    const full = { ...t, entities: [{ ...t.entities![0], owners: [{ kind: "family_member", familyMemberId: "f-c", percent: 1 }] }] } as unknown as ClientData;
+    expect(buildPlanInventory(full, [], "c").map((i) => i.id)).toContain("m-sub");
+  });
+
   it("marks retirement living expenses for the living-expense levers", () => {
     expect(byType("expense").find((i) => i.id === "x-ret")?.draftRef).toEqual({ livingExpense: true });
     expect(byType("expense").find((i) => i.id === "x-trip")?.draftRef).toBeUndefined();

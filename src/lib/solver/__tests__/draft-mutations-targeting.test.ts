@@ -150,6 +150,34 @@ describe("draftMutationsTargeting", () => {
     expect(draftMutationsTargeting(ms, { kind: "note_receivable", id: "n1" })).toEqual(ms.slice(0, 2));
   });
 
+  it("an account target pulls in the whole sale to trust", () => {
+    const ms: SolverMutation[] = [
+      { kind: "account-upsert", id: "a1", value: null },
+      { kind: "note-receivable-upsert", id: "n1", value: null, sourceAccountId: "a1" },
+      { kind: "account-upsert", id: "a2", value: null },
+    ];
+    expect(draftMutationsTargeting(ms, { kind: "account", id: "a1" })).toEqual(ms.slice(0, 2));
+  });
+
+  it("an account target pulls in the whole trust dissolve, anchor included", () => {
+    const ms: SolverMutation[] = [
+      { kind: "entity-upsert", id: "t1", value: null },
+      { kind: "account-upsert", id: "a1", value: null, removedRefId: "t1" },
+      { kind: "account-upsert", id: "a3", value: null, removedRefId: "t1" },
+      { kind: "income-upsert", id: "i1", value: null, removedRefId: "t1" },
+      { kind: "account-upsert", id: "a2", value: null },
+    ];
+    expect(draftMutationsTargeting(ms, { kind: "account", id: "a1" })).toEqual(ms.slice(0, 4));
+  });
+
+  it("an account target pulls in a whole charity removal", () => {
+    const ms: SolverMutation[] = [
+      { kind: "external-beneficiary-upsert", id: "b1", value: null },
+      { kind: "account-upsert", id: "a1", value: null, removedRefId: "b1" },
+    ];
+    expect(draftMutationsTargeting(ms, { kind: "account", id: "a1" })).toEqual(ms);
+  });
+
   it("matches nothing for a kind with no solver mutation", () => {
     const ms: SolverMutation[] = [{ kind: "income-upsert", id: "x", value: null }];
     expect(draftMutationsTargeting(ms, { kind: "transfer", id: "x" })).toEqual([]);

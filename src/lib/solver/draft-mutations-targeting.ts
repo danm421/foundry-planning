@@ -42,13 +42,34 @@ export function draftMutationsTargeting(
   target: DraftTarget,
 ): SolverMutation[] {
   const hit = new Set(mutations.filter((m) => matches(m, target)));
-  // A declared pair stands or falls together: a note's sale also retitled its
-  // source account, and `partitionBaseSavableMutations` holds one half back
-  // only while the other is still present.
-  for (const m of [...hit]) {
-    if (m.kind !== "note-receivable-upsert" || !m.sourceAccountId) continue;
-    for (const o of mutations) {
-      if (o.kind === "account-upsert" && o.id === m.sourceAccountId) hit.add(o);
+  // A declared pair stands or falls together, in both directions: superseding
+  // one member of a sale or dissolve while a sibling survives would double-count
+  // the asset, or delete a trust whose accounts stay titled to it —
+  // `partitionBaseSavableMutations` holds one half back only while the other is
+  // still present. Iterate to a fixed point.
+  let size = -1;
+  while (hit.size !== size) {
+    size = hit.size;
+    for (const m of [...hit]) {
+      const refId = "removedRefId" in m ? m.removedRefId : undefined;
+      for (const o of mutations) {
+        if (refId) {
+          if ("removedRefId" in o && o.removedRefId === refId) hit.add(o);
+          if (
+            (o.kind === "entity-upsert" || o.kind === "external-beneficiary-upsert") &&
+            o.id === refId &&
+            o.value === null
+          ) {
+            hit.add(o);
+          }
+        }
+        if (m.kind === "note-receivable-upsert" && o.kind === "account-upsert" && o.id === m.sourceAccountId) {
+          hit.add(o);
+        }
+        if (m.kind === "account-upsert" && o.kind === "note-receivable-upsert" && o.sourceAccountId === m.id) {
+          hit.add(o);
+        }
+      }
     }
   }
   return mutations.filter((m) => hit.has(m));
@@ -66,8 +87,8 @@ function matches(m: SolverMutation, target: DraftTarget): boolean {
 
   if (id !== null && m.kind === UPSERT_KINDS[kind] && "id" in m && m.id === id) return true;
 
-  // A trust dissolve / charity removal tags every companion mutation with the
-  // removed row's id.
+  // A trust dissolve / charity removal tags its account, income and expense
+  // upserts with the removed row's id (`removedRefId`).
   if ((kind === "entity" || kind === "external_beneficiary") && id !== null) {
     if ("removedRefId" in m && m.removedRefId === id) return true;
   }
