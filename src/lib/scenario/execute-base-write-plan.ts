@@ -12,6 +12,12 @@
 import { and, eq, getTableColumns } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import { clients, planSettings } from "@/db/schema";
+import {
+  assertEntitiesInClient,
+  assertExternalBeneficiariesInClient,
+  assertFamilyMembersInClient,
+  type FkCheck,
+} from "@/lib/db-scoping";
 import type { BaseWritePlan } from "./promote-to-base-types";
 import { PROMOTE_TABLE_REGISTRY, type PromoteTx } from "./promote-table-registry";
 import { coerceForTable } from "./promote-coerce";
@@ -190,9 +196,12 @@ export async function executeBaseWritePlan(
     const entry = PROMOTE_TABLE_REGISTRY[u.kind];
     if (!entry) throw new Error(`promote: no table for kind ${u.kind}`);
     const cols = getTableColumns(entry.table) as Cols;
+    // Same reshaping the insert path does, on the edit's partial `set`. Before
+    // remap and coercion for the same reason: a key only becomes a column here.
+    const translated = entry.translateSet ? entry.translateSet(u.set) : u.set;
     const set: Record<string, unknown> = coerceForTable(
       entry.table,
-      remapRefs(u.set, idRemap),
+      remapRefs(translated, idRemap),
     );
     if ("updatedAt" in cols) set.updatedAt = new Date();
     const matched = await tx
@@ -317,4 +326,75 @@ function remapRefs(
     if (typeof v === "string" && idRemap.has(v)) out[col] = idRemap.get(v);
   }
   return out;
+}
+
+/** The family-member / external-beneficiary / entity ids a plan's child rows
+ *  will reference. */
+export interface ClientRefs {
+  familyMemberIds: string[];
+  externalBeneficiaryIds: string[];
+  entityIds: string[];
+}
+
+/**
+ * PURE. Every family member, external beneficiary and entity named by an
+ * `owners` or `beneficiaries` array in the plan's inserts and updates. Those
+ * land in `account_owners`, `liability_owners` and `beneficiary_designations`,
+ * whose foreign keys are GLOBAL, and the scenario changes route validates
+ * nothing — so without a check a crafted id could attach another firm's person
+ * or trust to this client's account.
+ *
+ * Ids that a same-batch insert of the matching kind satisfies are left out: they
+ * are synthetic, only exist once the transaction has inserted them, and a
+ * `db`-scoped read outside that transaction could never find them.
+ */
+export function collectClientRefs(plan: BaseWritePlan): ClientRefs {
+  const inBatch = (kind: string) =>
+    new Set(plan.inserts.filter((i) => i.kind === kind).map((i) => i.targetId));
+  const skip = {
+    familyMemberIds: inBatch("family_member"),
+    externalBeneficiaryIds: inBatch("external_beneficiary"),
+    entityIds: inBatch("entity"),
+  };
+  const found = {
+    familyMemberIds: new Set<string>(),
+    externalBeneficiaryIds: new Set<string>(),
+    entityIds: new Set<string>(),
+  };
+  const add = (bucket: keyof ClientRefs, id: unknown) => {
+    if (typeof id === "string" && id.length > 0 && !skip[bucket].has(id)) found[bucket].add(id);
+  };
+  const walk = (payload: Record<string, unknown>) => {
+    for (const o of (payload.owners as Record<string, unknown>[] | undefined) ?? []) {
+      add("familyMemberIds", o.familyMemberId);
+      add("externalBeneficiaryIds", o.externalBeneficiaryId);
+      add("entityIds", o.entityId);
+    }
+    for (const b of (payload.beneficiaries as Record<string, unknown>[] | undefined) ?? []) {
+      add("familyMemberIds", b.familyMemberId);
+      add("externalBeneficiaryIds", b.externalBeneficiaryId);
+      add("entityIds", b.entityIdRef);
+    }
+  };
+  for (const ins of plan.inserts) walk(ins.raw);
+  for (const u of plan.updates) walk(u.set);
+  return {
+    familyMemberIds: [...found.familyMemberIds],
+    externalBeneficiaryIds: [...found.externalBeneficiaryIds],
+    entityIds: [...found.entityIds],
+  };
+}
+
+/** The tenant guard: one scoped read per table (skipped when its list is
+ *  empty). Run it BEFORE the promote transaction — see `collectClientRefs`. */
+export async function assertRefsInClient(
+  clientId: string,
+  refs: ClientRefs,
+): Promise<FkCheck> {
+  const checks = await Promise.all([
+    assertFamilyMembersInClient(clientId, refs.familyMemberIds),
+    assertExternalBeneficiariesInClient(clientId, refs.externalBeneficiaryIds),
+    assertEntitiesInClient(clientId, refs.entityIds),
+  ]);
+  return checks.find((c) => !c.ok) ?? { ok: true };
 }

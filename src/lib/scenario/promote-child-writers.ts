@@ -8,9 +8,13 @@
 // Field mapping follows the same patterns established in:
 //   - save-to-base/route.ts  (account owners)
 //   - create-with-clone.ts   (savings/transfer/roth children)
+//   - accounts/[accountId]/beneficiaries/route.ts  (beneficiary designations)
 import { and, eq } from "drizzle-orm";
 import {
   accountOwners,
+  beneficiaryDesignations,
+  lifeInsurancePolicies,
+  lifeInsuranceCashValueSchedule,
   liabilityOwners,
   extraPayments,
   incomeScheduleOverrides,
@@ -34,26 +38,183 @@ import { isEstateFlowGiftDraft } from "./apply-gift-overlays";
 
 // ── Account children ───────────────────────────────────────────────────────
 
-/** Inserts accountOwners rows from raw.owners. Each owner carries a `kind`
- *  discriminant plus the relevant FK (`familyMemberId` / `entityId` /
- *  `externalBeneficiaryId`). Mirrors the pattern in save-to-base/route.ts. */
+type Row = Record<string, unknown>;
+
+/** A same-batch synthetic id → the uuid the DB minted for it; any other id
+ *  (a base-plan row) passes through. */
+const remapId = (id: unknown, ctx: ChildWriterCtx) =>
+  typeof id === "string" ? (ctx.idRemap.get(id) ?? id) : null;
+
+/** Display-only policy keys. The engine `LifeInsurancePolicy` lacks them, so a
+ *  scenario carries them at the top level of the account payload; the base row
+ *  stores them on `life_insurance_policies`. Only the keys present are returned,
+ *  so an edit that did not change them leaves the stored values alone. */
+const POLICY_DISPLAY_KEYS = ["carrier", "policyNumberLast4"] as const;
+function policyDisplayColumns(raw: Row): Row {
+  const out: Row = {};
+  for (const k of POLICY_DISPLAY_KEYS) if (k in raw) out[k] = raw[k];
+  return out;
+}
+
+/** Writes an account add's children: owners, the life-insurance policy with its
+ *  cash-value schedule, and beneficiary designations. Every family-member /
+ *  entity / external-beneficiary ref goes through `ctx.idRemap`, because a
+ *  scenario can add the trust or relative in the same promote. Those foreign
+ *  keys are global, so promote-to-base tenant-checks every ref NOT satisfied in
+ *  the batch before the transaction opens (`collectClientRefs`). */
 export async function writeAccountChildren(
   tx: PromoteTx,
   parentId: string,
-  raw: Record<string, unknown>,
+  raw: Row,
+  ctx: ChildWriterCtx,
 ): Promise<void> {
-  const owners = (raw.owners as Array<Record<string, unknown>> | undefined) ?? [];
-  for (const o of owners) {
-    const values = coerceForTable(accountOwners, {
+  await insertAccountOwnerRows(tx, parentId, raw.owners, ctx);
+  if (raw.lifeInsurance) {
+    const li = raw.lifeInsurance as Row;
+    const policy = coerceForTable(lifeInsurancePolicies, {
+      ...li,
+      ...policyDisplayColumns(raw),
       accountId: parentId,
-      familyMemberId: o.kind === "family_member" ? (o.familyMemberId ?? null) : null,
-      entityId: o.kind === "entity" ? (o.entityId ?? null) : null,
+    });
+    await tx.insert(lifeInsurancePolicies).values(policy as never);
+    await insertCashValueScheduleRows(tx, parentId, li.cashValueSchedule);
+  }
+  await insertBeneficiaryRows(tx, parentId, raw.beneficiaries, ctx);
+}
+
+/**
+ * Rewrites an account's children after an account EDIT. Without it
+ * `coerceForTable` filters `owners` / `lifeInsurance` / `beneficiaries` out of
+ * the edit's `set` and they vanish at promote.
+ *
+ * Each key is independent: absent means "leave the base rows alone", present
+ * means delete-then-reinsert, as `updateLiabilityChildren` does. The policy row
+ * itself is UPSERTED rather than replaced, because its display columns are not
+ * part of `lifeInsurance` and an edit that did not change them must keep them.
+ *
+ * SCOPING: the executor runs this only after the scoped account UPDATE matched,
+ * so `parentId` is this client's account. Beneficiary designations carry their
+ * own `clientId`, and the delete pins it too.
+ */
+export async function updateAccountChildren(
+  tx: PromoteTx,
+  parentId: string,
+  set: Row,
+  ctx: ChildWriterCtx,
+): Promise<void> {
+  if ("owners" in set) {
+    await tx.delete(accountOwners).where(eq(accountOwners.accountId, parentId));
+    await insertAccountOwnerRows(tx, parentId, set.owners, ctx);
+  }
+
+  const display = policyDisplayColumns(set);
+  if ("lifeInsurance" in set) {
+    const li = set.lifeInsurance as Row | null;
+    if (!li) {
+      // Cascades to the cash-value schedule.
+      await tx.delete(lifeInsurancePolicies).where(eq(lifeInsurancePolicies.accountId, parentId));
+    } else {
+      const columns = coerceForTable(lifeInsurancePolicies, { ...li, ...display });
+      delete columns.accountId;
+      await tx
+        .insert(lifeInsurancePolicies)
+        .values({ ...columns, accountId: parentId } as never)
+        .onConflictDoUpdate({
+          target: lifeInsurancePolicies.accountId,
+          set: { ...columns, updatedAt: new Date() } as never,
+        });
+      await tx
+        .delete(lifeInsuranceCashValueSchedule)
+        .where(eq(lifeInsuranceCashValueSchedule.policyId, parentId));
+      await insertCashValueScheduleRows(tx, parentId, li.cashValueSchedule);
+    }
+  } else if (Object.keys(display).length > 0) {
+    await tx
+      .update(lifeInsurancePolicies)
+      .set({ ...display, updatedAt: new Date() } as never)
+      .where(eq(lifeInsurancePolicies.accountId, parentId));
+  }
+
+  if ("beneficiaries" in set) {
+    await tx
+      .delete(beneficiaryDesignations)
+      .where(
+        and(
+          eq(beneficiaryDesignations.clientId, ctx.clientId),
+          eq(beneficiaryDesignations.targetKind, "account"),
+          eq(beneficiaryDesignations.accountId, parentId),
+        ),
+      );
+    await insertBeneficiaryRows(tx, parentId, set.beneficiaries, ctx);
+  }
+}
+
+/** Each owner carries a `kind` discriminant plus the relevant FK. Mirrors
+ *  save-to-base/route.ts. */
+async function insertAccountOwnerRows(
+  tx: PromoteTx,
+  accountId: string,
+  raw: unknown,
+  ctx: ChildWriterCtx,
+): Promise<void> {
+  for (const o of (raw as Row[] | undefined) ?? []) {
+    const values = coerceForTable(accountOwners, {
+      accountId,
+      familyMemberId: o.kind === "family_member" ? remapId(o.familyMemberId, ctx) : null,
+      entityId: o.kind === "entity" ? remapId(o.entityId, ctx) : null,
       externalBeneficiaryId:
-        o.kind === "external_beneficiary" ? (o.externalBeneficiaryId ?? null) : null,
+        o.kind === "external_beneficiary" ? remapId(o.externalBeneficiaryId, ctx) : null,
       percent: o.percent,
     });
     await tx.insert(accountOwners).values(values as never);
   }
+}
+
+/** One batched insert: a schedule can run to dozens of years. Engine rows omit
+ *  a column the policy does not schedule; it lands NULL. */
+async function insertCashValueScheduleRows(
+  tx: PromoteTx,
+  policyId: string,
+  raw: unknown,
+): Promise<void> {
+  const rows = ((raw as Row[] | undefined) ?? []).map((r) =>
+    coerceForTable(lifeInsuranceCashValueSchedule, {
+      policyId,
+      year: r.year,
+      cashValue: r.cashValue,
+      premiumAmount: r.premiumAmount,
+      income: r.income,
+      deathBenefit: r.deathBenefit,
+    }),
+  );
+  if (rows.length > 0) await tx.insert(lifeInsuranceCashValueSchedule).values(rows as never);
+}
+
+/** Engine `BeneficiaryRef`s → designation rows, as the account beneficiaries
+ *  route writes them. The scenario's designation `id` is not carried — the DB
+ *  mints one. */
+async function insertBeneficiaryRows(
+  tx: PromoteTx,
+  accountId: string,
+  raw: unknown,
+  ctx: ChildWriterCtx,
+): Promise<void> {
+  const rows = ((raw as Row[] | undefined) ?? []).map((b, idx) =>
+    coerceForTable(beneficiaryDesignations, {
+      clientId: ctx.clientId,
+      targetKind: "account",
+      accountId,
+      entityId: null,
+      tier: b.tier,
+      familyMemberId: remapId(b.familyMemberId, ctx),
+      externalBeneficiaryId: remapId(b.externalBeneficiaryId, ctx),
+      entityIdRef: remapId(b.entityIdRef, ctx),
+      householdRole: b.householdRole ?? null,
+      percentage: b.percentage,
+      sortOrder: b.sortOrder ?? idx,
+    }),
+  );
+  if (rows.length > 0) await tx.insert(beneficiaryDesignations).values(rows as never);
 }
 
 // ── Liability children ─────────────────────────────────────────────────────

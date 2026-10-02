@@ -13,13 +13,22 @@ describe("PROMOTE_TABLE_REGISTRY", () => {
   // to a silent `updatedAt` no-op: promoting a trust dissolve would leave the
   // base will still paying to the trust the same promote deleted, and
   // `will_bequest_recipients.recipientId` carries no FK to clean the orphan up.
-  it.each(["will", "liability", "expense", "savings_rule"] as const)(
+  it.each(["will", "liability", "expense", "savings_rule", "account"] as const)(
     "registers a childUpdater for %s, which has a childWriter",
     (kind) => {
       expect(PROMOTE_TABLE_REGISTRY[kind]?.childWriter).toBeTypeOf("function");
       expect(PROMOTE_TABLE_REGISTRY[kind]?.childUpdater).toBeTypeOf("function");
     },
   );
+
+  // A disability payload is engine-shaped (`shortTerm` / `longTerm` objects),
+  // while the row is flat has*/std*/ltd* columns. Without a translator on BOTH
+  // paths `coerceForTable` drops the objects: an add lands as DB defaults and an
+  // edit degrades to an `updatedAt` no-op.
+  it("translates disability_policy payloads on insert and on update", () => {
+    expect(PROMOTE_TABLE_REGISTRY.disability_policy?.translate).toBeTypeOf("function");
+    expect(PROMOTE_TABLE_REGISTRY.disability_policy?.translateSet).toBeTypeOf("function");
+  });
 
   it("covers every overlayable array kind", () => {
     for (const [kind, field] of Object.entries(TARGET_KIND_TO_FIELD)) {

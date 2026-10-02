@@ -15,8 +15,11 @@ import {
   liabilityOwners,
   willBequests,
   willBequestRecipients,
+  disabilityPolicies,
+  beneficiaryDesignations,
+  lifeInsurancePolicies,
 } from "@/db/schema";
-import { executeBaseWritePlan } from "../execute-base-write-plan";
+import { executeBaseWritePlan, collectClientRefs } from "../execute-base-write-plan";
 import type { BaseWritePlan } from "../promote-to-base-types";
 
 // Minimal fake tx capturing operations. The real drizzle tables are passed
@@ -557,5 +560,196 @@ describe("executeBaseWritePlan", () => {
     });
     expect(ops.find((o) => o.op === "delete")!.table).toBe(accounts);
     expect(counts["account.remove"]).toBe(1);
+  });
+
+  // UPDATE-time translation. A disability edit carries engine keys
+  // (`shortTerm` / `longTerm` objects); `coerceForTable` keeps only exact
+  // column names, so without `translateSet` this UPDATE degraded to `updatedAt`
+  // and the cleared short-term layer survived promotion.
+  it("translates a disability_policy edit: {shortTerm: null} sets has_short_term = false", async () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      updates: [{ kind: "disability_policy", id: "dp-1", set: { shortTerm: null } }],
+    };
+    const { tx, ops } = makeTx([{ id: "dp-1" }]);
+    await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
+    const update = ops.find((o) => o.op === "update")!;
+    expect(update.table).toBe(disabilityPolicies);
+    expect(update.arg).toEqual({ hasShortTerm: false, updatedAt: expect.any(Date) });
+    // disability_policies is client-level (no scenarioId), so the scope is the client.
+    expect(update.where).toEqual(
+      and(eq(disabilityPolicies.id, "dp-1"), eq(disabilityPolicies.clientId, "c1")),
+    );
+  });
+
+  it("translates a disability_policy add into its flat columns", async () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        {
+          kind: "disability_policy",
+          targetId: "dp-syn",
+          raw: {
+            id: "dp-syn",
+            name: "Private LTD",
+            insured: "spouse",
+            coveredEarningsMode: "manual",
+            coveredEarningsAmount: 120000,
+            shortTerm: null,
+            longTerm: {
+              eliminationDays: 90,
+              benefitPct: 0.6,
+              monthlyMax: null,
+              benefitPeriod: { mode: "years", years: 5 },
+            },
+            benefitTaxable: false,
+            colaRate: 0.02,
+            annualPremium: 1800,
+            premiumPayer: "insured",
+            carrier: "Acme Mutual",
+          },
+        },
+      ],
+    };
+    const { tx, ops } = makeTx();
+    await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
+    const insert = ops.find((o) => o.op === "insert")!;
+    expect(insert.table).toBe(disabilityPolicies);
+    expect(insert.arg).toMatchObject({
+      clientId: "c1",
+      name: "Private LTD",
+      hasShortTerm: false,
+      hasLongTerm: true,
+      ltdBenefitPct: "0.6",
+      ltdMonthlyMax: null,
+      ltdBenefitPeriodMode: "years",
+      ltdBenefitPeriodYears: 5,
+      ltdBenefitPeriodAge: null,
+      colaRate: "0.02",
+      carrier: "Acme Mutual",
+    });
+    expect(insert.arg).not.toHaveProperty("stdEliminationDays");
+    expect(insert.arg).not.toHaveProperty("scenarioId");
+  });
+
+  it("writes a scenario-added policy's children under the generated account id", async () => {
+    // The family member is added in the same batch, so the beneficiary's
+    // synthetic ref must reach the designation row remapped — rank 0 inserts it
+    // before the account (rank 1), whose child writer then reads idRemap.
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        {
+          kind: "account",
+          targetId: "a-syn",
+          raw: {
+            id: "a-syn",
+            name: "Term Life",
+            category: "life_insurance",
+            lifeInsurance: { faceValue: 500000, policyType: "term", cashValueSchedule: [] },
+            beneficiaries: [
+              { id: "b1", tier: "primary", percentage: 100, familyMemberId: "fm-syn", sortOrder: 0 },
+            ],
+          },
+        },
+        { kind: "family_member", targetId: "fm-syn", raw: { id: "fm-syn", firstName: "Emma" } },
+      ],
+    };
+    const { tx, ops } = makeTx();
+    await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
+    // db-1 = family member, db-2 = account
+    const policy = ops.find((o) => o.op === "insert" && o.table === lifeInsurancePolicies)!;
+    expect(policy.arg).toMatchObject({ accountId: "db-2", faceValue: "500000" });
+    const ben = ops.find((o) => o.op === "insert" && o.table === beneficiaryDesignations)!;
+    expect((ben.arg as Record<string, unknown>[])[0]).toMatchObject({
+      accountId: "db-2",
+      familyMemberId: "db-1",
+      clientId: "c1",
+    });
+  });
+
+  it("rewrites an account's beneficiaries via the account childUpdater on a matched update", async () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      updates: [
+        {
+          kind: "account",
+          id: "acct-1",
+          set: {
+            beneficiaries: [
+              { id: "b1", tier: "primary", percentage: 100, familyMemberId: "fm-1", sortOrder: 0 },
+            ],
+          },
+        },
+      ],
+    };
+    const { tx, ops } = makeTx([{ id: "acct-1" }]);
+    await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
+    expect(ops.find((o) => o.op === "delete" && o.table === beneficiaryDesignations)).toBeTruthy();
+    const ins = ops.find((o) => o.op === "insert" && o.table === beneficiaryDesignations)!;
+    expect((ins.arg as Record<string, unknown>[])[0]).toMatchObject({
+      accountId: "acct-1",
+      familyMemberId: "fm-1",
+    });
+  });
+});
+
+// The tenant guard's pure half. beneficiary_designations / account_owners /
+// liability_owners reference family members, external beneficiaries and
+// entities through GLOBAL foreign keys, so every such id must be checked
+// against the client before the promote transaction opens — except ids a row in
+// this same batch creates, which do not exist yet and are remapped in the txn.
+describe("collectClientRefs", () => {
+  it("collects owner and beneficiary refs from inserts and updates, skipping same-batch rows", () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        { kind: "family_member", targetId: "fm-syn", raw: { id: "fm-syn" } },
+        {
+          kind: "account",
+          targetId: "a-syn",
+          raw: {
+            owners: [{ kind: "family_member", familyMemberId: "fm-base", percent: 1 }],
+            beneficiaries: [
+              { id: "b1", tier: "primary", percentage: 50, familyMemberId: "fm-syn", sortOrder: 0 },
+              { id: "b2", tier: "primary", percentage: 50, entityIdRef: "ent-base", sortOrder: 1 },
+            ],
+          },
+        },
+      ],
+      updates: [
+        {
+          kind: "account",
+          id: "a-base",
+          set: {
+            beneficiaries: [
+              { id: "b3", tier: "contingent", percentage: 100, externalBeneficiaryId: "eb-other", sortOrder: 0 },
+            ],
+          },
+        },
+        {
+          kind: "liability",
+          id: "l-base",
+          set: { owners: [{ kind: "entity", entityId: "ent-owner", percent: 1 }] },
+        },
+      ],
+    };
+    expect(collectClientRefs(plan)).toEqual({
+      familyMemberIds: ["fm-base"],
+      externalBeneficiaryIds: ["eb-other"],
+      entityIds: ["ent-base", "ent-owner"],
+    });
+  });
+
+  it("collects nothing from a plan with no owners or beneficiaries", () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      updates: [{ kind: "account", id: "a1", set: { value: 250 } }],
+    };
+    expect(collectClientRefs(plan)).toEqual({
+      familyMemberIds: [],
+      externalBeneficiaryIds: [],
+      entityIds: [],
+    });
   });
 });

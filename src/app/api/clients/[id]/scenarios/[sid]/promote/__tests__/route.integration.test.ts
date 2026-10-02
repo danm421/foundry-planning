@@ -385,6 +385,237 @@ d("promote route — live-Neon integration (disposable client)", () => {
     expect(res.status).toBe(400);
   });
 
+  // ── Test 7: Insurance round trip — self-contained (own scenario + fixtures) ──
+  // Promotion used to write an account add's OWNERS only, and disability
+  // policies had no translation at all: a scenario-added policy reached base
+  // without its policy row, cash-value schedule or beneficiaries, and a
+  // disability edit degraded to an `updatedAt` no-op.
+  it("promotes a life-insurance policy with its schedule and beneficiaries, and disability policies", async () => {
+    const { db } = dbMod;
+    const {
+      accounts,
+      beneficiaryDesignations,
+      disabilityPolicies,
+      familyMembers,
+      lifeInsuranceCashValueSchedule,
+      lifeInsurancePolicies,
+      scenarioChanges,
+      scenarios,
+    } = schema;
+    const { and, eq } = drizzleOrm;
+
+    const S2_ID = randomUUID();
+    const FM_ID = randomUUID();
+    const POLICY_ACCT_ID = randomUUID();
+    const DP_BASE_ID = randomUUID();
+    const DP_NEW_ID = randomUUID();
+    const STD = { eliminationDays: 7, benefitPct: 0.6, durationWeeks: 13, monthlyMax: null };
+
+    await db.insert(familyMembers).values({ id: FM_ID, clientId: CLIENT_ID, firstName: "Emma" });
+    // Column defaults: both layers on.
+    await db
+      .insert(disabilityPolicies)
+      .values({ id: DP_BASE_ID, clientId: CLIENT_ID, name: "Group STD/LTD", insured: "client" });
+    await db
+      .insert(scenarios)
+      .values({ id: S2_ID, clientId: CLIENT_ID, name: "Insurance Plan", isBaseCase: false });
+    await db.insert(scenarioChanges).values([
+      {
+        scenarioId: S2_ID,
+        opType: "add",
+        targetKind: "account",
+        targetId: POLICY_ACCT_ID,
+        payload: {
+          id: POLICY_ACCT_ID,
+          name: "Promoted Term Policy",
+          category: "life_insurance",
+          subType: "term",
+          insuredPerson: "client",
+          value: 0,
+          basis: 0,
+          owner: "client",
+          source: "manual",
+          owners: [],
+          carrier: "Acme Life",
+          policyNumberLast4: "4321",
+          lifeInsurance: {
+            faceValue: 500000,
+            costBasis: 0,
+            premiumAmount: 1200,
+            premiumYears: 20,
+            premiumPayer: "owner",
+            policyType: "term",
+            termIssueYear: 2026,
+            termLengthYears: 20,
+            endsAtInsuredRetirement: false,
+            cashValueGrowthMode: "basic",
+            premiumScheduleMode: "off",
+            deathBenefitScheduleMode: "off",
+            incomeScheduleMode: "off",
+            postPayoutGrowthRate: 0.06,
+            postPayoutModelPortfolioId: null,
+            cashValueSchedule: [
+              { year: 2027, cashValue: 1000 },
+              { year: 2028, cashValue: 2000 },
+            ],
+          },
+          beneficiaries: [
+            { id: randomUUID(), tier: "primary", percentage: 100, familyMemberId: FM_ID, sortOrder: 0 },
+          ],
+        },
+        orderIndex: 0,
+      },
+      {
+        scenarioId: S2_ID,
+        opType: "add",
+        targetKind: "disability_policy",
+        targetId: DP_NEW_ID,
+        payload: {
+          id: DP_NEW_ID,
+          name: "Private LTD",
+          insured: "client",
+          coveredEarningsMode: "manual",
+          coveredEarningsAmount: 120000,
+          shortTerm: null,
+          longTerm: {
+            eliminationDays: 90,
+            benefitPct: 0.6,
+            monthlyMax: null,
+            benefitPeriod: { mode: "years", years: 5 },
+          },
+          benefitTaxable: false,
+          colaRate: 0.02,
+          annualPremium: 1800,
+          premiumPayer: "insured",
+          carrier: "Acme Mutual",
+        },
+        orderIndex: 1,
+      },
+      {
+        scenarioId: S2_ID,
+        opType: "edit",
+        targetKind: "disability_policy",
+        targetId: DP_BASE_ID,
+        payload: { shortTerm: { from: STD, to: null } },
+        orderIndex: 2,
+      },
+    ]);
+
+    const res = await route.POST(makeRequest({ toggleState: {} }), {
+      params: Promise.resolve({ id: CLIENT_ID, sid: S2_ID }),
+    });
+    expect(res.status).toBe(200);
+
+    const [policyAcct] = await db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.scenarioId, BASE_ID), eq(accounts.name, "Promoted Term Policy")));
+    expect(policyAcct).toBeTruthy();
+
+    const [policy] = await db
+      .select()
+      .from(lifeInsurancePolicies)
+      .where(eq(lifeInsurancePolicies.accountId, policyAcct.id));
+    expect(policy).toMatchObject({
+      policyType: "term",
+      carrier: "Acme Life",
+      policyNumberLast4: "4321",
+      termLengthYears: 20,
+    });
+    expect(Number(policy.faceValue)).toBe(500000);
+
+    const schedule = await db
+      .select()
+      .from(lifeInsuranceCashValueSchedule)
+      .where(eq(lifeInsuranceCashValueSchedule.policyId, policyAcct.id));
+    expect(schedule.map((r) => [r.year, Number(r.cashValue)]).sort()).toEqual([
+      [2027, 1000],
+      [2028, 2000],
+    ]);
+
+    const bens = await db
+      .select()
+      .from(beneficiaryDesignations)
+      .where(eq(beneficiaryDesignations.accountId, policyAcct.id));
+    expect(bens).toHaveLength(1);
+    expect(bens[0]).toMatchObject({
+      clientId: CLIENT_ID,
+      targetKind: "account",
+      tier: "primary",
+      familyMemberId: FM_ID,
+    });
+    expect(Number(bens[0].percentage)).toBe(100);
+
+    const [added] = await db
+      .select()
+      .from(disabilityPolicies)
+      .where(and(eq(disabilityPolicies.clientId, CLIENT_ID), eq(disabilityPolicies.name, "Private LTD")));
+    expect(added).toMatchObject({
+      hasShortTerm: false,
+      hasLongTerm: true,
+      ltdBenefitPeriodMode: "years",
+      ltdBenefitPeriodYears: 5,
+      ltdBenefitPeriodAge: null,
+      ltdMonthlyMax: null,
+      premiumPayer: "insured",
+      carrier: "Acme Mutual",
+    });
+
+    const [edited] = await db
+      .select()
+      .from(disabilityPolicies)
+      .where(eq(disabilityPolicies.id, DP_BASE_ID));
+    expect(edited).toMatchObject({ hasShortTerm: false, hasLongTerm: true });
+  });
+
+  // ── Test 8: Tenant guard — a beneficiary outside the client is refused ─────
+  it("returns 400 and writes nothing when a beneficiary names a family member outside the client", async () => {
+    const { db } = dbMod;
+    const { accounts, scenarioChanges, scenarios } = schema;
+    const { and, eq } = drizzleOrm;
+
+    const S3_ID = randomUUID();
+    const ACCT_ID = randomUUID();
+    await db
+      .insert(scenarios)
+      .values({ id: S3_ID, clientId: CLIENT_ID, name: "Foreign Ref", isBaseCase: false });
+    await db.insert(scenarioChanges).values({
+      scenarioId: S3_ID,
+      opType: "add",
+      targetKind: "account",
+      targetId: ACCT_ID,
+      payload: {
+        id: ACCT_ID,
+        name: "Foreign Beneficiary Brokerage",
+        category: "taxable",
+        subType: "brokerage",
+        value: 1000,
+        basis: 0,
+        owner: "client",
+        source: "manual",
+        // No family member with this id belongs to the client.
+        beneficiaries: [
+          { id: randomUUID(), tier: "primary", percentage: 100, familyMemberId: randomUUID(), sortOrder: 0 },
+        ],
+      },
+      orderIndex: 0,
+    });
+
+    const res = await route.POST(makeRequest({ toggleState: {} }), {
+      params: Promise.resolve({ id: CLIENT_ID, sid: S3_ID }),
+    });
+    expect(res.status).toBe(400);
+
+    const rows = await db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.clientId, CLIENT_ID), eq(accounts.name, "Foreign Beneficiary Brokerage")));
+    expect(rows).toHaveLength(0);
+    // The scenario survives a refused promote.
+    const [s3] = await db.select().from(scenarios).where(eq(scenarios.id, S3_ID));
+    expect(s3).toBeTruthy();
+  });
+
   // ── Optional: Equivalence assertion via compareEffectiveTrees ───────────────
   // NOTE: loadEffectiveTree is wrapped in React cache(). In the test environment
   // the same cache context might return a stale (pre-promote) base tree after

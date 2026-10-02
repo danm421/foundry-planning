@@ -40,7 +40,11 @@ import {
   collectExternalDedicatedAccountIds,
   collectExternalSalaryIncomeIds,
 } from "./scenario-changes-to-base-writes";
-import { executeBaseWritePlan } from "./execute-base-write-plan";
+import {
+  assertRefsInClient,
+  collectClientRefs,
+  executeBaseWritePlan,
+} from "./execute-base-write-plan";
 import {
   copyFlowOverridesToBase,
   copyGiftSeriesToBase,
@@ -133,6 +137,13 @@ export async function promoteScenarioToBase(args: PromoteArgs): Promise<PromoteR
       collectExternalSalaryIncomeIds(plan),
     );
     if (!salaryCheck.ok) throw new PromoteError("invalid_ref", salaryCheck.reason);
+
+    // Same guard for the people and trusts that owners and beneficiary
+    // designations name (account_owners, liability_owners,
+    // beneficiary_designations — all GLOBAL FKs), excluding ids this batch
+    // creates. Also outside the transaction, for the same reason as above.
+    const refCheck = await assertRefsInClient(clientId, collectClientRefs(plan));
+    if (!refCheck.ok) throw new PromoteError("invalid_ref", refCheck.reason);
 
     await db.transaction(async (tx) => {
       const executed = await executeBaseWritePlan(tx, plan, { clientId, baseScenarioId });

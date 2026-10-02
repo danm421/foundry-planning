@@ -59,6 +59,28 @@ describe("compareEffectiveTrees", () => {
     expect(r.diffs[0]).toContain("planSettings");
   });
 
+  // A scenario payload carries `carrier` / `policyNumberLast4` / `notes` as
+  // display-only keys (promote writes them to their columns), but the engine
+  // never reads them and the base loader does not put them on the tree — so
+  // they must not read as a mismatch on accounts or disability policies.
+  it("ignores display-only keys on accounts and disability policies, and only there", () => {
+    const scenarioTree = {
+      accounts: [{ id: "a1", name: "Term", value: 0, carrier: "Acme", policyNumberLast4: "4321", notes: "x" }],
+      disabilityPolicies: [{ id: "d1", name: "LTD", carrier: "Acme", notes: "via employer" }],
+    } as never;
+    const baseTree = {
+      accounts: [{ id: "a2", name: "Term", value: 0 }],
+      disabilityPolicies: [{ id: "d2", name: "LTD" }],
+    } as never;
+    expect(compareEffectiveTrees(scenarioTree, baseTree).equal).toBe(true);
+
+    const r = compareEffectiveTrees(
+      { incomes: [{ id: "i1", name: "Salary", notes: "a" }] } as never,
+      { incomes: [{ id: "i2", name: "Salary", notes: "b" }] } as never,
+    );
+    expect(r.equal).toBe(false);
+  });
+
   it("ignores derived giftEvents entirely", () => {
     const r = compareEffectiveTrees(
       { giftEvents: [{ year: 2030, amount: 1 }] } as never,

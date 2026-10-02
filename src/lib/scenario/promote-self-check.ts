@@ -21,6 +21,20 @@ const UUID_RE =
 /** Keys on `ClientData` that are derived/synthesized and must not be compared. */
 const EXCLUDED_FIELDS = new Set(["giftEvents"]);
 
+/** Display-only keys a scenario payload carries beside the engine fields and
+ *  promote writes to their columns. The engine never reads them and the base
+ *  loader does not put them on the tree, so a scenario row that has them and its
+ *  promoted twin that lacks them are equal. Per `ClientData` array. */
+const DISPLAY_ONLY_KEYS = new Set(["carrier", "policyNumberLast4", "notes"]);
+const ARRAYS_WITH_DISPLAY_KEYS = new Set(["accounts", "disabilityPolicies"]);
+
+function withoutDisplayKeys(row: unknown): unknown {
+  if (!row || typeof row !== "object") return row;
+  return Object.fromEntries(
+    Object.entries(row as Record<string, unknown>).filter(([k]) => !DISPLAY_ONLY_KEYS.has(k)),
+  );
+}
+
 function normalizeValue(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(normalizeValue);
   if (v && typeof v === "object") return normalizeObject(v as Record<string, unknown>);
@@ -42,12 +56,14 @@ function isSynthesized(row: unknown): boolean {
   return !!row && typeof row === "object" && (row as { source?: unknown }).source === "policy";
 }
 
-/** Normalize a ClientData array: drop synthesized rows, normalize each row, and
- *  sort by content so order differences don't read as mismatches. */
-function normalizeArray(arr: unknown[]): string[] {
+/** Normalize a ClientData array: drop synthesized rows and display-only keys,
+ *  normalize each row, and sort by content so order differences don't read as
+ *  mismatches. */
+function normalizeArray(key: string, arr: unknown[]): string[] {
+  const stripDisplay = ARRAYS_WITH_DISPLAY_KEYS.has(key);
   return arr
     .filter((row) => !isSynthesized(row))
-    .map((row) => JSON.stringify(normalizeValue(row)))
+    .map((row) => JSON.stringify(normalizeValue(stripDisplay ? withoutDisplayKeys(row) : row)))
     .sort();
 }
 
@@ -75,8 +91,8 @@ export function compareEffectiveTrees(
     const a = act[key];
 
     if (Array.isArray(e) || Array.isArray(a)) {
-      const en = normalizeArray(Array.isArray(e) ? e : []);
-      const an = normalizeArray(Array.isArray(a) ? a : []);
+      const en = normalizeArray(key, Array.isArray(e) ? e : []);
+      const an = normalizeArray(key, Array.isArray(a) ? a : []);
       if (en.length !== an.length) {
         diffs.push(`${key}: length ${en.length} (expected) vs ${an.length} (actual)`);
         continue;

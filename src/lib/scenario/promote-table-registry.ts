@@ -32,8 +32,14 @@ import {
   relocations,
   disabilityPolicies,
 } from "@/db/schema";
+import type { DisabilityPolicy } from "@/engine/types";
+import {
+  disabilityPolicyToRow,
+  disabilitySetToColumns,
+} from "@/lib/insurance-policies/disability-policy-row";
 import {
   writeAccountChildren,
+  updateAccountChildren,
   writeLiabilityChildren,
   updateLiabilityChildren,
   writeIncomeChildren,
@@ -78,9 +84,9 @@ export type ChildWriter = (
 
 /** Reshapes an add payload into the parent table's column shape BEFORE
  *  `coerceForTable` drops every key that isn't a column name. Only needed where
- *  a scenario change stores an editor DRAFT rather than a row — today `gift`
- *  alone. Absent everywhere else, which is what keeps the executor's behaviour
- *  for the other kinds unchanged. */
+ *  a scenario change stores something other than a row — a `gift` editor DRAFT,
+ *  or a `disability_policy` in its engine shape. Absent everywhere else, which
+ *  is what keeps the executor's behaviour for the other kinds unchanged. */
 export type PayloadTranslator = (
   raw: Record<string, unknown>,
 ) => Record<string, unknown>;
@@ -88,6 +94,9 @@ export type PayloadTranslator = (
 export interface RegistryEntry {
   table: PgTable;
   translate?: PayloadTranslator;
+  /** The same reshaping for an EDIT's `set`, which is partial: it must map only
+   *  the keys present, so an UPDATE leaves every other column alone. */
+  translateSet?: PayloadTranslator;
   /** Write the add under the id the change names instead of letting the DB mint
    *  a fresh one, UPDATING that row when it already exists. Only for kinds whose
    *  `add` doubles as an edit of an existing base row — today `gift` alone,
@@ -117,7 +126,13 @@ export const NESTED_ONLY_KINDS = new Set<TargetKind>([
 ]);
 
 export const PROMOTE_TABLE_REGISTRY: Partial<Record<TargetKind, RegistryEntry>> = {
-  account: { table: accounts, childWriter: writeAccountChildren },
+  account: {
+    table: accounts,
+    // Owners, a life-insurance policy with its cash-value schedule, and
+    // beneficiary designations all live in child tables.
+    childWriter: writeAccountChildren,
+    childUpdater: updateAccountChildren,
+  },
   income: { table: incomes, childWriter: writeIncomeChildren },
   expense: {
     table: expenses,
@@ -155,7 +170,11 @@ export const PROMOTE_TABLE_REGISTRY: Partial<Record<TargetKind, RegistryEntry>> 
   will: { table: wills, childWriter: writeWillChildren, childUpdater: updateWillChildren },
   entity: { table: entities },
   relocation: { table: relocations },
-  // Incomplete: promoting still needs a `translate` from the engine payload's
-  // `shortTerm` / `longTerm` objects to the has*/std*/ltd* columns.
-  disability_policy: { table: disabilityPolicies },
+  // The scenario stores the engine shape (`shortTerm` / `longTerm` objects);
+  // the row is flat has*/std*/ltd* columns.
+  disability_policy: {
+    table: disabilityPolicies,
+    translate: (raw) => disabilityPolicyToRow(raw as unknown as DisabilityPolicy),
+    translateSet: (set) => disabilitySetToColumns(set as Partial<DisabilityPolicy>),
+  },
 };

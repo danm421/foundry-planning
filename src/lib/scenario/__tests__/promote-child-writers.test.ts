@@ -1,15 +1,22 @@
 // src/lib/scenario/__tests__/promote-child-writers.test.ts
 import { describe, it, expect } from "vitest";
+import { and, eq } from "drizzle-orm";
 import {
+  accountOwners,
+  beneficiaryDesignations,
   expenseDedicatedAccounts,
   extraPayments,
   liabilityOwners,
+  lifeInsuranceCashValueSchedule,
+  lifeInsurancePolicies,
   savingsRuleSalaryIncomes,
   willBequests,
   willResiduaryRecipients,
 } from "@/db/schema";
+import type { LifeInsurancePolicy } from "@/engine/types";
 import {
   writeAccountChildren,
+  updateAccountChildren,
   writeLiabilityChildren,
   writeIncomeChildren,
   writeExpenseChildren,
@@ -24,32 +31,59 @@ import {
   updateLiabilityChildren,
 } from "../promote-child-writers";
 
-// Minimal fake tx that records insert + delete operations.
+// Minimal fake tx that records insert + update + delete operations. The WHERE
+// predicate of a delete/update is CAPTURED, because it is the only evidence that
+// a child rewrite is scoped to its own parent.
 function makeTx(returnedId?: string) {
-  const inserted: { table: unknown; values: unknown }[] = [];
-  const deleted: { table: unknown }[] = [];
+  const inserted: { table: unknown; values: unknown; onConflict?: unknown }[] = [];
+  const deleted: { table: unknown; where?: unknown }[] = [];
+  const updated: { table: unknown; set: unknown; where: unknown }[] = [];
   const tx = {
     insert: (table: unknown) => ({
       // A thenable that also exposes `.returning()`, because the will writer
       // mixes both patterns: `await .values()` for recipients, `.returning()`
-      // for a bequest whose generated id its recipients need.
+      // for a bequest whose generated id its recipients need. The life-insurance
+      // policy upsert chains `.onConflictDoUpdate()`.
       values: (values: unknown) => {
-        inserted.push({ table, values });
+        const entry: (typeof inserted)[number] = { table, values };
+        inserted.push(entry);
         const result = Promise.resolve([{ id: returnedId ?? "child-id" }]);
         (result as unknown as Record<string, unknown>).returning = async () => [
           { id: returnedId ?? "child-id" },
         ];
+        (result as unknown as Record<string, unknown>).onConflictDoUpdate = async (
+          config: unknown,
+        ) => {
+          entry.onConflict = config;
+        };
         return result;
       },
     }),
+    update: (table: unknown) => ({
+      set: (set: unknown) => ({
+        where: async (where: unknown) => {
+          updated.push({ table, set, where });
+        },
+      }),
+    }),
     delete: (table: unknown) => ({
-      where: async () => {
-        deleted.push({ table });
+      where: async (where: unknown) => {
+        deleted.push({ table, where });
       },
     }),
   };
-  return { tx, inserted, deleted };
+  return { tx, inserted, deleted, updated };
 }
+
+/** Rows a writer inserted into `table`, flattened — a writer may insert one
+ *  row per call or a batch array in one call; the assertion is the same. */
+const rowsIn = (inserted: { table: unknown; values: unknown }[], table: unknown) =>
+  inserted
+    .filter((i) => i.table === table)
+    .flatMap((i) => (Array.isArray(i.values) ? i.values : [i.values])) as Record<
+    string,
+    unknown
+  >[];
 
 /** ChildWriter ctx with an optional synthetic-id → DB-uuid remap. */
 const makeCtx = (idRemap = new Map<string, string>()) => ({
@@ -57,6 +91,28 @@ const makeCtx = (idRemap = new Map<string, string>()) => ({
   baseScenarioId: "base1",
   idRemap,
 });
+
+const LI_POLICY: LifeInsurancePolicy = {
+  faceValue: 500_000,
+  costBasis: 0,
+  premiumAmount: 1_200,
+  premiumYears: 20,
+  premiumPayer: "owner",
+  policyType: "whole",
+  termIssueYear: null,
+  termLengthYears: null,
+  endsAtInsuredRetirement: false,
+  cashValueGrowthMode: "free_form",
+  premiumScheduleMode: "off",
+  deathBenefitScheduleMode: "off",
+  incomeScheduleMode: "off",
+  postPayoutGrowthRate: 0.06,
+  postPayoutModelPortfolioId: null,
+  cashValueSchedule: [
+    { year: 2027, cashValue: 10_000 },
+    { year: 2028, cashValue: 21_000, premiumAmount: 1_200 },
+  ],
+};
 
 // ── writeAccountChildren ───────────────────────────────────────────────────
 
@@ -66,7 +122,7 @@ describe("writeAccountChildren", () => {
     const raw = {
       owners: [{ kind: "family_member", familyMemberId: "fm1", percent: 100 }],
     };
-    await writeAccountChildren(tx as never, "acct-db-id", raw);
+    await writeAccountChildren(tx as never, "acct-db-id", raw, makeCtx());
     expect(inserted).toHaveLength(1);
     expect((inserted[0].values as Record<string, unknown>).accountId).toBe("acct-db-id");
     expect((inserted[0].values as Record<string, unknown>).percent).toBe("100");
@@ -80,7 +136,7 @@ describe("writeAccountChildren", () => {
     const raw = {
       owners: [{ kind: "entity", entityId: "ent1", percent: 100 }],
     };
-    await writeAccountChildren(tx as never, "acct2", raw);
+    await writeAccountChildren(tx as never, "acct2", raw, makeCtx());
     const vals = inserted[0].values as Record<string, unknown>;
     expect(vals.entityId).toBe("ent1");
     expect(vals.familyMemberId).toBeNull();
@@ -92,7 +148,7 @@ describe("writeAccountChildren", () => {
     const raw = {
       owners: [{ kind: "external_beneficiary", externalBeneficiaryId: "eb1", percent: 50 }],
     };
-    await writeAccountChildren(tx as never, "acct3", raw);
+    await writeAccountChildren(tx as never, "acct3", raw, makeCtx());
     const vals = inserted[0].values as Record<string, unknown>;
     expect(vals.externalBeneficiaryId).toBe("eb1");
     expect(vals.familyMemberId).toBeNull();
@@ -101,14 +157,163 @@ describe("writeAccountChildren", () => {
 
   it("skips owners when array is empty", async () => {
     const { tx, inserted } = makeTx();
-    await writeAccountChildren(tx as never, "a1", { owners: [] });
+    await writeAccountChildren(tx as never, "a1", { owners: [] }, makeCtx());
     expect(inserted).toHaveLength(0);
   });
 
   it("skips owners when not present in raw", async () => {
     const { tx, inserted } = makeTx();
-    await writeAccountChildren(tx as never, "a1", {});
+    await writeAccountChildren(tx as never, "a1", {}, makeCtx());
     expect(inserted).toHaveLength(0);
+  });
+
+  it("remaps a same-batch synthetic owner id to the row the batch inserted", async () => {
+    const { tx, inserted } = makeTx();
+    const raw = { owners: [{ kind: "entity", entityId: "ent-syn", percent: 1 }] };
+    await writeAccountChildren(tx as never, "acct-1", raw, makeCtx(new Map([["ent-syn", "ent-real"]])));
+    expect(rowsIn(inserted, accountOwners)[0]).toMatchObject({ entityId: "ent-real" });
+  });
+
+  it("writes the policy, its schedule and beneficiaries for a life-insurance add", async () => {
+    const { tx, inserted } = makeTx();
+    const raw = {
+      owners: [],
+      carrier: "Acme Life",
+      policyNumberLast4: "4321",
+      lifeInsurance: LI_POLICY,
+      beneficiaries: [
+        { id: "b1", tier: "primary", percentage: 60, familyMemberId: "fm-syn", sortOrder: 0 },
+        { id: "b2", tier: "primary", percentage: 40, entityIdRef: "ent-syn", sortOrder: 1 },
+        { id: "b3", tier: "contingent", percentage: 100, externalBeneficiaryId: "eb-base", sortOrder: 0 },
+      ],
+    };
+    const remap = new Map([
+      ["fm-syn", "fm-real"],
+      ["ent-syn", "ent-real"],
+    ]);
+    await writeAccountChildren(tx as never, "acct-1", raw, makeCtx(remap));
+
+    const [policy] = rowsIn(inserted, lifeInsurancePolicies);
+    expect(policy).toMatchObject({
+      accountId: "acct-1",
+      policyType: LI_POLICY.policyType,
+      faceValue: "500000",
+      postPayoutModelPortfolioId: null,
+      carrier: "Acme Life",
+      policyNumberLast4: "4321",
+    });
+    // Engine-only keys are not columns.
+    expect(policy).not.toHaveProperty("cashValueSchedule");
+
+    const schedule = rowsIn(inserted, lifeInsuranceCashValueSchedule);
+    expect(schedule).toHaveLength(LI_POLICY.cashValueSchedule.length);
+    expect(schedule[0]).toMatchObject({ policyId: "acct-1", year: 2027, cashValue: "10000", premiumAmount: null });
+
+    const bens = rowsIn(inserted, beneficiaryDesignations);
+    expect(bens).toHaveLength(3);
+    expect(bens[0]).toMatchObject({
+      accountId: "acct-1",
+      targetKind: "account",
+      familyMemberId: "fm-real",
+      clientId: "c1",
+      tier: "primary",
+      percentage: "60",
+    });
+    expect(bens[1]).toMatchObject({ entityIdRef: "ent-real", familyMemberId: null });
+    expect(bens[2]).toMatchObject({ externalBeneficiaryId: "eb-base", tier: "contingent" });
+    // The scenario's synthetic designation id is never written — the DB mints one.
+    expect(bens[0]).not.toHaveProperty("id");
+  });
+});
+
+// ── updateAccountChildren ──────────────────────────────────────────────────
+
+describe("updateAccountChildren", () => {
+  it("no-ops when no child key is in the edit set", async () => {
+    const { tx, inserted, deleted, updated } = makeTx();
+    await updateAccountChildren(tx as never, "acct-1", { value: 250 }, makeCtx());
+    expect([...inserted, ...deleted, ...updated]).toHaveLength(0);
+  });
+
+  it("an edit with only `beneficiaries` replaces designations and touches nothing else", async () => {
+    const { tx, inserted, deleted, updated } = makeTx();
+    const set = {
+      beneficiaries: [
+        { id: "b1", tier: "primary", percentage: 100, familyMemberId: "fm-syn", sortOrder: 0 },
+      ],
+    };
+    await updateAccountChildren(tx as never, "acct-1", set, makeCtx(new Map([["fm-syn", "fm-real"]])));
+
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0].table).toBe(beneficiaryDesignations);
+    expect(deleted[0].where).toEqual(
+      and(
+        eq(beneficiaryDesignations.clientId, "c1"),
+        eq(beneficiaryDesignations.targetKind, "account"),
+        eq(beneficiaryDesignations.accountId, "acct-1"),
+      ),
+    );
+    expect(inserted.map((i) => i.table)).toEqual([beneficiaryDesignations]);
+    expect(rowsIn(inserted, beneficiaryDesignations)[0]).toMatchObject({
+      accountId: "acct-1",
+      clientId: "c1",
+      familyMemberId: "fm-real",
+    });
+    expect(updated).toHaveLength(0);
+  });
+
+  it("an edit that clears the beneficiaries deletes them and inserts nothing", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    await updateAccountChildren(tx as never, "acct-1", { beneficiaries: [] }, makeCtx());
+    expect(deleted.map((d) => d.table)).toEqual([beneficiaryDesignations]);
+    expect(inserted).toHaveLength(0);
+  });
+
+  it("an edit with `lifeInsurance` upserts the policy row and replaces its schedule", async () => {
+    const { tx, inserted, deleted, updated } = makeTx();
+    await updateAccountChildren(tx as never, "acct-1", { lifeInsurance: LI_POLICY }, makeCtx());
+
+    const policyInsert = inserted.find((i) => i.table === lifeInsurancePolicies)!;
+    expect(policyInsert.values).toMatchObject({ accountId: "acct-1", faceValue: "500000" });
+    const conflict = policyInsert.onConflict as { target: unknown; set: Record<string, unknown> };
+    expect(conflict.target).toBe(lifeInsurancePolicies.accountId);
+    expect(conflict.set).toMatchObject({ faceValue: "500000", policyType: "whole" });
+    // An unchanged carrier is not in the edit, so the upsert must not null it.
+    expect(conflict.set).not.toHaveProperty("carrier");
+    expect(conflict.set).not.toHaveProperty("accountId");
+
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0].table).toBe(lifeInsuranceCashValueSchedule);
+    expect(deleted[0].where).toEqual(eq(lifeInsuranceCashValueSchedule.policyId, "acct-1"));
+    expect(rowsIn(inserted, lifeInsuranceCashValueSchedule)).toHaveLength(2);
+    // Owners and beneficiaries were not in the edit.
+    expect(rowsIn(inserted, accountOwners)).toHaveLength(0);
+    expect(rowsIn(inserted, beneficiaryDesignations)).toHaveLength(0);
+    expect(updated).toHaveLength(0);
+  });
+
+  it("a carrier-only edit updates the policy's display columns and nothing else", async () => {
+    const { tx, inserted, deleted, updated } = makeTx();
+    await updateAccountChildren(tx as never, "acct-1", { carrier: "New Mutual" }, makeCtx());
+    expect(updated).toHaveLength(1);
+    expect(updated[0].table).toBe(lifeInsurancePolicies);
+    expect(updated[0].set).toMatchObject({ carrier: "New Mutual" });
+    expect(updated[0].set).not.toHaveProperty("policyNumberLast4");
+    expect(updated[0].where).toEqual(eq(lifeInsurancePolicies.accountId, "acct-1"));
+    expect([...inserted, ...deleted]).toHaveLength(0);
+  });
+
+  it("an edit with `owners` replaces the account's owners, scoped to the account", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    const set = { owners: [{ kind: "family_member", familyMemberId: "fm-syn", percent: 1 }] };
+    await updateAccountChildren(tx as never, "acct-1", set, makeCtx(new Map([["fm-syn", "fm-real"]])));
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0].table).toBe(accountOwners);
+    expect(deleted[0].where).toEqual(eq(accountOwners.accountId, "acct-1"));
+    expect(rowsIn(inserted, accountOwners)[0]).toMatchObject({
+      accountId: "acct-1",
+      familyMemberId: "fm-real",
+    });
   });
 });
 
