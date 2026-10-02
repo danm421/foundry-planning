@@ -26,6 +26,7 @@ import type { GrowthContext } from "@/lib/investments/growth-context";
 import { controllingEntity } from "@/engine/ownership";
 import { buildAccountRows, loadAccountMetaRows, linkedSourceMapFrom } from "@/lib/accounts/load-account-rows";
 import { categoryDefaultRates } from "@/lib/investments/category-default-rates";
+import { planSettingsEngineToFormProps } from "@/lib/scenario/view-adapters";
 import { buildIncomeRows } from "@/lib/balance-sheet/build-income-rows";
 import {
   detectDefaultGrowthAtInflationFor,
@@ -191,14 +192,26 @@ export async function loadNetWorthViewProps(
       ));
     if (override) clientInflationOverride = override;
   }
-  const resolvedInflationRate = resolveInflationRate(
-    {
-      inflationRateSource: settings?.inflationRateSource ?? "custom",
-      inflationRate: settings?.inflationRate ?? "0",
-    },
-    firmInflationAc ? { geometricReturn: firmInflationAc.geometricReturn } : null,
-    clientInflationOverride,
-  );
+  // In a scenario the category defaults are the SCENARIO's (its growth edits
+  // are folded onto the tree, not onto the base row), and so is the inflation
+  // rate they quote. Stock-option defaults stay the base row's: no form edits
+  // them.
+  const scenarioGrowth =
+    scenarioParam && settings
+      ? planSettingsEngineToFormProps(effectiveTree.planSettings, effectiveTree.client)
+      : null;
+  const resolvedInflationRate =
+    scenarioParam && resolutionContext
+      ? resolutionContext.resolvedInflationRate
+      : resolveInflationRate(
+          {
+            inflationRateSource: settings?.inflationRateSource ?? "custom",
+            inflationRate: settings?.inflationRate ?? "0",
+          },
+          firmInflationAc ? { geometricReturn: firmInflationAc.geometricReturn } : null,
+          clientInflationOverride,
+        );
+  const growthSettings = scenarioGrowth ? { ...settings, ...scenarioGrowth } : settings;
 
   // Build milestones for MilestoneYearPicker in the savings sub-form
   const planStartYear = settings?.planStartYear ?? new Date().getFullYear();
@@ -269,11 +282,11 @@ export async function loadNetWorthViewProps(
 
   // Build category default source info
   const categoryDefaultSources: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }> = {};
-  if (settings) {
+  if (growthSettings) {
     const investable = [
-      { category: "taxable", source: settings.growthSourceTaxable, portfolioId: settings.modelPortfolioIdTaxable },
-      { category: "cash", source: settings.growthSourceCash, portfolioId: settings.modelPortfolioIdCash },
-      { category: "retirement", source: settings.growthSourceRetirement, portfolioId: settings.modelPortfolioIdRetirement },
+      { category: "taxable", source: growthSettings.growthSourceTaxable, portfolioId: growthSettings.modelPortfolioIdTaxable },
+      { category: "cash", source: growthSettings.growthSourceCash, portfolioId: growthSettings.modelPortfolioIdCash },
+      { category: "retirement", source: growthSettings.growthSourceRetirement, portfolioId: growthSettings.modelPortfolioIdRetirement },
     ];
     for (const entry of investable) {
       if (entry.source === "inflation") {
@@ -299,7 +312,7 @@ export async function loadNetWorthViewProps(
   }
 
   const categoryDefaults = categoryDefaultRates(
-    settings,
+    growthSettings,
     modelPortfolioOptions,
     resolvedInflationRate,
   );

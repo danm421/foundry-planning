@@ -9,6 +9,7 @@ import { AutosaveStatus } from "@/components/autosave-status";
 import { usePlanSettingsAutosave } from "@/components/forms/use-plan-settings-autosave";
 import { selectClassName } from "@/components/forms/input-styles";
 import { useClientAccess } from "@/components/client-access-provider";
+import { useScenarioState } from "@/hooks/use-scenario-state";
 import { RISK_LEVEL_LABELS, type RiskLevel } from "@/lib/risk-levels";
 
 interface ModelPortfolioOption {
@@ -108,6 +109,7 @@ export default function GrowthInflationForm({ clientId, riskLevel, modelPortfoli
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
   const router = useRouter();
+  const { scenarioId } = useScenarioState(clientId);
   const { save, state, error, retry } = usePlanSettingsAutosave(clientId);
   const [resetting, setResetting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
@@ -258,10 +260,10 @@ export default function GrowthInflationForm({ clientId, riskLevel, modelPortfoli
               checked={inflationRateSource === "custom"}
               onChange={() => {
                 setInflationRateSource("custom");
-                save({
-                  inflationRateSource: "custom",
-                  inflationRate: toDecimal(values.inflationRate),
-                });
+                // The source alone: the stored custom rate is already what the
+                // box shows, and a scenario writer diffs a sent `inflationRate`
+                // against the RESOLVED rate, so it would log a phantom change.
+                save({ inflationRateSource: "custom" });
               }}
             />
             <span className="w-24">Custom</span>
@@ -484,7 +486,13 @@ export default function GrowthInflationForm({ clientId, riskLevel, modelPortfoli
         </p>
       )}
 
-      {canEdit && (
+      {canEdit && scenarioId && (
+        <p className="flex gap-1.5 pt-2 text-xs text-ink-3">
+          <span className="font-medium text-ink-2">Reset all accounts to defaults:</span>
+          <span>Available on the base plan.</span>
+        </p>
+      )}
+      {canEdit && !scenarioId && (
         <div className="flex justify-start pt-2">
           <button
             type="button"

@@ -401,6 +401,74 @@ describe("AssumptionsClient focus mode — Tax Rates tab", () => {
   });
 });
 
+describe("AssumptionsClient focus mode — Growth & Inflation tab", () => {
+  it("plan_settings 'growth-inflation' renders the form in a dialog titled with the scenario", () => {
+    const { onFocusClose } = renderFocused({ kind: "plan_settings", id: "growth-inflation" });
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Growth & Inflation — Plan B")).toBeTruthy();
+    expect(dialog.querySelector("#defaultGrowthTaxable")).not.toBeNull();
+    expect(onFocusClose).not.toHaveBeenCalled();
+  });
+
+  it("hides the base-only account reset and says where it lives", () => {
+    renderFocused({ kind: "plan_settings", id: "growth-inflation" });
+
+    expect(screen.queryByRole("button", { name: /reset all accounts/i })).toBeNull();
+    expect(screen.getByText("Available on the base plan.")).toBeTruthy();
+  });
+
+  it("a default-growth edit posts exactly one scenario edit carrying only that key", async () => {
+    renderFocused({ kind: "plan_settings", id: "growth-inflation" });
+
+    fireEvent.change(document.getElementById("defaultGrowthTaxable")!, { target: { value: "7" } });
+    await waitForAutosave();
+
+    expectOnlyScenarioWrite();
+    expect(lastRequest()).toMatchObject({
+      method: "POST",
+      body: {
+        op: "edit",
+        targetKind: "plan_settings",
+        targetId: "c-1",
+        desiredFields: { defaultGrowthTaxable: 0.07 },
+      },
+    });
+  });
+
+  // The writer diffs `inflationRate` against the engine's RESOLVED rate, so a
+  // stray send under an asset-class source would show as a phantom
+  // "Inflation rate" change.
+  it("under an asset-class source, a growth edit never sends inflationRate", async () => {
+    renderView({
+      focus: { kind: "plan_settings", id: "growth-inflation" },
+      onFocusClose: vi.fn(),
+      settings: { ...PROPS.settings, inflationRate: "0.03", inflationRateSource: "asset_class" },
+      resolvedInflationRate: 0.025,
+      assetClassInflationRate: 0.025,
+      hasInflationAssetClass: true,
+    });
+
+    // The custom box holds the STORED rate, not the resolved asset-class one.
+    expect((document.getElementById("inflationRate") as HTMLInputElement).value).toBe("3.00");
+
+    fireEvent.change(document.getElementById("defaultGrowthTaxable")!, { target: { value: "7" } });
+    await waitForAutosave();
+
+    expectOnlyScenarioWrite();
+    expect(lastRequest().body.desiredFields).toEqual({ defaultGrowthTaxable: 0.07 });
+  });
+
+  it("closing the dialog hands control back with no outcome, once", async () => {
+    const { onFocusClose } = renderFocused({ kind: "plan_settings", id: "growth-inflation" });
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => expect(onFocusClose).toHaveBeenCalledTimes(1));
+    expect(onFocusClose).toHaveBeenCalledWith();
+  });
+});
+
 describe("AssumptionsClient focus mode — Savings & Withdrawals writes", () => {
   it("a surplus edit posts exactly one plan_settings scenario edit, never /plan-settings", async () => {
     renderFocused({ kind: "plan_settings", id: "withdrawal" });
@@ -474,7 +542,6 @@ describe("AssumptionsClient focus mode — nothing to open", () => {
     ["a tax adjustment that isn't there", { kind: "client_tax_adjustment", id: "gone" }],
     ["a withdrawal entry that isn't there", { kind: "withdrawal_strategy", id: "gone" }],
     ["a delete of a row that isn't there", { intent: "delete", kind: "client_deduction", id: "gone" }],
-    ["the Growth & Inflation tab (Task 15)", { kind: "plan_settings", id: "growth-inflation" }],
     ["a kind this page doesn't edit", { kind: "account", id: "acct-1" }],
   ] as [string, EditorFocus][])("%s → unavailable", async (_name, focus) => {
     await expectUnavailable(renderFocused(focus));

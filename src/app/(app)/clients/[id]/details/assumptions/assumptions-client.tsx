@@ -89,11 +89,10 @@ export interface AssumptionsClientProps {
    * view by the focus. Renders only the editor the focus names, over nothing:
    * - a `client_deduction` / `client_tax_adjustment` / `withdrawal_strategy`
    *   edit, create or delete → that list's own form (a delete runs silently);
-   * - `plan_settings` with id `"withdrawal"` or `"tax-rates"` → that tab, in a
-   *   dialog; both save through `usePlanSettingsAutosave`, which writes the
-   *   scenario when one is active.
-   * Anything else reports `"unavailable"` (Growth & Inflation is not wired
-   * yet).
+   * - `plan_settings` with id `"withdrawal"`, `"tax-rates"` or
+   *   `"growth-inflation"` → that tab, in a dialog; each saves through
+   *   `usePlanSettingsAutosave`, which writes the scenario when one is active.
+   * Anything else reports `"unavailable"`.
    */
   focus?: EditorFocus;
   /**
@@ -109,7 +108,7 @@ export interface AssumptionsClientProps {
 const SINGLETON_FOUND = {};
 
 /** The Assumptions singletons a focus can open as a dialog. */
-const SINGLETON_TABS = ["tax-rates", "withdrawal"] as const;
+const SINGLETON_TABS = ["tax-rates", "growth-inflation", "withdrawal"] as const;
 type SingletonTab = (typeof SINGLETON_TABS)[number];
 
 /** The focus kinds whose list opens its own editor, as that list's focus mode. */
@@ -193,6 +192,38 @@ export default function AssumptionsClient({
     />
   );
 
+  const growthInflationTab = (
+    <GrowthInflationForm
+      clientId={clientId}
+      riskLevel={riskLevel}
+      inflationRate={settings.inflationRate}
+      inflationRateSource={settings.inflationRateSource}
+      resolvedInflationRate={resolvedInflationRate}
+      assetClassInflationRate={assetClassInflationRate}
+      hasInflationAssetClass={hasInflationAssetClass}
+      defaultGrowthTaxable={settings.defaultGrowthTaxable}
+      defaultGrowthCash={settings.defaultGrowthCash}
+      defaultGrowthRetirement={settings.defaultGrowthRetirement}
+      defaultGrowthRealEstate={settings.defaultGrowthRealEstate}
+      defaultGrowthBusiness={settings.defaultGrowthBusiness}
+      defaultGrowthLifeInsurance={settings.defaultGrowthLifeInsurance}
+      growthSourceTaxable={settings.growthSourceTaxable}
+      growthSourceCash={settings.growthSourceCash}
+      growthSourceRetirement={settings.growthSourceRetirement}
+      growthSourceRealEstate={settings.growthSourceRealEstate}
+      growthSourceBusiness={settings.growthSourceBusiness}
+      growthSourceLifeInsurance={settings.growthSourceLifeInsurance}
+      modelPortfolioIdTaxable={settings.modelPortfolioIdTaxable}
+      modelPortfolioIdCash={settings.modelPortfolioIdCash}
+      modelPortfolioIdRetirement={settings.modelPortfolioIdRetirement}
+      modelPortfolios={modelPortfolios}
+      taxInflationRate={settings.taxInflationRate}
+      ssWageGrowthRate={settings.ssWageGrowthRate}
+      medicarePremiumInflationRate={settings.medicarePremiumInflationRate}
+      medicarePremiumInflationEnabled={settings.medicarePremiumInflationEnabled}
+    />
+  );
+
   const withdrawalTab = (
     <div className="space-y-8">
       <SurplusCashFlowForm
@@ -266,7 +297,11 @@ export default function AssumptionsClient({
         title={scenarioName ? `${label} — ${scenarioName}` : label}
         size="lg"
       >
-        {singletonTab === "tax-rates" ? taxRatesTab : withdrawalTab}
+        {singletonTab === "tax-rates"
+          ? taxRatesTab
+          : singletonTab === "growth-inflation"
+            ? growthInflationTab
+            : withdrawalTab}
       </DialogShell>
     );
   }
@@ -283,37 +318,7 @@ export default function AssumptionsClient({
 
       <div className="rounded-lg border border-hair bg-card p-6">
         {activeTab === "tax-rates" && taxRatesTab}
-        {activeTab === "growth-inflation" && (
-          <GrowthInflationForm
-            clientId={clientId}
-            riskLevel={riskLevel}
-            inflationRate={settings.inflationRate}
-            inflationRateSource={settings.inflationRateSource}
-            resolvedInflationRate={resolvedInflationRate}
-            assetClassInflationRate={assetClassInflationRate}
-            hasInflationAssetClass={hasInflationAssetClass}
-            defaultGrowthTaxable={settings.defaultGrowthTaxable}
-            defaultGrowthCash={settings.defaultGrowthCash}
-            defaultGrowthRetirement={settings.defaultGrowthRetirement}
-            defaultGrowthRealEstate={settings.defaultGrowthRealEstate}
-            defaultGrowthBusiness={settings.defaultGrowthBusiness}
-            defaultGrowthLifeInsurance={settings.defaultGrowthLifeInsurance}
-            growthSourceTaxable={settings.growthSourceTaxable}
-            growthSourceCash={settings.growthSourceCash}
-            growthSourceRetirement={settings.growthSourceRetirement}
-            growthSourceRealEstate={settings.growthSourceRealEstate}
-            growthSourceBusiness={settings.growthSourceBusiness}
-            growthSourceLifeInsurance={settings.growthSourceLifeInsurance}
-            modelPortfolioIdTaxable={settings.modelPortfolioIdTaxable}
-            modelPortfolioIdCash={settings.modelPortfolioIdCash}
-            modelPortfolioIdRetirement={settings.modelPortfolioIdRetirement}
-            modelPortfolios={modelPortfolios}
-            taxInflationRate={settings.taxInflationRate}
-            ssWageGrowthRate={settings.ssWageGrowthRate}
-            medicarePremiumInflationRate={settings.medicarePremiumInflationRate}
-            medicarePremiumInflationEnabled={settings.medicarePremiumInflationEnabled}
-          />
-        )}
+        {activeTab === "growth-inflation" && growthInflationTab}
         {activeTab === "withdrawal" && withdrawalTab}
         {activeTab === "deductions" && (
           <DeductionsClient

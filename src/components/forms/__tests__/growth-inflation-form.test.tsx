@@ -6,11 +6,17 @@ import { ClientAccessProvider } from "@/components/client-access-provider";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
+const nav = vi.hoisted(() => ({ params: new URLSearchParams() }));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
-  useSearchParams: () => ({ get: vi.fn(() => null), toString: () => "" }),
+  useSearchParams: () => nav.params,
   usePathname: () => "/clients/test-client/details",
 }));
+
+beforeEach(() => {
+  nav.params = new URLSearchParams();
+});
 
 // ── Fixture ───────────────────────────────────────────────────────────────────
 // Minimal valid props for GrowthInflationForm — every field it requires
@@ -82,6 +88,17 @@ describe("GrowthInflationForm — autosave", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("in base mode (no ?scenario=) the whole request list is one PUT /plan-settings", async () => {
+    renderForm();
+    fireEvent.change(document.getElementById("defaultGrowthTaxable")!, { target: { value: "6" } });
+    await settleAutosave();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual(["/api/clients/test-client-id/plan-settings"]);
+    expect(fetchMock.mock.calls[0][1].method).toBe("PUT");
+    expect(screen.queryByText("Available on the base plan.")).toBeNull();
   });
 
   it("has no Save button — but keeps the account-reset action, which is not a save", () => {
@@ -182,5 +199,88 @@ describe("GrowthInflationForm — inflation source rows", () => {
 
     const assetClassRow = screen.getByRole("radio", { name: /asset class/i }).closest("label");
     expect(assetClassRow).toHaveTextContent("2.50%");
+  });
+});
+
+// ── Inside a scenario ─────────────────────────────────────────────────────────
+// A scenario's growth edits are scenario changes and nothing else: the base
+// PUT and the base-only account reset must never be reached.
+
+describe("GrowthInflationForm — inside a scenario", () => {
+  const CHANGES_URL = "/api/clients/test-client-id/scenarios/scn-1/changes";
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    nav.params = new URLSearchParams("scenario=scn-1");
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const lastBody = () => JSON.parse(fetchMock.mock.calls.at(-1)![1].body as string);
+
+  it("hides the base-only account reset and says where it lives", () => {
+    renderForm();
+    expect(screen.queryByRole("button", { name: /reset all accounts/i })).toBeNull();
+    expect(screen.getByText("Available on the base plan.")).toBeInTheDocument();
+  });
+
+  it("a source change posts one plan_settings edit, and the whole request list is that POST", async () => {
+    renderForm({
+      modelPortfolios: [{ id: "mp-1", name: "Balanced", blendedReturn: 0.06, riskLevel: "moderate" }],
+    });
+
+    fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "inflation" } });
+    await settleAutosave();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([CHANGES_URL]);
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+    expect(lastBody()).toEqual({
+      op: "edit",
+      targetKind: "plan_settings",
+      targetId: "test-client-id",
+      desiredFields: { growthSourceTaxable: "inflation", modelPortfolioIdTaxable: null },
+    });
+  });
+
+  it("a default-growth edit sends only that key — never inflationRate", async () => {
+    renderForm({ inflationRateSource: "asset_class", inflationRate: "0.03", resolvedInflationRate: 0.025 });
+
+    fireEvent.change(document.getElementById("defaultGrowthTaxable")!, { target: { value: "6" } });
+    await settleAutosave();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(lastBody().desiredFields).toEqual({ defaultGrowthTaxable: 0.06 });
+  });
+
+  it("switching the source back to Custom sends the source alone", async () => {
+    renderForm({ inflationRateSource: "asset_class", inflationRate: "0.03", resolvedInflationRate: 0.025 });
+
+    fireEvent.click(screen.getByRole("radio", { name: /custom/i }));
+    await settleAutosave();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(lastBody().desiredFields).toEqual({ inflationRateSource: "custom" });
+  });
+
+  it("shows the stored custom rate in the box while an asset-class source is active", () => {
+    renderForm({ inflationRateSource: "asset_class", inflationRate: "0.03", resolvedInflationRate: 0.025 });
+    expect((document.getElementById("inflationRate") as HTMLInputElement).value).toBe("3.00");
+  });
+
+  it("refuses a value the validator rejects, writing nothing", async () => {
+    renderForm();
+    // A growth rate the 5,4 column cannot hold.
+    fireEvent.change(document.getElementById("defaultGrowthTaxable")!, { target: { value: "5000" } });
+    await settleAutosave();
+
+    await waitFor(() => expect(screen.getByText(/defaultGrowthTaxable must be a number/i)).toBeInTheDocument());
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

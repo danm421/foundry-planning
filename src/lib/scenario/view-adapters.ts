@@ -437,10 +437,13 @@ export function planSettingsEngineToView(s: EnginePlanSettings): PlanSettingsVie
  *  plan settings and client. The loader's base path builds the same shape from
  *  the DB row; this one is for a scenario, whose values only exist on the tree.
  *  Defaults mirror the DB columns' (a null column is an empty box). The
- *  capital-loss tax-return autofill is the loader's, not this adapter's. */
+ *  capital-loss tax-return autofill is the loader's, not this adapter's.
+ *  `storedInflationRate` is the custom rate as stored (see
+ *  `storedInflationRate`): the tree's `inflationRate` is the resolved one. */
 export function planSettingsEngineToFormProps(
   s: EnginePlanSettings,
   client: Pick<ClientInfo, "coveredByWorkplacePlan" | "spouseCoveredByWorkplacePlan">,
+  storedInflationRate?: string,
 ): AssumptionsSettings {
   const optional = (n: number | null | undefined) => (n != null ? String(n) : "");
   return {
@@ -452,7 +455,7 @@ export function planSettingsEngineToFormProps(
     irdTaxRate: String(s.irdTaxRate ?? 0),
     probateCostRate: String(s.probateCostRate ?? 0),
     pvDiscountRate: optional(s.pvDiscountRate),
-    inflationRate: String(s.inflationRate),
+    inflationRate: storedInflationRate ?? String(s.inflationRate),
     inflationRateSource: s.inflationRateSource ?? "asset_class",
     planStartYear: s.planStartYear,
     planEndYear: s.planEndYear,

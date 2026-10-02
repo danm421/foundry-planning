@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { ScenarioChange, ToggleGroup } from "@/engine/scenario/types";
-import { growthSettingsOverride, stripGrowthSettingsKeys } from "../growth-settings-override";
+import { growthSettingsOverride, storedInflationRate, stripGrowthSettingsKeys } from "../growth-settings-override";
 
 const ps = (
   id: string,
@@ -136,5 +136,17 @@ describe("stripGrowthSettingsKeys", () => {
     const out = stripGrowthSettingsKeys([plain, accountEdit]);
     expect(out[0]).toBe(plain);
     expect(out[1]).toBe(accountEdit);
+  });
+});
+
+describe("storedInflationRate", () => {
+  it("is the scenario's own custom rate when it set one", () => {
+    expect(storedInflationRate("0.03", { inflationRate: 0.045 })).toBe("0.045");
+  });
+
+  it("is the base row's column when the scenario left the rate alone", () => {
+    // A source-only edit: the engine's resolved rate would be the asset class's.
+    expect(storedInflationRate("0.03", { inflationRateSource: "asset_class" })).toBe("0.03");
+    expect(storedInflationRate("0.03", {})).toBe("0.03");
   });
 });

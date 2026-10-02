@@ -70,6 +70,14 @@ export function growthSettingsOverride(
   return override;
 }
 
+/** The custom inflation rate as STORED: the scenario's own value when it set
+ *  one, else the base row's column. The tree's `inflationRate` is the RESOLVED
+ *  rate (the asset class's under that source), so it cannot say what the custom
+ *  box holds. */
+export function storedInflationRate(baseColumn: string, override: GrowthSettingsOverride): string {
+  return override.inflationRate != null ? String(override.inflationRate) : baseColumn;
+}
+
 /** Remove the growth keys from every `plan_settings` edit, dropping an edit
  *  left with nothing. They reach the tree through the override load instead;
  *  applied as an overlay, a raw `inflationRate` would overwrite the engine's

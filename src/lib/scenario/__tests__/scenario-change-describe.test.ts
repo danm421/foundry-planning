@@ -142,3 +142,54 @@ describe("describeChangeUnit — internal fields", () => {
     expect(text).toContain("bundleId");
   });
 });
+
+describe("describeChangeUnit — growth & inflation settings", () => {
+  const settingsEdit = (payload: Record<string, { from: unknown; to: unknown }>) =>
+    describeChangeUnit(
+      {
+        kind: "single",
+        change: {
+          id: "c6", scenarioId: "s1", opType: "edit", targetKind: "plan_settings",
+          targetId: "client-1", payload, toggleGroupId: null, orderIndex: 0, enabled: true,
+        },
+      },
+      { "plan_settings:client-1": "Plan settings" },
+    );
+
+  it("labels a default-growth key and formats the rate as a percent", () => {
+    expect(settingsEdit({ defaultGrowthTaxable: { from: 0.06, to: 0.07 } })).toBe(
+      "Changed Default growth — taxable on Plan settings: 6% → 7%.",
+    );
+  });
+
+  it("labels the inflation rate and source", () => {
+    expect(settingsEdit({ inflationRate: { from: 0.025, to: 0.03 } })).toContain("Inflation rate");
+    expect(settingsEdit({ inflationRate: { from: 0.025, to: 0.03 } })).toContain("2.5% → 3%");
+    expect(settingsEdit({ inflationRateSource: { from: "asset_class", to: "custom" } })).toContain(
+      "Inflation source on Plan settings: asset_class → custom",
+    );
+  });
+
+  it("names the labelled fields of a multi-field edit", () => {
+    expect(
+      settingsEdit({
+        growthSourceCash: { from: "custom", to: "inflation" },
+        medicarePremiumInflationRate: { from: 0.03, to: 0.04 },
+      }),
+    ).toBe(
+      "Changed 2 fields on Plan settings: Growth source — cash, Medicare premium inflation rate.",
+    );
+  });
+
+  it("does not print a model-portfolio uuid", () => {
+    const uuid = "7f3a91c2-0000-4000-8000-0000000000ab";
+    const text = settingsEdit({ modelPortfolioIdTaxable: { from: null, to: uuid } });
+    expect(text).toContain("Model portfolio — taxable");
+    expect(text).toContain("none → a model portfolio");
+    expect(text).not.toContain(uuid);
+  });
+
+  it("leaves a key it has no label for as the raw key", () => {
+    expect(settingsEdit({ flatFederalRate: { from: 0.22, to: 0.24 } })).toContain("flatFederalRate");
+  });
+});

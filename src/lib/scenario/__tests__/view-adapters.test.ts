@@ -523,5 +523,46 @@ describe("view-adapters", () => {
         taxEngineMode: "flat",
       });
     });
+
+    // The engine's `inflationRate` is the RESOLVED rate; under an asset-class
+    // source it is the firm's asset-class return, not what the custom box holds.
+    it("shows the STORED custom inflation rate, not the resolved asset-class one", () => {
+      const resolved: EnginePlanSettings = {
+        ...base,
+        inflationRate: 0.025,
+        inflationRateSource: "asset_class",
+      };
+      expect(planSettingsEngineToFormProps(resolved, {}, "0.03")).toMatchObject({
+        inflationRate: "0.03",
+        inflationRateSource: "asset_class",
+      });
+      // Without a stored value the adapter keeps its old reading.
+      expect(planSettingsEngineToFormProps(resolved, {}).inflationRate).toBe("0.025");
+    });
+
+    it("reads the growth keys the scenario carries as the form's strings", () => {
+      const props = planSettingsEngineToFormProps(
+        {
+          ...base,
+          defaultGrowthTaxable: 0.06,
+          growthSourceTaxable: "model_portfolio",
+          modelPortfolioIdTaxable: "mp-1",
+          growthSourceRealEstate: "custom",
+          defaultGrowthRealEstate: 0.035,
+          medicarePremiumInflationRate: 0.04,
+          medicarePremiumInflationEnabled: false,
+        },
+        {},
+      );
+      expect(props).toMatchObject({
+        defaultGrowthTaxable: "0.06",
+        growthSourceTaxable: "model_portfolio",
+        modelPortfolioIdTaxable: "mp-1",
+        growthSourceRealEstate: "custom",
+        defaultGrowthRealEstate: "0.035",
+        medicarePremiumInflationRate: "0.04",
+        medicarePremiumInflationEnabled: false,
+      });
+    });
   });
 });

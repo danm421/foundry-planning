@@ -82,7 +82,6 @@ describe("NOT_YET_READY", () => {
       [
         "business", "note_receivable", "life_policy", "disability_policy", "gift_series",
         "family_member", "external_beneficiary", "reinvestment",
-        "growth_inflation",
       ].sort(),
     );
   });

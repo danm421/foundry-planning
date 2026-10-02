@@ -31,6 +31,36 @@ const AMOUNT_KEYS = [
   "lifetimeExemptionCap",
 ] as const;
 
+// Mirror `growthSourceEnum` and `inflationRateSourceEnum` in the schema, for the
+// same reason as `COVERAGE_VALUES`.
+const GROWTH_SOURCE_VALUES: readonly unknown[] = [
+  "default", "model_portfolio", "ticker_portfolio", "custom", "asset_mix", "inflation", "holdings",
+];
+const INFLATION_SOURCE_VALUES: readonly unknown[] = ["asset_class", "custom"];
+
+const GROWTH_SOURCE_KEYS = [
+  "growthSourceTaxable",
+  "growthSourceCash",
+  "growthSourceRetirement",
+  "growthSourceRealEstate",
+  "growthSourceBusiness",
+  "growthSourceLifeInsurance",
+] as const;
+
+/** Not-null `numeric(5,4)` columns: a present key must be a finite number the
+ *  column can hold (|x| < 10). A rate may be negative, so there is no sign
+ *  rule. The Medicare premium rate is also in `RATE_KEYS`, which adds 0..1. */
+const NEVER_EMPTY_RATE_KEYS = [
+  "inflationRate",
+  "defaultGrowthTaxable",
+  "defaultGrowthCash",
+  "defaultGrowthRetirement",
+  "defaultGrowthRealEstate",
+  "defaultGrowthBusiness",
+  "defaultGrowthLifeInsurance",
+  "medicarePremiumInflationRate",
+] as const;
+
 /** The forms send decimals as strings and the route has always accepted
  *  numbers too, so both are checked; null/undefined mean "unset / don't touch". */
 function finiteNumber(value: unknown): number | null {
@@ -54,6 +84,16 @@ export function validatePlanSettingsPatch(body: Record<string, unknown>): string
     return "residenceState must be a USPS 2-letter code for a US state or DC (or null)";
   }
 
+  // Before the range rules: they read a blank as 0 and a null as "don't touch",
+  // and neither is a rate a never-empty column can take.
+  for (const key of NEVER_EMPTY_RATE_KEYS) {
+    const value = body[key];
+    if (value === undefined) continue;
+    const blank = value === null || (typeof value === "string" && value.trim() === "");
+    const n = blank ? null : finiteNumber(value);
+    if (n === null || Math.abs(n) >= 10) return `${key} must be a number`;
+  }
+
   for (const key of RATE_KEYS) {
     const value = body[key];
     if (value == null) continue;
@@ -73,6 +113,18 @@ export function validatePlanSettingsPatch(body: Record<string, unknown>): string
     if (value !== undefined && !COVERAGE_VALUES.includes(value)) {
       return `${field} must be 'auto', 'yes', or 'no'`;
     }
+  }
+
+  for (const key of GROWTH_SOURCE_KEYS) {
+    const value = body[key];
+    if (value !== undefined && !GROWTH_SOURCE_VALUES.includes(value)) {
+      return `${key} must be one of ${GROWTH_SOURCE_VALUES.join(", ")}`;
+    }
+  }
+
+  const { inflationRateSource } = body;
+  if (inflationRateSource !== undefined && !INFLATION_SOURCE_VALUES.includes(inflationRateSource)) {
+    return "inflationRateSource must be one of asset_class, custom";
   }
 
   return null;
