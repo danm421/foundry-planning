@@ -360,11 +360,18 @@ export function deriveItemizedFromExpenses(
 // ── Source 3: Manual client_deductions rows ─────────────────────────────────
 
 export interface ClientDeductionRow {
+  /** The `client_deductions` row id — scenario edit/remove overlays match by it. */
+  id: string;
   type: "charitable" | "above_line" | "below_line" | "property_tax";
   annualAmount: number;
   growthRate: number;
   startYear: number;
   endYear: number;
+  /** Display keys for the Assumptions editor; the tax math never reads them. */
+  name?: string | null;
+  owner?: "client" | "spouse" | "joint";
+  startYearRef?: string | null;
+  endYearRef?: string | null;
 }
 
 export function sumItemizedFromEntries(

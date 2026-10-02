@@ -707,8 +707,8 @@ describe("projection — bracket/flat tax routing", () => {
     const fixtureWithDeductions = {
       ...fixture,
       deductions: [
-        { type: "property_tax" as const, annualAmount: 20000, growthRate: 0, startYear: 2026, endYear: 2076 },
-        { type: "charitable" as const, annualAmount: 25000, growthRate: 0, startYear: 2026, endYear: 2076 },
+        { id: "d-prop", type: "property_tax" as const, annualAmount: 20000, growthRate: 0, startYear: 2026, endYear: 2076 },
+        { id: "d-char", type: "charitable" as const, annualAmount: 25000, growthRate: 0, startYear: 2026, endYear: 2076 },
       ],
     };
     const years = runProjection({ ...fixtureWithDeductions, taxYearRows: FIXTURE_TAX_PARAMS });

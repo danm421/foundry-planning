@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, planSettings, scenarios, scenarioChanges, scenarioToggleGroups } from "@/db/schema";
+import { clientDeductions, clients, planSettings, scenarios, scenarioChanges, scenarioToggleGroups } from "@/db/schema";
 import {
   applyEntityEdit,
   applyEntityAdd,
@@ -365,6 +365,43 @@ describe.skipIf(!HAS_DB)("changes-writer", () => {
         );
 
       expect(rows).toHaveLength(0);
+    });
+  });
+
+  describe("base deductions", () => {
+    it("an edit diffs against the found base row, not a phantom", async () => {
+      const [base] = await db
+        .select({ id: scenarios.id })
+        .from(scenarios)
+        .where(and(eq(scenarios.clientId, COOPER_CLIENT_ID), eq(scenarios.isBaseCase, true)));
+      const [ded] = await db
+        .insert(clientDeductions)
+        .values({
+          clientId: COOPER_CLIENT_ID,
+          scenarioId: base.id,
+          type: "charitable",
+          annualAmount: "12000",
+          startYear: 2026,
+          endYear: 2040,
+        })
+        .returning();
+      try {
+        await applyEntityEdit({
+          scenarioId,
+          firmId: COOPER_FIRM_ID,
+          targetKind: "client_deduction",
+          targetId: ded.id,
+          desiredFields: { annualAmount: 20000 },
+        });
+
+        const [row] = await db
+          .select()
+          .from(scenarioChanges)
+          .where(and(eq(scenarioChanges.scenarioId, scenarioId), eq(scenarioChanges.targetId, ded.id)));
+        expect(row.payload).toEqual({ annualAmount: { from: 12000, to: 20000 } });
+      } finally {
+        await db.delete(clientDeductions).where(eq(clientDeductions.id, ded.id));
+      }
     });
   });
 

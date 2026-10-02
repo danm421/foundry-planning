@@ -200,11 +200,8 @@ export function buildPlanInventory(
     }
   }
 
-  // Deduction rows carry no id until the loader supplies one; skip those.
   for (const d of tree.deductions ?? []) {
-    const id = (d as { id?: string }).id;
-    if (!id) continue;
-    add("deduction", id, DEDUCTION_TYPE_LABELS[d.type] ?? "Deduction", {
+    add("deduction", d.id, DEDUCTION_TYPE_LABELS[d.type] ?? "Deduction", {
       sublabel: `${d.startYear}–${d.endYear}`,
     });
   }

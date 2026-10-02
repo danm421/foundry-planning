@@ -463,9 +463,6 @@ describe("SolverChangesTab — opening a Details editor", () => {
     ["reinvestment", "edit"],
     ["family_member", "edit"],
     ["external_beneficiary", "add"],
-    ["client_deduction", "add"],
-    ["client_tax_adjustment", "edit"],
-    ["withdrawal_strategy", "edit"],
   ] as const)("a %s %s explains it can't be edited here — no link, no load", (targetKind, opType) => {
     renderTab([makeChange({ targetKind, opType })]);
 
@@ -478,6 +475,20 @@ describe("SolverChangesTab — opening a Details editor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByText(UNSUPPORTED_MESSAGE)).not.toBeInTheDocument();
   });
+
+  it.each(["client_deduction", "client_tax_adjustment", "withdrawal_strategy"] as const)(
+    "a %s change opens the Assumptions editor in place",
+    async (targetKind) => {
+      loadChangeEditorPropsMock.mockResolvedValue({ page: "assumptions", props: { clientId: CLIENT_ID } });
+      renderTab([makeChange({ targetKind, payload: { name: "Charity" } })]);
+
+      fireEvent.click(screen.getByRole("button", { name: /^Edit / }));
+
+      const view = await screen.findByTestId("view-assumptions");
+      expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ kind: targetKind, id: TARGET_ID });
+      expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, "assumptions");
+    },
+  );
 
   it("'unsupported' from the view unmounts it and explains, with no link", async () => {
     loadChangeEditorPropsMock.mockResolvedValue({ page: "net-worth", props: { clientId: CLIENT_ID, accounts: [] } });
@@ -514,7 +525,7 @@ describe("SolverChangesTab — opening a Details editor", () => {
     loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
     renderTab([
       makeChange(),
-      makeChange({ id: "c-2", targetKind: "client_deduction", payload: { name: "Charity" } }),
+      makeChange({ id: "c-2", targetKind: "reinvestment", payload: { name: "Charity" } }),
     ]);
     fireEvent.click(screen.getByRole("button", { name: "Edit Charity" }));
     expect(screen.getByText(UNSUPPORTED_MESSAGE)).toBeInTheDocument();

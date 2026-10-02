@@ -459,7 +459,12 @@ const loadClientDataCached = cache(
       .where(and(eq(clientDeductions.clientId, id), eq(clientDeductions.scenarioId, scenario.id)));
 
     const parsedDeductions = deductionRows.map((d) => ({
+      id: d.id,
       type: d.type,
+      name: d.name,
+      owner: d.owner,
+      startYearRef: d.startYearRef,
+      endYearRef: d.endYearRef,
       annualAmount: parseFloat(d.annualAmount),
       growthRate: parseFloat(d.growthRate),
       startYear: d.startYear,
@@ -484,6 +489,9 @@ const loadClientDataCached = cache(
       id: a.id,
       taxType: a.taxType,
       name: a.name,
+      owner: a.owner,
+      startYearRef: a.startYearRef,
+      endYearRef: a.endYearRef,
       annualAmount: parseFloat(a.annualAmount),
       growthRate: parseFloat(a.growthRate),
       startYear: resolvedStart(a.startYearRef, a.startYear),
@@ -1116,6 +1124,8 @@ const loadClientDataCached = cache(
       priorityOrder: w.priorityOrder,
       startYear: resolvedStart(w.startYearRef, w.startYear),
       endYear: resolvedEnd(w.endYearRef, w.endYear),
+      startYearRef: w.startYearRef,
+      endYearRef: w.endYearRef,
     }));
 
     const mappedPlanSettings = {

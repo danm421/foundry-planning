@@ -4,13 +4,10 @@ import {
   clients,
   scenarios,
   planSettings,
-  withdrawalStrategies,
   modelPortfolios,
   modelPortfolioAllocations,
   assetClasses,
   clientCmaOverrides,
-  clientDeductions,
-  clientTaxAdjustments,
   crmHouseholdContacts,
   clientRiskProfiles,
 } from "@/db/schema";
@@ -66,10 +63,11 @@ export async function loadAssumptionsViewProps(
     spouseDob: spouseContact?.dateOfBirth ?? null,
   };
 
-  const [scenario] = await db
-    .select()
-    .from(scenarios)
-    .where(and(eq(scenarios.clientId, id), eq(scenarios.isBaseCase, true)));
+  // One read for both: the base case (the plan settings below still key off it)
+  // and the scenario being viewed, whose name titles the Solver's focus dialog.
+  const scenarioRows = await db.select().from(scenarios).where(eq(scenarios.clientId, id));
+  const scenario = scenarioRows.find((s) => s.isBaseCase);
+  const scenarioName = scenarioRows.find((s) => s.id === scenarioParam)?.name;
 
   if (!scenario) {
     return { status: "no-base-case" };
@@ -77,12 +75,9 @@ export async function loadAssumptionsViewProps(
 
   const [
     settingsRows,
-    withdrawalRows,
     portfolioRows,
     allocationRows,
     assetClassRows,
-    deductionRows,
-    taxAdjustmentDbRows,
     riskProfileRows,
     { effectiveTree },
   ] = await Promise.all([
@@ -90,26 +85,9 @@ export async function loadAssumptionsViewProps(
       .select()
       .from(planSettings)
       .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
-    db
-      .select()
-      .from(withdrawalStrategies)
-      .where(
-        and(
-          eq(withdrawalStrategies.clientId, id),
-          eq(withdrawalStrategies.scenarioId, scenario.id)
-        )
-      ),
     db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
     db.select().from(modelPortfolioAllocations),
     db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
-    db
-      .select()
-      .from(clientDeductions)
-      .where(and(eq(clientDeductions.clientId, id), eq(clientDeductions.scenarioId, scenario.id))),
-    db
-      .select()
-      .from(clientTaxAdjustments)
-      .where(and(eq(clientTaxAdjustments.clientId, id), eq(clientTaxAdjustments.scenarioId, scenario.id))),
     // Nothing in the risk-profile plan syncs `clients.risk_tolerance` from the
     // composite level, so the legacy column would go stale the moment an
     // advisor changes tolerance on /risk. Prefer the composite level; fall
@@ -127,6 +105,12 @@ export async function loadAssumptionsViewProps(
   const savingsRows = effectiveTree.savingsRules;
   const expenseRows = effectiveTree.expenses;
   const liabilityRows = effectiveTree.liabilities;
+  // Deductions, tax adjustments and withdrawal order are overlaid scenario
+  // rows: read them from the effective tree, not the base tables.
+  const deductionRows = effectiveTree.deductions ?? [];
+  const taxAdjustmentTreeRows = effectiveTree.taxAdjustments ?? [];
+  // Copied: the milestone pass below rewrites years in place.
+  const withdrawalRows = effectiveTree.withdrawalStrategy.map((w) => ({ ...w, id: w.id! }));
 
   // Derive per-account owner key ("client" | "spouse" | "joint") for UI display.
   const _clientFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
@@ -222,21 +206,16 @@ export async function loadAssumptionsViewProps(
 
   const milestones = buildClientMilestones(client, settings.planStartYear, settings.planEndYear);
 
-  // Resolution-on-read: re-resolve milestone refs and update stale years
+  // Resolution-on-read: re-resolve milestone refs to the live years (display
+  // only: a read never writes).
   for (const row of withdrawalRows) {
     if (row.startYearRef) {
       const resolved = resolveMilestone(row.startYearRef as YearRef, milestones, "start");
-      if (resolved != null && resolved !== row.startYear) {
-        row.startYear = resolved;
-        db.update(withdrawalStrategies).set({ startYear: resolved }).where(eq(withdrawalStrategies.id, row.id));
-      }
+      if (resolved != null) row.startYear = resolved;
     }
     if (row.endYearRef) {
       const resolved = resolveMilestone(row.endYearRef as YearRef, milestones, "end");
-      if (resolved != null && resolved !== row.endYear) {
-        row.endYear = resolved;
-        db.update(withdrawalStrategies).set({ endYear: resolved }).where(eq(withdrawalStrategies.id, row.id));
-      }
+      if (resolved != null) row.endYear = resolved;
     }
   }
 
@@ -303,29 +282,29 @@ export async function loadAssumptionsViewProps(
   const itemizedRows = deductionRows.map((d) => ({
     id: d.id,
     type: d.type,
-    name: d.name,
-    owner: d.owner,
-    annualAmount: parseFloat(d.annualAmount),
-    growthRate: parseFloat(d.growthRate),
+    name: d.name ?? null,
+    owner: d.owner ?? "joint",
+    annualAmount: d.annualAmount,
+    growthRate: d.growthRate,
     startYear: d.startYear,
     endYear: d.endYear,
-    startYearRef: d.startYearRef,
-    endYearRef: d.endYearRef,
+    startYearRef: d.startYearRef ?? null,
+    endYearRef: d.endYearRef ?? null,
   }));
 
-  const taxAdjustmentRows = taxAdjustmentDbRows.map((a) => ({
+  const taxAdjustmentRows = taxAdjustmentTreeRows.map((a) => ({
     id: a.id,
     taxType: a.taxType,
     name: a.name,
-    owner: a.owner,
-    annualAmount: parseFloat(a.annualAmount),
-    growthRate: parseFloat(a.growthRate),
+    owner: a.owner ?? "joint",
+    annualAmount: a.annualAmount,
+    growthRate: a.growthRate,
     startYear: a.startYear,
     endYear: a.endYear,
-    startYearRef: a.startYearRef,
-    endYearRef: a.endYearRef,
+    startYearRef: a.startYearRef ?? null,
+    endYearRef: a.endYearRef ?? null,
     withheldMode: a.withheldMode,
-    withheldValue: parseFloat(a.withheldValue),
+    withheldValue: a.withheldValue,
   }));
 
   const liquidAccounts = accountRows
@@ -348,6 +327,7 @@ export async function loadAssumptionsViewProps(
     status: "ok",
     props: {
       clientId: id,
+      scenarioName,
       riskLevel,
       filingStatus: clientRow.filingStatus,
       settings: {

@@ -228,7 +228,7 @@ describe("deriveAboveLineFromSavings", () => {
 // ── sumItemizedFromEntries (v2 enum) ────────────────────────────────────────
 
 function makeRow(type: ClientDeductionRow["type"], amount: number, growth = 0, startYear = 2026, endYear = 2076): ClientDeductionRow {
-  return { type, annualAmount: amount, growthRate: growth, startYear, endYear };
+  return { id: `d-${type}`, type, annualAmount: amount, growthRate: growth, startYear, endYear };
 }
 
 describe("sumItemizedFromEntries", () => {

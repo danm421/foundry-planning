@@ -100,9 +100,8 @@ export interface ChangeEditorInput {
 //
 // Kinds absent here are child rows (*_schedule_override, extra_payment,
 // will_bequest*, beneficiary_designation, life_insurance_*, transfer_schedule)
-// that are never written as their own change row, `plan_settings`, which is
-// resolved separately below, and the Assumptions kinds, whose page has no
-// per-row editor to open (Ruling T4e-assumptions).
+// that are never written as their own change row, and `plan_settings`, which
+// is resolved separately below.
 const DETAILS_PAGE_BY_KIND: Partial<Record<TargetKind, DetailsEditorPage>> = {
   income: "income-expenses",
   expense: "income-expenses",
@@ -120,6 +119,9 @@ const DETAILS_PAGE_BY_KIND: Partial<Record<TargetKind, DetailsEditorPage>> = {
   gift: "family",
   external_beneficiary: "family",
   will: "wills",
+  client_deduction: "assumptions",
+  client_tax_adjustment: "assumptions",
+  withdrawal_strategy: "assumptions",
 };
 
 // Ruling F-I2: kinds whose Details editor is KNOWN to corrupt data inside a
@@ -131,15 +133,10 @@ const DETAILS_PAGE_BY_KIND: Partial<Record<TargetKind, DetailsEditorPage>> = {
 //     (T4c-reinvestment).
 //   family_member — the page lists members from the base table (T4d-member).
 //   external_beneficiary — its inline form PATCHes the base row (T4d-extben).
-//   client_deduction / client_tax_adjustment / withdrawal_strategy — the page
-//     lists base-case rows whatever the scenario (T4e-assumptions).
 const UNSUPPORTED_KINDS: ReadonlySet<TargetKind> = new Set<TargetKind>([
   "reinvestment",
   "family_member",
   "external_beneficiary",
-  "client_deduction",
-  "client_tax_adjustment",
-  "withdrawal_strategy",
 ]);
 
 function isUnsupported({ targetKind }: ChangeEditorInput): boolean {

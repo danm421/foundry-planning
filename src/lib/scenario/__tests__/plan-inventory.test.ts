@@ -66,7 +66,7 @@ const raw = {
   ],
   deductions: [
     { id: "dd1", type: "charitable", annualAmount: 5000, growthRate: 0, startYear: 2026, endYear: 2030 },
-    { type: "above_line", annualAmount: 1, growthRate: 0, startYear: 2026, endYear: 2030 },
+    { id: "dd2", type: "above_line", annualAmount: 1, growthRate: 0, startYear: 2026, endYear: 2030 },
   ],
   taxAdjustments: [{ id: "ta1", name: "Prior bonus", annualAmount: 100 }],
 };
@@ -207,8 +207,8 @@ describe("buildPlanInventory", () => {
     expect(byType("expense").find((i) => i.id === "x-trip")?.draftRef).toBeUndefined();
   });
 
-  it("skips deduction rows that carry no id", () => {
-    expect(ids("deduction")).toEqual(["dd1"]);
+  it("lists every deduction row, each by its own id", () => {
+    expect(ids("deduction").sort()).toEqual(["dd1", "dd2"]);
   });
 
   it("maps the remaining families to their own types", () => {

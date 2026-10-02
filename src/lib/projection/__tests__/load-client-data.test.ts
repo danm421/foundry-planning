@@ -473,6 +473,50 @@ describe("loadClientData", () => {
     expect(data.planSettings.inflationRate).toBeCloseTo(0.025, 10);
   });
 
+  it("carries each deduction's id and display keys, so a scenario edit finds its base row", async () => {
+    seedValidFixture();
+    dbState.clientDeductions = [
+      {
+        id: "00000000-0000-0000-0000-0000000003d1",
+        clientId: FIXTURE_CLIENT_ID,
+        scenarioId: taxAdjustmentRow.scenarioId,
+        type: "charitable" as const,
+        name: "First Baptist Church",
+        owner: "spouse" as const,
+        annualAmount: "12000.00",
+        growthRate: "0.0200",
+        startYear: 2026,
+        endYear: 2040,
+        startYearRef: "client_retirement",
+        endYearRef: null,
+        source: "manual" as const,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    ];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    expect(data.deductions).toHaveLength(1);
+    expect(data.deductions![0]).toMatchObject({
+      id: "00000000-0000-0000-0000-0000000003d1",
+      name: "First Baptist Church",
+      owner: "spouse",
+      annualAmount: 12000,
+      startYearRef: "client_retirement",
+      endYearRef: null,
+    });
+  });
+
+  it("carries a tax adjustment's owner and year refs for the editor", async () => {
+    seedValidFixture();
+    dbState.clientTaxAdjustments = [taxAdjustmentRow];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    expect(data.taxAdjustments![0]).toMatchObject({ owner: "joint", startYearRef: null, endYearRef: null });
+  });
+
   it("loads tax adjustments for the scenario, parsing decimals to numbers", async () => {
     seedValidFixture();
     dbState.clientTaxAdjustments = [taxAdjustmentRow];

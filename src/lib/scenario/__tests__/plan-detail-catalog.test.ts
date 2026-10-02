@@ -81,7 +81,7 @@ describe("NOT_YET_READY", () => {
     expect([...NOT_YET_READY].sort()).toEqual(
       [
         "business", "note_receivable", "life_policy", "disability_policy", "gift_series",
-        "family_member", "external_beneficiary", "reinvestment", "deduction", "tax_adjustment",
+        "family_member", "external_beneficiary", "reinvestment",
         "tax_rates", "growth_inflation", "savings_withdrawals",
       ].sort(),
     );

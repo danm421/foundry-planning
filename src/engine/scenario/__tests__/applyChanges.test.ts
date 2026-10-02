@@ -1163,3 +1163,43 @@ describe("applyScenarioChanges — disability_policy", () => {
     expect(removed.effectiveTree.disabilityPolicies).toEqual([]);
   });
 });
+
+describe("applyScenarioChanges — base deductions", () => {
+  // The loader now carries each base deduction's id, so an edit/remove written
+  // against that id finds its row (the overlay matches by `findIndex(id)`).
+  const DEDUCTION = {
+    id: "d1",
+    type: "charitable" as const,
+    annualAmount: 12_000,
+    growthRate: 0,
+    startYear: 2026,
+    endYear: 2040,
+  };
+  const baseWithDeduction = () => ({ ...minimalClientData(), deductions: [DEDUCTION] });
+  const deductionChange = (opType: "edit" | "remove", payload: unknown): ScenarioChange => ({
+    id: "ch-d",
+    scenarioId: "s1",
+    opType,
+    targetKind: "client_deduction",
+    targetId: "d1",
+    payload,
+    toggleGroupId: null,
+    orderIndex: 0,
+  });
+
+  it("an edit of a base deduction changes that row", () => {
+    const out = applyScenarioChanges(
+      baseWithDeduction(),
+      [deductionChange("edit", { annualAmount: { from: 12_000, to: 20_000 } })],
+      {},
+      [],
+    );
+    expect(out.effectiveTree.deductions).toEqual([{ ...DEDUCTION, annualAmount: 20_000 }]);
+    expect(out.warnings).toEqual([]);
+  });
+
+  it("a remove of a base deduction drops that row", () => {
+    const out = applyScenarioChanges(baseWithDeduction(), [deductionChange("remove", {})], {}, []);
+    expect(out.effectiveTree.deductions).toEqual([]);
+  });
+});

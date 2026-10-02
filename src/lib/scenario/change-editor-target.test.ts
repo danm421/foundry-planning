@@ -45,6 +45,9 @@ describe("resolveChangeEditor", () => {
     ["client", "family"],
     ["gift", "family"],
     ["will", "wills"],
+    ["client_deduction", "assumptions"],
+    ["client_tax_adjustment", "assumptions"],
+    ["withdrawal_strategy", "assumptions"],
   ];
 
   it.each(mapped)(
@@ -84,9 +87,6 @@ describe("resolveChangeEditor", () => {
       "reinvestment",
       "family_member",
       "external_beneficiary",
-      "client_deduction",
-      "client_tax_adjustment",
-      "withdrawal_strategy",
     ];
 
     it.each(unsupportedKinds.flatMap((k) => [[k, "edit"], [k, "add"]] as const))(

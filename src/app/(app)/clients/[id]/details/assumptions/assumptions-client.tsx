@@ -1,7 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
+import DialogShell from "@/components/dialog-shell";
+import { useClientAccess } from "@/components/client-access-provider";
 import { ASSUMPTIONS_TABS, assumptionsTabQuery, resolveAssumptionsTab } from "./tabs";
 import AssumptionsSubtabs from "@/components/assumptions-subtabs";
 import TaxRatesForm from "@/components/forms/tax-rates-form";
@@ -11,6 +14,7 @@ import WithdrawalStrategySection from "@/components/withdrawal-strategy-section"
 import type { WithdrawalAccount, WithdrawalStrategy } from "@/components/withdrawal-strategy-section";
 import type { ClientMilestones } from "@/lib/milestones";
 import { DeductionsClient } from "./deductions-client";
+import { DeductionsItemizedList } from "@/components/deductions-itemized-list";
 import { TaxAdjustmentsList } from "@/components/tax-adjustments-list";
 import AccountGroupsTab from "./account-groups-tab";
 import type {
@@ -23,7 +27,7 @@ import type { LiquidAccount, AssetAccount } from "@/components/account-groups/ty
 import { type RiskLevel } from "@/lib/risk-levels";
 import type { FilingStatus } from "@/lib/tax/types";
 import type { TaxAdjustmentRow } from "@/components/forms/add-tax-adjustment-form";
-import type { EditorFocus } from "@/lib/scenario/change-editor-target";
+import { focusRowId, type EditorFocus } from "@/lib/scenario/change-editor-target";
 
 export interface DeductionsTabData {
   derivedRows: DerivedRow[];
@@ -102,6 +106,9 @@ interface ModelPortfolioOption {
 
 export interface AssumptionsClientProps {
   clientId: string;
+  /** The scenario being viewed, when the loader was asked for one — titles the
+   *  Solver's focus dialog. */
+  scenarioName?: string;
   /** The household's composite risk level (Task 9+), falling back to the
    *  legacy `clients.riskTolerance` column when no profile row exists yet --
    *  resolved by the server component so this stays a plain read-only value. */
@@ -125,23 +132,30 @@ export interface AssumptionsClientProps {
   allAccounts: AssetAccount[];
   /**
    * Focus mode, for the Solver's Changes tab. Read once, at mount — key the
-   * view by the focus. Nothing on this page opens in focus mode: see
-   * `onFocusClose`.
+   * view by the focus. Renders only the editor the focus names, over nothing:
+   * - a `client_deduction` / `client_tax_adjustment` / `withdrawal_strategy`
+   *   edit, create or delete → that list's own form (a delete runs silently);
+   * - `plan_settings` with id `"withdrawal"` → that tab, in a dialog.
+   * Anything else reports `"unavailable"`; the Tax Rates and Growth &
+   * Inflation tabs write the BASE plan settings whatever the scenario.
    */
   focus?: EditorFocus;
   /**
-   * Called once, with `"unavailable"`, whenever `focus` is set; the view
-   * renders nothing, and the host must UNMOUNT it (clearing `focus` on a
-   * still-mounted view falls through to the full page). The Deductions, Tax
-   * Adjustments and Withdrawal lists hold the BASE plan's rows whatever
-   * scenario is selected, so a focused editor would open on base values and
-   * its save would overwrite the scenario's own change with them.
+   * Called once when focus mode ends. The host must UNMOUNT the view then
+   * (clearing `focus` on a still-mounted view falls through to the full page).
+   * The outcome is `"unavailable"` when no editor opened, `"failed"` when a
+   * focused delete did not land.
    */
   onFocusClose?: (outcome?: FocusCloseOutcome) => void;
 }
 
+/** The focus kinds whose list opens its own editor, as that list's focus mode. */
+const ROW_FOCUS_KINDS = ["client_deduction", "client_tax_adjustment", "withdrawal_strategy"] as const;
+type RowFocusKind = (typeof ROW_FOCUS_KINDS)[number];
+
 export default function AssumptionsClient({
   clientId,
+  scenarioName,
   riskLevel,
   filingStatus,
   settings,
@@ -166,11 +180,104 @@ export default function AssumptionsClient({
   const searchParams = useSearchParams();
   const activeTab = resolveAssumptionsTab(searchParams.get("tab"));
 
-  // Focus mode opens nothing here (see `onFocusClose`) — hand control back
-  // at once, and only once.
-  useFocusCloseOnce(focus, null, false, onFocusClose);
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
 
-  if (focus) return null;
+  // Focus mode, read once. A row kind's list owns its own close handshake; the
+  // Savings & Withdrawals singleton is a dialog this view owns.
+  const [rowFocusKind] = useState<RowFocusKind | null>(() =>
+    focus && canEdit ? (ROW_FOCUS_KINDS.find((k) => k === focus.kind) ?? null) : null,
+  );
+  const [withdrawalFocus] = useState(
+    () => !!focus && canEdit && focus.kind === "plan_settings" && focusRowId(focus) === "withdrawal",
+  );
+  const [withdrawalDialogOpen, setWithdrawalDialogOpen] = useState(withdrawalFocus);
+  // Reports "unavailable" for every focus no editor opens for (a row kind
+  // handed to its list does not come through here), and closes the dialog's.
+  useFocusCloseOnce(
+    rowFocusKind ? undefined : focus,
+    withdrawalFocus ? {} : null,
+    withdrawalDialogOpen,
+    onFocusClose,
+  );
+
+  const withdrawalTab = (
+    <div className="space-y-8">
+      <SurplusCashFlowForm
+        clientId={clientId}
+        surplusSpendPct={settings.surplusSpendPct}
+        surplusSaveAccountId={settings.surplusSaveAccountId}
+        surplusSpendAllUntilRetirement={settings.surplusSpendAllUntilRetirement}
+        householdAccounts={accounts
+          .filter((a) => !a.ownerEntityId)
+          .map((a) => ({ id: a.id, name: a.name }))}
+      />
+      <WithdrawalStrategySection
+        clientId={clientId}
+        accounts={accounts}
+        initialStrategies={withdrawalStrategies}
+        milestones={milestones}
+        clientFirstName={clientFirstName}
+        spouseFirstName={spouseFirstName}
+      />
+    </div>
+  );
+
+  if (focus) {
+    const intent = focus.intent ?? "edit";
+    const rowFocus = { focusIntent: intent, focusRowId: focusRowId(focus), onFocusClose };
+    if (rowFocusKind === "client_deduction") {
+      return (
+        <DeductionsItemizedList
+          clientId={clientId}
+          rows={deductionsData.itemizedRows}
+          currentYear={deductionsData.currentYear}
+          milestones={milestones}
+          clientFirstName={clientFirstName}
+          spouseFirstName={spouseFirstName}
+          {...rowFocus}
+        />
+      );
+    }
+    if (rowFocusKind === "client_tax_adjustment") {
+      return (
+        <TaxAdjustmentsList
+          clientId={clientId}
+          rows={taxAdjustmentRows}
+          currentYear={deductionsData.currentYear}
+          milestones={milestones}
+          clientFirstName={clientFirstName}
+          spouseFirstName={spouseFirstName}
+          {...rowFocus}
+        />
+      );
+    }
+    if (rowFocusKind === "withdrawal_strategy") {
+      return (
+        <WithdrawalStrategySection
+          clientId={clientId}
+          accounts={accounts}
+          initialStrategies={withdrawalStrategies}
+          milestones={milestones}
+          clientFirstName={clientFirstName}
+          spouseFirstName={spouseFirstName}
+          {...rowFocus}
+        />
+      );
+    }
+    if (!withdrawalDialogOpen) return null;
+    const label = ASSUMPTIONS_TABS.find((t) => t.id === "withdrawal")!.label;
+    return (
+      <DialogShell
+        open
+        onOpenChange={(open) => !open && setWithdrawalDialogOpen(false)}
+        title={scenarioName ? `${label} — ${scenarioName}` : label}
+        size="lg"
+      >
+        {withdrawalTab}
+      </DialogShell>
+    );
+  }
 
   function handleTabChange(id: string) {
     // pushState (not router.push) -- syncs useSearchParams without re-running
@@ -241,27 +348,7 @@ export default function AssumptionsClient({
             medicarePremiumInflationEnabled={settings.medicarePremiumInflationEnabled}
           />
         )}
-        {activeTab === "withdrawal" && (
-          <div className="space-y-8">
-            <SurplusCashFlowForm
-              clientId={clientId}
-              surplusSpendPct={settings.surplusSpendPct}
-              surplusSaveAccountId={settings.surplusSaveAccountId}
-              surplusSpendAllUntilRetirement={settings.surplusSpendAllUntilRetirement}
-              householdAccounts={accounts
-                .filter((a) => !a.ownerEntityId)
-                .map((a) => ({ id: a.id, name: a.name }))}
-            />
-            <WithdrawalStrategySection
-              clientId={clientId}
-              accounts={accounts}
-              initialStrategies={withdrawalStrategies}
-              milestones={milestones}
-              clientFirstName={clientFirstName}
-              spouseFirstName={spouseFirstName}
-            />
-          </div>
-        )}
+        {activeTab === "withdrawal" && withdrawalTab}
         {activeTab === "deductions" && (
           <DeductionsClient
             clientId={clientId}

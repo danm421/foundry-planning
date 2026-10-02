@@ -24,6 +24,10 @@ export interface TaxAdjustmentRow {
   id: string;
   taxType: IncomeTaxType;
   name: string | null;
+  /** Display keys for the Assumptions editor; the tax math never reads them. */
+  owner?: "client" | "spouse" | "joint";
+  startYearRef?: string | null;
+  endYearRef?: string | null;
   /** SIGNED. Negative removes income the plan over-counts. */
   annualAmount: number;
   growthRate: number;

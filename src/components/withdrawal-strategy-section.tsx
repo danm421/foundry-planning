@@ -7,6 +7,8 @@ import { HelpTip } from "@/components/help-tip";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultWithdrawalRefs, resolveMilestone } from "@/lib/milestones";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
+import { useFocusDelete } from "@/hooks/use-focus-delete";
 import { useClientAccess } from "@/components/client-access-provider";
 import {
   fieldLabelBaseClassName,
@@ -42,6 +44,15 @@ interface WithdrawalStrategySectionProps {
   milestones?: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
+  /**
+   * Focus mode, for the Solver's Changes tab: render only the dialog this
+   * section's own Edit / Add button opens (or run its delete with no prompt),
+   * then hand control back through `onFocusClose`. Read once, at mount; the host
+   * must UNMOUNT the section when it closes.
+   */
+  focusIntent?: "edit" | "create" | "delete";
+  focusRowId?: string | null;
+  onFocusClose?: (outcome?: FocusCloseOutcome) => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -345,21 +356,37 @@ export default function WithdrawalStrategySection({
   milestones,
   clientFirstName,
   spouseFirstName,
+  focusIntent,
+  focusRowId,
+  onFocusClose,
 }: WithdrawalStrategySectionProps) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
   const writer = useScenarioWriter(clientId);
   const [list, setList] = useState<WithdrawalStrategy[]>(initialStrategies);
-  const [dialog, setDialog] = useState<{ open: boolean; editing?: WithdrawalStrategy }>({
-    open: false,
+  // Focus mode's row, snapshotted at mount. Null means there is nothing to open
+  // here (the row is gone, or there is no edit access): "unavailable".
+  const [focusFound] = useState<{ row: WithdrawalStrategy | null } | null>(() => {
+    if (!focusIntent || !canEdit) return null;
+    if (focusIntent === "create") return { row: null };
+    const row = initialStrategies.find((w) => w.id === focusRowId);
+    return row ? { row } : null;
   });
+  const [dialog, setDialog] = useState<{ open: boolean; editing?: WithdrawalStrategy }>(() =>
+    focusFound && focusIntent !== "delete"
+      ? { open: true, editing: focusFound.row ?? undefined }
+      : { open: false },
+  );
   const [deleting, setDeleting] = useState<WithdrawalStrategy | null>(null);
 
   const accountMap = Object.fromEntries(accounts.map((a) => [a.id, a]));
   const sorted = [...list].sort((a, b) => a.priorityOrder - b.priorityOrder);
   const nextPriority = list.length > 0 ? Math.max(...list.map((w) => w.priorityOrder)) + 1 : 1;
 
-  async function performDelete(strategyId: string): Promise<boolean> {
+  async function performDelete(
+    strategyId: string,
+    { silent = false }: { silent?: boolean } = {},
+  ): Promise<boolean> {
     const res = await writer.submit(
       { op: "remove", targetKind: "withdrawal_strategy", targetId: strategyId },
       {
@@ -368,6 +395,8 @@ export default function WithdrawalStrategySection({
       },
     );
     if (!res.ok && res.status !== 204) {
+      // Focus mode reports the failure through onFocusClose("failed") instead.
+      if (silent) return false;
       const json = await res.json().catch(() => ({}));
       alert(json.error ?? "Failed to delete");
       return false;
@@ -375,8 +404,73 @@ export default function WithdrawalStrategySection({
     return true;
   }
 
+  const focusDeleting = useFocusDelete(
+    focusIntent === "delete" && focusFound?.row
+      ? async () => {
+          const id = focusFound.row!.id;
+          const ok = await performDelete(id, { silent: true });
+          if (ok) setList((prev) => prev.filter((w) => w.id !== id));
+          return ok;
+        }
+      : null,
+    onFocusClose,
+  );
+  // Focus mode hands control back once its dialogs are gone, however it went.
+  useFocusCloseOnce(focusIntent, focusFound, dialog.open || deleting !== null || focusDeleting, onFocusClose);
+
   // Row template: # | Account | Years | Actions
   const ROW_GRID = "grid grid-cols-[2.25rem_minmax(0,1.6fr)_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2";
+
+  const dialogNodes = (
+    <>
+      {canEdit && dialog.open && (
+        <WithdrawalDialog
+          key={dialog.editing?.id ?? "new"}
+          clientId={clientId}
+          accounts={accounts}
+          nextPriority={nextPriority}
+          milestones={milestones}
+          clientFirstName={clientFirstName}
+          spouseFirstName={spouseFirstName}
+          open={dialog.open}
+          onOpenChange={(o) => setDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
+          editing={dialog.editing}
+          onSaved={(strategy, mode) => {
+            if (mode === "create") setList((prev) => [...prev, strategy]);
+            else setList((prev) => prev.map((w) => (w.id === strategy.id ? strategy : w)));
+          }}
+          onRequestDelete={() => {
+            if (dialog.editing) setDeleting(dialog.editing);
+          }}
+        />
+      )}
+
+      {canEdit && (
+        <ConfirmDeleteDialog
+          open={!!deleting}
+          title="Delete Withdrawal Entry"
+          message={
+            deleting
+              ? `Remove "${accountMap[deleting.accountId]?.name ?? "account"}" from the withdrawal order?`
+              : ""
+          }
+          onCancel={() => setDeleting(null)}
+          onConfirm={async () => {
+            if (!deleting) return;
+            const ok = await performDelete(deleting.id);
+            if (ok) {
+              setList((prev) => prev.filter((w) => w.id !== deleting.id));
+              setDialog({ open: false });
+              setDeleting(null);
+            }
+          }}
+        />
+      )}
+    </>
+  );
+
+  // Focus mode renders the dialogs alone (a delete renders none).
+  if (focusIntent) return dialogNodes;
 
   return (
     <section>
@@ -455,49 +549,7 @@ export default function WithdrawalStrategySection({
         )}
       </div>
 
-      {canEdit && dialog.open && (
-        <WithdrawalDialog
-          key={dialog.editing?.id ?? "new"}
-          clientId={clientId}
-          accounts={accounts}
-          nextPriority={nextPriority}
-          milestones={milestones}
-          clientFirstName={clientFirstName}
-          spouseFirstName={spouseFirstName}
-          open={dialog.open}
-          onOpenChange={(o) => setDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
-          editing={dialog.editing}
-          onSaved={(strategy, mode) => {
-            if (mode === "create") setList((prev) => [...prev, strategy]);
-            else setList((prev) => prev.map((w) => (w.id === strategy.id ? strategy : w)));
-          }}
-          onRequestDelete={() => {
-            if (dialog.editing) setDeleting(dialog.editing);
-          }}
-        />
-      )}
-
-      {canEdit && (
-        <ConfirmDeleteDialog
-          open={!!deleting}
-          title="Delete Withdrawal Entry"
-          message={
-            deleting
-              ? `Remove "${accountMap[deleting.accountId]?.name ?? "account"}" from the withdrawal order?`
-              : ""
-          }
-          onCancel={() => setDeleting(null)}
-          onConfirm={async () => {
-            if (!deleting) return;
-            const ok = await performDelete(deleting.id);
-            if (ok) {
-              setList((prev) => prev.filter((w) => w.id !== deleting.id));
-              setDialog({ open: false });
-              setDeleting(null);
-            }
-          }}
-        />
-      )}
+      {dialogNodes}
     </section>
   );
 }

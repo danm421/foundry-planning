@@ -1315,6 +1315,9 @@ export interface WithdrawalPriority {
   priorityOrder: number;
   startYear: number;
   endYear: number;
+  /** Display keys for the Assumptions editor; the engine never reads them. */
+  startYearRef?: string | null;
+  endYearRef?: string | null;
 }
 
 export interface Transfer {

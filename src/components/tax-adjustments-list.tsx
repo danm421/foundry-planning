@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
+import { useFocusDelete } from "@/hooks/use-focus-delete";
 import {
   AddTaxAdjustmentForm,
   type TaxAdjustmentRow,
@@ -47,6 +49,9 @@ export function TaxAdjustmentsList({
   milestones,
   clientFirstName,
   spouseFirstName,
+  focusIntent,
+  focusRowId,
+  onFocusClose,
 }: {
   clientId: string;
   rows: TaxAdjustmentRow[];
@@ -55,13 +60,32 @@ export function TaxAdjustmentsList({
   milestones?: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
+  /**
+   * Focus mode, for the Solver's Changes tab: render only the form this list's
+   * own Edit / Add button opens (or run its delete with no prompt), then hand
+   * control back through `onFocusClose`. Read once, at mount; the host must
+   * UNMOUNT the list when it closes.
+   */
+  focusIntent?: "edit" | "create" | "delete";
+  focusRowId?: string | null;
+  onFocusClose?: (outcome?: FocusCloseOutcome) => void;
 }) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
   const router = useRouter();
   const writer = useScenarioWriter(clientId);
-  const [editing, setEditing] = useState<TaxAdjustmentRow | null>(null);
-  const [adding, setAdding] = useState(false);
+  // Focus mode's row, snapshotted at mount. Null means there is nothing to open
+  // here (the row is gone, or there is no edit access): "unavailable".
+  const [focusFound] = useState<{ row: TaxAdjustmentRow | null } | null>(() => {
+    if (!focusIntent || !canEdit) return null;
+    if (focusIntent === "create") return { row: null };
+    const row = rows.find((r) => r.id === focusRowId);
+    return row ? { row } : null;
+  });
+  const [editing, setEditing] = useState<TaxAdjustmentRow | null>(
+    focusIntent === "edit" ? (focusFound?.row ?? null) : null,
+  );
+  const [adding, setAdding] = useState(focusIntent === "create" && focusFound !== null);
 
   // Compute current-year totals (display only). SIGNED — a negative row
   // (income the plan over-counts) subtracts from the total; never clamped.
@@ -71,19 +95,54 @@ export function TaxAdjustmentsList({
     currentYearTotal += r.annualAmount * Math.pow(1 + r.growthRate, currentYear - r.startYear);
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("Delete this tax adjustment?")) return;
-    await writer.submit(
+  // `silent` is focus mode's delete: no prompt, and it reports whether it landed.
+  async function handleDelete(id: string, { silent = false }: { silent?: boolean } = {}) {
+    if (!silent && !confirm("Delete this tax adjustment?")) return false;
+    const res = await writer.submit(
       { op: "remove", targetKind: "client_tax_adjustment", targetId: id },
       { url: `/api/clients/${clientId}/tax-adjustments/${id}`, method: "DELETE" },
     );
     router.refresh();
     onChange?.();
+    return res.ok || res.status === 204;
   }
+
+  const focusDeleting = useFocusDelete(
+    focusIntent === "delete" && focusFound?.row
+      ? () => handleDelete(focusFound.row!.id, { silent: true })
+      : null,
+    onFocusClose,
+  );
+  // Focus mode hands control back once its form is gone, however it went.
+  useFocusCloseOnce(focusIntent, focusFound, adding || editing !== null || focusDeleting, onFocusClose);
 
   // Row template: Treatment | Description | Owner | Years | Amount | Tax paid | Actions
   const ROW_GRID =
     "grid grid-cols-[9rem_minmax(0,1.3fr)_5rem_6rem_7rem_6rem_auto] items-center gap-3 px-3 py-1.5";
+
+  const formNode =
+    canEdit && (adding || editing) ? (
+      <AddTaxAdjustmentForm
+        clientId={clientId}
+        existing={editing}
+        onClose={() => {
+          setAdding(false);
+          setEditing(null);
+        }}
+        onSaved={() => {
+          setAdding(false);
+          setEditing(null);
+          router.refresh();
+          onChange?.();
+        }}
+        milestones={milestones}
+        clientFirstName={clientFirstName}
+        spouseFirstName={spouseFirstName}
+      />
+    ) : null;
+
+  // Focus mode renders the form alone (a delete renders nothing).
+  if (focusIntent) return formNode;
 
   return (
     <section>
@@ -182,25 +241,7 @@ export function TaxAdjustmentsList({
         <span className="tabular-nums font-semibold text-ink">{fmt.format(currentYearTotal)}</span>
       </div>
 
-      {canEdit && (adding || editing) && (
-        <AddTaxAdjustmentForm
-          clientId={clientId}
-          existing={editing}
-          onClose={() => {
-            setAdding(false);
-            setEditing(null);
-          }}
-          onSaved={() => {
-            setAdding(false);
-            setEditing(null);
-            router.refresh();
-            onChange?.();
-          }}
-          milestones={milestones}
-          clientFirstName={clientFirstName}
-          spouseFirstName={spouseFirstName}
-        />
-      )}
+      {formNode}
     </section>
   );
 }
