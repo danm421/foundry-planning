@@ -6,7 +6,7 @@ import { FieldTooltip } from "@/components/forms/field-tooltip";
 
 /** Shared by the narrow numeric inputs so a styling change cannot land on one
  *  and miss the others. `DollarField` is deliberately wider and keeps its own. */
-export const NUMBER_INPUT_CLASS =
+const NUMBER_INPUT_CLASS =
   "w-24 rounded border border-hair bg-card px-2 py-1 text-[13px] text-ink tabular-nums";
 
 /** A toggleable stressor block: checkbox + label + (when on) its parameter inputs. */
@@ -149,7 +149,7 @@ export function DollarField({
 }
 
 /** Whole-dollar value with thousand separators (no cents, no symbol). */
-export function formatDollars(n: number): string {
+function formatDollars(n: number): string {
   return Math.round(n).toLocaleString("en-US");
 }
 

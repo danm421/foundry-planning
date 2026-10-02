@@ -471,6 +471,13 @@ describe("DisabilityPanel", () => {
             spouseName="Jane"
             onChange={vi.fn()}
             onResetField={vi.fn()}
+            projectionYears={[]}
+            clientId="c1"
+            scenarioId={null}
+            scenarioName={null}
+            savedLtcChange={null}
+            onLtcSaved={vi.fn()}
+            onEditLtcOnChangesTab={vi.fn()}
           />,
         );
         const solverText = solver.container.textContent!;

@@ -1627,6 +1627,13 @@ export function LiveSolverWorkspace({
             spouseName={spouseName}
             onChange={pushMutation}
             onResetField={clearMutations}
+            projectionYears={currentProjection}
+            clientId={clientId}
+            scenarioId={isScenarioSource ? initialSource : null}
+            scenarioName={scenarioName ?? null}
+            savedLtcChange={null}
+            onLtcSaved={() => router.refresh()}
+            onEditLtcOnChangesTab={() => setActiveTab("changes")}
           />
         )}
 

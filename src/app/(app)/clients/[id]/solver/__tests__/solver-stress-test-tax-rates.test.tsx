@@ -44,6 +44,13 @@ function renderTab(over: Parameters<typeof tree>[0] = {}) {
       spouseName="Jane"
       onChange={onChange as never}
       onResetField={onResetField}
+      projectionYears={[]}
+      clientId="c1"
+      scenarioId={null}
+      scenarioName={null}
+      savedLtcChange={null}
+      onLtcSaved={vi.fn()}
+      onEditLtcOnChangesTab={vi.fn()}
     />
   );
   const { rerender } = render(tab(over));

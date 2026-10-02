@@ -123,6 +123,13 @@ function renderTab(
       spouseName="Jane"
       onChange={onChange as never}
       onResetField={vi.fn()}
+      projectionYears={[]}
+      clientId="c1"
+      scenarioId={null}
+      scenarioName={null}
+      savedLtcChange={null}
+      onLtcSaved={vi.fn()}
+      onEditLtcOnChangesTab={vi.fn()}
     />,
   );
 }
@@ -146,6 +153,13 @@ function renderStatefulTab(over: Parameters<typeof tree>[0]) {
             setEvent({ person: m.person, startYear: m.startYear, endYear: m.endYear })) as never
         }
         onResetField={vi.fn()}
+        projectionYears={[]}
+        clientId="c1"
+        scenarioId={null}
+        scenarioName={null}
+        savedLtcChange={null}
+        onLtcSaved={vi.fn()}
+        onEditLtcOnChangesTab={vi.fn()}
       />
     );
   }

@@ -1,6 +1,7 @@
 "use client";
 
-import type { ClientData, DisabilityPolicy } from "@/engine/types";
+import type { ClientData, DisabilityPolicy, ProjectionYear } from "@/engine/types";
+import type { ChangesPanelChange } from "@/components/scenario/changes-panel";
 import {
   benefitForYear,
   resolveCoverage,
@@ -12,6 +13,7 @@ import { benefitPeriodText } from "@/lib/insurance-policies/disability-labels";
 import { MAX_RATE_STRESS_POINTS } from "@/lib/tax/rate-stress";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { SolverSection } from "./solver-section";
+import { LtcStressRow } from "./solver-stress-ltc-row";
 import {
   DollarField,
   OptionalYearField,
@@ -29,6 +31,13 @@ interface Props {
   spouseName: string;
   onChange: (m: SolverMutation) => void;
   onResetField: (keys: SolverMutationKey[]) => void;
+  projectionYears: ProjectionYear[];
+  clientId: string;
+  scenarioId: string | null;
+  scenarioName: string | null;
+  savedLtcChange: ChangesPanelChange | null;
+  onLtcSaved: () => void;
+  onEditLtcOnChangesTab: (changeId: string) => void;
 }
 
 const DEFAULT_SS_HAIRCUT_PCT = 0.23;
@@ -51,6 +60,13 @@ export function SolverStressTestTab({
   spouseName,
   onChange,
   onResetField,
+  projectionYears,
+  clientId,
+  scenarioId,
+  scenarioName,
+  savedLtcChange,
+  onLtcSaved,
+  onEditLtcOnChangesTab,
 }: Props) {
   const ps = workingTree.planSettings;
   const baseInflation = baseClientData.planSettings.inflationRate;
@@ -276,6 +292,20 @@ export function SolverStressTestTab({
           endYear={disability.endYear}
         />
       </StressRow>
+
+      {/* Long-term care */}
+      <LtcStressRow
+        tree={workingTree}
+        projectionYears={projectionYears}
+        scenarioId={scenarioId}
+        scenarioName={scenarioName}
+        clientId={clientId}
+        savedChange={savedLtcChange}
+        onChange={onChange}
+        onResetField={onResetField}
+        onSaved={onLtcSaved}
+        onEditOnChangesTab={onEditLtcOnChangesTab}
+      />
 
       {/* Market crash */}
       <StressRow
