@@ -374,9 +374,10 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
       // `scenario_changes`, so GET /gifts overlays those changes onto the base
       // rows when it is handed the active scenario.
       //
-      // `gift_series` DOES carry a real scenario_id — one row per scenario, no
-      // overlay — so GET /gifts/series simply filters on it, and a series is
-      // written straight to its own route in both modes.
+      // `gift_series` DOES carry a real scenario_id, so GET /gifts/series
+      // filters the partition on it AND appends the scenario's overlay series
+      // (its own `gift` changes, marked `overlay`). A partition series is
+      // written to its own route; an overlay one is a `gift` change.
       //
       // Without the param this panel showed the base plan's gifts beside the
       // base plan's series.

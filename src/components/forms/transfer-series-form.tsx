@@ -114,11 +114,12 @@ export default function TransferSeriesForm({
         ? `/api/clients/${clientId}/gifts/series?scenario=${encodeURIComponent(scenarioId)}`
         : `/api/clients/${clientId}/gifts/series`;
 
-      // A recurring series is NEVER a `scenario_changes` row. `gift_series`
-      // carries a real `scenario_id`, the GET that fills this panel filters on
-      // it, and promotion copies the partition into base — so this route IS the
-      // scenario-correct write, and a change row would vanish from the list it
-      // was just saved into and abort the scenario's promote.
+      // This form writes the scenario's `gift_series` partition, not an overlay
+      // `gift` change: it carries milestone anchors (`startYearRef`/`endYearRef`)
+      // and notes, which an overlay series draft cannot hold. (The gift dialog,
+      // Family page and Estate flow create overlay series that DO project; a
+      // partition row here is listed and promotes, but does not feed the main
+      // projection.)
       const res = await writer.submitDirect({
         url: seriesUrl,
         method: "POST",

@@ -178,12 +178,12 @@ export async function saveGiftRecurring(
     notes: args.notes ?? null,
   };
 
-  // A recurring series is NEVER a `scenario_changes` row. `gift_series` carries
-  // a real `scenario_id`: the series GET filters on it and promotion copies the
-  // partition into base, so its own route IS the scenario-correct write and a
-  // change row would be invisible to every list that reads the table. The
-  // scenario goes on the URL — without it the row silently lands in base even
-  // while a scenario is selected.
+  // This writes the scenario's `gift_series` partition, not an overlay `gift`
+  // change: the drop form carries milestone anchors (`startYearRef`/
+  // `endYearRef`) and notes, which an overlay series draft cannot hold. (A
+  // partition row is listed and promotes, but does not feed the main
+  // projection.) The scenario goes on the URL — without it the row silently
+  // lands in base even while a scenario is selected.
   //
   // See the matching comment in saveGiftOneTime — dispatchSave owns the
   // single post-save refresh for every drop action.

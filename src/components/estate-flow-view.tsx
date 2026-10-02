@@ -93,13 +93,14 @@ function scenarioChangeBody(edit: ScenarioEdit): Record<string, unknown> {
 // ── Gift persistence ─────────────────────────────────────────────────────────
 
 /**
- * How a recurring series reaches storage, handed to `persistGiftChange`.
+ * Where the series route should write, handed to `persistGiftChange`.
  *
- * `gift_series` is scenario-PARTITIONED, not overlaid: the row carries a real
- * `scenario_id`, the series GET filters on it, and promotion copies the whole
- * partition into base. So a series is NEVER a `scenario_changes` row — it goes
- * to the series route in BOTH modes, carrying the scenario whose partition it
- * belongs in. `scenarioId: null` means the base case.
+ * Inside a scenario a recurring gift that PROJECTS is the scenario's own `gift`
+ * change (an overlay series draft) — a NEW series, and an edit/delete of an
+ * overlay series, go through `submit`. The series route only ever sees base-mode
+ * writes and edits/deletes of a `gift_series` PARTITION row (a series that
+ * predates the scenario's overlay), which carry the scenario whose partition
+ * holds them. `scenarioId: null` means the base case.
  *
  * It is a parameter rather than something read off the writer because the two
  * callers target two different scenarios: Save writes into the one named in the
@@ -120,8 +121,9 @@ function seriesUrl(base: string, target: SeriesRouteTarget): string {
  * Persist a single GiftChange, following the active scenario. For a one-time
  * gift `submit` decides where it lands: in a scenario it becomes a `gift`
  * overlay row; in the base case it falls through to the legacy gift routes
- * described below. A series always goes through `series` — see
- * `SeriesRouteTarget`.
+ * described below. A series follows the same rule inside a scenario (a new or
+ * overlay series is a `gift` change); the base case and partition series use
+ * `series` — see `SeriesRouteTarget`.
  *
  * Gifts have no `edit` op — a save (new gift OR edit of an existing one) is
  * always an `add` carrying the full draft, re-using the gift's id so the base
@@ -131,7 +133,7 @@ function seriesUrl(base: string, target: SeriesRouteTarget): string {
  * save-handlers.ts:
  *
  * - cash-once / asset-once → /gifts and /gifts/:id
- * - series                → /gifts/series and /gifts/series/:id
+ * - series (base mode)    → /gifts/series and /gifts/series/:id
  *
  * The client-generated `id` is never sent on POST — the route assigns one.
  * On PATCH, the immutable `accountId` is omitted (the gift routes reject it).
@@ -149,13 +151,20 @@ async function persistGiftChange(
 
   // ── series ────────────────────────────────────────────────────────────────
   if (gift.kind === "series") {
-    // An overlay series is the scenario's own `gift` change: no `gift_series`
-    // row exists for the series route to find. It saves exactly as the gift
-    // dialog saves it — an add under its own id, or a remove.
-    if (overlaySeriesIds.has(gift.id) && op !== "add") {
+    // Inside a scenario a NEW series, and an edit/remove of an overlay series,
+    // are the scenario's own `gift` change — no `gift_series` row exists for
+    // the series route to find, and a partition row would never project. It
+    // saves exactly as the gift dialog saves it. `direct` is only the writer's
+    // base-mode fallback shape; it is unused here.
+    if (series.scenarioId != null && (op === "add" || overlaySeriesIds.has(gift.id))) {
       const direct = {
-        url: seriesUrl(`/api/clients/${clientId}/gifts/series/${gift.id}`, series),
-        method: op === "remove" ? ("DELETE" as const) : ("PATCH" as const),
+        url: seriesUrl(
+          op === "add"
+            ? `/api/clients/${clientId}/gifts/series`
+            : `/api/clients/${clientId}/gifts/series/${gift.id}`,
+          series,
+        ),
+        method: op === "remove" ? ("DELETE" as const) : op === "add" ? ("POST" as const) : ("PATCH" as const),
       };
       return submit(op === "remove" ? giftScenarioRemove(gift.id) : giftScenarioAdd(gift), direct);
     }
@@ -604,13 +613,17 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       };
 
       for (const change of giftChanges) {
-        // The series half does NOT go through `submitToNewScenario`: it is a
-        // real `gift_series` row, so it is POSTed to the new scenario's own
-        // partition instead of becoming a change row.
-        const res = await persistGiftChange(props.clientId, change, submitToNewScenario, {
-          scenarioId: newScenarioId,
-          request: submitDirect,
-        });
+        // A new or overlay series is a `gift` change in the new scenario (the
+        // clone keeps each change's id, so overlay ids still match). Only a
+        // PARTITION series edit reaches the series route, and the clone
+        // mints fresh partition ids, so a source id 404s there (loudly).
+        const res = await persistGiftChange(
+          props.clientId,
+          change,
+          submitToNewScenario,
+          { scenarioId: newScenarioId, request: submitDirect },
+          overlaySeriesIds,
+        );
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           const apiMsg =
@@ -633,7 +646,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     } finally {
       setIsSaving(false);
     }
-  }, [canEdit, pendingChanges, giftChanges, submitDirect, props.clientId, props.scenarioId, isNamedScenario, router, pathname]);
+  }, [canEdit, pendingChanges, giftChanges, submitDirect, overlaySeriesIds, props.clientId, props.scenarioId, isNamedScenario, router, pathname]);
 
   return (
     <div className="flex flex-col gap-4 p-4">

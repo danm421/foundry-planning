@@ -134,9 +134,8 @@ const SERIES_GIFT: EstateFlowGift = {
 const EDITED_SERIES: EstateFlowGift = { ...SERIES_GIFT, annualAmount: 25_000 };
 const NEW_SERIES: EstateFlowGift = { ...SERIES_GIFT, id: "gs-new", annualAmount: 18_000 };
 
-/** The `gifts/series` POST body `NEW_SERIES` produces. Identical in both
- *  modes — a series always goes to the series route (only the `?scenario=`
- *  suffix on the URL differs), so one fixture pins both. */
+/** The `gifts/series` POST body `NEW_SERIES` produces in BASE mode. Inside a
+ *  scenario a new series is a `gift` change instead (no series request). */
 const SERIES_REST_BODY = {
   grantor: "client",
   recipientEntityId: "ent-trust",
@@ -302,26 +301,29 @@ describe("EstateFlowView — gift saves follow the active scenario", () => {
 
   // ── series, add/patch site ───────────────────────────────────────────────
   //
-  // A series is NEVER a `gift` change row. `gift_series` carries a real
-  // `scenario_id` — partitioned, not overlaid — so the series route is the
-  // scenario-correct write and the scenario rides on the URL. A change row was
-  // invisible to the series GET (which filters the table and applies no
-  // overlay) and made the whole scenario un-promotable.
-  it("writes a new gift series into the scenario's own partition, never as a `gift` change", async () => {
+  // Inside a scenario a NEW recurring gift is the scenario's own `gift` change
+  // (an overlay series draft): that is what the main-page projection reads, and
+  // promote turns it into a base `gift_series` row. A `gift_series` partition
+  // row would never project, so the series route is not touched.
+  it("creates a new gift series in a scenario as ONE `gift` add — no /gifts/series request", async () => {
     searchParams = new URLSearchParams("scenario=scn-1");
     await renderView("scn-1");
     await click("add series");
     await saveInPlace();
     await waitFor(() => expect(writeCalls()).toHaveLength(1));
 
-    const [call] = writeCalls();
-    expect(call.url).toBe(`/api/clients/${CLIENT_ID}/gifts/series?scenario=scn-1`);
-    expect(call.method).toBe("POST");
-    // The same REST body base mode sends — see the base-mode test below.
-    expect(call.body).toEqual(SERIES_REST_BODY);
-    for (const c of writeCalls()) {
-      expect(c.url).not.toContain("/scenarios/");
-    }
+    expect(writeCalls()).toEqual([
+      {
+        url: `/api/clients/${CLIENT_ID}/scenarios/scn-1/changes`,
+        method: "POST",
+        body: expect.objectContaining({
+          op: "add",
+          targetKind: "gift",
+          entity: expect.objectContaining({ kind: "series", id: NEW_SERIES.id, annualAmount: 18_000 }),
+        }),
+      },
+    ]);
+    for (const c of writeCalls()) expect(c.url).not.toContain("/gifts/series");
   });
 
   it("still POSTs the base series route when no scenario is active", async () => {
@@ -334,6 +336,8 @@ describe("EstateFlowView — gift saves follow the active scenario", () => {
     expect(call.url).toBe(`/api/clients/${CLIENT_ID}/gifts/series`);
     expect(call.method).toBe("POST");
     expect(call.body).toEqual(SERIES_REST_BODY);
+    // The whole request list: base mode is exactly one series POST.
+    expect(writeCalls()).toHaveLength(1);
   });
 
   // ── series, remove site ──────────────────────────────────────────────────
@@ -447,7 +451,7 @@ describe("EstateFlowView — gift saves follow the active scenario", () => {
     );
   });
 
-  it("sends a NEW series to the newly created scenario's own gift_series partition", async () => {
+  it("sends a NEW series to the newly created scenario as a `gift` add — no /gifts/series request", async () => {
     searchParams = new URLSearchParams(`scenario=${OLD_SCENARIO_ID}`);
     await renderView(OLD_SCENARIO_ID);
     await click("add series");
@@ -458,14 +462,54 @@ describe("EstateFlowView — gift saves follow the active scenario", () => {
 
     const [create, seriesCall] = writeCalls();
     expect(create.url).toBe(`/api/clients/${CLIENT_ID}/scenarios`);
-    // The partition is the scenario just minted — not `scn-old`, and not base.
     expect(seriesCall.url).toBe(
-      `/api/clients/${CLIENT_ID}/gifts/series?scenario=${NEW_SCENARIO_ID}`,
+      `/api/clients/${CLIENT_ID}/scenarios/${NEW_SCENARIO_ID}/changes`,
     );
-    expect(seriesCall.url).not.toContain(OLD_SCENARIO_ID);
     expect(seriesCall.method).toBe("POST");
-    expect(seriesCall.body).toEqual(SERIES_REST_BODY);
-    // And never a change row — `gift_series` is not an overlay kind.
-    expect(seriesCall.url).not.toContain("/changes");
+    expect(seriesCall.body).toEqual(
+      expect.objectContaining({
+        op: "add",
+        targetKind: "gift",
+        entity: expect.objectContaining({ kind: "series", id: NEW_SERIES.id }),
+      }),
+    );
+    for (const c of writeCalls()) expect(c.url).not.toContain("/gifts/series");
+  });
+
+  it("Save as new scenario writes an edited OVERLAY series as a `gift` add in the new scenario", async () => {
+    searchParams = new URLSearchParams(`scenario=${OLD_SCENARIO_ID}`);
+    await renderView(OLD_SCENARIO_ID, ["gs-1"]);
+    await click("edit series");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save as new scenario" }));
+    });
+    await waitFor(() => expect(writeCalls()).toHaveLength(2));
+
+    expect(writeCalls()[1]).toEqual({
+      url: `/api/clients/${CLIENT_ID}/scenarios/${NEW_SCENARIO_ID}/changes`,
+      method: "POST",
+      body: expect.objectContaining({
+        op: "add",
+        targetKind: "gift",
+        entity: expect.objectContaining({ kind: "series", id: "gs-1", annualAmount: 25_000 }),
+      }),
+    });
+    for (const c of writeCalls()) expect(c.url).not.toContain("/gifts/series");
+  });
+
+  it("Save as new scenario writes a deleted OVERLAY series as a `gift` remove in the new scenario", async () => {
+    searchParams = new URLSearchParams(`scenario=${OLD_SCENARIO_ID}`);
+    await renderView(OLD_SCENARIO_ID, ["gs-1"]);
+    await click("delete series");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save as new scenario" }));
+    });
+    await waitFor(() => expect(writeCalls()).toHaveLength(2));
+
+    expect(writeCalls()[1]).toEqual({
+      url: `/api/clients/${CLIENT_ID}/scenarios/${NEW_SCENARIO_ID}/changes`,
+      method: "POST",
+      body: { op: "remove", targetKind: "gift", targetId: "gs-1" },
+    });
   });
 });

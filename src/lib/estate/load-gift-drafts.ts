@@ -10,25 +10,16 @@ import {
 } from "./estate-flow-gifts";
 
 /** Representable gift drafts for a client + scenario (cash/asset/series;
- *  bundled-liability and business-interest rows are excluded). Shared by the
- *  estate-flow editor and the solver estate tab.
+ *  bundled-liability and business-interest rows are excluded), plus which
+ *  recurring gifts are the scenario's own `gift` changes rather than rows of its
+ *  `gift_series` partition (only the former open in the Solver's Changes tab).
+ *  Shared by the estate-flow editor and the solver estate tab.
  *
  *  The scenario's own `gift` changes are overlaid on top of the base rows, so a
  *  gift added in the solver and saved to a scenario reloads into the editor it
  *  was created in. Without that overlay the editors would show only base-plan
  *  gifts while the projection they sit next to already counted the scenario's —
  *  the list and the numbers would disagree. */
-export async function loadGiftDrafts(
-  clientId: string,
-  firmId: string,
-  scenarioId: string,
-): Promise<EstateFlowGift[]> {
-  return (await loadGiftDraftState(clientId, firmId, scenarioId)).drafts;
-}
-
-/** `loadGiftDrafts` plus which recurring gifts are the scenario's own `gift`
- *  changes rather than rows of its `gift_series` partition. Only the former
- *  open in the Solver's Changes tab. */
 export async function loadGiftDraftState(
   clientId: string,
   firmId: string,

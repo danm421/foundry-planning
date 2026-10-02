@@ -177,7 +177,7 @@ interface Props {
   onLayoutChange?: (next: ReportLayoutEntry[]) => void;
   /** Base-case effective tree, for the Base series of the estate chart. */
   baseTree: ClientData;
-  /** Base-plan gift drafts, loaded in `solver-content.tsx` via `loadGiftDrafts`.
+  /** Base-plan gift drafts, loaded in `solver-content.tsx` via `loadGiftDraftState`.
    *  Folded with the scenario's `gift-upsert` mutations to feed the Estate
    *  report's Flow Chart sub-tab. */
   baseGifts: EstateFlowGift[];
