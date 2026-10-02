@@ -115,11 +115,13 @@ export default function GiftTaxReportView({
 
     // Dense map: seeded years exact, out-years projected forward (audit F2).
     // Must match the engine's `buildAnnualExclusionsMap` so the drilldown agrees
-    // with the ledger on what a gift past the last seeded year is taxed.
+    // with the ledger on what a gift past the last seeded year is taxed. Its end
+    // is the ledger's own last year — the engine's end year, which an LTC
+    // scenario's care can carry past the saved plan end.
     const annualExclusionsByYear = buildAnnualExclusionMap(
       tree.taxYearRows ?? [],
       tree.planSettings.planStartYear,
-      tree.planSettings.planEndYear,
+      projection.giftLedger.at(-1)?.year ?? tree.planSettings.planEndYear,
       tree.planSettings.taxInflationRate ?? tree.planSettings.inflationRate ?? 0,
     );
 

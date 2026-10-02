@@ -509,6 +509,36 @@ describe("buildLifeInsuranceWhatIfData — LTC event", () => {
     for (const y of years) expect(y.expenses.bySource[ltcCareExpenseId(LTC_ID, "client")]).toBeUndefined();
   });
 
+  // R38 — the survivor's ending portfolio is read in the year they die. In
+  // care, that is the last care year whenever care runs past their life
+  // expectancy (the projection runs to it).
+  const endingVsRow = (data: ClientData) => {
+    const projection = runLifeInsuranceWhatIf({
+      data, deceased: "client", deathYear: 2030, faceValue: 1_000_000, proceedsGrowthRate: 0.05,
+      livingExpenseAtDeath: null, payoffLiabilityIds: [],
+    });
+    const at = (year: number) => {
+      const p = projection.find((y) => y.year === year)!.portfolioAssets;
+      return p.taxableTotal + p.cashTotal + p.retirementTotal + p.lifeInsuranceTotal;
+    };
+    return { ending: survivorEndingPortfolio(projection, "client", data), at, last: projection.at(-1)!.year };
+  };
+
+  it("a survivor whose care runs past their life expectancy is read at the care death year", () => {
+    // Jane (1972, life expectancy 92 → 2064) in care 2064–2068.
+    const { ending, at } = endingVsRow(withLtc({ people: [care("client", 85, 3), care("spouse", 92, 5)] }));
+    expect(at(2068)).not.toBeCloseTo(at(2064), 0); // the two reads really differ
+    expect(ending).toBeCloseTo(at(2068), 2);
+  });
+
+  it("control: a survivor whose care ends before their life expectancy reads as before", () => {
+    // Jane in care 2052–2054, dying ten years before her 2064 life expectancy:
+    // the projection ends with her, and the read falls back to that last year.
+    const { ending, at, last } = endingVsRow(withLtc({ people: [care("client", 85, 3), care("spouse", 80, 3)] }));
+    expect(last).toBe(2054);
+    expect(ending).toBeCloseTo(at(2054), 2);
+  });
+
   it("an event for the deceased alone is dropped — no care rows, no home sale, no cut", () => {
     const sale = { accountId: "acct-home", saleYear: 2056, price: { mode: "projected" as const }, sellingCostPct: 0.06 };
     const out = whatIf(withLtc({ livingExpenseCutPct: 1, homeSale: sale }));

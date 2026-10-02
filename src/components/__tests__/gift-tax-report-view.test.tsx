@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import GiftTaxReportView from "../gift-tax-report-view";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import type { ProjectionResult } from "@/engine/projection";
+import { buildClientData, baseClient, basePlanSettings } from "@/engine/__tests__/fixtures";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
@@ -157,5 +158,40 @@ describe("GiftTaxReportView", () => {
     const row2060 = await screen.findByTestId("gift-row-2060");
     expect(row2060.querySelector('[aria-label="Cooper passes"]')).not.toBeNull();
     expect(screen.getByTestId("gift-row-2068").querySelector('[aria-label="Cooper passes"]')).toBeNull();
+  });
+
+  it("a gift in a care-extended year shows the annual exclusion the engine applies", async () => {
+    // John (1970) in care 2055–2057; Jane dies 2052, so the saved plan ends 2055.
+    // The engine's ledger runs to 2057 and excludes the 2056 gift in full.
+    const tree = buildClientData({
+      client: { ...baseClient, lifeExpectancy: 95, spouseLifeExpectancy: 80 },
+      planSettings: { ...basePlanSettings, planEndYear: 2055 },
+      gifts: [{ id: "g-2056", year: 2056, amount: 19_000, grantor: "client", useCrummeyPowers: false }],
+      ltcEvents: [{
+        id: "3f1c2d7e-8a1b-4c5d-9e0f-112233445566", name: "LTC", includePolicies: true,
+        livingExpenseCutPct: null, homeSale: null,
+        people: [{ person: "client", startAge: 85, years: 3, careSetting: "nursing_private", annualCost: 129_575, costInflation: 0.05 }],
+      }],
+    });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => tree }) as unknown as typeof fetch;
+    const actual = await vi.importActual<typeof import("@/engine/projection")>("@/engine/projection");
+    projectionMock.mockImplementation(actual.runProjectionWithEvents);
+    const engine2056 = actual.runProjectionWithEvents(tree).giftLedger.find((g) => g.year === 2056)!;
+    const engineExclusion = engine2056.giftsGiven - engine2056.perGrantor.client.taxableGiftsThisYear;
+    expect(engineExclusion).toBe(19_000);
+
+    render(
+      <GiftTaxReportView
+        clientId="c1"
+        ownerNames={{ clientName: "John", spouseName: "Jane" }}
+        ownerDobs={{ clientDob: "1970-01-01", spouseDob: "1972-06-15" }}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId("gift-row-2056"));
+    // Drilldown columns: Description, Full Value, Discount, Gift Value, Exclusion, Taxable Gift.
+    const giftRow = screen.getByText("Gift").closest("tr")!;
+    const cells = within(giftRow).getAllByRole("cell");
+    expect(cells[4].textContent).toBe("$19,000");
+    expect(cells[5].textContent).toBe("—"); // nothing taxable, as in the ledger
   });
 });
