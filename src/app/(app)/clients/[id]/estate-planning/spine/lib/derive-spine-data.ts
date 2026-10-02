@@ -484,15 +484,17 @@ export function deriveSpineData(args: {
   asOf: AsOfValue;
 }): SpineData {
   const { tree, withResult, asOf } = args;
-  const { client, planSettings } = tree;
-  const { planStartYear } = planSettings;
+  const { client } = tree;
+  // The projection this spine reads ran the LTC pre-pass; derive death years
+  // from the same care-adjusted client and plan window (care can push a death
+  // past the plan's end year) or the stages land on the wrong year.
+  const {
+    client: deathClient,
+    planSettings: { planStartYear, planEndYear },
+  } = applyLtcEvent(tree).data;
   const anchorYear = args.pairRowYear ?? planStartYear;
   const anchorMode: BalanceMode = args.pairRowMode ?? "boy";
 
-  // The projection this spine reads ran the LTC pre-pass; derive death years
-  // from the same care-adjusted client and horizon (care can push a death past
-  // the plan's end year) or the stages land on the wrong year.
-  const { client: deathClient, planSettings: { planEndYear } } = applyLtcEvent(tree).data;
   const firstDeathYear = computeFirstDeathYear(deathClient, planStartYear, planEndYear);
   const finalDeathYear = computeFinalDeathYear(deathClient, planStartYear, planEndYear);
 

@@ -35,6 +35,22 @@ function withEvent(event: Partial<LtcEvent>, over: Partial<ClientData> = {}): Cl
   });
 }
 
+/** A household default checking account, so sale proceeds and Monte Carlo
+ *  liquid balances have somewhere to land. */
+const checking: Account = {
+  id: "acct-checking",
+  name: "Joint Checking",
+  category: "cash",
+  subType: "checking",
+  titlingType: "jtwros",
+  value: 10_000,
+  basis: 10_000,
+  growthRate: 0,
+  rmdEnabled: false,
+  isDefaultChecking: true,
+  owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+};
+
 const proceeds = (data: ClientData, year: number, txId: string): number =>
   runProjection(data).find((p) => p.year === year)!.income.bySource?.[`technique-proceeds:${txId}`] ?? 0;
 
@@ -148,19 +164,6 @@ describe("LTC event through runProjectionWithEvents", () => {
 // engine-level guard for a second same-year sale is pinned in
 // asset-transactions.test.ts.
 describe("LTC home sale in the same year as a Techniques sale of that home", () => {
-  const checking: Account = {
-    id: "acct-checking",
-    name: "Joint Checking",
-    category: "cash",
-    subType: "checking",
-    titlingType: "jtwros",
-    value: 10_000,
-    basis: 10_000,
-    growthRate: 0,
-    rmdEnabled: false,
-    isDefaultChecking: true,
-    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
-  };
   const mortgage = { ...sampleLiabilities[0], linkedPropertyId: "acct-home" };
   const techniques: AssetTransaction = { id: "t-same", name: "Sell home", type: "sell", year: 2030, accountId: "acct-home" };
   const over = { accounts: [...sampleAccounts, checking], liabilities: [mortgage], assetTransactions: [techniques] };
@@ -207,19 +210,6 @@ describe("LTC event through runMonteCarlo", () => {
         .filter((a) => a.category === "taxable" || a.category === "retirement" || a.category === "cash")
         .map((a) => [a.id, [{ fromYear: 0, mix: [{ assetClassId: "eq", weight: 0.6 }, { assetClassId: "bd", weight: 0.4 }] }]]),
     );
-  const checking: Account = {
-    id: "acct-checking",
-    name: "Joint Checking",
-    category: "cash",
-    subType: "checking",
-    titlingType: "jtwros",
-    value: 10_000,
-    basis: 10_000,
-    growthRate: 0,
-    rmdEnabled: false,
-    isDefaultChecking: true,
-    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
-  };
   const run = (data: ClientData) =>
     runMonteCarlo({ data, returnEngine: engine(7), accountMixes: mixForAll(data), trials: 5, yieldEvery: 5 });
 

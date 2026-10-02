@@ -59,5 +59,12 @@ describe("scale windows (LTC living-expense cut)", () => {
   it("scaleFactorFor multiplies windows that contain the year", () => {
     expect(scaleFactorFor(null, 2030)).toBe(1);
     expect(scaleFactorFor([{ startYear: 2030, endYear: 2030, factor: 0.5 }], 2031)).toBe(1);
+    expect(scaleFactorFor([{ startYear: 2030, endYear: 2032, factor: 0.5 }], 2031)).toBe(0.5);
+    const two = [
+      { startYear: 2030, endYear: 2032, factor: 0.5 },
+      { startYear: 2031, endYear: 2031, factor: 0.4 },
+    ];
+    expect(scaleFactorFor(two, 2031)).toBeCloseTo(0.2, 12); // both windows: 0.5 × 0.4
+    expect(scaleFactorFor(two, 2032)).toBe(0.5);
   });
 });

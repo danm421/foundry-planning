@@ -17,8 +17,8 @@ import type {
 } from "./types";
 import { resolveRefYears } from "@/lib/year-refs";
 import { ltcPersonFirstName } from "@/lib/ltc/ltc-event-name";
-
-const ASSUMED_LIFE_EXPECTANCY = 95; // the engine-wide fallback (death-event/shared.ts)
+import { ASSUMED_LIFE_EXPECTANCY, planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
+import { birthYearFromDob } from "@/lib/age-year";
 
 export const ltcCareExpenseId = (eventId: string, person: "client" | "spouse"): string =>
   `ltc-care-${eventId}-${person}`;
@@ -46,12 +46,6 @@ export interface LtcResolution {
   warnings: LtcWarning[];
 }
 
-function birthYearOf(dob: string | null | undefined): number | null {
-  if (!dob) return null;
-  const y = parseInt(String(dob).slice(0, 4), 10);
-  return Number.isFinite(y) ? y : null;
-}
-
 function toRanges(years: number[]): { startYear: number; endYear: number }[] {
   const sorted = [...new Set(years)].sort((a, b) => a - b);
   const ranges: { startYear: number; endYear: number }[] = [];
@@ -75,7 +69,7 @@ export function resolveLtcEvent(data: ClientData): LtcResolution | null {
 
   const people: ResolvedCarePerson[] = [];
   for (const p of event.people) {
-    const by = birthYearOf(p.person === "client" ? client.dateOfBirth : client.spouseDob);
+    const by = birthYearFromDob(p.person === "client" ? client.dateOfBirth : client.spouseDob);
     if (by == null) {
       warnings.push({ kind: "missing_dob", person: p.person });
       continue;
@@ -137,14 +131,10 @@ export function applyLtcEvent(data: ClientData): {
     const le = p.startAge + p.years - 1;
     client = p.person === "client" ? { ...client, lifeExpectancy: le } : { ...client, spouseLifeExpectancy: le };
   }
-  const clientBy = birthYearOf(client.dateOfBirth)!;
-  const spouseBy = birthYearOf(client.spouseDob);
-  const finalDeathYear = Math.max(
-    clientBy + client.lifeExpectancy!,
-    spouseBy != null ? spouseBy + (client.spouseLifeExpectancy ?? ASSUMED_LIFE_EXPECTANCY) : -Infinity,
-  );
-  const extends_ = finalDeathYear > planSettings.planEndYear;
-  if (extends_) client = { ...client, planEndAge: finalDeathYear - clientBy };
+  // The horizon is only ever extended, to the last death.
+  const horizon = planHorizonFromLifeExpectancy(client);
+  const extended = horizon && horizon.planEndYear > planSettings.planEndYear ? horizon : null;
+  if (extended) client = { ...client, planEndAge: extended.planEndAge };
 
   // 2. Care-cost rows (medical-deductible in full until Phase 2's benefits).
   const careRows: Expense[] = resolution.people.map((p) => {
@@ -197,13 +187,13 @@ export function applyLtcEvent(data: ClientData): {
   let next: ClientData = {
     ...data,
     client,
-    planSettings: extends_ ? { ...planSettings, planEndYear: finalDeathYear } : planSettings,
+    planSettings: extended ? { ...planSettings, planEndYear: extended.planEndYear } : planSettings,
     expenses: [...expenses, ...careRows],
     assetTransactions: sale.length > 0 ? [...(data.assetTransactions ?? []), ...sale] : data.assetTransactions,
   };
   // A later horizon moves plan_end / client_end anchored rows with it — the
   // same re-anchor the Solver's life-expectancy lever runs (apply-mutations).
-  if (extends_) next = resolveRefYears(next);
+  if (extended) next = resolveRefYears(next);
   return { data: next, resolution };
 }
 
