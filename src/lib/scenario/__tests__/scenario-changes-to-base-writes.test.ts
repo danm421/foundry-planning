@@ -7,6 +7,8 @@ import {
   collectExternalSalaryIncomeIds,
 } from "../scenario-changes-to-base-writes";
 import type { BaseWritePlan } from "../promote-to-base-types";
+import { executeBaseWritePlan } from "../execute-base-write-plan";
+import { accounts } from "@/db/schema";
 import { withSynthesizedEntityChecking } from "@/lib/entities/entity-checking";
 
 const minimalClientData = (): ClientData => ({
@@ -203,6 +205,50 @@ describe("scenarioChangesToBaseWrites", () => {
 // The promote planner reuses the engine cascade to decide which base rows to
 // delete, so it must hand that cascade each reinvestment's real targets: an edit
 // carries only its picks and groups, never the union the cascade reads.
+// Planner → executor, end to end on a fake tx: a Solver-added business and its
+// "<name> — Cash" child are two `account` adds, and the planner keeps whatever
+// order `loadScenarioChanges` returned them in. Either order must promote.
+describe("scenarioChangesToBaseWrites → executeBaseWritePlan — a business and its cash child", () => {
+  const addRow = (targetId: string, payload: Record<string, unknown>): ScenarioChange => ({
+    ...baseChange,
+    id: `ch-${targetId}`,
+    opType: "add",
+    targetKind: "account",
+    targetId,
+    payload: { id: targetId, value: 0, basis: 0, owners: [], ...payload },
+  });
+  const business = addRow("biz-syn", { name: "Acme", category: "business" });
+  const cash = addRow("cash-syn", {
+    name: "Acme — Cash",
+    category: "cash",
+    parentAccountId: "biz-syn",
+    isDefaultChecking: true,
+  });
+
+  it.each([
+    ["business row first", [business, cash]],
+    ["cash row first", [cash, business]],
+  ])("%s: the cash account is inserted under the business's generated id", async (_label, rows) => {
+    const writePlan = scenarioChangesToBaseWrites(minimalClientData(), rows, [], {});
+    const inserted: Record<string, unknown>[] = [];
+    let seq = 0;
+    const tx = {
+      insert: (table: unknown) => ({
+        values: (arg: Record<string, unknown>) => {
+          if (table === accounts) inserted.push(arg);
+          return { returning: async () => [{ id: `db-${++seq}` }] };
+        },
+      }),
+      update: () => ({ set: () => ({ where: () => ({ returning: async () => [] }) }) }),
+      delete: () => ({ where: async () => {} }),
+    };
+    await executeBaseWritePlan(tx as never, writePlan, { clientId: "c1", baseScenarioId: "b1" });
+
+    expect(inserted.map((a) => a.name)).toEqual(["Acme", "Acme — Cash"]);
+    expect(inserted[1].parentAccountId).toBe("db-1");
+  });
+});
+
 describe("scenarioChangesToBaseWrites — reinvestment cascade targets", () => {
   /** Checking (cash), an IRA, a brokerage (taxable), and one base reinvestment
    *  shaped as `loadClientData` builds it. */

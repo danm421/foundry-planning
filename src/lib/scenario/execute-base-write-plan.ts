@@ -44,8 +44,11 @@ interface ExecCtx {
  * SELF-references are excluded too (`accounts.roth_rollover_account_id`,
  * `asset_transactions.purchase_transaction_id`, `gifts.parent_gift_id`): the
  * rank table below orders kinds against each other, not rows within one kind,
- * so a same-kind parent is only remapped by luck of plan order. `parentAccountId`
- * is listed because `liabilities.parent_account_id` is a genuine cross-kind FK.
+ * so a same-kind parent is only remapped by luck of plan order. The one
+ * exception is `accounts.parent_account_id` — a Solver-added business always
+ * brings its own cash child — which `orderInserts` puts parents-first.
+ * `parentAccountId` is listed here for both: the account self-ref and
+ * `liabilities.parent_account_id`, a genuine cross-kind FK.
  *
  * Each entry is INERT unless the value it finds is a synthetic targetId inserted
  * in this same batch — a base-plan id passes through untouched. That is why the
@@ -106,9 +109,9 @@ const REF_COLUMNS = [
  *       client_deduction, client_tax_adjustment, relocation, reinvestment) sit
  *       here harmlessly: nothing references them.
  *
- * Array#sort is stable, so ties keep the plan's own order. That is what makes
- * `loadScenarioChanges`'s missing ORDER BY stop mattering for cross-kind FKs —
- * ranking by kind is the contract, not row order.
+ * Array#sort is stable, so ties keep the plan's own order. Ranking by kind is
+ * the contract for cross-kind FKs, not row order (`loadScenarioChanges` orders
+ * by creation, but an autosave can rewrite an older row after its dependents).
  */
 const INSERT_RANK: Record<string, number> = {
   entity: 0,
@@ -120,6 +123,36 @@ const INSERT_RANK: Record<string, number> = {
 };
 
 const insertRank = (kind: string) => INSERT_RANK[kind] ?? 3;
+
+type PlannedInsert = BaseWritePlan["inserts"][number];
+
+/**
+ * Inserts in FK-safe order: by `INSERT_RANK`, then — inside the `account` rank —
+ * an account whose `parentAccountId` names another account inserted in this
+ * batch goes after that parent, so `remapRefs` finds the parent's generated id.
+ * A scenario business and its "<name> — Cash" child are both `account` adds,
+ * and nothing else orders them: a later autosave rewrites the business's add
+ * row, so the child can come back first. Everything else keeps the plan's order
+ * (a parent is only pulled forward to just before its first child).
+ */
+function orderInserts(inserts: readonly PlannedInsert[]): PlannedInsert[] {
+  const ranked = [...inserts].sort((a, b) => insertRank(a.kind) - insertRank(b.kind));
+  const accountsById = new Map(
+    ranked.filter((i) => i.kind === "account").map((i) => [i.targetId, i]),
+  );
+  const out: PlannedInsert[] = [];
+  const placed = new Set<PlannedInsert>();
+  const place = (ins: PlannedInsert, path: Set<PlannedInsert>) => {
+    if (placed.has(ins) || path.has(ins)) return; // path: a malformed cycle stops here
+    const parentId = ins.kind === "account" ? ins.raw.parentAccountId : undefined;
+    const parent = typeof parentId === "string" ? accountsById.get(parentId) : undefined;
+    if (parent) place(parent, new Set(path).add(ins));
+    placed.add(ins);
+    out.push(ins);
+  };
+  for (const ins of ranked) place(ins, new Set());
+  return out;
+}
 
 type Cols = Record<string, PgColumn>;
 
@@ -162,11 +195,10 @@ export async function executeBaseWritePlan(
   // Child writers/updaters remap same-batch synthetic references (e.g. an
   // expense's dedicatedAccountIds pointing at an account added in this plan,
   // or a savings rule's salaryIncomeIds pointing at a new salary) through the
-  // shared idRemap — populated parents-first by the sort below.
+  // shared idRemap — populated parents-first by `orderInserts`.
   const childCtx = { clientId: ctx.clientId, baseScenarioId: ctx.baseScenarioId, idRemap };
 
-  const inserts = [...plan.inserts].sort((a, b) => insertRank(a.kind) - insertRank(b.kind));
-  for (const ins of inserts) {
+  for (const ins of orderInserts(plan.inserts)) {
     const entry = PROMOTE_TABLE_REGISTRY[ins.kind];
     if (!entry) throw new Error(`promote: no table for kind ${ins.kind}`);
     const cols = getTableColumns(entry.table) as Cols;

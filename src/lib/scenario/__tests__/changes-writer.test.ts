@@ -718,6 +718,58 @@ describe.skipIf(!HAS_DB)("changes-writer", () => {
       expect(rows).toHaveLength(0);
     });
 
+    // Removing a scenario-ADDED business drops only its own rows; its cash
+    // child (a sibling `add` whose parentAccountId is the business's synthetic
+    // id) survives. Left pointing at a parent that will never exist, it
+    // FK-failed every later promote. Base deletes with ON DELETE SET NULL, and
+    // resolveCascades releases the child the same way — so does the writer.
+    it("removing a scenario-added business nulls its sibling children's parentAccountId", async () => {
+      const businessId = randomUUID();
+      const cashId = randomUUID();
+      const loanId = randomUUID();
+      const otherId = randomUUID();
+      const add = (targetKind: "account" | "liability", entity: Record<string, unknown>) =>
+        applyEntityAdd({ scenarioId, firmId: COOPER_FIRM_ID, targetKind, entity: entity as never });
+      await add("account", { id: businessId, name: "Acme", category: "business", value: 0, basis: 0 });
+      await add("account", {
+        id: cashId,
+        name: "Acme — Cash",
+        category: "cash",
+        parentAccountId: businessId,
+        value: 0,
+        basis: 0,
+      });
+      await add("liability", { id: loanId, name: "Acme LOC", balance: 0, parentAccountId: businessId });
+      await add("account", {
+        id: otherId,
+        name: "Unrelated",
+        category: "taxable",
+        parentAccountId: null,
+        value: 0,
+        basis: 0,
+      });
+
+      await applyEntityRemove({
+        scenarioId,
+        firmId: COOPER_FIRM_ID,
+        targetKind: "account",
+        targetId: businessId,
+      });
+
+      const rows = await db
+        .select()
+        .from(scenarioChanges)
+        .where(eq(scenarioChanges.scenarioId, scenarioId));
+      const byTarget = new Map(rows.map((r) => [r.targetId, r]));
+      expect(byTarget.has(businessId)).toBe(false);
+      const cash = byTarget.get(cashId)!.payload as Record<string, unknown>;
+      expect(cash.parentAccountId).toBeNull();
+      expect(cash.name).toBe("Acme — Cash"); // the rest of the payload is untouched
+      expect((byTarget.get(loanId)!.payload as Record<string, unknown>).parentAccountId).toBeNull();
+      expect(byTarget.get(otherId)!.payload).toMatchObject({ name: "Unrelated", parentAccountId: null });
+      expect(rows).toHaveLength(3);
+    });
+
     it("inserts a remove row when entity exists in base", async () => {
       await applyEntityRemove({
         scenarioId,

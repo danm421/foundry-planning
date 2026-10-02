@@ -1,6 +1,6 @@
 // src/lib/scenario/changes.ts
 import { cache } from "react";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { scenarioChanges, scenarioToggleGroups } from "@/db/schema";
 import { resolveEffectiveToggleState } from "@/engine/scenario/applyChanges";
@@ -27,7 +27,12 @@ export const loadScenarioChanges = cache(async function loadScenarioChanges(
     .from(scenarioChanges)
     .where(
       and(eq(scenarioChanges.scenarioId, scenarioId), eq(scenarioChanges.enabled, true)),
-    );
+    )
+    // A stable, creation order rather than whatever the scan returns: an
+    // autosave UPDATE moves a row's tuple, so heap order drifts. Promote's
+    // FK safety does not rest on this (`executeBaseWritePlan` orders inserts
+    // itself) — it is the belt.
+    .orderBy(asc(scenarioChanges.createdAt), asc(scenarioChanges.id));
 
   return rows.map((r) => ({
     id: r.id,

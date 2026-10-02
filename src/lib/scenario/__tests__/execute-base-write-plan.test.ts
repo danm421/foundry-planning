@@ -230,6 +230,78 @@ describe("executeBaseWritePlan", () => {
     expect(ops[1].table).toBe(incomes);
   });
 
+  // A Solver-added business is a PAIR of `account` adds — the business and its
+  // "<name> — Cash" child, whose `parentAccountId` is the business's synthetic
+  // id. Both rank as `account`, so kind ranking alone left their order to the
+  // rows `loadScenarioChanges` returned: child first, and the synthetic id went
+  // straight into `accounts.parent_account_id` (FK violation, promote 500).
+  describe("a parent account inserted in the same batch as its child", () => {
+    const business: BaseWritePlan["inserts"][number] = {
+      kind: "account",
+      targetId: "biz-syn",
+      raw: { id: "biz-syn", name: "Acme", category: "business", value: 0, basis: 0, owners: [] },
+    };
+    const cash: BaseWritePlan["inserts"][number] = {
+      kind: "account",
+      targetId: "cash-syn",
+      raw: {
+        id: "cash-syn",
+        name: "Acme — Cash",
+        category: "cash",
+        parentAccountId: "biz-syn",
+        isDefaultChecking: true,
+        value: 0,
+        basis: 0,
+        owners: [],
+      },
+    };
+    const brokerage: BaseWritePlan["inserts"][number] = {
+      kind: "account",
+      targetId: "brk-syn",
+      raw: { id: "brk-syn", name: "Brokerage", category: "taxable", value: 0, basis: 0, owners: [] },
+    };
+
+    const accountInserts = (ops: ReturnType<typeof makeTx>["ops"]) =>
+      ops
+        .filter((o) => o.op === "insert" && o.table === accounts)
+        .map((o) => o.arg as { name: string; parentAccountId?: string });
+
+    it.each<[string, BaseWritePlan["inserts"]]>([
+      ["parent first", [business, cash]],
+      ["child first", [cash, business]],
+    ])("%s: the child's parentAccountId is the parent's generated id", async (_label, order) => {
+      const { tx, ops } = makeTx();
+      await executeBaseWritePlan(tx as never, { ...emptyPlan(), inserts: order }, {
+        clientId: "c1",
+        baseScenarioId: "base1",
+      });
+      const inserted = accountInserts(ops);
+      expect(inserted.map((a) => a.name)).toEqual(["Acme", "Acme — Cash"]);
+      // The business is the first insert, so the fake tx minted it `db-1`.
+      expect(inserted[1].parentAccountId).toBe("db-1");
+    });
+
+    it("moves only the parent — unrelated accounts keep the plan's order", async () => {
+      const { tx, ops } = makeTx();
+      await executeBaseWritePlan(
+        tx as never,
+        { ...emptyPlan(), inserts: [brokerage, cash, business] },
+        { clientId: "c1", baseScenarioId: "base1" },
+      );
+      expect(accountInserts(ops).map((a) => a.name)).toEqual(["Brokerage", "Acme", "Acme — Cash"]);
+    });
+
+    it("leaves a base-plan parent id untouched", async () => {
+      const { tx, ops } = makeTx();
+      const child = { ...cash, raw: { ...cash.raw, parentAccountId: "base-biz" } };
+      await executeBaseWritePlan(tx as never, { ...emptyPlan(), inserts: [child] }, {
+        clientId: "c1",
+        baseScenarioId: "base1",
+      });
+      expect(accountInserts(ops)[0].parentAccountId).toBe("base-biz");
+    });
+  });
+
   it("inserts incomes before the rows that FK to them (savings-rule salary basis)", async () => {
     // savings_rule_salary_incomes.income_id FKs to incomes.id, and the child
     // writer resolves synthetic ids through idRemap — which is only populated
