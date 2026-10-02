@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
@@ -507,8 +507,47 @@ export default function FamilyView({
   const [members, setMembers] = useState<FamilyMember[]>(initialMembers);
   const [entities, setEntities] = useState<Entity[]>(initialEntities);
   const [externals, setExternals] = useState<ExternalBeneficiary[]>(initialExternalBeneficiaries);
-  const [accounts] = useState<AccountLite[]>(initialAccounts);
+  // Straight from props, not a mount-time copy: a scenario save refreshes the
+  // page, and the Beneficiaries editor must reopen on the rows that were saved.
+  const accounts = initialAccounts;
   const [designations] = useState<Designation[]>(initialDesignations);
+  // The scenario's people, trusts and charities for the account form's
+  // Beneficiaries tab. `members` excludes the household principals, so they are
+  // added back (by role, with the names the page shows) as the old
+  // `/family-members` GET returned them. Memoized: a fresh object every render
+  // would restart the tab's load effect.
+  const beneficiaryPickLists = useMemo(
+    () => ({
+      members: [
+        {
+          id: "household-client",
+          firstName: primary.firstName,
+          lastName: primary.lastName,
+          relationship: "other" as const,
+          role: "client" as const,
+          dateOfBirth: null,
+          notes: null,
+        },
+        ...(primary.spouseName
+          ? [
+              {
+                id: "household-spouse",
+                firstName: primary.spouseName,
+                lastName: primary.spouseLastName ?? primary.lastName,
+                relationship: "other" as const,
+                role: "spouse" as const,
+                dateOfBirth: null,
+                notes: null,
+              },
+            ]
+          : []),
+        ...members,
+      ],
+      externals,
+      entities: entities.map((e) => ({ id: e.id, name: e.name })),
+    }),
+    [primary, members, externals, entities],
+  );
   const [giftsState, setGiftsState] = useState<Gift[]>(initialGifts);
   const [giftSeriesState, setGiftSeriesState] = useState<GiftSeriesLite[]>(initialGiftSeries);
 
@@ -798,11 +837,7 @@ export default function FamilyView({
           initialTab={accountDialogInitialTab}
           lockTab={accountDialogLockTab}
           familyMembers={[]}
-          beneficiaryPickLists={{
-            members,
-            externals,
-            entities: entities.map((e) => ({ id: e.id, name: e.name })),
-          }}
+          beneficiaryPickLists={beneficiaryPickLists}
         />
       )}
 

@@ -26,7 +26,7 @@ import type { DisabilityPanelProps } from "@/components/disability-panel";
 import { resolveCoveredEarnings } from "@/engine/disability-benefits";
 import type { DisabilityPolicy } from "@/engine/types";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
-import { loadScenarioChanges } from "@/lib/scenario/changes";
+import { loadActiveChangesOfKind } from "@/lib/scenario/changes";
 import { ownerRefFromOwners } from "@/lib/insurance-policies/owner-ref";
 import { buildClientMilestones } from "@/lib/milestones";
 
@@ -110,8 +110,9 @@ export async function loadInsuranceViewProps(
   }
   // In a scenario the inflation rate is the SCENARIO's: its growth edits are
   // folded onto the tree, not onto the base settings row.
+  const inScenario = !!scenarioParam && scenarioParam !== "base";
   const resolvedInflationRate =
-    scenarioParam && resolutionContext
+    inScenario && resolutionContext
       ? resolutionContext.resolvedInflationRate
       : resolveInflationRate(
           {
@@ -135,16 +136,17 @@ export async function loadInsuranceViewProps(
   // are stored as sent), else the base row.
   const baseRawPolicies = await loadPoliciesByAccountIds(lifeAccountIds);
   const scenarioRawRate = new Map<string, number>();
-  if (scenarioParam) {
-    const changes = [...(await loadScenarioChanges(scenarioParam))].sort(
+  if (inScenario) {
+    const changes = [...(await loadActiveChangesOfKind(scenarioParam, "account"))].sort(
       (x, y) => x.orderIndex - y.orderIndex,
     );
     for (const c of changes) {
-      const rate = (c.payload as { lifeInsurance?: { postPayoutGrowthRate?: unknown } } | null)
-        ?.lifeInsurance?.postPayoutGrowthRate;
-      if (c.targetKind === "account" && c.opType !== "remove" && typeof rate === "number") {
-        scenarioRawRate.set(c.targetId, rate);
-      }
+      // An add's payload is the entity; an edit's is a field diff whose `to` is
+      // the value the scenario sets.
+      const li = (c.payload as { lifeInsurance?: unknown } | null)?.lifeInsurance;
+      const policy = c.opType === "edit" ? (li as { to?: unknown } | undefined)?.to : li;
+      const rate = (policy as { postPayoutGrowthRate?: unknown } | null | undefined)?.postPayoutGrowthRate;
+      if (c.opType !== "remove" && typeof rate === "number") scenarioRawRate.set(c.targetId, rate);
     }
   }
   const policies: InsurancePanelProps["policies"] = {};

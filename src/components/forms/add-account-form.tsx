@@ -3216,7 +3216,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             clientId={clientId}
             accountId={effectiveAccountId}
             active={activeTab === "beneficiaries"}
-            scenarioBeneficiaries={initial?.beneficiaries}
+            // A new account has no designations to fetch — its id is not in the
+            // base tables, so the GET would 404.
+            scenarioBeneficiaries={isEdit ? initial?.beneficiaries : []}
             pickLists={beneficiaryPickLists}
           />
         )}

@@ -61,14 +61,15 @@ export const loadScenarioToggleGroups = cache(async function loadScenarioToggleG
 });
 
 /**
- * The scenario's `gift` changes, already narrowed to the ones a projection
- * would honour (row `enabled`, plus effective toggle-group state). This is the
- * exact subset `loadEffectiveTree` hands to `applyGiftOverlays`, exported so
- * the *editor* read paths — which render DB rows / drafts rather than the
- * projection tree — can overlay the same set and stay in agreement with it.
+ * The scenario's changes of one `targetKind`, already narrowed to the ones a
+ * projection would honour (row `enabled`, plus effective toggle-group state).
+ * The editor read paths — which render DB rows / drafts rather than the
+ * projection tree — use it to overlay the same set and stay in agreement with
+ * it.
  */
-export async function loadActiveGiftChanges(
+export async function loadActiveChangesOfKind(
   scenarioId: string,
+  targetKind: TargetKind,
 ): Promise<ScenarioChange[]> {
   const [changes, groups] = await Promise.all([
     loadScenarioChanges(scenarioId),
@@ -77,7 +78,13 @@ export async function loadActiveGiftChanges(
   const effective = resolveEffectiveToggleState({}, groups);
   return changes.filter(
     (c) =>
-      c.targetKind === "gift" &&
+      c.targetKind === targetKind &&
       (c.toggleGroupId == null || effective[c.toggleGroupId] === true),
   );
+}
+
+/** The scenario's `gift` changes a projection would honour — this is the exact
+ *  subset `loadEffectiveTree` hands to `applyGiftOverlays`. */
+export function loadActiveGiftChanges(scenarioId: string): Promise<ScenarioChange[]> {
+  return loadActiveChangesOfKind(scenarioId, "gift");
 }
