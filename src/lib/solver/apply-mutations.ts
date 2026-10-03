@@ -19,6 +19,8 @@ import {
 } from "@/lib/entities/entity-checking";
 import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
 import { withDebtPaydown } from "./debt-paydown";
+import { withStressTest } from "@/engine/stress-tests";
+import { stressParamsFromMutation } from "./stress-test-mutations";
 import type { SolverMutation } from "./types";
 
 export function applyMutations(
@@ -398,53 +400,15 @@ export function applyMutations(
         result.notesReceivable = list;
         break;
       }
-      case "stress-inflation": {
-        // Living expenses only — the engine pins their growth at this rate.
-        // Deliberately does NOT touch planSettings.inflationRate: tax indexing,
-        // incomes, savings, and other expenses keep the plan's assumption.
-        result.planSettings = {
-          ...result.planSettings,
-          livingExpenseInflationOverride: m.rate,
-        };
-        break;
-      }
-      case "stress-ss-haircut": {
-        result.planSettings = {
-          ...result.planSettings,
-          ssBenefitHaircut: { pct: m.pct, startYear: m.startYear },
-        };
-        break;
-      }
-      case "stress-disability": {
-        result.planSettings = {
-          ...result.planSettings,
-          disabilityEvent: {
-            person: m.person,
-            startYear: m.startYear,
-            endYear: m.endYear,
-          },
-        };
-        break;
-      }
-      case "stress-market-crash": {
-        result.planSettings = {
-          ...result.planSettings,
-          marketShock: { year: m.year, drawdownPct: m.drawdownPct },
-        };
-        break;
-      }
-      case "stress-exemption-cap": {
-        result.planSettings = {
-          ...result.planSettings,
-          lifetimeExemptionCap: m.cap,
-        };
-        break;
-      }
+      case "stress-inflation":
+      case "stress-ss-haircut":
+      case "stress-disability":
+      case "stress-market-crash":
+      case "stress-exemption-cap":
       case "stress-tax-rates": {
-        result.planSettings = {
-          ...result.planSettings,
-          taxRateStress: { points: m.points, startYear: m.startYear },
-        };
+        // Same writer as a SAVED stressor (the scenario overlay's
+        // applyStressTests), so a draft and a saved one cannot diverge.
+        result.planSettings = withStressTest(result.planSettings, stressParamsFromMutation(m));
         break;
       }
       case "stress-ltc": {
