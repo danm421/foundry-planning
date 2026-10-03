@@ -37,7 +37,7 @@ import {
   revertChange,
 } from "@/lib/scenario/changes-writer";
 import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
-import { ltcEventSchema } from "@/lib/schemas/ltc-event";
+import { WHOLE_ENTITY_SCHEMAS } from "@/lib/scenario/whole-entity-kinds";
 import type { OpType, TargetKind } from "@/engine/scenario/types";
 
 // All writable TargetKind values, derived from the runtime lookup maps so the
@@ -103,19 +103,19 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     // say" and a re-save keeps the row's group; null unlinks (Ruling F-I1).
     const body = parsed.data;
 
-    // The LTC event is validated whole — it has no Details form to shape it.
-    if (body.op === "add" && body.targetKind === "ltc_event") {
-      const ltc = ltcEventSchema.safeParse(body.entity);
-      if (!ltc.success) {
-        return NextResponse.json({ error: ltc.error.flatten() }, { status: 400 });
+    // Whole-entity kinds (an LTC event, a stress test) have no Details form to
+    // shape them: an add is validated whole here, and an edit is refused — the
+    // UI re-saves the whole entity as an `add`, which the writer upserts.
+    const wholeSchema = WHOLE_ENTITY_SCHEMAS[body.targetKind as TargetKind];
+    if (wholeSchema && body.op === "add") {
+      const whole = wholeSchema.safeParse(body.entity);
+      if (!whole.success) {
+        return NextResponse.json({ error: whole.error.flatten() }, { status: 400 });
       }
     }
-    // An edit would merge an unvalidated partial payload into the stored
-    // event. The UI never sends one: it saves an edit by re-posting the whole
-    // event as an `add`, which the writer upserts.
-    if (body.op === "edit" && body.targetKind === "ltc_event") {
+    if (wholeSchema && body.op === "edit") {
       return NextResponse.json(
-        { error: "ltc_event changes are saved whole with op \"add\"" },
+        { error: `${body.targetKind} changes are saved whole with op "add"` },
         { status: 400 },
       );
     }
