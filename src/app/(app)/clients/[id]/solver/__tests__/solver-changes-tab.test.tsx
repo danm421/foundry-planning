@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import { SolverChangesTab } from "../solver-changes-tab";
 import { ClientAccessProvider } from "@/components/client-access-provider";
 import type { PanelData } from "@/lib/scenario/load-panel-data";
@@ -195,6 +195,9 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
+
+/** The confirm dialog's own Remove — the toolbar button is "Remove" too. */
+const confirmRemove = () => within(screen.getByRole("dialog")).getByRole("button", { name: "Remove" });
 
 beforeEach(() => {
   loadChangeEditorPropsMock.mockReset();
@@ -642,20 +645,20 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
   it("Delete asks first, then mounts a delete focus", async () => {
     loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
     renderTab([], { inventory: INVENTORY, panelOverrides: { scenarioName: "Retire early" } });
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
     expect(
       screen.getByText("Remove Side income from Retire early? You can switch it back on in the list below."),
     ).toBeInTheDocument();
     expect(loadChangeEditorPropsMock).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.click(confirmRemove());
     const view = await screen.findByTestId("view-income-expenses");
     expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ intent: "delete", kind: "income", id: TARGET_ID });
   });
 
   it("cancelling the delete confirm mounts nothing", () => {
     renderTab([], { inventory: INVENTORY });
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByText(/^Remove Side income/)).not.toBeInTheDocument();
@@ -668,7 +671,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
       item({ typeKey: "savings_rule", id: "r-1", label: "401(k) — Pat" }),
     ];
     const pickAccount = () => {
-      fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+      fireEvent.click(screen.getByRole("button", { name: "Remove" }));
       fireEvent.click(screen.getByRole("option", { name: /Joint brokerage/ }));
     };
 
@@ -719,14 +722,14 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
       renderTab([], { inventory: ACCOUNT_INV, planTree: emptyTree({ accounts: [{ id: "a-1" }] }) });
       pickAccount();
       expect(screen.queryByText(/linked item/)).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Remove" })).toBeEnabled();
+      expect(confirmRemove()).toBeEnabled();
       expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 
   it("a non-account delete lists nothing", () => {
     renderTab([], { inventory: INVENTORY });
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
     expect(screen.queryByText(/linked item/)).not.toBeInTheDocument();
   });
@@ -735,9 +738,9 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
     const load = deferred<unknown>();
     loadChangeEditorPropsMock.mockReturnValue(load.promise);
     renderTab([], { inventory: INVENTORY });
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
+    fireEvent.click(confirmRemove());
     expect(screen.getByRole("status")).toHaveTextContent("Removing Side income…");
     expect(screen.queryByText("Opening the editor…")).not.toBeInTheDocument();
     load.resolve({ page: "income-expenses", props: { clientId: CLIENT_ID } });
@@ -779,9 +782,9 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
   it("a delete shows a status strip while the view runs", async () => {
     loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
     renderTab([], { inventory: INVENTORY });
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
+    fireEvent.click(confirmRemove());
     await screen.findByTestId("view-income-expenses");
     expect(screen.getByRole("status")).toHaveTextContent("Removing Side income…");
   });
@@ -789,9 +792,9 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
   it("a failed delete shows an inline error with Dismiss", async () => {
     loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
     renderTab([], { inventory: INVENTORY });
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
+    fireEvent.click(confirmRemove());
     await screen.findByTestId("view-income-expenses");
 
     fireEvent.click(screen.getByRole("button", { name: "stub failed" }));
@@ -828,7 +831,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
   it("view-only advisors see no toolbar", () => {
     renderTab([], { permission: "view", inventory: INVENTORY });
     expect(screen.queryByRole("button", { name: "+ Add" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
   });
 
   it("the base case shows the disabled toolbar and Create scenario", () => {
@@ -845,10 +848,10 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
         />
       </ClientAccessProvider>,
     );
-    for (const name of ["+ Add", "Edit", "Delete"]) {
+    for (const name of ["+ Add", "Edit", "Remove"]) {
       expect(screen.getByRole("button", { name })).toBeDisabled();
     }
-    expect(screen.getByText("Add, edit and delete work inside a scenario.")).toBeInTheDocument();
+    expect(screen.getByText("Add, edit and remove work inside a scenario.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create scenario" }));
     expect(openCreateMock).toHaveBeenCalledTimes(1);
   });

@@ -161,7 +161,7 @@ describe("SolverDetailActions — Edit and Delete pickers", () => {
 
   it("Delete lists only deletable items", () => {
     const { onDelete } = setup();
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     expect(screen.queryByRole("option", { name: /Social Security/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("option", { name: /Salary/ }));
     expect(onDelete).toHaveBeenCalledWith(INVENTORY[0]);
@@ -195,7 +195,7 @@ describe("SolverDetailActions — Edit and Delete pickers", () => {
 describe("SolverDetailActions — disabled", () => {
   it("disables all three buttons", () => {
     setup({ disabled: true });
-    for (const name of ["+ Add", "Edit", "Delete"]) {
+    for (const name of ["+ Add", "Edit", "Remove"]) {
       expect(screen.getByRole("button", { name })).toBeDisabled();
     }
   });

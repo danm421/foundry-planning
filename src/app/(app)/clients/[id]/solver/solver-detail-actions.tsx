@@ -1,7 +1,7 @@
 "use client";
 
 // The Changes tab's toolbar: "+ Add" opens a menu of every plan detail type
-// that can be created, "Edit" and "Delete" open a searchable picker over the
+// that can be created, "Edit" and "Remove" open a searchable picker over the
 // scenario's current plan. The toolbar only reports the advisor's pick; the tab
 // opens the Details editor (or the delete confirm) for it.
 
@@ -56,8 +56,8 @@ const VERBS: Record<Verb, { label: string; title: string; tone: string; fill: st
     fill: "bg-edit enabled:hover:bg-edit-ink aria-expanded:bg-edit-ink",
   },
   delete: {
-    label: "Delete",
-    title: "Delete a plan detail",
+    label: "Remove",
+    title: "Remove a plan detail",
     tone: "var(--color-delete)",
     fill: "bg-delete enabled:hover:bg-delete-ink aria-expanded:bg-delete-ink",
   },

@@ -112,7 +112,7 @@ export function SolverChangesTab({
               onDelete={() => {}}
             />
             <div className="flex items-center gap-3 text-[12px] text-ink-3">
-              <span>Add, edit and delete work inside a scenario.</span>
+              <span>Add, edit and remove work inside a scenario.</span>
               <button
                 type="button"
                 onClick={openCreate}
