@@ -6,9 +6,10 @@ describe("resolveTheme", () => {
     expect(resolveTheme(undefined)).toBe("industrial"));
   it("returns each known theme verbatim", () => {
     expect(resolveTheme("light")).toBe("light");
-    expect(resolveTheme("dark")).toBe("dark");
     expect(resolveTheme("industrial")).toBe("industrial");
   });
+  it("moves a legacy dark cookie onto industrial", () =>
+    expect(resolveTheme("dark")).toBe("industrial"));
   it("falls back to industrial for an unknown cookie", () =>
     expect(resolveTheme("garbage")).toBe("industrial"));
   it("exposes a stable cookie name", () => expect(THEME_COOKIE).toBe("theme"));

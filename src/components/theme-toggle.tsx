@@ -49,46 +49,21 @@ function MoonIcon() {
   );
 }
 
-// Industrial Dark — a plotted grid, matching the theme's own line-first,
-// architectural-drawing language.
-function GridIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="16"
-      height="16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="3" y="3" width="18" height="18" rx="1" />
-      <path d="M3 9h18" />
-      <path d="M3 15h18" />
-      <path d="M9 3v18" />
-      <path d="M15 3v18" />
-    </svg>
-  );
-}
-
-// Cycle order. Each entry names the theme the button moves TO, so the icon and
-// label always describe the next state rather than the current one.
+// Each entry names the theme the button moves TO, so the icon and label always
+// describe the next state rather than the current one.
 const NEXT: Record<Theme, Theme> = {
-  dark: "light",
+  industrial: "light",
   light: "industrial",
-  industrial: "dark",
 };
 
+// Industrial Dark is the app's only dark theme, so advisors see it as "dark".
 const THEME_LABELS: Record<Theme, string> = {
-  dark: "dark",
+  industrial: "dark",
   light: "light",
-  industrial: "industrial",
 };
 
 function isTheme(value: string | undefined): value is Theme {
-  return value === "dark" || value === "light" || value === "industrial";
+  return value === "light" || value === "industrial";
 }
 
 export function ThemeToggle() {
@@ -123,7 +98,7 @@ export function ThemeToggle() {
       title={label}
       className="inline-flex items-center justify-center rounded-md border border-hair bg-card-2 p-2 text-ink-2 transition-colors hover:border-accent hover:text-accent"
     >
-      {theme === "dark" ? <SunIcon /> : theme === "light" ? <GridIcon /> : <MoonIcon />}
+      {theme === "light" ? <MoonIcon /> : <SunIcon />}
     </button>
   );
 }
