@@ -1,5 +1,6 @@
 import type { ClientInfo, StressTestKind, StressTestParams } from "@/engine/types";
 import { ltcPersonFirstName } from "@/lib/ltc/ltc-event-name";
+import { exactCurrency } from "@/lib/presentations/format";
 
 /** The Stress tab's row labels. A saved change's title starts with the words
  *  the advisor clicked. */
@@ -11,8 +12,6 @@ export const STRESS_TEST_LABELS: Record<StressTestKind, string> = {
   "market-crash": "Market crash",
   "exemption-cap": "Cap exemption growth",
 };
-
-const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
 /** decimal → "23%" / "3.5%" — at most two decimals, never "0.35000000000000003". */
 function pct(d: number): string {
@@ -45,7 +44,7 @@ export function stressTestName(t: StressTestParams, client: ClientInfo): string 
     case "market-crash":
       return `${label} — ${pct(t.drawdownPct)} in ${t.year}`;
     case "exemption-cap":
-      return `${label} — ${money.format(t.cap)}`;
+      return `${label} — ${exactCurrency(t.cap)}`;
   }
 }
 
@@ -66,6 +65,6 @@ export function stressTestDetail(t: StressTestParams): string {
     case "market-crash":
       return `Investments drop ${pct(t.drawdownPct)} in ${t.year}`;
     case "exemption-cap":
-      return `Estate exemption capped at ${money.format(t.cap)}`;
+      return `Estate exemption capped at ${exactCurrency(t.cap)}`;
   }
 }

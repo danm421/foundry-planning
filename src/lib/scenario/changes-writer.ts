@@ -549,8 +549,8 @@ export async function applyEntityRemove(args: ApplyEntityRemoveArgs): Promise<vo
     // the gift gone. Every other kind but the whole-entity ones (`ltc_event`,
     // `stress_test`) reaches `applyEntityEdit`, which writes an `edit` row for a
     // base entity and only merges into an `add` when one already exists; a
-    // whole-entity kind exists only as an `add` (scenario-only, no base row). So for all of them `hasAdd` really does
-    // mean scenario-only.
+    // whole-entity kind exists only as an `add` (scenario-only, no base row).
+    // So for all of them `hasAdd` really does mean scenario-only.
     const hasAdd = existing.some((r) => r.opType === "add");
     if (hasAdd && targetKind !== "gift") {
       // Drop both add and any edit row for this target.

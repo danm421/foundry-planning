@@ -41,7 +41,6 @@ function Row(p: {
   return (
     <StressTestRow
       kind="market-crash"
-      label="Market crash"
       hint="One-time drawdown."
       disabled={p.disabled}
       draft={p.draft === undefined ? crash : p.draft}

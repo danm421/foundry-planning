@@ -110,7 +110,6 @@ export function SolverStressTestTab({
       {/* Inflation */}
       <StressTestRow
         kind="inflation"
-        label="Higher inflation"
         hint={`Grows living expenses at this rate instead of the plan's inflation assumption (currently ${pct(baseInflation)}). Other items — incomes, savings, taxes, insurance — are unaffected.`}
         draft={ps.livingExpenseInflationOverride != null ? { kind: "inflation", rate: ps.livingExpenseInflationOverride } : null}
         defaults={{ kind: "inflation", rate: roundRate(baseInflation + 0.02) }}
@@ -125,7 +124,6 @@ export function SolverStressTestTab({
       {/* Social Security haircut */}
       <StressTestRow
         kind="ss-haircut"
-        label="Social Security cut"
         hint="Reduces all Social Security benefits by a percentage starting in the chosen year (models a trust-fund shortfall)."
         draft={
           ps.ssBenefitHaircut
@@ -147,7 +145,6 @@ export function SolverStressTestTab({
       {/* Tax rates rise */}
       <StressTestRow
         kind="tax-rates"
-        label="Tax rates rise"
         hint={
           bracketMode
             ? "Adds this many percentage points to each federal marginal rate above 0% from the chosen year — ordinary income, long-term gains and qualified dividends, and trust brackets. Bracket thresholds do not move. The alternative minimum tax, the 3.8% net investment income surtax, and state income tax are unaffected, so a client with large AMT or state exposure will see less than the full effect."
@@ -192,7 +189,6 @@ export function SolverStressTestTab({
       {/* Disability */}
       <StressTestRow
         kind="disability"
-        label="Disability"
         hint="Stops the person's salary and business income from the chosen year, and pays any disability policies they hold. Leave the ending year blank for a disability that never ends; fill it in to model a recovery — the paycheck picks back up the following year at the level it would have reached, the benefit stops, and any waived premium is billed again. Percentage-of-salary savings stop and restart automatically; flat-dollar contributions do not (adjust those manually)."
         draft={
           ps.disabilityEvent
@@ -278,7 +274,6 @@ export function SolverStressTestTab({
       {/* Market crash */}
       <StressTestRow
         kind="market-crash"
-        label="Market crash"
         hint="One-time drawdown of investment balances (taxable, retirement, and 529s) in the chosen year. Cash, real estate, business, annuities, and life insurance are unaffected."
         draft={
           ps.marketShock
@@ -300,7 +295,6 @@ export function SolverStressTestTab({
       {/* Lifetime exemption cap */}
       <StressTestRow
         kind="exemption-cap"
-        label="Cap exemption growth"
         hint="Caps how high the federal estate/gift exemption grows. Above today's ~$15M it grows toward the cap then freezes; below $15M it freezes the exemption there for the whole plan. A lower cap raises estate tax."
         draft={capOn ? { kind: "exemption-cap", cap: ps.lifetimeExemptionCap ?? DEFAULT_EXEMPTION_CAP } : null}
         defaults={{ kind: "exemption-cap", cap: DEFAULT_EXEMPTION_CAP }}

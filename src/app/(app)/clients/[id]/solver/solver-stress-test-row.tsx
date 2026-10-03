@@ -7,7 +7,7 @@ import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
 import { useClientAccess } from "@/components/client-access-provider";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { STRESS_TEST_IDS } from "@/engine/stress-tests";
-import { stressTestName } from "@/lib/stress-tests/describe";
+import { STRESS_TEST_LABELS, stressTestName } from "@/lib/stress-tests/describe";
 import { STRESS_MUTATION_KIND, stressMutationFromParams } from "@/lib/solver/stress-test-mutations";
 import { StressRow } from "./solver-stress-fields";
 import { removeStressTest, saveStressTest, setStressTestEnabled } from "./solver-stress-saved";
@@ -28,8 +28,8 @@ export interface StressScenarioContext {
   onSaved(): void;
 }
 
-export const STRESS_BASE_CASE_HINT = "Pick or create a scenario first. A saved stress test lives in a scenario.";
-export const ADD_STRESS_AS_CHANGE_TOOLTIP = (scenario: string) =>
+const STRESS_BASE_CASE_HINT = "Pick or create a scenario first. A saved stress test lives in a scenario.";
+const ADD_STRESS_AS_CHANGE_TOOLTIP = (scenario: string) =>
   `Saves this stress test into ${scenario} as its own change. Switch it on and off here or on the Changes tab; presentations built from ${scenario} show it while it is on.`;
 
 /** True when a commit would store what is already saved. The fields commit on
@@ -50,7 +50,6 @@ function unchanged(next: StressTestParams, saved: StressTestParams): boolean {
  */
 export function StressTestRow<K extends StressTestKind>(props: {
   kind: K;
-  label: string;
   hint: string;
   disabled?: boolean;
   /** The draft's value in the working tree; null when the stressor is off there. */
@@ -96,7 +95,7 @@ export function StressTestRow<K extends StressTestKind>(props: {
     const locked = !canEdit || busy;
     return (
       <StressRow
-        label={props.label}
+        label={STRESS_TEST_LABELS[props.kind]}
         hint={props.hint}
         on={enabled}
         disabled={props.disabled}
@@ -141,7 +140,7 @@ export function StressTestRow<K extends StressTestKind>(props: {
   const scenarioId = ctx.scenarioId;
   return (
     <StressRow
-      label={props.label}
+      label={STRESS_TEST_LABELS[props.kind]}
       hint={props.hint}
       on={draft !== null}
       disabled={props.disabled}
