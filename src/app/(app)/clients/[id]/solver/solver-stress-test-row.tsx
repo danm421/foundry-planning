@@ -67,9 +67,8 @@ export function StressTestRow<K extends StressTestKind>(props: {
   const canEdit = useClientAccess().permission === "edit";
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
-  // What this row last saved, held until the refreshed change list (a new
-  // `updatedAt`) delivers it. A second field edit in that window builds on the
-  // first, not on the stale `saved` prop, which would quietly undo it.
+  // The last save, until a refresh brings a new `updatedAt`, so a second edit
+  // in that window doesn't build on the stale `saved` prop and undo the first.
   const [sent, setSent] = useState<{ stamp: string; params: StressTestParams } | null>(null);
 
   async function run(action: () => Promise<void>) {
@@ -104,6 +103,11 @@ export function StressTestRow<K extends StressTestKind>(props: {
     // switch says, so the row reads off and its switch can't help.
     const offGroup = props.saved.toggleGroupId ? ctx.offGroupNames[props.saved.toggleGroupId] : undefined;
     const applied = enabled && !offGroup;
+    const caption = offGroup
+      ? `Saved in ${scenarioLabel}, but its group “${offGroup}” is switched off on the Changes tab.`
+      : enabled
+        ? `Saved in ${scenarioLabel}.`
+        : `Saved in ${scenarioLabel}, switched off.`;
     return (
       <StressRow
         label={STRESS_TEST_LABELS[props.kind]}
@@ -114,13 +118,7 @@ export function StressTestRow<K extends StressTestKind>(props: {
         onToggle={(checked) => void run(() => setStressTestEnabled(ctx.clientId, scenarioId, changeId, checked))}
         footer={
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-[11px] text-ink-3">
-              {offGroup
-                ? `Saved in ${scenarioLabel}, but its group “${offGroup}” is switched off on the Changes tab.`
-                : enabled
-                  ? `Saved in ${scenarioLabel}.`
-                  : `Saved in ${scenarioLabel}, switched off.`}
-            </span>
+            <span className="text-[11px] text-ink-3">{caption}</span>
             <button
               type="button"
               disabled={locked}
