@@ -145,6 +145,7 @@ export function buildTargetNames(
   put("client_tax_adjustment", tree.taxAdjustments as unknown as ReadonlyArray<{ id: string }>);
   put("disability_policy", tree.disabilityPolicies ?? []);
   put("ltc_event", tree.ltcEvents);
+  put("stress_test", tree.stressTests);
 
   if (clientFirstName) names[`client:${clientId}`] = clientFirstName;
   // Plan settings have no name of their own; they're edited on the Assumptions page.

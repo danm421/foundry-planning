@@ -21,6 +21,20 @@ describe("describeChangeUnit — single ops", () => {
     expect(describeChangeUnit(unit, targetNames)).toBe("Added: Cooper's Salary.");
   });
 
+  it("names an add the names map misses by its payload's stored name, never the raw id", () => {
+    // A switched-off stress test is absent from the tree the names map is
+    // built from, and Forge previews pass no map at all.
+    const unit: ChangeUnit = {
+      kind: "single",
+      change: {
+        id: "c9", scenarioId: "s1", opType: "add", targetKind: "stress_test", targetId: "f06746bf-25ea-4c3f-9430-c3c7edf1b100",
+        payload: { kind: "market-crash", year: 2027, drawdownPct: 0.3, name: "Market crash — 30% in 2027" },
+        toggleGroupId: null, orderIndex: 0, enabled: false,
+      },
+    };
+    expect(describeChangeUnit(unit, {})).toBe("Added: Market crash — 30% in 2027.");
+  });
+
   it("describes remove", () => {
     const unit: ChangeUnit = {
       kind: "single",

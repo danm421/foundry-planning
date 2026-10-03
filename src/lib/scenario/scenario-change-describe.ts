@@ -2,6 +2,7 @@ import type { ScenarioChange } from "@/engine/scenario/types";
 import { POLICY_TYPE_LABEL } from "@/lib/presentations/pages/life-insurance-summary/aggregate";
 import { fieldLabel, fmtFieldValue } from "@/lib/presentations/pages/scenario-changes/describe/format";
 import { visibleChangeFields } from "./hidden-change-fields";
+import { storedEntityName } from "./describe-change-target";
 import {
   GROWTH_FIELD_LABELS,
   GROWTH_PERCENT_KEYS,
@@ -124,8 +125,15 @@ function fmtVal(v: unknown): string {
   return String(v);
 }
 
-function nameFor(c: { targetKind: string; targetId: string }, names: Record<string, string>): string {
-  return names[`${c.targetKind}:${c.targetId}`] ?? `${c.targetKind} ${c.targetId.slice(0, 6)}`;
+function nameFor(
+  c: { targetKind: string; targetId: string; payload: unknown },
+  names: Record<string, string>,
+): string {
+  return (
+    names[`${c.targetKind}:${c.targetId}`] ??
+    storedEntityName(c.payload) ??
+    `${c.targetKind} ${c.targetId.slice(0, 6)}`
+  );
 }
 
 export function describeChangeUnit(unit: ChangeUnit, targetNames: Record<string, string>): string {
