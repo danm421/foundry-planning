@@ -3,7 +3,8 @@
 // Beneficiary distribution rules for a Traditional or Roth IRA inherited from
 // someone other than a spouse. Pure: the projection's RMD step (4b) calls
 // `inheritedRmdForYear`, and the account form's RMD tab calls
-// `describeInheritedRule`, so the two cannot disagree.
+// `describeInheritedRule`, so the two cannot disagree. The optional payout
+// window (`inheritedPayoutForYear`) paces payouts above that minimum.
 //
 // Sources: Treas. Reg. §1.401(a)(9)-5(d) (applicable denominator after death)
 // and §1.401(a)(9)-9(b) (Single Life Table); IRC §401(a)(9)(H) (SECURE Act
@@ -227,4 +228,109 @@ export function inheritedIraInputFor(account: Account, heirBirthYear: number): I
     heirDisabled: account.inheritedHeirDisabled === true,
     isRoth: account.subType === "roth_ira",
   };
+}
+
+// ── Payout window (spec 2026-10-03) ──────────────────────────────────────────
+// An advisor-chosen pace on top of the required minimum: each year from
+// `fromYear` through `throughYear` pays the larger of the minimum and an even
+// share of what's left, so the account is empty after `throughYear` instead of
+// being swept out at the 10-year deadline.
+
+export interface InheritedPayoutWindow {
+  fromYear: number;
+  throughYear: number;
+}
+
+/** The window's last payout year. Under the 10-year rule a later year is
+ *  clamped to the deadline: the deadline sweep empties the account anyway, and
+ *  spreading over the typed years would leave a lump in the deadline year. */
+function effectiveThroughYear(window: InheritedPayoutWindow, finalYear: number | null): number {
+  return finalYear != null ? Math.min(window.throughYear, finalYear) : window.throughYear;
+}
+
+export interface InheritedPayoutResult {
+  /** The year's required minimum, exactly as `inheritedRmdForYear` computes it. */
+  minimum: InheritedRmdResult;
+  /** The planned payout above the minimum: ≥ 0, and 0 with no window. */
+  extra: number;
+  /** What comes out this year: `minimum.amount + extra`. */
+  total: number;
+}
+
+/** This year's payout: the larger of the required minimum and the window's even
+ *  share, never more than the live balance. With no window it is the minimum,
+ *  exactly — the share is 0 and the minimum never exceeds the balance. */
+export function inheritedPayoutForYear(args: {
+  input: InheritedIraInput;
+  rule: InheritedIraRule;
+  year: number;
+  /** Prior Dec-31 balance — the IRS basis for the minimum. */
+  priorYearEndBalance: number;
+  /** Live balance at the RMD step — what the even share divides. */
+  currentBalance: number;
+  window: InheritedPayoutWindow | null;
+}): InheritedPayoutResult {
+  const { window, ...rmdArgs } = args;
+  const minimum = inheritedRmdForYear(rmdArgs);
+  const share = evenShare(args.input, args.rule, window, args.year, args.currentBalance);
+  const total = Math.min(Math.max(0, args.currentBalance), Math.max(minimum.amount, share));
+  return { minimum, extra: total - minimum.amount, total };
+}
+
+/** Balance ÷ the years left in the window (counted from `year`), or 0 outside
+ *  it. In the window's last year the share is the whole balance. */
+function evenShare(
+  input: InheritedIraInput,
+  rule: InheritedIraRule,
+  window: InheritedPayoutWindow | null,
+  year: number,
+  currentBalance: number,
+): number {
+  if (window == null || year <= input.deathYear || currentBalance <= 0) return 0;
+  const through = effectiveThroughYear(window, rule.finalYear);
+  if (year < window.fromYear || year > through) return 0;
+  return currentBalance / (through - year + 1);
+}
+
+/** The RMD tab's preview line. `finalYear` is the 10-year deadline, or null
+ *  (a stretch account, or a rule the form can't resolve yet). */
+export function describeInheritedPayoutWindow(window: InheritedPayoutWindow, finalYear: number | null): string {
+  const through = effectiveThroughYear(window, finalYear);
+  if (window.fromYear >= through) return `The whole balance comes out in ${through}.`;
+  return `Each year from ${window.fromYear} through ${through} pays the larger of the minimum and an even share of what's left. The account is empty after ${through}.`;
+}
+
+/** Ledger label for the planned payout above the minimum. */
+export function inheritedPlannedPayoutLabel(window: InheritedPayoutWindow, finalYear: number | null): string {
+  const through = effectiveThroughYear(window, finalYear);
+  return window.fromYear >= through
+    ? `Inherited IRA planned payout (all in ${through})`
+    : `Inherited IRA planned payout (spread evenly ${window.fromYear}–${through})`;
+}
+
+/** The form's pre-fill when the advisor picks "Spread payouts evenly". */
+export function defaultInheritedPayoutWindow(
+  deathYear: number,
+  finalYear: number | null,
+  referenceYear: number,
+): { fromYear: number; throughYear: number | null } {
+  return { fromYear: Math.max(referenceYear, deathYear + 1), throughYear: finalYear };
+}
+
+/** The payout window on an inherited IRA, or null (minimum only). Whole-number
+ *  years in order only: a writer that skips the form's validation gets the
+ *  minimum, never garbage in the share. */
+export function inheritedPayoutWindowFor(
+  account: Pick<
+    Account,
+    | "category" | "subType" | "owners" | "inheritedDeathYear" | "inheritedOwnerBirthYear"
+    | "inheritedPayoutFromYear" | "inheritedPayoutThroughYear"
+  >,
+): InheritedPayoutWindow | null {
+  if (!isInheritedIra(account)) return null;
+  const from = account.inheritedPayoutFromYear;
+  const through = account.inheritedPayoutThroughYear;
+  if (!Number.isInteger(from) || !Number.isInteger(through)) return null;
+  if ((from as number) > (through as number)) return null;
+  return { fromYear: from as number, throughYear: through as number };
 }

@@ -918,6 +918,14 @@ export interface Account {
    *  who may stretch payouts over life expectancy (deaths 2020+). */
   inheritedHeirDisabled?: boolean;
   /**
+   * Inherited IRA payout window (spec 2026-10-03): each year from this year
+   * through `inheritedPayoutThroughYear` pays the larger of the required
+   * minimum and an even share of the balance (engine/inherited-ira.ts). Both
+   * null ⇒ the minimum only. Ignored unless the account is inherited.
+   */
+  inheritedPayoutFromYear?: number | null;
+  inheritedPayoutThroughYear?: number | null;
+  /**
    * Optional activation year: the account does not exist in the projection
    * before this year, then appears at `value` (a windfall) and behaves
    * normally after. Null / undefined ⇒ active from plan start (default).
