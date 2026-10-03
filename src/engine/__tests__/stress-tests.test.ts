@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyStressTests, withStressTest, STRESS_TEST_IDS } from "../stress-tests";
+import { applyStressTests, withStressTest, STRESS_TEST_FIELD, STRESS_TEST_IDS } from "../stress-tests";
 import { basePlanSettings, buildClientData } from "./fixtures";
 import type { StressTest, StressTestParams } from "../types";
 
@@ -18,6 +18,10 @@ describe("withStressTest", () => {
 
   it.each(cases)("%o writes its plan setting and nothing else", (t, expected) => {
     expect(withStressTest(basePlanSettings, t)).toEqual({ ...basePlanSettings, ...expected });
+  });
+
+  it.each(cases)("%o writes exactly the field STRESS_TEST_FIELD names", (t, expected) => {
+    expect(Object.keys(expected)).toEqual([STRESS_TEST_FIELD[t.kind]]);
   });
 
   it("returns a new object and leaves the input untouched", () => {

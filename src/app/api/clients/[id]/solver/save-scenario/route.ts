@@ -65,6 +65,7 @@ import {
 import type { TargetKind } from "@/engine/scenario/types";
 import type { ClientData } from "@/engine/types";
 import type { AccountOwner } from "@/engine/ownership";
+import { STRESS_TEST_FIELD } from "@/engine/stress-tests";
 import { recordAudit } from "@/lib/audit";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
@@ -706,6 +707,8 @@ const UPDATE_BODY = z.object({
   seed: z.number().int().optional(),
 });
 
+const STRESS_OWNED_FIELDS: ReadonlySet<string> = new Set(Object.values(STRESS_TEST_FIELD));
+
 /**
  * Read a single field off the working tree for `(targetKind, targetId)`.
  * Singletons (client / plan_settings) live as one object on ClientData; list
@@ -782,12 +785,12 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
     // union it with the new draft's fields, reading every value off the
     // working tree (the writer then diffs each against base).
     const existing = await loadScenarioChanges(scenarioId);
-    const existingEditFields = new Map<string, string[]>();
+    const existingEdits = new Map<string, Record<string, { to: unknown }>>();
     for (const c of existing) {
       if (c.opType !== "edit") continue;
-      existingEditFields.set(
+      existingEdits.set(
         `${c.targetKind}:${c.targetId}`,
-        Object.keys((c.payload ?? {}) as Record<string, unknown>),
+        (c.payload ?? {}) as Record<string, { to: unknown }>,
       );
     }
     // Ruling F-I1-put: the writer reads an omitted toggleGroupId as "keep the
@@ -844,13 +847,21 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
         const targetKind = d.targetKind as TargetKind;
         const gid = groupIdByTarget.get(d.targetId);
         if (d.opType === "edit") {
+          const stored = existingEdits.get(`${d.targetKind}:${d.targetId}`) ?? {};
           const fields = new Set<string>([
-            ...(existingEditFields.get(`${d.targetKind}:${d.targetId}`) ?? []),
+            ...Object.keys(stored),
             ...Object.keys((d.payload ?? {}) as Record<string, unknown>),
           ]);
           const desiredFields: Record<string, unknown> = {};
           for (const f of fields) {
-            desiredFields[f] = workingFieldValue(workingTree, targetKind, d.targetId, f);
+            // A stress test writes its plan setting over every other change, so
+            // the working tree holds the stress value there, not this row's.
+            // Stressors save as their own changes, so a stored value came from
+            // Assumptions or a legacy combined row: keep it.
+            desiredFields[f] =
+              targetKind === "plan_settings" && STRESS_OWNED_FIELDS.has(f) && f in stored
+                ? stored[f].to
+                : workingFieldValue(workingTree, targetKind, d.targetId, f);
           }
           const keepsAddGroup = !gid && addedTargets.has(`${d.targetKind}:${d.targetId}`);
           await applyEntityEdit({

@@ -13,6 +13,17 @@ export const STRESS_TEST_IDS: Record<StressTestKind, string> = {
   "exemption-cap": "941b73cd-110a-4d13-bca5-8fba8d84bb83",
 };
 
+/** The plan-settings field each stressor writes — exactly what `withStressTest`
+ *  sets (pinned by its test). */
+export const STRESS_TEST_FIELD = {
+  inflation: "livingExpenseInflationOverride",
+  "ss-haircut": "ssBenefitHaircut",
+  "tax-rates": "taxRateStress",
+  disability: "disabilityEvent",
+  "market-crash": "marketShock",
+  "exemption-cap": "lifetimeExemptionCap",
+} as const satisfies Record<StressTestKind, keyof PlanSettings>;
+
 /** Writes one stressor onto plan settings. The scenario overlay and the
  *  Solver's draft mutations both go through here, so a saved stressor and a
  *  draft one cannot write a field two different ways. */
