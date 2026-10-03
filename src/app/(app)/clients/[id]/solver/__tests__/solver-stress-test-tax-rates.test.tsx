@@ -51,6 +51,8 @@ function renderTab(over: Parameters<typeof tree>[0] = {}) {
       savedLtcChange={null}
       onLtcSaved={vi.fn()}
       onEditLtcOnChangesTab={vi.fn()}
+      savedStressTests={{}}
+      onStressSaved={vi.fn()}
     />
   );
   const { rerender } = render(tab(over));

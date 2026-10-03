@@ -15,14 +15,21 @@ export function StressRow({
   hint,
   on,
   disabled = false,
+  lockToggle = false,
   onToggle,
+  footer,
   children,
 }: {
   label: string;
   hint: string;
   on: boolean;
   disabled?: boolean;
+  /** Disables only the checkbox and keeps the row's fields on screen — a save
+   *  in flight, or view-only access to a saved stressor. */
+  lockToggle?: boolean;
   onToggle: (checked: boolean) => void;
+  /** Shown under the row whether or not it is on — a saved stressor's status. */
+  footer?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -32,7 +39,7 @@ export function StressRow({
           <input
             type="checkbox"
             checked={on && !disabled}
-            disabled={disabled}
+            disabled={disabled || lockToggle}
             onChange={(e) => onToggle(e.target.checked)}
             className="h-4 w-4 accent-accent"
           />
@@ -41,6 +48,7 @@ export function StressRow({
         <FieldTooltip text={hint} />
       </div>
       {on && !disabled ? <div className="mt-3">{children}</div> : null}
+      {footer ? <div className="mt-3">{footer}</div> : null}
     </div>
   );
 }

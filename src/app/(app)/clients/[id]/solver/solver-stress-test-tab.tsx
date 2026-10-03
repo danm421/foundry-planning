@@ -1,6 +1,6 @@
 "use client";
 
-import type { ClientData, DisabilityPolicy, ProjectionYear } from "@/engine/types";
+import type { ClientData, DisabilityPolicy, ProjectionYear, StressTestKind } from "@/engine/types";
 import type { ChangesPanelChange } from "@/components/scenario/changes-panel";
 import {
   benefitForYear,
@@ -14,12 +14,12 @@ import { MAX_RATE_STRESS_POINTS } from "@/lib/tax/rate-stress";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { SolverSection } from "./solver-section";
 import { LtcStressRow } from "./solver-stress-ltc-row";
+import { StressTestRow, type StressScenarioContext } from "./solver-stress-test-row";
 import {
   DollarField,
   OptionalYearField,
   PercentField,
   SelectField,
-  StressRow,
   YearField,
 } from "./solver-stress-fields";
 
@@ -38,6 +38,9 @@ interface Props {
   savedLtcChange: ChangesPanelChange | null;
   onLtcSaved: () => void;
   onEditLtcOnChangesTab: (changeId: string) => void;
+  /** Each kind's saved `stress_test` change in this scenario (on or off). */
+  savedStressTests: Partial<Record<StressTestKind, ChangesPanelChange>>;
+  onStressSaved: () => void;
 }
 
 const DEFAULT_SS_HAIRCUT_PCT = 0.23;
@@ -67,44 +70,34 @@ export function SolverStressTestTab({
   savedLtcChange,
   onLtcSaved,
   onEditLtcOnChangesTab,
+  savedStressTests,
+  onStressSaved,
 }: Props) {
   const ps = workingTree.planSettings;
   const baseInflation = baseClientData.planSettings.inflationRate;
   const hasSpouse = Boolean(baseClientData.client.spouseDob);
   const defaultEventYear = currentYear + 1;
 
-  // Derived on/off state — the working tree is the single source of truth.
-  const inflationOn = ps.livingExpenseInflationOverride != null;
-  const ssOn = ps.ssBenefitHaircut != null;
-  const taxRatesOn = ps.taxRateStress != null;
   // Flat mode has no bracket data to raise, so the control would be inert.
   // Disable it and say so rather than render something that looks live.
   // `taxEngineMode` is OPTIONAL and unset means flat (projection.ts routes on
   // `=== "bracket"`), so this must not be phrased as `!== "flat"`.
   const bracketMode = ps.taxEngineMode === "bracket";
-  const disabilityOn = ps.disabilityEvent != null;
-  const crashOn = ps.marketShock != null;
   const capOn =
     (ps.lifetimeExemptionCap ?? null) !==
     (baseClientData.planSettings.lifetimeExemptionCap ?? null);
 
-  // The whole disability lever as a mutation, so each field's onCommit spreads
-  // it and overrides one key. Rebuilding all three at every call site is how a
-  // newly added field gets dropped by the two handlers nobody remembered.
-  const disability: Extract<SolverMutation, { kind: "stress-disability" }> = {
-    kind: "stress-disability",
-    person: ps.disabilityEvent?.person ?? "client",
-    startYear: ps.disabilityEvent?.startYear ?? defaultEventYear,
-    endYear: ps.disabilityEvent?.endYear ?? null,
-  };
-
-  // Same reasoning as `disability` above. Also keeps the field's `key` and its
-  // `value` reading the SAME expression — they must agree for the remount to
-  // show what was committed, and two copies of a fallback chain can drift.
-  const taxRates: Extract<SolverMutation, { kind: "stress-tax-rates" }> = {
-    kind: "stress-tax-rates",
-    points: ps.taxRateStress?.points ?? DEFAULT_TAX_RATE_POINTS,
-    startYear: ps.taxRateStress?.startYear ?? defaultEventYear,
+  // Every row's draft value is read off the working tree (the single source of
+  // truth for drafts); a SAVED row reads the scenario's change list instead —
+  // see StressTestRow.
+  const stressCtx: StressScenarioContext = {
+    clientId,
+    scenarioId,
+    scenarioName,
+    client: workingTree.client,
+    onChange,
+    onResetField,
+    onSaved: onStressSaved,
   };
 
   return (
@@ -115,183 +108,158 @@ export function SolverStressTestTab({
       }
     >
       {/* Inflation */}
-      <StressRow
+      <StressTestRow
+        kind="inflation"
         label="Higher inflation"
         hint={`Grows living expenses at this rate instead of the plan's inflation assumption (currently ${pct(baseInflation)}). Other items — incomes, savings, taxes, insurance — are unaffected.`}
-        on={inflationOn}
-        onToggle={(checked) =>
-          checked
-            ? onChange({ kind: "stress-inflation", rate: roundRate(baseInflation + 0.02) })
-            : onResetField(["stress-inflation"])
-        }
+        draft={ps.livingExpenseInflationOverride != null ? { kind: "inflation", rate: ps.livingExpenseInflationOverride } : null}
+        defaults={{ kind: "inflation", rate: roundRate(baseInflation + 0.02) }}
+        saved={savedStressTests.inflation ?? null}
+        ctx={stressCtx}
       >
-        <PercentField
-          label="Inflation rate"
-          value={ps.livingExpenseInflationOverride ?? roundRate(baseInflation + 0.02)}
-          onCommit={(rate) => onChange({ kind: "stress-inflation", rate })}
-        />
-      </StressRow>
+        {(p, commit) => (
+          <PercentField label="Inflation rate" value={p.rate} onCommit={(rate) => commit({ ...p, rate })} />
+        )}
+      </StressTestRow>
 
       {/* Social Security haircut */}
-      <StressRow
+      <StressTestRow
+        kind="ss-haircut"
         label="Social Security cut"
         hint="Reduces all Social Security benefits by a percentage starting in the chosen year (models a trust-fund shortfall)."
-        on={ssOn}
-        onToggle={(checked) =>
-          checked
-            ? onChange({
-                kind: "stress-ss-haircut",
-                pct: DEFAULT_SS_HAIRCUT_PCT,
-                startYear: DEFAULT_SS_HAIRCUT_YEAR,
-              })
-            : onResetField(["stress-ss-haircut"])
+        draft={
+          ps.ssBenefitHaircut
+            ? { kind: "ss-haircut", pct: ps.ssBenefitHaircut.pct, startYear: ps.ssBenefitHaircut.startYear }
+            : null
         }
+        defaults={{ kind: "ss-haircut", pct: DEFAULT_SS_HAIRCUT_PCT, startYear: DEFAULT_SS_HAIRCUT_YEAR }}
+        saved={savedStressTests["ss-haircut"] ?? null}
+        ctx={stressCtx}
       >
-        <div className="grid grid-cols-2 gap-x-5">
-          <PercentField
-            label="Benefit cut"
-            value={ps.ssBenefitHaircut?.pct ?? DEFAULT_SS_HAIRCUT_PCT}
-            onCommit={(p) =>
-              onChange({
-                kind: "stress-ss-haircut",
-                pct: p,
-                startYear: ps.ssBenefitHaircut?.startYear ?? DEFAULT_SS_HAIRCUT_YEAR,
-              })
-            }
-          />
-          <YearField
-            label="Starting year"
-            value={ps.ssBenefitHaircut?.startYear ?? DEFAULT_SS_HAIRCUT_YEAR}
-            onCommit={(y) =>
-              onChange({
-                kind: "stress-ss-haircut",
-                pct: ps.ssBenefitHaircut?.pct ?? DEFAULT_SS_HAIRCUT_PCT,
-                startYear: y,
-              })
-            }
-          />
-        </div>
-      </StressRow>
+        {(p, commit) => (
+          <div className="grid grid-cols-2 gap-x-5">
+            <PercentField label="Benefit cut" value={p.pct} onCommit={(pct) => commit({ ...p, pct })} />
+            <YearField label="Starting year" value={p.startYear} onCommit={(startYear) => commit({ ...p, startYear })} />
+          </div>
+        )}
+      </StressTestRow>
 
       {/* Tax rates rise */}
-      <StressRow
+      <StressTestRow
+        kind="tax-rates"
         label="Tax rates rise"
         hint={
           bracketMode
             ? "Adds this many percentage points to each federal marginal rate above 0% from the chosen year — ordinary income, long-term gains and qualified dividends, and trust brackets. Bracket thresholds do not move. The alternative minimum tax, the 3.8% net investment income surtax, and state income tax are unaffected, so a client with large AMT or state exposure will see less than the full effect."
             : "Unavailable in flat tax mode — this plan has no tax brackets to raise. Switch the plan to the bracket tax engine to use it."
         }
-        on={taxRatesOn}
         disabled={!bracketMode}
-        onToggle={(checked) =>
-          checked
-            ? onChange({
-                kind: "stress-tax-rates",
-                points: DEFAULT_TAX_RATE_POINTS,
-                startYear: defaultEventYear,
-              })
-            : onResetField(["stress-tax-rates"])
+        draft={
+          ps.taxRateStress
+            ? { kind: "tax-rates", points: ps.taxRateStress.points, startYear: ps.taxRateStress.startYear }
+            : null
         }
+        defaults={{ kind: "tax-rates", points: DEFAULT_TAX_RATE_POINTS, startYear: defaultEventYear }}
+        saved={savedStressTests["tax-rates"] ?? null}
+        ctx={stressCtx}
       >
-        <div className="grid grid-cols-2 gap-x-5">
-          <PercentField
-            // PercentField is uncontrolled, so it keeps displaying whatever was
-            // typed. That only matters where the committed value can DIFFER
-            // from it, and this is the one percent field that applies a CEILING
-            // — type 25, blur, and the plan carries 20 while the box still
-            // reads 25. (The component's own floor at zero cannot disagree with
-            // the box, because the number input will not surrender a negative.)
-            // Remounting on the committed value is the fix the disability
-            // ending year already uses below.
-            key={taxRates.points}
-            label="Rate increase"
-            value={taxRates.points}
-            onCommit={(points) =>
-              // Upper clamp only — PercentField's own onBlur already floors at
-              // zero (Math.max(0, next) / 100) and the input carries min="0",
-              // so a lower clamp here would be dead code.
-              onChange({ ...taxRates, points: Math.min(points, MAX_RATE_STRESS_POINTS) })
-            }
-          />
-          <YearField
-            label="Starting year"
-            value={taxRates.startYear}
-            onCommit={(y) => onChange({ ...taxRates, startYear: y })}
-          />
-        </div>
-      </StressRow>
+        {(p, commit) => (
+          <div className="grid grid-cols-2 gap-x-5">
+            <PercentField
+              // PercentField is uncontrolled, so it keeps displaying whatever was
+              // typed. That only matters where the committed value can DIFFER
+              // from it, and this is the one percent field that applies a CEILING
+              // — type 25, blur, and the plan carries 20 while the box still
+              // reads 25. (The component's own floor at zero cannot disagree with
+              // the box, because the number input will not surrender a negative.)
+              // Remounting on the committed value is the fix the disability
+              // ending year already uses below.
+              key={p.points}
+              label="Rate increase"
+              value={p.points}
+              onCommit={(points) =>
+                // Upper clamp only — PercentField's own onBlur already floors at
+                // zero (Math.max(0, next) / 100) and the input carries min="0",
+                // so a lower clamp here would be dead code.
+                commit({ ...p, points: Math.min(points, MAX_RATE_STRESS_POINTS) })
+              }
+            />
+            <YearField label="Starting year" value={p.startYear} onCommit={(startYear) => commit({ ...p, startYear })} />
+          </div>
+        )}
+      </StressTestRow>
 
       {/* Disability */}
-      <StressRow
+      <StressTestRow
+        kind="disability"
         label="Disability"
         hint="Stops the person's salary and business income from the chosen year, and pays any disability policies they hold. Leave the ending year blank for a disability that never ends; fill it in to model a recovery — the paycheck picks back up the following year at the level it would have reached, the benefit stops, and any waived premium is billed again. Percentage-of-salary savings stop and restart automatically; flat-dollar contributions do not (adjust those manually)."
-        on={disabilityOn}
-        onToggle={(checked) =>
-          checked
-            ? onChange({
-                kind: "stress-disability",
-                person: "client",
-                startYear: defaultEventYear,
-                endYear: null,
-              })
-            : onResetField(["stress-disability"])
+        draft={
+          ps.disabilityEvent
+            ? {
+                kind: "disability",
+                person: ps.disabilityEvent.person,
+                startYear: ps.disabilityEvent.startYear,
+                endYear: ps.disabilityEvent.endYear ?? null,
+              }
+            : null
         }
+        defaults={{ kind: "disability", person: "client", startYear: defaultEventYear, endYear: null }}
+        saved={savedStressTests.disability ?? null}
+        ctx={stressCtx}
       >
-        <div className="grid grid-cols-2 gap-x-5 gap-y-3">
-          <SelectField
-            label="Person"
-            value={disability.person}
-            options={
-              hasSpouse
-                ? [
-                    { value: "client", label: clientName },
-                    { value: "spouse", label: spouseName },
-                  ]
-                : [{ value: "client", label: clientName }]
-            }
-            onCommit={(person) =>
-              onChange({ ...disability, person: person as SolverPerson })
-            }
-          />
-          <YearField
-            label="Starting year"
-            value={disability.startYear}
-            onCommit={(y) =>
-              onChange({
-                ...disability,
-                startYear: y,
-                // A disability cannot end before it begins. Pushing the start
-                // past the end drags the end along rather than leaving an
-                // inverted window, which reads to the engine as no disability
-                // at all — a lever that silently does nothing.
-                endYear: disability.endYear == null ? null : Math.max(disability.endYear, y),
-              })
-            }
-          />
-          <OptionalYearField
-            // The input is uncontrolled, so a year the CLAMP rewrote — either
-            // handler can move the ending year — has to remount the field, or
-            // the box keeps showing the rejected year while the readout beside
-            // it reports the clamped one.
-            key={disability.endYear ?? "never"}
-            label="Ending year"
-            value={disability.endYear}
-            placeholder="Never"
-            onCommit={(y) =>
-              onChange({
-                ...disability,
-                endYear: y == null ? null : Math.max(y, disability.startYear),
-              })
-            }
-          />
-        </div>
-        <DisabilityCoverage
-          tree={workingTree}
-          person={disability.person}
-          startYear={disability.startYear}
-          endYear={disability.endYear}
-        />
-      </StressRow>
+        {(p, commit) => (
+          <>
+            <div className="grid grid-cols-2 gap-x-5 gap-y-3">
+              <SelectField
+                label="Person"
+                value={p.person}
+                options={
+                  hasSpouse
+                    ? [
+                        { value: "client", label: clientName },
+                        { value: "spouse", label: spouseName },
+                      ]
+                    : [{ value: "client", label: clientName }]
+                }
+                onCommit={(person) => commit({ ...p, person: person as SolverPerson })}
+              />
+              <YearField
+                label="Starting year"
+                value={p.startYear}
+                onCommit={(y) =>
+                  commit({
+                    ...p,
+                    startYear: y,
+                    // A disability cannot end before it begins. Pushing the start
+                    // past the end drags the end along rather than leaving an
+                    // inverted window, which reads to the engine as no disability
+                    // at all — a lever that silently does nothing.
+                    endYear: p.endYear == null ? null : Math.max(p.endYear, y),
+                  })
+                }
+              />
+              <OptionalYearField
+                // The input is uncontrolled, so a year the CLAMP rewrote — either
+                // handler can move the ending year — has to remount the field, or
+                // the box keeps showing the rejected year while the readout beside
+                // it reports the clamped one.
+                key={p.endYear ?? "never"}
+                label="Ending year"
+                value={p.endYear}
+                placeholder="Never"
+                onCommit={(y) => commit({ ...p, endYear: y == null ? null : Math.max(y, p.startYear) })}
+              />
+            </div>
+            <DisabilityCoverage
+              tree={workingTree}
+              person={p.person}
+              startYear={p.startYear}
+              endYear={p.endYear}
+            />
+          </>
+        )}
+      </StressTestRow>
 
       {/* Long-term care */}
       <LtcStressRow
@@ -308,59 +276,39 @@ export function SolverStressTestTab({
       />
 
       {/* Market crash */}
-      <StressRow
+      <StressTestRow
+        kind="market-crash"
         label="Market crash"
         hint="One-time drawdown of investment balances (taxable, retirement, and 529s) in the chosen year. Cash, real estate, business, annuities, and life insurance are unaffected."
-        on={crashOn}
-        onToggle={(checked) =>
-          checked
-            ? onChange({ kind: "stress-market-crash", year: defaultEventYear, drawdownPct: DEFAULT_CRASH_PCT })
-            : onResetField(["stress-market-crash"])
+        draft={
+          ps.marketShock
+            ? { kind: "market-crash", year: ps.marketShock.year, drawdownPct: ps.marketShock.drawdownPct }
+            : null
         }
+        defaults={{ kind: "market-crash", year: defaultEventYear, drawdownPct: DEFAULT_CRASH_PCT }}
+        saved={savedStressTests["market-crash"] ?? null}
+        ctx={stressCtx}
       >
-        <div className="grid grid-cols-2 gap-x-5">
-          <PercentField
-            label="Drawdown"
-            value={ps.marketShock?.drawdownPct ?? DEFAULT_CRASH_PCT}
-            onCommit={(p) =>
-              onChange({
-                kind: "stress-market-crash",
-                year: ps.marketShock?.year ?? defaultEventYear,
-                drawdownPct: p,
-              })
-            }
-          />
-          <YearField
-            label="Year"
-            value={ps.marketShock?.year ?? defaultEventYear}
-            onCommit={(y) =>
-              onChange({
-                kind: "stress-market-crash",
-                year: y,
-                drawdownPct: ps.marketShock?.drawdownPct ?? DEFAULT_CRASH_PCT,
-              })
-            }
-          />
-        </div>
-      </StressRow>
+        {(p, commit) => (
+          <div className="grid grid-cols-2 gap-x-5">
+            <PercentField label="Drawdown" value={p.drawdownPct} onCommit={(drawdownPct) => commit({ ...p, drawdownPct })} />
+            <YearField label="Year" value={p.year} onCommit={(year) => commit({ ...p, year })} />
+          </div>
+        )}
+      </StressTestRow>
 
       {/* Lifetime exemption cap */}
-      <StressRow
+      <StressTestRow
+        kind="exemption-cap"
         label="Cap exemption growth"
         hint="Caps how high the federal estate/gift exemption grows. Above today's ~$15M it grows toward the cap then freezes; below $15M it freezes the exemption there for the whole plan. A lower cap raises estate tax."
-        on={capOn}
-        onToggle={(checked) =>
-          checked
-            ? onChange({ kind: "stress-exemption-cap", cap: DEFAULT_EXEMPTION_CAP })
-            : onResetField(["stress-exemption-cap"])
-        }
+        draft={capOn ? { kind: "exemption-cap", cap: ps.lifetimeExemptionCap ?? DEFAULT_EXEMPTION_CAP } : null}
+        defaults={{ kind: "exemption-cap", cap: DEFAULT_EXEMPTION_CAP }}
+        saved={savedStressTests["exemption-cap"] ?? null}
+        ctx={stressCtx}
       >
-        <DollarField
-          label="Exemption cap"
-          value={ps.lifetimeExemptionCap ?? DEFAULT_EXEMPTION_CAP}
-          onCommit={(cap) => onChange({ kind: "stress-exemption-cap", cap })}
-        />
-      </StressRow>
+        {(p, commit) => <DollarField label="Exemption cap" value={p.cap} onCommit={(cap) => commit({ ...p, cap })} />}
+      </StressTestRow>
     </SolverSection>
   );
 }

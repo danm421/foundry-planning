@@ -5,6 +5,8 @@ import type { ComponentType, SVGProps } from "react";
 import { useRouter } from "next/navigation";
 import { useClientAccess } from "@/components/client-access-provider";
 import type { ClientData, ProjectionYear, SavingsRule } from "@/engine";
+import type { StressTest, StressTestKind } from "@/engine/types";
+import type { ChangesPanelChange } from "@/components/scenario/changes-panel";
 import { controllingFamilyMember } from "@/engine/ownership";
 import { isAbsorbingLivingRow } from "@/engine/surplus-spend";
 import { resolveLtcEvent } from "@/engine/ltc-event";
@@ -16,6 +18,7 @@ import { DefaultGrowthBanner } from "@/components/default-growth-banner";
 import { parseProjectionResponse } from "@/lib/solver/projection-wire";
 import { mutationKey, type SolverMutation, type SolverMutationKey } from "@/lib/solver/types";
 import { partitionBaseSavableMutations } from "@/lib/solver/mutations-to-base-updates";
+import { staleStressDraftKeys } from "@/lib/solver/stress-test-mutations";
 import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "@/lib/solver/solve-types";
 import { buildLeverMutation } from "@/lib/solver/lever-search-config";
 import { livingExpenseSolveMutations } from "@/lib/solver/living-expense";
@@ -291,6 +294,15 @@ export function LiveSolverWorkspace({
   // Reads the change list, so a switched-off saved event still counts.
   const savedLtcChange =
     changesPanel?.changes.find((c) => c.targetKind === "ltc_event" && c.opType === "add") ?? null;
+  // Each kind's saved stress test, from the change list so a switched-off one
+  // still counts (it is absent from the tree).
+  const savedStressTests = useMemo(() => {
+    const byKind: Partial<Record<StressTestKind, ChangesPanelChange>> = {};
+    for (const c of changesPanel?.changes ?? []) {
+      if (c.targetKind === "stress_test" && c.opType === "add") byKind[(c.payload as StressTest).kind] = c;
+    }
+    return byKind;
+  }, [changesPanel]);
   // The Stress row's "Edit on Changes tab" sets this; the Changes tab opens
   // that change's editor on arrival and clears it.
   const [pendingOpenChangeId, setPendingOpenChangeId] = useState<string | null>(null);
@@ -1185,6 +1197,13 @@ export function LiveSolverWorkspace({
     if (savedLtcChange && mutationMap.has("stress-ltc")) clearMutations(["stress-ltc"]);
   }, [savedLtcChange, mutationMap, clearMutations]);
 
+  // The same stale-draft rule for the other six stressors: a saved kind (on or
+  // off) is the truth, so a leftover draft of it is dropped.
+  useEffect(() => {
+    const stale = staleStressDraftKeys(Object.keys(savedStressTests) as StressTestKind[], mutationMap);
+    if (stale.length > 0) clearMutations(stale);
+  }, [savedStressTests, mutationMap, clearMutations]);
+
   const handleSolveStart = useCallback(
     (
       target: SolveLeverKey,
@@ -1698,6 +1717,8 @@ export function LiveSolverWorkspace({
               setPendingOpenChangeId(id);
               selectLeftTab("changes");
             }}
+            savedStressTests={savedStressTests}
+            onStressSaved={() => router.refresh()}
           />
         )}
 
