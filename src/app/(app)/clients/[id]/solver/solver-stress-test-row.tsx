@@ -22,6 +22,8 @@ export interface StressScenarioContext {
   scenarioName: string | null;
   /** Names the disability stressor's person in the saved change's title. */
   client: ClientInfo;
+  /** Switched-off toggle groups by id (see `switchedOffGroupNames`). */
+  offGroupNames: Record<string, string>;
   onChange(m: SolverMutation): void;
   onResetField(keys: SolverMutationKey[]): void;
   /** Reloads page data so the change list and the scenario's tree catch up. */
@@ -98,18 +100,26 @@ export function StressTestRow<K extends StressTestKind>(props: {
     const stamp = String(props.saved.updatedAt);
     const savedParams = (sent?.stamp === stamp ? sent.params : props.saved.payload) as ParamsOf<K>;
     const locked = !canEdit || busy;
+    // A switched-off group keeps the change out of the tree whatever its own
+    // switch says, so the row reads off and its switch can't help.
+    const offGroup = props.saved.toggleGroupId ? ctx.offGroupNames[props.saved.toggleGroupId] : undefined;
+    const applied = enabled && !offGroup;
     return (
       <StressRow
         label={STRESS_TEST_LABELS[props.kind]}
         hint={props.hint}
-        on={enabled}
+        on={applied}
         disabled={props.disabled}
-        lockToggle={locked}
+        lockToggle={locked || Boolean(offGroup)}
         onToggle={(checked) => void run(() => setStressTestEnabled(ctx.clientId, scenarioId, changeId, checked))}
         footer={
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-[11px] text-ink-3">
-              {enabled ? `Saved in ${scenarioLabel}.` : `Saved in ${scenarioLabel}, switched off.`}
+              {offGroup
+                ? `Saved in ${scenarioLabel}, but its group “${offGroup}” is switched off on the Changes tab.`
+                : enabled
+                  ? `Saved in ${scenarioLabel}.`
+                  : `Saved in ${scenarioLabel}, switched off.`}
             </span>
             <button
               type="button"
@@ -119,7 +129,7 @@ export function StressTestRow<K extends StressTestKind>(props: {
             >
               Remove from scenario
             </button>
-            {!enabled && props.draft !== null && (
+            {!applied && props.draft !== null && (
               // A scenario saved before stress tests were their own changes can
               // carry this stressor inside one combined plan-assumption change,
               // which this switch does not reach.

@@ -40,6 +40,8 @@ interface Props {
   onEditLtcOnChangesTab: (changeId: string) => void;
   /** Each kind's saved `stress_test` change in this scenario (on or off). */
   savedStressTests: Partial<Record<StressTestKind, ChangesPanelChange>>;
+  /** Switched-off toggle groups by id (see `switchedOffGroupNames`). */
+  offGroupNames: Record<string, string>;
   onStressSaved: () => void;
 }
 
@@ -71,6 +73,7 @@ export function SolverStressTestTab({
   onLtcSaved,
   onEditLtcOnChangesTab,
   savedStressTests,
+  offGroupNames,
   onStressSaved,
 }: Props) {
   const ps = workingTree.planSettings;
@@ -95,6 +98,7 @@ export function SolverStressTestTab({
     scenarioId,
     scenarioName,
     client: workingTree.client,
+    offGroupNames,
     onChange,
     onResetField,
     onSaved: onStressSaved,

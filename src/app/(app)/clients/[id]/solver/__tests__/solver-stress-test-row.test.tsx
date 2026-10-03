@@ -19,7 +19,7 @@ const client = { firstName: "John", spouseName: "Jane Smith" } as ClientInfo;
 
 function ctx(over: Partial<StressScenarioContext> = {}): StressScenarioContext {
   return {
-    clientId: "c1", scenarioId: "s1", scenarioName: "Bear case", client,
+    clientId: "c1", scenarioId: "s1", scenarioName: "Bear case", client, offGroupNames: {},
     onChange: vi.fn(), onResetField: vi.fn(), onSaved: vi.fn(), ...over,
   };
 }
@@ -174,6 +174,15 @@ describe("StressTestRow — saved", () => {
     fireEvent.click(box());
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "PATCH", body: JSON.stringify({ enabled: true }) });
+  });
+
+  it("saved and on inside a switched-off group: reads off, says why, and the box is locked", () => {
+    const grouped = { ...saved(true), toggleGroupId: "g1" };
+    render(<Row c={ctx({ offGroupNames: { g1: "Downside" } })} saved={grouped} draft={null} />);
+    expect(box().checked).toBe(false);
+    expect(box().disabled).toBe(true);
+    expect(screen.queryByLabelText(/drawdown/i)).toBeNull();
+    expect(screen.getByText("Saved in Bear case, but its group “Downside” is switched off on the Changes tab.")).toBeTruthy();
   });
 
   it("saved-off row warns when an older combined change still applies it", () => {

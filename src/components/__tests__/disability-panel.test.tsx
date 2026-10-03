@@ -479,6 +479,7 @@ describe("DisabilityPanel", () => {
             onLtcSaved={vi.fn()}
             onEditLtcOnChangesTab={vi.fn()}
             savedStressTests={{}}
+            offGroupNames={{}}
             onStressSaved={vi.fn()}
           />,
         );

@@ -1,4 +1,6 @@
 import type { StressTest } from "@/engine/types";
+import type { ToggleGroup } from "@/engine/scenario/types";
+import { resolveEffectiveToggleState } from "@/engine/scenario/applyChanges";
 
 const changesUrl = (clientId: string, scenarioId: string) =>
   `/api/clients/${clientId}/scenarios/${scenarioId}/changes`;
@@ -32,4 +34,13 @@ export function setStressTestEnabled(
 
 export function removeStressTest(clientId: string, scenarioId: string, testId: string): Promise<void> {
   return send(`${changesUrl(clientId, scenarioId)}?kind=stress_test&target=${testId}&op=add`, "DELETE");
+}
+
+/** Name of every group the Solver's tree runs without — switched off itself, or
+ *  under a switched-off parent — by id. The Solver loads the scenario with each
+ *  group at its saved state, so a saved stressor in one of these is not applied
+ *  however its own switch reads. */
+export function switchedOffGroupNames(groups: ToggleGroup[]): Record<string, string> {
+  const effective = resolveEffectiveToggleState({}, groups);
+  return Object.fromEntries(groups.filter((g) => !effective[g.id]).map((g) => [g.id, g.name]));
 }

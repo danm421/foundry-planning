@@ -61,6 +61,7 @@ import { useSolverNetToHeirs } from "./use-solver-net-to-heirs";
 import { SaveAsScenarioDialog } from "./save-as-scenario-dialog";
 import { SolverTechniquesTab } from "./solver-techniques-tab";
 import { SolverStressTestTab } from "./solver-stress-test-tab";
+import { switchedOffGroupNames } from "./solver-stress-saved";
 import {
   SolverLifeInsuranceInputs,
   SolverLifeInsuranceResults,
@@ -303,6 +304,7 @@ export function LiveSolverWorkspace({
     }
     return byKind;
   }, [changesPanel]);
+  const offGroupNames = useMemo(() => switchedOffGroupNames(changesPanel?.toggleGroups ?? []), [changesPanel]);
   // The Stress row's "Edit on Changes tab" sets this; the Changes tab opens
   // that change's editor on arrival and clears it.
   const [pendingOpenChangeId, setPendingOpenChangeId] = useState<string | null>(null);
@@ -1718,6 +1720,7 @@ export function LiveSolverWorkspace({
               selectLeftTab("changes");
             }}
             savedStressTests={savedStressTests}
+            offGroupNames={offGroupNames}
             onStressSaved={() => router.refresh()}
           />
         )}
