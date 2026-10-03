@@ -22,9 +22,13 @@
 // (LtcEventDialog) — also on arrival from the Stress row's link. Rows with
 // nowhere to open, rows in a switched-off toggle group, and every row for a
 // view-only advisor, stay plain text.
+//
+// A scenario picker heads the tab (both states) once the client has a scenario
+// to pick, so the advisor can switch without leaving it.
 
 import { useEffect, useState } from "react";
-import { useScenarioModeUI } from "@/components/scenario/scenario-mode-wrapper";
+import { useClientScenarios, useScenarioModeUI } from "@/components/scenario/scenario-mode-wrapper";
+import { withoutTestOrphans } from "@/components/scenario/scenario-chip-row";
 import { ChangesPanel, type ChangesPanelChange } from "@/components/scenario/changes-panel";
 import { labelFor } from "@/components/scenario/changes-panel-leaf-row";
 import type { ClientData, LtcEvent, ProjectionYear } from "@/engine/types";
@@ -39,6 +43,7 @@ import { SolverChangeEditor, type EditorHostTarget } from "./solver-change-edito
 import { LtcEventDialog } from "./ltc-event-dialog";
 import { SolverDetailActions } from "./solver-detail-actions";
 import { SolverDeleteConfirm } from "./solver-delete-confirm";
+import { SolverScenarioSelect } from "./solver-scenario-select";
 import type { InputTab } from "./report-tab-link";
 
 interface Props {
@@ -79,6 +84,10 @@ export function SolverChangesTab({
   const { permission } = useClientAccess();
   const { openCreate } = useScenarioModeUI();
   const canEdit = permission === "edit";
+  const scenarios = withoutTestOrphans(useClientScenarios());
+  const scenarioPicker = scenarios.some((s) => !s.isBaseCase) ? (
+    <SolverScenarioSelect clientId={clientId} scenarios={scenarios} />
+  ) : null;
   // `seq` remounts the editor on every click, so re-opening the same change
   // (or replacing a message) always starts a fresh load. `label` names what the
   // editor is about, for its own messages and for the draft-reconciliation notice.
@@ -101,6 +110,7 @@ export function SolverChangesTab({
   if (!panel) {
     return (
       <>
+        {scenarioPicker}
         {canEdit && (
           <div className="mb-3">
             <SolverDetailActions
@@ -159,6 +169,7 @@ export function SolverChangesTab({
 
   return (
     <>
+      {scenarioPicker}
       {canEdit && (
         <SolverDetailActions
           inventory={inventory}

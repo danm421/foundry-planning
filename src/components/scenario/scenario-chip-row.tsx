@@ -38,6 +38,11 @@ const TEST_ORPHAN_PREFIXES = [
   "flow-mixed-scn-",
 ] as const;
 
+/** Drops leaked integration-test scenarios (see TEST_ORPHAN_PREFIXES). */
+export function withoutTestOrphans<T extends { name: string }>(scenarios: T[]): T[] {
+  return scenarios.filter((s) => !TEST_ORPHAN_PREFIXES.some((p) => s.name.startsWith(p)));
+}
+
 /**
  * Collapsed scenario selector that sits above the Details tabs. The corner
  * shows a single pill — the active scenario (accent fill, ● prefix) plus a ▾
@@ -102,9 +107,7 @@ export function ScenarioChipRow({
   // run leaks them, and they pile up in the chip row. Hide every known
   // test-orphan family in the UI; leave DB rows alone. Keep this list in sync
   // with the `name:` prefixes used by `.insert(scenarios)` across *.test.ts.
-  const visibleScenarios = scenarios.filter(
-    (s) => !TEST_ORPHAN_PREFIXES.some((p) => s.name.startsWith(p)),
-  );
+  const visibleScenarios = withoutTestOrphans(scenarios);
   const baseId = visibleScenarios.find((s) => s.isBaseCase)?.id ?? null;
   const effectiveActive = active ?? baseId;
   const activeScenario =

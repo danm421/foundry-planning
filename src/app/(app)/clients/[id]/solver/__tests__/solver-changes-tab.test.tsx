@@ -12,8 +12,18 @@ import type { ClientData } from "@/engine/types";
 import { buildClientData } from "@/engine/__tests__/fixtures";
 import { useScenarioWriteListener } from "@/hooks/scenario-write-listener";
 
+const { routerPushMock, nav, clientScenarios } = vi.hoisted(() => ({
+  routerPushMock: vi.fn(),
+  // The URL the scenario picker reads; a test sets the query it starts on.
+  nav: { search: "" },
+  // What the layout hands the page as the client's scenarios. Empty by
+  // default, which keeps the picker out of every test that doesn't set it.
+  clientScenarios: [] as { id: string; name: string; isBaseCase: boolean }[],
+}));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+  useRouter: () => ({ refresh: vi.fn(), push: routerPushMock }),
+  useSearchParams: () => new URLSearchParams(nav.search),
+  usePathname: () => "/clients/c1/solver",
 }));
 
 const TARGET_ID_FOR_STUB = "11111111-2222-3333-4444-555555555555";
@@ -90,6 +100,7 @@ vi.mock("@/app/(app)/clients/[id]/details/assumptions/assumptions-client", () =>
 }));
 vi.mock("@/components/scenario/scenario-mode-wrapper", () => ({
   useScenarioModeUI: () => ({ openCreate: openCreateMock }),
+  useClientScenarios: () => clientScenarios,
   ScenarioModeWrapper: ({ children }: { children: unknown }) => children,
 }));
 const fetchMock = vi.fn();
@@ -209,6 +220,9 @@ function pickFromCategory(verb: "Edit" | "Remove", category: string, name: RegEx
 beforeEach(() => {
   loadChangeEditorPropsMock.mockReset();
   openCreateMock.mockReset();
+  routerPushMock.mockReset();
+  nav.search = "";
+  clientScenarios.length = 0;
   notYetReady.clear();
   fetchMock.mockReset();
 });
@@ -238,6 +252,73 @@ describe("SolverChangesTab", () => {
     );
     expect(screen.getByText("Pick a scenario to see its changes.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^group$/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("SolverChangesTab — scenario picker", () => {
+  const SCENARIOS = [
+    { id: "base-id", name: "Base case", isBaseCase: true },
+    { id: SCENARIO_ID, name: "Retire at 62", isBaseCase: false },
+    { id: "s-2", name: "Sell the house", isBaseCase: false },
+    { id: "s-orphan", name: "writer-test-1234", isBaseCase: false },
+  ];
+  const picker = () => screen.getByRole("combobox", { name: "Scenario" });
+  const renderBase = () =>
+    render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <SolverChangesTab
+          clientId={CLIENT_ID}
+          panel={null}
+          inventory={[]}
+          planTree={emptyTree()}
+          willGrantors={[]}
+          onOpenSolverTab={vi.fn()}
+          onTargetsWritten={vi.fn()}
+        />
+      </ClientAccessProvider>,
+    );
+
+  it("switches to another scenario and stays on the Changes tab", () => {
+    clientScenarios.push(...SCENARIOS);
+    nav.search = `scenario=${SCENARIO_ID}&tab=changes`;
+    renderTab([makeChange()]);
+    expect(picker()).toHaveValue(SCENARIO_ID);
+    expect(within(picker()).queryByRole("option", { name: "writer-test-1234" })).not.toBeInTheDocument();
+
+    fireEvent.change(picker(), { target: { value: "s-2" } });
+    expect(routerPushMock).toHaveBeenCalledWith("/clients/c1/solver?scenario=s-2&tab=changes");
+    // The pick holds while the new scenario loads, rather than snapping back.
+    expect(picker()).toHaveValue("s-2");
+  });
+
+  it("picking Base case clears the scenario", () => {
+    clientScenarios.push(...SCENARIOS);
+    nav.search = `scenario=${SCENARIO_ID}&tab=changes`;
+    renderTab([makeChange()]);
+    fireEvent.change(picker(), { target: { value: "base" } });
+    expect(routerPushMock).toHaveBeenCalledWith("/clients/c1/solver?tab=changes");
+  });
+
+  it("the base case's empty state offers the picker too", () => {
+    clientScenarios.push(...SCENARIOS);
+    nav.search = "tab=changes";
+    renderBase();
+    expect(picker()).toHaveValue("base");
+    fireEvent.change(picker(), { target: { value: SCENARIO_ID } });
+    expect(routerPushMock).toHaveBeenCalledWith(`/clients/c1/solver?tab=changes&scenario=${SCENARIO_ID}`);
+  });
+
+  it("view-only advisors can switch scenarios too", () => {
+    clientScenarios.push(...SCENARIOS);
+    nav.search = `scenario=${SCENARIO_ID}`;
+    renderTab([makeChange()], { permission: "view" });
+    expect(picker()).toBeInTheDocument();
+  });
+
+  it("is left out when the client has no scenario besides the base case", () => {
+    clientScenarios.push(SCENARIOS[0], SCENARIOS[3]);
+    renderBase();
+    expect(screen.queryByRole("combobox", { name: "Scenario" })).not.toBeInTheDocument();
   });
 });
 

@@ -15,7 +15,7 @@ type Props = {
 export function SolverPaneToggle({ collapsed, onToggle, controls }: Props) {
   const label = collapsed ? "Show inputs" : "Hide inputs";
   return (
-    <div className="group hidden border-r border-hair transition-colors hover:border-hair-2 lg:block">
+    <div className="group hidden border-r-2 border-hair-3 lg:block">
       <div className="sticky top-0 flex flex-col items-center gap-3 pt-2">
         {/* btn-ghost's language (hairline → accent on hover), not the class
             itself: its 0.75rem padding is unlayered CSS and would beat any
