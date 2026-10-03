@@ -27,6 +27,8 @@ export const ACCOUNT_FIELD_LABELS: FieldLabels = {
   inheritedDeathYear: { label: "Inherited — year of death", format: "text" },
   inheritedOwnerBirthYear: { label: "Inherited — original owner's birth year", format: "text" },
   inheritedHeirDisabled: { label: "Inherited — heir disabled or chronically ill", format: "text" },
+  inheritedPayoutFromYear: { label: "Inherited — payout window first year", format: "text" },
+  inheritedPayoutThroughYear: { label: "Inherited — payout window last year", format: "text" },
   isDefaultChecking: { label: "Default checking", format: "text" },
   growthSource: { label: "Growth source", format: "text" },
   modelPortfolio: { label: "Model portfolio", format: "reference" },

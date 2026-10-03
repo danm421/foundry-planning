@@ -35,6 +35,8 @@ export async function toAccountSnapshot(row: AccountRow): Promise<EntitySnapshot
     inheritedDeathYear: row.inheritedDeathYear,
     inheritedOwnerBirthYear: row.inheritedOwnerBirthYear,
     inheritedHeirDisabled: row.inheritedHeirDisabled,
+    inheritedPayoutFromYear: row.inheritedPayoutFromYear,
+    inheritedPayoutThroughYear: row.inheritedPayoutThroughYear,
     isDefaultChecking: row.isDefaultChecking,
     growthSource: row.growthSource,
     modelPortfolio,

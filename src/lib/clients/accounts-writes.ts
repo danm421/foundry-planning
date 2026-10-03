@@ -134,6 +134,8 @@ export async function createAccountForClient(args: {
     subType: p.subType ?? "other",
     inheritedDeathYear: p.inheritedDeathYear,
     inheritedOwnerBirthYear: p.inheritedOwnerBirthYear,
+    inheritedPayoutFromYear: p.inheritedPayoutFromYear,
+    inheritedPayoutThroughYear: p.inheritedPayoutThroughYear,
     currentYear: new Date().getFullYear(),
   });
   if (inheritedError) return writeError(400, inheritedError);
@@ -229,6 +231,9 @@ export async function createAccountForClient(args: {
         inheritedDeathYear: p.inheritedDeathYear ?? null,
         inheritedOwnerBirthYear: p.inheritedOwnerBirthYear ?? null,
         inheritedHeirDisabled: p.inheritedDeathYear != null && p.inheritedHeirDisabled === true,
+        // The window rides on an inherited IRA only — same guard as heirDisabled.
+        inheritedPayoutFromYear: p.inheritedDeathYear != null ? p.inheritedPayoutFromYear ?? null : null,
+        inheritedPayoutThroughYear: p.inheritedDeathYear != null ? p.inheritedPayoutThroughYear ?? null : null,
         growthSource: p.growthSource as AccountRow["growthSource"],
         modelPortfolioId: p.modelPortfolioId ?? null,
         tickerPortfolioId: p.tickerPortfolioId ?? null,
@@ -432,6 +437,8 @@ export async function updateAccountForClient(args: {
     subType: resolvedField("subType", before.subType),
     inheritedDeathYear: resultInheritedDeathYear,
     inheritedOwnerBirthYear: resolvedField("inheritedOwnerBirthYear", before.inheritedOwnerBirthYear),
+    inheritedPayoutFromYear: resolvedField("inheritedPayoutFromYear", before.inheritedPayoutFromYear),
+    inheritedPayoutThroughYear: resolvedField("inheritedPayoutThroughYear", before.inheritedPayoutThroughYear),
     currentYear: new Date().getFullYear(),
   });
   if (inheritedError) return writeError(400, inheritedError);
@@ -490,6 +497,11 @@ export async function updateAccountForClient(args: {
   // inheritedHeirDisabled without touching inheritedDeathYear in the same payload.
   if (resultInheritedDeathYear == null) {
     (accountUpdate as Record<string, unknown>).inheritedHeirDisabled = false;
+    // Same invariant for the payout window (spec 2026-10-03): it means nothing
+    // on an account that isn't inherited, and the stored pair would otherwise
+    // survive an un-inherit made by a writer that didn't send it.
+    (accountUpdate as Record<string, unknown>).inheritedPayoutFromYear = null;
+    (accountUpdate as Record<string, unknown>).inheritedPayoutThroughYear = null;
   }
 
   let updated: AccountRow;

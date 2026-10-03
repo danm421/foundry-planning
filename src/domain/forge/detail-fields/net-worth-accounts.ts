@@ -219,6 +219,24 @@ export const NET_WORTH_ACCOUNT_ENTITIES: readonly DetailEntity[] = [
           "Keeps the life-expectancy stretch instead of the 10-year rule for a death in 2020 or later. The write path saves this as false whenever the resulting inheritedDeathYear is null, even if the caller sent true.",
       },
       {
+        key: "inheritedPayoutFromYear",
+        label: "Payout window — first year",
+        kind: "year",
+        nullable: true,
+        defaultValue: null,
+        notes:
+          "First year of an inherited IRA's even-payout window. Each year from here through inheritedPayoutThroughYear pays the larger of the required minimum and the balance divided by the years left, so the account is empty after the last year. Must be sent together with inheritedPayoutThroughYear. The write path rejects a first year on or before inheritedDeathYear, and saves both as null whenever the resulting inheritedDeathYear is null.",
+      },
+      {
+        key: "inheritedPayoutThroughYear",
+        label: "Payout window — last year",
+        kind: "year",
+        nullable: true,
+        defaultValue: null,
+        notes:
+          "Last year of the even-payout window, paired with inheritedPayoutFromYear; the write path rejects one before the first year. Under the 10-year rule the projection treats a later year as the deadline year.",
+      },
+      {
         key: "turnoverPct",
         label: "Turnover %",
         kind: "rate",
