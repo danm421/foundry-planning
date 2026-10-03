@@ -145,6 +145,26 @@ describe("StressTestRow — saved", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("a saved percent finer than one decimal shows as saved, and tabbing past it sends nothing", () => {
+    const fetchMock = okFetch();
+    const fine = saved(true);
+    fine.payload = { ...crash, drawdownPct: 0.0475, id: ID, name: "Market crash — 4.75% in 2027" };
+    render(<Row saved={fine} />);
+    const input = screen.getByLabelText(/drawdown/i) as HTMLInputElement;
+    expect(input.value).toBe("4.75");
+    fireEvent.blur(input);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("tabbing past a saved percent the box has to round sends nothing", () => {
+    const fetchMock = okFetch();
+    const finer = saved(true);
+    finer.payload = { ...crash, drawdownPct: 0.04125, id: ID, name: "Market crash — 4.125% in 2027" };
+    render(<Row saved={finer} />);
+    fireEvent.blur(screen.getByLabelText(/drawdown/i));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("saved and off: collapsed with its status line, and ticking PATCHes it on", async () => {
     const fetchMock = okFetch();
     render(<Row saved={saved(false)} draft={null} />);

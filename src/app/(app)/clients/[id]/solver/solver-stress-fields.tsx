@@ -106,8 +106,11 @@ export function PercentField({
           type="number"
           step="0.5"
           min="0"
-          defaultValue={Math.round(value * 1000) / 10}
+          defaultValue={Math.round(value * 10000) / 100}
           onBlur={(e) => {
+            // Leaving the box as shown commits nothing: the shown text can be a
+            // rounding of the value, and committing it would change the value.
+            if (e.target.value === e.target.defaultValue) return;
             const next = Number(e.target.value);
             if (Number.isFinite(next)) onCommit(Math.max(0, next) / 100);
           }}
