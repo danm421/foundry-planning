@@ -3,9 +3,10 @@
 // src/components/scenario/changes-panel.tsx
 //
 // Right-rail aside that lists every scenario_change for the active scenario,
-// per parent-spec §5.7. The header carries scenario name, change/group counts,
-// and a `Group` button that swaps the body for an inline <GroupEditor> — the
-// single entry point for creating/editing toggle groups. When the editor is
+// per parent-spec §5.7. The header carries the scenario name (click to rename
+// in place), change/group counts, and a `Group` button that swaps the body for
+// an inline <GroupEditor> — the single entry point for creating/editing toggle
+// groups. When the editor is
 // closed, the body shows the toggle-groups section followed by the ungrouped
 // section. A collapsible <CascadeWarningsChip> footer surfaces any cascade
 // warnings with per-warning [Restore] buttons.
@@ -25,6 +26,7 @@ import { ChangesPanelLeafRow } from "./changes-panel-leaf-row";
 import { ToggleGroupCard } from "./changes-panel-toggle-group-card";
 import { CascadeWarningsChip } from "./changes-panel-cascade-warnings";
 import { GroupEditor } from "./changes-panel-group-editor";
+import { ScenarioNameEditor } from "./changes-panel-scenario-name";
 
 /**
  * Panel-only widening of the engine's `ScenarioChange`. The DB row carries an
@@ -119,6 +121,8 @@ export function ChangesPanel({
   return (
     <aside className={asideClassName}>
       <PanelHeader
+        clientId={clientId}
+        scenarioId={scenarioId}
         scenarioName={scenarioName}
         changesCount={changes.length}
         groupsCount={toggleGroups.length}
@@ -166,11 +170,15 @@ export function ChangesPanel({
 }
 
 function PanelHeader({
+  clientId,
+  scenarioId,
   scenarioName,
   changesCount,
   groupsCount,
   onOpenEditor,
 }: {
+  clientId: string;
+  scenarioId: string;
   scenarioName: string;
   changesCount: number;
   groupsCount: number;
@@ -181,18 +189,27 @@ function PanelHeader({
       <div className="text-xs tracking-[0.18em] text-accent uppercase font-mono mb-1">
         §.06 · CHANGES
       </div>
-      <div className="text-[16px] text-ink mb-1">{scenarioName}</div>
-      <div className="text-xs text-ink-3">
-        {changesCount} change{changesCount === 1 ? "" : "s"} · {groupsCount} toggle
-        group{groupsCount === 1 ? "" : "s"}
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <ScenarioNameEditor
+            key={scenarioId}
+            clientId={clientId}
+            scenarioId={scenarioId}
+            name={scenarioName}
+          />
+          <div className="mt-1 text-xs text-ink-3">
+            {changesCount} change{changesCount === 1 ? "" : "s"} · {groupsCount} toggle
+            group{groupsCount === 1 ? "" : "s"}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenEditor}
+          className="shrink-0 px-3 h-7 rounded-full bg-accent text-accent-on text-[12px] font-medium hover:bg-accent-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+        >
+          Group
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={onOpenEditor}
-        className="mt-3 px-3 h-7 rounded-full bg-accent text-accent-on text-[12px] font-medium hover:bg-accent-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-      >
-        Group
-      </button>
     </div>
   );
 }
