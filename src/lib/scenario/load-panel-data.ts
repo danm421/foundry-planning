@@ -25,6 +25,7 @@ import type {
   ToggleGroup,
 } from "@/engine/scenario/types";
 import { describeChangeTarget } from "@/lib/scenario/describe-change-target";
+import { withoutBusinessCashRiders } from "@/lib/scenario/business-cash-rider";
 
 export interface PanelData {
   scenarioId: string;
@@ -70,7 +71,9 @@ export async function loadPanelData(
 
   if (!scenarioRow || scenarioRow.isBaseCase) return null;
 
-  const changes: ChangesPanelChange[] = changeRows.map((r) => ({
+  // A scenario business's "<name> — Cash" account is part of the business, not
+  // a change of its own — it never gets a row.
+  const changes: ChangesPanelChange[] = withoutBusinessCashRiders(changeRows).map((r) => ({
     id: r.id,
     scenarioId: r.scenarioId,
     opType: r.opType,

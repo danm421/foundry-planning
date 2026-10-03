@@ -14,6 +14,7 @@ import { runProjectionWithEvents } from "@/engine/projection";
 import type { MonteCarloSummary } from "@/engine";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
+import { withoutBusinessCashRiders } from "@/lib/scenario/business-cash-rider";
 import { buildTargetNames } from "@/lib/scenario/load-panel-data";
 import { describeChangeUnit, type ChangeUnit } from "@/lib/scenario/scenario-change-describe";
 import { buildRetirementComparisonMetrics } from "./metrics";
@@ -81,8 +82,9 @@ function changeLinesFor(
   targetNames: Record<string, string>,
 ): string[] {
   // loadScenarioChanges already filters to enabled rows; describeChangeUnit
-  // wants an explicit `enabled` flag on each change.
-  const enabled = changes.map((c) => ({ ...c, enabled: true }));
+  // wants an explicit `enabled` flag on each change. A scenario business's
+  // "<name> — Cash" is part of the business, not a change.
+  const enabled = withoutBusinessCashRiders(changes).map((c) => ({ ...c, enabled: true }));
   const groupNameById = new Map(toggleGroups.map((g) => [g.id, g.name]));
   const grouped = new Map<string, typeof enabled>();
   const singles: ChangeUnit[] = [];

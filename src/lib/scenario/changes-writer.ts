@@ -28,6 +28,7 @@ import { stableStringify } from "@/lib/compute-cache/hash";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { ltcEventSchema } from "@/lib/schemas/ltc-event";
 import { loadEffectiveTree } from "./loader";
+import { businessCashRidersOf } from "./business-cash-rider";
 
 /**
  * A Drizzle transaction handle (the value passed to a `db.transaction` callback).
@@ -560,27 +561,7 @@ export async function applyEntityRemove(args: ApplyEntityRemoveArgs): Promise<vo
             eq(scenarioChanges.targetId, targetId),
           ),
         );
-      // A scenario-added business takes its own rows with it, but its children
-      // are separate `add` rows (the auto-created "<name> — Cash" account, a
-      // line of credit) whose `parentAccountId` is the business's synthetic id.
-      // Release them to the top level, as base's `ON DELETE SET NULL` and
-      // `resolveCascades`' parent_account_cleared do — left dangling, every
-      // later promote FK-fails inserting the child.
-      if (targetKind === "account") {
-        await tx
-          .update(scenarioChanges)
-          .set({
-            payload: sql`jsonb_set(${scenarioChanges.payload}, '{parentAccountId}', 'null'::jsonb)`,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(scenarioChanges.scenarioId, scenarioId),
-              eq(scenarioChanges.opType, "add"),
-              sql`${scenarioChanges.payload}->>'parentAccountId' = ${targetId}`,
-            ),
-          );
-      }
+      if (targetKind === "account") await dropAddedAccountChildren(tx, scenarioId, targetId);
       return;
     }
 
@@ -671,5 +652,37 @@ export async function revertChange(args: RevertChangeArgs): Promise<void> {
           eq(scenarioChanges.opType, opType),
         ),
       );
+    if (targetKind === "account" && opType === "add") {
+      await dropAddedAccountChildren(tx, scenarioId, targetId);
+    }
   });
+}
+
+/**
+ * A scenario-added account's `add` row is going away. Its children are separate
+ * `add` rows whose `parentAccountId` is its synthetic id. A business's
+ * "<name> — Cash" account is part of the business and goes with it. Any other
+ * child (a line of credit) is released to the top level, as base's
+ * `ON DELETE SET NULL` and `resolveCascades`' parent_account_cleared do — left
+ * dangling, every later promote FK-fails inserting the child.
+ */
+export async function dropAddedAccountChildren(
+  tx: Tx,
+  scenarioId: string,
+  accountId: string,
+): Promise<void> {
+  await tx.delete(scenarioChanges).where(businessCashRidersOf(scenarioId, accountId));
+  await tx
+    .update(scenarioChanges)
+    .set({
+      payload: sql`jsonb_set(${scenarioChanges.payload}, '{parentAccountId}', 'null'::jsonb)`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(scenarioChanges.scenarioId, scenarioId),
+        eq(scenarioChanges.opType, "add"),
+        sql`${scenarioChanges.payload}->>'parentAccountId' = ${accountId}`,
+      ),
+    );
 }

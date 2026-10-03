@@ -19,6 +19,7 @@ import { runProjectionWithEvents } from "@/engine/projection";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import { getOrComputeMaxSpending } from "@/lib/compute-cache/max-spending";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
+import { withoutBusinessCashRiders } from "@/lib/scenario/business-cash-rider";
 import { buildTargetNames } from "@/lib/scenario/load-panel-data";
 import { buildBaseResolveData, buildAssetTxResolveData } from "@/lib/scenario/scenario-changes-resolve";
 import { describeChange } from "@/lib/presentations/pages/scenario-changes/describe";
@@ -228,8 +229,9 @@ async function loadStrategies(clientId: string, proposed: Projected): Promise<St
     }),
   };
 
+  // A scenario business's "<name> — Cash" is part of the business, not a change.
   return groupStrategies(
-    changes.map((c) => ({ change: c, row: describeChange(c, ctx) })),
+    withoutBusinessCashRiders(changes).map((c) => ({ change: c, row: describeChange(c, ctx) })),
     toggleGroups,
   );
 }

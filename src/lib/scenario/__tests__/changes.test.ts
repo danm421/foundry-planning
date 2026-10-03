@@ -97,4 +97,31 @@ describe.skipIf(!HAS_DB)("loadScenarioChanges enabled-flag filter", () => {
 
     expect((await loadScenarioChanges(scenarioId)).map((c) => c.id)).not.toContain(row.id);
   });
+
+  it("a scenario business's cash takes the business's switch and group", async () => {
+    const businessId = randomUUID();
+    const cashId = randomUUID();
+    await db.insert(scenarioChanges).values([
+      {
+        scenarioId,
+        opType: "add",
+        targetKind: "account",
+        targetId: businessId,
+        payload: { id: businessId, name: "Acme", category: "business" },
+        orderIndex: 0,
+        enabled: false,
+      },
+      {
+        scenarioId,
+        opType: "add",
+        targetKind: "account",
+        targetId: cashId,
+        payload: { id: cashId, name: "Acme — Cash", parentAccountId: businessId, isDefaultChecking: true },
+        orderIndex: 1,
+        enabled: true,
+      },
+    ]);
+
+    expect(await loadScenarioChanges(scenarioId)).toEqual([]);
+  });
 });

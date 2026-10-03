@@ -682,6 +682,60 @@ describe("applyAssetSales — source resolution", () => {
     ]);
   });
 
+  it.each([
+    ["a business's", { parentAccountId: "biz-1", owners: [] }],
+    ["a trust's", { owners: [{ kind: "entity" as const, entityId: "trust-1", percent: 1 }] }],
+  ])("skips with skipped='entity-cash' when the sale names %s operating cash", (_label, shape) => {
+    const entityCash: Account = { ...checkingAccount, id: "entity-cash", name: "Acme — Cash", ...shape };
+    const sell: AssetTransaction = {
+      id: "cash-sell",
+      name: "Sell cash",
+      type: "sell",
+      year: 2030,
+      accountId: "entity-cash",
+      qualifiesForHomeSaleExclusion: false,
+    };
+    const balances = { "entity-cash": 40_000, checking: 0 };
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [entityCash],
+      liabilities: [],
+      accountBalances: balances,
+      basisMap: { "entity-cash": 40_000, checking: 0 },
+      accountLedgers: { "entity-cash": makeLedger(40_000), checking: makeLedger(0) },
+      year: 2030,
+      defaultCheckingId: "checking",
+      filingStatus: "married_joint",
+    });
+    expect(result.breakdown[0].skipped).toBe("entity-cash");
+    expect(result.removedAccountIds).toEqual([]);
+    expect(balances["entity-cash"]).toBe(40_000);
+  });
+
+  it("still sells the household's own default checking", () => {
+    const sell: AssetTransaction = {
+      id: "hh-cash-sell",
+      name: "Sell checking",
+      type: "sell",
+      year: 2030,
+      accountId: "checking-1",
+      fractionSold: 0.5,
+      qualifiesForHomeSaleExclusion: false,
+    };
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [checkingAccount],
+      liabilities: [],
+      accountBalances: { "checking-1": 50_000 },
+      basisMap: { "checking-1": 50_000 },
+      accountLedgers: { "checking-1": makeLedger(50_000) },
+      year: 2030,
+      defaultCheckingId: "checking-1",
+      filingStatus: "married_joint",
+    });
+    expect(result.breakdown[0].skipped).toBeUndefined();
+  });
+
   it("skips with skipped='no-source-balance' when synthetic source not yet created", () => {
     // Sell year before buy year: form should block this, defense-in-depth here.
     const sell: AssetTransaction = {

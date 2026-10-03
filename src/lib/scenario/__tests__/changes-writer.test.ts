@@ -718,13 +718,16 @@ describe.skipIf(!HAS_DB)("changes-writer", () => {
       expect(rows).toHaveLength(0);
     });
 
-    // Removing a scenario-ADDED business drops only its own rows; its cash
-    // child (a sibling `add` whose parentAccountId is the business's synthetic
-    // id) survives. Left pointing at a parent that will never exist, it
-    // FK-failed every later promote. Base deletes with ON DELETE SET NULL, and
+    // Removing a scenario-ADDED business drops its own rows; an ordinary child
+    // (a sibling `add` whose parentAccountId is the business's synthetic id)
+    // survives. Left pointing at a parent that will never exist, it FK-failed
+    // every later promote. Base deletes with ON DELETE SET NULL, and
     // resolveCascades releases the child the same way — so does the writer.
-    it("removing a scenario-added business nulls its sibling children's parentAccountId", async () => {
+    // The business's own "<name> — Cash" default checking is part of the
+    // business and goes with it.
+    it("removing a scenario-added business deletes its cash and nulls its other children's parentAccountId", async () => {
       const businessId = randomUUID();
+      const defaultCashId = randomUUID();
       const cashId = randomUUID();
       const loanId = randomUUID();
       const otherId = randomUUID();
@@ -732,8 +735,17 @@ describe.skipIf(!HAS_DB)("changes-writer", () => {
         applyEntityAdd({ scenarioId, firmId: COOPER_FIRM_ID, targetKind, entity: entity as never });
       await add("account", { id: businessId, name: "Acme", category: "business", value: 0, basis: 0 });
       await add("account", {
-        id: cashId,
+        id: defaultCashId,
         name: "Acme — Cash",
+        category: "cash",
+        parentAccountId: businessId,
+        isDefaultChecking: true,
+        value: 0,
+        basis: 0,
+      });
+      await add("account", {
+        id: cashId,
+        name: "Acme Reserve",
         category: "cash",
         parentAccountId: businessId,
         value: 0,
@@ -762,9 +774,10 @@ describe.skipIf(!HAS_DB)("changes-writer", () => {
         .where(eq(scenarioChanges.scenarioId, scenarioId));
       const byTarget = new Map(rows.map((r) => [r.targetId, r]));
       expect(byTarget.has(businessId)).toBe(false);
+      expect(byTarget.has(defaultCashId)).toBe(false);
       const cash = byTarget.get(cashId)!.payload as Record<string, unknown>;
       expect(cash.parentAccountId).toBeNull();
-      expect(cash.name).toBe("Acme — Cash"); // the rest of the payload is untouched
+      expect(cash.name).toBe("Acme Reserve"); // the rest of the payload is untouched
       expect((byTarget.get(loanId)!.payload as Record<string, unknown>).parentAccountId).toBeNull();
       expect(byTarget.get(otherId)!.payload).toMatchObject({ name: "Unrelated", parentAccountId: null });
       expect(rows).toHaveLength(3);
@@ -941,6 +954,40 @@ describe.skipIf(!HAS_DB)("changes-writer", () => {
         );
 
       expect(rows).toHaveLength(0);
+    });
+
+    it("reverting a scenario-added business un-adds its cash and releases its other children", async () => {
+      const businessId = randomUUID();
+      const defaultCashId = randomUUID();
+      const reserveId = randomUUID();
+      const add = (entity: Record<string, unknown>) =>
+        applyEntityAdd({ scenarioId, firmId: COOPER_FIRM_ID, targetKind: "account", entity: entity as never });
+      await add({ id: businessId, name: "Acme", category: "business", value: 0, basis: 0 });
+      await add({
+        id: defaultCashId,
+        name: "Acme — Cash",
+        category: "cash",
+        parentAccountId: businessId,
+        isDefaultChecking: true,
+        value: 0,
+        basis: 0,
+      });
+      await add({ id: reserveId, name: "Acme Reserve", category: "cash", parentAccountId: businessId, value: 0, basis: 0 });
+
+      await revertChange({
+        scenarioId,
+        firmId: COOPER_FIRM_ID,
+        targetKind: "account",
+        targetId: businessId,
+        opType: "add",
+      });
+
+      const rows = await db
+        .select()
+        .from(scenarioChanges)
+        .where(eq(scenarioChanges.scenarioId, scenarioId));
+      expect(rows.map((r) => r.targetId)).toEqual([reserveId]);
+      expect((rows[0].payload as Record<string, unknown>).parentAccountId).toBeNull();
     });
   });
 });

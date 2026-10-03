@@ -506,6 +506,52 @@ d("scenario toggle-group [gid] route (PATCH / DELETE)", () => {
     );
   });
 
+  it("DELETE moveChangesTo=delete takes a grouped business's cash account along", async () => {
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(COOPER_FIRM_ID);
+
+    const { db } = dbMod;
+    const { scenarioChanges } = schema;
+    const { eq } = drizzleOrm;
+    const businessId = randomUUID();
+    const cashId = randomUUID();
+    // Only the business sits in the group; its cash row follows it on read.
+    await db.insert(scenarioChanges).values([
+      {
+        scenarioId,
+        opType: "add",
+        targetKind: "account",
+        targetId: businessId,
+        payload: { id: businessId, name: "Acme", category: "business" },
+        toggleGroupId: groupId,
+        orderIndex: 0,
+      },
+      {
+        scenarioId,
+        opType: "add",
+        targetKind: "account",
+        targetId: cashId,
+        payload: { id: cashId, name: "Acme — Cash", parentAccountId: businessId, isDefaultChecking: true },
+        toggleGroupId: null,
+        orderIndex: 1,
+      },
+    ]);
+
+    const req = makeReq(
+      "http://test.local/toggle-groups/g?moveChangesTo=delete",
+      { method: "DELETE" },
+    );
+    const res = await route.DELETE(req, {
+      params: Promise.resolve({ id: COOPER_CLIENT_ID, sid: scenarioId, gid: groupId }),
+    });
+    expect(res.status).toBe(200);
+
+    const remaining = await db
+      .select()
+      .from(scenarioChanges)
+      .where(eq(scenarioChanges.scenarioId, scenarioId));
+    expect(remaining).toHaveLength(0);
+  });
+
   it("DELETE gid not in sid returns 404", async () => {
     vi.mocked(helpers.requireOrgId).mockResolvedValue(COOPER_FIRM_ID);
 

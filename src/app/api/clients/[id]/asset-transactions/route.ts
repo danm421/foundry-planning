@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
-import { scenarios, assetTransactions, accounts } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { scenarios, assetTransactions, accounts, accountOwners } from "@/db/schema";
+import { eq, and, or, exists, isNotNull, sql } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
   assertAccountsInClient,
@@ -300,6 +300,39 @@ export function resolvePropertyTaxUpdateFields(
   };
 }
 
+const ENTITY_CASH_SALE_ERROR =
+  "A business's or trust's cash account can't be sold on its own — sell the business instead.";
+
+/** A business's or trust's operating cash ("<name> — Cash") is never a sell
+ *  source — the DB-row twin of the engine's `isEntityOperatingCash`. */
+async function isEntityOperatingCashRow(
+  clientId: string,
+  accountId: string | null | undefined,
+): Promise<boolean> {
+  if (!accountId) return false;
+  const [row] = await db
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(
+      and(
+        eq(accounts.id, accountId),
+        eq(accounts.clientId, clientId),
+        eq(accounts.isDefaultChecking, true),
+        or(
+          isNotNull(accounts.parentAccountId),
+          exists(
+            db
+              .select({ one: sql`1` })
+              .from(accountOwners)
+              .where(and(eq(accountOwners.accountId, accounts.id), isNotNull(accountOwners.entityId))),
+          ),
+        ),
+      ),
+    )
+    .limit(1);
+  return row != null;
+}
+
 async function getBaseCaseScenarioId(clientId: string): Promise<string | null> {
   const a = await verifyClientAccess(clientId);
   if (!a.ok) return null;
@@ -412,6 +445,10 @@ export async function POST(
     const mpCheck = await assertModelPortfoliosInFirm(firmId, [modelPortfolioId]);
     if (!mpCheck.ok) {
       return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
+    }
+
+    if (type === "sell" && (await isEntityOperatingCashRow(id, accountId))) {
+      return NextResponse.json({ error: ENTITY_CASH_SALE_ERROR }, { status: 400 });
     }
 
     // Business-sale validation: must reference a business account in this
@@ -603,6 +640,10 @@ export async function PUT(
     const mpCheck = await assertModelPortfoliosInFirm(firmId, [modelPortfolioId]);
     if (!mpCheck.ok) {
       return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
+    }
+
+    if (await isEntityOperatingCashRow(id, accountId)) {
+      return NextResponse.json({ error: ENTITY_CASH_SALE_ERROR }, { status: 400 });
     }
 
     // Business-sale validation on update: enforce client scoping and the

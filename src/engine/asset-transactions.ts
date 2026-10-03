@@ -196,7 +196,7 @@ export interface AssetSaleBreakdown {
   mortgagePaidOff: number;
   proceedsAccountId: string;
   fractionSold: number;
-  skipped?: "orphaned" | "no-source-balance";
+  skipped?: "orphaned" | "no-source-balance" | "entity-cash";
 }
 
 export interface AssetSalesResult {
@@ -229,6 +229,16 @@ export interface ApplyAssetSalesInput {
    *  than the household default — the cash belongs to the entity. Omitted (or
    *  missing the entity) falls back to `defaultCheckingId`. */
   entityCheckingByEntityId?: Record<string, string>;
+}
+
+/** A business's or trust's own operating checking ("<name> — Cash"). It is that
+ *  entity's plumbing, not a holding: a business's cash leaves with the business
+ *  (`applyBusinessSales`), and a trust's cash stays the trust's. */
+export function isEntityOperatingCash(a: Account): boolean {
+  return (
+    a.isDefaultChecking === true &&
+    (a.parentAccountId != null || a.owners.some((o) => o.kind === "entity"))
+  );
 }
 
 export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
@@ -275,6 +285,13 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
       breakdown.push({ ...skeleton, skipped: "orphaned" });
       continue;
     }
+    // The pickers never offer an entity's operating cash and the API refuses
+    // it; this covers every other writer (scenario changes, imports, AI tools).
+    const soldAccount = accounts.find((a) => a.id === sourceAccountId);
+    if (soldAccount && isEntityOperatingCash(soldAccount)) {
+      breakdown.push({ ...skeleton, skipped: "entity-cash" });
+      continue;
+    }
     // A second sale of an account an earlier sale THIS year already sold off
     // (e.g. a Techniques sale and the LTC home sale in one year) finds nothing
     // to sell. Its balance is 0, not undefined, so without this it would pay
@@ -286,7 +303,6 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
 
     const accountId = sourceAccountId;
     const fraction = sale.fractionSold ?? 1;
-    const soldAccount = accounts.find((a) => a.id === accountId);
 
     // Behavior-preserving extraction: sellAccountFraction handles the value/
     // basis math, mortgage payoff, balance drain, and sold-account ledger

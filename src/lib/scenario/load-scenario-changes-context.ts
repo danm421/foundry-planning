@@ -19,6 +19,7 @@
 import type { ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
+import { withoutBusinessCashRiders } from "@/lib/scenario/business-cash-rider";
 import { buildTargetNames } from "@/lib/scenario/load-panel-data";
 import {
   applyReinvestmentEnrichment,
@@ -48,10 +49,12 @@ export async function loadScenarioChangesContext(
 ): Promise<ScenarioChangesContext> {
   const { scenarioId, clientId, clientData, projection, getInvestmentCatalog, logContext } = args;
 
-  const [changes, toggleGroups] = await Promise.all([
+  const [allChanges, toggleGroups] = await Promise.all([
     loadScenarioChanges(scenarioId),
     loadScenarioToggleGroups(scenarioId),
   ]);
+  // A scenario business's "<name> — Cash" is part of the business, not a change.
+  const changes = withoutBusinessCashRiders(allChanges);
 
   // Always build the base resolve maps (account / recipient / entity / spouse
   // names) off the effective tree — this is what makes transfer / savings /

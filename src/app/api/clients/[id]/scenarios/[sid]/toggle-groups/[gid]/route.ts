@@ -31,6 +31,7 @@ import { requireOrgAndUser } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
+import { dropAddedAccountChildren } from "@/lib/scenario/changes-writer";
 
 export const dynamic = "force-dynamic";
 
@@ -230,9 +231,10 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx) {
     }
     const { moveChangesTo } = queryParsed.data;
 
-    // Three statements (reassign-or-delete-changes, then delete group) wrapped
-    // in a transaction — keeps the per-row state consistent if a tab-close /
-    // network drop interrupts mid-flight.
+    // Reassign-or-delete the changes, then delete the group, in a transaction
+    // — keeps the per-row state consistent if a tab-close / network drop
+    // interrupts mid-flight. Deleted account adds take their children along
+    // the way a single delete does (`dropAddedAccountChildren`).
     await db.transaction(async (tx) => {
       if (moveChangesTo === "ungrouped") {
         await tx
@@ -245,14 +247,24 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx) {
             ),
           );
       } else {
-        await tx
-          .delete(scenarioChanges)
+        const inGroup = and(
+          eq(scenarioChanges.scenarioId, scenarioId),
+          eq(scenarioChanges.toggleGroupId, groupId),
+        );
+        const addedAccounts = await tx
+          .select({ id: scenarioChanges.targetId })
+          .from(scenarioChanges)
           .where(
             and(
-              eq(scenarioChanges.scenarioId, scenarioId),
-              eq(scenarioChanges.toggleGroupId, groupId),
+              inGroup,
+              eq(scenarioChanges.targetKind, "account"),
+              eq(scenarioChanges.opType, "add"),
             ),
           );
+        for (const a of addedAccounts) {
+          await dropAddedAccountChildren(tx, scenarioId, a.id);
+        }
+        await tx.delete(scenarioChanges).where(inGroup);
       }
       await tx
         .delete(scenarioToggleGroups)

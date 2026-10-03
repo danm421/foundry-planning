@@ -1,9 +1,10 @@
 // src/lib/scenario/changes.ts
 import { cache } from "react";
-import { and, asc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { scenarioChanges, scenarioToggleGroups } from "@/db/schema";
 import { resolveEffectiveToggleState } from "@/engine/scenario/applyChanges";
+import { withRidersFollowingTheirBusiness } from "./business-cash-rider";
 import type {
   ScenarioChange,
   TargetKind,
@@ -12,7 +13,9 @@ import type {
 
 // Filters out rows where `enabled = false` so disabled changes never reach
 // the engine. The Changes panel's own queries fetch all rows directly so the
-// disabled rows still render with the toggle in the off position.
+// disabled rows still render with the toggle in the off position. A scenario
+// business's "<name> — Cash" row takes its business's switch and group first
+// (business-cash-rider.ts), which is why the filter runs here, not in SQL.
 //
 // Request-memoized (same pattern as `loadEffectiveTree`): a page that runs the
 // projection AND reads the same scenario's changes for a view list would
@@ -25,16 +28,14 @@ export const loadScenarioChanges = cache(async function loadScenarioChanges(
   const rows = await db
     .select()
     .from(scenarioChanges)
-    .where(
-      and(eq(scenarioChanges.scenarioId, scenarioId), eq(scenarioChanges.enabled, true)),
-    )
+    .where(eq(scenarioChanges.scenarioId, scenarioId))
     // A stable, creation order rather than whatever the scan returns: an
     // autosave UPDATE moves a row's tuple, so heap order drifts. Promote's
     // FK safety does not rest on this (`executeBaseWritePlan` orders inserts
     // itself) — it is the belt.
     .orderBy(asc(scenarioChanges.createdAt), asc(scenarioChanges.id));
 
-  return rows.map((r) => ({
+  return withRidersFollowingTheirBusiness(rows).filter((r) => r.enabled).map((r) => ({
     id: r.id,
     scenarioId: r.scenarioId,
     opType: r.opType,
