@@ -28,7 +28,7 @@ import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
 import { SolverChartPanel, type CashflowSubTab } from "./solver-chart-panel";
 import { SolverKpiStrip } from "./solver-kpi-strip";
 import { SolverPaneToggle } from "./solver-pane-toggle";
-import { type InputTab, type ReportKey } from "./report-tab-link";
+import { solverViewQuery, type InputTab, type ReportKey } from "./report-tab-link";
 import {
   resolveActiveReport,
   isReportVisible,
@@ -130,6 +130,10 @@ interface Props {
   educationSeed?: number;
   /** Advisor's persisted report order + visibility, reconciled server-side. */
   initialReportLayout: ReportLayoutEntry[];
+  /** The left tab and right report to open on, from `?tab=` / `?report=`.
+   *  Optional so the many workspace tests need not stub them. */
+  initialTab?: InputTab;
+  initialReport?: ReportKey;
   /** Set when the plan's taxable / retirement growth is still on the untouched
    *  inflation default; null/absent when the plan has real return assumptions
    *  (optional so the many workspace tests need not stub it). */
@@ -213,6 +217,8 @@ export function LiveSolverWorkspace({
   educationReturnStats,
   educationSeed,
   initialReportLayout,
+  initialTab = "retirement",
+  initialReport = "portfolio",
   defaultGrowthWarning,
   changesPanel,
 }: Props) {
@@ -281,7 +287,7 @@ export function LiveSolverWorkspace({
   // posted to the client's real record AND kept on screen as pending.
   const baseSavable = useMemo(() => partitionBaseSavableMutations(mutations), [mutations]);
 
-  const [activeTab, setActiveTab] = useState<InputTab>("retirement");
+  const [activeTab, setActiveTab] = useState<InputTab>(initialTab);
   // Reads the change list, so a switched-off saved event still counts.
   const savedLtcChange =
     changesPanel?.changes.find((c) => c.targetKind === "ltc_event" && c.opType === "add") ?? null;
@@ -325,16 +331,28 @@ export function LiveSolverWorkspace({
   const [reportLayout, setReportLayout] = useState<ReportLayoutEntry[]>(initialReportLayout);
 
   // The right-pane report is the advisor's own choice: it only changes when they
-  // click a report tab, never as a side effect of switching input tabs. Portfolio
-  // is the landing report, reconciled against the layout so a hidden report is
-  // never selected.
+  // click a report tab, never as a side effect of switching input tabs. It opens
+  // on the URL's report (Portfolio by default), reconciled against the layout so
+  // a hidden report is never selected.
   const [activeReport, setActiveReport] = useState<ReportKey>(() =>
-    resolveActiveReport("portfolio", initialReportLayout),
+    resolveActiveReport(initialReport, initialReportLayout),
   );
   const [activeSummary, setActiveSummary] = useState<SummaryKey>("retirement");
   // Owned here, not in the chart panel, because the year-detail drill below
   // is a sibling of that panel and has to know which table is showing.
   const [cashflowSubTab, setCashflowSubTab] = useState<CashflowSubTab>("cashflow");
+
+  // Mirror the open views into the URL. Switching scenarios navigates to a new
+  // `?scenario=` and remounts this workspace (see the key in solver-content.tsx);
+  // the scenario chip carries every other param across, so the advisor lands
+  // back on the tab and report they were on. replaceState syncs the URL without
+  // a server round-trip or a history entry per click.
+  useEffect(() => {
+    const query = solverViewQuery(new URLSearchParams(window.location.search), activeTab, activeReport);
+    if (query !== window.location.search) {
+      window.history.replaceState(null, "", query || window.location.pathname);
+    }
+  }, [activeTab, activeReport]);
 
   // "View report" buttons in the left pane jump the right pane to their own
   // report. Below `lg` the two panes stack, so the report sits off-screen below

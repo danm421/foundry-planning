@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor, act, within } from "@testing-librar
 import { LiveSolverWorkspace } from "../live-solver-workspace";
 import { resolveReportLayout } from "@/lib/solver/report-layout";
 import { solverDraftKey } from "../use-solver-draft";
+import { resolveInputTab, resolveReportParam } from "../report-tab-link";
 
 // jsdom implements no scrollIntoView — the "View report" buttons scroll the
 // report pane into view (which matters on the sub-lg stacked layout).
@@ -808,6 +809,33 @@ describe("LiveSolverWorkspace — right-column source change", () => {
       />,
     );
     expect(screen.getByTestId("chart-current-total")).toHaveTextContent("2500000");
+  });
+
+  it("lands back on the open tab and report after a scenario switch", () => {
+    const { rerender } = render(<LiveSolverWorkspace key="base" {...baseProps} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Techniques" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Cash Flow" }));
+    expect(window.location.search).toBe("?tab=techniques&report=cashflow");
+
+    // The scenario chip carries these params into the new URL; page.tsx reads
+    // them back into the remounted workspace.
+    const params = new URLSearchParams(window.location.search);
+    rerender(
+      <LiveSolverWorkspace
+        key="scenario-x"
+        {...baseProps}
+        initialSource="scenario-x"
+        initialTab={resolveInputTab(params.get("tab") ?? undefined)}
+        initialReport={resolveReportParam(params.get("report") ?? undefined)}
+      />,
+    );
+    expect(screen.getByRole("tab", { name: "Techniques" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Cash Flow" })).toHaveAttribute("aria-selected", "true");
+
+    // Back on the defaults, the URL drops both params.
+    fireEvent.click(screen.getByRole("tab", { name: "Retirement" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Portfolio" }));
+    expect(window.location.search).toBe("");
   });
 });
 

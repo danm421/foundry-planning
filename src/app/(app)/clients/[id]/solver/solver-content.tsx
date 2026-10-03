@@ -18,6 +18,7 @@ import { loadPanelData } from "@/lib/scenario/load-panel-data";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import { detectDefaultGrowthAtInflationFor } from "@/lib/investments/default-growth-at-inflation";
 import { LiveSolverWorkspace } from "./live-solver-workspace";
+import type { InputTab, ReportKey } from "./report-tab-link";
 
 // Deterministic fallback seed when the plan MC data can't be loaded (never
 // Math.random/Date — the per-goal gauges must reproduce across renders).
@@ -29,9 +30,19 @@ interface Props {
   /** Authenticated advisor id — scopes the browser-side working-state draft. */
   userId: string;
   source: string;
+  /** The views open when the page loads, from `?tab=` / `?report=`. */
+  initialTab: InputTab;
+  initialReport: ReportKey;
 }
 
-export async function SolverContent({ clientId, firmId, userId, source }: Props) {
+export async function SolverContent({
+  clientId,
+  firmId,
+  userId,
+  source,
+  initialTab,
+  initialReport,
+}: Props) {
   const [baseLoaded, sourceLoaded, scenarioRow, changesPanel] = await Promise.all([
     loadEffectiveTree(clientId, firmId, "base", {}),
     source === "base"
@@ -220,6 +231,8 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
       educationReturnStats={educationReturnStats}
       educationSeed={educationSeed}
       initialReportLayout={reportLayout}
+      initialTab={initialTab}
+      initialReport={initialReport}
       defaultGrowthWarning={defaultGrowthWarning}
       changesPanel={changesPanel}
     />

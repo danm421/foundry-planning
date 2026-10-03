@@ -4,18 +4,19 @@ import { requireOrgAndUser } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { SolverContent } from "./solver-content";
 import SolverSkeleton from "./loading-skeleton";
+import { resolveInputTab, resolveReportParam } from "./report-tab-link";
 
 export const dynamic = "force-dynamic";
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ scenario?: string }>;
+  searchParams: Promise<{ scenario?: string; tab?: string; report?: string }>;
 }
 
 export default async function SolverPage({ params, searchParams }: PageProps) {
   const { orgId: firmId, userId } = await requireOrgAndUser();
   const { id: clientId } = await params;
-  const { scenario } = await searchParams;
+  const { scenario, tab, report } = await searchParams;
 
   const inFirm = await findClientInFirm(clientId, firmId);
   if (!inFirm) notFound();
@@ -24,7 +25,14 @@ export default async function SolverPage({ params, searchParams }: PageProps) {
 
   return (
     <Suspense fallback={<SolverSkeleton />}>
-      <SolverContent clientId={clientId} firmId={firmId} userId={userId} source={source} />
+      <SolverContent
+        clientId={clientId}
+        firmId={firmId}
+        userId={userId}
+        source={source}
+        initialTab={resolveInputTab(tab)}
+        initialReport={resolveReportParam(report)}
+      />
     </Suspense>
   );
 }
