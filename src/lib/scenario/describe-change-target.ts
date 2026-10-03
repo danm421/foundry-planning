@@ -9,6 +9,7 @@
 //   - savings_rule: no name; identified by its target account (+ a basis summary
 //     derived from contributeMax / annualPercent / annualAmount).
 //   - will: no name; identified by `grantor` ("client" | "spouse").
+//   - family_member: first + last name.
 
 import type { TargetKind } from "@/engine/scenario/types";
 
@@ -30,6 +31,8 @@ export function describeChangeTarget(
       return describeSavingsRule(e, accountsById);
     case "will":
       return describeWill(e, clientFirstName);
+    case "family_member":
+      return [e.firstName, e.lastName].filter((n) => typeof n === "string" && n.trim()).join(" ") || null;
     default:
       return null;
   }

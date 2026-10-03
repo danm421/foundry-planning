@@ -17,6 +17,7 @@ import {
 } from "@/db/schema";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { loadClientDataWithContext } from "@/lib/projection/load-client-data";
 import type { ChangesPanelChange } from "@/components/scenario/changes-panel";
 import type {
   CascadeWarning,
@@ -31,11 +32,10 @@ export interface PanelData {
   changes: ChangesPanelChange[];
   toggleGroups: ToggleGroup[];
   cascadeWarnings: CascadeWarning[];
-  /** `${targetKind}:${targetId}` → entity display name, derived from the
-   *  effective tree so leaf rows can render "Income — Salary" instead of
-   *  the raw UUID. Entities the effective tree no longer contains
-   *  (e.g. an op=remove target) cause the row to fall back to the bare
-   *  humanized kind (e.g. "Income") — never a raw UUID. */
+  /** `${targetKind}:${targetId}` → entity display name, so leaf rows can
+   *  render "Salary" instead of the raw UUID. Read from the effective tree,
+   *  with the base tree filling in what the scenario no longer contains — an
+   *  op=remove target is named after the item it removed. */
   targetNames: Record<string, string>;
 }
 
@@ -47,7 +47,7 @@ export async function loadPanelData(
   const client = await findClientInFirm(clientId, firmId);
   if (!client) return null;
 
-  const [scenarioRow, changeRows, groupRows, effective] = await Promise.all([
+  const [scenarioRow, changeRows, groupRows, effective, base] = await Promise.all([
     db
       .select()
       .from(scenarios)
@@ -64,6 +64,8 @@ export async function loadPanelData(
       .where(eq(scenarioToggleGroups.scenarioId, scenarioId))
       .orderBy(scenarioToggleGroups.orderIndex),
     loadEffectiveTree(clientId, firmId, scenarioId, {}),
+    // cache()-shared with the base load `loadEffectiveTree` already makes.
+    loadClientDataWithContext(clientId, firmId),
   ]);
 
   if (!scenarioRow || scenarioRow.isBaseCase) return null;
@@ -97,7 +99,10 @@ export async function loadPanelData(
     changes,
     toggleGroups,
     cascadeWarnings: effective.warnings,
-    targetNames: buildTargetNames(effective.effectiveTree, clientId),
+    targetNames: {
+      ...buildTargetNames(base.clientData, clientId),
+      ...buildTargetNames(effective.effectiveTree, clientId),
+    },
   };
 }
 
@@ -139,5 +144,7 @@ export function buildTargetNames(
   put("ltc_event", tree.ltcEvents);
 
   if (clientFirstName) names[`client:${clientId}`] = clientFirstName;
+  // Plan settings have no name of their own; they're edited on the Assumptions page.
+  names[`plan_settings:${clientId}`] = "Assumptions";
   return names;
 }

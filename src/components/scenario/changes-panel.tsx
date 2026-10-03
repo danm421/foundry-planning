@@ -53,7 +53,7 @@ export interface ChangesPanelProps {
   cascadeWarnings: CascadeWarning[];
   /**
    * Map of `${targetKind}:${targetId}` → display name, built in
-   * `loadPanelData` from the effective tree. Leaf rows look up here so
+   * `loadPanelData` from the effective and base trees. Leaf rows look up here so
    * users see "Income — Salary" instead of "Income — 5b0eb216".
    */
   targetNames?: Record<string, string>;

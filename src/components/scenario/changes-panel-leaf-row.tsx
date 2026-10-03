@@ -38,8 +38,8 @@ export interface ChangesPanelLeafRowProps {
   /**
    * Resolved display name for the change's target entity (e.g. "Salary" for
    * an income, "401(k)" for an account). Built in `loadPanelData` from the
-   * effective tree. When undefined (e.g. a `remove` op whose target is no
-   * longer in the tree), the row falls back to the bare humanized kind (e.g.
+   * effective tree, with the base tree naming `remove` targets. When
+   * undefined, the row falls back to the bare humanized kind (e.g.
    * "Income") — never a raw UUID.
    */
   targetName?: string;

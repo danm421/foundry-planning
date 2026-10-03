@@ -86,6 +86,18 @@ describe("describeChangeTarget", () => {
     ).toBe("Co-client's will");
   });
 
+  it("family_member: first and last name", () => {
+    expect(
+      describeChangeTarget("family_member", { id: "f1", firstName: "Amy", lastName: "Smith" }, accounts),
+    ).toBe("Amy Smith");
+  });
+
+  it("family_member: first name alone when there is no last name", () => {
+    expect(
+      describeChangeTarget("family_member", { id: "f1", firstName: "Cher", lastName: null }, accounts),
+    ).toBe("Cher");
+  });
+
   it("returns null for an un-nameable unknown entity", () => {
     expect(
       describeChangeTarget("savings_rule", { id: "s1" }, accounts),
