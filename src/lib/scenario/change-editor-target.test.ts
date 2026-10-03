@@ -7,6 +7,7 @@ import {
   type DetailsEditorPage,
 } from "./change-editor-target";
 import type { TargetKind } from "@/engine/scenario/types";
+import { STRESS_TEST_IDS } from "@/engine/stress-tests";
 
 const CLIENT_ID = "client-1";
 
@@ -431,6 +432,23 @@ describe("resolveChangeEditor — ltc_event", () => {
   it("a switched-off ltc_event opens nothing (existing rule)", () => {
     expect(
       resolveChangeEditor({ id: "chg-1", opType: "add", targetKind: "ltc_event", targetId: "x", payload: {}, enabled: false }),
+    ).toBeNull();
+  });
+});
+
+describe("resolveChangeEditor — stress_test", () => {
+  const id = STRESS_TEST_IDS["market-crash"];
+  const payload = { kind: "market-crash", year: 2027, drawdownPct: 0.3, id, name: "Market crash — 30% in 2027" };
+
+  it("a saved stress test opens the Solver's Stress tab, where it is edited live", () => {
+    expect(
+      resolveChangeEditor({ id: "chg-1", opType: "add", targetKind: "stress_test", targetId: id, payload, enabled: true }),
+    ).toEqual({ surface: "solver-tab", tab: "stress_test" });
+  });
+
+  it("a switched-off one opens nothing — the Changes tab's own switch turns it back on", () => {
+    expect(
+      resolveChangeEditor({ id: "chg-1", opType: "add", targetKind: "stress_test", targetId: id, payload, enabled: false }),
     ).toBeNull();
   });
 });

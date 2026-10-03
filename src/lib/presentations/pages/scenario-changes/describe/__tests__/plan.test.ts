@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { describeChange } from "../index";
 import { buildResolveContext, EMPTY_RESOLVE_DATA } from "../resolve";
 import type { ScenarioChange } from "@/engine/scenario/types";
+import { STRESS_TEST_IDS } from "@/engine/stress-tests";
 
 const ctx = { targetNames: {}, resolve: buildResolveContext(EMPTY_RESOLVE_DATA) };
 const ch = (p: Partial<ScenarioChange>): ScenarioChange => ({
@@ -97,5 +98,26 @@ describe("plan_settings describer — growth & inflation", () => {
       "Inflation rate: 2.5% → 3%",
       "Medicare premium inflation: On → Off",
     ]);
+  });
+});
+
+describe("stress_test describer", () => {
+  const id = STRESS_TEST_IDS["market-crash"];
+  const crash = { kind: "market-crash", year: 2027, drawdownPct: 0.3, id, name: "Market crash — 30% in 2027" };
+  const stress = (payload: unknown): ScenarioChange =>
+    ch({ opType: "add", targetKind: "stress_test", targetId: id, payload });
+
+  it("prints the stored name and one plain-words line", () => {
+    const row = describeChange(stress(crash), ctx);
+    expect(row.area).toBe("Plan & Assumptions");
+    expect(row.op).toBe("add");
+    expect(row.what).toBe("+ Market crash — 30% in 2027");
+    expect(row.detail).toEqual(["Investments drop 30% in 2027"]);
+  });
+
+  it("a payload the schema refuses still prints a title, never raw fields", () => {
+    const row = describeChange(stress({ kind: "market-crash", drawdownPct: "lots" }), ctx);
+    expect(row.what).toBe("+ Stress test");
+    expect(row.detail).toEqual([]);
   });
 });

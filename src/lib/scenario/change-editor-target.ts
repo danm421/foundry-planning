@@ -187,6 +187,12 @@ export function resolveChangeEditor(change: ChangeEditorInput): ChangeEditorTarg
       : null;
   }
 
+  if (change.targetKind === "stress_test") {
+    // A saved stressor is edited live on the Solver's Stress row — there is no
+    // other editor for it (spec 2026-10-03).
+    return { surface: "solver-tab", tab: "stress_test" };
+  }
+
   if (change.targetKind === "plan_settings") {
     return resolvePlanSettingsTarget(change.payload);
   }
