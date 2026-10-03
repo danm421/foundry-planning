@@ -120,6 +120,24 @@ describe("StressTestRow — saved", () => {
     });
   });
 
+  it("a second field edit before the refresh lands builds on the first, not the stale saved copy", async () => {
+    const fetchMock = okFetch();
+    // onSaved does nothing here, so the `saved` prop stays at 30% — the window
+    // between a save and router.refresh() delivering the new payload.
+    render(<Row saved={saved(true)} />);
+    const drawdown = screen.getByLabelText(/drawdown/i);
+    fireEvent.change(drawdown, { target: { value: "40" } });
+    fireEvent.blur(drawdown);
+    await waitFor(() => expect(drawdown.closest("fieldset")!.disabled).toBe(false));
+    const year = screen.getByLabelText(/year/i);
+    fireEvent.change(year, { target: { value: "2028" } });
+    fireEvent.blur(year);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(fetchMock.mock.calls[1][1]!.body as string).entity).toMatchObject({
+      drawdownPct: 0.4, year: 2028, name: "Market crash — 40% in 2028",
+    });
+  });
+
   it("blurring a saved field without changing it sends nothing", () => {
     const fetchMock = okFetch();
     render(<Row saved={saved(true)} />);

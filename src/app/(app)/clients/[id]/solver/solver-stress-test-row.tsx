@@ -65,6 +65,10 @@ export function StressTestRow<K extends StressTestKind>(props: {
   const canEdit = useClientAccess().permission === "edit";
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  // What this row last saved, held until the refreshed change list (a new
+  // `updatedAt`) delivers it. A second field edit in that window builds on the
+  // first, not on the stale `saved` prop, which would quietly undo it.
+  const [sent, setSent] = useState<{ stamp: string; params: StressTestParams } | null>(null);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -91,7 +95,8 @@ export function StressTestRow<K extends StressTestKind>(props: {
   if (props.saved && ctx.scenarioId) {
     const scenarioId = ctx.scenarioId;
     const { id: changeId, enabled } = props.saved;
-    const savedParams = props.saved.payload as ParamsOf<K>;
+    const stamp = String(props.saved.updatedAt);
+    const savedParams = (sent?.stamp === stamp ? sent.params : props.saved.payload) as ParamsOf<K>;
     const locked = !canEdit || busy;
     return (
       <StressRow
@@ -129,7 +134,10 @@ export function StressTestRow<K extends StressTestKind>(props: {
         <fieldset disabled={locked} className="m-0 min-w-0 border-0 p-0">
           {props.children(savedParams, (next) => {
             if (unchanged(next, savedParams)) return;
-            void run(() => saveStressTest(ctx.clientId, scenarioId, entity(next)));
+            void run(async () => {
+              await saveStressTest(ctx.clientId, scenarioId, entity(next));
+              setSent({ stamp, params: next });
+            });
           })}
         </fieldset>
       </StressRow>
