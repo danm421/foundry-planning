@@ -178,7 +178,14 @@ describe("inheritedPayoutFormError", () => {
     expect(inheritedPayoutFormError({ ...even, payoutThroughYear: "2033" }, "retirement", "traditional_ira", null)).toBeNull();
   });
   it("stays silent while the year-of-death pair is incomplete (that error shows instead)", () => {
-    expect(inheritedPayoutFormError({ ...even, deathYear: "" }, "retirement", "traditional_ira", 1975)).toBeNull();
+    // A half window, so deleting the year-of-death guard would surface its error.
+    expect(inheritedPayoutFormError({ ...even, deathYear: "", payoutThroughYear: "" }, "retirement", "traditional_ira", 1975)).toBeNull();
+  });
+  it("asks for the years when 'spread evenly' is chosen and both are blank", () => {
+    expect(inheritedPayoutFormError({ ...even, payoutFromYear: "", payoutThroughYear: "" }, "retirement", "traditional_ira", 1975))
+      .toBe("Enter the first and last payout years.");
+    expect(inheritedPayoutFormError({ ...even, payoutFromYear: "", payoutThroughYear: "" }, "retirement", "traditional_ira", null))
+      .toBe("Enter the first and last payout years.");
   });
 });
 
@@ -191,5 +198,14 @@ describe("payout window — inheritedIraRowFields", () => {
     const none = { inheritedPayoutFromYear: null, inheritedPayoutThroughYear: null };
     expect(inheritedIraRowFields({ inheritedPayoutFromYear: 2031, inheritedPayoutThroughYear: 2036 })).toMatchObject(none);
     expect(inheritedIraRowFields({ inheritedDeathYear: 2026, inheritedOwnerBirthYear: 1930, inheritedPayoutFromYear: 2031 })).toMatchObject(none);
+  });
+  it("drops a reversed or fractional window but keeps the death/owner fields", () => {
+    const row = { inheritedDeathYear: 2026, inheritedOwnerBirthYear: 1930 };
+    expect(inheritedIraRowFields({ ...row, inheritedPayoutFromYear: 2036, inheritedPayoutThroughYear: 2031 })).toEqual({
+      inheritedDeathYear: 2026, inheritedOwnerBirthYear: 1930, inheritedHeirDisabled: false,
+      inheritedPayoutFromYear: null, inheritedPayoutThroughYear: null,
+    });
+    expect(inheritedIraRowFields({ ...row, inheritedPayoutFromYear: 2031.5, inheritedPayoutThroughYear: 2036 }))
+      .toMatchObject({ inheritedPayoutFromYear: null, inheritedPayoutThroughYear: null });
   });
 });

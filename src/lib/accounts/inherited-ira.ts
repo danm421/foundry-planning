@@ -140,6 +140,11 @@ export function inheritedPayoutFormError(
   if (!state.inherited || !canBeInheritedIra(category, subType) || state.payoutPlan !== "even") return null;
   const f = inheritedIraBodyFields(state, category, subType);
   if (f.inheritedDeathYear == null || f.inheritedOwnerBirthYear == null) return null;
+  // "Spread evenly" needs its years; the shared check treats both-blank as "no
+  // window" (right for the server), which here would silently save "minimum".
+  if (f.inheritedPayoutFromYear == null || f.inheritedPayoutThroughYear == null) {
+    return "Enter the first and last payout years.";
+  }
   const windowError = validateInheritedPayoutWindow(f.inheritedDeathYear, f.inheritedPayoutFromYear, f.inheritedPayoutThroughYear);
   if (windowError != null || heirBirthYear == null) return windowError;
   const rule = resolveInheritedRule({
@@ -149,7 +154,7 @@ export function inheritedPayoutFormError(
     heirDisabled: state.heirDisabled,
     isRoth: subType === "roth_ira",
   });
-  if (rule.finalYear != null && (f.inheritedPayoutThroughYear as number) > rule.finalYear) {
+  if (rule.finalYear != null && f.inheritedPayoutThroughYear > rule.finalYear) {
     return `The 10-year rule empties this account by ${rule.finalYear}, so the last payout year can't be later.`;
   }
   return null;
@@ -165,16 +170,24 @@ export function inheritedIraRowFields(a: {
   inheritedPayoutFromYear?: number | null;
   inheritedPayoutThroughYear?: number | null;
 }): InheritedIraBody {
-  // A window only means something on an inherited IRA, and only whole. Dropping
-  // anything else here keeps every hydrated row (edit dialog, Solver
-  // save-to-base) inside the accounts CHECKs.
+  // A window only means something on an inherited IRA, and only whole and in
+  // order (as `inheritedPayoutWindowFor` reads it). Dropping anything else here
+  // keeps every hydrated row (edit dialog, Solver save-to-base) inside the
+  // accounts CHECKs.
+  const from = a.inheritedPayoutFromYear;
+  const through = a.inheritedPayoutThroughYear;
   const hasWindow =
-    a.inheritedDeathYear != null && a.inheritedPayoutFromYear != null && a.inheritedPayoutThroughYear != null;
+    a.inheritedDeathYear != null &&
+    from != null &&
+    through != null &&
+    Number.isInteger(from) &&
+    Number.isInteger(through) &&
+    from <= through;
   return {
     inheritedDeathYear: a.inheritedDeathYear ?? null,
     inheritedOwnerBirthYear: a.inheritedOwnerBirthYear ?? null,
     inheritedHeirDisabled: a.inheritedHeirDisabled === true,
-    inheritedPayoutFromYear: hasWindow ? (a.inheritedPayoutFromYear as number) : null,
-    inheritedPayoutThroughYear: hasWindow ? (a.inheritedPayoutThroughYear as number) : null,
+    inheritedPayoutFromYear: hasWindow ? from : null,
+    inheritedPayoutThroughYear: hasWindow ? through : null,
   };
 }
