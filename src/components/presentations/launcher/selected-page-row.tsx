@@ -69,6 +69,11 @@ export function SelectedPageRow(props: Props) {
       ? (props.scenarios.find((s) => s.id === baselineId)?.name ?? baselineId)
       : null;
 
+  // A page that picks its one plan in Options names it on the static chip.
+  const planId = page.readPlanScenarioId?.(props.options as never) ?? "base";
+  const planChip =
+    planId === "base" ? "Base plan" : (props.scenarios.find((s) => s.id === planId)?.name ?? planId);
+
   const comparisonScenarios = props.scenarios.filter(
     (s) => !s.isBaseCase && !s.name.startsWith("writer-test-") && s.id !== baselineId,
   );
@@ -172,10 +177,14 @@ export function SelectedPageRow(props: Props) {
           </select>
         ) : (
           <div
-            title="This page always uses the base plan"
-            className="w-[13rem] cursor-not-allowed select-none rounded border border-hair bg-paper/50 px-2 py-1 text-xs text-ink-4"
+            title={
+              page.readPlanScenarioId
+                ? "Choose the plan in this page's Options"
+                : "This page always uses the base plan"
+            }
+            className="w-[13rem] cursor-not-allowed select-none truncate rounded border border-hair bg-paper/50 px-2 py-1 text-xs text-ink-4"
           >
-            Base plan
+            {planChip}
           </div>
         )}
         <button

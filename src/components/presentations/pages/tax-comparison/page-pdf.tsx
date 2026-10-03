@@ -10,6 +10,7 @@ import type {
 } from "@/lib/presentations/pages/tax-comparison/view-model";
 import { fmtUsd } from "@/lib/presentations/pages/tax-summary/aggregate";
 import { truncateLabel } from "@/lib/presentations/format";
+import { SplitBarPdf } from "@/components/presentations/shared/split-bar-pdf";
 import { TaxComparisonChartPdf } from "./chart-pdf";
 import { horizonYearsLabel } from "@/lib/presentations/shared/horizon-label";
 
@@ -43,7 +44,7 @@ const s = StyleSheet.create({
   cmpDelta: { width: CMP_CELL_W, fontSize: 8, fontWeight: 700, textAlign: "right" },
   note: { fontSize: 6.5, color: T.ink3, marginTop: 4 },
   compTrackLbl: { fontSize: 6.5, color: T.ink3, fontWeight: 700, textTransform: "uppercase", marginTop: 6 },
-  splitTrack: { flexDirection: "row", height: 12, borderRadius: 2, overflow: "hidden", marginTop: 2 },
+  splitTrack: { height: 12, marginTop: 2 },
   swatch: { width: 6, height: 6, marginRight: 4 },
   compLabelCell: { flexDirection: "row", alignItems: "center", flex: 1 },
   narr: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderLeftWidth: 3, borderLeftColor: T.accent, borderRadius: 3, padding: 7, marginTop: 6 },
@@ -82,15 +83,7 @@ function KpiCard({ kpi }: { kpi: TaxComparisonKpi }) {
 
 function SplitBar({ side }: { side: CompositionSide }) {
   if (side.total <= 0) return null;
-  return (
-    <View style={s.splitTrack}>
-      {COMP_SEGMENTS.map((seg) => {
-        const pct = (side[seg.key] / side.total) * 100;
-        if (pct <= 0) return null;
-        return <View key={seg.key} style={{ width: `${pct}%`, backgroundColor: seg.color }} />;
-      })}
-    </View>
-  );
+  return <SplitBarPdf parts={side} segments={COMP_SEGMENTS} style={s.splitTrack} />;
 }
 
 export function TaxComparisonPagePdf(input: RenderPdfInput<TaxComparisonPageData>) {

@@ -30,6 +30,13 @@ export function exactCurrency(n: number): string {
   }).format(n);
 }
 
+/** A change with its sign spelled out: "+$4,800", "−$1,200", and no sign on a
+ *  change that rounds to zero. `fmt` formats the size. */
+export function signed(n: number, fmt: (v: number) => string): string {
+  if (Math.abs(n) < 0.5) return fmt(0);
+  return `${n > 0 ? "+" : "−"}${fmt(Math.abs(n))}`;
+}
+
 export function jointAge(
   client: number | null,
   spouse: number | null,
