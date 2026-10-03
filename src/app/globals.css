@@ -84,6 +84,15 @@
   --color-action-ink: #12655a;
   --color-action-on: #f4f5f7;
 
+  /* The Solver Changes toolbar's other two verbs, filled like `action` (which
+     is its Add): blue Edit, red Delete. Same contract — `action-on` labels
+     them at AA, `-ink` is the hover/open fill that still holds AA, and each
+     fill clears 3:1 against the card so its menu's border reads too. */
+  --color-edit: #3368b8;
+  --color-edit-ink: #285aa5;
+  --color-delete: #c0392b;
+  --color-delete-ink: #a33024;
+
   /* Status (solid hues; tinted backgrounds are color-mix at call site) */
   --color-good: #4ade80;
   --color-warn: #fbbf24;
@@ -206,6 +215,12 @@
   --color-action-ink: #0b5d50;
   --color-action-on: #f3fbf8;
 
+  /* Solver Changes toolbar's Edit / Delete fills — see the dark block. */
+  --color-edit: #2d61aa;
+  --color-edit-ink: #244f8c;
+  --color-delete: #b42d22;
+  --color-delete-ink: #962a20;
+
   /* Status — deeper for legibility on cream */
   --color-good: #047857;
   --color-warn: #a84f09;
@@ -304,6 +319,12 @@
   --color-action-ink: #e3e7b2;
   --color-action-on: #111419;
 
+  /* Solver Changes toolbar's Edit / Delete fills — see the dark block. */
+  --color-edit: #94afc5;
+  --color-edit-ink: #a9c1d4;
+  --color-delete: #c99090;
+  --color-delete-ink: #d6a3a3;
+
   /* Status */
   --color-good: #a8c5a0;
   --color-warn: #d5be83;
@@ -393,6 +414,10 @@
   --color-action: var(--color-action);
   --color-action-ink: var(--color-action-ink);
   --color-action-on: var(--color-action-on);
+  --color-edit: var(--color-edit);
+  --color-edit-ink: var(--color-edit-ink);
+  --color-delete: var(--color-delete);
+  --color-delete-ink: var(--color-delete-ink);
 
   --color-good: var(--color-good);
   --color-warn: var(--color-warn);

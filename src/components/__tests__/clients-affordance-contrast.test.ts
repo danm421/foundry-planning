@@ -161,3 +161,16 @@ describe("Clients list affordance contrast (globals.css ratchet)", () => {
     });
   });
 });
+
+// The Solver Changes toolbar borrows these buttons' shape. Its Add IS
+// `action`; Edit and Delete are the same contract in blue and red, so they hold
+// the same floors — a label at AA on the fill and on the deeper hover/open
+// fill, and a fill that clears 3:1 on the card, since it also frames the menu.
+describe.each(THEMES)("Solver Changes toolbar contrast — %s theme", (theme) => {
+  it.each(["edit", "delete"])("keeps the %s button labelled at AA and its fill present on the card", (verb) => {
+    for (const fill of [verb, `${verb}-ink`]) {
+      expect(contrast(token(theme, "action-on"), token(theme, fill))).toBeGreaterThanOrEqual(AA);
+    }
+    expect(contrast(token(theme, verb), token(theme, "card"))).toBeGreaterThanOrEqual(3);
+  });
+});

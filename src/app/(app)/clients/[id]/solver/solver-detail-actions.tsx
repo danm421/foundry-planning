@@ -18,7 +18,7 @@ import {
   type DetailTypeKey,
 } from "@/lib/scenario/plan-detail-catalog";
 import { SolverAnchoredPopover } from "./solver-anchored-popover";
-import { SolverDetailPicker } from "./solver-detail-picker";
+import { MENU_ROW_CLASS, MenuGroup, MenuHeader, SolverDetailPicker } from "./solver-detail-picker";
 
 export interface SolverDetailActionsProps {
   inventory: InventoryItem[];
@@ -30,53 +30,62 @@ export interface SolverDetailActionsProps {
   onDelete: (item: InventoryItem) => void;
 }
 
-type Open = { menu: "add" | "edit" | "delete"; anchor: HTMLElement } | null;
+type Verb = "add" | "edit" | "delete";
+type Open = { menu: Verb; anchor: HTMLElement } | null;
 
+// Filled buttons with a near-white label, the shape of the Clients list's
+// CRM / Planning buttons (`client-row-actions.tsx`). Each verb has its own
+// hue, and its menu is framed in that hue so the two read as one control.
+// Hover and open both settle on the deeper `-ink` fill, which still holds AA.
 const BUTTON_CLASS =
-  "h-7 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[12px] text-ink-2 hover:border-hair focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-hair-2";
-const ADD_BUTTON_CLASS =
-  "h-7 rounded-md bg-accent px-2.5 text-[12px] font-medium text-accent-on hover:bg-accent/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex h-7 items-center rounded-md px-3 text-[13px] font-semibold text-action-on transition-colors " +
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent " +
+  "disabled:cursor-not-allowed disabled:opacity-50 disabled:saturate-0";
+
+const VERBS: Record<Verb, { label: string; title: string; tone: string; fill: string }> = {
+  add: {
+    label: "+ Add",
+    title: "Add a plan detail",
+    tone: "var(--color-action)",
+    fill: "bg-action enabled:hover:bg-action-ink aria-expanded:bg-action-ink",
+  },
+  edit: {
+    label: "Edit",
+    title: "Edit a plan detail",
+    tone: "var(--color-edit)",
+    fill: "bg-edit enabled:hover:bg-edit-ink aria-expanded:bg-edit-ink",
+  },
+  delete: {
+    label: "Delete",
+    title: "Delete a plan detail",
+    tone: "var(--color-delete)",
+    fill: "bg-delete enabled:hover:bg-delete-ink aria-expanded:bg-delete-ink",
+  },
+};
 
 export function SolverDetailActions({ inventory, disabled, willGrantors, onAdd, onEdit, onDelete }: SolverDetailActionsProps) {
   const [open, setOpen] = useState<Open>(null);
   const close = () => setOpen(null);
 
-  function toggle(menu: "add" | "edit" | "delete", anchor: HTMLElement) {
+  function toggle(menu: Verb, anchor: HTMLElement) {
     setOpen((cur) => (cur?.menu === menu ? null : { menu, anchor }));
   }
 
   return (
-    <div className="mb-2 flex items-center gap-2">
-      <button
-        type="button"
-        disabled={disabled}
-        aria-haspopup="dialog"
-        aria-expanded={open?.menu === "add"}
-        onClick={(e) => toggle("add", e.currentTarget)}
-        className={ADD_BUTTON_CLASS}
-      >
-        + Add
-      </button>
-      <button
-        type="button"
-        disabled={disabled}
-        aria-haspopup="dialog"
-        aria-expanded={open?.menu === "edit"}
-        onClick={(e) => toggle("edit", e.currentTarget)}
-        className={BUTTON_CLASS}
-      >
-        Edit
-      </button>
-      <button
-        type="button"
-        disabled={disabled}
-        aria-haspopup="dialog"
-        aria-expanded={open?.menu === "delete"}
-        onClick={(e) => toggle("delete", e.currentTarget)}
-        className={BUTTON_CLASS}
-      >
-        Delete
-      </button>
+    <div className="mb-3 flex items-center gap-2">
+      {(Object.keys(VERBS) as Verb[]).map((verb) => (
+        <button
+          key={verb}
+          type="button"
+          disabled={disabled}
+          aria-haspopup="dialog"
+          aria-expanded={open?.menu === verb}
+          onClick={(e) => toggle(verb, e.currentTarget)}
+          className={`${BUTTON_CLASS} ${VERBS[verb].fill}`}
+        >
+          {VERBS[verb].label}
+        </button>
+      ))}
 
       {open?.menu === "add" && (
         <AddMenu
@@ -93,7 +102,8 @@ export function SolverDetailActions({ inventory, disabled, willGrantors, onAdd, 
       {open?.menu === "edit" && (
         <SolverDetailPicker
           anchor={open.anchor}
-          title="Edit a plan detail"
+          title={VERBS.edit.title}
+          tone={VERBS.edit.tone}
           items={inventory.filter((i) => i.canEdit)}
           onClose={close}
           onPick={(item) => {
@@ -105,7 +115,8 @@ export function SolverDetailActions({ inventory, disabled, willGrantors, onAdd, 
       {open?.menu === "delete" && (
         <SolverDetailPicker
           anchor={open.anchor}
-          title="Delete a plan detail"
+          title={VERBS.delete.title}
+          tone={VERBS.delete.tone}
           items={inventory.filter((i) => i.canDelete)}
           onClose={close}
           onPick={(item) => {
@@ -134,20 +145,16 @@ function AddMenu({
   // The one type whose variants are showing (account categories, will grantor).
   const [expanded, setExpanded] = useState<DetailTypeKey | null>(null);
 
+  const { title, tone } = VERBS.add;
   return (
-    <SolverAnchoredPopover anchor={anchor} label="Add a plan detail" onClose={onClose} className="w-60">
-      <div className="max-h-80 overflow-y-auto py-1">
+    <SolverAnchoredPopover anchor={anchor} label={title} tone={tone} onClose={onClose} className="w-60">
+      <MenuHeader title={title} />
+      <div className="max-h-80 overflow-y-auto pb-1">
         {DETAIL_GROUP_ORDER.map((group) => {
           const types = ADDABLE.filter((t) => t.group === group);
           if (types.length === 0) return null;
           return (
-            <div key={group} role="group" aria-label={group}>
-              <div
-                aria-hidden="true"
-                className="px-3 pb-0.5 pt-2 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3"
-              >
-                {group}
-              </div>
+            <MenuGroup key={group} group={group}>
               {types.map((t) => (
                 <AddRow
                   key={t.key}
@@ -158,7 +165,7 @@ function AddMenu({
                   onAdd={onAdd}
                 />
               ))}
-            </div>
+            </MenuGroup>
           );
         })}
       </div>
@@ -166,8 +173,7 @@ function AddMenu({
   );
 }
 
-const ROW_CLASS =
-  "flex w-full items-center justify-between px-3 py-1.5 text-left text-[13px] text-ink hover:bg-card-2 focus-visible:bg-card-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent";
+const ROW_CLASS = `flex w-full items-center justify-between px-3 py-1.5 text-left text-[13px] text-ink ${MENU_ROW_CLASS}`;
 
 function AddRow({
   type,

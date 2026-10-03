@@ -12,7 +12,7 @@
 // closing hands focus back to the anchor (or the first focusable control inside
 // it) when it was inside.
 
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
 const GAP = 4; // px between anchor and popover
@@ -40,10 +40,13 @@ interface Props {
   onClose: () => void;
   /** Tailwind width/size classes; the popover supplies the surface itself. */
   className?: string;
+  /** A CSS colour that frames the popover in place of the neutral hairline,
+   *  and is handed to its contents as `--tone` for their own tinting. */
+  tone?: string;
   children: ReactNode;
 }
 
-export function SolverAnchoredPopover({ anchor, label, onClose, className = "w-64", children }: Props) {
+export function SolverAnchoredPopover({ anchor, label, onClose, className = "w-64", tone, children }: Props) {
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   // True while focus is inside the panel, so unmount knows whether to give it back.
@@ -134,6 +137,7 @@ export function SolverAnchoredPopover({ anchor, label, onClose, className = "w-6
         top: coords?.top ?? -9999,
         left: coords?.left ?? -9999,
         opacity: coords ? 1 : 0,
+        ...(tone && ({ borderColor: tone, "--tone": tone } as CSSProperties)),
       }}
       className={`z-50 rounded-md border border-hair-2 bg-card shadow-lg transition-opacity motion-reduce:transition-none ${className}`}
     >
