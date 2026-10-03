@@ -101,6 +101,9 @@ type EngineAccountLike = Parameters<typeof controllingEntity>[0] & {
   inheritedDeathYear?: number | null;
   inheritedOwnerBirthYear?: number | null;
   inheritedHeirDisabled?: boolean;
+  /** Inherited IRA even-payout window. Both null ⇒ minimum each year. */
+  inheritedPayoutFromYear?: number | null;
+  inheritedPayoutThroughYear?: number | null;
   isDefaultChecking?: boolean;
   owners?: AccountRow["owners"];
   titlingType?: AccountRow["titlingType"];

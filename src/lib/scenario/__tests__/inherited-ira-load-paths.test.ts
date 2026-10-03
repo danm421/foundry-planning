@@ -110,4 +110,45 @@ describe.skipIf(!HAS_DB)("inherited IRA — load paths", () => {
     expect(typeof edited.inheritedOwnerBirthYear).toBe("number");
     expect(hasInheritedRmd(effectiveTree, ira.id)).toBe(true);
   });
+
+  it("base: a payout window saved through the form's body helper loads as numbers", async () => {
+    const res = await createAccountForClient({
+      clientId: COOPER_CLIENT_ID, firmId: COOPER_FIRM_ID, actorId: "user_test_inherited_load",
+      input: {
+        name: "Inherited IRA window (load test)", category: "retirement", subType: "traditional_ira", value: "400000",
+        owners: [{ kind: "family_member", familyMemberId: COOPER_FM_ID, percent: 1 }],
+        ...inheritedIraBodyFields(
+          { inherited: true, deathYear: "2022", ownerBirthYear: "1945", heirDisabled: false, payoutPlan: "even", payoutFromYear: "2026", payoutThroughYear: "2030" },
+          "retirement", "traditional_ira",
+        ),
+      },
+    });
+    if (!res.ok) throw new Error(res.error);
+    createdAccountIds.push(res.data.id);
+    const { effectiveTree } = await loadEffectiveTree(COOPER_CLIENT_ID, COOPER_FIRM_ID, "base", {});
+    const acct = effectiveTree.accounts.find((a: Account) => a.id === res.data.id)!;
+    expect(acct.inheritedPayoutFromYear).toBe(2026);
+    expect(acct.inheritedPayoutThroughYear).toBe(2030);
+  });
+
+  it("scenario: a string-typed payout window is coerced to numbers and paces the payout", async () => {
+    const { effectiveTree: base } = await loadEffectiveTree(COOPER_CLIENT_ID, COOPER_FIRM_ID, "base", {});
+    const ira = base.accounts.find(
+      (a: Account) => a.category === "retirement" && a.subType === "traditional_ira" && controllingFamilyMember(a) != null && a.value > 0,
+    )!;
+    const start = base.planSettings.planStartYear;
+    await applyEntityEdit({
+      scenarioId, firmId: COOPER_FIRM_ID, targetKind: "account", targetId: ira.id,
+      desiredFields: {
+        inheritedDeathYear: "2022", inheritedOwnerBirthYear: "1945",
+        inheritedPayoutFromYear: String(start), inheritedPayoutThroughYear: String(start),
+      },
+    });
+    const { effectiveTree } = await loadEffectiveTree(COOPER_CLIENT_ID, COOPER_FIRM_ID, scenarioId, {});
+    const edited = effectiveTree.accounts.find((a: Account) => a.id === ira.id)!;
+    expect(edited.inheritedPayoutFromYear).toBe(start);
+    expect(edited.inheritedPayoutThroughYear).toBe(start);
+    const first = runProjection(effectiveTree).find((y) => y.year === start)!;
+    expect(first.accountLedgers[ira.id].entries.some((e) => e.label === `Inherited IRA planned payout (all in ${start})`)).toBe(true);
+  });
 });

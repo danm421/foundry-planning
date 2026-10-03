@@ -98,6 +98,9 @@ export interface AccountFormInitial {
   inheritedDeathYear?: number | null;
   inheritedOwnerBirthYear?: number | null;
   inheritedHeirDisabled?: boolean;
+  /** Inherited IRA even-payout window. Both null ⇒ minimum each year. */
+  inheritedPayoutFromYear?: number | null;
+  inheritedPayoutThroughYear?: number | null;
   ownerEntityId?: string | null;
   owners?: AccountOwner[];
   /** Joint-titling regime. Drives §1014(b)(6) full step-up vs §2040(b) 50/50. */
