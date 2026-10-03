@@ -37,10 +37,9 @@
      advisor's uploaded logo gets this plate. That logo is a print asset —
      black ink on transparent, drawn for white paper — so its ground has to be
      constant, which is why this token alone is declared here and never
-     re-cut by the light or industrial blocks (the radii below ARE re-cut;
-     this is not that). Both dark themes would otherwise paint the mark
-     black-on-black (paper is #0b0c0f dark, #111419 industrial); under the
-     light theme it equals `paper` and reads as no plate at all.
+     re-cut by the light block. The dark theme would otherwise paint the mark
+     black-on-black (paper is #0b0c0f); under the light theme it equals
+     `paper` and reads as no plate at all.
 
      The value tracks `colorsLight.paper` in src/brand/index.ts — the cream
      every client report already prints this same logo on, via
@@ -72,9 +71,8 @@
      white on dark `accent` measures 3.32:1, under the 4.5 AA floor. `action`
      is the same verdigris deepened until a near-white label clears AA, so the
      app's filled primaries can be white-on-green the way every other filled
-     primary in the product is. Light and industrial need no deepening: their
-     `accent-on` is already the right polarity, so `action*` simply tracks
-     `accent*` there.
+     primary in the product is. Light needs no deepening: its `accent-on` is
+     already the right polarity, so `action*` simply tracks `accent*` there.
 
      `control` is the filled GREY secondary. It is not `hair-3` — that is a
      hairline token spent on hover borders across CRM, and lightening it for
@@ -156,8 +154,7 @@
   /* Fonts — wired to next/font vars set on <html> by layout.tsx */
   --font-sans: var(--font-inter);
   --font-mono: var(--font-b612);
-  /* Display face. Dark/light stay on Inter (no visual change); Industrial
-     Dark overrides this to Archivo Black in its own block. */
+  /* Display face — headings and metrics. */
   --font-display: var(--font-inter);
 
   color-scheme: dark;
@@ -203,9 +200,8 @@
      white on dark `accent` measures 3.32:1, under the 4.5 AA floor. `action`
      is the same verdigris deepened until a near-white label clears AA, so the
      app's filled primaries can be white-on-green the way every other filled
-     primary in the product is. Light and industrial need no deepening: their
-     `accent-on` is already the right polarity, so `action*` simply tracks
-     `accent*` there.
+     primary in the product is. Light needs no deepening: its `accent-on` is
+     already the right polarity, so `action*` simply tracks `accent*` there.
 
      `control` is the filled GREY secondary. It is not `hair-3` — that is a
      hairline token spent on hover borders across CRM, and lightening it for
@@ -254,118 +250,6 @@
   --data-sky: #52a4d9;
 
   color-scheme: light;
-}
-
-/* ------------------------------------------------------------------ */
-/* Industrial Dark (v1) — graphite + warm ivory, pale-olive accent.    */
-/* Same token NAMES as dark/light, so every surface reskins with no    */
-/* per-component color edit and the old themes stay intact for A/B +   */
-/* rollback. Source: `industrial_dark_design_system.md` handoff.       */
-/* ------------------------------------------------------------------ */
-:root[data-theme="industrial"] {
-  /* Accent — action + active state ONLY. Never on a KPI or data value. */
-  --color-accent: #d7dca0;
-  --color-accent-ink: #e3e7b2;
-  --color-accent-deep: #838866;
-  --color-accent-on: #111419;
-  --color-accent-wash: rgba(215, 220, 160, 0.12);
-
-  /* Secondary — desaturated steel; the indigo would fight the olive. */
-  --color-secondary: #94afc5;
-  --color-secondary-ink: #adc3d6;
-  --color-secondary-on: #111419;
-  --color-secondary-wash: rgba(148, 175, 197, 0.14);
-
-  /* Surfaces — graphite, never #000. */
-  --color-paper: #111419;
-  --color-card: #1c2128;
-  --color-card-2: #171b21;
-  --color-card-hover: #232932;
-  --color-card-active: #292f38;
-
-  /* Ink — warm ivory, never #fff.
-
-     `ink-3` moves in lockstep with `ink-4` here: lifting ink-4 to clear AA
-     (it was 2.79:1 on card, below the floor, shipped) pushes it past the old
-     ink-3, which would invert the tiers — the quietest ink louder than the one
-     above it. C11 keeps them apart AND in order. */
-  --color-ink: #f1f0e7;
-  --color-ink-2: #b8bcc0;
-  --color-ink-3: #adb0b3;
-  --color-ink-4: #92989e;
-
-  /* Hairlines — structure is carried by lines, not shadows. */
-  --color-hair: #303741;
-  --color-hair-2: #414953;
-  --color-hair-3: #626a72;
-
-  /* Filled button surfaces — a CONTROL's fill, not a hairline or a hue.
-
-     Two tokens exist because a filled control has different needs from the
-     brand hue itself. `accent` is tuned to read as ACCENT TEXT on a card
-     (5.39:1 dark), which makes it too bright to carry a near-white LABEL —
-     white on dark `accent` measures 3.32:1, under the 4.5 AA floor. `action`
-     is the same verdigris deepened until a near-white label clears AA, so the
-     app's filled primaries can be white-on-green the way every other filled
-     primary in the product is. Light and industrial need no deepening: their
-     `accent-on` is already the right polarity, so `action*` simply tracks
-     `accent*` there.
-
-     `control` is the filled GREY secondary. It is not `hair-3` — that is a
-     hairline token spent on hover borders across CRM, and lightening it for
-     this would brighten all of them. */
-  --color-control: #666e77;
-  --color-action: #d7dca0;
-  --color-action-ink: #e3e7b2;
-  --color-action-on: #111419;
-
-  /* Solver Changes toolbar's Edit / Delete fills — see the dark block. */
-  --color-edit: #94afc5;
-  --color-edit-ink: #a9c1d4;
-  --color-delete: #c99090;
-  --color-delete-ink: #d6a3a3;
-
-  /* Status */
-  --color-good: #a8c5a0;
-  --color-warn: #d5be83;
-  --color-crit: #c99090;
-
-  /* Category taxonomy — muted to sit inside a graphite frame. */
-  --color-cat-income: #8fb8a3;
-  --color-cat-portfolio: #94afc5;
-  --color-cat-life: #a99cc0;
-  --color-cat-tax: #d5be83;
-  --color-cat-insurance: #c295a8;
-  --color-cat-transactions: #8fb4b8;
-
-  /* Estate spine palette */
-  --color-spouse: #3e5568;
-  --color-tax: #6b3d2e;
-  --color-inherit: #355267;
-  --color-heirs: #5d6a45;
-
-  /* Deep Jewel data palette — dark values hold up on graphite. */
-  --data-red: #c0392b;
-  --data-blue: #2c5fa8;
-  --data-green: #2a8a5e;
-  --data-yellow: #c99a1e;
-  --data-grey: #9ca3af;
-  --data-orange: #cf6a1f;
-  --data-purple: #6a3fa0;
-  --data-teal: #1f8a86;
-  --data-pink: #a83f6a;
-  --data-sky: #56a9dd;
-
-  /* Geometry — near-square. Nothing above 6px. */
-  --radius-sm: 2px;
-  --radius-md: 4px;
-  --radius: 4px;
-
-  /* Faces — display for headings/metrics, IBM Plex Mono for metadata. */
-  --font-mono: var(--font-plex-mono);
-  --font-display: var(--font-archivo);
-
-  color-scheme: dark;
 }
 
 /* Foundry brand mark: gold gradient in dark theme, solid black in light theme. */
@@ -495,8 +379,6 @@ html {
 /* ------------------------------------------------------------------ */
 
 .tabular {
-  /* var(--font-mono) is B612 Mono in dark/light and IBM Plex Mono under
-     Industrial Dark — same rendering as before on the existing themes. */
   font-family: var(--font-mono), "B612 Mono", ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";

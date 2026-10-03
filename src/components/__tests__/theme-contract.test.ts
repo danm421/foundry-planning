@@ -11,14 +11,13 @@ import { join } from "node:path";
  * reported defect ("Light View is just a gray version") with every class pin
  * still green.
  *
- * Split by token family, on purpose. The 2026-09-16 design work measured all
- * three themes and found the same class of defect in each. The INK retune has
- * landed everywhere, so C9-C11 run against all three. The SURFACE retune has
- * only landed for light; dark and industrial still sit at values that would
- * fail C1, C3, C6, C7 and C8, and asserting them now would land a red ratchet,
- * which is worse than none. The floors are theme-independent — when the dark
- * and industrial surfaces are retuned, fold SURFACE_THEMES into ALL_THEMES and
- * delete this paragraph.
+ * Split by token family, on purpose. The 2026-09-16 design work measured every
+ * theme and found the same class of defect in each. The INK retune has landed
+ * everywhere, so C9-C11 run against both themes. The SURFACE retune has only
+ * landed for light; dark still sits at values that would fail C1, C3, C6, C7
+ * and C8, and asserting them now would land a red ratchet, which is worse than
+ * none. The floors are theme-independent — when the dark surfaces are retuned,
+ * fold SURFACE_THEMES into ALL_THEMES and delete this paragraph.
  *
  * Contract C1–C12 is Part 1 of
  * ~/Documents/brain/20-projects/foundry-planning/specs/2026-09-16-theme-contrast-and-layering-design.md.
@@ -28,12 +27,12 @@ import { join } from "node:path";
 const CSS = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
 
 /**
- * Surface floors (C1-C8) are light-only: dark and industrial have not had their
- * surface retune yet and would land a red ratchet. The INK floors below are not
- * so limited — the ink retune HAS shipped for all three, so they all hold.
+ * Surface floors (C1-C8) are light-only: dark has not had its surface retune
+ * yet and would land a red ratchet. The INK floors below are not so limited —
+ * the ink retune HAS shipped for both themes, so they all hold.
  */
 const SURFACE_THEMES = ["light"] as const;
-const ALL_THEMES = ["dark", "light", "industrial"] as const;
+const ALL_THEMES = ["dark", "light"] as const;
 type Theme = (typeof ALL_THEMES)[number];
 
 /** Resting surfaces: what content sits on. hover/active are STATES, not surfaces. */
@@ -82,7 +81,6 @@ describe("theme contrast contract", () => {
     // (or nothing) would make every assertion below vacuous.
     expect(token("light", "paper")).toEqual([0xee, 0xe9, 0xdd]);
     expect(token("dark", "paper")).toEqual([0x0b, 0x0c, 0x0f]);
-    expect(token("industrial", "paper")).toEqual([0x11, 0x14, 0x19]);
     expect(() => token("light", "no-such-token")).toThrow(/not defined/);
   });
 
@@ -124,8 +122,7 @@ describe("theme contrast contract", () => {
       expect(worstOnResting(theme, ink)).toBeGreaterThanOrEqual(4.5);
     });
     // ink-4 is documented as "disabled text" but has ~540 live uses — helper
-    // copy, notes, icon buttons. It carries content, so it holds AA. Industrial
-    // shipped at 2.79:1 until the 2026-09-17 lift.
+    // copy, notes, icon buttons. It carries content, so it holds AA.
     it("C10 ink-4 clears AA", () => {
       expect(worstOnResting(theme, "ink-4")).toBeGreaterThanOrEqual(4.5);
     });
@@ -133,9 +130,9 @@ describe("theme contrast contract", () => {
       expect(ratio(theme, "ink-3", "ink-4")).toBeGreaterThanOrEqual(1.15);
     });
     // C11 alone is direction-blind: it sorts the two luminances, so a ramp
-    // where ink-4 is LOUDER than ink-3 satisfies it. Lifting industrial ink-4
-    // to clear C10 does exactly that if ink-3 is left behind (it measured 1.18
-    // apart, inverted). Order is part of the contract, not a side effect.
+    // where ink-4 is LOUDER than ink-3 satisfies it — lifting ink-4 to clear
+    // C10 does exactly that if ink-3 is left behind. Order is part of the
+    // contract, not a side effect.
     it("C11b ink-4 stays QUIETER than ink-3, not merely different", () => {
       expect(worstOnResting(theme, "ink-4")).toBeLessThan(worstOnResting(theme, "ink-3"));
     });

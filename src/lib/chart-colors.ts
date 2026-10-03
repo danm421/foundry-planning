@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { paletteTheme, resolveTheme, DEFAULT_THEME, type PaletteTheme } from "@/lib/theme";
+import { resolveTheme, DEFAULT_THEME, type Theme } from "@/lib/theme";
 import { chartSeriesColors } from "./chart-palette";
 
 // Re-export the pure helpers so existing client imports keep working from one
@@ -21,16 +21,13 @@ export type { ChartChrome, DataColorKey } from "./chart-palette";
  * attribute on <html>, so Chart.js configs (which paint to canvas and can't
  * read CSS vars) recolor on toggle without a reload. Initial render matches the
  * default theme's palette, as SSR paints it; corrected on mount.
- *
- * Which themes count as dark lives in one place — paletteTheme — so adding a
- * fourth theme can't map to the dark palette here and the light one elsewhere.
  */
-export function useThemeName(): PaletteTheme {
-  const [theme, setTheme] = useState<PaletteTheme>(paletteTheme(DEFAULT_THEME));
+export function useThemeName(): Theme {
+  const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
 
   useEffect(() => {
     const root = document.documentElement;
-    const read = () => setTheme(paletteTheme(resolveTheme(root.dataset.theme)));
+    const read = () => setTheme(resolveTheme(root.dataset.theme));
     read();
     const observer = new MutationObserver(read);
     observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });

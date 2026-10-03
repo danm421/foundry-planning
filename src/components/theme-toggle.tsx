@@ -52,18 +52,12 @@ function MoonIcon() {
 // Each entry names the theme the button moves TO, so the icon and label always
 // describe the next state rather than the current one.
 const NEXT: Record<Theme, Theme> = {
-  industrial: "light",
-  light: "industrial",
-};
-
-// Industrial Dark is the app's only dark theme, so advisors see it as "dark".
-const THEME_LABELS: Record<Theme, string> = {
-  industrial: "dark",
-  light: "light",
+  dark: "light",
+  light: "dark",
 };
 
 function isTheme(value: string | undefined): value is Theme {
-  return value === "light" || value === "industrial";
+  return value === "dark" || value === "light";
 }
 
 export function ThemeToggle() {
@@ -88,7 +82,7 @@ export function ThemeToggle() {
     setTheme(next);
   }
 
-  const label = `Switch to ${THEME_LABELS[NEXT[theme]]} theme`;
+  const label = `Switch to ${NEXT[theme]} theme`;
 
   return (
     <button
