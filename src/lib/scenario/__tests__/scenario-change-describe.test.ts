@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { describeChangeUnit, describeLifeInsuranceDiff, type ChangeUnit } from "../scenario-change-describe";
+import {
+  describeChangeUnit,
+  describeEditFields,
+  describeLifeInsuranceDiff,
+  type ChangeUnit,
+} from "../scenario-change-describe";
 
 const targetNames: Record<string, string> = {
   "income:i1": "Cooper's Salary",
@@ -236,5 +241,72 @@ describe("describeLifeInsuranceDiff", () => {
     expect(describeChangeUnit(unit, { "account:acct-1": "Whole Life" })).toBe(
       "Changed policy terms on Whole Life: face value $500,000 → $600,000.",
     );
+  });
+});
+
+describe("describeEditFields — the Changes panel's edit line", () => {
+  const MP = "a920a13c-9a13-4850-b957-6aa9c1ca1fa9";
+
+  it("names the field in words and formats the amounts", () => {
+    expect(describeEditFields("expense", { annualAmount: { from: 113440, to: 113400 } })).toBe(
+      "Annual amount: $113,440 → $113,400",
+    );
+  });
+
+  it("reads a number the overlay stored as a string", () => {
+    expect(describeEditFields("income", { annualAmount: { from: "250000", to: "261000" } })).toBe(
+      "Annual amount: $250,000 → $261,000",
+    );
+  });
+
+  it("joins several fields, keeps years plain and prints rates as percents", () => {
+    expect(
+      describeEditFields("liability", {
+        startYear: { from: 2026, to: 2028 },
+        interestRate: { from: 0.04, to: "0.105" },
+      }),
+    ).toBe("Start year: 2026 → 2028 · Interest rate: 4% → 10.5%");
+  });
+
+  it("prints a blank side and a toggle in words", () => {
+    expect(describeEditFields("account", { rothRolloverEnabled: { to: false } })).toBe(
+      "Roth rollover enabled: — → No",
+    );
+  });
+
+  it("names an id- or object-valued field without printing it", () => {
+    const owners = (id: string) => [{ kind: "family_member", familyMemberId: id, percent: 1 }];
+    const text = describeEditFields("account", {
+      owners: { from: owners("11111111-2222-3333-4444-555555555555"), to: owners(MP) },
+      linkedPropertyId: { from: null, to: MP },
+    });
+    expect(text).toBe("Owners changed · Linked property id changed");
+    expect(text).not.toMatch(/[0-9a-f]{8}-/);
+  });
+
+  it("drops internal plumbing fields", () => {
+    expect(
+      describeEditFields("asset_transaction", { bundleId: { from: null, to: MP }, name: { from: "Sell", to: "Sell Oak" } }),
+    ).toBe("Name: Sell → Sell Oak");
+  });
+
+  it("keeps the growth-settings vocabulary", () => {
+    expect(
+      describeEditFields("plan_settings", {
+        inflationRate: { from: 0.025, to: 0.03 },
+        modelPortfolioIdTaxable: { from: MP, to: "fdeb2131-a265-4e45-b4a8-1c81341a1fa1" },
+      }),
+    ).toBe("Inflation rate: 2.5% → 3% · Model portfolio — taxable changed");
+  });
+
+  it("describes a life-policy edit by its headline terms", () => {
+    const base = { policyType: "term", faceValue: 500000, premiumAmount: 900 };
+    expect(describeEditFields("account", { lifeInsurance: { from: base, to: { ...base, faceValue: 600000 } } })).toBe(
+      "Policy: face value $500,000 → $600,000",
+    );
+  });
+
+  it("names the household's second person by role, never the stored token", () => {
+    expect(describeEditFields("income", { owner: { from: "client", to: "spouse" } })).not.toMatch(/spouse/);
   });
 });

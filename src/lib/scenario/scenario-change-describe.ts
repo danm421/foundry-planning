@@ -1,5 +1,6 @@
 import type { ScenarioChange } from "@/engine/scenario/types";
 import { POLICY_TYPE_LABEL } from "@/lib/presentations/pages/life-insurance-summary/aggregate";
+import { fieldLabel, fmtFieldValue } from "@/lib/presentations/pages/scenario-changes/describe/format";
 import { visibleChangeFields } from "./hidden-change-fields";
 import {
   GROWTH_FIELD_LABELS,
@@ -57,11 +58,53 @@ function lifeInsuranceDiffBody(from: unknown, to: unknown): string {
 function fmtFieldVal(targetKind: string, field: string, v: unknown): string {
   if (targetKind === "plan_settings") {
     if (isGrowthModelPortfolioKey(field)) return v == null ? "none" : "a model portfolio";
-    if (GROWTH_PERCENT_KEYS.has(field) && typeof v === "number") return `${Number((v * 100).toFixed(4))}%`;
+    if (GROWTH_PERCENT_KEYS.has(field) && typeof v === "number") return percent(v);
     const label = growthEnumLabel(field, v);
     if (label) return label;
   }
   return fmtVal(v);
+}
+
+const percent = (v: number) => `${Number((v * 100).toFixed(4))}%`;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Every *Rate / *Pct / *Percent column stores a fraction (0.04 = 4%).
+const FRACTION_FIELD_RE = /(Rate|Pct|Percent)$/;
+
+/** One side of an edited field as the Changes panel prints it, or null when the
+ *  value has no reading for an advisor (an id, an owners slice, any object). */
+function panelValue(targetKind: string, field: string, raw: unknown): string | null {
+  // The overlay can store a number as a string ("113440").
+  const v = typeof raw === "string" && /^-?\d+(\.\d+)?$/.test(raw) ? Number(raw) : raw;
+  if (targetKind === "plan_settings" && GROWTH_FIELD_LABELS[field]) return fmtFieldVal(targetKind, field, v);
+  if (v == null || v === "") return "—";
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (typeof v === "number" && FRACTION_FIELD_RE.test(field) && Math.abs(v) <= 1) return percent(v);
+  if (typeof v === "number" || Array.isArray(v)) return fmtVal(v);
+  if (typeof v === "string") return UUID_RE.test(v) ? null : fmtFieldValue(field, v);
+  return null;
+}
+
+/**
+ * An edit's fields as one readable line for the Changes panel:
+ * "Annual amount: $113,440 → $113,400 · Start year: 2026 → 2028". A field whose
+ * value can't be read (an id, an owners slice) or reads the same on both sides
+ * is named, never dumped: "Owners changed".
+ */
+export function describeEditFields(targetKind: string, payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "";
+  return Object.entries(visibleChangeFields(targetKind, payload as Record<string, unknown>))
+    .map(([f, fromTo]) => {
+      if (!fromTo || typeof fromTo !== "object") return "";
+      const { from, to } = fromTo as { from?: unknown; to?: unknown };
+      if (f === "lifeInsurance") return describeLifeInsuranceDiff(from, to);
+      const label = (targetKind === "plan_settings" && GROWTH_FIELD_LABELS[f]) || fieldLabel(f);
+      const a = panelValue(targetKind, f, from);
+      const b = panelValue(targetKind, f, to);
+      return a == null || b == null || a === b ? `${label} changed` : `${label}: ${a} → ${b}`;
+    })
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function fmtVal(v: unknown): string {

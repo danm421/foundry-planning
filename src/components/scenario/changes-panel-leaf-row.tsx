@@ -21,7 +21,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PencilIcon, TrashIcon } from "@/components/icons";
 import type { ScenarioChange } from "@/engine/scenario/types";
-import { describeLifeInsuranceDiff } from "@/lib/scenario/scenario-change-describe";
+import { describeEditFields } from "@/lib/scenario/scenario-change-describe";
 
 const OP_ICON: Record<ScenarioChange["opType"], { glyph: string; color: string }> = {
   add: { glyph: "+", color: "text-good" },
@@ -350,43 +350,10 @@ export function labelFor(
 function subtextFor(change: ScenarioChange): string {
   if (change.opType === "add") return "Added in this scenario";
   if (change.opType === "remove") return "Removed in this scenario";
-
   // edit: payload is { fieldName: { from, to } } per changes-writer.ts
-  const payload = change.payload as
-    | Record<string, { from: unknown; to: unknown }>
-    | null
-    | undefined;
-  if (!payload || typeof payload !== "object") return "";
-  return Object.entries(payload)
-    .map(([f, fromTo]) => {
-      if (
-        fromTo == null ||
-        typeof fromTo !== "object" ||
-        !("from" in fromTo) ||
-        !("to" in fromTo)
-      ) {
-        return "";
-      }
-      // A life policy edit carries the whole nested policy on both sides.
-      if (f === "lifeInsurance") return describeLifeInsuranceDiff(fromTo.from, fromTo.to);
-      return `${f}: Base ${formatVal(fromTo.from)} → Scenario ${formatVal(fromTo.to)}`;
-    })
-    .filter(Boolean)
-    .join(" · ");
+  return describeEditFields(change.targetKind, change.payload);
 }
 
 function humanizeKind(k: string): string {
   return k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function formatVal(v: unknown): string {
-  if (v === null || v === undefined) return String(v);
-  // An array-valued field (e.g. a liability's extraPayments) dumped as raw JSON
-  // is unreadable on an advisor-facing panel; count it instead.
-  if (Array.isArray(v)) {
-    if (v.length === 0) return "none";
-    return `${v.length} ${v.length === 1 ? "entry" : "entries"}`;
-  }
-  if (typeof v === "object") return JSON.stringify(v);
-  return String(v);
 }

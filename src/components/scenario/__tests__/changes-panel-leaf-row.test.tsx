@@ -71,9 +71,7 @@ describe("ChangesPanelLeafRow", () => {
       />,
     );
     expect(screen.getByLabelText("edit")).toHaveTextContent("Δ");
-    expect(
-      screen.getByText(/annualAmount: Base 100000 → Scenario 250000/),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Annual amount: $100,000 → $250,000")).toBeInTheDocument();
   });
 
   // Browser pass A: a life-policy edit's subtext printed the whole
