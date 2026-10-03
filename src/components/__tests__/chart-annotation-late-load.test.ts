@@ -50,9 +50,12 @@ const crossoverLine = {
   },
 };
 
-async function annotationsOn(chart: ChartType) {
+async function annotationsOn(chart: ChartType<"line">) {
   const { default: annotationPlugin } = await import("chartjs-plugin-annotation");
-  return annotationPlugin.getAnnotations(chart);
+  // getAnnotations takes an untyped `Chart`. Whether TypeScript accepts a
+  // Chart<"line"> there depends on the order it checks files in — a full check
+  // passes, Vercel's cached incremental one fails — so widen it explicitly.
+  return annotationPlugin.getAnnotations(chart as unknown as ChartType);
 }
 
 afterEach(async () => {
