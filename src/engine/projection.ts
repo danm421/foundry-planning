@@ -102,7 +102,9 @@ import { computeEducationDraw } from "./education/education-funding";
 import { calculateRMD } from "./rmd";
 import {
   inheritedIraInputFor,
-  inheritedRmdForYear,
+  inheritedPayoutForYear,
+  inheritedPayoutWindowFor,
+  inheritedPlannedPayoutLabel,
   inheritedRmdLabel,
   resolveInheritedRule,
 } from "./inherited-ira";
@@ -2320,17 +2322,28 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const preTaxBalance = Math.max(0, currentBalance - (rothValueMap[acct.id] ?? 0));
       let rmd: number;
       let rmdLedgerLabel: string;
+      // An inherited IRA's payout window adds a planned extra above the
+      // required minimum (0 with no window). `rmd` is the whole payout — it
+      // all reports under RMDs — and the extra gets its own ledger line below.
+      let plannedExtra = 0;
+      let plannedLedgerLabel = "";
       if (inheritedInput != null) {
         const rule = resolveInheritedRule(inheritedInput);
-        const inheritedRmd = inheritedRmdForYear({
+        const window = inheritedPayoutWindowFor(acct);
+        const payout = inheritedPayoutForYear({
           input: inheritedInput,
           rule,
           year,
           priorYearEndBalance: rmdBasis,
           currentBalance,
+          window,
         });
-        rmd = inheritedRmd.amount;
-        rmdLedgerLabel = inheritedRmdLabel(rule, inheritedRmd);
+        rmd = payout.total;
+        rmdLedgerLabel = inheritedRmdLabel(rule, payout.minimum);
+        if (payout.extra > 0 && window != null) {
+          plannedExtra = payout.extra;
+          plannedLedgerLabel = inheritedPlannedPayoutLabel(window, rule.finalYear);
+        }
       } else {
         rmd = Math.min(preTaxBalance, calculateRMD(rmdBasis, ownerAge, ownerBirthYear));
         rmdLedgerLabel = `RMD distribution (age ${ownerAge})`;
@@ -2359,15 +2372,32 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         accountLedgers[acct.id].rmdAmount = rmd;
         accountLedgers[acct.id].distributions += rmd;
         accountLedgers[acct.id].endingValue -= rmd;
-        accountLedgers[acct.id].entries.push({
-          category: "rmd",
-          label: rmdLedgerLabel,
-          // Matches the basisMap delta removePoolBasis applies below: a pure
-          // pre-tax IRA still moves no basis. Negated only when non-zero —
-          // `-Math.min(0, 0)` is -0, which renders as "-$0.00" in the ledger.
-          basis: rmdBasisMoved === 0 ? 0 : -rmdBasisMoved,
-          amount: -rmd,
-        });
+        // One line for the required minimum, plus one for a payout window's
+        // planned extra. Basis splits by amount and the extra takes the
+        // remainder, so the lines sum to exactly the basisMap delta
+        // removePoolBasis applies below (a pure pre-tax IRA still moves none).
+        // With no extra this is the single line it always was: minimumAmount
+        // is rmd and minimumBasis is rmdBasisMoved, exactly.
+        const minimumAmount = rmd - plannedExtra;
+        const minimumBasis = rmdBasisMoved * (minimumAmount / rmd);
+        // Negated only when non-zero — `-0` renders as "-$0.00" in the ledger.
+        const ledgerBasis = (moved: number) => (moved === 0 ? 0 : -moved);
+        if (minimumAmount > 0) {
+          accountLedgers[acct.id].entries.push({
+            category: "rmd",
+            label: rmdLedgerLabel,
+            basis: ledgerBasis(minimumBasis),
+            amount: -minimumAmount,
+          });
+        }
+        if (plannedExtra > 0) {
+          accountLedgers[acct.id].entries.push({
+            category: "rmd",
+            label: plannedLedgerLabel,
+            basis: ledgerBasis(rmdBasisMoved - minimumBasis),
+            amount: -plannedExtra,
+          });
+        }
       }
       removePoolBasis(data.accounts, acct.id, rmdBasisReturn, basisMap, rmdPoolKey);
 
