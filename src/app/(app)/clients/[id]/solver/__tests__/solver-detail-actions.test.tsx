@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { SolverDetailActions } from "../solver-detail-actions";
 import type { InventoryItem } from "@/lib/scenario/plan-inventory";
 
@@ -17,7 +17,11 @@ const INVENTORY: InventoryItem[] = [
   item({ typeKey: "account", id: "a1", label: "Joint brokerage" }),
   item({ typeKey: "business", id: "b1", label: "Acme LLC" }),
   item({ typeKey: "note_receivable", id: "n1", label: "Loan to Sam" }),
+  item({ typeKey: "tax_rates", id: "tax-rates", label: "Tax rates", canDelete: false }),
 ];
+
+const category = (label: string) => screen.queryByRole("button", { name: new RegExp(`^${label} \\(`) });
+const expand = (label: string) => fireEvent.click(category(label)!);
 
 function setup(props: Partial<React.ComponentProps<typeof SolverDetailActions>> = {}) {
   const handlers = { onAdd: vi.fn(), onEdit: vi.fn(), onDelete: vi.fn() };
@@ -146,24 +150,55 @@ describe("SolverDetailActions — Add menu", () => {
   });
 });
 
-describe("SolverDetailActions — Edit and Delete pickers", () => {
-  it("Edit opens a searchable listbox; picking an option calls onEdit", () => {
+describe("SolverDetailActions — Edit and Remove pickers", () => {
+  it("items sit in collapsed categories by type; expanding one lists its items", () => {
     const { onEdit } = setup();
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    const search = screen.getByRole("searchbox");
-    expect(search).toHaveFocus();
-    fireEvent.change(search, { target: { value: "sal" } });
-    const list = screen.getByRole("listbox");
-    expect(within(list).getAllByRole("option")).toHaveLength(1);
-    fireEvent.click(screen.getByRole("option", { name: /Salary/ }));
+    expect(screen.getByRole("searchbox")).toHaveFocus();
+    expect(category("Income")).toHaveAccessibleName("Income (1)");
+    expect(category("Income")).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: /Salary/ })).not.toBeInTheDocument();
+    expand("Income");
+    expect(category("Income")).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(screen.getByRole("button", { name: /Salary/ }));
     expect(onEdit).toHaveBeenCalledWith(INVENTORY[0]);
   });
 
-  it("Delete lists only deletable items", () => {
+  it("a category collapses again on a second click", () => {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expand("Account");
+    expand("Account");
+    expect(screen.queryByRole("button", { name: /Joint brokerage/ })).not.toBeInTheDocument();
+  });
+
+  it("a one-of-a-kind type is listed directly, not inside a category", () => {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("button", { name: "Tax rates" })).not.toHaveAttribute("aria-expanded");
+  });
+
+  it("a search opens every category with a match; clearing it closes them", () => {
+    const { onEdit } = setup();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const search = screen.getByRole("searchbox");
+    fireEvent.change(search, { target: { value: "sal" } });
+    expect(category("Account")).not.toBeInTheDocument();
+    expect(category("Income")).toHaveAttribute("aria-expanded", "true");
+    fireEvent.change(search, { target: { value: "" } });
+    expect(screen.queryByRole("button", { name: /Salary/ })).not.toBeInTheDocument();
+    fireEvent.change(search, { target: { value: "sal" } });
+    fireEvent.click(screen.getByRole("button", { name: /Salary/ }));
+    expect(onEdit).toHaveBeenCalledWith(INVENTORY[0]);
+  });
+
+  it("Remove lists only removable items", () => {
     const { onDelete } = setup();
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-    expect(screen.queryByRole("option", { name: /Social Security/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("option", { name: /Salary/ }));
+    expect(category("Social Security")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Tax rates" })).not.toBeInTheDocument();
+    expand("Income");
+    fireEvent.click(screen.getByRole("button", { name: /Salary/ }));
     expect(onDelete).toHaveBeenCalledWith(INVENTORY[0]);
   });
 
@@ -177,7 +212,8 @@ describe("SolverDetailActions — Edit and Delete pickers", () => {
   it("an item of a type still in progress is greyed and cannot be picked", () => {
     const { onEdit } = setup();
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    const opt = screen.getByRole("option", { name: /Loan to Sam/ });
+    expand("Note receivable");
+    const opt = screen.getByRole("button", { name: /Loan to Sam/ });
     expect(opt).toBeDisabled();
     expect(opt).toHaveAttribute("title", "Not available inside a scenario yet");
     fireEvent.click(opt);
@@ -188,7 +224,7 @@ describe("SolverDetailActions — Edit and Delete pickers", () => {
     setup();
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
   });
 });
 
@@ -224,7 +260,8 @@ describe("SolverDetailActions — keyboard focus", () => {
     const edit = screen.getByRole("button", { name: "Edit" });
     edit.focus();
     fireEvent.click(edit);
-    fireEvent.click(screen.getByRole("option", { name: /Salary/ }));
+    expand("Income");
+    fireEvent.click(screen.getByRole("button", { name: /Salary/ }));
     expect(edit).toHaveFocus();
   });
 
@@ -256,5 +293,14 @@ describe("SolverDetailActions — keyboard focus", () => {
     setup();
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(screen.getByRole("searchbox")).toHaveFocus();
+  });
+
+  it("arrow keys walk from the search box through the categories", () => {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.keyDown(screen.getByRole("searchbox"), { key: "ArrowDown" });
+    expect(category("Income")).toHaveFocus();
+    fireEvent.keyDown(category("Income")!, { key: "ArrowDown" });
+    expect(category("Social Security")).toHaveFocus();
   });
 });

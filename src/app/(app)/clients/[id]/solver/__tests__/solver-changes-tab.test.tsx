@@ -199,6 +199,13 @@ function deferred<T>() {
 /** The confirm dialog's own Remove — the toolbar button is "Remove" too. */
 const confirmRemove = () => within(screen.getByRole("dialog")).getByRole("button", { name: "Remove" });
 
+/** Opens the Edit or Remove picker, expands the item's category, and picks it. */
+function pickFromCategory(verb: "Edit" | "Remove", category: string, name: RegExp) {
+  fireEvent.click(screen.getByRole("button", { name: verb }));
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${category} \\(`) }));
+  fireEvent.click(screen.getByRole("button", { name }));
+}
+
 beforeEach(() => {
   loadChangeEditorPropsMock.mockReset();
   openCreateMock.mockReset();
@@ -633,7 +640,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
     renderTab([], { inventory: INVENTORY });
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "salary" } });
-    fireEvent.click(screen.getByRole("option", { name: /Salary/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Salary/ }));
     const view = await screen.findByTestId("view-income-expenses");
     expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({
       intent: "edit",
@@ -645,8 +652,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
   it("Delete asks first, then mounts a delete focus", async () => {
     loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
     renderTab([], { inventory: INVENTORY, panelOverrides: { scenarioName: "Retire early" } });
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
+    pickFromCategory("Remove", "Income", /Side income/);
     expect(
       screen.getByText("Remove Side income from Retire early? You can switch it back on in the list below."),
     ).toBeInTheDocument();
@@ -658,8 +664,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
 
   it("cancelling the delete confirm mounts nothing", () => {
     renderTab([], { inventory: INVENTORY });
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
+    pickFromCategory("Remove", "Income", /Side income/);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByText(/^Remove Side income/)).not.toBeInTheDocument();
     expect(loadChangeEditorPropsMock).not.toHaveBeenCalled();
@@ -671,8 +676,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
       item({ typeKey: "savings_rule", id: "r-1", label: "401(k) — Pat" }),
     ];
     const pickAccount = () => {
-      fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-      fireEvent.click(screen.getByRole("option", { name: /Joint brokerage/ }));
+      pickFromCategory("Remove", "Account", /Joint brokerage/);
     };
 
     it("an account with a savings rule and a Roth conversion sourced only from it lists both", () => {
@@ -729,8 +733,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
 
   it("a non-account delete lists nothing", () => {
     renderTab([], { inventory: INVENTORY });
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
+    pickFromCategory("Remove", "Income", /Side income/);
     expect(screen.queryByText(/linked item/)).not.toBeInTheDocument();
   });
 
@@ -738,8 +741,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
     const load = deferred<unknown>();
     loadChangeEditorPropsMock.mockReturnValue(load.promise);
     renderTab([], { inventory: INVENTORY });
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
+    pickFromCategory("Remove", "Income", /Side income/);
     fireEvent.click(confirmRemove());
     expect(screen.getByRole("status")).toHaveTextContent("Removing Side income…");
     expect(screen.queryByText("Opening the editor…")).not.toBeInTheDocument();
@@ -755,7 +757,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
       inventory: [item({ typeKey: "savings_withdrawals", id: "withdrawal", label: "Savings & withdrawals" })],
     });
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.click(screen.getByRole("option", { name: /Savings & withdrawals/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Savings & withdrawals/ }));
     await screen.findByTestId("view-assumptions");
     fireEvent.click(screen.getByRole("button", { name: "stub write settings" }));
     expect(onTargetsWritten).toHaveBeenCalledWith(
@@ -770,7 +772,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
       inventory: [item({ typeKey: "tax_rates", id: "tax-rates", label: "Tax rates" })],
     });
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.click(screen.getByRole("option", { name: /Tax rates/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Tax rates/ }));
     await screen.findByTestId("view-assumptions");
     fireEvent.click(screen.getByRole("button", { name: "stub write client" }));
     expect(onTargetsWritten).toHaveBeenCalledWith(
@@ -782,8 +784,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
   it("a delete shows a status strip while the view runs", async () => {
     loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
     renderTab([], { inventory: INVENTORY });
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
+    pickFromCategory("Remove", "Income", /Side income/);
     fireEvent.click(confirmRemove());
     await screen.findByTestId("view-income-expenses");
     expect(screen.getByRole("status")).toHaveTextContent("Removing Side income…");
@@ -792,8 +793,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
   it("a failed delete shows an inline error with Dismiss", async () => {
     loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
     renderTab([], { inventory: INVENTORY });
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
+    pickFromCategory("Remove", "Income", /Side income/);
     fireEvent.click(confirmRemove());
     await screen.findByTestId("view-income-expenses");
 
@@ -809,8 +809,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
   it("reports a write the view announces, with the editor's label", async () => {
     loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
     const { onTargetsWritten } = renderTab([], { inventory: INVENTORY });
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.click(screen.getByRole("option", { name: /Side income/ }));
+    pickFromCategory("Edit", "Income", /Side income/);
     await screen.findByTestId("view-income-expenses");
     fireEvent.click(screen.getByRole("button", { name: "stub write" }));
     expect(onTargetsWritten).toHaveBeenCalledWith(
@@ -822,8 +821,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
   it("editing a trust opens the family view with an edit focus", async () => {
     loadChangeEditorPropsMock.mockResolvedValue({ page: "family", props: { clientId: CLIENT_ID } });
     renderTab([], { inventory: [item({ typeKey: "trust", id: "t1", label: "Family Trust" })] });
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.click(screen.getByRole("option", { name: /Family Trust/ }));
+    pickFromCategory("Edit", "Trust / entity", /Family Trust/);
     const view = await screen.findByTestId("view-family");
     expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ intent: "edit", kind: "entity", id: "t1" });
   });
