@@ -9,6 +9,7 @@ import type {
   ToggleState,
 } from "./types";
 import { resolveCascades, type RemovedRef } from "./cascadeResolution";
+import { applyStressTests } from "../stress-tests";
 
 export function resolveEffectiveToggleState(
   toggleState: ToggleState,
@@ -318,6 +319,7 @@ export const TARGET_KIND_TO_FIELD: Record<TargetKind, keyof ClientData | null> =
   entity: "entities",
   disability_policy: "disabilityPolicies",
   ltc_event: "ltcEvents",
+  stress_test: "stressTests",
   // Singletons: handled specially (not a list) — see SINGLETON_KIND_TO_FIELD
   client: null,
   plan_settings: null,
@@ -400,6 +402,10 @@ export function applyScenarioChanges(
       }
     }
   }
+
+  // Saved stressors land on planSettings last, so a legacy combined
+  // plan_settings edit cannot override one whatever its orderIndex.
+  applyStressTests(tree);
 
   const cascadeWarnings = resolveCascades(tree, removed);
   warnings.push(...cascadeWarnings);
