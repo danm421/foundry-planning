@@ -1,5 +1,42 @@
 import { configDefaults, defineConfig } from "vitest/config";
+import { readdirSync, readFileSync } from "fs";
 import path from "path";
+
+// Test files that talk to the shared dev Neon branch (via .env.local) run one
+// at a time in the "db" project. Several clean up by toggling user triggers on
+// shared tables (e.g. account_owners_sum_check) via `ALTER TABLE ... DISABLE
+// TRIGGER`, which is database-global: when two such files run in parallel one's
+// `finally` re-enables the trigger while the other is mid-cleanup, raising
+// spurious sum-check violations. Everything else runs in parallel in the "unit"
+// project, whose setup file fails any database connection with directions
+// instead of letting it race.
+//
+// A file is a DB test when it imports `@/db` without mocking it, uses the audit
+// test helpers, or reads a database URL. Files that reach the database only
+// through the code under test are listed by hand.
+const DB_TESTS_WITHOUT_A_DB_IMPORT = [
+  "src/lib/integrations/auth.test.ts",
+  "src/lib/integrations/connections.test.ts",
+  "src/lib/integrations/connections-byok.test.ts",
+];
+const USES_DB =
+  /["']@\/db(\/index)?["']|["']@\/lib\/audit\/test-helpers["']|DATABASE_URL|INTEGRATION_DB_URL/;
+const MOCKS_DB = /vi\.(do)?[mM]ock\(\s*["']@\/db(\/index)?["']/;
+
+const dbTestFiles = ["src", "scripts"]
+  .flatMap((dir) =>
+    readdirSync(path.join(__dirname, dir), { recursive: true, encoding: "utf8" }).map((file) =>
+      path.join(dir, file),
+    ),
+  )
+  .filter((file) => /\.test\.tsx?$/.test(file))
+  .filter((file) => {
+    const source = readFileSync(path.join(__dirname, file), "utf8");
+    return USES_DB.test(source) && !MOCKS_DB.test(source);
+  })
+  .concat(DB_TESTS_WITHOUT_A_DB_IMPORT)
+  // Route folders like `[id]` and `(group)` are glob syntax; match them literally.
+  .map((file) => file.replace(/[[\](){}*?!+@]/g, "\\$&"));
 
 export default defineConfig({
   test: {
@@ -27,13 +64,27 @@ export default defineConfig({
       // npm test`, not the root web suite.
       "**/mobile/**",
     ],
-    // Several test files clean up by toggling user triggers on shared tables
-    // (e.g. account_owners_sum_check) via `ALTER TABLE ... DISABLE TRIGGER`,
-    // which is database-global. When two such files run in parallel one's
-    // `finally` re-enables the trigger while the other is mid-cleanup, raising
-    // spurious sum-check violations. Disable file-level parallelism so
-    // DB-touching tests can't race each other on the shared dev Neon branch.
-    fileParallelism: false,
+    // `extends: true` reloads this file and appends each project's arrays to
+    // the ones above. The two projects run at the same time; "db" runs its
+    // files one by one.
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "unit",
+          exclude: dbTestFiles,
+          setupFiles: ["./vitest.unit-setup.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "db",
+          include: dbTestFiles,
+          fileParallelism: false,
+        },
+      },
+    ],
   },
   resolve: {
     alias: {

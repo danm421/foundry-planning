@@ -12,9 +12,10 @@ import base from "./vitest.config";
 // keeps the base's `resolve.alias` (`@` -> `./src`, `server-only`'s no-op
 // shim) and its `setupFiles` (dotenv load of `.env.local`, jsdom shims) -
 // `golden.eval.ts` imports `@/lib/imports/...`, and needs the same env
-// loading path production code gets.
+// loading path production code gets. The base's `projects` are dropped: they
+// would replace this lane's `include` with the unit/db split.
 export default mergeConfig(
-  base,
+  { ...base, test: { ...base.test, projects: undefined } },
   defineConfig({
     test: {
       include: ["src/lib/imports/planner/__tests__/*.eval.ts"],
