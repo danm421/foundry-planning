@@ -14,6 +14,7 @@ const m = vi.hoisted(() => ({
   where: vi.fn(),
   insertValues: vi.fn(),
   createCrmHousehold: vi.fn(),
+  recordHouseholdOpen: vi.fn(),
   createClientForHousehold: vi.fn(),
   recordAudit: vi.fn(),
 }));
@@ -26,6 +27,7 @@ vi.mock("@/db", () => ({
 }));
 vi.mock("@/lib/crm/households", () => ({
   createCrmHousehold: (...a: unknown[]) => m.createCrmHousehold(...a),
+  recordHouseholdOpen: (...a: unknown[]) => m.recordHouseholdOpen(...a),
 }));
 vi.mock("@/lib/clients/create-client", () => ({
   createClientForHousehold: (...a: unknown[]) => m.createClientForHousehold(...a),
@@ -58,6 +60,7 @@ describe("ensurePlanImport", () => {
       expect(result).toEqual({ clientId: "c1", scenarioId: "base1", importId: "imp1" });
       expect(m.createCrmHousehold).not.toHaveBeenCalled();
       expect(m.createClientForHousehold).not.toHaveBeenCalled();
+      expect(m.recordHouseholdOpen).not.toHaveBeenCalled();
 
       expect(m.insertValues).toHaveBeenCalledTimes(1);
       const insertArg = m.insertValues.mock.calls[0][0] as Record<string, unknown>;
@@ -180,6 +183,49 @@ describe("ensurePlanImport", () => {
           actorId: "u1",
         }),
       );
+    });
+
+    it("puts the new household in the advisor's Recently opened list", async () => {
+      m.createCrmHousehold.mockResolvedValue({ id: "hh1", name: "The Smiths" });
+      m.createClientForHousehold.mockResolvedValue({ clientId: "c2", scenarioId: "scn2" });
+
+      await ensurePlanImport({
+        mode: "new",
+        firmId: "org1",
+        actorUserId: "u1",
+        newHousehold: {
+          householdName: "The Smiths",
+          primary: { firstName: "Jane", lastName: "Smith", dateOfBirth: "1980-01-01" },
+          filingStatus: "single",
+          retirementAge: 65,
+          lifeExpectancy: 95,
+        },
+      });
+
+      expect(m.recordHouseholdOpen).toHaveBeenCalledWith("hh1", "u1");
+    });
+
+    it("still builds the plan when recording the open fails", async () => {
+      m.createCrmHousehold.mockResolvedValue({ id: "hh1", name: "The Smiths" });
+      m.createClientForHousehold.mockResolvedValue({ clientId: "c2", scenarioId: "scn2" });
+      m.recordHouseholdOpen.mockRejectedValue(new Error("db down"));
+      const err = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const result = await ensurePlanImport({
+        mode: "new",
+        firmId: "org1",
+        actorUserId: "u1",
+        newHousehold: {
+          householdName: "The Smiths",
+          primary: { firstName: "Jane", lastName: "Smith", dateOfBirth: "1980-01-01" },
+          filingStatus: "single",
+          retirementAge: 65,
+          lifeExpectancy: 95,
+        },
+      });
+
+      expect(result).toEqual({ clientId: "c2", scenarioId: "scn2", importId: "imp1" });
+      err.mockRestore();
     });
 
     it("forwards spouse retirement age and life expectancy to client creation", async () => {
