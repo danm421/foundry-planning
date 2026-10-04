@@ -1721,6 +1721,77 @@ describe("commitEntities", () => {
     expect(v.entityType).toBe("trust");
   });
 
+  // The extractor reads only a name and a type. A trust inserted with no
+  // flag read as revocable: gifts to it were refused and it sat in no estate.
+  it("lands a new trust irrevocable with no grantor, as the trust form does", async () => {
+    const { tx, calls } = makeFakeTx();
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      entities: [
+        { name: "R&H Legacy Trust", entityType: "trust", match: { kind: "new" } },
+        // "Irrevocable" contains "revocable" — it must not read as a living trust.
+        { name: "Smith Irrevocable Trust", match: { kind: "new" } },
+      ],
+    };
+    await commitEntities(tx, payload, ctx);
+    const inserts = callsForTable(calls, "entities").map(
+      (c) => (c as { values: Record<string, unknown> }).values,
+    );
+    expect(inserts).toHaveLength(2);
+    for (const v of inserts) {
+      expect(v.trustSubType).toBe("irrevocable");
+      expect(v.isIrrevocable).toBe(true);
+      expect(v.grantor).toBeUndefined();
+    }
+    expect(callsForTable(calls, "revocable_trusts")).toHaveLength(0);
+  });
+
+  it("gives a non-trust entity no trust fields", async () => {
+    const { tx, calls } = makeFakeTx();
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      entities: [{ name: "Americo Real Estate LP", entityType: "partnership", match: { kind: "new" } }],
+    };
+    await commitEntities(tx, payload, ctx);
+    const v = (callsForTable(calls, "entities")[0] as { values: Record<string, unknown> }).values;
+    expect(v.trustSubType).toBeUndefined();
+    expect(v.isIrrevocable).toBeUndefined();
+  });
+
+  it("adds a living or revocable trust as a revocable-trust tag, not an entity", async () => {
+    const { tx, calls } = makeFakeTx();
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      entities: [
+        { name: "Bradshaw & Cox Living Trust", entityType: "trust", match: { kind: "new" } },
+        { name: "Smith Revocable Trust", match: { kind: "new" } },
+      ],
+    };
+    const result = await commitEntities(tx, payload, ctx);
+    expect(result.created).toBe(2);
+    expect(callsForTable(calls, "entities")).toHaveLength(0);
+    const tags = callsForTable(calls, "revocable_trusts")
+      .filter((c) => c.op === "insert")
+      .map((c) => (c as { values: Record<string, unknown> }).values);
+    expect(tags).toEqual([
+      { clientId: "client-1", name: "Bradshaw & Cox Living Trust" },
+      { clientId: "client-1", name: "Smith Revocable Trust" },
+    ]);
+  });
+
+  it("does not add a revocable-trust tag the client already has", async () => {
+    const fake = makeFakeTx();
+    fake.setSelectResult("revocable_trusts", [{ id: "rt-1" }]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      entities: [{ name: "Bradshaw & Cox Living Trust", match: { kind: "new" } }],
+    };
+    const result = await commitEntities(fake.tx, payload, ctx);
+    expect(result).toMatchObject({ created: 0, skipped: 1 });
+    expect(callsForTable(fake.calls, "revocable_trusts").filter((c) => c.op === "insert")).toHaveLength(0);
+    expect(callsForTable(fake.calls, "entities")).toHaveLength(0);
+  });
+
   it("updates exact-matched entity, preserving name", async () => {
     const { tx, calls } = makeFakeTx();
     const payload: ImportPayload = {

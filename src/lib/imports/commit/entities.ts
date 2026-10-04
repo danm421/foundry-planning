@@ -1,6 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
-import { entities } from "@/db/schema";
+import { entities, revocableTrusts } from "@/db/schema";
+import { deriveIsIrrevocable } from "@/lib/entities/trust";
 
 import { getExistingId, linkCreated, type ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
@@ -15,9 +16,12 @@ import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./t
  *   trustSubType, isIrrevocable, trustee: replace-if-non-null
  *
  * The extracted entity carries only `name` and `entityType` (the LLM does
- * not produce the trust-detail fields), so on insert the trust-only
- * columns are left null and the advisor fills them in via the canonical
- * entity editor post-commit.
+ * not produce the trust-detail fields), so a new trust takes the trust
+ * form's own new-trust defaults — an irrevocable trust with no grantor —
+ * and the advisor refines it in the canonical entity editor post-commit.
+ *
+ * A living / revocable trust is not an entity in this app: it becomes a
+ * revocable-trust tag (`revocable_trusts`), whose assets stay in the estate.
  */
 export async function commitEntities(
   tx: Tx,
@@ -36,10 +40,37 @@ export async function commitEntities(
     }
 
     if (kind === "new") {
+      const entityType = row.entityType ?? "trust";
+
+      if (entityType === "trust" && isRevocableTrustName(row.name)) {
+        // Not linked back onto the row: the id is a tag's, not an entity's.
+        // A re-commit finds the tag by name instead.
+        const [existing] = await tx
+          .select({ id: revocableTrusts.id })
+          .from(revocableTrusts)
+          .where(
+            and(
+              eq(revocableTrusts.clientId, ctx.clientId),
+              sql`lower(trim(${revocableTrusts.name})) = ${row.name.trim().toLowerCase()}`,
+            ),
+          );
+        if (existing) {
+          result.skipped += 1;
+          continue;
+        }
+        await tx.insert(revocableTrusts).values({ clientId: ctx.clientId, name: row.name });
+        result.created += 1;
+        continue;
+      }
+
       const [inserted] = await tx.insert(entities).values({
         clientId: ctx.clientId,
         name: row.name,
-        entityType: row.entityType ?? "trust",
+        entityType,
+        ...(entityType === "trust" && {
+          trustSubType: "irrevocable" as const,
+          isIrrevocable: deriveIsIrrevocable("irrevocable"),
+        }),
       }).returning({ id: entities.id });
       linkCreated(row, inserted.id);
       result.created += 1;
@@ -64,4 +95,9 @@ export async function commitEntities(
   }
 
   return result;
+}
+
+/** "… Living Trust" or "… Revocable Trust" — but not "Irrevocable". */
+function isRevocableTrustName(name: string): boolean {
+  return /\b(living trust|revocable)\b/i.test(name) && !/\birrevocable\b/i.test(name);
 }
