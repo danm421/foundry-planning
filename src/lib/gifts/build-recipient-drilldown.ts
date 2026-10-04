@@ -1,5 +1,6 @@
 import type { Gift, GiftEvent, FamilyMember, EntitySummary } from "@/engine/types";
 import {
+  isAnnualExclusionEligible,
   toCanonicalGifts,
   treatCanonicalGift,
   type CanonicalGift,
@@ -122,26 +123,6 @@ const GROUP_RANK: Record<GroupKind, number> = {
   external: 2,
 };
 
-/**
- * §2503(b): a canonical gift is annual-exclusion-eligible — i.e.
- * `treatCanonicalGift` would apply a (poolable) annual exclusion — for cash to a
- * natural person (family member / external individual / unmodeled individual)
- * and for Crummey-eligible cash to a trust. Asset / business-interest transfers
- * (forced `useCrummeyPowers: false` in normalize-gifts) and charitable gifts are
- * NOT AE-eligible. Mirror of `isAnnualExclusionEligible` in
- * src/engine/gift-ledger.ts — keep the two in lockstep.
- */
-function isAnnualExclusionEligible(cg: CanonicalGift): boolean {
-  if (cg.recipientEntityId) {
-    return cg.useCrummeyPowers && cg.crummeyBeneficiaryCount > 0;
-  }
-  if (cg.recipientExternalBeneficiaryId) {
-    return cg.external?.kind !== "charity";
-  }
-  // Family member or unmodeled individual — both draw a single AE.
-  return true;
-}
-
 export function buildRecipientDrilldown(
   input: BuildRecipientDrilldownInput,
 ): RecipientGroup[] {
@@ -221,8 +202,13 @@ export function buildRecipientDrilldown(
       taxableGift = t.lifetimeUsed;
     }
 
+    // Its zero exclusion and zero taxable gift would otherwise read as a mistake.
+    const label = describeCanonical(cg, input);
     addRow(rec, {
-      description: describeCanonical(cg, input),
+      description:
+        cg.entity && !cg.entity.isIrrevocable
+          ? `${label} — not a completed gift (revocable trust)`
+          : label,
       amount: cg.undiscountedAmount,
       valuationDiscount: cg.valuationDiscount,
       giftValue: cg.amount,

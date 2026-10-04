@@ -16,6 +16,7 @@ vi.mock("@/lib/scenario/changes-writer", () => ({
   applyEntityEdit: vi.fn().mockResolvedValue(undefined),
   applyEntityAdd: vi.fn().mockResolvedValue({ targetId: "x" }),
   applyEntityRemove: vi.fn().mockResolvedValue(undefined),
+  ScenarioChangeRejectedError: class ScenarioChangeRejectedError extends Error {},
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 // `gift_series` is the one piece of the client's plan that is scenario-
@@ -161,6 +162,7 @@ import {
   applyEntityEdit,
   applyEntityAdd,
   applyEntityRemove,
+  ScenarioChangeRejectedError,
 } from "@/lib/scenario/changes-writer";
 import { recordAudit } from "@/lib/audit";
 import {
@@ -737,6 +739,23 @@ describe("PUT /api/clients/[id]/solver/save-scenario", () => {
       const calls = vi.mocked(applyEntityAdd).mock.calls.map((c) => c[0]);
       expect(calls).toHaveLength(1);
       expect(calls[0]).toHaveProperty("toggleGroupId", null);
+    });
+
+    it("a change the writer refuses comes back as a 400 with its reason", async () => {
+      vi.mocked(applyEntityAdd).mockRejectedValueOnce(
+        new ScenarioChangeRejectedError("Gifts to revocable trusts are not completed gifts"),
+      );
+
+      const res = await PUT(
+        makeUpdateRequest({
+          scenarioId: SCENARIO_ID,
+          mutations: [{ kind: "account-upsert", id: "acct-new", value: { ...account, id: "acct-new" } }],
+        }),
+        ctx,
+      );
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "Gifts to revocable trusts are not completed gifts" });
     });
 
     it("a remove passes toggleGroupId: null", async () => {

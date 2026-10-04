@@ -136,13 +136,15 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     scenarioId = scenario.id;
 
     // A real recipient row: `gifts.recipient_entity_id` carries an FK, so the
-    // promoted insert only succeeds against an entity that exists.
+    // promoted insert only succeeds against an entity that exists. Irrevocable,
+    // or the writer refuses a gift to it.
     const [trust] = await db
       .insert(entities)
       .values({
         clientId: COOPER_CLIENT_ID,
         name: `promote-gift-test-trust-${randomUUID().slice(0, 8)}`,
         entityType: "trust",
+        isIrrevocable: true,
       })
       .returning();
     trustId = trust.id;
@@ -932,7 +934,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
       scenarioId,
       firmId: COOPER_FIRM_ID,
       targetKind: "entity",
-      entity: { id: syntheticId, name, entityType: "trust" },
+      entity: { id: syntheticId, name, entityType: "trust", isIrrevocable: true },
     });
     return { syntheticId, name };
   }

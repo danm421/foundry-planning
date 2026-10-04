@@ -47,8 +47,11 @@ export function computeGiftTaxTreatment(
     if (ctx.entity.entityType !== "trust") {
       throw new Error("computeGiftTaxTreatment: entity recipient must be a trust");
     }
+    // Not a completed gift — the grantor can take it back — so no exclusion and
+    // no exemption; the assets stay in the grantor's estate
+    // (`deceasedEntityShare`). An unset flag reads as revocable.
     if (!ctx.entity.isIrrevocable) {
-      throw new Error("computeGiftTaxTreatment: gifts to revocable trusts are not completed gifts");
+      return { lifetimeUsed: 0, annualExcluded: 0, charitableExcluded: 0 };
     }
 
     if (!gift.useCrummeyPowers || ctx.crummeyBeneficiaryCount <= 0) {

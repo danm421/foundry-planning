@@ -238,3 +238,27 @@ export function treatCanonicalGift(
     },
   );
 }
+
+/**
+ * §2503(b): exactly ONE annual exclusion per donee per calendar year (for a
+ * Crummey trust, AE × beneficiaryCount per year). A canonical gift is
+ * AE-eligible — i.e. `treatCanonicalGift` would apply an annual exclusion — for
+ * cash to a natural person (family member / external individual / unmodeled
+ * individual) and for Crummey-eligible cash to an irrevocable trust. Asset and
+ * business-interest transfers (forced `useCrummeyPowers: false` above),
+ * charitable gifts and gifts to a revocable trust are NOT AE-eligible.
+ */
+export function isAnnualExclusionEligible(cg: CanonicalGift): boolean {
+  if (cg.recipientEntityId) {
+    return (
+      cg.entity?.isIrrevocable === true &&
+      cg.useCrummeyPowers &&
+      cg.crummeyBeneficiaryCount > 0
+    );
+  }
+  if (cg.recipientExternalBeneficiaryId) {
+    return cg.external?.kind !== "charity";
+  }
+  // Family member or unmodeled individual — both draw a single AE.
+  return true;
+}

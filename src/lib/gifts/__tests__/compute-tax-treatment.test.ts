@@ -91,17 +91,16 @@ describe("computeGiftTaxTreatment", () => {
     expect(r).toEqual({ lifetimeUsed: 0, annualExcluded: 0, charitableExcluded: 1_000_000 });
   });
 
-  it("revocable trust → throws", () => {
-    expect(() =>
-      computeGiftTaxTreatment(
-        giftTo({ amount: 100_000, recipientEntityId: "t1" }),
-        {
-          entity: { isIrrevocable: false, entityType: "trust" },
-          annualExclusionAmount: 19_000,
-          crummeyBeneficiaryCount: 0,
-        },
-      ),
-    ).toThrow(/revocable/i);
+  it("revocable trust, even with Crummey powers → not a completed gift: no exclusion, no exemption", () => {
+    const r = computeGiftTaxTreatment(
+      giftTo({ amount: 100_000, useCrummeyPowers: true, recipientEntityId: "t1" }),
+      {
+        entity: { isIrrevocable: false, entityType: "trust" },
+        annualExclusionAmount: 19_000,
+        crummeyBeneficiaryCount: 3,
+      },
+    );
+    expect(r).toEqual({ lifetimeUsed: 0, annualExcluded: 0, charitableExcluded: 0 });
   });
 
   it("non-trust entity → throws", () => {
