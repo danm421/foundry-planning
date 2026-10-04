@@ -181,4 +181,35 @@ describe("SelectedPageRow", () => {
     // assertion tests for the chip's absence, not the summary's wording.
     expect(screen.queryByText(/^vs /, { selector: "span" })).toBeNull();
   });
+
+  // Roth Conversion keeps its one plan in options (the "without conversions"
+  // variant is derived from it), so the row picks it directly — no dialog.
+  it("picks the Roth Conversion plan on the row and writes it into options", () => {
+    const onOptionsChange = vi.fn();
+    render(
+      <SelectedPageRow
+        {...baseProps}
+        pageId="rothConversion"
+        options={{ scenarioId: "base" }}
+        onOptionsChange={onOptionsChange}
+        scenarios={[
+          { id: "base", name: "Base case", isBaseCase: true },
+          { id: "sc-1", name: "Convert to 24%", isBaseCase: false },
+        ]}
+      />,
+    );
+    const select = screen.getByLabelText(
+      "Plan for Roth Conversion Strategy",
+    ) as HTMLSelectElement;
+    expect(select.value).toBe("base");
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "Base Case",
+      "Convert to 24%",
+    ]);
+    expect(screen.queryByText("Base plan")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Options for Roth Conversion Strategy")).toBeDisabled();
+
+    fireEvent.change(select, { target: { value: "sc-1" } });
+    expect(onOptionsChange).toHaveBeenCalledWith({ scenarioId: "sc-1" });
+  });
 });

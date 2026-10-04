@@ -1,10 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { listCrmHouseholds, createCrmHousehold } = vi.hoisted(() => ({
+const { listCrmHouseholds, createCrmHousehold, recordHouseholdOpen } = vi.hoisted(() => ({
   listCrmHouseholds: vi.fn(),
   createCrmHousehold: vi.fn(),
+  recordHouseholdOpen: vi.fn(),
 }));
-vi.mock("@/lib/crm/households", () => ({ listCrmHouseholds, getCrmHousehold: vi.fn(), createCrmHousehold }));
+vi.mock("@/lib/crm/households", () => ({
+  listCrmHouseholds,
+  getCrmHousehold: vi.fn(),
+  createCrmHousehold,
+  recordHouseholdOpen,
+}));
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn(async () => "org_A") }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn(async () => {}) }));
 vi.mock("../../custom-events", () => ({
@@ -132,6 +138,26 @@ describe("set_up_plan (HITL)", () => {
     }));
     expect(emitNavigate).toHaveBeenCalledWith("/clients/client_9");
     expect(out).toEqual({ clientId: "client_9" });
+  });
+  it("puts the household in the advisor's Recently opened list", async () => {
+    vi.mocked(getCrmHousehold).mockResolvedValue(household as unknown as Awaited<ReturnType<typeof getCrmHousehold>>);
+    vi.mocked(createClientForHousehold).mockResolvedValue({ clientId: "client_9", scenarioId: "base" } as unknown as Awaited<ReturnType<typeof createClientForHousehold>>);
+    await getTool("set_up_plan").invoke({
+      householdId: "hh_1", retirementAge: 65, lifeExpectancy: 95, filingStatus: "single", primaryDob: "1970-05-15",
+    });
+    expect(recordHouseholdOpen).toHaveBeenCalledWith("hh_1", "user_1");
+  });
+  it("still sets up the plan when recording the open fails", async () => {
+    vi.mocked(getCrmHousehold).mockResolvedValue(household as unknown as Awaited<ReturnType<typeof getCrmHousehold>>);
+    vi.mocked(createClientForHousehold).mockResolvedValue({ clientId: "client_9", scenarioId: "base" } as unknown as Awaited<ReturnType<typeof createClientForHousehold>>);
+    recordHouseholdOpen.mockRejectedValueOnce(new Error("db down"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const out = JSON.parse(String(await getTool("set_up_plan").invoke({
+      householdId: "hh_1", retirementAge: 65, lifeExpectancy: 95, filingStatus: "single", primaryDob: "1970-05-15",
+    })));
+    expect(out).toEqual({ clientId: "client_9" });
+    expect(emitNavigate).toHaveBeenCalledWith("/clients/client_9");
+    err.mockRestore();
   });
   it("refuses when the household already has a plan", async () => {
     vi.mocked(getCrmHousehold).mockResolvedValue({ ...household, planningClient: { id: "client_x" } } as unknown as Awaited<ReturnType<typeof getCrmHousehold>>);

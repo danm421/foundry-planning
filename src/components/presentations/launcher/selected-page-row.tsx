@@ -69,14 +69,15 @@ export function SelectedPageRow(props: Props) {
       ? (props.scenarios.find((s) => s.id === baselineId)?.name ?? baselineId)
       : null;
 
-  // A page that picks its one plan in Options names it on the static chip.
-  const planId = page.readPlanScenarioId?.(props.options as never) ?? "base";
-  const planChip =
-    planId === "base" ? "Base plan" : (props.scenarios.find((s) => s.id === planId)?.name ?? planId);
+  // A single-plan page that stores its plan in options (Roth Conversion) gets
+  // a plain plan picker: Base Case plus the live scenarios.
+  const planScenario = page.planScenarioOption;
+  const planScenarioValue = planScenario ? planScenario.get(props.options as never) : "base";
 
-  const comparisonScenarios = props.scenarios.filter(
-    (s) => !s.isBaseCase && !s.name.startsWith("writer-test-") && s.id !== baselineId,
+  const liveScenarios = props.scenarios.filter(
+    (s) => !s.isBaseCase && !s.name.startsWith("writer-test-"),
   );
+  const comparisonScenarios = liveScenarios.filter((s) => s.id !== baselineId);
 
   return (
     <div className="rounded border border-hair bg-card-2 p-3 space-y-2 transition-colors hover:border-hair-2">
@@ -175,16 +176,34 @@ export function SelectedPageRow(props: Props) {
               </option>
             ))}
           </select>
+        ) : planScenario ? (
+          <select
+            aria-label={`Plan for ${page.title}`}
+            value={planScenarioValue}
+            onChange={(e) =>
+              props.onOptionsChange(
+                planScenario.set(props.options as never, e.target.value),
+              )
+            }
+            className={`w-[13rem] rounded border bg-paper px-2 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+              planScenarioValue !== "base"
+                ? "border-accent text-accent"
+                : "border-hair text-ink-3 hover:border-hair-2 hover:text-ink"
+            }`}
+          >
+            <option value="base">Base Case</option>
+            {liveScenarios.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
         ) : (
           <div
-            title={
-              page.readPlanScenarioId
-                ? "Choose the plan in this page's Options"
-                : "This page always uses the base plan"
-            }
-            className="w-[13rem] cursor-not-allowed select-none truncate rounded border border-hair bg-paper/50 px-2 py-1 text-xs text-ink-4"
+            title="This page always uses the base plan"
+            className="w-[13rem] cursor-not-allowed select-none rounded border border-hair bg-paper/50 px-2 py-1 text-xs text-ink-4"
           >
-            {planChip}
+            Base plan
           </div>
         )}
         <button

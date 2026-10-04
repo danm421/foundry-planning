@@ -11,7 +11,8 @@ describe("rothConversion registration", () => {
     expect(page.id).toBe(ROTH_CONVERSION_PAGE_ID);
     expect(page.title).toBe("Roth Conversion Strategy");
     expect(page.category).toBe("Income Tax");
-    expect(typeof page.OptionsControl).toBe("function");
+    // The plan is its only option and is picked on the row, so no dialog.
+    expect(page.OptionsControl).toBeUndefined();
   });
 
   it("defaults to Base Case and fills a missing plan with it", () => {
@@ -27,8 +28,10 @@ describe("rothConversion registration", () => {
     expect(derivedKey(page.id, req.key)).toBe("derived:rothConversion:without");
   });
 
-  it("names the chosen plan on the launcher row", () => {
-    expect(page.readPlanScenarioId!({ scenarioId: "s9" })).toBe("s9");
+  it("picks the plan on the launcher row", () => {
+    const set = page.planScenarioOption!.set(page.defaultOptions, "s9");
+    expect(set).toEqual({ scenarioId: "s9" });
+    expect(page.planScenarioOption!.get(set)).toBe("s9");
     expect(page.readBaselineScenarioId).toBeUndefined();
   });
 

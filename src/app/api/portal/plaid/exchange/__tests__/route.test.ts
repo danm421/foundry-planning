@@ -23,6 +23,10 @@ vi.mock("@/lib/portal/require-portal-subscription", () => ({
 vi.mock("@/lib/portal/require-edit-enabled", () => ({
   requireEditEnabled: (...args: unknown[]) => requireEditEnabled(...args),
 }));
+vi.mock("@/lib/rate-limit", () => ({
+  checkPortalPlaidLinkRateLimit: () => Promise.resolve({ allowed: true }),
+  rateLimitErrorResponse: () => new Response("rl", { status: 429 }),
+}));
 
 const insertedItem = { id: "item-uuid-1" };
 const insertReturning = vi.fn().mockResolvedValue([insertedItem]);
