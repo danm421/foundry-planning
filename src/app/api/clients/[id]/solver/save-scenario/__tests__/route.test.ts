@@ -480,6 +480,37 @@ describe("PUT /api/clients/[id]/solver/save-scenario", () => {
     expect(call.desiredFields.retirementAge).toBe(67);
   });
 
+  it("keeps a stored plan-settings value a saved stress test overrides, instead of baking the stress value in", async () => {
+    // The scenario caps the exemption at $5M on Assumptions AND holds a $7M cap
+    // stress test, which the overlay applies last — so the tree reads $7M.
+    vi.mocked(loadEffectiveTree).mockResolvedValue({
+      effectiveTree: {
+        ...minimalTree(),
+        planSettings: { lifetimeExemptionCap: 7_000_000, surplusSpendPct: 0 } as never,
+        stressTests: [
+          { kind: "exemption-cap", cap: 7_000_000, id: "941b73cd-110a-4d13-bca5-8fba8d84bb83", name: "Exemption cap — $7,000,000" },
+        ],
+      },
+      warnings: [],
+    } as never);
+    vi.mocked(loadScenarioChanges).mockResolvedValue([
+      {
+        id: "ps", scenarioId: SCENARIO_ID, opType: "edit", targetKind: "plan_settings", targetId: CLIENT_ID,
+        payload: { lifetimeExemptionCap: { from: null, to: 5_000_000 } }, toggleGroupId: null, orderIndex: 0,
+      },
+    ] as never);
+    const res = await PUT(
+      makeUpdateRequest({
+        scenarioId: SCENARIO_ID,
+        mutations: [{ kind: "surplus-allocation", spendPct: 0.5, saveAccountId: null, spendAllUntilRetirement: false }],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    const call = vi.mocked(applyEntityEdit).mock.calls.find((c) => c[0].targetKind === "plan_settings")![0];
+    expect(call.desiredFields).toEqual({ surplusSpendPct: 0.5, lifetimeExemptionCap: 5_000_000 });
+  });
+
   it("replaces the scenario's stored MC seed when one is supplied", async () => {
     await PUT(
       makeUpdateRequest({

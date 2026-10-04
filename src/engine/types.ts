@@ -550,6 +550,11 @@ export interface ClientData {
    *  changes. Scenario-only — never in the base plan, never promoted. The
    *  engine uses the first; the UI never writes a second. */
   ltcEvents?: LtcEvent[];
+  /** Stressors saved in the active scenario as `stress_test` changes.
+   *  Scenario-only — never in the base plan, never promoted. The overlay has
+   *  already folded them into `planSettings` (`applyStressTests`); the list
+   *  stays so the Changes panel can name them. */
+  stressTests?: StressTest[];
   /** Per-person Medicare coverage overrides. Empty/undefined = use defaults for all enrolled persons. */
   medicareCoverage?: MedicareCoverage[];
   /** Annual rate at which Medicare premiums inflate forward from their base year.
@@ -1023,6 +1028,23 @@ export interface DisabilityEvent {
   /** Inclusive last disabled year. Null / absent = never recovers. */
   endYear?: number | null;
 }
+
+/** A Solver stressor's settings, saved into a scenario as its own
+ *  `stress_test` change (spec 2026-10-03). `withStressTest` writes each one onto
+ *  the same `PlanSettings` field the matching `stress-*` solver mutation does. */
+export type StressTestParams =
+  | { kind: "inflation"; rate: number }
+  | { kind: "ss-haircut"; pct: number; startYear: number }
+  | { kind: "tax-rates"; points: number; startYear: number }
+  | { kind: "disability"; person: "client" | "spouse"; startYear: number; endYear: number | null }
+  | { kind: "market-crash"; year: number; drawdownPct: number }
+  | { kind: "exemption-cap"; cap: number };
+
+export type StressTestKind = StressTestParams["kind"];
+
+/** A saved stressor. `id` is fixed per kind (`STRESS_TEST_IDS`), so a scenario
+ *  holds at most one of each. `name` is the change's title, written at save. */
+export type StressTest = StressTestParams & { id: string; name: string };
 
 /** Where the person in care receives it. Drives the cost preset and, in
  *  Phase 2, a policy's home-care benefit percentage. */

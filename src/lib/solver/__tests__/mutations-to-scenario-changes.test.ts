@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import type { ClientData } from "@/engine/types";
+import type { ClientData, StressTest } from "@/engine/types";
+import { STRESS_TEST_IDS } from "@/engine/stress-tests";
+import { stressTestSchema } from "@/lib/schemas/stress-test";
 import { mutationsToScenarioChanges } from "../mutations-to-scenario-changes";
 import { SOLVER_MUTATION_SCHEMA } from "../mutation-schema";
 
@@ -614,50 +616,59 @@ describe("mutationsToScenarioChanges — reinvestment upserts", () => {
   });
 });
 
-describe("mutationsToScenarioChanges — stress overrides → plan_settings", () => {
-  it("coalesces every stressor into ONE plan_settings edit (no unique-index collision)", () => {
-    const src = {
-      ...makeSource(),
-      planSettings: { planStartYear: 2026, inflationRate: 0.025 } as ClientData["planSettings"],
-    };
-    const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
-      { kind: "stress-inflation", rate: 0.05 },
-      { kind: "stress-ss-haircut", pct: 0.23, startYear: 2035 },
-      { kind: "stress-disability", person: "client", startYear: 2032, endYear: 2036 },
-      { kind: "stress-market-crash", year: 2030, drawdownPct: 0.4 },
-      { kind: "stress-exemption-cap", cap: 7_000_000 },
-      { kind: "stress-tax-rates", points: 0.03, startYear: 2030 },
-    ]);
+describe("mutationsToScenarioChanges — stressors → one stress_test add each", () => {
+  const src = (): ClientData => ({
+    ...makeSource(),
+    planSettings: { planStartYear: 2026, inflationRate: 0.025, surplusSpendPct: 0 } as ClientData["planSettings"],
+  });
+  const SIX = [
+    { kind: "stress-inflation", rate: 0.05 },
+    { kind: "stress-ss-haircut", pct: 0.23, startYear: 2035 },
+    { kind: "stress-disability", person: "client", startYear: 2032, endYear: 2036 },
+    { kind: "stress-market-crash", year: 2030, drawdownPct: 0.4 },
+    { kind: "stress-exemption-cap", cap: 7_000_000 },
+    { kind: "stress-tax-rates", points: 0.03, startYear: 2030 },
+  ] as Parameters<typeof mutationsToScenarioChanges>[2];
 
-    const ps = drafts.filter((d) => d.targetKind === "plan_settings");
-    expect(ps).toHaveLength(1); // single row → no (scenarioId, kind, id, opType) collision
-    expect(ps[0]).toMatchObject({ opType: "edit", targetId: CLIENT_ID });
-    expect(ps[0].payload).toEqual({
-      livingExpenseInflationOverride: { from: null, to: 0.05 },
-      ssBenefitHaircut: { from: null, to: { pct: 0.23, startYear: 2035 } },
-      disabilityEvent: {
-        from: null,
-        to: { person: "client", startYear: 2032, endYear: 2036 },
-      },
-      marketShock: { from: null, to: { year: 2030, drawdownPct: 0.4 } },
-      lifetimeExemptionCap: { from: null, to: 7_000_000 },
-      taxRateStress: { from: null, to: { points: 0.03, startYear: 2030 } },
+  it("emits one stress_test add per stressor and no plan_settings row", () => {
+    const drafts = mutationsToScenarioChanges(src(), CLIENT_ID, SIX);
+    expect(drafts.filter((d) => d.targetKind === "plan_settings")).toHaveLength(0);
+    const stress = drafts.filter((d) => d.targetKind === "stress_test");
+    expect(stress.map((d) => d.targetId).sort()).toEqual(Object.values(STRESS_TEST_IDS).sort());
+    for (const d of stress) {
+      expect(d.opType).toBe("add");
+      expect((d.payload as StressTest).id).toBe(d.targetId);
+      // The save-as-new path inserts these rows directly, so they must already
+      // be what the writer would have accepted.
+      expect(stressTestSchema.safeParse(d.payload).success).toBe(true);
+    }
+    expect(stress.find((d) => d.targetId === STRESS_TEST_IDS["market-crash"])!.payload).toEqual({
+      kind: "market-crash", year: 2030, drawdownPct: 0.4,
+      id: STRESS_TEST_IDS["market-crash"], name: "Market crash — 40% in 2030",
     });
+    expect((stress.find((d) => d.targetId === STRESS_TEST_IDS.disability)!.payload as StressTest).name)
+      .toBe("Disability — Cooper 2032–2036");
   });
 
-  it("drops a stress-inflation override that matches an existing override (no-op)", () => {
-    const src = {
-      ...makeSource(),
-      planSettings: {
-        planStartYear: 2026,
-        inflationRate: 0.03,
-        livingExpenseInflationOverride: 0.05,
-      } as ClientData["planSettings"],
-    };
-    const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
-      { kind: "stress-inflation", rate: 0.05 },
+  it("keeps only the last mutation of a kind — one row per stressor", () => {
+    const drafts = mutationsToScenarioChanges(src(), CLIENT_ID, [
+      { kind: "stress-market-crash", year: 2030, drawdownPct: 0.4 },
+      { kind: "stress-market-crash", year: 2031, drawdownPct: 0.2 },
     ]);
-    expect(drafts.filter((d) => d.targetKind === "plan_settings")).toHaveLength(0);
+    const stress = drafts.filter((d) => d.targetKind === "stress_test");
+    expect(stress).toHaveLength(1);
+    expect(stress[0].payload).toMatchObject({ year: 2031, drawdownPct: 0.2 });
+  });
+
+  it("a surplus edit beside a stressor still lands in plan_settings", () => {
+    const drafts = mutationsToScenarioChanges(src(), CLIENT_ID, [
+      { kind: "stress-inflation", rate: 0.05 },
+      { kind: "surplus-allocation", spendPct: 0.4, saveAccountId: null, spendAllUntilRetirement: false },
+    ]);
+    const ps = drafts.filter((d) => d.targetKind === "plan_settings");
+    expect(ps).toHaveLength(1);
+    expect(Object.keys(ps[0].payload as object)).toEqual(["surplusSpendPct"]);
+    expect(drafts.filter((d) => d.targetKind === "stress_test")).toHaveLength(1);
   });
 });
 
@@ -677,18 +688,6 @@ describe("mutationsToScenarioChanges — surplus allocation → plan_settings", 
       surplusSpendPct: { from: 0, to: 0.3 },
       surplusSaveAccountId: { from: null, to: "acct-1" },
     });
-  });
-
-  it("coalesces surplus with a stressor into ONE plan_settings edit", () => {
-    const src = {
-      ...makeSource(),
-      planSettings: { planStartYear: 2026, inflationRate: 0.025, surplusSpendPct: 0 } as ClientData["planSettings"],
-    };
-    const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
-      { kind: "stress-inflation", rate: 0.05 },
-      { kind: "surplus-allocation", spendPct: 0.4, saveAccountId: null, spendAllUntilRetirement: false },
-    ]);
-    expect(drafts.filter((d) => d.targetKind === "plan_settings")).toHaveLength(1);
   });
 
   it("drops a surplus edit equal to base (no-op)", () => {
@@ -809,12 +808,6 @@ describe("mutationsToScenarioChanges — every emitted targetId is a uuid", () =
   const SINGLETON_KINDS = new Set(["plan_settings", "client"]);
 
   const EVERY_PLAN_SETTINGS_MUTATION = [
-    { kind: "stress-inflation", rate: 0.05 },
-    { kind: "stress-ss-haircut", pct: 0.23, startYear: 2035 },
-    { kind: "stress-disability", person: "client", startYear: 2032, endYear: 2036 },
-    { kind: "stress-market-crash", year: 2030, drawdownPct: 0.4 },
-    { kind: "stress-exemption-cap", cap: 7_000_000 },
-    { kind: "stress-tax-rates", points: 0.03, startYear: 2030 },
     {
       kind: "surplus-allocation",
       spendPct: 0.3,
@@ -844,6 +837,22 @@ describe("mutationsToScenarioChanges — every emitted targetId is a uuid", () =
       for (const d of singletons) {
         expect(d.targetId).toBe(CLIENT_ID);
       }
+    },
+  );
+
+  it.each(Object.entries(STRESS_TEST_IDS))(
+    "a %s stressor's row carries its fixed uuid, never the kind name",
+    (kind, id) => {
+      const m = {
+        inflation: { kind: "stress-inflation", rate: 0.05 },
+        "ss-haircut": { kind: "stress-ss-haircut", pct: 0.23, startYear: 2035 },
+        "tax-rates": { kind: "stress-tax-rates", points: 0.03, startYear: 2030 },
+        disability: { kind: "stress-disability", person: "client", startYear: 2032, endYear: null },
+        "market-crash": { kind: "stress-market-crash", year: 2030, drawdownPct: 0.4 },
+        "exemption-cap": { kind: "stress-exemption-cap", cap: 7_000_000 },
+      }[kind] as Parameters<typeof mutationsToScenarioChanges>[2][number];
+      const [d] = mutationsToScenarioChanges(makeSource(), CLIENT_ID, [m]);
+      expect(d).toMatchObject({ targetKind: "stress_test", targetId: id });
     },
   );
 

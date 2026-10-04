@@ -4,14 +4,19 @@
 // scenarioChanges rows ready for insertion. Edits to the client singleton
 // (retirement age + life expectancy, either spouse) coalesce into a single
 // `targetKind: "client"` row so we don't violate the
-// (scenarioId, targetKind, targetId, opType) unique index.
+// (scenarioId, targetKind, targetId, opType) unique index. Stress-test
+// stressors are NOT coalesced: each becomes its own `stress_test` add (fixed
+// id per kind) so it switches on and off alone.
 //
 // Returns an empty array (not null) when every mutation is a no-op vs base.
 
-import type { ClientData } from "@/engine/types";
+import type { ClientData, StressTestKind, StressTestParams } from "@/engine/types";
+import { STRESS_TEST_IDS } from "@/engine/stress-tests";
+import { stressTestName } from "@/lib/stress-tests/describe";
 import { planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
 import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
 import { baseExtraPayments, withDebtPaydown } from "./debt-paydown";
+import { stressParamsFromMutation } from "./stress-test-mutations";
 import type {
   SolverMutation,
   SolverPerson,
@@ -24,10 +29,14 @@ export function mutationsToScenarioChanges(
   mutations: SolverMutation[],
 ): SolverScenarioChangeDraft[] {
   const clientFieldDiff: Record<string, { from: unknown; to: unknown }> = {};
-  // Stress-test overrides all land on planSettings; coalesce into ONE
-  // plan_settings edit so multiple stressors don't collide on the
+  // Plan-settings edits (surplus allocation, plan horizon) coalesce into ONE
+  // plan_settings edit so they don't collide on the
   // (scenarioId, targetKind, targetId, opType) unique index.
   const planSettingsDiff: Record<string, { from: unknown; to: unknown }> = {};
+  // One `stress_test` add per stressor kind — each switches on and off alone.
+  // A Map so a second mutation of one kind replaces the first rather than
+  // emitting a duplicate row for the same (fixed) id.
+  const stressTests = new Map<StressTestKind, StressTestParams>();
   // Coalesce per-owner SS edits into one income row per owner so the
   // (scenarioId, targetKind, targetId, opType) unique index isn't violated.
   const ssDiffs = new Map<
@@ -707,55 +716,17 @@ export function mutationsToScenarioChanges(
       // group — see Task 5.
       case "note-receivable-upsert":
         break;
-      // ── Stress-test overrides → plan_settings (mirror apply-mutations.ts) ──
-      // Without these a saved "Bear case" scenario silently drops its stressors
-      // (and the stored MC seed reproduces an UNstressed, higher PoS on reload).
-      case "stress-inflation": {
-        maybeDiff(
-          planSettingsDiff,
-          "livingExpenseInflationOverride",
-          source.planSettings.livingExpenseInflationOverride ?? null,
-          m.rate,
-        );
-        break;
-      }
-      case "stress-ss-haircut": {
-        planSettingsDiff.ssBenefitHaircut = {
-          from: source.planSettings.ssBenefitHaircut ?? null,
-          to: { pct: m.pct, startYear: m.startYear },
-        };
-        break;
-      }
-      case "stress-disability": {
-        planSettingsDiff.disabilityEvent = {
-          from: source.planSettings.disabilityEvent ?? null,
-          to: { person: m.person, startYear: m.startYear, endYear: m.endYear },
-        };
-        break;
-      }
-      case "stress-market-crash": {
-        planSettingsDiff.marketShock = {
-          from: source.planSettings.marketShock ?? null,
-          to: { year: m.year, drawdownPct: m.drawdownPct },
-        };
-        break;
-      }
-      case "stress-exemption-cap": {
-        maybeDiff(
-          planSettingsDiff,
-          "lifetimeExemptionCap",
-          source.planSettings.lifetimeExemptionCap ?? null,
-          m.cap,
-        );
-        break;
-      }
+      // ── Stressors → their own `stress_test` changes (spec 2026-10-03) ──
+      // Not plan_settings: folded into one combined edit, a saved scenario
+      // could not switch one stressor off and keep the rest.
+      case "stress-inflation":
+      case "stress-ss-haircut":
+      case "stress-disability":
+      case "stress-market-crash":
+      case "stress-exemption-cap":
       case "stress-tax-rates": {
-        // Object-valued, so a direct assignment like ssBenefitHaircut above —
-        // maybeDiff compares with === and would never dedupe a fresh object.
-        planSettingsDiff.taxRateStress = {
-          from: source.planSettings.taxRateStress ?? null,
-          to: { points: m.points, startYear: m.startYear },
-        };
+        const params = stressParamsFromMutation(m);
+        stressTests.set(params.kind, params);
         break;
       }
       case "surplus-allocation": {
@@ -868,6 +839,16 @@ export function mutationsToScenarioChanges(
       targetKind: "expense",
       targetId: expenseId,
       payload: entry.fields,
+      orderIndex: 0,
+    });
+  }
+  for (const params of stressTests.values()) {
+    const id = STRESS_TEST_IDS[params.kind];
+    nonClientDrafts.push({
+      opType: "add",
+      targetKind: "stress_test",
+      targetId: id,
+      payload: { ...params, id, name: stressTestName(params, source.client) },
       orderIndex: 0,
     });
   }

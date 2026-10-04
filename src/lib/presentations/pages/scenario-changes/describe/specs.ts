@@ -78,6 +78,8 @@ export const SPEC: Record<TargetKind, KindSpec> = {
     whyAdd: "A savings contribution is added.", whyRemove: "This savings contribution is removed.", whyEdit: "Adjusts this savings contribution." },
   savings_schedule_override: { area: "Savings", noun: "savings schedule", whatMode: "name",
     whyAdd: "A custom year-by-year savings schedule is set.", whyRemove: "The custom savings schedule is removed.", whyEdit: "Adjusts the custom savings schedule." },
+  stress_test: { area: "Plan & Assumptions", noun: "stress test", whatMode: "name",
+    whyAdd: "A stress test is added to the plan.", whyRemove: "This stress test is removed.", whyEdit: "Adjusts this stress test." },
   transfer: { area: "Assets", noun: "transfer", whatMode: "name",
     whyAdd: "A transfer between accounts is added.", whyRemove: "This transfer is removed.", whyEdit: "Adjusts this transfer." },
   transfer_schedule: { area: "Assets", noun: "transfer schedule", whatMode: "name",

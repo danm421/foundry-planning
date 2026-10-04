@@ -22,6 +22,7 @@ import { useRouter } from "next/navigation";
 import { PencilIcon, TrashIcon } from "@/components/icons";
 import type { ScenarioChange } from "@/engine/scenario/types";
 import { describeEditFields } from "@/lib/scenario/scenario-change-describe";
+import { storedEntityName } from "@/lib/scenario/describe-change-target";
 
 const OP_ICON: Record<ScenarioChange["opType"], { glyph: string; color: string }> = {
   add: { glyph: "+", color: "text-good" },
@@ -337,14 +338,7 @@ export function labelFor(
   // shown on its own (no "Kind — " prefix — it just repeats the op context and,
   // for nameless kinds like will, the descriptor itself); the humanized kind is
   // only the fallback when no name resolves, and never a UUID.
-  const payloadName =
-    change.payload &&
-    typeof change.payload === "object" &&
-    typeof (change.payload as Record<string, unknown>).name === "string"
-      ? ((change.payload as Record<string, unknown>).name as string).trim()
-      : "";
-  const name = targetName ?? (payloadName || null);
-  return name ?? humanizeKind(change.targetKind);
+  return targetName ?? storedEntityName(change.payload) ?? humanizeKind(change.targetKind);
 }
 
 function subtextFor(change: ScenarioChange): string {

@@ -3,8 +3,9 @@ import { describe, it, expect } from "vitest";
 import { resolveEffectiveToggleState } from "../applyChanges";
 import { applyScenarioChanges } from "../applyChanges";
 import type { ToggleGroup } from "../types";
-import type { ClientData, Account, DisabilityPolicy } from "@/engine/types";
+import type { ClientData, Account, DisabilityPolicy, StressTest } from "@/engine/types";
 import type { ScenarioChange } from "../types";
+import { STRESS_TEST_IDS } from "@/engine/stress-tests";
 
 describe("resolveEffectiveToggleState", () => {
   const independentGroup: ToggleGroup = {
@@ -1201,5 +1202,44 @@ describe("applyScenarioChanges — base deductions", () => {
   it("a remove of a base deduction drops that row", () => {
     const out = applyScenarioChanges(baseWithDeduction(), [deductionChange("remove", {})], {}, []);
     expect(out.effectiveTree.deductions).toEqual([]);
+  });
+});
+
+describe("applyScenarioChanges — stress_test", () => {
+  const crash: StressTest = {
+    kind: "market-crash", year: 2030, drawdownPct: 0.3,
+    id: STRESS_TEST_IDS["market-crash"], name: "Market crash — 30% in 2030",
+  };
+  const add = (over: Partial<ScenarioChange> = {}): ScenarioChange => ({
+    id: "ch-stress", scenarioId: "s1", opType: "add", targetKind: "stress_test",
+    targetId: crash.id, payload: crash, toggleGroupId: null, orderIndex: 0, ...over,
+  });
+  // A scenario saved before stress tests were their own changes carries the
+  // stressor inside the combined plan_settings edit.
+  const legacyEdit = (orderIndex: number): ScenarioChange => ({
+    id: "ch-ps", scenarioId: "s1", opType: "edit", targetKind: "plan_settings", targetId: "c1",
+    payload: { marketShock: { from: null, to: { year: 2040, drawdownPct: 0.5 } } },
+    toggleGroupId: null, orderIndex,
+  });
+
+  it("keeps the saved stressor on the tree and writes it onto planSettings", () => {
+    const { effectiveTree } = applyScenarioChanges(minimalClientData(), [add()], {}, []);
+    expect(effectiveTree.stressTests).toEqual([crash]);
+    expect(effectiveTree.planSettings.marketShock).toEqual({ year: 2030, drawdownPct: 0.3 });
+  });
+
+  it.each([0, 5])("wins over a legacy combined plan_settings edit at orderIndex %i", (orderIndex) => {
+    const { effectiveTree } = applyScenarioChanges(minimalClientData(), [add(), legacyEdit(orderIndex)], {}, []);
+    expect(effectiveTree.planSettings.marketShock).toEqual({ year: 2030, drawdownPct: 0.3 });
+  });
+
+  it("a stressor in a toggle group that is off leaves planSettings alone", () => {
+    const group: ToggleGroup = {
+      id: "g1", scenarioId: "s1", name: "Bear", defaultOn: true, requiresGroupId: null, orderIndex: 0,
+    };
+    const { effectiveTree } = applyScenarioChanges(
+      minimalClientData(), [add({ toggleGroupId: "g1" })], { g1: false }, [group],
+    );
+    expect(effectiveTree.planSettings.marketShock).toBeUndefined();
   });
 });
