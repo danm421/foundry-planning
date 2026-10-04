@@ -318,7 +318,17 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
  *  distributes the residual. Trust pour-outs fold in as a preceding step to
  *  the chain. Residual unlinked debt falls back to the old proportional-
  *  distribution helper post-chain. */
-export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
+export function applyFinalDeath(rawInput: DeathEventInput): DeathEventResult {
+  // A revocable trust with no grantor is the household's: the first death
+  // leaves it alone and the final decedent (a single client's only death)
+  // carries all of it. Naming them its grantor routes it through every
+  // grantor-keyed rule below — gross estate, drains, succession + pour-out.
+  const input: DeathEventInput = {
+    ...rawInput,
+    entities: rawInput.entities.map((e) =>
+      isHouseholdRevocableTrust(e) ? { ...e, grantor: rawInput.deceased } : e,
+    ),
+  };
   const warnings: string[] = [];
 
   // Resolve household principal FM ids for ownership comparisons in drains.
@@ -855,6 +865,11 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     lifeInsurancePayouts: li.lifeInsurancePayouts,
     entities: mutatedEntities,
   };
+}
+
+/** A trust that isn't irrevocable and names no grantor (an untyped import). */
+function isHouseholdRevocableTrust(e: EntitySummary): boolean {
+  return (e.entityType ?? "trust") === "trust" && !e.isIrrevocable && e.grantor == null;
 }
 
 /** 4d-specific invariants on the estate-tax result + post-succession entity state. */

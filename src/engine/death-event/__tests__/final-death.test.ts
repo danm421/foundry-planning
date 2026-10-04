@@ -3,6 +3,7 @@ import { applyFinalDeath } from "../final-death";
 import type { DeathEventInput } from "../shared";
 import type {
   Account,
+  EntitySummary,
   FamilyMember,
   Liability,
   PlanSettings,
@@ -470,5 +471,70 @@ describe("applyFinalDeath — business-interest succession integration", () => {
       (t) => t.sourceAccountId === "rental" && t.amount > 0,
     );
     expect(rentalTransfers).toHaveLength(0);
+  });
+});
+
+describe("applyFinalDeath — a revocable trust with no grantor", () => {
+  // An imported trust can carry no irrevocable flag and no grantor. It is the
+  // household's: nothing at the first death, all of it at the final one (or at
+  // a single client's only death).
+  const trustAccount: Account = {
+    id: "acct-rt",
+    name: "Trust brokerage",
+    category: "taxable",
+    subType: "brokerage",
+    titlingType: "jtwros",
+    value: 1_000_000,
+    basis: 400_000,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: [{ kind: "entity", entityId: "rt", percent: 1 }],
+  };
+  const trust = (over: Partial<EntitySummary> = {}): EntitySummary => ({
+    id: "rt",
+    name: "Bradshaw & Cox Living Trust",
+    entityType: "trust",
+    includeInPortfolio: false,
+    isGrantor: false,
+    beneficiaries: [
+      { id: "b1", tier: "primary", percentage: 100, familyMemberId: "kid-a", sortOrder: 0 },
+    ],
+    ...over,
+  });
+  const run = (entity: EntitySummary) =>
+    applyFinalDeath(
+      mkInput({
+        accounts: [trustAccount],
+        entities: [entity],
+        familyMembers: [kidA],
+        planSettings: planSettings({ flatStateEstateRate: 0.1 }),
+      }),
+    );
+  const trustTransfers = (r: ReturnType<typeof run>) =>
+    r.transfers.filter((t) => t.sourceAccountId === "acct-rt" && t.amount > 0);
+
+  it("counts it in the estate, pays the tax from it and passes it to its beneficiaries", () => {
+    const result = run(trust());
+
+    expect(result.estateTax.grossEstate).toBeCloseTo(1_000_000, 0);
+    expect(result.estateTax.stateEstateTax).toBeCloseTo(100_000, 0);
+    expect(result.warnings.filter((w) => w.startsWith("estate_tax_insufficient_liquid"))).toEqual([]);
+    const toKid = trustTransfers(result).filter((t) => t.recipientId === "kid-a");
+    expect(toKid.reduce((s, t) => s + t.amount, 0)).toBeCloseTo(1_000_000, 0);
+    expect(result.entities.find((e) => e.id === "rt")).toMatchObject({ isIrrevocable: true });
+  });
+
+  it("leaves an irrevocable trust with no grantor out of the estate", () => {
+    const result = run(trust({ isIrrevocable: true }));
+
+    expect(result.estateTax.grossEstate).toBe(0);
+    expect(trustTransfers(result)).toEqual([]);
+  });
+
+  it("leaves a foundation out — it is not a trust", () => {
+    const result = run(trust({ entityType: "foundation", beneficiaries: undefined }));
+
+    expect(result.estateTax.grossEstate).toBe(0);
+    expect(trustTransfers(result)).toEqual([]);
   });
 });

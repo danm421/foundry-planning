@@ -3,6 +3,7 @@ import { applyFirstDeath } from "../first-death";
 import type { DeathEventInput } from "../shared";
 import type {
   Account,
+  EntitySummary,
   FamilyMember,
   Income,
   PlanSettings,
@@ -486,5 +487,40 @@ describe("applyFirstDeath — §2056(b)(7)(C) survivor-annuity marital deduction
     expect(annuityLine).toBeDefined();
     expect(result.estateTax.maritalDeduction).toBeCloseTo(0, 0);
     expect(result.estateTax.stateEstateTax).toBeCloseTo(annuityLine!.amount * 0.1, 0);
+  });
+});
+
+describe("applyFirstDeath — a revocable trust with no grantor", () => {
+  // The household's trust is the final death's to carry (see final-death.test.ts);
+  // the first death neither counts it nor passes it on.
+  it("stays out of the first estate and stays revocable", () => {
+    const trust: EntitySummary = {
+      id: "rt",
+      entityType: "trust",
+      includeInPortfolio: false,
+      isGrantor: false,
+      beneficiaries: [
+        { id: "b1", tier: "primary", percentage: 100, familyMemberId: "kid-a", sortOrder: 0 },
+      ],
+    };
+    const trustAccount: Account = {
+      id: "acct-rt",
+      name: "Trust brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      titlingType: "jtwros",
+      value: 1_000_000,
+      basis: 400_000,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "entity", entityId: "rt", percent: 1 }],
+    };
+    const result = applyFirstDeath(
+      mkInput({ accounts: [trustAccount], entities: [trust], familyMembers: [kidA] }),
+    );
+
+    expect(result.estateTax.grossEstate).toBe(0);
+    expect(result.transfers.filter((t) => t.sourceAccountId === "acct-rt")).toEqual([]);
+    expect(result.entities.find((e) => e.id === "rt")?.isIrrevocable).toBeFalsy();
   });
 });
