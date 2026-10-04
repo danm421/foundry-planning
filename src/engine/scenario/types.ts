@@ -35,6 +35,7 @@ export type TargetKind =
   | "roth_conversion"
   | "savings_rule"
   | "savings_schedule_override"
+  | "stress_test"
   | "transfer"
   | "transfer_schedule"
   | "will"

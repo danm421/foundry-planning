@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildClientData } from "@/engine/__tests__/fixtures";
+import { STRESS_TEST_IDS } from "@/engine/stress-tests";
 import { MAX_RATE_STRESS_POINTS } from "@/lib/tax/rate-stress";
 import { applyMutations } from "../apply-mutations";
 import { mutationKey, type SolverMutation } from "../types";
@@ -87,30 +88,25 @@ describe("stress-tax-rates mutation", () => {
     expect(isBaseSavableMutation(M)).toBe(false);
   });
 
-  it("round-trips into a scenario change", () => {
+  it("round-trips into its own stress_test change, not plan_settings", () => {
     const source = buildClientData();
     const drafts = mutationsToScenarioChanges(source, CLIENT_ID, [M]);
-    const ps = drafts.filter((d) => d.targetKind === "plan_settings");
-    expect(ps).toHaveLength(1);
-    expect(ps[0]).toMatchObject({ opType: "edit", targetId: CLIENT_ID });
-    expect(ps[0].payload).toEqual({
-      taxRateStress: { from: null, to: { points: 0.03, startYear: 2030 } },
-    });
+    expect(drafts.filter((d) => d.targetKind === "plan_settings")).toHaveLength(0);
+    const stress = drafts.filter((d) => d.targetKind === "stress_test");
+    expect(stress).toHaveLength(1);
+    expect(stress[0]).toMatchObject({ opType: "add", targetId: STRESS_TEST_IDS["tax-rates"] });
+    expect(stress[0].payload).toMatchObject({ kind: "tax-rates", points: 0.03, startYear: 2030 });
   });
 
-  it("carries the existing stressor as `from` when one is already set", () => {
+  it("saves the new values when a stressor is already set on the source", () => {
     const source = buildClientData();
     source.planSettings = {
       ...source.planSettings,
       taxRateStress: { points: 0.01, startYear: 2028 },
     };
     const drafts = mutationsToScenarioChanges(source, CLIENT_ID, [M]);
-    const ps = drafts.filter((d) => d.targetKind === "plan_settings");
-    expect(ps[0].payload).toEqual({
-      taxRateStress: {
-        from: { points: 0.01, startYear: 2028 },
-        to: { points: 0.03, startYear: 2030 },
-      },
-    });
+    const stress = drafts.filter((d) => d.targetKind === "stress_test");
+    expect(stress).toHaveLength(1);
+    expect(stress[0].payload).toMatchObject({ kind: "tax-rates", points: 0.03, startYear: 2030 });
   });
 });

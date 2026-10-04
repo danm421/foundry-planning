@@ -39,6 +39,29 @@ const change1: ChangesPanelChange = {
 // globally here.
 
 describe("GroupEditor", () => {
+  it("names a row the names map misses by its payload's stored name, never the raw id", () => {
+    const stress: ChangesPanelChange = {
+      ...change1,
+      id: "c-9",
+      targetKind: "stress_test",
+      targetId: "f06746bf-25ea-4c3f-9430-c3c7edf1b100",
+      opType: "add",
+      payload: { kind: "market-crash", year: 2027, drawdownPct: 0.3, name: "Market crash — 30% in 2027" },
+      enabled: false,
+    };
+    render(
+      <GroupEditor
+        clientId="cl-1"
+        scenarioId="sc-1"
+        changes={[stress]}
+        groups={[groupA]}
+        targetNames={{}}
+        onClose={NOOP}
+      />,
+    );
+    expect(screen.getByTestId("editor-row-c-9").textContent).toBe("Market crash — 30% in 2027");
+  });
+
   it("renders the dropdown with existing group selected by default", () => {
     render(
       <GroupEditor

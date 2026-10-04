@@ -10,6 +10,8 @@ import {
 } from "@/lib/scenario/growth-field-labels";
 import { SPEC } from "../specs";
 import { DESCRIBERS, simpleDescriber, type Describer } from "../registry";
+import { stressTestSchema } from "@/lib/schemas/stress-test";
+import { stressTestDetail } from "@/lib/stress-tests/describe";
 
 const ASSUMPTION_LINE: Record<string, (to: unknown) => string> = {
   retirementAge: (to) => `Client retires at ${to}`,
@@ -98,8 +100,19 @@ const relocation: Describer = (c, ctx) => {
   return editRow({ ...c, payload: mapped }, { ...SPEC.relocation }, name);
 };
 
+/** A saved Solver stressor: the name stored at save time as the title, one
+ *  plain-words line beneath. A payload that fails the schema still gets a
+ *  title — never raw fractions or field names. */
+const stressTest: Describer = (c, ctx) => {
+  const parsed = stressTestSchema.safeParse(c.payload);
+  const name = nameFor(c, ctx.targetNames) ?? (parsed.success ? parsed.data.name : "Stress test");
+  if (c.opType === "remove") return removeRow("Plan & Assumptions", name, [SPEC.stress_test.whyRemove]);
+  return addRow("Plan & Assumptions", name, parsed.success ? [stressTestDetail(parsed.data)] : []);
+};
+
 DESCRIBERS.client = client;
 DESCRIBERS.plan_settings = planSettings;
 DESCRIBERS.family_member = familyMember;
 DESCRIBERS.withdrawal_strategy = withdrawalStrategy;
 DESCRIBERS.relocation = relocation;
+DESCRIBERS.stress_test = stressTest;

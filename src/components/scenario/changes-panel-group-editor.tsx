@@ -14,6 +14,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ToggleGroup } from "@/engine/scenario/types";
 import type { ChangesPanelChange } from "./changes-panel";
+import { storedEntityName } from "@/lib/scenario/describe-change-target";
 
 const NEW_GROUP_SENTINEL = "__new__";
 
@@ -343,6 +344,7 @@ function EditorRow({
 }) {
   const name =
     targetNames?.[`${change.targetKind}:${change.targetId}`] ??
+    storedEntityName(change.payload) ??
     `${change.targetKind} — ${change.targetId.slice(0, 8)}`;
   return (
     <label

@@ -478,6 +478,9 @@ describe("DisabilityPanel", () => {
             savedLtcChange={null}
             onLtcSaved={vi.fn()}
             onEditLtcOnChangesTab={vi.fn()}
+            savedStressTests={{}}
+            offGroupNames={{}}
+            onStressSaved={vi.fn()}
           />,
         );
         const solverText = solver.container.textContent!;

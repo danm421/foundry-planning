@@ -130,6 +130,9 @@ function renderTab(
       savedLtcChange={null}
       onLtcSaved={vi.fn()}
       onEditLtcOnChangesTab={vi.fn()}
+      savedStressTests={{}}
+      offGroupNames={{}}
+      onStressSaved={vi.fn()}
     />,
   );
 }
@@ -160,6 +163,9 @@ function renderStatefulTab(over: Parameters<typeof tree>[0]) {
         savedLtcChange={null}
         onLtcSaved={vi.fn()}
         onEditLtcOnChangesTab={vi.fn()}
+        savedStressTests={{}}
+        offGroupNames={{}}
+        onStressSaved={vi.fn()}
       />
     );
   }

@@ -13,6 +13,7 @@ import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from "vitest";
 import { recordAudit } from "@/lib/audit";
+import { STRESS_TEST_IDS } from "@/engine/stress-tests";
 
 // Load .env.local before importing anything that reads DATABASE_URL.
 try {
@@ -456,6 +457,73 @@ d("scenario_changes writer route", () => {
       expect(rows).toHaveLength(1);
       expect(rows[0].opType).toBe("add");
       expect(rows[0].payload).toEqual(event);
+    });
+  });
+
+  // A stressor is validated whole by `stressTestSchema`, and its fixed per-kind
+  // id makes a re-save update the scenario's one row in place.
+  describe("stress_test writes", () => {
+    const crash = {
+      kind: "market-crash", year: 2027, drawdownPct: 0.3,
+      id: STRESS_TEST_IDS["market-crash"], name: "Market crash — 30% in 2027",
+    };
+
+    async function post(body: Record<string, unknown>) {
+      return route.POST(
+        makeReq("http://test.local/changes", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+        { params: Promise.resolve({ id: COOPER_CLIENT_ID, sid: scenarioId }) },
+      );
+    }
+
+    async function rowsFor(targetId: string) {
+      const { scenarioChanges } = schema;
+      const { and, eq } = drizzleOrm;
+      return dbMod.db
+        .select()
+        .from(scenarioChanges)
+        .where(and(eq(scenarioChanges.scenarioId, scenarioId), eq(scenarioChanges.targetId, targetId)));
+    }
+
+    beforeEach(() => {
+      vi.mocked(helpers.requireOrgId).mockResolvedValue(COOPER_FIRM_ID);
+    });
+
+    it("rejects a stressor carrying another kind's id with 400", async () => {
+      const wrongId = randomUUID();
+      const res = await post({ op: "add", targetKind: "stress_test", entity: { ...crash, id: wrongId } });
+      expect(res.status).toBe(400);
+      expect(await rowsFor(wrongId)).toHaveLength(0);
+    });
+
+    it("stores a valid add, and a re-save updates the one row in place", async () => {
+      expect((await post({ op: "add", targetKind: "stress_test", entity: crash })).status).toBe(200);
+      const resaved = { ...crash, drawdownPct: 0.4, name: "Market crash — 40% in 2027" };
+      expect((await post({ op: "add", targetKind: "stress_test", entity: resaved })).status).toBe(200);
+
+      const rows = await rowsFor(crash.id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ targetKind: "stress_test", opType: "add", payload: resaved });
+    });
+
+    it("rejects an edit op with 400 — a stressor is re-saved whole as an add", async () => {
+      const res = await post({
+        op: "edit", targetKind: "stress_test", targetId: crash.id, desiredFields: { drawdownPct: 0.9 },
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it("DELETE removes the saved stressor", async () => {
+      expect((await post({ op: "add", targetKind: "stress_test", entity: crash })).status).toBe(200);
+      const res = await route.DELETE(
+        makeReq(`http://test.local/changes?kind=stress_test&target=${crash.id}&op=add`, { method: "DELETE" }),
+        { params: Promise.resolve({ id: COOPER_CLIENT_ID, sid: scenarioId }) },
+      );
+      expect(res.status).toBe(200);
+      expect(await rowsFor(crash.id)).toHaveLength(0);
     });
   });
 

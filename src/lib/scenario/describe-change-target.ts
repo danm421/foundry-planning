@@ -13,6 +13,18 @@
 
 import type { TargetKind } from "@/engine/scenario/types";
 
+/**
+ * An `add` row's payload IS the entity, so its stored `name` can name the
+ * change wherever the names map (built from a tree) has no entry — a
+ * switched-off row is absent from the tree, and some callers pass no map.
+ * Null for edit and remove payloads, which carry no string `name`.
+ */
+export function storedEntityName(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const name = (payload as Record<string, unknown>).name;
+  return typeof name === "string" && name.trim() ? name.trim() : null;
+}
+
 export function describeChangeTarget(
   kind: TargetKind,
   entity: unknown,

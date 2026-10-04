@@ -6,9 +6,10 @@
 // delete-when-revert-to-base, and add/remove handling that collapses inverse
 // pairs (remove-of-an-add becomes a no-op delete, not a remove row) — except
 // for `gift`, which has no `edit` op and so always keeps the remove marker.
-// See `applyEntityRemove`. `ltc_event` has no `edit` op either (it is saved
-// whole, as an `add`), but it is scenario-only, so its remove collapses like
-// any other add.
+// See `applyEntityRemove`. The whole-entity kinds (`ltc_event`, `stress_test`
+// — see whole-entity-kinds.ts) have no `edit` op either (each is saved whole,
+// as an `add`), but they are scenario-only, so their remove collapses like any
+// other add.
 //
 // The Postgres trigger from Plan 2 Task 1 forbids any non-base writes to
 // scenario-bearing tables, so this writer is the *only* sanctioned path for
@@ -26,9 +27,9 @@ import type { PlanSettings } from "@/engine/types";
 import { ForbiddenError } from "@/lib/authz";
 import { stableStringify } from "@/lib/compute-cache/hash";
 import { findClientInFirm } from "@/lib/db-scoping";
-import { ltcEventSchema } from "@/lib/schemas/ltc-event";
 import { loadEffectiveTree } from "./loader";
 import { businessCashRidersOf } from "./business-cash-rider";
+import { WHOLE_ENTITY_SCHEMAS } from "./whole-entity-kinds";
 
 /**
  * A Drizzle transaction handle (the value passed to a `db.transaction` callback).
@@ -297,12 +298,12 @@ export interface ApplyEntityEditArgs {
  * Changes panel rendered as two leaf rows for a single in-scenario entity.
  */
 export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> {
-  // An LTC event is saved whole: an edit would merge an unvalidated partial
-  // payload into it. A change to the event is re-saved whole as an `add`,
-  // which `applyEntityAdd` validates and upserts.
-  if (args.targetKind === "ltc_event") {
+  // A whole-entity kind (an LTC event, a stress test) is re-saved whole as an
+  // `add`, which `applyEntityAdd` validates and upserts. An edit would merge
+  // an unvalidated partial payload into it.
+  if (WHOLE_ENTITY_SCHEMAS[args.targetKind]) {
     throw new Error(
-      "changes-writer: targetKind=ltc_event has no edit (re-save the whole event as an add)",
+      `changes-writer: targetKind=${args.targetKind} has no edit (re-save the whole entity as an add)`,
     );
   }
   const { scenarioId, firmId, targetKind, targetId, desiredFields } = args;
@@ -481,17 +482,18 @@ export async function applyEntityAdd(
 ): Promise<{ targetId: string }> {
   const { scenarioId, firmId, targetKind } = args;
   let { entity } = args;
-  // An LTC event has no Details form to shape it, so it is validated whole
+  // A whole-entity kind has no Details form to shape it, so it is validated
   // here, where the changes route, Forge and the Solver's "update this
   // scenario" land. (The Solver's "save as new scenario" inserts its rows
-  // directly; its adds are validated by the mutation schema instead.) The
-  // parsed copy is stored, which drops any unknown key.
-  if (targetKind === "ltc_event") {
-    const ltc = ltcEventSchema.safeParse(entity);
-    if (!ltc.success) {
-      throw new Error(`changes-writer: invalid ltc_event entity: ${ltc.error.message}`);
+  // directly; those payloads come from schema-validated mutations.) The parsed
+  // copy is stored, which drops any unknown key.
+  const wholeSchema = WHOLE_ENTITY_SCHEMAS[targetKind];
+  if (wholeSchema) {
+    const parsed = wholeSchema.safeParse(entity);
+    if (!parsed.success) {
+      throw new Error(`changes-writer: invalid ${targetKind} entity: ${parsed.error.message}`);
     }
-    entity = ltc.data;
+    entity = parsed.data as typeof entity;
   }
   const toggleGroupId = args.toggleGroupId ?? null;
 
@@ -596,11 +598,11 @@ export async function applyEntityRemove(args: ApplyEntityRemoveArgs): Promise<vo
     // full draft (lib/gifts/gift-write.ts). Editing a base gift in a scenario
     // therefore leaves an `add` row on a base gift's id, and collapsing that
     // add on delete would resurrect the base row un-edited while the UI showed
-    // the gift gone. Every other kind but `ltc_event` reaches `applyEntityEdit`,
-    // which writes an `edit` row for a base entity and only merges into an
-    // `add` when one already exists; an `ltc_event` exists only as an `add`
-    // (scenario-only, no base row). So for all of them `hasAdd` really does
-    // mean scenario-only.
+    // the gift gone. Every other kind but the whole-entity ones (`ltc_event`,
+    // `stress_test`) reaches `applyEntityEdit`, which writes an `edit` row for a
+    // base entity and only merges into an `add` when one already exists; a
+    // whole-entity kind exists only as an `add` (scenario-only, no base row).
+    // So for all of them `hasAdd` really does mean scenario-only.
     const hasAdd = existing.some((r) => r.opType === "add");
     if (hasAdd && targetKind !== "gift") {
       // Drop both add and any edit row for this target.
