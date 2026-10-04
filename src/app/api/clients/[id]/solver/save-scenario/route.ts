@@ -57,6 +57,7 @@ import {
   applyEntityAdd,
   applyEntityEdit,
   applyEntityRemove,
+  ScenarioChangeRejectedError,
 } from "@/lib/scenario/changes-writer";
 import {
   SINGLETON_KIND_TO_FIELD,
@@ -940,6 +941,9 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
     const authResp = authErrorResponse(err);
     if (authResp) {
       return NextResponse.json(authResp.body, { status: authResp.status });
+    }
+    if (err instanceof ScenarioChangeRejectedError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
     }
     console.error("PUT /api/clients/[id]/solver/save-scenario error:", err);
     return NextResponse.json(

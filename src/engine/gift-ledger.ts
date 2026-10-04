@@ -1,6 +1,7 @@
 import type { EntitySummary, Gift, GiftEvent } from "./types";
 import { applyUnifiedRateSchedule, beaForYear } from "@/lib/tax/estate";
 import {
+  isAnnualExclusionEligible,
   toCanonicalGifts,
   treatCanonicalGift,
   type CanonicalGift,
@@ -127,26 +128,6 @@ export function computeGiftLedger(input: GiftLedgerInput): GiftLedgerYear[] {
   }
 
   return result;
-}
-
-/**
- * §2503(b): exactly ONE annual exclusion per donee per calendar year (for a
- * Crummey trust, AE × beneficiaryCount per year). A canonical gift is
- * AE-eligible — i.e. `treatCanonicalGift` would apply an annual exclusion — for
- * cash to a natural person (family member / external individual / unmodeled
- * individual) and for Crummey-eligible cash to a trust. Asset and
- * business-interest transfers (forced `useCrummeyPowers: false` in
- * normalize-gifts) and charitable gifts are NOT AE-eligible.
- */
-function isAnnualExclusionEligible(cg: CanonicalGift): boolean {
-  if (cg.recipientEntityId) {
-    return cg.useCrummeyPowers && cg.crummeyBeneficiaryCount > 0;
-  }
-  if (cg.recipientExternalBeneficiaryId) {
-    return cg.external?.kind !== "charity";
-  }
-  // Family member or unmodeled individual — both draw a single AE.
-  return true;
 }
 
 /** Donee identity for pooling the §2503(b) exclusion. AE-eligible cash to the

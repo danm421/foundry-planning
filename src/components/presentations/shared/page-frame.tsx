@@ -5,6 +5,8 @@ import type { ReactNode } from "react";
 
 /** LETTER, the size every page in the deck is rendered at. */
 export const PAGE_WIDTH_PORTRAIT = 612;
+/** The same sheet turned on its side. */
+export const PAGE_WIDTH_LANDSCAPE = 792;
 /** The paper's horizontal padding, both sides — so the content box a page body
  *  lays out in is `PAGE_WIDTH_PORTRAIT - 2 * PAGE_PAD_X` wide.
  *

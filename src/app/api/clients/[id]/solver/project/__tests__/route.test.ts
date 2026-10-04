@@ -26,6 +26,10 @@ vi.mock("@/engine", () => ({
 vi.mock("@clerk/nextjs/server", () => ({
   auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
 }));
+vi.mock("@/lib/rate-limit", () => ({
+  checkProjectionRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+  rateLimitErrorResponse: vi.fn(() => new Response("rl", { status: 429 })),
+}));
 // Phase 1b: verifyClientAccess now owns the client-in-firm gate (replaces
 // findClientInFirm). Delegate to the already-mocked findClientInFirm so tests
 // that set findClientInFirm → null still exercise the 404 path.

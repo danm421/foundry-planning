@@ -35,6 +35,7 @@ import {
   applyEntityEdit,
   applyEntityRemove,
   revertChange,
+  ScenarioChangeRejectedError,
 } from "@/lib/scenario/changes-writer";
 import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
 import { ltcEventSchema } from "@/lib/schemas/ltc-event";
@@ -216,6 +217,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
   } catch (err) {
     const authResp = authErrorResponse(err);
     if (authResp) return NextResponse.json(authResp.body, { status: authResp.status });
+    if (err instanceof ScenarioChangeRejectedError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     console.error("POST /api/clients/[id]/scenarios/[sid]/changes error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

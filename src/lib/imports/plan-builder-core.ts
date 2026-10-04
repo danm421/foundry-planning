@@ -11,7 +11,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, scenarios, clientImports } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
-import { createCrmHousehold } from "@/lib/crm/households";
+import { createCrmHousehold, recordHouseholdOpen } from "@/lib/crm/households";
 import { createClientForHousehold, type FilingStatus } from "@/lib/clients/create-client";
 import { isUSPSStateCode } from "@/lib/usps-states";
 
@@ -123,6 +123,15 @@ export async function ensurePlanImport(
     clientId = created.clientId;
     scenarioId = created.scenarioId;
     mode = "onboarding";
+
+    // Surface the new household in the advisor's "Recently opened" clients
+    // list, as POST /api/clients does for the form-driven create. Non-fatal:
+    // a view-write failure must not fail the plan build.
+    try {
+      await recordHouseholdOpen(hh.id, args.actorUserId);
+    } catch (viewErr) {
+      console.error("Failed to record household open on plan build:", viewErr);
+    }
   }
 
   // Shared insert — mirror src/app/api/clients/[id]/imports/route.ts:143-166.

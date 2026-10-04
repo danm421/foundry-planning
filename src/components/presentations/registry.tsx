@@ -170,6 +170,24 @@ import { summarizeTaxComparisonOptions } from "@/lib/presentations/pages/tax-com
 import { estimateTaxComparisonPageCount } from "@/lib/presentations/pages/tax-comparison/estimate-page-count";
 import { TaxComparisonPagePdf } from "./pages/tax-comparison/page-pdf";
 import { TaxComparisonOptionsControl } from "./pages/tax-comparison/options-control";
+import {
+  buildRothConversionData,
+  ROTH_CONVERSION_PAGE_ID,
+  withoutConversionsRef,
+} from "@/lib/presentations/pages/roth-conversion/view-model";
+import { rothConversionOptionsSchema } from "@/lib/presentations/pages/roth-conversion/options-schema";
+import { summarizeRothConversionOptions } from "@/lib/presentations/pages/roth-conversion/summarize-options";
+import { estimateRothConversionPageCount } from "@/lib/presentations/pages/roth-conversion/estimate-page-count";
+import {
+  ROTH_CONVERSION_OPTIONS_DEFAULT,
+  type RothConversionPageData,
+  type RothConversionPageOptions,
+} from "@/lib/presentations/pages/roth-conversion/types";
+import {
+  RothConversionPagePdf,
+  STRATEGY_SHEET_TITLE,
+  DETAIL_SHEET_TITLE,
+} from "./pages/roth-conversion/page-pdf";
 import { buildMedicareSummaryData } from "@/lib/presentations/pages/medicare-summary/view-model";
 import type { MedicareSummaryPageData } from "@/lib/presentations/pages/medicare-summary/view-model";
 import {
@@ -589,6 +607,15 @@ export interface PresentationPage<TData, TOptions> {
    *  it is not Base Case — `summarizeOptions` receives ids and never names, so
    *  it cannot do this itself. Pages that omit the hook render nothing new. */
   readBaselineScenarioId?: (options: TOptions) => string;
+  /** Optional: a single-plan page that stores its plan inside its own options
+   *  (not through the row's override) exposes it here, so the launcher row
+   *  shows a plan picker — Base Case or a scenario — in place of the fixed
+   *  "Base plan" chip. Mutually exclusive with `supportsScenarioOverride` and
+   *  `inlineScenarioOption`, which own the same slot. */
+  planScenarioOption?: {
+    get: (options: TOptions) => string;
+    set: (options: TOptions, scenarioId: string) => TOptions;
+  };
   /** Optional: a page may request plan *variants* that exist nowhere in the
    *  database — an already-loaded plan with one lever moved. The export applies
    *  the mutations to the `from` tree and exposes each result at
@@ -1523,6 +1550,38 @@ export const taxComparisonPage: PresentationPage<TaxComparisonPageData, TaxCompa
   renderPdf: (input) => <TaxComparisonPagePdf {...input} />,
 };
 
+export const rothConversionPage: PresentationPage<RothConversionPageData, RothConversionPageOptions> = {
+  id: ROTH_CONVERSION_PAGE_ID,
+  title: "Roth Conversion Strategy",
+  description:
+    "The plan's Roth conversions in plain words, against the same plan without them: what is converted and when, the tax it adds, the tax it saves later, and what it means for the heirs.",
+  category: "Income Tax",
+  defaultOptions: ROTH_CONVERSION_OPTIONS_DEFAULT,
+  optionsSchema: rothConversionOptionsSchema,
+  summarizeOptions: summarizeRothConversionOptions,
+  estimatePageCount: estimateRothConversionPageCount,
+  tocSections: (data) =>
+    data.emptyMessage
+      ? [{ title: STRATEGY_SHEET_TITLE, offset: 0 }]
+      : [
+          { title: STRATEGY_SHEET_TITLE, offset: 0 },
+          { title: DETAIL_SHEET_TITLE, offset: 1 },
+        ],
+  // The plan lives in the options (Base Case or a scenario), because the
+  // "without" variant is derived FROM that plan and `requiredDerivedRefs` sees
+  // only options — a launcher-row override would never reach it. It is picked
+  // on the row itself; it is the page's only option, so there is no dialog.
+  supportsScenarioOverride: false,
+  requiredScenarioRefs: (o) => [o.scenarioId],
+  planScenarioOption: {
+    get: (o) => o.scenarioId,
+    set: (o, scenarioId) => ({ ...o, scenarioId }),
+  },
+  requiredDerivedRefs: (o) => [withoutConversionsRef(o)],
+  buildData: buildRothConversionData,
+  renderPdf: (input) => <RothConversionPagePdf {...input} />,
+};
+
 export const medicareSummaryPage: PresentationPage<MedicareSummaryPageData, MedicareSummaryOptions> = {
   id: "medicareSummary",
   title: "Medicare & IRMAA Summary",
@@ -1924,6 +1983,7 @@ export const PRESENTATION_PAGES = {
   entityCashFlow: entityCashFlowPage,
   taxSummary: taxSummaryPage,
   taxComparison: taxComparisonPage,
+  rothConversion: rothConversionPage,
   medicareSummary: medicareSummaryPage,
   retirementSummary: retirementSummaryPage,
   incomeTaxIncome: incomeTaxIncomePage,

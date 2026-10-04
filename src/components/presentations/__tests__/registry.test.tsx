@@ -94,6 +94,7 @@ describe("registry — Cash Flow page", () => {
         "portfolioAnalysis",
         "retirementComparison",
         "retirementSummary",
+        "rothConversion",
         "scenarioChanges",
         "scenarioComparison",
         "taxComparison",

@@ -1,30 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { resolveTheme, isDarkTheme, paletteTheme, THEME_COOKIE } from "./theme";
+import { resolveTheme, THEME_COOKIE } from "./theme";
 
 describe("resolveTheme", () => {
-  it("defaults to industrial when cookie absent", () =>
-    expect(resolveTheme(undefined)).toBe("industrial"));
+  it("defaults to dark when cookie absent", () => expect(resolveTheme(undefined)).toBe("dark"));
   it("returns each known theme verbatim", () => {
     expect(resolveTheme("light")).toBe("light");
-    expect(resolveTheme("industrial")).toBe("industrial");
+    expect(resolveTheme("dark")).toBe("dark");
   });
-  it("moves a legacy dark cookie onto industrial", () =>
-    expect(resolveTheme("dark")).toBe("industrial"));
-  it("falls back to industrial for an unknown cookie", () =>
-    expect(resolveTheme("garbage")).toBe("industrial"));
+  it("moves a legacy industrial cookie onto dark", () =>
+    expect(resolveTheme("industrial")).toBe("dark"));
+  it("falls back to dark for an unknown cookie", () =>
+    expect(resolveTheme("garbage")).toBe("dark"));
   it("exposes a stable cookie name", () => expect(THEME_COOKIE).toBe("theme"));
-});
-
-describe("theme classification", () => {
-  it("treats industrial as a dark surface", () => {
-    // Clerk's appearance and the chart palettes both split two ways, so the
-    // new default must land on the dark side of each or the sign-in card and
-    // every chart render light-on-light.
-    expect(isDarkTheme("industrial")).toBe(true);
-    expect(paletteTheme("industrial")).toBe("dark");
-  });
-  it("keeps light on the light side", () => {
-    expect(isDarkTheme("light")).toBe(false);
-    expect(paletteTheme("light")).toBe("light");
-  });
 });

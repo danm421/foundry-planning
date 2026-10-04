@@ -416,6 +416,32 @@ describe("buildRecipientDrilldown", () => {
     expect(ilit.subtotal.exclusion).toBe(18_000);
   });
 
+  it("shows a Crummey gift to a trust that is not irrevocable as no exclusion and no taxable gift", () => {
+    // Crummey cash to a trust with a beneficiary is otherwise pooled, and a
+    // pooled row's taxable gift is `amount − exclusion` — so a zero exclusion
+    // would have shown the whole gift as taxable.
+    const livingTrust = {
+      id: "t1",
+      name: "Living Trust",
+      entityType: "trust",
+      crummeyPowers: true,
+      beneficiaries: [{ id: "b1", tier: "primary", percentage: 100, familyMemberId: "k1", sortOrder: 0 }],
+    } as unknown as EntitySummary;
+    const groups = buildRecipientDrilldown(
+      baseInput({
+        year: 2030,
+        gifts: [
+          { id: "g1", year: 2030, amount: 30_000, grantor: "client", recipientEntityId: "t1", useCrummeyPowers: true },
+        ],
+        entities: [livingTrust],
+        entitiesById: new Map([["t1", { name: "Living Trust" }]]),
+      }),
+    );
+    const row = groups.find((g) => g.label === "Living Trust")!.rows[0];
+    expect(row).toMatchObject({ amount: 30_000, exclusion: 0, taxableGift: 0 });
+    expect(row.description).toMatch(/not a completed gift/i);
+  });
+
   it("annotates clt_remainder_interest gifts with CLT trust name in description", () => {
     const remainderGift: Gift = {
       id: "g-clut",

@@ -69,9 +69,15 @@ export function SelectedPageRow(props: Props) {
       ? (props.scenarios.find((s) => s.id === baselineId)?.name ?? baselineId)
       : null;
 
-  const comparisonScenarios = props.scenarios.filter(
-    (s) => !s.isBaseCase && !s.name.startsWith("writer-test-") && s.id !== baselineId,
+  // A single-plan page that stores its plan in options (Roth Conversion) gets
+  // a plain plan picker: Base Case plus the live scenarios.
+  const planScenario = page.planScenarioOption;
+  const planScenarioValue = planScenario ? planScenario.get(props.options as never) : "base";
+
+  const liveScenarios = props.scenarios.filter(
+    (s) => !s.isBaseCase && !s.name.startsWith("writer-test-"),
   );
+  const comparisonScenarios = liveScenarios.filter((s) => s.id !== baselineId);
 
   return (
     <div className="rounded border border-hair bg-card-2 p-3 space-y-2 transition-colors hover:border-hair-2">
@@ -165,6 +171,28 @@ export function SelectedPageRow(props: Props) {
           >
             <option value="">{inlineScenario.placeholder}</option>
             {comparisonScenarios.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        ) : planScenario ? (
+          <select
+            aria-label={`Plan for ${page.title}`}
+            value={planScenarioValue}
+            onChange={(e) =>
+              props.onOptionsChange(
+                planScenario.set(props.options as never, e.target.value),
+              )
+            }
+            className={`w-[13rem] rounded border bg-paper px-2 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+              planScenarioValue !== "base"
+                ? "border-accent text-accent"
+                : "border-hair text-ink-3 hover:border-hair-2 hover:text-ink"
+            }`}
+          >
+            <option value="base">Base Case</option>
+            {liveScenarios.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
               </option>

@@ -16,7 +16,7 @@
 
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { scenarioChanges, scenarios } from "@/db/schema";
+import { entities, scenarioChanges, scenarios } from "@/db/schema";
 import {
   SINGLETON_KIND_TO_FIELD,
   TARGET_KIND_TO_FIELD,
@@ -42,6 +42,55 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 interface BaseEntity {
   id: string;
   [k: string]: unknown;
+}
+
+/** A change the writer refuses on its merits. Routes map it to a 400. */
+export class ScenarioChangeRejectedError extends Error {}
+
+/**
+ * A scenario gift must name a recipient the base gift routes would accept: a
+ * trust, and an irrevocable one — a transfer to a revocable trust is not a
+ * completed gift. The trust is read as this scenario sees it (its own `entity`
+ * add, else the base row). One found in neither passes: a batch may write a
+ * gift before the trust it names.
+ */
+async function assertGiftRecipientAccepted(
+  executor: Tx | typeof db,
+  scenarioId: string,
+  clientId: string,
+  gift: BaseEntity,
+): Promise<void> {
+  const recipient = gift.recipient as { kind?: string; id?: string } | undefined;
+  if (recipient?.kind !== "entity" || !recipient.id) return;
+
+  const [added] = await executor
+    .select({ payload: scenarioChanges.payload })
+    .from(scenarioChanges)
+    .where(
+      and(
+        eq(scenarioChanges.scenarioId, scenarioId),
+        eq(scenarioChanges.targetKind, "entity"),
+        eq(scenarioChanges.targetId, recipient.id),
+        eq(scenarioChanges.opType, "add"),
+      ),
+    );
+  let trust = added?.payload as
+    | { entityType?: string; isIrrevocable?: boolean | null }
+    | undefined;
+  if (!trust) {
+    [trust] = await executor
+      .select({ entityType: entities.entityType, isIrrevocable: entities.isIrrevocable })
+      .from(entities)
+      .where(and(eq(entities.id, recipient.id), eq(entities.clientId, clientId)));
+  }
+  if (!trust) return;
+
+  if ((trust.entityType ?? "trust") !== "trust") {
+    throw new ScenarioChangeRejectedError("Recipient must be a trust");
+  }
+  if (trust.isIrrevocable !== true) {
+    throw new ScenarioChangeRejectedError("Gifts to revocable trusts are not completed gifts");
+  }
 }
 
 /**
@@ -446,7 +495,10 @@ export async function applyEntityAdd(
   }
   const toggleGroupId = args.toggleGroupId ?? null;
 
-  await assertScenarioInFirm(scenarioId, firmId);
+  const { clientId } = await assertScenarioInFirm(scenarioId, firmId);
+  if (targetKind === "gift") {
+    await assertGiftRecipientAccepted(args.tx ?? db, scenarioId, clientId, entity);
+  }
 
   // Sanity check — singletons and nested entities aren't writable here.
   if (TARGET_KIND_TO_FIELD[targetKind] == null) {

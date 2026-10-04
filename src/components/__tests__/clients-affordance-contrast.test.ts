@@ -22,7 +22,7 @@ import { join } from "node:path";
 
 const CSS = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
 
-const THEMES = ["dark", "light", "industrial"] as const;
+const THEMES = ["dark", "light"] as const;
 type Theme = (typeof THEMES)[number];
 
 /** Pull one theme's `:root[data-theme="…"]` block out of globals.css. */

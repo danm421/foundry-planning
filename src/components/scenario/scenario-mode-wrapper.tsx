@@ -37,6 +37,19 @@ export function useScenarioModeUI(): ScenarioModeUI {
   return useContext(ScenarioModeCtx);
 }
 
+type ScenarioListItem = { id: string; name: string; isBaseCase: boolean };
+
+const ScenarioListCtx = createContext<ScenarioListItem[]>([]);
+
+/**
+ * The client's scenarios, as the layout loaded them for the chip row, so a
+ * page can offer its own scenario picker without querying again. Empty outside
+ * a wrapper.
+ */
+export function useClientScenarios(): ScenarioListItem[] {
+  return useContext(ScenarioListCtx);
+}
+
 /**
  * Mounts at the top of the client layout. Exposes `openCreate` to the chip
  * row (and any future descendant) via context, and keeps the dialog mounted
@@ -64,17 +77,19 @@ export function ScenarioModeWrapper({
 
   return (
     <ScenarioModeCtx.Provider value={{ openCreate }}>
-      <InputStylingMount clientId={clientId}>
-        {children}
-        {canEdit && (
-          <CreateScenarioDialog
-            clientId={clientId}
-            scenarios={scenarios}
-            open={open}
-            onClose={onClose}
-          />
-        )}
-      </InputStylingMount>
+      <ScenarioListCtx.Provider value={scenarios}>
+        <InputStylingMount clientId={clientId}>
+          {children}
+          {canEdit && (
+            <CreateScenarioDialog
+              clientId={clientId}
+              scenarios={scenarios}
+              open={open}
+              onClose={onClose}
+            />
+          )}
+        </InputStylingMount>
+      </ScenarioListCtx.Provider>
     </ScenarioModeCtx.Provider>
   );
 }

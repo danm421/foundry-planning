@@ -45,9 +45,13 @@ describe("PRESENTATION_PAGES", () => {
 describe("scenario-control invariants", () => {
   const pages = Object.values(PRESENTATION_PAGES);
 
-  it("no page offers both a scenario override and an inline scenario picker", () => {
-    const both = pages.filter((p) => p.supportsScenarioOverride && p.inlineScenarioOption);
-    expect(both.map((p) => p.id)).toEqual([]);
+  it("no page offers more than one of override, inline comparison, and plan picker", () => {
+    const many = pages.filter(
+      (p) =>
+        [p.supportsScenarioOverride, p.inlineScenarioOption, p.planScenarioOption].filter(Boolean)
+          .length > 1,
+    );
+    expect(many.map((p) => p.id)).toEqual([]);
   });
 
   it("every inline scenario picker uses the same 'Compare to…' prompt", () => {

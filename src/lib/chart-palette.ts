@@ -1,6 +1,6 @@
 import { colors, colorsLight, data, dataLight, dataScale } from "@/brand";
 import type { DataColorKey } from "@/brand";
-import type { PaletteTheme } from "@/lib/theme";
+import type { Theme } from "@/lib/theme";
 
 export type { DataColorKey };
 
@@ -28,7 +28,7 @@ const ADJACENCY: readonly DataColorKey[] = [
  * nine named Deep Jewel hues while `n <= 9`; beyond that, appends in-band
  * `dataScale` hues so the set still reads as one family.
  */
-export function chartSeriesColors(n: number, theme: PaletteTheme = "dark"): string[] {
+export function chartSeriesColors(n: number, theme: Theme = "dark"): string[] {
   const palette = theme === "light" ? dataLight : data;
   const named = ADJACENCY.map((key) => palette[key]);
   if (n <= named.length) return named.slice(0, n);
@@ -36,7 +36,7 @@ export function chartSeriesColors(n: number, theme: PaletteTheme = "dark"): stri
 }
 
 /** The Deep Jewel data palette (nine named hues) for a theme. */
-export function dataPalette(theme: PaletteTheme) {
+export function dataPalette(theme: Theme) {
   return theme === "light" ? dataLight : data;
 }
 
@@ -65,7 +65,7 @@ const FLOOR_ORDER: readonly DataColorKey[] = [
 ];
 
 /** The colour of the bracket floor with this rank in the ladder. */
-export function bracketFloorColor(rank: number, theme: PaletteTheme = "dark"): string {
+export function bracketFloorColor(rank: number, theme: Theme = "dark"): string {
   return dataPalette(theme)[FLOOR_ORDER[rank % FLOOR_ORDER.length]];
 }
 
@@ -74,7 +74,7 @@ export function bracketFloorColor(rank: number, theme: PaletteTheme = "dark"): s
  * series that signal status on canvas (e.g. a marginal-rate ceiling line),
  * which can't read the CSS status vars.
  */
-export function statusColors(theme: PaletteTheme) {
+export function statusColors(theme: Theme) {
   const c = theme === "light" ? colorsLight : colors;
   return { good: c.good, warn: c.warn, crit: c.crit };
 }
@@ -90,7 +90,7 @@ export interface ChartChrome {
 }
 
 /** Theme-aware Chart.js chrome colors (axes, gridlines, legend, tooltip). */
-export function chartChrome(theme: PaletteTheme): ChartChrome {
+export function chartChrome(theme: Theme): ChartChrome {
   const c = theme === "light" ? colorsLight : colors;
   return {
     tick: c.ink3,

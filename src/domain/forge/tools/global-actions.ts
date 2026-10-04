@@ -10,7 +10,12 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
-import { listCrmHouseholds, getCrmHousehold, createCrmHousehold } from "@/lib/crm/households";
+import {
+  listCrmHouseholds,
+  getCrmHousehold,
+  createCrmHousehold,
+  recordHouseholdOpen,
+} from "@/lib/crm/households";
 import { isUSPSStateCode } from "@/lib/usps-states";
 import { createClientForHousehold } from "@/lib/clients/create-client";
 import { ensurePlanImport } from "@/lib/imports/plan-builder-core";
@@ -177,6 +182,12 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
           action: "forge.write_approved", resourceType: "client", resourceId: result.clientId,
           firmId, actorId: ctx.userId, metadata: { tool: "set_up_plan", conversationId, householdId: hh.id },
         });
+        // Same "Recently opened" stamp as POST /api/clients; non-fatal.
+        try {
+          await recordHouseholdOpen(hh.id, ctx.userId);
+        } catch (viewErr) {
+          console.error("Failed to record household open on set_up_plan:", viewErr);
+        }
         await emitNavigate(`/clients/${result.clientId}`);
         return JSON.stringify({ clientId: result.clientId });
       } catch (e) {
