@@ -975,6 +975,8 @@ const loadClientDataCached = cache(
           inheritedDeathYear: a.inheritedDeathYear,
           inheritedOwnerBirthYear: a.inheritedOwnerBirthYear,
           inheritedHeirDisabled: a.inheritedHeirDisabled,
+          inheritedPayoutFromYear: a.inheritedPayoutFromYear,
+          inheritedPayoutThroughYear: a.inheritedPayoutThroughYear,
           insuredPerson: a.insuredPerson,
           titlingType: a.titlingType,
           businessType: a.businessType,

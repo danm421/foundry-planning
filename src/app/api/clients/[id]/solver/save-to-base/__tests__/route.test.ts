@@ -237,6 +237,34 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     });
   });
 
+  it("persists the payout window on insert", async () => {
+    // inheritedIraRowFields carries the window; dropping it there would
+    // silently reset a scenario's payout plan to the minimum on save-to-base.
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [
+          {
+            kind: "account-upsert",
+            id: "synthetic-new",
+            value: {
+              ...ACCT,
+              category: "retirement",
+              subType: "traditional_ira",
+              inheritedDeathYear: 2026,
+              inheritedOwnerBirthYear: 1930,
+              inheritedPayoutFromYear: 2031,
+              inheritedPayoutThroughYear: 2036,
+            },
+          },
+        ],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    expect(inserts[0].values).toMatchObject({ inheritedPayoutFromYear: 2031, inheritedPayoutThroughYear: 2036 });
+  });
+
   it("clears a stale portfolio link when the account moves off a portfolio", async () => {
     vi.mocked(loadEffectiveTree).mockResolvedValue({
       effectiveTree: { accounts: [{ ...ACCT }], savingsRules: [] },

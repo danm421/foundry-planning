@@ -205,3 +205,53 @@ describe("AddAccountForm — inherited IRA on the RMD tab", () => {
     expect(summary).not.toContain("10-year rule");
   });
 });
+
+describe("AddAccountForm — inherited IRA payout plan", () => {
+  // INHERITED: death 2022, owner born 1945, heir = client born 1975 → deadline 2032.
+  const WITH_WINDOW: AccountFormInitial = { ...INHERITED, inheritedPayoutFromYear: 2028, inheritedPayoutThroughYear: 2032 };
+
+  it("round-trips a saved window through the submit path", async () => {
+    renderForm(WITH_WINDOW);
+    fireEvent.click(screen.getByRole("button", { name: "RMD" }));
+    expect((screen.getByLabelText("Spread payouts evenly") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("From") as HTMLInputElement).value).toBe("2028");
+    fireEvent.submit(document.getElementById("add-account-form")!);
+    expect(await putBody()).toMatchObject({ inheritedPayoutFromYear: 2028, inheritedPayoutThroughYear: 2032 });
+  });
+
+  it("choosing 'Minimum each year' sends nulls", async () => {
+    renderForm(WITH_WINDOW);
+    fireEvent.click(screen.getByRole("button", { name: "RMD" }));
+    fireEvent.click(screen.getByLabelText("Minimum each year"));
+    fireEvent.submit(document.getElementById("add-account-form")!);
+    expect(await putBody()).toMatchObject({ inheritedPayoutFromYear: null, inheritedPayoutThroughYear: null });
+  });
+
+  it("unticking 'Inherited' clears the window via the autosave path", async () => {
+    const ref = createRef<AccountFormAutoSaveHandle>();
+    renderForm(WITH_WINDOW, { ref });
+    fireEvent.click(screen.getByRole("button", { name: "RMD" }));
+    fireEvent.click(screen.getByLabelText("Inherited from someone other than a spouse"));
+    await act(async () => { await ref.current!.saveAsync(); });
+    expect(await putBody()).toMatchObject({ inheritedDeathYear: null, inheritedPayoutFromYear: null, inheritedPayoutThroughYear: null });
+  });
+
+  it("picking the window pre-fills it, and the autosave path sends it", async () => {
+    const ref = createRef<AccountFormAutoSaveHandle>();
+    renderForm(INHERITED, { ref });
+    fireEvent.click(screen.getByRole("button", { name: "RMD" }));
+    fireEvent.click(screen.getByLabelText("Spread payouts evenly"));
+    await act(async () => { await ref.current!.saveAsync(); });
+    expect(await putBody()).toMatchObject({ inheritedPayoutFromYear: 2026, inheritedPayoutThroughYear: 2032 });
+  });
+
+  it("blocks saving a last year after the 10-year deadline, with the message under the window", async () => {
+    const onAutoSaveStateChange = vi.fn();
+    renderForm({ ...WITH_WINDOW, inheritedPayoutThroughYear: 2033 }, { onAutoSaveStateChange });
+    fireEvent.click(screen.getByRole("button", { name: "RMD" }));
+    await waitFor(() => expect(onAutoSaveStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ canSave: false })));
+    expect(screen.getByRole("alert").textContent).toContain("empties this account by 2032");
+    // The inputs that fix it are still on screen.
+    expect(screen.getByLabelText("Through")).toBeTruthy();
+  });
+});

@@ -15,6 +15,7 @@ vi.mock("@clerk/nextjs/server", () => ({
 }));
 
 import { createAccountForClient, updateAccountForClient } from "../accounts-writes";
+import { inheritedIraBodyFields, type InheritedIraFormState } from "@/lib/accounts/inherited-ira";
 
 const HAS_DB = !!process.env.DATABASE_URL;
 const d = HAS_DB ? describe : describe.skip;
@@ -189,5 +190,88 @@ d("accounts-writes core — inherited IRA", () => {
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data.inheritedHeirDisabled).toBe(false);
+  });
+
+  // ── Payout window (spec 2026-10-03). Bodies come from the form's REAL
+  // builder — a hand-built payload would be vacuous by construction.
+  const windowState: InheritedIraFormState = {
+    inherited: true, deathYear: "2022", ownerBirthYear: "1945", heirDisabled: false,
+    payoutPlan: "even", payoutFromYear: "2026", payoutThroughYear: "2032",
+  };
+  const windowBody = (over: Partial<InheritedIraFormState> = {}) =>
+    inheritedIraBodyFields({ ...windowState, ...over }, "retirement", "traditional_ira");
+  const update = (accountId: string, input: Record<string, unknown>) =>
+    updateAccountForClient({ clientId: COOPER_CLIENT_ID, firmId: COOPER_FIRM_ID, actorId: ACTOR_ID, accountId, input });
+
+  it("create persists a payout window built by the form", async () => {
+    const res = await createInherited({ ...windowBody() });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.inheritedPayoutFromYear).toBe(2026);
+    expect(res.data.inheritedPayoutThroughYear).toBe(2032);
+  });
+
+  it("create rejects a window starting in the year of death", async () => {
+    const res = await createInherited({ ...windowBody({ payoutFromYear: "2022" }) });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.status).toBe(400);
+    expect(res.error).toBe("Payouts can start no earlier than 2023, the year after death.");
+  });
+
+  it("create saves no window on an account that isn't inherited", async () => {
+    const res = await createAccountForClient({
+      clientId: COOPER_CLIENT_ID, firmId: COOPER_FIRM_ID, actorId: ACTOR_ID,
+      input: {
+        name: "Non-inherited IRA (test, window sent)", category: "retirement", subType: "traditional_ira",
+        owners: OWNERS, inheritedPayoutFromYear: 2026, inheritedPayoutThroughYear: 2030,
+      },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    createdIds.push(res.data.id);
+    expect(res.data.inheritedPayoutFromYear).toBeNull();
+    expect(res.data.inheritedPayoutThroughYear).toBeNull();
+  });
+
+  it("update: unticking 'Inherited' in the form clears a saved window", async () => {
+    const created = await createInherited({ ...windowBody() });
+    if (!created.ok) throw new Error(created.error);
+    expect(created.data.inheritedPayoutFromYear).toBe(2026); // precondition — not vacuous
+    const res = await update(created.data.id, { ...windowBody({ inherited: false }) });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.inheritedPayoutFromYear).toBeNull();
+    expect(res.data.inheritedPayoutThroughYear).toBeNull();
+  });
+
+  it("update: clearing only the year-of-death pair (a non-form writer) still clears the window", async () => {
+    const created = await createInherited({ ...windowBody() });
+    if (!created.ok) throw new Error(created.error);
+    const res = await update(created.data.id, { inheritedDeathYear: null, inheritedOwnerBirthYear: null });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.inheritedPayoutFromYear).toBeNull();
+    expect(res.data.inheritedPayoutThroughYear).toBeNull();
+  });
+
+  it("update: one payout year sent alone is a 400, not a database error", async () => {
+    const created = await createInherited();
+    if (!created.ok) throw new Error(created.error);
+    const res = await update(created.data.id, { inheritedPayoutFromYear: 2026 });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.status).toBe(400);
+    expect(res.error).toBe("Enter the first and last payout years.");
+  });
+
+  it("update: moving the year of death past a saved window's first year is a 400", async () => {
+    const created = await createInherited({ ...windowBody() });
+    if (!created.ok) throw new Error(created.error);
+    const res = await update(created.data.id, { inheritedDeathYear: 2026 });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.status).toBe(400);
+    expect(res.error).toBe("Payouts can start no earlier than 2027, the year after death.");
   });
 });

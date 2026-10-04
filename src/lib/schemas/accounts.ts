@@ -100,6 +100,8 @@ const nullDefaultCreate = {
   activationYearRef: yearRefZodEnum.nullable().optional().default(null),
   inheritedDeathYear: z.number().int().nullable().optional().default(null),
   inheritedOwnerBirthYear: z.number().int().nullable().optional().default(null),
+  inheritedPayoutFromYear: z.number().int().nullable().optional().default(null),
+  inheritedPayoutThroughYear: z.number().int().nullable().optional().default(null),
 };
 
 const nullDefaultUpdate = {
@@ -118,6 +120,8 @@ const nullDefaultUpdate = {
   activationYearRef: yearRefZodEnum.nullable().optional(),
   inheritedDeathYear: z.number().int().nullable().optional(),
   inheritedOwnerBirthYear: z.number().int().nullable().optional(),
+  inheritedPayoutFromYear: z.number().int().nullable().optional(),
+  inheritedPayoutThroughYear: z.number().int().nullable().optional(),
 };
 
 // CREATE: name/category required; loose fields default to mirror the POST route's

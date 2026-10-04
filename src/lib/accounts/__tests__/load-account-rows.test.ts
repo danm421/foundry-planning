@@ -108,14 +108,14 @@ describe("buildAccountRows", () => {
 
   it("carries the inherited-IRA fields so the edit dialog can't silently un-inherit", () => {
     const rows = buildAccountRows({
-      accounts: [engineAccount({ inheritedDeathYear: 2022, inheritedOwnerBirthYear: 1945, inheritedHeirDisabled: true })],
+      accounts: [engineAccount({ inheritedDeathYear: 2022, inheritedOwnerBirthYear: 1945, inheritedHeirDisabled: true, inheritedPayoutFromYear: 2026, inheritedPayoutThroughYear: 2030 })],
       familyMembers: [],
       accountMetaById: new Map([["acct-1", meta({ id: "acct-1" })]]),
       linkedSourceById: new Map(),
       stockOptionPlans: [],
       planStartYear: 2026,
     });
-    expect(rows[0]).toMatchObject({ inheritedDeathYear: 2022, inheritedOwnerBirthYear: 1945, inheritedHeirDisabled: true });
+    expect(rows[0]).toMatchObject({ inheritedDeathYear: 2022, inheritedOwnerBirthYear: 1945, inheritedHeirDisabled: true, inheritedPayoutFromYear: 2026, inheritedPayoutThroughYear: 2030 });
   });
 
   it("defaults the inherited-IRA fields to null/false", () => {
@@ -127,7 +127,7 @@ describe("buildAccountRows", () => {
       stockOptionPlans: [],
       planStartYear: 2026,
     });
-    expect(rows[0]).toMatchObject({ inheritedDeathYear: null, inheritedOwnerBirthYear: null, inheritedHeirDisabled: false });
+    expect(rows[0]).toMatchObject({ inheritedDeathYear: null, inheritedOwnerBirthYear: null, inheritedHeirDisabled: false, inheritedPayoutFromYear: null, inheritedPayoutThroughYear: null });
   });
 });
 

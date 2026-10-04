@@ -2321,6 +2321,9 @@ export const accounts = pgTable("accounts", {
   inheritedDeathYear: integer("inherited_death_year"),
   inheritedOwnerBirthYear: integer("inherited_owner_birth_year"),
   inheritedHeirDisabled: boolean("inherited_heir_disabled").notNull().default(false),
+  // Inherited IRA even-payout window (spec 2026-10-03). Both null ⇒ minimum only.
+  inheritedPayoutFromYear: integer("inherited_payout_from_year"),
+  inheritedPayoutThroughYear: integer("inherited_payout_through_year"),
   // Optional future-activation year: the account is absent from the projection
   // (no balance, growth, contributions, premiums, or death benefit) until this
   // year, then appears at `value`. Null ⇒ active from plan start. `*_ref` is an
@@ -2441,6 +2444,14 @@ export const accounts = pgTable("accounts", {
   inheritedFieldsPaired: check(
     "accounts_inherited_fields_paired",
     sql`(${t.inheritedDeathYear} IS NULL) = (${t.inheritedOwnerBirthYear} IS NULL)`,
+  ),
+  inheritedPayoutYearsPaired: check(
+    "accounts_inherited_payout_years_paired",
+    sql`(${t.inheritedPayoutFromYear} IS NULL) = (${t.inheritedPayoutThroughYear} IS NULL)`,
+  ),
+  inheritedPayoutOrder: check(
+    "accounts_inherited_payout_order",
+    sql`${t.inheritedPayoutFromYear} IS NULL OR ${t.inheritedPayoutFromYear} <= ${t.inheritedPayoutThroughYear}`,
   ),
   // Prevents duplicate external accounts per client+provider+externalId.
   externalAccountUnique: uniqueIndex("accounts_client_external_uq")

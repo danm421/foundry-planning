@@ -104,6 +104,8 @@ type RawAccount = {
   inheritedDeathYear?: string | number | null;
   inheritedOwnerBirthYear?: string | number | null;
   inheritedHeirDisabled?: boolean | null;
+  inheritedPayoutFromYear?: string | number | null;
+  inheritedPayoutThroughYear?: string | number | null;
   /** The base loader stamps these on after resolving; a scenario `add` reaches
    *  the engine through this resolver alone, so they must pass through here. */
   activationYear?: string | number | null;
@@ -287,6 +289,8 @@ export function resolveAccountFromRaw(
     inheritedDeathYear: nNullable(raw.inheritedDeathYear) ?? null,
     inheritedOwnerBirthYear: nNullable(raw.inheritedOwnerBirthYear) ?? null,
     inheritedHeirDisabled: raw.inheritedHeirDisabled === true,
+    inheritedPayoutFromYear: nNullable(raw.inheritedPayoutFromYear) ?? null,
+    inheritedPayoutThroughYear: nNullable(raw.inheritedPayoutThroughYear) ?? null,
     activationYear: nNullable(raw.activationYear) ?? null,
     activationYearRef: raw.activationYearRef ?? null,
     beneficiaries: raw.beneficiaries ?? ctx.beneficiariesByAccountId?.get(raw.id),

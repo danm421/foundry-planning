@@ -98,6 +98,9 @@ export interface AccountRow {
   inheritedDeathYear?: number | null;
   inheritedOwnerBirthYear?: number | null;
   inheritedHeirDisabled?: boolean;
+  /** Inherited IRA even-payout window. Both null ⇒ minimum each year. */
+  inheritedPayoutFromYear?: number | null;
+  inheritedPayoutThroughYear?: number | null;
   ownerEntityId?: string | null;
   growthSource?: string;
   modelPortfolioId?: string | null;

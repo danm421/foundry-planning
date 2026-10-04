@@ -1,0 +1,4 @@
+ALTER TABLE "accounts" ADD COLUMN "inherited_payout_from_year" integer;--> statement-breakpoint
+ALTER TABLE "accounts" ADD COLUMN "inherited_payout_through_year" integer;--> statement-breakpoint
+ALTER TABLE "accounts" ADD CONSTRAINT "accounts_inherited_payout_years_paired" CHECK (("accounts"."inherited_payout_from_year" IS NULL) = ("accounts"."inherited_payout_through_year" IS NULL));--> statement-breakpoint
+ALTER TABLE "accounts" ADD CONSTRAINT "accounts_inherited_payout_order" CHECK ("accounts"."inherited_payout_from_year" IS NULL OR "accounts"."inherited_payout_from_year" <= "accounts"."inherited_payout_through_year");

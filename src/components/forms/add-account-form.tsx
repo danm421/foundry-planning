@@ -62,7 +62,7 @@ import { isRmdEligibleSubType } from "@/engine/rmd";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 import { isAumEligible } from "@/lib/accounts/aum";
 import { InheritedIraFields } from "./inherited-ira-fields";
-import { canBeInheritedIra, inheritedIraBodyFields, inheritedIraFormError } from "@/lib/accounts/inherited-ira";
+import { canBeInheritedIra, inheritedIraBodyFields, inheritedIraFormError, inheritedPayoutFormError } from "@/lib/accounts/inherited-ira";
 import { FieldTooltip } from "./field-tooltip";
 import { basisFieldLabel, basisFieldHelp } from "@/lib/accounts/basis-label";
 import { TRAD_IRA_SUBTYPES } from "@/engine/ira-basis";
@@ -98,6 +98,9 @@ export interface AccountFormInitial {
   inheritedDeathYear?: number | null;
   inheritedOwnerBirthYear?: number | null;
   inheritedHeirDisabled?: boolean;
+  /** Inherited IRA even-payout window. Both null ⇒ minimum each year. */
+  inheritedPayoutFromYear?: number | null;
+  inheritedPayoutThroughYear?: number | null;
   ownerEntityId?: string | null;
   owners?: AccountOwner[];
   /** Joint-titling regime. Drives §1014(b)(6) full step-up vs §2040(b) 50/50. */
@@ -514,6 +517,15 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     initial?.inheritedOwnerBirthYear != null ? String(initial.inheritedOwnerBirthYear) : "",
   );
   const [inheritedHeirDisabled, setInheritedHeirDisabled] = useState<boolean>(initial?.inheritedHeirDisabled === true);
+  const [inheritedPayoutPlan, setInheritedPayoutPlan] = useState<"minimum" | "even">(
+    initial?.inheritedPayoutFromYear != null ? "even" : "minimum",
+  );
+  const [inheritedPayoutFromYear, setInheritedPayoutFromYear] = useState<string>(
+    initial?.inheritedPayoutFromYear != null ? String(initial.inheritedPayoutFromYear) : "",
+  );
+  const [inheritedPayoutThroughYear, setInheritedPayoutThroughYear] = useState<string>(
+    initial?.inheritedPayoutThroughYear != null ? String(initial.inheritedPayoutThroughYear) : "",
+  );
   const [annualPropertyTax, setAnnualPropertyTax] = useState(initial?.annualPropertyTax ?? "0");
   const [propertyTaxGrowthRate, setPropertyTaxGrowthRate] = useState(
     initial?.propertyTaxGrowthRate != null ? (Number(initial.propertyTaxGrowthRate) * 100).toString() : "3"
@@ -776,6 +788,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     inheritedDeathYear,
     inheritedOwnerBirthYear,
     inheritedHeirDisabled,
+    inheritedPayoutPlan, inheritedPayoutFromYear, inheritedPayoutThroughYear,
     annualPropertyTax,
     propertyTaxGrowthRate,
     propertyTaxGrowthSource,
@@ -818,6 +831,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     accountRothValue, growthSource, growthRatePct, realEstateGrowthSource,
     realEstateGrowthRatePct, modelPortfolioId, tickerPortfolioId, rmdEnabled, countsTowardAum, priorYearEndValue,
     inheritedIra, inheritedDeathYear, inheritedOwnerBirthYear, inheritedHeirDisabled,
+    inheritedPayoutPlan, inheritedPayoutFromYear, inheritedPayoutThroughYear,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     turnoverPct, customAllocations, custodian, accountNumberLast4,
@@ -883,8 +897,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const annuityIncomplete =
     category === "annuity" && annuityContractIncomplete(annuityContract);
   const inheritedState = useMemo(
-    () => ({ inherited: inheritedIra, deathYear: inheritedDeathYear, ownerBirthYear: inheritedOwnerBirthYear, heirDisabled: inheritedHeirDisabled }),
-    [inheritedIra, inheritedDeathYear, inheritedOwnerBirthYear, inheritedHeirDisabled],
+    () => ({
+      inherited: inheritedIra, deathYear: inheritedDeathYear, ownerBirthYear: inheritedOwnerBirthYear, heirDisabled: inheritedHeirDisabled,
+      payoutPlan: inheritedPayoutPlan, payoutFromYear: inheritedPayoutFromYear, payoutThroughYear: inheritedPayoutThroughYear,
+    }),
+    [inheritedIra, inheritedDeathYear, inheritedOwnerBirthYear, inheritedHeirDisabled, inheritedPayoutPlan, inheritedPayoutFromYear, inheritedPayoutThroughYear],
   );
   const inheritedFields = useMemo(
     () => inheritedIraBodyFields(inheritedState, category, subType),
@@ -915,9 +932,16 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     : null;
   const inheritedUnavailableReason =
     inheritedHeirRole === "joint" ? `Only an IRA owned by ${inheritedOwnerLabel} can be marked inherited.` : null;
+  // Shown under the window inputs, never in the year-of-death slot: an error
+  // there hides the whole payout section, including the inputs that fix it.
+  const inheritedPayoutError =
+    inheritedError == null
+      ? inheritedPayoutFormError(inheritedState, category, subType, inheritedHeirBirthYear)
+      : null;
+
   const canSave =
     name.trim().length > 0 && !educationBeneficiaryMissing && !equityStrategyIncomplete &&
-    !annuityIncomplete && inheritedError == null;
+    !annuityIncomplete && inheritedError == null && inheritedPayoutError == null;
 
   // ── An in-progress grant must not be thrown away (audit F42) ───────────────
   // The grant editor saves through its own "Save Grant" button. The dialog's
@@ -3116,6 +3140,13 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 referenceYear={milestones?.planStart ?? new Date().getFullYear()}
                 unavailableReason={inheritedUnavailableReason}
                 error={inheritedError}
+                payoutPlan={inheritedPayoutPlan}
+                onPayoutPlanChange={setInheritedPayoutPlan}
+                payoutFromYear={inheritedPayoutFromYear}
+                onPayoutFromYearChange={setInheritedPayoutFromYear}
+                payoutThroughYear={inheritedPayoutThroughYear}
+                onPayoutThroughYearChange={setInheritedPayoutThroughYear}
+                payoutError={inheritedPayoutError}
               />
             )}
 
