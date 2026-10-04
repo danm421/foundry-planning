@@ -14,12 +14,14 @@
 // Real DB (dev branch) rather than a fake tx: the three recipient columns carry
 // real FKs and `amount`/`percent`/`valuation_discount` are `numeric`, which
 // comes back as a STRING. A mocked tx cannot show either.
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import {
   accounts,
+  clients,
+  crmHouseholds,
   entities,
   giftSeries,
   gifts,
@@ -34,21 +36,41 @@ import { scenarioChangesToBaseWrites } from "../scenario-changes-to-base-writes"
 import { executeBaseWritePlan } from "../execute-base-write-plan";
 import { copyGiftSeriesToBase } from "../promote-direct-tables";
 import { PROMOTE_TABLE_REGISTRY } from "../promote-table-registry";
+import { createTestClientWithScenario } from "@/test/factories";
 
-const COOPER_CLIENT_ID = "877a9532-f8ea-49b0-9db7-aadd64fab82a";
-const COOPER_FIRM_ID = "org_3CitTEIe8PJa1BVYw7LnEjkiP9r";
+/** Each run writes to a throwaway client of its own, in a firm nothing else
+ *  uses. A run killed before its teardown used to leave real base gifts on dev
+ *  Cooper (2026-10-03: they crashed that household's export); now it leaves
+ *  them only on its own client, which a later run sweeps. */
+const TEST_FIRM_ID = "firm_test_promote_gift";
+let testClientId: string;
 /** A second dev client, used only to prove the id-preserving update cannot
  *  reach across tenants. Belongs to a different firm (`firm_test_entities`). */
 const OTHER_CLIENT_ID = "55d2752a-94cf-44f7-9d4d-311cfd645ceb";
 
 const HAS_DB = !!process.env.DATABASE_URL;
 
+/** Deletes this file's throwaway clients matching `which`, with everything on
+ *  them. Gifts go first: `gifts.account_id` / `liability_id` are ON DELETE SET
+ *  NULL, and a percent gift left with neither fails `gifts_event_kind`. */
+async function dropTestClients(which: SQL) {
+  const rows = await db
+    .select({ id: clients.id, householdId: clients.crmHouseholdId })
+    .from(clients)
+    .where(and(eq(clients.firmId, TEST_FIRM_ID), which));
+  for (const c of rows) {
+    await db.delete(gifts).where(eq(gifts.clientId, c.id));
+    await db.delete(clients).where(eq(clients.id, c.id));
+    await db.delete(crmHouseholds).where(eq(crmHouseholds.id, c.householdId));
+  }
+}
+
 /** The classifier reads the base tree only to ask the engine for cascade drops;
  *  a gift add produces none, so a minimal tree is the honest input here (same
  *  fixture shape scenario-changes-to-base-writes.test.ts uses). */
 const minimalClientData = (): ClientData =>
   ({
-    client: { id: COOPER_CLIENT_ID } as unknown as ClientData["client"],
+    client: { id: testClientId } as unknown as ClientData["client"],
     planSettings: { id: "ps1", planStartYear: 2026 } as unknown as ClientData["planSettings"],
     accounts: [],
     incomes: [],
@@ -115,20 +137,25 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
    *  creates them, and the existing trust-cascade teardown cannot reach them. */
   let promotedEntityNames: string[];
 
+  beforeAll(async () => {
+    // A killed run's client, once it is an hour old — never a concurrent
+    // run's, which is younger.
+    await dropTestClients(sql`${clients.createdAt} < now() - interval '1 hour'`);
+    ({ clientId: testClientId, scenarioId: baseScenarioId } =
+      await createTestClientWithScenario(TEST_FIRM_ID));
+  });
+
+  afterAll(async () => {
+    if (testClientId) await dropTestClients(eq(clients.id, testClientId));
+  });
+
   beforeEach(async () => {
     promotedEntityNames = [];
-    const [base] = await db
-      .select({ id: scenarios.id })
-      .from(scenarios)
-      .where(
-        and(eq(scenarios.clientId, COOPER_CLIENT_ID), eq(scenarios.isBaseCase, true)),
-      );
-    baseScenarioId = base.id;
 
     const [scenario] = await db
       .insert(scenarios)
       .values({
-        clientId: COOPER_CLIENT_ID,
+        clientId: testClientId,
         name: `promote-gift-test-${randomUUID().slice(0, 8)}`,
         isBaseCase: false,
       })
@@ -141,7 +168,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const [trust] = await db
       .insert(entities)
       .values({
-        clientId: COOPER_CLIENT_ID,
+        clientId: testClientId,
         name: `promote-gift-test-trust-${randomUUID().slice(0, 8)}`,
         entityType: "trust",
         isIrrevocable: true,
@@ -156,7 +183,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const [acct] = await db
       .insert(accounts)
       .values({
-        clientId: COOPER_CLIENT_ID,
+        clientId: testClientId,
         scenarioId: baseScenarioId,
         name: "promote-gift-test-brokerage",
         category: "taxable",
@@ -168,14 +195,14 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
 
   afterEach(async () => {
     // A promote-minted entity goes FIRST, and by name: its id is generated
-    // inside the promote, the name is per-run unique (so a concurrent run of
-    // this file is never touched), and this runs even when the test threw.
+    // inside the promote, the name is unique to the test, and this runs even
+    // when the test threw.
     // Before the account, because `gifts.account_id` is ON DELETE SET NULL and
     // a gift row left with a `percent` but no account fails `gifts_event_kind`.
     for (const name of promotedEntityNames) {
       await db
         .delete(entities)
-        .where(and(eq(entities.clientId, COOPER_CLIENT_ID), eq(entities.name, name)));
+        .where(and(eq(entities.clientId, testClientId), eq(entities.name, name)));
     }
     // `gifts.recipient_entity_id` is ON DELETE CASCADE, so dropping the test
     // trust takes every gift this test promoted with it.
@@ -187,8 +214,8 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
   /** Run the promote write path for this scenario's overlay: real change rows →
    *  the real classifier → the real executor, inside a real transaction. This is
    *  the half of `promoteScenarioToBase` that drives PROMOTE_TABLE_REGISTRY; the
-   *  rest of that function (snapshot, sibling-scenario deletion, audit) would
-   *  rewrite a shared dev client's whole plan and proves nothing about gifts. */
+   *  rest of that function (snapshot, sibling-scenario deletion, audit) proves
+   *  nothing about gifts. */
   async function promoteOverlay(
     /** Re-orders the loaded change rows before classification. `loadScenarioChanges`
      *  has no ORDER BY, so the real promote sees them in Postgres row order —
@@ -208,7 +235,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     );
     return db.transaction(async (tx) => {
       const { counts, idRemap } = await executeBaseWritePlan(tx, plan, {
-        clientId: COOPER_CLIENT_ID,
+        clientId: testClientId,
         baseScenarioId,
       });
       // The scenario-PARTITIONED half of the same promote, in the order
@@ -217,7 +244,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
       // helper like this one cannot get it wrong.
       await copyGiftSeriesToBase(
         tx,
-        { clientId: COOPER_CLIENT_ID, scenarioId, baseScenarioId },
+        { clientId: testClientId, scenarioId, baseScenarioId },
         { ...plan.giftSeries, idRemap },
       );
       return counts;
@@ -250,7 +277,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const giftId = randomUUID();
     await applyEntityAdd({
       scenarioId,
-      firmId: COOPER_FIRM_ID,
+      firmId: TEST_FIRM_ID,
       targetKind: "gift",
       entity: {
         id: giftId,
@@ -277,7 +304,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     // …and the rest of the row, so a half-translation cannot pass.
     expect(row.recipientFamilyMemberId).toBeNull();
     expect(row.recipientExternalBeneficiaryId).toBeNull();
-    expect(row.clientId).toBe(COOPER_CLIENT_ID);
+    expect(row.clientId).toBe(testClientId);
     expect(row.year).toBe(2030);
     expect(row.grantor).toBe("spouse");
     expect(row.valuationDiscount).toBe("0.2500");
@@ -293,7 +320,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const giftId = randomUUID();
     await applyEntityAdd({
       scenarioId,
-      firmId: COOPER_FIRM_ID,
+      firmId: TEST_FIRM_ID,
       targetKind: "gift",
       entity: {
         id: giftId,
@@ -336,7 +363,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const [mortgage] = await db
       .insert(liabilities)
       .values({
-        clientId: COOPER_CLIENT_ID,
+        clientId: testClientId,
         scenarioId: baseScenarioId,
         name: "promote-gift-test-mortgage",
         balance: "400000",
@@ -349,7 +376,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
       const giftId = randomUUID();
       await applyEntityAdd({
         scenarioId,
-        firmId: COOPER_FIRM_ID,
+        firmId: TEST_FIRM_ID,
         targetKind: "gift",
         entity: {
           id: giftId,
@@ -382,7 +409,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
       expect(child!.year).toBe(2028);
       expect(child!.grantor).toBe("client");
       expect(child!.recipientEntityId).toBe(trustId);
-      expect(child!.clientId).toBe(COOPER_CLIENT_ID);
+      expect(child!.clientId).toBe(testClientId);
       expect(child!.amount).toBeNull();
       expect(child!.useCrummeyPowers).toBe(false);
       // A liability transfer contributes $0 to the gift ledger, so a discount
@@ -406,7 +433,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const [mortgage] = await db
       .insert(liabilities)
       .values({
-        clientId: COOPER_CLIENT_ID,
+        clientId: testClientId,
         scenarioId: baseScenarioId,
         name: "promote-gift-test-mortgage-2",
         balance: "250000",
@@ -420,7 +447,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
       const add = (year: number, percent: number) =>
         applyEntityAdd({
           scenarioId,
-          firmId: COOPER_FIRM_ID,
+          firmId: TEST_FIRM_ID,
           targetKind: "gift",
           entity: {
             id: giftId,
@@ -456,7 +483,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const giftId = randomUUID();
     await applyEntityAdd({
       scenarioId,
-      firmId: COOPER_FIRM_ID,
+      firmId: TEST_FIRM_ID,
       targetKind: "gift",
       entity: {
         id: giftId,
@@ -487,7 +514,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const seriesId = randomUUID();
     await applyEntityAdd({
       scenarioId,
-      firmId: COOPER_FIRM_ID,
+      firmId: TEST_FIRM_ID,
       targetKind: "gift",
       entity: {
         id: seriesId,
@@ -516,7 +543,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
       .from(giftSeries)
       .where(
         and(
-          eq(giftSeries.clientId, COOPER_CLIENT_ID),
+          eq(giftSeries.clientId, testClientId),
           eq(giftSeries.scenarioId, baseScenarioId),
           eq(giftSeries.recipientEntityId, trustId),
         ),
@@ -535,7 +562,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     // non-default value can fail.
     await applyEntityAdd({
       scenarioId,
-      firmId: COOPER_FIRM_ID,
+      firmId: TEST_FIRM_ID,
       targetKind: "gift",
       entity: {
         id: randomUUID(),
@@ -570,7 +597,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const [baseGift] = await db
       .insert(gifts)
       .values({
-        clientId: COOPER_CLIENT_ID,
+        clientId: testClientId,
         year: 2030,
         amount: "10000",
         grantor: "client",
@@ -581,7 +608,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
 
     await applyEntityAdd({
       scenarioId,
-      firmId: COOPER_FIRM_ID,
+      firmId: TEST_FIRM_ID,
       targetKind: "gift",
       entity: {
         id: baseGift.id, // the EXISTING gift's id — this is an edit
@@ -611,7 +638,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const [baseGift] = await db
       .insert(gifts)
       .values({
-        clientId: COOPER_CLIENT_ID,
+        clientId: testClientId,
         year: 2031,
         amount: "20000",
         grantor: "client",
@@ -623,7 +650,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
 
     await applyEntityAdd({
       scenarioId,
-      firmId: COOPER_FIRM_ID,
+      firmId: TEST_FIRM_ID,
       targetKind: "gift",
       entity: {
         id: baseGift.id,
@@ -658,7 +685,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const [targeted] = await db
       .insert(gifts)
       .values({
-        clientId: COOPER_CLIENT_ID,
+        clientId: testClientId,
         year: 2033,
         amount: "1000",
         grantor: "client",
@@ -669,7 +696,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const [bystander] = await db
       .insert(gifts)
       .values({
-        clientId: COOPER_CLIENT_ID,
+        clientId: testClientId,
         year: 2034,
         amount: "7000",
         grantor: "client",
@@ -722,7 +749,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     try {
       await applyEntityAdd({
         scenarioId,
-        firmId: COOPER_FIRM_ID,
+        firmId: TEST_FIRM_ID,
         targetKind: "gift",
         entity: {
           id: foreignGiftId, // an id this client does not own
@@ -758,7 +785,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const giftId = randomUUID();
     await applyEntityAdd({
       scenarioId,
-      firmId: COOPER_FIRM_ID,
+      firmId: TEST_FIRM_ID,
       targetKind: "gift",
       entity: {
         id: giftId,
@@ -790,7 +817,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const [mortgage] = await db
       .insert(liabilities)
       .values({
-        clientId: COOPER_CLIENT_ID,
+        clientId: testClientId,
         scenarioId: baseScenarioId,
         name: "promote-gift-test-mortgage",
         balance: "400000",
@@ -803,7 +830,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
       const [parent] = await db
         .insert(gifts)
         .values({
-          clientId: COOPER_CLIENT_ID,
+          clientId: testClientId,
           year: 2030,
           grantor: "client",
           recipientEntityId: trustId,
@@ -814,7 +841,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
       const [child] = await db
         .insert(gifts)
         .values({
-          clientId: COOPER_CLIENT_ID,
+          clientId: testClientId,
           year: 2030,
           grantor: "client",
           recipientEntityId: trustId,
@@ -828,7 +855,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
       // Row-shaped, i.e. NO `kind` — the shape `isEstateFlowGiftDraft` rejects.
       await applyEntityAdd({
         scenarioId,
-        firmId: COOPER_FIRM_ID,
+        firmId: TEST_FIRM_ID,
         targetKind: "gift",
         entity: {
           id: parent.id,
@@ -863,7 +890,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const [mortgage] = await db
       .insert(liabilities)
       .values({
-        clientId: COOPER_CLIENT_ID,
+        clientId: testClientId,
         scenarioId: baseScenarioId,
         name: "promote-gift-test-mortgage",
         balance: "400000",
@@ -876,7 +903,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
       const giftId = randomUUID();
       await applyEntityAdd({
         scenarioId,
-        firmId: COOPER_FIRM_ID,
+        firmId: TEST_FIRM_ID,
         targetKind: "gift",
         entity: {
           id: giftId,
@@ -920,7 +947,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const [row] = await db
       .select()
       .from(entities)
-      .where(and(eq(entities.clientId, COOPER_CLIENT_ID), eq(entities.name, name)));
+      .where(and(eq(entities.clientId, testClientId), eq(entities.name, name)));
     return row;
   }
 
@@ -932,7 +959,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     promotedEntityNames.push(name);
     await applyEntityAdd({
       scenarioId,
-      firmId: COOPER_FIRM_ID,
+      firmId: TEST_FIRM_ID,
       targetKind: "entity",
       entity: { id: syntheticId, name, entityType: "trust", isIrrevocable: true },
     });
@@ -944,7 +971,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const giftId = randomUUID();
     await applyEntityAdd({
       scenarioId,
-      firmId: COOPER_FIRM_ID,
+      firmId: TEST_FIRM_ID,
       targetKind: "gift",
       entity: {
         id: giftId,
@@ -983,7 +1010,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const giftId = randomUUID();
     await applyEntityAdd({
       scenarioId,
-      firmId: COOPER_FIRM_ID,
+      firmId: TEST_FIRM_ID,
       targetKind: "gift",
       entity: {
         id: giftId,
@@ -1011,7 +1038,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
       // cascades the gift it recipients, so both rows go.
       await db
         .delete(entities)
-        .where(and(eq(entities.clientId, COOPER_CLIENT_ID), eq(entities.name, name)));
+        .where(and(eq(entities.clientId, testClientId), eq(entities.name, name)));
       return seen;
     };
 
@@ -1036,7 +1063,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const [mortgage] = await db
       .insert(liabilities)
       .values({
-        clientId: COOPER_CLIENT_ID,
+        clientId: testClientId,
         scenarioId: baseScenarioId,
         name: "promote-gift-test-mortgage-new-trust",
         balance: "400000",
@@ -1050,7 +1077,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
       const giftId = randomUUID();
       await applyEntityAdd({
         scenarioId,
-        firmId: COOPER_FIRM_ID,
+        firmId: TEST_FIRM_ID,
         targetKind: "gift",
         entity: {
           id: giftId,
@@ -1118,7 +1145,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const [row] = await db
       .insert(giftSeries)
       .values({
-        clientId: COOPER_CLIENT_ID,
+        clientId: testClientId,
         scenarioId,
         grantor: "client",
         recipientEntityId: trustId,
@@ -1131,15 +1158,15 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     return row;
   }
 
-  /** The base plan's series for one recipient. Filtered by recipient rather
-   *  than by client so a concurrent run of this file is never counted. */
+  /** The base plan's series for one recipient — not the whole base plan,
+   *  which the run's other tests share. */
   async function baseSeriesFor(recipientEntityId: string) {
     return db
       .select()
       .from(giftSeries)
       .where(
         and(
-          eq(giftSeries.clientId, COOPER_CLIENT_ID),
+          eq(giftSeries.clientId, testClientId),
           eq(giftSeries.scenarioId, baseScenarioId),
           eq(giftSeries.recipientEntityId, recipientEntityId),
         ),
@@ -1153,7 +1180,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const draft = seriesDraft({ valuationDiscount: 0.3 });
     await applyEntityAdd({
       scenarioId,
-      firmId: COOPER_FIRM_ID,
+      firmId: TEST_FIRM_ID,
       targetKind: "gift",
       entity: draft,
     });
@@ -1190,7 +1217,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const partition = await addPartitionSeries();
     await applyEntityRemove({
       scenarioId,
-      firmId: COOPER_FIRM_ID,
+      firmId: TEST_FIRM_ID,
       targetKind: "gift",
       targetId: partition.id,
     });
@@ -1220,7 +1247,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
 
     await applyEntityAdd({
       scenarioId,
-      firmId: COOPER_FIRM_ID,
+      firmId: TEST_FIRM_ID,
       targetKind: "gift",
       entity: seriesDraft({ id: partition.id, annualAmount: 25_000 }),
     });
@@ -1244,7 +1271,7 @@ describe.skipIf(!HAS_DB)("promote — a scenario `gift` add becomes a base gifts
     const { syntheticId, name } = await addScenarioTrust();
     await applyEntityAdd({
       scenarioId,
-      firmId: COOPER_FIRM_ID,
+      firmId: TEST_FIRM_ID,
       targetKind: "gift",
       entity: seriesDraft({ recipient: { kind: "entity", id: syntheticId } }),
     });
