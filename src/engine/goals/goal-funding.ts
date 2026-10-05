@@ -45,12 +45,22 @@ export function goalDrawAccountIds(
 /** Whether the projection funds this expense in its goal step rather than as a
  *  plain expense. Every education goal does, as before. An Other goal does only
  *  once it has an account to draw — without one it stays a plain expense, so
- *  marking an expense as a goal never moves a number by itself. */
+ *  marking an expense as a goal never moves a number by itself. A business- or
+ *  entity-owned Other goal never does: its owner's income already pays it
+ *  (business year-flow / entity-flows), so drawing savings too would charge it
+ *  twice. */
 export function isFundedGoal(
-  goal: { type: string; isGoal?: boolean; dedicatedAccountIds?: string[] },
+  goal: {
+    type: string;
+    isGoal?: boolean;
+    dedicatedAccountIds?: string[];
+    ownerAccountId?: string | null;
+    ownerEntityId?: string | null;
+  },
   accountById: ReadonlyMap<string, GoalFundingAccountLike>,
 ): boolean {
   if (goal.type === "education") return true;
+  if (goal.ownerAccountId != null || goal.ownerEntityId != null) return false;
   return canHaveGoalFunding(goal) && goalDrawAccountIds(goal, accountById).length > 0;
 }
 

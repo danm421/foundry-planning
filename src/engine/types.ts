@@ -1261,9 +1261,11 @@ export interface Expense {
    *  expenses so they auto-end when projected Medicare premiums kick in,
    *  preventing double-counting alongside the modeled Medicare cost. */
   endsAtMedicareEligibilityOwner?: "client" | "spouse";
-  /** Funded goal: ordered savings accounts (drawn first, in order). Read on education rows and on Other rows marked as a goal; see `goalDrawAccountIds`. */
+  /** Advisor-set "Show as a goal" flag. Education rows are goals regardless (src/lib/goals.ts). The projection reads it only through `canHaveGoalFunding` (src/engine/goals/goal-funding.ts): an Other expense marked as a goal may draw from its savings accounts. */
+  isGoal?: boolean;
+  /** Funded goal: ordered savings accounts (drawn first, in order). Read on education rows and on household-owned Other rows marked as a goal (`isFundedGoal`); see `goalDrawAccountIds`. */
   dedicatedAccountIds?: string[];
-  /** Funded goal: pay the uncovered goal cost from household cash when true; otherwise it's an unfunded shortfall. Read on education rows and on Other rows marked as a goal. */
+  /** Funded goal: pay the uncovered goal cost from household cash when true; otherwise it's an unfunded shortfall. Read on education rows and on household-owned Other rows marked as a goal (`isFundedGoal`). */
   payShortfallOutOfPocket?: boolean;
   /** Education-goal free-text labels (no cost-lookup DB in v1). */
   institutionState?: string | null;
@@ -1280,8 +1282,6 @@ export interface Expense {
    *  month-by-month view. Null/absent = spread across all twelve months.
    *  Engine math ignores this, like everything else in this block. */
   paymentMonth?: number | null;
-  /** Advisor-set "Show as a goal" flag. Education rows are goals regardless (src/lib/goals.ts). The projection reads it only through `canHaveGoalFunding` (src/engine/goals/goal-funding.ts): an Other expense marked as a goal may draw from its savings accounts. */
-  isGoal?: boolean;
   /** Living rows only. When true the row spends the household's entire
    *  remaining cash flow in each year it is active, and `annualAmount` is a
    *  floor rather than the amount. Consumed by the surplus-allocation phase in

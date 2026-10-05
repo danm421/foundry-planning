@@ -3162,10 +3162,11 @@ export const expenses = pgTable("expenses", {
   // year onward. Used to mark pre-Medicare health-insurance expenses so they auto-end
   // when projected Medicare premiums kick in.
   endsAtMedicareEligibilityOwner: ownerEnum("ends_at_medicare_eligibility_owner"),
-  // Education-goal fields (type === "education").
+  // Funded-goal field: read on education rows and on household-owned Other rows
+  // marked as a goal (isFundedGoal, src/engine/goals/goal-funding.ts).
   // When true, any goal cost the dedicated accounts can't cover is paid from
   // household cash (normal withdrawal waterfall); when false, it's an unfunded
-  // shortfall. Ignored for non-education rows.
+  // shortfall. Ignored on every other row.
   payShortfallOutOfPocket: boolean("pay_shortfall_out_of_pocket")
     .notNull()
     .default(false),

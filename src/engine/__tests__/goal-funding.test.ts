@@ -96,4 +96,11 @@ describe("goal-funding predicates", () => {
     expect(isFundedGoal({ type: "other", isGoal: false, dedicatedAccountIds: ["brk"] }, accounts)).toBe(false);
     expect(isFundedGoal({ type: "living", isGoal: true, dedicatedAccountIds: ["brk"] }, accounts)).toBe(false);
   });
+
+  it("isFundedGoal: a business- or entity-owned Other goal stays a plain expense; education is unchanged", () => {
+    const other = { type: "other", isGoal: true, dedicatedAccountIds: ["brk"] };
+    expect(isFundedGoal({ ...other, ownerAccountId: "biz" }, accounts)).toBe(false);
+    expect(isFundedGoal({ ...other, ownerEntityId: "t1" }, accounts)).toBe(false);
+    expect(isFundedGoal({ type: "education", ownerAccountId: "biz" }, accounts)).toBe(true);
+  });
 });

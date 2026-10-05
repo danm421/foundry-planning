@@ -127,4 +127,18 @@ describe("goal funding: Other goals", () => {
     expect(y0.taxDetail!.bySource["goal_capital:car"]?.amount ?? 0).toBeGreaterThan(0);
     expect(y0.taxDetail!.bySource["education_capital:car"]).toBeUndefined();
   });
+
+  it("leaves an entity-owned Other goal as a plain expense its owner pays, never drawing the savings account", () => {
+    // A business- or entity-owned expense is netted against its owner's income
+    // (entity-flows / business year-flow); drawing the savings account too
+    // would charge the goal twice.
+    const y0 = runProjection(
+      makeData([checking, fund(80000)], [car({ ownerEntityId: "llc" })], {
+        entities: [{ id: "llc", name: "Family LLC", entityType: "llc", includeInPortfolio: false, isGrantor: false }],
+      }),
+    )[0];
+    expect(y0.goals ?? []).toEqual([]);
+    expect(y0.accountLedgers["fund"].endingValue).toBeCloseTo(80000, 6);
+    expect(y0.accountLedgers["fund"].entries.some((e) => e.sourceId === "car")).toBe(false);
+  });
 });
