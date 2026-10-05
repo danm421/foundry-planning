@@ -2,8 +2,9 @@
 //
 // Knowledge Hub search. Pure, so the Hub runs it in the browser on every
 // keystroke and suggest_help_video runs the same ranking on the server.
-// Words match by prefix ("expen" → "expense") with a light plural fold on both
-// sides; no typo tolerance in v1.
+// Words match by prefix ("expen" → "expense") with a light fold on both sides
+// (plural -s, and -ing/-ed so "adding" and "added" find "add"); no typo
+// tolerance in v1.
 import type { HelpVideo } from "./video-schema";
 
 export type HelpVideoHit = {
@@ -22,9 +23,15 @@ export type HelpVideoHit = {
 const STOPWORDS = new Set([
   "how", "do", "i", "to", "a", "an", "the", "my", "in", "on", "of", "for",
   "can", "what", "where", "is", "and", "or", "with", "it", "this", "that",
+  "video", "videos", "watch", "show", "me", "about", "there", "are", "from",
 ]);
 
-const fold = (w: string) => (w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w);
+/** One fold per word. "saving" → "sav" still finds "save" by prefix. */
+function fold(w: string): string {
+  if (w.length > 5 && w.endsWith("ing")) return w.slice(0, -3);
+  if (w.length > 4 && w.endsWith("ed")) return w.slice(0, -2);
+  return w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w;
+}
 const words = (text: string) => text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 const fieldWords = (text: string) => words(text).map(fold);
 

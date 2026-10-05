@@ -318,7 +318,8 @@ describe("per-turn personalization tail (advisor name, today's date, recalled pr
     expect(FORGE_SYSTEM_PREFIX).not.toMatch(/recalled from memory/i);
   });
 
-  it("tells the model when to suggest a help video", () => {
+  it("tells the model when to suggest a help video — and not to send a write request there", () => {
     expect(FORGE_SYSTEM_PREFIX).toMatch(/suggest_help_video/);
+    expect(FORGE_SYSTEM_PREFIX).toContain("If they're asking you to make the change, make it — this is only for 'how do I…' questions.");
   });
 });

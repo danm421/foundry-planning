@@ -43,6 +43,11 @@ describe("searchHelpVideos", () => {
   it("ignores punctuation, including a non-ASCII hyphen", () => {
     expect(slugs("one‑time")).toEqual(["add-one-time-expense"]);
   });
+
+  it("folds -ed and -ing on both sides, so a past or ongoing verb finds its root", () => {
+    expect(slugs("added")).toEqual(["add-one-time-expense"]);
+    expect(slugs("saving")).toEqual(["solver-save-scenario"]);
+  });
 });
 
 describe("isStrongMatch", () => {
@@ -59,6 +64,17 @@ describe("isStrongMatch", () => {
 
   it("is weak when under 60% of the words matched", () => {
     expect(isStrongMatch(top("expense roth conversion ira"))).toBe(false);
+  });
+
+  it("is strong for how advisors actually phrase it", () => {
+    // "adding" ≠ "add" and "video"/"there" are filler — without the -ing fold
+    // and the extra stopwords these fall under the 60% bar.
+    expect(top("adding an expense").video.slug).toBe("add-one-time-expense");
+    expect(isStrongMatch(top("adding an expense"))).toBe(true);
+    expect(isStrongMatch(top("video on adding an expense"))).toBe(true);
+    const q = "is there a video on saving Solver changes as a scenario";
+    expect(top(q).video.slug).toBe("solver-save-scenario");
+    expect(isStrongMatch(top(q))).toBe(true);
   });
 
   it("is never strong with zero meaningful words (no NaN)", () => {

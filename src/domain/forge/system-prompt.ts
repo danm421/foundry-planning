@@ -92,7 +92,7 @@ export const DECOMPOSITION = [
 /** Sends "how do I…" questions about the app to suggest_help_video. Shared
  *  with the global (clientless) prompt. */
 export const HELP_VIDEO_RULE =
-  "Help videos: when the advisor asks how to DO something in Foundry itself (add an expense, save Solver changes as a scenario), call suggest_help_video with the task in a few plain words. If it attaches a video, point to it in one short line; if it finds none, don't mention videos.";
+  "Help videos: when the advisor asks how to DO something in Foundry itself (add an expense, save Solver changes as a scenario), call suggest_help_video with the task in a few plain words. If it attaches a video, point to it in one short line; if it finds none, don't mention videos. If they're asking you to make the change, make it — this is only for 'how do I…' questions.";
 
 /**
  * STABLE clause list for the system prefix. Kept as an array, with the grounding

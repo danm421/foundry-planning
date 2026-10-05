@@ -46,7 +46,9 @@ describe("buildGlobalSystemPrompt", () => {
     expect(p).not.toContain("create_task_for_client");
   });
 
-  it("tells the model when to suggest a help video", () => {
-    expect(buildGlobalSystemPrompt({ firmName: "F" })).toMatch(/suggest_help_video/);
+  it("tells the model when to suggest a help video — and not to send a write request there", () => {
+    const p = buildGlobalSystemPrompt({ firmName: "F" });
+    expect(p).toMatch(/suggest_help_video/);
+    expect(p).toContain("If they're asking you to make the change, make it — this is only for 'how do I…' questions.");
   });
 });

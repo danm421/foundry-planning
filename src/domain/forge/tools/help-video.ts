@@ -15,11 +15,18 @@ const NONE = JSON.stringify({ suggested: null, note: "No help video matches — 
 export function buildHelpVideoTools(): StructuredToolInterface[] {
   const suggest = tool(
     async ({ query }: { query: string }) => {
-      const top = searchHelpVideos(query, HELP_VIDEOS)[0];
-      if (!top || !isStrongMatch(top)) return NONE;
+      // Hits are sorted by words matched, so the first strong one is the best
+      // strong one — a weak hit ranked above it mustn't hide it.
+      const top = searchHelpVideos(query, HELP_VIDEOS).find(isStrongMatch);
+      if (!top) return NONE;
       try {
         await emitVideoLink(top.video.slug, top.chapter);
-      } catch {
+      } catch (err) {
+        // Broken wiring, not "no match" — say so in the logs.
+        console.warn("suggest_help_video: couldn't attach the Watch card", {
+          slug: top.video.slug,
+          error: err instanceof Error ? err.message : String(err),
+        });
         return NONE;
       }
       return JSON.stringify({ suggested: { title: top.video.title, chapter: top.chapter?.label ?? null } });
