@@ -181,4 +181,13 @@ describe("resolveSourceLabel", () => {
   it("falls back to planId when equityPlanNames absent", () => {
     expect(resolveSourceLabel("equity-vest:plan_tsla", ctx)).toBe("plan_tsla — vest");
   });
+
+  it("labels the three goal-funding drill keys instead of leaking a goal UUID", () => {
+    const goalId = "3f1b0c2a-0000-4000-8000-000000000002";
+    expect(resolveSourceLabel(`goal_tax_free:${goalId}`, ctx)).toBe(
+      "Goal funding — non-taxable distribution",
+    );
+    expect(resolveSourceLabel(`goal_capital:${goalId}`, ctx)).toBe("Goal funding — capital gain");
+    expect(resolveSourceLabel(`goal:${goalId}`, ctx)).toBe("Goal funding — taxable distribution");
+  });
 });

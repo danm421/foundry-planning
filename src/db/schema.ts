@@ -3169,9 +3169,11 @@ export const expenses = pgTable("expenses", {
   payShortfallOutOfPocket: boolean("pay_shortfall_out_of_pocket")
     .notNull()
     .default(false),
-  // Advisor-set flag: show this expense as a goal on the Household Map's Goals
-  // board. Education rows are always treated as goals regardless of this flag —
-  // see src/lib/household-map/goals.ts. Presentation only; the engine ignores it.
+  // Advisor-set flag: show this expense as a goal (Household Map Goals board,
+  // Solver Goals tab). Education rows are always treated as goals regardless of
+  // this flag — see src/lib/goals.ts. The projection reads it only through
+  // canHaveGoalFunding (src/engine/goals/goal-funding.ts): an Other expense
+  // marked as a goal may draw from its dedicated savings accounts.
   isGoal: boolean("is_goal").notNull().default(false),
   // When true on a living row, the row spends the household's entire remaining
   // cash flow for each year it is active, and `annual_amount` acts as a floor

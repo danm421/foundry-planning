@@ -23,6 +23,7 @@ describe("education engine types", () => {
   it("GoalYear + ProjectionYear.goals shape", () => {
     const row: GoalYear = {
       goalId: "e1",
+      kind: "education",
       dedicatedAssetsBOY: 30000,
       growthAndSavings: 1800,
       goalExpense: 0,

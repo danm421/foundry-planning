@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { computeGoalDraw } from "../goals/goal-funding";
+import {
+  computeGoalDraw,
+  is529Account,
+  canHaveGoalFunding,
+  goalDrawAccountIds,
+  isFundedGoal,
+} from "../goals/goal-funding";
 
 // A trivial categorizer: cash/529 → basisReturn; else ordinaryIncome.
 const categorize = (id: string, amount: number) =>
@@ -47,5 +53,47 @@ describe("computeGoalDraw", () => {
     expect(r.draws).toEqual([]);
     expect(r.dedicatedWithdrawal).toBe(0);
     expect(r.shortfall).toBe(5000);
+  });
+});
+
+describe("goal-funding predicates", () => {
+  const accounts = new Map([
+    ["p529", { category: "education_savings", subType: "529" }],
+    ["legacy529", { category: "taxable", subType: "529" }],
+    ["brk", { category: "taxable", subType: "brokerage" }],
+  ]);
+
+  it("is529Account: the education_savings category, or a 529 sub-type filed elsewhere", () => {
+    expect(is529Account({ category: "education_savings", subType: "529" })).toBe(true);
+    expect(is529Account({ category: "taxable", subType: "529" })).toBe(true);
+    expect(is529Account({ category: "taxable", subType: "brokerage" })).toBe(false);
+  });
+
+  it("canHaveGoalFunding: education, or an Other expense marked as a goal", () => {
+    expect(canHaveGoalFunding({ type: "education" })).toBe(true);
+    expect(canHaveGoalFunding({ type: "other", isGoal: true })).toBe(true);
+    expect(canHaveGoalFunding({ type: "other" })).toBe(false);
+    expect(canHaveGoalFunding({ type: "living", isGoal: true })).toBe(false);
+    expect(canHaveGoalFunding({ type: "insurance", isGoal: true })).toBe(false);
+  });
+
+  it("goalDrawAccountIds keeps every link on an education goal", () => {
+    expect(goalDrawAccountIds({ type: "education", dedicatedAccountIds: ["p529", "brk"] }, accounts))
+      .toEqual(["p529", "brk"]);
+  });
+
+  it("goalDrawAccountIds drops 529s and unknown accounts from any other goal", () => {
+    expect(
+      goalDrawAccountIds({ type: "other", dedicatedAccountIds: ["p529", "legacy529", "gone", "brk"] }, accounts),
+    ).toEqual(["brk"]);
+  });
+
+  it("isFundedGoal: every education goal; an Other goal only with a drawable account", () => {
+    expect(isFundedGoal({ type: "education" }, accounts)).toBe(true);
+    expect(isFundedGoal({ type: "other", isGoal: true, dedicatedAccountIds: ["brk"] }, accounts)).toBe(true);
+    expect(isFundedGoal({ type: "other", isGoal: true, dedicatedAccountIds: [] }, accounts)).toBe(false);
+    expect(isFundedGoal({ type: "other", isGoal: true, dedicatedAccountIds: ["p529"] }, accounts)).toBe(false);
+    expect(isFundedGoal({ type: "other", isGoal: false, dedicatedAccountIds: ["brk"] }, accounts)).toBe(false);
+    expect(isFundedGoal({ type: "living", isGoal: true, dedicatedAccountIds: ["brk"] }, accounts)).toBe(false);
   });
 });

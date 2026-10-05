@@ -1261,10 +1261,9 @@ export interface Expense {
    *  expenses so they auto-end when projected Medicare premiums kick in,
    *  preventing double-counting alongside the modeled Medicare cost. */
   endsAtMedicareEligibilityOwner?: "client" | "spouse";
-  /** Education-goal: ordered dedicated funding accounts (drawn first, in order). */
+  /** Funded goal: ordered savings accounts (drawn first, in order). Read on education rows and on Other rows marked as a goal; see `goalDrawAccountIds`. */
   dedicatedAccountIds?: string[];
-  /** Education-goal: pay the uncovered goal cost from household cash when true;
-   *  otherwise it's an unfunded shortfall. Ignored for non-education rows. */
+  /** Funded goal: pay the uncovered goal cost from household cash when true; otherwise it's an unfunded shortfall. Read on education rows and on Other rows marked as a goal. */
   payShortfallOutOfPocket?: boolean;
   /** Education-goal free-text labels (no cost-lookup DB in v1). */
   institutionState?: string | null;
@@ -1281,9 +1280,7 @@ export interface Expense {
    *  month-by-month view. Null/absent = spread across all twelve months.
    *  Engine math ignores this, like everything else in this block. */
   paymentMonth?: number | null;
-  /** Advisor-set flag surfacing this expense on the Household Map Goals board.
-   *  Presentation only — engine math ignores it. Education rows are treated as
-   *  goals regardless of this flag; see src/lib/household-map/goals.ts. */
+  /** Advisor-set "Show as a goal" flag. Education rows are goals regardless (src/lib/goals.ts). The projection reads it only through `canHaveGoalFunding` (src/engine/goals/goal-funding.ts): an Other expense marked as a goal may draw from its savings accounts. */
   isGoal?: boolean;
   /** Living rows only. When true the row spends the household's entire
    *  remaining cash flow in each year it is active, and `annualAmount` is a
@@ -1721,6 +1718,9 @@ export interface PlanSettings {
 
 export interface GoalYear {
   goalId: string;
+  /** Which kind of goal this row funds: an education goal, or an Other expense
+   *  marked "Show as a goal". Tax-source keys and ledger labels follow it. */
+  kind: "education" | "other";
   /** Dedicated-account balances at the start of the year (before growth). */
   dedicatedAssetsBOY: number;
   /** Growth + savings contributions into the dedicated accounts this year. */
@@ -1927,7 +1927,7 @@ export interface ProjectionYear {
     interestByLiability: Record<string, number>;
   };
 
-  /** Present only when the plan has education goals with dedicated funding. */
+  /** Present only when the plan has a funded goal — an education goal, or an Other goal with a savings account (spec 2026-10-05-solver-goals-design). */
   goals?: GoalYear[];
 
   savings: {

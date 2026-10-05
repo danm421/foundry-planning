@@ -205,4 +205,13 @@ describe("parseHouseholdSource", () => {
     expect(r.type).not.toBe("Investment Income");
     expect(r.description).not.toBe(uuid);
   });
+
+  it("parses the goal-funding capital-gain key without leaking the goal UUID", () => {
+    const r = parseHouseholdSource(
+      "goal_capital:3f1b0c2a-0000-4000-8000-000000000002",
+      { type: "capital_gains", amount: 36000 },
+      ctx,
+    );
+    expect(r).toMatchObject({ type: "Goal Funding", description: "Capital gain", account: null, amount: 36000 });
+  });
 });
