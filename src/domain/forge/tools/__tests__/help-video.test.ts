@@ -32,7 +32,7 @@ describe("suggest_help_video", () => {
   });
 
   it("attaches a Watch card for a strong match — server-picked title and chapter", async () => {
-    const out = await invoke("set the start and end year for a one-time expense");
+    const out = await invoke("the start year for a one-time expense");
     expect(dispatch).toHaveBeenCalledWith("video_link", {
       slug: "add-one-time-expense",
       title: EXPENSE_VIDEO.title,

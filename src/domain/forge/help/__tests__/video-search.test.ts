@@ -93,7 +93,12 @@ describe("isStrongMatch", () => {
     expect(isStrongMatch(top(q))).toBe(true);
   });
 
+  it("is weak when the only strong word is a generic verb and the rest hit only the steps", () => {
+    // "add" is in EXPENSE's title; "client" only in its steps ("From a client's Details")
+    expect(isStrongMatch(top("how do I add a client"))).toBe(false);
+  });
+
   it("is never strong with zero meaningful words (no NaN)", () => {
-    expect(isStrongMatch({ video: EXPENSE_VIDEO, matched: 0, of: 0, score: 0, strongField: false })).toBe(false);
+    expect(isStrongMatch({ video: EXPENSE_VIDEO, matched: 0, of: 0, score: 0, strongMatched: 0 })).toBe(false);
   });
 });

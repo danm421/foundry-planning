@@ -14,8 +14,8 @@ export type HelpVideoHit = {
   /** Meaningful words in the query. */
   of: number;
   score: number;
-  /** A word hit the title, summary, search words or tags — what the video is ABOUT. */
-  strongField: boolean;
+  /** Meaningful words whose best hit is the title, summary, search words or tags — what the video is ABOUT. */
+  strongMatched: number;
   /** The chapter matching the most query words, when any matched. */
   chapter?: { at: number; label: string };
 };
@@ -60,13 +60,13 @@ export function searchHelpVideos(query: string, videos: readonly HelpVideo[]): H
     const fields = FIELDS.map((f) => ({ ...f, ws: fieldWords(f.text(video)) }));
     let matched = 0;
     let score = 0;
-    let strongField = false;
+    let strongMatched = 0;
     for (const q of qs) {
       const best = fields.find((f) => hits(q, f.ws)); // FIELDS is ordered heaviest first
       if (!best) continue;
       matched += 1;
       score += best.weight;
-      strongField ||= best.strong; // strong fields are listed first, so a strong hit is always `best`
+      if (best.strong) strongMatched += 1; // strong fields are listed first, so a strong hit is always `best`
     }
     if (matched === 0) continue;
     let chapter: HelpVideoHit["chapter"];
@@ -78,7 +78,7 @@ export function searchHelpVideos(query: string, videos: readonly HelpVideo[]): H
         chapter = { at: c.at, label: c.label };
       }
     }
-    out.push({ video, matched, of: qs.length, score, strongField, ...(chapter ? { chapter } : {}) });
+    out.push({ video, matched, of: qs.length, score, strongMatched, ...(chapter ? { chapter } : {}) });
   }
   return out.sort(
     (a, b) => b.matched - a.matched || b.score - a.score || b.video.recordedOn.localeCompare(a.video.recordedOn),
@@ -86,7 +86,7 @@ export function searchHelpVideos(query: string, videos: readonly HelpVideo[]): H
 }
 
 /** Good enough for chat to recommend: at least 60% of the question's words
- *  found, and at least one in what the video is about. */
+ *  found in what the video is about (not just its steps or chapters). */
 export function isStrongMatch(hit: HelpVideoHit): boolean {
-  return hit.of > 0 && hit.strongField && hit.matched / hit.of >= 0.6;
+  return hit.of > 0 && hit.strongMatched / hit.of >= 0.6;
 }
