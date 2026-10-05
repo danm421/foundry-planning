@@ -134,7 +134,15 @@ export function HelpVideoView({
         </>
       )}
 
-      <DialogShell open={expandedFrom !== null} onOpenChange={(o) => !o && collapse()} title={video.title} size="xl">
+      {/* contentFill: a real height and a flex-column body, so the player fits
+          the dialog (controls in view) instead of overflowing it. */}
+      <DialogShell
+        open={expandedFrom !== null}
+        onOpenChange={(o) => !o && collapse()}
+        title={video.title}
+        size="xl"
+        contentFill
+      >
         {expandedFrom !== null && (
           <video
             ref={big}
@@ -146,7 +154,7 @@ export function HelpVideoView({
             onLoadedMetadata={(e) => {
               e.currentTarget.currentTime = expandedFrom;
             }}
-            className="w-full"
+            className="min-h-0 w-full flex-1 object-contain"
           />
         )}
       </DialogShell>
