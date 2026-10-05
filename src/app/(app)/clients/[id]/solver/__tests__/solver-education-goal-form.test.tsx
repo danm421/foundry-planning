@@ -71,6 +71,12 @@ describe("SolverEducationGoalForm", () => {
       value: { category: "education_savings", subType: "529", value: 15000, education529: { beneficiaryFamilyMemberId: "emma" } },
     });
     expect(mutations[1]).toMatchObject({ kind: "savings-rule-upsert", value: { annualAmount: 6000, isDeductible: false, endYear: 2035 } });
+    // Save as scenario stores both ids in uuid columns.
+    const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    expect(mutations[0].id).toMatch(UUID);
+    expect(mutations[1].id).toMatch(UUID);
+    expect(mutations[1].value.id).toBe(mutations[1].id);
+    expect(expense.id).toMatch(UUID);
     // The new 529 is wired into the goal's dedicated funding, in draw order.
     const new529Id = mutations[0].id;
     expect(expense.dedicatedAccountIds).toContain(new529Id);

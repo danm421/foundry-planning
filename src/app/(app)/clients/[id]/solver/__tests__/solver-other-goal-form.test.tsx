@@ -10,6 +10,7 @@ const ACCOUNTS = [
   { id: "chk", name: "Household Checking", category: "cash", subType: "checking", ownerFamilyMemberIds: ["fm-1"], isDefaultChecking: true },
 ];
 const OWNERS = [{ familyMemberId: "fm-1", label: "Harold" }];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function renderForm(overrides: Partial<Parameters<typeof SolverOtherGoalForm>[0]> = {}) {
   const onSubmit = vi.fn();
@@ -55,6 +56,11 @@ describe("SolverOtherGoalForm", () => {
       owners: [{ kind: "family_member", familyMemberId: "fm-1", percent: 1 }],
     });
     expect(mutations[1].value).toMatchObject({ annualAmount: 12000, startYear: 2026, endYear: 2029 });
+    // Save as scenario stores both ids in uuid columns.
+    expect(mutations[0].id).toMatch(UUID);
+    expect(mutations[1].id).toMatch(UUID);
+    expect(mutations[1].value.id).toBe(mutations[1].id);
+    expect(expense.id).toMatch(UUID);
     expect(expense).toMatchObject({
       type: "other", isGoal: true, name: "New car", annualAmount: 60000,
       startYear: 2029, endYear: 2029, growthRate: 0.025, payShortfallOutOfPocket: true,
@@ -73,6 +79,32 @@ describe("SolverOtherGoalForm", () => {
     fireEvent.click(screen.getByRole("button", { name: /save goal/i }));
     const [expense] = onSubmit.mock.calls[0];
     expect(expense).toMatchObject({ id: "car", cashAccountId: "chk", startYear: 2031, startYearRef: null, endYearRef: null });
+  });
+
+  it("drops a hidden 529 or main-checking link from an edited goal, so Save to base isn't refused", () => {
+    // A legacy row (or a promoted scenario) can carry ids the picker hides; the
+    // advisor could never untick them, and the save rules refuse a 529.
+    const initial = {
+      id: "car", type: "other", name: "Car", annualAmount: 50000, startYear: 2030, endYear: 2030,
+      growthRate: 0.03, isGoal: true, dedicatedAccountIds: ["p529", "brk", "chk", "gone"],
+      payShortfallOutOfPocket: true,
+    } as unknown as Expense;
+    const onSubmit = renderForm({ mode: "edit", initial });
+    fireEvent.click(screen.getByRole("button", { name: /save goal/i }));
+    const [expense] = onSubmit.mock.calls[0];
+    expect(expense.dedicatedAccountIds).toEqual(["brk"]);
+  });
+
+  it("keeps a new savings account alongside the existing ones it may draw", () => {
+    const initial = {
+      id: "car", type: "other", name: "Car", annualAmount: 50000, startYear: 2030, endYear: 2030,
+      growthRate: 0.03, isGoal: true, dedicatedAccountIds: ["p529", "brk"], payShortfallOutOfPocket: true,
+    } as unknown as Expense;
+    const onSubmit = renderForm({ mode: "edit", initial });
+    fireEvent.click(screen.getByRole("button", { name: /new savings account/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save goal/i }));
+    const [expense, mutations] = onSubmit.mock.calls[0];
+    expect(expense.dedicatedAccountIds).toEqual(["brk", mutations[0].id]);
   });
 
   const MARRIED = [

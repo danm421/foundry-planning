@@ -1,5 +1,5 @@
 import type { ClientData, ProjectionYear, SavingsRule } from "@/engine/types";
-import { canHaveGoalFunding } from "@/lib/goals";
+import { canHaveGoalFunding, is529Account } from "@/lib/goals";
 import { buildSavingsRuleForAccount } from "./quick-add-account";
 
 export interface GoalSolveInput {
@@ -12,8 +12,9 @@ export interface GoalSolveInput {
   tolerance?: number;
   cap?: number;
   /** Share of the goal's cost to fund, 0–1. Defaults to 1 (fund it fully).
-   *  An advisor funding, say, 70% of a private-school bill solves to 0.7 and
-   *  the remaining 30% is left as a deliberate shortfall. */
+   *  An advisor funding, say, 70% of a private-school bill solves to 0.7, and
+   *  the savings leave the remaining 30% uncovered: cash flow pays it when
+   *  "Pay shortfall out of pocket" is on, and it is a shortfall otherwise. */
   targetPct?: number;
 }
 
@@ -27,10 +28,8 @@ export interface GoalSolveResult {
   targetPct: number;
 }
 
-/** The goal a contribution rule serves: its id names a new rule, and its last
- *  year bounds one. */
+/** The goal a contribution rule serves: its last year bounds the rule. */
 export interface GoalRef {
-  id: string;
   endYear: number;
 }
 
@@ -48,33 +47,58 @@ function isPlainFixedAmountRule(r: SavingsRule): boolean {
 }
 
 /**
- * The savings rule that is the goal's contribution to one of its accounts —
- * the ONE answer the solve, its Apply and the Goals-tab stepper all use.
+ * The goal's existing contribution rule on one account, or undefined when it
+ * has none yet — the ONE answer the solve, its Apply and the Goals-tab stepper
+ * all use (via `goalContributionRule` when they write).
  *
  * The goal's own rule is a plain fixed-amount rule on the account that is
  * contributing now and stops by the goal's last year: the shape both goal forms
- * write (now → goal end). Anything else on the account is the household's —
- * running past the goal, already ended, starting later, or not a dollar
- * amount — and raising it would save for years the goal never sees, or do
- * nothing. Then the goal gets a rule of its own, `annualAmount` 0 until a
- * caller sets it, spanning now → the goal's end and taxed like any new rule on
- * that account (`buildSavingsRuleForAccount`). The household rule is never
- * touched.
+ * and `goalContributionRule` write (now → goal end), which is how a written
+ * rule is found again — never by its id. Anything else on a household account
+ * is the household's — running past the goal, already ended, starting later,
+ * or not a dollar amount — and raising it would save for years the goal never
+ * sees, or do nothing.
+ *
+ * A 529's fixed-amount rule that is contributing now is the goal's whatever its
+ * end year: a 529 pays only for education (spec Decision 6), so raising its
+ * rule never saves anywhere the goal can't use.
+ */
+export function findGoalContributionRule(
+  tree: Pick<ClientData, "accounts" | "savingsRules">,
+  goal: GoalRef,
+  accountId: string,
+  currentYear: number,
+): SavingsRule | undefined {
+  const acct = tree.accounts.find((a) => a.id === accountId);
+  const anyEnd = acct != null && is529Account(acct);
+  return tree.savingsRules.find(
+    (r) =>
+      r.accountId === accountId &&
+      isPlainFixedAmountRule(r) &&
+      r.startYear <= currentYear &&
+      currentYear <= r.endYear &&
+      (anyEnd || r.endYear <= goal.endYear),
+  );
+}
+
+/**
+ * The rule a write raises: the goal's own (`findGoalContributionRule`), or else
+ * a new one with `annualAmount` 0, spanning now → the goal's end and taxed like
+ * any new rule on that account (`buildSavingsRuleForAccount`). The household
+ * rule is never touched.
+ *
+ * `newRuleId` names the new rule. Callers mint it with `crypto.randomUUID()` at
+ * write time: a scenario stores it in `scenario_changes.target_id`, a uuid
+ * column, and a fresh id per render must never reach a key or a mutation.
  */
 export function goalContributionRule(
   tree: Pick<ClientData, "accounts" | "savingsRules">,
   goal: GoalRef,
   accountId: string,
   currentYear: number,
+  newRuleId: string,
 ): SavingsRule {
-  const own = tree.savingsRules.find(
-    (r) =>
-      r.accountId === accountId &&
-      isPlainFixedAmountRule(r) &&
-      r.startYear <= currentYear &&
-      currentYear <= r.endYear &&
-      r.endYear <= goal.endYear,
-  );
+  const own = findGoalContributionRule(tree, goal, accountId, currentYear);
   if (own) return own;
   const acct = tree.accounts.find((a) => a.id === accountId);
   return buildSavingsRuleForAccount({
@@ -82,7 +106,7 @@ export function goalContributionRule(
     annualAmount: 0,
     startYear: currentYear,
     endYear: goal.endYear,
-    ruleId: `goal-fund-rule-${goal.id}-${accountId}`,
+    ruleId: newRuleId,
   });
 }
 
@@ -97,7 +121,7 @@ function withAdditionalContribution(
   currentYear: number,
 ): ClientData {
   const next = structuredClone(tree);
-  const current = goalContributionRule(next, goal, accountId, currentYear);
+  const current = goalContributionRule(next, goal, accountId, currentYear, crypto.randomUUID());
   const raised = { ...current, annualAmount: current.annualAmount + additional };
   const at = next.savingsRules.findIndex((r) => r.id === raised.id);
   if (at >= 0) next.savingsRules[at] = raised;
@@ -127,7 +151,7 @@ export function solveGoalDedicatedSavings(input: GoalSolveInput): GoalSolveResul
   const targetPct = Math.min(1, Math.max(0, input.targetPct ?? 1));
 
   const goal = tree.expenses.find((e) => e.id === goalId && canHaveGoalFunding(e));
-  const goalRef: GoalRef = { id: goalId, endYear: goal?.endYear ?? currentYear };
+  const goalRef: GoalRef = { endYear: goal?.endYear ?? currentYear };
 
   const totalsAt = (additional: number) =>
     goalTotals(
@@ -135,7 +159,7 @@ export function solveGoalDedicatedSavings(input: GoalSolveInput): GoalSolveResul
       goalId,
     );
 
-  // A partial target leaves this many dollars deliberately unfunded. The goal's
+  // A partial target leaves this many dollars uncovered by savings. The goal's
   // cost is fixed by the plan, not by what we contribute, so one read at 0 is
   // enough to set the bar for every later iteration.
   const base = totalsAt(0);

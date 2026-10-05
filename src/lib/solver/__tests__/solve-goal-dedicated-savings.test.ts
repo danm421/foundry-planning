@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { solveGoalDedicatedSavings } from "@/lib/solver/solve-goal-dedicated-savings";
+import {
+  findGoalContributionRule,
+  goalContributionRule,
+  solveGoalDedicatedSavings,
+} from "@/lib/solver/solve-goal-dedicated-savings";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 
 // A goal costing $10k/yr for years 2032..2033, funded by "acct".
@@ -147,9 +151,12 @@ describe("solveGoalDedicatedSavings — which savings rule it raises", () => {
     expect(Math.abs(r.additionalAnnual - stopsAtGoal.r.additionalAnnual)).toBeLessThanOrEqual(1);
 
     expect(modeled.savingsRules.find((x) => x.id === "general")).toEqual(general);
-    expect(modeled.savingsRules.find((x) => x.id === "goal-fund-rule-goal-acct")).toMatchObject({
+    const goalRule = modeled.savingsRules.find((x) => x.id !== "general");
+    expect(goalRule).toMatchObject({
       accountId: "acct", startYear: 2026, endYear: 2029, isDeductible: false,
     });
+    // A scenario stores the rule's id in a uuid column.
+    expect(goalRule!.id).toMatch(UUID);
   });
 
   it("reaches the target through a goal rule when the account's only rule already ended", () => {
@@ -189,5 +196,67 @@ describe("solveGoalDedicatedSavings — which savings rule it raises", () => {
     expect(modeled.savingsRules).toHaveLength(1);
     expect(modeled.savingsRules[0].id).toBe("r529");
     expect(modeled.savingsRules[0].annualAmount).toBeGreaterThan(1_000);
+  });
+
+  it("raises a 529's rule even when it runs past the goal — a 529 only pays for education", () => {
+    // Prod shape (goal e3efbe5d): $300/yr into the 529 from 2026 to 2039; the
+    // goal runs 2030–2033.
+    const t = withRules([rule({ id: "r529", annualAmount: 300, endYear: 2039 })], { startYear: 2030, endYear: 2033 });
+    t.accounts = [{ id: "acct", category: "education_savings", subType: "529" }] as never;
+    const { modeled } = solve(t);
+    expect(modeled.savingsRules).toHaveLength(1);
+    expect(modeled.savingsRules[0]).toMatchObject({ id: "r529", endYear: 2039 });
+    expect(modeled.savingsRules[0].annualAmount).toBeGreaterThan(300);
+  });
+});
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+describe("goalContributionRule", () => {
+  type Rule = ClientData["savingsRules"][number];
+  const rule = (p: Partial<Rule>): Rule =>
+    ({ id: "r", accountId: "acct", annualAmount: 0, isDeductible: false, startYear: 2026, endYear: 2033, ...p }) as Rule;
+  const treeWith = (category: string, subType: string, rules: Rule[]) => ({
+    accounts: [{ id: "acct", category, subType }] as unknown as ClientData["accounts"],
+    savingsRules: rules,
+  });
+  const goal = { endYear: 2033 };
+  const NEW_ID = "6f9619ff-8b86-4d01-b42d-00cf4fc964ff";
+
+  it("gives a new goal rule the id its caller minted, spanning now → the goal's end", () => {
+    const t = treeWith("taxable", "brokerage", []);
+    expect(findGoalContributionRule(t, goal, "acct", 2026)).toBeUndefined();
+    expect(goalContributionRule(t, goal, "acct", 2026, NEW_ID)).toMatchObject({
+      id: NEW_ID, accountId: "acct", annualAmount: 0, startYear: 2026, endYear: 2033,
+    });
+  });
+
+  it("finds the rule it wrote again by its shape, so a second write raises the same rule", () => {
+    const t = treeWith("taxable", "brokerage", []);
+    const first = { ...goalContributionRule(t, goal, "acct", 2026, NEW_ID), annualAmount: 2_000 };
+    t.savingsRules = [first];
+    expect(findGoalContributionRule(t, goal, "acct", 2026)).toBe(first);
+    expect(goalContributionRule(t, goal, "acct", 2026, "11111111-1111-4111-8111-111111111111")).toBe(first);
+  });
+
+  it("picks a 529's fixed-amount rule active now, whatever its end year (prod shape)", () => {
+    const r529 = rule({ id: "r529", annualAmount: 300, startYear: 2026, endYear: 2039 });
+    const t = treeWith("education_savings", "529", [r529]);
+    expect(findGoalContributionRule(t, { endYear: 2033 }, "acct", 2026)).toBe(r529);
+    // A 529 filed under another category by a legacy import counts too.
+    const legacy = treeWith("taxable", "529", [r529]);
+    expect(findGoalContributionRule(legacy, { endYear: 2033 }, "acct", 2026)).toBe(r529);
+  });
+
+  it("still skips a 529 rule that isn't active now", () => {
+    const later = rule({ id: "later", annualAmount: 300, startYear: 2028, endYear: 2039 });
+    expect(findGoalContributionRule(treeWith("education_savings", "529", [later]), goal, "acct", 2026)).toBeUndefined();
+  });
+
+  it("keeps the strict test on a household account: a rule running past the goal is not the goal's", () => {
+    const general = rule({ id: "general", annualAmount: 6_000, endYear: 2045 });
+    const t = treeWith("taxable", "brokerage", [general]);
+    expect(findGoalContributionRule(t, goal, "acct", 2026)).toBeUndefined();
+    expect(goalContributionRule(t, goal, "acct", 2026, NEW_ID).id).toBe(NEW_ID);
   });
 });

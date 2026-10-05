@@ -4,6 +4,8 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { SolverGoalsSection } from "../solver-goals-section";
 import type { ClientData, Expense } from "@/engine/types";
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const goal: Expense = {
   id: "goal-1",
   type: "education",
@@ -200,51 +202,107 @@ describe("SolverGoalsSection", () => {
       savingsRules: [general],
     } as unknown as ClientData;
 
-    const renderCar = (onChange = vi.fn()) => {
-      render(
+    const renderCar = (onChange = vi.fn(), workingTree: ClientData = tree) => {
+      const view = render(
         <SolverGoalsSection
-          baseExpenses={[car]} workingTree={tree} currentYear={2026}
+          baseExpenses={[car]} workingTree={workingTree} currentYear={2026}
           clientId="c1" source="base" mutations={[]} onChange={onChange}
         />,
       );
-      return onChange;
+      return { onChange, view };
     };
-
-    it("Apply writes a goal rule ending with the goal, never the household rule", async () => {
+    const solveAndApply = async (additionalAnnual: number) => {
       vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ additionalAnnual: 2000, reachesTarget: true, targetPct: 1 }),
+        json: async () => ({ additionalAnnual, reachesTarget: true, targetPct: 1 }),
       }));
-      const onChange = renderCar();
       fireEvent.click(screen.getByRole("button", { name: /solve brokerage/i }));
       fireEvent.click(await screen.findByRole("button", { name: "Apply" }));
+      vi.unstubAllGlobals();
+    };
+    const ruleUpserts = (onChange: ReturnType<typeof vi.fn>) =>
+      onChange.mock.calls.map((c) => c[0]).filter((m) => m.kind === "savings-rule-upsert");
 
-      const upserts = onChange.mock.calls.map((c) => c[0]).filter((m) => m.kind === "savings-rule-upsert");
+    it("Apply writes a goal rule ending with the goal, never the household rule", async () => {
+      const { onChange } = renderCar();
+      await solveAndApply(2000);
+
+      const upserts = ruleUpserts(onChange);
       expect(upserts).toEqual([
         {
           kind: "savings-rule-upsert",
-          id: "goal-fund-rule-car-brk",
+          id: expect.stringMatching(UUID),
           value: expect.objectContaining({
-            id: "goal-fund-rule-car-brk", accountId: "brk", annualAmount: 2000,
-            startYear: 2026, endYear: 2029, isDeductible: false,
+            accountId: "brk", annualAmount: 2000, startYear: 2026, endYear: 2029, isDeductible: false,
           }),
         },
       ]);
-      vi.unstubAllGlobals();
+      // A scenario stores the id in a uuid column; the mutation and the rule agree.
+      expect(upserts[0].value.id).toBe(upserts[0].id);
+    });
+
+    it("a second Apply raises the rule the first one wrote, rather than adding another", async () => {
+      const first = renderCar();
+      await solveAndApply(2000);
+      const written = ruleUpserts(first.onChange)[0].value;
+      first.view.unmount();
+
+      // The working tree now holds the rule the first Apply wrote.
+      const { onChange } = renderCar(vi.fn(), { ...tree, savingsRules: [general, written] } as unknown as ClientData);
+      expect(screen.getByRole("spinbutton", { name: "Brokerage annual contribution" }))
+        .toHaveAttribute("aria-valuenow", "2000");
+      await solveAndApply(500);
+      expect(ruleUpserts(onChange)).toEqual([
+        { kind: "savings-rule-upsert", id: written.id, value: { ...written, annualAmount: 2500 } },
+      ]);
     });
 
     it("the contribution stepper reads and writes the goal rule", () => {
-      const onChange = renderCar();
+      const { onChange } = renderCar();
       const stepper = screen.getByRole("spinbutton", { name: "Brokerage annual contribution" });
       expect(stepper).toHaveAttribute("aria-valuenow", "0");
       fireEvent.click(screen.getByRole("button", { name: "Increase Brokerage annual contribution" }));
       expect(onChange).toHaveBeenCalledTimes(1);
-      expect(onChange.mock.calls[0][0]).toMatchObject({
+      const m = onChange.mock.calls[0][0];
+      expect(m).toMatchObject({
         kind: "savings-rule-upsert",
-        id: "goal-fund-rule-car-brk",
         value: { accountId: "brk", annualAmount: 500, startYear: 2026, endYear: 2029 },
       });
+      expect(m.id).toMatch(UUID);
+      expect(m.value.id).toBe(m.id);
     });
+  });
+
+  it("an education goal's 529 rule that runs past the goal is still its contribution (prod shape)", async () => {
+    // Prod goal e3efbe5d: $300/yr into the 529 from 2026 to 2039, goal 2030–2033.
+    const edu = { ...goal, startYear: 2030, endYear: 2033 } as Expense;
+    const r529 = { id: "r529", accountId: "529-emma", annualAmount: 300, isDeductible: false, startYear: 2026, endYear: 2039 };
+    const tree = {
+      ...workingTree,
+      expenses: [edu],
+      accounts: [{ ...workingTree.accounts[0], category: "education_savings", subType: "529" }],
+      savingsRules: [r529],
+    } as unknown as ClientData;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ additionalAnnual: 1000, reachesTarget: true, targetPct: 1 }),
+    }));
+    const onChange = vi.fn();
+    render(
+      <SolverGoalsSection
+        baseExpenses={[edu]} workingTree={tree} currentYear={2026}
+        clientId="c1" source="base" mutations={[]} onChange={onChange}
+      />,
+    );
+    expect(screen.getByRole("spinbutton", { name: "529 — Emma annual contribution" }))
+      .toHaveAttribute("aria-valuenow", "300");
+    fireEvent.click(screen.getByRole("button", { name: /solve 529 — emma/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply" }));
+    const upserts = onChange.mock.calls.map((c) => c[0]).filter((m) => m.kind === "savings-rule-upsert");
+    expect(upserts).toEqual([
+      { kind: "savings-rule-upsert", id: "r529", value: { ...r529, annualAmount: 1300 } },
+    ]);
+    vi.unstubAllGlobals();
   });
 
   it("Apply still raises a 529 rule that runs from now to the goal's end", async () => {

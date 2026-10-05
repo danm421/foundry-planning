@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { ClientData, Expense } from "@/engine/types";
 import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
-import { goalContributionRule } from "@/lib/solver/solve-goal-dedicated-savings";
+import { findGoalContributionRule, goalContributionRule } from "@/lib/solver/solve-goal-dedicated-savings";
 import { canHaveGoalFunding, goalDrawAccountIds } from "@/engine/goals/goal-funding";
 import { SolverSection } from "./solver-section";
 import { SolverFieldStepper } from "./solver-field-stepper";
@@ -135,9 +135,10 @@ export function SolverGoalsSection({
 
   // The goal's own contribution on an account — the same rule the solve and
   // Apply raise, so the stepper never edits a household rule that runs past
-  // the goal (or no longer runs at all).
+  // the goal (or no longer runs at all). Only a write calls this: a new rule's
+  // id is minted here, once per write, never per render.
   function contributionRule(goal: Expense, accountId: string) {
-    return goalContributionRule(workingTree, goal, accountId, currentYear);
+    return goalContributionRule(workingTree, goal, accountId, currentYear, crypto.randomUUID());
   }
 
   function setContribution(goal: Expense, accountId: string, amount: number) {
@@ -284,7 +285,7 @@ export function SolverGoalsSection({
                         <SolverFieldStepper
                           id={`edu-contrib-${key}`}
                           label={`${acct?.name ?? accountId} annual contribution`}
-                          value={contributionRule(goal, accountId).annualAmount}
+                          value={findGoalContributionRule(workingTree, goal, accountId, currentYear)?.annualAmount ?? 0}
                           min={0}
                           max={100_000}
                           step={500}

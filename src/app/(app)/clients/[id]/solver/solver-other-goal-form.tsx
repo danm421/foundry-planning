@@ -5,7 +5,7 @@ import type { Expense } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
 import { DedicatedFundingPicker } from "@/components/forms/dedicated-funding-picker";
 import { buildQuickAddAccount } from "@/lib/solver/quick-add-account";
-import { defaultPayShortfallOutOfPocket } from "@/lib/goals";
+import { defaultPayShortfallOutOfPocket, is529Account } from "@/lib/goals";
 import type { EducationGoalFormAccount } from "./solver-education-goal-form";
 
 /** A household member who can own a new savings account. */
@@ -89,13 +89,22 @@ export function SolverOtherGoalForm({
         },
       ]
     : accounts;
+  // What the save may send: the ids the picker offers, plus the pending new
+  // account. An edited goal can carry a 529 or the main checking account from
+  // before the rules (or a promoted scenario) — the picker hides them, so the
+  // advisor could never untick one, and Save to base refuses a 529. Same filter
+  // as the I&E dialog's `fundingIdsForSave`.
+  const drawableIds = dedicatedAccountIds.filter((id) => {
+    const a = pickerAccounts.find((x) => x.id === id);
+    return a != null && !is529Account(a) && !a.isDefaultChecking;
+  });
 
   function submit() {
     const start = Number(startYear) || currentYear + 1;
     const end = start + Math.max(1, Number(years) || 1) - 1;
     const amount = Number(annualAmount) || 0;
     const emitNew = addingNew && newOwnerIds.length > 0;
-    const ids = emitNew ? dedicatedAccountIds : dedicatedAccountIds.filter((id) => id !== newId);
+    const ids = emitNew ? drawableIds : drawableIds.filter((id) => id !== newId);
     // Moving the years un-anchors them: a stale milestone ref would re-resolve
     // the old year on the next load and silently undo the edit.
     const yearsMoved = !!initial && (initial.startYear !== start || initial.endYear !== end);
@@ -133,7 +142,8 @@ export function SolverOtherGoalForm({
         endYear: end,
         growthRate: growthTaxable,
         accountId: newId,
-        ruleId: `goal-fund-rule-${newId}`,
+        // A uuid: Save as scenario stores it in a uuid column.
+        ruleId: crypto.randomUUID(),
         balance: Number(newBalance) || 0,
       });
       newMutations.push({ kind: "account-upsert", id: account.id, value: account });
@@ -250,7 +260,7 @@ export function SolverOtherGoalForm({
           )}
         </div>
 
-        {dedicatedAccountIds.length > 0 && (
+        {drawableIds.length > 0 && (
           <label className="col-span-2 flex items-center gap-2 text-[12px] text-ink-3">
             <input type="checkbox" checked={payOutOfPocket} onChange={(e) => setPayOutOfPocket(e.target.checked)} />
             <span>Pay shortfall out of pocket</span>
