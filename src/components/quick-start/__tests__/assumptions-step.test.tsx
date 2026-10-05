@@ -31,9 +31,10 @@ const ctx = buildQsContext({
   client: {
     dateOfBirth: "1965-04-15",
     retirementAge: 65,
-    planEndAge: 95,
+    lifeExpectancy: 95,
     spouseDob: null,
     spouseRetirementAge: null,
+    spouseLifeExpectancy: null,
   },
   planStartYear: 2026,
   planEndYear: 2060,

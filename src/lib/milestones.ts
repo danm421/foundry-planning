@@ -1,4 +1,6 @@
 import { controllingFamilyMember, type AccountOwner } from "@/engine/ownership";
+import type { ClientData } from "@/engine/types";
+import { ASSUMED_LIFE_EXPECTANCY } from "@/lib/plan-horizon";
 
 export const YEAR_REFS = [
   "plan_start",
@@ -36,8 +38,8 @@ export const YEAR_REF_LABELS: Record<YearRef, string> = {
   plan_end: "Plan End",
   client_retirement: "Client Retirement",
   spouse_retirement: "Co-client Retirement",
-  client_end: "Client End of Plan",
-  spouse_end: "Co-client End of Plan",
+  client_end: "Client Death",
+  spouse_end: "Co-client Death",
   client_ss_62: "Client Age 62",
   client_ss_fra: "Client FRA",
   client_ss_70: "Client Age 70",
@@ -51,10 +53,13 @@ export interface ClientMilestones {
   planStart: number;
   planEnd: number;
   clientRetirement: number;
+  /** The client's own death year (birth year + life expectancy) — the last
+   *  year they are alive, as the engine counts it. */
   clientEnd: number;
   clientBirthYear?: number;
   spouseBirthYear?: number;
   spouseRetirement?: number;
+  /** The spouse's own death year, like `clientEnd`. */
   spouseEnd?: number;
   clientSS62?: number;
   clientSSFRA?: number;
@@ -67,8 +72,9 @@ export interface ClientMilestones {
 /** The year of a `YYYY-MM-DD` date, read off the string exactly as the
  *  projection reads a birth year. `new Date(dob).getFullYear()` parses a
  *  date-only string as UTC midnight, so a Jan-1 date reads as the prior year
- *  west of UTC. Only the exposed birth years use this; the milestone years
- *  below still go through `Date` (moving them is future work). Absent →
+ *  west of UTC. The exposed birth years and the death years use this (a death
+ *  year must match the engine's); the other milestone years below still go
+ *  through `Date` (moving them is future work). Absent →
  *  undefined — `date_of_birth` is nullable in the DB. */
 function yearOfDateString(date: string | null | undefined): number | undefined {
   if (!date) return undefined;
@@ -83,17 +89,24 @@ function yearOfDateString(date: string | null | undefined): number | undefined {
 export function buildClientMilestones(client: {
   dateOfBirth: string;
   retirementAge: number;
-  planEndAge: number;
+  /** Absent → 95, the engine's own assumption. */
+  lifeExpectancy?: number | null;
   spouseDob?: string | null;
   spouseRetirementAge?: number | null;
+  spouseLifeExpectancy?: number | null;
 }, planStartYear: number, planEndYear: number): ClientMilestones {
   const clientBirthYear = new Date(client.dateOfBirth).getFullYear();
 
+  // Each person's death is their OWN birth year + life expectancy — the rule
+  // the engine's death events use (`computeFirstDeathYear`) — not the
+  // household's last death, which is `planEnd`.
   const milestones: ClientMilestones = {
     planStart: planStartYear,
     planEnd: planEndYear,
     clientRetirement: clientBirthYear + client.retirementAge,
-    clientEnd: clientBirthYear + client.planEndAge,
+    clientEnd:
+      (yearOfDateString(client.dateOfBirth) ?? clientBirthYear) +
+      (client.lifeExpectancy ?? ASSUMED_LIFE_EXPECTANCY),
     clientSS62: clientBirthYear + 62,
     clientSSFRA: clientBirthYear + 67,
     clientSS70: clientBirthYear + 70,
@@ -111,7 +124,9 @@ export function buildClientMilestones(client: {
   if (client.spouseDob && client.spouseRetirementAge != null) {
     const spouseBirthYear = new Date(client.spouseDob).getFullYear();
     milestones.spouseRetirement = spouseBirthYear + client.spouseRetirementAge;
-    milestones.spouseEnd = spouseBirthYear + client.planEndAge;
+    milestones.spouseEnd =
+      (yearOfDateString(client.spouseDob) ?? spouseBirthYear) +
+      (client.spouseLifeExpectancy ?? ASSUMED_LIFE_EXPECTANCY);
     milestones.spouseSS62 = spouseBirthYear + 62;
     milestones.spouseSSFRA = spouseBirthYear + 67;
     milestones.spouseSS70 = spouseBirthYear + 70;
@@ -121,7 +136,18 @@ export function buildClientMilestones(client: {
 }
 
 /**
- * Refs that mark a *transition* into a new state (retirement, death, SS-claim).
+ * Milestones of a loaded tree — the ones the projection resolves refs against.
+ * Inside a scenario they are the SCENARIO's (a retirement-age change moves
+ * them). Build pickers from this, not from a raw plan_settings row: the tree's
+ * horizon is re-derived from the life expectancies (load-client-data), while
+ * the stored plan_end_year can lag them.
+ */
+export function treeMilestones(tree: Pick<ClientData, "client" | "planSettings">): ClientMilestones {
+  return buildClientMilestones(tree.client, tree.planSettings.planStartYear, tree.planSettings.planEndYear);
+}
+
+/**
+ * Refs that mark a *transition* into a new state (retirement, SS-claim).
  * For these, the milestone year is the first year of the new state, so when
  * used as an `endYear`, the inclusive last year of the prior state is `year - 1`.
  * `plan_start` / `plan_end` are absolute window bounds, not transitions.
@@ -129,8 +155,6 @@ export function buildClientMilestones(client: {
 const TRANSITION_REFS: ReadonlySet<YearRef> = new Set<YearRef>([
   "client_retirement",
   "spouse_retirement",
-  "client_end",
-  "spouse_end",
   "client_ss_62",
   "client_ss_fra",
   "client_ss_70",
@@ -140,10 +164,19 @@ const TRANSITION_REFS: ReadonlySet<YearRef> = new Set<YearRef>([
 ]);
 
 /**
+ * Death refs. Their milestone year is the LAST year of the prior state: the
+ * engine runs a death year to completion (`applyIncomeTermination` clips the
+ * deceased's income to it). So a stream ending at a death includes that year,
+ * and one starting at it begins the year after — still no double-counted year.
+ */
+const DEATH_REFS: ReadonlySet<YearRef> = new Set<YearRef>(["client_end", "spouse_end"]);
+
+/**
  * Resolve a milestone ref to a year number, taking position into account so the
  * retirement year (etc.) isn't double-counted between an ending and a starting
  * stream. `position: "end"` on a transition ref returns `year - 1` (last year
- * of the prior state); `"start"` returns the milestone year itself.
+ * of the prior state); `"start"` returns the milestone year itself. A death
+ * ref is the reverse: `"end"` is the death year, `"start"` the year after.
  *
  * Returns undefined if ref requires spouse data that's missing.
  */
@@ -169,6 +202,7 @@ export function resolveMilestone(
   }
   if (year == null) return undefined;
   if (position === "end" && TRANSITION_REFS.has(ref)) return year - 1;
+  if (position === "start" && DEATH_REFS.has(ref)) return year + 1;
   return year;
 }
 

@@ -3,7 +3,6 @@ import { db } from "@/db";
 import {
   clients,
   scenarios,
-  planSettings,
   modelPortfolios,
   familyMembers,
   crmHouseholdContacts,
@@ -12,7 +11,7 @@ import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import type { TechniquesViewProps } from "@/components/techniques-view";
 import { buildBusinessSaleOptions } from "@/lib/techniques/sell-source-options";
-import { buildClientMilestones } from "@/lib/milestones";
+import { treeMilestones } from "@/lib/milestones";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { controllingFamilyMember } from "@/engine/ownership";
 
@@ -47,13 +46,7 @@ export async function loadTechniquesViewProps(
     .from(crmHouseholdContacts)
     .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
   const primaryContact = contactRows.find((c) => c.role === "primary");
-  const spouseContact = contactRows.find((c) => c.role === "spouse");
   if (!primaryContact?.dateOfBirth) notFound();
-  const client = {
-    ...clientRow,
-    dateOfBirth: primaryContact.dateOfBirth,
-    spouseDob: spouseContact?.dateOfBirth ?? null,
-  };
 
   const [scenario] = await db
     .select()
@@ -64,11 +57,7 @@ export async function loadTechniquesViewProps(
     return { status: "no-base-case" };
   }
 
-  const [planSettingsRows, loadedTree, modelPortfolioRows, familyMemberRows] = await Promise.all([
-    db
-      .select()
-      .from(planSettings)
-      .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
+  const [loadedTree, modelPortfolioRows, familyMemberRows] = await Promise.all([
     loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
     db
       .select({ id: modelPortfolios.id, name: modelPortfolios.name })
@@ -114,10 +103,7 @@ export async function loadTechniquesViewProps(
     a.name.localeCompare(b.name),
   );
 
-  const settings = planSettingsRows[0];
-  const planStartYear = settings?.planStartYear ?? new Date().getFullYear();
-  const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
-  const milestones = buildClientMilestones(client, planStartYear, planEndYear);
+  const milestones = treeMilestones(effectiveTree);
 
   const transferProps = transferRows.map((t) => ({
     id: t.id,

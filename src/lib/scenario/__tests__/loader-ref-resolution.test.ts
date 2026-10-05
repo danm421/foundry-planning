@@ -93,3 +93,36 @@ describe("applyScenarioChangesWithRefs — milestone re-resolution", () => {
     expect(effectiveTree.incomes[0].endYear).toBe(2029);
   });
 });
+
+// "Last Year" (`plan_end`) is the year the LAST spouse dies, derived from the
+// two life expectancies — `plan_settings.plan_end_year` is only a cache of it.
+// A scenario whose stored horizon lags its life expectancies must still end at
+// the survivor's death, and every plan_end-anchored row must follow.
+describe("applyScenarioChangesWithRefs — plan horizon follows life expectancy", () => {
+  it("re-derives a stale planEndYear from the survivor's life expectancy", () => {
+    const tree = baseTree();
+    // Client 1970 + 95 → 2065; spouse 1975 + 95 → 2070. Stored horizon is
+    // stuck at the client's own death, as if the spouse were never counted.
+    tree.client = {
+      ...tree.client,
+      lifeExpectancy: 95,
+      spouseDob: "1975-03-01",
+      spouseLifeExpectancy: 95,
+    };
+    tree.expenses = [
+      {
+        id: "exp-living",
+        startYear: 2025,
+        startYearRef: "plan_start",
+        endYear: 2065,
+        endYearRef: "plan_end",
+      },
+    ] as unknown as ClientData["expenses"];
+
+    const { effectiveTree } = applyScenarioChangesWithRefs(tree, [], {}, []);
+
+    expect(effectiveTree.planSettings.planEndYear).toBe(2070);
+    expect(effectiveTree.client.planEndAge).toBe(100);
+    expect(effectiveTree.expenses[0].endYear).toBe(2070);
+  });
+});

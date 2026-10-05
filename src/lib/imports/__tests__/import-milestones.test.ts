@@ -3,8 +3,9 @@ import { assembleImportMilestones } from "@/lib/imports/import-milestones";
 
 const base = {
   retirementAge: 65,
-  planEndAge: 95,
+  lifeExpectancy: 95,
   spouseRetirementAge: null,
+  spouseLifeExpectancy: null,
   // Use mid-year DOBs: "YYYY-01-01" parses as UTC midnight → Dec 31 in Pacific
   // timezone, making getFullYear() return YYYY-1 and breaking the arithmetic.
   primary: { firstName: "John", dateOfBirth: "1970-06-15" },

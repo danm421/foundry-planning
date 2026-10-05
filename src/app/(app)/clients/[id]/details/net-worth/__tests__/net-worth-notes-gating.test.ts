@@ -152,7 +152,8 @@ const gatedNote = () => ({
 function seedTree(notesReceivable: unknown[], savingsRules: unknown[] = []) {
   vi.mocked(loadEffectiveTree).mockResolvedValue({
     effectiveTree: {
-      client: { firstName: "Cooper", lastName: "Smith" },
+      client: { firstName: "Cooper", lastName: "Smith", dateOfBirth: "1965-03-15", retirementAge: 65, planEndAge: 95 },
+      planSettings: { planStartYear: 2026, planEndYear: 2060 },
       accounts: [],
       liabilities: [],
       incomes: [],

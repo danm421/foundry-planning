@@ -35,9 +35,10 @@ export function buildQsContext(input: {
   client: {
     dateOfBirth: string;
     retirementAge: number;
-    planEndAge: number;
+    lifeExpectancy: number;
     spouseDob?: string | null;
     spouseRetirementAge?: number | null;
+    spouseLifeExpectancy: number | null;
   };
   planStartYear: number;
   planEndYear: number;
@@ -49,9 +50,10 @@ export function buildQsContext(input: {
     {
       dateOfBirth: input.client.dateOfBirth,
       retirementAge: input.client.retirementAge,
-      planEndAge: input.client.planEndAge,
+      lifeExpectancy: input.client.lifeExpectancy,
       spouseDob: input.client.spouseDob ?? null,
       spouseRetirementAge: input.client.spouseRetirementAge ?? null,
+      spouseLifeExpectancy: input.client.spouseLifeExpectancy,
     },
     input.planStartYear,
     input.planEndYear,

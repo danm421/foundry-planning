@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { planSettings, scenarios } from "@/db/schema";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { buildClientMilestones, type ClientMilestones } from "@/lib/milestones";
+import { planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
 
 export interface ImportMilestones {
   milestones: ClientMilestones;
@@ -18,8 +19,9 @@ interface ContactLite {
 
 interface AssembleInput {
   retirementAge: number;
-  planEndAge: number;
+  lifeExpectancy: number | null;
   spouseRetirementAge: number | null;
+  spouseLifeExpectancy: number | null;
   primary: ContactLite | undefined;
   spouse: ContactLite | undefined;
   planStartYear: number | null;
@@ -41,9 +43,10 @@ export function assembleImportMilestones(input: AssembleInput): ImportMilestones
     {
       dateOfBirth: input.primary.dateOfBirth,
       retirementAge: input.retirementAge,
-      planEndAge: input.planEndAge,
+      lifeExpectancy: input.lifeExpectancy,
       spouseDob: input.spouse?.dateOfBirth ?? null,
       spouseRetirementAge: input.spouseRetirementAge,
+      spouseLifeExpectancy: input.spouseLifeExpectancy,
     },
     planStart,
     planEnd,
@@ -87,10 +90,20 @@ export async function loadImportMilestones(
       .where(and(eq(planSettings.clientId, clientId), eq(planSettings.scenarioId, sid)));
   }
 
+  // The horizon follows the life expectancies, as the projection's does
+  // (load-client-data) — the stored plan_end_year can lag them.
+  const horizon = planHorizonFromLifeExpectancy({
+    dateOfBirth: client.dateOfBirth,
+    lifeExpectancy: client.lifeExpectancy,
+    spouseDob: client.spouseDateOfBirth,
+    spouseLifeExpectancy: client.spouseLifeExpectancy,
+  });
+
   return assembleImportMilestones({
     retirementAge: client.retirementAge,
-    planEndAge: client.planEndAge,
+    lifeExpectancy: client.lifeExpectancy,
     spouseRetirementAge: client.spouseRetirementAge,
+    spouseLifeExpectancy: client.spouseLifeExpectancy,
     primary:
       client.firstName != null
         ? { firstName: client.firstName, dateOfBirth: client.dateOfBirth }
@@ -100,6 +113,6 @@ export async function loadImportMilestones(
         ? { firstName: client.spouseFirstName, dateOfBirth: client.spouseDateOfBirth }
         : undefined,
     planStartYear: settings?.planStartYear ?? null,
-    planEndYear: settings?.planEndYear ?? null,
+    planEndYear: horizon?.planEndYear ?? settings?.planEndYear ?? null,
   });
 }

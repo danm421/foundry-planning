@@ -475,8 +475,8 @@ function makeRefsBase(): ClientData {
       dateOfBirth: "1965-03-15", // birth year 1965
       retirementAge: 65, // → client_retirement = 2030
       retirementMonth: 1,
-      planEndAge: 95, // → client_end = 2060
-      lifeExpectancy: 95,
+      planEndAge: 95,
+      lifeExpectancy: 95, // → client_end = 2060
       spouseName: "Susan",
       spouseDob: "1967-05-20", // birth year 1967
       spouseRetirementAge: 63, // → spouse_retirement = 2030
@@ -576,9 +576,9 @@ describe("applyMutations — milestone-ref re-resolution", () => {
     const pension = out.incomes.find((i) => i.id === "income-deferred-cooper")!;
     // start-position on transition ref = milestone year (2035)
     expect(pension.startYear).toBe(2035);
-    // endYearRef = "client_end" is also a transition ref (end-position →
-    // year - 1). Unchanged because planEndAge wasn't mutated: 1965 + 95 - 1.
-    expect(pension.endYear).toBe(2059);
+    // endYearRef = "client_end" ends ON the client's own death year (the
+    // engine's last alive year). Unchanged because LE wasn't mutated: 1965 + 95.
+    expect(pension.endYear).toBe(2060);
   });
 
   it("retirement-age (client) reshifts retirement-anchored expense and savings rule", () => {
@@ -821,9 +821,9 @@ describe("applyMutations — life-expectancy horizon recompute", () => {
       { kind: "life-expectancy", person: "client", age: 105 },
     ]);
     const pension = out.incomes.find((i) => i.id === "income-deferred-cooper")!;
-    // endYearRef "client_end" is a transition ref (end position → year - 1):
-    // 1965 + 105 - 1 = 2069 (was 2059).
-    expect(pension.endYear).toBe(2069);
+    // endYearRef "client_end" ends ON the client's own death year:
+    // 1965 + 105 = 2070 (was 2060).
+    expect(pension.endYear).toBe(2070);
   });
 
   it("lowering client LE anchors the horizon to the surviving spouse's death year", () => {

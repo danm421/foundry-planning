@@ -17,7 +17,7 @@ import {
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import type { AccountRow, BalanceSheetViewProps, LiabilityRow } from "@/components/balance-sheet-view";
-import { buildClientMilestones } from "@/lib/milestones";
+import { treeMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadOverlaidAccountMeta } from "@/lib/scenario/account-meta";
@@ -235,9 +235,8 @@ export async function loadNetWorthViewProps(
     : settings;
 
   // Build milestones for MilestoneYearPicker in the savings sub-form
-  const planStartYear = settings?.planStartYear ?? new Date().getFullYear();
-  const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
-  const milestones = buildClientMilestones(client, planStartYear, planEndYear);
+  const { planStartYear, planEndYear } = effectiveTree.planSettings;
+  const milestones = treeMilestones(effectiveTree);
 
   const accountProps: AccountRow[] = buildAccountRows({
     accounts: effectiveTree.accounts,

@@ -73,7 +73,6 @@ export function buildMapBoards(input: MapBoardsInput): MapBoards {
   const effectiveClient = effectiveTree.client;
   const { planStartYear, planEndYear } = effectiveTree.planSettings;
   const retirementAge = effectiveClient.retirementAge;
-  const planEndAge = effectiveClient.planEndAge;
   const lifeExpectancy = effectiveClient.lifeExpectancy ?? identity.lifeExpectancy;
   const spouseRetirementAge = effectiveClient.spouseRetirementAge ?? null;
   const spouseLifeExpectancy = effectiveClient.spouseLifeExpectancy ?? null;
@@ -82,9 +81,10 @@ export function buildMapBoards(input: MapBoardsInput): MapBoards {
     {
       dateOfBirth: identity.dateOfBirth,
       retirementAge,
-      planEndAge,
+      lifeExpectancy,
       spouseDob: identity.spouseDob,
       spouseRetirementAge,
+      spouseLifeExpectancy,
     },
     planStartYear,
     planEndYear,

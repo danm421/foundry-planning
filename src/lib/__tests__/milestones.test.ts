@@ -10,12 +10,15 @@ import {
   savingsRuleOwnerForAccount,
 } from "../milestones";
 
+// Different life expectancies, so a death milestone can only pass by reading
+// its OWN person's — not a shared household age.
 const CLIENT = {
   dateOfBirth: "1965-06-15",
   retirementAge: 62,
-  planEndAge: 95,
+  lifeExpectancy: 90,
   spouseDob: "1968-03-10",
   spouseRetirementAge: 65,
+  spouseLifeExpectancy: 97,
 };
 
 describe("buildClientMilestones", () => {
@@ -24,18 +27,28 @@ describe("buildClientMilestones", () => {
     expect(m.planStart).toBe(2026);
     expect(m.planEnd).toBe(2060);
     expect(m.clientRetirement).toBe(2027); // 1965 + 62
-    expect(m.clientEnd).toBe(2060); // 1965 + 95
+    expect(m.clientEnd).toBe(2055); // 1965 + 90 — the client's own death year
     expect(m.spouseRetirement).toBe(2033); // 1968 + 65
-    expect(m.spouseEnd).toBe(2063); // 1968 + 95
+    expect(m.spouseEnd).toBe(2065); // 1968 + 97 — the spouse's own death year
     expect(m.clientSS62).toBe(2027); // 1965 + 62
     expect(m.clientSSFRA).toBe(2032); // 1965 + 67
     expect(m.clientSS70).toBe(2035); // 1965 + 70
     expect(m.spouseSS62).toBe(2030); // 1968 + 62
   });
 
+  it("assumes 95 for a missing life expectancy, as the engine does", () => {
+    const m = buildClientMilestones(
+      { ...CLIENT, lifeExpectancy: undefined, spouseLifeExpectancy: null },
+      2026,
+      2063,
+    );
+    expect(m.clientEnd).toBe(2060); // 1965 + 95
+    expect(m.spouseEnd).toBe(2063); // 1968 + 95
+  });
+
   it("handles no spouse", () => {
     const m = buildClientMilestones(
-      { dateOfBirth: "1970-01-01", retirementAge: 65, planEndAge: 90 },
+      { dateOfBirth: "1970-01-01", retirementAge: 65, lifeExpectancy: 90 },
       2026,
       2060
     );
@@ -51,13 +64,13 @@ describe("resolveMilestone", () => {
   it("resolves each ref type", () => {
     expect(resolveMilestone("plan_start", m)).toBe(2026);
     expect(resolveMilestone("client_retirement", m)).toBe(2027);
-    expect(resolveMilestone("spouse_end", m)).toBe(2063);
+    expect(resolveMilestone("spouse_end", m)).toBe(2066);
     expect(resolveMilestone("client_ss_fra", m)).toBe(2032);
   });
 
   it("returns undefined for missing spouse refs", () => {
     const noSpouse = buildClientMilestones(
-      { dateOfBirth: "1970-01-01", retirementAge: 65, planEndAge: 90 },
+      { dateOfBirth: "1970-01-01", retirementAge: 65, lifeExpectancy: 90 },
       2026, 2060
     );
     expect(resolveMilestone("spouse_retirement", noSpouse)).toBeUndefined();
@@ -69,15 +82,22 @@ describe("resolveMilestone", () => {
       // the salary's last working year is 2026 (year before retirement).
       expect(resolveMilestone("client_retirement", m, "end")).toBe(2026);
       expect(resolveMilestone("spouse_retirement", m, "end")).toBe(2032);
-      expect(resolveMilestone("client_end", m, "end")).toBe(2059);
-      expect(resolveMilestone("spouse_end", m, "end")).toBe(2062);
       expect(resolveMilestone("client_ss_fra", m, "end")).toBe(2031);
     });
 
     it("transition refs return the milestone year when used as start position", () => {
       expect(resolveMilestone("client_retirement", m, "start")).toBe(2027);
-      expect(resolveMilestone("spouse_end", m, "start")).toBe(2063);
       expect(resolveMilestone("client_ss_fra", m, "start")).toBe(2032);
+    });
+
+    // The engine runs a death year to completion (applyIncomeTermination,
+    // computeIncome): it is the person's LAST alive year. So a stream ending at
+    // a death includes that year, and one starting at it begins the year after.
+    it("death refs end ON the death year and start the year after", () => {
+      expect(resolveMilestone("client_end", m, "end")).toBe(2055);
+      expect(resolveMilestone("spouse_end", m, "end")).toBe(2065);
+      expect(resolveMilestone("client_end", m, "start")).toBe(2056);
+      expect(resolveMilestone("spouse_end", m, "start")).toBe(2066);
     });
 
     it("plan_start and plan_end are absolute bounds (not transitions) — no offset for end position", () => {
@@ -93,7 +113,7 @@ describe("resolveMilestone", () => {
 
     it("returns undefined for missing spouse refs regardless of position", () => {
       const noSpouse = buildClientMilestones(
-        { dateOfBirth: "1970-01-01", retirementAge: 65, planEndAge: 90 },
+        { dateOfBirth: "1970-01-01", retirementAge: 65, lifeExpectancy: 90 },
         2026, 2060
       );
       expect(resolveMilestone("spouse_retirement", noSpouse, "end")).toBeUndefined();
@@ -110,7 +130,7 @@ describe("availableRefs", () => {
 
   it("excludes spouse refs when no spouse", () => {
     const m = buildClientMilestones(
-      { dateOfBirth: "1970-01-01", retirementAge: 65, planEndAge: 90 },
+      { dateOfBirth: "1970-01-01", retirementAge: 65, lifeExpectancy: 90 },
       2026, 2060
     );
     const refs = availableRefs(m);

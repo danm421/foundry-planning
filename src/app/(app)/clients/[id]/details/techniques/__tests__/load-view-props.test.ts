@@ -50,7 +50,8 @@ const reinvestment = (over: Record<string, unknown> = {}) => ({
 function mountTree(reinvestments: unknown[]) {
   vi.mocked(loadEffectiveTree).mockResolvedValue({
     effectiveTree: {
-      client: { firstName: "Cooper", spouseName: null },
+      client: { firstName: "Cooper", spouseName: null, dateOfBirth: "1970-01-01", retirementAge: 65, planEndAge: 95 },
+      planSettings: { planStartYear: 2026, planEndYear: 2065 },
       accounts: [
         account("a-brokerage", "taxable"),
         account("a-brokerage-2", "taxable"),

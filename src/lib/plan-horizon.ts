@@ -99,14 +99,12 @@ export function planHorizonFromLifeExpectancy(client: {
  * Return a copy of `tree` whose plan horizon (planSettings.planEndYear and
  * client.planEndAge) is re-derived from the household's life expectancies.
  *
- * Mirrors the scenario-side recompute in `applyMutations` so a base or source
- * projection ends in the same year a mutated scenario would when their life
- * expectancies match. A loaded tree carries its *stored* planEndYear, which can
- * lag the life-expectancy-implied horizon (the facts route re-derives it on
- * every horizon-input change, but the stored value can still drift). Without
- * this reconciliation the shorter projection stops early and the portfolio
- * comparison chart renders the longer side's extra trailing years as an
- * (all-blue) common floor — visually implying the two plans are identical.
+ * The life expectancies are the source of truth for the horizon; the stored
+ * planEndYear only caches it and drifts when a DOB or life expectancy changes
+ * through a path that doesn't re-derive it. `load-client-data` re-derives the
+ * base tree's horizon; the scenario loader calls this after applying a
+ * scenario's changes, since a scenario can move a life expectancy. Mirrors the
+ * live Solver's recompute in `applyMutations`.
  *
  * Pure — never mutates the input. No-op (returns the same reference) when no
  * horizon can be derived (missing/unparsable client DOB), matching

@@ -4,8 +4,7 @@ import { loadGiftDraftState } from "@/lib/estate/load-gift-drafts";
 import { db } from "@/db";
 import { modelPortfolios, modelPortfolioAllocations, scenarios } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
-import { buildClientMilestones } from "@/lib/milestones";
-import { applyLifeExpectancyHorizon } from "@/lib/plan-horizon";
+import { treeMilestones } from "@/lib/milestones";
 import { loadLifeInsuranceSettings } from "@/lib/life-insurance/settings";
 import { assembleSolverPortfolios, mixFromAllocationRows, type SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
@@ -71,18 +70,10 @@ export async function SolverContent({
     cash: growthResolver?.resolveCategoryDefault("cash").rate ?? 0.02,
   };
 
-  // Re-derive each side's plan horizon from its life expectancies before
-  // projecting. The scenario (right column) re-derives its horizon whenever a
-  // life-expectancy lever moves (see applyMutations), but a loaded tree carries
-  // its *stored* planEndYear, which can lag the life-expectancy-implied horizon.
-  // Left unreconciled the base projection stops early and the portfolio
-  // comparison chart paints the scenario's extra trailing years as "identical
-  // to base" (an all-blue floor). Normalizing both sides keeps them on the same
-  // year grid; it's a no-op for trees whose stored horizon is already correct.
-  const baseTree = applyLifeExpectancyHorizon(baseLoaded.effectiveTree);
-  const sourceTree = sourceLoaded
-    ? applyLifeExpectancyHorizon(sourceLoaded.effectiveTree)
-    : null;
+  // Both trees' horizons already follow their life expectancies: the loaders
+  // re-derive planEndYear rather than trusting the stored column.
+  const baseTree = baseLoaded.effectiveTree;
+  const sourceTree = sourceLoaded?.effectiveTree ?? null;
 
   const baseProjection = runProjection(baseTree);
   const sourceProjection = sourceTree
@@ -134,11 +125,7 @@ export async function SolverContent({
     ? mixFromAllocationRows(allocsByPortfolio.get(retirementDefaultPortfolioId) ?? [])
     : [];
 
-  const milestones = buildClientMilestones(
-    baseTree.client,
-    baseTree.planSettings.planStartYear,
-    baseTree.planSettings.planEndYear,
-  );
+  const milestones = treeMilestones(baseTree);
 
   // Per-goal education POS gauge inputs. The gauge simulates each goal's
   // dedicated pool client-side; the blended return stats + scenario seed come

@@ -16,7 +16,7 @@ import {
   scenarios,
 } from "@/db/schema";
 import type { AccountRow, LiabilityRow } from "@/components/balance-sheet-view";
-import { buildClientMilestones } from "@/lib/milestones";
+import { treeMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { buildIncomeRows } from "@/lib/balance-sheet/build-income-rows";
@@ -160,9 +160,7 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
     clientInflationOverride,
   );
 
-  const planStartYear = settings?.planStartYear ?? new Date().getFullYear();
-  const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
-  const milestones = buildClientMilestones(client, planStartYear, planEndYear);
+  const milestones = treeMilestones(effectiveTree);
 
   const clientFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
   const spouseFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;

@@ -171,8 +171,11 @@ describe("ChipBar read-only gating", () => {
 
     const stateChipBtn = screen.queryByRole("button", { name: /State estate %/ });
     expect(stateChipBtn).not.toBeNull();
+    // Plan end year follows the life expectancies, so it is shown but never
+    // editable — even under edit.
     const endYearChipBtn = screen.queryByRole("button", { name: /Plan end year/ });
-    expect(endYearChipBtn).not.toBeNull();
+    expect(endYearChipBtn).toBeNull();
+    expect(screen.getByText(/Plan end year/)).toBeTruthy();
 
     const editAssumptions = screen.queryByRole("button", { name: /edit assumptions/i });
     expect(editAssumptions).not.toBeNull();

@@ -16,8 +16,11 @@ const CHIPS: Array<{
   key: "planEndYear" | "flatStateEstateRate";
   label: string;
   format: ChipFormat;
+  /** Shown but never edited. The plan end year follows the life expectancies
+   *  (load-client-data re-derives it), so a typed year would be ignored. */
+  readOnly?: boolean;
 }> = [
-  { key: "planEndYear", label: "Plan end year", format: "year" },
+  { key: "planEndYear", label: "Plan end year", format: "year", readOnly: true },
   { key: "flatStateEstateRate", label: "State estate %", format: "pct" },
 ];
 
@@ -60,8 +63,9 @@ export function ChipBar({ clientId, planSettings, onOpenAssumptions }: Props) {
           const numeric = raw == null ? 0 : Number(raw);
           // Under view-only, render the chip as a static, non-interactive label
           // that still shows the assumption value (no onClick → no inline
-          // ChipEditor → no PUT /plan-settings).
-          if (!canEdit) {
+          // ChipEditor → no PUT /plan-settings). A read-only chip renders the
+          // same way for everyone.
+          if (!canEdit || c.readOnly) {
             return (
               <span
                 key={c.key}

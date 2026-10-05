@@ -79,6 +79,7 @@ import { sortOwners } from "@/engine/ownership";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
+import { planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
 import { loadAnnuityContractsByAccountIds } from "@/lib/annuities/load-annuity-contracts";
 import { loadDisabilityPolicies } from "@/lib/insurance-policies/load-disability-policies";
@@ -404,27 +405,43 @@ const loadClientDataCached = cache(
     if (!baseSettings) {
       throw new ProjectionInputError(`Client ${clientId} has no plan_settings row`);
     }
-    const settings = withGrowthOverride(
-      baseSettings,
-      override,
-      new Set(portfolioRows.map((p) => p.id)),
-    );
+    // The plan ends the year the LAST spouse dies, and the life expectancies
+    // are the source of truth for it (see `clients.plan_end_age` in schema.ts).
+    // The stored plan_end_year / plan_end_age only cache that, and they drift
+    // when a DOB or life expectancy changes through a path that doesn't
+    // re-derive them (CRM contact edits, imports) — which left "Last Year"
+    // stuck at the primary's own death. Re-derive here so the engine's year
+    // loop, every `plan_end` ref and every picker built off this tree agree.
+    const horizon = planHorizonFromLifeExpectancy({
+      dateOfBirth: clientDob,
+      lifeExpectancy: client.lifeExpectancy,
+      spouseDob,
+      spouseLifeExpectancy: client.spouseLifeExpectancy,
+    });
+    const planEndAge = horizon?.planEndAge ?? client.planEndAge;
+    const settings = {
+      ...withGrowthOverride(baseSettings, override, new Set(portfolioRows.map((p) => p.id))),
+      planEndYear: horizon?.planEndYear ?? baseSettings.planEndYear,
+    };
 
     // Position-aware milestone resolution. When a row has a startYearRef /
     // endYearRef set, re-derive its numeric year so the engine sees the
     // correct value even if the stored startYear/endYear is stale (e.g.,
     // retirement age changed, or row was saved before the position-aware
-    // resolution rule landed). Transition refs (`*_retirement`, `*_end`,
-    // `*_ss_*`) returned for `position: "end"` are `year - 1`, so a stream
-    // ending at retirement stops the year *before* the retirement year and
-    // doesn't overlap with streams starting at retirement.
+    // resolution rule landed). Transition refs (`*_retirement`, `*_ss_*`)
+    // returned for `position: "end"` are `year - 1`, so a stream ending at
+    // retirement stops the year *before* the retirement year and doesn't
+    // overlap with streams starting at retirement. A death ref (`*_end`) is
+    // that person's own death year — their last alive year — so it ends ON it
+    // and starts the year after (see `resolveMilestone`).
     const refMilestones = buildClientMilestones(
       {
         dateOfBirth: clientDob,
         retirementAge: client.retirementAge,
-        planEndAge: client.planEndAge,
+        lifeExpectancy: client.lifeExpectancy,
         spouseDob: spouseDob ?? null,
         spouseRetirementAge: client.spouseRetirementAge ?? null,
+        spouseLifeExpectancy: client.spouseLifeExpectancy,
       },
       settings.planStartYear,
       settings.planEndYear,
@@ -1746,7 +1763,7 @@ const loadClientDataCached = cache(
       dateOfBirth: clientDob,
       retirementAge: client.retirementAge,
       retirementMonth: client.retirementMonth ?? 1,
-      planEndAge: client.planEndAge,
+      planEndAge,
       lifeExpectancy: client.lifeExpectancy,
       spouseName: spouseFirstName,
       spouseDob: spouseDob,

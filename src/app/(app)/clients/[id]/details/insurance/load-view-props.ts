@@ -28,7 +28,7 @@ import type { DisabilityPolicy } from "@/engine/types";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadActiveChangesOfKind } from "@/lib/scenario/changes";
 import { ownerRefFromOwners } from "@/lib/insurance-policies/owner-ref";
-import { buildClientMilestones } from "@/lib/milestones";
+import { treeMilestones } from "@/lib/milestones";
 
 export type InsuranceViewPropsResult =
   | { status: "ok"; props: InsurancePanelProps; disabilityProps: DisabilityPanelProps }
@@ -235,17 +235,7 @@ export async function loadInsuranceViewProps(
   // Milestones power the policy dialog's activation-year picker.
   const planStartYear = effectiveTree.planSettings.planStartYear;
   const planEndYear = effectiveTree.planSettings.planEndYear;
-  const milestones = buildClientMilestones(
-    {
-      dateOfBirth: effectiveTree.client.dateOfBirth,
-      retirementAge: effectiveTree.client.retirementAge,
-      planEndAge: effectiveTree.client.planEndAge,
-      spouseDob: effectiveTree.client.spouseDob,
-      spouseRetirementAge: effectiveTree.client.spouseRetirementAge,
-    },
-    planStartYear,
-    planEndYear,
-  );
+  const milestones = treeMilestones(effectiveTree);
 
   // What a policy insures this year, in SALARY mode. This calls the engine's
   // `resolveCoveredEarnings` itself rather than re-typing its `computeIncome`

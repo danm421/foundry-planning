@@ -77,7 +77,8 @@ const account = (id: string, name: string, category: string) => ({
 
 /** The scenario has no changes yet, so its effective tree IS the base tree. */
 const BASE_TREE = {
-  client: { firstName: "Cooper", spouseName: null },
+  client: { firstName: "Cooper", spouseName: null, dateOfBirth: "1970-01-01", retirementAge: 65, planEndAge: 95 },
+  planSettings: { planStartYear: 2026, planEndYear: 2065 },
   accounts: [account("a-brokerage", "Joint Brokerage", "taxable"), account("a-cash", "Checking", "cash")],
   liabilities: [],
   reinvestments: [

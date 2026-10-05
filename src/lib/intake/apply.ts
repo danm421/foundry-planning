@@ -505,9 +505,10 @@ async function applySectionsToClient(
       {
         dateOfBirth: dob,
         retirementAge: clientRetirementAge,
-        planEndAge: client.planEndAge,
+        lifeExpectancy: client.lifeExpectancy,
         spouseDob: spouse?.dateOfBirth ?? null,
         spouseRetirementAge,
+        spouseLifeExpectancy: client.spouseLifeExpectancy,
       },
       currentYear,
       planEndYear,

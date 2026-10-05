@@ -566,6 +566,22 @@ describe("loadClientData", () => {
     expect(data.taxAdjustments![0].endYear).toBe(2063);
   });
 
+  it("ends a plan_end-anchored expense at the survivor's death, not a stale stored horizon", async () => {
+    // Alice 1968 + 95 → 2063; Bob 1970 + 97 → 2067. The stored horizon
+    // (planEndYear 2063, planEndAge 95) still stops at Alice's death — the
+    // drift a DOB/life-expectancy edit outside the client PUT route leaves.
+    // Life expectancies are the source of truth, so "Last Year" is 2067.
+    seedValidFixture();
+    dbState.clients = [{ ...clientRow, spouseLifeExpectancy: 97 }];
+    dbState.expenses = [{ ...expenseRow, endYearRef: "plan_end" as unknown as typeof expenseRow.endYearRef }];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    expect(data.planSettings.planEndYear).toBe(2067);
+    expect(data.client.planEndAge).toBe(99);
+    expect(data.expenses[0].endYear).toBe(2067);
+  });
+
   // A percentage of an account gifted to a PERSON, not to a trust — the arm
   // that carries `recipientFamilyMemberId`.
   const assetGiftToAPersonRow = {

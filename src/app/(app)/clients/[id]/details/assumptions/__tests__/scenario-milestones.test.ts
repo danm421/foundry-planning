@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { ClientData } from "@/engine/types";
-import { treeMilestones, withdrawalRowsForDisplay } from "../scenario-milestones";
+import { withdrawalRowsForDisplay } from "../scenario-milestones";
+import { treeMilestones } from "@/lib/milestones";
 
 // Mid-year DOB: see year-refs.activation.test.ts for the UTC-parse caveat.
 function tree(retirementAge: number): Pick<ClientData, "client" | "planSettings"> {

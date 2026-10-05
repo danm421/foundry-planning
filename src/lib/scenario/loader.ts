@@ -31,6 +31,7 @@ import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gi
 import { withSynthesizedDisabilityPremiums } from "@/lib/insurance-policies/disability-premium-expense";
 import { withSynthesizedEntityChecking } from "@/lib/entities/entity-checking";
 import { resolveRefYears } from "@/lib/year-refs";
+import { applyLifeExpectancyHorizon } from "@/lib/plan-horizon";
 import { applyGiftOverlays } from "./apply-gift-overlays";
 import { withReinvestmentTargets } from "./reinvestment-picks";
 import { reResolveEditedAccountGrowth } from "./account-growth-edits";
@@ -192,7 +193,9 @@ export function applyScenarioChangesWithRefs(
     );
   }
 
-  const refResolved = resolveRefYears(effectiveTree);
+  // A scenario can move a life expectancy; the horizon (and so every
+  // `plan_end` ref resolved just below) follows it, not a stored planEndYear.
+  const refResolved = resolveRefYears(applyLifeExpectancyHorizon(effectiveTree));
 
   // Gift overlay: apply the scenario's `gift` changes (partitioned out of
   // applyScenarioChanges above, which mis-handles base gifts). For each targeted

@@ -51,8 +51,8 @@ Timing rules:
     - "Client's Retirement", "<name>'s Retirement" for the client -> "client_retirement"
     - "Spouse's Retirement", "Co-client's Retirement", "<name>'s Retirement" for the spouse -> "spouse_retirement"
     - "Client's Death", "Client's Life Expectancy" -> "client_end"
-    - "Spouse's Death", "Co-client's Death", "At Second Death" -> "spouse_end"
-    - "Plan End", "End of Plan" -> "plan_end"
+    - "Spouse's Death", "Co-client's Death" -> "spouse_end"
+    - "Plan End", "End of Plan", "At Second Death" -> "plan_end"
   Still fill "startYear"/"endYear" with the resolved 4-digit year when the
   document shows one, e.g. "Client's Retirement (age 64 in 2051)" -> 2051.
 - "owner": infer from the destination account's owner or the row name. Use

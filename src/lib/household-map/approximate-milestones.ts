@@ -22,9 +22,10 @@ export function approximateMilestones(
   currentYear: number,
 ): ClientMilestones {
   const clientRetirement = people.client.retirementYear ?? currentYear + 10;
-  // Each person's OWN death year, off their own life-expectancy card. A single
-  // shared "plan end" here would offer "Co-client End of Plan" and "Client End of
-  // Plan" as the same year for every household, and be wrong for one of them.
+  // Each person's OWN death year, off their own life-expectancy card — the same
+  // rule `buildClientMilestones` uses. A single shared "plan end" here would
+  // offer "Co-client Death" and "Client Death" as the same year for every
+  // household, and be wrong for one of them.
   const clientEnd =
     goals.find((g) => g.lifeExpectancy?.owner === "client")?.year ?? currentYear + 30;
   const spouseEnd = goals.find((g) => g.lifeExpectancy?.owner === "spouse")?.year;

@@ -1,11 +1,5 @@
 import type { ClientData } from "@/engine/types";
-import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
-
-/** Milestones of the tree being shown. Inside a scenario these are the
- *  SCENARIO's (a retirement-age change moves them), never the base plan's. */
-export function treeMilestones(tree: Pick<ClientData, "client" | "planSettings">) {
-  return buildClientMilestones(tree.client, tree.planSettings.planStartYear, tree.planSettings.planEndYear);
-}
+import { resolveMilestone, type ClientMilestones, type YearRef } from "@/lib/milestones";
 
 /**
  * Withdrawal-order rows with their milestone-anchored years re-resolved against
@@ -13,7 +7,7 @@ export function treeMilestones(tree: Pick<ClientData, "client" | "planSettings">
  */
 export function withdrawalRowsForDisplay(
   rows: NonNullable<ClientData["withdrawalStrategy"]>,
-  milestones: ReturnType<typeof treeMilestones>,
+  milestones: ClientMilestones,
 ) {
   return rows.map((w) => {
     const row = { ...w, id: w.id! };

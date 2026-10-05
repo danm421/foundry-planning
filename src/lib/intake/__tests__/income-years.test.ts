@@ -18,7 +18,7 @@ const ANCHORS = buildClientMilestones(
   {
     dateOfBirth: "1975-04-01",
     retirementAge: 65,
-    planEndAge: 95,
+    lifeExpectancy: 95,
     spouseDob: "1980-09-12",
     spouseRetirementAge: 62,
   },
@@ -99,7 +99,7 @@ describe("incomeYearWindow", () => {
     // buildClientMilestones leaves `spouseRetirement` undefined without a spouse
     // DOB, so anchoring to it would store a ref that resolves to nothing.
     const single = buildClientMilestones(
-      { dateOfBirth: "1975-04-01", retirementAge: 65, planEndAge: 95 },
+      { dateOfBirth: "1975-04-01", retirementAge: 65, lifeExpectancy: 95 },
       2026,
       2070,
     );

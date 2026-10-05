@@ -102,9 +102,10 @@ export default async function QuickStartPage({ params }: { params: Promise<{ id:
       client: {
         dateOfBirth: identity.dateOfBirth,
         retirementAge: identity.retirementAge,
-        planEndAge: identity.planEndAge,
+        lifeExpectancy: identity.lifeExpectancy,
         spouseDob: identity.spouseDob,
         spouseRetirementAge: identity.spouseRetirementAge,
+        spouseLifeExpectancy: identity.spouseLifeExpectancy,
       },
       planStartYear: settings?.planStartYear ?? currentYear,
       planEndYear: settings?.planEndYear ?? currentYear + 40,

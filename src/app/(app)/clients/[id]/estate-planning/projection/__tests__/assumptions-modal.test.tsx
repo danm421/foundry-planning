@@ -62,7 +62,8 @@ describe("AssumptionsModal", () => {
     expect(body.inflationRate).toBeCloseTo(0.03);
     // Other fields are also included since modal submits the full edited form.
     expect(body.flatFederalRate).toBeCloseTo(0.24);
-    expect(body.planEndYear).toBe(2080);
+    // The plan end year follows the life expectancies — never posted from here.
+    expect(body).not.toHaveProperty("planEndYear");
     expect(body.taxEngineMode).toBe("flat");
 
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));

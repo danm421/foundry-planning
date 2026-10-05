@@ -14,7 +14,7 @@ import {
   scenarios,
 } from "@/db/schema";
 import type { IncomeExpensesViewProps } from "@/components/income-expenses-view";
-import { buildClientMilestones } from "@/lib/milestones";
+import { treeMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { buildFlowScenarioFields } from "@/lib/inline-edit/flow-write";
@@ -171,9 +171,8 @@ export async function loadCashFlowStepData(
     spouseEndYear = spouseBirthYear + client.planEndAge;
   }
 
-  const planStartYear = settings?.planStartYear ?? new Date().getFullYear();
-  const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
-  const milestones = buildClientMilestones(client, planStartYear, planEndYear);
+  const { planStartYear, planEndYear } = effectiveTree.planSettings;
+  const milestones = treeMilestones(effectiveTree);
 
   const accountsForView = effectiveTree.accounts.map((a) => ({
     id: a.id,

@@ -296,20 +296,15 @@ export function buildMapGoals(input: BuildMapGoalsInput): MapGoal[] {
   // for the LATER of the two deaths, so the first-to-die spouse never appeared
   // on the timeline at all — which is the whole point of a two-sided spine.
   //
-  // Its years were wrong too, and worth spelling out so nobody reinstates them:
-  // both came from `milestones`, which derives BOTH ends from the household-wide
-  // `planEndAge` (`clients.plan_end_age` = "the last death, in the primary's
-  // years"). So `m.clientEnd` is the year the last spouse dies — the client's own
-  // death year only when the client outlives — and `m.spouseEnd` is
-  // `spouseBirthYear + planEndAge`, a number with no meaning whatsoever. The
-  // card's AGE detail meanwhile came from that person's real `lifeExpectancy`, so
-  // year and age disagreed for every household where the client is not the last
-  // to die.
+  // Its years were wrong too: both came from `milestones`, which then derived
+  // BOTH ends from the household-wide `planEndAge` (the last death, in the
+  // primary's years), so year and age disagreed for every household where the
+  // client was not the last to die. `milestones` has since moved to the same
+  // per-person rule.
   //
-  // Both cards now use the engine's own per-person rule, `birthYear +
+  // Both cards use the engine's own per-person rule, `birthYear +
   // lifeExpectancy` (`computeFinalDeathYear`, `engine/death-event/shared.ts`),
-  // which is what the projection actually keys death events off. Do not route
-  // these back through `milestones`.
+  // which is what the projection actually keys death events off.
   goals.push(...lifeExpectancyMilestones(input));
   goals.push(...socialSecurityMilestones(input));
 

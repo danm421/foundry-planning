@@ -15,9 +15,10 @@ export interface QsBootstrap {
     client: {
       dateOfBirth: string;
       retirementAge: number;
-      planEndAge: number;
+      lifeExpectancy: number;
       spouseDob: string | null;
       spouseRetirementAge: number | null;
+      spouseLifeExpectancy: number | null;
     };
     planStartYear: number;
     planEndYear: number;

@@ -25,7 +25,7 @@ import InsurancePanel, {
 } from "@/components/insurance-panel";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { ownerRefFromOwners } from "@/lib/insurance-policies/owner-ref";
-import { buildClientMilestones } from "@/lib/milestones";
+import { treeMilestones } from "@/lib/milestones";
 
 interface InsuranceStepProps {
   clientId: string;
@@ -154,6 +154,8 @@ export default async function InsuranceStep({ clientId, firmId }: InsuranceStepP
     blendedReturn: blendedByPortfolio.get(p.id) ?? 0,
   }));
 
+  const { planStartYear, planEndYear } = effectiveTree.planSettings;
+
   // Policy schedule grid range: plan start year → household second-to-die year.
   const { startYear: scheduleStartYear, endYear: scheduleEndYear } =
     computeScheduleYearRange({
@@ -161,24 +163,12 @@ export default async function InsuranceStep({ clientId, firmId }: InsuranceStepP
       lifeExpectancy: effectiveTree.client.lifeExpectancy ?? 95,
       spouseDob: effectiveTree.client.spouseDob ?? null,
       spouseLifeExpectancy: effectiveTree.client.spouseLifeExpectancy ?? null,
-      planStartYear: settings?.planStartYear ?? new Date().getFullYear(),
-      planEndYear: settings?.planEndYear ?? new Date().getFullYear() + 30,
+      planStartYear,
+      planEndYear,
     });
 
   // Milestones power the policy dialog's activation-year picker.
-  const planStartYear = settings?.planStartYear ?? new Date().getFullYear();
-  const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
-  const milestones = buildClientMilestones(
-    {
-      dateOfBirth: effectiveTree.client.dateOfBirth,
-      retirementAge: effectiveTree.client.retirementAge,
-      planEndAge: effectiveTree.client.planEndAge,
-      spouseDob: effectiveTree.client.spouseDob,
-      spouseRetirementAge: effectiveTree.client.spouseRetirementAge,
-    },
-    planStartYear,
-    planEndYear,
-  );
+  const milestones = treeMilestones(effectiveTree);
 
   return (
     <Suspense fallback={null}>

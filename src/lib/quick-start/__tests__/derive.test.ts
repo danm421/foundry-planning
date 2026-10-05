@@ -14,9 +14,10 @@ import {
 const client = {
   dateOfBirth: "1965-04-15",
   retirementAge: 65,
-  planEndAge: 95,
+  lifeExpectancy: 95,
   spouseDob: "1967-09-22",
   spouseRetirementAge: 63,
+  spouseLifeExpectancy: 95,
 };
 const ctx = buildQsContext({
   client,

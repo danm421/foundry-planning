@@ -6,9 +6,10 @@ import { clients, crmHouseholdContacts } from "@/db/schema";
 export interface QsIdentity {
   dateOfBirth: string;
   retirementAge: number;
-  planEndAge: number;
+  lifeExpectancy: number;
   spouseDob: string | null;
   spouseRetirementAge: number | null;
+  spouseLifeExpectancy: number | null;
   clientFirstName: string;
   spouseFirstName: string | null;
   hasSpouse: boolean;
@@ -31,9 +32,10 @@ export async function loadClientIdentity(clientId: string): Promise<QsIdentity> 
   return {
     dateOfBirth: primary?.dateOfBirth ?? "",
     retirementAge: c?.retirementAge ?? 65,
-    planEndAge: c?.planEndAge ?? 95,
+    lifeExpectancy: c?.lifeExpectancy ?? 95,
     spouseDob: spouse?.dateOfBirth ?? null,
     spouseRetirementAge: c?.spouseRetirementAge ?? null,
+    spouseLifeExpectancy: c?.spouseLifeExpectancy ?? null,
     clientFirstName: primary?.firstName ?? "Client",
     spouseFirstName: spouse?.firstName ?? null,
     hasSpouse: Boolean(spouse),
