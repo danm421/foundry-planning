@@ -345,4 +345,31 @@ describe("intakeNoteBody", () => {
       intakeNoteBody(p, ALL, { currentYear: 2026 }),
     );
   });
+
+  it("adds each person's Social Security answer to the Income block", () => {
+    const body = intakeNoteBody(
+      payload({
+        socialSecurity: {
+          client: { piaMonthly: 2800, claimingAge: 67 },
+          spouse: { piaMonthly: 0 },
+        },
+      }),
+      ALL,
+      { currentYear: 2026 },
+    )!;
+
+    expect(body).toContain("- Jane's Social Security — $2,800/mo at FRA · start at 67");
+    // A $0 benefit is what an untouched field reads, not an answer.
+    expect(body).not.toContain("John's Social Security");
+  });
+
+  it("files a Social Security answer even when no income rows were added", () => {
+    const body = intakeNoteBody(
+      payload({ income: [], socialSecurity: { client: { claimingAge: 62 } } }),
+      ["income"],
+      { currentYear: 2026 },
+    )!;
+
+    expect(body).toContain("## Income\n- Jane's Social Security — Start at 62");
+  });
 });

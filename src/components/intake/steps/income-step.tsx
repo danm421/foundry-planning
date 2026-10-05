@@ -1,7 +1,13 @@
 "use client";
 
-import type { IntakeDraft } from "@/lib/intake/schema";
+import { Fragment } from "react";
+import {
+  INTAKE_SS_CLAIMING_AGES,
+  type IntakeDraft,
+  type IntakeSocialSecurity,
+} from "@/lib/intake/schema";
 import { incomeSpanLabel } from "@/lib/intake/income-years";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
 import {
   ContextualUploadZone,
   type IntakeUploadContext,
@@ -10,6 +16,8 @@ import {
   CardList,
   MoneyInput,
   OwnerField,
+  SectionHeading,
+  StepCard,
   YearInput,
   inputCls,
   labelCls,
@@ -27,6 +35,8 @@ type IncomeItem = NonNullable<IncomeSlice>[number];
 export interface IncomeStepProps {
   value: IncomeSlice;
   onChange: (next: IncomeSlice) => void;
+  socialSecurity: IntakeSocialSecurity | undefined;
+  onSocialSecurityChange: (next: IntakeSocialSecurity) => void;
   /** Display name for the primary client (falls back to "Client"). */
   clientName?: string;
   /** Display name for the co-client (falls back to "Co-client"); omit when none. */
@@ -45,6 +55,14 @@ const TYPE_OPTIONS = [
   { value: "business",         label: "Business income" },
   { value: "other",            label: "Other" },
 ] as const;
+
+// Social Security has its own section below the list, so a new row isn't
+// offered it — only a row already saved as Social Security keeps the option.
+function typeOptionsFor(item: IncomeItem) {
+  return item.type === "social_security"
+    ? TYPE_OPTIONS
+    : TYPE_OPTIONS.filter((opt) => opt.value !== "social_security");
+}
 
 // ─── Blank template ──────────────────────────────────────────────────────────
 
@@ -68,6 +86,8 @@ function blankIncome(currentYear: number): IncomeItem {
 export function IncomeStep({
   value,
   onChange,
+  socialSecurity,
+  onSocialSecurityChange,
   clientName,
   spouseName,
   hasSpouse = false,
@@ -99,7 +119,7 @@ export function IncomeStep({
       <CardList
         addLabel="Add income"
         emptyMessage="No income sources added yet"
-        emptyHint="Add salary, Social Security, business, and any other income."
+        emptyHint="Add salary, business, and any other income."
         items={income}
         kpis={[
           { label: "Total annual income", value: money(total) },
@@ -147,7 +167,7 @@ export function IncomeStep({
                   }
                   aria-label="Type"
                 >
-                  {TYPE_OPTIONS.map((opt) => (
+                  {typeOptionsFor(item).map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
                     </option>
@@ -228,11 +248,99 @@ export function IncomeStep({
         }}
       />
 
+      <SocialSecuritySection
+        value={socialSecurity}
+        onChange={onSocialSecurityChange}
+        people={ownerOpts.filter(
+          (o): o is { value: "client" | "spouse"; label: string } => o.value !== "joint",
+        )}
+      />
+
       <ContextualUploadZone
         uploads={uploads}
         docType="paystub"
         label="Or upload a pay stub or W-2"
       />
     </div>
+  );
+}
+
+// ─── Social Security ──────────────────────────────────────────────────────────
+//
+// One row per person rather than a card in the list above: everyone has exactly
+// one benefit, and the two numbers an advisor needs — the monthly amount at full
+// retirement age off the SSA statement, and when they plan to start — fit on a
+// single line. Both are optional; "Not sure" is a real answer here.
+
+type SsOwner = keyof IntakeSocialSecurity;
+
+const colHeadCls = "text-[12px] font-medium uppercase tracking-[0.06em] text-ink-3";
+
+function SocialSecuritySection({
+  value,
+  onChange,
+  people,
+}: {
+  value: IntakeSocialSecurity | undefined;
+  onChange: (next: IntakeSocialSecurity) => void;
+  people: { value: SsOwner; label: string }[];
+}) {
+  function update(owner: SsOwner, patch: NonNullable<IntakeSocialSecurity[SsOwner]>) {
+    onChange({ ...value, [owner]: { ...value?.[owner], ...patch } });
+  }
+
+  return (
+    <section aria-labelledby="income-ss-heading" className="space-y-3">
+      <SectionHeading id="income-ss-heading">Social Security</SectionHeading>
+      <StepCard>
+        {/* Name | benefit | start age on one line; on a phone the name takes its
+            own line above the two fields, which would otherwise be too narrow
+            to show "Not sure". */}
+        <div className="grid grid-cols-2 items-center gap-x-4 gap-y-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.75fr)_minmax(0,1fr)]">
+          <span aria-hidden="true" className="hidden sm:block" />
+          <span className={`${colHeadCls} flex items-center gap-1.5 self-end`}>
+            Monthly benefit at 67 (FRA)
+            <FieldTooltip text="The monthly amount your Social Security statement shows at full retirement age — 67 for anyone born in 1960 or later. You can find it at ssa.gov/myaccount." />
+          </span>
+          <span className={`${colHeadCls} self-end`}>Start age</span>
+
+          {people.map(({ value: owner, label }) => {
+            const answer = value?.[owner];
+            return (
+              <Fragment key={owner}>
+                <span className="col-span-2 truncate text-[14px] font-medium text-ink sm:col-span-1">
+                  {label}
+                </span>
+                <MoneyInput
+                  id={`ss-${owner}-pia`}
+                  value={answer?.piaMonthly}
+                  onChange={(num) => update(owner, { piaMonthly: num })}
+                  ariaLabel={`${label} monthly benefit at 67`}
+                  placeholder="0"
+                />
+                <select
+                  id={`ss-${owner}-age`}
+                  className={`${selectCls} tabular`}
+                  value={answer?.claimingAge ?? ""}
+                  onChange={(e) =>
+                    update(owner, {
+                      claimingAge: e.target.value === "" ? undefined : Number(e.target.value),
+                    })
+                  }
+                  aria-label={`${label} start age`}
+                >
+                  <option value="">Not sure</option>
+                  {INTAKE_SS_CLAIMING_AGES.map((age) => (
+                    <option key={age} value={age}>
+                      {age}
+                    </option>
+                  ))}
+                </select>
+              </Fragment>
+            );
+          })}
+        </div>
+      </StepCard>
+    </section>
   );
 }

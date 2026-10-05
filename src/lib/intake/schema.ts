@@ -81,6 +81,28 @@ export const intakeIncomeSchema = z.object({
   endsAtRetirement: z.boolean().default(false),
 });
 
+// Social Security, asked on the Income step as one row per person: the monthly
+// benefit at full retirement age off their SSA statement, and the age they plan
+// to start. Apply writes both onto that person's Social Security income row.
+//
+// Every field is optional even on submit — "I don't know yet" is a real answer
+// and must not block the form. The same schema serves the draft: the age comes
+// from a 62–70 dropdown and the benefit from a money field, so there is no
+// half-typed value for a draft variant to relax.
+export const INTAKE_SS_CLAIMING_AGES = [62, 63, 64, 65, 66, 67, 68, 69, 70] as const;
+
+const intakeSocialSecurityPersonSchema = z.object({
+  piaMonthly: z.number().nonnegative().max(1e6).optional(),
+  claimingAge: z.number().int().min(62).max(70).optional(),
+});
+
+const intakeSocialSecuritySchema = z.object({
+  client: intakeSocialSecurityPersonSchema.optional(),
+  spouse: intakeSocialSecurityPersonSchema.optional(),
+});
+
+export type IntakeSocialSecurity = z.infer<typeof intakeSocialSecuritySchema>;
+
 // A mortgage on a property. Presence of the object IS the "yes I have one"
 // answer — the step adds it when the box is checked and drops it when cleared.
 //
@@ -401,6 +423,8 @@ const intakeSubmitBaseSchema = z.object({
     .optional(),
   accounts: z.array(intakeAccountSchema).max(50).default([]),
   income: z.array(intakeIncomeSchema).max(50).default([]),
+  // Collected on the Income step, so gated on the "income" section everywhere.
+  socialSecurity: intakeSocialSecuritySchema.optional(),
   property: z.array(intakePropertySchema).max(50).default([]),
   // The default has to satisfy the OUTPUT type, so the two array members are
   // spelled out — `{}` no longer type-checks now that they're `.default([])`.
@@ -583,6 +607,7 @@ export const intakeDraftSchema = z.object({
   }).optional(),
   accounts: z.array(intakeAccountDraftSchema).max(50).optional(),
   income: z.array(intakeIncomeDraftSchema).max(50).optional(),
+  socialSecurity: intakeSocialSecuritySchema.optional(),
   property: z.array(intakePropertyDraftSchema).max(50).optional(),
   goals: intakeGoalsDraftSchema.optional(),
   estate: intakeEstateDraftSchema.optional(),
@@ -603,6 +628,14 @@ const blankNum = (v: unknown) => v === undefined || v === null || v === 0;
  */
 export function isBlankIntakeIncomeRow(row: { name?: unknown; annualAmount?: unknown }): boolean {
   return blankStr(row.name) && blankNum(row.annualAmount);
+}
+
+/** Neither person gave a benefit or a start age. A $0 benefit is not an answer,
+ *  for the same reason a $0 income row is not: it is what an untouched field reads. */
+export function isBlankIntakeSocialSecurity(ss: IntakeSocialSecurity | undefined): boolean {
+  const blank = (a: IntakeSocialSecurity["client"]) =>
+    blankNum(a?.piaMonthly) && a?.claimingAge === undefined;
+  return blank(ss?.client) && blank(ss?.spouse);
 }
 
 /**

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   isBlankIntakeIncomeRow,
+  isBlankIntakeSocialSecurity,
   isBlankIntakePropertyRow,
   type IntakeDraft,
 } from "@/lib/intake/schema";
@@ -145,6 +146,8 @@ function useDraftSliceSetters(value: IntakeDraft, onChange: (next: IntakeDraft) 
     onChange({ ...value, accounts: patch });
   const setIncome: (patch: IntakeDraft["income"]) => void = (patch) =>
     onChange({ ...value, income: patch });
+  const setSocialSecurity: (patch: IntakeDraft["socialSecurity"]) => void = (patch) =>
+    onChange({ ...value, socialSecurity: patch });
   const setProperty: (patch: IntakeDraft["property"]) => void = (patch) =>
     onChange({ ...value, property: patch });
   const setGoals: (patch: IntakeDraft["goals"]) => void = (patch) =>
@@ -153,7 +156,16 @@ function useDraftSliceSetters(value: IntakeDraft, onChange: (next: IntakeDraft) 
     onChange({ ...value, estate: patch });
   const setRisk: (patch: IntakeDraft["risk"]) => void = (patch) =>
     onChange({ ...value, risk: patch });
-  return { setFamily, setAccounts, setIncome, setProperty, setGoals, setEstate, setRisk };
+  return {
+    setFamily,
+    setAccounts,
+    setIncome,
+    setSocialSecurity,
+    setProperty,
+    setGoals,
+    setEstate,
+    setRisk,
+  };
 }
 
 // ─── Skip affordance ─────────────────────────────────────────────────────────
@@ -178,7 +190,11 @@ function offersSkip(
   if (!step.skipable) return false;
   const hasDoc = (t: string) => documents.some((d) => d.docType === t);
   if (step.subStep === "income") {
-    return (draft.income ?? []).every(isBlankIntakeIncomeRow) && !hasDoc("paystub");
+    return (
+      (draft.income ?? []).every(isBlankIntakeIncomeRow) &&
+      isBlankIntakeSocialSecurity(draft.socialSecurity) &&
+      !hasDoc("paystub")
+    );
   }
   if (step.subStep === "property") {
     return (draft.property ?? []).every(isBlankIntakePropertyRow) && !hasDoc("mortgage");
@@ -243,8 +259,16 @@ export function IntakeWizard({
   // 0 = welcome; then the selected sections in canonical order (Documents only
   // where uploads are offered); then review.
   const [flatIndex, setFlatIndex] = useState(0);
-  const { setFamily, setAccounts, setIncome, setProperty, setGoals, setEstate, setRisk } =
-    useDraftSliceSetters(value, onChange);
+  const {
+    setFamily,
+    setAccounts,
+    setIncome,
+    setSocialSecurity,
+    setProperty,
+    setGoals,
+    setEstate,
+    setRisk,
+  } = useDraftSliceSetters(value, onChange);
 
   // Live uploads are all three or none: a list with no token can't upload, and
   // uploads with no refetch callback would leave the client staring at a stale
@@ -340,6 +364,8 @@ export function IntakeWizard({
             <IncomeStep
               value={value.income}
               onChange={setIncome}
+              socialSecurity={value.socialSecurity}
+              onSocialSecurityChange={setSocialSecurity}
               clientName={value.family?.primary?.firstName}
               spouseName={value.family?.spouse?.firstName ?? undefined}
               hasSpouse={value.family?.spouse != null}

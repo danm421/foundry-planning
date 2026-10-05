@@ -254,21 +254,6 @@ async function runCreate(
 
   // Seed Social Security income entries at $0 — one per person on the household —
   // so the advisor is prompted to enter benefit amounts and claiming ages.
-  //
-  // BOTH MODE COLUMNS ARE WRITTEN EXPLICITLY, and that is the whole point of the
-  // seed. Every reader falls back on a NULL: `ssBenefitMode` reads as
-  // "manual_amount" (`SocialSecurityCard`, `SocialSecurityDialog`,
-  // `household-map/goals.ts`) and `claimingAgeMode` reads as "years"
-  // (`engine/socialSecurity/claimAge.ts`), so a seed that leaves them null opens
-  // every new household on "Annual benefit amount · 67y 0mo" — the opposite of
-  // the product default, which is a PIA off the SSA statement claimed at full
-  // retirement age. Storing the choice rather than defaulting it in each reader
-  // keeps the engine and every surface reading the same row.
-  //
-  // `claimingAge: 67` still rides along even though `fra` mode never reads it:
-  // it is the age the dialog's "Specific Age" picker opens on, and
-  // `household-map/goals.ts` drops the milestone card for a row whose
-  // `claimingAge` is null.
   const ssSeeds: { name: string; owner: "client" | "spouse" }[] = [
     { name: `Social Security — ${firstName}`, owner: "client" },
   ];
@@ -276,20 +261,16 @@ async function runCreate(
     ssSeeds.push({ name: `Social Security — ${spouseName}`, owner: "spouse" });
   }
   await handle.insert(incomes).values(
-    ssSeeds.map((seed) => ({
-      clientId: client.id,
-      scenarioId: scenario.id,
-      type: "social_security" as const,
-      name: seed.name,
-      annualAmount: "0",
-      startYear: currentYear,
-      endYear: planEndYearValue,
-      growthRate: "0.02",
-      owner: seed.owner,
-      claimingAge: 67,
-      claimingAgeMode: "fra" as const,
-      ssBenefitMode: "pia_at_fra" as const,
-    })),
+    ssSeeds.map((seed) =>
+      socialSecuritySeedRow({
+        clientId: client.id,
+        scenarioId: scenario.id,
+        owner: seed.owner,
+        name: seed.name,
+        currentYear,
+        planEndYear: planEndYearValue,
+      }),
+    ),
   );
 
   // Record the client.create audit. Mirror the original route: pass NO explicit
@@ -332,4 +313,48 @@ export async function createClientForHousehold(
     return runCreate(args.tx, args);
   }
   return db.transaction((tx) => runCreate(tx, args));
+}
+
+/**
+ * A person's starting Social Security row: $0, PIA at full retirement age,
+ * claimed at FRA. Shared with intake apply, which mints one for a person who
+ * has none, so the two can't drift.
+ *
+ * BOTH MODE COLUMNS ARE WRITTEN EXPLICITLY, and that is the whole point of the
+ * seed. Every reader falls back on a NULL: `ssBenefitMode` reads as
+ * "manual_amount" (`SocialSecurityCard`, `SocialSecurityDialog`,
+ * `household-map/goals.ts`) and `claimingAgeMode` reads as "years"
+ * (`engine/socialSecurity/claimAge.ts`), so a seed that leaves them null opens
+ * every new household on "Annual benefit amount · 67y 0mo" — the opposite of
+ * the product default, which is a PIA off the SSA statement claimed at full
+ * retirement age. Storing the choice rather than defaulting it in each reader
+ * keeps the engine and every surface reading the same row.
+ *
+ * `claimingAge: 67` still rides along even though `fra` mode never reads it:
+ * it is the age the dialog's "Specific Age" picker opens on, and
+ * `household-map/goals.ts` drops the milestone card for a row whose
+ * `claimingAge` is null.
+ */
+export function socialSecuritySeedRow(args: {
+  clientId: string;
+  scenarioId: string;
+  owner: "client" | "spouse";
+  name: string;
+  currentYear: number;
+  planEndYear: number;
+}) {
+  return {
+    clientId: args.clientId,
+    scenarioId: args.scenarioId,
+    type: "social_security" as const,
+    name: args.name,
+    annualAmount: "0",
+    startYear: args.currentYear,
+    endYear: args.planEndYear,
+    growthRate: "0.02",
+    owner: args.owner,
+    claimingAge: 67,
+    claimingAgeMode: "fra" as const,
+    ssBenefitMode: "pia_at_fra" as const,
+  };
 }

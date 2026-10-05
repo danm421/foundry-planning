@@ -1505,3 +1505,122 @@ describe("applyIntake — estate", () => {
     expect(rows).toHaveLength(0);
   });
 });
+
+describe("applyIntake — Social Security", () => {
+  const FIRM_SS = "test-firm-apply-ss-2026";
+  const ADVISOR_SS = "user_test_apply_ss";
+  let ids: { householdId?: string; clientId?: string; formId?: string } = {};
+
+  afterEach(async () => {
+    await cleanup(ids);
+    ids = {};
+  });
+
+  const payloadWith = (
+    socialSecurity: IntakePayload["socialSecurity"],
+  ): IntakePayload => ({
+    accounts: [],
+    income: [],
+    socialSecurity,
+    property: [],
+    goals: { expenseGoals: [], topics: [] },
+    meta: { completedSections: [] },
+  });
+
+  const ssRows = (clientId: string) =>
+    db
+      .select({
+        owner: incomes.owner,
+        piaMonthly: incomes.piaMonthly,
+        ssBenefitMode: incomes.ssBenefitMode,
+        claimingAge: incomes.claimingAge,
+        claimingAgeMonths: incomes.claimingAgeMonths,
+        claimingAgeMode: incomes.claimingAgeMode,
+      })
+      .from(incomes)
+      .where(and(eq(incomes.clientId, clientId), eq(incomes.type, "social_security")));
+
+  async function applyWith(
+    sections: IntakeSectionKey[],
+    socialSecurity: IntakePayload["socialSecurity"],
+    opts: { dropSeededRows?: boolean } = {},
+  ) {
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_SS, ADVISOR_SS);
+    if (opts.dropSeededRows) {
+      await db
+        .delete(incomes)
+        .where(and(eq(incomes.clientId, clientId), eq(incomes.type, "social_security")));
+    }
+    const formId = await submitFormWithSections(
+      FIRM_SS,
+      ADVISOR_SS,
+      clientId,
+      sections,
+      payloadWith(socialSecurity),
+    );
+    ids = { householdId, clientId, formId };
+    await applyIntake({ formId, firmId: FIRM_SS, actorId: ADVISOR_SS });
+    return clientId;
+  }
+
+  it("writes the benefit and start age onto the seeded row instead of adding a second", async () => {
+    const clientId = await applyWith(["income"], {
+      client: { piaMonthly: 2800, claimingAge: 70 },
+    });
+
+    const rows = await ssRows(clientId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      owner: "client",
+      piaMonthly: "2800.00",
+      ssBenefitMode: "pia_at_fra",
+      claimingAge: 70,
+      claimingAgeMonths: 0,
+      claimingAgeMode: "years",
+    });
+  });
+
+  it("leaves the claim at full retirement age when only the benefit was given", async () => {
+    const clientId = await applyWith(["income"], { client: { piaMonthly: 1900 } });
+
+    const [row] = await ssRows(clientId);
+    expect(row.piaMonthly).toBe("1900.00");
+    expect(row.claimingAgeMode).toBe("fra");
+  });
+
+  it("adds the row in the seed's shape when the household has none", async () => {
+    const clientId = await applyWith(
+      ["income"],
+      { client: { claimingAge: 62 } },
+      { dropSeededRows: true },
+    );
+
+    const rows = await ssRows(clientId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      owner: "client",
+      piaMonthly: null,
+      ssBenefitMode: "pia_at_fra",
+      claimingAge: 62,
+      claimingAgeMode: "years",
+    });
+  });
+
+  it("drops a co-client answer on a household with no co-client", async () => {
+    const clientId = await applyWith(["income"], { spouse: { piaMonthly: 2000 } });
+
+    const rows = await ssRows(clientId);
+    expect(rows.map((r) => r.owner)).toEqual(["client"]);
+    expect(rows[0].piaMonthly).toBeNull();
+  });
+
+  it("writes nothing when the form did not COLLECT income", async () => {
+    const clientId = await applyWith(["documents"], {
+      client: { piaMonthly: 2800, claimingAge: 70 },
+    });
+
+    const [row] = await ssRows(clientId);
+    expect(row.piaMonthly).toBeNull();
+    expect(row.claimingAgeMode).toBe("fra");
+  });
+});

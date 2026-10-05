@@ -20,6 +20,7 @@ import {
   goalTypeLabel,
 } from "@/lib/intake/goal-rows";
 import { incomeSpanLabel } from "@/lib/intake/income-years";
+import { answeredSocialSecurity } from "@/lib/intake/social-security";
 import type { IntakePayload } from "@/lib/intake/schema";
 import {
   INTAKE_SECTIONS,
@@ -263,15 +264,20 @@ function accountsLines(payload: IntakePayload): string[] {
 }
 
 function incomeLines(payload: IntakePayload, currentYear: number): string[] {
-  return (payload.income ?? []).map(
-    (i) =>
-      `- ${i.name} — ${detail(
-        unlessEchoed(i.name, INCOME_TYPE_LABELS[i.type] ?? i.type),
-        `${usd(i.annualAmount)}/yr`,
-        ownerLabel(i.owner, payload.family),
-        incomeSpanLabel(i, currentYear),
-      )}`,
-  );
+  return [
+    ...(payload.income ?? []).map(
+      (i) =>
+        `- ${i.name} — ${detail(
+          unlessEchoed(i.name, INCOME_TYPE_LABELS[i.type] ?? i.type),
+          `${usd(i.annualAmount)}/yr`,
+          ownerLabel(i.owner, payload.family),
+          incomeSpanLabel(i, currentYear),
+        )}`,
+    ),
+    ...answeredSocialSecurity(payload.socialSecurity, payload.family).map(
+      (ss) => `- ${ss.name}'s Social Security — ${ss.label}`,
+    ),
+  ];
 }
 
 function propertyLines(payload: IntakePayload): string[] {

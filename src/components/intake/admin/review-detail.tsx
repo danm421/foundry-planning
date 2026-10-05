@@ -284,6 +284,16 @@ export default function ReviewDetail({
       {/* ── List sections ───────────────────────────────────────────────── */}
       <ListSection label="Accounts" data={diff.accounts} />
       <ListSection label="Income" data={diff.income} />
+      {diff.socialSecurity.length > 0 && (
+        <div className="rounded-[var(--radius-sm)] border border-hair bg-card p-5">
+          <h3 className={`${labelCls} mb-3`}>Social Security</h3>
+          <div className="space-y-1">
+            {diff.socialSecurity.map((row) => (
+              <FieldRow key={row.owner} label={row.name} diff={row.answer} />
+            ))}
+          </div>
+        </div>
+      )}
       <ListSection label="Property and business interests" data={diff.property} />
       <ListSection label="Upcoming goals" data={diff.expenseGoals} />
 

@@ -228,4 +228,25 @@ describe("ReviewStep — estate", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit Estate" }));
     expect(onEdit).toHaveBeenCalledWith("estate");
   });
+
+  it("lists each person's Social Security answer under Income", () => {
+    render(
+      <ReviewStep
+        {...makeProps({
+          value: {
+            ...richDraft,
+            socialSecurity: {
+              client: { piaMonthly: 2800, claimingAge: 67 },
+              spouse: { claimingAge: 70 },
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Jane's Social Security")).toBeInTheDocument();
+    expect(screen.getByText("$2,800/mo at FRA · start at 67")).toBeInTheDocument();
+    expect(screen.getByText("John's Social Security")).toBeInTheDocument();
+    expect(screen.getByText("Start at 70")).toBeInTheDocument();
+  });
 });

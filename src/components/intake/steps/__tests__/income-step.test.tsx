@@ -2,15 +2,24 @@
 import { useState } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import type { IntakeDraft } from "@/lib/intake/schema";
+import type { IntakeDraft, IntakeSocialSecurity } from "@/lib/intake/schema";
 import { IncomeStep } from "../income-step";
 
 type IncomeSlice = IntakeDraft["income"];
 
-function makeProps(overrides: Partial<{ value: IncomeSlice; onChange: (v: IncomeSlice) => void }> = {}) {
+function makeProps(
+  overrides: Partial<{
+    value: IncomeSlice;
+    onChange: (v: IncomeSlice) => void;
+    socialSecurity: IntakeSocialSecurity;
+    onSocialSecurityChange: (v: IntakeSocialSecurity) => void;
+  }> = {},
+) {
   return {
     value: [] as IncomeSlice,
     onChange: vi.fn(),
+    socialSecurity: undefined,
+    onSocialSecurityChange: vi.fn(),
     ...overrides,
   };
 }
@@ -88,17 +97,40 @@ describe("IncomeStep", () => {
   it("changing type calls onChange with the new type", () => {
     const onChange = vi.fn();
     const value: IncomeSlice = [
-      { name: "SS", type: "salary", annualAmount: 0, owner: "client" },
+      { name: "Side gig", type: "salary", annualAmount: 0, owner: "client" },
     ];
     render(<IncomeStep {...makeProps({ value, onChange })} />);
 
-    expandRow(/edit ss/i);
+    expandRow(/edit side gig/i);
     fireEvent.change(screen.getByRole("combobox", { name: /type/i }), {
-      target: { value: "social_security" },
+      target: { value: "business" },
     });
 
     expect(onChange).toHaveBeenCalledOnce();
-    expect(onChange.mock.calls[0][0]?.[0]?.type).toBe("social_security");
+    expect(onChange.mock.calls[0][0]?.[0]?.type).toBe("business");
+  });
+
+  it("does not offer Social Security as a type for a new row — it has its own section", () => {
+    const value: IncomeSlice = [
+      { name: "Job", type: "salary", annualAmount: 0, owner: "client" },
+    ];
+    render(<IncomeStep {...makeProps({ value })} />);
+
+    expandRow(/edit job/i);
+    const labels = Array.from(
+      screen.getByRole("combobox", { name: /type/i }).querySelectorAll("option"),
+    ).map((o) => o.textContent);
+    expect(labels).not.toContain("Social Security");
+  });
+
+  it("keeps the Social Security type on a row already saved as one", () => {
+    const value: IncomeSlice = [
+      { name: "Old SS", type: "social_security", annualAmount: 24000, owner: "client" },
+    ];
+    render(<IncomeStep {...makeProps({ value })} />);
+
+    expandRow(/edit old ss/i);
+    expect(screen.getByRole("combobox", { name: /type/i })).toHaveValue("social_security");
   });
 
   it("changing annualAmount calls onChange with numeric amount", () => {
@@ -121,7 +153,7 @@ describe("IncomeStep", () => {
       const [income, setIncome] = useState<IncomeSlice>([
         { name: "Job", type: "salary", annualAmount: undefined, owner: "client" },
       ]);
-      return <IncomeStep value={income} onChange={setIncome} />;
+      return <IncomeStep {...makeProps()} value={income} onChange={setIncome} />;
     }
     render(<Host />);
 
@@ -237,6 +269,7 @@ describe("IncomeStep", () => {
       ]);
       return (
         <IncomeStep
+          {...makeProps()}
           value={income}
           onChange={(next) => {
             seen.push(next);
@@ -355,5 +388,85 @@ describe("IncomeStep", () => {
     expect(within(total).getByText("$180,000")).toBeInTheDocument();
     const count = screen.getByText("Income sources").parentElement!;
     expect(within(count).getByText("2")).toBeInTheDocument();
+  });
+
+  // ── Social Security ──────────────────────────────────────────────────────
+
+  describe("Social Security section", () => {
+    it("shows one row for a single client", () => {
+      render(<IncomeStep {...makeProps()} clientName="Cooper" />);
+
+      expect(screen.getByRole("heading", { name: /social security/i })).toBeInTheDocument();
+      expect(screen.getByRole("textbox", { name: "Cooper monthly benefit at 67" })).toBeInTheDocument();
+      expect(screen.getByRole("combobox", { name: "Cooper start age" })).toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: /co-client start age/i })).not.toBeInTheDocument();
+    });
+
+    it("shows a row for each person when there is a co-client", () => {
+      render(<IncomeStep {...makeProps()} clientName="Cooper" spouseName="Susan" hasSpouse />);
+
+      expect(screen.getByRole("textbox", { name: "Cooper monthly benefit at 67" })).toBeInTheDocument();
+      expect(screen.getByRole("textbox", { name: "Susan monthly benefit at 67" })).toBeInTheDocument();
+      expect(screen.getByRole("combobox", { name: "Susan start age" })).toBeInTheDocument();
+    });
+
+    it("offers start ages 62 through 70, with 'Not sure' as the unanswered choice", () => {
+      render(<IncomeStep {...makeProps()} clientName="Cooper" />);
+
+      const select = screen.getByRole("combobox", { name: "Cooper start age" });
+      const labels = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
+      expect(labels).toEqual(["Not sure", "62", "63", "64", "65", "66", "67", "68", "69", "70"]);
+      expect(select).toHaveValue("");
+    });
+
+    it("reports the monthly benefit for the person it was typed against", () => {
+      const onSocialSecurityChange = vi.fn();
+      render(
+        <IncomeStep
+          {...makeProps({
+            onSocialSecurityChange,
+            socialSecurity: { client: { claimingAge: 67 } },
+          })}
+          clientName="Cooper"
+          spouseName="Susan"
+          hasSpouse
+        />,
+      );
+
+      fireEvent.change(screen.getByRole("textbox", { name: "Susan monthly benefit at 67" }), {
+        target: { value: "2400" },
+      });
+
+      expect(onSocialSecurityChange).toHaveBeenCalledWith({
+        client: { claimingAge: 67 },
+        spouse: { piaMonthly: 2400 },
+      });
+    });
+
+    it("keeps the benefit when a start age is picked, and clears the age on 'Not sure'", () => {
+      const onSocialSecurityChange = vi.fn();
+      render(
+        <IncomeStep
+          {...makeProps({
+            onSocialSecurityChange,
+            socialSecurity: { client: { piaMonthly: 3100, claimingAge: 70 } },
+          })}
+          clientName="Cooper"
+        />,
+      );
+
+      const select = screen.getByRole("combobox", { name: "Cooper start age" });
+      expect(select).toHaveValue("70");
+
+      fireEvent.change(select, { target: { value: "62" } });
+      expect(onSocialSecurityChange).toHaveBeenLastCalledWith({
+        client: { piaMonthly: 3100, claimingAge: 62 },
+      });
+
+      fireEvent.change(select, { target: { value: "" } });
+      expect(onSocialSecurityChange).toHaveBeenLastCalledWith({
+        client: { piaMonthly: 3100, claimingAge: undefined },
+      });
+    });
   });
 });

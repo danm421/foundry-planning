@@ -75,6 +75,7 @@ const baseDiff: IntakeDiff = {
     ],
   },
   income: { baselineCount: 1, submittedCount: 1, submittedItems: [{ name: "Salary", value: 120000, secondary: "salary" }] },
+  socialSecurity: [],
   property: { baselineCount: 0, submittedCount: 1, submittedItems: [{ name: "Home", value: 800000, secondary: "real_estate" }] },
 };
 
@@ -141,6 +142,29 @@ describe("ReviewDetail", () => {
     };
     render(<ReviewDetail form={makeForm()} diff={diff} />);
     expect(screen.getByText(/partially answered — no score \(2\/5\)/i)).toBeInTheDocument();
+  });
+
+  it("hides the Social Security card when nobody answered", () => {
+    render(<ReviewDetail form={makeForm()} diff={baseDiff} />);
+    expect(screen.queryByRole("heading", { name: "Social Security" })).not.toBeInTheDocument();
+  });
+
+  it("shows each person's Social Security answer against what the plan holds", () => {
+    const diff: IntakeDiff = {
+      ...baseDiff,
+      socialSecurity: [
+        {
+          owner: "client",
+          name: "Jane",
+          answer: { changed: true, old: "$2,500/mo at FRA", new: "$2,800/mo at FRA · Start at 67" },
+        },
+      ],
+    };
+    render(<ReviewDetail form={makeForm()} diff={diff} />);
+
+    expect(screen.getByRole("heading", { name: "Social Security" })).toBeInTheDocument();
+    expect(screen.getByText("$2,500/mo at FRA")).toBeInTheDocument();
+    expect(screen.getByText("$2,800/mo at FRA · Start at 67")).toBeInTheDocument();
   });
 
   it("hides the On-your-radar card when nothing was checked or written", () => {

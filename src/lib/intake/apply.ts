@@ -31,7 +31,7 @@
  * recordUpdate plus the "intake.form.applied" summary (see emitApplyAudits).
  */
 
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import {
   accounts,
@@ -73,7 +73,10 @@ import {
   synthesizeAccountOwners,
   synthesizeLiabilityOwners,
 } from "@/lib/imports/commit/family-resolver";
-import { createClientForHousehold } from "@/lib/clients/create-client";
+import {
+  createClientForHousehold,
+  socialSecuritySeedRow,
+} from "@/lib/clients/create-client";
 import { recordAudit, recordCreate, recordUpdate } from "@/lib/audit";
 import { recordActivityNonFatal } from "@/lib/crm/activity";
 import { noteDateToOccurredAt } from "@/lib/crm/notes";
@@ -89,6 +92,8 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type ApplyResult = {
   accountIds: string[];
   incomeIds: string[];
+  /** Existing Social Security rows the Income step's answers were written onto. */
+  incomeUpdateIds: string[];
   childIds: string[];
   /** Carried out so the post-commit CRM note doesn't have to re-query for it. */
   crmHouseholdId: string;
@@ -162,6 +167,95 @@ async function primaryDobFromCrm(tx: Tx, householdId: string | null): Promise<st
 }
 
 /**
+ * Write the Income step's Social Security answers onto each person's Social
+ * Security income row.
+ *
+ * UPDATES the row rather than appending one: every household is seeded with a
+ * $0 row per person at creation (`create-client.ts`), and a second row would
+ * pay the benefit twice. Only when no row exists — a household that predates
+ * the seed, or a spouse the Family step just added — is one inserted, in the
+ * seed's own shape.
+ *
+ * Only what the client answered is written. A benefit switches the row to
+ * "PIA at full retirement age", which is what the statement figure is; a start
+ * age pins the claim to that age. A $0 benefit is not an answer (it is what an
+ * untouched field reads), and a spouse answer on a household with no spouse — a
+ * stale draft — is dropped.
+ */
+async function applyIntakeSocialSecurity(
+  tx: Tx,
+  args: {
+    clientId: string;
+    scenarioId: string;
+    ss: NonNullable<IntakePayload["socialSecurity"]>;
+    hasSpouse: boolean;
+    firstNames: { client?: string; spouse?: string };
+    currentYear: number;
+    planEndYear: number;
+  },
+): Promise<{ createdIds: string[]; updatedIds: string[] }> {
+  const out = { createdIds: [] as string[], updatedIds: [] as string[] };
+  for (const owner of ["client", "spouse"] as const) {
+    if (owner === "spouse" && !args.hasSpouse) continue;
+    const pia = args.ss[owner]?.piaMonthly || undefined;
+    const age = args.ss[owner]?.claimingAge;
+    if (pia === undefined && age === undefined) continue;
+
+    const patch = {
+      ...(pia !== undefined && { piaMonthly: String(pia), ssBenefitMode: "pia_at_fra" as const }),
+      ...(age !== undefined && {
+        claimingAge: age,
+        claimingAgeMonths: 0,
+        claimingAgeMode: "years" as const,
+      }),
+    };
+
+    const [existing] = await tx
+      .select({ id: incomes.id })
+      .from(incomes)
+      .where(
+        and(
+          eq(incomes.clientId, args.clientId),
+          eq(incomes.scenarioId, args.scenarioId),
+          eq(incomes.type, "social_security"),
+          eq(incomes.owner, owner),
+          isNull(incomes.ownerEntityId),
+          isNull(incomes.ownerAccountId),
+        ),
+      )
+      .orderBy(asc(incomes.createdAt))
+      .limit(1);
+
+    if (existing) {
+      await tx
+        .update(incomes)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(eq(incomes.id, existing.id));
+      out.updatedIds.push(existing.id);
+      continue;
+    }
+
+    const firstName = args.firstNames[owner]?.trim();
+    const [row] = await tx
+      .insert(incomes)
+      .values({
+        ...socialSecuritySeedRow({
+          clientId: args.clientId,
+          scenarioId: args.scenarioId,
+          owner,
+          name: firstName ? `Social Security — ${firstName}` : "Social Security",
+          currentYear: args.currentYear,
+          planEndYear: args.planEndYear,
+        }),
+        ...patch,
+      })
+      .returning({ id: incomes.id });
+    out.createdIds.push(row.id);
+  }
+  return out;
+}
+
+/**
  * Apply the parsed intake payload onto a single client's base scenario.
  *
  * All writes run on the supplied tx handle so the caller controls atomicity.
@@ -206,6 +300,7 @@ async function applySectionsToClient(
   const result: ApplyResult = {
     accountIds: [],
     incomeIds: [],
+    incomeUpdateIds: [],
     childIds: [],
     crmHouseholdId: client.crmHouseholdId,
     expenseIds: [],
@@ -534,6 +629,20 @@ async function applySectionsToClient(
         })
         .returning({ id: incomes.id });
       result.incomeIds.push(row.id);
+    }
+
+    if (payload.socialSecurity) {
+      const ss = await applyIntakeSocialSecurity(tx, {
+        clientId,
+        scenarioId,
+        ss: payload.socialSecurity,
+        hasSpouse: familyRoleIds.spouseFmId !== null,
+        firstNames: { client: primary?.firstName, spouse: spouse?.firstName },
+        currentYear,
+        planEndYear,
+      });
+      result.incomeIds.push(...ss.createdIds);
+      result.incomeUpdateIds.push(...ss.updatedIds);
     }
   }
 
@@ -944,6 +1053,18 @@ async function emitApplyAudits(args: {
       extraMetadata: { via: "intake.apply", formId },
     });
   }
+  for (const id of applied.incomeUpdateIds) {
+    await recordAudit({
+      action: "income.update",
+      resourceType: "income",
+      resourceId: id,
+      clientId,
+      firmId,
+      actorId,
+      actorKind: "advisor",
+      metadata: { via: "intake.apply", formId, fields: "social_security" },
+    });
+  }
   for (const id of applied.expenseIds) {
     await recordCreate({
       action: "expense.create",
@@ -1023,6 +1144,7 @@ async function emitApplyAudits(args: {
     metadata: {
       accounts: applied.accountIds.length,
       incomes: applied.incomeIds.length,
+      incomesUpdated: applied.incomeUpdateIds.length,
       children: applied.childIds.length,
       expenses: applied.expenseIds.length,
       liabilities: applied.liabilityIds.length,

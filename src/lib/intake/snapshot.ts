@@ -156,6 +156,35 @@ function mapIncomeType(dbType: string): IntakeIncomeType {
   }
 }
 
+/**
+ * A Social Security row as the step's two answers — only what the step can
+ * show exactly. Apply writes back whatever the form carries, so seeding an
+ * approximation would rewrite the plan on an untouched form: a claim at
+ * 66y 6mo would come back as 66, and a row claiming at FRA would be pinned to
+ * a fixed age. Those read "Not sure", which apply leaves alone.
+ */
+function ssAnswerFromRow(row: {
+  piaMonthly: string | null;
+  ssBenefitMode: string | null;
+  claimingAge: number | null;
+  claimingAgeMonths: number | null;
+  claimingAgeMode: string | null;
+}): NonNullable<IntakePayload["socialSecurity"]>["client"] {
+  const pia = Number(row.piaMonthly ?? 0);
+  const age = row.claimingAge;
+  return {
+    ...(row.ssBenefitMode === "pia_at_fra" && pia > 0 ? { piaMonthly: pia } : {}),
+    // A NULL mode reads as "years" in the engine (`claimAge.ts`), so it counts.
+    ...((row.claimingAgeMode ?? "years") === "years" &&
+    (row.claimingAgeMonths ?? 0) === 0 &&
+    age !== null &&
+    age >= 62 &&
+    age <= 70
+      ? { claimingAge: age }
+      : {}),
+  };
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 /**
@@ -363,13 +392,31 @@ export async function snapshotClientToPayload(
       .from(incomes)
       .where(and(eq(incomes.clientId, clientId), eq(incomes.scenarioId, scenarioId)));
 
-    const payloadIncome: IntakePayload["income"] = incomeRows.map((row) => ({
-      name: row.name,
-      type: mapIncomeType(row.type),
-      annualAmount: Number(row.annualAmount),
-      owner: row.owner,
-      ...incomeFormYears(row),
-    }));
+    // Social Security rows seed the step's own Social Security section, not the
+    // income list: apply UPDATES each person's row from that section, so a row
+    // listed here as well would be appended a second time and pay twice.
+    const isPersonalSs = (row: (typeof incomeRows)[number]) =>
+      row.type === "social_security" &&
+      (row.owner === "client" || row.owner === "spouse") &&
+      row.ownerEntityId === null &&
+      row.ownerAccountId === null;
+
+    const payloadIncome: IntakePayload["income"] = incomeRows
+      .filter((row) => !isPersonalSs(row))
+      .map((row) => ({
+        name: row.name,
+        type: mapIncomeType(row.type),
+        annualAmount: Number(row.annualAmount),
+        owner: row.owner,
+        ...incomeFormYears(row),
+      }));
+
+    const payloadSocialSecurity: NonNullable<IntakePayload["socialSecurity"]> = {};
+    for (const row of incomeRows.filter(isPersonalSs)) {
+      const owner = row.owner as "client" | "spouse";
+      if (payloadSocialSecurity[owner]) continue; // first row per person, like apply
+      payloadSocialSecurity[owner] = ssAnswerFromRow(row);
+    }
 
     // ── 10. Assemble and return ───────────────────────────────────────────
     // Each slice is seeded only when the form collects it. `goals` stays
@@ -389,6 +436,7 @@ export async function snapshotClientToPayload(
         : {}),
       accounts: sections.includes("accounts") ? payloadAccounts : [],
       income: sections.includes("income") ? payloadIncome : [],
+      ...(sections.includes("income") ? { socialSecurity: payloadSocialSecurity } : {}),
       property: sections.includes("property") ? payloadProperty : [],
       ...(estate ? { estate } : {}),
       goals: {

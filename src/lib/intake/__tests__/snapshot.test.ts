@@ -253,6 +253,59 @@ describe("snapshotClientToPayload", () => {
     expect(inc?.owner).toBe("client");
   });
 
+  it("seeds Social Security into its own section, not the income list", async () => {
+    const ss = await db
+      .insert(incomes)
+      .values([
+        // A statement figure claimed at a whole age — both answers seed.
+        {
+          clientId,
+          scenarioId,
+          type: "social_security",
+          name: "Social Security — Alice",
+          annualAmount: "0",
+          owner: "client",
+          startYear: 2026,
+          endYear: 2065,
+          piaMonthly: "2800.00",
+          ssBenefitMode: "pia_at_fra",
+          claimingAge: 67,
+          claimingAgeMonths: 0,
+          claimingAgeMode: "years",
+        },
+        // The create-client seed: no PIA yet, claimed at FRA — nothing the step
+        // can show exactly, so nothing seeds.
+        {
+          clientId,
+          scenarioId,
+          type: "social_security",
+          name: "Social Security — Sam",
+          annualAmount: "0",
+          owner: "spouse",
+          startYear: 2026,
+          endYear: 2065,
+          ssBenefitMode: "pia_at_fra",
+          claimingAge: 67,
+          claimingAgeMode: "fra",
+        },
+      ])
+      .returning({ id: incomes.id });
+    try {
+      const payload = await snapshotClientToPayload(clientId, FIRM, ALL);
+      expect(payload.income.map((i) => i.type)).not.toContain("social_security");
+      expect(payload.socialSecurity).toEqual({
+        client: { piaMonthly: 2800, claimingAge: 67 },
+        spouse: {},
+      });
+
+      // A form that does not collect Income carries no Social Security either.
+      const docsOnly = await snapshotClientToPayload(clientId, FIRM, ["documents"]);
+      expect("socialSecurity" in docsOnly).toBe(false);
+    } finally {
+      await db.delete(incomes).where(inArray(incomes.id, ss.map((r) => r.id)));
+    }
+  });
+
   it("returns goals.clientRetirementAge from client row", async () => {
     const payload = await snapshotClientToPayload(clientId, FIRM, ALL);
     expect(payload.goals.clientRetirementAge).toBe(65);

@@ -309,4 +309,27 @@ describe("buildIntakeDiff — risk", () => {
     );
     expect(risk.note).toBe("Sold a business.");
   });
+
+  it("diffs each person's Social Security answer against what the plan holds", () => {
+    const baseline: IntakePayload = {
+      ...minPayload,
+      socialSecurity: { client: { piaMonthly: 2500 } },
+    };
+    const submitted: IntakePayload = {
+      ...minPayload,
+      socialSecurity: { client: { piaMonthly: 2800, claimingAge: 67 } },
+    };
+
+    expect(buildIntakeDiff(baseline, submitted).socialSecurity).toEqual([
+      {
+        owner: "client",
+        name: "Jane",
+        answer: { changed: true, old: "$2,500/mo at FRA", new: "$2,800/mo at FRA · start at 67" },
+      },
+    ]);
+  });
+
+  it("lists no Social Security rows when nobody answered", () => {
+    expect(buildIntakeDiff(minPayload, minPayload).socialSecurity).toEqual([]);
+  });
 });

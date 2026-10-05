@@ -8,6 +8,10 @@ import {
 } from "@/lib/intake/goal-rows";
 import { incomeSpanLabel } from "@/lib/intake/income-years";
 import {
+  answeredSocialSecurity,
+  socialSecurityAnswerLabel,
+} from "@/lib/intake/social-security";
+import {
   FIDUCIARY_SLOTS,
   childDistributionLabel,
   estateHouseholdFromPayload,
@@ -105,6 +109,8 @@ export interface IntakeDiff {
   goals: GoalsDiff;
   accounts: ListSectionDiff;
   income: ListSectionDiff;
+  /** One row per person who answered; apply writes it onto their Social Security row. */
+  socialSecurity: { owner: "client" | "spouse"; name: string; answer: FieldDiff<string | undefined> }[];
   property: ListSectionDiff;
   /** Funded goals — apply writes one goal-flagged expense row per entry. */
   expenseGoals: ListSectionDiff;
@@ -245,6 +251,20 @@ export function buildIntakeDiff(
     })),
   };
 
+  // Compared as the worded line, so a changed benefit or start age reads
+  // struck-through against what the plan holds today.
+  const socialSecurity: IntakeDiff["socialSecurity"] = answeredSocialSecurity(
+    submitted.socialSecurity,
+    submitted.family,
+  ).map((ss) => ({
+    owner: ss.owner,
+    name: ss.name,
+    answer: field(
+      socialSecurityAnswerLabel(baseline?.socialSecurity?.[ss.owner]) ?? undefined,
+      ss.label,
+    ),
+  }));
+
   // A property row fans out to three tables on apply — the account, an
   // insurance expense, and a mortgage liability — so everything that drives one
   // of those writes has to be visible before the advisor approves. A declared
@@ -338,5 +358,16 @@ export function buildIntakeDiff(
     estate.ifPredeceased !== null ||
     distribution !== null;
 
-  return { family, goals, accounts, income, property, expenseGoals, radar, estate, risk };
+  return {
+    family,
+    goals,
+    accounts,
+    income,
+    socialSecurity,
+    property,
+    expenseGoals,
+    radar,
+    estate,
+    risk,
+  };
 }

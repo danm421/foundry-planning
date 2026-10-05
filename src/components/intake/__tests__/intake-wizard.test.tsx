@@ -139,6 +139,17 @@ describe("IntakeWizard", () => {
     expect(screen.getByRole("button", { name: /skip for now/i })).toBeInTheDocument();
   });
 
+  it("labels the Income step Next once a Social Security answer has been given", () => {
+    render(<IntakeWizard {...makeProps({ value: { socialSecurity: { client: { claimingAge: 67 } } } })} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+    fireEvent.click(screen.getByRole("button", { name: /next/i }));
+    fireEvent.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(screen.getByRole("button", { name: /^next$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /skip for now/i })).not.toBeInTheDocument();
+  });
+
   it("keeps Skip for now on the Income step while every row is blank", () => {
     render(
       <IntakeWizard

@@ -14,6 +14,7 @@ import {
   legalResidenceLabel,
 } from "@/lib/intake/estate";
 import type { IntakeSectionKey } from "@/lib/intake/sections";
+import { answeredSocialSecurity } from "@/lib/intake/social-security";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -102,7 +103,7 @@ function formatMoney(n: number | undefined): string | undefined {
 // Edit jump-back affordances — no in-body Submit button.
 
 export function ReviewStep({ value, sections, onEdit }: ReviewStepProps) {
-  const { family, accounts, income, property, goals, estate } = value;
+  const { family, accounts, income, socialSecurity, property, goals, estate } = value;
 
   const collects = (s: ReviewableSection) => sections.includes(s);
   const anyReviewable = REVIEWABLE_SECTIONS.some(collects);
@@ -184,6 +185,9 @@ export function ReviewStep({ value, sections, onEdit }: ReviewStepProps) {
               />
             ))
           )}
+          {answeredSocialSecurity(socialSecurity, family).map((ss) => (
+            <Row key={ss.owner} label={`${ss.name}'s Social Security`} value={ss.label} />
+          ))}
         </SectionCard>
       )}
 
