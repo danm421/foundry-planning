@@ -40,6 +40,24 @@ describe("FlowGrowthCell", () => {
     expect(screen.getByText("3.00%")).toBeInTheDocument();
   });
 
+  // A row added or switched to inflation in this session still carries the rate
+  // it was posted with (the Add dialog's hidden 3%) until the page reloads and
+  // the loader resolves it. The cell must show the rate the plan actually uses.
+  it("shows the plan's inflation rate for an inflation-following row, not its stored rate", () => {
+    setup({ row: { name: "Kitchen Remodel", growthRate: "0.03", growthSource: "inflation" } });
+    expect(
+      screen.getByRole("button", { name: /Change growth rate for Kitchen Remodel/ }),
+    ).toHaveTextContent("3.50%");
+  });
+
+  it("shows the plan's inflation rate read-only too", () => {
+    setup({
+      row: { name: "Kitchen Remodel", growthRate: "0.03", growthSource: "inflation" },
+      canEdit: false,
+    });
+    expect(screen.getByText("3.50%")).toBeInTheDocument();
+  });
+
   // Order and wording are lifted from `growthOptionsFor`'s `inflation_custom`
   // branch, so the two dropdowns over one field cannot disagree.
   it("offers exactly [Custom %, inflation], in that order", async () => {

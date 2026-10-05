@@ -51,7 +51,12 @@ export default function FlowGrowthCell({
 }: FlowGrowthCellProps) {
   const [customArmed, setCustomArmed] = useState(false);
 
-  const display = formatGrowthPct(row.growthRate ?? null);
+  // An inflation-following row shows the plan's rate, not its stored one: a row
+  // added or switched in this session keeps its posted rate (the Add dialog's
+  // hidden 3%) until a reload resolves it.
+  const display = formatGrowthPct(
+    row.growthSource === "inflation" ? resolvedInflationRate : (row.growthRate ?? null),
+  );
 
   // Self-handled, like `GrowthRateCell` — so the call site never has to supply a
   // read-only fallback for this slot.
