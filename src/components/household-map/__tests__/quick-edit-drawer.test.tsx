@@ -230,6 +230,50 @@ describe("QuickEditDrawer — save path", () => {
   });
 });
 
+describe("QuickEditDrawer — unticking a goal that draws from savings", () => {
+  // The update core refuses a non-goal that still has savings accounts, and this
+  // drawer has no funding UI — so unticking a funded Other goal must clear them,
+  // the way the I&E dialog does. Every other save leaves the links alone.
+  async function saveAndReadPut(row: ExpenseView, untick: boolean) {
+    const calls = captureFetch();
+    renderExpense(row);
+    if (untick) fireEvent.click(screen.getByRole("checkbox", { name: /Show as a goal/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.init?.method === "PUT")).toBe(true));
+    const put = calls.find((c) => c.init?.method === "PUT")!;
+    expect(put.url).toBe(`/api/clients/client-1/expenses/${row.id}`);
+    return JSON.parse(String(put.init!.body)) as Record<string, unknown>;
+  }
+  const funded = expenseRow({ id: "car", name: "New car", isGoal: true, dedicatedAccountIds: ["brk"] });
+
+  it("sends dedicatedAccountIds: [] with isGoal false for a funded Other goal", async () => {
+    const body = await saveAndReadPut(funded, true);
+    expect(body.isGoal).toBe(false);
+    expect(body.dedicatedAccountIds).toEqual([]);
+  });
+
+  it("leaves the links alone when the funded goal stays a goal", async () => {
+    const body = await saveAndReadPut(funded, false);
+    expect(body.isGoal).toBe(true);
+    expect(body).not.toHaveProperty("dedicatedAccountIds");
+  });
+
+  it("sends no dedicatedAccountIds when an unfunded Other goal is unticked", async () => {
+    const body = await saveAndReadPut(expenseRow({ id: "trip", isGoal: true, dedicatedAccountIds: [] }), true);
+    expect(body.isGoal).toBe(false);
+    expect(body).not.toHaveProperty("dedicatedAccountIds");
+  });
+
+  it("sends no dedicatedAccountIds for an education goal with a 529", async () => {
+    const body = await saveAndReadPut(
+      expenseRow({ id: "college", type: "education", isGoal: true, dedicatedAccountIds: ["p529"] }),
+      false,
+    );
+    expect(body.isGoal).toBe(true);
+    expect(body).not.toHaveProperty("dedicatedAccountIds");
+  });
+});
+
 describe("QuickEditDrawer — delete confirmation", () => {
   it("requires a second, confirming click before deleting, and Cancel backs out", async () => {
     const calls = captureFetch();
