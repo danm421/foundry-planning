@@ -21,6 +21,7 @@ export interface EducationGoalFormAccount {
   /** 529 only — who the money is FOR, shown on the funding row. */
   beneficiaryFamilyMemberId?: string | null;
   beneficiaryName?: string | null;
+  isDefaultChecking?: boolean | null;
 }
 
 interface Props {

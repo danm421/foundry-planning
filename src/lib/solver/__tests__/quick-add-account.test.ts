@@ -52,6 +52,14 @@ describe("quick-add account builder", () => {
     expect(buildQuickAddAccount({ ...args, type: "ira" }).account.rmdEnabled).toBe(true);
     expect(buildQuickAddAccount({ ...args, type: "taxable" }).account.rmdEnabled).toBe(false);
   });
+
+  it("starts a quick-add account at the given balance (value == basis)", () => {
+    const { account } = buildQuickAddAccount({
+      type: "taxable", ownerFamilyMemberId: "fm-1", ownerLabel: "Harold", annualAmount: 0,
+      startYear: 2026, endYear: 2030, growthRate: 0.06, accountId: "a1", ruleId: "r1", balance: 12000,
+    });
+    expect(account).toMatchObject({ value: 12000, basis: 12000 });
+  });
 });
 
 describe("additional-savings account (min-savings solve)", () => {
