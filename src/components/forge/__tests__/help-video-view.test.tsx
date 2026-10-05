@@ -62,6 +62,48 @@ describe("HelpVideoView", () => {
     expect((videos[1] as HTMLVideoElement).currentTime).toBe(21);
   });
 
+  it("plays from a chapter at 0:00 too", () => {
+    const { container } = render(<HelpVideoView video={EXPENSE_VIDEO} startAt={0} active onBack={() => {}} />);
+    fireEvent.loadedMetadata(videoEl(container));
+    expect(videoEl(container).currentTime).toBe(0);
+    expect(media.play).toHaveBeenCalled();
+  });
+
+  it("seeks but doesn't play when the metadata lands after the tab was hidden", () => {
+    const { container } = render(<HelpVideoView video={EXPENSE_VIDEO} startAt={30} active={false} onBack={() => {}} />);
+    fireEvent.loadedMetadata(videoEl(container));
+    expect(videoEl(container).currentTime).toBe(30);
+    expect(media.play).not.toHaveBeenCalled();
+  });
+
+  it("Expand renders the dialog at the page level, outside the Forge panel", () => {
+    const { container } = render(<HelpVideoView video={EXPENSE_VIDEO} active onBack={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    const dialog = screen.getByRole("dialog");
+    expect(container.contains(dialog)).toBe(false);
+    expect(dialog.parentElement?.parentElement).toBe(document.body);
+  });
+
+  it("closing the large player hands its time back to the panel player", () => {
+    const { container } = render(<HelpVideoView video={EXPENSE_VIDEO} active onBack={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    const big = document.querySelectorAll("video")[1] as HTMLVideoElement;
+    Object.defineProperty(big, "readyState", { configurable: true, value: 1 }); // HAVE_METADATA
+    big.currentTime = 50;
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(document.querySelectorAll("video").length).toBe(1);
+    expect(videoEl(container).currentTime).toBe(50);
+  });
+
+  it("closing the large player before it loaded keeps the panel player's place", () => {
+    const { container } = render(<HelpVideoView video={EXPENSE_VIDEO} active onBack={() => {}} />);
+    videoEl(container).currentTime = 21;
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(document.querySelectorAll("video").length).toBe(1);
+    expect(videoEl(container).currentTime).toBe(21);
+  });
+
   it("goes back to the list", () => {
     let back = false;
     render(<HelpVideoView video={EXPENSE_VIDEO} active onBack={() => (back = true)} />);

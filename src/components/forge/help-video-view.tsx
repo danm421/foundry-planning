@@ -2,6 +2,7 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import DialogShell from "@/components/dialog-shell";
 import type { HelpVideo } from "@/domain/forge/help/video-schema";
 import { formatClock, posterSrc, recordedLabel, videoSrc } from "./help-video-format";
@@ -41,16 +42,19 @@ export function HelpVideoView({
   const big = useRef<HTMLVideoElement>(null);
   const [failed, setFailed] = useState(false);
   const [expandedFrom, setExpandedFrom] = useState<number | null>(null);
+  // Read by the metadata handler, which can fire after the tab was hidden.
+  const activeRef = useRef(active);
 
   useEffect(() => {
+    activeRef.current = active;
     if (!active) inline.current?.pause();
   }, [active]);
 
-  const seekTo = (at: number) => {
+  const seekTo = (at: number, play = true) => {
     const el = inline.current;
     if (!el) return;
     el.currentTime = at;
-    el.play().catch(() => {});
+    if (play) el.play().catch(() => {});
   };
 
   const expand = () => {
@@ -59,7 +63,11 @@ export function HelpVideoView({
     el?.pause();
   };
   const collapse = () => {
-    if (inline.current && big.current) inline.current.currentTime = big.current.currentTime;
+    // Before its metadata loads (or if it failed) the big player sits at 0;
+    // copying that back would rewind the panel player.
+    if (inline.current && big.current && big.current.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      inline.current.currentTime = big.current.currentTime;
+    }
     setExpandedFrom(null);
   };
 
@@ -88,7 +96,8 @@ export function HelpVideoView({
             playsInline
             preload="metadata"
             onLoadedMetadata={() => {
-              if (startAt) seekTo(startAt);
+              // 0 is a real chapter. Seek even in a hidden tab, but only play in a visible one.
+              if (startAt !== undefined) seekTo(startAt, activeRef.current);
             }}
             onError={() => setFailed(true)}
             className="w-full rounded-[var(--radius-sm)] bg-card-2"
@@ -134,30 +143,30 @@ export function HelpVideoView({
         </>
       )}
 
-      {/* contentFill: a real height and a flex-column body, so the player fits
-          the dialog (controls in view) instead of overflowing it. */}
-      <DialogShell
-        open={expandedFrom !== null}
-        onOpenChange={(o) => !o && collapse()}
-        title={video.title}
-        size="xl"
-        contentFill
-      >
-        {expandedFrom !== null && (
-          <video
-            ref={big}
-            src={videoSrc(video)}
-            controls
-            muted
-            playsInline
-            autoPlay
-            onLoadedMetadata={(e) => {
-              e.currentTarget.currentTime = expandedFrom;
-            }}
-            className="min-h-0 w-full flex-1 object-contain"
-          />
+      {/* Portaled to <body>: the Forge panel is transformed, which would make it
+          the containing block for the dialog's `fixed inset-0` and trap the
+          "large" player inside the 420px panel. Only exists once Expand is
+          clicked, so it never renders on the server. contentFill gives the
+          dialog a real height and a flex-column body, so the player fits with
+          its controls in view. */}
+      {expandedFrom !== null &&
+        createPortal(
+          <DialogShell open onOpenChange={(o) => !o && collapse()} title={video.title} size="xl" contentFill>
+            <video
+              ref={big}
+              src={videoSrc(video)}
+              controls
+              muted
+              playsInline
+              autoPlay
+              onLoadedMetadata={(e) => {
+                e.currentTarget.currentTime = expandedFrom;
+              }}
+              className="min-h-0 w-full flex-1 object-contain"
+            />
+          </DialogShell>,
+          document.body,
         )}
-      </DialogShell>
     </div>
   );
 }
