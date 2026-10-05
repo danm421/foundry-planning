@@ -7,10 +7,12 @@
 // which makes the cast checked rather than hopeful.
 import type { HelpVideo } from "../video-schema";
 import addOneTimeExpense from "./add-one-time-expense.json";
+import addRothConversion from "./add-roth-conversion.json";
 import solverSaveScenario from "./solver-save-scenario.json";
 
 export const HELP_VIDEOS: readonly HelpVideo[] = [
   addOneTimeExpense as HelpVideo,
+  addRothConversion as HelpVideo,
   solverSaveScenario as HelpVideo,
 ];
 

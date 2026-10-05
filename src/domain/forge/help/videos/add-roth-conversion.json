@@ -1,0 +1,103 @@
+{
+  "slug": "add-roth-conversion",
+  "title": "Fill a tax bracket with a Roth conversion and see the tax impact",
+  "summary": "Add a Roth conversion that fills a tax bracket in the Solver, then compare lifetime taxes and taxes at death with it on and off.",
+  "screens": [
+    {
+      "route": "/clients/:id/solver",
+      "label": "Solver"
+    }
+  ],
+  "tags": [
+    "solver",
+    "taxes",
+    "estate",
+    "retirement"
+  ],
+  "searchTerms": [
+    "roth ira",
+    "convert 401k",
+    "rmd",
+    "required minimum distributions",
+    "22% bracket",
+    "lifetime taxes",
+    "heirs",
+    "inherited ira",
+    "tax planning"
+  ],
+  "chapters": [
+    {
+      "at": 0,
+      "label": "A Roth conversion can fill a low tax bracket before RMDs begin."
+    },
+    {
+      "at": 5,
+      "label": "On the Techniques tab, add a Roth conversion."
+    },
+    {
+      "at": 8.8,
+      "label": "Pick Fill Up Tax Bracket and choose the 22% bracket."
+    },
+    {
+      "at": 20.4,
+      "label": "Convert Laura's 401(k) from her retirement in 2035 through 2044."
+    },
+    {
+      "at": 36.6,
+      "label": "On Taxes, each orange bar tops out at the edge of the 22% bracket."
+    },
+    {
+      "at": 44.7,
+      "label": "Four years of conversions move her whole 401(k) into her Roth."
+    },
+    {
+      "at": 49.7,
+      "label": "On Portfolio, lifetime taxes fall compared with the base plan."
+    },
+    {
+      "at": 60.7,
+      "label": "Switch the conversion off, and the tax savings disappear."
+    },
+    {
+      "at": 69.4,
+      "label": "Switch it back on to keep it in the plan."
+    },
+    {
+      "at": 76.9,
+      "label": "On Estate, compare base facts with the plan at the second death."
+    },
+    {
+      "at": 87.6,
+      "label": "Heirs inherit a Roth, so far less is lost to income tax."
+    },
+    {
+      "at": 92.9,
+      "label": "Off, the two plans match. On, the savings return."
+    }
+  ],
+  "steps": [
+    "**Add a Roth conversion.** In the Solver, open the **Techniques** tab and select **Roth conversion**.",
+    "**Choose the bracket.** Name the conversion, select **Fill Up Tax Bracket**, and pick the bracket in **Fill Up To**.",
+    "**Set the years and the account.** Choose when it **Starts** and **Ends**, then add the pre-tax account under **Accounts to Convert**. Select **Add Conversion**.",
+    "**Check the Taxes view.** Orange bars show each year's conversion on top of the household's other taxable income. They stop at the edge of the bracket you chose.",
+    "**Compare lifetime taxes.** On **Portfolio**, **Lifetime Taxes** shows the change from the base plan. Use the switch on the conversion's row to turn it off and on.",
+    "**Compare the estate.** On **Estate**, the chart sets **Base Facts** beside the plan at the second death. **Total Taxes & Expenses** includes the income tax heirs owe on inherited pre-tax accounts, so a converted account shrinks it."
+  ],
+  "goodToKnow": [
+    "A conversion can only go into a Roth owned by the same person, so **Accounts to Convert** lists only that person's pre-tax accounts. **+ New Roth IRA** adds one if they don't have a Roth yet.",
+    "Conversions stop once the source accounts are empty, which can be before the **Ends** year.",
+    "The conversion stays in the Solver until you save it as a scenario or to base facts."
+  ],
+  "durationSec": 108.6,
+  "recordedOn": "2026-10-05",
+  "appCommit": "86f6eba7d",
+  "video": {
+    "path": "knowledge-hub/add-roth-conversion/c9fb449f4f86.mp4",
+    "sha256": "c9fb449f4f867900b291530fb696633338979a475a3c676bf1cdd315b312579f",
+    "bytes": 7863333
+  },
+  "poster": {
+    "path": "knowledge-hub/add-roth-conversion/8911c710a9f8.jpg",
+    "sha256": "8911c710a9f8a234240952199976740c27442e1349dc28668c30223a10576147"
+  }
+}
