@@ -1,6 +1,6 @@
 // src/components/forge/__tests__/help-video-view.test.tsx
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { HelpVideoView } from "../help-video-view";
 import { EXPENSE_VIDEO } from "@/domain/forge/help/__tests__/help-video-fixtures";
@@ -102,6 +102,44 @@ describe("HelpVideoView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(document.querySelectorAll("video").length).toBe(1);
     expect(videoEl(container).currentTime).toBe(21);
+  });
+
+  it("Esc closes only the large player, not the Forge panel behind it", () => {
+    const { container } = render(<HelpVideoView video={EXPENSE_VIDEO} active onBack={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    const big = document.querySelectorAll("video")[1] as HTMLVideoElement;
+    Object.defineProperty(big, "readyState", { configurable: true, value: 1 }); // HAVE_METADATA
+    big.currentTime = 50;
+    // The Forge panel (and DialogShell) close on Escape at `window`.
+    const windowEsc = vi.fn();
+    window.addEventListener("keydown", windowEsc);
+    try {
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    } finally {
+      window.removeEventListener("keydown", windowEsc);
+    }
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(windowEsc).not.toHaveBeenCalled();
+    expect(videoEl(container).currentTime).toBe(50);
+  });
+
+  it("leaves Esc to the panel once the large player is closed or the view is gone", () => {
+    const windowEsc = vi.fn();
+    window.addEventListener("keydown", windowEsc);
+    try {
+      const { unmount } = render(<HelpVideoView video={EXPENSE_VIDEO} active onBack={() => {}} />);
+      fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      expect(windowEsc).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+      unmount();
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      expect(windowEsc).toHaveBeenCalledTimes(2);
+    } finally {
+      window.removeEventListener("keydown", windowEsc);
+    }
   });
 
   it("goes back to the list", () => {

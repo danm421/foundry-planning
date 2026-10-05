@@ -1,7 +1,7 @@
 // src/components/forge/help-video-view.tsx
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import DialogShell from "@/components/dialog-shell";
 import type { HelpVideo } from "@/domain/forge/help/video-schema";
@@ -62,14 +62,30 @@ export function HelpVideoView({
     setExpandedFrom(el?.currentTime ?? 0);
     el?.pause();
   };
-  const collapse = () => {
+  const collapse = useCallback(() => {
     // Before its metadata loads (or if it failed) the big player sits at 0;
     // copying that back would rewind the panel player.
     if (inline.current && big.current && big.current.readyState >= HTMLMediaElement.HAVE_METADATA) {
       inline.current.currentTime = big.current.currentTime;
     }
     setExpandedFrom(null);
-  };
+  }, []);
+
+  // Esc closes only the large player. DialogShell and the Forge panel both
+  // close on Escape at `window`; the event reaches `document` first, so
+  // stopping it here keeps one press from also shutting the panel (the same
+  // move as the panel's composer menu).
+  const expanded = expandedFrom !== null;
+  useEffect(() => {
+    if (!expanded) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      collapse();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [expanded, collapse]);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto px-4 py-3">
