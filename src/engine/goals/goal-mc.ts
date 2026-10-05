@@ -6,8 +6,9 @@
  *  can't meet the cost. Cash flow is the goal's backstop, not part of this
  *  measure — the gauge answers "will the savings cover it" (spec 2026-10-05,
  *  Decision 7). Framework-free; ignores general-spending draws on the pool (a
- *  documented v1 simplification — education goals are typically
- *  pre-retirement).
+ *  documented v1 simplification). Education goals are typically
+ *  pre-retirement, but an Other goal can draw a household brokerage the
+ *  withdrawal strategy also draws, and then the gauge may overstate confidence.
  */
 import { createRng, splitSeed } from "../monteCarlo/prng";
 import { createNormalSampler } from "../monteCarlo/normal";

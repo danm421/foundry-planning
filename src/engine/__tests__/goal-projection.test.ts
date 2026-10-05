@@ -285,7 +285,10 @@ describe("goal funding: who owns the account decides what Cash Flow shows", () =
     );
     const y0 = runProjection(data)[0];
     expect(y0.goals!.find((g) => g.goalId === "car")!.dedicatedWithdrawal).toBeCloseTo(60000, 6);
-    // 100k − 60k for the car leaves 40k; the gap-fill may take at most that.
-    expect(y0.accountLedgers["brk"].endingValue).toBeGreaterThanOrEqual(-0.01);
+    // 100k − 60k for the car leaves 40k, and the 80k living gap takes exactly
+    // that — no more (the account would go negative), and no less (a capacity
+    // shrunk twice, or a waterfall that stopped drawing, would leave some).
+    expect(y0.accountLedgers["brk"].endingValue).toBeCloseTo(0, 2);
+    expect(y0.withdrawals.byAccount["brk"]).toBeCloseTo(100000, 2); // 60k goal draw + 40k gap-fill
   });
 });

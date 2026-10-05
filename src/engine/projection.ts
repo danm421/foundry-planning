@@ -6377,9 +6377,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     // Goal cost paid by the household — the out-of-pocket slice, plus (below)
     // any draw from a household-owned dedicated account — accumulated across
-    // household-owned goals and folded into `expenses.other` below. ONLY the
-    // out-of-pocket slice counts here: an unfunded shortfall moves no money. The
-    // out-of-pocket slice DOES drain checking, which provokes a gap-fill
+    // household-owned goals and folded into `expenses.other` below. A shortfall
+    // left unfunded (the toggle off) moves no money, so it never counts here.
+    // The out-of-pocket slice drains checking, which provokes a gap-fill
     // withdrawal — so leaving it out of expenses made the cash-flow chart's
     // stacked bars overshoot the Total Expenses line by exactly this amount, and
     // inflated the phase-12 surplus available to spend. Entity-owned goals are
