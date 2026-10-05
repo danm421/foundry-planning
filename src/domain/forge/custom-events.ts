@@ -10,6 +10,7 @@ import "server-only";
 import { dispatchCustomEvent } from "@langchain/core/callbacks/dispatch";
 import { NAVIGATE_ALLOWLIST_PREFIXES } from "./navigate-allowlist";
 import { getWalkthrough } from "./help/catalog";
+import { getHelpVideo } from "./help/videos";
 
 // Re-exported so existing server callers (tools/navigate*, custom-events.test)
 // keep importing the allowlist from here unchanged.
@@ -42,12 +43,20 @@ export interface WalkthroughFrame {
   type: "walkthrough";
   walkthroughId: string;
 }
+export interface VideoLinkFrame {
+  type: "video_link";
+  slug: string;
+  title: string;
+  chapterAt?: number;
+  chapterLabel?: string;
+}
 export type ForgeCustomFrame =
   | ToolRenderFrame
   | NavigateFrame
   | ActivityFrame
   | PageLinkFrame
-  | WalkthroughFrame;
+  | WalkthroughFrame
+  | VideoLinkFrame;
 
 export async function emitToolRender(name: string, status: ToolRenderFrame["status"], data: unknown) {
   await dispatchCustomEvent("tool_render", { name, status, data });
@@ -87,4 +96,17 @@ export async function emitWalkthrough(walkthroughId: string) {
     throw new Error("unknown walkthrough id");
   }
   await dispatchCustomEvent("walkthrough", { walkthroughId });
+}
+
+/** Emit a ▶ Watch card for a Knowledge Hub video. The slug is re-validated
+ *  against the reviewed details files and the title comes from there, never
+ *  from the model (defence in depth — same contract as emitWalkthrough). */
+export async function emitVideoLink(slug: string, chapter?: { at: number; label: string }) {
+  const video = getHelpVideo(slug);
+  if (!video) throw new Error("unknown help video");
+  await dispatchCustomEvent("video_link", {
+    slug,
+    title: video.title,
+    ...(chapter ? { chapterAt: chapter.at, chapterLabel: chapter.label } : {}),
+  });
 }

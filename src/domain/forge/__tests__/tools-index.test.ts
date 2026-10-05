@@ -193,7 +193,7 @@ const EXPECTED_NAVIGATE = ["open_page", "cite_page"];
 const EXPECTED_PLAN_BUILDER_TOOL_NAMES = ["get_plan_status", "build_plan"];
 
 describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + book + navigate)", () => {
-  it("returns exactly the 67 named tools (20 Phase-1 + 5 scenario writes + 12 detail writes + 20 CRM + 1 report + 2 memory + 1 book + 2 navigate + 2 meetings + 2 plan builder = 67, + 1 meeting save)", () => {
+  it("returns exactly the 68 named tools (20 Phase-1 + 5 scenario writes + 12 detail writes + 20 CRM + 1 report + 2 memory + 1 book + 2 navigate + 2 meetings + 2 plan builder + 1 help video = 68, + 1 meeting save)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
     // Phase-1, scenario-write, detail-write, report, memory, navigate, meetings, and plan-builder tools all present
@@ -207,10 +207,15 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
       "summarize_meeting_transcript",
       "save_meeting_record",
       ...EXPECTED_PLAN_BUILDER_TOOL_NAMES,
+      "suggest_help_video",
     ]) {
       expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
     }
-    expect(tools).toHaveLength(67);
+    expect(tools).toHaveLength(68);
+  });
+
+  it("suggest_help_video is NOT a write tool (read-only, no HITL)", () => {
+    expect(WRITE_TOOL_NAMES.has("suggest_help_video")).toBe(false);
   });
 
   it("memory tools are present and NOT in WRITE_TOOL_NAMES (non-destructive prefs)", () => {
@@ -391,8 +396,8 @@ describe("buildTools (navigate bundle)", () => {
 });
 
 describe("buildTools bundles", () => {
-  it("buildTools() with no bundle arg returns the full set (unchanged count 67)", () => {
-    expect(buildTools(TOOL_CTX)).toHaveLength(67);
+  it("buildTools() with no bundle arg returns the full set (unchanged count 68)", () => {
+    expect(buildTools(TOOL_CTX)).toHaveLength(68);
   });
 
   it("buildTools(ctx, ['read']) returns only the read bundle", () => {
@@ -413,11 +418,11 @@ describe("global tool set (clientless)", () => {
   const names = buildGlobalTools({ ctx: { userId: "u", firmId: "f" }, conversationId: "c" })
     .map((t) => t.name)
     .sort();
-  it("is exactly the help + navigation + global-action + walkthrough + global-task set (19 tools)", () => {
+  it("is exactly the help + navigation + global-action + walkthrough + global-task + help-video set (20 tools)", () => {
     expect(names).toEqual([
       "build_plan", "cite_page", "create_household", "find_client", "firm_members", "get_help",
       "ingest_fact_finder", "open_client", "open_page", "search_help", "set_up_plan", "start_walkthrough",
-      "tasks_comment", "tasks_create", "tasks_delete", "tasks_detail", "tasks_list",
+      "suggest_help_video", "tasks_comment", "tasks_create", "tasks_delete", "tasks_detail", "tasks_list",
       "tasks_set_status", "tasks_update",
     ]);
   });

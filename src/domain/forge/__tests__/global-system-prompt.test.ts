@@ -45,4 +45,8 @@ describe("buildGlobalSystemPrompt", () => {
     expect(p).toContain("firm_members");
     expect(p).not.toContain("create_task_for_client");
   });
+
+  it("tells the model when to suggest a help video", () => {
+    expect(buildGlobalSystemPrompt({ firmName: "F" })).toMatch(/suggest_help_video/);
+  });
 });

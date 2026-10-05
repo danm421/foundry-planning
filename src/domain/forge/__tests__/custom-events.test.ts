@@ -4,16 +4,35 @@ const dispatch = vi.fn();
 vi.mock("@langchain/core/callbacks/dispatch", () => ({
   dispatchCustomEvent: (...a: unknown[]) => dispatch(...a),
 }));
+vi.mock("../help/videos", async () => {
+  const f = await import("../help/__tests__/help-video-fixtures");
+  return { getHelpVideo: (s: string) => [f.EXPENSE_VIDEO].find((v) => v.slug === s) };
+});
 
 import {
   emitNavigate,
   emitToolRender,
   emitActivity,
   emitWalkthrough,
+  emitVideoLink,
   NAVIGATE_ALLOWLIST_PREFIXES,
 } from "../custom-events";
 
 describe("custom events", () => {
+  it("emitVideoLink dispatches a video_link frame with the catalog's title", async () => {
+    await emitVideoLink("add-one-time-expense", { at: 30, label: "Set the years" });
+    expect(dispatch).toHaveBeenCalledWith("video_link", {
+      slug: "add-one-time-expense",
+      title: "Add a one-time expense and see it in the cash flow",
+      chapterAt: 30,
+      chapterLabel: "Set the years",
+    });
+  });
+
+  it("emitVideoLink rejects a slug that isn't in the details files", async () => {
+    await expect(emitVideoLink("made-up")).rejects.toThrow();
+  });
+
   it("emitNavigate dispatches a navigate frame for an allowlisted href", async () => {
     await emitNavigate("/clients/c1/scenarios/s1");
     expect(dispatch).toHaveBeenCalledWith("navigate", { href: "/clients/c1/scenarios/s1" });

@@ -21,6 +21,7 @@ export const ALL_BUNDLES = [
   "navigate",
   "meetings",
   "plan-builder",
+  "help",
 ] as const;
 export type BundleName = (typeof ALL_BUNDLES)[number];
 

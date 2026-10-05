@@ -14,6 +14,7 @@ import { buildBookTools } from "./book";
 import { buildNavigateTools } from "./navigate";
 import { buildMeetingTools } from "./meetings";
 import { buildPlanBuilderTools } from "./plan-builder";
+import { buildHelpVideoTools } from "./help-video";
 import { ALL_BUNDLES, type BundleName } from "../dispatcher";
 
 /**
@@ -39,6 +40,7 @@ export const TOOL_BUNDLES: Record<
   navigate: buildNavigateTools,
   meetings: buildMeetingTools,
   "plan-builder": buildPlanBuilderTools,
+  help: buildHelpVideoTools,
 };
 
 /**

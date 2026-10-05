@@ -42,6 +42,12 @@ tests:
       - type: javascript
         value: file://./assertions.ts:noUnapprovedWrite
   - vars:
+      message: "How do I add a one-time expense, like a kitchen remodel next year?"
+      expectTool: suggest_help_video
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+  - vars:
       message: "Run a projection for this client"
       expectTool: "run_projection"
     assert:
@@ -210,6 +216,13 @@ tests:
       message: "Can you walk me through adding a new household, step by step on screen?"
       mode: global
       expectTool: start_walkthrough
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+  - vars:
+      message: "Is there a video on saving Solver changes as a scenario?"
+      mode: global
+      expectTool: suggest_help_video
     assert:
       - type: javascript
         value: file://./assertions.ts:usedExpectedTool

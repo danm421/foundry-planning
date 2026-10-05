@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 
 // navigate-global imports custom-events which imports server-only (not resolvable
 // from the worktree's near-empty node_modules). Mock it so assembly stays pure.
-vi.mock("../../custom-events", () => ({ emitNavigate: vi.fn(), emitPageLink: vi.fn(), emitWalkthrough: vi.fn() }));
+vi.mock("../../custom-events", () => ({ emitNavigate: vi.fn(), emitPageLink: vi.fn(), emitWalkthrough: vi.fn(), emitVideoLink: vi.fn() }));
 // global-actions imports @/lib/crm/households which transitively imports server-only
 // via audit/snapshots/household. Mock it so the assembly test stays pure.
 vi.mock("@/lib/crm/households", () => ({ listCrmHouseholds: vi.fn(), getCrmHousehold: vi.fn(), createCrmHousehold: vi.fn() }));
@@ -29,7 +29,7 @@ describe("buildGlobalTools", () => {
     expect(names).toEqual([
       "build_plan", "cite_page", "create_household", "find_client", "firm_members", "get_help",
       "ingest_fact_finder", "open_client", "open_page", "search_help", "set_up_plan", "start_walkthrough",
-      "tasks_comment", "tasks_create", "tasks_delete", "tasks_detail", "tasks_list",
+      "suggest_help_video", "tasks_comment", "tasks_create", "tasks_delete", "tasks_detail", "tasks_list",
       "tasks_set_status", "tasks_update",
     ]);
   });
