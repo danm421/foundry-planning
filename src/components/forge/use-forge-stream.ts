@@ -30,6 +30,12 @@ export interface PageLink {
    *  citation chip under "See this in the app". */
   intent?: "action";
 }
+export interface VideoLink {
+  slug: string;
+  title: string;
+  chapterAt?: number;
+  chapterLabel?: string;
+}
 export interface ProposedTaskView {
   title: string;
   description: string;
@@ -60,6 +66,7 @@ export type ForgeSseEvent =
   | { type: "navigate"; href: string }
   | { type: "page_link"; href: string; section: string; label: string; intent?: "action" }
   | { type: "walkthrough"; walkthroughId: string }
+  | { type: "video_link"; slug: string; title: string; chapterAt?: number; chapterLabel?: string }
   | { type: "activity"; label: string }
   | { type: "approval_required"; previews: WritePreview[]; calls: ApprovalCall[] }
   | { type: "meeting_review"; summaryTitle: string; summary: string; meetingDate: string | null; proposedTasks: ProposedTaskView[] }
@@ -80,6 +87,9 @@ export interface ForgeMessage {
   /** Server-built deep links attached to an assistant answer (ephemeral — not
    *  persisted; absent when an old conversation is reloaded from history). */
   pageLinks?: PageLink[];
+  /** ▶ Watch cards (Knowledge Hub videos) attached to an assistant answer.
+   *  Ephemeral like pageLinks — absent when history is reloaded. */
+  videoLinks?: VideoLink[];
 }
 export type ForgeStatus = "idle" | "streaming" | "done" | "error" | "cancelled";
 
@@ -292,6 +302,25 @@ export function useForgeStream(clientId: string | null): UseForgeStreamResult {
               { href: ev.href, section: ev.section, label: ev.label, ...(ev.intent ? { intent: ev.intent } : {}) },
             ],
           };
+          return copy;
+        });
+        break;
+      case "video_link":
+        // Attach to the trailing assistant bubble, de-duped by video.
+        setMessages((m) => {
+          if (m.length === 0) return m;
+          const copy = [...m];
+          const last = copy[copy.length - 1];
+          if (last.role !== "assistant") return copy;
+          const existing = last.videoLinks ?? [];
+          if (existing.some((l) => l.slug === ev.slug)) return copy;
+          const link: VideoLink = {
+            slug: ev.slug,
+            title: ev.title,
+            ...(ev.chapterAt != null ? { chapterAt: ev.chapterAt } : {}),
+            ...(ev.chapterLabel ? { chapterLabel: ev.chapterLabel } : {}),
+          };
+          copy[copy.length - 1] = { ...last, videoLinks: [...existing, link] };
           return copy;
         });
         break;

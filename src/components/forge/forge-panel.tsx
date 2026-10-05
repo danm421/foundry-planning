@@ -34,6 +34,9 @@ import {
 import { ImportReviewLink } from "./import-review-link";
 import { PlanQuestionsCard } from "./plan-questions-card";
 import { FactFinderDuplicateCard } from "./fact-finder-duplicate-card";
+import { ForgeTabs } from "./forge-tabs";
+import { KnowledgeHub } from "./knowledge-hub";
+import { HelpVideoLinks } from "./help-video-links";
 
 // Mirrors ScenarioDrawer's explicit width — the CSS slide transition needs a
 // concrete translateX distance, so the px width can't live in Tailwind alone.
@@ -73,6 +76,7 @@ const TOOL_LABELS: Record<string, string> = {
   solve_goal: "Running the goal solver",
   solve_max_spending: "Running the spending solver",
   meeting_prep: "Preparing meeting notes",
+  suggest_help_video: "Looking for a help video",
 };
 
 /** Convert a snake_case tool name to a presentable label (e.g. "some_tool" → "Some tool"). */
@@ -105,10 +109,15 @@ export function ForgePanel({
   scenarioNames,
   forceOpenForTest,
 }: ForgePanelProps) {
-  const { scenarioId, pathname, isOpen, close } = useForge();
+  const { scenarioId, pathname, isOpen, close, tab, setTab, openHubVideo, chatDraft, clearChatDraft } = useForge();
   const drawer = useScenarioDrawerOptional();
   const walkthrough = useWalkthrough();
   const open = forceOpenForTest || isOpen;
+  // The Hub mounts the first time it's shown, then stays mounted (hidden)
+  // so a playing video keeps its place — and posters never load for
+  // advisors who don't open it.
+  const [hubMounted, setHubMounted] = useState(false);
+  if (tab === "hub" && !hubMounted) setHubMounted(true);
 
   const {
     messages,
@@ -256,10 +265,21 @@ export function ForgePanel({
   // Guard on !locked — a disabled textarea can't take focus, and the composer is
   // locked while a stream/approval/import is in flight. The panel is `inert` when
   // closed, so focusing only makes sense once `open` is true (inert is already
-  // gone by the time this post-commit effect runs).
+  // gone by the time this post-commit effect runs). Only on the Chat tab, and
+  // never out of the tab bar: arrow keys keep focus on the tabs.
   useEffect(() => {
-    if (open && !locked) composerRef.current?.focus();
-  }, [open, locked]);
+    if (!open || locked || tab !== "chat") return;
+    if (document.activeElement?.getAttribute("role") === "tab") return;
+    composerRef.current?.focus();
+  }, [open, locked, tab]);
+
+  // "Ask in Chat instead" from the Hub: move its text into the composer.
+  useEffect(() => {
+    if (chatDraft == null) return;
+    setInput(chatDraft);
+    clearChatDraft();
+    composerRef.current?.focus();
+  }, [chatDraft, clearChatDraft]);
 
   // Grow the composer with the message. Reset to `auto` first so it shrinks
   // back when text is deleted or cleared after a send; cap it at
@@ -751,615 +771,640 @@ export function ForgePanel({
           <span data-testid="chip-page" className="text-ink-2">{pageLabel}</span>
         </div>
 
-        {/* Thread row */}
-        <div className="flex flex-col gap-2 border-b border-hair px-4 py-2">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={newChat}
-              disabled={busy}
-              className="rounded-[var(--radius-sm)] border border-secondary/40 bg-secondary-wash px-2.5 py-1 text-[12px] font-medium text-secondary-ink hover:bg-secondary/20 disabled:opacity-50"
-            >
-              + New chat
-            </button>
-            {threads.length > 0 && (
+        <ForgeTabs tab={tab} onChange={setTab} />
+
+        <div
+          role="tabpanel"
+          id="forge-tabpanel-chat"
+          aria-labelledby="forge-tab-chat"
+          hidden={tab !== "chat"}
+          className={tab === "chat" ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+        >
+          {/* Thread row */}
+          <div className="flex flex-col gap-2 border-b border-hair px-4 py-2">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setHistoryOpen(!historyOpen)}
-                aria-expanded={showHistory}
-                className="ml-auto flex items-center gap-1 rounded-[var(--radius-sm)] px-2 py-1 text-[12px] font-medium text-ink-3 hover:bg-card-hover hover:text-ink"
+                onClick={newChat}
+                disabled={busy}
+                className="rounded-[var(--radius-sm)] border border-secondary/40 bg-secondary-wash px-2.5 py-1 text-[12px] font-medium text-secondary-ink hover:bg-secondary/20 disabled:opacity-50"
               >
-                <svg
-                  aria-hidden
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className={`transition-transform ${showHistory ? "rotate-180" : ""}`}
-                >
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-                History
-                <span className="text-ink-4">{threads.length}</span>
+                + New chat
               </button>
-            )}
-          </div>
-          {showHistory && (
-            <ConversationList
-              threads={threads}
-              activeId={conversationId}
-              onSelect={(id) => void selectThread(id)}
-              onRename={async (id, title) => {
-                // Optimistic local update
-                const prev = threads;
-                setThreads((ts) => ts.map((t) => (t.id === id ? { ...t, title } : t)));
-                try {
-                  await renameConversation(id, title);
-                  refetchThreads();
-                } catch {
-                  // Revert on failure + refetch to restore server state
-                  setThreads(prev);
-                  refetchThreads();
-                }
-              }}
-              onDelete={async (id) => {
-                // Optimistic local removal
-                setThreads((ts) => ts.filter((t) => t.id !== id));
-                // If the deleted thread was active, start a new chat
-                if (id === conversationId) newChat();
-                try {
-                  await deleteConversation(id);
-                  refetchThreads();
-                } catch {
-                  refetchThreads();
-                }
-              }}
-            />
-          )}
-        </div>
-
-        {/* Messages */}
-        <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
-          {loadingThread && <p className="text-[13px] text-ink-3">Loading conversation…</p>}
-
-          {!loadingThread && messages.length === 0 && (
-            <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary-wash text-secondary-ink">
-                <SparkIcon />
-              </span>
-              <p className="text-[13px] font-medium text-ink">How can I help?</p>
-              {clientId == null ? (
-                <p className="max-w-[16rem] text-[12px] text-ink-3">
-                  Build a plan for a new prospect from their documents, find a client, or
-                  ask how something works. I only report figures from the engine — never
-                  invented numbers.
-                </p>
-              ) : (
-                <p className="max-w-[16rem] text-[12px] text-ink-3">
-                  Ask me to explain the plan, run the numbers, or compare scenarios. I only
-                  report figures from the engine — never invented numbers.
-                </p>
-              )}
-            </div>
-          )}
-
-          {messages.map((m, i) => {
-            const isUser = m.role === "user";
-            const isStreamingThis = streamingEmpty && i === messages.length - 1;
-            return (
-              <div key={i} className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}>
-                <div
-                  className={
-                    isUser
-                      ? "min-w-0 max-w-[85%] rounded-[var(--radius)] rounded-br-sm bg-secondary px-3 py-2 text-[13px] leading-relaxed text-secondary-on [overflow-wrap:anywhere] whitespace-pre-wrap"
-                      : "min-w-0 max-w-[90%] rounded-[var(--radius)] rounded-bl-sm border border-hair bg-card-2 px-3 py-2"
-                  }
-                >
-                  {isUser ? (
-                    <>
-                      {m.attachments && m.attachments.length > 0 && (
-                        <div className="mb-1 flex flex-wrap gap-1">
-                          {m.attachments.map((name, k) => (
-                            <span
-                              key={k}
-                              className="inline-flex items-center gap-1 rounded-full bg-secondary-ink/30 px-2 py-0.5 text-[11px]"
-                            >
-                              📎 {name}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {m.text && <span>{m.text}</span>}
-                    </>
-                  ) : isStreamingThis ? (
-                    <TypingDots />
-                  ) : (
-                    <MarkdownMessage text={m.text} />
-                  )}
-                </div>
-
-                {!isUser && m.pageLinks && m.pageLinks.length > 0 && (
-                  <PageLinks links={m.pageLinks} onJump={jumpToPage} />
-                )}
-              </div>
-            );
-          })}
-
-          {/* Tool affordance — human-readable label (never raw snake_case identifiers). */}
-          {toolStatus && (
-            <div className="flex items-center gap-2 text-[12px] text-secondary-ink" aria-live="polite">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-secondary" />
-              {toolStatusLabel(toolStatus)}…
-            </div>
-          )}
-
-          {isVerifying && (
-            <div className="flex items-center gap-2 text-[12px] text-secondary-ink" aria-live="polite">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-secondary" />
-              Checking the numbers…
-            </div>
-          )}
-
-          {importing && (
-            <div className="flex items-center gap-2 text-[12px] text-secondary-ink" aria-live="polite">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-secondary" />
-              {importStatus === "creating" && "Starting import…"}
-              {importStatus === "uploading" && "Uploading document…"}
-              {importStatus === "extracting" && "Extracting data…"}
-              {importStatus === "matching" && "Matching against existing accounts…"}
-              {importStatus === "assembling" && "Assembling the plan…"}
-            </div>
-          )}
-
-          {/* Hold the commit hand-off until Forge finishes narrating the import
-              (`busy` = streaming). setImportResult + send()'s setStatus("streaming")
-              batch into one render, so the link never flashes before analysis. */}
-          {importResult && clientId != null && !busy && (
-            <ImportReviewLink
-              clientId={clientId}
-              importId={importResult.importId}
-              warnings={importResult.warnings}
-            />
-          )}
-
-          {planResult && (
-            <div className="space-y-2">
-              {!planQuestionsDismissed && planResult.assemble.questions.some((q) => !q.answer) && (
-                <PlanQuestionsCard
-                  questions={planResult.assemble.questions.filter((q) => !q.answer)}
-                  busy={busy}
-                  onSubmit={(answers) => void submitPlanAnswersHandler(answers)}
-                  onSkip={() => setPlanQuestionsDismissed(true)}
-                />
-              )}
-              {!busy && (
-                <div className="space-y-2">
-                  <ImportReviewLink
-                    clientId={planResult.clientId}
-                    importId={planResult.importId}
-                    warnings={planResult.warnings}
-                  />
-                  {planResult.importId === committedImportId ? (
-                    <p className="text-[12px] text-ink-3" data-testid="forge-plan-committed">
-                      Committed the whole plan. Open the client to review.
-                    </p>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={committing}
-                      onClick={async () => {
-                        const targetImportId = planResult.importId;
-                        setCommitting(true);
-                        const res = await commitAllTabs(planResult.clientId, planResult.importId);
-                        setCommitting(false);
-                        // Bind the committed state to THIS import; a "review"
-                        // (partial) status or a resolution that lands after the
-                        // advisor moved on must not show a false "committed".
-                        if (res?.status === "committed") setCommittedImportId(targetImportId);
-                      }}
-                      className="rounded-[var(--radius-sm)] border border-hair px-3 py-1.5 text-[12px] text-ink hover:bg-card disabled:opacity-40"
-                    >
-                      {committing ? "Committing…" : "Commit everything now"}
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Global attach-first ingest: duplicate-household match found with no
-              typed intent — ask the advisor rather than guessing (Task 7). */}
-          {factFinderDecision && (
-            <FactFinderDuplicateCard
-              householdName={factFinderDecision.identity!.householdName}
-              candidates={factFinderDecision.candidates}
-              onUpdate={(cid) => {
-                const files = factFinderDecision.files;
-                setFactFinderDecision(null);
-                void send({
-                  message: `Update the existing plan (clientId: ${cid}) from the attached fact finder.\n\n${buildIngestTurnMessage(
-                    {
-                      isHouseholdDoc: true,
-                      identity: factFinderDecision.identity,
-                      duplicateCandidates: factFinderDecision.candidates,
-                    },
-                    "",
-                  )}`,
-                  scenarioId: scenarioId ?? "base",
-                  conversationId,
-                  currentPage: sectionKeyForPath(pathname),
-                  skipUserBubble: true,
-                });
-                refetchThreads();
-                // Keep files for the build kicked by the tool_render frame.
-                setAttached(files);
-              }}
-              onCreateSeparate={() => {
-                const files = factFinderDecision.files;
-                setFactFinderDecision(null);
-                void send({
-                  message: `Create a SEPARATE new household from the attached fact finder (the advisor confirmed it is not the existing match).\n\n${buildIngestTurnMessage(
-                    {
-                      isHouseholdDoc: true,
-                      identity: factFinderDecision.identity,
-                      duplicateCandidates: factFinderDecision.candidates,
-                    },
-                    "",
-                  )}`,
-                  scenarioId: scenarioId ?? "base",
-                  conversationId,
-                  currentPage: sectionKeyForPath(pathname),
-                  skipUserBubble: true,
-                });
-                refetchThreads();
-                setAttached(files);
-              }}
-              onCancel={() => {
-                setFactFinderDecision(null);
-                setAttached([]);
-              }}
-            />
-          )}
-
-          {importError && (
-            <div className="rounded-[var(--radius-sm)] border border-crit/40 bg-crit/10 px-3 py-2 text-[12px] text-crit">
-              {importError}
-            </div>
-          )}
-
-          {/* Phase-2: render the real ApprovalCard when approval is pending.
-              key= per approval round so verdict state resets on each new payload. */}
-          {pendingApproval && (
-            <ApprovalCard
-              key={pendingApproval.calls.map((c) => c.id).join("|") || "approval"}
-              previews={pendingApproval.previews}
-              calls={pendingApproval.calls}
-              busy={status === "streaming"}
-              onSubmit={(decisions) => {
-                setResolvedApproval({ ...pendingApproval, decisions });
-                // A confirmed write COMMITS during the resume (the graph is
-                // paused mid-interrupt; the tool only runs on /resume). The
-                // host planning views (Net Worth, Inflows & Outflows, etc.) are
-                // server components reading the DB, so nothing re-fetches on
-                // its own — without this the advisor sees stale data (deleted
-                // accounts still listed) until a manual page reload. Refresh
-                // after the resume drains so those views reflect the change in
-                // place. A reject-only resume mutates nothing, so skip it.
-                const committed = Object.values(decisions).some((v) => v === "confirm");
-                void Promise.resolve(resume(decisions)).then(() => {
-                  if (committed) router.refresh();
-                });
-              }}
-              onCancel={() => {
-                const rejectAll: Record<string, "confirm" | "reject"> = {};
-                for (const c of pendingApproval.calls) rejectAll[c.id] = "reject";
-                setResolvedApproval({ ...pendingApproval, decisions: rejectAll });
-                resume(rejectAll);
-              }}
-            />
-          )}
-
-          {/* Meeting review card — parallel to approval, rendered after it. */}
-          {pendingMeetingReview && (
-            <MeetingReviewCard
-              review={pendingMeetingReview}
-              busy={busy}
-              onApprove={(payload) =>
-                // Saving a meeting record commits a note + tasks + transcript
-                // doc on approval; refresh so CRM/tasks views reflect it
-                // without a manual reload (mirrors the approval path above).
-                void Promise.resolve(resumeMeetingReview(payload)).then(() => {
-                  if (payload.approved) router.refresh();
-                })
-              }
-              onCancel={() =>
-                void resumeMeetingReview({
-                  approved: false,
-                  summaryTitle: pendingMeetingReview.summaryTitle,
-                  summary: pendingMeetingReview.summary,
-                  meetingDate: pendingMeetingReview.meetingDate ?? new Date().toISOString().slice(0, 10),
-                  tasks: [],
-                })
-              }
-            />
-          )}
-
-          {/* Read-only receipt of the just-resolved approval (live path). */}
-          {!pendingApproval && resolvedApproval && (
-            <div data-testid="approval-receipt">
-              <ApprovalCard
-                previews={resolvedApproval.previews}
-                calls={resolvedApproval.calls}
-                busy={false}
-                onSubmit={() => {}}
-                onCancel={() => {}}
-                resolved={resolvedApproval.calls.map((c) => ({
-                  id: c.id,
-                  choice: resolvedApproval.decisions[c.id] ?? "reject",
-                }))}
-              />
-            </div>
-          )}
-
-          {status === "error" && errorMessage && (
-            <div className="rounded-[var(--radius-sm)] border border-crit/40 bg-crit/10 px-3 py-2 text-[12px] text-crit">
-              {errorMessage}
-              {retryAfterSeconds != null && (
-                <span className="ml-1">— try again in ~{retryAfterSeconds}s</span>
-              )}
-              {pendingApproval == null && (
+              {threads.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => void retry()}
-                  className="ml-2 rounded-[var(--radius-sm)] border border-crit/40 px-2 py-0.5 text-[11px] font-medium hover:bg-crit/20"
-                >
-                  Retry
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Composer — extra bottom padding keeps the input off the viewport
-            edge so it doesn't sit flush with the app footer behind the panel. */}
-        <div className="border-t border-hair px-4 pt-3 pb-6">
-          {/* Ask-first prompt: shown when a pasted transcript is detected */}
-          {transcriptCandidate && (
-            <div className="mb-2 rounded-[var(--radius)] border border-hair bg-card-2 px-3 py-2.5">
-              <p className="mb-2 text-[12px] text-ink-2">
-                This looks like a meeting transcript (~{transcriptCandidate.wordCount.toLocaleString()} words).
-                Summarize it and draft follow-up tasks?
-              </p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => void processTranscript(transcriptCandidate.text, "paste")}
-                  className="rounded-[var(--radius-sm)] bg-accent px-2.5 py-1 text-[12px] font-medium text-accent-on"
-                >
-                  Yes, summarize
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInput((v) => v + transcriptCandidate.text);
-                    setTranscriptCandidate(null);
-                    composerRef.current?.focus();
-                  }}
-                  className="rounded-[var(--radius-sm)] border border-hair px-2.5 py-1 text-[12px] text-ink-3 hover:text-ink"
-                >
-                  No, just paste it
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Explicit transcript paste affordance */}
-          {showTranscriptPaste && (
-            <div className="mb-2 rounded-[var(--radius)] border border-hair bg-card-2 px-3 py-2.5">
-              <p className="mb-1.5 text-[11px] font-medium text-ink-3">Paste a meeting transcript</p>
-              <textarea
-                aria-label="Paste transcript here"
-                autoFocus // the box only mounts on an explicit menu pick
-                rows={4}
-                value={transcriptPasteText}
-                onChange={(e) => setTranscriptPasteText(e.target.value)}
-                placeholder="Paste transcript text here…"
-                className="mb-2 w-full resize-y rounded-[var(--radius-sm)] border border-hair bg-card px-2 py-1 text-[12px] text-ink placeholder:text-ink-4 focus:outline-none"
-              />
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (transcriptPasteText.trim()) {
-                      void processTranscript(transcriptPasteText, "explicit");
-                    }
-                  }}
-                  disabled={!transcriptPasteText.trim()}
-                  className="rounded-[var(--radius-sm)] bg-accent px-2.5 py-1 text-[12px] font-medium text-accent-on disabled:opacity-40"
-                >
-                  Summarize
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowTranscriptPaste(false);
-                    setTranscriptPasteText("");
-                  }}
-                  className="rounded-[var(--radius-sm)] border border-hair px-2.5 py-1 text-[12px] text-ink-3 hover:text-ink"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-
-          {attached.length > 0 && (
-            /* One horizontal strip — attachments scroll sideways instead of
-               stacking, so ten files cost the same vertical space as one. */
-            <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1">
-              {attached.map((f, i) => (
-                <div
-                  key={i}
-                  data-testid="forge-attachment"
-                  title={`${f.name} · ${formatBytes(f.size)}`}
-                  className="flex max-w-[13rem] shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2 py-1"
+                  onClick={() => setHistoryOpen(!historyOpen)}
+                  aria-expanded={showHistory}
+                  className="ml-auto flex items-center gap-1 rounded-[var(--radius-sm)] px-2 py-1 text-[12px] font-medium text-ink-3 hover:bg-card-hover hover:text-ink"
                 >
                   <svg
                     aria-hidden
-                    width="14"
-                    height="14"
+                    width="11"
+                    height="11"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={`transition-transform ${showHistory ? "rotate-180" : ""}`}
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                  History
+                  <span className="text-ink-4">{threads.length}</span>
+                </button>
+              )}
+            </div>
+            {showHistory && (
+              <ConversationList
+                threads={threads}
+                activeId={conversationId}
+                onSelect={(id) => void selectThread(id)}
+                onRename={async (id, title) => {
+                  // Optimistic local update
+                  const prev = threads;
+                  setThreads((ts) => ts.map((t) => (t.id === id ? { ...t, title } : t)));
+                  try {
+                    await renameConversation(id, title);
+                    refetchThreads();
+                  } catch {
+                    // Revert on failure + refetch to restore server state
+                    setThreads(prev);
+                    refetchThreads();
+                  }
+                }}
+                onDelete={async (id) => {
+                  // Optimistic local removal
+                  setThreads((ts) => ts.filter((t) => t.id !== id));
+                  // If the deleted thread was active, start a new chat
+                  if (id === conversationId) newChat();
+                  try {
+                    await deleteConversation(id);
+                    refetchThreads();
+                  } catch {
+                    refetchThreads();
+                  }
+                }}
+              />
+            )}
+          </div>
+
+          {/* Messages */}
+          <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+            {loadingThread && <p className="text-[13px] text-ink-3">Loading conversation…</p>}
+
+            {!loadingThread && messages.length === 0 && (
+              <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary-wash text-secondary-ink">
+                  <SparkIcon />
+                </span>
+                <p className="text-[13px] font-medium text-ink">How can I help?</p>
+                {clientId == null ? (
+                  <p className="max-w-[16rem] text-[12px] text-ink-3">
+                    Build a plan for a new prospect from their documents, find a client, or
+                    ask how something works. I only report figures from the engine — never
+                    invented numbers.
+                  </p>
+                ) : (
+                  <p className="max-w-[16rem] text-[12px] text-ink-3">
+                    Ask me to explain the plan, run the numbers, or compare scenarios. I only
+                    report figures from the engine — never invented numbers.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {messages.map((m, i) => {
+              const isUser = m.role === "user";
+              const isStreamingThis = streamingEmpty && i === messages.length - 1;
+              return (
+                <div key={i} className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}>
+                  <div
+                    className={
+                      isUser
+                        ? "min-w-0 max-w-[85%] rounded-[var(--radius)] rounded-br-sm bg-secondary px-3 py-2 text-[13px] leading-relaxed text-secondary-on [overflow-wrap:anywhere] whitespace-pre-wrap"
+                        : "min-w-0 max-w-[90%] rounded-[var(--radius)] rounded-bl-sm border border-hair bg-card-2 px-3 py-2"
+                    }
+                  >
+                    {isUser ? (
+                      <>
+                        {m.attachments && m.attachments.length > 0 && (
+                          <div className="mb-1 flex flex-wrap gap-1">
+                            {m.attachments.map((name, k) => (
+                              <span
+                                key={k}
+                                className="inline-flex items-center gap-1 rounded-full bg-secondary-ink/30 px-2 py-0.5 text-[11px]"
+                              >
+                                📎 {name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {m.text && <span>{m.text}</span>}
+                      </>
+                    ) : isStreamingThis ? (
+                      <TypingDots />
+                    ) : (
+                      <MarkdownMessage text={m.text} />
+                    )}
+                  </div>
+
+                  {!isUser && m.pageLinks && m.pageLinks.length > 0 && (
+                    <PageLinks links={m.pageLinks} onJump={jumpToPage} />
+                  )}
+                  {!isUser && m.videoLinks && m.videoLinks.length > 0 && (
+                    <HelpVideoLinks links={m.videoLinks} onOpen={openHubVideo} />
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Tool affordance — human-readable label (never raw snake_case identifiers). */}
+            {toolStatus && (
+              <div className="flex items-center gap-2 text-[12px] text-secondary-ink" aria-live="polite">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-secondary" />
+                {toolStatusLabel(toolStatus)}…
+              </div>
+            )}
+
+            {isVerifying && (
+              <div className="flex items-center gap-2 text-[12px] text-secondary-ink" aria-live="polite">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-secondary" />
+                Checking the numbers…
+              </div>
+            )}
+
+            {importing && (
+              <div className="flex items-center gap-2 text-[12px] text-secondary-ink" aria-live="polite">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-secondary" />
+                {importStatus === "creating" && "Starting import…"}
+                {importStatus === "uploading" && "Uploading document…"}
+                {importStatus === "extracting" && "Extracting data…"}
+                {importStatus === "matching" && "Matching against existing accounts…"}
+                {importStatus === "assembling" && "Assembling the plan…"}
+              </div>
+            )}
+
+            {/* Hold the commit hand-off until Forge finishes narrating the import
+                (`busy` = streaming). setImportResult + send()'s setStatus("streaming")
+                batch into one render, so the link never flashes before analysis. */}
+            {importResult && clientId != null && !busy && (
+              <ImportReviewLink
+                clientId={clientId}
+                importId={importResult.importId}
+                warnings={importResult.warnings}
+              />
+            )}
+
+            {planResult && (
+              <div className="space-y-2">
+                {!planQuestionsDismissed && planResult.assemble.questions.some((q) => !q.answer) && (
+                  <PlanQuestionsCard
+                    questions={planResult.assemble.questions.filter((q) => !q.answer)}
+                    busy={busy}
+                    onSubmit={(answers) => void submitPlanAnswersHandler(answers)}
+                    onSkip={() => setPlanQuestionsDismissed(true)}
+                  />
+                )}
+                {!busy && (
+                  <div className="space-y-2">
+                    <ImportReviewLink
+                      clientId={planResult.clientId}
+                      importId={planResult.importId}
+                      warnings={planResult.warnings}
+                    />
+                    {planResult.importId === committedImportId ? (
+                      <p className="text-[12px] text-ink-3" data-testid="forge-plan-committed">
+                        Committed the whole plan. Open the client to review.
+                      </p>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={committing}
+                        onClick={async () => {
+                          const targetImportId = planResult.importId;
+                          setCommitting(true);
+                          const res = await commitAllTabs(planResult.clientId, planResult.importId);
+                          setCommitting(false);
+                          // Bind the committed state to THIS import; a "review"
+                          // (partial) status or a resolution that lands after the
+                          // advisor moved on must not show a false "committed".
+                          if (res?.status === "committed") setCommittedImportId(targetImportId);
+                        }}
+                        className="rounded-[var(--radius-sm)] border border-hair px-3 py-1.5 text-[12px] text-ink hover:bg-card disabled:opacity-40"
+                      >
+                        {committing ? "Committing…" : "Commit everything now"}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Global attach-first ingest: duplicate-household match found with no
+                typed intent — ask the advisor rather than guessing (Task 7). */}
+            {factFinderDecision && (
+              <FactFinderDuplicateCard
+                householdName={factFinderDecision.identity!.householdName}
+                candidates={factFinderDecision.candidates}
+                onUpdate={(cid) => {
+                  const files = factFinderDecision.files;
+                  setFactFinderDecision(null);
+                  void send({
+                    message: `Update the existing plan (clientId: ${cid}) from the attached fact finder.\n\n${buildIngestTurnMessage(
+                      {
+                        isHouseholdDoc: true,
+                        identity: factFinderDecision.identity,
+                        duplicateCandidates: factFinderDecision.candidates,
+                      },
+                      "",
+                    )}`,
+                    scenarioId: scenarioId ?? "base",
+                    conversationId,
+                    currentPage: sectionKeyForPath(pathname),
+                    skipUserBubble: true,
+                  });
+                  refetchThreads();
+                  // Keep files for the build kicked by the tool_render frame.
+                  setAttached(files);
+                }}
+                onCreateSeparate={() => {
+                  const files = factFinderDecision.files;
+                  setFactFinderDecision(null);
+                  void send({
+                    message: `Create a SEPARATE new household from the attached fact finder (the advisor confirmed it is not the existing match).\n\n${buildIngestTurnMessage(
+                      {
+                        isHouseholdDoc: true,
+                        identity: factFinderDecision.identity,
+                        duplicateCandidates: factFinderDecision.candidates,
+                      },
+                      "",
+                    )}`,
+                    scenarioId: scenarioId ?? "base",
+                    conversationId,
+                    currentPage: sectionKeyForPath(pathname),
+                    skipUserBubble: true,
+                  });
+                  refetchThreads();
+                  setAttached(files);
+                }}
+                onCancel={() => {
+                  setFactFinderDecision(null);
+                  setAttached([]);
+                }}
+              />
+            )}
+
+            {importError && (
+              <div className="rounded-[var(--radius-sm)] border border-crit/40 bg-crit/10 px-3 py-2 text-[12px] text-crit">
+                {importError}
+              </div>
+            )}
+
+            {/* Phase-2: render the real ApprovalCard when approval is pending.
+                key= per approval round so verdict state resets on each new payload. */}
+            {pendingApproval && (
+              <ApprovalCard
+                key={pendingApproval.calls.map((c) => c.id).join("|") || "approval"}
+                previews={pendingApproval.previews}
+                calls={pendingApproval.calls}
+                busy={status === "streaming"}
+                onSubmit={(decisions) => {
+                  setResolvedApproval({ ...pendingApproval, decisions });
+                  // A confirmed write COMMITS during the resume (the graph is
+                  // paused mid-interrupt; the tool only runs on /resume). The
+                  // host planning views (Net Worth, Inflows & Outflows, etc.) are
+                  // server components reading the DB, so nothing re-fetches on
+                  // its own — without this the advisor sees stale data (deleted
+                  // accounts still listed) until a manual page reload. Refresh
+                  // after the resume drains so those views reflect the change in
+                  // place. A reject-only resume mutates nothing, so skip it.
+                  const committed = Object.values(decisions).some((v) => v === "confirm");
+                  void Promise.resolve(resume(decisions)).then(() => {
+                    if (committed) router.refresh();
+                  });
+                }}
+                onCancel={() => {
+                  const rejectAll: Record<string, "confirm" | "reject"> = {};
+                  for (const c of pendingApproval.calls) rejectAll[c.id] = "reject";
+                  setResolvedApproval({ ...pendingApproval, decisions: rejectAll });
+                  resume(rejectAll);
+                }}
+              />
+            )}
+
+            {/* Meeting review card — parallel to approval, rendered after it. */}
+            {pendingMeetingReview && (
+              <MeetingReviewCard
+                review={pendingMeetingReview}
+                busy={busy}
+                onApprove={(payload) =>
+                  // Saving a meeting record commits a note + tasks + transcript
+                  // doc on approval; refresh so CRM/tasks views reflect it
+                  // without a manual reload (mirrors the approval path above).
+                  void Promise.resolve(resumeMeetingReview(payload)).then(() => {
+                    if (payload.approved) router.refresh();
+                  })
+                }
+                onCancel={() =>
+                  void resumeMeetingReview({
+                    approved: false,
+                    summaryTitle: pendingMeetingReview.summaryTitle,
+                    summary: pendingMeetingReview.summary,
+                    meetingDate: pendingMeetingReview.meetingDate ?? new Date().toISOString().slice(0, 10),
+                    tasks: [],
+                  })
+                }
+              />
+            )}
+
+            {/* Read-only receipt of the just-resolved approval (live path). */}
+            {!pendingApproval && resolvedApproval && (
+              <div data-testid="approval-receipt">
+                <ApprovalCard
+                  previews={resolvedApproval.previews}
+                  calls={resolvedApproval.calls}
+                  busy={false}
+                  onSubmit={() => {}}
+                  onCancel={() => {}}
+                  resolved={resolvedApproval.calls.map((c) => ({
+                    id: c.id,
+                    choice: resolvedApproval.decisions[c.id] ?? "reject",
+                  }))}
+                />
+              </div>
+            )}
+
+            {status === "error" && errorMessage && (
+              <div className="rounded-[var(--radius-sm)] border border-crit/40 bg-crit/10 px-3 py-2 text-[12px] text-crit">
+                {errorMessage}
+                {retryAfterSeconds != null && (
+                  <span className="ml-1">— try again in ~{retryAfterSeconds}s</span>
+                )}
+                {pendingApproval == null && (
+                  <button
+                    type="button"
+                    onClick={() => void retry()}
+                    className="ml-2 rounded-[var(--radius-sm)] border border-crit/40 px-2 py-0.5 text-[11px] font-medium hover:bg-crit/20"
+                  >
+                    Retry
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Composer — extra bottom padding keeps the input off the viewport
+              edge so it doesn't sit flush with the app footer behind the panel. */}
+          <div className="border-t border-hair px-4 pt-3 pb-6">
+            {/* Ask-first prompt: shown when a pasted transcript is detected */}
+            {transcriptCandidate && (
+              <div className="mb-2 rounded-[var(--radius)] border border-hair bg-card-2 px-3 py-2.5">
+                <p className="mb-2 text-[12px] text-ink-2">
+                  This looks like a meeting transcript (~{transcriptCandidate.wordCount.toLocaleString()} words).
+                  Summarize it and draft follow-up tasks?
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void processTranscript(transcriptCandidate.text, "paste")}
+                    className="rounded-[var(--radius-sm)] bg-accent px-2.5 py-1 text-[12px] font-medium text-accent-on"
+                  >
+                    Yes, summarize
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInput((v) => v + transcriptCandidate.text);
+                      setTranscriptCandidate(null);
+                      composerRef.current?.focus();
+                    }}
+                    className="rounded-[var(--radius-sm)] border border-hair px-2.5 py-1 text-[12px] text-ink-3 hover:text-ink"
+                  >
+                    No, just paste it
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Explicit transcript paste affordance */}
+            {showTranscriptPaste && (
+              <div className="mb-2 rounded-[var(--radius)] border border-hair bg-card-2 px-3 py-2.5">
+                <p className="mb-1.5 text-[11px] font-medium text-ink-3">Paste a meeting transcript</p>
+                <textarea
+                  aria-label="Paste transcript here"
+                  autoFocus // the box only mounts on an explicit menu pick
+                  rows={4}
+                  value={transcriptPasteText}
+                  onChange={(e) => setTranscriptPasteText(e.target.value)}
+                  placeholder="Paste transcript text here…"
+                  className="mb-2 w-full resize-y rounded-[var(--radius-sm)] border border-hair bg-card px-2 py-1 text-[12px] text-ink placeholder:text-ink-4 focus:outline-none"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (transcriptPasteText.trim()) {
+                        void processTranscript(transcriptPasteText, "explicit");
+                      }
+                    }}
+                    disabled={!transcriptPasteText.trim()}
+                    className="rounded-[var(--radius-sm)] bg-accent px-2.5 py-1 text-[12px] font-medium text-accent-on disabled:opacity-40"
+                  >
+                    Summarize
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowTranscriptPaste(false);
+                      setTranscriptPasteText("");
+                    }}
+                    className="rounded-[var(--radius-sm)] border border-hair px-2.5 py-1 text-[12px] text-ink-3 hover:text-ink"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {attached.length > 0 && (
+              /* One horizontal strip — attachments scroll sideways instead of
+                 stacking, so ten files cost the same vertical space as one. */
+              <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1">
+                {attached.map((f, i) => (
+                  <div
+                    key={i}
+                    data-testid="forge-attachment"
+                    title={`${f.name} · ${formatBytes(f.size)}`}
+                    className="flex max-w-[13rem] shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2 py-1"
+                  >
+                    <svg
+                      aria-hidden
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={1.5}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="shrink-0 text-ink-3"
+                    >
+                      <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                      <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" />
+                    </svg>
+                    <span className="min-w-0 truncate text-[12px] text-ink">{f.name}</span>
+                    <span className="shrink-0 text-[11px] text-ink-4">{formatBytes(f.size)}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${f.name}`}
+                      onClick={() => setAttached((prev) => prev.filter((_, j) => j !== i))}
+                      className="shrink-0 text-ink-4 hover:text-ink"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input
+              ref={fileInputRef}
+              data-testid="forge-file-input"
+              type="file"
+              multiple
+              accept=".pdf,.docx,.xlsx,.xls,.csv,.png,.jpg,.jpeg"
+              className="hidden"
+              onChange={(e) => {
+                onPickFiles(e.target.files);
+                e.target.value = ""; // allow re-selecting the same file
+              }}
+            />
+            <div className="flex items-end gap-2 rounded-[var(--radius)] border border-hair bg-card-2 p-1.5 focus-within:border-secondary/50">
+              {/* Attach button — visible in client mode always, and in global
+                  mode as the attach-first fact-finder ingest entry point (see
+                  canAttach above). */}
+              {canAttach && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={locked}
+                  aria-label="Attach a document"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-hair text-ink-2 hover:text-ink disabled:opacity-40"
+                >
+                  {/* Inline Lucide-style paperclip — lucide-react isn't a repo dep
+                      (see theme-toggle.tsx); outline, 1.5 stroke, currentColor. */}
+                  <svg
+                    aria-hidden
+                    width="15"
+                    height="15"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
                     strokeWidth={1.5}
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className="shrink-0 text-ink-3"
                   >
-                    <path d="M14 3v4a1 1 0 0 0 1 1h4" />
-                    <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" />
+                    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                   </svg>
-                  <span className="min-w-0 truncate text-[12px] text-ink">{f.name}</span>
-                  <span className="shrink-0 text-[11px] text-ink-4">{formatBytes(f.size)}</span>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${f.name}`}
-                    onClick={() => setAttached((prev) => prev.filter((_, j) => j !== i))}
-                    className="shrink-0 text-ink-4 hover:text-ink"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <input
-            ref={fileInputRef}
-            data-testid="forge-file-input"
-            type="file"
-            multiple
-            accept=".pdf,.docx,.xlsx,.xls,.csv,.png,.jpg,.jpeg"
-            className="hidden"
-            onChange={(e) => {
-              onPickFiles(e.target.files);
-              e.target.value = ""; // allow re-selecting the same file
-            }}
-          />
-          <div className="flex items-end gap-2 rounded-[var(--radius)] border border-hair bg-card-2 p-1.5 focus-within:border-secondary/50">
-            {/* Attach button — visible in client mode always, and in global
-                mode as the attach-first fact-finder ingest entry point (see
-                canAttach above). */}
-            {canAttach && (
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
+                </button>
+              )}
+              {/* Explicit transcript affordance — client-only (transcript tools
+                  need a client context), tucked behind the "+" menu so the
+                  composer row stays quiet. */}
+              {clientId != null && (
+                <ComposerAddMenu
+                  disabled={locked}
+                  onPasteTranscript={() => setShowTranscriptPaste(true)}
+                />
+              )}
+              <textarea
+                ref={composerRef}
+                aria-label="Ask Forge"
+                rows={1}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onPaste={(e) => {
+                  if (locked) return;
+                  // Screenshots first: image clipboard items become attachments
+                  // (needs a client context — see attachTarget above). Renamed
+                  // because clipboard images all arrive as generic "image.png",
+                  // which reads as noise in the review wizard.
+                  const images = Array.from(e.clipboardData.files ?? []).filter(
+                    (f) => f.type === "image/png" || f.type === "image/jpeg",
+                  );
+                  if (images.length > 0 && attachTarget != null) {
+                    e.preventDefault();
+                    setAttached((prev) => [
+                      ...prev,
+                      ...images.map((f, i) => {
+                        const ext = f.type === "image/png" ? "png" : "jpg";
+                        return new File([f], `screenshot-${prev.length + i + 1}.${ext}`, {
+                          type: f.type,
+                        });
+                      }),
+                    ]);
+                    return;
+                  }
+                  const text = e.clipboardData.getData("text");
+                  const { isCandidate, wordCount } = looksLikeTranscript(text);
+                  if (isCandidate) {
+                    e.preventDefault(); // keep the big text OUT of the composer
+                    setTranscriptCandidate({ text, wordCount });
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void onSend();
+                  }
+                }}
+                placeholder={
+                  pendingApproval
+                    ? "Approve or reject the proposed change above…"
+                    : clientId == null
+                      ? "Build a plan, find a client, or ask how something works…"
+                      : "Ask about this plan…"
+                }
                 disabled={locked}
-                aria-label="Attach a document"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-hair text-ink-2 hover:text-ink disabled:opacity-40"
-              >
-                {/* Inline Lucide-style paperclip — lucide-react isn't a repo dep
-                    (see theme-toggle.tsx); outline, 1.5 stroke, currentColor. */}
-                <svg
-                  aria-hidden
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                </svg>
-              </button>
-            )}
-            {/* Explicit transcript affordance — client-only (transcript tools
-                need a client context), tucked behind the "+" menu so the
-                composer row stays quiet. */}
-            {clientId != null && (
-              <ComposerAddMenu
-                disabled={locked}
-                onPasteTranscript={() => setShowTranscriptPaste(true)}
+                className="min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-[13px] text-ink placeholder:text-ink-4 focus:outline-none disabled:opacity-50"
               />
-            )}
-            <textarea
-              ref={composerRef}
-              aria-label="Ask Forge"
-              rows={1}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onPaste={(e) => {
-                if (locked) return;
-                // Screenshots first: image clipboard items become attachments
-                // (needs a client context — see attachTarget above). Renamed
-                // because clipboard images all arrive as generic "image.png",
-                // which reads as noise in the review wizard.
-                const images = Array.from(e.clipboardData.files ?? []).filter(
-                  (f) => f.type === "image/png" || f.type === "image/jpeg",
-                );
-                if (images.length > 0 && attachTarget != null) {
-                  e.preventDefault();
-                  setAttached((prev) => [
-                    ...prev,
-                    ...images.map((f, i) => {
-                      const ext = f.type === "image/png" ? "png" : "jpg";
-                      return new File([f], `screenshot-${prev.length + i + 1}.${ext}`, {
-                        type: f.type,
-                      });
-                    }),
-                  ]);
-                  return;
-                }
-                const text = e.clipboardData.getData("text");
-                const { isCandidate, wordCount } = looksLikeTranscript(text);
-                if (isCandidate) {
-                  e.preventDefault(); // keep the big text OUT of the composer
-                  setTranscriptCandidate({ text, wordCount });
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void onSend();
-                }
-              }}
-              placeholder={
-                pendingApproval
-                  ? "Approve or reject the proposed change above…"
-                  : clientId == null
-                    ? "Build a plan, find a client, or ask how something works…"
-                    : "Ask about this plan…"
-              }
-              disabled={locked}
-              className="min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-[13px] text-ink placeholder:text-ink-4 focus:outline-none disabled:opacity-50"
-            />
-            {busy ? (
-              <button
-                type="button"
-                onClick={cancel}
-                aria-label="Stop"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-hair text-ink-2 hover:text-ink"
-              >
-                <span aria-hidden className="text-xs">■</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void onSend()}
-                disabled={(!input.trim() && attached.length === 0) || locked}
-                aria-label="Send message"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-secondary text-secondary-on hover:bg-secondary-ink disabled:opacity-40"
-              >
-                <span aria-hidden className="text-sm">↑</span>
-              </button>
-            )}
+              {busy ? (
+                <button
+                  type="button"
+                  onClick={cancel}
+                  aria-label="Stop"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-hair text-ink-2 hover:text-ink"
+                >
+                  <span aria-hidden className="text-xs">■</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void onSend()}
+                  disabled={(!input.trim() && attached.length === 0) || locked}
+                  aria-label="Send message"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-secondary text-secondary-on hover:bg-secondary-ink disabled:opacity-40"
+                >
+                  <span aria-hidden className="text-sm">↑</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
+
+        {hubMounted && (
+          <div
+            role="tabpanel"
+            id="forge-tabpanel-hub"
+            aria-labelledby="forge-tab-hub"
+            hidden={tab !== "hub"}
+            className={tab === "hub" ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+          >
+            <KnowledgeHub active={open && tab === "hub"} />
+          </div>
+        )}
       </div>
     </div>
   );

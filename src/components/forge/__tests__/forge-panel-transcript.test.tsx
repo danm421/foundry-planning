@@ -36,6 +36,13 @@ vi.mock("../forge-provider", () => ({
     pathname: "/clients/c1/overview",
     isOpen: true,
     close: vi.fn(),
+    tab: "chat",
+    setTab: vi.fn(),
+    hubTarget: null,
+    openHubVideo: vi.fn(),
+    chatDraft: null,
+    askInChat: vi.fn(),
+    clearChatDraft: vi.fn(),
   }),
   ForgeProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
