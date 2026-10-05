@@ -3162,16 +3162,19 @@ export const expenses = pgTable("expenses", {
   // year onward. Used to mark pre-Medicare health-insurance expenses so they auto-end
   // when projected Medicare premiums kick in.
   endsAtMedicareEligibilityOwner: ownerEnum("ends_at_medicare_eligibility_owner"),
-  // Education-goal fields (type === "education").
+  // Funded-goal field: read on education rows and on household-owned Other rows
+  // marked as a goal (isFundedGoal, src/engine/goals/goal-funding.ts).
   // When true, any goal cost the dedicated accounts can't cover is paid from
   // household cash (normal withdrawal waterfall); when false, it's an unfunded
-  // shortfall. Ignored for non-education rows.
+  // shortfall. Ignored on every other row.
   payShortfallOutOfPocket: boolean("pay_shortfall_out_of_pocket")
     .notNull()
     .default(false),
-  // Advisor-set flag: show this expense as a goal on the Household Map's Goals
-  // board. Education rows are always treated as goals regardless of this flag —
-  // see src/lib/household-map/goals.ts. Presentation only; the engine ignores it.
+  // Advisor-set flag: show this expense as a goal (Household Map Goals board,
+  // Solver Goals tab). Education rows are always treated as goals regardless of
+  // this flag — see src/lib/goals.ts. The projection reads it only through
+  // canHaveGoalFunding (src/engine/goals/goal-funding.ts): an Other expense
+  // marked as a goal may draw from its dedicated savings accounts.
   isGoal: boolean("is_goal").notNull().default(false),
   // When true on a living row, the row spends the household's entire remaining
   // cash flow for each year it is active, and `annual_amount` acts as a floor

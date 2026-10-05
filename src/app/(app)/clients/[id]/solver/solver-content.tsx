@@ -9,9 +9,10 @@ import { loadLifeInsuranceSettings } from "@/lib/life-insurance/settings";
 import { assembleSolverPortfolios, mixFromAllocationRows, type SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import {
-  buildEducationReturnStats,
-  type EducationReturnStat,
-} from "@/lib/reports/education-mc-inputs";
+  buildGoalReturnStats,
+  type GoalReturnStat,
+} from "@/lib/reports/goal-mc-inputs";
+import { canHaveGoalFunding, goalDrawAccountIds } from "@/engine/goals/goal-funding";
 import { loadReportLayout } from "@/lib/solver/report-layout-store";
 import { loadPanelData } from "@/lib/scenario/load-panel-data";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
@@ -21,7 +22,7 @@ import type { InputTab, ReportKey } from "./report-tab-link";
 
 // Deterministic fallback seed when the plan MC data can't be loaded (never
 // Math.random/Date — the per-goal gauges must reproduce across renders).
-const FALLBACK_EDUCATION_SEED = 1;
+const FALLBACK_GOAL_SEED = 1;
 
 interface Props {
   clientId: string;
@@ -127,11 +128,11 @@ export async function SolverContent({
 
   const milestones = treeMilestones(baseTree);
 
-  // Per-goal education POS gauge inputs. The gauge simulates each goal's
-  // dedicated pool client-side; the blended return stats + scenario seed come
-  // from the plan Monte Carlo data (same asset-class stats + account mixes).
-  // Gated on there being at least one funded education goal, so the common
-  // no-education case skips the extra MC-data load entirely. Kicked off before
+  // Per-goal POS gauge inputs. The gauge simulates each goal's dedicated pool
+  // client-side; the blended return stats + scenario seed come from the plan
+  // Monte Carlo data (same asset-class stats + account mixes). Gated on there
+  // being at least one goal with a savings account, so the common no-goal case
+  // skips the extra MC-data load entirely. Kicked off before
   // the life-insurance-settings await below so the two independent loads run
   // in parallel on this page's server-render path; a load failure resolves to
   // null and takes the neutral-fallback branch.
@@ -145,10 +146,11 @@ export async function SolverContent({
     growthContext,
     solverTree.accounts,
   );
-  const hasEducationGoals = solverTree.expenses.some(
-    (e) => e.type === "education" && (e.dedicatedAccountIds?.length ?? 0) > 0,
+  const solverAccountById = new Map(solverTree.accounts.map((a) => [a.id, a]));
+  const hasFundedGoals = solverTree.expenses.some(
+    (e) => canHaveGoalFunding(e) && goalDrawAccountIds(e, solverAccountById).length > 0,
   );
-  const educationMcPromise = hasEducationGoals
+  const goalMcPromise = hasFundedGoals
     ? loadMonteCarloData(clientId, firmId, source, [], solverTree).catch(() => null)
     : null;
 
@@ -163,23 +165,23 @@ export async function SolverContent({
   const clientName = baseClient.firstName?.trim() || "Client";
   const spouseName = baseClient.spouseName?.trim() || CO_CLIENT_LABEL;
 
-  let educationReturnStats: Record<string, EducationReturnStat> = {};
-  let educationSeed = FALLBACK_EDUCATION_SEED;
-  const mcData = educationMcPromise ? await educationMcPromise : null;
+  let goalReturnStats: Record<string, GoalReturnStat> = {};
+  let goalSeed = FALLBACK_GOAL_SEED;
+  const mcData = goalMcPromise ? await goalMcPromise : null;
   if (mcData) {
     try {
-      educationSeed = mcData.seed;
-      const assetClassStats = new Map<string, EducationReturnStat>(
+      goalSeed = mcData.seed;
+      const assetClassStats = new Map<string, GoalReturnStat>(
         mcData.indices.map((i) => [i.id, { arithMean: i.arithMean, stdDev: i.stdDev }]),
       );
       // The fromYear-0 segment is the base mix — the right allocation for
-      // near-term education goals. An account with no base mix may still carry
+      // near-term goals. An account with no base mix may still carry
       // a reinvestment's later segment; it stays fixed-rate here.
       const accountMixes = mcData.accountMixes.map((m) => ({
         accountId: m.accountId,
         mix: m.segments.find((s) => s.fromYear === 0)?.mix ?? [],
       }));
-      educationReturnStats = buildEducationReturnStats({
+      goalReturnStats = buildGoalReturnStats({
         expenses: solverTree.expenses,
         accounts: solverTree.accounts,
         accountMixes,
@@ -215,8 +217,8 @@ export async function SolverContent({
       scenarioName={scenarioName}
       baseGifts={giftState.drafts}
       overlayGiftSeriesIds={giftState.overlaySeriesIds}
-      educationReturnStats={educationReturnStats}
-      educationSeed={educationSeed}
+      goalReturnStats={goalReturnStats}
+      goalSeed={goalSeed}
       initialReportLayout={reportLayout}
       initialTab={initialTab}
       initialReport={initialReport}

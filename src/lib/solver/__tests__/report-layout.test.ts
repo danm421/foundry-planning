@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   REPORT_KEYS,
+  canonicalReportId,
   resolveReportLayout,
   visibleReportsInOrder,
   firstVisibleReport,
@@ -75,7 +76,9 @@ describe("resolveReportLayout", () => {
     ];
     const stored = storedIds.map((id) => ({ id, visible: true }));
     const out = resolveReportLayout(stored);
-    expect(out.map((e) => e.id)).toEqual(storedIds.slice(0, -1));
+    expect(out.map((e) => e.id)).toEqual(
+      storedIds.slice(0, -1).map((id) => (id === "education" ? "goals" : id)),
+    );
     // `String(...)` because "thresholds" is no longer a ReportKey — comparing
     // it against `e.id` directly is a type error, not just a false assertion.
     expect(out.map((e) => String(e.id))).not.toContain("thresholds");
@@ -95,6 +98,19 @@ describe("resolveReportLayout", () => {
     const freshAdvisorOrder = resolveReportLayout(null).map((e) => e.id);
     const existingAdvisorOrder = resolveReportLayout(stored).map((e) => e.id);
     expect(existingAdvisorOrder).toEqual(freshAdvisorOrder);
+  });
+
+  it("carries a stored education entry over as goals, keeping its place and visibility", () => {
+    const out = resolveReportLayout([
+      { id: "education", visible: false },
+      { id: "portfolio", visible: true },
+    ]);
+    expect(out[0]).toEqual({ id: "goals", visible: false });
+    expect(out.filter((e) => e.id === "goals")).toHaveLength(1);
+  });
+
+  it("never maps an inherited object key to a renamed report", () => {
+    expect(canonicalReportId("constructor")).toBe("constructor");
   });
 
   it("treats a corrupted non-array stored value as empty → canonical defaults", () => {

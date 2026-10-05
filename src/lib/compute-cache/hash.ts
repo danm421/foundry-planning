@@ -42,8 +42,12 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
  *    treated as valid for the credit layer too, serving stale projections with no
  *    error. Nothing in the toolchain flags this; it has to be checked by hand
  *    against main before every merge.
+ * 12: goal funding — an Other expense marked as a goal draws from its savings
+ *     accounts; household-owned goal draws book as withdrawals + expenses and
+ *     leave the surplus split alone (spec 2026-10-05-solver-goals-design,
+ *     2026-10-05)
  */
-export const ENGINE_VERSION = 11;
+export const ENGINE_VERSION = 12;
 
 /** Round to 6 decimals so float representation noise can't cause spurious misses. */
 function round(n: number): number {

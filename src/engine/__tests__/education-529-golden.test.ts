@@ -252,7 +252,7 @@ const controlYears = runProjection(makeData({ with529: false }));
 
 const golden = (year: number) => goldenYears.find((y) => y.year === year)!;
 const control = (year: number) => controlYears.find((y) => y.year === year)!;
-const eduRow = (year: number) => golden(year).educationGoals?.find((g) => g.goalId === "edu");
+const eduRow = (year: number) => golden(year).goals?.find((g) => g.goalId === "edu");
 const led529 = (year: number) => golden(year).accountLedgers["the-529"];
 const ledRoth = (year: number) => golden(year).accountLedgers["kid-roth"];
 

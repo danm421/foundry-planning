@@ -18,11 +18,11 @@ describe("expenseCreateSchema education", () => {
     }
   });
 
-  it("defaults payShortfallOutOfPocket to false and dedicatedAccountIds to []", () => {
+  it("leaves payShortfallOutOfPocket undefined (the write core defaults it) and dedicatedAccountIds to []", () => {
     const r = expenseCreateSchema.safeParse({ type: "education", name: "C", startYear: 2033, endYear: 2036 });
     expect(r.success).toBe(true);
     if (r.success) {
-      expect(r.data.payShortfallOutOfPocket).toBe(false);
+      expect(r.data.payShortfallOutOfPocket).toBeUndefined();
       expect(r.data.dedicatedAccountIds).toEqual([]);
     }
   });

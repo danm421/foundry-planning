@@ -111,7 +111,7 @@ describe("SolverRowOtherExpenses", () => {
 
   it("ignores rows the quick-add popup could not have minted", () => {
     // A max-spending solve synthesizes a "living" retirement expense and
-    // SolverEducationSection adds "education" goals — both land in the working
+    // SolverGoalsSection adds "education" goals — both land in the working
     // tree through the same expense-upsert this category's rows use.
     const synthesized = expense({
       id: "e-living",
@@ -133,5 +133,12 @@ describe("SolverRowOtherExpenses", () => {
 
     expect(screen.queryByLabelText("Daycare")).toBeNull();
     expect(screen.getByLabelText("Boat")).toBeInTheDocument();
+  });
+
+  it("leaves a goal-marked Other expense to the Goals tab", () => {
+    const goalRow = expense({ id: "e-goal", name: "New car", isGoal: true });
+    renderRow({ source: [planned, goalRow], working: [planned, goalRow] });
+    expect(screen.getByText("Travel")).toBeInTheDocument();
+    expect(screen.queryByText("New car")).toBeNull();
   });
 });

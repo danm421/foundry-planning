@@ -112,6 +112,11 @@ describe("isQuickAddCashflowRow", () => {
     const synthesized = { id: "x", type: "living" } as unknown as Expense;
     expect(isQuickAddCashflowRow(synthesized)).toBe(false);
   });
+
+  it("never treats a goal-marked Other expense as a quick-added row", () => {
+    expect(isQuickAddCashflowRow({ type: "other", isGoal: true })).toBe(false);
+    expect(isQuickAddCashflowRow({ type: "other" })).toBe(true);
+  });
 });
 
 describe("addedQuickAddRows", () => {

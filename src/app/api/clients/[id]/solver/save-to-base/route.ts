@@ -52,6 +52,7 @@ import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { inheritedIraRowFields } from "@/lib/accounts/inherited-ira";
 import { recordAudit } from "@/lib/audit";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import { goalFundingError } from "@/lib/goals";
 
 export const dynamic = "force-dynamic";
 
@@ -321,6 +322,23 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const dedicatedCheck = await assertAccountsInClient(clientId, dedicatedAccountIds);
     if (!dedicatedCheck.ok) {
       return NextResponse.json({ error: dedicatedCheck.reason }, { status: 400 });
+    }
+
+    // Goal-funding rule (spec 2026-10-05): a 529 pays only for education, and
+    // only a goal may carry savings accounts. Kinds come from the source tree
+    // plus this batch's inserts, so a just-created savings account resolves; an
+    // id neither knows still counts toward "has accounts" (category unknown).
+    const accountKindById = new Map<string, { category: string; subType?: string | null }>(
+      [...(sourceTree.accounts ?? []), ...accountInserts].map((a) => [a.id, a]),
+    );
+    for (const e of [...expenseInserts, ...expenseFullUpdates]) {
+      const linked = (e.dedicatedAccountIds ?? []).map(
+        (id) => accountKindById.get(id) ?? { category: "unknown" },
+      );
+      const fundingError = goalFundingError(e, linked);
+      if (fundingError) {
+        return NextResponse.json({ error: fundingError }, { status: 400 });
+      }
     }
 
     // Validate the surplus "save remainder to" destination when it's a non-null
@@ -603,6 +621,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             institutionState: e.institutionState ?? null,
             institutionName: e.institutionName ?? null,
             forFamilyMemberId: e.forFamilyMemberId ?? null,
+            isGoal: e.isGoal ?? false,
             absorbsRemainingCashFlow: e.absorbsRemainingCashFlow ?? false,
             paymentMonth: e.paymentMonth ?? null,
           })
@@ -627,6 +646,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             institutionState: e.institutionState ?? null,
             institutionName: e.institutionName ?? null,
             forFamilyMemberId: e.forFamilyMemberId ?? null,
+            isGoal: e.isGoal ?? false,
             absorbsRemainingCashFlow: e.absorbsRemainingCashFlow ?? false,
             paymentMonth: e.paymentMonth ?? null,
             updatedAt: new Date(),

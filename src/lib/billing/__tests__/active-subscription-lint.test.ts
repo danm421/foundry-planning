@@ -357,8 +357,8 @@ const ALLOWLIST: Record<string, string> = {
   //     write for a subscription gate to protect. Same ruling as solver/solve.
   "src/app/api/clients/[id]/rebalance/compute/route.ts":
     "rebalance trade-list compute — read-only on DB, no mutation; parity with solver/solve",
-  "src/app/api/clients/[id]/solver/education-solve/route.ts":
-    "education dedicated-savings solve — read-only on DB, no mutation; parity with solver/solve",
+  "src/app/api/clients/[id]/solver/goal-solve/route.ts":
+    "goal dedicated-savings solve — read-only on DB, no mutation; parity with solver/solve",
   "src/app/api/clients/[id]/solver/retirement-comparison/route.ts":
     "retirement-comparison solve — read-only on DB (compute cache only, same as the already-exempt solver/monte-carlo); no mutation",
   "src/app/api/crm/import/remap/route.ts":

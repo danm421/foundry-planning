@@ -114,7 +114,6 @@ export const expenseCreateSchema = z
     growthSource: growthSourceOptional.default("custom"),
     paymentMonth: paymentMonthOptional,
     ...shared,
-    payShortfallOutOfPocket: z.boolean().default(false),
     isGoal: z.boolean().default(false),
     absorbsRemainingCashFlow: z.boolean().default(false),
     dedicatedAccountIds: z.array(uuidSchema).default([]),

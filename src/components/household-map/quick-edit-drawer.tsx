@@ -277,6 +277,15 @@ export default function QuickEditDrawer({
   async function handleSave() {
     setSaving(true);
     setError(null);
+    // A non-goal may not draw from savings — the update core refuses it — and
+    // this drawer has no funding UI. So unticking "Show as a goal" on an Other
+    // goal that has savings accounts clears them too, the same as the I&E
+    // dialog. Every other save leaves the links alone.
+    const dropsFunding =
+      target.kind === "expense" &&
+      !isEducation &&
+      !isGoal &&
+      (target.row?.dedicatedAccountIds?.length ?? 0) > 0;
     const body: Record<string, unknown> = {
       name,
       annualAmount,
@@ -288,6 +297,7 @@ export default function QuickEditDrawer({
       growthSource,
       ...(target.kind === "income" ? { owner } : {}),
       ...(target.kind === "expense" ? { isGoal: isEducation ? true : isGoal } : {}),
+      ...(dropsFunding ? { dedicatedAccountIds: [] } : {}),
       // Education-only, and create-only (the type picker is). `|| null` rather
       // than the empty string: `forFamilyMemberId` is validated as a uuid, and
       // "" is a 400 rather than "no beneficiary".

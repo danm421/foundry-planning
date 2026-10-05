@@ -782,8 +782,9 @@ describe("LiveSolverWorkspace — save to base facts", () => {
 describe("LiveSolverWorkspace — editing-surface tabs", () => {
   it("switches between the Retirement and Techniques tabs", () => {
     render(<LiveSolverWorkspace {...baseProps} />);
-    // Retirement tab is active by default — its Goals section is visible.
-    expect(screen.getByText("Goals")).toBeTruthy();
+    // Retirement tab is active by default — its Goals section is visible. Its
+    // header is a disclosure button; the Goals REPORT tab shares the text.
+    expect(screen.getByRole("button", { name: "Goals" })).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: /techniques/i }));
     // Techniques tab shows the technique catalog.
     expect(screen.getByRole("button", { name: /add roth conversion/i })).toBeTruthy();
@@ -1138,7 +1139,7 @@ describe("LiveSolverWorkspace — KPI strip is Portfolio-only", () => {
       "Life Insurance Need",
       "Estate",
       "Monte Carlo",
-      "Education",
+      "Goals",
       "Balance Sheet",
     ]) {
       fireEvent.click(reportTabs().getByRole("tab", { name: label }));
@@ -1244,7 +1245,7 @@ describe("LiveSolverWorkspace — report layout customization", () => {
 
     // Two rapid hides of non-active reports (active stays Portfolio throughout).
     fireEvent.click(screen.getByRole("switch", { name: "Estate" }));
-    fireEvent.click(screen.getByRole("switch", { name: "Education" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Goals" }));
 
     // Single-flight: only the first save is in flight; the second is queued.
     expect(saveReportLayoutMock).toHaveBeenCalledTimes(1);
@@ -1261,12 +1262,12 @@ describe("LiveSolverWorkspace — report layout customization", () => {
       visible: boolean;
     }>;
     expect(lastArg.find((e) => e.id === "estate")!.visible).toBe(false);
-    expect(lastArg.find((e) => e.id === "education")!.visible).toBe(false);
+    expect(lastArg.find((e) => e.id === "goals")!.visible).toBe(false);
   });
 });
 
 describe("LiveSolverWorkspace — left-pane View report buttons", () => {
-  // "Education" names BOTH a left input tab and a right report tab, so every
+  // "Goals" names BOTH a left input tab and a right report tab, so every
   // query here is scoped to one tablist by its aria-label.
   const inputTab = (name: string) =>
     within(screen.getByRole("tablist", { name: "Solver editing surface" })).getByRole(
@@ -1286,17 +1287,17 @@ describe("LiveSolverWorkspace — left-pane View report buttons", () => {
         : Promise.resolve({ ok: true, json: async () => liResult }),
     );
 
-  it("jumps the right pane to the Education report", () => {
+  it("jumps the right pane to the Goals report", () => {
     render(<LiveSolverWorkspace {...baseProps} />);
     expect(reportTabs().getByRole("tab", { name: "Portfolio" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
 
-    fireEvent.click(inputTab("Education"));
-    fireEvent.click(screen.getByRole("button", { name: /view the education report/i }));
+    fireEvent.click(inputTab("Goals"));
+    fireEvent.click(screen.getByRole("button", { name: /view the goals report/i }));
 
-    expect(reportTabs().getByRole("tab", { name: "Education" })).toHaveAttribute(
+    expect(reportTabs().getByRole("tab", { name: "Goals" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -1321,14 +1322,14 @@ describe("LiveSolverWorkspace — left-pane View report buttons", () => {
     // only select a report the strip isn't showing — the button goes too.
     render(<LiveSolverWorkspace {...baseProps} />);
     fireEvent.click(screen.getByRole("button", { name: /customize reports/i }));
-    fireEvent.click(screen.getByRole("switch", { name: "Education" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Goals" }));
 
-    fireEvent.click(inputTab("Education"));
+    fireEvent.click(inputTab("Goals"));
     await waitFor(() =>
-      expect(reportTabs().queryByRole("tab", { name: "Education" })).toBeNull(),
+      expect(reportTabs().queryByRole("tab", { name: "Goals" })).toBeNull(),
     );
     expect(
-      screen.queryByRole("button", { name: /view the education report/i }),
+      screen.queryByRole("button", { name: /view the goals report/i }),
     ).toBeNull();
   });
 });

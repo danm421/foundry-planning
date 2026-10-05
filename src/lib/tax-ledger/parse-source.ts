@@ -99,6 +99,15 @@ export function parseHouseholdSource(
   if (key.startsWith("education:")) {
     return { type: "Education Funding", description: "Taxable distribution", character, account: null, amount, taxable };
   }
+  if (key.startsWith("goal_tax_free:")) {
+    return { type: "Goal Funding", description: "Non-taxable distribution", character, account: null, amount, taxable };
+  }
+  if (key.startsWith("goal_capital:")) {
+    return { type: "Goal Funding", description: "Capital gain", character, account: null, amount, taxable };
+  }
+  if (key.startsWith("goal:")) {
+    return { type: "Goal Funding", description: "Taxable distribution", character, account: null, amount, taxable };
+  }
   if (key.startsWith("transfer:")) {
     return { type: "Transfer", description: "Taxable in-kind transfer", character, account: null, amount, taxable };
   }

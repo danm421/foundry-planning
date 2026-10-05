@@ -21,6 +21,7 @@ export interface EducationGoalFormAccount {
   /** 529 only — who the money is FOR, shown on the funding row. */
   beneficiaryFamilyMemberId?: string | null;
   beneficiaryName?: string | null;
+  isDefaultChecking?: boolean | null;
 }
 
 interface Props {
@@ -122,7 +123,8 @@ export function SolverEducationGoalForm({
     if (has529) {
       const { account, rule } = buildQuickAdd529({
         accountId: new529Id,
-        ruleId: `edu-529-rule-${new529Id}`,
+        // A uuid: Save as scenario stores it in a uuid column.
+        ruleId: crypto.randomUUID(),
         name: new529NameValue,
         beneficiaryFamilyMemberId: forFamilyMemberId,
         balance: Number(new529Balance) || 0,

@@ -1,35 +1,42 @@
-import { REPORT_KEYS, type ReportKey } from "@/lib/solver/report-layout";
+import { REPORT_KEYS, canonicalReportId, type ReportKey } from "@/lib/solver/report-layout";
 
 /** Re-exported so existing `./report-tab-link` imports keep working. The
  *  canonical definition lives in `@/lib/solver/report-layout`. */
 export type { ReportKey };
 
 /** The six left-pane input tabs. */
-export type InputTab = "retirement" | "techniques" | "stress_test" | "life_insurance" | "education" | "changes";
+export type InputTab = "retirement" | "techniques" | "stress_test" | "life_insurance" | "goals" | "changes";
 
 const INPUT_TABS: readonly InputTab[] = [
   "retirement",
   "techniques",
   "stress_test",
   "life_insurance",
-  "education",
+  "goals",
   "changes",
 ];
 
 const DEFAULT_INPUT_TAB: InputTab = "retirement";
 const DEFAULT_REPORT: ReportKey = "portfolio";
 
+/** Input-tab ids an old `?tab=` link may still carry. "education" became
+ *  "goals" on 2026-10-05 (spec 2026-10-05-solver-goals-design). */
+const RENAMED_INPUT_TABS: Readonly<Record<string, InputTab>> = { education: "goals" };
+
 /** The left tab for a raw `?tab=` value. Anything unrecognised, including a
  *  hand-edited URL, falls back to Retirement. */
 export function resolveInputTab(raw: string | undefined): InputTab {
-  return (INPUT_TABS as readonly string[]).includes(raw ?? "") ? (raw as InputTab) : DEFAULT_INPUT_TAB;
+  // Own keys only: `?tab=constructor` must not pick up Object.prototype's.
+  const id = raw == null ? "" : Object.hasOwn(RENAMED_INPUT_TABS, raw) ? RENAMED_INPUT_TABS[raw] : raw;
+  return (INPUT_TABS as readonly string[]).includes(id) ? (id as InputTab) : DEFAULT_INPUT_TAB;
 }
 
 /** The right report for a raw `?report=` value, falling back to Portfolio. The
  *  workspace still reconciles it against the advisor's layout, so a hidden
  *  report is never selected. */
 export function resolveReportParam(raw: string | undefined): ReportKey {
-  return (REPORT_KEYS as readonly string[]).includes(raw ?? "") ? (raw as ReportKey) : DEFAULT_REPORT;
+  const id = raw == null ? "" : canonicalReportId(raw);
+  return (REPORT_KEYS as readonly string[]).includes(id) ? (id as ReportKey) : DEFAULT_REPORT;
 }
 
 /** The query string recording the open views, preserving every other param

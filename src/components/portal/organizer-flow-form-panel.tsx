@@ -169,6 +169,14 @@ export function OrganizerFlowFormPanel({
       : `${isEdit ? "Edit" : "Add"} ${NOUN[kind]}`;
   const saveDisabled =
     busy || (kind === "savings" ? form.accountId === "" : form.name.trim() === "");
+  // An Other goal your advisor funds from savings stays a goal here: unmarking
+  // it would need its savings accounts cleared, and those are the advisor's
+  // call, not the client's (the update core refuses a non-goal that keeps them).
+  const goalLocked =
+    target.kind === "expense" &&
+    target.row != null &&
+    target.row.type !== "education" &&
+    (target.row.dedicatedAccountIds?.length ?? 0) > 0;
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -328,14 +336,22 @@ export function OrganizerFlowFormPanel({
           </div>
 
           {kind === "expense" && (
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={form.isGoal}
-                onChange={(e) => set("isGoal", e.target.checked)}
-              />
-              <span>Show as a goal</span>
-            </label>
+            <div className="space-y-1">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={form.isGoal}
+                  disabled={goalLocked}
+                  onChange={(e) => set("isGoal", e.target.checked)}
+                />
+                <span>Show as a goal</span>
+              </label>
+              {goalLocked && (
+                <p className={LABEL}>
+                  Your advisor has set savings aside for this goal, so only they can change this.
+                </p>
+              )}
+            </div>
           )}
         </div>
 

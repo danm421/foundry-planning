@@ -52,6 +52,25 @@ describe("quick-add account builder", () => {
     expect(buildQuickAddAccount({ ...args, type: "ira" }).account.rmdEnabled).toBe(true);
     expect(buildQuickAddAccount({ ...args, type: "taxable" }).account.rmdEnabled).toBe(false);
   });
+
+  it("starts a quick-add account at the given balance (value == basis)", () => {
+    const { account } = buildQuickAddAccount({
+      type: "taxable", ownerFamilyMemberId: "fm-1", ownerLabel: "Harold", annualAmount: 0,
+      startYear: 2026, endYear: 2030, growthRate: 0.06, accountId: "a1", ruleId: "r1", balance: 12000,
+    });
+    expect(account).toMatchObject({ value: 12000, basis: 12000 });
+  });
+
+  it("titles a co-owned quick-add account jointly: two family members at half each", () => {
+    const { account } = buildQuickAddAccount({ ...args, type: "taxable", coOwnerFamilyMemberId: "fm-2" });
+    // The engine's joint test (isJointHousehold): exactly two family-member
+    // rows summing to 1 — what passes the account to the survivor at first death.
+    expect(account.owners).toEqual([
+      { kind: "family_member", familyMemberId: "fm-1", percent: 0.5 },
+      { kind: "family_member", familyMemberId: "fm-2", percent: 0.5 },
+    ]);
+    expect(account.titlingType).toBe("jtwros");
+  });
 });
 
 describe("additional-savings account (min-savings solve)", () => {

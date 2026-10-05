@@ -1,9 +1,9 @@
-// src/app/api/clients/[id]/solver/education-solve/route.ts
+// src/app/api/clients/[id]/solver/goal-solve/route.ts
 //
-// POST /api/clients/[id]/solver/education-solve
+// POST /api/clients/[id]/solver/goal-solve
 //
-// Live "solve" for the solver Education tab. Given a working tree (source +
-// unsaved mutations), an education goal, and a dedicated funding account, finds
+// Live "solve" for the solver Goals tab. Given a working tree (source +
+// unsaved mutations), a goal, and one of its savings accounts, finds
 // the smallest additional annual contribution to that account that funds
 // `targetPct` of the goal (default: all of it). Runs the REAL engine projection
 // server-side (heavy: a bisection that re-projects per iteration). Pure COMPUTE
@@ -20,7 +20,7 @@ import { applyMutations } from "@/lib/solver/apply-mutations";
 import { resolveTechniqueMutations } from "@/lib/solver/resolve-technique-mutations";
 import type { SolverMutation } from "@/lib/solver/types";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
-import { solveEducationDedicatedSavings } from "@/lib/solver/solve-education-dedicated-savings";
+import { solveGoalDedicatedSavings } from "@/lib/solver/solve-goal-dedicated-savings";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -32,6 +32,11 @@ const BODY = z.object({
   accountId: z.string().min(1),
   /** Share of the goal to fund, 0–1. Absent = fund it fully. */
   targetPct: z.number().min(0).max(1).optional(),
+  /** The Goals tab's "now" — the year it applies the result in, and the year
+   *  both goal forms stamp on the rules they write. Solving in the same year is
+   *  what makes the solve and Apply pick the same savings rule. Absent (a tab
+   *  opened before this field existed) = the plan's first projection year. */
+  currentYear: z.number().int().min(1900).max(2200).optional(),
 });
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -62,7 +67,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         { status: 400 },
       );
     }
-    const { source, mutations, goalId, accountId, targetPct } = parsed.data;
+    const { source, mutations, goalId, accountId, targetPct, currentYear: postedYear } = parsed.data;
 
     // ── Working tree (source + live mutations), so the solve reflects unsaved
     //    solver changes — mirrors the life-insurance-summary route. ──
@@ -82,8 +87,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     }
 
     const currentYear =
-      runProjection(workingTree)[0]?.year ?? new Date().getFullYear();
-    const result = solveEducationDedicatedSavings({
+      postedYear ?? runProjection(workingTree)[0]?.year ?? new Date().getFullYear();
+    const result = solveGoalDedicatedSavings({
       tree: workingTree,
       goalId,
       accountId,
@@ -96,7 +101,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
   } catch (err) {
     const authResp = authErrorResponse(err);
     if (authResp) return NextResponse.json(authResp.body, { status: authResp.status });
-    console.error("POST /api/clients/[id]/solver/education-solve error:", err);
+    console.error("POST /api/clients/[id]/solver/goal-solve error:", err);
     return NextResponse.json({ error: "Solve failed" }, { status: 500 });
   }
 }

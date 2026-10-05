@@ -1,21 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { buildEducationMcInput, buildEducationReturnStats } from "../education-mc-inputs";
-import { runEducationGoalMc } from "@/engine/education/education-mc";
-import type { EducationGoalReport } from "../education-report-data";
+import { buildGoalMcInput, buildGoalReturnStats } from "../goal-mc-inputs";
+import { runGoalMc } from "@/engine/goals/goal-mc";
+import type { GoalReport } from "../goal-report-data";
 
 const report = {
   goalId: "edu", name: "College", dedicatedFundsUsed: 30000, cashFlowFundsUsed: 0, totalShortfall: 10000, totalGoalCost: 40000,
-  coveredByCashFlow: false,
   chart: { labels: [], remaining: [], withdrawals: [], outOfPocket: [], shortfall: [] },
   rows: [
-    { goalId: "edu", year: 2026, dedicatedAssetsBOY: 30000, growthAndSavings: 1800, goalExpense: 0, otherExpenseFlows: 0, dedicatedWithdrawal: 0, outOfPocketWithdrawal: 0, dedicatedAssetsEOY: 31800, shortfall: 0 },
-    { goalId: "edu", year: 2033, dedicatedAssetsBOY: 40000, growthAndSavings: 0, goalExpense: 40000, otherExpenseFlows: 0, dedicatedWithdrawal: 30000, outOfPocketWithdrawal: 0, dedicatedAssetsEOY: 0, shortfall: 10000 },
+    { goalId: "edu", kind: "education", year: 2026, dedicatedAssetsBOY: 30000, growthAndSavings: 1800, goalExpense: 0, otherExpenseFlows: 0, dedicatedWithdrawal: 0, householdWithdrawal: 0, outOfPocketWithdrawal: 0, dedicatedAssetsEOY: 31800, shortfall: 0 },
+    { goalId: "edu", kind: "education", year: 2033, dedicatedAssetsBOY: 40000, growthAndSavings: 0, goalExpense: 40000, otherExpenseFlows: 0, dedicatedWithdrawal: 30000, householdWithdrawal: 0, outOfPocketWithdrawal: 0, dedicatedAssetsEOY: 0, shortfall: 10000 },
   ],
-} as EducationGoalReport;
+} as GoalReport;
 
-describe("buildEducationMcInput", () => {
+describe("buildGoalMcInput", () => {
   it("uses BOY of the first row as starting balance and maps schedules", () => {
-    const input = buildEducationMcInput(report, { arithMean: 0.06, stdDev: 0.12 }, 99);
+    const input = buildGoalMcInput(report, { arithMean: 0.06, stdDev: 0.12 }, 99);
     expect(input.startingBalance).toBe(30000);
     // Target is the goal COST, not the capped dedicated withdrawal (40000 vs 30000).
     expect(input.withdrawalsByYear).toEqual([0, 40000]);
@@ -30,25 +29,24 @@ describe("buildEducationMcInput", () => {
     // *withdrawal* ($40k) instead of the true goal cost ($100k).
     const underfunded = {
       ...report,
-      coveredByCashFlow: false,
       rows: [
         { goalId: "edu", year: 2033, dedicatedAssetsBOY: 40000, growthAndSavings: 0, goalExpense: 100000, otherExpenseFlows: 0, dedicatedWithdrawal: 40000, outOfPocketWithdrawal: 0, dedicatedAssetsEOY: 0, shortfall: 60000 },
       ],
-    } as EducationGoalReport;
-    const input = buildEducationMcInput(underfunded, { arithMean: 0.05, stdDev: 0 }, 42);
-    expect(runEducationGoalMc(input).successRate).toBe(0);
+    } as GoalReport;
+    const input = buildGoalMcInput(underfunded, { arithMean: 0.05, stdDev: 0 }, 42);
+    expect(runGoalMc(input).successRate).toBe(0);
   });
 
-  it("counts a goal funded from cash flow as fully funded even when the pool falls short", () => {
+  it("measures the savings alone, even when cash flow covers the gap (Decision 7)", () => {
     const covered = {
       ...report,
-      coveredByCashFlow: true,
       rows: [
-        { goalId: "edu", year: 2033, dedicatedAssetsBOY: 40000, growthAndSavings: 0, goalExpense: 100000, otherExpenseFlows: 0, dedicatedWithdrawal: 40000, outOfPocketWithdrawal: 60000, dedicatedAssetsEOY: 0, shortfall: 0 },
+        { goalId: "edu", kind: "education", year: 2033, dedicatedAssetsBOY: 40000, growthAndSavings: 0, goalExpense: 100000, otherExpenseFlows: 0, dedicatedWithdrawal: 40000, householdWithdrawal: 0, outOfPocketWithdrawal: 60000, dedicatedAssetsEOY: 0, shortfall: 0 },
       ],
-    } as EducationGoalReport;
-    const input = buildEducationMcInput(covered, { arithMean: 0.05, stdDev: 0 }, 42);
-    expect(runEducationGoalMc(input).successRate).toBe(1);
+    } as GoalReport;
+    const input = buildGoalMcInput(covered, { arithMean: 0.05, stdDev: 0 }, 42);
+    expect(input).not.toHaveProperty("coveredByCashFlow");
+    expect(runGoalMc(input).successRate).toBe(0);
   });
 
   it("ignores accumulation rows so the gauge stays scoped to the expense phase", () => {
@@ -63,10 +61,10 @@ describe("buildEducationMcInput", () => {
         { goalId: "edu", year: 2025, dedicatedAssetsBOY: 27560, growthAndSavings: 1653, goalExpense: 0, otherExpenseFlows: 0, dedicatedWithdrawal: 0, dedicatedAssetsEOY: 29213, shortfall: 0, accumulation: true },
         ...report.rows,
       ],
-    } as EducationGoalReport;
+    } as GoalReport;
 
-    const base = buildEducationMcInput(report, { arithMean: 0.06, stdDev: 0.12 }, 99);
-    const withAcc = buildEducationMcInput(withAccumulation, { arithMean: 0.06, stdDev: 0.12 }, 99);
+    const base = buildGoalMcInput(report, { arithMean: 0.06, stdDev: 0.12 }, 99);
+    const withAcc = buildGoalMcInput(withAccumulation, { arithMean: 0.06, stdDev: 0.12 }, 99);
 
     expect(withAcc.startingBalance).toBe(30000); // first EXPENSE row, not 26000
     expect(withAcc.contributionsByYear).toEqual(base.contributionsByYear);
@@ -74,7 +72,7 @@ describe("buildEducationMcInput", () => {
   });
 });
 
-describe("buildEducationReturnStats", () => {
+describe("buildGoalReturnStats", () => {
   // Two asset classes shared across cases below.
   const ASSET_CLASS_STATS = new Map([
     ["equity", { arithMean: 0.08, stdDev: 0.16 }],
@@ -86,11 +84,11 @@ describe("buildEducationReturnStats", () => {
     // acctB: 20,000 @ 80/20 equity/bond → arith 0.07, std 0.138
     // balance-weighted: arith = (10000*0.06 + 20000*0.07) / 30000 = 2000/30000
     //                   std   = (10000*0.116 + 20000*0.138) / 30000 = 3920/30000
-    const out = buildEducationReturnStats({
+    const out = buildGoalReturnStats({
       expenses: [{ id: "goal-1", type: "education", dedicatedAccountIds: ["acctA", "acctB"] }],
       accounts: [
-        { id: "acctA", value: 10000, growthRate: 0.03 },
-        { id: "acctB", value: 20000, growthRate: 0.02 },
+        { id: "acctA", value: 10000, growthRate: 0.03, category: "taxable", subType: "brokerage" },
+        { id: "acctB", value: 20000, growthRate: 0.02, category: "taxable", subType: "brokerage" },
       ],
       accountMixes: [
         {
@@ -117,11 +115,11 @@ describe("buildEducationReturnStats", () => {
   it("all-fixed-rate pool → growthRate = balance-weighted fixed rate, stdDev = 0", () => {
     // acctC: 5,000 @ 4% fixed, acctD: 15,000 @ 5% fixed, no mix on either.
     // weighted rate = (5000*0.04 + 15000*0.05) / 20000 = 950/20000 = 0.0475
-    const out = buildEducationReturnStats({
+    const out = buildGoalReturnStats({
       expenses: [{ id: "goal-2", type: "education", dedicatedAccountIds: ["acctC", "acctD"] }],
       accounts: [
-        { id: "acctC", value: 5000, growthRate: 0.04 },
-        { id: "acctD", value: 15000, growthRate: 0.05 },
+        { id: "acctC", value: 5000, growthRate: 0.04, category: "taxable", subType: "brokerage" },
+        { id: "acctD", value: 15000, growthRate: 0.05, category: "taxable", subType: "brokerage" },
       ],
       accountMixes: [],
       assetClassStats: ASSET_CLASS_STATS,
@@ -134,18 +132,18 @@ describe("buildEducationReturnStats", () => {
     const base = {
       expenses: [{ id: "goal-3", type: "education", dedicatedAccountIds: ["acctC", "acctD"] }],
       accounts: [
-        { id: "acctC", value: 5000, growthRate: 0.04 },
-        { id: "acctD", value: 15000, growthRate: 0.05 },
+        { id: "acctC", value: 5000, growthRate: 0.04, category: "taxable", subType: "brokerage" },
+        { id: "acctD", value: 15000, growthRate: 0.05, category: "taxable", subType: "brokerage" },
       ],
       accountMixes: [],
       assetClassStats: ASSET_CLASS_STATS,
     };
-    const withoutZero = buildEducationReturnStats(base);
+    const withoutZero = buildGoalReturnStats(base);
 
-    const withZero = buildEducationReturnStats({
+    const withZero = buildGoalReturnStats({
       ...base,
       expenses: [{ id: "goal-3", type: "education", dedicatedAccountIds: ["acctC", "acctD", "acctZero"] }],
-      accounts: [...base.accounts, { id: "acctZero", value: 0, growthRate: 0.1 }],
+      accounts: [...base.accounts, { id: "acctZero", value: 0, growthRate: 0.1, category: "taxable", subType: "brokerage" }],
     });
 
     expect(withZero["goal-3"]).toEqual(withoutZero["goal-3"]);
@@ -155,9 +153,9 @@ describe("buildEducationReturnStats", () => {
     // acctF: 10,000 @ 50% equity (known) / 50% "unknown" (not in assetClassStats).
     // The unknown slice contributes nothing (skipped, not renormalized):
     // arith = 0.5*0.08 = 0.04, std = 0.5*0.16 = 0.08.
-    const out = buildEducationReturnStats({
+    const out = buildGoalReturnStats({
       expenses: [{ id: "goal-4", type: "education", dedicatedAccountIds: ["acctF"] }],
-      accounts: [{ id: "acctF", value: 10000, growthRate: 0.03 }],
+      accounts: [{ id: "acctF", value: 10000, growthRate: 0.03, category: "taxable", subType: "brokerage" }],
       accountMixes: [
         {
           accountId: "acctF",
@@ -173,5 +171,18 @@ describe("buildEducationReturnStats", () => {
     expect(out["goal-4"].stdDev).toBeCloseTo(0.08, 10);
     expect(Number.isNaN(out["goal-4"].arithMean)).toBe(false);
     expect(Number.isNaN(out["goal-4"].stdDev)).toBe(false);
+  });
+
+  it("skips a 529 linked to an Other goal", () => {
+    const stats = buildGoalReturnStats({
+      expenses: [{ id: "car", type: "other", isGoal: true, dedicatedAccountIds: ["p529", "brk"] }],
+      accounts: [
+        { id: "p529", value: 50000, growthRate: 0.02, category: "education_savings", subType: "529" },
+        { id: "brk", value: 50000, growthRate: 0.06, category: "taxable", subType: "brokerage" },
+      ],
+      accountMixes: [],
+      assetClassStats: new Map(),
+    });
+    expect(stats["car"]).toEqual({ arithMean: 0.06, stdDev: 0 });
   });
 });

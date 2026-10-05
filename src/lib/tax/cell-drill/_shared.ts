@@ -82,6 +82,15 @@ export function resolveSourceLabel(
   if (sourceId.startsWith("education:")) {
     return "Education funding — taxable distribution";
   }
+  if (sourceId.startsWith("goal_tax_free:")) {
+    return "Goal funding — non-taxable distribution";
+  }
+  if (sourceId.startsWith("goal_capital:")) {
+    return "Goal funding — capital gain";
+  }
+  if (sourceId.startsWith("goal:")) {
+    return "Goal funding — taxable distribution";
+  }
   if (sourceId.startsWith("roth_conversion:")) {
     const cid = sourceId.slice("roth_conversion:".length);
     const name = ctx.rothConversionNames?.[cid];

@@ -73,7 +73,7 @@ describe("applyEducationFunding — education_savings category", () => {
     const years = runProjection(data);
     const y0 = years[0];
 
-    const goal = y0.educationGoals?.find((g) => g.goalId === "edu");
+    const goal = y0.goals?.find((g) => g.goalId === "edu");
     expect(goal).toBeDefined();
     expect(goal!.dedicatedAssetsBOY).toBe(30000);
     expect(goal!.goalExpense).toBe(20000);

@@ -84,6 +84,38 @@ describe("OrganizerFlowFormPanel", () => {
     expect(screen.getByRole("heading", { name: "Add goal" })).toBeInTheDocument();
   });
 
+  describe("an Other goal your advisor funds from savings", () => {
+    const NOTE = "Your advisor has set savings aside for this goal, so only they can change this.";
+    const otherRow = (dedicatedAccountIds: string[]) =>
+      ({
+        id: "car", name: "New car", annualAmount: "60000", startYear: 2029, endYear: 2029,
+        type: "other", growthRate: "0.03", isGoal: true, dedicatedAccountIds,
+      }) as never;
+
+    it("locks 'Show as a goal' on, says why, and keeps sending isGoal true", async () => {
+      render(<OrganizerFlowFormPanel {...base} target={{ kind: "expense", id: "car", row: otherRow(["brk"]) }} />);
+      const box = screen.getByLabelText("Show as a goal");
+      expect(box).toBeChecked();
+      expect(box).toBeDisabled();
+      expect(screen.getByText(NOTE)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(portalFetch).toHaveBeenCalled());
+      const body = JSON.parse(portalFetch.mock.calls[0][1].body);
+      expect(body.isGoal).toBe(true);
+      // Never the advisor's funding — the portal deny list refuses a non-empty one.
+      expect(body).not.toHaveProperty("dedicatedAccountIds");
+    });
+
+    it("leaves the box editable on an Other goal with no savings accounts", () => {
+      render(<OrganizerFlowFormPanel {...base} target={{ kind: "expense", id: "car", row: otherRow([]) }} />);
+      const box = screen.getByLabelText("Show as a goal");
+      expect(box).toBeChecked();
+      expect(box).not.toBeDisabled();
+      expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
+    });
+  });
+
   it("renders an account picker for savings, and no owner picker", () => {
     render(<OrganizerFlowFormPanel {...base} target={{ kind: "savings", id: null, row: null }} />);
     expect(screen.getByLabelText("Account")).toBeInTheDocument();

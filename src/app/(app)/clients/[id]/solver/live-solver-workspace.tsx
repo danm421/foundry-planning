@@ -70,7 +70,7 @@ import {
 import { useLiMcSolve } from "./use-li-mc-solve";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { SolverQuickAddAccount } from "./solver-quick-add-account";
-import { SolverEducationSection } from "./solver-education-section";
+import { SolverGoalsSection } from "./solver-goals-section";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import type { SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
@@ -82,7 +82,7 @@ import {
   TechniquesIcon,
   StressTestIcon,
   LifeInsuranceIcon,
-  EducationIcon,
+  GoalsIcon,
   ChangesIcon,
 } from "./solver-tab-icons";
 import { SolverChangesTab } from "./solver-changes-tab";
@@ -126,12 +126,12 @@ interface Props {
   /** Which of `baseGifts`' recurring gifts are the scenario's own `gift`
    *  changes. Only those are listed in the Changes tab (they alone open). */
   overlayGiftSeriesIds: string[];
-  /** Blended dedicated-pool return stats per education goalId (from the plan MC
-   *  data), driving the Education report's per-goal POS gauge. Optional — the
-   *  panel falls back to a neutral per-goal default when absent. */
-  educationReturnStats?: Record<string, { arithMean: number; stdDev: number }>;
-  /** Scenario Monte Carlo seed, so the per-goal education gauges reproduce. */
-  educationSeed?: number;
+  /** Blended dedicated-pool return stats per goalId (from the plan MC data),
+   *  driving the Goals report's per-goal gauge. Optional — the panel falls back
+   *  to a neutral per-goal default when absent. */
+  goalReturnStats?: Record<string, { arithMean: number; stdDev: number }>;
+  /** Scenario Monte Carlo seed, so the per-goal gauges reproduce. */
+  goalSeed?: number;
   /** Advisor's persisted report order + visibility, reconciled server-side. */
   initialReportLayout: ReportLayoutEntry[];
   /** The left tab and right report to open on, from `?tab=` / `?report=`.
@@ -160,7 +160,7 @@ const LEFT_TABS: {
   { id: "techniques", label: "Techniques", short: "Techniques", icon: TechniquesIcon },
   { id: "stress_test", label: "Stress Test", short: "Stress", icon: StressTestIcon },
   { id: "life_insurance", label: "Life Insurance", short: "Insurance", icon: LifeInsuranceIcon },
-  { id: "education", label: "Education", short: "Education", icon: EducationIcon },
+  { id: "goals", label: "Goals", short: "Goals", icon: GoalsIcon },
   { id: "changes", label: "Scenario changes", short: "Changes", icon: ChangesIcon },
 ];
 
@@ -218,8 +218,8 @@ export function LiveSolverWorkspace({
   scenarioName,
   baseGifts,
   overlayGiftSeriesIds,
-  educationReturnStats,
-  educationSeed,
+  goalReturnStats,
+  goalSeed,
   initialReportLayout,
   initialTab = "retirement",
   initialReport = "portfolio",
@@ -1754,8 +1754,8 @@ export function LiveSolverWorkspace({
           />
         )}
 
-        {activeTab === "education" && (
-          <SolverEducationSection
+        {activeTab === "goals" && (
+          <SolverGoalsSection
             baseExpenses={baseClientData.expenses}
             workingTree={workingTree}
             currentYear={currentYear}
@@ -1765,7 +1765,10 @@ export function LiveSolverWorkspace({
             onChange={pushMutation}
             onResetField={clearMutations}
             growth529={categoryGrowthDefaults.retirement}
-            onOpenReport={reportOpener("education")}
+            growthTaxable={categoryGrowthDefaults.taxable}
+            inflationRate={baseClientData.planSettings.inflationRate}
+            owners={ownerOptions}
+            onOpenReport={reportOpener("goals")}
           />
         )}
 
@@ -1876,8 +1879,8 @@ export function LiveSolverWorkspace({
               onCashflowSubTabChange={setCashflowSubTab}
               selectedYear={selectedYear}
               onYearClick={setSelectedYear}
-              educationReturnStats={educationReturnStats}
-              educationSeed={educationSeed}
+              goalReturnStats={goalReturnStats}
+              goalSeed={goalSeed}
             />
             {activeReport === "lifeInsurance" ? (
               <SolverLifeInsuranceResults
