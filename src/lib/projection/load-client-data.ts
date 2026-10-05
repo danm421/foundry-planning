@@ -76,6 +76,7 @@ import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { discountedGiftValue } from "@/lib/gifts/apply-valuation-discount";
 import type { AccountOwner, EntityOwner } from "@/engine/ownership";
 import { sortOwners } from "@/engine/ownership";
+import { fillHouseholdCashOwners } from "@/lib/projection/household-cash-owners";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
@@ -589,6 +590,8 @@ const loadClientDataCached = cache(
       arr.push(owner);
       ownersByAccountId.set(r.accountId, arr);
     }
+
+    fillHouseholdCashOwners(accountRows, ownersByAccountId, familyMemberRows);
 
     const ownersByLiabilityId = new Map<string, AccountOwner[]>();
     for (const r of liabilityOwnerRows) {

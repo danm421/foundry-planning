@@ -311,6 +311,21 @@ describe("loadClientData", () => {
     ).rejects.toThrow(ClientNotFoundError);
   });
 
+  it("gives an ownerless Household Cash joint client and spouse owners", async () => {
+    seedValidFixture();
+    dbState.familyMembers = [
+      { ...familyMemberRow, id: "fm-client", firstName: "Alice", relationship: "other", role: "client" },
+      { ...familyMemberRow, id: "fm-spouse", firstName: "Bob", relationship: "other", role: "spouse" },
+    ] as unknown as typeof dbState.familyMembers;
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    expect(data.accounts.find((a) => a.isDefaultChecking)?.owners).toEqual([
+      { kind: "family_member", familyMemberId: "fm-client", percent: 0.5 },
+      { kind: "family_member", familyMemberId: "fm-spouse", percent: 0.5 },
+    ]);
+  });
+
   it("returns a fully populated ClientData for a valid client", async () => {
     seedValidFixture();
 

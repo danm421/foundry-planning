@@ -189,7 +189,7 @@ async function runCreate(
   // are drawn from it; the projection engine pulls from the withdrawal strategy when
   // this balance would go negative.
   // Insert default household cash account. No account_owners rows are created here;
-  // joint FM ownership is inferred when family members are added via the family page.
+  // loadClientData fills in joint ownership at read time (fillHouseholdCashOwners).
   await handle.insert(accounts).values({
     clientId: client.id,
     scenarioId: scenario.id,
