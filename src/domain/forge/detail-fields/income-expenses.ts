@@ -363,7 +363,8 @@ export const INCOME_EXPENSE_ENTITIES: readonly DetailEntity[] = [
         kind: "boolean",
         required: false,
         defaultValue: false,
-        notes: "Only rendered (and only sent as its real value) for type = \"education\"; the dialog forces false for every other type regardless of a stale prior value.",
+        notes:
+          "Rendered (and sent as its real value) only for an education goal, or a type = \"other\" expense with isGoal = true (canHaveGoalFunding); the dialog forces false for every other row regardless of a stale prior value. On an Other goal it appears once at least one savings account is picked. Default depends on the kind (defaultPayShortfallOutOfPocket), which this single defaultValue cannot express: OFF for education, ON for an Other goal — the create route stores true for an Other goal when the key is omitted, and the dialog starts it on for an Other goal that has never had accounts.",
       },
       {
         key: "isGoal",
@@ -410,7 +411,7 @@ export const INCOME_EXPENSE_ENTITIES: readonly DetailEntity[] = [
         required: false,
         defaultValue: null,
         notes:
-          "Education only. Array of account uuids, order = draw order = the account's sortOrder in the expense_dedicated_accounts join table — there is no separate route for that table; it is written entirely through this field on the expense payload. Duplicates are silently deduped server-side (dedupeDedicatedIds).",
+          "Only for an education goal, or a type = \"other\" expense with isGoal = true (canHaveGoalFunding); every other row is refused with GOAL_FUNDING_NOT_A_GOAL_ERROR, and the dialog sends [] once the row stops qualifying (\"Show as a goal\" unticked, or type switched to living/insurance). An Other goal never takes a 529 (GOAL_FUNDING_529_ERROR) and its picker never offers the household's main checking account (isDefaultChecking). Array of account uuids, order = draw order = the account's sortOrder in the expense_dedicated_accounts join table — there is no separate route for that table; it is written entirely through this field on the expense payload. Duplicates are silently deduped server-side (dedupeDedicatedIds).",
       },
       {
         key: "paymentMonth",

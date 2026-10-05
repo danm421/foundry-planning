@@ -26,7 +26,14 @@ import {
 } from "@/lib/inline-edit/flow-write";
 import { livingSlotRank } from "@/lib/living-slot-order";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
-import { isGoalExpense, educationGoalYears, EDUCATION_GOAL_YEARS } from "@/lib/goals";
+import {
+  isGoalExpense,
+  educationGoalYears,
+  EDUCATION_GOAL_YEARS,
+  canHaveGoalFunding,
+  defaultPayShortfallOutOfPocket,
+  is529Account,
+} from "@/lib/goals";
 import { isTodaysDollars, withoutRestatedInflationStart } from "@/lib/todays-dollars";
 import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@/engine/types";
 import type { IncomeTaxType } from "@/engine/tax-adjustments";
@@ -1178,7 +1185,20 @@ function ExpenseDialog({
   const [endsAtMedicareEligibilityOwner, setEndsAtMedicareEligibilityOwner] = useState<"client" | "spouse" | null>(
     editing?.endsAtMedicareEligibilityOwner ?? null
   );
-  const [payOutOfPocket, setPayOutOfPocket] = useState<boolean>(editing?.payShortfallOutOfPocket ?? false);
+  // A goal that already has savings accounts shows what it stored; one that has
+  // never had any takes its kind's default (`defaultPayShortfallOutOfPocket`).
+  const hasStoredFunding = (editing?.dedicatedAccountIds?.length ?? 0) > 0;
+  const [payOutOfPocket, setPayOutOfPocket] = useState<boolean>(
+    editing && (editing.type === "education" || hasStoredFunding)
+      ? (editing.payShortfallOutOfPocket ?? false)
+      : defaultPayShortfallOutOfPocket({
+          type: editing?.type ?? defaultType,
+          isGoal: editing?.isGoal ?? defaultIsGoal,
+        }),
+  );
+  function resetPayShortfall(next: { type: ExpenseType; isGoal: boolean }) {
+    if (!hasStoredFunding) setPayOutOfPocket(defaultPayShortfallOutOfPocket(next));
+  }
   const [isGoal, setIsGoal] = useState<boolean>(editing?.isGoal ?? defaultIsGoal);
   const [absorbsRemaining, setAbsorbsRemaining] = useState<boolean>(
     editing?.absorbsRemainingCashFlow ?? false,
@@ -1257,12 +1277,25 @@ function ExpenseDialog({
   const familyMemberNames = Object.fromEntries(
     (familyMembers ?? []).map((fm) => [fm.id, `${fm.firstName}${fm.lastName ? ` ${fm.lastName}` : ""}`]),
   );
+  // Who may carry savings accounts: education, or an Other expense marked as a
+  // goal (spec 2026-10-05-solver-goals-design, §2).
+  const fundingEligible = canHaveGoalFunding({ type, isGoal });
+  // What the save sends. An Other goal never keeps a 529 or the main checking
+  // account (a type switch away from education can leave one selected).
+  const fundingIdsForSave =
+    type === "education"
+      ? dedicatedAccountIds
+      : dedicatedAccountIds.filter((id) => {
+          const a = accounts.find((x) => x.id === id);
+          return a != null && !is529Account(a) && !a.isDefaultChecking;
+        });
 
   // Switching an unsaved expense to education re-frames its end the same way a
   // dialog opened on education starts out — a four-year programme off the
   // start. Still editable, and never applied to a saved expense.
   function handleTypeChange(next: ExpenseType) {
     setType(next);
+    resetPayShortfall({ type: next, isGoal });
     if (!isEdit && next === "education") {
       setEndYear(startYear + EDUCATION_GOAL_YEARS - 1);
       setEndYearRef(null);
@@ -1316,11 +1349,11 @@ function ExpenseDialog({
       // for them, so force it null rather than carrying a stale selection.
       deductionType: type === "living" ? null : deductionType || null,
       endsAtMedicareEligibilityOwner,
-      payShortfallOutOfPocket: type === "education" ? payOutOfPocket : false,
+      payShortfallOutOfPocket: fundingEligible ? payOutOfPocket : false,
       institutionState: type === "education" ? (institutionState || null) : null,
       institutionName: type === "education" ? (institutionName || null) : null,
       forFamilyMemberId: type === "education" ? (forFamilyMemberId || null) : null,
-      dedicatedAccountIds: type === "education" ? dedicatedAccountIds : [],
+      dedicatedAccountIds: fundingEligible ? fundingIdsForSave : [],
       isGoal: type === "education" ? true : isGoal,
       absorbsRemainingCashFlow: absorbActive,
       paymentMonth,
@@ -1429,7 +1462,10 @@ function ExpenseDialog({
               type="checkbox"
               checked={type === "education" ? true : isGoal}
               disabled={type === "education"}
-              onChange={(e) => setIsGoal(e.target.checked)}
+              onChange={(e) => {
+                setIsGoal(e.target.checked);
+                resetPayShortfall({ type, isGoal: e.target.checked });
+              }}
               className="accent-[color:var(--color-accent)]"
             />
             Show as a goal
@@ -1478,21 +1514,29 @@ function ExpenseDialog({
                   />
                 </div>
               </div>
+            </div>
+          )}
+
+          {fundingEligible && (
+            <div className="space-y-3 rounded-md border border-hair bg-card-2/40 p-3">
               <DedicatedFundingPicker
                 accounts={accounts}
                 value={dedicatedAccountIds}
                 onChange={setDedicatedAccountIds}
                 allowedOwnerFamilyMemberIds={allowedFundingOwnerIds}
                 familyMemberNames={familyMemberNames}
+                goalType={type === "education" ? "education" : "other"}
               />
-              <label className="flex items-center gap-2 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  checked={payOutOfPocket}
-                  onChange={(e) => setPayOutOfPocket(e.target.checked)}
-                />
-                Pay shortfall out of pocket
-              </label>
+              {(type === "education" || fundingIdsForSave.length > 0) && (
+                <label className="flex items-center gap-2 text-sm text-ink">
+                  <input
+                    type="checkbox"
+                    checked={payOutOfPocket}
+                    onChange={(e) => setPayOutOfPocket(e.target.checked)}
+                  />
+                  Pay shortfall out of pocket
+                </label>
+              )}
             </div>
           )}
 

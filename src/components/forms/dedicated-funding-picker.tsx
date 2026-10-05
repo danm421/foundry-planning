@@ -14,6 +14,7 @@ interface PickerAccount {
   /** 529 only — the designated beneficiary typed in as free text (someone with
    *  no family-member record, e.g. a grandchild). */
   beneficiaryName?: string | null;
+  isDefaultChecking?: boolean | null;
 }
 
 interface Props {
@@ -30,6 +31,10 @@ interface Props {
   allowedOwnerFamilyMemberIds?: string[];
   /** Family member id → display name, for naming a 529's beneficiary. */
   familyMemberNames?: Record<string, string>;
+  /** "other" for an Other goal: never offers a 529 (the projection treats
+   *  every 529 draw as a tax-free education withdrawal) or the household's
+   *  main checking account, which is the cash flow itself. */
+  goalType?: "education" | "other";
 }
 
 // Accounts eligible to fund an education goal: cash, taxable, dedicated
@@ -57,8 +62,13 @@ function is529(a: PickerAccount): boolean {
  * in another child's name is visible rather than silently gone (and legitimately
  * usable: a beneficiary can be changed between siblings).
  */
-function isEligible(a: PickerAccount, allowed: Set<string> | null): boolean {
+function isEligible(
+  a: PickerAccount,
+  allowed: Set<string> | null,
+  goalType: "education" | "other",
+): boolean {
   if (!isEligibleType(a)) return false;
+  if (goalType === "other" && (is529(a) || a.isDefaultChecking)) return false;
   if (allowed === null || is529(a)) return true;
   return (a.ownerFamilyMemberIds ?? []).some((id) => allowed.has(id));
 }
@@ -75,19 +85,22 @@ export function DedicatedFundingPicker({
   onChange,
   allowedOwnerFamilyMemberIds,
   familyMemberNames,
+  goalType = "education",
 }: Props) {
   const allowed = allowedOwnerFamilyMemberIds ? new Set(allowedOwnerFamilyMemberIds) : null;
-  const eligible = accounts.filter((a) => isEligible(a, allowed));
+  const eligible = accounts.filter((a) => isEligible(a, allowed, goalType));
   if (eligible.length === 0) {
     // Distinguish "the plan holds nothing that could fund this" from "it does,
     // but not for this person" — the second used to read as the first, which is
-    // what made a hidden 529 look like an unsupported account type.
-    const narrowed = accounts.some(isEligibleType);
+    // what made a hidden 529 look like an unsupported account type. An Other
+    // goal's excluded 529s and main checking never count as "narrowed".
+    const narrowed = accounts.some((a) => isEligible(a, null, goalType));
+    const kinds = goalType === "other" ? "cash / taxable" : "cash / taxable / 529";
     return (
       <p className="text-xs text-ink-3">
         {narrowed
-          ? "The plan's cash / taxable / 529 accounts all belong to someone outside this goal."
-          : "No eligible funding accounts (cash / taxable / 529)."}
+          ? `The plan's ${kinds} accounts all belong to someone outside this goal.`
+          : `No eligible funding accounts (${kinds}).`}
       </p>
     );
   }

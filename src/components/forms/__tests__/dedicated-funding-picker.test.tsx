@@ -136,3 +136,24 @@ describe("DedicatedFundingPicker — 529s and the ownership filter", () => {
     expect(screen.getByText(/belong to someone outside this goal/i)).toBeTruthy();
   });
 });
+
+/** An Other goal (spec 2026-10-05-solver-goals-design, §2) never offers a 529
+ *  or the household's main checking account. */
+describe("DedicatedFundingPicker — an Other goal", () => {
+  it("says the plan has nothing to fund it when its only cash is main checking and a 529", () => {
+    const accounts = [
+      { id: "chk", name: "Household Checking", category: "cash", subType: "checking", ownerFamilyMemberIds: ["client"], isDefaultChecking: true },
+      { id: "k1", name: "College 529", category: "education_savings", subType: "529" },
+    ];
+    render(
+      <DedicatedFundingPicker
+        accounts={accounts as never}
+        value={[]}
+        onChange={vi.fn()}
+        allowedOwnerFamilyMemberIds={["client"]}
+        goalType="other"
+      />,
+    );
+    expect(screen.getByText("No eligible funding accounts (cash / taxable).")).toBeTruthy();
+  });
+});
