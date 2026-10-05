@@ -152,8 +152,6 @@ export async function createExpenseForClient(args: {
   if (dedicatedAccountIds && dedicatedAccountIds.length > 0) {
     const dedCheck = await assertAccountsInClient(clientId, dedicatedAccountIds);
     if (!dedCheck.ok) return writeError(400, dedCheck.reason);
-  }
-  if (dedicatedAccountIds && dedicatedAccountIds.length > 0) {
     const fundingError = goalFundingError(
       { type: p.type, isGoal: p.isGoal },
       await linkedAccountKinds(clientId, dedicatedAccountIds),

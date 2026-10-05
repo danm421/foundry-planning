@@ -29,7 +29,6 @@
 //     accountId is verified to belong to this client (assertAccountsInClient)
 //     before it is written, mirroring the accounts route's parent-account guard.
 // The whole batch runs in one transaction.
-import { goalFundingError } from "@/lib/goals";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
@@ -53,6 +52,7 @@ import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { inheritedIraRowFields } from "@/lib/accounts/inherited-ira";
 import { recordAudit } from "@/lib/audit";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import { goalFundingError } from "@/lib/goals";
 
 export const dynamic = "force-dynamic";
 

@@ -88,8 +88,8 @@ export function goalContributionRule(
 
 /** Build the candidate tree the SAME way the UI applies the result: raise the
  *  goal's contribution rule on the account (`goalContributionRule`) by
- *  `additional`. Exported so the apply path stays consistent. */
-export function withAdditionalContribution(
+ *  `additional`. The Goals tab's Apply raises that same rule. */
+function withAdditionalContribution(
   tree: ClientData,
   goal: GoalRef,
   accountId: string,

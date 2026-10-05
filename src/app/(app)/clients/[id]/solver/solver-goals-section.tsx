@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { ClientData, Expense } from "@/engine/types";
 import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
-import { goalContributionRule, withAdditionalContribution } from "@/lib/solver/solve-goal-dedicated-savings";
+import { goalContributionRule } from "@/lib/solver/solve-goal-dedicated-savings";
 import { canHaveGoalFunding, goalDrawAccountIds } from "@/engine/goals/goal-funding";
 import { SolverSection } from "./solver-section";
 import { SolverFieldStepper } from "./solver-field-stepper";
@@ -152,12 +152,14 @@ export function SolverGoalsSection({
   }
 
   function applySolve(goal: Expense, accountId: string, additional: number) {
-    // Model-matches-application: build the candidate tree the SAME way the solve
-    // modeled it (withAdditionalContribution), then upsert the resulting rule.
-    const built = withAdditionalContribution(workingTree, goal, accountId, additional, currentYear);
-    const ruleId = contributionRule(goal, accountId).id;
-    const rule = built.savingsRules.find((r) => r.id === ruleId)!;
-    onChange({ kind: "savings-rule-upsert", id: rule.id, value: rule });
+    // Model-matches-application: raise the same rule by the same amount the
+    // solve modeled (withAdditionalContribution raises `goalContributionRule`).
+    const rule = contributionRule(goal, accountId);
+    onChange({
+      kind: "savings-rule-upsert",
+      id: rule.id,
+      value: { ...rule, annualAmount: rule.annualAmount + additional },
+    });
     setSolveResult((prev) => {
       const next = { ...prev };
       delete next[`${goal.id}:${accountId}`];

@@ -6405,7 +6405,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     };
 
     const goalYears: GoalYear[] = [];
-    for (const { goal, gate, drawIds } of fundedGoalsThisYear) {
+    for (const { goal, gate, drawIds: ids } of fundedGoalsThisYear) {
       const goalCost = fundedGoalCost(goal, gate);
       const isEducation = goal.type === "education";
       // Education keeps its tax-source keys and ledger labels; any other goal
@@ -6413,7 +6413,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const sourcePrefix = isEducation ? "education" : "goal";
       const ledgerLabel = isEducation ? "Education" : "Goal";
 
-      const ids = drawIds;
       const boy = ids.reduce((s, id) => s + (goalBoyBalances[id] ?? 0), 0);
 
       const drawResult = computeGoalDraw({
@@ -6662,10 +6661,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // contribution landed), so the chart starts at first dedicated funding.
     // Post-expense trailing years (year ≥ startYear but inactive) are
     // intentionally excluded.
-    for (const { goal, gate, drawIds } of allFundedGoals) {
+    for (const { goal, gate, drawIds: ids } of allFundedGoals) {
       if (gate.include) continue; // active goals handled above
       if (year >= goal.startYear) continue; // only lead-up (pre-start) years
-      const ids = drawIds;
       if (ids.length === 0) continue;
 
       const boy = ids.reduce((s, id) => s + (goalBoyBalances[id] ?? 0), 0);
