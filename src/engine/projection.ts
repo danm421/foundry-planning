@@ -98,7 +98,7 @@ import {
 } from "./contribution-limits";
 import { computeRoth529Rollover } from "./education/roth-rollover";
 import { executeWithdrawals, planSupplementalWithdrawal, categorizeDraw, supplementalDrawSources, type SupplementalDraw } from "./withdrawal";
-import { computeGoalDraw, goalDrawAccountIds, isFundedGoal } from "./goals/goal-funding";
+import { computeGoalDraw, goalDrawAccountIds, isFundedGoal, is529Account } from "./goals/goal-funding";
 import { calculateRMD } from "./rmd";
 import {
   inheritedIraInputFor,
@@ -6375,7 +6375,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // across goals and folded into taxFreeRetirementIncome (same as supplemental).
     let goalTaxFreeIncome = 0;
 
-    // Goal cost paid out of household cash flow, accumulated across
+    // Goal cost paid by the household — the out-of-pocket slice, plus (below)
+    // any draw from a household-owned dedicated account — accumulated across
     // household-owned goals and folded into `expenses.other` below. ONLY the
     // out-of-pocket slice counts here: an unfunded shortfall moves no money. The
     // out-of-pocket slice DOES drain checking, which provokes a gap-fill
@@ -6386,6 +6387,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // not the household's (mirrors householdSyntheticExpenseTotal).
     let goalCashFlowExpenseTotal = 0;
     const goalCashFlowExpenseBySource: Record<string, number> = {};
+
+    // Household-owned goal draws (spec 2026-10-05-solver-goals-design, Decision
+    // 4). The draw pays the bill directly — no money moves through checking —
+    // but it is the household's own money, so the Cash Flow report shows it as
+    // a withdrawal from that account and the goal's cost as an expense. A 529
+    // (out of the estate, whatever its owner rows say) and an entity-owned
+    // account stay outside: they pay the bill and touch neither line, as
+    // education always has. "Household" is the same test the waterfall uses to
+    // admit an account (householdWithdrawBalances).
+    const goalHouseholdDrawByAccount: Record<string, number> = {};
+    let goalHouseholdDrawTotal = 0;
+    const isHouseholdGoalAccount = (id: string): boolean => {
+      const acct = workingAccountById.get(id) ?? accountById.get(id);
+      if (!acct || is529Account(acct)) return false;
+      return ownedByHouseholdAtYear(acct, data.giftEvents, year, planSettings.planStartYear) > 0;
+    };
 
     const goalYears: GoalYear[] = [];
     for (const { goal, gate, drawIds } of fundedGoalsThisYear) {
@@ -6455,6 +6472,36 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             basis: entryBasisDelta,
           });
         }
+      }
+
+      // The waterfall's household capacity (`householdWithdrawBalances`) was
+      // snapshotted before this pass. Shrink it by what the goal just drew so a
+      // deficit year's gap-fill can't plan against money the goal already spent.
+      for (const d of drawResult.draws) {
+        if (d.accountId in householdWithdrawBalances) {
+          householdWithdrawBalances[d.accountId] = Math.max(
+            0,
+            householdWithdrawBalances[d.accountId] - d.amount,
+          );
+        }
+      }
+
+      // Entity-owned goals never touch household cash flow (resolveCashAccount
+      // routes their spend to the entity), so only a household goal books here.
+      let householdWithdrawal = 0;
+      if (goal.ownerEntityId == null) {
+        for (const d of drawResult.draws) {
+          if (!isHouseholdGoalAccount(d.accountId)) continue;
+          householdWithdrawal += d.amount;
+          goalHouseholdDrawByAccount[d.accountId] =
+            (goalHouseholdDrawByAccount[d.accountId] ?? 0) + d.amount;
+        }
+      }
+      if (householdWithdrawal > 0) {
+        goalHouseholdDrawTotal += householdWithdrawal;
+        goalCashFlowExpenseTotal += householdWithdrawal;
+        goalCashFlowExpenseBySource[goal.id] =
+          (goalCashFlowExpenseBySource[goal.id] ?? 0) + householdWithdrawal;
       }
 
       // Taxable components feed the year's tax (mostly zero — 529 is tax-free).
@@ -6529,6 +6576,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         goalExpense: goalCost,
         otherExpenseFlows,
         dedicatedWithdrawal: drawResult.dedicatedWithdrawal,
+        householdWithdrawal,
         outOfPocketWithdrawal,
         dedicatedAssetsEOY: eoy,
         shortfall,
@@ -6637,6 +6685,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // residual keeps BOY + G&S − withdrawal − otherExpenseFlows = EOY.
         otherExpenseFlows: boy + growthAndSavings - eoy,
         dedicatedWithdrawal: 0,
+        householdWithdrawal: 0,
         outOfPocketWithdrawal: 0,
         dedicatedAssetsEOY: eoy,
         shortfall: 0,
@@ -6877,7 +6926,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // negative: any deficit after income/expenses/taxes/savings (and the BoY
     // purchase equity) is refilled from the withdrawal strategy (grossed up
     // for tax).
-    const withdrawals = { byAccount: {} as Record<string, number>, total: 0 };
+    // Seeded with this year's household-owned goal draws (goal-funding pass), so
+    // the Cash Flow report shows them as withdrawals from the accounts that paid.
+    const withdrawals = {
+      byAccount: { ...goalHouseholdDrawByAccount } as Record<string, number>,
+      total: goalHouseholdDrawTotal,
+    };
     const entityWithdrawals = { byAccount: {} as Record<string, number>, total: 0 };
     let withdrawalTax = 0;
 
@@ -8502,6 +8556,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           - savings.total
           - hypoContribution
           - grantorTrustSurplusCorrection
+          // A household-owned goal draw sits in expenses.total (Decision 4) but
+          // paid the bill straight from its account — no cash left checking —
+          // so it must not shrink the surplus the household splits.
+          + goalHouseholdDrawTotal
       );
       if (surplusForSplit > 0) {
         if (absorbingRow) {

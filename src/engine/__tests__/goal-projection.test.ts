@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
 import { basePlanSettings, buildClientData } from "./fixtures";
 import { LEGACY_FM_CLIENT } from "../ownership";
-import type { Account, ClientData, Expense } from "../types";
+import type { Account, ClientData, EntitySummary, Expense, Income } from "../types";
 
 /**
  * The goal-funding step for goals other than education (spec
@@ -140,5 +140,152 @@ describe("goal funding: Other goals", () => {
     expect(y0.goals ?? []).toEqual([]);
     expect(y0.accountLedgers["fund"].endingValue).toBeCloseTo(80000, 6);
     expect(y0.accountLedgers["fund"].entries.some((e) => e.sourceId === "car")).toBe(false);
+  });
+});
+
+describe("goal funding: who owns the account decides what Cash Flow shows", () => {
+  const salary: Income = {
+    id: "sal",
+    type: "salary",
+    name: "Salary",
+    annualAmount: 200000,
+    startYear: 2026,
+    endYear: 2027,
+    growthRate: 0,
+    owner: "client",
+  };
+  const living: Expense = {
+    id: "liv",
+    type: "living",
+    name: "Living",
+    annualAmount: 50000,
+    startYear: 2026,
+    endYear: 2027,
+    growthRate: 0,
+  };
+  // Income well above spending, half the surplus spent: a year with a real
+  // discretionary split the goal must not disturb.
+  const withSurplus = (accounts: Account[], expenses: Expense[]) =>
+    makeData(accounts, expenses, {
+      incomes: [salary],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2027, surplusSpendPct: 0.5 },
+    });
+
+  it("shows a household draw as a withdrawal and the cost as an expense, leaving the surplus split alone", () => {
+    const without = runProjection(withSurplus([checking, fund(80000)], [living]))[0];
+    const withGoal = runProjection(withSurplus([checking, fund(80000)], [living, car()]))[0];
+
+    expect(withGoal.withdrawals.byAccount["fund"]).toBeCloseTo(60000, 6);
+    expect(withGoal.withdrawals.total).toBeCloseTo(without.withdrawals.total + 60000, 6);
+    expect(withGoal.expenses.bySource["car"]).toBeCloseTo(60000, 6);
+    expect(withGoal.expenses.other).toBeCloseTo(without.expenses.other + 60000, 6);
+    expect(withGoal.goals!.find((g) => g.goalId === "car")!.householdWithdrawal).toBeCloseTo(60000, 6);
+
+    // The surplus invariant (spec §1): the household's other spending and saving don't move.
+    expect(without.expenses.discretionary).toBeGreaterThan(0);
+    expect(withGoal.expenses.discretionary).toBeCloseTo(without.expenses.discretionary, 6);
+    expect(withGoal.accountLedgers["chk"].endingValue).toBeCloseTo(without.accountLedgers["chk"].endingValue, 6);
+    expect(withGoal.accountLedgers["fund"].endingValue).toBeCloseTo(
+      without.accountLedgers["fund"].endingValue - 60000,
+      6,
+    );
+  });
+
+  it("shows an education goal paid from a household brokerage too, without moving any other balance", () => {
+    const brk: Account = { ...fund(80000), id: "brk", name: "Brokerage", category: "taxable", subType: "brokerage" };
+    const college: Expense = {
+      id: "edu",
+      type: "education",
+      name: "College",
+      annualAmount: 30000,
+      startYear: 2026,
+      endYear: 2026,
+      growthRate: 0,
+      dedicatedAccountIds: ["brk"],
+      payShortfallOutOfPocket: false,
+    };
+    const without = runProjection(withSurplus([checking, brk], [living]))[0];
+    const withGoal = runProjection(withSurplus([checking, brk], [living, college]))[0];
+
+    expect(withGoal.withdrawals.byAccount["brk"]).toBeCloseTo(30000, 6);
+    expect(withGoal.expenses.bySource["edu"]).toBeCloseTo(30000, 6);
+    expect(withGoal.expenses.discretionary).toBeCloseTo(without.expenses.discretionary, 6);
+    expect(withGoal.accountLedgers["chk"].endingValue).toBeCloseTo(without.accountLedgers["chk"].endingValue, 6);
+  });
+
+  it("keeps a 529 off household Cash Flow even when its owner rows name the client", () => {
+    const p529: Account = { ...fund(50000), id: "p529", name: "529", category: "education_savings", subType: "529" };
+    const college: Expense = {
+      id: "edu",
+      type: "education",
+      name: "College",
+      annualAmount: 30000,
+      startYear: 2026,
+      endYear: 2026,
+      growthRate: 0,
+      dedicatedAccountIds: ["p529"],
+      payShortfallOutOfPocket: false,
+    };
+    const y0 = runProjection(makeData([checking, p529], [college]))[0];
+    expect(y0.withdrawals.total).toBe(0);
+    expect(y0.expenses.bySource["edu"]).toBeUndefined();
+    expect(y0.goals!.find((g) => g.goalId === "edu")!.householdWithdrawal).toBe(0);
+  });
+
+  it("keeps an entity-owned account off household Cash Flow", () => {
+    const TRUST_ID = "trust-1";
+    const trust: EntitySummary = {
+      id: TRUST_ID,
+      name: "Family Trust",
+      entityType: "trust",
+      trustSubType: "irrevocable",
+      isIrrevocable: true,
+      isGrantor: false,
+      includeInPortfolio: false,
+      accessibleToClient: false,
+      grantor: "client",
+    };
+    const trustFund = fund(80000, { owners: [{ kind: "entity", entityId: TRUST_ID, percent: 1 }] });
+    const y0 = runProjection(makeData([checking, trustFund], [car()], { entities: [trust] }))[0];
+
+    expect(y0.withdrawals.byAccount["fund"]).toBeUndefined();
+    expect(y0.expenses.bySource["car"]).toBeUndefined();
+    expect(y0.goals!.find((g) => g.goalId === "car")).toMatchObject({
+      dedicatedWithdrawal: 60000,
+      householdWithdrawal: 0,
+    });
+  });
+
+  it("with the toggle on, the household draw and the out-of-pocket rest are both expenses", () => {
+    const y0 = runProjection(makeData([checking, fund(20000)], [car()]))[0];
+    expect(y0.withdrawals.byAccount["fund"]).toBeCloseTo(20000, 6);
+    expect(y0.expenses.bySource["car"]).toBeCloseTo(60000, 6);
+    expect(y0.accountLedgers["chk"].endingValue).toBeCloseTo(60000, 6); // 100k − 40k out of pocket
+  });
+
+  it("with the toggle off, leaves what the account can't cover unfunded and off the expense line", () => {
+    const y0 = runProjection(makeData([checking, fund(20000)], [car({ payShortfallOutOfPocket: false })]))[0];
+    expect(y0.goals!.find((g) => g.goalId === "car")).toMatchObject({
+      dedicatedWithdrawal: 20000,
+      householdWithdrawal: 20000,
+      outOfPocketWithdrawal: 0,
+      shortfall: 40000,
+    });
+    expect(y0.expenses.bySource["car"]).toBeCloseTo(20000, 6);
+    expect(y0.accountLedgers["chk"].endingValue).toBeCloseTo(100000, 6);
+  });
+
+  it("never lets a deficit year's withdrawals overdraw a goal account the goal just drew", () => {
+    const brk: Account = { ...fund(100000), id: "brk", name: "Brokerage", category: "taxable", subType: "brokerage" };
+    const bigLiving: Expense = { ...living, annualAmount: 80000 };
+    const data = makeData(
+      [{ ...checking, value: 0, basis: 0 }, brk],
+      [bigLiving, car({ dedicatedAccountIds: ["brk"] })],
+      { withdrawalStrategy: [{ accountId: "brk", priorityOrder: 1, startYear: 2026, endYear: 2027 }] },
+    );
+    const y0 = runProjection(data)[0];
+    expect(y0.goals!.find((g) => g.goalId === "car")!.dedicatedWithdrawal).toBeCloseTo(60000, 6);
+    // 100k − 60k for the car leaves 40k; the gap-fill may take at most that.
+    expect(y0.accountLedgers["brk"].endingValue).toBeGreaterThanOrEqual(-0.01);
   });
 });

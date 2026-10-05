@@ -8,8 +8,8 @@ const report = {
   coveredByCashFlow: false,
   chart: { labels: [], remaining: [], withdrawals: [], outOfPocket: [], shortfall: [] },
   rows: [
-    { goalId: "edu", kind: "education", year: 2026, dedicatedAssetsBOY: 30000, growthAndSavings: 1800, goalExpense: 0, otherExpenseFlows: 0, dedicatedWithdrawal: 0, outOfPocketWithdrawal: 0, dedicatedAssetsEOY: 31800, shortfall: 0 },
-    { goalId: "edu", kind: "education", year: 2033, dedicatedAssetsBOY: 40000, growthAndSavings: 0, goalExpense: 40000, otherExpenseFlows: 0, dedicatedWithdrawal: 30000, outOfPocketWithdrawal: 0, dedicatedAssetsEOY: 0, shortfall: 10000 },
+    { goalId: "edu", kind: "education", year: 2026, dedicatedAssetsBOY: 30000, growthAndSavings: 1800, goalExpense: 0, otherExpenseFlows: 0, dedicatedWithdrawal: 0, householdWithdrawal: 0, outOfPocketWithdrawal: 0, dedicatedAssetsEOY: 31800, shortfall: 0 },
+    { goalId: "edu", kind: "education", year: 2033, dedicatedAssetsBOY: 40000, growthAndSavings: 0, goalExpense: 40000, otherExpenseFlows: 0, dedicatedWithdrawal: 30000, householdWithdrawal: 0, outOfPocketWithdrawal: 0, dedicatedAssetsEOY: 0, shortfall: 10000 },
   ],
 } as GoalReport;
 

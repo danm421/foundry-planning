@@ -1731,6 +1731,10 @@ export interface GoalYear {
   otherExpenseFlows: number;
   /** Amount drawn from the dedicated accounts for the goal. */
   dedicatedWithdrawal: number;
+  /** Part of `dedicatedWithdrawal` drawn from household-owned accounts. The
+   *  Cash Flow report shows it as a withdrawal and the matching cost as an
+   *  expense; draws from a 529 or an entity-owned account are not in it. */
+  householdWithdrawal: number;
   /**
    * Portion of the goal cost funded from household cash flow (out-of-pocket) —
    * non-zero only when the goal's `payShortfallOutOfPocket` is set. This is the
@@ -1904,10 +1908,11 @@ export interface ProjectionYear {
   expenses: {
     living: number;
     liabilities: number;
-    /** Includes education-goal cost paid out of household cash flow
-     *  (`payShortfallOutOfPocket`), keyed by the goal's expense id in `bySource`.
-     *  The dedicated-account draw is NOT here — it pays the school straight out of
-     *  the 529 without touching household cash — and neither is an unfunded
+    /** Includes goal cost paid by the household, keyed by the goal's expense id
+     *  in `bySource`: the out-of-pocket slice (`payShortfallOutOfPocket`) and any
+     *  draw from a household-owned dedicated account (also in `withdrawals`).
+     *  A draw from a 529 or an entity-owned account is NOT here — it pays the
+     *  bill without touching household money — and neither is an unfunded
      *  shortfall, which moves no money. See GoalYear. */
     other: number;
     insurance: number;
