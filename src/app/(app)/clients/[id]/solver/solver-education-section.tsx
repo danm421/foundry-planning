@@ -3,12 +3,12 @@
 import { useMemo, useState } from "react";
 import type { ClientData, Expense, SavingsRule } from "@/engine/types";
 import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
-import { withAdditionalContribution } from "@/lib/solver/solve-education-dedicated-savings";
+import { withAdditionalContribution } from "@/lib/solver/solve-goal-dedicated-savings";
 import { SolverSection } from "./solver-section";
 import { SolverFieldStepper } from "./solver-field-stepper";
 import { SolverViewReportButton } from "./solver-view-report-button";
 import { SolverEducationGoalForm, type EducationGoalFormAccount } from "./solver-education-goal-form";
-import { useEducationSolve, type EducationSolveOutput } from "./use-education-solve";
+import { useGoalSolve, type GoalSolveOutput } from "./use-goal-solve";
 
 interface Props {
   baseExpenses: Expense[];
@@ -33,7 +33,7 @@ const MIN_TARGET_PCT = 1;
 
 /** What the solve found, in the advisor's words. A full-funding solve keeps the
  *  familiar wording; a partial one names the target it was asked for. */
-function solveLabel(result: EducationSolveOutput): string {
+function solveLabel(result: GoalSolveOutput): string {
   const pct = Math.round(result.targetPct * 100);
   const full = pct >= 100;
   if (!result.reachesTarget) {
@@ -98,11 +98,11 @@ export function SolverEducationSection({
 
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [solveResult, setSolveResult] = useState<Record<string, EducationSolveOutput>>({});
+  const [solveResult, setSolveResult] = useState<Record<string, GoalSolveOutput>>({});
   // Per-source funding target, in whole percent. Absent = 100 (fund it fully) —
   // an advisor covering only part of a bill dials this down before solving.
   const [targetPct, setTargetPct] = useState<Record<string, number>>({});
-  const { pendingKey, run } = useEducationSolve({ clientId, source, mutations });
+  const { pendingKey, run } = useGoalSolve({ clientId, source, mutations });
 
   function upsertGoal(expense: Expense, newMutations: SolverMutation[]) {
     // Emit new-account + savings-rule mutations FIRST so the expense's

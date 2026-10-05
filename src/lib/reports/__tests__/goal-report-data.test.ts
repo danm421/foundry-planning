@@ -1,17 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { buildEducationReport } from "../education-report-data";
+import { buildGoalReport } from "../goal-report-data";
 import type { ProjectionYear } from "@/engine/types";
 
-const py = (year: number, g: Partial<import("@/engine/types").EducationGoalYear>): ProjectionYear =>
-  ({ year, educationGoals: [{ goalId: "edu", dedicatedAssetsBOY: 0, growthAndSavings: 0, goalExpense: 0, otherExpenseFlows: 0, dedicatedWithdrawal: 0, outOfPocketWithdrawal: 0, dedicatedAssetsEOY: 0, shortfall: 0, ...g }] } as ProjectionYear);
+const py = (year: number, g: Partial<import("@/engine/types").GoalYear>): ProjectionYear =>
+  ({ year, goals: [{ goalId: "edu", dedicatedAssetsBOY: 0, growthAndSavings: 0, goalExpense: 0, otherExpenseFlows: 0, dedicatedWithdrawal: 0, outOfPocketWithdrawal: 0, dedicatedAssetsEOY: 0, shortfall: 0, ...g }] } as ProjectionYear);
 
-describe("buildEducationReport", () => {
+describe("buildGoalReport", () => {
   it("groups per goal, sums KPIs, builds chart series", () => {
     const years = [
       py(2026, { dedicatedAssetsEOY: 31800 }),
       py(2033, { goalExpense: 40000, dedicatedWithdrawal: 30000, shortfall: 10000, dedicatedAssetsEOY: 0 }),
     ];
-    const [report] = buildEducationReport(years, [{ id: "edu", name: "College for Child" }]);
+    const [report] = buildGoalReport(years, [{ id: "edu", name: "College for Child" }]);
     expect(report.name).toBe("College for Child");
     expect(report.dedicatedFundsUsed).toBe(30000);
     expect(report.totalShortfall).toBe(10000);
@@ -28,7 +28,7 @@ describe("buildEducationReport", () => {
       py(2033, { goalExpense: 40000, dedicatedWithdrawal: 25000, outOfPocketWithdrawal: 15000, shortfall: 0, dedicatedAssetsEOY: 0 }),
       py(2034, { goalExpense: 40000, dedicatedWithdrawal: 30000, outOfPocketWithdrawal: 0, shortfall: 10000, dedicatedAssetsEOY: 0 }),
     ];
-    const [report] = buildEducationReport(years, [{ id: "edu", name: "College", payShortfallOutOfPocket: true }]);
+    const [report] = buildGoalReport(years, [{ id: "edu", name: "College", payShortfallOutOfPocket: true }]);
     expect(report.coveredByCashFlow).toBe(true); // reads the goal's cash-flow funding setting
     expect(report.cashFlowFundsUsed).toBe(15000);
     expect(report.totalShortfall).toBe(10000); // unfunded only, not the cash-flow portion
@@ -38,6 +38,6 @@ describe("buildEducationReport", () => {
   });
 
   it("returns [] when no education goals exist", () => {
-    expect(buildEducationReport([{ year: 2026 } as ProjectionYear], [])).toEqual([]);
+    expect(buildGoalReport([{ year: 2026 } as ProjectionYear], [])).toEqual([]);
   });
 });

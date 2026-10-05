@@ -8,11 +8,11 @@ import {
 import { Bar } from "react-chartjs-2";
 import { useThemeName } from "@/lib/chart-colors";
 import { dataPalette, chartChrome } from "@/lib/chart-palette";
-import type { EducationGoalReport } from "@/lib/reports/education-report-data";
+import type { GoalReport } from "@/lib/reports/goal-report-data";
 
 ChartJS.register(BarController, BarElement, CategoryScale, Legend, LinearScale, Tooltip);
 
-export function EducationChart({ chart }: { chart: EducationGoalReport["chart"] }) {
+export function GoalChart({ chart }: { chart: GoalReport["chart"] }) {
   const theme = useThemeName();
   const palette = dataPalette(theme);
   const chrome = chartChrome(theme);

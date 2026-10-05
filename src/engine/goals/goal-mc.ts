@@ -15,7 +15,7 @@ import { arithToLogParams, rateFromLogReturn } from "../monteCarlo/lognormal";
 
 const RATE_CAP = { min: -1.0, max: 2.0 } as const;
 
-export interface EducationMcInput {
+export interface GoalMcInput {
   startingBalance: number;
   contributionsByYear: readonly number[];
   /** Per-year goal cost the pool must cover (the target, not the capped draw). */
@@ -29,7 +29,7 @@ export interface EducationMcInput {
   trials?: number;
 }
 
-export function runEducationGoalMc(input: EducationMcInput): { successRate: number; trials: number } {
+export function runGoalMc(input: GoalMcInput): { successRate: number; trials: number } {
   const { startingBalance, contributionsByYear, withdrawalsByYear, coveredByCashFlow, arithMean, stdDev, seed } = input;
   const trials = input.trials ?? 1000;
   const nYears = Math.max(contributionsByYear.length, withdrawalsByYear.length);

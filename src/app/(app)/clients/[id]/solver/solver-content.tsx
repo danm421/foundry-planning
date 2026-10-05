@@ -9,9 +9,9 @@ import { loadLifeInsuranceSettings } from "@/lib/life-insurance/settings";
 import { assembleSolverPortfolios, mixFromAllocationRows, type SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import {
-  buildEducationReturnStats,
-  type EducationReturnStat,
-} from "@/lib/reports/education-mc-inputs";
+  buildGoalReturnStats,
+  type GoalReturnStat,
+} from "@/lib/reports/goal-mc-inputs";
 import { loadReportLayout } from "@/lib/solver/report-layout-store";
 import { loadPanelData } from "@/lib/scenario/load-panel-data";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
@@ -163,13 +163,13 @@ export async function SolverContent({
   const clientName = baseClient.firstName?.trim() || "Client";
   const spouseName = baseClient.spouseName?.trim() || CO_CLIENT_LABEL;
 
-  let educationReturnStats: Record<string, EducationReturnStat> = {};
+  let educationReturnStats: Record<string, GoalReturnStat> = {};
   let educationSeed = FALLBACK_EDUCATION_SEED;
   const mcData = educationMcPromise ? await educationMcPromise : null;
   if (mcData) {
     try {
       educationSeed = mcData.seed;
-      const assetClassStats = new Map<string, EducationReturnStat>(
+      const assetClassStats = new Map<string, GoalReturnStat>(
         mcData.indices.map((i) => [i.id, { arithMean: i.arithMean, stdDev: i.stdDev }]),
       );
       // The fromYear-0 segment is the base mix — the right allocation for
@@ -179,7 +179,7 @@ export async function SolverContent({
         accountId: m.accountId,
         mix: m.segments.find((s) => s.fromYear === 0)?.mix ?? [],
       }));
-      educationReturnStats = buildEducationReturnStats({
+      educationReturnStats = buildGoalReturnStats({
         expenses: solverTree.expenses,
         accounts: solverTree.accounts,
         accountMixes,

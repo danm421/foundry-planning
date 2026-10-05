@@ -127,7 +127,7 @@ export function buildGoalFunding({
   for (const y of years) {
     const coverage = coverageByYear.get(y.year) ?? 1;
 
-    for (const row of y.educationGoals ?? []) {
+    for (const row of y.goals ?? []) {
       // Accumulation rows are pre-expense funding-runway years — they carry no
       // goal cost, so folding them in would only widen the reported span.
       if (row.accumulation) continue;

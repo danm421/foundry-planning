@@ -1719,7 +1719,7 @@ export interface PlanSettings {
 
 // ── Output Types ─────────────────────────────────────────────────────────────
 
-export interface EducationGoalYear {
+export interface GoalYear {
   goalId: string;
   /** Dedicated-account balances at the start of the year (before growth). */
   dedicatedAssetsBOY: number;
@@ -1750,7 +1750,7 @@ export interface EducationGoalYear {
    * active, emitted so the report chart/table show the dedicated funds growing
    * (goalExpense / dedicatedWithdrawal / shortfall are all 0). Expense years
    * omit this flag. The per-goal Monte Carlo gauge filters these rows out so its
-   * probability stays scoped to the expense phase (see education-mc-inputs.ts).
+   * probability stays scoped to the expense phase (see goal-mc-inputs.ts).
    */
   accumulation?: boolean;
 }
@@ -1908,7 +1908,7 @@ export interface ProjectionYear {
      *  (`payShortfallOutOfPocket`), keyed by the goal's expense id in `bySource`.
      *  The dedicated-account draw is NOT here — it pays the school straight out of
      *  the 529 without touching household cash — and neither is an unfunded
-     *  shortfall, which moves no money. See EducationGoalYear. */
+     *  shortfall, which moves no money. See GoalYear. */
     other: number;
     insurance: number;
     realEstate: number;
@@ -1928,7 +1928,7 @@ export interface ProjectionYear {
   };
 
   /** Present only when the plan has education goals with dedicated funding. */
-  educationGoals?: EducationGoalYear[];
+  goals?: GoalYear[];
 
   savings: {
     byAccount: Record<string, number>;

@@ -1,10 +1,10 @@
-// src/app/(app)/clients/[id]/solver/use-education-solve.ts
+// src/app/(app)/clients/[id]/solver/use-goal-solve.ts
 "use client";
 
 import { useCallback, useRef, useState } from "react";
 import type { SolverMutation } from "@/lib/solver/types";
 
-export interface EducationSolveOutput {
+export interface GoalSolveOutput {
   additionalAnnual: number;
   reachesTarget: boolean;
   /** Echoed back by the route (clamped), so the caller labels the result with
@@ -12,7 +12,7 @@ export interface EducationSolveOutput {
   targetPct: number;
 }
 
-export function useEducationSolve(args: {
+export function useGoalSolve(args: {
   clientId: string;
   source: string;
   mutations: SolverMutation[];
@@ -24,17 +24,17 @@ export function useEducationSolve(args: {
   mutationsRef.current = mutations;
 
   const run = useCallback(
-    async (goalId: string, accountId: string, targetPct: number): Promise<EducationSolveOutput | null> => {
+    async (goalId: string, accountId: string, targetPct: number): Promise<GoalSolveOutput | null> => {
       const key = `${goalId}:${accountId}`;
       setPendingKey(key);
       try {
-        const res = await fetch(`/api/clients/${clientId}/solver/education-solve`, {
+        const res = await fetch(`/api/clients/${clientId}/solver/goal-solve`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ source, mutations: mutationsRef.current, goalId, accountId, targetPct }),
         });
         if (!res.ok) return null;
-        return (await res.json()) as EducationSolveOutput;
+        return (await res.json()) as GoalSolveOutput;
       } catch {
         return null;
       } finally {

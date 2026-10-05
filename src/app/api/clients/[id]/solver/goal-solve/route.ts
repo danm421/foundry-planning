@@ -1,9 +1,9 @@
-// src/app/api/clients/[id]/solver/education-solve/route.ts
+// src/app/api/clients/[id]/solver/goal-solve/route.ts
 //
-// POST /api/clients/[id]/solver/education-solve
+// POST /api/clients/[id]/solver/goal-solve
 //
-// Live "solve" for the solver Education tab. Given a working tree (source +
-// unsaved mutations), an education goal, and a dedicated funding account, finds
+// Live "solve" for the solver Goals tab. Given a working tree (source +
+// unsaved mutations), a goal, and one of its savings accounts, finds
 // the smallest additional annual contribution to that account that funds
 // `targetPct` of the goal (default: all of it). Runs the REAL engine projection
 // server-side (heavy: a bisection that re-projects per iteration). Pure COMPUTE
@@ -20,7 +20,7 @@ import { applyMutations } from "@/lib/solver/apply-mutations";
 import { resolveTechniqueMutations } from "@/lib/solver/resolve-technique-mutations";
 import type { SolverMutation } from "@/lib/solver/types";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
-import { solveEducationDedicatedSavings } from "@/lib/solver/solve-education-dedicated-savings";
+import { solveGoalDedicatedSavings } from "@/lib/solver/solve-goal-dedicated-savings";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
     const currentYear =
       runProjection(workingTree)[0]?.year ?? new Date().getFullYear();
-    const result = solveEducationDedicatedSavings({
+    const result = solveGoalDedicatedSavings({
       tree: workingTree,
       goalId,
       accountId,
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
   } catch (err) {
     const authResp = authErrorResponse(err);
     if (authResp) return NextResponse.json(authResp.body, { status: authResp.status });
-    console.error("POST /api/clients/[id]/solver/education-solve error:", err);
+    console.error("POST /api/clients/[id]/solver/goal-solve error:", err);
     return NextResponse.json({ error: "Solve failed" }, { status: 500 });
   }
 }

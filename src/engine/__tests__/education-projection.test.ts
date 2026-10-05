@@ -7,7 +7,7 @@ import type { Account, Expense } from "../types";
 /**
  * Task 4 — applyEducationFunding pass. Each projection year, after savings, an
  * active education goal draws its indexed cost from its dedicated accounts
- * (529 tax-free via categorizeDraw), records `educationGoals` on the year, feeds
+ * (529 tax-free via categorizeDraw), records `goals` on the year, feeds
  * taxable draw components into the year's tax, and optionally spills the
  * shortfall to household cash. These integration tests exercise the three
  * behaviors through `runProjection` end-to-end.
@@ -73,12 +73,12 @@ function makeData(accounts: Account[], expense: Expense, planEndYear = 2026) {
 }
 
 describe("applyEducationFunding", () => {
-  it("draws a 529 for the goal, records educationGoals, stays tax-free", () => {
+  it("draws a 529 for the goal, records goals, stays tax-free", () => {
     const data = makeData([checking, p529(30000)], eduExpense({}));
     const years = runProjection(data);
     const y0 = years[0];
 
-    const goal = y0.educationGoals?.find((g) => g.goalId === "edu");
+    const goal = y0.goals?.find((g) => g.goalId === "edu");
     expect(goal).toBeDefined();
     expect(goal!.dedicatedAssetsBOY).toBe(30000);
     expect(goal!.goalExpense).toBe(20000);
@@ -95,7 +95,7 @@ describe("applyEducationFunding", () => {
   it("caps at dedicated funds when out-of-pocket is off (shortfall, no extra household outflow)", () => {
     const data = makeData([checking, p529(5000)], eduExpense({}));
     const y0 = runProjection(data)[0];
-    const goal = y0.educationGoals!.find((g) => g.goalId === "edu")!;
+    const goal = y0.goals!.find((g) => g.goalId === "edu")!;
 
     expect(goal.dedicatedWithdrawal).toBe(5000);
     expect(goal.shortfall).toBe(15000); // out-of-pocket off → genuinely unfunded
@@ -110,7 +110,7 @@ describe("applyEducationFunding", () => {
       eduExpense({ payShortfallOutOfPocket: true }),
     );
     const y0 = runProjection(data)[0];
-    const goal = y0.educationGoals!.find((g) => g.goalId === "edu")!;
+    const goal = y0.goals!.find((g) => g.goalId === "edu")!;
 
     expect(goal.dedicatedWithdrawal).toBe(5000);
     // The 15k gap is FUNDED from cash flow, so it books as an out-of-pocket
@@ -154,7 +154,7 @@ describe("applyEducationFunding", () => {
     const data = makeData([checking, p529(30000)], eduExpense({ payShortfallOutOfPocket: true }));
     const y0 = runProjection(data)[0];
 
-    expect(y0.educationGoals!.find((g) => g.goalId === "edu")!.dedicatedWithdrawal).toBe(20000);
+    expect(y0.goals!.find((g) => g.goalId === "edu")!.dedicatedWithdrawal).toBe(20000);
     expect(y0.expenses.bySource["edu"]).toBeUndefined();
     expect(y0.expenses.other).toBe(0);
     expect(y0.totalExpenses).toBe(0);
@@ -181,7 +181,7 @@ describe("applyEducationFunding", () => {
       eduExpense({ dedicatedAccountIds: ["brk-edu"] }),
     );
     const y0 = runProjection(data)[0];
-    const goal = y0.educationGoals!.find((g) => g.goalId === "edu")!;
+    const goal = y0.goals!.find((g) => g.goalId === "edu")!;
 
     expect(goal.dedicatedWithdrawal).toBe(20000);
     expect(goal.shortfall).toBe(0);
@@ -206,7 +206,7 @@ describe("applyEducationFunding", () => {
     );
     const years = runProjection(data);
     const rowFor = (y: number) =>
-      years.find((yr) => yr.year === y)!.educationGoals?.find((g) => g.goalId === "edu");
+      years.find((yr) => yr.year === y)!.goals?.find((g) => g.goalId === "edu");
 
     const y2026 = rowFor(2026)!;
     expect(y2026).toBeDefined();
@@ -241,7 +241,7 @@ describe("applyEducationFunding", () => {
     );
     const years = runProjection(data);
     const rowFor = (y: number) =>
-      years.find((yr) => yr.year === y)!.educationGoals?.find((g) => g.goalId === "edu");
+      years.find((yr) => yr.year === y)!.goals?.find((g) => g.goalId === "edu");
 
     expect(rowFor(2026)).toBeUndefined(); // pre-funding: no row
     expect(rowFor(2027)?.accumulation).toBe(true); // first funded year
@@ -304,7 +304,7 @@ describe("applyEducationFunding — signed capital gains on the draw", () => {
       eduExpense({ dedicatedAccountIds: ["brk-edu"] }),
     );
     const y0 = runProjection(data)[0];
-    const goal = y0.educationGoals!.find((g) => g.goalId === "edu")!;
+    const goal = y0.goals!.find((g) => g.goalId === "edu")!;
 
     expect(goal.dedicatedWithdrawal).toBe(20000);
     expect(goal.shortfall).toBe(0);
@@ -344,7 +344,7 @@ describe("applyEducationFunding — signed capital gains on the draw", () => {
       eduExpense({ dedicatedAccountIds: ["ira-edu", "brk-edu"] }),
     );
     const y0 = runProjection(data)[0];
-    const goal = y0.educationGoals!.find((g) => g.goalId === "edu")!;
+    const goal = y0.goals!.find((g) => g.goalId === "edu")!;
 
     expect(goal.dedicatedWithdrawal).toBe(20000);
 

@@ -1,8 +1,8 @@
 import type { YearTableColumn } from "@/components/scenario/year-table";
-import type { EducationGoalReportRow } from "@/lib/reports/education-report-data";
+import type { GoalReportRow } from "@/lib/reports/goal-report-data";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
 
-export function educationYearColumns(): YearTableColumn<EducationGoalReportRow>[] {
+export function goalYearColumns(): YearTableColumn<GoalReportRow>[] {
   const money = (n: number) => formatCurrency(n);
   return [
     { key: "year", header: "Year", align: "left", render: (r) => r.year },

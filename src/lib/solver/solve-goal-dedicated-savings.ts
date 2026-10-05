@@ -1,6 +1,6 @@
 import type { ClientData, ProjectionYear, SavingsRule } from "@/engine/types";
 
-export interface EducationSolveInput {
+export interface GoalSolveInput {
   tree: ClientData;
   goalId: string;
   accountId: string;
@@ -15,7 +15,7 @@ export interface EducationSolveInput {
   targetPct?: number;
 }
 
-export interface EducationSolveResult {
+export interface GoalSolveResult {
   additionalAnnual: number;
   /** The solve got the goal to (at least) `targetPct` funded. False only when
    *  the cap was hit first — this source can't reach the target alone. */
@@ -59,14 +59,14 @@ export function withAdditionalContribution(
  *  engine's own `goalExpense` rather than a re-derivation of the tree's
  *  indexing — the two must not be allowed to drift. */
 function goalTotals(years: ProjectionYear[], goalId: string): { shortfall: number; cost: number } {
-  const rows = years.flatMap((y) => y.educationGoals ?? []).filter((g) => g.goalId === goalId);
+  const rows = years.flatMap((y) => y.goals ?? []).filter((g) => g.goalId === goalId);
   return {
     shortfall: rows.reduce((s, g) => s + g.shortfall, 0),
     cost: rows.reduce((s, g) => s + g.goalExpense, 0),
   };
 }
 
-export function solveEducationDedicatedSavings(input: EducationSolveInput): EducationSolveResult {
+export function solveGoalDedicatedSavings(input: GoalSolveInput): GoalSolveResult {
   const { tree, goalId, accountId, currentYear, runProjection } = input;
   const maxIterations = input.maxIterations ?? 24;
   const tolerance = input.tolerance ?? 1;

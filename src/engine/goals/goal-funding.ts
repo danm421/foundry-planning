@@ -3,14 +3,14 @@
  *  report the uncovered shortfall + aggregated taxable components. Framework-free.
  */
 
-export interface EducationDrawTax {
+export interface GoalDrawTax {
   ordinaryIncome: number;
   capitalGains: number;
   basisReturn: number;
   earlyWithdrawalPenalty: number;
 }
 
-export interface EducationDrawInput {
+export interface GoalDrawInput {
   /** Indexed goal cost for the year (>= 0). */
   goalCost: number;
   /** Dedicated funding account ids, in draw order. */
@@ -18,16 +18,16 @@ export interface EducationDrawInput {
   /** Current available balance per account id. */
   balances: Record<string, number>;
   /** Tax categorizer for a draw of `amount` from `accountId` (e.g. wraps categorizeDraw). */
-  categorize: (accountId: string, amount: number) => EducationDrawTax;
+  categorize: (accountId: string, amount: number) => GoalDrawTax;
 }
 
-export interface EducationDraw extends EducationDrawTax {
+export interface GoalDraw extends GoalDrawTax {
   accountId: string;
   amount: number;
 }
 
-export interface EducationDrawResult {
-  draws: EducationDraw[];
+export interface GoalDrawResult {
+  draws: GoalDraw[];
   dedicatedWithdrawal: number;
   shortfall: number;
   ordinaryIncome: number;
@@ -35,10 +35,10 @@ export interface EducationDrawResult {
   earlyWithdrawalPenalty: number;
 }
 
-export function computeEducationDraw(input: EducationDrawInput): EducationDrawResult {
+export function computeGoalDraw(input: GoalDrawInput): GoalDrawResult {
   const { goalCost, dedicatedAccountIds, balances, categorize } = input;
   let remaining = Math.max(0, goalCost);
-  const draws: EducationDraw[] = [];
+  const draws: GoalDraw[] = [];
   let ordinaryIncome = 0;
   let capitalGains = 0;
   let earlyWithdrawalPenalty = 0;

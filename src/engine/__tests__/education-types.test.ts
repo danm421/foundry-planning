@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { Expense, EducationGoalYear, ProjectionYear } from "../types";
+import type { Expense, GoalYear, ProjectionYear } from "../types";
 
 describe("education engine types", () => {
   it("Expense accepts type education + dedicated funding fields", () => {
@@ -20,8 +20,8 @@ describe("education engine types", () => {
     expect(e.type).toBe("education");
   });
 
-  it("EducationGoalYear + ProjectionYear.educationGoals shape", () => {
-    const row: EducationGoalYear = {
+  it("GoalYear + ProjectionYear.goals shape", () => {
+    const row: GoalYear = {
       goalId: "e1",
       dedicatedAssetsBOY: 30000,
       growthAndSavings: 1800,
@@ -32,7 +32,7 @@ describe("education engine types", () => {
       dedicatedAssetsEOY: 31800,
       shortfall: 0,
     };
-    const py = { educationGoals: [row] } as Partial<ProjectionYear>;
-    expect(py.educationGoals?.[0].dedicatedAssetsEOY).toBe(31800);
+    const py = { goals: [row] } as Partial<ProjectionYear>;
+    expect(py.goals?.[0].dedicatedAssetsEOY).toBe(31800);
   });
 });

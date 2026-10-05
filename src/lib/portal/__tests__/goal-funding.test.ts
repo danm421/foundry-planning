@@ -164,7 +164,7 @@ describe("buildGoalFunding — education", () => {
       yr(2032, {
         income: { salaries: 200_000 },
         totalExpenses: 100_000,
-        educationGoals: [
+        goals: [
           {
             goalId: "edu1",
             goalExpense: 40_000,
@@ -195,7 +195,7 @@ describe("buildGoalFunding — education", () => {
       yr(2032, {
         income: { salaries: 50_000 },
         totalExpenses: 100_000,
-        educationGoals: [
+        goals: [
           {
             goalId: "edu1",
             goalExpense: 40_000,
@@ -221,7 +221,7 @@ describe("buildGoalFunding — education", () => {
     const years = [
       yr(2030, {
         totalExpenses: 0,
-        educationGoals: [
+        goals: [
           {
             goalId: "edu1",
             goalExpense: 0,
@@ -235,7 +235,7 @@ describe("buildGoalFunding — education", () => {
       yr(2032, {
         income: { salaries: 100_000 },
         totalExpenses: 40_000,
-        educationGoals: [
+        goals: [
           {
             goalId: "edu1",
             goalExpense: 40_000,
@@ -262,7 +262,7 @@ describe("buildGoalFunding — education", () => {
       yr(2032, {
         income: { salaries: 100_000 },
         totalExpenses: 40_000,
-        educationGoals: [
+        goals: [
           {
             goalId: "edu1",
             goalExpense: 40_000,

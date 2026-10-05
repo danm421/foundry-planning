@@ -1,13 +1,13 @@
-import type { EducationGoalYear, ProjectionYear } from "@/engine/types";
+import type { GoalYear, ProjectionYear } from "@/engine/types";
 
-export interface EducationGoalReportRow extends EducationGoalYear {
+export interface GoalReportRow extends GoalYear {
   year: number;
 }
 
-export interface EducationGoalReport {
+export interface GoalReport {
   goalId: string;
   name: string;
-  rows: EducationGoalReportRow[];
+  rows: GoalReportRow[];
   dedicatedFundsUsed: number;
   /** Total funded from household cash flow (out-of-pocket) across the goal. */
   cashFlowFundsUsed: number;
@@ -29,15 +29,15 @@ export interface EducationGoalReport {
   };
 }
 
-/** Group ProjectionYear.educationGoals into per-goal report bundles. */
-export function buildEducationReport(
+/** Group ProjectionYear.goals into per-goal report bundles. */
+export function buildGoalReport(
   years: ProjectionYear[],
   expenses: { id: string; name: string; payShortfallOutOfPocket?: boolean }[],
-): EducationGoalReport[] {
+): GoalReport[] {
   const byId = new Map(expenses.map((e) => [e.id, e]));
-  const byGoal = new Map<string, EducationGoalReportRow[]>();
+  const byGoal = new Map<string, GoalReportRow[]>();
   for (const y of years) {
-    for (const g of y.educationGoals ?? []) {
+    for (const g of y.goals ?? []) {
       const arr = byGoal.get(g.goalId) ?? [];
       arr.push({ ...g, year: y.year });
       byGoal.set(g.goalId, arr);

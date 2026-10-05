@@ -5,7 +5,7 @@ import { EducationReportPanel } from "../education-report-panel";
 import type { ProjectionYear } from "@/engine/types";
 
 const years = [
-  { year: 2033, educationGoals: [{ goalId: "edu", dedicatedAssetsBOY: 30000, growthAndSavings: 0, goalExpense: 40000, otherExpenseFlows: 0, dedicatedWithdrawal: 30000, dedicatedAssetsEOY: 0, shortfall: 10000 }] } as ProjectionYear,
+  { year: 2033, goals: [{ goalId: "edu", dedicatedAssetsBOY: 30000, growthAndSavings: 0, goalExpense: 40000, otherExpenseFlows: 0, dedicatedWithdrawal: 30000, dedicatedAssetsEOY: 0, shortfall: 10000 }] } as ProjectionYear,
 ];
 
 describe("EducationReportPanel", () => {
@@ -25,14 +25,14 @@ describe("EducationReportPanel", () => {
 
   it("reads 100% only when nothing is unfunded, and rounds down otherwise", () => {
     const nearlyFunded = [
-      { year: 2033, educationGoals: [{ goalId: "edu", dedicatedAssetsBOY: 40000, growthAndSavings: 0, goalExpense: 40000, otherExpenseFlows: 0, dedicatedWithdrawal: 39999, dedicatedAssetsEOY: 0, shortfall: 1 }] } as ProjectionYear,
+      { year: 2033, goals: [{ goalId: "edu", dedicatedAssetsBOY: 40000, growthAndSavings: 0, goalExpense: 40000, otherExpenseFlows: 0, dedicatedWithdrawal: 39999, dedicatedAssetsEOY: 0, shortfall: 1 }] } as ProjectionYear,
     ];
     const { unmount } = render(<EducationReportPanel years={nearlyFunded} expenses={[{ id: "edu", name: "College" }]} />);
     expect(screen.getByText("99%")).toBeTruthy();
     unmount();
 
     const funded = [
-      { year: 2033, educationGoals: [{ goalId: "edu", dedicatedAssetsBOY: 40000, growthAndSavings: 0, goalExpense: 40000, otherExpenseFlows: 0, dedicatedWithdrawal: 40000, dedicatedAssetsEOY: 0, shortfall: 0 }] } as ProjectionYear,
+      { year: 2033, goals: [{ goalId: "edu", dedicatedAssetsBOY: 40000, growthAndSavings: 0, goalExpense: 40000, otherExpenseFlows: 0, dedicatedWithdrawal: 40000, dedicatedAssetsEOY: 0, shortfall: 0 }] } as ProjectionYear,
     ];
     render(<EducationReportPanel years={funded} expenses={[{ id: "edu", name: "College" }]} />);
     expect(screen.getByText("100%")).toBeTruthy();

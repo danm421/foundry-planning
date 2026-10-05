@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { educationYearColumns } from "../education-year-columns";
+import { goalYearColumns } from "../goal-year-columns";
 
-describe("educationYearColumns", () => {
+describe("goalYearColumns", () => {
   it("renders the 9 report columns and flags shortfall rows", () => {
-    const cols = educationYearColumns();
+    const cols = goalYearColumns();
     expect(cols.map((c) => c.header)).toEqual([
       "Year", "Dedicated Assets (BOY)", "Dedicated Assets Growth & Savings",
       "Goal Expense", "Other Expenses Flows", "Dedicated Withdrawals",

@@ -1,9 +1,9 @@
-import type { EducationGoalReport } from "./education-report-data";
-import type { EducationMcInput } from "@/engine/education/education-mc";
+import type { GoalReport } from "./goal-report-data";
+import type { GoalMcInput } from "@/engine/goals/goal-mc";
 
 /** Blended dedicated-pool return stats for one education goal, feeding the
  *  lognormal per-goal Monte Carlo. */
-export interface EducationReturnStat {
+export interface GoalReturnStat {
   arithMean: number;
   stdDev: number;
 }
@@ -15,18 +15,18 @@ export interface EducationReturnStat {
  *  returns slightly double-counts the growth slice. This is a deliberate,
  *  documented v1 approximation — the gauge is directional. A precise version
  *  needs a contributions-only figure split out of `growthAndSavings` on
- *  `EducationGoalYear` (logged as deferred future-work), not a change here.
+ *  `GoalYear` (logged as deferred future-work), not a change here.
  *
  *  withdrawalsByYear = the goal's yearly *cost* (`goalExpense`), i.e. the target
  *  the funding must cover — NOT the pool's `dedicatedWithdrawal`, which is capped
  *  at the pool balance and so would always read as fully funded. Cash-flow
  *  funding (`coveredByCashFlow`) is passed through so the gauge counts a
  *  dedicated-pool shortfall as covered rather than a failure. */
-export function buildEducationMcInput(
-  report: EducationGoalReport,
-  stats: EducationReturnStat,
+export function buildGoalMcInput(
+  report: GoalReport,
+  stats: GoalReturnStat,
   seed: number,
-): EducationMcInput {
+): GoalMcInput {
   // Accumulation rows are display-only lead-up years; the gauge stays scoped to
   // the expense phase (its v1 growth+savings-as-contributions approximation would
   // badly amplify over a long runway). Starting balance is the first expense
@@ -52,7 +52,7 @@ interface ReturnStatsArgs {
   /** Base asset mix per account, resolved by the plan MC loader. */
   accountMixes: ReadonlyArray<{ accountId: string; mix: ReadonlyArray<{ assetClassId: string; weight: number }> }>;
   /** Per-asset-class arithmetic mean + std dev (the plan MC's index stats). */
-  assetClassStats: ReadonlyMap<string, EducationReturnStat>;
+  assetClassStats: ReadonlyMap<string, GoalReturnStat>;
 }
 
 /** Derive blended `{ arithMean, stdDev }` for each education goal's dedicated
@@ -68,10 +68,10 @@ interface ReturnStatsArgs {
  *  Then blend across the goal's accounts weighted by current balance. A goal
  *  whose dedicated accounts have zero total balance is omitted, so the panel
  *  falls back to its neutral default. Pure — safe to call server-side. */
-export function buildEducationReturnStats(args: ReturnStatsArgs): Record<string, EducationReturnStat> {
+export function buildGoalReturnStats(args: ReturnStatsArgs): Record<string, GoalReturnStat> {
   const acctById = new Map(args.accounts.map((a) => [a.id, a]));
   const mixByAccount = new Map(args.accountMixes.map((m) => [m.accountId, m.mix]));
-  const out: Record<string, EducationReturnStat> = {};
+  const out: Record<string, GoalReturnStat> = {};
 
   for (const e of args.expenses) {
     if (e.type !== "education") continue;

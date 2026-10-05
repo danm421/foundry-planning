@@ -21,7 +21,7 @@ import type {
   MedicareYearDetail,
   IrmaaTier,
   RothConversion,
-  EducationGoalYear,
+  GoalYear,
 } from "./types";
 import {
   computeMedicareYear,
@@ -98,7 +98,7 @@ import {
 } from "./contribution-limits";
 import { computeRoth529Rollover } from "./education/roth-rollover";
 import { executeWithdrawals, planSupplementalWithdrawal, categorizeDraw, supplementalDrawSources, type SupplementalDraw } from "./withdrawal";
-import { computeEducationDraw } from "./education/education-funding";
+import { computeGoalDraw } from "./goals/goal-funding";
 import { calculateRMD } from "./rmd";
 import {
   inheritedIraInputFor,
@@ -6379,14 +6379,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let educationOutOfPocketTotal = 0;
     const educationOutOfPocketBySource: Record<string, number> = {};
 
-    const educationGoalYears: EducationGoalYear[] = [];
+    const educationGoalYears: GoalYear[] = [];
     for (const { goal, gate } of educationGoalsThisYear) {
       const goalCost = educationGoalCost(goal, gate);
 
       const ids = goal.dedicatedAccountIds ?? [];
       const boy = ids.reduce((s, id) => s + (eduBoyBalances[id] ?? 0), 0);
 
-      const drawResult = computeEducationDraw({
+      const drawResult = computeGoalDraw({
         goalCost,
         dedicatedAccountIds: ids,
         balances: accountBalances,
@@ -8901,7 +8901,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       withdrawals,
       entityWithdrawals,
       expenses,
-      ...(educationGoalYears.length > 0 ? { educationGoals: educationGoalYears } : {}),
+      ...(educationGoalYears.length > 0 ? { goals: educationGoalYears } : {}),
       savings,
       ...(hypoContribution > 0
         ? {
