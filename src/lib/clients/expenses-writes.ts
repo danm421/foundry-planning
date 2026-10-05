@@ -12,8 +12,8 @@
 // requireOrgId()/auth()), and NextResponse.json(...) becomes writeError(...) /
 // {ok:true,...}.
 import { db } from "@/db";
-import { expenses, planSettings } from "@/db/schema";
-import { eq, and, ne } from "drizzle-orm";
+import { accounts, expenseDedicatedAccounts, expenses, planSettings } from "@/db/schema";
+import { eq, and, ne, inArray } from "drizzle-orm";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import {
   assertAccountsInClient,
@@ -24,6 +24,7 @@ import { recordAudit } from "@/lib/audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { summarizeZodIssues } from "@/lib/schemas/common";
 import { expenseCreateSchema, expenseUpdateSchema } from "@/lib/schemas/expenses";
+import { goalFundingError, defaultPayShortfallOutOfPocket } from "@/lib/goals";
 import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
 import { baseCaseScenarioId } from "./base-case";
 import { replaceDedicatedAccounts } from "./dedicated-accounts";
@@ -105,6 +106,19 @@ async function absorbingRowConflict(
     : null;
 }
 
+/** The category / sub-type of each linked account, for the goal-funding
+ *  rule. Scoped to the client; ids were already FK-checked by the caller. */
+async function linkedAccountKinds(
+  clientId: string,
+  ids: string[],
+): Promise<{ category: string; subType: string | null }[]> {
+  if (ids.length === 0) return [];
+  return db
+    .select({ category: accounts.category, subType: accounts.subType })
+    .from(accounts)
+    .where(and(eq(accounts.clientId, clientId), inArray(accounts.id, ids)));
+}
+
 export async function createExpenseForClient(args: {
   clientId: string;
   firmId: string;
@@ -138,6 +152,13 @@ export async function createExpenseForClient(args: {
   if (dedicatedAccountIds && dedicatedAccountIds.length > 0) {
     const dedCheck = await assertAccountsInClient(clientId, dedicatedAccountIds);
     if (!dedCheck.ok) return writeError(400, dedCheck.reason);
+  }
+  if (dedicatedAccountIds && dedicatedAccountIds.length > 0) {
+    const fundingError = goalFundingError(
+      { type: p.type, isGoal: p.isGoal },
+      await linkedAccountKinds(clientId, dedicatedAccountIds),
+    );
+    if (fundingError) return writeError(400, fundingError);
   }
 
   // The flag only means anything on a living row; the engine's own filter
@@ -189,7 +210,8 @@ export async function createExpenseForClient(args: {
           ? null
           : (p.deductionType ?? null)) as ExpenseRow["deductionType"],
         endsAtMedicareEligibilityOwner: p.endsAtMedicareEligibilityOwner ?? null,
-        payShortfallOutOfPocket: p.payShortfallOutOfPocket ?? false,
+        payShortfallOutOfPocket:
+          p.payShortfallOutOfPocket ?? defaultPayShortfallOutOfPocket({ type: p.type, isGoal: p.isGoal }),
         institutionState: p.institutionState ?? null,
         institutionName: p.institutionName ?? null,
         forFamilyMemberId: p.forFamilyMemberId ?? null,
@@ -323,6 +345,30 @@ export async function updateExpenseForClient(args: {
   if (dedicatedAccountIds !== undefined && dedicatedAccountIds.length > 0) {
     const dedCheck = await assertAccountsInClient(clientId, dedicatedAccountIds);
     if (!dedCheck.ok) return writeError(400, dedCheck.reason);
+  }
+
+  // Goal-funding rule on the row AFTER this patch (spec 2026-10-05). Only a
+  // patch touching the type, the goal flag or the links can change the answer.
+  if (p.type !== undefined || p.isGoal !== undefined || dedicatedAccountIds !== undefined) {
+    const [stored] = await db
+      .select({ type: expenses.type, isGoal: expenses.isGoal })
+      .from(expenses)
+      .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, clientId)));
+    if (stored) {
+      const ids =
+        dedicatedAccountIds ??
+        (
+          await db
+            .select({ accountId: expenseDedicatedAccounts.accountId })
+            .from(expenseDedicatedAccounts)
+            .where(eq(expenseDedicatedAccounts.expenseId, expenseId))
+        ).map((r) => r.accountId);
+      const fundingError = goalFundingError(
+        { type: p.type ?? stored.type, isGoal: p.isGoal ?? stored.isGoal },
+        await linkedAccountKinds(clientId, ids),
+      );
+      if (fundingError) return writeError(400, fundingError);
+    }
   }
 
   const updated = await db.transaction(async (tx) => {

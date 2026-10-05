@@ -80,6 +80,7 @@ import {
 } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { recordAudit } from "@/lib/audit";
+import { GOAL_FUNDING_529_ERROR } from "@/lib/goals";
 
 const CLIENT_ID = "00000000-0000-4000-8000-000000000001";
 const FIRM_ID = "00000000-0000-4000-8000-000000000099";
@@ -745,5 +746,42 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     ) as Record<string, unknown> | undefined;
     expect(written).toBeDefined();
     expect(written!.absorbsRemainingCashFlow).toBe(true);
+  });
+
+  it("refuses a 529 on an Other goal before writing anything", async () => {
+    vi.mocked(loadEffectiveTree).mockResolvedValue({
+      effectiveTree: {
+        accounts: [{ id: "acct-529", category: "education_savings", subType: "529" }],
+        savingsRules: [],
+      },
+      warnings: [],
+    } as never);
+    const CAR = {
+      id: "syn-car-1", name: "Car", type: "other", annualAmount: 60000,
+      startYear: 2030, endYear: 2030, growthRate: 0.03,
+      isGoal: true, dedicatedAccountIds: ["acct-529"], payShortfallOutOfPocket: true,
+    };
+    const res = await POST(
+      makeRequest({ source: "base", mutations: [{ kind: "expense-upsert", id: "syn-car-1", value: CAR }] }),
+      ctx as never,
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe(GOAL_FUNDING_529_ERROR);
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("persists isGoal on a Solver-added Other goal", async () => {
+    const CAR = {
+      id: "syn-car-1", name: "Car", type: "other", annualAmount: 60000,
+      startYear: 2030, endYear: 2030, growthRate: 0.03,
+      isGoal: true, dedicatedAccountIds: [], payShortfallOutOfPocket: true,
+    };
+    const res = await POST(
+      makeRequest({ source: "base", mutations: [{ kind: "expense-upsert", id: "syn-car-1", value: CAR }] }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    const inserted = inserts.find((i) => (i.values as { name?: string }).name === "Car");
+    expect(inserted?.values).toMatchObject({ type: "other", isGoal: true });
   });
 });

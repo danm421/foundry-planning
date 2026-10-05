@@ -14,6 +14,7 @@ import {
   updateExpenseForClient,
   deleteExpenseForClient,
 } from "../expenses-writes";
+import { GOAL_FUNDING_529_ERROR, GOAL_FUNDING_NOT_A_GOAL_ERROR } from "@/lib/goals";
 
 // verifyClientAccess (via authz.ts → staffMaySeeAdvisor) calls Clerk's auth(),
 // which throws under vitest. Mock it to a firm-wide admin: org:admin is not a
@@ -270,5 +271,75 @@ d("expenses-writes core", () => {
     expect(res.data.annualAmount).toBe("999.00");
     // Untouched field preserved.
     expect(res.data.name).toBe("Update target");
+  });
+
+  // Cooper base-case accounts (dev branch): a 529 and a household brokerage.
+  // Sourced 2026-10-05 from `accounts where client_id = COOPER and category in
+  // ('education_savings','taxable')`.
+  const COOPER_529_ID = "11499c2b-7a19-45df-a33e-6d0f113e9fe6"; // "529 Plan 2"
+  const COOPER_TAXABLE_ID = "3e29f9ce-7ceb-4d7b-9479-d888733e46c5"; // "Taxable Account"
+
+  const otherGoal = (overrides: Record<string, unknown> = {}) => ({
+    type: "other",
+    name: "Goal-funding test car",
+    annualAmount: "60000",
+    startYear: 2030,
+    endYear: 2030,
+    isGoal: true,
+    ...overrides,
+  });
+
+  it("refuses a 529 on an Other goal", async () => {
+    const res = await createExpenseForClient({
+      clientId: COOPER_CLIENT_ID, firmId: COOPER_FIRM_ID, actorId: ACTOR_ID,
+      input: otherGoal({ dedicatedAccountIds: [COOPER_529_ID] }),
+    });
+    if (res.ok) createdIds.push(res.data.id); // never expected; keeps Cooper clean if the rule regresses
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toBe(GOAL_FUNDING_529_ERROR);
+  });
+
+  it("refuses savings accounts on an expense that isn't a goal", async () => {
+    const res = await createExpenseForClient({
+      clientId: COOPER_CLIENT_ID, firmId: COOPER_FIRM_ID, actorId: ACTOR_ID,
+      input: otherGoal({ isGoal: false, dedicatedAccountIds: [COOPER_TAXABLE_ID] }),
+    });
+    if (res.ok) createdIds.push(res.data.id); // never expected; keeps Cooper clean if the rule regresses
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toBe(GOAL_FUNDING_NOT_A_GOAL_ERROR);
+  });
+
+  it("accepts a brokerage on an Other goal and defaults the toggle on", async () => {
+    const res = await createExpenseForClient({
+      clientId: COOPER_CLIENT_ID, firmId: COOPER_FIRM_ID, actorId: ACTOR_ID,
+      input: otherGoal({ dedicatedAccountIds: [COOPER_TAXABLE_ID] }),
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    createdIds.push(res.data.id);
+    expect(res.data.payShortfallOutOfPocket).toBe(true);
+  });
+
+  it("refuses unmarking a funded Other goal unless the same patch clears its links", async () => {
+    const created = await createExpenseForClient({
+      clientId: COOPER_CLIENT_ID, firmId: COOPER_FIRM_ID, actorId: ACTOR_ID,
+      input: otherGoal({ dedicatedAccountIds: [COOPER_TAXABLE_ID] }),
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    createdIds.push(created.data.id);
+
+    const stale = await updateExpenseForClient({
+      clientId: COOPER_CLIENT_ID, firmId: COOPER_FIRM_ID, actorId: ACTOR_ID,
+      expenseId: created.data.id, input: { isGoal: false },
+    });
+    expect(stale.ok).toBe(false);
+    if (!stale.ok) expect(stale.error).toBe(GOAL_FUNDING_NOT_A_GOAL_ERROR);
+
+    const cleared = await updateExpenseForClient({
+      clientId: COOPER_CLIENT_ID, firmId: COOPER_FIRM_ID, actorId: ACTOR_ID,
+      expenseId: created.data.id, input: { isGoal: false, dedicatedAccountIds: [] },
+    });
+    expect(cleared.ok).toBe(true);
   });
 });

@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { educationGoalYears, EDUCATION_GOAL_YEARS } from "@/lib/goals";
+import {
+  educationGoalYears,
+  EDUCATION_GOAL_YEARS,
+  goalFundingError,
+  defaultPayShortfallOutOfPocket,
+  GOAL_FUNDING_529_ERROR,
+  GOAL_FUNDING_NOT_A_GOAL_ERROR,
+} from "@/lib/goals";
 
 describe("educationGoalYears", () => {
   const FIRST_YEAR = 2026;
@@ -35,5 +42,35 @@ describe("educationGoalYears", () => {
       const { startYear, endYear } = educationGoalYears(birthYear, FIRST_YEAR);
       expect(endYear - startYear + 1).toBe(EDUCATION_GOAL_YEARS);
     }
+  });
+});
+
+describe("goalFundingError", () => {
+  const brokerage = { category: "taxable", subType: "brokerage" };
+  const plan529 = { category: "education_savings", subType: "529" };
+
+  it("allows no accounts on anything", () => {
+    expect(goalFundingError({ type: "living" }, [])).toBeNull();
+  });
+  it("allows any account, 529s included, on an education goal", () => {
+    expect(goalFundingError({ type: "education" }, [plan529, brokerage])).toBeNull();
+  });
+  it("allows a non-529 account on an Other goal", () => {
+    expect(goalFundingError({ type: "other", isGoal: true }, [brokerage])).toBeNull();
+  });
+  it("refuses a 529 on an Other goal", () => {
+    expect(goalFundingError({ type: "other", isGoal: true }, [brokerage, plan529])).toBe(GOAL_FUNDING_529_ERROR);
+  });
+  it("refuses accounts on an expense that isn't a goal, or isn't Other/education", () => {
+    expect(goalFundingError({ type: "other" }, [brokerage])).toBe(GOAL_FUNDING_NOT_A_GOAL_ERROR);
+    expect(goalFundingError({ type: "living", isGoal: true }, [brokerage])).toBe(GOAL_FUNDING_NOT_A_GOAL_ERROR);
+  });
+});
+
+describe("defaultPayShortfallOutOfPocket", () => {
+  it("is on only for an Other goal (paid in full from cash flow today)", () => {
+    expect(defaultPayShortfallOutOfPocket({ type: "other", isGoal: true })).toBe(true);
+    expect(defaultPayShortfallOutOfPocket({ type: "other" })).toBe(false);
+    expect(defaultPayShortfallOutOfPocket({ type: "education" })).toBe(false);
   });
 });

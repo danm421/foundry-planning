@@ -29,6 +29,7 @@
 //     accountId is verified to belong to this client (assertAccountsInClient)
 //     before it is written, mirroring the accounts route's parent-account guard.
 // The whole batch runs in one transaction.
+import { goalFundingError } from "@/lib/goals";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
@@ -323,6 +324,23 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       return NextResponse.json({ error: dedicatedCheck.reason }, { status: 400 });
     }
 
+    // Goal-funding rule (spec 2026-10-05): a 529 pays only for education, and
+    // only a goal may carry savings accounts. Kinds come from the source tree
+    // plus this batch's inserts, so a just-created savings account resolves; an
+    // id neither knows still counts toward "has accounts" (category unknown).
+    const accountKindById = new Map<string, { category: string; subType?: string | null }>(
+      [...(sourceTree.accounts ?? []), ...accountInserts].map((a) => [a.id, a]),
+    );
+    for (const e of [...expenseInserts, ...expenseFullUpdates]) {
+      const linked = (e.dedicatedAccountIds ?? []).map(
+        (id) => accountKindById.get(id) ?? { category: "unknown" },
+      );
+      const fundingError = goalFundingError(e, linked);
+      if (fundingError) {
+        return NextResponse.json({ error: fundingError }, { status: 400 });
+      }
+    }
+
     // Validate the surplus "save remainder to" destination when it's a non-null
     // account NOT satisfied by an in-batch insert. surplus_save_account_id →
     // accounts.id is a GLOBAL FK (no tenant column), so an unvalidated id could
@@ -603,6 +621,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             institutionState: e.institutionState ?? null,
             institutionName: e.institutionName ?? null,
             forFamilyMemberId: e.forFamilyMemberId ?? null,
+            isGoal: e.isGoal ?? false,
             absorbsRemainingCashFlow: e.absorbsRemainingCashFlow ?? false,
             paymentMonth: e.paymentMonth ?? null,
           })
@@ -627,6 +646,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             institutionState: e.institutionState ?? null,
             institutionName: e.institutionName ?? null,
             forFamilyMemberId: e.forFamilyMemberId ?? null,
+            isGoal: e.isGoal ?? false,
             absorbsRemainingCashFlow: e.absorbsRemainingCashFlow ?? false,
             paymentMonth: e.paymentMonth ?? null,
             updatedAt: new Date(),

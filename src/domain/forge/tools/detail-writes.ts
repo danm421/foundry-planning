@@ -126,7 +126,7 @@ const expenseFields = {
     .nullable()
     .optional()
     .describe("end the expense when this owner reaches Medicare eligibility"),
-  // Education-goal fields (type === "education"; ignored otherwise). Nullable
+  // Goal fields — each description says which expense types read it. Nullable
   // fields mirror expenseCreateSchema's `shared` block (src/lib/schemas/expenses.ts)
   // so update_expense can clear them, not just set them. Id-shaped fields stay
   // bare z.string() (no .uuid()) to match every other id field in this object —
@@ -136,15 +136,17 @@ const expenseFields = {
     .array(z.string())
     .optional()
     .describe(
-      "Accounts this goal draws from first, in draw order. 529s for an education goal." +
-        " Education expenses only (type: \"education\") — stored but ignored by the projection on any other expense type.",
+      "Savings accounts this goal draws from first, in draw order. Allowed on an education expense," +
+        " or on an Other expense with isGoal: true. A 529 may fund only an education goal." +
+        " Rejected on any other expense.",
     ),
   payShortfallOutOfPocket: z
     .boolean()
     .optional()
     .describe(
-      "When true, cost the dedicated accounts cannot cover is paid from household cash; when false it is an unfunded shortfall." +
-        " Education expenses only (type: \"education\") — stored but ignored by the projection on any other expense type.",
+      "When true, cost the savings accounts cannot cover is paid from household cash flow; when false it is" +
+        " an unfunded shortfall. Read on education expenses and on Other expenses with isGoal: true." +
+        " Defaults to true for an Other goal and false otherwise.",
     ),
   forFamilyMemberId: z
     .string()
