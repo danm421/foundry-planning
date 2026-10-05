@@ -57,6 +57,7 @@ describe("GET /api/knowledge-hub/videos/[slug]", () => {
     expect(res.headers.get("Accept-Ranges")).toBe("bytes");
     expect(res.headers.get("Content-Type")).toBe("video/mp4");
     expect(res.headers.get("Cache-Control")).toBe("private, max-age=31536000, immutable");
+    expect(res.headers.get("ETag")).toBe(`"${v12}"`);
   });
 
   it("caps a request without Range at the first 2 MB", async () => {
@@ -80,5 +81,17 @@ describe("GET /api/knowledge-hub/videos/[slug]", () => {
   it("404s when the file is missing from storage", async () => {
     m.get.mockResolvedValue(null);
     expect((await GET(req(url(), "bytes=0-1"), params(V.slug))).status).toBe(404);
+  });
+
+  it("502s when storage throws, logging the slug and range but not the error's token or URL", async () => {
+    m.get.mockRejectedValue(new Error("Vercel Blob: 503 at https://store.example/secret?token=vercel_blob_rw_SECRET"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect((await GET(req(url(), "bytes=0-1"), params(V.slug))).status).toBe(502);
+      expect(log).toHaveBeenCalledWith("knowledge-hub: storage read failed", { slug: V.slug, range: "bytes=0-1" });
+      expect(JSON.stringify(log.mock.calls)).not.toMatch(/SECRET|https:/);
+    } finally {
+      log.mockRestore();
+    }
   });
 });

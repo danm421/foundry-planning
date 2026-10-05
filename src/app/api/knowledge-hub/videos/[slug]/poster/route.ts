@@ -19,7 +19,14 @@ export async function GET(req: Request, ctx: { params: Promise<{ slug: string }>
     return new Response("Not found", { status: 404 });
   }
 
-  const result = await get(video.poster.path, { access: "private" });
+  let result: Awaited<ReturnType<typeof get>>;
+  try {
+    result = await get(video.poster.path, { access: "private" });
+  } catch {
+    // A storage outage (BlobError); its message can carry the store URL.
+    console.error("knowledge-hub: poster read failed", { slug });
+    return new Response("Bad gateway", { status: 502 });
+  }
   if (!result || result.statusCode !== 200 || !result.stream) return new Response("Not found", { status: 404 });
   return new Response(result.stream, {
     headers: {

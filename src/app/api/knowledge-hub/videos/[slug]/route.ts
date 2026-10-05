@@ -28,10 +28,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ slug: string }>
   const range = parseByteRange(req.headers.get("range"), size);
   if (!range) return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}` } });
 
-  const result = await get(video.video.path, {
-    access: "private",
-    headers: { Range: `bytes=${range.start}-${range.end}` },
-  });
+  const asked = `bytes=${range.start}-${range.end}`;
+  let result: Awaited<ReturnType<typeof get>>;
+  try {
+    result = await get(video.video.path, { access: "private", headers: { Range: asked } });
+  } catch {
+    // A storage outage (BlobError). Log what was asked, never the error: its
+    // message can carry the store URL.
+    console.error("knowledge-hub: storage read failed", { slug, range: asked });
+    return new Response("Bad gateway", { status: 502 });
+  }
   if (!result || result.statusCode !== 200 || !result.stream) return new Response("Not found", { status: 404 });
 
   const contentRange = `bytes ${range.start}-${range.end}/${size}`;
@@ -49,6 +55,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ slug: string }>
       "Content-Length": String(range.end - range.start + 1),
       "Accept-Ranges": "bytes",
       "Cache-Control": "private, max-age=31536000, immutable",
+      ETag: `"${assetVersion(video.video)}"`,
       "X-Content-Type-Options": "nosniff",
     },
   });

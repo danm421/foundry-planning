@@ -44,4 +44,16 @@ describe("GET /api/knowledge-hub/videos/[slug]/poster", () => {
     expect((await GET(req("nope", p12), params("nope"))).status).toBe(404);
     expect((await GET(req(V.slug, "000000000000"), params(V.slug))).status).toBe(404);
   });
+
+  it("502s when storage throws, logging the slug but not the error's token or URL", async () => {
+    m.get.mockRejectedValue(new Error("Vercel Blob: 503 at https://store.example/secret?token=vercel_blob_rw_SECRET"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect((await GET(req(V.slug, p12), params(V.slug))).status).toBe(502);
+      expect(log).toHaveBeenCalledWith("knowledge-hub: poster read failed", { slug: V.slug });
+      expect(JSON.stringify(log.mock.calls)).not.toMatch(/SECRET|https:/);
+    } finally {
+      log.mockRestore();
+    }
+  });
 });
