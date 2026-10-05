@@ -29,6 +29,22 @@ vi.mock("@/domain/forge/help/videos", async () => {
   return { HELP_VIDEOS: all, getHelpVideo: (s: string) => all.find((v) => v.slug === s) };
 });
 
+// jsdom has no element scrolling: spy on the chat's scroll-to-newest.
+const scrollTo = vi.fn();
+Element.prototype.scrollTo = scrollTo;
+
+/** A stream the test feeds frame by frame, to land an answer at a chosen moment. */
+function controlledStream() {
+  const enc = new TextEncoder();
+  let ctl!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({ start: (c) => void (ctl = c) });
+  return {
+    response: new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } }),
+    push: (frame: string) => ctl.enqueue(enc.encode(frame)),
+    end: () => ctl.close(),
+  };
+}
+
 function framed(frames: string[]): Response {
   const enc = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -50,6 +66,15 @@ const mount = () =>
   );
 const tab = (name: string) => screen.getByRole("tab", { name });
 const composer = () => screen.queryByRole("textbox", { name: /ask forge/i }) as HTMLTextAreaElement | null;
+const ask = async (text: string) => {
+  await act(async () => {
+    fireEvent.change(composer()!, { target: { value: text } });
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText("Send message"));
+  });
+};
+const EXPENSE_TITLE = "Add a one-time expense and see it in the cash flow";
 
 let media: ReturnType<typeof stubMediaElements>;
 
@@ -133,6 +158,51 @@ describe("ForgePanel — Chat | Knowledge Hub", () => {
     fireEvent.click(tab("Knowledge Hub"));
     expect(container.querySelector("video")).toBe(video);
     expect(video.currentTime).toBe(30);
+  });
+
+  it("clicking a Watch card moves focus into the Hub, onto the video's title", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        framed([
+          `data: {"type":"token","text":"Here's how."}\n\n`,
+          `data: {"type":"video_link","slug":"add-one-time-expense","title":"${EXPENSE_TITLE}"}\n\n`,
+          `data: {"type":"done"}\n\n`,
+        ]),
+      ),
+    );
+    mount();
+    await ask("How do I add a one-time expense?");
+    const card = await screen.findByRole("button", { name: /watch: add a one-time expense/i });
+    act(() => card.focus());
+    fireEvent.click(card);
+    expect(screen.getByRole("tabpanel", { name: "Knowledge Hub" })).toContainElement(document.activeElement as HTMLElement);
+    expect(screen.getByRole("heading", { name: EXPENSE_TITLE })).toHaveFocus();
+  });
+
+  it("an answer that streamed while the Hub showed is scrolled into view on return to Chat", async () => {
+    const stream = controlledStream();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(stream.response));
+    mount();
+    await ask("How do I add a one-time expense?");
+    fireEvent.click(tab("Knowledge Hub"));
+    await act(async () => {
+      stream.push(`data: {"type":"token","text":"Here's how."}\n\n`);
+      stream.push(`data: {"type":"done"}\n\n`);
+      stream.end();
+    });
+    await screen.findByText(/Here's how\./);
+    await act(async () => {});
+
+    scrollTo.mockClear();
+    fireEvent.click(tab("Chat"));
+    expect(scrollTo).toHaveBeenCalledWith({ top: expect.any(Number), behavior: "smooth" });
+
+    // Nothing new since: another round trip leaves the advisor's scroll alone.
+    fireEvent.click(tab("Knowledge Hub"));
+    scrollTo.mockClear();
+    fireEvent.click(tab("Chat"));
+    expect(scrollTo).not.toHaveBeenCalled();
   });
 
   it("doesn't mount the Hub (or fetch posters) until it's first opened", () => {

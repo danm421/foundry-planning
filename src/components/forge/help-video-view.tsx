@@ -38,10 +38,18 @@ export function HelpVideoView({
   active: boolean;
   onBack: () => void;
 }) {
+  const heading = useRef<HTMLHeadingElement>(null);
   const inline = useRef<HTMLVideoElement>(null);
   const big = useRef<HTMLVideoElement>(null);
   const [failed, setFailed] = useState(false);
   const [expandedFrom, setExpandedFrom] = useState<number | null>(null);
+
+  // Whatever opened this view had focus and is now gone (a list card) or
+  // hidden (a ▶ Watch card in Chat), so start keyboard users at the title.
+  // The view remounts per open; in a hidden or inert panel focus() is a no-op.
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
 
   useEffect(() => {
     if (!active) inline.current?.pause();
@@ -89,7 +97,9 @@ export function HelpVideoView({
       <button type="button" onClick={onBack} className="mb-2 self-start text-[12px] text-ink-3 hover:text-ink">
         ← All videos
       </button>
-      <h3 className="text-[14px] font-semibold text-ink">{video.title}</h3>
+      <h3 ref={heading} tabIndex={-1} className="text-[14px] font-semibold text-ink">
+        {video.title}
+      </h3>
       <p className="mb-2 text-[11px] text-ink-3">
         {recordedLabel(video.recordedOn)} · <span className="tabular">{formatClock(video.durationSec)}</span>
       </p>
@@ -131,7 +141,7 @@ export function HelpVideoView({
               onClick={() => seekTo(c.at)}
               className="flex w-full gap-2 rounded-[var(--radius-sm)] px-1 py-0.5 text-left text-[12px] text-ink-2 hover:bg-card-hover disabled:opacity-50"
             >
-              <span className="tabular w-9 flex-none text-ink-3">{formatClock(c.at)}</span>
+              <span className="tabular w-9 flex-none text-ink-3">{formatClock(c.at)}</span>{" "}
               <span>{c.label}</span>
             </button>
           </li>
@@ -161,13 +171,18 @@ export function HelpVideoView({
           "large" player inside the 420px panel. Only exists once Expand is
           clicked, so it never renders on the server. contentFill gives the
           dialog a real height and a flex-column body, so the player fits with
-          its controls in view. */}
+          its controls in view. DialogShell's Tab trap only cycles through
+          elements it can tab to, which leaves a <video> out — tabIndex puts
+          the player (and its keyboard controls) in the loop, and
+          data-autofocus makes it where focus lands on open. */}
       {expandedFrom !== null &&
         createPortal(
           <DialogShell open onOpenChange={(o) => !o && collapse()} title={video.title} size="xl" contentFill>
             <video
               ref={big}
               src={videoSrc(video)}
+              tabIndex={0}
+              data-autofocus
               controls
               muted
               playsInline

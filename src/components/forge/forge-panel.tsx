@@ -313,13 +313,21 @@ export function ForgePanel({
     };
   }, [open, clientId]);
 
-  // Keep the latest bubble in view as it streams.
+  // Keep the latest bubble in view as it streams. A hidden Chat panel can't
+  // scroll, so a change that lands while the Hub shows is owed until Chat is
+  // back — and only then, so a plain round trip keeps the advisor's place.
+  const scrollOwed = useRef(false);
   useEffect(() => {
+    scrollOwed.current = true;
+  }, [messages, toolStatus, pendingApproval, loadingThread]);
+  useEffect(() => {
+    if (tab !== "chat" || !scrollOwed.current) return;
+    scrollOwed.current = false;
     const el = scrollRef.current;
     if (el && typeof el.scrollTo === "function") {
       el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }
-  }, [messages, toolStatus, pendingApproval, loadingThread]);
+  }, [tab, messages, toolStatus, pendingApproval, loadingThread]);
 
   // Custom-streaming seam: consume a pending in-app navigation. Re-check the
   // allowlist client-side (defense in depth — the server already gates emit).

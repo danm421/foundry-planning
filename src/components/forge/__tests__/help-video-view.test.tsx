@@ -2,6 +2,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { HelpVideoView } from "../help-video-view";
 import { EXPENSE_VIDEO } from "@/domain/forge/help/__tests__/help-video-fixtures";
 import { stubMediaElements } from "./media-stubs";
@@ -18,8 +19,8 @@ describe("HelpVideoView", () => {
     render(<HelpVideoView video={EXPENSE_VIDEO} active onBack={() => {}} />);
     expect(screen.getByRole("heading", { name: EXPENSE_VIDEO.title })).toBeInTheDocument();
     expect(screen.getByText(/Recorded Oct 2026/)).toBeInTheDocument();
-    // the time and label are sibling spans, so the accessible name has no space between them
-    expect(screen.getByRole("button", { name: /0:30\s*Set the start and end year/ })).toBeInTheDocument();
+    // a screen reader hears "0:30 Set the start…", not "0:30Set the start…"
+    expect(screen.getByRole("button", { name: "0:30 Set the start and end year to 2028, so it's paid once." })).toBeInTheDocument();
     expect(screen.getByText("Open Inflows & Outflows.").tagName).toBe("STRONG");
     expect(screen.getByText(/grows with inflation/)).toBeInTheDocument();
   });
@@ -33,7 +34,7 @@ describe("HelpVideoView", () => {
 
   it("jumps when a chapter is clicked", () => {
     const { container } = render(<HelpVideoView video={EXPENSE_VIDEO} active onBack={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: /0:44\s*Open Cash Flow/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^0:44 Open Cash Flow/ }));
     expect(videoEl(container).currentTime).toBe(44);
   });
 
@@ -74,6 +75,22 @@ describe("HelpVideoView", () => {
     fireEvent.loadedMetadata(videoEl(container));
     expect(videoEl(container).currentTime).toBe(30);
     expect(media.play).not.toHaveBeenCalled();
+  });
+
+  it("Expand puts keyboard focus on the large player, and Tab from Close reaches it", async () => {
+    const user = userEvent.setup();
+    render(<HelpVideoView video={EXPENSE_VIDEO} active onBack={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    const big = document.querySelectorAll("video")[1] as HTMLVideoElement;
+    expect(big).toHaveFocus();
+    screen.getByRole("button", { name: "Close" }).focus();
+    await user.tab();
+    expect(big).toHaveFocus();
+  });
+
+  it("opening a video puts focus on its title (whatever opened it is gone or hidden)", () => {
+    render(<HelpVideoView video={EXPENSE_VIDEO} active onBack={() => {}} />);
+    expect(screen.getByRole("heading", { name: EXPENSE_VIDEO.title })).toHaveFocus();
   });
 
   it("Expand renders the dialog at the page level, outside the Forge panel", () => {
