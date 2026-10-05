@@ -3,8 +3,10 @@ import { buildYearCellDrill } from "../year-cell-drill";
 import type { ClientData, ProjectionYear } from "@/engine";
 
 // Minimal ProjectionYear factory — only the fields the builder reads.
-// Inflow math: SS 40k + salaries 50k + other (pension 30k + note 6k) 36k
-// + RMDs (15k + 8k entity) 23k + withdrawals 20k = 169k total inflows.
+// Cash In: SS 40k + salaries 50k + other (pension 30k + note 6k) 36k
+// + household RMD 15k + withdrawals 20k = 161k. The trust IRA's 8k RMD goes to
+// the trust's checking, so it is in neither totalIncome (141k) nor Cash In.
+// Cash Out: totalExpenses 103k → Surplus 58k.
 function makeYear(overrides: Partial<ProjectionYear> = {}): ProjectionYear {
   return {
     year: 2034,
@@ -21,7 +23,7 @@ function makeYear(overrides: Partial<ProjectionYear> = {}): ProjectionYear {
     withdrawals: { byAccount: { "acc-brokerage": 20_000 }, total: 20_000 },
     accountLedgers: {
       "acc-ira": { rmdAmount: 15_000 } as never,
-      "acc-trust-ira": { rmdAmount: 8_000 } as never, // entity-owned — still counted here
+      "acc-trust-ira": { rmdAmount: 8_000 } as never, // entity-owned — not household cash
       "acc-brokerage": { rmdAmount: 0 } as never,
     },
     notesReceivableByNote: {
@@ -43,9 +45,9 @@ function makeYear(overrides: Partial<ProjectionYear> = {}): ProjectionYear {
     },
     savings: { byAccount: { "acc-401k": 10_000 }, total: 10_000, employerTotal: 0 },
     taxResult: { flow: { totalFederalTax: 7_000, stateTax: 2_000 } } as never,
-    totalIncome: 149_000,
+    totalIncome: 141_000,
     totalExpenses: 103_000,
-    netCashFlow: -18_000,
+    netCashFlow: 38_000,
     portfolioAssets: {
       taxable: { "acc-brokerage": 400_000 }, cash: { "acc-check": 50_000 },
       retirement: { "acc-ira": 300_000, "acc-401k": 250_000 },
@@ -73,7 +75,7 @@ function makeClientData(): ClientData {
     entities: [],
     accounts: [
       { id: "acc-ira", name: "Traditional IRA", category: "retirement", owners: fmOwner },
-      { id: "acc-trust-ira", name: "Trust IRA", category: "retirement", owners: fmOwner },
+      { id: "acc-trust-ira", name: "Trust IRA", category: "retirement", owners: [{ kind: "entity", entityId: "trust-1", percent: 1 }] },
       { id: "acc-brokerage", name: "Joint Brokerage", category: "taxable", owners: fmOwner },
       { id: "acc-401k", name: "401(k)", category: "retirement", owners: fmOwner },
       { id: "acc-check", name: "Checking", category: "cash", owners: fmOwner },
@@ -132,24 +134,21 @@ describe("buildYearCellDrill — income side", () => {
     expect(rowsOf(d).reduce((s, r) => s + r.amount, 0)).toBe(36_000);
   });
 
-  it("otherIncome: excludes equity-proceeds:* keys (not part of income.other/otherInflows)", () => {
-    // pension 30k + equity-proceeds 10k in bySource, but income.other /
-    // otherInflows() only ever reflect the pension — equity cash feeds
-    // totalIncome separately (projection.ts ~1320-1330).
-    const y = makeYear();
+  it("otherIncome: names an equity sale's cash, which totalIncome counts outside income.other", () => {
+    const y = makeYear({ totalIncome: 151_000 });
     y.income.bySource = { ...y.income.bySource, "equity-proceeds:plan-1": 10_000 };
     const d = buildYearCellDrill("otherIncome", y, makeClientData())!;
-    expect(d.total).toBe(36_000); // unchanged: pension 30k + note cash 6k
+    expect(d.total).toBe(46_000); // pension 30k + note cash 6k + equity cash 10k
     const rows = rowsOf(d);
-    expect(rows.map((r) => r.id)).not.toContain("equity-proceeds:plan-1");
+    expect(rows.map((r) => r.id)).toContain("equity-proceeds:plan-1");
     expect(rows.map((r) => r.label)).not.toContain("Other");
-    expect(rows.reduce((s, r) => s + r.amount, 0)).toBe(36_000);
+    expect(rows.reduce((s, r) => s + r.amount, 0)).toBe(46_000);
   });
 
-  it("rmds: one row per account with an RMD, counting ALL ledgers (matches rmdTotal)", () => {
+  it("rmds: household-owned accounts only — a trust's RMD never reaches household cash", () => {
     const d = buildYearCellDrill("rmds", makeYear(), makeClientData())!;
-    expect(d.total).toBe(23_000); // 15k + 8k — entity ledger included, unlike the cash-flow panel
-    expect(rowsOf(d).map((r) => r.label).sort()).toEqual(["Traditional IRA", "Trust IRA"]);
+    expect(d.total).toBe(15_000);
+    expect(rowsOf(d).map((r) => r.label)).toEqual(["Traditional IRA"]);
   });
 
   it("withdrawals: one row per account", () => {
@@ -158,11 +157,12 @@ describe("buildYearCellDrill — income side", () => {
     expect(rowsOf(d)).toEqual([{ id: "acc-brokerage", label: "Joint Brokerage", amount: 20_000 }]);
   });
 
-  it("totalIncomeWithdrawals: the five band subtotals, no balancing row", () => {
-    const d = buildYearCellDrill("totalIncomeWithdrawals", makeYear(), makeClientData())!;
-    expect(d.total).toBe(169_000);
+  it("totalIn: the five Cash In columns, tying exactly to Total In", () => {
+    const d = buildYearCellDrill("totalIn", makeYear(), makeClientData())!;
+    expect(d.title).toBe("Total In — 2034");
+    expect(d.total).toBe(161_000);
     expect(rowsOf(d).map((r) => r.label)).toEqual([
-      "Social Security", "Salaries", "Other Income", "RMDs", "Portfolio Withdrawals",
+      "Social Security", "Salaries", "Other Income", "RMDs", "Withdrawals",
     ]);
     expect(rowsOf(d).reduce((s, r) => s + r.amount, 0)).toBe(d.total);
   });
@@ -227,46 +227,74 @@ describe("buildYearCellDrill — expenses & portfolio", () => {
     expect(rowsOf(d)).toEqual([{ id: "taxes-other", label: "Other", amount: 9_000 }]);
   });
 
-  it("totalExpenses: category subtotals tying to totalExpenses (savings included, cashGifts not double-counted)", () => {
-    const d = buildYearCellDrill("totalExpenses", makeYear(), makeClientData())!;
-    expect(d.total).toBe(103_000);
-    const rows = rowsOf(d);
-    expect(rows.reduce((s, r) => s + r.amount, 0)).toBe(103_000);
-    expect(rows.map((r) => r.label)).toContain("Savings");
-    expect(rows.map((r) => r.label)).not.toContain("Cash Gifts"); // inside Other Expenses already
+  it("otherExpenses: one group per category, item rows naming what was paid", () => {
+    const d = buildYearCellDrill("otherExpenses", makeYear(), makeClientData())!;
+    expect(d.total).toBe(24_000); // debt 12k + insurance 3k + real estate 4k + other 5k
+    expect(d.groups.map((g) => g.label)).toEqual([
+      "Debt Payments", "Insurance Premiums", "Real Estate", "Other",
+    ]);
+    expect(d.groups[0].rows).toEqual([{ id: "liab-mortgage", label: "Home Mortgage", amount: 12_000 }]);
+    expect(d.groups[3].rows).toEqual([{ id: "exp-misc", label: "Misc", amount: 5_000 }]);
+    expect(rowsOf(d).reduce((s, r) => s + r.amount, 0)).toBe(24_000);
   });
 
-  it("totalExpenses: includes a Hypothetical Savings row when hypotheticalSavings.contribution is nonzero", () => {
-    // totalExpenses = expenses.total + savings.total + hypoContribution
-    // (projection.ts ~5874) — bump totalExpenses by the 4k contribution so
-    // the fixture still ties, mirroring how the engine derives it.
+  it("otherExpenses: surplus spent gets its own group", () => {
+    const y = makeYear();
+    y.expenses = { ...y.expenses, discretionary: 2_000, total: 95_000 };
+    const d = buildYearCellDrill("otherExpenses", { ...y, totalExpenses: 105_000 }, makeClientData())!;
+    expect(d.total).toBe(26_000);
+    expect(d.groups.at(-1)).toEqual({
+      label: "Surplus Spent",
+      rows: [{ id: "discretionary", label: "Surplus Spent", amount: 2_000 }],
+    });
+  });
+
+  it("savings: one row per account, plus the Solver's hypothetical contribution", () => {
     const y = makeYear({
       hypotheticalSavings: { contribution: 4_000, fromCashFlow: 4_000, fromExpenseReduction: 0 },
       totalExpenses: 107_000,
     });
-    const d = buildYearCellDrill("totalExpenses", y, makeClientData())!;
-    expect(d.total).toBe(107_000);
-    const rows = rowsOf(d);
-    expect(rows).toEqual(
-      expect.arrayContaining([
-        { id: "hypoContribution", label: "Hypothetical Savings", amount: 4_000 },
-      ]),
-    );
-    expect(rows.map((r) => r.label)).not.toContain("Other");
-    expect(rows.reduce((s, r) => s + r.amount, 0)).toBe(107_000);
+    const d = buildYearCellDrill("savings", y, makeClientData())!;
+    expect(d.total).toBe(14_000);
+    expect(rowsOf(d)).toEqual([
+      { id: "acc-401k", label: "401(k)", amount: 10_000 },
+      { id: "hypoContribution", label: "Hypothetical Savings", amount: 4_000 },
+    ]);
   });
 
-  it("shortfall: shows the expenses-minus-inflows math when positive", () => {
-    // totalExpenses 103k − inflows 169k → no shortfall in the base fixture.
-    expect(buildYearCellDrill("shortfall", makeYear(), makeClientData())).toBeNull();
-    const y = makeYear({ totalExpenses: 200_000 });
-    const d = buildYearCellDrill("shortfall", y, makeClientData())!;
-    expect(d.total).toBe(31_000); // 200k − 169k
+  it("totalOut: the four Cash Out columns, tying exactly to Total Out", () => {
+    const d = buildYearCellDrill("totalOut", makeYear(), makeClientData())!;
+    expect(d.total).toBe(103_000);
+    expect(rowsOf(d).map((r) => r.label)).toEqual([
+      "Living Expenses", "Taxes", "Other Expenses", "Savings",
+    ]);
+    expect(rowsOf(d).reduce((s, r) => s + r.amount, 0)).toBe(103_000);
+  });
+
+  it("net: a surplus year shows Total In less Total Out", () => {
+    const d = buildYearCellDrill("net", makeYear(), makeClientData())!;
+    expect(d.title).toBe("Surplus — 2034");
+    expect(d.total).toBe(58_000);
+    expect(d.totalLabel).toBe("Surplus");
+    expect(rowsOf(d)).toEqual([
+      { id: "in", label: "Total In", amount: 161_000 },
+      { id: "out", label: "Less: Total Out", amount: -103_000 },
+    ]);
+  });
+
+  it("net: a shortfall year shows Total Out less Total In, as a positive shortfall", () => {
+    const d = buildYearCellDrill("net", makeYear({ totalExpenses: 200_000 }), makeClientData())!;
+    expect(d.title).toBe("Shortfall — 2034");
+    expect(d.total).toBe(39_000); // 200k − 161k
     expect(d.totalLabel).toBe("Shortfall");
     expect(rowsOf(d)).toEqual([
-      { id: "expenses", label: "Total Expenses", amount: 200_000 },
-      { id: "inflows", label: "Less: Total Income & Withdrawals", amount: -169_000 },
+      { id: "out", label: "Total Out", amount: 200_000 },
+      { id: "in", label: "Less: Total In", amount: -161_000 },
     ]);
+  });
+
+  it("net: no drill when the year breaks even", () => {
+    expect(buildYearCellDrill("net", makeYear({ totalExpenses: 161_000 }), makeClientData())).toBeNull();
   });
 
   it("portfolioAssets: per-account EoY balances grouped Taxable/Cash/Retirement, tying to liquidPortfolioTotal", () => {

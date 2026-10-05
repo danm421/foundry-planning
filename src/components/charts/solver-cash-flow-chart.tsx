@@ -59,7 +59,8 @@ interface CashFlowDataset {
 /**
  * Pure dataset builder for the solver Cash Flow chart. Mirrors the main
  * cash-flow report (`cashflow-report.tsx`): five stacked income bars plus a
- * Total Expenses line. If the report's income segments change, update this
+ * Total Out line (the report calls it Total Expenses; both are totalExpenses,
+ * which includes savings). If the report's income segments change, update this
  * in tandem.
  *
  * Colors are resolved once against the supplied theme so the returned datasets
@@ -132,7 +133,7 @@ export function buildSolverCashFlowChartData(
       },
       {
         type: "line",
-        label: "Total Expenses",
+        label: "Total Out",
         data: years.map((y) => y.totalExpenses),
         borderColor: expensesLine,
         backgroundColor: "transparent",
@@ -164,7 +165,7 @@ export function SolverCashFlowChart({ years, onYearClick, selectedYear }: Props)
 
   // Emphasise the selected year with an outline rather than dimming the others,
   // so the full projection stays visible — only the detail panel below reacts
-  // to the click. The line dataset (Total Expenses) is left untouched.
+  // to the click. The line dataset (Total Out) is left untouched.
   // Implemented as a scriptable borderWidth so we don't rebuild the dataset
   // array on every selection change.
   const selectedIndex = useMemo(
@@ -222,7 +223,7 @@ export function SolverCashFlowChart({ years, onYearClick, selectedYear }: Props)
             // Drop income rows that are exactly $0 for the hovered year, so the
             // tooltip only lists what's actually flowing (e.g. no "Salaries: $0"
             // once retired). `filter` removes the whole row including its color
-            // swatch — cleaner than blanking the label. Total Expenses isn't
+            // swatch — cleaner than blanking the label. Total Out isn't
             // zero in practice, so it always stays.
             filter: (item) => Number(item.parsed.y) !== 0,
             callbacks: {

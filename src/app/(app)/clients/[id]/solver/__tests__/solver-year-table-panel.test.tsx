@@ -19,9 +19,9 @@ const clientData = {
 // - row.income.{socialSecurity,salaries,business,deferred,capitalGains,trust,other,bySource}
 // - row.accountLedgers (iterated for RMD sums)
 // - row.withdrawals.{total,byAccount}
-// - row.totalExpenses
-// - row.expenses.{living,taxes,bySource,liabilities,other,insurance,realEstate,discretionary}
-// - row.savings.total
+// - row.totalIncome, row.totalExpenses
+// - row.expenses.{living,taxes,total,bySource,byLiability,liabilities,other,insurance,realEstate,discretionary}
+// - row.savings.{total,byAccount}
 // - row.portfolioAssets.{taxableTotal,cashTotal,retirementTotal,taxable,cash,retirement}
 function makeYear(year: number): ProjectionYear {
   return {
@@ -39,18 +39,21 @@ function makeYear(year: number): ProjectionYear {
     },
     accountLedgers: {},
     withdrawals: { total: 0, byAccount: {} },
+    totalIncome: 0,
     totalExpenses: 0,
     expenses: {
       living: 0,
       taxes: 0,
+      total: 0,
       bySource: {},
+      byLiability: {},
       liabilities: 0,
       other: 0,
       insurance: 0,
       realEstate: 0,
       discretionary: 0,
     },
-    savings: { total: 0 },
+    savings: { total: 0, byAccount: {} },
     portfolioAssets: {
       taxableTotal: 0,
       cashTotal: 0,
@@ -72,5 +75,13 @@ describe("SolverYearTablePanel", () => {
     expect(screen.getByText("2026")).toBeInTheDocument();
     expect(screen.getByText("2027")).toBeInTheDocument();
     expect(screen.getByText("2040")).toBeInTheDocument();
+  });
+
+  it("labels the Cash In and Cash Out column groups", () => {
+    render(
+      <SolverYearTablePanel years={years} hasSpouse={false} clientData={clientData} />,
+    );
+    expect(screen.getByRole("columnheader", { name: "Cash In" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Cash Out" })).toBeInTheDocument();
   });
 });

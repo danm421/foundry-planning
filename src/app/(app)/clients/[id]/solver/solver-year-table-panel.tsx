@@ -21,7 +21,7 @@ export function SolverYearTablePanel({ years, hasSpouse, clientData }: Props) {
     <div className="mt-3 overflow-hidden rounded-md border border-hair-2">
       <AnalysisYearTable
         rows={years}
-        columns={retirementYearColumns(hasSpouse, clientData)}
+        columns={retirementYearColumns(years, hasSpouse, clientData)}
         caption="Year-by-year detail (all plan years)"
       />
     </div>

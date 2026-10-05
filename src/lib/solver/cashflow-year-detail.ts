@@ -160,6 +160,51 @@ export function taxLineItems(year: ProjectionYear): CashFlowLineItem[] {
   ];
 }
 
+/** Only household-owned RMDs flow into year.totalIncome — the engine routes an
+ *  entity-owned account's RMD to entity checking (grantor pass-through), not
+ *  the household. */
+export function householdRmdItems(
+  year: ProjectionYear,
+  clientData: ClientData,
+  accountNames: Record<string, string>,
+): CashFlowLineItem[] {
+  const accountsById = new Map((clientData.accounts ?? []).map((a) => [a.id, a]));
+  return Object.entries(year.accountLedgers)
+    .filter(([id, l]) => {
+      if (l.rmdAmount <= 0) return false;
+      const acc = accountsById.get(id);
+      return acc != null && Array.isArray(acc.owners) && controllingFamilyMember(acc) != null;
+    })
+    .map(([id, l]) => ({ id, label: accountNames[id] ?? id, amount: l.rmdAmount }));
+}
+
+/** Named line items behind each outflow category other than living and taxes. */
+export function otherOutflowItems(year: ProjectionYear, m: NameMaps) {
+  const fromSources = (keep: (id: string) => boolean): CashFlowLineItem[] =>
+    Object.entries(year.expenses.bySource)
+      .filter(([id]) => keep(id))
+      .map(([id, amount]) => ({ id, label: m.expenseNames[id] ?? id, amount }));
+  return {
+    liabilities: Object.entries(year.expenses.byLiability).map(([id, amount]) => ({
+      id,
+      label: m.liabilityNames[id] ?? id,
+      amount,
+    })),
+    // Education goals reach bySource only for the slice paid out of household
+    // cash flow (the engine folds that slice into expenses.other); the dedicated
+    // 529 draw and any unfunded shortfall are absent. Enumerate them here so the
+    // out-of-pocket spend shows under its goal name instead of a nameless
+    // balancing "Other" row.
+    other: fromSources(
+      (id) => m.expenseTypeById[id] === "other" || m.expenseTypeById[id] === "education",
+    ),
+    insurance: fromSources(
+      (id) => m.expenseTypeById[id] === "insurance" || id === "medicarePremiums",
+    ),
+    realEstate: fromSources((id) => id.startsWith("synth-proptax-")),
+  };
+}
+
 function isOtherInflowKey(key: string): boolean {
   return OTHER_INFLOW_PREFIXES.some((p) => key.startsWith(p));
 }
@@ -200,18 +245,9 @@ export function buildCashFlowYearDetail(
     .filter(([key]) => !isOtherInflowKey(key))
     .map(([id, amount]) => ({ id, label: m.incomeNames[id] ?? id, amount }));
 
-  // Only household-owned RMDs flow into year.totalIncome — the engine routes an
-  // entity-owned account's RMD to entity checking (grantor pass-through), not the
-  // household. Mirror that here so the RMD category reconciles to totalIncome
-  // instead of overshooting by every entity RMD.
-  const accountsById = new Map((clientData.accounts ?? []).map((a) => [a.id, a]));
-  const rmdItems: CashFlowLineItem[] = Object.entries(year.accountLedgers)
-    .filter(([id, l]) => {
-      if (l.rmdAmount <= 0) return false;
-      const acc = accountsById.get(id);
-      return acc != null && Array.isArray(acc.owners) && controllingFamilyMember(acc) != null;
-    })
-    .map(([id, l]) => ({ id, label: m.accountNames[id] ?? id, amount: l.rmdAmount }));
+  // Household-only, so the RMD category reconciles to totalIncome instead of
+  // overshooting by every entity RMD.
+  const rmdItems = householdRmdItems(year, clientData, m.accountNames);
 
   const withdrawalItems: CashFlowLineItem[] = Object.entries(year.withdrawals.byAccount)
     .map(([id, amount]) => ({ id, label: m.accountNames[id] ?? id, amount }));
@@ -243,24 +279,12 @@ export function buildCashFlowYearDetail(
   // ── Outflows ──────────────────────────────────────────────────────────
   const livingItems = livingExpenseItems(year, m);
 
-  const liabilityItems = Object.entries(year.expenses.byLiability)
-    .map(([id, amount]) => ({ id, label: m.liabilityNames[id] ?? id, amount }));
-
-  // Education goals reach bySource only for the slice paid out of household cash
-  // flow (the engine folds that slice into expenses.other); the dedicated 529 draw
-  // and any unfunded shortfall are absent. Enumerate them here so the out-of-pocket
-  // spend shows under its goal name instead of a nameless balancing "Other" row.
-  const otherExpenseItems = Object.entries(year.expenses.bySource)
-    .filter(([id]) => m.expenseTypeById[id] === "other" || m.expenseTypeById[id] === "education")
-    .map(([id, amount]) => ({ id, label: m.expenseNames[id] ?? id, amount }));
-
-  const insuranceItems = Object.entries(year.expenses.bySource)
-    .filter(([id]) => m.expenseTypeById[id] === "insurance" || id === "medicarePremiums")
-    .map(([id, amount]) => ({ id, label: m.expenseNames[id] ?? id, amount }));
-
-  const realEstateItems = Object.entries(year.expenses.bySource)
-    .filter(([id]) => id.startsWith("synth-proptax-"))
-    .map(([id, amount]) => ({ id, label: m.expenseNames[id] ?? id, amount }));
+  const {
+    liabilities: liabilityItems,
+    other: otherExpenseItems,
+    insurance: insuranceItems,
+    realEstate: realEstateItems,
+  } = otherOutflowItems(year, m);
 
   const taxItems: CashFlowLineItem[] = taxLineItems(year).filter(
     (i) => Math.abs(i.amount) >= EPSILON,

@@ -22,7 +22,7 @@ function year(over: Record<string, unknown>): ProjectionYear {
 }
 
 describe("buildSolverCashFlowChartData", () => {
-  it("emits five stacked income bars plus a Total Expenses line", () => {
+  it("emits five stacked income bars plus a Total Out line", () => {
     const data = buildSolverCashFlowChartData([year({ year: 2026 })]);
     expect(data.labels).toEqual(["2026"]);
 
@@ -36,7 +36,7 @@ describe("buildSolverCashFlowChartData", () => {
       "Withdrawals",
     ]);
     expect(bars.every((d) => d.stack === "inflows")).toBe(true);
-    expect(lines.map((d) => d.label)).toEqual(["Total Expenses"]);
+    expect(lines.map((d) => d.label)).toEqual(["Total Out"]);
   });
 
   it("sums Other Inflows from business/deferred/capitalGains/trust/other", () => {

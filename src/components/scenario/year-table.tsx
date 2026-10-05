@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import type { CellDrillProps } from "@/lib/cell-drill/types";
 import { CellDrillDownModal } from "@/components/cell-drill-down-modal";
+import { TaxDetailTooltip } from "@/components/cashflow/tax-detail-tooltip";
 
 export interface YearTableColumn<Row> {
   key: string;
@@ -10,6 +11,11 @@ export interface YearTableColumn<Row> {
   align?: "left" | "right";
   render: (row: Row) => React.ReactNode;
   tone?: (row: Row) => "default" | "crit";
+  /** Adjacent columns sharing a group get one label above their headers, and a
+   *  divider where the group starts and ends. */
+  group?: string;
+  /** How the column is derived — revealed from an info icon in the header. */
+  tooltip?: string;
   /** When set and returning non-null for a row, the cell renders as a button
    *  that opens the cell drill-down modal with the returned breakdown. */
   drill?: (row: Row) => CellDrillProps | null;
@@ -33,6 +39,17 @@ export function AnalysisYearTable<Row>({
   maxHeight,
 }: AnalysisYearTableProps<Row>) {
   const [drill, setDrill] = useState<CellDrillProps | null>(null);
+  // A divider runs down the left edge of every column whose group differs
+  // from its neighbor's.
+  const startsGroup = (i: number) => i > 0 && columns[i].group !== columns[i - 1].group;
+  const groupRuns: { group?: string; start: number; span: number }[] = [];
+  if (columns.some((c) => c.group)) {
+    columns.forEach((col, i) => {
+      const last = groupRuns.at(-1);
+      if (last && !startsGroup(i)) last.span += 1;
+      else groupRuns.push({ group: col.group, start: i, span: 1 });
+    });
+  }
   const maxH =
     maxHeight == null
       ? undefined
@@ -50,18 +67,43 @@ export function AnalysisYearTable<Row>({
           <caption className="sr-only">{caption}</caption>
         )}
         <thead className="sticky top-0 z-20 bg-card">
+          {groupRuns.length > 0 && (
+            <tr>
+              {groupRuns.map((run) => (
+                <th
+                  key={run.start}
+                  scope={run.group ? "colgroup" : undefined}
+                  colSpan={run.span}
+                  className={
+                    "bg-card px-3 pb-1.5 pt-3 text-center text-[11px] font-semibold uppercase tracking-wider text-ink-3 " +
+                    (run.group ? "border-b border-hair " : "") +
+                    (startsGroup(run.start) ? "border-l border-hair" : "")
+                  }
+                >
+                  {run.group}
+                </th>
+              ))}
+            </tr>
+          )}
           <tr>
-            {columns.map((col) => (
+            {columns.map((col, colIdx) => (
               <th
                 key={col.key}
                 scope="col"
                 className={
                   "max-w-[9rem] whitespace-normal border-b-2 border-hair bg-card px-3 py-3.5 text-[13px] font-semibold uppercase leading-tight tracking-wider text-ink-2 first:pl-4 last:pr-4 " +
+                  (startsGroup(colIdx) ? "border-l " : "") +
                   (col.align === "right" ? "text-right" : "text-left")
                 }
               >
                 <span className="inline-block whitespace-normal break-words leading-tight">
                   {col.header}
+                  {col.tooltip ? (
+                    // The header is uppercase; the explanation reads as a sentence.
+                    <span className="ml-1 inline-flex align-middle normal-case tracking-normal">
+                      <TaxDetailTooltip text={col.tooltip} iconLabel={`About ${col.header}`} />
+                    </span>
+                  ) : null}
                 </span>
               </th>
             ))}
@@ -83,6 +125,7 @@ export function AnalysisYearTable<Row>({
                       "whitespace-nowrap border-b border-hair bg-card px-3 py-2 " +
                       (colIdx === 0 ? "first:pl-4 " : "") +
                       (colIdx === columns.length - 1 ? "last:pr-4 " : "") +
+                      (startsGroup(colIdx) ? "border-l " : "") +
                       (isRight ? "text-right tabular " : "") +
                       (isCrit
                         ? "text-[color:var(--color-crit)]"

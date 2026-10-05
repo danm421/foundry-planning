@@ -6,14 +6,16 @@
 import type { ClientData, Income, ProjectionYear } from "@/engine";
 import { liquidPortfolioTotal } from "@/engine/monteCarlo/trial";
 import type { CellDrillGroup, CellDrillProps, CellDrillRow } from "@/lib/cell-drill/types";
-import { retirementInflows, rmdTotal } from "@/lib/retirement/retirement-inflows";
 import {
   ageLabel,
   buildNameMaps,
+  householdRmdItems,
   livingExpenseItems,
   noteReceivableItems,
+  otherOutflowItems,
   taxLineItems,
 } from "./cashflow-year-detail";
+import { yearCashFlow } from "./year-table-cash-flow";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 export type YearDrillColumnKey =
@@ -22,11 +24,13 @@ export type YearDrillColumnKey =
   | "otherIncome"
   | "rmds"
   | "withdrawals"
-  | "totalIncomeWithdrawals"
+  | "totalIn"
   | "livingExpenses"
   | "taxes"
-  | "totalExpenses"
-  | "shortfall"
+  | "otherExpenses"
+  | "savings"
+  | "totalOut"
+  | "net"
   | "portfolioAssets";
 
 const EPSILON = 1; // sub-dollar reconciliation noise we don't surface
@@ -126,10 +130,10 @@ function computeYearCellDrill(
   clientData: ClientData,
 ): CellDrillProps | null {
   const m = cachedNameMaps(clientData);
+  const cf = yearCashFlow(year, clientData);
 
   switch (columnKey) {
     case "socialSecurity": {
-      const inflows = retirementInflows(year);
       const d = year.socialSecurityDetail;
       let rows: CellDrillRow[];
       if (d) {
@@ -151,7 +155,7 @@ function computeYearCellDrill(
       } else {
         rows = incomeRowsByTypes(year, m, new Set(["social_security"]));
       }
-      return drillResult("socialSecurity", "Social Security", year, inflows.socialSecurity, rows);
+      return drillResult("socialSecurity", "Social Security", year, cf.socialSecurity, rows);
     }
 
     case "salaries":
@@ -159,23 +163,18 @@ function computeYearCellDrill(
         "salaries",
         "Salaries",
         year,
-        retirementInflows(year).salaries,
+        cf.salaries,
         incomeRowsByTypes(year, m, new Set(["salary"])),
       );
 
     case "otherIncome": {
       // Everything in bySource that isn't a salary or SS row — named incomes
       // (business/trust/deferred/cap-gains/other), entity pass-throughs, and
-      // synthetic proceeds keys — plus notes-receivable cash, mirroring
-      // otherInflows() in retirement-inflows.ts.
+      // synthetic proceeds keys (equity net cash included: totalIncome counts
+      // it outside income.other) — plus notes-receivable cash.
       const excluded: ReadonlySet<Income["type"]> = new Set(["salary", "social_security"]);
       const sourceRows: CellDrillRow[] = Object.entries(year.income.bySource)
         .filter(([id]) => {
-          // equity-proceeds:* is deliberately NOT folded into income.other /
-          // otherInflows() (see projection.ts ~1320) — its cash feeds
-          // totalIncome separately, so including it here would show an
-          // equity row offset by a negative balancing "Other" row.
-          if (id.startsWith("equity-proceeds:")) return false;
           const t = m.incomeTypeById[id];
           return t == null || !excluded.has(t);
         })
@@ -184,20 +183,20 @@ function computeYearCellDrill(
           label: m.incomeNames[id] ?? m.otherInflowNames[id] ?? id,
           amount,
         }));
-      return drillResult("otherIncome", "Other Income", year, retirementInflows(year).otherInflows, [
+      return drillResult("otherIncome", "Other Income", year, cf.otherIncome, [
         ...sourceRows,
         ...noteReceivableItems(year, m),
       ]);
     }
 
-    case "rmds": {
-      // ALL ledgers, including entity-owned — the column renders rmdTotal(),
-      // which does not household-filter (unlike the cash-flow year panel).
-      const rows: CellDrillRow[] = Object.entries(year.accountLedgers)
-        .filter(([, l]) => l.rmdAmount > 0)
-        .map(([id, l]) => ({ id, label: m.accountNames[id] ?? id, amount: l.rmdAmount }));
-      return drillResult("rmds", "RMDs", year, rmdTotal(year), rows);
-    }
+    case "rmds":
+      return drillResult(
+        "rmds",
+        "RMDs",
+        year,
+        cf.rmds,
+        householdRmdItems(year, clientData, m.accountNames),
+      );
 
     case "withdrawals": {
       const rows: CellDrillRow[] = Object.entries(year.withdrawals.byAccount).map(
@@ -206,24 +205,22 @@ function computeYearCellDrill(
       return drillResult("withdrawals", "Withdrawals", year, year.withdrawals.total, rows);
     }
 
-    case "totalIncomeWithdrawals": {
-      const inflows = retirementInflows(year);
-      const rows: CellDrillRow[] = [
-        { id: "socialSecurity", label: "Social Security", amount: inflows.socialSecurity },
-        { id: "salaries", label: "Salaries", amount: inflows.salaries },
-        { id: "otherIncome", label: "Other Income", amount: inflows.otherInflows },
-        { id: "rmds", label: "RMDs", amount: inflows.rmds },
-        { id: "withdrawals", label: "Portfolio Withdrawals", amount: inflows.withdrawals },
-      ];
+    case "totalIn":
       return drillResult(
-        "totalIncomeWithdrawals",
-        "Total Income & Withdrawals",
+        "totalIn",
+        "Total In",
         year,
-        inflows.total,
-        rows,
+        cf.totalIn,
+        [
+          { id: "socialSecurity", label: "Social Security", amount: cf.socialSecurity },
+          { id: "salaries", label: "Salaries", amount: cf.salaries },
+          { id: "otherIncome", label: "Other Income", amount: cf.otherIncome },
+          { id: "rmds", label: "RMDs", amount: cf.rmds },
+          { id: "withdrawals", label: "Withdrawals", amount: cf.withdrawals },
+        ],
+        // Ties by construction; skip the sort so rows read in column order.
         { skipBalance: true },
       );
-    }
 
     case "livingExpenses":
       return drillResult(
@@ -237,43 +234,92 @@ function computeYearCellDrill(
     case "taxes":
       return drillResult("taxes", "Taxes", year, year.expenses.taxes, taxLineItems(year));
 
-    case "totalExpenses": {
-      // Category subtotals. cashGifts is already rolled into expenses.other
-      // (see ProjectionYear.expenses doc) so it is deliberately NOT its own
-      // row; savings IS part of the column's totalExpenses.
+    case "otherExpenses": {
       const e = year.expenses;
-      const rows: CellDrillRow[] = [
-        { id: "living", label: "Living Expenses", amount: e.living },
-        { id: "liabilities", label: "Liabilities", amount: e.liabilities },
-        { id: "other", label: "Other Expenses", amount: e.other },
-        { id: "insurance", label: "Insurance Premiums", amount: e.insurance },
-        { id: "realEstate", label: "Real Estate", amount: e.realEstate },
-        { id: "taxes", label: "Taxes", amount: e.taxes },
-        { id: "discretionary", label: "Surplus Spent", amount: e.discretionary },
-        { id: "savings", label: "Savings", amount: year.savings.total },
+      const items = otherOutflowItems(year, m);
+      // cashGifts is already inside expenses.other, so it is not its own group.
+      const groups: CellDrillGroup[] = [
+        { label: "Debt Payments", rows: balanced("liabilities", e.liabilities, items.liabilities) },
+        { label: "Insurance Premiums", rows: balanced("insurance", e.insurance, items.insurance) },
+        { label: "Real Estate", rows: balanced("realEstate", e.realEstate, items.realEstate) },
+        { label: "Other", rows: balanced("other", e.other, items.other) },
+        {
+          label: "Surplus Spent",
+          rows: balanced("discretionary", e.discretionary, [
+            { id: "discretionary", label: "Surplus Spent", amount: e.discretionary },
+          ]),
+        },
+      ].filter((g) => g.rows.length > 0);
+      // Anything expenses.total holds beyond these categories.
+      const gap = cf.otherExpenses - groups.flatMap((g) => g.rows).reduce((s, r) => s + r.amount, 0);
+      if (Math.abs(gap) >= EPSILON) {
+        groups.push({ rows: [{ id: "otherExpenses-other", label: "Other", amount: gap }] });
+      }
+      if (Math.abs(cf.otherExpenses) < EPSILON && groups.length === 0) return null;
+      return {
+        title: `Other Expenses — ${year.year}`,
+        subtitle: ageLabel(year),
+        total: cf.otherExpenses,
+        groups,
+      };
+    }
+
+    case "savings":
+      return drillResult("savings", "Savings", year, cf.savings, [
+        ...Object.entries(year.savings.byAccount).map(([id, amount]) => ({
+          id,
+          label: m.accountNames[id] ?? id,
+          amount,
+        })),
         {
           id: "hypoContribution",
           label: "Hypothetical Savings",
           amount: year.hypotheticalSavings?.contribution ?? 0,
         },
-      ];
-      return drillResult("totalExpenses", "Total Expenses", year, year.totalExpenses, rows);
-    }
+      ]);
 
-    case "shortfall": {
-      const inflows = retirementInflows(year);
-      const s = inflows.shortfall;
-      if (s < EPSILON) return null;
-      const rows: CellDrillRow[] = [
-        { id: "expenses", label: "Total Expenses", amount: year.totalExpenses },
-        { id: "inflows", label: "Less: Total Income & Withdrawals", amount: -inflows.total },
-      ];
-      return drillResult("shortfall", "Shortfall", year, s, rows, {
-        totalLabel: "Shortfall",
-        skipBalance: true,
-        footnote:
-          "Expenses not covered by income, RMDs, or portfolio withdrawals this year.",
-      });
+    case "totalOut":
+      return drillResult(
+        "totalOut",
+        "Total Out",
+        year,
+        cf.totalOut,
+        [
+          { id: "living", label: "Living Expenses", amount: cf.living },
+          { id: "taxes", label: "Taxes", amount: cf.taxes },
+          { id: "otherExpenses", label: "Other Expenses", amount: cf.otherExpenses },
+          { id: "savings", label: "Savings", amount: cf.savings },
+        ],
+        { skipBalance: true },
+      );
+
+    case "net": {
+      // Drillable exactly when the cell prints a non-zero amount.
+      if (Math.round(cf.net) === 0) return null;
+      const surplus = cf.net > 0;
+      const label = surplus ? "Surplus" : "Shortfall";
+      return drillResult(
+        "net",
+        label,
+        year,
+        Math.abs(cf.net),
+        surplus
+          ? [
+              { id: "in", label: "Total In", amount: cf.totalIn },
+              { id: "out", label: "Less: Total Out", amount: -cf.totalOut },
+            ]
+          : [
+              { id: "out", label: "Total Out", amount: cf.totalOut },
+              { id: "in", label: "Less: Total In", amount: -cf.totalIn },
+            ],
+        {
+          totalLabel: label,
+          skipBalance: true,
+          footnote: surplus
+            ? "Left over after spending and savings. It stays in the portfolio."
+            : "Spending that income, RMDs, and portfolio withdrawals could not cover.",
+        },
+      );
     }
 
     case "portfolioAssets": {
