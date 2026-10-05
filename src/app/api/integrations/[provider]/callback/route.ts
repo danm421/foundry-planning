@@ -58,12 +58,12 @@ export async function GET(
       firmId: stateRow.firmId,
       metadata: { provider: provider.id },
     });
-    return NextResponse.redirect(new URL(`${SETTINGS_PATH}?connected=${provider.id}`, req.url));
+    return NextResponse.redirect(new URL(`${SETTINGS_PATH}/${provider.id}?connected=${provider.id}`, req.url));
   } catch (err) {
     console.error(
       `GET /api/integrations/${provider.id}/callback exchange failed:`,
       err instanceof Error ? err.message : "unknown",
     );
-    return NextResponse.redirect(new URL(`${SETTINGS_PATH}?error=${provider.id}_exchange_failed`, req.url));
+    return NextResponse.redirect(new URL(`${SETTINGS_PATH}/${provider.id}?error=${provider.id}_exchange_failed`, req.url));
   }
 }

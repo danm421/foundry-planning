@@ -62,7 +62,7 @@ export async function GET(
     return NextResponse.redirect(authorizeUrl);
   } catch (err) {
     if (err instanceof ProviderNotConfigured) {
-      return NextResponse.redirect(new URL(`/settings/integrations?error=${err.providerId}_not_configured`, req.url));
+      return NextResponse.redirect(new URL(`/settings/integrations/${err.providerId}?error=${err.providerId}_not_configured`, req.url));
     }
     const resp = authErrorResponse(err);
     if (resp) return NextResponse.json(resp.body, { status: resp.status });

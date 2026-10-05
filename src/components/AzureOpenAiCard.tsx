@@ -12,7 +12,7 @@ interface Props {
   endpoint: string | null;
   /**
    * The other four fields of the stored `AzureConfig`, decoded by
-   * settings/integrations/page.tsx. The connected card is the artifact a firm
+   * settings/integrations/[integration]/page.tsx. The connected card is the artifact a firm
    * shows its auditor, so it has to name EVERY deployment its AI runs on and
    * the API version it pins — not just the main one. Null whenever there is no
    * stored config to read (never connected, or a corrupt `scope`).
@@ -200,7 +200,7 @@ export function AzureOpenAiCard({
   const { showToast } = useToast();
 
   // In the `error` state the page already knows the endpoint and main-model
-  // deployment — settings/integrations/page.tsx decodes both from the stored
+  // deployment — settings/integrations/[integration]/page.tsx decodes both from the stored
   // config, which a status flip does not touch — so a firm reconnecting does
   // not retype what we can already see. PREFILL ONLY: `tested` stays false, so
   // a Test connection is still required before Connect, and the API key is
@@ -334,7 +334,7 @@ export function AzureOpenAiCard({
     return (
       <div className="flex flex-col gap-3 rounded-lg border border-hair p-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-ink">Azure OpenAI</h2>
+          <h2 className="text-sm font-medium text-ink">Connection</h2>
           <span className="inline-flex items-center gap-2 text-sm text-ink-2">
             <span className="h-2 w-2 rounded-full bg-good" aria-hidden="true" />
             Connected
@@ -398,7 +398,7 @@ export function AzureOpenAiCard({
   return (
     <div className="flex flex-col gap-4 rounded-lg border border-hair p-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-ink">Azure OpenAI</h2>
+        <h2 className="text-sm font-medium text-ink">Connection</h2>
         <span className="inline-flex items-center gap-2 text-sm text-ink-2">
           <span
             className={`h-2 w-2 rounded-full ${status === "error" ? "bg-warn" : "bg-ink-4"}`}

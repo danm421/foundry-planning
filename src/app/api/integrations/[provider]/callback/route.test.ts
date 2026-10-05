@@ -76,7 +76,9 @@ describe("[provider] callback", () => {
     mockConsume.mockResolvedValue({ firmId: "firm_1", providerId: "orion", userId: "u1", codeVerifier: "v" });
     mockAuth.mockResolvedValue({ orgId: "firm_1", userId: "u1" });
     const res = await GET(req("code=c&state=s"), ctx());
-    expect([302, 307]).toContain(res.status); // redirect to settings
+    expect([302, 307]).toContain(res.status);
+    // Back to the provider's own settings page, where the household links are.
+    expect(new URL(res.headers.get("location")!).pathname).toBe("/settings/integrations/orion");
     expect(upsertConnection).toHaveBeenCalledWith(
       expect.objectContaining({ firmId: "firm_1", providerId: "orion", accessToken: "AT" }),
     );
@@ -88,7 +90,9 @@ describe("[provider] callback", () => {
     mockExchange.mockRejectedValueOnce(new Error("invalid_grant"));
     const res = await GET(req("code=c&state=s"), ctx());
     expect([302, 307]).toContain(res.status);
-    expect(res.headers.get("location")).toContain("error=orion_exchange_failed");
+    const location = new URL(res.headers.get("location")!);
+    expect(location.pathname).toBe("/settings/integrations/orion");
+    expect(location.searchParams.get("error")).toBe("orion_exchange_failed");
     expect(upsertConnection).not.toHaveBeenCalled();
   });
 

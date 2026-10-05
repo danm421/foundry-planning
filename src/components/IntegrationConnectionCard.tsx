@@ -12,7 +12,6 @@ type ConnectionStatus = "connected" | "disconnected" | "error";
 interface Props {
   providerId: ProviderId;
   label: string;
-  enabled: boolean;
   authKind: ProviderAuthKind;
   status: ConnectionStatus;
   /** ISO string (serialized across the server boundary) or null. */
@@ -76,7 +75,6 @@ function formatSyncedAt(iso: string): string {
 export function IntegrationConnectionCard({
   providerId,
   label,
-  enabled,
   authKind,
   status,
   lastSyncedAt,
@@ -85,22 +83,6 @@ export function IntegrationConnectionCard({
   const router = useRouter();
   const { showToast } = useToast();
   const [busy, setBusy] = useState<"sync" | "disconnect" | null>(null);
-
-  if (!enabled) {
-    return (
-      <div className="rounded-lg border border-hair p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-ink">{label}</h2>
-          <span className="rounded-full bg-card-2 px-2 py-0.5 text-xs text-ink-3">
-            Available soon
-          </span>
-        </div>
-        <p className="mt-1 text-sm text-ink-3">
-          We&rsquo;re working with {label} to enable direct account syncing.
-        </p>
-      </div>
-    );
-  }
 
   async function handleSync() {
     setBusy("sync");

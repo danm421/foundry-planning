@@ -12,7 +12,7 @@ beforeEach(() => {
   global.fetch = fetchMock as unknown as typeof fetch;
 });
 
-/** What settings/integrations/page.tsx hands the card for a firm that has never
+/** What settings/integrations/[integration]/page.tsx hands the card for a firm that has never
  *  connected: a status and nothing else, because there is no stored config to
  *  decode. Named once so adding a prop does not mean editing fourteen renders. */
 const DISCONNECTED = {
