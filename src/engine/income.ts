@@ -75,6 +75,35 @@ export function applyDisabilityEvent(
   });
 }
 
+/**
+ * End each claim-age Social Security row at its OWNER's death year (which runs
+ * to completion, as everywhere else in the engine).
+ *
+ * A stored SS `endYear` is not a choice anyone made: the SS dialog writes 2099,
+ * and client creation copies the plan's last year at that moment — which can be
+ * the OTHER spouse's death when the plan end has drifted. Every gate that reads
+ * the window (benefit, tax, cash routing) would then cut the survivor's benefit
+ * off at the first death. Legacy flat-amount rows (no claim age) keep their
+ * window; it is the only timing they have.
+ */
+export function endSocialSecurityAtOwnersDeath(incomes: Income[], client: ClientInfo): Income[] {
+  const deathYear = (owner: Income["owner"]): number | null => {
+    if (owner === "client" && client.lifeExpectancy != null) {
+      return parseInt(client.dateOfBirth.slice(0, 4), 10) + client.lifeExpectancy;
+    }
+    // ?? 95 matches the orchestrator and computeFirstDeathYear.
+    if (owner === "spouse" && client.spouseDob) {
+      return parseInt(client.spouseDob.slice(0, 4), 10) + (client.spouseLifeExpectancy ?? 95);
+    }
+    return null;
+  };
+  return incomes.map((inc) => {
+    if (inc.type !== "social_security" || inc.claimingAge == null) return inc;
+    const endYear = deathYear(inc.owner);
+    return endYear == null ? inc : { ...inc, endYear, endYearRef: null };
+  });
+}
+
 export function computeIncome(
   incomes: Income[],
   year: number,

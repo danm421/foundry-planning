@@ -43,7 +43,7 @@ import { accrueLockedEntityShare } from "./locked-shares";
 import { buildOwnershipSnapshot } from "./ownership-snapshot";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
-import { computeIncome, applyDisabilityEvent } from "./income";
+import { computeIncome, applyDisabilityEvent, endSocialSecurityAtOwnersDeath } from "./income";
 import {
   computeTradIraPool,
   iraPoolKey,
@@ -1109,7 +1109,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // Benefits are synthesized from the SAME untouched rows, because a disability
   // policy insures the paycheck that is about to stop. Reading earnings after
   // the suspension yields $0 and a benefit row that pays nothing.
-  const expandedIncomes = expandLinkedIncomes(data.incomes, {
+  const expandedIncomes = expandLinkedIncomes(endSocialSecurityAtOwnersDeath(data.incomes, client), {
     accountById,
     giftEvents: data.giftEvents ?? [],
     assetTransactions: data.assetTransactions ?? [],
