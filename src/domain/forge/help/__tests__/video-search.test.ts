@@ -48,6 +48,22 @@ describe("searchHelpVideos", () => {
     expect(slugs("added")).toEqual(["add-one-time-expense"]);
     expect(slugs("saving")).toEqual(["solver-save-scenario"]);
   });
+
+  it("still matches a word while it's being typed, though the field side is folded", () => {
+    // "Saving" folds to "sav", which a half-typed "savin" isn't a prefix of —
+    // so the word as written must count too, for the match and the chapter.
+    const saving = makeVideo({
+      slug: "saving-scenarios",
+      title: "Saving a scenario",
+      chapters: [{ at: 0, label: "Open the Solver." }, { at: 12, label: "Saving the scenario." }],
+    });
+    const adding = makeVideo({ slug: "adding-expenses", title: "Adding an expense" });
+    const [hit, ...rest] = searchHelpVideos("savin", [saving, adding]);
+    expect(hit.video.slug).toBe("saving-scenarios");
+    expect(rest).toEqual([]);
+    expect(hit.chapter).toEqual({ at: 12, label: "Saving the scenario." });
+    expect(searchHelpVideos("addi", [saving, adding]).map((h) => h.video.slug)).toEqual(["adding-expenses"]);
+  });
 });
 
 describe("isStrongMatch", () => {

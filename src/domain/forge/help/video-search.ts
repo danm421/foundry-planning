@@ -33,7 +33,9 @@ function fold(w: string): string {
   return w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w;
 }
 const words = (text: string) => text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-const fieldWords = (text: string) => words(text).map(fold);
+/** Each word folded AND as written: "saving" folds to "sav", and a half-typed
+ *  "savin" is only a prefix of the word as written. */
+const fieldWords = (text: string) => words(text).flatMap((w) => [w, fold(w)]);
 
 function queryWords(query: string): string[] {
   return [...new Set(words(query).filter((w) => w.length > 1 && !STOPWORDS.has(w)).map(fold))];
