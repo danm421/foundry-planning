@@ -1,0 +1,83 @@
+// src/domain/forge/help/video-search.ts
+//
+// Knowledge Hub search. Pure, so the Hub runs it in the browser on every
+// keystroke and suggest_help_video runs the same ranking on the server.
+// Words match by prefix ("expen" → "expense") with a light plural fold on both
+// sides; no typo tolerance in v1.
+import type { HelpVideo } from "./video-schema";
+
+export type HelpVideoHit = {
+  video: HelpVideo;
+  /** Meaningful query words found anywhere in the video's details. */
+  matched: number;
+  /** Meaningful words in the query. */
+  of: number;
+  score: number;
+  /** A word hit the title, summary, search words or tags — what the video is ABOUT. */
+  strongField: boolean;
+  /** The chapter matching the most query words, when any matched. */
+  chapter?: { at: number; label: string };
+};
+
+const STOPWORDS = new Set([
+  "how", "do", "i", "to", "a", "an", "the", "my", "in", "on", "of", "for",
+  "can", "what", "where", "is", "and", "or", "with", "it", "this", "that",
+]);
+
+const fold = (w: string) => (w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w);
+const words = (text: string) => text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+const fieldWords = (text: string) => words(text).map(fold);
+
+function queryWords(query: string): string[] {
+  return [...new Set(words(query).filter((w) => w.length > 1 && !STOPWORDS.has(w)).map(fold))];
+}
+
+const FIELDS: { weight: number; strong: boolean; text: (v: HelpVideo) => string }[] = [
+  { weight: 5, strong: true, text: (v) => v.title },
+  { weight: 4, strong: true, text: (v) => `${v.summary} ${v.searchTerms.join(" ")}` },
+  { weight: 3, strong: true, text: (v) => v.tags.join(" ") },
+  { weight: 3, strong: false, text: (v) => v.screens.map((s) => s.label).join(" ") },
+  { weight: 2, strong: false, text: (v) => v.chapters.map((c) => c.label).join(" ") },
+  { weight: 1, strong: false, text: (v) => [...v.steps, ...(v.goodToKnow ?? [])].join(" ") },
+];
+
+const hits = (q: string, ws: string[]) => ws.some((w) => w.startsWith(q));
+
+export function searchHelpVideos(query: string, videos: readonly HelpVideo[]): HelpVideoHit[] {
+  const qs = queryWords(query);
+  if (qs.length === 0) return [];
+  const out: HelpVideoHit[] = [];
+  for (const video of videos) {
+    const fields = FIELDS.map((f) => ({ ...f, ws: fieldWords(f.text(video)) }));
+    let matched = 0;
+    let score = 0;
+    let strongField = false;
+    for (const q of qs) {
+      const best = fields.find((f) => hits(q, f.ws)); // FIELDS is ordered heaviest first
+      if (!best) continue;
+      matched += 1;
+      score += best.weight;
+      strongField ||= best.strong; // strong fields are listed first, so a strong hit is always `best`
+    }
+    if (matched === 0) continue;
+    let chapter: HelpVideoHit["chapter"];
+    let chapterHits = 0;
+    for (const c of video.chapters) {
+      const n = qs.filter((q) => hits(q, fieldWords(c.label))).length;
+      if (n > chapterHits) {
+        chapterHits = n;
+        chapter = { at: c.at, label: c.label };
+      }
+    }
+    out.push({ video, matched, of: qs.length, score, strongField, ...(chapter ? { chapter } : {}) });
+  }
+  return out.sort(
+    (a, b) => b.matched - a.matched || b.score - a.score || b.video.recordedOn.localeCompare(a.video.recordedOn),
+  );
+}
+
+/** Good enough for chat to recommend: at least 60% of the question's words
+ *  found, and at least one in what the video is about. */
+export function isStrongMatch(hit: HelpVideoHit): boolean {
+  return hit.of > 0 && hit.strongField && hit.matched / hit.of >= 0.6;
+}
