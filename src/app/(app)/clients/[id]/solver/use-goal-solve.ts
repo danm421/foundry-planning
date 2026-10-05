@@ -16,8 +16,11 @@ export function useGoalSolve(args: {
   clientId: string;
   source: string;
   mutations: SolverMutation[];
+  /** The year the caller applies results in. The route solves in it too, so
+   *  both sides pick the same savings rule (`goalContributionRule`). */
+  currentYear: number;
 }) {
-  const { clientId, source, mutations } = args;
+  const { clientId, source, mutations, currentYear } = args;
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   // Read the latest mutations at call time without re-creating `run`.
   const mutationsRef = useRef(mutations);
@@ -31,7 +34,9 @@ export function useGoalSolve(args: {
         const res = await fetch(`/api/clients/${clientId}/solver/goal-solve`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ source, mutations: mutationsRef.current, goalId, accountId, targetPct }),
+          body: JSON.stringify({
+            source, mutations: mutationsRef.current, goalId, accountId, targetPct, currentYear,
+          }),
         });
         if (!res.ok) return null;
         return (await res.json()) as GoalSolveOutput;
@@ -41,7 +46,7 @@ export function useGoalSolve(args: {
         setPendingKey(null);
       }
     },
-    [clientId, source],
+    [clientId, source, currentYear],
   );
 
   return { pendingKey, run };

@@ -118,7 +118,7 @@ export function SolverGoalsSection({
   // Per-source funding target, in whole percent. Absent = 100 (fund it fully) —
   // an advisor covering only part of a bill dials this down before solving.
   const [targetPct, setTargetPct] = useState<Record<string, number>>({});
-  const { pendingKey, run } = useGoalSolve({ clientId, source, mutations });
+  const { pendingKey, run } = useGoalSolve({ clientId, source, mutations, currentYear });
 
   function upsertGoal(expense: Expense, newMutations: SolverMutation[]) {
     // Emit new-account + savings-rule mutations FIRST so the expense's

@@ -32,6 +32,11 @@ const BODY = z.object({
   accountId: z.string().min(1),
   /** Share of the goal to fund, 0–1. Absent = fund it fully. */
   targetPct: z.number().min(0).max(1).optional(),
+  /** The Goals tab's "now" — the year it applies the result in, and the year
+   *  both goal forms stamp on the rules they write. Solving in the same year is
+   *  what makes the solve and Apply pick the same savings rule. Absent (a tab
+   *  opened before this field existed) = the plan's first projection year. */
+  currentYear: z.number().int().min(1900).max(2200).optional(),
 });
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -62,7 +67,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         { status: 400 },
       );
     }
-    const { source, mutations, goalId, accountId, targetPct } = parsed.data;
+    const { source, mutations, goalId, accountId, targetPct, currentYear: postedYear } = parsed.data;
 
     // ── Working tree (source + live mutations), so the solve reflects unsaved
     //    solver changes — mirrors the life-insurance-summary route. ──
@@ -82,7 +87,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     }
 
     const currentYear =
-      runProjection(workingTree)[0]?.year ?? new Date().getFullYear();
+      postedYear ?? runProjection(workingTree)[0]?.year ?? new Date().getFullYear();
     const result = solveGoalDedicatedSavings({
       tree: workingTree,
       goalId,

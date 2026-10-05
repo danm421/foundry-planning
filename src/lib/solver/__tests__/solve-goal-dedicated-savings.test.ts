@@ -169,6 +169,19 @@ describe("solveGoalDedicatedSavings — which savings rule it raises", () => {
     expect(modeled.savingsRules.find((x) => x.id === "pct")).toEqual(pct);
   });
 
+  it("in a plan that began last year, raises the form's rule from this year to the goal's end", () => {
+    // The projection starts in 2025; the Goals tab's "now" is 2026, which is
+    // the year both goal forms stamp on the rule they write.
+    const formRule = rule({ id: "form", annualAmount: 1_000, startYear: 2026, endYear: 2033 });
+    let modeled: ClientData | undefined;
+    solveGoalDedicatedSavings({
+      tree: withRules([formRule]), goalId: "goal", accountId: "acct", currentYear: 2026,
+      runProjection: fakeRun(2025, 2033, (x) => { modeled = x; }),
+    });
+    expect(modeled!.savingsRules.map((x) => x.id)).toEqual(["form"]);
+    expect(modeled!.savingsRules[0].annualAmount).toBeGreaterThan(1_000);
+  });
+
   it("still raises a 529 rule that runs from now to the goal's end", () => {
     const own = rule({ id: "r529", annualAmount: 1_000 });
     const { r, modeled } = solve(withRules([own]));

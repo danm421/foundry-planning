@@ -76,7 +76,11 @@ describe("SolverGoalsSection", () => {
     fireEvent.click(screen.getByRole("button", { name: /solve 529 — emma/i }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ goalId: "goal-1", targetPct: 0.7 });
+    // The tab's own year rides along, so the solve picks the same savings rule
+    // Apply will — not the plan's first projection year.
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      goalId: "goal-1", targetPct: 0.7, currentYear: 2026,
+    });
     // The result names the target it solved for, not "fully funds".
     expect(await screen.findByText(/\+\$1,500\/yr funds 70% of this goal/i)).toBeInTheDocument();
     vi.unstubAllGlobals();
