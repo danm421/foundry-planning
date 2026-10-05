@@ -182,12 +182,15 @@ describe("Disability stressor coverage line", () => {
     expect(screen.getByText(/\$93,913/)).toBeInTheDocument();
   });
 
-  it("says plainly when the person has no coverage", () => {
+  it("says plainly when the person has no coverage: two words on screen, the detail on hover", () => {
     renderTab({
       disabilityPolicies: [],
       disabilityEvent: { person: "client", startYear: DISABILITY_YEAR },
     });
-    expect(screen.getByText(/no disability coverage on file/i)).toBeInTheDocument();
+    const chip = screen.getByRole("button", { name: "No coverage" });
+    const detail = screen.getByText(/no disability coverage on file/i);
+    expect(detail).toHaveAttribute("role", "tooltip");
+    expect(chip).toHaveAttribute("aria-describedby", detail.id);
   });
 
   it("reads coverage for the SELECTED person, not always the client", () => {

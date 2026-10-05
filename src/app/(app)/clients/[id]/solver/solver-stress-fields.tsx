@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 
@@ -50,6 +50,45 @@ export function StressRow({
       {on && !disabled ? <div className="mt-3">{children}</div> : null}
       {footer ? <div className="mt-3">{footer}</div> : null}
     </div>
+  );
+}
+
+/** A stressor's "Add as change" button. With `blockedHint` set (no scenario to
+ *  save into) it stays on screen greyed out — `aria-disabled`, not `disabled`,
+ *  so hovering or focusing it still shows the hint saying why. */
+export function AddAsChangeButton({
+  blockedHint,
+  disabled,
+  onClick,
+}: {
+  blockedHint: string | null;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const hintId = useId();
+  const blocked = blockedHint !== null;
+  return (
+    <span className="group relative inline-flex">
+      <button
+        type="button"
+        aria-disabled={blocked || undefined}
+        aria-describedby={blocked ? hintId : undefined}
+        disabled={disabled}
+        onClick={blocked ? undefined : onClick}
+        className="rounded border border-hair px-2.5 py-1 text-[12px] font-medium text-ink hover:border-accent disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:border-hair"
+      >
+        Add as change
+      </button>
+      {blocked && (
+        <span
+          id={hintId}
+          role="tooltip"
+          className="pointer-events-none invisible absolute bottom-full left-0 z-50 mb-2 w-56 rounded-md border border-hair bg-card px-3 py-2 text-xs leading-snug text-ink-2 opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+        >
+          {blockedHint}
+        </span>
+      )}
+    </span>
   );
 }
 

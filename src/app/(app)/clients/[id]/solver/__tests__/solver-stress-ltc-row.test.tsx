@@ -151,12 +151,14 @@ describe("LtcStressRow (draft)", () => {
     expect((screen.getByRole("button", { name: /add as change/i }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("on the base case, Add as change is disabled and says why", () => {
+  it("on the base case, Add as change is greyed out and says why in its tooltip", () => {
     render(<Harness base={plan} />);
     fireEvent.click(screen.getByRole("checkbox", { name: /long-term care/i }));
     const btn = screen.getByRole("button", { name: /add as change/i }) as HTMLButtonElement;
-    expect(btn.disabled).toBe(true);
-    expect(screen.getByText(/Pick or create a scenario first/)).toBeTruthy();
+    expect(btn.getAttribute("aria-disabled")).toBe("true");
+    const hint = screen.getByText(/Pick or create a scenario first/);
+    expect(hint.getAttribute("role")).toBe("tooltip");
+    expect(btn.getAttribute("aria-describedby")).toBe(hint.id);
   });
 });
 

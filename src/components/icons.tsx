@@ -364,6 +364,15 @@ export function ShieldIcon(props: IconProps) {
   );
 }
 
+export function ShieldOffIcon(props: IconProps) {
+  return (
+    <svg {...baseSvgProps} {...props}>
+      <path d="M12 2 4 5v7c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V5z" />
+      <path d="m3 3 18 18" />
+    </svg>
+  );
+}
+
 export function SlidersIcon(props: IconProps) {
   return (
     <svg {...baseSvgProps} {...props}>

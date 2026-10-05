@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import type { ClientData, DisabilityPolicy, ProjectionYear, StressTestKind } from "@/engine/types";
 import type { ChangesPanelChange } from "@/components/scenario/changes-panel";
 import {
@@ -12,6 +13,7 @@ import type { SolverMutation, SolverMutationKey, SolverPerson } from "@/lib/solv
 import { benefitPeriodText } from "@/lib/insurance-policies/disability-labels";
 import { MAX_RATE_STRESS_POINTS } from "@/lib/tax/rate-stress";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
+import { ShieldOffIcon } from "@/components/icons";
 import { SolverSection } from "./solver-section";
 import { LtcStressRow } from "./solver-stress-ltc-row";
 import { StressTestRow, type StressScenarioContext } from "./solver-stress-test-row";
@@ -400,13 +402,28 @@ function DisabilityCoverage({
   /** Last disabled year, or null for a disability that never ends. */
   endYear: number | null;
 }) {
+  const noCoverageId = useId();
   const policies = (tree.disabilityPolicies ?? []).filter((p) => p.insured === person);
 
   if (policies.length === 0) {
     return (
-      <p className="mt-3 text-[12px] leading-snug text-ink-3">
-        No disability coverage on file — this stops the income and pays no benefit.
-      </p>
+      <span className="group relative mt-3 inline-flex">
+        <button
+          type="button"
+          aria-describedby={noCoverageId}
+          className="inline-flex cursor-help items-center gap-1.5 text-[12px] font-medium text-ink-2 hover:text-ink focus:text-ink focus:outline-none"
+        >
+          <ShieldOffIcon width={14} height={14} className="shrink-0 text-warn" aria-hidden="true" />
+          No coverage
+        </button>
+        <span
+          id={noCoverageId}
+          role="tooltip"
+          className="pointer-events-none invisible absolute bottom-full left-0 z-50 mb-2 w-56 rounded-md border border-hair bg-card px-3 py-2 text-xs leading-snug text-ink-2 opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+        >
+          No disability coverage on file — this stops the income and pays no benefit.
+        </span>
+      </span>
     );
   }
 

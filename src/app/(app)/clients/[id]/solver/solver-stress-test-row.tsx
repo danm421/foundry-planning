@@ -9,7 +9,7 @@ import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { STRESS_TEST_IDS } from "@/engine/stress-tests";
 import { STRESS_TEST_LABELS, stressTestName } from "@/lib/stress-tests/describe";
 import { STRESS_MUTATION_KIND, stressMutationFromParams } from "@/lib/solver/stress-test-mutations";
-import { StressRow } from "./solver-stress-fields";
+import { AddAsChangeButton, StressRow } from "./solver-stress-fields";
 import { removeStressTest, saveStressTest, setStressTestEnabled } from "./solver-stress-saved";
 
 type ParamsOf<K extends StressTestKind> = Extract<StressTestParams, { kind: K }>;
@@ -168,24 +168,16 @@ export function StressTestRow<K extends StressTestKind>(props: {
       footer={
         draft !== null && !props.disabled ? (
           <div className="flex items-center gap-2">
-            <button
-              type="button"
+            <AddAsChangeButton
+              blockedHint={scenarioId === null ? STRESS_BASE_CASE_HINT : null}
               // A second click before the refresh lands is harmless: the fixed
               // id makes it an upsert of the same row.
-              disabled={scenarioId === null || !canEdit || busy}
+              disabled={!canEdit || busy}
               onClick={() => {
                 if (scenarioId) void run(() => saveStressTest(ctx.clientId, scenarioId, entity(draft)));
               }}
-              className="rounded border border-hair px-2.5 py-1 text-[12px] font-medium text-ink hover:border-accent disabled:opacity-50"
-            >
-              Add as change
-            </button>
-            {scenarioId === null ? (
-              // Said inline, not in a tooltip: a disabled button can't be hovered for help.
-              <span className="text-[11px] text-ink-3">{STRESS_BASE_CASE_HINT}</span>
-            ) : (
-              <FieldTooltip text={ADD_STRESS_AS_CHANGE_TOOLTIP(scenarioLabel)} />
-            )}
+            />
+            {scenarioId !== null && <FieldTooltip text={ADD_STRESS_AS_CHANGE_TOOLTIP(scenarioLabel)} />}
             {failure}
           </div>
         ) : null

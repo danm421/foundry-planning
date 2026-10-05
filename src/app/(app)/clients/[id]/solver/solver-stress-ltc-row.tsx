@@ -8,7 +8,7 @@ import { useClientAccess } from "@/components/client-access-provider";
 import { resolveLtcEvent } from "@/engine/ltc-event";
 import { defaultLtcEvent } from "@/lib/ltc/default-ltc-event";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
-import { StressRow } from "./solver-stress-fields";
+import { AddAsChangeButton, StressRow } from "./solver-stress-fields";
 import { LtcEventFields, LtcWarnings } from "./ltc-event-fields";
 import { saveLtcEvent } from "./save-ltc-event";
 
@@ -106,18 +106,12 @@ export function LtcStressRow(props: {
             onChange={(next) => props.onChange({ kind: "stress-ltc", value: next })}
           />
           <div className="mt-3 flex items-center gap-2">
-            <button
-              type="button"
+            <AddAsChangeButton
+              blockedHint={props.scenarioId === null ? BASE_CASE_TOOLTIP : null}
+              disabled={!canEdit || saving}
               onClick={addAsChange}
-              disabled={props.scenarioId === null || !canEdit || saving}
-              className="rounded border border-hair px-2.5 py-1 text-[12px] font-medium text-ink hover:border-accent disabled:opacity-50"
-            >
-              Add as change
-            </button>
-            {props.scenarioId === null ? (
-              // Said inline, not in a tooltip: a disabled button can't be hovered for help.
-              <span className="text-[11px] text-ink-3">{BASE_CASE_TOOLTIP}</span>
-            ) : (
+            />
+            {props.scenarioId !== null && (
               <FieldTooltip text={ADD_AS_CHANGE_TOOLTIP(props.scenarioName ?? "this scenario")} />
             )}
             {saveError && (

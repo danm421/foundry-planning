@@ -63,10 +63,18 @@ const okFetch = () =>
 const box = () => screen.getByRole("checkbox", { name: /market crash/i }) as HTMLInputElement;
 
 describe("StressTestRow — draft", () => {
-  it("on the base case, Add as change is disabled and says why inline", () => {
+  it("on the base case, Add as change is greyed out, says why in its tooltip, and saves nothing", () => {
+    const fetchMock = okFetch();
     render(<Row c={ctx({ scenarioId: null, scenarioName: null })} />);
-    expect((screen.getByRole("button", { name: "Add as change" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText("Pick or create a scenario first. A saved stress test lives in a scenario.")).toBeTruthy();
+    const button = screen.getByRole("button", { name: "Add as change" }) as HTMLButtonElement;
+    // Not natively disabled: it has to stay hoverable for the tooltip.
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    const hint = screen.getByText("Pick or create a scenario first. A saved stress test lives in a scenario.");
+    expect(hint.getAttribute("role")).toBe("tooltip");
+    expect(button.getAttribute("aria-describedby")).toBe(hint.id);
+    fireEvent.click(button);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("Add as change POSTs the whole stressor with its fixed id and name, then refreshes", async () => {
