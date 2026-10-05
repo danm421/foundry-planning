@@ -1523,7 +1523,9 @@ function ExpenseDialog({
                 accounts={accounts}
                 value={dedicatedAccountIds}
                 onChange={setDedicatedAccountIds}
-                allowedOwnerFamilyMemberIds={allowedFundingOwnerIds}
+                // Only education narrows by owner; an Other goal's picker drops
+                // just 529s and the main checking account (spec §2).
+                allowedOwnerFamilyMemberIds={type === "education" ? allowedFundingOwnerIds : undefined}
                 familyMemberNames={familyMemberNames}
                 goalType={type === "education" ? "education" : "other"}
               />
