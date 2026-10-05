@@ -60,20 +60,25 @@ export const loadActivePrefilledForm = cache(async (
 /**
  * Load a form by ID, scoped to the given firm. Returns null if the form
  * belongs to a different firm (prevents cross-firm access).
- * React.cache'd so the apply route's 404 guard and applyIntake's internal
- * load share one DB round-trip, consistent with the sibling queries.
+ *
+ * Uncached: a writer that branches on the row (applyIntake) must see this
+ * request's own earlier writes — linking the form to a client moments before
+ * applying it is the case that would otherwise apply it as a new household.
  */
-export const loadFormForFirm = cache(async (
+export async function readFormForFirm(
   id: string,
   firmId: string,
-): Promise<IntakeFormRow | null> => {
+): Promise<IntakeFormRow | null> {
   const rows = await db
     .select()
     .from(intakeForms)
     .where(and(eq(intakeForms.id, id), eq(intakeForms.firmId, firmId)))
     .limit(1);
   return rows[0] ?? null;
-});
+}
+
+/** `readFormForFirm`, React.cache'd for readers, consistent with the siblings. */
+export const loadFormForFirm = cache(readFormForFirm);
 
 /**
  * Returns true if the client has a prefilled form in DRAFT state (not yet

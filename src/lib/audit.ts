@@ -469,6 +469,8 @@ export type AuditAction =
   | "intake.form.reminded"
   | "intake.form.submitted"
   | "intake.form.applied"
+  // A new-household form pointed at an existing client before apply.
+  | "intake.form.linked"
   | "intake.form.discarded"
   | "intake.form.revoked"
   // Public-link identity gate: a failed attempt is the signal that someone is

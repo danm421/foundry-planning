@@ -6,8 +6,9 @@ import type { IntakeFormRow } from "@/lib/intake/queries";
 import type { IntakeDiff } from "../diff-utils";
 
 // Mock next/navigation
+const router = vi.hoisted(() => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => router,
 }));
 
 function makeForm(overrides: Partial<IntakeFormRow> = {}): IntakeFormRow {
@@ -79,6 +80,7 @@ const baseDiff: IntakeDiff = {
 
 describe("ReviewDetail", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) }));
   });
 
@@ -236,6 +238,59 @@ describe("ReviewDetail", () => {
     // Same blank mode as the prospect case above — only clientId differs.
     render(<ReviewDetail form={makeForm({ clientId: "client-1", mode: "blank" })} diff={baseDiff} />);
     expect(screen.getByText("Existing client")).toBeInTheDocument();
+  });
+
+  // ── Linking a new-household form to an existing client ────────────────────
+
+  it("offers the link only when the page says the form can be linked", () => {
+    const { unmount } = render(<ReviewDetail form={makeForm({ clientId: null })} diff={baseDiff} canLink />);
+    expect(screen.getByRole("button", { name: "Link to existing client" })).toBeInTheDocument();
+    unmount();
+
+    render(<ReviewDetail form={makeForm({ clientId: null })} diff={baseDiff} />);
+    expect(screen.queryByRole("button", { name: "Link to existing client" })).toBeNull();
+    expect(screen.getByText("New household")).toBeInTheDocument();
+  });
+
+  it("opens the client search from the link button", () => {
+    render(<ReviewDetail form={makeForm({ clientId: null })} diff={baseDiff} canLink />);
+    fireEvent.click(screen.getByRole("button", { name: "Link to existing client" }));
+    expect(screen.getByRole("combobox")).toBeInTheDocument();
+  });
+
+  it("applies to the picked client: names them, sends their id, lands on their plan", async () => {
+    render(
+      <ReviewDetail
+        form={makeForm({ clientId: null })}
+        diff={baseDiff}
+        canLink
+        linkTarget={{ id: "client-9", householdTitle: "Jane & John Doe" }}
+      />,
+    );
+    expect(screen.getByText(/instead of creating a new household/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply to Jane & John Doe" }));
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith("/api/data-collection/form-1/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: "client-9" }),
+      });
+    });
+    expect(router.push).toHaveBeenCalledWith("/clients/client-9");
+  });
+
+  it("Remove drops the pick and goes back to a new household", () => {
+    render(
+      <ReviewDetail
+        form={makeForm({ clientId: null })}
+        diff={baseDiff}
+        canLink
+        linkTarget={{ id: "client-9", householdTitle: "Jane & John Doe" }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    expect(router.replace).toHaveBeenCalledWith("/data-collection/form-1", { scroll: false });
   });
 
   // ── Documents ──────────────────────────────────────────────────────────────

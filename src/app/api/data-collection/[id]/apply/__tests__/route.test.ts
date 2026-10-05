@@ -51,6 +51,16 @@ vi.mock("@/lib/intake/apply", () => ({
   applyIntake: (args: unknown) => applyIntakeMock(args),
 }));
 
+// ── Link-to-existing-client mocks ─────────────────────────────────────────────
+const requireClientEditAccessMock = vi.fn();
+vi.mock("@/lib/clients/authz", () => ({
+  requireClientEditAccess: (id: string) => requireClientEditAccessMock(id),
+}));
+const linkMock = vi.fn();
+vi.mock("@/lib/intake/link-client", () => ({
+  linkIntakeFormToClient: (args: unknown) => linkMock(args),
+}));
+
 import { POST } from "@/app/api/data-collection/[id]/apply/route";
 import { ForbiddenError } from "@/lib/authz";
 
@@ -60,6 +70,15 @@ function postReq() {
     method: "POST",
   });
 }
+
+function linkReq(clientId: unknown) {
+  return new Request("http://localhost/api/data-collection/form-1/apply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ clientId }),
+  });
+}
+const EXISTING = "7f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f";
 
 const ctx = { params: Promise.resolve({ id: "form-1" }) };
 const crossFirmCtx = { params: Promise.resolve({ id: "cross-firm-form" }) };
@@ -78,6 +97,10 @@ beforeEach(() => {
     clientId: null,
   });
   applyIntakeMock.mockResolvedValue({ clientId: "client-new-1" });
+  requireClientEditAccessMock.mockReset();
+  requireClientEditAccessMock.mockResolvedValue({});
+  linkMock.mockReset();
+  linkMock.mockResolvedValue("linked");
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -118,5 +141,58 @@ describe("POST /api/data-collection/[id]/apply", () => {
     expect(applyIntakeMock).not.toHaveBeenCalled();
     // Gate runs before the form load — a lapsed firm never reaches the DB.
     expect(loadFormForFirmMock).not.toHaveBeenCalled();
+  });
+
+  it("never links when no clientId is sent", async () => {
+    await POST(postReq(), ctx);
+    expect(linkMock).not.toHaveBeenCalled();
+  });
+
+  describe("with a clientId (link to an existing client)", () => {
+    it("checks edit access, links, then applies", async () => {
+      applyIntakeMock.mockResolvedValue({ clientId: EXISTING });
+      const res = await POST(linkReq(EXISTING), ctx);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, clientId: EXISTING });
+      expect(requireClientEditAccessMock).toHaveBeenCalledWith(EXISTING);
+      expect(linkMock).toHaveBeenCalledWith({
+        formId: "form-1",
+        firmId: "firm-1",
+        clientId: EXISTING,
+        actorId: "advisor-1",
+      });
+      expect(linkMock.mock.invocationCallOrder[0]).toBeLessThan(
+        applyIntakeMock.mock.invocationCallOrder[0],
+      );
+    });
+
+    it("400s on a malformed id before touching anything", async () => {
+      const res = await POST(linkReq("not-a-uuid"), ctx);
+      expect(res.status).toBe(400);
+      expect(requireClientEditAccessMock).not.toHaveBeenCalled();
+      expect(applyIntakeMock).not.toHaveBeenCalled();
+    });
+
+    it("403s for a client the advisor can't edit, without linking", async () => {
+      requireClientEditAccessMock.mockRejectedValue(new ForbiddenError("Edit access required"));
+      const res = await POST(linkReq(EXISTING), ctx);
+      expect(res.status).toBe(403);
+      expect(linkMock).not.toHaveBeenCalled();
+      expect(applyIntakeMock).not.toHaveBeenCalled();
+    });
+
+    it("409s when the form can't be linked, and does not apply it", async () => {
+      linkMock.mockResolvedValue("conflict");
+      const res = await POST(linkReq(EXISTING), ctx);
+      expect(res.status).toBe(409);
+      expect(applyIntakeMock).not.toHaveBeenCalled();
+    });
+
+    it("404s when the client isn't in this firm", async () => {
+      linkMock.mockResolvedValue("client_not_found");
+      const res = await POST(linkReq(EXISTING), ctx);
+      expect(res.status).toBe(404);
+      expect(applyIntakeMock).not.toHaveBeenCalled();
+    });
   });
 });

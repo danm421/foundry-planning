@@ -9,7 +9,8 @@ import type { ClientSearchResult } from "@/lib/client-search";
  * Owns the query/results/highlight state, the debounce + abort plumbing, and
  * the listbox keyboard contract; the caller owns the markup and what a pick
  * means. Two callers today: the sidebar search (navigates to the client) and
- * the intake sender (fills the recipient from the picked household).
+ * Data Collection's ClientPicker (who a form goes to, or which existing client
+ * a submitted form belongs to).
  */
 
 const DEBOUNCE_MS = 200;

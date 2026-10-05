@@ -1,16 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { IntakeFormRow } from "@/lib/intake/queries";
 import type { IntakeDocumentView } from "@/lib/intake/document-types";
+import type { ClientSearchResult } from "@/lib/client-search";
 import { DocumentsSection } from "./documents-section";
+import { ClientPicker } from "./client-picker";
 import type { IntakeDiff, FieldDiff, ListSectionDiff } from "./diff-utils";
 import { RISK_LEVEL_LABELS } from "@/lib/risk-levels";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const labelCls = "block text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3";
+const linkButtonCls = "text-[12px] font-medium text-accent hover:underline disabled:opacity-50";
 
 function formatMoney(n: number | undefined): string {
   if (n === undefined) return "—";
@@ -103,6 +106,12 @@ export interface ReviewDetailProps {
   /** The household that owns them — the vault link needs it. Null for a
    *  prospect who never uploaded, which is also when the list is empty. */
   householdId?: string | null;
+  /** Whether this form may be pointed at an existing client — the page asks
+   *  `canLinkToClient`, the same rule the link itself enforces. */
+  canLink?: boolean;
+  /** The existing client picked for it (`?linkTo=`). The diff is already
+   *  against their plan; Apply links the form to them first. */
+  linkTarget?: Pick<ClientSearchResult, "id" | "householdTitle"> | null;
 }
 
 export default function ReviewDetail({
@@ -110,12 +119,28 @@ export default function ReviewDetail({
   diff,
   documents = [],
   householdId = null,
+  canLink = false,
+  linkTarget = null,
 }: ReviewDetailProps) {
   const router = useRouter();
   const [actionError, setActionError] = useState<string | null>(null);
   const [acting, setActing] = useState<"apply" | "discard" | null>(null);
+  const [picking, setPicking] = useState(false);
+  // While the page re-renders for a new pick, `linkTarget` still names the old
+  // one — Apply waits, or it would apply to the client on screen a moment ago.
+  const [switching, startSwitch] = useTransition();
 
   const alreadyActioned = form.status === "applied" || form.status === "discarded";
+
+  function setLinkTarget(clientId: string | null) {
+    setPicking(false);
+    startSwitch(() => {
+      router.replace(
+        clientId ? `/data-collection/${form.id}?linkTo=${clientId}` : `/data-collection/${form.id}`,
+        { scroll: false },
+      );
+    });
+  }
 
   async function handleAction(action: "apply" | "discard") {
     setActionError(null);
@@ -123,6 +148,12 @@ export default function ReviewDetail({
     try {
       const res = await fetch(`/api/data-collection/${form.id}/${action}`, {
         method: "POST",
+        ...(action === "apply" && linkTarget
+          ? {
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ clientId: linkTarget.id }),
+            }
+          : {}),
       });
       if (res.status === 409) {
         setActionError("This form has already been applied or discarded.");
@@ -138,8 +169,9 @@ export default function ReviewDetail({
       }
       // Bust the router cache (incl. the destination's stale entry) before navigating.
       router.refresh();
-      if (action === "apply" && form.clientId) {
-        router.push(`/clients/${form.clientId}`);
+      const appliedTo = form.clientId ?? linkTarget?.id;
+      if (action === "apply" && appliedTo) {
+        router.push(`/clients/${appliedTo}`);
       } else {
         router.push("/data-collection");
       }
@@ -164,10 +196,39 @@ export default function ReviewDetail({
           </div>
           <div className="flex items-center justify-between gap-4 py-1">
             <span className="text-ink-3">Applies to</span>
-            {/* clientId, not mode: a blank form can be addressed to an existing
-                client, and then applying it merges onto that client's plan. */}
-            <span className="text-ink">{form.clientId ? "Existing client" : "New household"}</span>
+            {canLink ? (
+              <span className="flex items-center gap-3">
+                <span className="text-ink">{linkTarget?.householdTitle ?? "New household"}</span>
+                {linkTarget && (
+                  <button
+                    type="button"
+                    disabled={switching}
+                    onClick={() => setLinkTarget(null)}
+                    className={linkButtonCls}
+                  >
+                    Remove
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={switching}
+                  onClick={() => setPicking((p) => !p)}
+                  className={linkButtonCls}
+                >
+                  {picking ? "Cancel" : linkTarget ? "Change" : "Link to existing client"}
+                </button>
+              </span>
+            ) : (
+              /* clientId, not mode: a blank form can be addressed to an existing
+                 client, and then applying it merges onto that client's plan. */
+              <span className="text-ink">{form.clientId ? "Existing client" : "New household"}</span>
+            )}
           </div>
+          {picking && (
+            <div className="py-2">
+              <ClientPicker onPick={(hit) => setLinkTarget(hit.id)} />
+            </div>
+          )}
           <div className="flex items-center justify-between gap-4 py-1">
             <span className="text-ink-3">Status</span>
             <span className="tabular font-medium text-ink">{form.status}</span>
@@ -182,6 +243,15 @@ export default function ReviewDetail({
           )}
         </div>
       </div>
+
+      {linkTarget && (
+        <div className="rounded-[var(--radius-sm)] border border-warn/40 bg-warn/10 p-4 text-[13px] text-ink-2">
+          Applying updates <span className="font-medium text-ink">{linkTarget.householdTitle}</span>
+          &apos;s plan instead of creating a new household. Names, birthdays and goals they filled
+          in replace what&apos;s there. Accounts, income, property and children are added and
+          nothing is removed, so anything you already entered by hand will show up twice.
+        </div>
+      )}
 
       {/* ── Family diff ─────────────────────────────────────────────────── */}
       <div className="rounded-[var(--radius-sm)] border border-hair bg-card p-5">
@@ -356,15 +426,19 @@ export default function ReviewDetail({
         <div className="flex items-center gap-3">
           <button
             type="button"
-            disabled={acting !== null}
+            disabled={acting !== null || switching}
             onClick={() => handleAction("apply")}
             className="btn-primary rounded-[var(--radius-sm)] bg-accent px-5 py-2 text-[14px] font-medium text-accent-on transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {acting === "apply" ? "Applying…" : "Apply entire form"}
+            {acting === "apply"
+              ? "Applying…"
+              : linkTarget
+                ? `Apply to ${linkTarget.householdTitle}`
+                : "Apply entire form"}
           </button>
           <button
             type="button"
-            disabled={acting !== null}
+            disabled={acting !== null || switching}
             onClick={() => handleAction("discard")}
             className="btn-ghost rounded-[var(--radius-sm)] border border-hair px-5 py-2 text-[14px] text-ink-2 transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
           >

@@ -1,8 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { put, del } from "@vercel/blob";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, notExists, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { intakeForms, crmHouseholds, clients, crmHouseholdDocuments } from "@/db/schema";
+import {
+  intakeForms,
+  crmHouseholds,
+  clients,
+  crmHouseholdContacts,
+  crmHouseholdDocuments,
+} from "@/db/schema";
 import { ensureIntakeFolder } from "@/lib/crm/folders";
 import { MAX_DOCUMENT_SIZE_BYTES } from "@/lib/crm/document-constants";
 import { sanitizeFilename, STORAGE_PROVIDER } from "@/lib/crm/documents";
@@ -158,6 +164,73 @@ export async function resolveIntakeHousehold(formId: string): Promise<string> {
  */
 export async function findIntakeHousehold(formId: string): Promise<string | null> {
   return householdFromRouting(await loadFormRouting(formId));
+}
+
+/**
+ * A form that had a placeholder parked on it now names a client, so every
+ * reader above routes its documents through the client's household instead.
+ * Move the uploads there — otherwise they vanish from the review and from the
+ * client's vault alike — then send the emptied placeholder to the Trash, where
+ * left alone it would sit in the CRM as a duplicate of that client. It stays if
+ * anything else has landed on it: a contact, another document, a client
+ * created from it.
+ *
+ * Runs on the caller's transaction, which already holds the form's row lock.
+ */
+export async function adoptParkedUploads(
+  tx: Tx,
+  args: { firmId: string; placeholder: string; householdId: string; actorId: string },
+): Promise<{ documentsMoved: number; placeholderTrashed: boolean }> {
+  const { firmId, placeholder, householdId, actorId } = args;
+
+  // A parked id is never trusted to be this firm's — moving another firm's
+  // files onto this client is the failure the check exists for. Throwing rolls
+  // the caller's transaction back.
+  const [owned] = await tx
+    .select({ id: crmHouseholds.id })
+    .from(crmHouseholds)
+    .where(and(eq(crmHouseholds.id, placeholder), eq(crmHouseholds.firmId, firmId)));
+  if (!owned) throw new Error(`Household ${placeholder} is outside firm ${firmId}`);
+
+  const folderId = await ensureIntakeFolder(householdId, firmId);
+  const moved = await tx
+    .update(crmHouseholdDocuments)
+    .set({ householdId, folderId })
+    .where(
+      and(
+        eq(crmHouseholdDocuments.householdId, placeholder),
+        eq(crmHouseholdDocuments.sourceKind, "intake_upload"),
+      ),
+    )
+    .returning({ id: crmHouseholdDocuments.id });
+
+  const trashed = await tx
+    .update(crmHouseholds)
+    .set({ deletedAt: new Date(), deletedBy: actorId, updatedAt: new Date() })
+    .where(
+      and(
+        eq(crmHouseholds.id, placeholder),
+        isNull(crmHouseholds.deletedAt),
+        notExists(
+          tx.select({ id: clients.id }).from(clients).where(eq(clients.crmHouseholdId, placeholder)),
+        ),
+        notExists(
+          tx
+            .select({ id: crmHouseholdContacts.id })
+            .from(crmHouseholdContacts)
+            .where(eq(crmHouseholdContacts.householdId, placeholder)),
+        ),
+        notExists(
+          tx
+            .select({ id: crmHouseholdDocuments.id })
+            .from(crmHouseholdDocuments)
+            .where(eq(crmHouseholdDocuments.householdId, placeholder)),
+        ),
+      ),
+    )
+    .returning({ id: crmHouseholds.id });
+
+  return { documentsMoved: moved.length, placeholderTrashed: trashed.length > 0 };
 }
 
 function toView(row: typeof crmHouseholdDocuments.$inferSelect): IntakeDocumentView {

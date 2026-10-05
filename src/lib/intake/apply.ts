@@ -4,7 +4,7 @@
  *
  * Always advisor-authenticated, firm-scoped, audited, atomic, and idempotent:
  *
- *  - Firm scoping: the form is loaded via loadFormForFirm(formId, firmId), so
+ *  - Firm scoping: the form is loaded via readFormForFirm(formId, firmId), so
  *    form.clientId is guaranteed in-firm. We never call verifyClientAccess /
  *    Clerk auth() here (this runs in non-request contexts too) — the base
  *    scenario is resolved with a DIRECT query inside the transaction, mirroring
@@ -65,7 +65,7 @@ import {
 } from "@/lib/intake/goal-rows";
 import { intakeFallbackSubType } from "@/lib/intake/account-types";
 import { intakeNoteBody } from "@/lib/intake/note-body";
-import { loadFormForFirm } from "@/lib/intake/queries";
+import { readFormForFirm } from "@/lib/intake/queries";
 import { incomeYearWindow } from "@/lib/intake/income-years";
 import { buildClientMilestones } from "@/lib/milestones";
 import {
@@ -1043,7 +1043,7 @@ export async function applyIntake(args: {
 }): Promise<{ clientId: string }> {
   const { formId, firmId, actorId } = args;
 
-  const form = await loadFormForFirm(formId, firmId);
+  const form = await readFormForFirm(formId, firmId);
   if (!form) throw new Error(`Intake form ${formId} not found in firm ${firmId}`);
 
   // Idempotency guard governs BOTH paths: only a freshly submitted form applies.

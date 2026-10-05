@@ -1,5 +1,8 @@
 import { notFound } from "next/navigation";
-import { requireOrgId } from "@/lib/db-helpers";
+import { auth } from "@clerk/nextjs/server";
+import { requireOrgAndUser } from "@/lib/db-helpers";
+import { findClientRecipient } from "@/lib/client-search";
+import { canLinkToClient } from "@/lib/intake/link-client";
 import { loadFormForFirm } from "@/lib/intake/queries";
 import { findIntakeHousehold, listIntakeDocuments } from "@/lib/intake/documents";
 import { intakeSubmitSchemaFor } from "@/lib/intake/schema";
@@ -13,11 +16,17 @@ import { ArrowLeftIcon } from "@/components/icons";
 
 interface Props {
   params: Promise<{ id: string }>;
+  /** `?linkTo=` is the existing client the advisor picked for a new-household
+   *  form. Nothing is saved until Apply; until then it only re-points the
+   *  comparison below at that client's plan. */
+  searchParams: Promise<{ linkTo?: string }>;
 }
 
-export default async function DataCollectionReviewPage({ params }: Props) {
+export default async function DataCollectionReviewPage({ params, searchParams }: Props) {
   const { id } = await params;
-  const orgId = await requireOrgId();
+  const { linkTo } = await searchParams;
+  const { orgId, userId } = await requireOrgAndUser();
+  const { orgRole } = await auth();
 
   const form = await loadFormForFirm(id, orgId);
   if (!form) notFound();
@@ -59,6 +68,12 @@ export default async function DataCollectionReviewPage({ params }: Props) {
   if (!parseResult.success) notFound();
   const submitted = parseResult.data;
 
+  // A client the caller can't see resolves to null — the plain form shows.
+  const canLink = canLinkToClient(form);
+  const linkTarget =
+    canLink && linkTo ? await findClientRecipient(linkTo, orgId, { userId, orgRole }) : null;
+  const baselineClientId = form.clientId ?? linkTarget?.id ?? null;
+
   // Three independent reads — the baseline does not depend on the uploads, and
   // awaiting it separately spent a whole round trip of latency on every review.
   const [[documents, householdId], baseline] = await Promise.all([
@@ -69,8 +84,8 @@ export default async function DataCollectionReviewPage({ params }: Props) {
     // where the advisor decides whether to write this to the plan.
     //
     // A missing client or scenario is "no baseline", not a broken page.
-    form.clientId
-      ? snapshotClientToPayload(form.clientId, orgId, sections).catch(() => null)
+    baselineClientId
+      ? snapshotClientToPayload(baselineClientId, orgId, sections).catch(() => null)
       : null,
   ]);
 
@@ -83,6 +98,8 @@ export default async function DataCollectionReviewPage({ params }: Props) {
         diff={diff}
         documents={documents}
         householdId={householdId}
+        canLink={canLink}
+        linkTarget={linkTarget}
       />
     </Shell>
   );
