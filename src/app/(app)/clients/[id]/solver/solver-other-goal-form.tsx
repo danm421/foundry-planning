@@ -30,6 +30,9 @@ interface Props {
 
 const inputClass = "mt-1 w-full rounded border border-hair-2 bg-card px-2 py-1 text-ink";
 
+/** Owner-select value for a new account owned jointly by the first two owners. */
+const JOINT = "joint";
+
 /**
  * Add or edit an Other goal on the Solver Goals tab (spec
  * 2026-10-05-solver-goals-design, §3): a one-off or recurring cost, paid from
@@ -60,12 +63,19 @@ export function SolverOtherGoalForm({
   const [newId] = useState(() => crypto.randomUUID());
   const [newName, setNewName] = useState("");
   const [newNameDirty, setNewNameDirty] = useState(false);
-  const [newOwnerId, setNewOwnerId] = useState(owners[0]?.familyMemberId ?? "");
+  // A married household's new account is joint unless the advisor picks one owner.
+  const [newOwnerId, setNewOwnerId] = useState(
+    owners.length > 1 ? JOINT : (owners[0]?.familyMemberId ?? ""),
+  );
   const [newBalance, setNewBalance] = useState("");
   const [newAnnual, setNewAnnual] = useState("");
   const addingNew = dedicatedAccountIds.includes(newId);
   const newNameValue = newNameDirty ? newName : `${name.trim() || "Goal"} fund`;
-  const newOwnerLabel = owners.find((o) => o.familyMemberId === newOwnerId)?.label ?? "";
+  const joint = newOwnerId === JOINT;
+  const newOwnerIds = joint
+    ? owners.slice(0, 2).map((o) => o.familyMemberId)
+    : newOwnerId ? [newOwnerId] : [];
+  const newOwnerLabel = joint ? "Joint" : (owners.find((o) => o.familyMemberId === newOwnerId)?.label ?? "");
 
   const pickerAccounts: EducationGoalFormAccount[] = addingNew
     ? [
@@ -75,7 +85,7 @@ export function SolverOtherGoalForm({
           name: `${newNameValue} (new)`,
           category: "taxable",
           subType: "brokerage",
-          ownerFamilyMemberIds: newOwnerId ? [newOwnerId] : [],
+          ownerFamilyMemberIds: newOwnerIds,
         },
       ]
     : accounts;
@@ -83,11 +93,12 @@ export function SolverOtherGoalForm({
   function submit() {
     const start = Number(startYear) || currentYear + 1;
     const end = start + Math.max(1, Number(years) || 1) - 1;
-    const emitNew = addingNew && !!newOwnerId;
+    const amount = Number(annualAmount) || 0;
+    const emitNew = addingNew && newOwnerIds.length > 0;
     const ids = emitNew ? dedicatedAccountIds : dedicatedAccountIds.filter((id) => id !== newId);
     // Moving the years un-anchors them: a stale milestone ref would re-resolve
     // the old year on the next load and silently undo the edit.
-    const datesMoved = !initial || initial.startYear !== start || initial.endYear !== end;
+    const yearsMoved = !!initial && (initial.startYear !== start || initial.endYear !== end);
 
     const expense: Expense = {
       ...initial,
@@ -95,21 +106,26 @@ export function SolverOtherGoalForm({
       type: "other",
       isGoal: true,
       name: name.trim() || "Goal",
-      annualAmount: Number(annualAmount) || 0,
+      annualAmount: amount,
       startYear: start,
       endYear: end,
       growthRate: initial?.growthRate ?? inflationRate,
       dedicatedAccountIds: ids,
       payShortfallOutOfPocket:
         ids.length > 0 ? payOutOfPocket : defaultPayShortfallOutOfPocket({ type: "other", isGoal: true }),
-      ...(datesMoved && initial ? { startYearRef: null, endYearRef: null } : {}),
+      ...(yearsMoved ? { startYearRef: null, endYearRef: null } : {}),
     };
+    // A hand-built schedule replaces the annual cost year by year
+    // (engine/expenses.ts), so a new cost would be ignored and moved years
+    // costed at $0. Drop it then; a name- or accounts-only edit keeps it.
+    if (yearsMoved || (initial && initial.annualAmount !== amount)) delete expense.scheduleOverrides;
 
     const newMutations: SolverMutation[] = [];
     if (emitNew) {
       const { account, rule } = buildQuickAddAccount({
         type: "taxable",
-        ownerFamilyMemberId: newOwnerId,
+        ownerFamilyMemberId: newOwnerIds[0],
+        coOwnerFamilyMemberId: newOwnerIds[1],
         ownerLabel: newOwnerLabel,
         name: newNameValue,
         annualAmount: Number(newAnnual) || 0,
@@ -196,6 +212,7 @@ export function SolverOtherGoalForm({
                     onChange={(e) => setNewOwnerId(e.target.value)}
                     className={inputClass}
                   >
+                    <option value={JOINT}>Joint</option>
                     {owners.map((o) => (
                       <option key={o.familyMemberId} value={o.familyMemberId}>{o.label}</option>
                     ))}

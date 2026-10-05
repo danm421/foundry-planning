@@ -74,4 +74,62 @@ describe("SolverOtherGoalForm", () => {
     const [expense] = onSubmit.mock.calls[0];
     expect(expense).toMatchObject({ id: "car", cashAccountId: "chk", startYear: 2031, startYearRef: null, endYearRef: null });
   });
+
+  const MARRIED = [
+    { familyMemberId: "fm-1", label: "Harold" },
+    { familyMemberId: "fm-2", label: "Maude" },
+  ];
+
+  it("titles a married household's new savings account jointly by default", () => {
+    const onSubmit = renderForm({ owners: MARRIED });
+    fireEvent.click(screen.getByRole("button", { name: /new savings account/i }));
+    expect((screen.getByLabelText("Owner") as HTMLSelectElement).value).toBe("joint");
+    fireEvent.click(screen.getByRole("button", { name: /add goal/i }));
+    const [, mutations] = onSubmit.mock.calls[0];
+    expect(mutations[0].value.owners).toEqual([
+      { kind: "family_member", familyMemberId: "fm-1", percent: 0.5 },
+      { kind: "family_member", familyMemberId: "fm-2", percent: 0.5 },
+    ]);
+  });
+
+  it("still lets a married household pick one owner", () => {
+    const onSubmit = renderForm({ owners: MARRIED });
+    fireEvent.click(screen.getByRole("button", { name: /new savings account/i }));
+    fireEvent.change(screen.getByLabelText("Owner"), { target: { value: "fm-2" } });
+    fireEvent.click(screen.getByRole("button", { name: /add goal/i }));
+    const [, mutations] = onSubmit.mock.calls[0];
+    expect(mutations[0].value.owners).toEqual([{ kind: "family_member", familyMemberId: "fm-2", percent: 1 }]);
+  });
+
+  describe("a hand-built cost schedule", () => {
+    const scheduled = {
+      id: "car", type: "other", name: "Car", annualAmount: 50000, startYear: 2030, endYear: 2030,
+      growthRate: 0.03, isGoal: true, dedicatedAccountIds: [], scheduleOverrides: { 2030: 50000 },
+    } as unknown as Expense;
+
+    it("is dropped when the cost changes — the engine would otherwise ignore the new cost", () => {
+      const onSubmit = renderForm({ mode: "edit", initial: scheduled });
+      fireEvent.change(screen.getByLabelText("Annual cost"), { target: { value: "65000" } });
+      fireEvent.click(screen.getByRole("button", { name: /save goal/i }));
+      const [expense] = onSubmit.mock.calls[0];
+      expect(expense.annualAmount).toBe(65000);
+      expect("scheduleOverrides" in expense).toBe(false);
+    });
+
+    it("is dropped when the years move — the engine would otherwise cost the new years at $0", () => {
+      const onSubmit = renderForm({ mode: "edit", initial: scheduled });
+      fireEvent.change(screen.getByLabelText("Start year"), { target: { value: "2031" } });
+      fireEvent.click(screen.getByRole("button", { name: /save goal/i }));
+      const [expense] = onSubmit.mock.calls[0];
+      expect("scheduleOverrides" in expense).toBe(false);
+    });
+
+    it("survives a name-only edit", () => {
+      const onSubmit = renderForm({ mode: "edit", initial: scheduled });
+      fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Truck" } });
+      fireEvent.click(screen.getByRole("button", { name: /save goal/i }));
+      const [expense] = onSubmit.mock.calls[0];
+      expect(expense).toMatchObject({ name: "Truck", scheduleOverrides: { 2030: 50000 } });
+    });
+  });
 });

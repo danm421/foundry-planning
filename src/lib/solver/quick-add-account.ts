@@ -54,6 +54,10 @@ export interface QuickAddArgs {
   activationYearRef?: string | null;
   /** Starting balance (value == basis). Defaults to 0. */
   balance?: number;
+  /** Second owner for a joint account: the two family members then own half
+   *  each, which the engine treats as joint (passes to the survivor at first
+   *  death). Absent → solo-owned by `ownerFamilyMemberId`. */
+  coOwnerFamilyMemberId?: string;
 }
 
 export function buildQuickAddAccount(args: QuickAddArgs): { account: Account; rule: SavingsRule } {
@@ -68,7 +72,12 @@ export function buildQuickAddAccount(args: QuickAddArgs): { account: Account; ru
     growthRate: args.growthRate,
     rmdEnabled: map.rmdEnabled,
     titlingType: "jtwros", // engine ignores titling for solo-owned accounts; field is still required
-    owners: [{ kind: "family_member", familyMemberId: args.ownerFamilyMemberId, percent: 1 }],
+    owners: args.coOwnerFamilyMemberId
+      ? [
+          { kind: "family_member", familyMemberId: args.ownerFamilyMemberId, percent: 0.5 },
+          { kind: "family_member", familyMemberId: args.coOwnerFamilyMemberId, percent: 0.5 },
+        ]
+      : [{ kind: "family_member", familyMemberId: args.ownerFamilyMemberId, percent: 1 }],
     activationYear: args.activationYear ?? null,
     activationYearRef: args.activationYearRef ?? null,
     ...(args.realization ? { realization: args.realization } : {}),
