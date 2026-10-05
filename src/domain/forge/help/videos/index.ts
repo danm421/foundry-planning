@@ -6,8 +6,13 @@
 // entry is cast — videos.contract.test.ts proves every file matches HelpVideo,
 // which makes the cast checked rather than hopeful.
 import type { HelpVideo } from "../video-schema";
+import addOneTimeExpense from "./add-one-time-expense.json";
+import solverSaveScenario from "./solver-save-scenario.json";
 
-export const HELP_VIDEOS: readonly HelpVideo[] = [];
+export const HELP_VIDEOS: readonly HelpVideo[] = [
+  addOneTimeExpense as HelpVideo,
+  solverSaveScenario as HelpVideo,
+];
 
 export function getHelpVideo(slug: string): HelpVideo | undefined {
   return HELP_VIDEOS.find((v) => v.slug === slug);

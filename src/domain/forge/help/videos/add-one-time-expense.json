@@ -1,0 +1,97 @@
+{
+  "slug": "add-one-time-expense",
+  "title": "Add a one-time expense and see it in the cash flow",
+  "summary": "Add a one-off cost, like a kitchen remodel, as an expense that starts and ends in the same year, then see it in Cash Flow.",
+  "screens": [
+    {
+      "route": "/clients/:id/details/income-expenses",
+      "label": "Inflows & Outflows"
+    },
+    {
+      "route": "/clients/:id/cashflow",
+      "label": "Cash Flow"
+    }
+  ],
+  "tags": [
+    "expenses",
+    "cash-flow"
+  ],
+  "searchTerms": [
+    "lump sum",
+    "one-off",
+    "single year",
+    "remodel",
+    "renovation",
+    "large purchase",
+    "big expense",
+    "today's dollars"
+  ],
+  "chapters": [
+    {
+      "at": 0,
+      "label": "Mark and Laura plan an $80,000 kitchen remodel in 2028."
+    },
+    {
+      "at": 4.6,
+      "label": "Add it as an expense: choose Other and give it a name."
+    },
+    {
+      "at": 15.5,
+      "label": "Enter the cost in today's dollars. Foundry adds inflation."
+    },
+    {
+      "at": 23.9,
+      "label": "Set the start and end year to 2028, so it's paid once."
+    },
+    {
+      "at": 39.1,
+      "label": "Select Add Expense to put it in the plan."
+    },
+    {
+      "at": 46.4,
+      "label": "It's listed under Other Expenses, for 2028 only."
+    },
+    {
+      "at": 51.3,
+      "label": "Open Cash Flow to see the effect year by year."
+    },
+    {
+      "at": 58.4,
+      "label": "In 2028, spending jumps and net cash flow turns negative."
+    },
+    {
+      "at": 63.1,
+      "label": "Drill into Expenses to see what's behind the jump."
+    },
+    {
+      "at": 68.5,
+      "label": "The remodel shows up as Other, in 2028 only, grown with inflation."
+    }
+  ],
+  "steps": [
+    "**Open Inflows & Outflows.** From a client's **Details**, choose **Inflows & Outflows**. The **Expenses** panel lists what the plan already spends.",
+    "**Add the expense.** In the **Expenses** panel, select **+ Add**. Set **Type** to **Other** and enter a **Name**.",
+    "**Enter the cost.** Type the amount in **Annual Amount ($)**. Leave **Amount in today's dollars** ticked to enter today's price and let Foundry add inflation.",
+    "**Make it one year.** For **Start Year** and **End Year**, choose **Manual** and enter the same year in both.",
+    "**Save it.** Select **Add Expense**. The expense appears under **Other Expenses**.",
+    "**Check the cash flow.** Open **Cash Flow** in the top bar. That year's expenses rise, and its net cash flow can turn negative.",
+    "**See what's behind it.** Select the **Expenses ▶** column header. The table breaks expenses down by category, and the cost shows in the **Other** column for that year only."
+  ],
+  "goodToKnow": [
+    "An amount in today's dollars grows with inflation until its year, so Cash Flow shows more than you typed: $80,000 in 2028 appears as $83,886 at 2.4% inflation. Untick the box to enter the amount as it will be in that year.",
+    "The **Expenses** figure at the top of Inflows & Outflows covers the current year only, so a cost in a future year doesn't change it.",
+    "Cash Flow hides columns that are zero in every year. The **Other** column appears once the plan has an Other expense."
+  ],
+  "durationSec": 73.5,
+  "recordedOn": "2026-10-05",
+  "appCommit": "66f2b6035",
+  "video": {
+    "path": "knowledge-hub/add-one-time-expense/c56f855d4a43.mp4",
+    "sha256": "c56f855d4a4372f528827e1933713f2c2c1b7450a28b31a997706e1c564617c7",
+    "bytes": 6280861
+  },
+  "poster": {
+    "path": "knowledge-hub/add-one-time-expense/19bca480500b.jpg",
+    "sha256": "19bca480500be448bd3fc542759971d7561e29a3ac24fbf801bc9855247d8c71"
+  }
+}

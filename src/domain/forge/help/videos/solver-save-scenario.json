@@ -1,0 +1,97 @@
+{
+  "slug": "solver-save-scenario",
+  "title": "Try what-if changes in the Solver and save them as a scenario",
+  "summary": "Try what-if changes in the Solver, watch Plan Confidence react, and save the version you like as a scenario.",
+  "screens": [
+    {
+      "route": "/clients/:id/solver",
+      "label": "Solver"
+    }
+  ],
+  "tags": [
+    "solver",
+    "scenarios",
+    "retirement",
+    "monte-carlo"
+  ],
+  "searchTerms": [
+    "what if",
+    "retire early",
+    "retirement age",
+    "plan confidence",
+    "probability of success",
+    "compare plans",
+    "save scenario",
+    "trade-offs"
+  ],
+  "chapters": [
+    {
+      "at": 0,
+      "label": "The Solver tries what-if changes and shows the impact right away."
+    },
+    {
+      "at": 4.8,
+      "label": "What if Mark and Laura both retire at 62 instead of 65?"
+    },
+    {
+      "at": 18.7,
+      "label": "Plan Confidence drops. Each figure shows the change from the base plan."
+    },
+    {
+      "at": 24.1,
+      "label": "Trim their retirement spending to $125,000 a year."
+    },
+    {
+      "at": 34,
+      "label": "That wins back much of the drop."
+    },
+    {
+      "at": 39,
+      "label": "And Laura works two more years, until 64."
+    },
+    {
+      "at": 48.2,
+      "label": "The plan is nearly back where it started."
+    },
+    {
+      "at": 53.1,
+      "label": "Save these changes as a scenario and give it a name."
+    },
+    {
+      "at": 61.6,
+      "label": "The dialog lists every change the scenario keeps."
+    },
+    {
+      "at": 69.2,
+      "label": "Open the Scenario changes tab and pick the scenario."
+    },
+    {
+      "at": 80.7,
+      "label": "Each change shows its base value and its new one."
+    }
+  ],
+  "steps": [
+    "**Open the Solver.** From a client, choose **Solver** in the top bar. The strip under the chart shows **Plan Confidence**, **Portfolio at Retirement**, **Ending Portfolio Assets**, **Lifetime Taxes** and **Total to Heirs** for the plan as it stands.",
+    "**Change an assumption.** Use the **−** and **+** buttons beside a field, for example **Retirement Ages**. The figures recalculate after each change, and each one shows how far it moved from the base plan.",
+    "**Keep adjusting until the plan works.** Lowering **Retirement Living Expenses** or moving a retirement age later wins confidence back. A **Reset to** link under a changed field puts it back to its base value.",
+    "**Save it as a scenario.** Select **Save as scenario…**, type a **Name**, and check the list of changes the scenario will keep. Then select **Save scenario**.",
+    "**Review the changes.** Open the **Changes** tab on the left and pick the scenario from the **Scenario** list. Each change shows its base value and its new one."
+  ],
+  "goodToKnow": [
+    "Changes in the Solver don't touch the base plan. Only **Save to base facts** writes them there.",
+    "Plan Confidence comes from a fresh Monte Carlo run each time, so a saved scenario can read a point or two different from what the Solver showed before saving.",
+    "Each change on the **Changes** tab has a switch. Turn one off to see the plan without it."
+  ],
+  "durationSec": 86.8,
+  "recordedOn": "2026-10-05",
+  "appCommit": "66f2b6035",
+  "video": {
+    "path": "knowledge-hub/solver-save-scenario/5cf703c6d931.mp4",
+    "sha256": "5cf703c6d931a7e8b6a6d673543f7450a17df7e219b41f1a242c9a1918962f89",
+    "bytes": 6638740
+  },
+  "poster": {
+    "path": "knowledge-hub/solver-save-scenario/1fd7bcdd7a16.jpg",
+    "sha256": "1fd7bcdd7a16351fe1676fe42e4b2e276e33e16b86e6f21055166670f13620b3"
+  }
+}
