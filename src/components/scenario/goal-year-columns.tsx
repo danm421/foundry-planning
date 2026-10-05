@@ -1,5 +1,5 @@
 import type { YearTableColumn } from "@/components/scenario/year-table";
-import type { GoalReportRow } from "@/lib/reports/goal-report-data";
+import type { CashFlowGoalReport, GoalReportRow } from "@/lib/reports/goal-report-data";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
 
 export function goalYearColumns(): YearTableColumn<GoalReportRow>[] {
@@ -18,5 +18,15 @@ export function goalYearColumns(): YearTableColumn<GoalReportRow>[] {
       render: (r) => money(r.shortfall),
       tone: (r) => (r.shortfall > 0 ? "crit" : "default"),
     },
+  ];
+}
+
+/** Columns for a goal paid from cash flow (no savings account behind it). */
+export function cashFlowGoalYearColumns(): YearTableColumn<CashFlowGoalReport["rows"][number]>[] {
+  const money = (n: number) => formatCurrency(n);
+  return [
+    { key: "year", header: "Year", align: "left", render: (r) => r.year },
+    { key: "cost", header: "Goal Expense", align: "right", render: (r) => money(r.cost) },
+    { key: "funded", header: "Funded", align: "right", render: (r) => money(r.funded) },
   ];
 }

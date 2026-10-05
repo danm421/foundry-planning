@@ -15,7 +15,7 @@ export type ReportKey =
   | "lifeInsurance"
   | "estate"
   | "monteCarlo"
-  | "education"
+  | "goals"
   | "balanceSheet"
   | "summaries";
 
@@ -31,10 +31,20 @@ export const REPORT_KEYS: readonly ReportKey[] = [
   "lifeInsurance",
   "estate",
   "monteCarlo",
-  "education",
+  "goals",
   "balanceSheet",
   "summaries",
 ];
+
+/** Report ids an advisor's stored layout or a bookmarked `?report=` may still
+ *  carry under an old name. "education" became "goals" on 2026-10-05 (spec
+ *  2026-10-05-solver-goals-design). */
+const RENAMED_REPORT_IDS: Readonly<Record<string, ReportKey>> = { education: "goals" };
+
+/** The current id for a stored or linked report id. */
+export function canonicalReportId(raw: string): string {
+  return RENAMED_REPORT_IDS[raw] ?? raw;
+}
 
 /** One report's place in an advisor's customized strip. */
 export interface ReportLayoutEntry {
@@ -63,8 +73,9 @@ export function resolveReportLayout(
 
   if (Array.isArray(stored)) {
     for (const e of stored) {
-      if (!canonicalSet.has(e.id)) continue;
-      const id = e.id as ReportKey;
+      const raw = canonicalReportId(e.id);
+      if (!canonicalSet.has(raw)) continue;
+      const id = raw as ReportKey;
       if (seen.has(id)) continue;
       out.push({ id, visible: Boolean(e.visible) });
       seen.add(id);

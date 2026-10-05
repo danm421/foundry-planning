@@ -18,4 +18,8 @@ describe("solver view URL params", () => {
     expect(resolveReportParam("monteCarlo")).toBe("monteCarlo");
     expect(resolveReportParam("thresholds")).toBe("portfolio");
   });
+
+  it("opens Goals for an old ?report=education link", () => {
+    expect(resolveReportParam("education")).toBe("goals");
+  });
 });

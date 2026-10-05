@@ -126,12 +126,12 @@ interface Props {
   /** Which of `baseGifts`' recurring gifts are the scenario's own `gift`
    *  changes. Only those are listed in the Changes tab (they alone open). */
   overlayGiftSeriesIds: string[];
-  /** Blended dedicated-pool return stats per education goalId (from the plan MC
-   *  data), driving the Education report's per-goal POS gauge. Optional — the
-   *  panel falls back to a neutral per-goal default when absent. */
-  educationReturnStats?: Record<string, { arithMean: number; stdDev: number }>;
-  /** Scenario Monte Carlo seed, so the per-goal education gauges reproduce. */
-  educationSeed?: number;
+  /** Blended dedicated-pool return stats per goalId (from the plan MC data),
+   *  driving the Goals report's per-goal gauge. Optional — the panel falls back
+   *  to a neutral per-goal default when absent. */
+  goalReturnStats?: Record<string, { arithMean: number; stdDev: number }>;
+  /** Scenario Monte Carlo seed, so the per-goal gauges reproduce. */
+  goalSeed?: number;
   /** Advisor's persisted report order + visibility, reconciled server-side. */
   initialReportLayout: ReportLayoutEntry[];
   /** The left tab and right report to open on, from `?tab=` / `?report=`.
@@ -218,8 +218,8 @@ export function LiveSolverWorkspace({
   scenarioName,
   baseGifts,
   overlayGiftSeriesIds,
-  educationReturnStats,
-  educationSeed,
+  goalReturnStats,
+  goalSeed,
   initialReportLayout,
   initialTab = "retirement",
   initialReport = "portfolio",
@@ -1765,7 +1765,7 @@ export function LiveSolverWorkspace({
             onChange={pushMutation}
             onResetField={clearMutations}
             growth529={categoryGrowthDefaults.retirement}
-            onOpenReport={reportOpener("education")}
+            onOpenReport={reportOpener("goals")}
           />
         )}
 
@@ -1876,8 +1876,8 @@ export function LiveSolverWorkspace({
               onCashflowSubTabChange={setCashflowSubTab}
               selectedYear={selectedYear}
               onYearClick={setSelectedYear}
-              educationReturnStats={educationReturnStats}
-              educationSeed={educationSeed}
+              goalReturnStats={goalReturnStats}
+              goalSeed={goalSeed}
             />
             {activeReport === "lifeInsurance" ? (
               <SolverLifeInsuranceResults

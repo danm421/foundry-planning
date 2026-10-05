@@ -36,7 +36,7 @@ import {
   LifeInsuranceIcon,
   EstatePlanningIcon,
   MonteCarloIcon,
-  EducationIcon,
+  GoalsIcon,
   SummariesIcon,
   BalanceSheetIcon,
 } from "./report-tab-icons";
@@ -50,7 +50,7 @@ import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import type { SummaryKey } from "@/components/solver/summaries/types";
 import { SolverSummaryPanel } from "./solver-summary-panel";
 import { SolverMonteCarloPanel } from "./solver-monte-carlo-panel";
-import { EducationReportPanel } from "@/components/solver/education/education-report-panel";
+import { GoalsReportPanel } from "@/components/solver/goals/goals-report-panel";
 import { SolverBalanceSheetPanel } from "./solver-balance-sheet-panel";
 import { SolverThresholdsPanel } from "./solver-thresholds-panel";
 
@@ -73,7 +73,7 @@ export const REPORT_TABS: {
   { id: "lifeInsurance", label: "Life Insurance Need", short: "Insurance", icon: LifeInsuranceIcon },
   { id: "estate", label: "Estate", short: "Estate", icon: EstatePlanningIcon },
   { id: "monteCarlo", label: "Monte Carlo", short: "Monte Carlo", icon: MonteCarloIcon },
-  { id: "education", label: "Education", short: "Education", icon: EducationIcon },
+  { id: "goals", label: "Goals", short: "Goals", icon: GoalsIcon },
   { id: "balanceSheet", label: "Balance Sheet", short: "Bal Sheet", icon: BalanceSheetIcon },
   { id: "summaries", label: "Summaries", short: "Summary", icon: SummariesIcon },
 ];
@@ -200,12 +200,12 @@ interface Props {
   selectedYear: number | null;
   /** Fired when a cash-flow chart bar is clicked. */
   onYearClick: (year: number) => void;
-  /** Blended dedicated-pool return stats per education goalId, for the Education
-   *  report's per-goal POS gauge. Sourced from the plan MC data. Optional — the
-   *  panel falls back to a neutral per-goal default when absent. */
-  educationReturnStats?: Record<string, { arithMean: number; stdDev: number }>;
-  /** Scenario Monte Carlo seed, so the per-goal education gauges reproduce. */
-  educationSeed?: number;
+  /** Blended dedicated-pool return stats per goalId, for the Goals report's
+   *  per-goal gauge. Sourced from the plan MC data. Optional — the panel falls
+   *  back to a neutral per-goal default when absent. */
+  goalReturnStats?: Record<string, { arithMean: number; stdDev: number }>;
+  /** Scenario Monte Carlo seed, so the per-goal gauges reproduce. */
+  goalSeed?: number;
 }
 
 export function SolverChartPanel({
@@ -237,8 +237,8 @@ export function SolverChartPanel({
   onCashflowSubTabChange,
   selectedYear,
   onYearClick,
-  educationReturnStats,
-  educationSeed,
+  goalReturnStats,
+  goalSeed,
 }: Props) {
   const tab = activeReport;
   const [showPortfolioAssets, setShowPortfolioAssets] = useState(false);
@@ -596,15 +596,15 @@ export function SolverChartPanel({
     );
   }
 
-  if (tab === "education") {
+  if (tab === "goals") {
     return (
       <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
         <div className="mb-3">{reportTabs}</div>
-        <EducationReportPanel
+        <GoalsReportPanel
           years={currentProjection}
           expenses={workingTree.expenses}
-          returnStats={educationReturnStats}
-          seed={educationSeed}
+          returnStats={goalReturnStats}
+          seed={goalSeed}
         />
         {recalculating}
       </div>

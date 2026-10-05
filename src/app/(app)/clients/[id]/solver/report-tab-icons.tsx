@@ -69,12 +69,13 @@ export function MonteCarloIcon(props: SVGProps<SVGSVGElement>): ReactElement {
   );
 }
 
-/** Education — Lucide `graduation-cap` (education-goal dedicated funding). */
-export function EducationIcon(props: SVGProps<SVGSVGElement>): ReactElement {
+/** Goals — Lucide `target` (every goal the plan funds). */
+export function GoalsIcon(props: SVGProps<SVGSVGElement>): ReactElement {
   return (
     <svg {...base} aria-hidden="true" {...props}>
-      <path d="M22 10 12 5 2 10l10 5 10-5Z" />
-      <path d="M6 12v5c0 1 2.7 2.5 6 2.5s6-1.5 6-2.5v-5" />
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="12" r="6" />
+      <circle cx="12" cy="12" r="2" />
     </svg>
   );
 }

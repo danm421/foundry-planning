@@ -1,4 +1,4 @@
-import { REPORT_KEYS, type ReportKey } from "@/lib/solver/report-layout";
+import { REPORT_KEYS, canonicalReportId, type ReportKey } from "@/lib/solver/report-layout";
 
 /** Re-exported so existing `./report-tab-link` imports keep working. The
  *  canonical definition lives in `@/lib/solver/report-layout`. */
@@ -29,7 +29,8 @@ export function resolveInputTab(raw: string | undefined): InputTab {
  *  workspace still reconciles it against the advisor's layout, so a hidden
  *  report is never selected. */
 export function resolveReportParam(raw: string | undefined): ReportKey {
-  return (REPORT_KEYS as readonly string[]).includes(raw ?? "") ? (raw as ReportKey) : DEFAULT_REPORT;
+  const id = raw == null ? "" : canonicalReportId(raw);
+  return (REPORT_KEYS as readonly string[]).includes(id) ? (id as ReportKey) : DEFAULT_REPORT;
 }
 
 /** The query string recording the open views, preserving every other param
