@@ -1,8 +1,9 @@
 import type { GoalReport } from "./goal-report-data";
 import type { GoalMcInput } from "@/engine/goals/goal-mc";
+import { canHaveGoalFunding, goalDrawAccountIds } from "@/engine/goals/goal-funding";
 
-/** Blended dedicated-pool return stats for one education goal, feeding the
- *  lognormal per-goal Monte Carlo. */
+/** Blended dedicated-pool return stats for one goal, feeding the lognormal
+ *  per-goal Monte Carlo. */
 export interface GoalReturnStat {
   arithMean: number;
   stdDev: number;
@@ -19,9 +20,7 @@ export interface GoalReturnStat {
  *
  *  withdrawalsByYear = the goal's yearly *cost* (`goalExpense`), i.e. the target
  *  the funding must cover — NOT the pool's `dedicatedWithdrawal`, which is capped
- *  at the pool balance and so would always read as fully funded. Cash-flow
- *  funding (`coveredByCashFlow`) is passed through so the gauge counts a
- *  dedicated-pool shortfall as covered rather than a failure. */
+ *  at the pool balance and so would always read as fully funded. */
 export function buildGoalMcInput(
   report: GoalReport,
   stats: GoalReturnStat,
@@ -36,7 +35,6 @@ export function buildGoalMcInput(
     startingBalance: expenseRows[0]?.dedicatedAssetsBOY ?? 0,
     contributionsByYear: expenseRows.map((r) => r.growthAndSavings),
     withdrawalsByYear: expenseRows.map((r) => r.goalExpense),
-    coveredByCashFlow: report.coveredByCashFlow,
     arithMean: stats.arithMean,
     stdDev: stats.stdDev,
     seed,
@@ -45,17 +43,17 @@ export function buildGoalMcInput(
 }
 
 interface ReturnStatsArgs {
-  /** Education expenses drive which goals get stats; `id` is the goalId. */
-  expenses: ReadonlyArray<{ id: string; type: string; dedicatedAccountIds?: string[] }>;
+  /** Goal expenses drive which goals get stats; `id` is the goalId. */
+  expenses: ReadonlyArray<{ id: string; type: string; isGoal?: boolean; dedicatedAccountIds?: string[] }>;
   /** Current balances + fixed growth rate per account (from the effective tree). */
-  accounts: ReadonlyArray<{ id: string; value: number; growthRate: number }>;
+  accounts: ReadonlyArray<{ id: string; value: number; growthRate: number; category: string; subType?: string | null }>;
   /** Base asset mix per account, resolved by the plan MC loader. */
   accountMixes: ReadonlyArray<{ accountId: string; mix: ReadonlyArray<{ assetClassId: string; weight: number }> }>;
   /** Per-asset-class arithmetic mean + std dev (the plan MC's index stats). */
   assetClassStats: ReadonlyMap<string, GoalReturnStat>;
 }
 
-/** Derive blended `{ arithMean, stdDev }` for each education goal's dedicated
+/** Derive blended `{ arithMean, stdDev }` for each goal's dedicated
  *  pool, for the client-side per-goal gauge MC.
  *
  *  Per dedicated account:
@@ -74,8 +72,8 @@ export function buildGoalReturnStats(args: ReturnStatsArgs): Record<string, Goal
   const out: Record<string, GoalReturnStat> = {};
 
   for (const e of args.expenses) {
-    if (e.type !== "education") continue;
-    const ids = e.dedicatedAccountIds ?? [];
+    if (!canHaveGoalFunding(e)) continue;
+    const ids = goalDrawAccountIds(e, acctById);
     if (ids.length === 0) continue;
 
     let totalBalance = 0;

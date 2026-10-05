@@ -1,4 +1,5 @@
 import type { ClientData, ProjectionYear, SavingsRule } from "@/engine/types";
+import { canHaveGoalFunding } from "@/lib/goals";
 
 export interface GoalSolveInput {
   tree: ClientData;
@@ -55,13 +56,16 @@ export function withAdditionalContribution(
   return next;
 }
 
-/** Unfunded dollars and total indexed cost for one goal. Cost comes from the
- *  engine's own `goalExpense` rather than a re-derivation of the tree's
- *  indexing — the two must not be allowed to drift. */
-function goalTotals(years: ProjectionYear[], goalId: string): { shortfall: number; cost: number } {
+/** The cost the goal's savings leave uncovered, and the goal's total indexed
+ *  cost. Uncovered = goalExpense − dedicatedWithdrawal: what cash flow paid
+ *  (`outOfPocketWithdrawal`) still counts, because this solve sizes the
+ *  SAVINGS and cash flow is only the backstop (spec 2026-10-05, Decision 7).
+ *  Cost comes from the engine's own `goalExpense` rather than a re-derivation
+ *  of the tree's indexing — the two must not be allowed to drift. */
+function goalTotals(years: ProjectionYear[], goalId: string): { uncovered: number; cost: number } {
   const rows = years.flatMap((y) => y.goals ?? []).filter((g) => g.goalId === goalId);
   return {
-    shortfall: rows.reduce((s, g) => s + g.shortfall, 0),
+    uncovered: rows.reduce((s, g) => s + Math.max(0, g.goalExpense - g.dedicatedWithdrawal), 0),
     cost: rows.reduce((s, g) => s + g.goalExpense, 0),
   };
 }
@@ -73,7 +77,7 @@ export function solveGoalDedicatedSavings(input: GoalSolveInput): GoalSolveResul
   const cap = input.cap ?? 1_000_000;
   const targetPct = Math.min(1, Math.max(0, input.targetPct ?? 1));
 
-  const goal = tree.expenses.find((e) => e.id === goalId && e.type === "education");
+  const goal = tree.expenses.find((e) => e.id === goalId && canHaveGoalFunding(e));
   const lastDrawYear = goal?.endYear ?? currentYear;
 
   const totalsAt = (additional: number) =>
@@ -86,12 +90,12 @@ export function solveGoalDedicatedSavings(input: GoalSolveInput): GoalSolveResul
   // cost is fixed by the plan, not by what we contribute, so one read at 0 is
   // enough to set the bar for every later iteration.
   const base = totalsAt(0);
-  const allowedShortfall = (1 - targetPct) * base.cost;
+  const allowedUncovered = (1 - targetPct) * base.cost;
   const atTarget = (additional: number): boolean =>
-    totalsAt(additional).shortfall <= allowedShortfall + tolerance;
+    totalsAt(additional).uncovered <= allowedUncovered + tolerance;
 
   // Already at (or past) the target.
-  if (base.shortfall <= allowedShortfall + tolerance) {
+  if (base.uncovered <= allowedUncovered + tolerance) {
     return { additionalAnnual: 0, reachesTarget: true, targetPct };
   }
 

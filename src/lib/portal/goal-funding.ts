@@ -13,19 +13,20 @@
 // the engine — a shortfall year is short on *everything* — so a pro-rata split
 // is the only allocation the projection actually supports.
 //
-// Education is the one exception, because the engine already answers the
-// question exactly: a 529 pays the school straight out of the dedicated
-// account without touching household cash (`dedicatedWithdrawal`, always
-// funded), the uncovered remainder is either paid from household cash flow
-// (`outOfPocketWithdrawal`, subject to that year's coverage) or booked as an
-// unfunded `shortfall`. So education reads the engine's own numbers rather
-// than the pro-rata rule.
+// Funded goals are the exception — education, and an Other goal with a
+// savings account — because the engine already answers the question exactly:
+// the goal's savings pay it straight out of the dedicated accounts
+// (`dedicatedWithdrawal`, always funded), the uncovered remainder is either
+// paid from household cash flow (`outOfPocketWithdrawal`, subject to that
+// year's coverage) or booked as an unfunded `shortfall`. So funded goals read
+// the engine's own numbers rather than the pro-rata rule.
 //
 // A goal expense the household does not pay — one owned by an entity or a
 // business account — never lands in `expenses.bySource`, so it drops out of
 // this list rather than reporting against a coverage figure derived from
 // household cash it was never paid from.
 import type { Account, ProjectionYear } from "@/engine/types";
+import { isFundedGoal } from "@/engine/goals/goal-funding";
 import { isGoalExpense } from "@/lib/goals";
 import { retirementInflows } from "@/lib/retirement/retirement-inflows";
 import { lifetimeFunding } from "@/lib/retirement/retirement-funding";
@@ -38,11 +39,17 @@ export interface GoalFundingExpense {
   name: string;
   isGoal?: boolean;
   forFamilyMemberId?: string | null;
+  dedicatedAccountIds?: string[];
+  /** A business- or entity-owned goal is paid by its owner, never from
+   *  savings — read so this list agrees with the projection (`isFundedGoal`). */
+  ownerAccountId?: string | null;
+  ownerEntityId?: string | null;
 }
 
 export interface BuildGoalFundingInput {
   years: ProjectionYear[];
-  /** Only used for the retirement line, via `lifetimeFunding`. */
+  /** The retirement line (`lifetimeFunding`) and which goals the projection
+   *  funds from savings (`isFundedGoal`). */
   accounts: readonly Account[];
   expenses: GoalFundingExpense[];
   /** Beneficiary names for the "for <name>" line. */
@@ -110,10 +117,13 @@ export function buildGoalFunding({
   for (const y of years) coverageByYear.set(y.year, yearCoverage(y));
 
   const goalExpenses = expenses.filter(isGoalExpense);
-  const educationById = new Map(
-    goalExpenses.filter((e) => e.type === "education").map((e) => [e.id, e]),
+  // Funded goals (education, or an Other goal with a savings account) read the
+  // projection's own goal rows; the rest are plain expenses funded pro-rata.
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
+  const fundedById = new Map(
+    goalExpenses.filter((e) => isFundedGoal(e, accountById)).map((e) => [e.id, e]),
   );
-  const otherGoals = goalExpenses.filter((e) => e.type !== "education");
+  const cashFlowGoals = goalExpenses.filter((e) => !fundedById.has(e.id));
 
   const accumulators = new Map<string, Accumulator>();
   const accFor = (id: string): Accumulator => {
@@ -131,7 +141,7 @@ export function buildGoalFunding({
       // Accumulation rows are pre-expense funding-runway years — they carry no
       // goal cost, so folding them in would only widen the reported span.
       if (row.accumulation) continue;
-      if (!educationById.has(row.goalId)) continue;
+      if (!fundedById.has(row.goalId)) continue;
       addYear(
         accFor(row.goalId),
         y.year,
@@ -140,7 +150,7 @@ export function buildGoalFunding({
       );
     }
 
-    for (const e of otherGoals) {
+    for (const e of cashFlowGoals) {
       const cost = y.expenses.bySource[e.id] ?? 0;
       if (cost === 0) continue;
       addYear(accFor(e.id), y.year, cost, cost * coverage);

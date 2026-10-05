@@ -127,6 +127,37 @@ describe("buildGoalFunding — flagged goal expenses", () => {
     expect(goal.pctFunded).toBeCloseTo(0.5);
   });
 
+  it("reads the projection's own numbers for a funded Other goal, not the pro-rata rule", () => {
+    // The year covers only half its expenses, but the car was paid from its own
+    // brokerage: the goal row says fully funded, so the pro-rata 50% must not apply.
+    const years = [
+      yr(2029, {
+        income: { salaries: 50_000 },
+        totalExpenses: 100_000,
+        expenses: { bySource: { car: 60_000 } },
+        goals: [
+          {
+            goalId: "car",
+            kind: "other",
+            goalExpense: 60_000,
+            dedicatedWithdrawal: 60_000,
+            householdWithdrawal: 60_000,
+            outOfPocketWithdrawal: 0,
+            shortfall: 0,
+          },
+        ],
+      }),
+    ];
+    const [goal] = buildGoalFunding({
+      years,
+      expenses: [expense({ id: "car", name: "New car", dedicatedAccountIds: ["brk"] })],
+      accounts: [{ id: "brk", category: "taxable", subType: "brokerage" }] as never,
+      familyMemberNamesById: noFamily,
+      retirementYear: null,
+    });
+    expect(goal).toMatchObject({ kind: "other", cost: 60_000, funded: 60_000, pctFunded: 1 });
+  });
+
   it("ignores an expense the advisor did not flag as a goal", () => {
     const years = [
       yr(2030, { income: { salaries: 100 }, totalExpenses: 100, expenses: { bySource: { e1: 100 } } }),

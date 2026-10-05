@@ -28,7 +28,7 @@ function fakeRun(currentYear: number): (t: ClientData) => ProjectionYear[] {
     const available = perYear * years;
     const remaining = Math.max(0, 20_000 - available);
     // Attribute the whole cost + shortfall to a single goal-year row for simplicity.
-    return [{ year: 2033, goals: [{ goalId: "goal", goalExpense: 20_000, shortfall: remaining } as never] } as never];
+    return [{ year: 2033, goals: [{ goalId: "goal", goalExpense: 20_000, dedicatedWithdrawal: 20_000 - remaining, outOfPocketWithdrawal: 0, shortfall: remaining } as never] } as never];
   };
 }
 
@@ -72,5 +72,27 @@ describe("solveGoalDedicatedSavings", () => {
     const r = solveGoalDedicatedSavings({ tree: tree(), goalId: "goal", accountId: "acct", currentYear: 2026, runProjection: fakeRun(2026), cap: 1_000 });
     expect(r.reachesTarget).toBe(false);
     expect(r.additionalAnnual).toBe(1_000);
+  });
+  it("sizes the savings even when cash flow pays the gap (Decision 7)", () => {
+    // Same savings picture, but the goal pays its gap from cash flow: shortfall
+    // is 0 while the savings still leave `remaining` uncovered.
+    const coveredRun = (currentYear: number) => (t: ClientData) => {
+      const rule = t.savingsRules.find((r) => r.accountId === "acct");
+      const available = (rule?.annualAmount ?? 0) * (2033 - currentYear + 1);
+      const remaining = Math.max(0, 20_000 - available);
+      return [{ year: 2033, goals: [{ goalId: "goal", goalExpense: 20_000, dedicatedWithdrawal: 20_000 - remaining, outOfPocketWithdrawal: remaining, shortfall: 0 } as never] } as never];
+    };
+    const r = solveGoalDedicatedSavings({ tree: tree(), goalId: "goal", accountId: "acct", currentYear: 2026, runProjection: coveredRun(2026) });
+    expect(r.reachesTarget).toBe(true);
+    expect(Math.abs(r.additionalAnnual - 2_500)).toBeLessThanOrEqual(50);
+  });
+
+  it("solves an Other goal the same way", () => {
+    const t = tree();
+    (t.expenses as unknown as Record<string, unknown>[])[0] = {
+      ...(t.expenses[0] as unknown as Record<string, unknown>), type: "other", isGoal: true,
+    };
+    const r = solveGoalDedicatedSavings({ tree: t, goalId: "goal", accountId: "acct", currentYear: 2026, runProjection: fakeRun(2026) });
+    expect(Math.abs(r.additionalAnnual - 2_500)).toBeLessThanOrEqual(50);
   });
 });
