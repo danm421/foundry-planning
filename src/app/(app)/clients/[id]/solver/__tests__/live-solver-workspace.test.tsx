@@ -1559,7 +1559,7 @@ describe("LiveSolverWorkspace — left tabs open at their top", () => {
   it("switching tabs resets the left pane's scroll, so the Changes toolbar is in view", () => {
     render(<LiveSolverWorkspace {...baseProps} changesPanel={panel} />);
     const tabs = screen.getByRole("tablist", { name: "Solver editing surface" });
-    const pane = tabs.parentElement as HTMLElement;
+    const pane = tabs.closest<HTMLElement>("#solver-inputs-pane")!;
     pane.scrollTop = 640; // as if a lever far down the Retirement tab was edited
 
     fireEvent.click(within(tabs).getByRole("tab", { name: "Scenario changes" }));
@@ -1571,7 +1571,7 @@ describe("LiveSolverWorkspace — left tabs open at their top", () => {
   it("re-clicking the active tab leaves the scroll alone", () => {
     render(<LiveSolverWorkspace {...baseProps} changesPanel={panel} />);
     const tabs = screen.getByRole("tablist", { name: "Solver editing surface" });
-    const pane = tabs.parentElement as HTMLElement;
+    const pane = tabs.closest<HTMLElement>("#solver-inputs-pane")!;
     pane.scrollTop = 640;
 
     fireEvent.click(within(tabs).getByRole("tab", { name: "Retirement" }));

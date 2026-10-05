@@ -30,7 +30,7 @@ import { shouldAutoRunMc, AUTO_RUN_DEBOUNCE_MS } from "./auto-run-mc";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
 import { SolverChartPanel, type CashflowSubTab } from "./solver-chart-panel";
 import { SolverKpiStrip } from "./solver-kpi-strip";
-import { SolverPaneToggle } from "./solver-pane-toggle";
+import { SolverCollapsedInputsRail, SolverPaneToggleButton } from "./solver-pane-toggle";
 import { solverViewQuery, type InputTab, type ReportKey } from "./report-tab-link";
 import {
   resolveActiveReport,
@@ -1492,56 +1492,67 @@ export function LiveSolverWorkspace({
           offset can't see them and leaves a dead gap below the workspace.
           On mobile (<lg) the shell stays min-h-screen: the panes stack and the
           page scrolls normally. */}
-      {/* Collapsed drops the inputs track entirely rather than zeroing it: the
-          hidden pane is out of flow, so a leading 0px track would swallow the
-          rail and push the report pane into the rail's width. */}
+      {/* Expanded, the inputs pane takes the width the collapsed rail would,
+          so the report pane is the same size either way. Collapsed drops the
+          inputs track entirely rather than zeroing it: the hidden pane is out
+          of flow, so a leading 0px track would swallow the rail and push the
+          report pane into the rail's width. */}
       <div
         className={`relative grid min-h-0 flex-1 grid-cols-1 ${
           leftCollapsed
             ? "lg:grid-cols-[2.75rem_minmax(0,1fr)]"
-            : "lg:grid-cols-[35%_2.75rem_minmax(0,1fr)]"
+            : "lg:grid-cols-[calc(35%_+_2.75rem)_minmax(0,1fr)]"
         }`}
       >
-        {/* LEFT — inputs, independent scroll. The boundary hairline is drawn by
-            the toggle rail (the middle column), so no lg:border-r here. Collapse
-            hides the pane on desktop only: below lg the panes stack, the rail is
+        {/* LEFT — inputs, independent scroll; draws the boundary divider itself
+            while expanded (the rail draws it while collapsed). Collapse hides
+            the pane on desktop only: below lg the panes stack, the toggle is
             hidden, and the inputs always show. Hidden rather than unmounted so
             the tab and form state survive a collapse. */}
         <div
           ref={leftPaneRef}
           id={SOLVER_INPUTS_PANE_ID}
-          className={`relative min-h-0 overflow-x-hidden overflow-y-auto border-b border-hair lg:border-b-0${
+          className={`relative min-h-0 overflow-x-hidden overflow-y-auto border-b border-hair lg:border-b-0 lg:border-r-2 lg:border-r-hair-3${
             leftCollapsed ? " lg:hidden" : ""
           }`}
         >
-          <div
-            role="tablist"
-            aria-label="Solver editing surface"
-            className="sticky top-0 z-10 flex border-b border-hair-2 bg-card px-1 pt-0.5"
-          >
-            {LEFT_TABS.map((t) => {
-              const Icon = t.icon;
-              const active = activeTab === t.id;
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  aria-label={t.label}
-                  title={t.label}
-                  onClick={() => selectLeftTab(t.id)}
-                  className={
-                    active
-                      ? "flex min-w-0 flex-1 flex-col items-center gap-1 border-b-2 border-accent px-1 py-1.5 text-[11px] font-medium text-accent"
-                      : "flex min-w-0 flex-1 flex-col items-center gap-1 border-b-2 border-transparent px-1 py-1.5 text-[11px] text-ink-3 transition-colors hover:text-ink"
-                  }
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  <span className="max-w-full truncate">{t.short}</span>
-                </button>
-              );
-            })}
+          <div className="sticky top-0 z-10 flex border-b border-hair-2 bg-card">
+            <div
+              role="tablist"
+              aria-label="Solver editing surface"
+              className="flex min-w-0 flex-1 px-1 pt-0.5"
+            >
+              {LEFT_TABS.map((t) => {
+                const Icon = t.icon;
+                const active = activeTab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    aria-label={t.label}
+                    title={t.label}
+                    onClick={() => selectLeftTab(t.id)}
+                    className={
+                      active
+                        ? "flex min-w-0 flex-1 flex-col items-center gap-1 border-b-2 border-accent px-1 py-1.5 text-[11px] font-medium text-accent"
+                        : "flex min-w-0 flex-1 flex-col items-center gap-1 border-b-2 border-transparent px-1 py-1.5 text-[11px] text-ink-3 transition-colors hover:text-ink"
+                    }
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="max-w-full truncate">{t.short}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="hidden shrink-0 items-center pr-2 lg:flex">
+              <SolverPaneToggleButton
+                collapsed={false}
+                onToggle={toggleLeftPane}
+                controls={SOLVER_INPUTS_PANE_ID}
+              />
+            </div>
           </div>
 
           <div className="px-1 pb-4">
@@ -1778,11 +1789,9 @@ export function LiveSolverWorkspace({
           </div>
         </div>
 
-        <SolverPaneToggle
-          collapsed={leftCollapsed}
-          onToggle={toggleLeftPane}
-          controls={SOLVER_INPUTS_PANE_ID}
-        />
+        {leftCollapsed ? (
+          <SolverCollapsedInputsRail onToggle={toggleLeftPane} controls={SOLVER_INPUTS_PANE_ID} />
+        ) : null}
 
         {/* RIGHT — reports, scroll as one document.
             `relative` on both panes is load-bearing, not decoration: an

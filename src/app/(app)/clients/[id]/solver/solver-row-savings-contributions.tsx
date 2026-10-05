@@ -17,6 +17,7 @@ import type { SalaryOption } from "@/components/forms/salary-basis-fields";
 import { toSalaryOptions } from "@/lib/savings/salary-options";
 import { FieldHintPopover, type HintRow } from "@/components/forms/field-hint-popover";
 import { SolverBaseHint } from "./solver-base-hint";
+import { SolverFieldActions } from "./solver-field-actions";
 import { RothSplitControl } from "./solver-roth-split-control";
 import { SolverSavingsEditDialog } from "./solver-savings-edit-dialog";
 import { SolverSolveIcon } from "./solver-solve-icon";
@@ -418,8 +419,10 @@ function Editable({
             <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474L4.42 15.14a.75.75 0 0 1-.36.198l-3.25.75a.75.75 0 0 1-.902-.901l.75-3.25a.75.75 0 0 1 .198-.36L11.013 1.427Z" />
           </svg>
         </button>
+      </div>
+      <SolverFieldActions>
         {isDollarMode ? (
-          <div ref={anchorRef} className="relative">
+          <div ref={anchorRef} className="relative shrink-0">
             <SolverSolveIcon
               label={`Solve ${label}`}
               tooltip={SAVINGS_CONTRIBUTION_SOLVE_DESCRIPTION}
@@ -442,25 +445,25 @@ function Editable({
             ) : null}
           </div>
         ) : null}
-      </div>
-      {baseRule ? (
-        <SolverBaseHint
-          base={baseRule}
-          working={workingRule}
-          changed={contributionMagnitude(baseRule) !== contributionMagnitude(workingRule)}
-          format={(r) => contributionLabel(r)}
-          onReset={
-            onResetField
-              ? () => {
-                  onResetField(savingsResetKeys(workingRule.accountId));
-                  setResetTick((t) => t + 1);
-                }
-              : undefined
-          }
-        />
-      ) : (
-        <div className="mt-0.5 text-[11px] text-accent">added in scenario</div>
-      )}
+        {baseRule ? (
+          <SolverBaseHint
+            base={baseRule}
+            working={workingRule}
+            changed={contributionMagnitude(baseRule) !== contributionMagnitude(workingRule)}
+            format={(r) => contributionLabel(r)}
+            onReset={
+              onResetField
+                ? () => {
+                    onResetField(savingsResetKeys(workingRule.accountId));
+                    setResetTick((t) => t + 1);
+                  }
+                : undefined
+            }
+          />
+        ) : (
+          <div className="text-[11px] text-accent">added in scenario</div>
+        )}
+      </SolverFieldActions>
       {workingAccount && supportsRothSplit(workingAccount.category, workingAccount.subType) ? (
         <RothSplitControl
           rothPercent={workingRule.rothPercent ?? null}
@@ -522,7 +525,7 @@ function CurrencyAmountInput({
   }
 
   return (
-    <div className="relative">
+    <div className="relative w-32 min-w-0">
       <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">
         $
       </span>
@@ -532,7 +535,7 @@ function CurrencyAmountInput({
         inputMode="numeric"
         value={display}
         onChange={handleChange}
-        className="h-9 w-32 rounded-md border border-hair-2 bg-card-2 pl-6 pr-2.5 text-[14px] text-ink tabular border-l-2 border-l-accent/70 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+        className="h-9 w-full rounded-md border border-hair-2 bg-card-2 pl-6 pr-2.5 text-[14px] text-ink tabular border-l-2 border-l-accent/70 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
         aria-label={label}
       />
     </div>
