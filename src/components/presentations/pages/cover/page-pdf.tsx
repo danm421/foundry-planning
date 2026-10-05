@@ -28,7 +28,8 @@ interface CoverProps {
   firmTagline: string | null;
   clientName: string;
   spouseName: string | null;
-  scenarioLabel: string;
+  /** Null drops the Scenario line — a document with no plan behind it. */
+  scenarioLabel: string | null;
   reportDate: string;
   /** Cream-panel logo as a base64 data URL — firm logo, or the Foundry default
    *  supplied by the export route. `null` falls back to the firm-name wordmark. */
@@ -145,10 +146,12 @@ export function CoverPdf(props: CoverProps) {
           <Text style={styles.metaLabel}>Prepared By</Text>
           <Text style={styles.metaValue}>{props.firmName}</Text>
         </View>
-        <View style={styles.metaGroup}>
-          <Text style={styles.metaLabel}>Scenario</Text>
-          <Text style={styles.metaValue}>{props.scenarioLabel}</Text>
-        </View>
+        {props.scenarioLabel !== null && (
+          <View style={styles.metaGroup}>
+            <Text style={styles.metaLabel}>Scenario</Text>
+            <Text style={styles.metaValue}>{props.scenarioLabel}</Text>
+          </View>
+        )}
         <View style={styles.metaGroup}>
           <Text style={styles.metaLabel}>Date</Text>
           <Text style={styles.metaValueMono}>{props.reportDate}</Text>

@@ -8,6 +8,9 @@
 // ceilings. Q1 and Q4 both probe drawdown behavior on purpose -- stated versus
 // revealed, where Q4 is the honesty check on Q1.
 
+import type { RiskLevel } from "@/lib/risk-levels";
+import { band } from "@/lib/risk/scoring";
+
 export const RTQ_VERSION = 1;
 
 export interface RtqOption {
@@ -85,6 +88,35 @@ export const RTQ_V1: RtqQuestion[] = [
     ],
   },
 ];
+
+/**
+ * A sitting as it reads back: every question with the option picked (null when
+ * skipped), and a score only when EVERY question is answered — `scoreRtq`
+ * throws on a gap, and a fragment is not a measurement. The advisor's review
+ * card and the downloadable answers both read this, so neither can print a
+ * score the profile never received.
+ */
+export function summarizeRtq(answers: RtqAnswers): {
+  answered: number;
+  total: number;
+  score: number | null;
+  level: RiskLevel | null;
+  answers: { prompt: string; label: string | null }[];
+} {
+  const picked = RTQ_V1.map((q) => ({
+    prompt: q.prompt,
+    label: q.options.find((o) => o.value === answers[q.id])?.label ?? null,
+  }));
+  const answered = picked.filter((a) => a.label !== null).length;
+  const score = answered === RTQ_V1.length ? scoreRtq(answers) : null;
+  return {
+    answered,
+    total: RTQ_V1.length,
+    score,
+    level: score === null ? null : band(score),
+    answers: picked,
+  };
+}
 
 export function isCompleteRtq(answers: RtqAnswers): boolean {
   return RTQ_V1.every((q) => q.options.some((o) => o.value === answers[q.id]));

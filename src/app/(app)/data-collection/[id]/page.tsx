@@ -11,6 +11,7 @@ import { snapshotClientToPayload } from "@/lib/intake/snapshot";
 import { buildIntakeDiff } from "@/components/intake/admin/diff-utils";
 import ReviewDetail from "@/components/intake/admin/review-detail";
 import PendingDetail from "@/components/intake/admin/pending-detail";
+import { AnswersPdfButton } from "@/components/intake/admin/answers-pdf-button";
 import Link from "next/link";
 import { ArrowLeftIcon } from "@/components/icons";
 
@@ -92,7 +93,7 @@ export default async function DataCollectionReviewPage({ params, searchParams }:
   const diff = buildIntakeDiff(baseline, submitted);
 
   return (
-    <Shell title={title}>
+    <Shell title={title} action={<AnswersPdfButton formId={form.id} />}>
       <ReviewDetail
         form={form}
         diff={diff}
@@ -106,7 +107,16 @@ export default async function DataCollectionReviewPage({ params, searchParams }:
 }
 
 /** Page frame — shared so the two views can't drift apart. */
-function Shell({ title, children }: { title: string; children: React.ReactNode }) {
+function Shell({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  /** Right of the title — only a submitted form has answers to download. */
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
       <div className="mb-6">
@@ -117,9 +127,12 @@ function Shell({ title, children }: { title: string; children: React.ReactNode }
           <ArrowLeftIcon width={14} height={14} />
           Data Collection
         </Link>
-        <h1 className="mt-3 text-[22px] font-semibold leading-tight tracking-[-0.02em] text-ink">
-          {title}
-        </h1>
+        <div className="mt-3 flex items-start justify-between gap-4">
+          <h1 className="min-w-0 break-words text-[22px] font-semibold leading-tight tracking-[-0.02em] text-ink">
+            {title}
+          </h1>
+          {action}
+        </div>
       </div>
       {children}
     </div>

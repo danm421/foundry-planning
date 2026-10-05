@@ -24,8 +24,7 @@ import {
   predeceasedLabel,
   legalResidenceLabel,
 } from "@/lib/intake/estate";
-import { RTQ_V1, scoreRtq } from "@/lib/risk/rtq";
-import { band } from "@/lib/risk/scoring";
+import { summarizeRtq } from "@/lib/risk/rtq";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 // RiskLevel lives in risk-levels, NOT risk/labels — that module holds
 // tolerance-source and binding-constraint labels, not level names.
@@ -295,19 +294,10 @@ export function buildIntakeDiff(
 
   // Every question is listed, answered or not — an advisor reading a partial
   // sitting needs to see WHICH ones are missing, not just how many.
-  const rawAnswers = (submitted.risk?.answers ?? {}) as Record<string, string>;
-  const answered = RTQ_V1.filter((q) => q.options.some((o) => o.value === rawAnswers[q.id]));
-  const complete = answered.length === RTQ_V1.length;
-  const score = complete ? scoreRtq(rawAnswers) : null;
+  const rtq = summarizeRtq((submitted.risk?.answers ?? {}) as Record<string, string>);
   const risk: RiskDiff = {
-    answered: answered.length,
-    total: RTQ_V1.length,
-    score,
-    level: score === null ? null : band(score),
-    answers: RTQ_V1.map((q) => ({
-      prompt: q.prompt,
-      label: q.options.find((o) => o.value === rawAnswers[q.id])?.label ?? "—",
-    })),
+    ...rtq,
+    answers: rtq.answers.map((a) => ({ prompt: a.prompt, label: a.label ?? "—" })),
     note: submitted.risk?.environmentNote ?? null,
   };
 

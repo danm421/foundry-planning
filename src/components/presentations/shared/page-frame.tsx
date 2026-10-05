@@ -42,6 +42,9 @@ const styles = StyleSheet.create({
     backgroundColor: PRESENTATION_THEME.accent,
   },
   body: { flex: 1, marginTop: 14 },
+  // Flow mode: the header repeats on every sheet and carries the gap the body's
+  // margin gives a single sheet.
+  flowHeader: { marginBottom: 14 },
   // Out of the flow, pinned 42pt off the paper's bottom edge — the same place
   // it printed when it was a flow sibling of `body`.
   //
@@ -84,6 +87,8 @@ export function PageFrame({
   pageIndex,
   totalPages,
   orientation = "portrait",
+  disclaimer = SHORT_DISCLAIMER,
+  flow = false,
   children,
 }: {
   firmName: string;
@@ -92,19 +97,53 @@ export function PageFrame({
   pageIndex: number;
   totalPages: number;
   orientation?: "portrait" | "landscape";
+  /** Footer line. Defaults to the projection disclaimer every deck page wears;
+   *  a document with no projections in it says what it is instead. */
+  disclaimer?: string;
+  /**
+   * Content that runs as long as it runs, across as many sheets as it needs.
+   *
+   * Deck pages size themselves to whole sheets, so their body is `flex: 1` —
+   * exactly one sheet tall. Content longer than that is not broken onto the next
+   * sheet: react-pdf SHRINKS it to fit, printing the last rows on top of each
+   * other over the footer. And `flexShrink: 0` cannot opt out — this react-pdf
+   * writes `flexShrink || 1`, so a zero becomes a one. Flow mode drops the body
+   * wrapper (overflow is what react-pdf breaks onto a new sheet) and repeats the
+   * header on every sheet.
+   *
+   * Children should be a FLAT run of unbreakable rows. When a container's first
+   * child will not fit, react-pdf keeps the whole container on the sheet it
+   * started on and squeezes it into what is left — so a table wrapped in a
+   * View prints squashed at the foot of a page instead of moving to the next.
+   */
+  flow?: boolean;
   children: ReactNode;
 }) {
-  return (
-    <Page size="LETTER" orientation={orientation} style={styles.page}>
+  const header = (
+    <>
       <View style={styles.headerRow}>
         <Text>{firmName}</Text>
         <Text>{`${clientName}  ·  ${reportDate}`}</Text>
       </View>
       <View style={styles.headerAccentRule} />
-      <View style={styles.body}>{children}</View>
+    </>
+  );
+  return (
+    <Page size="LETTER" orientation={orientation} style={styles.page}>
+      {flow ? (
+        // Never `fixed={false}`: react-pdf tests `'fixed' in props`, and a node
+        // carrying the key at all is never moved to the next sheet.
+        <View style={styles.flowHeader} fixed>
+          {header}
+        </View>
+      ) : (
+        header
+      )}
+      {/* Flow content sits directly on the page — see `flow` above. */}
+      {flow ? children : <View style={styles.body}>{children}</View>}
       <View style={styles.footer} fixed>
         <View style={styles.footerHair} />
-        <Text style={styles.footerDisclaimer}>{SHORT_DISCLAIMER}</Text>
+        <Text style={styles.footerDisclaimer}>{disclaimer}</Text>
         <View style={styles.footerRow}>
           <Text>Confidential · Personal</Text>
           <Text render={({ pageNumber, totalPages: tp }) => `Page ${pageNumber} of ${tp}`} />
