@@ -760,11 +760,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         expensesByType[segmentKey].push(exp.id);
       }
       // Education goals have no drill segment of their own. The engine folds the
-      // slice paid out of household cash flow into expenses.other and keys it by
-      // the goal's expense id, so list it under the Other drill. The dedicated 529
-      // draw never reaches bySource; a goal funded entirely from its 529 yields an
-      // all-zero column, which the zero-column filter drops.
-      if (exp.type === "education" && exp.payShortfallOutOfPocket) {
+      // household-paid slice — out of pocket, or drawn from a household-owned
+      // savings account — into expenses.other, keyed by the goal's expense id, so
+      // list it under the Other drill. A draw from a 529 never reaches bySource; a
+      // goal funded entirely from one yields an all-zero column, which the
+      // zero-column filter drops.
+      if (exp.type === "education") {
         if (!expensesByType["other_expense"]) expensesByType["other_expense"] = [];
         expensesByType["other_expense"].push(exp.id);
       }

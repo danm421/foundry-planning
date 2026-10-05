@@ -1267,7 +1267,7 @@ describe("LiveSolverWorkspace — report layout customization", () => {
 });
 
 describe("LiveSolverWorkspace — left-pane View report buttons", () => {
-  // "Education" names BOTH a left input tab and a right report tab, so every
+  // "Goals" names BOTH a left input tab and a right report tab, so every
   // query here is scoped to one tablist by its aria-label.
   const inputTab = (name: string) =>
     within(screen.getByRole("tablist", { name: "Solver editing surface" })).getByRole(
@@ -1287,15 +1287,15 @@ describe("LiveSolverWorkspace — left-pane View report buttons", () => {
         : Promise.resolve({ ok: true, json: async () => liResult }),
     );
 
-  it("jumps the right pane to the Education report", () => {
+  it("jumps the right pane to the Goals report", () => {
     render(<LiveSolverWorkspace {...baseProps} />);
     expect(reportTabs().getByRole("tab", { name: "Portfolio" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
 
-    fireEvent.click(inputTab("Education"));
-    fireEvent.click(screen.getByRole("button", { name: /view the education report/i }));
+    fireEvent.click(inputTab("Goals"));
+    fireEvent.click(screen.getByRole("button", { name: /view the goals report/i }));
 
     expect(reportTabs().getByRole("tab", { name: "Goals" })).toHaveAttribute(
       "aria-selected",
@@ -1324,12 +1324,12 @@ describe("LiveSolverWorkspace — left-pane View report buttons", () => {
     fireEvent.click(screen.getByRole("button", { name: /customize reports/i }));
     fireEvent.click(screen.getByRole("switch", { name: "Goals" }));
 
-    fireEvent.click(inputTab("Education"));
+    fireEvent.click(inputTab("Goals"));
     await waitFor(() =>
       expect(reportTabs().queryByRole("tab", { name: "Goals" })).toBeNull(),
     );
     expect(
-      screen.queryByRole("button", { name: /view the education report/i }),
+      screen.queryByRole("button", { name: /view the goals report/i }),
     ).toBeNull();
   });
 });

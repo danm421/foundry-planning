@@ -5,24 +5,30 @@ import { REPORT_KEYS, canonicalReportId, type ReportKey } from "@/lib/solver/rep
 export type { ReportKey };
 
 /** The six left-pane input tabs. */
-export type InputTab = "retirement" | "techniques" | "stress_test" | "life_insurance" | "education" | "changes";
+export type InputTab = "retirement" | "techniques" | "stress_test" | "life_insurance" | "goals" | "changes";
 
 const INPUT_TABS: readonly InputTab[] = [
   "retirement",
   "techniques",
   "stress_test",
   "life_insurance",
-  "education",
+  "goals",
   "changes",
 ];
 
 const DEFAULT_INPUT_TAB: InputTab = "retirement";
 const DEFAULT_REPORT: ReportKey = "portfolio";
 
+/** Input-tab ids an old `?tab=` link may still carry. "education" became
+ *  "goals" on 2026-10-05 (spec 2026-10-05-solver-goals-design). */
+const RENAMED_INPUT_TABS: Readonly<Record<string, InputTab>> = { education: "goals" };
+
 /** The left tab for a raw `?tab=` value. Anything unrecognised, including a
  *  hand-edited URL, falls back to Retirement. */
 export function resolveInputTab(raw: string | undefined): InputTab {
-  return (INPUT_TABS as readonly string[]).includes(raw ?? "") ? (raw as InputTab) : DEFAULT_INPUT_TAB;
+  // Own keys only: `?tab=constructor` must not pick up Object.prototype's.
+  const id = raw == null ? "" : Object.hasOwn(RENAMED_INPUT_TABS, raw) ? RENAMED_INPUT_TABS[raw] : raw;
+  return (INPUT_TABS as readonly string[]).includes(id) ? (id as InputTab) : DEFAULT_INPUT_TAB;
 }
 
 /** The right report for a raw `?report=` value, falling back to Portfolio. The

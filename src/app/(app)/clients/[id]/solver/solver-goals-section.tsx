@@ -4,10 +4,12 @@ import { useMemo, useState } from "react";
 import type { ClientData, Expense, SavingsRule } from "@/engine/types";
 import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
 import { withAdditionalContribution } from "@/lib/solver/solve-goal-dedicated-savings";
+import { canHaveGoalFunding, goalDrawAccountIds } from "@/engine/goals/goal-funding";
 import { SolverSection } from "./solver-section";
 import { SolverFieldStepper } from "./solver-field-stepper";
 import { SolverViewReportButton } from "./solver-view-report-button";
 import { SolverEducationGoalForm, type EducationGoalFormAccount } from "./solver-education-goal-form";
+import { SolverOtherGoalForm, type OtherGoalOwnerOption } from "./solver-other-goal-form";
 import { useGoalSolve, type GoalSolveOutput } from "./use-goal-solve";
 
 interface Props {
@@ -23,7 +25,13 @@ interface Props {
   onResetField?: (keys: SolverMutationKey[]) => void;
   /** CMA-resolved growth for a new 529 (retirement-category default). */
   growth529?: number;
-  /** Switch the right pane to the Education report. Omitted when that report is
+  /** Household members who can own a new savings account (Other goals). */
+  owners?: OtherGoalOwnerOption[];
+  /** CMA-resolved growth for a new taxable savings account. */
+  growthTaxable?: number;
+  /** The plan's inflation rate — a new Other goal's cost grows with it. */
+  inflationRate?: number;
+  /** Switch the right pane to the Goals report. Omitted when that report is
    *  hidden in the advisor's layout — the button is then not shown. */
   onOpenReport?: () => void;
 }
@@ -56,7 +64,7 @@ function ownerFamilyMemberIds(acct: {
     .map((o) => o.familyMemberId!);
 }
 
-export function SolverEducationSection({
+export function SolverGoalsSection({
   baseExpenses,
   workingTree,
   currentYear,
@@ -65,9 +73,16 @@ export function SolverEducationSection({
   mutations,
   onChange,
   growth529 = 0.05,
+  owners = [],
+  growthTaxable = 0.05,
+  inflationRate = 0.03,
   onOpenReport,
 }: Props) {
-  const goals = workingTree.expenses.filter((e) => e.type === "education");
+  // Every goal that may carry savings accounts (spec 2026-10-05, §3):
+  // education, and Other expenses marked as goals — in start-year order.
+  const goals = workingTree.expenses
+    .filter(canHaveGoalFunding)
+    .sort((a, b) => a.startYear - b.startYear);
   const accountsById = useMemo(
     () => new Map(workingTree.accounts.map((a) => [a.id, a])),
     [workingTree.accounts],
@@ -84,6 +99,7 @@ export function SolverEducationSection({
         // beneficiary is who the money is FOR, and only labels the row.
         beneficiaryFamilyMemberId: a.education529?.beneficiaryFamilyMemberId ?? null,
         beneficiaryName: a.education529?.beneficiaryName ?? null,
+        isDefaultChecking: a.isDefaultChecking ?? false,
       })),
     [workingTree.accounts],
   );
@@ -96,7 +112,7 @@ export function SolverEducationSection({
     [workingTree.familyMembers],
   );
 
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<null | "choose" | "education" | "other">(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [solveResult, setSolveResult] = useState<Record<string, GoalSolveOutput>>({});
   // Per-source funding target, in whole percent. Absent = 100 (fund it fully) —
@@ -109,7 +125,7 @@ export function SolverEducationSection({
     // dedicatedAccountIds references an account already in the working tree.
     for (const m of newMutations) onChange(m);
     onChange({ kind: "expense-upsert", id: expense.id, value: expense });
-    setAdding(false);
+    setAdding(null);
     setEditingId(null);
   }
 
@@ -169,29 +185,33 @@ export function SolverEducationSection({
 
   return (
     <SolverSection
-      title="Education"
+      title="Goals"
       action={
         onOpenReport ? (
-          <SolverViewReportButton reportLabel="Education" onClick={onOpenReport} />
+          <SolverViewReportButton reportLabel="Goals" onClick={onOpenReport} />
         ) : undefined
       }
     >
       {goals.length === 0 ? (
-        <div className="text-[12px] text-ink-3">No education goals yet.</div>
+        <div className="text-[12px] text-ink-3">No goals yet.</div>
       ) : (
         <div className="flex flex-col gap-y-5">
           {goals.map((goal) => {
             const baseGoal = baseExpenses.find((e) => e.id === goal.id);
+            const fundingIds = goalDrawAccountIds(goal, accountsById);
             return (
               <div key={goal.id} className="rounded-md border border-hair-2 p-3">
                 <div className="mb-2 flex items-center gap-2">
-                  <div className="flex-1 text-[13px] font-medium text-ink">{goal.name}</div>
+                  <div data-testid="goal-name" className="flex-1 text-[13px] font-medium text-ink">{goal.name}</div>
+                  <span className="rounded border border-hair-2 px-1.5 text-[10px] uppercase tracking-wide text-ink-3">
+                    {goal.type === "education" ? "Education" : "Goal"}
+                  </span>
                   <button
                     type="button"
                     aria-label={`Edit ${goal.name}`}
                     onClick={() => {
                       setEditingId(goal.id);
-                      setAdding(false);
+                      setAdding(null);
                     }}
                     className="text-[12px] text-ink-3 hover:text-ink"
                   >
@@ -221,7 +241,22 @@ export function SolverEducationSection({
                 />
 
                 <div className="mt-3 flex flex-col gap-2">
-                  {(goal.dedicatedAccountIds ?? []).map((accountId) => {
+                  {fundingIds.length === 0 && goal.type === "other" ? (
+                    <div className="flex items-center gap-2 text-[12px] text-ink-3">
+                      <span className="flex-1">Paid from cash flow</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingId(goal.id);
+                          setAdding(null);
+                        }}
+                        className="rounded border border-hair-2 px-2 py-0.5 text-[11px] text-ink-3 hover:text-ink"
+                      >
+                        + Add savings account
+                      </button>
+                    </div>
+                  ) : null}
+                  {fundingIds.map((accountId) => {
                     const acct = accountsById.get(accountId);
                     const key = `${goal.id}:${accountId}`;
                     const result = solveResult[key];
@@ -296,16 +331,30 @@ export function SolverEducationSection({
                 </div>
 
                 {editingId === goal.id ? (
-                  <SolverEducationGoalForm
-                    mode="edit"
-                    initial={goal}
-                    accounts={pickerAccounts}
-                    beneficiaries={beneficiaries}
-                    growth529={growth529}
-                    currentYear={currentYear}
-                    onSubmit={upsertGoal}
-                    onCancel={() => setEditingId(null)}
-                  />
+                  goal.type === "education" ? (
+                    <SolverEducationGoalForm
+                      mode="edit"
+                      initial={goal}
+                      accounts={pickerAccounts}
+                      beneficiaries={beneficiaries}
+                      growth529={growth529}
+                      currentYear={currentYear}
+                      onSubmit={upsertGoal}
+                      onCancel={() => setEditingId(null)}
+                    />
+                  ) : (
+                    <SolverOtherGoalForm
+                      mode="edit"
+                      initial={goal}
+                      accounts={pickerAccounts}
+                      owners={owners}
+                      growthTaxable={growthTaxable}
+                      inflationRate={inflationRate}
+                      currentYear={currentYear}
+                      onSubmit={upsertGoal}
+                      onCancel={() => setEditingId(null)}
+                    />
+                  )
                 ) : null}
               </div>
             );
@@ -313,7 +362,7 @@ export function SolverEducationSection({
         </div>
       )}
 
-      {adding ? (
+      {adding === "education" ? (
         <SolverEducationGoalForm
           mode="add"
           accounts={pickerAccounts}
@@ -321,18 +370,53 @@ export function SolverEducationSection({
           growth529={growth529}
           currentYear={currentYear}
           onSubmit={upsertGoal}
-          onCancel={() => setAdding(false)}
+          onCancel={() => setAdding(null)}
         />
+      ) : adding === "other" ? (
+        <SolverOtherGoalForm
+          mode="add"
+          accounts={pickerAccounts}
+          owners={owners}
+          growthTaxable={growthTaxable}
+          inflationRate={inflationRate}
+          currentYear={currentYear}
+          onSubmit={upsertGoal}
+          onCancel={() => setAdding(null)}
+        />
+      ) : adding === "choose" ? (
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setAdding("education")}
+            className="rounded-md border border-hair-2 px-3 py-1.5 text-[12px] font-medium text-ink-3 hover:text-ink"
+          >
+            Education goal
+          </button>
+          <button
+            type="button"
+            onClick={() => setAdding("other")}
+            className="rounded-md border border-hair-2 px-3 py-1.5 text-[12px] font-medium text-ink-3 hover:text-ink"
+          >
+            Other goal
+          </button>
+          <button
+            type="button"
+            onClick={() => setAdding(null)}
+            className="px-2 text-[12px] text-ink-3 hover:text-ink"
+          >
+            Cancel
+          </button>
+        </div>
       ) : (
         <button
           type="button"
           onClick={() => {
-            setAdding(true);
+            setAdding("choose");
             setEditingId(null);
           }}
           className="mt-2 rounded-md border border-hair-2 px-3 py-1.5 text-[12px] font-medium text-ink-3 hover:text-ink"
         >
-          + Add education goal
+          + Add goal
         </button>
       )}
     </SolverSection>

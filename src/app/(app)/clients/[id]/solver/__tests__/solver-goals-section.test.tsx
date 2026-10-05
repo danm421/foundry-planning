@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { SolverEducationSection } from "../solver-education-section";
+import { SolverGoalsSection } from "../solver-goals-section";
 import type { ClientData, Expense } from "@/engine/types";
 
 const goal: Expense = {
@@ -33,11 +33,11 @@ const workingTree = {
   incomes: [],
 } as unknown as ClientData;
 
-describe("SolverEducationSection", () => {
+describe("SolverGoalsSection", () => {
   it("lists goals and removes one via expense-upsert null", () => {
     const onChange = vi.fn();
     render(
-      <SolverEducationSection
+      <SolverGoalsSection
         baseExpenses={[goal]}
         workingTree={workingTree}
         currentYear={2026}
@@ -59,7 +59,7 @@ describe("SolverEducationSection", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     render(
-      <SolverEducationSection
+      <SolverGoalsSection
         baseExpenses={[goal]}
         workingTree={workingTree}
         currentYear={2026}
@@ -89,7 +89,7 @@ describe("SolverEducationSection", () => {
       familyMembers: [{ id: "emma", role: "child", firstName: "Emma", lastName: null }],
     } as unknown as ClientData;
     render(
-      <SolverEducationSection
+      <SolverGoalsSection
         baseExpenses={[goal]}
         workingTree={tree}
         currentYear={2026}
@@ -100,7 +100,8 @@ describe("SolverEducationSection", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /add education goal/i }));
+    fireEvent.click(screen.getByRole("button", { name: "+ Add goal" }));
+    fireEvent.click(screen.getByRole("button", { name: "Education goal" }));
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "College — Emma" } });
     fireEvent.change(screen.getByLabelText("For"), { target: { value: "emma" } });
     fireEvent.change(screen.getByLabelText("Start year"), { target: { value: "2032" } });
@@ -120,5 +121,56 @@ describe("SolverEducationSection", () => {
     const expenseMut = onChange.mock.calls[2][0];
     expect(expenseMut.value.forFamilyMemberId).toBe("emma");
     expect(expenseMut.value.dedicatedAccountIds).toContain(accountMut.id);
+  });
+
+  it("lists an Other goal with no savings account as paid from cash flow, by start year", () => {
+    const car = {
+      id: "car", type: "other", name: "New car", annualAmount: 60000,
+      startYear: 2029, endYear: 2029, growthRate: 0.025, isGoal: true, dedicatedAccountIds: [],
+    } as unknown as Expense;
+    const tree = { ...workingTree, expenses: [goal, car] } as unknown as ClientData;
+    render(
+      <SolverGoalsSection
+        baseExpenses={[goal, car]} workingTree={tree} currentYear={2026}
+        clientId="c1" source="base" mutations={[]} onChange={vi.fn()}
+      />,
+    );
+    const names = screen.getAllByTestId("goal-name").map((n) => n.textContent);
+    expect(names).toEqual(["New car", "College — Emma"]); // 2029 before 2032
+    expect(screen.getByText("Paid from cash flow")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add savings account" }));
+    expect(screen.getByRole("button", { name: /save goal/i })).toBeInTheDocument();
+  });
+
+  it("leaves out an Other expense that isn't marked as a goal", () => {
+    const gym = {
+      id: "gym", type: "other", name: "Gym", annualAmount: 1200,
+      startYear: 2026, endYear: 2040, growthRate: 0.025,
+    } as unknown as Expense;
+    const tree = { ...workingTree, expenses: [goal, gym] } as unknown as ClientData;
+    render(
+      <SolverGoalsSection
+        baseExpenses={[goal, gym]} workingTree={tree} currentYear={2026}
+        clientId="c1" source="base" mutations={[]} onChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText("Gym")).toBeNull();
+  });
+
+  it("adds an Other goal through the chooser", () => {
+    const onChange = vi.fn();
+    render(
+      <SolverGoalsSection
+        baseExpenses={[goal]} workingTree={workingTree} currentYear={2026}
+        clientId="c1" source="base" mutations={[]} onChange={onChange}
+        owners={[{ familyMemberId: "fm-1", label: "Harold" }]} growthTaxable={0.06} inflationRate={0.025}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "+ Add goal" }));
+    fireEvent.click(screen.getByRole("button", { name: "Other goal" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Wedding" } });
+    fireEvent.click(screen.getByRole("button", { name: /add goal/i }));
+    const last = onChange.mock.calls.at(-1)![0];
+    expect(last).toMatchObject({ kind: "expense-upsert", value: { type: "other", isGoal: true, name: "Wedding" } });
   });
 });

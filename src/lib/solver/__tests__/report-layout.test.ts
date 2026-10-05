@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   REPORT_KEYS,
+  canonicalReportId,
   resolveReportLayout,
   visibleReportsInOrder,
   firstVisibleReport,
@@ -106,6 +107,10 @@ describe("resolveReportLayout", () => {
     ]);
     expect(out[0]).toEqual({ id: "goals", visible: false });
     expect(out.filter((e) => e.id === "goals")).toHaveLength(1);
+  });
+
+  it("never maps an inherited object key to a renamed report", () => {
+    expect(canonicalReportId("constructor")).toBe("constructor");
   });
 
   it("treats a corrupted non-array stored value as empty → canonical defaults", () => {

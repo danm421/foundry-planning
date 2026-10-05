@@ -70,7 +70,7 @@ import {
 import { useLiMcSolve } from "./use-li-mc-solve";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { SolverQuickAddAccount } from "./solver-quick-add-account";
-import { SolverEducationSection } from "./solver-education-section";
+import { SolverGoalsSection } from "./solver-goals-section";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import type { SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
@@ -82,7 +82,7 @@ import {
   TechniquesIcon,
   StressTestIcon,
   LifeInsuranceIcon,
-  EducationIcon,
+  GoalsIcon,
   ChangesIcon,
 } from "./solver-tab-icons";
 import { SolverChangesTab } from "./solver-changes-tab";
@@ -160,7 +160,7 @@ const LEFT_TABS: {
   { id: "techniques", label: "Techniques", short: "Techniques", icon: TechniquesIcon },
   { id: "stress_test", label: "Stress Test", short: "Stress", icon: StressTestIcon },
   { id: "life_insurance", label: "Life Insurance", short: "Insurance", icon: LifeInsuranceIcon },
-  { id: "education", label: "Education", short: "Education", icon: EducationIcon },
+  { id: "goals", label: "Goals", short: "Goals", icon: GoalsIcon },
   { id: "changes", label: "Scenario changes", short: "Changes", icon: ChangesIcon },
 ];
 
@@ -1754,8 +1754,8 @@ export function LiveSolverWorkspace({
           />
         )}
 
-        {activeTab === "education" && (
-          <SolverEducationSection
+        {activeTab === "goals" && (
+          <SolverGoalsSection
             baseExpenses={baseClientData.expenses}
             workingTree={workingTree}
             currentYear={currentYear}
@@ -1765,6 +1765,9 @@ export function LiveSolverWorkspace({
             onChange={pushMutation}
             onResetField={clearMutations}
             growth529={categoryGrowthDefaults.retirement}
+            growthTaxable={categoryGrowthDefaults.taxable}
+            inflationRate={baseClientData.planSettings.inflationRate}
+            owners={ownerOptions}
             onOpenReport={reportOpener("goals")}
           />
         )}

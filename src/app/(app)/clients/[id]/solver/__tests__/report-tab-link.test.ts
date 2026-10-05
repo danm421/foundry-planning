@@ -3,7 +3,7 @@ import { resolveInputTab, resolveReportParam, solverViewQuery } from "../report-
 
 describe("solver view URL params", () => {
   it("keeps the scenario and records only non-default views", () => {
-    const current = new URLSearchParams("scenario=s1&tab=education");
+    const current = new URLSearchParams("scenario=s1&tab=goals");
     expect(solverViewQuery(current, "changes", "taxBracket")).toBe(
       "?scenario=s1&tab=changes&report=taxBracket",
     );
@@ -21,5 +21,13 @@ describe("solver view URL params", () => {
 
   it("opens Goals for an old ?report=education link", () => {
     expect(resolveReportParam("education")).toBe("goals");
+  });
+
+  it("opens Goals for an old ?tab=education link", () => {
+    expect(resolveInputTab("education")).toBe("goals");
+  });
+
+  it("never resolves an inherited object key as a tab", () => {
+    expect(resolveInputTab("constructor")).toBe("retirement");
   });
 });

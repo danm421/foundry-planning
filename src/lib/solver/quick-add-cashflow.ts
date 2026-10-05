@@ -34,11 +34,11 @@ export const QUICK_ADD_CASHFLOW_TYPE = "other";
 export const DEFAULT_INCOME_TAX_TYPE: IncomeTaxType = "ordinary_income";
 
 /** True for a row this popup could have minted. The added-rows list filters on
- *  it so a synthesized retirement living expense (living-expense.ts) or an
- *  education goal (solver-education-section.tsx) — both of which also reach the
+ *  it so a synthesized retirement living expense (living-expense.ts) or a
+ *  goal (solver-goals-section.tsx) — both of which also reach the
  *  working tree via `expense-upsert` — never show up here with a delete button. */
-export function isQuickAddCashflowRow(row: { type: string }): boolean {
-  return row.type === QUICK_ADD_CASHFLOW_TYPE;
+export function isQuickAddCashflowRow(row: { type: string; isGoal?: boolean }): boolean {
+  return row.type === QUICK_ADD_CASHFLOW_TYPE && row.isGoal !== true;
 }
 
 export interface CashflowDraft {
@@ -166,11 +166,11 @@ export function draftFromExpense(e: Expense): CashflowDraft {
  *
  *  Compared against the SOURCE rather than base so a loaded scenario's own rows
  *  are never offered up for deletion, and type-filtered so a synthesized
- *  retirement living expense (living-expense.ts) or an education goal
- *  (solver-education-section.tsx) — both of which reach the working tree through
+ *  retirement living expense (living-expense.ts) or a goal
+ *  (solver-goals-section.tsx) — both of which reach the working tree through
  *  the same expense-upsert — are never mistaken for one of ours. A tree diff
  *  says WHAT changed, never WHO changed it. */
-export function addedQuickAddRows<T extends { id: string; type: string }>(
+export function addedQuickAddRows<T extends { id: string; type: string; isGoal?: boolean }>(
   sourceRows: readonly T[],
   workingRows: readonly T[],
 ): T[] {

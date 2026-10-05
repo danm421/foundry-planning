@@ -31,9 +31,10 @@ interface Props {
  * The plan's miscellaneous ("other") expenses, and any this session added.
  *
  * Living expenses have their own row with the spending solve lever, insurance
- * premiums are synthesized from policies, and education goals live in the
- * Education tab — so this is the category the "+ Add income or expense" popup
- * writes an expense into, and the one it has to be editable in afterwards.
+ * premiums are synthesized from policies, and goals (education, and Other
+ * expenses marked as goals) live in the Goals tab — so this is the category the
+ * "+ Add income or expense" popup writes an expense into, and the one it has to
+ * be editable in afterwards.
  */
 export function SolverRowOtherExpenses({
   baseClientData,

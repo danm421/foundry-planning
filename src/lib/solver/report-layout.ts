@@ -43,7 +43,8 @@ const RENAMED_REPORT_IDS: Readonly<Record<string, ReportKey>> = { education: "go
 
 /** The current id for a stored or linked report id. */
 export function canonicalReportId(raw: string): string {
-  return RENAMED_REPORT_IDS[raw] ?? raw;
+  // Own keys only: "constructor" must not pick up Object.prototype's.
+  return Object.hasOwn(RENAMED_REPORT_IDS, raw) ? RENAMED_REPORT_IDS[raw] : raw;
 }
 
 /** One report's place in an advisor's customized strip. */
