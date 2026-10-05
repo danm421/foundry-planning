@@ -4,7 +4,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { HELP_VIDEOS } from "@/domain/forge/help/videos";
 import type { HelpVideo } from "@/domain/forge/help/video-schema";
-import { searchHelpVideos } from "@/domain/forge/help/video-search";
+import { searchHelpVideos, type HelpVideoHit } from "@/domain/forge/help/video-search";
 import { useForge } from "./forge-provider";
 import { matchesWalkthroughRoute } from "./walkthrough-route-match";
 import { HelpVideoView } from "./help-video-view";
@@ -12,7 +12,7 @@ import { formatClock, posterSrc } from "./help-video-format";
 
 /** An opened video. `n` keys the player so re-opening remounts and re-seeks. */
 type Opened = { slug: string; at?: number; n: number };
-type Item = { video: HelpVideo; chapter?: { at: number; label: string } };
+type Item = Pick<HelpVideoHit, "video" | "chapter">;
 
 /** The Forge's Knowledge Hub tab: search, videos for the current screen, then
  *  every video. A ▶ Watch card in Chat opens a video here via hubTarget. */
@@ -67,7 +67,7 @@ export function KnowledgeHub({
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3">
         {query.trim() ? (
           hits.length > 0 ? (
-            <VideoList items={hits.map((h) => ({ video: h.video, chapter: h.chapter }))} onOpen={open} />
+            <VideoList items={hits} onOpen={open} />
           ) : (
             <div className="flex flex-col items-center gap-2 py-8 text-center">
               <p className="text-[13px] text-ink-2">No videos match.</p>

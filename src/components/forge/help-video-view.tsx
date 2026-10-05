@@ -42,11 +42,8 @@ export function HelpVideoView({
   const big = useRef<HTMLVideoElement>(null);
   const [failed, setFailed] = useState(false);
   const [expandedFrom, setExpandedFrom] = useState<number | null>(null);
-  // Read by the metadata handler, which can fire after the tab was hidden.
-  const activeRef = useRef(active);
 
   useEffect(() => {
-    activeRef.current = active;
     if (!active) inline.current?.pause();
   }, [active]);
 
@@ -113,7 +110,7 @@ export function HelpVideoView({
             preload="metadata"
             onLoadedMetadata={() => {
               // 0 is a real chapter. Seek even in a hidden tab, but only play in a visible one.
-              if (startAt !== undefined) seekTo(startAt, activeRef.current);
+              if (startAt !== undefined) seekTo(startAt, active);
             }}
             onError={() => setFailed(true)}
             className="w-full rounded-[var(--radius-sm)] bg-card-2"

@@ -2,6 +2,7 @@
 //
 // Display + URL helpers for Knowledge Hub videos.
 import type { HelpVideo } from "@/domain/forge/help/video-schema";
+import { assetVersion } from "@/domain/forge/help/asset-version";
 
 /** 73.5 → "1:13" */
 export function formatClock(sec: number): string {
@@ -17,5 +18,5 @@ export function recordedLabel(isoDate: string): string {
 
 /** ?v= is the content hash: a re-shot video gets a new URL, and the route
  *  refuses the old one rather than mixing two files' bytes. */
-export const videoSrc = (v: HelpVideo) => `/api/knowledge-hub/videos/${v.slug}?v=${v.video.sha256.slice(0, 12)}`;
-export const posterSrc = (v: HelpVideo) => `/api/knowledge-hub/videos/${v.slug}/poster?v=${v.poster.sha256.slice(0, 12)}`;
+export const videoSrc = (v: HelpVideo) => `/api/knowledge-hub/videos/${v.slug}?v=${assetVersion(v.video)}`;
+export const posterSrc = (v: HelpVideo) => `/api/knowledge-hub/videos/${v.slug}/poster?v=${assetVersion(v.poster)}`;

@@ -34,7 +34,7 @@ import {
 import { ImportReviewLink } from "./import-review-link";
 import { PlanQuestionsCard } from "./plan-questions-card";
 import { FactFinderDuplicateCard } from "./fact-finder-duplicate-card";
-import { ForgeTabs } from "./forge-tabs";
+import { ForgeTabPanel, ForgeTabs } from "./forge-tabs";
 import { KnowledgeHub } from "./knowledge-hub";
 import { HelpVideoLinks } from "./help-video-links";
 
@@ -773,13 +773,7 @@ export function ForgePanel({
 
         <ForgeTabs tab={tab} onChange={setTab} />
 
-        <div
-          role="tabpanel"
-          id="forge-tabpanel-chat"
-          aria-labelledby="forge-tab-chat"
-          hidden={tab !== "chat"}
-          className={tab === "chat" ? "flex min-h-0 flex-1 flex-col" : "hidden"}
-        >
+        <ForgeTabPanel id="chat" tab={tab}>
           {/* Thread row */}
           <div className="flex flex-col gap-2 border-b border-hair px-4 py-2">
             <div className="flex items-center gap-2">
@@ -1392,18 +1386,12 @@ export function ForgePanel({
               )}
             </div>
           </div>
-        </div>
+        </ForgeTabPanel>
 
         {hubMounted && (
-          <div
-            role="tabpanel"
-            id="forge-tabpanel-hub"
-            aria-labelledby="forge-tab-hub"
-            hidden={tab !== "hub"}
-            className={tab === "hub" ? "flex min-h-0 flex-1 flex-col" : "hidden"}
-          >
+          <ForgeTabPanel id="hub" tab={tab}>
             <KnowledgeHub active={open && tab === "hub"} />
-          </div>
+          </ForgeTabPanel>
         )}
       </div>
     </div>

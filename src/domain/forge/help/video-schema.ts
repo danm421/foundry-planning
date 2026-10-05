@@ -5,6 +5,7 @@
 // contract test and the kb-video publish review; the app never parses at
 // runtime — the files are reviewed in git and typed through videos/index.ts.
 import { z } from "zod";
+import { assetVersion } from "./asset-version";
 
 /** Topic tags. One shared list so "expense" and "expenses" can't drift apart;
  *  adding a tag is a one-line change here. */
@@ -55,10 +56,10 @@ export const helpVideoSchema = z
       if (i > 0 && c.at <= v.chapters[i - 1].at) issue(["chapters", i, "at"], "chapters must be strictly ascending");
       if (c.at >= v.durationSec) issue(["chapters", i, "at"], "chapter starts after the video ends");
     });
-    if (v.video.path !== `knowledge-hub/${v.slug}/${v.video.sha256.slice(0, 12)}.mp4`) {
+    if (v.video.path !== `knowledge-hub/${v.slug}/${assetVersion(v.video)}.mp4`) {
       issue(["video", "path"], "video.path must be knowledge-hub/<slug>/<sha12>.mp4");
     }
-    if (v.poster.path !== `knowledge-hub/${v.slug}/${v.poster.sha256.slice(0, 12)}.jpg`) {
+    if (v.poster.path !== `knowledge-hub/${v.slug}/${assetVersion(v.poster)}.jpg`) {
       issue(["poster", "path"], "poster.path must be knowledge-hub/<slug>/<sha12>.jpg");
     }
   });

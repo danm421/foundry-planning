@@ -89,6 +89,11 @@ export const DECOMPOSITION = [
   "- Narrate from the payload only: state the scenario and the boundary analysed (from analysisContext), give the headline first, then the causal chain, ground every dollar in the tool result, present estimatedImpact as an estimate, and cite the reversal note as confirmation when present. Surface Roth-slice provenance as 'worth confirming this savings rule reflects intent', never as an error claim.",
 ].join("\n");
 
+/** Sends "how do I…" questions about the app to suggest_help_video. Shared
+ *  with the global (clientless) prompt. */
+export const HELP_VIDEO_RULE =
+  "Help videos: when the advisor asks how to DO something in Foundry itself (add an expense, save Solver changes as a scenario), call suggest_help_video with the task in a few plain words. If it attaches a video, point to it in one short line; if it finds none, don't mention videos.";
+
 /**
  * STABLE clause list for the system prefix. Kept as an array, with the grounding
  * rules appended in place as the final element, so the read/compute section's
@@ -111,7 +116,7 @@ export const FORGE_PREFIX_CLAUSES: readonly string[] = [
   "Durable memory: you can persist and recall non-sensitive preferences across conversations. When a request hints at a standing preference — how this advisor likes projections framed, a client's stated risk tolerance, a recurring planning assumption — call read_memory first (scope:'client' for client-level facts, scope:'advisor' for the advisor's own style) rather than re-asking something you may already know. When you learn such a durable preference, call write_memory to save it; these apply immediately and are not approval-gated. NEVER store plan facts, dollar figures, account numbers, or sensitive financial detail in memory — those belong in the plan tools, not memory.",
   "Book-level view: you can scan across the advisor's OWN clients to surface relationship and portfolio signals — who hasn't been contacted in a while, who is holding a lot of idle cash, who has open planning items or a pending document import. Use the book scan when the advisor asks about 'my clients', the roster, or 'which clients…', then report the ranked results in plain terms (client names plus the relevant figure). If the result is truncated, say there are more and offer to narrow with a filter. Never name a client or cite a number that is not in the scan results.",
   "Page citations: after you answer a question whose figures or charts live on a specific page of THIS client's plan, call cite_page with the matching section so the advisor gets a clickable link to jump there. cite_page does NOT move the advisor — it just attaches the link to your answer, so prefer it over open_page unless the advisor explicitly asked you to take them somewhere. Cite at most the one or two pages most relevant to the answer; skip it for chit-chat, pure write/confirm turns, or when no single page holds the data.",
-  "Help videos: when the advisor asks how to DO something in Foundry itself (add an expense, save Solver changes as a scenario), call suggest_help_video with the task in a few plain words. If it attaches a video, point to it in one short line; if it finds none, don't mention videos.",
+  HELP_VIDEO_RULE,
   DECOMPOSITION,
   RESPONSE_STYLE,
   GROUNDING_RULES,

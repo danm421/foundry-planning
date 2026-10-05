@@ -1,13 +1,16 @@
 // src/components/forge/forge-tabs.tsx
 "use client";
 
-import { useRef, type KeyboardEvent } from "react";
+import { useRef, type KeyboardEvent, type ReactNode } from "react";
 import type { ForgeTab } from "./forge-provider";
 
 const TABS: { id: ForgeTab; label: string }[] = [
   { id: "chat", label: "Chat" },
   { id: "hub", label: "Knowledge Hub" },
 ];
+
+const tabId = (t: ForgeTab) => `forge-tab-${t}`;
+const panelId = (t: ForgeTab) => `forge-tabpanel-${t}`;
 
 /** Chat | Knowledge Hub. Styled like DialogTabs; adds the ARIA tab pattern
  *  (roving tabindex, arrow keys) that DialogTabs doesn't have. */
@@ -32,9 +35,9 @@ export function ForgeTabs({ tab, onChange }: { tab: ForgeTab; onChange: (t: Forg
             }}
             type="button"
             role="tab"
-            id={`forge-tab-${t.id}`}
+            id={tabId(t.id)}
             aria-selected={selected}
-            aria-controls={`forge-tabpanel-${t.id}`}
+            aria-controls={panelId(t.id)}
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(t.id)}
             className={
@@ -46,6 +49,16 @@ export function ForgeTabs({ tab, onChange }: { tab: ForgeTab; onChange: (t: Forg
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/** One view's panel. Hidden, not unmounted, while the other tab shows
+ *  (Tailwind's preflight makes `hidden` win over `flex`). */
+export function ForgeTabPanel({ id, tab, children }: { id: ForgeTab; tab: ForgeTab; children: ReactNode }) {
+  return (
+    <div role="tabpanel" id={panelId(id)} aria-labelledby={tabId(id)} hidden={tab !== id} className="flex min-h-0 flex-1 flex-col">
+      {children}
     </div>
   );
 }

@@ -180,6 +180,25 @@ export interface UseForgeStreamResult {
   resumeMeetingReview: (payload: MeetingReviewResume) => Promise<void>;
 }
 
+type LinkKey = "pageLinks" | "videoLinks";
+type LinkOf<K extends LinkKey> = NonNullable<ForgeMessage[K]>[number];
+
+/** Attach a link to the trailing assistant bubble unless `isSame` finds it
+ *  there already. Mirrors how `token` appends to the same message, so the
+ *  links lock with the answer when the turn ends. */
+function attachLink<K extends LinkKey>(
+  m: ForgeMessage[],
+  key: K,
+  link: LinkOf<K>,
+  isSame: (l: LinkOf<K>) => boolean,
+): ForgeMessage[] {
+  const last = m[m.length - 1];
+  if (last?.role !== "assistant") return m;
+  const existing: LinkOf<K>[] = last[key] ?? [];
+  if (existing.some(isSame)) return m;
+  return [...m.slice(0, -1), { ...last, [key]: [...existing, link] }];
+}
+
 /** Resolve the Forge API base for the current scope. Global (no client) posts
  *  to /api/forge/*; a client posts to /api/clients/<id>/forge/*. */
 export function forgeApiBase(clientId: string | null): string {
@@ -285,44 +304,31 @@ export function useForgeStream(clientId: string | null): UseForgeStreamResult {
         setPendingWalkthrough(ev.walkthroughId);
         break;
       case "page_link":
-        // Attach the link to the trailing assistant bubble (de-duped by
-        // section). Mirrors how `token` appends to the same message, so the
-        // chips lock with the answer when the turn ends.
-        setMessages((m) => {
-          if (m.length === 0) return m;
-          const copy = [...m];
-          const last = copy[copy.length - 1];
-          if (last.role !== "assistant") return copy;
-          const existing = last.pageLinks ?? [];
-          if (existing.some((l) => l.section === ev.section)) return copy;
-          copy[copy.length - 1] = {
-            ...last,
-            pageLinks: [
-              ...existing,
-              { href: ev.href, section: ev.section, label: ev.label, ...(ev.intent ? { intent: ev.intent } : {}) },
-            ],
-          };
-          return copy;
-        });
+        // De-duped by section.
+        setMessages((m) =>
+          attachLink(
+            m,
+            "pageLinks",
+            { href: ev.href, section: ev.section, label: ev.label, ...(ev.intent ? { intent: ev.intent } : {}) },
+            (l) => l.section === ev.section,
+          ),
+        );
         break;
       case "video_link":
-        // Attach to the trailing assistant bubble, de-duped by video.
-        setMessages((m) => {
-          if (m.length === 0) return m;
-          const copy = [...m];
-          const last = copy[copy.length - 1];
-          if (last.role !== "assistant") return copy;
-          const existing = last.videoLinks ?? [];
-          if (existing.some((l) => l.slug === ev.slug)) return copy;
-          const link: VideoLink = {
-            slug: ev.slug,
-            title: ev.title,
-            ...(ev.chapterAt != null ? { chapterAt: ev.chapterAt } : {}),
-            ...(ev.chapterLabel ? { chapterLabel: ev.chapterLabel } : {}),
-          };
-          copy[copy.length - 1] = { ...last, videoLinks: [...existing, link] };
-          return copy;
-        });
+        // De-duped by video.
+        setMessages((m) =>
+          attachLink(
+            m,
+            "videoLinks",
+            {
+              slug: ev.slug,
+              title: ev.title,
+              ...(ev.chapterAt != null ? { chapterAt: ev.chapterAt } : {}),
+              ...(ev.chapterLabel ? { chapterLabel: ev.chapterLabel } : {}),
+            },
+            (l) => l.slug === ev.slug,
+          ),
+        );
         break;
       case "activity":
         setToolStatus(ev.label);

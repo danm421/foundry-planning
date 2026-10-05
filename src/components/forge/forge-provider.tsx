@@ -5,7 +5,6 @@ import {
   createContext,
   useContext,
   useCallback,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -80,11 +79,9 @@ export function ForgeProvider({
   const [tab, setTab] = useState<ForgeTab>("chat");
   const [hubTarget, setHubTarget] = useState<HubTarget | null>(null);
   const [chatDraft, setChatDraft] = useState<string | null>(null);
-  const hubNonce = useRef(0);
 
   const openHubVideo = useCallback((slug: string, at?: number) => {
-    hubNonce.current += 1;
-    setHubTarget({ slug, at, nonce: hubNonce.current });
+    setHubTarget((prev) => ({ slug, at, nonce: (prev?.nonce ?? 0) + 1 }));
     setTab("hub");
   }, []);
   const askInChat = useCallback((text: string) => {

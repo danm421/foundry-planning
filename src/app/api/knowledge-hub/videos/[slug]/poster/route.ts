@@ -5,6 +5,7 @@
 import { get } from "@vercel/blob";
 import { forgeViewerGate } from "@/lib/forge-access";
 import { getHelpVideo } from "@/domain/forge/help/videos";
+import { assetVersion } from "@/domain/forge/help/asset-version";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ slug: string }>
 
   const { slug } = await ctx.params;
   const video = getHelpVideo(slug);
-  if (!video || new URL(req.url).searchParams.get("v") !== video.poster.sha256.slice(0, 12)) {
+  if (!video || new URL(req.url).searchParams.get("v") !== assetVersion(video.poster)) {
     return new Response("Not found", { status: 404 });
   }
 
