@@ -18,17 +18,31 @@ function tree(): ClientData {
   } as unknown as ClientData;
 }
 
-// contribution years: 2026..2033 inclusive = 8 years. Total goal cost = 20_000.
-// Available = 8 * annualContribution. Shortfall = max(0, 20_000 - available).
-function fakeRun(currentYear: number): (t: ClientData) => ProjectionYear[] {
+// Salary a percent-of-salary rule resolves against in the fake.
+const SALARY = 10_000;
+
+// Total goal cost = 20_000, paid in `lastYear`. Like the engine, every rule on
+// "acct" contributes only inside its own years (here clipped to currentYear..
+// lastYear, the years that can reach the goal), and a percent-of-salary rule
+// contributes salary × percent whatever its annualAmount says.
+// Default window 2026..2033 = 8 years: available = 8 × annualContribution.
+function fakeRun(
+  currentYear: number,
+  lastYear = 2033,
+  onTree?: (t: ClientData) => void,
+): (t: ClientData) => ProjectionYear[] {
   return (t: ClientData) => {
-    const rule = t.savingsRules.find((r) => r.accountId === "acct");
-    const perYear = rule?.annualAmount ?? 0;
-    const years = 2033 - currentYear + 1;
-    const available = perYear * years;
+    onTree?.(t);
+    const available = t.savingsRules
+      .filter((r) => r.accountId === "acct")
+      .reduce((sum, r) => {
+        const perYear = r.annualPercent ? SALARY * r.annualPercent : r.annualAmount;
+        const years = Math.min(lastYear, r.endYear) - Math.max(currentYear, r.startYear) + 1;
+        return sum + perYear * Math.max(0, years);
+      }, 0);
     const remaining = Math.max(0, 20_000 - available);
     // Attribute the whole cost + shortfall to a single goal-year row for simplicity.
-    return [{ year: 2033, goals: [{ goalId: "goal", goalExpense: 20_000, dedicatedWithdrawal: 20_000 - remaining, outOfPocketWithdrawal: 0, shortfall: remaining } as never] } as never];
+    return [{ year: lastYear, goals: [{ goalId: "goal", goalExpense: 20_000, dedicatedWithdrawal: 20_000 - remaining, outOfPocketWithdrawal: 0, shortfall: remaining } as never] } as never];
   };
 }
 
@@ -94,5 +108,73 @@ describe("solveGoalDedicatedSavings", () => {
     };
     const r = solveGoalDedicatedSavings({ tree: t, goalId: "goal", accountId: "acct", currentYear: 2026, runProjection: fakeRun(2026) });
     expect(Math.abs(r.additionalAnnual - 2_500)).toBeLessThanOrEqual(50);
+  });
+});
+
+describe("solveGoalDedicatedSavings — which savings rule it raises", () => {
+  type Rule = ClientData["savingsRules"][number];
+  const rule = (p: Partial<Rule>): Rule =>
+    ({ id: "r", accountId: "acct", annualAmount: 0, isDeductible: false, startYear: 2026, endYear: 2033, ...p }) as Rule;
+  const withRules = (rules: Rule[], goal: Record<string, unknown> = {}): ClientData => {
+    const t = tree();
+    (t.expenses as unknown as Record<string, unknown>[])[0] = {
+      ...(t.expenses[0] as unknown as Record<string, unknown>), ...goal,
+    };
+    t.savingsRules = rules;
+    return t;
+  };
+  /** Runs the solve, keeping the tree it modeled at its last step. */
+  const solve = (t: ClientData, lastYear = 2033) => {
+    let modeled: ClientData | undefined;
+    const r = solveGoalDedicatedSavings({
+      tree: t, goalId: "goal", accountId: "acct", currentYear: 2026,
+      runProjection: fakeRun(2026, lastYear, (x) => { modeled = x; }),
+    });
+    return { r, modeled: modeled! };
+  };
+
+  it("leaves a general rule that runs past the goal alone and adds a goal rule ending with it", () => {
+    // An Other goal paid in 2029 from a brokerage whose household rule runs to 2045.
+    const otherGoal = { type: "other", isGoal: true, startYear: 2029, endYear: 2029 };
+    const general = rule({ id: "general", annualAmount: 1_000, endYear: 2045 });
+    const { r, modeled } = solve(withRules([general], otherGoal), 2029);
+
+    // 2026..2029 = 4 deposits. The general rule's 4 × 1_000 already land in the
+    // account, so the extra is (20_000 − 4_000) / 4 — exactly what a rule that
+    // stopped at the goal would leave to fill.
+    const stopsAtGoal = solve(withRules([rule({ id: "general", annualAmount: 1_000, endYear: 2029 })], otherGoal), 2029);
+    expect(Math.abs(r.additionalAnnual - 4_000)).toBeLessThanOrEqual(50);
+    expect(Math.abs(r.additionalAnnual - stopsAtGoal.r.additionalAnnual)).toBeLessThanOrEqual(1);
+
+    expect(modeled.savingsRules.find((x) => x.id === "general")).toEqual(general);
+    expect(modeled.savingsRules.find((x) => x.id === "goal-fund-rule-goal-acct")).toMatchObject({
+      accountId: "acct", startYear: 2026, endYear: 2029, isDeductible: false,
+    });
+  });
+
+  it("reaches the target through a goal rule when the account's only rule already ended", () => {
+    const ended = rule({ id: "old", annualAmount: 3_000, startYear: 2010, endYear: 2020 });
+    const { r, modeled } = solve(withRules([ended]));
+    expect(r.reachesTarget).toBe(true);
+    expect(Math.abs(r.additionalAnnual - 2_500)).toBeLessThanOrEqual(50);
+    expect(modeled.savingsRules.find((x) => x.id === "old")).toEqual(ended);
+  });
+
+  it("never raises a percent-of-salary rule — its amount isn't the dollar figure", () => {
+    // 10% of 10_000 = 1_000/yr × 8 = 8_000 already; the rest comes from a goal rule.
+    const pct = rule({ id: "pct", annualPercent: 0.1 });
+    const { r, modeled } = solve(withRules([pct]));
+    expect(r.reachesTarget).toBe(true);
+    expect(Math.abs(r.additionalAnnual - 1_500)).toBeLessThanOrEqual(50);
+    expect(modeled.savingsRules.find((x) => x.id === "pct")).toEqual(pct);
+  });
+
+  it("still raises a 529 rule that runs from now to the goal's end", () => {
+    const own = rule({ id: "r529", annualAmount: 1_000 });
+    const { r, modeled } = solve(withRules([own]));
+    expect(Math.abs(r.additionalAnnual - 1_500)).toBeLessThanOrEqual(50);
+    expect(modeled.savingsRules).toHaveLength(1);
+    expect(modeled.savingsRules[0].id).toBe("r529");
+    expect(modeled.savingsRules[0].annualAmount).toBeGreaterThan(1_000);
   });
 });

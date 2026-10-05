@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { ClientData, Expense, SavingsRule } from "@/engine/types";
+import type { ClientData, Expense } from "@/engine/types";
 import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
-import { withAdditionalContribution } from "@/lib/solver/solve-goal-dedicated-savings";
+import { goalContributionRule, withAdditionalContribution } from "@/lib/solver/solve-goal-dedicated-savings";
 import { canHaveGoalFunding, goalDrawAccountIds } from "@/engine/goals/goal-funding";
 import { SolverSection } from "./solver-section";
 import { SolverFieldStepper } from "./solver-field-stepper";
@@ -133,35 +133,16 @@ export function SolverGoalsSection({
     onChange({ kind: "expense-upsert", id, value: null });
   }
 
-  function contributionRuleFor(accountId: string): SavingsRule | undefined {
-    return workingTree.savingsRules.find((r) => r.accountId === accountId);
+  // The goal's own contribution on an account — the same rule the solve and
+  // Apply raise, so the stepper never edits a household rule that runs past
+  // the goal (or no longer runs at all).
+  function contributionRule(goal: Expense, accountId: string) {
+    return goalContributionRule(workingTree, goal, accountId, currentYear);
   }
 
-  function currentContribution(accountId: string): number {
-    return contributionRuleFor(accountId)?.annualAmount ?? 0;
-  }
-
-  function setContribution(accountId: string, amount: number, lastDrawYear: number) {
-    const existing = contributionRuleFor(accountId);
-    if (existing) {
-      onChange({
-        kind: "savings-rule-upsert",
-        id: existing.id,
-        value: { ...existing, annualAmount: amount },
-      });
-    } else {
-      // Match the solve/Apply path (withAdditionalContribution): a freshly
-      // created rule funds now → the goal's last draw year, not a single year.
-      const rule: SavingsRule = {
-        id: `edu-solve-${accountId}`,
-        accountId,
-        annualAmount: amount,
-        isDeductible: false,
-        startYear: currentYear,
-        endYear: lastDrawYear,
-      };
-      onChange({ kind: "savings-rule-upsert", id: rule.id, value: rule });
-    }
+  function setContribution(goal: Expense, accountId: string, amount: number) {
+    const rule = contributionRule(goal, accountId);
+    onChange({ kind: "savings-rule-upsert", id: rule.id, value: { ...rule, annualAmount: amount } });
   }
 
   async function solveSource(goal: Expense, accountId: string) {
@@ -173,8 +154,9 @@ export function SolverGoalsSection({
   function applySolve(goal: Expense, accountId: string, additional: number) {
     // Model-matches-application: build the candidate tree the SAME way the solve
     // modeled it (withAdditionalContribution), then upsert the resulting rule.
-    const built = withAdditionalContribution(workingTree, accountId, additional, currentYear, goal.endYear);
-    const rule = built.savingsRules.find((r) => r.accountId === accountId)!;
+    const built = withAdditionalContribution(workingTree, goal, accountId, additional, currentYear);
+    const ruleId = contributionRule(goal, accountId).id;
+    const rule = built.savingsRules.find((r) => r.id === ruleId)!;
     onChange({ kind: "savings-rule-upsert", id: rule.id, value: rule });
     setSolveResult((prev) => {
       const next = { ...prev };
@@ -300,12 +282,12 @@ export function SolverGoalsSection({
                         <SolverFieldStepper
                           id={`edu-contrib-${key}`}
                           label={`${acct?.name ?? accountId} annual contribution`}
-                          value={currentContribution(accountId)}
+                          value={contributionRule(goal, accountId).annualAmount}
                           min={0}
                           max={100_000}
                           step={500}
                           prefix="$"
-                          onCommit={(n) => setContribution(accountId, n, goal.endYear)}
+                          onCommit={(n) => setContribution(goal, accountId, n)}
                         />
                         {result ? (
                           result.reachesTarget ? (

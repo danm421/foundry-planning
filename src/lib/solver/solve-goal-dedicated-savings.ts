@@ -1,5 +1,6 @@
 import type { ClientData, ProjectionYear, SavingsRule } from "@/engine/types";
 import { canHaveGoalFunding } from "@/lib/goals";
+import { buildSavingsRuleForAccount } from "./quick-add-account";
 
 export interface GoalSolveInput {
   tree: ClientData;
@@ -26,33 +27,81 @@ export interface GoalSolveResult {
   targetPct: number;
 }
 
-/** Build the candidate tree the SAME way the UI applies the result: bump the
- *  first savings rule on the account, or create a new rule spanning now → the
- *  goal's last draw year. Exported so the apply path stays consistent. */
+/** The goal a contribution rule serves: its id names a new rule, and its last
+ *  year bounds one. */
+export interface GoalRef {
+  id: string;
+  endYear: number;
+}
+
+/** Whether the engine reads this rule's `annualAmount` as its contribution.
+ *  It doesn't for a percent-of-salary rule (`resolveContributionAmount`), an
+ *  IRS-max rule, or a year-by-year schedule (both resolved first in the
+ *  projection); a "minimum additional savings" rule belongs to that solve. */
+function isPlainFixedAmountRule(r: SavingsRule): boolean {
+  return (
+    !(r.annualPercent != null && r.annualPercent > 0) &&
+    !r.contributeMax &&
+    Object.keys(r.scheduleOverrides ?? {}).length === 0 &&
+    !r.fundFromExpenseReduction
+  );
+}
+
+/**
+ * The savings rule that is the goal's contribution to one of its accounts —
+ * the ONE answer the solve, its Apply and the Goals-tab stepper all use.
+ *
+ * The goal's own rule is a plain fixed-amount rule on the account that is
+ * contributing now and stops by the goal's last year: the shape both goal forms
+ * write (now → goal end). Anything else on the account is the household's —
+ * running past the goal, already ended, starting later, or not a dollar
+ * amount — and raising it would save for years the goal never sees, or do
+ * nothing. Then the goal gets a rule of its own, `annualAmount` 0 until a
+ * caller sets it, spanning now → the goal's end and taxed like any new rule on
+ * that account (`buildSavingsRuleForAccount`). The household rule is never
+ * touched.
+ */
+export function goalContributionRule(
+  tree: Pick<ClientData, "accounts" | "savingsRules">,
+  goal: GoalRef,
+  accountId: string,
+  currentYear: number,
+): SavingsRule {
+  const own = tree.savingsRules.find(
+    (r) =>
+      r.accountId === accountId &&
+      isPlainFixedAmountRule(r) &&
+      r.startYear <= currentYear &&
+      currentYear <= r.endYear &&
+      r.endYear <= goal.endYear,
+  );
+  if (own) return own;
+  const acct = tree.accounts.find((a) => a.id === accountId);
+  return buildSavingsRuleForAccount({
+    account: { id: accountId, category: acct?.category ?? "", subType: acct?.subType ?? "" },
+    annualAmount: 0,
+    startYear: currentYear,
+    endYear: goal.endYear,
+    ruleId: `goal-fund-rule-${goal.id}-${accountId}`,
+  });
+}
+
+/** Build the candidate tree the SAME way the UI applies the result: raise the
+ *  goal's contribution rule on the account (`goalContributionRule`) by
+ *  `additional`. Exported so the apply path stays consistent. */
 export function withAdditionalContribution(
   tree: ClientData,
+  goal: GoalRef,
   accountId: string,
   additional: number,
   currentYear: number,
-  lastDrawYear: number,
 ): ClientData {
   const next = structuredClone(tree);
-  const existing = next.savingsRules.find((r) => r.accountId === accountId);
-  if (existing) {
-    next.savingsRules = next.savingsRules.map((r) =>
-      r.id === existing.id ? { ...r, annualAmount: r.annualAmount + additional } : r,
-    );
-  } else {
-    const rule: SavingsRule = {
-      id: `edu-solve-${accountId}`,
-      accountId,
-      annualAmount: additional,
-      isDeductible: false,
-      startYear: currentYear,
-      endYear: lastDrawYear,
-    };
-    next.savingsRules.push(rule);
-  }
+  const current = goalContributionRule(next, goal, accountId, currentYear);
+  const raised = { ...current, annualAmount: current.annualAmount + additional };
+  const at = next.savingsRules.findIndex((r) => r.id === raised.id);
+  if (at >= 0) next.savingsRules[at] = raised;
+  else next.savingsRules.push(raised);
   return next;
 }
 
@@ -78,11 +127,11 @@ export function solveGoalDedicatedSavings(input: GoalSolveInput): GoalSolveResul
   const targetPct = Math.min(1, Math.max(0, input.targetPct ?? 1));
 
   const goal = tree.expenses.find((e) => e.id === goalId && canHaveGoalFunding(e));
-  const lastDrawYear = goal?.endYear ?? currentYear;
+  const goalRef: GoalRef = { id: goalId, endYear: goal?.endYear ?? currentYear };
 
   const totalsAt = (additional: number) =>
     goalTotals(
-      runProjection(withAdditionalContribution(tree, accountId, additional, currentYear, lastDrawYear)),
+      runProjection(withAdditionalContribution(tree, goalRef, accountId, additional, currentYear)),
       goalId,
     );
 
