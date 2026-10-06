@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef } from "react";
-import DialogShell from "@/components/dialog-shell";
+import { useState, useMemo } from "react";
 import { fieldLabelClassName } from "@/components/forms/input-styles";
 import { redistributeTier, splitEvenly } from "@/components/forms/auto-split-percentages";
 import WillRecipientList, {
@@ -21,17 +20,18 @@ import type {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export type RouteTab = "beneficiary" | "will";
+
 interface Props {
-  accountId: string;
+  account: Account;
   clientData: ClientData;
+  /** Which tab of the shared asset dialog is showing. */
+  route: RouteTab;
   onApplyBeneficiaries: (refs: BeneficiaryRef[]) => void;
   /** Receives the will(s) to upsert: the client's will, plus the co-client's
    *  will when the bequest cascades to the co-client. */
   onApplyWill: (wills: Will[]) => void;
-  onClose: () => void;
 }
-
-type RouteTab = "beneficiary" | "will";
 
 // A simplified row shape used for editing beneficiary refs in the dialog.
 interface BeneficiaryRow {
@@ -53,7 +53,7 @@ interface BeneficiaryRow {
  * under ERISA / IRC rules. We use the engine's `category === "retirement"`
  * field which covers all retirement subtypes.
  */
-function isRetirementAccount(account: Account): boolean {
+export function isRetirementAccount(account: Account): boolean {
   return account.category === "retirement";
 }
 
@@ -62,7 +62,7 @@ function isRetirementAccount(account: Account): boolean {
  * pass only by will (or titling). The Beneficiary Designation tab is disabled
  * for these categories, mirroring how retirement disables the Will tab.
  */
-function isBequestOnlyAccount(account: Account): boolean {
+export function isBequestOnlyAccount(account: Account): boolean {
   return account.category === "real_estate" || account.category === "business";
 }
 
@@ -226,81 +226,19 @@ const rowSelectClassName =
   " appearance-none pr-8 bg-no-repeat bg-[right_0.5rem_center] " +
   "bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 20 20%22 fill=%22%238b909c%22><path fill-rule=%22evenodd%22 d=%22M5.23 7.21a.75.75 0 011.06.02L10 11.04l3.71-3.81a.75.75 0 111.08 1.04l-4.25 4.36a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z%22 clip-rule=%22evenodd%22/></svg>')]";
 
-export default function EstateFlowChangeDistributionDialog({
-  accountId,
-  clientData,
-  onApplyBeneficiaries,
-  onApplyWill,
-  onClose,
-}: Props) {
-  const account = clientData.accounts.find((a) => a.id === accountId);
-  // Guard: view only renders when account is found, but be safe.
-  if (!account) return null;
-
-  return (
-    <EstateFlowChangeDistributionDialogInner
-      account={account}
-      clientData={clientData}
-      onApplyBeneficiaries={onApplyBeneficiaries}
-      onApplyWill={onApplyWill}
-      onClose={onClose}
-    />
-  );
-}
-
-interface InnerProps {
-  account: Account;
-  clientData: ClientData;
-  onApplyBeneficiaries: (refs: BeneficiaryRef[]) => void;
-  onApplyWill: (wills: Will[]) => void;
-  onClose: () => void;
-}
-
-function EstateFlowChangeDistributionDialogInner({
+/**
+ * The Beneficiary and Bequest tabs of the Estate Flow asset dialog — one panel,
+ * so edits survive switching between them. Returns the open tab's body and
+ * primary action; the dialog draws the frame.
+ */
+export function useDistributionPanel({
   account,
   clientData,
+  route,
   onApplyBeneficiaries,
   onApplyWill,
-  onClose,
-}: InnerProps) {
+}: Props) {
   const isRetirement = isRetirementAccount(account);
-  const isBequestOnly = isBequestOnlyAccount(account);
-
-  // Refs for keyboard-navigation focus management on the tablist.
-  const tabBtnRefs = useRef<Record<RouteTab, HTMLButtonElement | null>>({
-    beneficiary: null,
-    will: null,
-  });
-
-  // ── Derive current route ──────────────────────────────────────────────────
-
-  /**
-   * An account "has beneficiaries" if its beneficiaries array is populated,
-   * or if it's a retirement account (which always uses beneficiary designation
-   * by law). When neither is true and a will bequest exists, we default to "will".
-   */
-  const currentRoute = useMemo((): RouteTab => {
-    if (isBequestOnly) return "will";
-    if (isRetirement) return "beneficiary";
-    if (account.beneficiaries && account.beneficiaries.length > 0) return "beneficiary";
-    // Check if any will has a specific bequest for this account.
-    const wills = clientData.wills ?? [];
-    for (const will of wills) {
-      for (const bequest of will.bequests) {
-        if (
-          bequest.kind === "asset" &&
-          bequest.assetMode === "specific" &&
-          bequest.accountId === account.id
-        ) {
-          return "will";
-        }
-      }
-    }
-    // Default: beneficiary designation (even if empty, so advisor can set one).
-    return "beneficiary";
-  }, [isBequestOnly, isRetirement, account.beneficiaries, clientData.wills, account.id]);
-
-  const [activeTab, setActiveTab] = useState<RouteTab>(currentRoute);
 
   // ── People/entity data ────────────────────────────────────────────────────
 
@@ -501,7 +439,7 @@ function EstateFlowChangeDistributionDialogInner({
   const jointWillValid = willSumOk && willRecipientsHaveIds && jointSpouseOk;
 
   const canApply =
-    activeTab === "beneficiary"
+    route === "beneficiary"
       ? beneficiaryValid
       : isJointOwned
         ? jointWillValid
@@ -512,7 +450,7 @@ function EstateFlowChangeDistributionDialogInner({
   function handleApply() {
     if (!canApply) return;
 
-    if (activeTab === "beneficiary") {
+    if (route === "beneficiary") {
       onApplyBeneficiaries(rowsToRefs(beneficiaryRows));
       return;
     }
@@ -928,124 +866,27 @@ function EstateFlowChangeDistributionDialogInner({
 
   // ── Main render ───────────────────────────────────────────────────────────
 
-  return (
-    <DialogShell
-      open={true}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      title="Change Distribution"
-      size={isJointOwned ? "lg" : "md"}
-      primaryAction={{
-        label: "Apply",
-        onClick: handleApply,
-        disabled: !canApply,
-      }}
-    >
-      {/* Asset summary */}
-      <div className="mb-5 rounded border border-hair bg-card-2 px-4 py-3">
-        <p className="text-[14px] font-medium text-ink">{account.name}</p>
-        <p className="mt-0.5 text-[12px] text-ink-3">{fmt.format(account.value)}</p>
-        <p className="mt-1 text-[12px] text-ink-3">
-          <span className="text-ink-4">Category: </span>
-          {account.category}
-          {isRetirement && (
-            <span className="ml-2 rounded bg-blue-900/30 px-1.5 py-0.5 text-[10px] text-blue-300">
-              Retirement
-            </span>
-          )}
-        </p>
-      </div>
-
-      {/* Route tabs */}
-      <div>
-        <div
-          className="flex gap-1 mb-4"
-          role="tablist"
-          aria-label="Distribution method"
-          onKeyDown={(e) => {
-            const tabs: Array<RouteTab> = isRetirement
-              ? ["beneficiary"]
-              : isBequestOnly
-                ? ["will"]
-                : ["beneficiary", "will"];
-            const currentIndex = tabs.indexOf(activeTab);
-            if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-              e.preventDefault();
-              const delta = e.key === "ArrowRight" ? 1 : -1;
-              const nextIndex = (currentIndex + delta + tabs.length) % tabs.length;
-              const nextTab = tabs[nextIndex];
-              setActiveTab(nextTab);
-              tabBtnRefs.current[nextTab]?.focus();
-            } else if (e.key === "Home") {
-              e.preventDefault();
-              setActiveTab(tabs[0]);
-              tabBtnRefs.current[tabs[0]]?.focus();
-            } else if (e.key === "End") {
-              e.preventDefault();
-              const last = tabs[tabs.length - 1];
-              setActiveTab(last);
-              tabBtnRefs.current[last]?.focus();
-            }
-          }}
-        >
-          <button
-            ref={(el) => { tabBtnRefs.current["beneficiary"] = el; }}
-            role="tab"
-            type="button"
-            id="eflow-tab-beneficiary"
-            aria-controls="eflow-panel-beneficiary"
-            aria-selected={activeTab === "beneficiary"}
-            disabled={isBequestOnly}
-            title={
-              isBequestOnly
-                ? "Real estate and business interests have no beneficiary designation — they pass by will."
-                : undefined
-            }
-            onClick={() => !isBequestOnly && setActiveTab("beneficiary")}
-            className={`rounded border px-3 py-1.5 text-[13px] font-medium transition-colors ${
-              isBequestOnly
-                ? "cursor-not-allowed border-hair opacity-40 text-ink-2"
-                : activeTab === "beneficiary"
-                  ? "border-accent bg-accent/15 text-accent"
-                  : "border-hair bg-card-2 text-ink-2 hover:bg-card-hover"
-            }`}
-          >
-            Beneficiary Designation
-            {isBequestOnly && <span className="ml-1 text-[10px]">(N/A)</span>}
-          </button>
-          <button
-            ref={(el) => { tabBtnRefs.current["will"] = el; }}
-            role="tab"
-            type="button"
-            id="eflow-tab-will"
-            aria-controls="eflow-panel-will"
-            aria-selected={activeTab === "will"}
-            disabled={isRetirement}
-            title={
-              isRetirement
-                ? "Retirement accounts must use beneficiary designation — they cannot be distributed by will (ERISA / IRC)"
-                : undefined
-            }
-            onClick={() => !isRetirement && setActiveTab("will")}
-            className={`rounded border px-3 py-1.5 text-[13px] font-medium transition-colors ${
-              isRetirement
-                ? "cursor-not-allowed border-hair opacity-40 text-ink-2"
-                : activeTab === "will"
-                  ? "border-accent bg-accent/15 text-accent"
-                  : "border-hair bg-card-2 text-ink-2 hover:bg-card-hover"
-            }`}
-          >
-            Will Bequest
+  return {
+    primaryAction: { label: "Apply", onClick: handleApply, disabled: !canApply },
+    wide: route === "will" && isJointOwned,
+    body: (
+      <>
+        {/* Asset summary — the dialog title carries the asset's name */}
+        <div className="mb-5 rounded border border-hair bg-card-2 px-4 py-3">
+          <p className="text-[12px] text-ink-3">{fmt.format(account.value)}</p>
+          <p className="mt-1 text-[12px] text-ink-3">
+            <span className="text-ink-4">Category: </span>
+            {account.category}
             {isRetirement && (
-              <span className="ml-1 text-[10px]">(N/A for retirement)</span>
+              <span className="ml-2 rounded bg-blue-900/30 px-1.5 py-0.5 text-[10px] text-blue-300">
+                Retirement
+              </span>
             )}
-          </button>
+          </p>
         </div>
 
-        {/* Tab content */}
-        {activeTab === "beneficiary" && (
-          <div role="tabpanel" id="eflow-panel-beneficiary" aria-labelledby="eflow-tab-beneficiary">
+        {route === "beneficiary" ? (
+          <div>
             <p className="text-[12px] text-ink-3 mb-1">
               Set primary and contingent beneficiaries. Each tier&apos;s percentages must sum
               to 100%.
@@ -1055,14 +896,10 @@ function EstateFlowChangeDistributionDialogInner({
               {renderBeneficiaryTier("contingent", contingentRows, contingentOk)}
             </div>
           </div>
+        ) : (
+          renderWillTab()
         )}
-
-        {activeTab === "will" && (
-          <div role="tabpanel" id="eflow-panel-will" aria-labelledby="eflow-tab-will">
-            {renderWillTab()}
-          </div>
-        )}
-      </div>
-    </DialogShell>
-  );
+      </>
+    ),
+  };
 }

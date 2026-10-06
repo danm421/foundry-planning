@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
-import EstateFlowChangeDistributionDialog from "../estate-flow-change-distribution-dialog";
+import EstateFlowAssetDialog from "../estate-flow-asset-dialog";
 import type { ClientData } from "@/engine/types";
 
 /**
@@ -36,17 +36,30 @@ function householdData(): ClientData {
   } as unknown as ClientData;
 }
 
-describe("EstateFlowChangeDistributionDialog — Split among children", () => {
+/** Renders the asset dialog for the brokerage and opens its Beneficiary tab. */
+function renderBeneficiaryTab() {
+  const data = householdData();
+  render(
+    <EstateFlowAssetDialog
+      account={data.accounts[0]}
+      clientData={data}
+      ledger={[]}
+      taxInflationRate={0}
+      annualExclusionByYear={{}}
+      onApplyOwners={vi.fn()}
+      onApplyGift={vi.fn()}
+      onSeedBeneficiary={vi.fn()}
+      onApplyBeneficiaries={vi.fn()}
+      onApplyWill={vi.fn()}
+      onClose={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Beneficiary" }));
+}
+
+describe("Estate Flow asset dialog, Beneficiary tab — Split among children", () => {
   it("creates one row per real child, not per household member", () => {
-    render(
-      <EstateFlowChangeDistributionDialog
-        accountId="acc-1"
-        clientData={householdData()}
-        onApplyBeneficiaries={vi.fn()}
-        onApplyWill={vi.fn()}
-        onClose={vi.fn()}
-      />,
-    );
+    renderBeneficiaryTab();
 
     // Primary tier is rendered first; click its "Split among children".
     fireEvent.click(screen.getAllByRole("button", { name: /split among children/i })[0]);
@@ -56,17 +69,9 @@ describe("EstateFlowChangeDistributionDialog — Split among children", () => {
   });
 });
 
-describe("EstateFlowChangeDistributionDialog — household beneficiary options", () => {
+describe("Estate Flow asset dialog, Beneficiary tab — household beneficiary options", () => {
   it("renders the co-client option with the lowercase parenthetical tag, beside the client tag", () => {
-    render(
-      <EstateFlowChangeDistributionDialog
-        accountId="acc-1"
-        clientData={householdData()}
-        onApplyBeneficiaries={vi.fn()}
-        onApplyWill={vi.fn()}
-        onClose={vi.fn()}
-      />,
-    );
+    renderBeneficiaryTab();
 
     // The fixture starts with no beneficiary rows; add one to render the
     // "Household" optgroup (both household members' real names).

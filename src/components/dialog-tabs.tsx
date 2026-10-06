@@ -5,6 +5,9 @@ import type { ReactNode } from "react";
 export interface DialogTab {
   id: string;
   label: string;
+  /** Greys the tab out; `disabledReason` becomes its hover title. */
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
 interface DialogTabsProps {
@@ -26,12 +29,14 @@ export default function DialogTabs({ tabs, activeTab, onTabChange, right }: Dial
             <button
               key={tab.id}
               type="button"
+              disabled={tab.disabled}
+              title={tab.disabled ? tab.disabledReason : undefined}
               onClick={() => onTabChange(tab.id)}
               className={
-                "px-4 py-3 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] border-b-2 -mb-px transition-colors duration-150 " +
+                "px-4 py-3 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] border-b-2 -mb-px transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 " +
                 (isActive
                   ? "text-ink border-accent"
-                  : "text-ink-3 hover:text-ink-2 border-transparent")
+                  : "text-ink-3 enabled:hover:text-ink-2 border-transparent")
               }
             >
               {tab.label}

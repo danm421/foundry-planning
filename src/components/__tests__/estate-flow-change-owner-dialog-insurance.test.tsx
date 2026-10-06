@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import EstateFlowChangeOwnerDialog from "@/components/estate-flow-change-owner-dialog";
+import EstateFlowAssetDialog from "@/components/estate-flow-asset-dialog";
 import type { Account, ClientData } from "@/engine/types";
 
 /**
@@ -51,23 +51,36 @@ const taxableAccount = {
   lifeInsurance: undefined,
 } as unknown as Account;
 
-describe("EstateFlowChangeOwnerDialog — insurance + irrevocable trust", () => {
+/** Renders the asset dialog, which opens on the Owner tab. */
+function renderOwnerTab(props: {
+  account: Account;
+  onApply: (owners: Account["owners"]) => void;
+  onApplyGift: () => void;
+  onSeedBeneficiary?: () => void;
+}) {
+  render(
+    <EstateFlowAssetDialog
+      account={props.account}
+      clientData={clientData}
+      ledger={[]}
+      taxInflationRate={0}
+      annualExclusionByYear={{}}
+      onApplyOwners={props.onApply}
+      onApplyGift={props.onApplyGift}
+      onSeedBeneficiary={props.onSeedBeneficiary ?? vi.fn()}
+      onApplyBeneficiaries={vi.fn()}
+      onApplyWill={vi.fn()}
+      onClose={vi.fn()}
+    />,
+  );
+}
+
+describe("Estate Flow asset dialog, Owner tab — insurance + irrevocable trust", () => {
   it("retitles an insurance policy into an ILIT without invoking the gift handler", () => {
     const onApply = vi.fn();
     const onApplyGift = vi.fn();
 
-    render(
-      <EstateFlowChangeOwnerDialog
-        account={insuranceAccount}
-        clientData={clientData}
-        onApply={onApply}
-        onApplyGift={onApplyGift}
-        ledger={[]}
-        taxInflationRate={0}
-        annualExclusionByYear={{}}
-        onClose={vi.fn()}
-      />,
-    );
+    renderOwnerTab({ account: insuranceAccount, onApply, onApplyGift });
 
     // Pick the ILIT as the new owner. Destinations render as <label>+<input
     // type="radio">; the accessible name of each radio is the destination label.
@@ -93,18 +106,7 @@ describe("EstateFlowChangeOwnerDialog — insurance + irrevocable trust", () => 
     const onApply = vi.fn();
     const onApplyGift = vi.fn();
 
-    render(
-      <EstateFlowChangeOwnerDialog
-        account={taxableAccount}
-        clientData={clientData}
-        onApply={onApply}
-        onApplyGift={onApplyGift}
-        ledger={[]}
-        taxInflationRate={0}
-        annualExclusionByYear={{}}
-        onClose={vi.fn()}
-      />,
-    );
+    renderOwnerTab({ account: taxableAccount, onApply, onApplyGift });
 
     // Pick the ILIT — for a non-insurance account this must surface the gift form.
     fireEvent.click(screen.getByRole("radio", { name: /alice ilit/i }));
@@ -128,19 +130,7 @@ describe("EstateFlowChangeOwnerDialog — insurance + irrevocable trust", () => 
 
     // `insuranceAccount` has no `beneficiaries` field — the seed criterion
     // (empty / undefined) is met out of the box.
-    render(
-      <EstateFlowChangeOwnerDialog
-        account={insuranceAccount}
-        clientData={clientData}
-        onApply={onApply}
-        onApplyGift={onApplyGift}
-        onSeedBeneficiary={onSeedBeneficiary}
-        ledger={[]}
-        taxInflationRate={0}
-        annualExclusionByYear={{}}
-        onClose={vi.fn()}
-      />,
-    );
+    renderOwnerTab({ account: insuranceAccount, onApply, onApplyGift, onSeedBeneficiary });
 
     // Retitle into the ILIT (direct retitling, not a gift — same as the
     // first test above).
@@ -184,19 +174,7 @@ describe("EstateFlowChangeOwnerDialog — insurance + irrevocable trust", () => 
       ],
     } as unknown as Account;
 
-    render(
-      <EstateFlowChangeOwnerDialog
-        account={accountWithBene}
-        clientData={clientData}
-        onApply={onApply}
-        onApplyGift={onApplyGift}
-        onSeedBeneficiary={onSeedBeneficiary}
-        ledger={[]}
-        taxInflationRate={0}
-        annualExclusionByYear={{}}
-        onClose={vi.fn()}
-      />,
-    );
+    renderOwnerTab({ account: accountWithBene, onApply, onApplyGift, onSeedBeneficiary });
 
     fireEvent.click(screen.getByRole("radio", { name: /alice ilit/i }));
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
@@ -211,19 +189,7 @@ describe("EstateFlowChangeOwnerDialog — insurance + irrevocable trust", () => 
     const onApplyGift = vi.fn();
     const onSeedBeneficiary = vi.fn();
 
-    render(
-      <EstateFlowChangeOwnerDialog
-        account={taxableAccount}
-        clientData={clientData}
-        onApply={onApply}
-        onApplyGift={onApplyGift}
-        onSeedBeneficiary={onSeedBeneficiary}
-        ledger={[]}
-        taxInflationRate={0}
-        annualExclusionByYear={{}}
-        onClose={vi.fn()}
-      />,
-    );
+    renderOwnerTab({ account: taxableAccount, onApply, onApplyGift, onSeedBeneficiary });
 
     // Revocable trust is a direct retitling destination for any account
     // category, so we can fire Apply without invoking the gift form.

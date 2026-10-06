@@ -10,8 +10,7 @@ import {
   asOfSelectionFor,
   pickDeathColumns,
 } from "@/lib/estate/estate-flow-death-columns";
-import EstateFlowChangeOwnerDialog from "@/components/estate-flow-change-owner-dialog";
-import EstateFlowChangeDistributionDialog from "@/components/estate-flow-change-distribution-dialog";
+import EstateFlowAssetDialog from "@/components/estate-flow-asset-dialog";
 import EstateFlowAddGiftDialog from "@/components/estate-flow-add-gift-dialog";
 import EstateFlowChangeEntityOwnerDialog from "@/components/estate-flow-change-entity-owner-dialog";
 import { changeOwner, changeBeneficiaries, upsertWills, changeEntityOwners } from "@/lib/estate/estate-flow-edits";
@@ -62,9 +61,9 @@ export function EstateFlowReportTab({
   // projected year) and a specific year remain available from the dropdown.
   const [deathAsOf, setDeathAsOf] = useState<AsOfValue>("today");
 
-  const [ownerDialogId, setOwnerDialogId] = useState<string | null>(null);
+  // Asset whose owner / beneficiary / bequest dialog is open (column 1 click).
+  const [assetDialogId, setAssetDialogId] = useState<string | null>(null);
   const [entityDialogId, setEntityDialogId] = useState<string | null>(null);
-  const [distributionDialogId, setDistributionDialogId] = useState<string | null>(null);
   // Standalone "Add a gift" dialog (no source account).
   const [addGiftOpen, setAddGiftOpen] = useState(false);
   // Gift currently being edited via a column-1 future-gift marker.
@@ -187,8 +186,8 @@ export function EstateFlowReportTab({
   }, [working.client, projection.firstDeathEvent, projection.secondDeathEvent]);
 
   // ── Derived ──────────────────────────────────────────────────────────────────
-  const ownerDialogAccount = ownerDialogId
-    ? working.accounts.find((a) => a.id === ownerDialogId)
+  const assetDialogAccount = assetDialogId
+    ? working.accounts.find((a) => a.id === assetDialogId)
     : undefined;
   const entityDialogEntity = entityDialogId
     ? (working.entities ?? []).find((e) => e.id === entityDialogId)
@@ -235,7 +234,7 @@ export function EstateFlowReportTab({
         <div className="rounded border border-hair p-3">
           <EstateFlowOwnershipColumn
             data={ownership}
-            onAssetClick={(id) => setOwnerDialogId(id)}
+            onAssetClick={setAssetDialogId}
             minYear={planStartYear}
             maxYear={planEndYear}
             asOfYear={asOfYear}
@@ -261,10 +260,8 @@ export function EstateFlowReportTab({
                   section={col2Section}
                   deathOrder={1}
                   projection={projection}
-                  onAssetClick={setDistributionDialogId}
                   gifts={workingGifts}
                   accountNameById={accountNameById}
-                  onGiftClick={setEditingGiftId}
                 />
               </div>
               {/* Death column 3 — second death, married only */}
@@ -274,10 +271,8 @@ export function EstateFlowReportTab({
                     section={col3Section}
                     deathOrder={2}
                     projection={projection}
-                    onAssetClick={setDistributionDialogId}
                     gifts={workingGifts}
                     accountNameById={accountNameById}
-                    onGiftClick={setEditingGiftId}
                   />
                 </div>
               ) : (
@@ -289,29 +284,31 @@ export function EstateFlowReportTab({
       </div>
 
       {/* Dialogs */}
-      {ownerDialogAccount && (
-        <EstateFlowChangeOwnerDialog
-          account={ownerDialogAccount}
+      {assetDialogAccount && (
+        <EstateFlowAssetDialog
+          account={assetDialogAccount}
           clientData={working}
           ledger={projection.giftLedger}
           taxInflationRate={taxInflationRate}
           annualExclusionByYear={annualExclusionByYear}
           priorDiscounts={priorDiscounts}
           accountValueAtYear={accountValueAtYear}
-          onApply={(owners) => {
-            applyEdit((d) => changeOwner(d, ownerDialogId!, owners));
-            setOwnerDialogId(null);
-          }}
-          onSeedBeneficiary={(ref) => {
+          onApplyOwners={(owners) =>
+            applyEdit((d) => changeOwner(d, assetDialogAccount.id, owners))
+          }
+          onSeedBeneficiary={(ref) =>
             applyEdit((d) =>
-              changeBeneficiaries(d, "account", ownerDialogId!, [ref]),
-            );
-          }}
-          onApplyGift={(draft) => {
-            setWorkingGifts((cur) => addGift(cur, draft));
-            setOwnerDialogId(null);
-          }}
-          onClose={() => setOwnerDialogId(null)}
+              changeBeneficiaries(d, "account", assetDialogAccount.id, [ref]),
+            )
+          }
+          onApplyGift={(draft) => setWorkingGifts((cur) => addGift(cur, draft))}
+          onApplyBeneficiaries={(refs) =>
+            applyEdit((d) =>
+              changeBeneficiaries(d, "account", assetDialogAccount.id, refs),
+            )
+          }
+          onApplyWill={(wills) => applyEdit((d) => upsertWills(d, wills))}
+          onClose={() => setAssetDialogId(null)}
         />
       )}
 
@@ -324,22 +321,6 @@ export function EstateFlowReportTab({
             setEntityDialogId(null);
           }}
           onClose={() => setEntityDialogId(null)}
-        />
-      )}
-
-      {distributionDialogId && working.accounts.some((a) => a.id === distributionDialogId) && (
-        <EstateFlowChangeDistributionDialog
-          accountId={distributionDialogId}
-          clientData={working}
-          onApplyBeneficiaries={(refs) => {
-            applyEdit((d) => changeBeneficiaries(d, "account", distributionDialogId, refs));
-            setDistributionDialogId(null);
-          }}
-          onApplyWill={(wills) => {
-            applyEdit((d) => upsertWills(d, wills));
-            setDistributionDialogId(null);
-          }}
-          onClose={() => setDistributionDialogId(null)}
         />
       )}
 

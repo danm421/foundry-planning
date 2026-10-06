@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import DialogShell from "@/components/dialog-shell";
 import { fieldLabelClassName } from "@/components/forms/input-styles";
 import GiftForm, { giftFormRecipientsFromClientData } from "@/components/gift-form";
 import type { AccountValueAtYear } from "@/lib/estate/account-value-at-year";
@@ -40,7 +39,6 @@ interface Props {
   /** Projected account balance at a gift year — powers the in-kind value
    *  preview and the dollars → share conversion. */
   accountValueAtYear?: AccountValueAtYear;
-  onClose: () => void;
 }
 
 // A "destination" is a UI-level concept that maps to one AccountOwner[] shape.
@@ -118,7 +116,11 @@ function describeOwners(
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function EstateFlowChangeOwnerDialog({
+/**
+ * The Owner tab of the Estate Flow asset dialog: retitle the asset, or gift it.
+ * Returns the tab's body and primary action; the dialog draws the frame.
+ */
+export function useOwnerPanel({
   account,
   clientData,
   onApply,
@@ -129,7 +131,6 @@ export default function EstateFlowChangeOwnerDialog({
   annualExclusionByYear,
   priorDiscounts,
   accountValueAtYear,
-  onClose,
 }: Props) {
   // ── Derive available destinations ─────────────────────────────────────────
 
@@ -460,159 +461,153 @@ export default function EstateFlowChangeOwnerDialog({
         disabled: !canApply,
       };
 
-  return (
-    <DialogShell
-      open={true}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      title="Change Ownership"
-      size="sm"
-      primaryAction={primaryAction}
-    >
-      {/* Asset summary */}
-      <div className="mb-5 rounded border border-hair bg-card-2 px-4 py-3">
-        <p className="text-[14px] font-medium text-ink">{account.name}</p>
-        <p className="mt-0.5 text-[12px] text-ink-3">{fmt.format(account.value)}</p>
-        <p className="mt-1 text-[12px] text-ink-3">
-          <span className="text-ink-4">Current owner: </span>
-          {currentOwnerLabel}
-        </p>
-        {linkedLiability && (
-          <p className="mt-2 rounded bg-amber-900/30 px-2 py-1 text-[11px] text-amber-200">
-            Note: mortgage / liability &ldquo;{linkedLiability.name}&rdquo; moves with this
-            property.
+  return {
+    primaryAction,
+    body: (
+      <>
+        {/* Asset summary — the dialog title carries the asset's name */}
+        <div className="mb-5 rounded border border-hair bg-card-2 px-4 py-3">
+          <p className="text-[12px] text-ink-3">{fmt.format(account.value)}</p>
+          <p className="mt-1 text-[12px] text-ink-3">
+            <span className="text-ink-4">Current owner: </span>
+            {currentOwnerLabel}
           </p>
-        )}
-      </div>
-
-      {/* Destination selector */}
-      <div>
-        <p className={fieldLabelClassName}>New owner</p>
-        <div className="flex flex-col gap-1.5">
-          {destinations.map((dest) => {
-            const isSelected = dest.id === selectedDestId;
-            return (
-              <label
-                key={dest.id}
-                className={`flex cursor-pointer items-center gap-2.5 rounded px-3 py-2 transition-colors ${
-                  dest.disabled
-                    ? "cursor-not-allowed opacity-40"
-                    : isSelected
-                    ? "bg-accent/15 ring-1 ring-accent/40"
-                    : "hover:bg-card-2"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="dest"
-                  value={dest.id}
-                  checked={isSelected}
-                  disabled={dest.disabled}
-                  onChange={() => !dest.disabled && handleDestChange(dest.id)}
-                  className="accent-[var(--color-accent)] h-4 w-4 shrink-0"
-                />
-                <span className="flex-1 text-[13px] text-ink">{dest.label}</span>
-                {dest.disabledHint && (
-                  <span className="text-[11px] text-ink-4 italic">
-                    {dest.disabledHint}
-                  </span>
-                )}
-              </label>
-            );
-          })}
+          {linkedLiability && (
+            <p className="mt-2 rounded bg-amber-900/30 px-2 py-1 text-[11px] text-amber-200">
+              Note: mortgage / liability &ldquo;{linkedLiability.name}&rdquo; moves with this
+              property.
+            </p>
+          )}
         </div>
-      </div>
 
-      {/* Gift destination — gift form replaces the joint-split section.
-          Keyed on the destination id so switching between gift destinations
-          remounts the form and re-seeds its state (honours the remount
-          contract documented on GiftForm). */}
-      {isGiftDest && (
-        <div className="mt-4">
-          <GiftForm
-            key={selectedDestId}
-            recipients={giftFormRecipientsFromClientData(clientData)}
-            accounts={(clientData.accounts ?? []).map((a) => ({
-              id: a.id, name: a.name, value: a.value, subType: a.subType,
-            }))}
-            hasSpouse={clientData.client.spouseDob != null}
-            annualExclusionByYear={annualExclusionByYear}
-            editing={null}
-            sourceAccount={{
-              id: account.id,
-              name: account.name,
-              value: account.value,
-              subType: account.subType,
-            }}
-            accountValueAtYear={accountValueAtYear}
-            priorDiscounts={priorDiscounts}
-            ledger={ledger}
-            taxInflationRate={taxInflationRate}
-            onChange={setGiftDraft}
-          />
-        </div>
-      )}
-
-      {/* Joint split percent inputs */}
-      {isJoint && selectedDest?.memberIds && selectedDest.memberIds.length === 2 && (
-        <div className="mt-4">
-          <p className={fieldLabelClassName}>Ownership split</p>
-          <div className="flex flex-col gap-2">
-            {selectedDest.memberIds.map((memberId) => {
-              const fm = (clientData.familyMembers ?? []).find((m) => m.id === memberId);
-              let label: string;
-              if (memberId === clientFmId || memberId === LEGACY_FM_CLIENT) {
-                label = clientName;
-              } else if (memberId === spouseFmId || memberId === LEGACY_FM_SPOUSE) {
-                label = spouseName ?? CO_CLIENT_LABEL;
-              } else {
-                label = fm ? `${fm.firstName} ${fm.lastName ?? ""}`.trim() : memberId;
-              }
-              const inputId = `split-${memberId}`;
+        {/* Destination selector */}
+        <div>
+          <p className={fieldLabelClassName}>New owner</p>
+          <div className="flex flex-col gap-1.5">
+            {destinations.map((dest) => {
+              const isSelected = dest.id === selectedDestId;
               return (
-                <div key={memberId} className="flex items-center gap-3">
-                  <label
-                    htmlFor={inputId}
-                    className="w-32 shrink-0 text-[13px] text-ink-2"
-                  >
-                    {label}
-                  </label>
+                <label
+                  key={dest.id}
+                  className={`flex cursor-pointer items-center gap-2.5 rounded px-3 py-2 transition-colors ${
+                    dest.disabled
+                      ? "cursor-not-allowed opacity-40"
+                      : isSelected
+                      ? "bg-accent/15 ring-1 ring-accent/40"
+                      : "hover:bg-card-2"
+                  }`}
+                >
                   <input
-                    id={inputId}
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={splitPercents[memberId] ?? 50}
-                    onChange={(e) => {
-                      const raw = Number(e.target.value);
-                      const clamped = Math.max(0, Math.min(100, Number.isNaN(raw) ? 0 : raw));
-                      setSplitPercents((prev) => ({
-                        ...prev,
-                        [memberId]: clamped,
-                      }));
-                    }}
-                    aria-describedby="split-total-msg"
-                    aria-invalid={!percentSumValid}
-                    className="h-9 w-20 rounded-[var(--radius-sm)] bg-card-2 border border-hair px-3 text-[14px] text-ink outline-none hover:border-hair-2 focus:border-accent focus:ring-2 focus:ring-accent/25"
+                    type="radio"
+                    name="dest"
+                    value={dest.id}
+                    checked={isSelected}
+                    disabled={dest.disabled}
+                    onChange={() => !dest.disabled && handleDestChange(dest.id)}
+                    className="accent-[var(--color-accent)] h-4 w-4 shrink-0"
                   />
-                  <span className="text-[13px] text-ink-3">%</span>
-                </div>
+                  <span className="flex-1 text-[13px] text-ink">{dest.label}</span>
+                  {dest.disabledHint && (
+                    <span className="text-[11px] text-ink-4 italic">
+                      {dest.disabledHint}
+                    </span>
+                  )}
+                </label>
               );
             })}
           </div>
-          {/* Percent sum validation feedback */}
-          <p
-            id="split-total-msg"
-            className={`mt-2 text-[12px] ${
-              percentSumValid ? "text-ink-3" : "text-crit"
-            }`}
-          >
-            Total: {percentTotal}%{!percentSumValid && " — must equal 100%"}
-          </p>
         </div>
-      )}
-    </DialogShell>
-  );
+
+        {/* Gift destination — gift form replaces the joint-split section.
+            Keyed on the destination id so switching between gift destinations
+            remounts the form and re-seeds its state (honours the remount
+            contract documented on GiftForm). */}
+        {isGiftDest && (
+          <div className="mt-4">
+            <GiftForm
+              key={selectedDestId}
+              recipients={giftFormRecipientsFromClientData(clientData)}
+              accounts={(clientData.accounts ?? []).map((a) => ({
+                id: a.id, name: a.name, value: a.value, subType: a.subType,
+              }))}
+              hasSpouse={clientData.client.spouseDob != null}
+              annualExclusionByYear={annualExclusionByYear}
+              editing={null}
+              sourceAccount={{
+                id: account.id,
+                name: account.name,
+                value: account.value,
+                subType: account.subType,
+              }}
+              accountValueAtYear={accountValueAtYear}
+              priorDiscounts={priorDiscounts}
+              ledger={ledger}
+              taxInflationRate={taxInflationRate}
+              onChange={setGiftDraft}
+            />
+          </div>
+        )}
+
+        {/* Joint split percent inputs */}
+        {isJoint && selectedDest?.memberIds && selectedDest.memberIds.length === 2 && (
+          <div className="mt-4">
+            <p className={fieldLabelClassName}>Ownership split</p>
+            <div className="flex flex-col gap-2">
+              {selectedDest.memberIds.map((memberId) => {
+                const fm = (clientData.familyMembers ?? []).find((m) => m.id === memberId);
+                let label: string;
+                if (memberId === clientFmId || memberId === LEGACY_FM_CLIENT) {
+                  label = clientName;
+                } else if (memberId === spouseFmId || memberId === LEGACY_FM_SPOUSE) {
+                  label = spouseName ?? CO_CLIENT_LABEL;
+                } else {
+                  label = fm ? `${fm.firstName} ${fm.lastName ?? ""}`.trim() : memberId;
+                }
+                const inputId = `split-${memberId}`;
+                return (
+                  <div key={memberId} className="flex items-center gap-3">
+                    <label
+                      htmlFor={inputId}
+                      className="w-32 shrink-0 text-[13px] text-ink-2"
+                    >
+                      {label}
+                    </label>
+                    <input
+                      id={inputId}
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={splitPercents[memberId] ?? 50}
+                      onChange={(e) => {
+                        const raw = Number(e.target.value);
+                        const clamped = Math.max(0, Math.min(100, Number.isNaN(raw) ? 0 : raw));
+                        setSplitPercents((prev) => ({
+                          ...prev,
+                          [memberId]: clamped,
+                        }));
+                      }}
+                      aria-describedby="split-total-msg"
+                      aria-invalid={!percentSumValid}
+                      className="h-9 w-20 rounded-[var(--radius-sm)] bg-card-2 border border-hair px-3 text-[14px] text-ink outline-none hover:border-hair-2 focus:border-accent focus:ring-2 focus:ring-accent/25"
+                    />
+                    <span className="text-[13px] text-ink-3">%</span>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Percent sum validation feedback */}
+            <p
+              id="split-total-msg"
+              className={`mt-2 text-[12px] ${
+                percentSumValid ? "text-ink-3" : "text-crit"
+              }`}
+            >
+              Total: {percentTotal}%{!percentSumValid && " — must equal 100%"}
+            </p>
+          </div>
+        )}
+      </>
+    ),
+  };
 }
