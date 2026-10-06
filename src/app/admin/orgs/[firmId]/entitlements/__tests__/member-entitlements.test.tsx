@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import MemberEntitlements, { type MemberEntitlementRow } from "../member-entitlements";
 
 vi.mock("../actions", () => ({
@@ -105,6 +105,24 @@ describe("MemberEntitlements", () => {
     );
     expect(screen.getByText(/left the pilot/)).toBeTruthy();
     expect(screen.getByText(/u_ops/)).toBeTruthy();
+  });
+
+  it("clears the reason once the change lands, so a grant's reason never pre-fills the revoke", () => {
+    const { rerender } = render(<MemberEntitlements firmId="org_firm" rows={[rows[1]]} />);
+    fireEvent.change(screen.getByLabelText("Reason to grant Client portal for Bo Broker"), {
+      target: { value: "pilot firm" },
+    });
+    // The server action revalidates; the row comes back flipped.
+    rerender(
+      <MemberEntitlements
+        firmId="org_firm"
+        rows={[{ ...rows[1], caps: [cap({ enabled: true, overrideMode: "grant", reason: "pilot firm" })] }]}
+      />,
+    );
+    const revokeReason = screen.getByLabelText(
+      "Reason to revoke Client portal for Bo Broker",
+    ) as HTMLInputElement;
+    expect(revokeReason.value).toBe("");
   });
 
   it("renders nothing when the firm has no members", () => {

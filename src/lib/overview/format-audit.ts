@@ -23,11 +23,58 @@ const LABELS: Record<string, string> = {
   "savings_rule.update": "Updated savings rule",
   "savings_rule.delete": "Deleted savings rule",
   "client.update": "Updated client details",
+  "client.base_facts.update": "Updated client details",
   "client.extract": "Imported document",
+  "family_member.create": "Added family member",
+  // Client edits in the portal. Ones that mirror an advisor action
+  // ("portal.account.create") fall through to the unprefixed label above.
+  "portal.transaction.create": "Added transaction",
+  "portal.transaction.update": "Updated transaction",
+  "portal.transaction.delete": "Deleted transaction",
+  "portal.transaction.review_batch": "Marked transactions reviewed",
+  "portal.transaction.review_all": "Marked all transactions reviewed",
+  "portal.budget.update": "Updated budget",
+  "portal.category.create": "Added budget category",
+  "portal.category.update": "Updated budget category",
+  "portal.category.delete": "Deleted budget category",
+  "portal.rule.create": "Added transaction rule",
+  "portal.rule.update": "Updated transaction rule",
+  "portal.rule.delete": "Deleted transaction rule",
+  "portal.recurring.create": "Added recurring bill",
+  "portal.recurring.update": "Updated recurring bill",
+  "portal.recurring.delete": "Deleted recurring bill",
+  "portal.document.create": "Added document",
+  "portal.document.update": "Updated document",
+  "portal.document.delete": "Deleted document",
+  "portal.folder.create": "Added folder",
+  "portal.folder.update": "Updated folder",
+  "portal.folder.delete": "Deleted folder",
+  "portal.family.create": "Added family member",
+  "portal.family.update": "Updated family member",
+  "portal.family.delete": "Deleted family member",
+  "portal.trust.update": "Updated trust",
+  "portal.household.update": "Updated household details",
+  "portal.privacy.update": "Changed what they share",
+  "portal.plaid.link": "Linked account",
+  "portal.plaid.unlink": "Unlinked account",
+  "portal.plaid.refresh": "Refreshed linked accounts",
+  "portal.plaid.sync": "Refreshed linked accounts",
+  "portal.plaid.reauth": "Reconnected linked account",
+  "portal.plaid.account_detach": "Removed linked account",
+  "portal.plaid.dismiss_new_accounts": "Dismissed new linked accounts",
+  "portal.invite.accepted": "Accepted portal invite",
+  "portal.access.accepted": "Accepted portal access",
+  "portal.access.declined": "Declined portal access",
+  "portal.access.revoked_by_client": "Left the portal",
+  "intake.form.submitted": "Submitted intake form",
+  "intake.document.uploaded": "Uploaded intake document",
+  "intake.document.deleted": "Deleted intake document",
+  "risk_profile.rtq_completed": "Completed risk questionnaire",
 };
 
 export function formatAuditRow(row: Row): string {
-  const label = LABELS[row.action as string];
+  const action = String(row.action);
+  const label = LABELS[action] ?? LABELS[action.replace(/^portal\./, "")];
   if (label) return label;
-  return String(row.action).replace(/[._]/g, " ");
+  return action.replace(/[._]/g, " ");
 }

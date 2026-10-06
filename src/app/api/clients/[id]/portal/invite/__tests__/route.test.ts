@@ -187,11 +187,74 @@ describe("POST /api/clients/[id]/portal/invite", () => {
         ],
       }),
     );
+    getInvitationListMock.mockResolvedValue({
+      data: [{ id: "inv_0", emailAddress: "Pending@Example.com" }],
+    });
     const res = await POST(postReq({ email: "pending@example.com" }), {
       params: Promise.resolve({ id: "c1" }),
     });
     expect(res.status).toBe(409);
     expect((await res.json()).error).toMatch(/already pending/i);
+    expect(createInvitationMock).toHaveBeenCalledTimes(1);
+  });
+
+  // Clerk keeps an ACCEPTED invitation forever and answers the next invite to
+  // that address with the same `duplicate_record` a pending one earns — so after
+  // Delete login, re-inviting the client used to dead-end on "Revoke it first"
+  // with nothing to revoke.
+  it("re-invites an email whose only invitation was accepted by a since-deleted login", async () => {
+    checkLimitMock.mockResolvedValue({ allowed: true });
+    createInvitationMock
+      .mockRejectedValueOnce(
+        new ClerkAPIResponseError("Bad Request", {
+          status: 400,
+          data: [{ code: "duplicate_record", message: "There are already pending invitations." }],
+        }),
+      )
+      .mockResolvedValueOnce({ id: "inv_2" });
+    // Clerk's `query` matches loosely — an invite to a different address is not this one's.
+    getInvitationListMock.mockResolvedValue({
+      data: [{ id: "inv_9", emailAddress: "other.client@example.com" }],
+    });
+    const res = await POST(postReq({ email: "client@example.com" }), {
+      params: Promise.resolve({ id: "c1" }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ mode: "invited", invitationId: "inv_2" });
+    expect(getInvitationListMock).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "pending", query: "client@example.com" }),
+    );
+    expect(createInvitationMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        emailAddress: "client@example.com",
+        publicMetadata: { clientId: "c1" },
+        ignoreExisting: true,
+      }),
+    );
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ portalInvitedAt: expect.any(Date) }),
+    );
+  });
+
+  it("never forces an invite past Clerk once the email has an account", async () => {
+    checkLimitMock.mockResolvedValue({ allowed: true });
+    createInvitationMock.mockRejectedValue(
+      new ClerkAPIResponseError("Bad Request", {
+        status: 400,
+        data: [{ code: "duplicate_record", message: "There are already pending invitations." }],
+      }),
+    );
+    getInvitationListMock.mockResolvedValue({ data: [] });
+    // Empty on the route's own lookup, present by the time Clerk refused (a sign-up in between).
+    getUserListMock
+      .mockResolvedValueOnce({ data: [], totalCount: 0 })
+      .mockResolvedValue({ data: [{ id: "user_1" }], totalCount: 1 });
+    const res = await POST(postReq({ email: "client@example.com" }), {
+      params: Promise.resolve({ id: "c1" }),
+    });
+    expect(res.status).toBe(409);
+    expect(createInvitationMock).toHaveBeenCalledTimes(1);
+    expect(updateMock).not.toHaveBeenCalled();
   });
 
   it("403s without sending an invite when the firm lacks the client_portal entitlement", async () => {

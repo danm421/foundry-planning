@@ -148,7 +148,7 @@ export default async function PortalManagePage({ params }: Props): Promise<React
               target="_blank"
               rel="noopener noreferrer"
               className={portalBtn.accent}
-              title="See exactly what the client sees — read-only, works before you send an invite."
+              title="See exactly what the client sees — works before you send an invite. With editing on, changes you make there are saved."
             >
               <EyeIcon />
               Preview Client Portal

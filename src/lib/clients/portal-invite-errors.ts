@@ -15,6 +15,17 @@ export function isExistingAccountError(err: unknown): boolean {
 }
 
 /**
+ * Did Clerk refuse because the email already has an invitation? Clerk says so
+ * for a PENDING invitation and — forever — for an ACCEPTED one, so the caller
+ * must check which before telling an advisor to revoke something.
+ */
+export function isDuplicateInvitationError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  if (!isClerkAPIResponseError(err)) return false;
+  return err.errors.some((e) => e.code === "duplicate_record");
+}
+
+/**
  * Maps a Clerk `createInvitation` failure to an advisor-facing response.
  *
  * Clerk rejects a portal invitation when the email can't be invited:
@@ -31,8 +42,6 @@ export function clerkInviteErrorResponse(
   if (!err || typeof err !== "object") return null;
   if (!isClerkAPIResponseError(err)) return null;
 
-  const codes = err.errors.map((e) => e.code);
-
   if (isExistingAccountError(err)) {
     return {
       status: 409,
@@ -42,7 +51,7 @@ export function clerkInviteErrorResponse(
     };
   }
 
-  if (codes.includes("duplicate_record")) {
+  if (isDuplicateInvitationError(err)) {
     return {
       status: 409,
       error:

@@ -9,6 +9,7 @@ import {
 import PortalCard from "@/components/portal/portal-card";
 import { PORTAL_AREA_LABELS } from "@/components/portal/not-shared-notice";
 import { HistoryIcon } from "@/components/portal/portal-icons";
+import { formatAuditRow } from "@/lib/overview/format-audit";
 
 interface Props {
   clientId: string;
@@ -58,8 +59,7 @@ export default async function PortalActivityFeed({
                   minute: "2-digit",
                 })}
               </time>
-              <span className="w-[120px] shrink-0 truncate text-ink-2">{r.resourceType}</span>
-              <span className="min-w-0 truncate text-ink">{r.action.replace(/^portal\./, "")}</span>
+              <span className="min-w-0 truncate text-ink">{formatAuditRow(r)}</span>
             </li>
           ))}
         </ol>

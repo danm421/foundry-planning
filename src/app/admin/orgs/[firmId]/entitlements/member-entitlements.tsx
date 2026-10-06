@@ -123,9 +123,11 @@ export default function MemberEntitlements({
                   <div className="tabular text-sm text-ink-3">{m.userId}</div>
                 )}
               </div>
+              {/* Keyed on the state too: a landed grant/revoke remounts the form, so
+                  the reason just typed doesn't carry over into the opposite action. */}
               {m.caps.map((c) => (
                 <CapForm
-                  key={c.key}
+                  key={`${c.key}:${c.enabled}`}
                   firmId={firmId}
                   userId={m.userId}
                   memberName={m.displayName}

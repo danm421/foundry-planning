@@ -89,8 +89,10 @@ export default function EntitlementsClient({
         change requires a reason and is recorded in the audit log.
       </p>
       <div className="grid gap-3">
+        {/* Keyed on the state too: a landed grant/revoke remounts the row, so the
+            reason just typed doesn't carry over into the opposite action's box. */}
         {rows.map((r) => (
-          <RowCard key={r.key} firmId={firmId} row={r} />
+          <RowCard key={`${r.key}:${r.enabled}`} firmId={firmId} row={r} />
         ))}
       </div>
     </section>
