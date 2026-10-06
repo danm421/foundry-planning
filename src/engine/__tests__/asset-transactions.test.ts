@@ -402,6 +402,7 @@ describe("applyAssetPurchases", () => {
     const result = applyAssetPurchases({
       purchases: [buy], accounts: [checkingAccount], liabilities: [],
       accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, planStartYear: 2026, defaultCheckingId: "checking-1",
+      ownerFmId: LEGACY_FM_CLIENT,
     });
 
     expect(balances["checking-1"]).toBe(100000);
@@ -426,6 +427,7 @@ describe("applyAssetPurchases", () => {
     const result = applyAssetPurchases({
       purchases: [buy], accounts: [checkingAccount], liabilities: [],
       accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, planStartYear: 2026, defaultCheckingId: "checking-1",
+      ownerFmId: LEGACY_FM_CLIENT,
     });
 
     expect(balances["checking-1"]).toBe(100000); // 200k - 100k equity
@@ -450,6 +452,7 @@ describe("applyAssetPurchases", () => {
     applyAssetPurchases({
       purchases: [buy], accounts: [checkingAccount], liabilities: [],
       accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, planStartYear: 2026, defaultCheckingId: "checking-1",
+      ownerFmId: LEGACY_FM_CLIENT,
     });
 
     expect(balances["checking-1"]).toBe(50000);
@@ -487,6 +490,7 @@ describe("applyAssetPurchases — deterministic synthetic ids", () => {
       year: 2030,
       planStartYear: 2026,
       defaultCheckingId: "checking",
+      ownerFmId: LEGACY_FM_CLIENT,
     });
 
     expect(result.newAccounts).toHaveLength(1);
@@ -930,6 +934,7 @@ describe("applyAssetPurchases — property tax", () => {
       year: 2032,
       planStartYear,
       defaultCheckingId: "checking-1",
+      ownerFmId: LEGACY_FM_CLIENT,
     });
   }
 
@@ -977,6 +982,7 @@ describe("applyAssetPurchases — property tax", () => {
       year: 2026,
       planStartYear: 2026,
       defaultCheckingId: "checking-1",
+      ownerFmId: LEGACY_FM_CLIENT,
     });
     expect(newAccounts[0].annualPropertyTax).toBeCloseTo(16_500, 6);
   });

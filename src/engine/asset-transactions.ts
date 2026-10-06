@@ -7,7 +7,7 @@ import type {
   Liability,
 } from "./types";
 import type { FilingStatus } from "../lib/tax/types";
-import { LEGACY_FM_CLIENT, controllingEntity, giftAwareOwners } from "./ownership";
+import { controllingEntity, giftAwareOwners } from "./ownership";
 
 /** IRC §121 home-sale exclusion caps by filing status.
  *  Married filing jointly gets $500k; all other statuses (single, head of
@@ -474,6 +474,13 @@ export interface ApplyAssetPurchasesInput {
    *  to plan-start dollars. */
   planStartYear: number;
   defaultCheckingId: string;
+  /** The living principal's family-member id — the client, or the surviving
+   *  spouse once the client has died. The bought asset and its mortgage are
+   *  owned by it. It must be the household's REAL id (never the legacy
+   *  sentinel when the household has one) and a living person's, or the death
+   *  step — which matches the decedent by id — treats both as a stranger's and
+   *  leaves them out of every estate. */
+  ownerFmId: string;
 }
 
 /** Matches accounts.property_tax_growth_rate's DB default AND the fallback in
@@ -498,6 +505,7 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
     year,
     planStartYear,
     defaultCheckingId,
+    ownerFmId,
   } = input;
 
   const newAccounts: Account[] = [];
@@ -568,7 +576,7 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
       // Technique-created assets default to household-owned (single client).
       // Mirrors the legacy `owner: "client"` semantics so portfolio rollups,
       // withdrawal sourcing, etc. treat the new asset as household property.
-      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      owners: [{ kind: "family_member", familyMemberId: ownerFmId, percent: 1 }],
     };
     newAccounts.push(newAccount);
 
@@ -631,7 +639,7 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
         extraPayments: [],
         // Technique-created mortgages default to household debt (single client),
         // mirroring migration 0055's "non-entity liabilities → client 100%" rule.
-        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+        owners: [{ kind: "family_member", familyMemberId: ownerFmId, percent: 1 }],
       };
       newLiabilities.push(newLiability);
       syntheticLiabilityId = newLiabilityId;

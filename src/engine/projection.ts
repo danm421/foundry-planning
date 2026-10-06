@@ -1042,6 +1042,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   const firstDeathSurvivor: "client" | "spouse" | null =
     firstDeathDeceased === "client" ? "spouse" : firstDeathDeceased === "spouse" ? "client" : null;
 
+  // Owner of every account / mortgage the engine mints mid-plan (purchases,
+  // equity destinations) — see `ApplyAssetPurchasesInput.ownerFmId`. The
+  // client, until the client has died first; then the surviving spouse.
+  const householdOwnerFmIdAt = (year: number): string =>
+    firstDeathDeceased === "client" && firstDeathYear != null && year > firstDeathYear
+      ? (spouseFmId ?? LEGACY_FM_SPOUSE)
+      : (clientFmId ?? LEGACY_FM_CLIENT);
+
   const finalDeathYear = computeFinalDeathYear(
     client,
     planSettings.planStartYear,
@@ -1581,6 +1589,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           year,
           planStartYear: planSettings.planStartYear,
           defaultCheckingId: defaultChecking?.id ?? "",
+          ownerFmId: householdOwnerFmIdAt(year),
         });
 
         purchaseBreakdown = purchaseResult.breakdown;
@@ -1706,7 +1715,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               turnoverPct: 0,
             },
             // Household-owned (single client), mirroring applyAssetPurchases.
-            owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+            owners: [{ kind: "family_member", familyMemberId: householdOwnerFmIdAt(year), percent: 1 }],
           };
           workingAccounts.push(destAccount);
           accountBalances[destId] = 0;

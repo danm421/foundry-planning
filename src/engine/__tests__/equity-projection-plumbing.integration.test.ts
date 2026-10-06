@@ -545,3 +545,28 @@ describe("F31 — a raided destination cannot manufacture sale proceeds", () => 
     expect(sell.accountLedgers[DEST_ID]!.distributions).toBeCloseTo(available, 2);
   });
 });
+
+// ── The minted destination account belongs to the REAL client ───────────────
+// A sentinel owner on a real-id household left the shares out of every estate.
+
+describe("the minted destination account is owned by the household's client", () => {
+  it("carries the client's real family-member id, not the legacy sentinel", () => {
+    const realFm: FamilyMember = { ...FM, id: "fm-client-1" };
+    const years = runProjection(
+      buildData({
+        familyMembers: [realFm],
+        accounts: [CHECKING, SO_ACCOUNT].map((a) => ({
+          ...a,
+          owners: [{ kind: "family_member", familyMemberId: realFm.id, percent: 1 }],
+        })),
+        stockOptionPlans: [HOLD_PLAN],
+      }),
+    );
+    const dest = years
+      .find((y) => y.year === VEST_YEAR)!
+      .syntheticAccounts?.find((a) => a.id === DEST_ID);
+    expect(dest?.owners).toEqual([
+      { kind: "family_member", familyMemberId: "fm-client-1", percent: 1 },
+    ]);
+  });
+});
