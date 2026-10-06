@@ -38,6 +38,10 @@ import {
   ScenarioChangeRejectedError,
 } from "@/lib/scenario/changes-writer";
 import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
+import {
+  withDefaultBeneficiariesFollowingOwner,
+  withDefaultBeneficiariesOnAdd,
+} from "@/lib/scenario/retirement-beneficiary-defaults";
 import { WHOLE_ENTITY_SCHEMAS } from "@/lib/scenario/whole-entity-kinds";
 import type { OpType, TargetKind } from "@/engine/scenario/types";
 
@@ -143,6 +147,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       }
     }
 
+    // A retirement account's default beneficiaries, as the base write core
+    // gives them (retirement-beneficiary-defaults.ts).
+    const scenarioScope = { clientId, firmId, scenarioId };
     switch (body.op) {
       case "edit": {
         await applyEntityEdit({
@@ -150,7 +157,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           firmId,
           targetKind: body.targetKind as TargetKind,
           targetId: body.targetId,
-          desiredFields: body.desiredFields,
+          desiredFields:
+            body.targetKind === "account"
+              ? await withDefaultBeneficiariesFollowingOwner(scenarioScope, body.targetId, body.desiredFields)
+              : body.desiredFields,
           toggleGroupId: body.toggleGroupId,
         });
         await recordAudit({
@@ -168,13 +178,18 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         return NextResponse.json({ ok: true });
       }
       case "add": {
+        // The Zod refine above guarantees entity.id is a non-empty string;
+        // cast for the writer's `BaseEntity` shape.
+        const entity = (
+          body.targetKind === "account"
+            ? await withDefaultBeneficiariesOnAdd(scenarioScope, body.entity)
+            : body.entity
+        ) as { id: string } & Record<string, unknown>;
         const { targetId } = await applyEntityAdd({
           scenarioId,
           firmId,
           targetKind: body.targetKind as TargetKind,
-          // The Zod refine above guarantees entity.id is a non-empty string;
-          // cast for the writer's `BaseEntity` shape.
-          entity: body.entity as { id: string } & Record<string, unknown>,
+          entity,
           toggleGroupId: body.toggleGroupId,
         });
         await recordAudit({
@@ -189,7 +204,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             targetId,
           }),
         });
-        return NextResponse.json({ ok: true, targetId });
+        // The Add Account form opens its Beneficiaries tab on what was stored.
+        return NextResponse.json({ ok: true, targetId, beneficiaries: entity.beneficiaries });
       }
       case "remove": {
         await applyEntityRemove({

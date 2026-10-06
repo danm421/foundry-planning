@@ -527,6 +527,96 @@ d("scenario_changes writer route", () => {
     });
   });
 
+  // A retirement account added inside a scenario starts on the household's
+  // default beneficiaries, as one added to the base plan does.
+  describe("retirement account default beneficiaries", () => {
+    const COOPER_FM_ID = "7f875f15-50f6-4ef2-8f18-8a0b1f8b3997";
+    const SUSAN_FM_ID = "700e50bc-9679-4aa5-b699-4afdd4064ca7";
+    const CHILD_IDS = ["ee579f90-cc1a-4fb1-8b9f-3861ef47ad3b", "b9d724dc-57b0-4167-9fe1-6f4b0b6f1741"];
+    const soleOwner = (familyMemberId: string) => [{ kind: "family_member", familyMemberId, percent: 1 }];
+
+    async function post(body: Record<string, unknown>) {
+      return route.POST(
+        makeReq("http://test.local/changes", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+        { params: Promise.resolve({ id: COOPER_CLIENT_ID, sid: scenarioId }) },
+      );
+    }
+
+    async function storedBeneficiaries(targetId: string) {
+      const { scenarioChanges } = schema;
+      const { and, eq } = drizzleOrm;
+      const [row] = await dbMod.db
+        .select()
+        .from(scenarioChanges)
+        .where(and(eq(scenarioChanges.scenarioId, scenarioId), eq(scenarioChanges.targetId, targetId)));
+      return (row.payload as { beneficiaries?: Array<Record<string, unknown>> }).beneficiaries;
+    }
+
+    const summary = (refs: Array<Record<string, unknown>> | undefined) =>
+      (refs ?? [])
+        .map((r) => `${r.tier}:${r.householdRole ?? r.familyMemberId}:${r.percentage}`)
+        .sort();
+
+    const expected = (otherRole: "client" | "spouse") =>
+      [`primary:${otherRole}:100`, `contingent:${CHILD_IDS[0]}:50`, `contingent:${CHILD_IDS[1]}:50`].sort();
+
+    const ira = (ownerId: string, extra: Record<string, unknown> = {}) => ({
+      id: randomUUID(),
+      name: "Scenario IRA",
+      category: "retirement",
+      subType: "traditional_ira",
+      value: "100000",
+      owners: soleOwner(ownerId),
+      ...extra,
+    });
+
+    beforeEach(() => {
+      vi.mocked(helpers.requireOrgId).mockResolvedValue(COOPER_FIRM_ID);
+    });
+
+    it("an added IRA gets spouse primary + children contingent, stored and returned", async () => {
+      const entity = ira(COOPER_FM_ID);
+      const res = await post({ op: "add", targetKind: "account", entity });
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { beneficiaries?: Array<Record<string, unknown>> };
+      expect(summary(json.beneficiaries)).toEqual(expected("spouse"));
+      expect(summary(await storedBeneficiaries(entity.id))).toEqual(expected("spouse"));
+    });
+
+    it("an add that names its own beneficiaries keeps them", async () => {
+      const entity = ira(COOPER_FM_ID, { beneficiaries: [] });
+      expect((await post({ op: "add", targetKind: "account", entity })).status).toBe(200);
+      expect(await storedBeneficiaries(entity.id)).toEqual([]);
+    });
+
+    it("switching the owner re-points an untouched default", async () => {
+      const entity = ira(COOPER_FM_ID);
+      await post({ op: "add", targetKind: "account", entity });
+      const res = await post({
+        op: "edit", targetKind: "account", targetId: entity.id,
+        desiredFields: { category: "retirement", owners: soleOwner(SUSAN_FM_ID) },
+      });
+      expect(res.status).toBe(200);
+      expect(summary(await storedBeneficiaries(entity.id))).toEqual(expected("client"));
+    }, 30_000); // each owner switch loads the scenario's whole tree
+
+    it("switching the owner leaves edited beneficiaries alone", async () => {
+      const entity = ira(COOPER_FM_ID);
+      await post({ op: "add", targetKind: "account", entity });
+      const edited = [{ id: randomUUID(), tier: "primary", percentage: 100, familyMemberId: CHILD_IDS[0], sortOrder: 0 }];
+      await post({ op: "edit", targetKind: "account", targetId: entity.id, desiredFields: { beneficiaries: edited } });
+      await post({
+        op: "edit", targetKind: "account", targetId: entity.id,
+        desiredFields: { category: "retirement", owners: soleOwner(SUSAN_FM_ID) },
+      });
+      expect(await storedBeneficiaries(entity.id)).toEqual(edited);
+    }, 30_000);
+  });
+
   it("DELETE returns 400 when search params are missing", async () => {
     vi.mocked(helpers.requireOrgId).mockResolvedValue(COOPER_FIRM_ID);
 

@@ -384,6 +384,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // Tracks the server-assigned id for accounts that start as "create" but have
   // been auto-saved at least once (first save mints the row and returns the id).
   const [effectiveAccountId, setEffectiveAccountId] = useState<string | null>(initial?.id ?? null);
+  // Inside a scenario, the beneficiaries the server gave a just-added account
+  // (a retirement account's defaults), for the Beneficiaries tab to open on.
+  const [addedBeneficiaries, setAddedBeneficiaries] = useState<BeneficiaryRef[]>([]);
 
   // Annuity contract (1:1 extension row on an `annuity` account). The panel in
   // the Income & Guarantees tab is controlled and IO-free, so the load and the
@@ -1572,9 +1575,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           const json = (await res.json().catch(() => ({}))) as { error?: string };
           return { ok: false, error: json.error ?? "Failed to create account" };
         }
-        const saved = writer.scenarioActive
-          ? { id: newAccountId }
-          : (await res.json()) as { id: string };
+        // Base answers with the saved row, a scenario with `{ targetId, beneficiaries? }`.
+        const json = (await res.json()) as { id?: string; beneficiaries?: BeneficiaryRef[] };
+        const saved = { id: writer.scenarioActive ? newAccountId : json.id! };
+        if (writer.scenarioActive) setAddedBeneficiaries(json.beneficiaries ?? []);
 
         if (showAssetMixTab && customAllocations.length > 0 && !writer.scenarioActive && !drivenByHoldings) {
           await fetch(`/api/clients/${clientId}/accounts/${saved.id}/allocations`, {
@@ -3261,9 +3265,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             clientId={clientId}
             accountId={effectiveAccountId}
             active={activeTab === "beneficiaries"}
-            // A new account has no designations to fetch — its id is not in the
-            // base tables, so the GET would 404.
-            scenarioBeneficiaries={isEdit ? initial?.beneficiaries : []}
+            // A new account's designations aren't fetchable — its id is not in
+            // the base tables, so the GET would 404.
+            scenarioBeneficiaries={isEdit ? initial?.beneficiaries : addedBeneficiaries}
             pickLists={beneficiaryPickLists}
           />
         )}

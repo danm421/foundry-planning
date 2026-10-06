@@ -50,8 +50,8 @@
 //   • actorId forwarding: recordCreate/recordUpdate/recordDelete receive actorId
 //     explicitly (they accept `actorId?`) — matches the three shipped cores.
 import { db } from "@/db";
-import { accounts, accountOwners } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { accounts, accountOwners, beneficiaryDesignations, familyMembers } from "@/db/schema";
+import { eq, and, asc } from "drizzle-orm";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import {
   assertAccountsInClient,
@@ -74,10 +74,46 @@ import { accountCreateSchema } from "@/lib/schemas/accounts";
 import { validateInheritedIraFields } from "@/lib/accounts/inherited-ira";
 import { AddBusinessInputSchema, mapBusinessTypeToSubType } from "@/lib/schemas/accounts-business";
 import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
+import {
+  type DefaultDesignation,
+  type HouseholdPerson,
+  defaultRetirementBeneficiaries,
+  isDefaultDesignationSet,
+} from "@/lib/beneficiaries/default-retirement-beneficiaries";
 import { baseCaseScenarioId } from "./base-case";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
 
 type AccountRow = typeof accounts.$inferSelect;
+
+/** The household as the default-beneficiary rule reads it, oldest child first. */
+function loadHouseholdPeople(clientId: string): Promise<HouseholdPerson[]> {
+  return db
+    .select({ id: familyMembers.id, role: familyMembers.role, relationship: familyMembers.relationship })
+    .from(familyMembers)
+    .where(eq(familyMembers.clientId, clientId))
+    .orderBy(asc(familyMembers.dateOfBirth), asc(familyMembers.firstName));
+}
+
+function accountDesignationsWhere(clientId: string, accountId: string) {
+  return and(
+    eq(beneficiaryDesignations.clientId, clientId),
+    eq(beneficiaryDesignations.targetKind, "account"),
+    eq(beneficiaryDesignations.accountId, accountId),
+  );
+}
+
+function designationRows(clientId: string, accountId: string, defaults: DefaultDesignation[]) {
+  return defaults.map((d) => ({
+    clientId,
+    targetKind: "account" as const,
+    accountId,
+    tier: d.tier,
+    percentage: d.percentage.toFixed(2),
+    householdRole: d.householdRole,
+    familyMemberId: d.familyMemberId,
+    sortOrder: d.sortOrder,
+  }));
+}
 
 export async function createAccountForClient(args: {
   clientId: string;
@@ -205,6 +241,13 @@ export async function createAccountForClient(args: {
   }
   // ── end owners[] validation ───────────────────────────────────────────────
 
+  // A new retirement account starts on the household's default beneficiaries.
+  const soleOwner = resolvedOwners?.length === 1 ? resolvedOwners[0] : undefined;
+  const defaultBeneficiaries =
+    category === "retirement" && soleOwner?.kind === "family_member"
+      ? defaultRetirementBeneficiaries(soleOwner.familyMemberId, await loadHouseholdPeople(clientId))
+      : [];
+
   // Insert values come straight off the parsed object — the schema already coerced
   // every field (decOrZero → "0"-defaulted strings, ?? null applied for nullable
   // FKs, defaults for subType/growthSource/titlingType/etc.). The business-only
@@ -294,6 +337,12 @@ export async function createAccountForClient(args: {
           percent: o.percent.toString(),
         });
       }
+    }
+
+    if (defaultBeneficiaries.length > 0) {
+      await tx
+        .insert(beneficiaryDesignations)
+        .values(designationRows(clientId, account.id, defaultBeneficiaries));
     }
 
     // Auto-provision a child default-checking cash account on every new top-level
@@ -486,6 +535,29 @@ export async function updateAccountForClient(args: {
   }
   // ── end owners[] validation ───────────────────────────────────────────────
 
+  // A retirement account still on its untouched default beneficiaries follows
+  // its owner: hand it to the other co-client and the default re-points at
+  // them. Designations anyone has edited are left alone.
+  let redefaultedBeneficiaries: DefaultDesignation[] | undefined;
+  const newSoleOwner = validatedOwners?.length === 1 ? validatedOwners[0] : undefined;
+  if (resultCategory === "retirement" && newSoleOwner?.kind === "family_member") {
+    const priorOwners = await db
+      .select({ familyMemberId: accountOwners.familyMemberId })
+      .from(accountOwners)
+      .where(eq(accountOwners.accountId, accountId));
+    const priorOwnerId = priorOwners.length === 1 ? priorOwners[0].familyMemberId : null;
+    if (priorOwnerId && priorOwnerId !== newSoleOwner.familyMemberId) {
+      const people = await loadHouseholdPeople(clientId);
+      const current = await db
+        .select()
+        .from(beneficiaryDesignations)
+        .where(accountDesignationsWhere(clientId, accountId));
+      if (isDefaultDesignationSet(current, defaultRetirementBeneficiaries(priorOwnerId, people))) {
+        redefaultedBeneficiaries = defaultRetirementBeneficiaries(newSoleOwner.familyMemberId, people);
+      }
+    }
+  }
+
   // Strip owners from the spread — owners live in account_owners, not accounts.
   const { owners: _stripOwners, ...accountUpdate } = safeUpdate;
   void _stripOwners;
@@ -530,6 +602,15 @@ export async function updateAccountForClient(args: {
           entityId: o.kind === "entity" ? o.entityId : null,
           percent: o.percent.toString(),
         });
+      }
+    }
+
+    if (redefaultedBeneficiaries) {
+      await tx.delete(beneficiaryDesignations).where(accountDesignationsWhere(clientId, accountId));
+      if (redefaultedBeneficiaries.length > 0) {
+        await tx
+          .insert(beneficiaryDesignations)
+          .values(designationRows(clientId, accountId, redefaultedBeneficiaries));
       }
     }
   });
