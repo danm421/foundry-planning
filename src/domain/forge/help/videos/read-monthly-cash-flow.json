@@ -1,0 +1,109 @@
+{
+  "slug": "read-monthly-cash-flow",
+  "title": "Read the monthly cash flow and test spending and savings changes",
+  "summary": "See a household's plan as a monthly budget in the Solver, then test how spending and savings changes move what is left each month.",
+  "screens": [
+    {
+      "route": "/clients/:id/solver",
+      "label": "Solver"
+    }
+  ],
+  "tags": [
+    "cash-flow",
+    "solver",
+    "expenses",
+    "retirement"
+  ],
+  "searchTerms": [
+    "monthly budget",
+    "budget",
+    "surplus",
+    "left over",
+    "spending",
+    "available each month",
+    "savings contributions",
+    "401k",
+    "spend whatever's left",
+    "portfolio draw"
+  ],
+  "chapters": [
+    {
+      "at": 0,
+      "label": "See Mark and Laura's plan as a monthly budget, then test changes."
+    },
+    {
+      "at": 5.2,
+      "label": "Open the Cash Flow report, then Monthly. It starts on this year."
+    },
+    {
+      "at": 14.4,
+      "label": "Available each month is income minus taxes, savings and other costs."
+    },
+    {
+      "at": 19.6,
+      "label": "Where it goes: $11,250 for living costs, $4,225 left unspent."
+    },
+    {
+      "at": 28.1,
+      "label": "Each bar is a month. Green is what's left over after living costs."
+    },
+    {
+      "at": 33.8,
+      "label": "What if they spend $150,000 a year now instead of $135,000?"
+    },
+    {
+      "at": 40.7,
+      "label": "Living costs rise to $12,500 a month, and the surplus shrinks."
+    },
+    {
+      "at": 46.1,
+      "label": "Or save more: Laura raises her 401(k) to $23,500 a year."
+    },
+    {
+      "at": 53.8,
+      "label": "More goes to savings, so only $2,468 a month is left unspent."
+    },
+    {
+      "at": 60,
+      "label": "Tick Spend whatever's left each year to spend the surplus too."
+    },
+    {
+      "at": 68,
+      "label": "Living costs now take all $14,968, and nothing is left unspent."
+    },
+    {
+      "at": 73.4,
+      "label": "Across the plan shows every year. No surplus is left while they work."
+    },
+    {
+      "at": 82.4,
+      "label": "After they retire, the portfolio draw covers what income doesn't."
+    }
+  ],
+  "steps": [
+    "**Open the Monthly view.** In the Solver, select the **Cash Flow** report, then **Monthly**. It opens on the current year.",
+    "**Read the summary.** **Available each month** is income minus taxes, savings and other committed costs, plus any **Portfolio draw**. **Where it goes** splits that into living expenses and any surplus.",
+    "**Read the chart.** Each bar is one month, stacked by cost. The green **Left over** band is what remains after living expenses.",
+    "**Try a spending change.** Use **+** or **−** beside **Current Living Expenses**. Living expenses move and the surplus moves with them.",
+    "**Try saving more.** Type a new amount in a **Savings Contributions** field. Savings rise, so less is left unspent.",
+    "**Spend the surplus.** Tick **Spend whatever's left each year**. Living expenses take every leftover dollar, and the amount above becomes a minimum.",
+    "**See the whole plan.** Select **Across the plan** for one bar per year. In retirement, the gap between the income line and the top of each bar is the portfolio draw."
+  ],
+  "goodToKnow": [
+    "Figures are in today's dollars. Select **Future dollars** to see them with inflation added.",
+    "Pre-tax contributions also lower taxes, so **Available each month** falls by less than the extra savings.",
+    "Solver changes stay unsaved until you choose **Save as scenario…** or **Save to base facts**."
+  ],
+  "durationSec": 88.5,
+  "recordedOn": "2026-10-06",
+  "appCommit": "2f303096e",
+  "video": {
+    "path": "knowledge-hub/read-monthly-cash-flow/ff8cc6be3f4f.mp4",
+    "sha256": "ff8cc6be3f4f02c236f68055da2636ccc690224422f8b84ae8d79e8c24fa8ca5",
+    "bytes": 9653257
+  },
+  "poster": {
+    "path": "knowledge-hub/read-monthly-cash-flow/ee402a234cba.jpg",
+    "sha256": "ee402a234cbab3a4629b8ebb268a4923071015e3bdf3a747f35e8b2fea048c82"
+  }
+}

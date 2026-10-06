@@ -32,39 +32,39 @@
       "label": "Mark and Laura plan an $80,000 kitchen remodel in 2028."
     },
     {
-      "at": 4.6,
+      "at": 5.5,
       "label": "Add it as an expense: choose Other and give it a name."
     },
     {
-      "at": 15.5,
+      "at": 16.4,
       "label": "Enter the cost in today's dollars. Foundry adds inflation."
     },
     {
-      "at": 23.9,
+      "at": 24.8,
       "label": "Set the start and end year to 2028, so it's paid once."
     },
     {
-      "at": 39.1,
+      "at": 40.1,
       "label": "Select Add Expense to put it in the plan."
     },
     {
-      "at": 46.4,
+      "at": 47.9,
       "label": "It's listed under Other Expenses, for 2028 only."
     },
     {
-      "at": 51.3,
+      "at": 52.8,
       "label": "Open Cash Flow to see the effect year by year."
     },
     {
-      "at": 58.4,
+      "at": 60.4,
       "label": "In 2028, spending jumps and net cash flow turns negative."
     },
     {
-      "at": 63.1,
+      "at": 65,
       "label": "Drill into Expenses to see what's behind the jump."
     },
     {
-      "at": 68.5,
+      "at": 70.4,
       "label": "The remodel shows up as Other, in 2028 only, grown with inflation."
     }
   ],
@@ -82,16 +82,16 @@
     "The **Expenses** figure at the top of Inflows & Outflows covers the current year only, so a cost in a future year doesn't change it.",
     "Cash Flow hides columns that are zero in every year. The **Other** column appears once the plan has an Other expense."
   ],
-  "durationSec": 73.5,
-  "recordedOn": "2026-10-05",
-  "appCommit": "66f2b6035",
+  "durationSec": 75.5,
+  "recordedOn": "2026-10-06",
+  "appCommit": "2f303096e",
   "video": {
-    "path": "knowledge-hub/add-one-time-expense/c56f855d4a43.mp4",
-    "sha256": "c56f855d4a4372f528827e1933713f2c2c1b7450a28b31a997706e1c564617c7",
-    "bytes": 6280861
+    "path": "knowledge-hub/add-one-time-expense/bdce712cd9f0.mp4",
+    "sha256": "bdce712cd9f04512162985238ef9f076dbe17451bfb8836e6dee5b1063cd96e1",
+    "bytes": 7139315
   },
   "poster": {
-    "path": "knowledge-hub/add-one-time-expense/19bca480500b.jpg",
-    "sha256": "19bca480500be448bd3fc542759971d7561e29a3ac24fbf801bc9855247d8c71"
+    "path": "knowledge-hub/add-one-time-expense/486db764bd56.jpg",
+    "sha256": "486db764bd56d12fcb3215733a3b8f3ed7dc529d2cd3b8e89ca655253cf45fda"
   }
 }

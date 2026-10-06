@@ -34,39 +34,39 @@
       "label": "What if Mark and Laura both retire at 62 instead of 65?"
     },
     {
-      "at": 18.7,
+      "at": 19.2,
       "label": "Plan Confidence drops. Each figure shows the change from the base plan."
     },
     {
-      "at": 24.1,
+      "at": 24.6,
       "label": "Trim their retirement spending to $125,000 a year."
     },
     {
-      "at": 34,
+      "at": 35,
       "label": "That wins back much of the drop."
     },
     {
-      "at": 39,
+      "at": 40,
       "label": "And Laura works two more years, until 64."
     },
     {
-      "at": 48.2,
+      "at": 49.7,
       "label": "The plan is nearly back where it started."
     },
     {
-      "at": 53.1,
+      "at": 54.6,
       "label": "Save these changes as a scenario and give it a name."
     },
     {
-      "at": 61.6,
+      "at": 63.1,
       "label": "The dialog lists every change the scenario keeps."
     },
     {
-      "at": 69.2,
+      "at": 70.7,
       "label": "Open the Scenario changes tab and pick the scenario."
     },
     {
-      "at": 80.7,
+      "at": 82.2,
       "label": "Each change shows its base value and its new one."
     }
   ],
@@ -82,16 +82,16 @@
     "Plan Confidence comes from a fresh Monte Carlo run each time, so a saved scenario can read a point or two different from what the Solver showed before saving.",
     "Each change on the **Changes** tab has a switch. Turn one off to see the plan without it."
   ],
-  "durationSec": 86.8,
-  "recordedOn": "2026-10-05",
-  "appCommit": "66f2b6035",
+  "durationSec": 88.3,
+  "recordedOn": "2026-10-06",
+  "appCommit": "2f303096e",
   "video": {
-    "path": "knowledge-hub/solver-save-scenario/5cf703c6d931.mp4",
-    "sha256": "5cf703c6d931a7e8b6a6d673543f7450a17df7e219b41f1a242c9a1918962f89",
-    "bytes": 6638740
+    "path": "knowledge-hub/solver-save-scenario/f67b29db8a0c.mp4",
+    "sha256": "f67b29db8a0cf7c78c5075528e255dac6c31e038ce4ccbb857dd0560d4a67805",
+    "bytes": 7512390
   },
   "poster": {
-    "path": "knowledge-hub/solver-save-scenario/1fd7bcdd7a16.jpg",
-    "sha256": "1fd7bcdd7a16351fe1676fe42e4b2e276e33e16b86e6f21055166670f13620b3"
+    "path": "knowledge-hub/solver-save-scenario/8e359b0d5557.jpg",
+    "sha256": "8e359b0d55576a03b8c310dad11bf12fa9fac9b3293f8d60ee7b9abb47efc011"
   }
 }

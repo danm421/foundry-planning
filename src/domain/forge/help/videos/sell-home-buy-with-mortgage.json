@@ -1,0 +1,104 @@
+{
+  "slug": "sell-home-buy-with-mortgage",
+  "title": "Sell a home and buy a new one with a mortgage in the Solver",
+  "summary": "Model a move in the Solver: sell the current home, buy the next one with a mortgage, and see the leftover cash and new costs in Cash Flow.",
+  "screens": [
+    {
+      "route": "/clients/:id/solver",
+      "label": "Solver"
+    }
+  ],
+  "tags": [
+    "solver",
+    "cash-flow",
+    "expenses",
+    "taxes"
+  ],
+  "searchTerms": [
+    "asset transaction",
+    "sell house",
+    "buy a house",
+    "downsize",
+    "mortgage",
+    "down payment",
+    "home sale exclusion",
+    "section 121",
+    "property tax",
+    "real estate"
+  ],
+  "chapters": [
+    {
+      "at": 0,
+      "label": "Mark and Laura plan to move to a new home when Mark retires."
+    },
+    {
+      "at": 5.5,
+      "label": "On Techniques, add an Asset transaction for the year Mark retires."
+    },
+    {
+      "at": 16.8,
+      "label": "Sell their Primary Home. Foundry fills in its value in 2033."
+    },
+    {
+      "at": 25.4,
+      "label": "Their gain qualifies for the home-sale exclusion, so it isn't taxed."
+    },
+    {
+      "at": 30.5,
+      "label": "Add the new home: a $1,100,000 house that grows 3% a year."
+    },
+    {
+      "at": 43.8,
+      "label": "Enter its property tax in the year they buy it: $9,000."
+    },
+    {
+      "at": 48.7,
+      "label": "Finance $500,000 with a 30-year mortgage at 6.5%."
+    },
+    {
+      "at": 60.7,
+      "label": "The sale covers the $600,000 down payment, with $492,047 left over."
+    },
+    {
+      "at": 68.7,
+      "label": "Save it. On Cash Flow, 2033 now shows the leftover money coming in."
+    },
+    {
+      "at": 77.9,
+      "label": "Click 2033 for the details. The leftover arrives as Other Inflows."
+    },
+    {
+      "at": 85.5,
+      "label": "The mortgage payment and the new property tax start the same year."
+    },
+    {
+      "at": 90.9,
+      "label": "In the table, Other Expenses carry both costs every year after."
+    }
+  ],
+  "steps": [
+    "**Add an asset transaction.** On the Solver's **Techniques** tab, select **Asset transaction**. Enter a **Name** and pick the **Year**. A milestone such as **Client Retirement** ties the move to that event.",
+    "**Sell the current home.** Select the sale under **Sell** and choose it in **Asset to Sell**. **Sale value** fills in with the home's projected value in that year. Tick **Qualifies for home-sale gain exclusion (§121)** when it applies.",
+    "**Add the new home.** Select **+ Add buy**, then enter its **Asset Name**, **Purchase Price**, **Growth Rate** and **Annual Property Tax**.",
+    "**Add the mortgage.** Open **Mortgage / Financing** and enter the **Amount**, **Rate** and **Term (mo)**. **Combined net** shows the proceeds minus the cash the purchase needs, and **Surplus goes to** picks where the rest lands. Select **Save**.",
+    "**See it on Cash Flow.** On the **Cash Flow** report, select the bar for the year of the move. The money left over shows under **Other Inflows**, and the mortgage payment and property tax under **Liabilities** and **Real Estate**.",
+    "**Check the later years.** Select **Expand table**. **Other Expenses** carries the mortgage payment and property tax in every year after the move."
+  ],
+  "goodToKnow": [
+    "**Purchase Price** and **Annual Property Tax** are in the dollars of the year you buy, not today's.",
+    "Leave **Growth Rate** blank and the new home keeps the same value every year.",
+    "Without the §121 box, the whole gain on the sale is taxed in the year of the move."
+  ],
+  "durationSec": 101.9,
+  "recordedOn": "2026-10-06",
+  "appCommit": "2f303096e",
+  "video": {
+    "path": "knowledge-hub/sell-home-buy-with-mortgage/755bf84799bf.mp4",
+    "sha256": "755bf84799bf9ecb2856b5462bba085c9f07f885c07b782ec2e181f90199702d",
+    "bytes": 9151575
+  },
+  "poster": {
+    "path": "knowledge-hub/sell-home-buy-with-mortgage/3b390357b676.jpg",
+    "sha256": "3b390357b6768fad9dcd361ef8a64da08fd22145ffbcb32dd35370b9a43a05c5"
+  }
+}
