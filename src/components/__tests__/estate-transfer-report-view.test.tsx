@@ -33,6 +33,7 @@ import type {
   EstateTransferReportData,
   RecipientTotal,
 } from "@/lib/estate/transfer-report";
+import type { EstateTaxResult } from "@/engine/types";
 
 const OWNER_NAMES = { clientName: "Robert", spouseName: "Anita" };
 const OWNER_DOBS = { clientDob: "1960-01-01", spouseDob: "1962-01-01" };
@@ -76,6 +77,7 @@ function deathSection(
     year: 2060,
     taxableEstate: assetEstateValue,
     grossEstate: assetEstateValue,
+    estateTax: {} as EstateTaxResult,
     assetEstateValue,
     assetCount: 1,
     recipients: [],

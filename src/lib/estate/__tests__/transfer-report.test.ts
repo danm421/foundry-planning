@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   buildEstateTransferReportData,
   detectConflicts,
+  netToRecipientsOf,
+  type DeathSectionData,
   type EstateTransferReportInput,
 } from "../transfer-report";
 import type {
@@ -759,6 +761,17 @@ describe("buildEstateTransferReportData", () => {
 
     expect(out.firstDeath!.grossEstate).toBe(3_000_000);
     expect(out.secondDeath!.grossEstate).toBe(5_500_000);
+    // The whole result rides along too — Estate Flow's tax box renders it.
+    expect(out.firstDeath!.estateTax).toBe(firstTax);
+    expect(out.secondDeath!.estateTax).toBe(secondTax);
+  });
+
+  it("netToRecipientsOf sums what each recipient receives after their drains", () => {
+    const section = {
+      recipients: [{ netTotal: 700_000 }, { netTotal: 249_757 }],
+      reconciliation: { sumRecipients: 1_050_000 },
+    } as unknown as DeathSectionData;
+    expect(netToRecipientsOf(section)).toBe(949_757);
   });
 
   // ── F1 — assetEstateValue + reconciliation flip ─────────────────────────

@@ -108,4 +108,20 @@ describe("buildEstateFlowReportData", () => {
     expect(data.firstColumn?.decedentName).toBe("Susan");
     expect(data.secondColumn?.decedentName).toBe("Cooper");
   });
+
+  it("leaves each death's full tax result out of the page data", () => {
+    // This data is also handed to the Forge as JSON; the PDF draws no tax
+    // calculation, so the Form 706 detail would only be dead weight.
+    const withTax = {
+      ...twoDeathPrep,
+      reportData: {
+        ...twoDeathPrep.reportData,
+        firstDeath: { ...twoDeathPrep.reportData.firstDeath, estateTax: { grossEstate: 100 } },
+      },
+    };
+    mockPrepEstate.mockReturnValue(withTax);
+    const data = buildEstateFlowReportData(ctx, { ...baseOptions, ordering: "primaryFirst" });
+    expect(data.firstColumn?.decedentName).toBe("Cooper");
+    expect(data.firstColumn).not.toHaveProperty("estateTax");
+  });
 });

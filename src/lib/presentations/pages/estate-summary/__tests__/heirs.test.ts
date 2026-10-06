@@ -5,6 +5,7 @@ import type {
   RecipientGroup,
 } from "@/lib/estate/transfer-report";
 import { buildHeirRows } from "../heirs";
+import type { EstateTaxResult } from "@/engine/types";
 
 function group(over: Partial<RecipientGroup>): RecipientGroup {
   return {
@@ -17,7 +18,7 @@ function group(over: Partial<RecipientGroup>): RecipientGroup {
 function section(recipients: RecipientGroup[]): DeathSectionData {
   return {
     decedent: "client", decedentName: "John", year: 2050,
-    taxableEstate: 0, grossEstate: 0, assetEstateValue: 0, assetCount: 0,
+    taxableEstate: 0, grossEstate: 0, estateTax: {} as EstateTaxResult, assetEstateValue: 0, assetCount: 0,
     recipients, reductions: [], conflicts: [],
     grossEstateDollarsByAccount: {}, grossEstateDollarsByLiability: {},
     reconciliation: { sumLiabilityTransfers: 0, sumRecipients: 0, sumReductions: 0, unattributed: 0, reconciles: true },

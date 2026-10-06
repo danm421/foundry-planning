@@ -1,14 +1,18 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { ProjectionResult } from "@/engine/projection";
 import {
+  estateAtDeathOf,
+  netToRecipientsOf,
   type DeathSectionData,
   type MechanismBreakdown,
   type RecipientGroup,
 } from "@/lib/estate/transfer-report";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { EstateTransferConflictsCallout } from "@/components/estate-transfer-conflicts-callout";
+import { EstateFlowDeathTaxBox } from "@/components/estate-flow-death-tax-box";
+import { DisclosureButton } from "@/components/disclosure-button";
 import {
   summarizeDeathWarnings,
   type DeathWarningNote,
@@ -122,23 +126,22 @@ function giftMarkerLabel(
   };
 }
 
-// ── Recipient table ───────────────────────────────────────────────────────────
+// ── Recipient boxes ───────────────────────────────────────────────────────────
 // Read-only: every edit starts from the ownership column's asset dialog. One
-// table per death column — a header row per recipient carrying their net total,
-// their inherited assets beneath (asset · how it passes · value), then any
+// collapsed box per recipient — name and what they receive. Expanding it lists
+// their inherited assets inline (asset · how it passes · value), then any
 // planned lifetime gifts and the recipient's reductions.
 
-function RecipientRows({
+function RecipientBox({
   group,
-  isFirst,
   gifts,
   accountNameById,
 }: {
   group: RecipientGroup;
-  isFirst: boolean;
   gifts: EstateFlowGift[];
   accountNameById: Map<string, string>;
 }) {
+  const [open, setOpen] = useState(false);
   const isSpouse = group.recipientKind === "spouse";
   const isSystemDefault = group.recipientKind === "system_default";
 
@@ -157,152 +160,117 @@ function RecipientRows({
     mech.assets.map((asset) => ({
       asset,
       mechanismLabel: SHORT_MECHANISM_LABELS[mech.mechanism] ?? mech.mechanismLabel,
+      mechanismTitle: mech.mechanismLabel,
     })),
   );
 
-  // Breathing room above every recipient after the first.
-  const headerPad = isFirst ? "py-1.5" : "pt-4 pb-1.5";
+  const tint = isSpouse
+    ? "bg-indigo-950/15"
+    : isSystemDefault
+      ? "bg-amber-950/15"
+      : "";
 
   return (
-    <tbody
-      className={
-        isSpouse ? "bg-indigo-950/15" : isSystemDefault ? "bg-amber-950/15" : undefined
-      }
-    >
-      {/* Recipient header */}
-      <tr className="border-b border-hair">
-        <th scope="rowgroup" className={`${headerPad} max-w-0 pl-2 text-left font-semibold text-ink`}>
-          <span className="flex items-baseline gap-2">
-            <span className="truncate">{group.recipientLabel}</span>
-            {isSystemDefault && (
-              <span className="shrink-0 rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-200">
-                No plan
-              </span>
-            )}
+    <li className={`overflow-hidden rounded border border-hair text-xs ${tint}`}>
+      <DisclosureButton open={open} onToggle={() => setOpen((o) => !o)}>
+        <span className="min-w-0 flex-1 truncate font-semibold text-ink" title={group.recipientLabel}>
+          {group.recipientLabel}
+        </span>
+        {isSystemDefault && (
+          <span className="shrink-0 rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-200">
+            No plan
           </span>
-        </th>
-        <td colSpan={2} className={`${headerPad} whitespace-nowrap pr-2 text-right`}>
+        )}
+        <span className="shrink-0 whitespace-nowrap">
           {hasReductions && (
             <span className="mr-1.5 text-[10px] uppercase tracking-wider text-ink-4">Net</span>
           )}
-          <span className="text-sm font-semibold tabular-nums text-ink">
-            {fmt.format(group.netTotal)}
-          </span>
-        </td>
-      </tr>
+          <span className="tabular-nums font-semibold text-ink">{fmt.format(group.netTotal)}</span>
+        </span>
+      </DisclosureButton>
 
-      {rows.map(({ asset: a, mechanismLabel }, i) => (
-        <tr key={`${a.sourceAccountId ?? a.sourceLiabilityId ?? "asset"}-${i}`}>
-          <td className="w-full max-w-0 py-1 pl-4 text-ink-3">
-            <span className="flex min-w-0 items-baseline gap-1.5">
-              <span className="truncate" title={a.label}>
-                {a.label}
-              </span>
-              {a.conflictIds.length > 0 && (
-                <span
-                  className="shrink-0 rounded bg-amber-900/40 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wider text-amber-200"
-                  title={`${a.conflictIds.length} configuration conflict(s) on this asset`}
+      {open && (
+        // Auto layout: "Passes by" and "Value" shrink to their content and sit
+        // together on the right; the asset name (w-full + max-w-0) takes the rest.
+        <table className="w-full border-collapse border-t border-hair">
+          <tbody>
+            {rows.map(({ asset: a, mechanismLabel, mechanismTitle }, i) => (
+              <tr key={`${a.sourceAccountId ?? a.sourceLiabilityId ?? "asset"}-${i}`}>
+                <td className="w-full max-w-0 py-1 pl-6 text-ink-3">
+                  <span className="flex min-w-0 items-baseline gap-1.5">
+                    <span className="truncate" title={a.label}>
+                      {a.label}
+                    </span>
+                    {a.conflictIds.length > 0 && (
+                      <span
+                        className="shrink-0 rounded bg-amber-900/40 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wider text-amber-200"
+                        title={`${a.conflictIds.length} configuration conflict(s) on this asset`}
+                      >
+                        Conflict
+                      </span>
+                    )}
+                    {a.distributionForm && (
+                      <span
+                        className={`shrink-0 rounded ${DISTRIBUTION_FORM_CHIP[a.distributionForm].className} px-1 py-0.5 text-[9px] font-medium uppercase tracking-wider`}
+                      >
+                        {DISTRIBUTION_FORM_CHIP[a.distributionForm].label}
+                      </span>
+                    )}
+                  </span>
+                </td>
+                <td
+                  className="whitespace-nowrap py-1 pl-3 text-right text-ink-4"
+                  title={`Passes by ${mechanismTitle}`}
                 >
-                  Conflict
-                </span>
-              )}
-              {a.distributionForm && (
-                <span
-                  className={`shrink-0 rounded ${DISTRIBUTION_FORM_CHIP[a.distributionForm].className} px-1 py-0.5 text-[9px] font-medium uppercase tracking-wider`}
-                >
-                  {DISTRIBUTION_FORM_CHIP[a.distributionForm].label}
-                </span>
-              )}
-            </span>
-          </td>
-          <td className="whitespace-nowrap py-1 pl-3 text-right text-ink-3">{mechanismLabel}</td>
-          <td className="whitespace-nowrap py-1 pl-3 pr-2 text-right tabular-nums text-ink-2">
-            {fmt.format(a.amount)}
-          </td>
-        </tr>
-      ))}
+                  {mechanismLabel}
+                </td>
+                <td className="whitespace-nowrap py-1 pl-3 pr-2 text-right tabular-nums text-ink-2">
+                  {fmt.format(a.amount)}
+                </td>
+              </tr>
+            ))}
 
-      {matchedGifts.map((gift) => {
-        const { label, year } = giftMarkerLabel(gift, accountNameById);
-        return (
-          <tr key={gift.id}>
-            <td colSpan={3} className="max-w-0 truncate py-1 pl-4 text-[11px] text-amber-400/90">
-              Also receives: {label} · {year}
-            </td>
-          </tr>
-        );
-      })}
+            {matchedGifts.map((gift) => {
+              const { label, year } = giftMarkerLabel(gift, accountNameById);
+              return (
+                <tr key={gift.id}>
+                  <td colSpan={3} className="max-w-0 truncate py-1 pl-6 text-[11px] text-amber-400/90">
+                    Also receives: {label} · {year}
+                  </td>
+                </tr>
+              );
+            })}
 
-      {hasReductions && (
-        <tr className="border-t border-hair">
-          <td colSpan={2} className="py-1 pl-4 text-[11px] text-ink-3">
-            Reductions
-          </td>
-          <td className="whitespace-nowrap py-1 pr-2 text-right text-[11px] tabular-nums text-rose-300/80">
-            −{fmt.format(totalDrains)}
-          </td>
-        </tr>
+            {hasReductions && (
+              <tr className="border-t border-hair">
+                <td colSpan={2} className="py-1 pl-6 text-[11px] text-ink-3">
+                  Reductions
+                </td>
+                <td className="whitespace-nowrap py-1 pr-2 text-right text-[11px] tabular-nums text-rose-300/80">
+                  −{fmt.format(totalDrains)}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       )}
-    </tbody>
-  );
-}
-
-function RecipientTable({
-  recipients,
-  gifts,
-  accountNameById,
-}: {
-  recipients: RecipientGroup[];
-  gifts: EstateFlowGift[];
-  accountNameById: Map<string, string>;
-}) {
-  // Auto layout: "Passes by" and "Value" shrink to their content and sit
-  // together on the right; the asset name (w-full + max-w-0) takes the rest.
-  return (
-    <table className="w-full border-collapse text-xs">
-      <thead>
-        <tr className="border-b border-hair-2 text-[10px] uppercase tracking-[0.12em] text-ink-4">
-          <th scope="col" className="py-1.5 pl-2 text-left font-medium">
-            Asset
-          </th>
-          <th scope="col" className="whitespace-nowrap py-1.5 pl-3 text-right font-medium">
-            Passes by
-          </th>
-          <th scope="col" className="py-1.5 pl-3 pr-2 text-right font-medium">
-            Value
-          </th>
-        </tr>
-      </thead>
-      {recipients.map((group, i) => (
-        <RecipientRows
-          key={group.key}
-          group={group}
-          isFirst={i === 0}
-          gifts={gifts}
-          accountNameById={accountNameById}
-        />
-      ))}
-    </table>
+    </li>
   );
 }
 
 // ── Totals strip ──────────────────────────────────────────────────────────────
 
 function TotalsStrip({ section }: { section: DeathSectionData }) {
-  const gross = section.assetEstateValue + section.reconciliation.sumLiabilityTransfers;
-  const tax = section.reconciliation.sumReductions;
-  const net = section.reconciliation.sumRecipients;
+  // Taxes live in the tax box at the foot of the column; the strip's gap
+  // between gross and net also carries debts paid, so it shows no tax figure.
+  const gross = estateAtDeathOf(section);
+  const net = netToRecipientsOf(section);
 
   return (
     <div className="flex items-baseline justify-between gap-3 rounded border border-hair bg-card-2 px-3 py-1.5 text-[10px] tabular-nums">
       <span className="text-ink-3">
         Gross <span className="text-ink-2">{fmt.format(gross)}</span>
       </span>
-      {tax > 0 && (
-        <span className="text-rose-400/80">
-          − {fmt.format(tax)} taxes
-        </span>
-      )}
       <span className="font-semibold text-ink">
         Net {fmt.format(net)}
       </span>
@@ -323,6 +291,8 @@ interface EstateFlowDeathColumnProps {
   gifts: EstateFlowGift[];
   /** Account display names keyed by id — resolves asset-gift marker labels. */
   accountNameById: Map<string, string>;
+  /** Married households port the first death's unused exemption (DSUE). */
+  isMarried: boolean;
 }
 
 export function EstateFlowDeathColumn({
@@ -331,6 +301,7 @@ export function EstateFlowDeathColumn({
   projection,
   gifts,
   accountNameById,
+  isMarried,
 }: EstateFlowDeathColumnProps) {
   // Resolve death warnings from the projection year matching this section,
   // then translate the raw engine codes into advisor-facing notes. Asset names
@@ -383,7 +354,7 @@ export function EstateFlowDeathColumn({
             {section.year}
           </span>
         </div>
-        {/* Gross / tax / net strip */}
+        {/* Gross / net strip */}
         <div className="mt-2">
           <TotalsStrip section={section} />
         </div>
@@ -399,12 +370,22 @@ export function EstateFlowDeathColumn({
       {section.recipients.length === 0 ? (
         <p className="text-xs text-ink-4">No transfers in this death event.</p>
       ) : (
-        <RecipientTable
-          recipients={section.recipients}
-          gifts={gifts}
-          accountNameById={accountNameById}
-        />
+        <ul className="flex flex-col gap-1.5">
+          {section.recipients.map((group) => (
+            <RecipientBox
+              key={group.key}
+              group={group}
+              gifts={gifts}
+              accountNameById={accountNameById}
+            />
+          ))}
+        </ul>
       )}
+
+      <EstateFlowDeathTaxBox
+        tax={section.estateTax}
+        showDsueGenerated={isMarried && section.estateTax.deathOrder === 1}
+      />
     </div>
   );
 }

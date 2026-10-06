@@ -6,14 +6,26 @@ import { prepEstate } from "@/lib/presentations/shared/estate-context";
 import { pickDeathColumns } from "@/lib/estate/estate-flow-death-columns";
 import type { AsOfValue } from "@/components/report-controls/as-of-dropdown";
 
+/** A death column as the PDF draws it. The PDF shows no tax calculation, and
+ *  this data also reaches the Forge as JSON — so the section's full Form 706
+ *  result is dropped rather than shipped as tokens. */
+export type EstateFlowDeathColumnData = Omit<DeathSectionData, "estateTax">;
+
 export interface EstateFlowReportData {
   title: string;
   subtitle: string;
   ownership: OwnershipColumnData;
   asOfYear: number;
-  firstColumn: DeathSectionData | null;
-  secondColumn: DeathSectionData | null;
+  firstColumn: EstateFlowDeathColumnData | null;
+  secondColumn: EstateFlowDeathColumnData | null;
   showHeirDetail: boolean;
+}
+
+function withoutTaxResult(section: DeathSectionData | null): EstateFlowDeathColumnData | null {
+  if (!section) return null;
+  const { estateTax: _estateTax, ...column } = section;
+  void _estateTax;
+  return column;
 }
 
 // `AsOfSelection` ({kind}) → `AsOfValue` (the union pickDeathColumns expects).
@@ -37,8 +49,8 @@ export function buildEstateFlowReportData(
     subtitle: `${ctx.scenarioLabel} · As of ${asOfYear}`,
     ownership,
     asOfYear,
-    firstColumn,
-    secondColumn,
+    firstColumn: withoutTaxResult(firstColumn),
+    secondColumn: withoutTaxResult(secondColumn),
     showHeirDetail: options.showHeirDetail,
   };
 }

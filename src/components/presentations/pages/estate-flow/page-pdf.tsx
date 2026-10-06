@@ -1,8 +1,11 @@
 import { Text, View, StyleSheet } from "@react-pdf/renderer";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import { PageFrame } from "../../shared/page-frame";
-import type { EstateFlowReportData } from "@/lib/presentations/pages/estate-flow/view-model";
-import type { DeathSectionData, RecipientGroup } from "@/lib/estate/transfer-report";
+import type {
+  EstateFlowDeathColumnData,
+  EstateFlowReportData,
+} from "@/lib/presentations/pages/estate-flow/view-model";
+import type { RecipientGroup } from "@/lib/estate/transfer-report";
 import type { OwnershipGroup } from "@/lib/estate/estate-flow-ownership";
 
 const fmt = new Intl.NumberFormat("en-US", {
@@ -126,7 +129,7 @@ function DeathColumn({
   section,
   ordinal,
 }: {
-  section: DeathSectionData | null;
+  section: EstateFlowDeathColumnData | null;
   ordinal: "First" | "Second";
 }) {
   if (!section) {

@@ -262,6 +262,7 @@ export function EstateFlowReportTab({
                   projection={projection}
                   gifts={workingGifts}
                   accountNameById={accountNameById}
+                  isMarried={isMarried}
                 />
               </div>
               {/* Death column 3 — second death, married only */}
@@ -273,6 +274,7 @@ export function EstateFlowReportTab({
                     projection={projection}
                     gifts={workingGifts}
                     accountNameById={accountNameById}
+                    isMarried={isMarried}
                   />
                 </div>
               ) : (

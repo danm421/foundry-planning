@@ -103,6 +103,9 @@ export interface DeathSectionData {
    *  deductions). Re-exported from the underlying EstateTaxResult so summary
    *  surfaces can show per-death-event gross without re-resolving ordering. */
   grossEstate: number;
+  /** The engine's full Form 706 result for this decedent — the Estate Flow
+   *  death column's tax box renders its calculation. */
+  estateTax: EstateTaxResult;
   /** Σ positive asset-source transfers. The asset value physically passing
    *  through this death event (full balance of joint accounts at first death,
    *  since titling routes 100% to the survivor). */
@@ -142,6 +145,16 @@ export interface DeathSectionData {
  */
 export function estateAtDeathOf(section: DeathSectionData): number {
   return section.assetEstateValue + section.reconciliation.sumLiabilityTransfers;
+}
+
+/**
+ * What the recipients actually receive: each recipient's `netTotal` (their
+ * share after taxes, expenses and debts), summed. NOT
+ * `reconciliation.sumRecipients` — that is their GROSS total and equals
+ * `estateAtDeathOf` whenever the ledger reconciles.
+ */
+export function netToRecipientsOf(section: DeathSectionData): number {
+  return section.recipients.reduce((s, r) => s + r.netTotal, 0);
 }
 
 export interface RecipientGroup {
@@ -690,6 +703,7 @@ function buildDeathSection(
     year: payload.year,
     taxableEstate,
     grossEstate: tax.grossEstate,
+    estateTax: tax,
     assetEstateValue,
     assetCount,
     recipients,

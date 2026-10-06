@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { DeathSectionData, EstateTransferReportData, ReductionsLine } from "@/lib/estate/transfer-report";
 import { fmtUsd, fmtPct, summarizeHousehold, buildDeathRows } from "../aggregate";
+import type { EstateTaxResult } from "@/engine/types";
 
 function reductions(parts: Partial<Record<ReductionsLine["kind"], number>>): ReductionsLine[] {
   const labels: Record<ReductionsLine["kind"], string> = {
@@ -19,7 +20,7 @@ function reductions(parts: Partial<Record<ReductionsLine["kind"], number>>): Red
 function section(over: Partial<DeathSectionData>): DeathSectionData {
   return {
     decedent: "client", decedentName: "John", year: 2050,
-    taxableEstate: 0, grossEstate: 0, assetEstateValue: 0, assetCount: 0,
+    taxableEstate: 0, grossEstate: 0, estateTax: {} as EstateTaxResult, assetEstateValue: 0, assetCount: 0,
     recipients: [], reductions: [], conflicts: [],
     grossEstateDollarsByAccount: {}, grossEstateDollarsByLiability: {},
     reconciliation: { sumLiabilityTransfers: 0, sumRecipients: 0, sumReductions: 0, unattributed: 0, reconciles: true },

@@ -7,7 +7,7 @@ import type {
   MechanismBreakdown,
   AssetTransferLine,
 } from "@/lib/estate/transfer-report";
-import type { ClientData } from "@/engine/types";
+import type { ClientData, EstateTaxResult } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { buildEstateFlowSummary } from "@/lib/estate/estate-flow-summary";
 
@@ -102,6 +102,7 @@ function deathSection(opts: {
     year: opts.year,
     taxableEstate: assetEstateValue,
     grossEstate: assetEstateValue,
+    estateTax: {} as EstateTaxResult,
     assetEstateValue,
     assetCount: opts.recipients.flatMap((r) =>
       r.byMechanism.flatMap((m) => m.assets),
