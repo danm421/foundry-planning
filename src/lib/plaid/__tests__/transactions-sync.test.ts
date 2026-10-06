@@ -46,6 +46,8 @@ const mockDeleteWhere = vi.fn();
 const mockTransaction = vi.fn();
 const mockUpdate = vi.fn();
 let selectRows: unknown[] = [];
+// Results for the sync transaction's own selects, in call order.
+let txSelectQueue: unknown[][] = [];
 
 vi.mock("@/db", () => ({
   db: {
@@ -80,6 +82,9 @@ vi.mock("@/db", () => ({
     transaction: (fn: (tx: unknown) => Promise<unknown>) => {
       mockTransaction();
       return fn({
+        select: () => ({
+          from: () => ({ where: () => Promise.resolve(txSelectQueue.shift() ?? []) }),
+        }),
         insert: () => ({
           values: (row: unknown) => {
             mockInsertValues(row);
@@ -116,17 +121,20 @@ vi.mock("@/db/schema", () => ({
     clientId: "clientId",
     plaidAccountId: "plaidAccountId",
     accountId: "accountId",
+    id: "id",
   },
+  liabilities: { clientId: "clientId", plaidAccountId: "plaidAccountId", liabilityType: "liabilityType" },
   plaidItems: { id: "id", transactionsCursor: "transactionsCursor" },
   accounts: { id: "id", plaidItemId: "plaidItemId", plaidAccountId: "plaidAccountId" },
 }));
 
 vi.mock("drizzle-orm", () => ({
   eq: () => ({ type: "eq" }),
-  and: () => ({ type: "and" }),
-  inArray: () => ({ type: "inArray" }),
+  and: (...conds: unknown[]) => ({ type: "and", conds }),
+  inArray: (_col: unknown, values: unknown[]) => ({ type: "inArray", values }),
   isNotNull: () => ({ type: "isNotNull" }),
   isNull: () => ({ type: "isNull" }),
+  or: () => ({ type: "or" }),
 }));
 
 import {
@@ -171,6 +179,7 @@ beforeEach(() => {
   mockTransaction.mockReset();
   mockUpdate.mockReset();
   selectRows = [];
+  txSelectQueue = [];
 });
 
 const plaidTxn = {
@@ -471,5 +480,43 @@ describe("syncTransactionsForItem attribution repair", () => {
       .filter((c) => c.table === plaidTransactions);
     expect(repair).toHaveLength(1);
     expect(repair[0].values).toEqual({ accountId: "acct-checking" });
+  });
+});
+
+describe("syncTransactionsForItem card payments", () => {
+  const noUpdates = {
+    data: { added: [], modified: [], removed: [], next_cursor: "cur2", has_more: false },
+  };
+  const item = { id: "item-1", clientId: "c1", accessToken: "enc", transactionsCursor: "cur1" };
+  const ccPayment = { pfcPrimary: "LOAN_PAYMENTS", pfcDetailed: "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT" };
+  const retypes = () =>
+    mockUpdate.mock.calls
+      .map((c) => c[0])
+      .filter((c) => (c.values as { type?: string }).type === "transfer");
+
+  it("types both sides of a payment to a linked card as transfers", async () => {
+    transactionsSync.mockResolvedValueOnce(noUpdates);
+    txSelectQueue = [
+      [{ plaidAccountId: "plaid-card" }],
+      [
+        { id: "paid", plaidAccountId: "plaid-checking", amount: "500.00", date: "2026-09-02", type: "expense", ...ccPayment },
+        { id: "received", plaidAccountId: "plaid-card", amount: "-500.00", date: "2026-09-01", type: "expense", ...ccPayment },
+      ],
+    ];
+    await syncTransactionsForItem(item);
+    const [update] = retypes();
+    expect(retypes()).toHaveLength(1);
+    expect(update.values).toMatchObject({ type: "transfer", categoryId: null });
+    const ids = (update.cond as { conds: { type: string; values?: string[] }[] }).conds.find(
+      (c) => c.type === "inArray",
+    )?.values;
+    expect(ids?.sort()).toEqual(["paid", "received"]);
+  });
+
+  it("changes nothing when the client has no linked card", async () => {
+    transactionsSync.mockResolvedValueOnce(noUpdates);
+    txSelectQueue = [[]];
+    await syncTransactionsForItem(item);
+    expect(retypes()).toHaveLength(0);
   });
 });

@@ -1,7 +1,7 @@
 import type { Transaction, RemovedTransaction } from "plaid";
-import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, plaidItems, plaidTransactions } from "@/db/schema";
+import { accounts, liabilities, plaidItems, plaidTransactions } from "@/db/schema";
 import { getPlaidClient } from "./client";
 import { decrypt } from "./crypto";
 import { plaidErrorCode, plaidErrorMessage } from "./errors";
@@ -10,6 +10,7 @@ import { ensureCategoriesSeeded } from "@/lib/portal/seed-categories";
 import { loadCategorizationContext } from "@/lib/portal/load-categorization-context";
 import type { CategorizationContext } from "@/lib/portal/load-categorization-context";
 import { pfcToType } from "@/lib/portal/pfc-mapping";
+import { cardPaymentTransferIds } from "@/lib/portal/card-payments";
 
 const FIRST_SYNC_DAYS_REQUESTED = 730; // Phase 2 decision: max trend depth
 
@@ -232,6 +233,62 @@ export async function backfillTransactionAccountIds(
   }
 }
 
+/**
+ * Types card payments as transfers — see `cardPaymentTransferIds`. Scans the
+ * client's whole history, not just this sync's rows: the two sides of one
+ * payment can arrive on different items and days, and a pair broken before
+ * this shipped heals on the next sync.
+ */
+export async function retypeCardPayments(tx: typeof db, clientId: string): Promise<void> {
+  const cards = await tx
+    .select({ plaidAccountId: liabilities.plaidAccountId })
+    .from(liabilities)
+    .where(
+      and(
+        eq(liabilities.clientId, clientId),
+        eq(liabilities.liabilityType, "credit_card"),
+        isNotNull(liabilities.plaidAccountId),
+      ),
+    );
+  const cardIds = cards.flatMap((c) => c.plaidAccountId ?? []);
+  if (cardIds.length === 0) return;
+
+  const rows = await tx
+    .select({
+      id: plaidTransactions.id,
+      plaidAccountId: plaidTransactions.plaidAccountId,
+      amount: plaidTransactions.amount,
+      date: plaidTransactions.date,
+      type: plaidTransactions.type,
+      pfcPrimary: plaidTransactions.pfcPrimary,
+      pfcDetailed: plaidTransactions.pfcDetailed,
+    })
+    .from(plaidTransactions)
+    .where(
+      and(
+        eq(plaidTransactions.clientId, clientId),
+        or(
+          eq(plaidTransactions.pfcPrimary, "LOAN_PAYMENTS"),
+          and(
+            eq(plaidTransactions.pfcPrimary, "TRANSFER_IN"),
+            inArray(plaidTransactions.plaidAccountId, cardIds),
+          ),
+        ),
+      ),
+    );
+  const ids = cardPaymentTransferIds(
+    rows.map((r) => ({ ...r, amount: Number(r.amount) })),
+    new Set(cardIds),
+  );
+  if (ids.length === 0) return;
+  // Same transition as a manual re-type (transactions/[id] PUT): a transfer
+  // carries no category, so it drops out of that category's drill-down too.
+  await tx
+    .update(plaidTransactions)
+    .set({ type: "transfer", categoryId: null, updatedAt: new Date() })
+    .where(and(eq(plaidTransactions.clientId, clientId), inArray(plaidTransactions.id, ids)));
+}
+
 export type SyncSummary =
   | { ok: true; added: number; modified: number; removed: number }
   | { ok: false; errorCode: string; errorMessage: string };
@@ -267,6 +324,7 @@ export async function syncTransactionsForItem(item: {
       categorization,
     }, fetched);
     await backfillTransactionAccountIds(tx as unknown as typeof db, item.clientId, accountIdByPlaidAccountId);
+    await retypeCardPayments(tx as unknown as typeof db, item.clientId);
     await tx
       .update(plaidItems)
       .set({ transactionsCursor: fetched.nextCursor })

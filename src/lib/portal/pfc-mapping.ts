@@ -39,8 +39,9 @@ export function mapPfcToSlug(
 
 export type TransactionType = "income" | "expense" | "transfer";
 
-// Default classification at ingest. Card payments arrive as LOAN_PAYMENTS and
-// stay 'expense' — the client can reclassify to 'transfer' in the panel.
+// Default classification at ingest. Card payments arrive as LOAN_PAYMENTS →
+// 'expense'; the sync then re-types the ones touching a linked card
+// (`retypeCardPayments`).
 export function pfcToType(primary: string | null): TransactionType {
   if (primary === "INCOME") return "income";
   if (primary === "TRANSFER_IN" || primary === "TRANSFER_OUT") return "transfer";
