@@ -5596,6 +5596,8 @@ export const advisorOnboarding = pgTable(
     eligible: boolean("eligible").notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }),
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+    // When this advisor dismissed Home's welcome video; null = still owed it.
+    welcomeVideoSeenAt: timestamp("welcome_video_seen_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

@@ -518,6 +518,8 @@ export type AuditAction =
   | "advisor_onboarding.create"
   | "advisor_onboarding.start"
   | "advisor_onboarding.dismiss"
+  // Home's one-time welcome video popup, dismissed (any close path)
+  | "advisor_onboarding.welcome_video_dismiss"
   // Intake document uploads (public client-facing path, no Clerk session)
   | "intake.document.uploaded"
   | "intake.document.deleted"

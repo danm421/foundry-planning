@@ -5,10 +5,17 @@ import { requireOrgAndUser } from "@/lib/db-helpers";
 import { listRecentlyOpenedHouseholds } from "@/lib/crm/households";
 import { getBookKpis } from "@/lib/home/kpis";
 import { getHomeFeed } from "@/lib/home/feed-sources";
-import { resolveFirstRunCard } from "@/lib/onboarding/advisor-first-run";
+import {
+  WELCOME_VIDEO_SLUG,
+  resolveFirstRun,
+  type FirstRun,
+} from "@/lib/onboarding/advisor-first-run";
+import { forgeViewerGate } from "@/lib/forge-access";
+import { getHelpVideo } from "@/domain/forge/help/videos";
 import type { HomeFeed, RecentHousehold } from "@/lib/home/types";
 import { WelcomeBanner } from "./_components/welcome-banner";
 import { FirstRunCard } from "./_components/first-run-card";
+import { WelcomeVideoDialog } from "./_components/welcome-video-dialog";
 import { KpiRow } from "./_components/kpi-row";
 import { HomeFeedCard } from "./_components/home-feed";
 import { RecentHouseholds } from "./_components/recent-households";
@@ -21,7 +28,7 @@ async function FeedSection({ feed }: { feed: Promise<HomeFeed> }): Promise<React
 
 export default async function HomePage(): Promise<ReactElement> {
   const { orgId, userId } = await requireOrgAndUser();
-  const [{ orgRole }, user] = await Promise.all([auth(), currentUser()]);
+  const [{ orgRole, actor }, user] = await Promise.all([auth(), currentUser()]);
   const today = new Date();
 
   // Start the feed now so it loads in parallel with the awaited sections
@@ -30,13 +37,22 @@ export default async function HomePage(): Promise<ReactElement> {
   const feedPromise = getHomeFeed(orgId, userId, orgRole, today);
 
   // Section-level degradation: a failing helper blanks its section only.
-  const [kpis, recentRows, firstRun] = await Promise.all([
+  const [kpis, recentRows, firstRun, canWatchVideos] = await Promise.all([
     getBookKpis(orgId, userId, orgRole, today).catch(() => null),
     listRecentlyOpenedHouseholds({ userId, limit: 8 }).catch(() => []),
-    resolveFirstRunCard(orgId, userId, orgRole).catch(
-      () => ({ kind: "hidden" }) as const,
+    // Unknown counts as seen: a failed read must not greet a long-time advisor.
+    resolveFirstRun(orgId, userId, orgRole).catch(
+      (): FirstRun => ({ card: { kind: "hidden" }, welcomeVideoSeen: true }),
     ),
+    // The Knowledge Hub video route's own gate: never open on a player that 403s.
+    forgeViewerGate().then((denied) => denied === null, () => false),
   ]);
+
+  // Not while ops is impersonating: the welcome stays the advisor's to see.
+  const welcomeVideo =
+    !firstRun.welcomeVideoSeen && !actor && canWatchVideos
+      ? getHelpVideo(WELCOME_VIDEO_SLUG)
+      : undefined;
 
   const recent: RecentHousehold[] = recentRows.map((h) => ({
     id: h.id,
@@ -49,8 +65,8 @@ export default async function HomePage(): Promise<ReactElement> {
   return (
     <div className="flex flex-col gap-4 p-[var(--pad-card)]">
       <WelcomeBanner firstName={user?.firstName ?? null} />
-      <FirstRunCard card={firstRun} />
-      {firstRun.kind !== "no_client" && <KpiRow kpis={kpis} />}
+      <FirstRunCard card={firstRun.card} />
+      {firstRun.card.kind !== "no_client" && <KpiRow kpis={kpis} />}
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <Suspense
@@ -65,6 +81,7 @@ export default async function HomePage(): Promise<ReactElement> {
         </div>
         <RecentHouseholds households={recent} />
       </div>
+      {welcomeVideo && <WelcomeVideoDialog video={welcomeVideo} />}
     </div>
   );
 }

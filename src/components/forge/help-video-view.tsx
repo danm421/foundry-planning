@@ -5,7 +5,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import DialogShell from "@/components/dialog-shell";
 import type { HelpVideo } from "@/domain/forge/help/video-schema";
-import { formatClock, posterSrc, recordedLabel, videoSrc } from "./help-video-format";
+import { formatClock, play, posterSrc, recordedLabel, videoSrc } from "./help-video-format";
 
 /** "**Open the Solver.** Then…" → bold runs as <strong>. Steps come from our
  *  own reviewed details files and render as text nodes (no HTML). */
@@ -22,16 +22,6 @@ function withBold(text: string) {
 }
 
 const HEADING = "mt-3 text-[11px] font-semibold uppercase tracking-wide text-ink-3";
-
-/** Plays with sound. A browser that refuses sound without a recent click
- *  (Safari) gets the video muted instead; the captions carry the narration. */
-function play(el: HTMLVideoElement) {
-  el.play().catch((err: unknown) => {
-    if (!(err instanceof DOMException) || err.name !== "NotAllowedError") return;
-    el.muted = true;
-    el.play().catch(() => {});
-  });
-}
 
 /** One Knowledge Hub video: the player (fits the panel; Expand for a large
  *  one), chapters to jump between, then the written steps. Videos are

@@ -102,11 +102,17 @@ async function ensureRow(
   return row ?? null;
 }
 
-export async function resolveFirstRunCard(
+export interface FirstRun {
+  card: FirstRunCard;
+  /** Dismissed Home's one-time welcome video, on any device. */
+  welcomeVideoSeen: boolean;
+}
+
+export async function resolveFirstRun(
   firmId: string,
   userId: string,
   orgRole: string | null | undefined,
-): Promise<FirstRunCard> {
+): Promise<FirstRun> {
   // Same visibility source as getBookKpis (React-`cache`d, so this is free on
   // a render that already computed it). "Clients in the org" and "clients this
   // advisor can see" are different sets; the card must agree with the KPI row
@@ -127,15 +133,21 @@ export async function resolveFirstRunCard(
     .limit(1);
 
   const row = await ensureRow(firmId, userId, !first);
-  if (!row || !row.eligible || row.dismissedAt !== null) return { kind: "hidden" };
+  // A row created on this render starts NULL; the column's migration stamped
+  // every row that existed before the video shipped.
+  const welcomeVideoSeen = !row || row.welcomeVideoSeenAt !== null;
+  if (!row || !row.eligible || row.dismissedAt !== null) {
+    return { card: { kind: "hidden" }, welcomeVideoSeen };
+  }
 
   if (!first) {
-    return deriveFirstRunCard({
+    const card = deriveFirstRunCard({
       eligible: true,
       dismissedAt: null,
       client: null,
       totalSteps: STEPS.length,
     });
+    return { card, welcomeVideoSeen };
   }
 
   // Only loaded when the card will actually render for an advisor mid-setup —
@@ -149,7 +161,7 @@ export async function resolveFirstRunCard(
     ).length;
   }
 
-  return deriveFirstRunCard({
+  const card = deriveFirstRunCard({
     eligible: true,
     dismissedAt: null,
     client: {
@@ -160,13 +172,17 @@ export async function resolveFirstRunCard(
     },
     totalSteps: STEPS.length,
   });
+  return { card, welcomeVideoSeen };
 }
 
-// Both blind UPDATEs below rely on the row already existing: the card can
-// only be on screen (and so only reachable for a start/dismiss action) after
-// `resolveFirstRunCard` → `ensureRow` has created it, so by the time either
-// function is callable the `(firmId, advisorUserId)` row is guaranteed to be
-// there. Calling either before that would silently affect 0 rows.
+/** The Knowledge Hub video Home's welcome popup plays. */
+export const WELCOME_VIDEO_SLUG = "add-first-household";
+
+// The blind UPDATEs below rely on the row already existing: the card and the
+// welcome video only reach the screen from a /home render, which runs
+// `resolveFirstRun` → `ensureRow`, so by the time any of them is callable
+// the `(firmId, advisorUserId)` row is there. Calling one before that would
+// silently affect 0 rows.
 
 export async function markFirstRunStarted(
   firmId: string,
@@ -190,6 +206,21 @@ export async function dismissFirstRun(
   await db
     .update(advisorOnboarding)
     .set({ dismissedAt: new Date(), updatedAt: new Date() })
+    .where(
+      and(
+        eq(advisorOnboarding.firmId, firmId),
+        eq(advisorOnboarding.advisorUserId, advisorUserId),
+      ),
+    );
+}
+
+export async function dismissWelcomeVideo(
+  firmId: string,
+  advisorUserId: string,
+): Promise<void> {
+  await db
+    .update(advisorOnboarding)
+    .set({ welcomeVideoSeenAt: new Date(), updatedAt: new Date() })
     .where(
       and(
         eq(advisorOnboarding.firmId, firmId),

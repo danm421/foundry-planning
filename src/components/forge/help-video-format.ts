@@ -20,3 +20,13 @@ export function recordedLabel(isoDate: string): string {
  *  refuses the old one rather than mixing two files' bytes. */
 export const videoSrc = (v: HelpVideo) => `/api/knowledge-hub/videos/${v.slug}?v=${assetVersion(v.video)}`;
 export const posterSrc = (v: HelpVideo) => `/api/knowledge-hub/videos/${v.slug}/poster?v=${assetVersion(v.poster)}`;
+
+/** Plays with sound. A browser that refuses sound without a recent click
+ *  (Safari) gets the video muted instead; the captions carry the narration. */
+export function play(el: HTMLVideoElement) {
+  el.play().catch((err: unknown) => {
+    if (!(err instanceof DOMException) || err.name !== "NotAllowedError") return;
+    el.muted = true;
+    el.play().catch(() => {});
+  });
+}

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircleIcon } from "@/components/icons";
 import type { FirstRunCard as FirstRunCardState } from "@/lib/onboarding/advisor-first-run";
 
-async function patchFirstRun(action: "start" | "dismiss") {
+export async function patchFirstRun(action: "start" | "dismiss" | "dismiss_welcome_video") {
   await fetch("/api/onboarding/first-run", {
     method: "PATCH",
     headers: { "content-type": "application/json" },

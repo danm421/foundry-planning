@@ -1891,6 +1891,13 @@
       "when": 1791043575822,
       "tag": "0269_inherited_ira_payout_window",
       "breakpoints": true
+    },
+    {
+      "idx": 270,
+      "version": "7",
+      "when": 1791311441869,
+      "tag": "0270_welcome_video_seen",
+      "breakpoints": true
     }
   ]
 }
