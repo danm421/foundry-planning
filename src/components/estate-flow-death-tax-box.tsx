@@ -7,7 +7,7 @@ import {
   inheritanceTaxOf,
   irdTaxOf,
 } from "@/components/estate-tax-decedent-breakdown";
-import { DisclosureButton } from "@/components/disclosure-button";
+import { ShareBandButton } from "@/components/estate-flow-share-band";
 
 const fmt = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -18,14 +18,18 @@ const fmt = new Intl.NumberFormat("en-US", {
 
 /**
  * The bottom of an Estate Flow death column: this death's projected tax —
- * federal, state and IRD income tax — expandable to the Estate Tax page's
- * full calculation for the same decedent and year.
+ * federal, state and IRD income tax — banded to its share of the estate like
+ * the recipient boxes above it, and expandable to the Estate Tax page's full
+ * calculation for the same decedent and year.
  */
 export function EstateFlowDeathTaxBox({
   tax,
+  estateAtDeath,
   showDsueGenerated,
 }: {
   tax: EstateTaxResult;
+  /** The column's gross estate — what the tax band is a share of. */
+  estateAtDeath: number;
   showDsueGenerated: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -43,14 +47,17 @@ export function EstateFlowDeathTaxBox({
   const total = lines.reduce((s, line) => s + line.amount, 0);
 
   return (
-    <section className="overflow-hidden rounded border border-hair bg-card-2 text-xs">
-      <DisclosureButton open={open} onToggle={() => setOpen((o) => !o)}>
-        <span className="flex-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-2">
-          Projected tax
-        </span>
-        <span className="tabular-nums font-semibold text-ink">{fmt.format(total)}</span>
-      </DisclosureButton>
-      <dl className="px-2 pb-1.5 pl-6">
+    <section className="overflow-hidden rounded-lg border border-hair text-xs">
+      <ShareBandButton
+        open={open}
+        onToggle={() => setOpen((o) => !o)}
+        share={estateAtDeath > 0 ? total / estateAtDeath : 0}
+        hue="var(--share-tax)"
+        shareOf="the estate"
+        label="Projected tax"
+        figure={fmt.format(total)}
+      />
+      <dl className="pb-2 pl-[30px] pr-3 pt-1.5">
         {lines.map((line) => (
           <div key={line.label} className="flex items-baseline justify-between gap-3 py-0.5">
             <dt className="text-ink-3">{line.label}</dt>

@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { EstateFlowDeathColumn } from "@/components/estate-flow-death-column";
 import type { DeathSectionData, RecipientGroup } from "@/lib/estate/transfer-report";
+import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import type { EstateTaxResult } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
 
@@ -100,13 +101,13 @@ function section(recipients: RecipientGroup[], tax: EstateTaxResult = estateTax(
   };
 }
 
-function renderColumn(s: DeathSectionData, isMarried = true) {
+function renderColumn(s: DeathSectionData, isMarried = true, gifts: EstateFlowGift[] = []) {
   return render(
     <EstateFlowDeathColumn
       section={s}
       deathOrder={1}
       projection={{ years: [] } as unknown as ProjectionResult}
-      gifts={[]}
+      gifts={gifts}
       accountNameById={new Map()}
       isMarried={isMarried}
     />,
@@ -114,7 +115,7 @@ function renderColumn(s: DeathSectionData, isMarried = true) {
 }
 
 describe("EstateFlowDeathColumn — recipient boxes", () => {
-  it("shows only the recipient's name and net total until the box is expanded", () => {
+  it("shows only the recipient's name, net total and share until the box is expanded", () => {
     const jane = recipient({
       assets: [["Schwab Brokerage", 800_000]],
       drainsByKind: { ...NO_DRAINS, federal_estate_tax: 100_000 },
@@ -126,17 +127,71 @@ describe("EstateFlowDeathColumn — recipient boxes", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(within(toggle).getByText("$700,000")).toBeDefined();
     expect(screen.queryByText("Schwab Brokerage")).toBeNull();
-    expect(screen.queryByText("Reductions")).toBeNull();
+    expect(screen.queryByText("Taxes, expenses and debts")).toBeNull();
 
     fireEvent.click(toggle);
 
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     const box = within(toggle.closest("li")!);
-    expect(box.getByText("Schwab Brokerage")).toBeDefined();
-    expect(box.getByText("Titling")).toBeDefined();
-    expect(box.getByText("$800,000")).toBeDefined();
-    expect(box.getByText("Reductions")).toBeDefined();
-    expect(box.getByText("−$100,000")).toBeDefined();
+    expect(box.getByText("Schwab Brokerage").closest("li")!.textContent).toBe(
+      "Schwab BrokerageTitling$800,000",
+    );
+    expect(box.getByText("Gross").nextSibling?.textContent).toBe("$800,000");
+    expect(box.getByText("Taxes, expenses and debts").nextSibling?.textContent).toBe("−$100,000");
+  });
+
+  it("bands each recipient to their share of what the column's recipients net", () => {
+    const jane = recipient({ assets: [["Brokerage", 750_000]] });
+    const tom = recipient({
+      key: "family_member|fm-tom",
+      recipientId: "fm-tom",
+      recipientLabel: "Tom Sample",
+      assets: [["IRA", 250_000]],
+    });
+    renderColumn(section([jane, tom]));
+
+    expect(within(screen.getByRole("button", { name: /Jane Sample/ })).getByText("75%")).toBeDefined();
+    expect(within(screen.getByRole("button", { name: /Tom Sample/ })).getByText("25%")).toBeDefined();
+  });
+
+  it("names how assets pass once per run, not on every row", () => {
+    renderColumn(section([recipient({ assets: [["Home", 500_000], ["Checking", 20_000]] })]));
+    fireEvent.click(screen.getByRole("button", { name: /Jane Sample/ }));
+
+    expect(screen.getAllByText("Titling")).toHaveLength(1);
+    expect(screen.getByText("Checking").closest("li")!.textContent).toBe("Checking$20,000");
+  });
+
+  it("folds accounts with no balance into one line until asked for", () => {
+    renderColumn(
+      section([recipient({ assets: [["Brokerage", 300_000], ["Old Checking", 0], ["Roth IRA", 0]] })]),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Jane Sample/ }));
+
+    expect(screen.getByText("Brokerage")).toBeDefined();
+    expect(screen.queryByText("Old Checking")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "2 more accounts with no balance" }));
+
+    expect(screen.getByText("Old Checking")).toBeDefined();
+    expect(screen.getByText("Roth IRA")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Hide accounts with no balance" })).toBeDefined();
+  });
+
+  it("lists a planned lifetime gift to the recipient in words", () => {
+    const gift = {
+      kind: "cash-once",
+      id: "gift-1",
+      year: 2026,
+      amount: 50_000,
+      grantor: "client",
+      recipient: { kind: "family_member", id: "fm-jane" },
+      crummey: false,
+    } as EstateFlowGift;
+    renderColumn(section([recipient({ assets: [["IRA", 500_000]] })]), true, [gift]);
+    fireEvent.click(screen.getByRole("button", { name: /Jane Sample/ }));
+
+    expect(screen.getByText("Lifetime gift: $50,000 in 2026")).toBeDefined();
   });
 
   it("keeps the No-plan flag on a collapsed default-order box", () => {
@@ -181,6 +236,7 @@ describe("EstateFlowDeathColumn — tax box", () => {
 
     const toggle = screen.getByRole("button", { name: /Projected tax/ });
     expect(within(toggle).getByText("$175,000")).toBeDefined();
+    expect(within(toggle).getByText("35%")).toBeDefined();
     const box = toggle.closest("section")!;
     expect(within(box).getByText("Federal estate tax").nextSibling?.textContent).toBe("$100,000");
     expect(within(box).getByText("State estate tax").nextSibling?.textContent).toBe("$50,000");

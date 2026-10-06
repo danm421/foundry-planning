@@ -12,7 +12,8 @@ import {
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { EstateTransferConflictsCallout } from "@/components/estate-transfer-conflicts-callout";
 import { EstateFlowDeathTaxBox } from "@/components/estate-flow-death-tax-box";
-import { DisclosureButton } from "@/components/disclosure-button";
+import { ShareBandButton } from "@/components/estate-flow-share-band";
+import { AlertCircleIcon, GiftIcon } from "@/components/icons";
 import {
   summarizeDeathWarnings,
   type DeathWarningNote,
@@ -58,15 +59,34 @@ function DeathWarningsCallout({ notes }: { notes: DeathWarningNote[] }) {
   );
 }
 
-const DISTRIBUTION_FORM_CHIP = {
-  outright: { className: "bg-card-active text-ink-3", label: "Outright" },
-  in_trust: { className: "bg-indigo-900/40 text-indigo-200", label: "In trust" },
+// Outright is the usual case, so it stays plain; In trust takes the entity hue.
+const DISTRIBUTION_FORM_TAG = {
+  outright: { className: "text-ink-4", label: "Outright" },
+  in_trust: {
+    className:
+      "rounded-full bg-[color-mix(in_srgb,var(--share-entity)_16%,transparent)] px-1.5 font-semibold text-[var(--share-entity)]",
+    label: "In trust",
+  },
 } as const;
+
+/** Hue per kind of recipient: the share band, its edge and the percent. */
+const SHARE_HUE: Record<RecipientGroup["recipientKind"], string> = {
+  spouse: "var(--share-spouse)",
+  family_member: "var(--share-family)",
+  entity: "var(--share-entity)",
+  external_beneficiary: "var(--share-external)",
+  system_default: "var(--share-no-plan)",
+};
+
+/** Debts carry a true minus sign, matching the reductions line. */
+function signed(n: number): string {
+  return n < 0 ? `−${fmt.format(-n)}` : fmt.format(n);
+}
 
 // ── Mechanism labels ──────────────────────────────────────────────────────────
 // Asset rows are listed flat under each recipient (no per-mechanism subsections);
-// each row's "Passes by" cell names how the asset passes. Short forms of the
-// MECHANISM_LABELS in lib/estate/transfer-report.ts.
+// the first row of each run that passes the same way names how. Short forms of
+// the MECHANISM_LABELS in lib/estate/transfer-report.ts.
 
 const SHORT_MECHANISM_LABELS: Partial<
   Record<MechanismBreakdown["mechanism"], string>
@@ -100,50 +120,55 @@ function giftMatchesGroup(gift: EstateFlowGift, group: RecipientGroup): boolean 
 }
 
 /**
- * Human-readable label for a planned-gift marker line, per gift kind:
- *  - cash-once → formatted dollar amount
- *  - series    → "$X/yr START–END"
- *  - asset-once → "P% of {account name}" (account name resolved via the map;
- *                 falls back to "an asset" when the id is not resolvable)
+ * A planned lifetime gift in words, per gift kind:
+ *  - cash-once  → "$50,000 in 2026"
+ *  - series     → "$19,000 a year, 2026–2035"
+ *  - asset-once → "15% of {account name} in 2030" (falls back to "an asset"
+ *                 when the account id is not resolvable)
  */
-function giftMarkerLabel(
-  gift: EstateFlowGift,
-  accountNameById: Map<string, string>,
-): { label: string; year: number } {
+function giftText(gift: EstateFlowGift, accountNameById: Map<string, string>): string {
   if (gift.kind === "cash-once") {
-    return { label: fmt.format(gift.amount), year: gift.year };
+    return `${fmt.format(gift.amount)} in ${gift.year}`;
   }
   if (gift.kind === "series") {
-    return {
-      label: `${fmt.format(gift.annualAmount)}/yr ${gift.startYear}–${gift.endYear}`,
-      year: gift.startYear,
-    };
+    return `${fmt.format(gift.annualAmount)} a year, ${gift.startYear}–${gift.endYear}`;
   }
   const assetName = accountNameById.get(gift.accountId) ?? "an asset";
-  return {
-    label: `${Math.round(gift.percent * 100)}% of ${assetName}`,
-    year: gift.year,
-  };
+  return `${Math.round(gift.percent * 100)}% of ${assetName} in ${gift.year}`;
+}
+
+function NoPlanFlag() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-warn/15 py-px pl-1 pr-1.5 text-[11px] font-semibold text-warn">
+      <AlertCircleIcon width={11} height={11} strokeWidth={2.2} aria-hidden="true" />
+      No plan
+    </span>
+  );
 }
 
 // ── Recipient boxes ───────────────────────────────────────────────────────────
 // Read-only: every edit starts from the ownership column's asset dialog. One
-// collapsed box per recipient — name and what they receive. Expanding it lists
-// their inherited assets inline (asset · how it passes · value), then any
-// planned lifetime gifts and the recipient's reductions.
+// box per recipient, its header banded to their share of what passes at this
+// death. Expanding it lists their inherited assets (accounts with no balance
+// fold into one line), then any planned lifetime gifts and what taxes,
+// expenses and debts took.
 
 function RecipientBox({
   group,
+  share,
   gifts,
   accountNameById,
 }: {
   group: RecipientGroup;
+  /** This recipient's fraction of everything the column's recipients net. */
+  share: number;
   gifts: EstateFlowGift[];
   accountNameById: Map<string, string>;
 }) {
   const [open, setOpen] = useState(false);
-  const isSpouse = group.recipientKind === "spouse";
+  const [showEmpty, setShowEmpty] = useState(false);
   const isSystemDefault = group.recipientKind === "system_default";
+  const hue = SHARE_HUE[group.recipientKind];
 
   // Inter-vivos gifts this recipient receives during life. A pure annotation —
   // deliberately NOT added into group.total / group.netTotal.
@@ -155,104 +180,127 @@ function RecipientBox({
   const hasReductions = Math.abs(totalDrains) >= 0.5;
 
   // All mechanisms (titling, default order, beneficiary designation, …) are
-  // combined into one list; the "Passes by" cell names each row's mechanism.
+  // combined into one list, in runs that pass the same way.
   const rows = group.byMechanism.flatMap((mech) =>
-    mech.assets.map((asset) => ({
+    mech.assets.map((asset, i) => ({
+      key: `${mech.mechanism}-${asset.sourceAccountId ?? asset.sourceLiabilityId ?? "asset"}-${i}`,
       asset,
       mechanismLabel: SHORT_MECHANISM_LABELS[mech.mechanism] ?? mech.mechanismLabel,
       mechanismTitle: mech.mechanismLabel,
     })),
   );
-
-  const tint = isSpouse
-    ? "bg-indigo-950/15"
-    : isSystemDefault
-      ? "bg-amber-950/15"
-      : "";
+  // Displays as $0 — folded until asked for.
+  const isEmpty = (amount: number) => Math.abs(amount) < 0.5;
+  const withBalance = rows.filter((r) => !isEmpty(r.asset.amount));
+  const emptyCount = rows.length - withBalance.length;
+  const shown = showEmpty ? rows : withBalance;
 
   return (
-    <li className={`overflow-hidden rounded border border-hair text-xs ${tint}`}>
-      <DisclosureButton open={open} onToggle={() => setOpen((o) => !o)}>
-        <span className="min-w-0 flex-1 truncate font-semibold text-ink" title={group.recipientLabel}>
-          {group.recipientLabel}
-        </span>
-        {isSystemDefault && (
-          <span className="shrink-0 rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-200">
-            No plan
-          </span>
-        )}
-        <span className="shrink-0 whitespace-nowrap">
-          {hasReductions && (
-            <span className="mr-1.5 text-[10px] uppercase tracking-wider text-ink-4">Net</span>
-          )}
-          <span className="tabular-nums font-semibold text-ink">{fmt.format(group.netTotal)}</span>
-        </span>
-      </DisclosureButton>
+    <li
+      className={`overflow-hidden rounded-lg border text-xs ${open ? "border-hair" : "border-transparent"}`}
+    >
+      <ShareBandButton
+        open={open}
+        onToggle={() => setOpen((o) => !o)}
+        share={share}
+        hue={hue}
+        hatched={isSystemDefault}
+        shareOf="the total"
+        label={group.recipientLabel}
+        figure={
+          <>
+            {hasReductions && (
+              <span className="mr-1.5 text-[10.5px] font-normal text-ink-4">net</span>
+            )}
+            <span>{fmt.format(group.netTotal)}</span>
+          </>
+        }
+        flag={isSystemDefault ? <NoPlanFlag /> : undefined}
+      />
 
       {open && (
-        // Auto layout: "Passes by" and "Value" shrink to their content and sit
-        // together on the right; the asset name (w-full + max-w-0) takes the rest.
-        <table className="w-full border-collapse border-t border-hair">
-          <tbody>
-            {rows.map(({ asset: a, mechanismLabel, mechanismTitle }, i) => (
-              <tr key={`${a.sourceAccountId ?? a.sourceLiabilityId ?? "asset"}-${i}`}>
-                <td className="w-full max-w-0 py-1 pl-6 text-ink-3">
-                  <span className="flex min-w-0 items-baseline gap-1.5">
+        <div className="pb-2.5 pl-[30px] pr-3 pt-1.5">
+          <ul>
+            {shown.map(({ key, asset: a, mechanismLabel, mechanismTitle }, i) => {
+              const runStart = i === 0 || shown[i - 1].mechanismLabel !== mechanismLabel;
+              return (
+                <li
+                  key={key}
+                  className={`flex items-baseline gap-2.5 py-[3px] ${runStart && i > 0 ? "mt-1.5" : ""}`}
+                >
+                  <span className="flex min-w-0 flex-1 items-baseline gap-1.5 text-ink-2">
                     <span className="truncate" title={a.label}>
                       {a.label}
                     </span>
                     {a.conflictIds.length > 0 && (
                       <span
-                        className="shrink-0 rounded bg-amber-900/40 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wider text-amber-200"
+                        className="flex shrink-0 items-center gap-0.5 self-center text-[10.5px] font-semibold text-warn"
                         title={`${a.conflictIds.length} configuration conflict(s) on this asset`}
                       >
+                        <AlertCircleIcon width={11} height={11} strokeWidth={2.2} aria-hidden="true" />
                         Conflict
                       </span>
                     )}
                     {a.distributionForm && (
                       <span
-                        className={`shrink-0 rounded ${DISTRIBUTION_FORM_CHIP[a.distributionForm].className} px-1 py-0.5 text-[9px] font-medium uppercase tracking-wider`}
+                        className={`shrink-0 text-[10.5px] ${DISTRIBUTION_FORM_TAG[a.distributionForm].className}`}
                       >
-                        {DISTRIBUTION_FORM_CHIP[a.distributionForm].label}
+                        {DISTRIBUTION_FORM_TAG[a.distributionForm].label}
                       </span>
                     )}
                   </span>
-                </td>
-                <td
-                  className="whitespace-nowrap py-1 pl-3 text-right text-ink-4"
-                  title={`Passes by ${mechanismTitle}`}
-                >
-                  {mechanismLabel}
-                </td>
-                <td className="whitespace-nowrap py-1 pl-3 pr-2 text-right tabular-nums text-ink-2">
-                  {fmt.format(a.amount)}
-                </td>
-              </tr>
-            ))}
-
-            {matchedGifts.map((gift) => {
-              const { label, year } = giftMarkerLabel(gift, accountNameById);
-              return (
-                <tr key={gift.id}>
-                  <td colSpan={3} className="max-w-0 truncate py-1 pl-6 text-[11px] text-amber-400/90">
-                    Also receives: {label} · {year}
-                  </td>
-                </tr>
+                  {runStart && (
+                    <span
+                      className="shrink-0 whitespace-nowrap text-[11px] text-ink-4"
+                      title={`Passes by ${mechanismTitle}`}
+                    >
+                      {mechanismLabel}
+                    </span>
+                  )}
+                  <span
+                    className={`shrink-0 whitespace-nowrap tabular-nums ${a.amount > 0 ? "text-ink-2" : "text-ink-4"}`}
+                  >
+                    {signed(a.amount)}
+                  </span>
+                </li>
               );
             })}
+          </ul>
 
-            {hasReductions && (
-              <tr className="border-t border-hair">
-                <td colSpan={2} className="py-1 pl-6 text-[11px] text-ink-3">
-                  Reductions
-                </td>
-                <td className="whitespace-nowrap py-1 pr-2 text-right text-[11px] tabular-nums text-rose-300/80">
-                  −{fmt.format(totalDrains)}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+          {emptyCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowEmpty((s) => !s)}
+              className="mt-1.5 rounded-sm py-0.5 text-[11.5px] text-ink-3 underline decoration-hair-2 underline-offset-[3px] hover:text-ink focus:outline-none focus-visible:ring-1 focus-visible:ring-hair-2"
+            >
+              {showEmpty
+                ? "Hide accounts with no balance"
+                : `${emptyCount} more account${emptyCount === 1 ? "" : "s"} with no balance`}
+            </button>
+          )}
+
+          {matchedGifts.map((gift) => (
+            <p key={gift.id} className="mt-2 flex items-center gap-1.5 text-[11.5px] text-ink-3">
+              <GiftIcon
+                width={13}
+                height={13}
+                aria-hidden="true"
+                className="shrink-0"
+                style={{ color: hue }}
+              />
+              <span className="min-w-0">Lifetime gift: {giftText(gift, accountNameById)}</span>
+            </p>
+          ))}
+
+          {hasReductions && (
+            <dl className="mt-2.5 grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 border-t border-dashed border-hair-2 pt-1.5 text-[11.5px] text-ink-3">
+              <dt>Gross</dt>
+              <dd className="text-right tabular-nums">{fmt.format(group.total)}</dd>
+              <dt>Taxes, expenses and debts</dt>
+              <dd className="text-right tabular-nums">{signed(-totalDrains)}</dd>
+            </dl>
+          )}
+        </div>
       )}
     </li>
   );
@@ -342,6 +390,9 @@ export function EstateFlowDeathColumn({
       ? `${section.decedentName} — First to die`
       : `${section.decedentName} — Second to die`;
 
+  // Each band is a recipient's share of what the column's recipients net.
+  const shareBase = section.recipients.reduce((s, g) => s + Math.max(0, g.netTotal), 0);
+
   return (
     <div className="flex flex-col gap-3">
       {/* Column header */}
@@ -375,6 +426,7 @@ export function EstateFlowDeathColumn({
             <RecipientBox
               key={group.key}
               group={group}
+              share={shareBase > 0 ? Math.max(0, group.netTotal) / shareBase : 0}
               gifts={gifts}
               accountNameById={accountNameById}
             />
@@ -384,6 +436,7 @@ export function EstateFlowDeathColumn({
 
       <EstateFlowDeathTaxBox
         tax={section.estateTax}
+        estateAtDeath={estateAtDeathOf(section)}
         showDsueGenerated={isMarried && section.estateTax.deathOrder === 1}
       />
     </div>

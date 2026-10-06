@@ -110,6 +110,18 @@
   --color-inherit: #355267;
   --color-heirs: #5d6a45;
 
+  /* Estate Flow share bands — one hue per kind of recipient, plus tax. Each
+     colours a band's edge and its share percent; the band's wash is a
+     color-mix of the same hue at the call site. Not `--color-*`: Tailwind
+     drops a `--color-*` token that no utility class uses, and these are only
+     read through var(). */
+  --share-spouse: #aab0ff;
+  --share-family: #5fd4c4;
+  --share-entity: #cdb0ff;
+  --share-external: #f5a6c3;
+  --share-no-plan: #f2b84b;
+  --share-tax: #f68fa1;
+
   /* Allocation palette (semantic aliases — Deep Jewel data family).
      Aliased to --data-* (not the brighter category hues) so portfolio
      breakdowns read as one calm, premium chart family. --data-* is defined
@@ -236,6 +248,14 @@
   --color-tax: #5a3527;
   --color-inherit: #2c4a5e;
   --color-heirs: #4e5b38;
+
+  /* Estate Flow share bands — see the dark block. */
+  --share-spouse: #4338ca;
+  --share-family: #0b5d50;
+  --share-entity: #6d28d9;
+  --share-external: #9d174d;
+  --share-no-plan: #92400e;
+  --share-tax: #9f1239;
 
   /* Deep Jewel data palette — vibrant, cream-tuned to match dark vibrancy. */
   --data-red: #c5392b;
