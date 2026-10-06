@@ -1982,6 +1982,8 @@ export function LiveSolverWorkspace({
       <SaveAsScenarioDialog
         open={saveOpen}
         mutations={mutations}
+        sourceTree={initialSourceClientData}
+        workingTree={workingTree}
         onClose={() => (saving ? null : setSaveOpen(false))}
         onSubmit={handleSaveSubmit}
       />

@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { buildClientData } from "@/engine/__tests__/fixtures";
 import { SaveAsScenarioDialog } from "../save-as-scenario-dialog";
+
+const tree = buildClientData();
 
 const baseProps = {
   open: true,
@@ -9,6 +12,8 @@ const baseProps = {
     { kind: "retirement-age", person: "client", age: 67 },
     { kind: "ss-claim-age", person: "client", age: 70 },
   ] as never,
+  sourceTree: tree,
+  workingTree: tree,
   onClose: vi.fn(),
   onSubmit: vi.fn(),
 };
@@ -21,8 +26,8 @@ beforeEach(() => {
 describe("<SaveAsScenarioDialog />", () => {
   it("renders a human-readable line per mutation", () => {
     render(<SaveAsScenarioDialog {...baseProps} />);
-    expect(screen.getByText(/Retirement age/i)).toBeInTheDocument();
-    expect(screen.getByText(/SS claim age/i)).toBeInTheDocument();
+    expect(screen.getByText("Retirement age (John) → 67")).toBeInTheDocument();
+    expect(screen.getByText("SS claim age (John) → 70")).toBeInTheDocument();
   });
 
   it("disables Save when name is empty", () => {
