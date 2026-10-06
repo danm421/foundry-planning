@@ -5,6 +5,7 @@ import {
   legToBody, combinedNet, mergeEditBody, applySettlement, settlementFromLegs, legSettles,
 } from "../use-asset-transaction-legs";
 import { emptySellLeg as mkSell, emptyBuyLeg as mkBuy } from "../asset-transaction-leg-model";
+import { postBodySchema, putBodySchema } from "@/app/api/clients/[id]/asset-transactions/route";
 
 describe("leg factories", () => {
   it("emptySellLeg defaults to a full-sale account source", () => {
@@ -33,8 +34,8 @@ describe("legToBody — sell", () => {
     expect(body.accountId).toBe("acc-1");
     expect(body.fractionSold).toBeNull();
     expect(body.overrideSaleValue).toBeNull();
-    expect(body.transactionCostPct).toBe("0.06");   // percent → decimal string
-    expect(body.transactionCostFlat).toBe("1000");
+    expect(body.transactionCostPct).toBe(0.06);   // percent → decimal
+    expect(body.transactionCostFlat).toBe(1000);
     expect(body.qualifiesForHomeSaleExclusion).toBe(true);
   });
   it("full sale persists a typed value/basis override (engine honors saleValue override)", () => {
@@ -42,8 +43,8 @@ describe("legToBody — sell", () => {
       overrideSaleValue: "850000", overrideBasis: "600000" };
     const body = legToBody(leg, 2030, { isRealEstate: false });
     expect(body.fractionSold).toBeNull();
-    expect(body.overrideSaleValue).toBe("850000");
-    expect(body.overrideBasis).toBe("600000");
+    expect(body.overrideSaleValue).toBe(850000);
+    expect(body.overrideBasis).toBe(600000);
   });
   it("non-real-estate never persists §121 true", () => {
     const leg = { ...mkSell("s"), sellAccountId: "acc-1", qualifiesForHomeSaleExclusion: true };
@@ -75,8 +76,8 @@ describe("legToBody — buy", () => {
     const body = legToBody(leg, 2030, { isRealEstate: false });
     expect(body.type).toBe("buy");
     expect(body.assetName).toBe("Condo");
-    expect(body.purchasePrice).toBe("800000");
-    expect(body.growthRate).toBe("0.035");
+    expect(body.purchasePrice).toBe(800000);
+    expect(body.growthRate).toBe(0.035);
     expect(body.fundingAccountId).toBeNull();
     expect(body.mortgageAmount).toBeNull();
   });
@@ -84,8 +85,8 @@ describe("legToBody — buy", () => {
     const leg = { ...mkBuy("b"), assetName: "Condo", purchasePrice: "800000",
       showMortgage: true, mortgageAmount: "500000", mortgageRate: "6.75", mortgageTermMonths: "360" };
     const body = legToBody(leg, 2030, { isRealEstate: false });
-    expect(body.mortgageAmount).toBe("500000");
-    expect(body.mortgageRate).toBe("0.0675");
+    expect(body.mortgageAmount).toBe(500000);
+    expect(body.mortgageRate).toBe(0.0675);
     expect(body.mortgageTermMonths).toBe(360);
   });
 });
@@ -103,8 +104,8 @@ describe("legToBody — buy property tax", () => {
       annualPropertyTax: "16500", propertyTaxGrowthRate: "3",
       propertyTaxGrowthSource: "custom" as const };
     const body = legToBody(leg, 2030, { isRealEstate: true });
-    expect(body.annualPropertyTax).toBe("16500");
-    expect(body.propertyTaxGrowthRate).toBe("0.03");   // percent → decimal string
+    expect(body.annualPropertyTax).toBe(16500);
+    expect(body.propertyTaxGrowthRate).toBe(0.03);   // percent → decimal
     expect(body.propertyTaxGrowthSource).toBe("custom");
   });
 
@@ -160,8 +161,8 @@ describe("mergeEditBody", () => {
       propertyTaxGrowthSource: "custom" as const };
     const body = mergeEditBody([buy], "Buy a condo", 2030, { isRealEstate: true });
     expect(body.type).toBe("buy");
-    expect(body.annualPropertyTax).toBe("16500");
-    expect(body.propertyTaxGrowthRate).toBe("0.03");
+    expect(body.annualPropertyTax).toBe(16500);
+    expect(body.propertyTaxGrowthRate).toBe(0.03);
     expect(body.propertyTaxGrowthSource).toBe("custom");
   });
 });
@@ -252,5 +253,37 @@ describe("legSettles — one statement of the business-sell exception", () => {
     const biz = { ...mkSell("s"), sellMode: "business" as const, sellBusinessAccountId: "biz-1" };
     expect([biz].some(legSettles)).toBe(false);
     expect([biz, mkBuy("b")].some(legSettles)).toBe(true);
+  });
+});
+
+// Details → Techniques posts these bodies straight to the API (the Solver's
+// draft path coerces them first, which is why only Details ever failed). Every
+// numeric field the advisor can type has to arrive as a number, or the save
+// 422s — so type ALL of them and parse against the route's own schemas.
+describe("legToBody — wire contract with the asset-transactions API", () => {
+  const ACC = "11111111-1111-4111-8111-111111111111";
+  const sell: SellLegDraft = { ...mkSell("s"), name: "Sell Home", sellAccountId: ACC,
+    overrideSaleValue: "925000", overrideBasis: "400000",
+    transactionCostPct: "6", transactionCostFlat: "2500", proceedsAccountId: ACC };
+  const buy: BuyLegDraft = { ...mkBuy("b"), name: "Buy Lake Home", assetName: "Lake Home",
+    assetCategory: "real_estate", purchasePrice: "1100000", growthRate: "3", basis: "1100000",
+    fundingAccountId: ACC, showMortgage: true, mortgageAmount: "500000", mortgageRate: "6.5",
+    mortgageTermMonths: "360", annualPropertyTax: "16500", propertyTaxGrowthRate: "3",
+    propertyTaxGrowthSource: "custom" };
+
+  it("a sell with every amount typed passes the POST schema", () => {
+    const res = postBodySchema.safeParse(legToBody(sell, 2033, { isRealEstate: true }));
+    expect(res.error?.issues).toBeUndefined();
+  });
+
+  it("a buy with every amount typed passes the POST schema", () => {
+    const res = postBodySchema.safeParse(legToBody(buy, 2033, { isRealEstate: false }));
+    expect(res.error?.issues).toBeUndefined();
+  });
+
+  it("an edited record with every amount typed passes the PUT schema", () => {
+    const body = mergeEditBody([buy], "Buy Lake Home", 2033, { isRealEstate: true });
+    const res = putBodySchema.safeParse({ ...body, transactionId: ACC });
+    expect(res.error?.issues).toBeUndefined();
   });
 });

@@ -10,8 +10,12 @@ import {
 
 const optStr = (v: string | null | undefined): string | null =>
   v !== "" && v != null ? v : null;
-const optDec = (v: string | null | undefined): string | null =>
-  v !== "" && v != null ? String(Number(v) / 100) : null;
+// Amounts go out as numbers — the API's schema is plain `z.number()`.
+const optNum = (v: string | null | undefined): number | null =>
+  v !== "" && v != null ? Number(v) : null;
+/** A percent field ("6.5") → its decimal (0.065). */
+const optDec = (v: string | null | undefined): number | null =>
+  v !== "" && v != null ? Number(v) / 100 : null;
 
 function sellLegToBody(leg: SellLegDraft, year: number, isRealEstate: boolean): Record<string, unknown> {
   const body: Record<string, unknown> = { type: "sell", name: leg.name, year };
@@ -20,10 +24,10 @@ function sellLegToBody(leg: SellLegDraft, year: number, isRealEstate: boolean): 
     body.purchaseTransactionId = null;
     body.businessAccountId = leg.sellBusinessAccountId;
     body.fractionSold = leg.sellAmountMode === "percent" ? Number(leg.fractionSoldPct) / 100 : null;
-    body.overrideSaleValue = optStr(leg.overrideSaleValue);
-    body.overrideBasis = optStr(leg.overrideBasis);
+    body.overrideSaleValue = optNum(leg.overrideSaleValue);
+    body.overrideBasis = optNum(leg.overrideBasis);
     body.transactionCostPct = optDec(leg.transactionCostPct);
-    body.transactionCostFlat = optStr(leg.transactionCostFlat);
+    body.transactionCostFlat = optNum(leg.transactionCostFlat);
     body.proceedsAccountId = null;
     body.qualifiesForHomeSaleExclusion = false;
   } else {
@@ -35,15 +39,15 @@ function sellLegToBody(leg: SellLegDraft, year: number, isRealEstate: boolean): 
       // value override, when the user typed one over the projected default,
       // sets the realized sale value — the engine already honors it
       // (saleValue = overrideSaleValue ?? balance). Empty ⇒ use the projection.
-      body.fractionSold = null; body.overrideSaleValue = optStr(leg.overrideSaleValue);
+      body.fractionSold = null; body.overrideSaleValue = optNum(leg.overrideSaleValue);
     } else if (leg.sellAmountMode === "percent") {
       body.fractionSold = Number(leg.fractionSoldPct) / 100; body.overrideSaleValue = null;
     } else {
-      body.fractionSold = null; body.overrideSaleValue = optStr(leg.overrideSaleValue);
+      body.fractionSold = null; body.overrideSaleValue = optNum(leg.overrideSaleValue);
     }
-    body.overrideBasis = optStr(leg.overrideBasis);
+    body.overrideBasis = optNum(leg.overrideBasis);
     body.transactionCostPct = optDec(leg.transactionCostPct);
-    body.transactionCostFlat = optStr(leg.transactionCostFlat);
+    body.transactionCostFlat = optNum(leg.transactionCostFlat);
     body.proceedsAccountId = optStr(leg.proceedsAccountId) || null;
     body.qualifiesForHomeSaleExclusion = isRealEstate && leg.qualifiesForHomeSaleExclusion;
   }
@@ -58,17 +62,17 @@ function buyLegToBody(leg: BuyLegDraft, year: number): Record<string, unknown> {
   // presence check (which gates BOTH the growth rate and the source) don't
   // re-derive it — the rate defaults to "3" on every buy leg, so gating it on
   // the category alone stamped a phantom 0.0300 onto rows with no amount.
-  const propertyTax = leg.assetCategory === "real_estate" ? optStr(leg.annualPropertyTax) : null;
+  const propertyTax = leg.assetCategory === "real_estate" ? optNum(leg.annualPropertyTax) : null;
   return {
     type: "buy", name: leg.name, year,
     assetName: optStr(leg.assetName),
     assetCategory: leg.assetCategory,
     assetSubType: leg.assetSubType,
-    purchasePrice: optStr(leg.purchasePrice),
+    purchasePrice: optNum(leg.purchasePrice),
     growthRate: optDec(leg.growthRate),
-    basis: optStr(leg.basis),
+    basis: optNum(leg.basis),
     fundingAccountId: funding,
-    mortgageAmount: leg.showMortgage ? optStr(leg.mortgageAmount) : null,
+    mortgageAmount: leg.showMortgage ? optNum(leg.mortgageAmount) : null,
     mortgageRate: leg.showMortgage ? optDec(leg.mortgageRate) : null,
     mortgageTermMonths: leg.showMortgage && leg.mortgageTermMonths ? Number(leg.mortgageTermMonths) : null,
     annualPropertyTax: propertyTax,

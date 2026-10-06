@@ -1,7 +1,8 @@
 // Conversions between the engine technique types and the shapes the
 // `add-*-form` components produce / consume. The asset-transaction form emits
-// string-typed numeric fields (the persisting API normally coerces them);
-// `coerceAssetTransactionDraft` does that coercion for the solver's draft path.
+// numeric fields as numbers (the persisting API's schema is `z.number()`);
+// `coerceAssetTransactionDraft` still coerces them for the solver's draft path
+// so a string can never reach the engine's arithmetic.
 
 import type { AssetTransaction, RothConversion, Reinvestment, Relocation } from "@/engine/types";
 import type { RothConversionInitialData } from "@/components/forms/add-roth-conversion-form";
@@ -15,7 +16,7 @@ function numToString(value: number | undefined): string | null {
   return value != null ? String(value) : null;
 }
 
-/** Numeric fields the asset-transaction form emits as strings.
+/** Numeric fields of the asset-transaction form body.
  *
  *  SIBLING: `NUMERIC_FIELDS_BY_KIND.asset_transaction` in
  *  `src/engine/scenario/applyChanges.ts` does the same job for the SCENARIO
@@ -39,8 +40,8 @@ const NUMERIC_FIELDS = [
   "propertyTaxGrowthRate",
 ] as const;
 
-/** Convert the asset-transaction form `body` (string numerics, explicit
- *  nulls) into a numeric `AssetTransaction`. Null / empty fields are dropped
+/** Convert the asset-transaction form `body` (explicit nulls) into a
+ *  numeric `AssetTransaction`. Null / empty fields are dropped
  *  so optional engine fields stay `undefined`. */
 export function coerceAssetTransactionDraft(
   body: Record<string, unknown>,
