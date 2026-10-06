@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildCashFlowYearDetail, buildNameMaps } from "../cashflow-year-detail";
 import type { ClientData, ProjectionYear } from "@/engine";
+import { applyAssetPurchases } from "@/engine/asset-transactions";
 
 // Minimal ProjectionYear factory — only the fields the helper reads. Engine-
 // consistent: totalIncome = displayIncome.total (70k) + household RMD (15k) = 85k
@@ -206,6 +207,43 @@ describe("buildCashFlowYearDetail", () => {
     expect(m.expenseNames["synth-proptax-technique-acct-txn-buy-house"]).toBe(
       "Property Tax – New House",
     );
+  });
+
+  it("names a purchase's mortgage the way the engine does, under the engine's id", () => {
+    // The engine's purchase mortgage never appears in clientData.liabilities, and
+    // techniqueBreakdown carries its name only in the purchase year — every later
+    // year's payment would otherwise read as the raw id.
+    const txn = {
+      id: "txn-buy-house",
+      name: "Buy New House",
+      type: "buy",
+      year: 2034,
+      assetName: "New House",
+      assetCategory: "real_estate",
+      purchasePrice: 900_000,
+      mortgageAmount: 500_000,
+      mortgageRate: 0.03,
+      mortgageTermMonths: 360,
+    } as const;
+    const client = makeClientData();
+    client.assetTransactions = [txn as never];
+
+    const { newLiabilities } = applyAssetPurchases({
+      purchases: [txn],
+      accounts: [],
+      liabilities: [],
+      accountBalances: { checking: 1_000_000 },
+      basisMap: { checking: 1_000_000 },
+      accountLedgers: {},
+      year: 2034,
+      planStartYear: 2026,
+      defaultCheckingId: "checking",
+      ownerFmId: "fm-client",
+    });
+
+    const m = buildNameMaps(client);
+    expect(m.liabilityNames[newLiabilities[0].id]).toBe("Mortgage: New House");
+    expect(m.liabilityNames[newLiabilities[0].id]).toBe(newLiabilities[0].name);
   });
 
   it("builds an age label with the spouse age only when married", () => {

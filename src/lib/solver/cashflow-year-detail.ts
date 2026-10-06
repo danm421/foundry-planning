@@ -70,6 +70,13 @@ export function buildNameMaps(clientData: ClientData) {
 
   const liabilityNames: Record<string, string> = {};
   for (const liab of clientData.liabilities ?? []) liabilityNames[liab.id] = liab.name;
+  // A purchase's mortgage is engine-created as technique-liab-<txn.id> and never
+  // appears in clientData.liabilities; name it as the engine does.
+  for (const txn of clientData.assetTransactions ?? []) {
+    if (txn.type === "buy" && (txn.mortgageAmount ?? 0) > 0) {
+      liabilityNames[`technique-liab-${txn.id}`] = `Mortgage: ${txn.assetName ?? txn.name}`;
+    }
+  }
 
   const expenseNames: Record<string, string> = {};
   for (const exp of ltcTree.expenses ?? []) expenseNames[exp.id] = exp.name;

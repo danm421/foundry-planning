@@ -496,6 +496,38 @@ describe("applyAssetPurchases — deterministic synthetic ids", () => {
     expect(result.newAccounts).toHaveLength(1);
     expect(result.newAccounts[0].id).toBe("technique-acct-buy-uuid-fixed");
   });
+
+  it("uses technique-liab-${purchase.id} so reports can name the mortgage in every year", () => {
+    _resetSyntheticIdCounter();
+    const purchase: AssetTransaction = {
+      id: "buy-uuid-fixed",
+      name: "Vacation Home",
+      type: "buy",
+      year: 2030,
+      assetName: "Lakeside Cottage",
+      assetCategory: "real_estate",
+      purchasePrice: 400_000,
+      mortgageAmount: 300_000,
+      mortgageRate: 0.06,
+      mortgageTermMonths: 360,
+    };
+
+    const result = applyAssetPurchases({
+      purchases: [purchase],
+      accounts: [],
+      liabilities: [],
+      accountBalances: { checking: 1_000_000 },
+      basisMap: { checking: 1_000_000 },
+      accountLedgers: { checking: makeLedger(1_000_000) },
+      year: 2030,
+      planStartYear: 2026,
+      defaultCheckingId: "checking",
+      ownerFmId: LEGACY_FM_CLIENT,
+    });
+
+    expect(result.newLiabilities[0].id).toBe("technique-liab-buy-uuid-fixed");
+    expect(result.breakdown[0].liabilityId).toBe("technique-liab-buy-uuid-fixed");
+  });
 });
 
 describe("applyAssetSales — partial sales on existing accounts", () => {

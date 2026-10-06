@@ -621,7 +621,9 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
 
     // Create synthetic liability for mortgage if provided
     if (mortgageAmount > 0 && purchase.mortgageRate !== undefined && purchase.mortgageTermMonths !== undefined) {
-      const newLiabilityId = nextSyntheticId("technique-liab");
+      // Keyed on the purchase (like the account above), not the run counter, so
+      // reports can name this mortgage from clientData in every payment year.
+      const newLiabilityId = `technique-liab-${purchase.id}`;
       const termMonths = purchase.mortgageTermMonths;
       const monthlyPayment = _calcMonthlyPayment(mortgageAmount, purchase.mortgageRate, termMonths);
       const liabilityName = `Mortgage: ${newAccount.name}`;
