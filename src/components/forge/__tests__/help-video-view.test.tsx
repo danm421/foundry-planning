@@ -63,6 +63,43 @@ describe("HelpVideoView", () => {
     expect((videos[1] as HTMLVideoElement).currentTime).toBe(21);
   });
 
+  it("plays with sound: the videos are narrated", () => {
+    const { container } = render(<HelpVideoView video={EXPENSE_VIDEO} startAt={30} active onBack={() => {}} />);
+    fireEvent.loadedMetadata(videoEl(container));
+    expect(videoEl(container).muted).toBe(false);
+    expect(media.play).toHaveBeenCalledTimes(1);
+  });
+
+  it("plays muted when the browser refuses sound (the captions still carry it)", async () => {
+    media.play.mockRejectedValueOnce(new DOMException("needs a click", "NotAllowedError"));
+    const { container } = render(<HelpVideoView video={EXPENSE_VIDEO} startAt={30} active onBack={() => {}} />);
+    fireEvent.loadedMetadata(videoEl(container));
+    await vi.waitFor(() => expect(media.play).toHaveBeenCalledTimes(2));
+    expect(videoEl(container).muted).toBe(true);
+  });
+
+  it("keeps the sound when play fails for another reason", async () => {
+    media.play.mockRejectedValueOnce(new DOMException("aborted", "AbortError"));
+    const { container } = render(<HelpVideoView video={EXPENSE_VIDEO} startAt={30} active onBack={() => {}} />);
+    fireEvent.loadedMetadata(videoEl(container));
+    await Promise.resolve();
+    expect(media.play).toHaveBeenCalledTimes(1);
+    expect(videoEl(container).muted).toBe(false);
+  });
+
+  it("the large player plays with sound from the current time, muted if refused", async () => {
+    media.play.mockRejectedValueOnce(new DOMException("needs a click", "NotAllowedError"));
+    const { container } = render(<HelpVideoView video={EXPENSE_VIDEO} active onBack={() => {}} />);
+    videoEl(container).currentTime = 21;
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    const big = document.querySelectorAll("video")[1] as HTMLVideoElement;
+    expect(big.muted).toBe(false);
+    fireEvent.loadedMetadata(big);
+    expect(big.currentTime).toBe(21);
+    await vi.waitFor(() => expect(media.play).toHaveBeenCalledTimes(2));
+    expect(big.muted).toBe(true);
+  });
+
   it("plays from a chapter at 0:00 too", () => {
     const { container } = render(<HelpVideoView video={EXPENSE_VIDEO} startAt={0} active onBack={() => {}} />);
     fireEvent.loadedMetadata(videoEl(container));

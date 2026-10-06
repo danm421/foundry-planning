@@ -23,9 +23,19 @@ function withBold(text: string) {
 
 const HEADING = "mt-3 text-[11px] font-semibold uppercase tracking-wide text-ink-3";
 
+/** Plays with sound. A browser that refuses sound without a recent click
+ *  (Safari) gets the video muted instead; the captions carry the narration. */
+function play(el: HTMLVideoElement) {
+  el.play().catch((err: unknown) => {
+    if (!(err instanceof DOMException) || err.name !== "NotAllowedError") return;
+    el.muted = true;
+    el.play().catch(() => {});
+  });
+}
+
 /** One Knowledge Hub video: the player (fits the panel; Expand for a large
- *  one), chapters to jump between, then the written steps. Videos are silent
- *  screen recordings, so the players are muted, which lets them autoplay. */
+ *  one), chapters to jump between, then the written steps. Videos are
+ *  narrated screen recordings with the captions burned in. */
 export function HelpVideoView({
   video,
   startAt,
@@ -55,11 +65,11 @@ export function HelpVideoView({
     if (!active) inline.current?.pause();
   }, [active]);
 
-  const seekTo = (at: number, play = true) => {
+  const seekTo = (at: number, andPlay = true) => {
     const el = inline.current;
     if (!el) return;
     el.currentTime = at;
-    if (play) el.play().catch(() => {});
+    if (andPlay) play(el);
   };
 
   const expand = () => {
@@ -115,7 +125,6 @@ export function HelpVideoView({
             src={videoSrc(video)}
             poster={posterSrc(video)}
             controls
-            muted
             playsInline
             preload="metadata"
             onLoadedMetadata={() => {
@@ -184,11 +193,10 @@ export function HelpVideoView({
               tabIndex={0}
               data-autofocus
               controls
-              muted
               playsInline
-              autoPlay
               onLoadedMetadata={(e) => {
                 e.currentTarget.currentTime = expandedFrom;
+                play(e.currentTarget);
               }}
               className="min-h-0 w-full flex-1 object-contain"
             />
