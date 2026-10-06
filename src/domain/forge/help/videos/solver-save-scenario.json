@@ -34,39 +34,39 @@
       "label": "What if Mark and Laura both retire at 62 instead of 65?"
     },
     {
-      "at": 19.2,
+      "at": 19.1,
       "label": "Plan Confidence drops. Each figure shows the change from the base plan."
     },
     {
-      "at": 24.6,
+      "at": 24.5,
       "label": "Trim their retirement spending to $125,000 a year."
     },
     {
-      "at": 35,
+      "at": 34.9,
       "label": "That wins back much of the drop."
     },
     {
-      "at": 40,
+      "at": 39.7,
       "label": "And Laura works two more years, until 64."
     },
     {
-      "at": 49.7,
+      "at": 49.5,
       "label": "The plan is nearly back where it started."
     },
     {
-      "at": 54.6,
+      "at": 54.3,
       "label": "Save these changes as a scenario and give it a name."
     },
     {
-      "at": 63.1,
+      "at": 62.8,
       "label": "The dialog lists every change the scenario keeps."
     },
     {
-      "at": 70.7,
+      "at": 70.5,
       "label": "Open the Scenario changes tab and pick the scenario."
     },
     {
-      "at": 82.2,
+      "at": 82,
       "label": "Each change shows its base value and its new one."
     }
   ],
@@ -82,13 +82,13 @@
     "Plan Confidence comes from a fresh Monte Carlo run each time, so a saved scenario can read a point or two different from what the Solver showed before saving.",
     "Each change on the **Changes** tab has a switch. Turn one off to see the plan without it."
   ],
-  "durationSec": 88.3,
+  "durationSec": 88.1,
   "recordedOn": "2026-10-06",
-  "appCommit": "2f303096e",
+  "appCommit": "94cf79db5",
   "video": {
-    "path": "knowledge-hub/solver-save-scenario/7f686f47a7a6.mp4",
-    "sha256": "7f686f47a7a682e2bfa69ca125f0bda624ab4a3be0bfd9712cc2705d8c89760c",
-    "bytes": 7262783
+    "path": "knowledge-hub/solver-save-scenario/3b24c7c21b60.mp4",
+    "sha256": "3b24c7c21b604e85389898039455a4118889cddcca9d117d13d48b7f7fd8d59e",
+    "bytes": 7916061
   },
   "poster": {
     "path": "knowledge-hub/solver-save-scenario/8e359b0d5557.jpg",
