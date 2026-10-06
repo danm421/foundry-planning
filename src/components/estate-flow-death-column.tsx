@@ -171,7 +171,7 @@ function RecipientRows({
     >
       {/* Recipient header */}
       <tr className="border-b border-hair">
-        <th scope="rowgroup" className={`${headerPad} pl-2 text-left font-semibold text-ink`}>
+        <th scope="rowgroup" className={`${headerPad} max-w-0 pl-2 text-left font-semibold text-ink`}>
           <span className="flex items-baseline gap-2">
             <span className="truncate">{group.recipientLabel}</span>
             {isSystemDefault && (
@@ -193,7 +193,7 @@ function RecipientRows({
 
       {rows.map(({ asset: a, mechanismLabel }, i) => (
         <tr key={`${a.sourceAccountId ?? a.sourceLiabilityId ?? "asset"}-${i}`}>
-          <td className="py-1 pl-4 text-ink-3">
+          <td className="w-full max-w-0 py-1 pl-4 text-ink-3">
             <span className="flex min-w-0 items-baseline gap-1.5">
               <span className="truncate" title={a.label}>
                 {a.label}
@@ -215,8 +215,10 @@ function RecipientRows({
               )}
             </span>
           </td>
-          <td className="truncate py-1 text-ink-3">{mechanismLabel}</td>
-          <td className="py-1 pr-2 text-right tabular-nums text-ink-2">{fmt.format(a.amount)}</td>
+          <td className="whitespace-nowrap py-1 pl-3 text-right text-ink-3">{mechanismLabel}</td>
+          <td className="whitespace-nowrap py-1 pl-3 pr-2 text-right tabular-nums text-ink-2">
+            {fmt.format(a.amount)}
+          </td>
         </tr>
       ))}
 
@@ -224,7 +226,7 @@ function RecipientRows({
         const { label, year } = giftMarkerLabel(gift, accountNameById);
         return (
           <tr key={gift.id}>
-            <td colSpan={3} className="truncate py-1 pl-4 text-[11px] text-amber-400/90">
+            <td colSpan={3} className="max-w-0 truncate py-1 pl-4 text-[11px] text-amber-400/90">
               Also receives: {label} · {year}
             </td>
           </tr>
@@ -236,7 +238,7 @@ function RecipientRows({
           <td colSpan={2} className="py-1 pl-4 text-[11px] text-ink-3">
             Reductions
           </td>
-          <td className="py-1 pr-2 text-right text-[11px] tabular-nums text-rose-300/80">
+          <td className="whitespace-nowrap py-1 pr-2 text-right text-[11px] tabular-nums text-rose-300/80">
             −{fmt.format(totalDrains)}
           </td>
         </tr>
@@ -254,22 +256,19 @@ function RecipientTable({
   gifts: EstateFlowGift[];
   accountNameById: Map<string, string>;
 }) {
+  // Auto layout: "Passes by" and "Value" shrink to their content and sit
+  // together on the right; the asset name (w-full + max-w-0) takes the rest.
   return (
-    <table className="w-full table-fixed border-collapse text-xs">
-      <colgroup>
-        <col />
-        <col className="w-[5.5rem]" />
-        <col className="w-[6.5rem]" />
-      </colgroup>
+    <table className="w-full border-collapse text-xs">
       <thead>
         <tr className="border-b border-hair-2 text-[10px] uppercase tracking-[0.12em] text-ink-4">
           <th scope="col" className="py-1.5 pl-2 text-left font-medium">
             Asset
           </th>
-          <th scope="col" className="py-1.5 text-left font-medium">
+          <th scope="col" className="whitespace-nowrap py-1.5 pl-3 text-right font-medium">
             Passes by
           </th>
-          <th scope="col" className="py-1.5 pr-2 text-right font-medium">
+          <th scope="col" className="py-1.5 pl-3 pr-2 text-right font-medium">
             Value
           </th>
         </tr>

@@ -87,9 +87,11 @@ function AssetRow({
 }: AssetRowProps) {
   const hasLinkedLiabilities = asset.linkedLiabilities.length > 0;
   const futureGifts = asset.futureGifts ?? [];
+  // Mutually exclusive: a conflict means no beneficiary and no will provision.
+  const hasPlanTag = asset.hasBeneficiaries || asset.hasConflict;
 
   return (
-    <li>
+    <li className="col-span-full grid grid-cols-subgrid">
       <button
         type="button"
         disabled={asset.isDefaultCash}
@@ -101,47 +103,52 @@ function AssetRow({
         onClick={() => onAssetClick(asset.accountId)}
         aria-label={`${asset.name}, ${fmt.format(asset.value)}${asset.hasConflict ? ", no estate plan" : ""}${asset.hasBeneficiaries ? ", has beneficiary" : ""}${asset.isSplit ? `, ${Math.round(asset.percent * 100)}% split` : ""}${asset.isDefaultCash ? "" : ". Click to edit."}`}
         className={
-          "group flex w-full items-baseline justify-between gap-3 py-0.5 pl-2 text-left text-xs text-ink-3 transition-colors " +
+          "group col-span-full grid grid-cols-subgrid items-baseline py-0.5 pl-2 text-left text-xs text-ink-3 transition-colors " +
           (asset.isDefaultCash
             ? "cursor-default"
             : "cursor-pointer hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500")
         }
       >
-        <span className="flex items-baseline gap-1.5 truncate">
-          <span className="truncate">{asset.name}</span>
+        {/* With no plan tag, the name also takes the empty Plan cell. */}
+        <span
+          className={`flex min-w-0 items-baseline gap-1.5 ${hasPlanTag ? "" : "col-span-2"}`}
+        >
+          <span className="truncate" title={asset.name}>
+            {asset.name}
+          </span>
           {asset.isSplit && (
             <span className="shrink-0 rounded bg-indigo-900/40 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wider text-indigo-300">
               {Math.round(asset.percent * 100)}%
             </span>
           )}
-          {asset.hasBeneficiaries && (
-            <span
-              title="Has beneficiary designations"
-              className="shrink-0 rounded bg-emerald-900/30 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wider text-emerald-400"
-            >
-              Beneficiary
-            </span>
-          )}
-          {asset.hasConflict && (
-            <span
-              title="No beneficiary and no will provision"
-              className="shrink-0 rounded bg-rose-900/40 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wider text-rose-300"
-            >
-              No Plan
-            </span>
-          )}
-          <span className="shrink-0 rounded bg-card-active px-1 py-0.5 text-[9px] font-medium uppercase tracking-wider text-ink-3">
-            {formatAccountType(asset.accountType)}
-          </span>
         </span>
-        <span className="tabular-nums text-ink-2">
+        {asset.hasBeneficiaries && (
+          <span
+            title="Has beneficiary designations"
+            className="justify-self-end whitespace-nowrap text-[11px] text-emerald-400"
+          >
+            Beneficiary
+          </span>
+        )}
+        {asset.hasConflict && (
+          <span
+            title="No beneficiary and no will provision"
+            className="justify-self-end whitespace-nowrap text-[11px] text-rose-300"
+          >
+            No plan
+          </span>
+        )}
+        <span className="justify-self-end whitespace-nowrap text-[11px] text-ink-4">
+          {formatAccountType(asset.accountType)}
+        </span>
+        <span className="justify-self-end whitespace-nowrap tabular-nums text-ink-2">
           {fmt.format(asset.value)}
         </span>
       </button>
 
       {/* Linked liabilities & net value */}
       {hasLinkedLiabilities && (
-        <div className="space-y-0.5 py-0.5 pl-4 pr-0">
+        <div className="col-span-full space-y-0.5 py-0.5 pl-4 pr-0">
           {asset.linkedLiabilities.map((liab) => (
             <div
               key={liab.liabilityId}
@@ -162,7 +169,7 @@ function AssetRow({
       {/* Future-gift markers — rendered outside the asset <button> (no nested
           buttons) so each marker can be its own clickable affordance. */}
       {futureGifts.length > 0 && (
-        <div className="mt-0.5 space-y-0.5 pl-2">
+        <div className="col-span-full mt-0.5 space-y-0.5 pl-2">
           {futureGifts.map((g) => {
             const gift = gifts.find((x) => x.id === g.giftId);
             const recipientLabel = gift
@@ -207,9 +214,9 @@ function GroupCard({
   const kindLabel = KIND_LABEL[group.kind];
 
   return (
-    <section className="rounded-lg border border-hair bg-card-2 px-3 py-2.5">
+    <section className="col-span-full grid grid-cols-subgrid rounded-lg border border-hair bg-card-2 px-3 py-2.5">
       {/* Header */}
-      <div className="flex items-baseline justify-between gap-2">
+      <div className="col-span-full flex items-baseline justify-between gap-2">
         <h3 className="flex items-baseline gap-2 text-xs font-semibold text-ink">
           <span>{group.label}</span>
           <span className="text-[10px] font-medium uppercase tracking-wider text-ink-4">
@@ -222,7 +229,7 @@ function GroupCard({
       </div>
 
       {/* Asset list */}
-      <ul className="mt-1.5">
+      <ul className="col-span-full mt-1.5 grid grid-cols-subgrid">
         {group.assets.map((asset) => (
           <AssetRow
             key={`${asset.accountId}-${group.key}`}
@@ -366,8 +373,10 @@ export function EstateFlowOwnershipColumn({
         </div>
       ) : (
         <>
-          {/* Group cards */}
-          <div className="space-y-3">
+          {/* Group cards — one grid (asset · plan · type · value) shared by
+              every card through subgrid, so the tag and value columns line up
+              across cards and sit together on the right; the name takes the rest. */}
+          <div className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-x-2 gap-y-3">
             {data.groups.map((group) => (
               <GroupCard
                 key={group.key}
