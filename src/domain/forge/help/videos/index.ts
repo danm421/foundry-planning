@@ -9,6 +9,7 @@ import type { HelpVideo } from "../video-schema";
 import addFirstHousehold from "./add-first-household.json";
 import addOneTimeExpense from "./add-one-time-expense.json";
 import addRothConversion from "./add-roth-conversion.json";
+import inviteClientToPortal from "./invite-client-to-portal.json";
 import readMonthlyCashFlow from "./read-monthly-cash-flow.json";
 import sellHomeBuyWithMortgage from "./sell-home-buy-with-mortgage.json";
 import solverSaveScenario from "./solver-save-scenario.json";
@@ -17,6 +18,7 @@ export const HELP_VIDEOS: readonly HelpVideo[] = [
   addFirstHousehold as HelpVideo,
   addOneTimeExpense as HelpVideo,
   addRothConversion as HelpVideo,
+  inviteClientToPortal as HelpVideo,
   readMonthlyCashFlow as HelpVideo,
   sellHomeBuyWithMortgage as HelpVideo,
   solverSaveScenario as HelpVideo,

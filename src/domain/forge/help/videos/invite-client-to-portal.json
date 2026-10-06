@@ -1,0 +1,134 @@
+{
+  "slug": "invite-client-to-portal",
+  "title": "Set up a client's portal and invite them",
+  "summary": "Choose what a client sees in their portal, preview it, send the invite, and manage their sign-in once they join.",
+  "screens": [
+    {
+      "route": "/clients/:id/details/net-worth",
+      "label": "Net Worth"
+    },
+    {
+      "route": "/clients/:id/portal",
+      "label": "Manage Portal"
+    }
+  ],
+  "tags": [
+    "households"
+  ],
+  "searchTerms": [
+    "client login",
+    "sign-in link",
+    "remove access",
+    "edit permission",
+    "preview",
+    "features",
+    "intake form",
+    "data collection",
+    "two-factor",
+    "locked out"
+  ],
+  "chapters": [
+    {
+      "at": 0,
+      "label": "The client portal gives Mark and Laura their own secure sign-in."
+    },
+    {
+      "at": 3.7,
+      "label": "Open Portal at the top of their plan to set it up."
+    },
+    {
+      "at": 10.2,
+      "label": "Features picks which sections appear in their portal."
+    },
+    {
+      "at": 14.2,
+      "label": "Turn off Calculators if they won't use it. It saves right away."
+    },
+    {
+      "at": 21.3,
+      "label": "Editing is on by default, so they can update their own details."
+    },
+    {
+      "at": 29.7,
+      "label": "Switch it off and they can view their portal but change nothing."
+    },
+    {
+      "at": 33.8,
+      "label": "Preview Client Portal shows exactly what they'll see."
+    },
+    {
+      "at": 42.3,
+      "label": "Calculators is gone from their menu."
+    },
+    {
+      "at": 46.7,
+      "label": "With editing on, changes you make in the preview are saved."
+    },
+    {
+      "at": 56.5,
+      "label": "Intake form sends a data-collection form, blank or pre-filled."
+    },
+    {
+      "at": 63.6,
+      "label": "Access sends the invite. Mark's email comes from his CRM contact."
+    },
+    {
+      "at": 68.3,
+      "label": "Send invite emails Mark a link to create his sign-in."
+    },
+    {
+      "at": 74.9,
+      "label": "It reads Invited until he signs up. You can resend or revoke it."
+    },
+    {
+      "at": 82.4,
+      "label": "Once Mark signs up, it turns Active and shows his last sign-in."
+    },
+    {
+      "at": 86.5,
+      "label": "Send sign-in link emails him a one-time link if he's locked out."
+    },
+    {
+      "at": 91.1,
+      "label": "Sign out everywhere ends his sessions on every device."
+    },
+    {
+      "at": 95.7,
+      "label": "Remove portal access ends his access but keeps his login."
+    },
+    {
+      "at": 100.3,
+      "label": "Delete login erases his login at every firm. It can't be undone."
+    },
+    {
+      "at": 105,
+      "label": "Activity lists each change Mark makes in his portal."
+    }
+  ],
+  "steps": [
+    "**Open the Portal tab.** From a client, choose **Portal** at the top of their plan.",
+    "**Choose their sections.** Under **Features**, switch off any section they won't use: **Investments**, **Budget**, **Documents** or **Calculators**. Each change saves right away. **Dashboard**, **Organizer** and **Settings** are always included.",
+    "**Decide whether they can edit.** **Editing** is on by default, so they can update their details and link accounts. Switch it off for a view-only portal.",
+    "**Preview it.** **Preview Client Portal** opens their portal in a new tab, exactly as they'll see it.",
+    "**Send the invite.** Under **Access**, check the **Client email** (it comes from their CRM contact) and select **Send invite**. The card reads **Invited** until they sign up. From there you can **Resend invite** or **Revoke invite**.",
+    "**Manage their sign-in.** Once they sign up, the card turns **Active** and shows their last sign-in. **Send sign-in link** emails a one-time link, **Sign out everywhere** ends their sessions, and **Remove portal access** ends access to this household but keeps their login. **Delete login** erases the login at every firm and can't be undone.",
+    "**Watch for changes.** **Activity** lists each change the client makes in their portal."
+  ],
+  "goodToKnow": [
+    "With editing on, anything you change in the preview saves to the client's account.",
+    "If the email already has a Foundry account, Foundry sends an access request instead of an invite, and the client approves it from their own sign-in.",
+    "**Intake form** sends a data-collection form, blank or pre-filled from the plan. A blank form works even without portal access."
+  ],
+  "durationSec": 113.6,
+  "recordedOn": "2026-10-06",
+  "appCommit": "e8f96e835",
+  "video": {
+    "path": "knowledge-hub/invite-client-to-portal/5d596d138502.mp4",
+    "sha256": "5d596d1385026a477bdffccda1fe7fd99fa93af1168708e06baf10c3925d8884",
+    "bytes": 7074234
+  },
+  "poster": {
+    "path": "knowledge-hub/invite-client-to-portal/7014a00d02e1.jpg",
+    "sha256": "7014a00d02e1025864367e9f66b3fb5cc9cfd71785571f3b603933323d7785c3"
+  }
+}
