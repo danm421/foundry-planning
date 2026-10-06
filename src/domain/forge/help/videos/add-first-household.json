@@ -1,0 +1,177 @@
+{
+  "slug": "add-first-household",
+  "title": "Add your first household and start planning",
+  "summary": "Add a household from Clients, start their plan with the Guided Walkthrough, and see what a finished plan looks like.",
+  "screens": [
+    {
+      "route": "/home",
+      "label": "Home"
+    },
+    {
+      "route": "/clients",
+      "label": "Clients"
+    },
+    {
+      "route": "/crm/new",
+      "label": "New Household"
+    },
+    {
+      "route": "/clients/new",
+      "label": "Start planning"
+    },
+    {
+      "route": "/clients/:id/onboarding/:step",
+      "label": "Guided Walkthrough"
+    },
+    {
+      "route": "/crm/households/:id",
+      "label": "CRM household"
+    },
+    {
+      "route": "/clients/:id/details/net-worth",
+      "label": "Net Worth"
+    },
+    {
+      "route": "/clients/:id/solver",
+      "label": "Solver"
+    }
+  ],
+  "tags": [
+    "households",
+    "solver"
+  ],
+  "searchTerms": [
+    "new client",
+    "create client",
+    "getting started",
+    "onboarding",
+    "guided walkthrough",
+    "co-client",
+    "spouse",
+    "CRM",
+    "intake form",
+    "AI import"
+  ],
+  "chapters": [
+    {
+      "at": 0,
+      "label": "Here's how to add your first household and start their plan."
+    },
+    {
+      "at": 3.6,
+      "label": "Open Clients from the sidebar, then select New household."
+    },
+    {
+      "at": 11,
+      "label": "Enter the client's name and date of birth."
+    },
+    {
+      "at": 20.6,
+      "label": "Planning for a couple? Check Add Co-client and enter their details."
+    },
+    {
+      "at": 30.3,
+      "label": "Pick their state. It sets their state income and estate tax."
+    },
+    {
+      "at": 35.9,
+      "label": "The name fills in on its own. Then select Create household."
+    },
+    {
+      "at": 44.3,
+      "label": "Next, choose how to start their plan. There are four ways."
+    },
+    {
+      "at": 48.3,
+      "label": "Guided Walkthrough takes you through their plan one step at a time."
+    },
+    {
+      "at": 52.6,
+      "label": "AI import reads their statements and builds the plan from them."
+    },
+    {
+      "at": 57.1,
+      "label": "Intake form emails them a questionnaire to fill in."
+    },
+    {
+      "at": 61,
+      "label": "Empty client starts blank, so you fill it in as you go."
+    },
+    {
+      "at": 64.2,
+      "label": "Pick Guided Walkthrough, then select Start guided walkthrough."
+    },
+    {
+      "at": 75.3,
+      "label": "The walkthrough builds their plan in nine steps."
+    },
+    {
+      "at": 78.8,
+      "label": "First the household and their family: names, ages, children."
+    },
+    {
+      "at": 83.5,
+      "label": "Then what they own and owe: accounts, home, mortgages and loans."
+    },
+    {
+      "at": 88.8,
+      "label": "Then goals, income and expenses, insurance, and planning assumptions."
+    },
+    {
+      "at": 93.3,
+      "label": "Skip any step for now. Review shows what's done and what's left."
+    },
+    {
+      "at": 98.9,
+      "label": "Back in Clients, Mark and Laura Hendricks already have a full plan."
+    },
+    {
+      "at": 106.1,
+      "label": "CRM opens their record: contacts, tasks, notes and documents."
+    },
+    {
+      "at": 117.7,
+      "label": "Planning opens their plan."
+    },
+    {
+      "at": 122.8,
+      "label": "The bar across the top moves between Details, Solver and Presentations."
+    },
+    {
+      "at": 128.1,
+      "label": "Open the Solver. It's where you view and build the plan."
+    },
+    {
+      "at": 135.4,
+      "label": "Finish the walkthrough, and Ben and Claire's plan looks like this."
+    }
+  ],
+  "steps": [
+    "**Open Clients.** Select **Clients** in the sidebar, then **New household**.",
+    "**Enter the people.** Fill in **First name**, **Last name** and **Date of birth**. For a couple, check **Add Co-client** and enter their details.",
+    "**Pick the state and create it.** Choose a **State of residence**, which sets state income and estate tax. The **Household name** fills in on its own. Select **Create household**.",
+    "**Choose how to start their plan.** **Guided Walkthrough**, **AI import** (reads their statements), **Intake form** (emails them a questionnaire) or **Empty client**.",
+    "**Start the walkthrough.** Pick **Guided Walkthrough**. Retirement age, month, life expectancy and filing status start with defaults you can change. Select **Start guided walkthrough**.",
+    "**Work through the nine steps.** Household and Family, then Assets and Liabilities, then Goals, Cash Flow, Insurance and Assumptions. **Next** moves on; a step you pass without entering anything is marked skipped. **Review** shows what's complete, skipped and remaining.",
+    "**Open a household from Clients.** **CRM** opens their record: contacts, tasks, notes and documents. **Planning** opens their plan.",
+    "**Find your way around the plan.** The bar across the top moves between **Details**, **Solver** and **Presentations**, plus the **Assets**, **Cash Flow** and **Estate** menus.",
+    "**Open the Solver.** It's where you view and build the plan. A finished plan shows its projection and key figures."
+  ],
+  "goodToKnow": [
+    "**Save & exit** leaves the walkthrough. Reopen it from **Guided Walkthrough** on the plan's Details page.",
+    "Not ready to plan yet? Select **Not now** after creating the household. You can start planning later from its CRM record.",
+    "Clients opens on **Recently opened**. Choose **All** to see every household."
+  ],
+  "durationSec": 138.9,
+  "recordedOn": "2026-10-06",
+  "appCommit": "d55abf2a6",
+  "video": {
+    "path": "knowledge-hub/add-first-household/54c8cbb33d3c.mp4",
+    "sha256": "54c8cbb33d3cae35cf0026751a472fb3679909f9aaeb7f86bf00cbae64dc6243",
+    "bytes": 9140527
+  },
+  "poster": {
+    "path": "knowledge-hub/add-first-household/4fe3ac877fbd.jpg",
+    "sha256": "4fe3ac877fbd01f94cb2d5cab90f7ce98109aef0384b9dd1fabb9361364d05b4"
+  }
+}
