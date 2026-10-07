@@ -1232,28 +1232,25 @@ function ExpenseDialog({
   const [institutionName, setInstitutionName] = useState<string>(editing?.institutionName ?? "");
   const [forFamilyMemberId, setForFamilyMemberId] = useState<string>(editing?.forFamilyMemberId ?? "");
   const [dedicatedAccountIds, setDedicatedAccountIds] = useState<string[]>(editing?.dedicatedAccountIds ?? []);
-  const [name, setName] = useState<string>(editing?.name ?? prefill?.name ?? "");
+  // What the editor starts from: the row being edited, or the new goal "Make it
+  // a goal" pre-filled. `isEdit` still means `editing` alone.
+  const seed = editing ?? prefill;
+  const [name, setName] = useState<string>(seed?.name ?? "");
   const hasSpouse = Boolean(clientInfo?.spouseDob);
   const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
-    editing
-      ? isTodaysDollars(editing.inflationStartYear, editing.startYear)
-      : prefill
-        ? isTodaysDollars(prefill.inflationStartYear, prefill.startYear)
-        : true
+    seed ? isTodaysDollars(seed.inflationStartYear, seed.startYear) : true
   );
   // New expenses default to inflation growth (advisor convention — planned
   // spending tracks inflation unless the advisor sets a custom rate). Editing an
-  // existing row preserves whatever source it was saved with.
+  // existing row (or a pre-filled one) preserves whatever source it carries.
   const [growthSource, setGrowthSource] = useState<"custom" | "inflation">(
-    editing
-      ? editing.growthSource === "inflation" ? "inflation" : "custom"
-      : prefill
-        ? prefill.growthSource === "inflation" ? "inflation" : "custom"
-        : "inflation"
+    seed
+      ? seed.growthSource === "inflation" ? "inflation" : "custom"
+      : "inflation"
   );
   const [growthRateDisplay, setGrowthRateDisplay] = useState<string>(
-    String(pctFromDecimal(editing?.growthRate ?? prefill?.growthRate, 3))
+    String(pctFromDecimal(seed?.growthRate, 3))
   );
   const [paymentMonth, setPaymentMonth] = useState<number | null>(editing?.paymentMonth ?? null);
   const currentYear = new Date().getFullYear();
@@ -1262,7 +1259,7 @@ function ExpenseDialog({
   // An itemized row's total is set by its items; the Details tab only shows it.
   const itemCount = editing?.livingItems?.length ?? 0;
 
-  const expDefaultRefs = !isEdit && !prefill ? defaultExpenseRefs(editing?.type ?? defaultType) : null;
+  const expDefaultRefs = !seed ? defaultExpenseRefs(defaultType) : null;
   // A new education goal funds a programme, not a period of the plan: its end
   // is the four-year length measured off the start, so it follows the start
   // when the beneficiary — or the advisor — moves it. Every other expense keeps
@@ -1270,21 +1267,16 @@ function ExpenseDialog({
   // with; re-framing the picker must never silently re-length a saved goal.
   const newEducation = !isEdit && (editing?.type ?? defaultType) === "education";
   const [startYearRef, setStartYearRef] = useState<YearRef | null>(
-    (editing?.startYearRef as YearRef) ??
-      (prefill ? (prefill.startYearRef as YearRef | null) : expDefaultRefs?.startYearRef ?? null)
+    (seed?.startYearRef as YearRef) ?? expDefaultRefs?.startYearRef ?? null
   );
   const [endYearRef, setEndYearRef] = useState<YearRef | null>(
-    (editing?.endYearRef as YearRef) ??
-      (prefill
-        ? (prefill.endYearRef as YearRef | null)
-        : newEducation ? null : expDefaultRefs?.endYearRef ?? null)
+    (seed?.endYearRef as YearRef) ?? (newEducation ? null : expDefaultRefs?.endYearRef ?? null)
   );
   const [startYear, setStartYear] = useState<number>(
-    editing?.startYear ?? prefill?.startYear ?? (startYearRef && clientInfo?.milestones ? resolveMilestone(startYearRef, clientInfo.milestones, "start") ?? currentYear : currentYear)
+    seed?.startYear ?? (startYearRef && clientInfo?.milestones ? resolveMilestone(startYearRef, clientInfo.milestones, "start") ?? currentYear : currentYear)
   );
   const [endYear, setEndYear] = useState<number>(() => {
-    if (editing?.endYear != null) return editing.endYear;
-    if (prefill) return prefill.endYear;
+    if (seed?.endYear != null) return seed.endYear;
     if (newEducation) return startYear + EDUCATION_GOAL_YEARS - 1;
     const resolved =
       endYearRef && clientInfo?.milestones ? resolveMilestone(endYearRef, clientInfo.milestones, "end") : null;
@@ -1649,7 +1641,7 @@ function ExpenseDialog({
                       id="exp-amount"
                       name="annualAmount"
                       required
-                      defaultValue={editing?.annualAmount ?? prefill?.annualAmount ?? 0}
+                      defaultValue={seed?.annualAmount ?? 0}
                       className="mt-1"
                     />
                   )}
