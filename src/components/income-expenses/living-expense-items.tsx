@@ -53,7 +53,7 @@ function FrequencyToggle({
   label: string;
 }) {
   return (
-    <div role="group" aria-label={`How often for ${label}`} className="inline-flex shrink-0 overflow-hidden rounded-md border border-hair text-xs">
+    <div role="group" aria-label={`How often for ${label}`} className="inline-flex shrink-0 gap-0.5 rounded-md border border-hair p-0.5 text-xs">
       {(["monthly", "annual"] as const).map((f) => (
         <button
           key={f}
@@ -62,7 +62,9 @@ function FrequencyToggle({
           onClick={() => {
             if (value !== f) onChange(f);
           }}
-          className={`px-1.5 py-0.5 ${value === f ? "bg-accent/15 text-accent" : "text-ink-3 hover:text-ink-2"}`}
+          className={`rounded border px-1.5 ${
+            value === f ? "border-accent bg-accent/15 text-accent" : "border-transparent text-ink-3 hover:text-ink-2"
+          }`}
         >
           {SHORT[f]}
         </button>
