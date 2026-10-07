@@ -9,7 +9,8 @@ import { NextResponse } from "next/server";
  *   - `unconfigured`: UPSTASH_REDIS_REST_URL / _TOKEN missing at runtime.
  *   - `exceeded`:     the limiter denied the request (over budget).
  *   - `redis_error`:  Redis itself threw (NOPERM, network, transient
- *                     outage). Caught in `safeLimit` and surfaced as
+ *                     outage) or never answered before the limiter's
+ *                     timeout. Caught in `safeLimit` and surfaced as
  *                     a typed result instead of bubbling.
  *
  * In-memory fallbacks reset per serverless container and are inadequate
@@ -71,7 +72,13 @@ async function safeLimit(
   key: string,
 ): Promise<RateLimitResult> {
   try {
-    const { success, remaining, reset } = await limiter.limit(key);
+    const { success, remaining, reset, reason } = await limiter.limit(key);
+    // On its own timeout (default 5 s) the library resolves success: true.
+    // A Redis that never answered is a Redis failure, so refuse it.
+    if (reason === "timeout") {
+      console.error("[rate-limit] Redis call failed:", "limiter timed out");
+      return { allowed: false, reason: "redis_error" };
+    }
     return success
       ? { allowed: true, remaining, reset }
       : { allowed: false, reason: "exceeded", remaining, reset };
