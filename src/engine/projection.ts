@@ -523,9 +523,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // `liability_owners` junction tables — for that path this is a no-op. After
   // this step, every downstream ownership read can use `owners[]` exclusively
   // (see src/engine/ownership.ts helpers).
+  //
+  // Accounts are copied, not passed through: `applyBusinessSales` writes the
+  // sold business's value/basis onto the object it is handed. On the caller's
+  // own object that leaked the sale out of the run — the "today" estate in
+  // runProjectionWithEvents and every later run over the same input (Monte
+  // Carlo, solvers) then saw a $0 business.
   data = {
     ...data,
-    accounts: data.accounts.map(normalizeOwners),
+    accounts: data.accounts.map((a) => normalizeOwners({ ...a })),
     liabilities: data.liabilities.map(normalizeOwners),
   };
 
