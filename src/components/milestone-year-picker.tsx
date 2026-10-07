@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { availableRefs, resolveMilestone, YEAR_REF_LABELS } from "@/lib/milestones";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
-import { inputClassName, selectClassName } from "@/components/forms/input-styles";
+import { fieldLabelBaseClassName, inputClassName, selectClassName } from "@/components/forms/input-styles";
 
 interface MilestoneYearPickerProps {
   /** HTML name attribute for the year input (used by FormData) */
@@ -54,6 +54,13 @@ interface MilestoneYearPickerProps {
    * a related event (e.g. a sell-year picker floored to buy.year + 1).
    */
   minYear?: number;
+  /**
+   * One control per field: a milestone shows its select alone — the option
+   * already names the year — instead of repeating the year in a read-only box
+   * beneath it, and the label takes the dialog's field-label style. Manual and
+   * Duration still show their input, since that is where the year is typed.
+   */
+  compact?: boolean;
 }
 
 const INPUT_CLASS = `block ${inputClassName}`;
@@ -92,6 +99,7 @@ export default function MilestoneYearPicker({
   preferDuration = false,
   position = "start",
   minYear,
+  compact = false,
 }: MilestoneYearPickerProps) {
   type Mode = "manual" | "milestone" | "duration";
 
@@ -194,14 +202,21 @@ export default function MilestoneYearPicker({
   }
 
   const selectValue = mode === "milestone" && currentRef ? currentRef : mode;
+  // In compact milestone mode the select is the only visible control, so it
+  // takes the label; the year still rides along for FormData.
+  const selectOnly = compact && currentRef !== null;
 
   return (
     <div>
-      <label className="block text-xs font-medium text-ink-3" htmlFor={id}>
+      <label
+        className={`block ${compact ? fieldLabelBaseClassName : "text-xs font-medium text-ink-3"}`}
+        htmlFor={id}
+      >
         {label}
       </label>
 
       <select
+        id={selectOnly ? id : undefined}
         value={selectValue}
         onChange={(e) => handleModeChange(e.target.value)}
         className={`mt-1 ${SELECT_CLASS}`}
@@ -215,7 +230,9 @@ export default function MilestoneYearPicker({
         ))}
       </select>
 
-      {mode === "duration" ? (
+      {selectOnly ? (
+        <input type="hidden" name={name} value={currentYear} />
+      ) : mode === "duration" ? (
         <div className="relative mt-1">
           <input
             id={id}

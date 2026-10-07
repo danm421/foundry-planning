@@ -10,6 +10,8 @@ import { useId } from "react";
  * The tooltip floats *above* the badge (centered horizontally) so it extends
  * vertically rather than horizontally — sideways positioning would push the
  * tooltip past the dialog edge in narrow modals and force a horizontal scroll.
+ * `side="bottom"` drops it below instead, for a badge near the top of a
+ * scrolling panel, where a tooltip above would be clipped by the panel's edge.
  *
  * The badge keeps "Show help" as its accessible *name* (a long name would be
  * appended to any control that nests it) and points at the copy with
@@ -17,7 +19,7 @@ import { useId } from "react";
  * reader hears the explanation at all, since the panel is `visibility: hidden`
  * until hover or focus.
  */
-export function FieldTooltip({ text }: { text: string }) {
+export function FieldTooltip({ text, side = "top" }: { text: string; side?: "top" | "bottom" }) {
   const id = useId();
   return (
     <span className="group relative inline-flex items-center">
@@ -32,7 +34,7 @@ export function FieldTooltip({ text }: { text: string }) {
       <span
         id={id}
         role="tooltip"
-        className="pointer-events-none invisible absolute bottom-full left-1/2 z-50 mb-2 w-56 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-md border border-hair bg-card px-3 py-2 text-xs leading-snug text-ink-2 opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+        className={`pointer-events-none invisible absolute ${side === "top" ? "bottom-full mb-2" : "top-full mt-2"} left-1/2 z-50 w-56 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-md border border-hair bg-card px-3 py-2 text-xs leading-snug text-ink-2 opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100`}
       >
         {text}
       </span>

@@ -293,7 +293,10 @@ describe("ExpenseDialog end-year framing by type", () => {
       </ClientAccessProvider>,
     );
     fireEvent.click(screen.getAllByRole("button", { name: /^\+ Add$/ })[1]);
-    expect((screen.getByLabelText(/^end year$/i) as HTMLInputElement).value).toBe(String(NOW + 45));
+    // A milestone end shows as the select alone — its option names the year.
+    const milestoneEnd = screen.getByLabelText(/^end year$/i) as HTMLSelectElement;
+    expect(milestoneEnd.value).toBe("plan_end");
+    expect(milestoneEnd.selectedOptions[0].textContent).toBe(`Last Year (${NOW + 45})`);
 
     fireEvent.change(screen.getByLabelText(/^type$/i), { target: { value: "education" } });
 
