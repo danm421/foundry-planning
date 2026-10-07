@@ -4,9 +4,10 @@
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { baseCaseScenarioId } from "@/lib/clients/base-case";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import {
   listMyConversations as listConversationsForUser,
-  userOwnsConversation,
+  findOwnedConversation,
   renameConversation as domainRenameConversation,
   deleteConversation as domainDeleteConversation,
 } from "@/domain/forge/conversations";
@@ -14,38 +15,45 @@ import { getCheckpointer } from "@/domain/forge/checkpointer";
 import { toUiMessages } from "@/domain/forge/transcript";
 import type { WritePreview } from "@/domain/forge/types";
 
-/** Thread list for the signed-in advisor.
- *  - Pass a `clientId` string to narrow to threads for a single client.
- *  - Pass `null` to return ONLY clientless (global) threads.
- *  - Omit / pass `undefined` to return all threads regardless of clientId. */
-export async function listMyConversations(clientId?: string | null) {
+/** Thread list for the signed-in advisor in the active firm.
+ *  - Pass a `clientId` string to narrow to threads for a single client; a
+ *    client the caller can no longer open lists nothing.
+ *  - Pass `null` to return ONLY clientless (global) threads. */
+export async function listMyConversations(clientId: string | null) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
   const firmId = await requireOrgId();
+  if (typeof clientId !== "string") return listConversationsForUser(userId, firmId, null);
+  if (!(await verifyClientAccess(clientId)).ok) return [];
   return listConversationsForUser(userId, firmId, clientId);
+}
+
+/**
+ * The caller's own thread in the active firm, and for a client thread only
+ * while the caller can still open that client. Returns the caller's userId.
+ */
+async function requireConversationAccess(conversationId: string): Promise<string> {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+  const firmId = await requireOrgId();
+  const conv = await findOwnedConversation(conversationId, userId, firmId);
+  if (!conv || (conv.clientId !== null && !(await verifyClientAccess(conv.clientId)).ok)) {
+    throw new Error("Conversation not found");
+  }
+  return userId;
 }
 
 /** Rename a conversation (owner only). Title is sanitized and must be non-empty. */
 export async function renameConversation(conversationId: string, title: string): Promise<void> {
-  const { userId } = await auth();
-  if (!userId) throw new Error("Unauthorized");
-  await requireOrgId();
+  const userId = await requireConversationAccess(conversationId);
   const sanitized = String(title).slice(0, 80).trim();
   if (!sanitized) throw new Error("Title must not be empty");
-  if (!(await userOwnsConversation(conversationId, userId))) {
-    throw new Error("Conversation not found");
-  }
   await domainRenameConversation(conversationId, userId, sanitized);
 }
 
 /** Delete a conversation (owner only). */
 export async function deleteConversation(conversationId: string): Promise<void> {
-  const { userId } = await auth();
-  if (!userId) throw new Error("Unauthorized");
-  await requireOrgId();
-  if (!(await userOwnsConversation(conversationId, userId))) {
-    throw new Error("Conversation not found");
-  }
+  const userId = await requireConversationAccess(conversationId);
   await domainDeleteConversation(conversationId, userId);
 }
 
@@ -54,14 +62,9 @@ export interface LoadedConversation {
   approval: { previews: WritePreview[]; calls: { id: string; name: string; args: unknown }[] } | null;
 }
 
-/** Reload one thread's checkpointed messages + any pending approval (IDOR-checked). */
+/** Reload one thread's checkpointed messages + any pending approval (scope-checked). */
 export async function loadConversationMessages(conversationId: string): Promise<LoadedConversation> {
-  const { userId } = await auth();
-  if (!userId) throw new Error("Unauthorized");
-  await requireOrgId();
-  if (!(await userOwnsConversation(conversationId, userId))) {
-    throw new Error("Conversation not found");
-  }
+  await requireConversationAccess(conversationId);
   const checkpointer = getCheckpointer();
   const tuple = await checkpointer.getTuple({ configurable: { thread_id: conversationId } });
   // channel_values is Record<string, unknown> per CheckpointTuple type

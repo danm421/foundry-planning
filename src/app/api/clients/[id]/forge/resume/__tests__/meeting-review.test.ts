@@ -33,10 +33,10 @@ vi.mock("@/lib/rate-limit", async () => {
 });
 
 const touchConversation = vi.fn(async () => {});
-const userOwnsConversation = vi.fn(async () => true);
+const findOwnedConversation = vi.fn(async (): Promise<{ clientId: string | null } | null> => ({ clientId: "c1" }));
 vi.mock("@/domain/forge/conversations", () => ({
   touchConversation: (...a: unknown[]) => touchConversation(...(a as [])),
-  userOwnsConversation: (...a: unknown[]) => userOwnsConversation(...(a as [])),
+  findOwnedConversation: (...a: unknown[]) => findOwnedConversation(...(a as [])),
 }));
 
 vi.mock("@/domain/forge/load-prompt-context", () => ({
@@ -184,7 +184,7 @@ beforeEach(() => {
     access: "own",
   });
   checkForgeRateLimit.mockResolvedValue({ allowed: true, remaining: 9, reset: 0 });
-  userOwnsConversation.mockResolvedValue(true);
+  findOwnedConversation.mockResolvedValue({ clientId: "c1" });
 });
 
 describe("POST /api/clients/[id]/forge/resume — meetingReview path", () => {

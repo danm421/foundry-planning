@@ -7,7 +7,7 @@ import { checkForgeRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { buildGraph } from "@/domain/forge/graph";
 import { getCheckpointer } from "@/domain/forge/checkpointer";
-import { touchConversation, userOwnsConversation } from "@/domain/forge/conversations";
+import { touchConversation, findOwnedConversation } from "@/domain/forge/conversations";
 import { loadPromptContext } from "@/domain/forge/load-prompt-context";
 import { buildSystemPrompt } from "@/domain/forge/system-prompt";
 import { safeForgeErrorMessage } from "@/domain/forge/safe-error";
@@ -127,8 +127,10 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
 
   // --- IDOR (two pins; buildGraph runs only after BOTH pass) ---
 
-  // (a) User pin: a conversation the caller does not own returns 404.
-  if (!(await userOwnsConversation(conversationId, userId))) {
+  // (a) Thread pin: only the caller's own thread for THIS client in the active
+  // firm; anything else returns 404.
+  const conv = await findOwnedConversation(conversationId, userId, firmId);
+  if (!conv || conv.clientId !== clientId) {
     return new Response("Not found", { status: 404 });
   }
 

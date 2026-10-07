@@ -39,10 +39,10 @@ vi.mock("@/lib/rate-limit", async () => {
 });
 
 const touchConversation = vi.fn(async () => {});
-const userOwnsConversation = vi.fn(async () => true);
+const findOwnedConversation = vi.fn<(...a: unknown[]) => Promise<{ clientId: string | null } | null>>();
 vi.mock("@/domain/forge/conversations", () => ({
   touchConversation: (...a: unknown[]) => touchConversation(...(a as [])),
-  userOwnsConversation: (...a: unknown[]) => userOwnsConversation(...(a as [])),
+  findOwnedConversation: (...a: unknown[]) => findOwnedConversation(...a),
 }));
 
 vi.mock("@/domain/forge/load-prompt-context", () => ({
@@ -166,7 +166,7 @@ beforeEach(() => {
   requireActiveSubscription.mockResolvedValue(undefined);
   verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "firm_1", access: "own" });
   checkForgeRateLimit.mockResolvedValue({ allowed: true, remaining: 9, reset: 0 });
-  userOwnsConversation.mockResolvedValue(true);
+  findOwnedConversation.mockResolvedValue({ clientId: "c1" });
 });
 
 const goodBody = {
@@ -182,11 +182,14 @@ describe("POST /api/clients/[id]/forge/resume — gates + IDOR", () => {
     expect(buildGraph).not.toHaveBeenCalled();
   });
 
-  it("returns 404 on user IDOR (userOwnsConversation=false) — buildGraph NOT called", async () => {
-    userOwnsConversation.mockResolvedValue(false);
+  it("returns 404 unless the thread is the caller's own in the active firm (IDOR) — buildGraph NOT called", async () => {
+    // Another user's thread, or the caller's own from another firm: the lookup
+    // scoped to (user, active firm) finds nothing.
+    findOwnedConversation.mockResolvedValue(null);
     const res = await POST(makeReq(goodBody), ctx);
     expect(res.status).toBe(404);
     expect(buildGraph).not.toHaveBeenCalled();
+    expect(findOwnedConversation).toHaveBeenCalledWith("conv-1", "user_1", "firm_1");
   });
 
   it("returns 404 on client-pin mismatch (checkpointed clientId !== URL clientId) — buildGraph NOT called", async () => {

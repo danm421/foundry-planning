@@ -6,7 +6,7 @@ import { checkForgeRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { buildGraph } from "@/domain/forge/graph";
 import { getCheckpointer } from "@/domain/forge/checkpointer";
-import { touchConversation, userOwnsConversation } from "@/domain/forge/conversations";
+import { touchConversation, findOwnedConversation } from "@/domain/forge/conversations";
 import { buildGlobalSystemPrompt } from "@/domain/forge/global-system-prompt";
 import { safeForgeErrorMessage } from "@/domain/forge/safe-error";
 import { maybeLangfuseHandler, flushLangfuse } from "@/domain/forge/observability";
@@ -66,8 +66,10 @@ export async function POST(req: Request): Promise<Response> {
 
   // --- IDOR (two pins; buildGraph runs only after BOTH pass) ---
 
-  // (a) User pin: a conversation the caller does not own → 404.
-  if (!(await userOwnsConversation(conversationId, userId))) return new Response("Not found", { status: 404 });
+  // (a) Thread pin: only the caller's own GLOBAL (clientless) thread in the
+  // active firm; anything else → 404.
+  const conv = await findOwnedConversation(conversationId, userId, firmId);
+  if (!conv || conv.clientId !== null) return new Response("Not found", { status: 404 });
 
   // (b) Global-thread pin: the checkpoint MUST be a GLOBAL thread (no clientId)
   // owned by this user. A client thread ("clientId" in persisted) must resume

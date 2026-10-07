@@ -42,10 +42,10 @@ vi.mock("@/lib/rate-limit", async () => {
 
 // Conversations.
 const touchConversation = vi.fn(async () => {});
-const userOwnsConversation = vi.fn(async () => true);
+const findOwnedConversation = vi.fn<(...a: unknown[]) => Promise<{ clientId: string | null } | null>>();
 vi.mock("@/domain/forge/conversations", () => ({
   touchConversation: (...a: unknown[]) => touchConversation(...(a as [])),
-  userOwnsConversation: (...a: unknown[]) => userOwnsConversation(...(a as [])),
+  findOwnedConversation: (...a: unknown[]) => findOwnedConversation(...a),
 }));
 
 // Audit.
@@ -186,7 +186,7 @@ beforeEach(() => {
   requireOrgId.mockResolvedValue("firm_1");
   requireActiveSubscription.mockResolvedValue(undefined);
   checkForgeRateLimit.mockResolvedValue({ allowed: true, remaining: 9, reset: 0 });
-  userOwnsConversation.mockResolvedValue(true);
+  findOwnedConversation.mockResolvedValue({ clientId: null });
 });
 
 describe("POST /api/forge/resume — gate chain", () => {
@@ -218,15 +218,24 @@ describe("POST /api/forge/resume — gate chain", () => {
     expect(buildGraph).not.toHaveBeenCalled();
   });
 
-  it("404s when userOwnsConversation returns false", async () => {
-    userOwnsConversation.mockResolvedValue(false);
+  it("404s unless the thread is the caller's own in the active firm", async () => {
+    // Another user's thread, or the caller's own from another firm: the lookup
+    // scoped to (user, active firm) finds nothing.
+    findOwnedConversation.mockResolvedValue(null);
+    const res = await POST(req(goodBody));
+    expect(res.status).toBe(404);
+    expect(findOwnedConversation).toHaveBeenCalledWith("conv_1", "user_1", "firm_1");
+    expect(buildGraph).not.toHaveBeenCalled();
+  });
+
+  it("404s on the caller's own client thread", async () => {
+    findOwnedConversation.mockResolvedValue({ clientId: "client_X" });
     const res = await POST(req(goodBody));
     expect(res.status).toBe(404);
     expect(buildGraph).not.toHaveBeenCalled();
   });
 
   it("404s when the checkpointed thread is a CLIENT thread (has clientId) — IDOR pin", async () => {
-    userOwnsConversation.mockResolvedValue(true);
     getTuple.mockResolvedValue({
       checkpoint: {
         channel_values: {
@@ -245,7 +254,6 @@ describe("POST /api/forge/resume — gate chain", () => {
   });
 
   it("404s when the checkpointed userId does not match the resuming userId", async () => {
-    userOwnsConversation.mockResolvedValue(true);
     getTuple.mockResolvedValue({
       checkpoint: {
         channel_values: {

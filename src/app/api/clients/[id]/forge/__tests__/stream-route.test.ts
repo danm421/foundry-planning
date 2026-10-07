@@ -27,11 +27,11 @@ vi.mock("@/lib/rate-limit", async () => {
 
 const createConversation = vi.fn(async () => "conv-new");
 const touchConversation = vi.fn(async () => {});
-const userOwnsConversation = vi.fn(async () => true);
+const findOwnedConversation = vi.fn<(...a: unknown[]) => Promise<{ clientId: string | null } | null>>();
 vi.mock("@/domain/forge/conversations", () => ({
   createConversation: (...a: unknown[]) => createConversation(...(a as [])),
   touchConversation: (...a: unknown[]) => touchConversation(...(a as [])),
-  userOwnsConversation: (...a: unknown[]) => userOwnsConversation(...(a as [])),
+  findOwnedConversation: (...a: unknown[]) => findOwnedConversation(...a),
 }));
 
 vi.mock("@/domain/forge/load-prompt-context", () => ({
@@ -60,7 +60,8 @@ const fakeGraph: {
   streamEvents: defaultStreamEvents,
   getState: vi.fn(async () => ({ tasks: [] })),
 };
-vi.mock("@/domain/forge/graph", () => ({ buildGraph: () => fakeGraph }));
+const buildGraph = vi.fn(() => fakeGraph);
+vi.mock("@/domain/forge/graph", () => ({ buildGraph: () => buildGraph() }));
 
 import { POST } from "../stream/route";
 
@@ -101,6 +102,7 @@ beforeEach(() => {
   requireOrgId.mockResolvedValue("org_A");
   verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_A", access: "own" });
   checkForgeRateLimit.mockResolvedValue({ allowed: true, remaining: 9, reset: 0 });
+  findOwnedConversation.mockResolvedValue({ clientId: "c1" });
 });
 
 describe("POST /api/clients/[id]/forge/stream — gate chain", () => {
@@ -167,13 +169,39 @@ describe("POST /api/clients/[id]/forge/stream — hello stream", () => {
     expect(touchConversation).toHaveBeenCalledWith("conv-new", "u1");
   });
 
-  it("returns 404 when the caller does not own the supplied conversationId (IDOR)", async () => {
-    userOwnsConversation.mockResolvedValue(false);
+  it("returns 404 unless the supplied conversationId is the caller's own thread in the active firm (IDOR)", async () => {
+    // Another user's thread, or the caller's own from another firm: the lookup
+    // scoped to (user, active firm) finds nothing.
+    findOwnedConversation.mockResolvedValue(null);
     const res = await POST(
       makeReq({ message: "hi", scenarioId: "base", conversationId: "someone-elses" }),
       ctx,
     );
     expect(res.status).toBe(404);
+    expect(findOwnedConversation).toHaveBeenCalledWith("someone-elses", "u1", "org_A");
+    expect(buildGraph).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for the caller's own thread about a different client — buildGraph NOT called", async () => {
+    findOwnedConversation.mockResolvedValue({ clientId: "client_X" });
+    const res = await POST(
+      makeReq({ message: "hi", scenarioId: "base", conversationId: "conv-x" }),
+      ctx,
+    );
+    expect(res.status).toBe(404);
+    expect(buildGraph).not.toHaveBeenCalled();
+  });
+
+  it("continues the caller's own thread for this client in the active firm", async () => {
+    const res = await POST(
+      makeReq({ message: "and next year?", scenarioId: "base", conversationId: "conv-1" }),
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    await drain(res);
+    expect(findOwnedConversation).toHaveBeenCalledWith("conv-1", "u1", "org_A");
+    expect(createConversation).not.toHaveBeenCalled();
+    expect(buildGraph).toHaveBeenCalledTimes(1);
   });
 
   it("emits a generic SSE error (never raw internals) when the stream throws", async () => {

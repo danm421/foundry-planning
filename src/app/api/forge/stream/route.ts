@@ -9,7 +9,7 @@ import { getCheckpointer } from "@/domain/forge/checkpointer";
 import {
   createConversation,
   touchConversation,
-  userOwnsConversation,
+  findOwnedConversation,
 } from "@/domain/forge/conversations";
 import { buildGlobalSystemPrompt } from "@/domain/forge/global-system-prompt";
 import { categorizeForgeError, logForgeError } from "@/domain/forge/safe-error";
@@ -102,8 +102,10 @@ export async function POST(req: Request): Promise<Response> {
   try {
     let conversationId = body.conversationId;
     if (conversationId) {
-      // IDOR guard: a conversation the caller does not own returns 404.
-      if (!(await userOwnsConversation(conversationId, userId))) {
+      // Thread pin: only the caller's own GLOBAL (clientless) thread in the
+      // active firm; anything else returns 404.
+      const conv = await findOwnedConversation(conversationId, userId, firmId);
+      if (!conv || conv.clientId !== null) {
         return new Response("Not found", { status: 404 });
       }
       // Checkpoint pin (mirrors resume/route.ts): if this thread has persisted

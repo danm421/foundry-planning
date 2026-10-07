@@ -64,16 +64,28 @@ export async function touchConversation(id: string, userId: string, title?: stri
 }
 
 /**
- * IDOR guard for the stream/resume routes: true only when `userId` owns `id`.
- * A conversationId belonging to another user returns false → 404.
+ * Scope guard for every path that reads or continues a thread: the thread's
+ * client (null = global) when `userId` owns `id` in `firmId` (the caller's
+ * active org), else null → 404. Callers then pin `clientId` to their own scope
+ * — the URL client, null on the global routes, or a fresh client-access check.
  */
-export async function userOwnsConversation(id: string, userId: string): Promise<boolean> {
-  const rows = await db
-    .select({ id: forgeConversations.id })
+export async function findOwnedConversation(
+  id: string,
+  userId: string,
+  firmId: string,
+): Promise<{ clientId: string | null } | null> {
+  const [row] = await db
+    .select({ clientId: forgeConversations.clientId })
     .from(forgeConversations)
-    .where(and(eq(forgeConversations.id, id), eq(forgeConversations.userId, userId)))
+    .where(
+      and(
+        eq(forgeConversations.id, id),
+        eq(forgeConversations.userId, userId),
+        eq(forgeConversations.firmId, firmId),
+      ),
+    )
     .limit(1);
-  return rows.length > 0;
+  return row ?? null;
 }
 
 /** Rename a thread (owner-only no-op for non-owners). Does NOT bump updatedAt. */

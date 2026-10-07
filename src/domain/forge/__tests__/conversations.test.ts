@@ -13,7 +13,7 @@ import {
   createConversation,
   listMyConversations,
   touchConversation,
-  userOwnsConversation,
+  findOwnedConversation,
   renameConversation,
   deleteConversation,
 } from "../conversations";
@@ -72,10 +72,17 @@ describe("forge conversations CRUD", () => {
     expect(afterA.title).toBe("renamed");
   });
 
-  it("userOwnsConversation returns false for another user (IDOR guard)", async () => {
+  it("findOwnedConversation finds a thread only for its owner in its own firm", async () => {
     const id = await createConversation({ userId: USER_A, firmId: FIRM, title: "Owned by A" });
-    expect(await userOwnsConversation(id, USER_A)).toBe(true);
-    expect(await userOwnsConversation(id, USER_B)).toBe(false);
+    expect(await findOwnedConversation(id, USER_A, FIRM)).toEqual({ clientId: null });
+    expect(await findOwnedConversation(id, USER_B, FIRM)).toBeNull();
+    expect(await findOwnedConversation(id, USER_A, "org_forge_conv_other")).toBeNull();
+  });
+
+  it("findOwnedConversation returns the thread's client", async () => {
+    const clientId = await seedClient("Scope");
+    const id = await createConversation({ userId: USER_A, firmId: FIRM, clientId, title: "Client thread" });
+    expect(await findOwnedConversation(id, USER_A, FIRM)).toEqual({ clientId });
   });
 });
 
