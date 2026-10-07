@@ -182,4 +182,11 @@ describe("searching for more recurrings", () => {
     expect(screen.queryByText(/everything we could find/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Search for more" })).toBeEnabled();
   });
+
+  it("tells an advisor the suggestions are private instead of offering a search", () => {
+    view({ suggestions: [], suggestionsWithheld: true });
+    expect(screen.getByText("This client keeps their transactions private.")).toBeInTheDocument();
+    expect(screen.queryByText("Nothing suggested yet.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Search for more" })).not.toBeInTheDocument();
+  });
 });

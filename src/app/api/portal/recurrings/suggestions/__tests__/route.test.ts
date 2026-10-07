@@ -60,6 +60,17 @@ describe("GET /api/portal/recurrings/suggestions", () => {
     expect(sharedMock).toHaveBeenCalledWith("client", "c1", "recurrings");
   });
 
+  it("refuses an advisor when the client keeps transactions private", async () => {
+    resolveMock.mockResolvedValue({ clientId: "c1", mode: "advisor" });
+    sharedMock.mockImplementation(async (mode: string, _id: string, area: string) => {
+      if (mode === "advisor" && area === "transactions") throw new Error("not shared");
+    });
+    authErrMock.mockReturnValue({ status: 403, body: { error: "Forbidden" } });
+    const res = await GET(req("?scope=wide"));
+    expect(res.status).toBe(403);
+    expect(loadMock).not.toHaveBeenCalled();
+  });
+
   it("a closed gate is the auth error, not a 200 with suggestions", async () => {
     featureMock.mockRejectedValue(new Error("gated"));
     authErrMock.mockReturnValue({ status: 403, body: { error: "Forbidden" } });

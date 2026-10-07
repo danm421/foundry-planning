@@ -40,15 +40,16 @@ describe("loadPortalPrivacy", () => {
 });
 
 describe("requireAreaShared", () => {
-  it("is a no-op for client mode (never queries)", async () => {
-    await expect(requireAreaShared("client", "c1", "transactions")).resolves.toBeUndefined();
+  it("passes client mode with every switch on (never queries)", async () => {
+    await expect(requireAreaShared("client", "c1", "transactions")).resolves.toEqual(
+      DEFAULT_PORTAL_PRIVACY,
+    );
     expect(selectChain).not.toHaveBeenCalled();
   });
-  it("passes for advisor mode when the area is shared", async () => {
-    selectChain.mockResolvedValue([
-      { shareTransactions: true, shareBudgets: false, shareRecurrings: true },
-    ]);
-    await expect(requireAreaShared("advisor", "c1", "transactions")).resolves.toBeUndefined();
+  it("passes for advisor mode when the area is shared, with the client's switches", async () => {
+    const row = { shareTransactions: true, shareBudgets: false, shareRecurrings: true };
+    selectChain.mockResolvedValue([row]);
+    await expect(requireAreaShared("advisor", "c1", "transactions")).resolves.toEqual(row);
   });
   it("throws ForbiddenError for advisor mode when the area is off", async () => {
     selectChain.mockResolvedValue([
@@ -60,7 +61,9 @@ describe("requireAreaShared", () => {
   });
   it("passes for advisor mode when no settings row exists (default open)", async () => {
     selectChain.mockResolvedValue([]);
-    await expect(requireAreaShared("advisor", "c1", "recurrings")).resolves.toBeUndefined();
+    await expect(requireAreaShared("advisor", "c1", "recurrings")).resolves.toEqual(
+      DEFAULT_PORTAL_PRIVACY,
+    );
   });
 });
 

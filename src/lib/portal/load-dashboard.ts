@@ -193,7 +193,7 @@ export async function loadPortalDashboard(
       ? loadBudgetSummary(clientId, now)
       : Promise.resolve(emptyBudget(month)),
     share.shareRecurrings
-      ? loadRecurringsData(clientId, now)
+      ? loadRecurringsData(clientId, now, { includeSuggestions: share.shareTransactions })
       : Promise.resolve(null),
     // This month's expense txns (signed) for the pace curve. `categoryId` comes
     // along so the curve can drop budget-excluded categories below — the curve

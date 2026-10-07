@@ -139,7 +139,7 @@ export default async function PortalPreviewPage({
     );
   } else if (path === "budget/recurring") {
     section = privacy.shareRecurrings ? (
-      <RecurringsSection clientId={id} />
+      <RecurringsSection clientId={id} includeSuggestions={privacy.shareTransactions} />
     ) : (
       <NotSharedNotice area="recurrings" />
     );

@@ -20,6 +20,7 @@ export function RecurringSuggestionsList({
   onSearchMore,
   searching = false,
   foundNothingMore = false,
+  withheld = false,
 }: {
   suggestions: RecurringSuggestionDTO[];
   month: string;
@@ -31,10 +32,12 @@ export function RecurringSuggestionsList({
   searching?: boolean;
   /** The deeper search came back with nothing the client had not already seen. */
   foundNothingMore?: boolean;
+  /** An advisor's preview where the client keeps transactions private. */
+  withheld?: boolean;
 }): ReactElement | null {
   // The search button has to survive an empty list: a client with nothing
   // suggested is exactly the one who wants us to go looking.
-  if (suggestions.length === 0 && !onSearchMore && !foundNothingMore) return null;
+  if (suggestions.length === 0 && !onSearchMore && !foundNothingMore && !withheld) return null;
   return (
     <section className="space-y-1">
       <h2 className="text-[13px] font-medium text-ink-2">Suggested</h2>
@@ -91,9 +94,11 @@ export function RecurringSuggestionsList({
       </ul>
       {suggestions.length === 0 && !searching && (
         <p className="text-[13px] text-ink-3">
-          {foundNothingMore
-            ? "We looked through your history and didn\u2019t find any repeating charges."
-            : "Nothing suggested yet."}
+          {withheld
+            ? "This client keeps their transactions private."
+            : foundNothingMore
+              ? "We looked through your history and didn\u2019t find any repeating charges."
+              : "Nothing suggested yet."}
         </p>
       )}
       {onSearchMore && (

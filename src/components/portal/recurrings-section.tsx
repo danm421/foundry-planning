@@ -7,15 +7,18 @@ import RecurringsView from "@/components/portal/recurrings-view";
 
 export default async function RecurringsSection({
   clientId,
+  includeSuggestions = true,
 }: {
   clientId: string;
+  /** False in an advisor's preview when the client keeps transactions private. */
+  includeSuggestions?: boolean;
 }): Promise<ReactElement> {
   const [client] = await db
     .select({ portalEditEnabled: clients.portalEditEnabled })
     .from(clients)
     .where(eq(clients.id, clientId))
     .limit(1);
-  const data = await loadRecurringsData(clientId, new Date());
+  const data = await loadRecurringsData(clientId, new Date(), { includeSuggestions });
   const categories = await db
     .select({
       id: transactionCategories.id,

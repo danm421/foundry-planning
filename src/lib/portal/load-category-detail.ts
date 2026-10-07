@@ -28,6 +28,7 @@ export async function loadCategoryDetail(
   clientId: string,
   categoryId: string,
   now: Date,
+  { includeTransactions = true }: { includeTransactions?: boolean } = {},
 ): Promise<CategoryDetail | null> {
   const [cat] = await db
     .select({
@@ -116,7 +117,11 @@ export async function loadCategoryDetail(
       )
       .groupBy(monthKey);
     byMonth = Object.fromEntries(aggRows.map((r) => [r.month, Number(r.total)]));
+  }
 
+  // The rows belong to the Transactions sharing switch, not Budget: when the
+  // caller may not see them they are never queried.
+  if (targetIds.length > 0 && includeTransactions) {
     const txnRows = await db
       .select({
         id: plaidTransactions.id,
@@ -171,5 +176,6 @@ export async function loadCategoryDetail(
     history: buildHistory(byMonth, months, monthlyBudget),
     metrics: computeYearMetrics(byMonth),
     transactions,
+    transactionsWithheld: !includeTransactions,
   };
 }

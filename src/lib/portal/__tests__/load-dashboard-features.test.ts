@@ -191,5 +191,12 @@ describe("loadPortalDashboard with the Budget feature on", () => {
     expect(dto.spending.budgeted).toBe(6650);
     expect(dto.budgetEnabled).toBe(true);
   });
+
+  it("leaves recurring suggestions unread when the client keeps transactions private", async () => {
+    await loadPortalDashboard("c1", NOW, { ...ALL_SHARED, shareTransactions: false }, {
+      includeGoals: false,
+    });
+    expect(loadRecurringsMock).toHaveBeenCalledWith("c1", NOW, { includeSuggestions: false });
+  });
 });
 

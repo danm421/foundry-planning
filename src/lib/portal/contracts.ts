@@ -401,6 +401,9 @@ export type CategoryDetail = {
   history: HistoryBar[];
   metrics: YearMetric[];
   transactions: CategoryTransaction[];
+  /** True when an advisor's view leaves the rows out because the client keeps
+   *  transactions private. */
+  transactionsWithheld: boolean;
 };
 
 // ---- plaid items (GET /api/portal/plaid/items) ----
@@ -522,6 +525,9 @@ export interface RecurringsDTO {
   /** Unclaimed charges that look recurring, detected from transaction history.
    *  Never persisted — recomputed on read, and dropped once a rule covers them. */
   suggestions: RecurringSuggestionDTO[];
+  /** Set when an advisor's view leaves suggestions out because the client
+   *  keeps transactions private. */
+  suggestionsWithheld?: boolean;
 }
 /** A candidate recurring the client has not created yet. Every field is a
  *  prefill for the create dialog, so accepting one is a single tap. */

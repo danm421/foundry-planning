@@ -183,9 +183,14 @@ export default function RecurringsView({
         // Offered until the deeper pass has run. Pressing it again would only
         // repeat the same search — and alongside "that's everything we could
         // find" it would read as a contradiction.
-        onSearchMore={editEnabled && searched === null ? () => void runSearch() : null}
+        onSearchMore={
+          editEnabled && searched === null && !data.suggestionsWithheld
+            ? () => void runSearch()
+            : null
+        }
         searching={searching}
         foundNothingMore={searched !== null && extra.length === 0}
+        withheld={editEnabled && data.suggestionsWithheld}
       />
 
       {selected &&

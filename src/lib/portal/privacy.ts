@@ -47,18 +47,21 @@ export function areaShared(privacy: PortalPrivacy, area: PortalArea): boolean {
 /**
  * Route-handler gate for `/api/portal/*`. A real client always passes (they
  * are looking at their own data); an advisor in act-as-client preview is
- * rejected when the client has switched the area off.
+ * rejected when the client has switched the area off. Resolves to the switches
+ * that apply to this caller — all on for a real client — so a route can hold
+ * back another area's data from the same read.
  */
 export async function requireAreaShared(
   mode: PortalActorMode,
   clientId: string,
   area: PortalArea,
-): Promise<void> {
-  if (mode !== "advisor") return;
+): Promise<PortalPrivacy> {
+  if (mode !== "advisor") return DEFAULT_PORTAL_PRIVACY;
   const privacy = await loadPortalPrivacy(clientId);
   if (!areaShared(privacy, area)) {
     throw new ForbiddenError("The client has not shared this with their advisor");
   }
+  return privacy;
 }
 
 /**

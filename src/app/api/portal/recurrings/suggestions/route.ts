@@ -17,6 +17,8 @@ export async function GET(req: Request): Promise<Response> {
     const { clientId, mode } = await resolvePortalClient();
     await requirePortalFeature(clientId, "budget");
     await requireAreaShared(mode, clientId, "recurrings");
+    // Mined from the transaction feed, so that area must be shared as well.
+    await requireAreaShared(mode, clientId, "transactions");
     const scope = new URL(req.url).searchParams.get("scope");
     const suggestions = await loadRecurringSuggestions(
       clientId,

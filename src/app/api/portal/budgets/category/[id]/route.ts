@@ -3,7 +3,8 @@
 // Read-only detail for one budget category: 24-month spend history, per-year
 // metrics, and recent transactions. Powers the portal Budget detail panel.
 // Uses resolvePortalClient (act-as aware) so advisor "preview as client" sees
-// the same data as the client — identical resolution to the budget PUT route.
+// the same data as the client, less the transactions unless those are shared —
+// identical resolution to the budget PUT route.
 import { NextResponse } from "next/server";
 import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
@@ -22,10 +23,14 @@ export async function GET(
     const { id } = await params;
     const { clientId, mode } = await resolvePortalClient();
     await requirePortalFeature(clientId, "budget");
-    await requireAreaShared(mode, clientId, "budgets");
+    // Budget sharing covers the totals; the rows themselves are the client's
+    // transaction feed, so an advisor gets them only when that is shared too.
+    const { shareTransactions } = await requireAreaShared(mode, clientId, "budgets");
     await requirePortalActiveSubscription(clientId);
 
-    const detail = await loadCategoryDetail(clientId, id, new Date());
+    const detail = await loadCategoryDetail(clientId, id, new Date(), {
+      includeTransactions: shareTransactions,
+    });
     if (!detail) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }

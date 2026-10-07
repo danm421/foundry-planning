@@ -92,6 +92,18 @@ it("fetches and renders header, metrics and transactions by month", async () => 
   expect(screen.getByText("-$68.22")).toBeTruthy();
 });
 
+it("says the client keeps transactions private when the rows are withheld", async () => {
+  portalFetchMock.mockResolvedValue({
+    ok: true,
+    json: async () => ({ detail: { ...DETAIL, transactions: [], transactionsWithheld: true } }),
+  });
+  render(
+    <BudgetCategoryDetail categoryId="l-groceries" editEnabled={false} onBudgetSaved={() => {}} />,
+  );
+  expect(await screen.findByText("This client keeps their transactions private.")).toBeTruthy();
+  expect(screen.queryByText("No transactions yet.")).toBeNull();
+});
+
 it("hides the budget edit row when editEnabled is false", async () => {
   render(
     <BudgetCategoryDetail categoryId="l-groceries" editEnabled={false} onBudgetSaved={() => {}} />,

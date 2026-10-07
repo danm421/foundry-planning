@@ -382,7 +382,11 @@ export function BudgetCategoryDetail({
       <section className="space-y-4 border-t border-hair pt-4">
         {txnError && <p className="text-[12px] text-crit">{txnError}</p>}
         {months.length === 0 && (
-          <p className="text-[13px] text-ink-3">No transactions yet.</p>
+          <p className="text-[13px] text-ink-3">
+            {detail.transactionsWithheld
+              ? "This client keeps their transactions private."
+              : "No transactions yet."}
+          </p>
         )}
         {months.map(([key, txns]) => (
           <div key={key} className="space-y-1">

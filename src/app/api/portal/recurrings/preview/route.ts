@@ -12,6 +12,9 @@ export async function GET(req: Request): Promise<Response> {
     const { clientId, mode } = await resolvePortalClient();
     await requirePortalFeature(clientId, "budget");
     await requireAreaShared(mode, clientId, "recurrings");
+    // The match count and sample for a caller-chosen pattern read the
+    // transaction feed itself, so that area must be shared as well.
+    await requireAreaShared(mode, clientId, "transactions");
     const qp = new URL(req.url).searchParams;
     const matchType = qp.get("matchType");
     const pattern = qp.get("pattern") ?? "";

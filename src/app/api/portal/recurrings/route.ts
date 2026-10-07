@@ -30,8 +30,12 @@ export async function GET(): Promise<Response> {
   try {
     const { clientId, mode } = await resolvePortalClient();
     await requirePortalFeature(clientId, "budget");
-    await requireAreaShared(mode, clientId, "recurrings");
-    const data = await loadRecurringsData(clientId, new Date());
+    // Suggestions are mined from the transaction feed, not the bills the client
+    // tracks, so an advisor sees them only when transactions are shared too.
+    const { shareTransactions } = await requireAreaShared(mode, clientId, "recurrings");
+    const data = await loadRecurringsData(clientId, new Date(), {
+      includeSuggestions: shareTransactions,
+    });
     return NextResponse.json(data);
   } catch (err) {
     const r = authErrorResponse(err);

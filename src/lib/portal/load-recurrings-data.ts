@@ -13,7 +13,11 @@ import {
 
 export type { RecurringRowDTO, RecurringsData } from "@/lib/portal/recurring-matching";
 
-export async function loadRecurringsData(clientId: string, now: Date): Promise<RecurringsData> {
+export async function loadRecurringsData(
+  clientId: string,
+  now: Date,
+  { includeSuggestions = true }: { includeSuggestions?: boolean } = {},
+): Promise<RecurringsData> {
   const { from, to, month } = currentMonthRange(now);
 
   const [rows, claimed, history, cats, unclaimed] = await Promise.all([
@@ -53,10 +57,14 @@ export async function loadRecurringsData(clientId: string, now: Date): Promise<R
       .from(transactionCategories)
       .where(eq(transactionCategories.clientId, clientId)),
 
-    selectSuggestionCandidates(clientId, suggestionLookbackFrom(now)),
+    // Suggestions read the transaction feed; when the caller may not see it,
+    // it is never queried.
+    includeSuggestions
+      ? selectSuggestionCandidates(clientId, suggestionLookbackFrom(now))
+      : Promise.resolve([]),
   ]);
 
-  return assembleRecurringView({
+  const view = assembleRecurringView({
     rows: rows.map((r) => ({
       id: r.id, name: r.name, matchType: r.matchType, pattern: r.pattern,
       amountMin: Number(r.amountMin), amountMax: Number(r.amountMax), cadence: r.cadence,
@@ -88,4 +96,5 @@ export async function loadRecurringsData(clientId: string, now: Date): Promise<R
       today: ymd(now),
     }),
   });
+  return includeSuggestions ? view : { ...view, suggestionsWithheld: true };
 }
