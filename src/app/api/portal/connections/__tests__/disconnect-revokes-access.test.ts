@@ -62,9 +62,13 @@ type ClientRow = {
   clerkUserId: string | null;
 };
 
-/** The two tables this suite persists. Reset per test. */
+/** A `portal_push_tokens` row: the household and login a phone registered under. */
+type TokenRow = { clientId: string; clerkUserId: string; expoPushToken: string };
+
+/** The tables this suite persists. Reset per test. */
 let store: Row[] = [];
 let clientStore: ClientRow[] = [];
+let tokenStore: TokenRow[] = [];
 /** Every table handed to `db.update(...)`, so "revoking never touches
  *  `clients`" is an assertion about the real call, not an assumption. */
 let updatedTables: unknown[] = [];
@@ -86,6 +90,7 @@ const COLUMNS: Record<string, Record<string, string>> = {
     status: "status",
   },
   clients: { id: "id", clerk_user_id: "clerkUserId" },
+  portal_push_tokens: { client_id: "clientId", clerk_user_id: "clerkUserId" },
 };
 
 /**
@@ -99,10 +104,9 @@ const COLUMNS: Record<string, Record<string, string>> = {
  * silently mapped onto the wrong row shape.
  */
 function match(cond: unknown, table: string): Record<string, unknown>[] {
-  const rows: Record<string, unknown>[] =
-    table === "clients"
-      ? (clientStore as unknown as Record<string, unknown>[])
-      : (store as unknown as Record<string, unknown>[]);
+  const rows = (
+    table === "clients" ? clientStore : table === "portal_push_tokens" ? tokenStore : store
+  ) as unknown as Record<string, unknown>[];
   if (!cond) return rows;
   const { sql, params } = dialect.sqlToQuery(cond as SQL);
   const wanted: [string, unknown][] = [];
@@ -191,6 +195,17 @@ vi.mock("@/db", () => {
           }),
         };
       },
+      delete: (t: unknown) => ({
+        where: (cond: unknown) => {
+          const table = getTableName(t as Parameters<typeof getTableName>[0]);
+          if (table !== "portal_push_tokens") {
+            throw new Error("this suite only deletes portal_push_tokens");
+          }
+          const hits = match(cond, table);
+          tokenStore = tokenStore.filter((r) => !hits.includes(r));
+          return Promise.resolve([]);
+        },
+      }),
     },
   };
 });
@@ -266,6 +281,13 @@ beforeEach(() => {
     { id: "client-1", firmId: "org_a", advisorId: "user_adv", clerkUserId: "user_1" },
     { id: "client-2", firmId: "org_b", advisorId: "user_adv2", clerkUserId: "user_1" },
   ];
+  // Phones registered for push: this login's on both households, and another
+  // login's on the household this login is about to leave.
+  tokenStore = [
+    { clientId: "client-1", clerkUserId: "user_1", expoPushToken: "ExponentPushToken[one]" },
+    { clientId: "client-2", clerkUserId: "user_1", expoPushToken: "ExponentPushToken[two]" },
+    { clientId: "client-1", clerkUserId: "user_other", expoPushToken: "ExponentPushToken[other]" },
+  ];
   updatedTables = [];
   getUserMock.mockReset();
   authMock.mockReset();
@@ -316,6 +338,14 @@ describe("Disconnect actually removes access", () => {
     });
     expect(await getPortalClientRef("user_1")).toBeNull();
     expect(await getPortalBindings("user_1")).toEqual([]);
+  });
+
+  it("unregisters this login's phone for the household it left, and no one else's", async () => {
+    await DELETE(del("client-1"));
+    expect(tokenStore.map((t) => t.expoPushToken)).toEqual([
+      "ExponentPushToken[two]",
+      "ExponentPushToken[other]",
+    ]);
   });
 
   it("never clears the legacy column it depends on other logins still having", async () => {

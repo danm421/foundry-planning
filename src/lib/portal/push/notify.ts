@@ -1,6 +1,12 @@
 import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { plaidTransactions, portalNotifications, portalPushTokens } from "@/db/schema";
+import {
+  clients,
+  plaidTransactions,
+  portalBindings,
+  portalNotifications,
+  portalPushTokens,
+} from "@/db/schema";
 import { buildReconnectMessage, buildTransactionsMessage, type PushMessage } from "./messages";
 import { sendExpoPush } from "./expo-client";
 
@@ -29,12 +35,45 @@ async function recentlyNotified(
   return !!row;
 }
 
+/**
+ * The household's enabled tokens, kept only for logins that can still open it.
+ *
+ * A token row is not proof of access: it outlives the binding it was registered
+ * under. So the send applies `getPortalClientRef`'s rule itself — an active
+ * binding to this household, or, for a login `portal_bindings` has never
+ * settled anything for (no active or revoked row anywhere), the legacy
+ * `clients.clerk_user_id` column naming them.
+ */
 async function enabledTokens(clientId: string): Promise<string[]> {
   const rows = await db
-    .select({ token: portalPushTokens.expoPushToken })
+    .select({
+      token: portalPushTokens.expoPushToken,
+      clerkUserId: portalPushTokens.clerkUserId,
+      legacyClerkUserId: clients.clerkUserId,
+    })
     .from(portalPushTokens)
+    .innerJoin(clients, eq(clients.id, portalPushTokens.clientId))
     .where(and(eq(portalPushTokens.clientId, clientId), eq(portalPushTokens.enabled, true)));
-  return rows.map((r) => r.token);
+  if (rows.length === 0) return [];
+
+  const bindings = await db
+    .select({
+      clientId: portalBindings.clientId,
+      clerkUserId: portalBindings.clerkUserId,
+      status: portalBindings.status,
+    })
+    .from(portalBindings)
+    .where(inArray(portalBindings.clerkUserId, rows.map((r) => r.clerkUserId)));
+
+  return rows
+    .filter((r) => {
+      const settled = bindings.filter(
+        (b) => b.clerkUserId === r.clerkUserId && (b.status === "active" || b.status === "revoked"),
+      );
+      if (settled.length === 0) return r.legacyClerkUserId === r.clerkUserId;
+      return settled.some((b) => b.clientId === clientId && b.status === "active");
+    })
+    .map((r) => r.token);
 }
 
 async function dispatch(params: {

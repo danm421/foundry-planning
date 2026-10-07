@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
+import { portalPushTokens } from "@/db/schema";
 
 /**
  * A chainable `db.select()` / `db.update()` mock: every step (`from`/
@@ -24,6 +25,7 @@ const selectOrderByArgs: unknown[] = [];
 const insertValues = vi.fn();
 const updateSet = vi.fn();
 const updateWhereArgs: unknown[] = [];
+const deleteFrom = vi.fn();
 const deleteWhereArgs: unknown[] = [];
 
 const selectChain = {
@@ -75,12 +77,15 @@ vi.mock("@/db", () => ({
         };
       },
     }),
-    delete: () => ({
-      where: (cond: unknown) => {
-        deleteWhereArgs.push(cond);
-        return { returning: () => Promise.resolve(queue.shift() ?? []) };
-      },
-    }),
+    delete: (table: unknown) => {
+      deleteFrom(table);
+      return {
+        where: (cond: unknown) => {
+          deleteWhereArgs.push(cond);
+          return { returning: () => Promise.resolve(queue.shift() ?? []) };
+        },
+      };
+    },
   },
 }));
 
@@ -127,6 +132,7 @@ beforeEach(() => {
   insertValues.mockClear();
   updateSet.mockClear();
   updateWhereArgs.length = 0;
+  deleteFrom.mockClear();
   deleteWhereArgs.length = 0;
   recordAudit.mockClear();
 });
@@ -593,6 +599,22 @@ describe("revokeBinding", () => {
     expect(result).toBe(false);
     expect(recordAudit).not.toHaveBeenCalled();
   });
+
+  it("unregisters that login's phones for this household when it ends the binding", async () => {
+    queue = [[{ id: "b1", firmId: "firm-1" }], [{ id: "b1" }]];
+    await revokeBinding({ clientId: "c1", clerkUserId: "user_x", endedBy: "advisor", actorId: "adv-1" });
+    expect(deleteFrom).toHaveBeenCalledWith(portalPushTokens);
+    const compiled = compile(deleteWhereArgs[0]);
+    expect(compiled.sql).toContain("portal_push_tokens");
+    expect(compiled.params).toEqual(expect.arrayContaining(["c1", "user_x"]));
+  });
+
+  it("unregisters the phones of a login removed through the original portal column too", async () => {
+    queue = [[], [], [{ firmId: "firm-1" }], [{ id: "b-new" }]];
+    await revokeBinding({ clientId: "c1", clerkUserId: "user_x", endedBy: "client", actorId: "user_x" });
+    expect(deleteFrom).toHaveBeenCalledWith(portalPushTokens);
+    expect(compile(deleteWhereArgs[0]).params).toEqual(expect.arrayContaining(["c1", "user_x"]));
+  });
 });
 
 describe("getActiveBindingClerkUserId", () => {
@@ -715,6 +737,15 @@ describe("revokeAllForUser", () => {
     expect(updateSet).toHaveBeenCalledWith(
       expect.objectContaining({ endedAt: expect.any(Date) }),
     );
+  });
+
+  it("unregisters every phone the login registered, in every household", async () => {
+    // Even with nothing active to end: a login served only by the original
+    // portal column has no row here, and its account is going away all the same.
+    queue = [[]];
+    await revokeAllForUser("user_x");
+    expect(deleteFrom).toHaveBeenCalledWith(portalPushTokens);
+    expect(compile(deleteWhereArgs[0]).params).toEqual(["user_x"]);
   });
 });
 

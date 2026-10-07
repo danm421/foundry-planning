@@ -4,7 +4,9 @@ const { sendMock } = vi.hoisted(() => ({ sendMock: vi.fn() }));
 vi.mock("./expo-client", () => ({ sendExpoPush: sendMock }));
 vi.mock("@/db/schema", () => ({
   portalNotifications: { _n: "pn", clientId: "c", kind: "k", plaidItemId: "p", createdAt: "ca", id: "id" },
-  portalPushTokens: { _n: "ppt", clientId: "c", enabled: "e", expoPushToken: "t" },
+  portalPushTokens: { _n: "ppt", clientId: "c", enabled: "e", expoPushToken: "t", clerkUserId: "u" },
+  portalBindings: { _n: "pb", clientId: "bc", clerkUserId: "bu", status: "bs" },
+  clients: { _n: "cl", id: "cid", clerkUserId: "ccu" },
   plaidTransactions: { _n: "ptx", clientId: "c", reviewedAt: "r" },
 }));
 vi.mock("drizzle-orm", () => ({
@@ -23,23 +25,28 @@ const selectQueue: unknown[][] = [];
 const whereArgs: unknown[] = [];
 const insertMock = vi.fn();
 const deleteMock = vi.fn();
-vi.mock("@/db", () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        where: (cond: unknown) => {
-          whereArgs.push(cond);
-          const rows = selectQueue.shift() ?? [];
-          return Object.assign(Promise.resolve(rows), { limit: () => Promise.resolve(rows) });
-        },
+vi.mock("@/db", () => {
+  const where = (cond: unknown) => {
+    whereArgs.push(cond);
+    const rows = selectQueue.shift() ?? [];
+    return Object.assign(Promise.resolve(rows), { limit: () => Promise.resolve(rows) });
+  };
+  return {
+    db: {
+      select: () => ({
+        from: () => ({ where, innerJoin: () => ({ where }) }),
       }),
-    }),
-    insert: () => ({ values: (v: unknown) => { insertMock(v); return Promise.resolve(); } }),
-    delete: () => ({ where: (w: unknown) => { deleteMock(w); return Promise.resolve(); } }),
-  },
-}));
+      insert: () => ({ values: (v: unknown) => { insertMock(v); return Promise.resolve(); } }),
+      delete: () => ({ where: (w: unknown) => { deleteMock(w); return Promise.resolve(); } }),
+    },
+  };
+});
 
 import { notifyTransactionsToReview, notifyReconnectRequired } from "./notify";
+
+// One enabled token on household client-1, and the binding that makes its login live.
+const TOKEN_A = { token: "ExponentPushToken[a]", clerkUserId: "user_a", legacyClerkUserId: null };
+const LIVE_A = [{ clientId: "client-1", clerkUserId: "user_a", status: "active" }];
 
 beforeEach(() => {
   selectQueue.length = 0;
@@ -66,7 +73,8 @@ describe("notifyTransactionsToReview", () => {
 
   it("sends and logs with the current to-review count", async () => {
     selectQueue.push([]);                              // throttle clear
-    selectQueue.push([{ token: "ExponentPushToken[a]" }]); // one enabled token
+    selectQueue.push([TOKEN_A]);                       // one enabled token
+    selectQueue.push(LIVE_A);                          // its login's bindings
     selectQueue.push([{ count: 5 }]);                  // to-review count
     await notifyTransactionsToReview("client-1");
     expect(sendMock).toHaveBeenCalledOnce();
@@ -77,7 +85,8 @@ describe("notifyTransactionsToReview", () => {
 
   it("does not send when the to-review count is zero", async () => {
     selectQueue.push([]);
-    selectQueue.push([{ token: "ExponentPushToken[a]" }]);
+    selectQueue.push([TOKEN_A]);
+    selectQueue.push(LIVE_A);
     selectQueue.push([{ count: 0 }]);
     await notifyTransactionsToReview("client-1");
     expect(sendMock).not.toHaveBeenCalled();
@@ -86,7 +95,8 @@ describe("notifyTransactionsToReview", () => {
 
   it("prunes tokens the send reports invalid", async () => {
     selectQueue.push([]);
-    selectQueue.push([{ token: "ExponentPushToken[a]" }]);
+    selectQueue.push([TOKEN_A]);
+    selectQueue.push(LIVE_A);
     selectQueue.push([{ count: 2 }]);
     sendMock.mockResolvedValue({ sentCount: 1, invalidTokens: ["ExponentPushToken[a]"] });
     await notifyTransactionsToReview("client-1");
@@ -97,12 +107,63 @@ describe("notifyTransactionsToReview", () => {
 describe("notifyReconnectRequired", () => {
   it("sends a reconnect push logged against the item", async () => {
     selectQueue.push([]);                              // throttle clear
-    selectQueue.push([{ token: "ExponentPushToken[a]" }]); // tokens
+    selectQueue.push([TOKEN_A]);                       // tokens
+    selectQueue.push(LIVE_A);                          // bindings
     await notifyReconnectRequired({ id: "item-1", clientId: "client-1", institutionName: "Chase" });
     expect(sendMock).toHaveBeenCalledOnce();
     expect(insertMock).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "reconnect_required", plaidItemId: "item-1", tokenCount: 1 }),
     );
+  });
+});
+
+describe("who a push reaches", () => {
+  const notify = () =>
+    notifyReconnectRequired({ id: "item-1", clientId: "client-1", institutionName: "Chase" });
+
+  it("sends nothing to a login whose access to the household has ended", async () => {
+    selectQueue.push([]);                              // throttle clear
+    selectQueue.push([TOKEN_A]);                       // the token is still registered
+    selectQueue.push([{ clientId: "client-1", clerkUserId: "user_a", status: "revoked" }]);
+    await notify();
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(insertMock).not.toHaveBeenCalled();
+  });
+
+  it("sends only to the logins still connected when the household has several", async () => {
+    selectQueue.push([]);
+    selectQueue.push([TOKEN_A, { token: "ExponentPushToken[b]", clerkUserId: "user_b", legacyClerkUserId: null }]);
+    selectQueue.push([
+      { clientId: "client-1", clerkUserId: "user_a", status: "revoked" },
+      { clientId: "client-1", clerkUserId: "user_b", status: "active" },
+    ]);
+    await notify();
+    expect(sendMock).toHaveBeenCalledWith(["ExponentPushToken[b]"], expect.anything());
+  });
+
+  it("does not count a login's connection to a different household", async () => {
+    selectQueue.push([]);
+    selectQueue.push([TOKEN_A]);
+    selectQueue.push([{ clientId: "client-2", clerkUserId: "user_a", status: "active" }]);
+    await notify();
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it("still reaches a login connected only through the household's original portal column", async () => {
+    selectQueue.push([]);
+    selectQueue.push([{ ...TOKEN_A, legacyClerkUserId: "user_a" }]);
+    // A pending request from another firm settles nothing, so the column still answers.
+    selectQueue.push([{ clientId: "client-2", clerkUserId: "user_a", status: "pending" }]);
+    await notify();
+    expect(sendMock).toHaveBeenCalledWith(["ExponentPushToken[a]"], expect.anything());
+  });
+
+  it("ignores that column once the login's access has been removed", async () => {
+    selectQueue.push([]);
+    selectQueue.push([{ ...TOKEN_A, legacyClerkUserId: "user_a" }]);
+    selectQueue.push([{ clientId: "client-1", clerkUserId: "user_a", status: "revoked" }]);
+    await notify();
+    expect(sendMock).not.toHaveBeenCalled();
   });
 });
 
@@ -112,7 +173,7 @@ describe("notifyReconnectRequired", () => {
 // (`and`/`eq`/`gt`/`isNull` → arrays) and the table mocks map columns to
 // sentinel strings, so a captured `and(...)` cond is a nested array of
 // `[sentinel, value]` pairs. Query order is: [0] throttle, [1] tokens,
-// [2] to-review count (transactions path only).
+// [2] the token logins' bindings, [3] to-review count (transactions path only).
 //
 // Sentinels in play (from the @/db/schema mock above):
 //   portalNotifications.clientId → "c", .kind → "k", .createdAt → "ca",
@@ -138,7 +199,8 @@ function condValue(conds: unknown, sentinel: string): unknown {
 describe("throttle predicate shape", () => {
   it("reconnect throttle query is keyed per client AND item", async () => {
     selectQueue.push([]);                              // throttle clear
-    selectQueue.push([{ token: "ExponentPushToken[a]" }]); // tokens
+    selectQueue.push([TOKEN_A]);                       // tokens
+    selectQueue.push(LIVE_A);                          // bindings
     await notifyReconnectRequired({ id: "item-1", clientId: "client-1", institutionName: "Chase" });
     // whereArgs[0] is the throttle query's `and(...)` conds.
     expect(whereArgs[0]).toContainEqual(["c", "client-1"]);
@@ -149,7 +211,8 @@ describe("throttle predicate shape", () => {
 
   it("transactions throttle query is NOT keyed by item", async () => {
     selectQueue.push([]);                              // throttle clear
-    selectQueue.push([{ token: "ExponentPushToken[a]" }]); // tokens
+    selectQueue.push([TOKEN_A]);                       // tokens
+    selectQueue.push(LIVE_A);                          // bindings
     selectQueue.push([{ count: 5 }]);                  // to-review count
     await notifyTransactionsToReview("client-1");
     expect(whereArgs[0]).toContainEqual(["c", "client-1"]);
@@ -159,7 +222,8 @@ describe("throttle predicate shape", () => {
 
   it("transactions throttle window is recent and ≈ 4h wide", async () => {
     selectQueue.push([]);
-    selectQueue.push([{ token: "ExponentPushToken[a]" }]);
+    selectQueue.push([TOKEN_A]);
+    selectQueue.push(LIVE_A);
     selectQueue.push([{ count: 5 }]);
     await notifyTransactionsToReview("client-1");
     const since = condValue(whereArgs[0], "ca");
@@ -173,7 +237,8 @@ describe("throttle predicate shape", () => {
 
   it("reconnect throttle window is recent and ≈ 24h wide", async () => {
     selectQueue.push([]);
-    selectQueue.push([{ token: "ExponentPushToken[a]" }]);
+    selectQueue.push([TOKEN_A]);
+    selectQueue.push(LIVE_A);
     await notifyReconnectRequired({ id: "item-1", clientId: "client-1", institutionName: "Chase" });
     const since = condValue(whereArgs[0], "ca");
     expect(since).toBeInstanceOf(Date);
@@ -184,13 +249,14 @@ describe("throttle predicate shape", () => {
 
   it("to-review count query filters on reviewedAt IS NULL", async () => {
     selectQueue.push([]);                              // throttle clear
-    selectQueue.push([{ token: "ExponentPushToken[a]" }]); // tokens
+    selectQueue.push([TOKEN_A]);                       // tokens
+    selectQueue.push(LIVE_A);                          // bindings
     selectQueue.push([{ count: 3 }]);                  // to-review count
     await notifyTransactionsToReview("client-1");
-    // whereArgs[2] is the count query's `and(...)` conds.
-    expect(whereArgs[2]).toContainEqual(["c", "client-1"]);
+    // whereArgs[3] is the count query's `and(...)` conds.
+    expect(whereArgs[3]).toContainEqual(["c", "client-1"]);
     // `isNull(plaidTransactions.reviewedAt)` → `["r"]`; dropping it would fail:
-    expect(whereArgs[2]).toContainEqual(["r"]);
-    expect(hasCond(whereArgs[2], "r")).toBe(true);
+    expect(whereArgs[3]).toContainEqual(["r"]);
+    expect(hasCond(whereArgs[3], "r")).toBe(true);
   });
 });

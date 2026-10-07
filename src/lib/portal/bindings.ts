@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, gt, or, isNull, isNotNull, inArray, desc, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { portalBindings, clients, type PortalBindingStatus } from "@/db/schema";
+import { portalBindings, portalPushTokens, clients, type PortalBindingStatus } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 
 /** How long an access request stays acceptable. */
@@ -375,6 +375,24 @@ export async function declineBinding(bindingId: string, clerkUserId: string): Pr
 }
 
 /**
+ * Unregister the login's phones for one household, or for every household when
+ * `clientId` is omitted. Every path that ends access calls this, because the app
+ * cannot do it afterwards: unregistering is a portal request, and the login no
+ * longer resolves to the household (or, after Delete login, exists at all).
+ * `notify.ts` re-checks access at send time as well, for rows left from before.
+ */
+async function deletePushTokens(clerkUserId: string, clientId?: string): Promise<void> {
+  await db
+    .delete(portalPushTokens)
+    .where(
+      and(
+        eq(portalPushTokens.clerkUserId, clerkUserId),
+        clientId ? eq(portalPushTokens.clientId, clientId) : undefined,
+      ),
+    );
+}
+
+/**
  * End access for a household this table holds NOTHING for — the Deploy-1 client
  * bound between migration 0263 landing and this code shipping, whose access
  * lives in `clients.clerk_user_id` alone because the old code wrote only that
@@ -431,6 +449,7 @@ async function recordRevokedForUnbound(args: {
     .values({ clientId, clerkUserId, status: "revoked", endedAt: new Date(), endedBy })
     .returning({ id: portalBindings.id });
   if (!inserted[0]) return false;
+  await deletePushTokens(clerkUserId, clientId);
 
   await recordAudit({
     action: endedBy === "client" ? "portal.access.revoked_by_client" : "portal.access.revoked_by_advisor",
@@ -447,8 +466,9 @@ async function recordRevokedForUnbound(args: {
 }
 
 /**
- * End an active binding. Writes ONE row and nothing else — the household, its
- * plan, its documents and its audit history are untouched by design.
+ * End an active binding. Writes ONE row and unregisters that login's phones for
+ * the household — the household, its plan, its documents and its audit history
+ * are untouched by design.
  *
  * Same read-then-atomically-re-checked-write shape as `acceptBinding`: the
  * UPDATE's WHERE repeats `clientId` + `clerkUserId` + `status = 'active'`
@@ -494,6 +514,7 @@ export async function revokeBinding(args: {
     )
     .returning({ id: portalBindings.id });
   if (!updated[0]) return false;
+  await deletePushTokens(clerkUserId, clientId);
 
   await recordAudit({
     action: endedBy === "client" ? "portal.access.revoked_by_client" : "portal.access.revoked_by_advisor",
@@ -642,16 +663,19 @@ export async function resolveClientPortalUserId(
 }
 
 /**
- * End every active binding a login holds. Used only when the Clerk account
- * itself is being deleted — a binding pointing at a deleted user can never
- * resolve, so leaving one behind would be a permanently broken row.
+ * End every active binding a login holds, and unregister every phone it
+ * registered. Used only when the Clerk account itself is being deleted — a
+ * binding pointing at a deleted user can never resolve, so leaving one behind
+ * would be a permanently broken row. The phones go even when no binding was
+ * active: a login served only by the legacy column has none, and its account is
+ * being deleted all the same.
  *
- * One statement, no read first: there is nothing to decide per row, and the
- * count comes from `RETURNING` rather than from a preceding SELECT that a
- * concurrent revoke could make stale. `ended_by` is discussed at the call site
- * in the disable route — the column's domain has no value for "their whole
- * login was deleted", so every row records "advisor" and the audit carries the
- * real story.
+ * No read first: there is nothing to decide per row, and the count comes from
+ * `RETURNING` rather than from a preceding SELECT that a concurrent revoke
+ * could make stale. `ended_by` is discussed at the call site in the disable
+ * route — the column's domain has no value for "their whole login was
+ * deleted", so every row records "advisor" and the audit carries the real
+ * story.
  *
  * Deliberately audits nothing itself: this ends rows across firms that did not
  * act, and the one advisor action that caused them is audited once by its own
@@ -664,6 +688,7 @@ export async function revokeAllForUser(clerkUserId: string): Promise<number> {
     .set({ status: "revoked", endedAt: new Date(), endedBy: "advisor" })
     .where(and(eq(portalBindings.clerkUserId, clerkUserId), eq(portalBindings.status, "active")))
     .returning({ id: portalBindings.id });
+  await deletePushTokens(clerkUserId);
   return rows.length;
 }
 
