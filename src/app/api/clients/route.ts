@@ -19,6 +19,7 @@ import { requireActiveSubscription } from "@/lib/authz";
 import { parseBody } from "@/lib/schemas/common";
 import { clientCreateSchema, clientContactInfoSchema } from "@/lib/schemas/resources";
 import { recordHouseholdOpen } from "@/lib/crm/households";
+import { verifyCrmHouseholdAccessFor } from "@/lib/crm/authz";
 import { mirrorContactToCrm } from "@/lib/clients/mirror-contact-to-crm";
 import { createClientForHousehold } from "@/lib/clients/create-client";
 
@@ -121,7 +122,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const firmId = await requireOrgId();
-    const { userId } = await auth();
+    const { userId, orgRole } = await auth();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -139,6 +140,19 @@ export async function POST(request: NextRequest) {
       spouseRetirementMonth,
       spouseLifeExpectancy,
     } = parsed.data;
+
+    // The household must be in the caller's book and not in the Trash. A
+    // refusal answers exactly like a missing household.
+    const gate = await verifyCrmHouseholdAccessFor(
+      { userId, orgId: firmId, orgRole: orgRole ?? null },
+      crmHouseholdId,
+    );
+    if (!gate.ok) {
+      return NextResponse.json(
+        { error: "CRM household not found" },
+        { status: 404 },
+      );
+    }
 
     // Load the CRM household + contacts. Without a primary contact we can't
     // populate the still-notNull legacy columns, so reject early with 422.
