@@ -28,7 +28,7 @@
 
 import { useEffect, useState } from "react";
 import { useClientScenarios, useScenarioModeUI } from "@/components/scenario/scenario-mode-wrapper";
-import { withoutTestOrphans } from "@/components/scenario/scenario-chip-row";
+import { withoutTestOrphans } from "@/lib/scenario/test-orphans";
 import { ChangesPanel, type ChangesPanelChange } from "@/components/scenario/changes-panel";
 import { labelFor } from "@/components/scenario/changes-panel-leaf-row";
 import type { ClientData, LtcEvent, ProjectionYear } from "@/engine/types";

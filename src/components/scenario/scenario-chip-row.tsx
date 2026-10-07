@@ -6,41 +6,12 @@ import { useScenarioState } from "@/hooks/use-scenario-state";
 import { useScenarioModeUI } from "./scenario-mode-wrapper";
 import { PromoteScenarioDialog } from "./promote-scenario-dialog";
 import { useClientAccess } from "@/components/client-access-provider";
+import { withoutTestOrphans } from "@/lib/scenario/test-orphans";
 
 export interface ScenarioChip {
   id: string;
   name: string;
   isBaseCase: boolean;
-}
-
-// Name prefixes used by integration tests that insert into the `scenarios`
-// table (see `.insert(scenarios)` in src/**/__tests__/*.test.ts). Each test
-// names rows `<prefix><uuid-slice>` and deletes them in afterEach; leaked rows
-// from crashed runs are filtered out of the chip row below.
-const TEST_ORPHAN_PREFIXES = [
-  "writer-test-",
-  "nr-loader-test-",
-  "nr-fast-path-host-",
-  "nr-filter-",
-  "preview-fidelity-",
-  "change-cid-test-",
-  "change-cid-other-",
-  "delta-preview-cache-",
-  "delta-preview-test-",
-  "load-changes-test-",
-  "route-list-test-",
-  "route-test-",
-  "tg-gid-test-",
-  "tg-test-",
-  "tg-other-",
-  "clone-src-",
-  "flow-inherit-scn-",
-  "flow-mixed-scn-",
-] as const;
-
-/** Drops leaked integration-test scenarios (see TEST_ORPHAN_PREFIXES). */
-export function withoutTestOrphans<T extends { name: string }>(scenarios: T[]): T[] {
-  return scenarios.filter((s) => !TEST_ORPHAN_PREFIXES.some((p) => s.name.startsWith(p)));
 }
 
 /**

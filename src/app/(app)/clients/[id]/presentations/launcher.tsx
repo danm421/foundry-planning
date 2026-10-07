@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   DndContext,
   closestCenter,
@@ -31,6 +31,7 @@ import type { ScenarioComparisonOptions } from "@/lib/presentations/pages/scenar
 import { TemplatesPanel } from "@/components/presentations/launcher/templates-panel";
 import { SaveTemplateModal } from "@/components/presentations/launcher/save-template-modal";
 import { AddPageButton } from "@/components/presentations/launcher/report-command-palette";
+import { SuggestedReportsPanel } from "@/components/presentations/launcher/suggested-reports-panel";
 import {
   useLauncherState,
   type LauncherState,
@@ -510,6 +511,8 @@ export function PresentationsLauncher(props: Props) {
     }
   }
 
+  const deckPageIds = useMemo(() => state.pages.map((p) => p.pageId), [state.pages]);
+
   const generateDisabled = generating || state.pages.length === 0;
   const isLoadedTemplateMine =
     state.loadedTemplate?.createdByUserId === props.currentUserId;
@@ -704,6 +707,23 @@ export function PresentationsLauncher(props: Props) {
               </SortableContext>
             </DndContext>
           )}
+          <div className="pt-2">
+            <SuggestedReportsPanel
+              clientId={props.clientId}
+              deckScenario={state.topScenarioPickerValue}
+              deckPageIds={deckPageIds}
+              scenarios={props.scenarios}
+              snapshots={props.snapshots}
+              onAdd={(pageId, options) => dispatch({ type: "addPage", pageId, options })}
+              onPreview={(pageId, options) =>
+                setPreviewRequest({
+                  title: PRESENTATION_PAGES[pageId].title,
+                  scenarioId: resolvedScenarioId,
+                  pages: descriptorsFor([{ pageId, options, scenarioOverride: undefined }]),
+                })
+              }
+            />
+          </div>
         </div>
 
         <div className="space-y-4">
