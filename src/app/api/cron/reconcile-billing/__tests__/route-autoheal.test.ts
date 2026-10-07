@@ -111,7 +111,7 @@ describe("reconcile-billing auto-heal", () => {
 
     expect(mockUpdateOrgMeta).toHaveBeenCalledWith(
       "org_1",
-      { publicMetadata: { subscription_status: "active" } },
+      { publicMetadata: { subscription_status: "active", past_due_since: null } },
     );
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({

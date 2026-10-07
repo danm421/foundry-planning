@@ -101,7 +101,7 @@ export async function handleInvoiceUpserted(event: Stripe.Event): Promise<void> 
         .where(eq(subscriptions.stripeSubscriptionId, subId));
       const cc = await clerkClient();
       await cc.organizations.updateOrganizationMetadata(firmId, {
-        publicMetadata: { subscription_status: "active" },
+        publicMetadata: { subscription_status: "active", past_due_since: null },
       });
       await recordAudit({
         action: "billing.payment_recovered",

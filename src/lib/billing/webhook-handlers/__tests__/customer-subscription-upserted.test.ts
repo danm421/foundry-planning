@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { sql } from "drizzle-orm";
 
 const mockSubsRetrieve = vi.fn();
@@ -9,9 +9,11 @@ vi.mock("@/lib/billing/stripe-client", () => ({
 }));
 
 const mockUpdateOrgMeta = vi.fn();
+const mockGetOrg = vi.fn();
 vi.mock("@clerk/nextjs/server", () => ({
   clerkClient: async () => ({
     organizations: {
+      getOrganization: (...a: unknown[]) => mockGetOrg(...a),
       updateOrganizationMetadata: (...a: unknown[]) => mockUpdateOrgMeta(...a),
     },
   }),
@@ -77,6 +79,7 @@ import { handleSubscriptionUpsert } from "../customer-subscription-upserted";
 beforeEach(() => {
   mockSubsRetrieve.mockReset();
   mockUpdateOrgMeta.mockReset();
+  mockGetOrg.mockReset();
   mockSelectFirms.mockReset();
   mockSubsUpsert.mockReset();
   mockItemsUpsert.mockReset();
@@ -510,5 +513,90 @@ describe("a live subscription lifts the Founder comp (symmetric auto-lift)", () 
         publicMetadata: expect.not.objectContaining({ is_founder: false }),
       }),
     );
+  });
+});
+
+describe("records when the firm went past due", () => {
+  const NOW = new Date("2026-10-07T12:00:00Z").getTime();
+  const DAY = 86_400_000;
+  const sec = (ms: number) => Math.floor(ms / 1000);
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  // A monthly renewal that failed: the item's billing period has already moved
+  // on, so current_period_end is in the future.
+  function arrange(status: string, currentMeta: Record<string, unknown>) {
+    mockSubsRetrieve.mockResolvedValue({
+      id: "sub_1",
+      customer: "cus_1",
+      status,
+      cancel_at_period_end: false,
+      canceled_at: null,
+      trial_start: null,
+      trial_end: null,
+      metadata: { firm_id: "f1" },
+      items: {
+        data: [
+          {
+            id: "si_1",
+            price: { id: "price_seat", unit_amount: 9900, currency: "usd" },
+            quantity: 1,
+            metadata: { kind: "seat" },
+            current_period_start: sec(NOW - 20 * DAY),
+            current_period_end: sec(NOW + 10 * DAY),
+          },
+        ],
+      },
+    });
+    mockSelectFirms.mockResolvedValue([{ firmId: "f1", isFounder: false }]);
+    mockSubsUpsert.mockResolvedValue([{ id: "internal-sub-1" }]);
+    mockItemsUpsert.mockResolvedValue([]);
+    mockGetOrg.mockResolvedValue({ publicMetadata: currentMeta });
+  }
+
+  const fire = () =>
+    handleSubscriptionUpsert({
+      id: "evt_pd",
+      type: "customer.subscription.updated",
+      data: { object: { id: "sub_1" } },
+    } as never);
+
+  const written = () =>
+    (mockUpdateOrgMeta.mock.calls[0][1] as { publicMetadata: Record<string, unknown> })
+      .publicMetadata;
+
+  it("starts the clock now when the firm first goes past due", async () => {
+    arrange("past_due", { subscription_status: "active" });
+    await fire();
+    expect(written().past_due_since).toBe(new Date(NOW).toISOString());
+  });
+
+  it("keeps the original start on later past-due updates", async () => {
+    const since = new Date(NOW - 5 * DAY).toISOString();
+    arrange("past_due", { subscription_status: "past_due", past_due_since: since });
+    await fire();
+    expect(written().past_due_since).toBe(since);
+  });
+
+  it("starts a fresh clock when a stamp is left over from an earlier spell", async () => {
+    arrange("past_due", {
+      subscription_status: "active",
+      past_due_since: new Date(NOW - 90 * DAY).toISOString(),
+    });
+    await fire();
+    expect(written().past_due_since).toBe(new Date(NOW).toISOString());
+  });
+
+  it("clears it once the subscription is active again", async () => {
+    arrange("active", {
+      subscription_status: "past_due",
+      past_due_since: new Date(NOW - 5 * DAY).toISOString(),
+    });
+    await fire();
+    expect(written()).toHaveProperty("past_due_since", null);
   });
 });

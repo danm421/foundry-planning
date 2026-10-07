@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mockInvoicesRetrieve = vi.fn();
 vi.mock("@/lib/billing/stripe-client", () => ({
@@ -6,9 +6,11 @@ vi.mock("@/lib/billing/stripe-client", () => ({
 }));
 
 const mockUpdateOrgMeta = vi.fn();
+const mockGetOrg = vi.fn();
 vi.mock("@clerk/nextjs/server", () => ({
   clerkClient: async () => ({
     organizations: {
+      getOrganization: (...a: unknown[]) => mockGetOrg(...a),
       updateOrganizationMetadata: (...a: unknown[]) => mockUpdateOrgMeta(...a),
     },
   }),
@@ -41,6 +43,8 @@ beforeEach(() => {
   mockSubSelect.mockReset();
   mockSubSelect.mockResolvedValue([]); // default: no existing row
   mockUpdateOrgMeta.mockReset();
+  mockGetOrg.mockReset();
+  mockGetOrg.mockResolvedValue({ publicMetadata: { subscription_status: "active" } });
   mockSendBillingEmail.mockReset();
   mockRecordAudit.mockReset();
 });
@@ -126,5 +130,48 @@ describe("handleInvoicePaymentFailed", () => {
     expect(mockSubUpdate).not.toHaveBeenCalled();
     expect(mockUpdateOrgMeta).not.toHaveBeenCalled();
     expect(mockRecordAudit).not.toHaveBeenCalled();
+  });
+
+  describe("the past-due start date", () => {
+    const failedInvoice = {
+      id: "in_1",
+      customer: "cus_1",
+      parent: { type: "subscription_details", subscription_details: { subscription: "sub_1" } },
+      metadata: {},
+    };
+    const fail = () =>
+      handleInvoicePaymentFailed({
+        id: "evt_fail",
+        type: "invoice.payment_failed",
+        data: { object: { id: "in_1" } },
+      } as never);
+    const writtenStart = () =>
+      (mockUpdateOrgMeta.mock.calls[0][1] as { publicMetadata: Record<string, unknown> })
+        .publicMetadata.past_due_since;
+
+    beforeEach(() => {
+      vi.useFakeTimers({ now: new Date("2026-10-07T12:00:00.000Z") });
+      mockInvoicesRetrieve.mockResolvedValue(failedInvoice);
+      mockSubSelect.mockResolvedValue([{ firmId: "org_1" }]);
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("starts now when the firm wasn't past due, ignoring a date left from an earlier spell", async () => {
+      mockGetOrg.mockResolvedValue({
+        publicMetadata: { subscription_status: "active", past_due_since: "2026-01-01T00:00:00.000Z" },
+      });
+      await fail();
+      expect(writtenStart()).toBe("2026-10-07T12:00:00.000Z");
+    });
+
+    it("keeps the recorded start when a retry fails again", async () => {
+      mockGetOrg.mockResolvedValue({
+        publicMetadata: { subscription_status: "past_due", past_due_since: "2026-10-01T00:00:00.000Z" },
+      });
+      await fail();
+      expect(writtenStart()).toBe("2026-10-01T00:00:00.000Z");
+    });
   });
 });

@@ -186,5 +186,8 @@ describe("handleInvoiceUpserted", () => {
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "billing.payment_recovered" }),
     );
+    expect(mockUpdateOrgMeta).toHaveBeenCalledWith("org_1", {
+      publicMetadata: { subscription_status: "active", past_due_since: null },
+    });
   });
 });

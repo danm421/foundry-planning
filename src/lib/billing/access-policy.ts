@@ -12,6 +12,16 @@ export type AccessDecision = "allow" | "block_mutation" | "lock_out";
 export const PAST_DUE_GRACE_DAYS = 14;
 const PAST_DUE_GRACE_MS = PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000;
 
+/**
+ * Is a past_due firm still inside its full-access window? Counted from when it
+ * went past due (`pastDueStart`); an unknown start counts as inside. Shared by
+ * `decideAccess` (the proxy) and the in-handler `requireActiveSubscription*`
+ * gates so the two cutoffs cannot drift apart.
+ */
+export function pastDueWithinGrace(since: Date | null): boolean {
+  return since === null || Date.now() - since.getTime() < PAST_DUE_GRACE_MS;
+}
+
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /**
@@ -78,12 +88,9 @@ export function decideAccess(
     case "paused":
       return "lock_out";
 
-    case "past_due": {
-      if (state.pastDueSince === null) return "allow";
-      const ageMs = Date.now() - state.pastDueSince.getTime();
-      if (ageMs < PAST_DUE_GRACE_MS) return "allow";
+    case "past_due":
+      if (pastDueWithinGrace(state.pastDueSince)) return "allow";
       return mutationDecision(method, pathname);
-    }
 
     // A comp ending is a business decision, not a broken account: the firm
     // keeps reading its own book while it decides, and is prompted to

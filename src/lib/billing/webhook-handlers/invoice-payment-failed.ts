@@ -7,6 +7,7 @@ import { getStripe } from "@/lib/billing/stripe-client";
 import { sendBillingEmail } from "@/lib/billing/email-stub";
 import { recordAudit } from "@/lib/audit";
 import { resolveBillingContact } from "@/lib/billing/billing-contact";
+import { nextPastDueSince, type OrgMeta } from "@/lib/billing/subscription-state";
 
 /**
  * invoice.payment_failed — flips parent subscription to past_due so the
@@ -65,8 +66,15 @@ export async function handleInvoicePaymentFailed(event: Stripe.Event): Promise<v
     .where(eq(subscriptions.stripeSubscriptionId, subId));
 
   const cc = await clerkClient();
+  // Every retry fails again, so carry an existing past-due start forward
+  // rather than restarting the read-only countdown (see `pastDueStart`).
+  const currentMeta = (await cc.organizations.getOrganization({ organizationId: firmId }))
+    .publicMetadata as OrgMeta;
   await cc.organizations.updateOrganizationMetadata(firmId, {
-    publicMetadata: { subscription_status: "past_due" },
+    publicMetadata: {
+      subscription_status: "past_due",
+      past_due_since: nextPastDueSince(currentMeta, "past_due", new Date()),
+    },
   });
 
   // Notify billing contact.

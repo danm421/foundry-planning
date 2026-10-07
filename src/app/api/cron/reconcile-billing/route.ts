@@ -21,6 +21,7 @@ import { checkRecentWebhookErrors } from "@/lib/billing/webhook-error-check";
 import { getActiveEntitlementOverrides } from "@/lib/ops/entitlements";
 import { recordAudit } from "@/lib/audit";
 import { planAutoHeal } from "@/lib/billing/auto-heal";
+import type { OrgMeta } from "@/lib/billing/subscription-state";
 
 export const dynamic = "force-dynamic";
 
@@ -128,7 +129,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
       // Auto-heal: write Stripe-derived status/entitlements back to Clerk on
       // drift (Stripe is source of truth). Item drift stays detect-only.
-      const heal = planAutoHeal(firmDrift);
+      const heal = planAutoHeal(firmDrift, clerkMeta as OrgMeta);
       if (heal) {
         // Clerk PATCH /metadata shallow-merges publicMetadata — only the keys
         // present in heal.patch are overwritten, so a status-only heal leaves

@@ -4,7 +4,8 @@ import { UnauthorizedError } from "./db-helpers";
 import { getPortalClientRef } from "@/lib/portal/get-portal-client";
 import { roleHasCapability, type Capability } from "./capabilities";
 import { currentUserIsBillingContact } from "@/lib/billing/billing-contact";
-import { PAST_DUE_GRACE_DAYS } from "@/lib/billing/access-policy";
+import { pastDueWithinGrace } from "@/lib/billing/access-policy";
+import { pastDueStart, type OrgMeta } from "@/lib/billing/subscription-state";
 import { hasClientPortalEntitlement, deriveUserEntitlements } from "@/lib/billing/entitlements";
 import { getActiveUserOverrides } from "@/lib/entitlements/user-overrides";
 
@@ -67,22 +68,15 @@ const ACTIVE_SUBSCRIPTION_STATUSES = new Set([
   "past_due",
 ]);
 
-const PAST_DUE_GRACE_MS = PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000;
-
 function metaIsActive(meta: Record<string, unknown>): boolean {
   if (meta.is_founder === true) return true;
   const status = typeof meta.subscription_status === "string" ? meta.subscription_status : null;
   if (!status || !ACTIVE_SUBSCRIPTION_STATUSES.has(status)) return false;
   if (status === "past_due") {
-    // Aligned with decideAccess: past_due keeps mutation access only inside
-    // the dunning grace window, keyed off current_period_end (the same field
-    // stateFromMeta uses for pastDueSince). No parseable timestamp → allow,
-    // matching decideAccess's pastDueSince === null branch.
-    const raw = meta.current_period_end;
-    const since = typeof raw === "string" ? new Date(raw) : null;
-    if (since && !Number.isNaN(since.getTime())) {
-      return Date.now() - since.getTime() < PAST_DUE_GRACE_MS;
-    }
+    // The same anchor and cutoff as the proxy's decideAccess: past_due keeps
+    // mutation access only inside the grace window, counted from when the
+    // firm went past due.
+    return pastDueWithinGrace(pastDueStart(meta as OrgMeta));
   }
   return true;
 }

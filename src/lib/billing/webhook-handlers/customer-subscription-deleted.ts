@@ -65,8 +65,8 @@ export async function handleSubscriptionDeleted(
       ? // Keep the founder status string canonical and clear any cancellation
         // shadow — `stateFromMeta` already short-circuits on is_founder, but a
         // stale archived_at here would misreport the firm everywhere it's read.
-        { subscription_status: "founder", archived_at: null }
-      : { subscription_status: "canceled", archived_at: now.toISOString() },
+        { subscription_status: "founder", archived_at: null, past_due_since: null }
+      : { subscription_status: "canceled", archived_at: now.toISOString(), past_due_since: null },
   });
 
   await recordAudit({

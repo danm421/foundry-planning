@@ -10,7 +10,7 @@ describe("planAutoHeal", () => {
     ];
     expect(planAutoHeal(drift)).toEqual({
       firmId: "org_1",
-      patch: { subscription_status: "active" },
+      patch: { subscription_status: "active", past_due_since: null },
       healedFields: ["status"],
     });
   });
@@ -32,7 +32,11 @@ describe("planAutoHeal", () => {
       { firmId: "org_1", field: "entitlements", stripeValue: ["ai_import"], clerkValue: [] },
     ];
     const plan = planAutoHeal(drift);
-    expect(plan!.patch).toEqual({ subscription_status: "active", entitlements: ["ai_import"] });
+    expect(plan!.patch).toEqual({
+      subscription_status: "active",
+      past_due_since: null,
+      entitlements: ["ai_import"],
+    });
     expect(plan!.healedFields.sort()).toEqual(["entitlements", "status"]);
   });
 
@@ -50,7 +54,7 @@ describe("planAutoHeal", () => {
     ];
     expect(planAutoHeal(drift)).toEqual({
       firmId: "org_1",
-      patch: { subscription_status: "active" },
+      patch: { subscription_status: "active", past_due_since: null },
       healedFields: ["status"],
     });
   });
@@ -71,7 +75,7 @@ describe("planAutoHeal", () => {
     ];
     expect(planAutoHeal(drift)).toEqual({
       firmId: "org_1",
-      patch: { subscription_status: "active" },
+      patch: { subscription_status: "active", past_due_since: null },
       healedFields: ["status"],
     });
   });
@@ -85,5 +89,32 @@ describe("planAutoHeal", () => {
       { firmId: "org_1", field: "status", stripeValue: "<error>", clerkValue: "boom" },
     ];
     expect(planAutoHeal(drift)).toBeNull();
+  });
+
+  describe("the past-due start date", () => {
+    const now = new Date("2026-10-07T12:00:00.000Z");
+    const healTo = (status: string): DriftEntry[] => [
+      { firmId: "org_1", field: "status", stripeValue: status, dbValue: "x", clerkValue: "x" },
+    ];
+
+    it("starts now when the heal makes the firm past due", () => {
+      const plan = planAutoHeal(healTo("past_due"), { subscription_status: "active" }, now);
+      expect(plan?.patch).toEqual({ subscription_status: "past_due", past_due_since: now.toISOString() });
+    });
+
+    it("keeps a recorded start when Clerk already had the firm past due", () => {
+      const prev = { subscription_status: "past_due", past_due_since: "2026-10-01T00:00:00.000Z" };
+      expect(planAutoHeal(healTo("past_due"), prev, now)?.patch.past_due_since).toBe(
+        "2026-10-01T00:00:00.000Z",
+      );
+    });
+
+    it("clears it when the heal moves the firm off past due", () => {
+      const prev = { subscription_status: "past_due", past_due_since: "2026-10-01T00:00:00.000Z" };
+      expect(planAutoHeal(healTo("active"), prev, now)?.patch).toEqual({
+        subscription_status: "active",
+        past_due_since: null,
+      });
+    });
   });
 });

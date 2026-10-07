@@ -172,6 +172,38 @@ describe("requireActiveSubscription", () => {
     await expect(requireActiveSubscription()).rejects.toBeInstanceOf(ForbiddenError);
   });
 
+  it("throws ForbiddenError 20 days after the firm went past due, even with the billing period still running", async () => {
+    // Stripe moves current_period_end on to the new, unpaid period when a
+    // renewal fails, so the countdown runs from past_due_since.
+    const DAY = 24 * 60 * 60 * 1000;
+    mockAuth.mockResolvedValue({
+      userId: "u1",
+      sessionClaims: {
+        org_public_metadata: {
+          subscription_status: "past_due",
+          past_due_since: new Date(Date.now() - 20 * DAY).toISOString(),
+          current_period_end: new Date(Date.now() + 10 * DAY).toISOString(),
+        },
+      },
+    });
+    await expect(requireActiveSubscription()).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("passes 10 days after the firm went past due", async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    mockAuth.mockResolvedValue({
+      userId: "u1",
+      sessionClaims: {
+        org_public_metadata: {
+          subscription_status: "past_due",
+          past_due_since: new Date(Date.now() - 10 * DAY).toISOString(),
+          current_period_end: new Date(Date.now() + 20 * DAY).toISOString(),
+        },
+      },
+    });
+    await expect(requireActiveSubscription()).resolves.toBeUndefined();
+  });
+
   it("throws ForbiddenError for subscription_status=canceled", async () => {
     mockAuth.mockResolvedValue({
       userId: "u1",

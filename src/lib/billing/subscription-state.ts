@@ -35,6 +35,8 @@ export type OrgMeta = {
   subscription_status?: string;
   trial_ends_at?: string;
   current_period_end?: string;
+  /** When the firm went past due. Written by the subscription webhook. */
+  past_due_since?: string;
   cancel_at_period_end?: boolean;
   archived_at?: string;
   entitlements?: string[];
@@ -44,6 +46,36 @@ function parseDate(s: string | undefined): Date | null {
   if (!s) return null;
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * When a past_due firm's read-only countdown started. `current_period_end`
+ * can't serve: by the time a renewal fails, Stripe has already moved the
+ * billing period on, so it sits in the future for as long as the firm stays
+ * past due. A firm that went past due before `past_due_since` was recorded
+ * has no stamp and keeps the old `current_period_end` reading, so the stamp's
+ * arrival locks nobody out by itself; its next subscription webhook stamps it.
+ */
+export function pastDueStart(meta: OrgMeta): Date | null {
+  return parseDate(meta.past_due_since) ?? parseDate(meta.current_period_end);
+}
+
+/**
+ * The `past_due_since` to write alongside a new `subscription_status`, given
+ * the org's metadata before the write. Staying past due keeps the recorded
+ * start, so later webhooks never restart the countdown; going past due starts
+ * it now (a stamp left over from an earlier spell doesn't count); any other
+ * status clears it.
+ */
+export function nextPastDueSince(
+  prev: OrgMeta | undefined,
+  status: string,
+  now: Date,
+): string | null {
+  if (status !== "past_due") return null;
+  const kept =
+    prev?.subscription_status === "past_due" ? parseDate(prev.past_due_since) : null;
+  return (kept ?? now).toISOString();
 }
 
 /**
@@ -84,7 +116,7 @@ export function stateFromMeta(meta: OrgMeta | undefined): SubscriptionState {
     return { kind: "active" };
   }
   if (status === "past_due") {
-    return { kind: "past_due", pastDueSince: parseDate(meta.current_period_end) };
+    return { kind: "past_due", pastDueSince: pastDueStart(meta) };
   }
   if (status === "unpaid") return { kind: "unpaid" };
   if (status === "paused") return { kind: "paused" };

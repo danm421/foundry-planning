@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mockAuth = vi.fn();
 vi.mock("@clerk/nextjs/server", () => ({
@@ -6,6 +6,7 @@ vi.mock("@clerk/nextjs/server", () => ({
 }));
 
 import { getSubscriptionState, stateFromMeta } from "../subscription-state";
+import { decideAccess } from "../access-policy";
 
 beforeEach(() => mockAuth.mockReset());
 
@@ -229,5 +230,39 @@ describe("comp_ended", () => {
     // The checkout webhook writes subscription_status: sub.status over the
     // top, so the state self-heals with no extra clean-up step.
     expect(stateFromMeta({ subscription_status: "active" })).toEqual({ kind: "active" });
+  });
+});
+
+describe("past_due read-only cutoff counts from when the firm went past due", () => {
+  const NOW = new Date("2026-10-07T12:00:00Z").getTime();
+  const DAY = 86_400_000;
+  const MUTATE_PATH = "/api/clients/c1/accounts";
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  // A monthly renewal that failed: Stripe has already moved the billing period
+  // on, so current_period_end sits in the future the whole time the firm is
+  // past due. The countdown has to run from past_due_since instead.
+  const pastDue = (sinceDaysAgo: number) =>
+    stateFromMeta({
+      subscription_status: "past_due",
+      past_due_since: new Date(NOW - sinceDaysAgo * DAY).toISOString(),
+      current_period_end: new Date(NOW + 10 * DAY).toISOString(),
+    });
+
+  it("blocks changes 20 days in, even though the billing period has not ended", () => {
+    expect(decideAccess(pastDue(20), "POST", MUTATE_PATH)).toBe("block_mutation");
+  });
+
+  it("still allows changes 10 days in", () => {
+    expect(decideAccess(pastDue(10), "POST", MUTATE_PATH)).toBe("allow");
+  });
+
+  it("keeps reads open after the cutoff", () => {
+    expect(decideAccess(pastDue(20), "GET", MUTATE_PATH)).toBe("allow");
   });
 });

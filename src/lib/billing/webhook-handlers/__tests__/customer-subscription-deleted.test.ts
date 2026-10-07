@@ -130,7 +130,7 @@ describe("handleSubscriptionDeleted — a founder's cancellation is a comp, not 
     expect(mockUpdateOrgMeta).toHaveBeenCalledWith(
       "org_founder",
       expect.objectContaining({
-        publicMetadata: { subscription_status: "founder", archived_at: null },
+        publicMetadata: { subscription_status: "founder", archived_at: null, past_due_since: null },
       }),
     );
   });

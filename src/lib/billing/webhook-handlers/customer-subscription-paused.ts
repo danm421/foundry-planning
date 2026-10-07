@@ -30,7 +30,7 @@ export async function handleSubscriptionPaused(
 
   const cc = await clerkClient();
   await cc.organizations.updateOrganizationMetadata(firmId, {
-    publicMetadata: { subscription_status: "paused" },
+    publicMetadata: { subscription_status: "paused", past_due_since: null },
   });
 
   await recordAudit({

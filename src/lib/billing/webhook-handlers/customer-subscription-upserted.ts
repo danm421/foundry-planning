@@ -11,6 +11,7 @@ import {
 } from "@/lib/billing/entitlements";
 import { getActiveEntitlementOverrides } from "@/lib/ops/entitlements";
 import { readSubscriptionItemMeta } from "@/lib/billing/subscription-item-meta";
+import { nextPastDueSince, type OrgMeta } from "@/lib/billing/subscription-state";
 import { recordAudit } from "@/lib/audit";
 
 // The partial unique index subscriptions_firm_active_unique only indexes rows in
@@ -191,6 +192,14 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
   const isLive = LIVE_SUBSCRIPTION_STATUSES.includes(sub.status);
 
   const cc = await clerkClient();
+  // Start of a past_due firm's read-only countdown (see `pastDueStart`). Only
+  // a past_due write needs the org's current metadata — to carry an existing
+  // start forward instead of restarting the clock on every webhook.
+  const currentMeta =
+    sub.status === "past_due"
+      ? ((await cc.organizations.getOrganization({ organizationId: firmId }))
+          .publicMetadata as OrgMeta)
+      : undefined;
   await Promise.all([
     cc.organizations.updateOrganizationMetadata(firmId, {
       publicMetadata: {
@@ -201,6 +210,7 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
         current_period_end: periodEnd
           ? new Date(periodEnd * 1000).toISOString()
           : null,
+        past_due_since: nextPastDueSince(currentMeta, sub.status, new Date()),
         trial_ends_at: sub.trial_end
           ? new Date(sub.trial_end * 1000).toISOString()
           : null,

@@ -17,6 +17,7 @@ import {
   clearPendingSignup,
 } from "@/lib/billing/pending-signup";
 import { recordAudit } from "@/lib/audit";
+import { nextPastDueSince } from "@/lib/billing/subscription-state";
 
 const TOS_VERSION_DEFAULT = "v1";
 
@@ -316,6 +317,7 @@ export async function handleCheckoutSessionCompleted(
       stripe_customer_id: customerId,
       stripe_subscription_id: sub.id,
       subscription_status: sub.status,
+      past_due_since: nextPastDueSince(undefined, sub.status, new Date()),
       entitlements,
       trial_ends_at: sub.trial_end
         ? new Date(sub.trial_end * 1000).toISOString()
