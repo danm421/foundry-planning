@@ -17,6 +17,7 @@ import { recordAudit } from "@/lib/audit";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import { assertExternalBeneficiariesInClient } from "@/lib/db-scoping";
 import { entityCreateSchema } from "@/lib/schemas/entities";
 import type { TrustSubType } from "@/lib/entities/trust";
 import { computeCltInceptionInterests } from "@/lib/entities/compute-clt-inception";
@@ -126,6 +127,15 @@ export async function POST(
       );
     }
     const data = parsed.data;
+
+    if (data.splitInterest) {
+      const ext = await assertExternalBeneficiariesInClient(id, [
+        data.splitInterest.charityId,
+      ]);
+      if (!ext.ok) {
+        return NextResponse.json({ error: ext.reason }, { status: 400 });
+      }
+    }
 
     // Load household family members so we can validate ownership refs and
     // derive the legacy owner enum for back-compat readers.

@@ -242,7 +242,12 @@ async function ensureExternalBeneficiary(
   const [p] = await tx
     .select()
     .from(externalBeneficiaries)
-    .where(eq(externalBeneficiaries.id, pId))
+    .where(
+      and(
+        eq(externalBeneficiaries.id, pId),
+        eq(externalBeneficiaries.clientId, ctx.plan.clientId),
+      ),
+    )
     .limit(1);
   if (!p) return pId;
   const [s] = await tx

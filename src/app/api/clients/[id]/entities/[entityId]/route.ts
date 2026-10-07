@@ -16,7 +16,11 @@ import { recordAudit } from "@/lib/audit";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
-import { assertEntitiesInClient } from "@/lib/db-scoping";
+import {
+  assertEntitiesInClient,
+  assertExternalBeneficiariesInClient,
+  assertFamilyMembersInClient,
+} from "@/lib/db-scoping";
 import { cleanupWillRecipientReferences } from "@/lib/estate/cleanup-will-recipients";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { entityCreateSchema, entityUpdateSchema } from "@/lib/schemas/entities";
@@ -105,6 +109,21 @@ export async function PUT(
       valueGrowthRate?: number | null;
       splitInterest?: TrustSplitInterestInput;
     };
+
+    if (patch.splitInterest) {
+      const si = patch.splitInterest;
+      const ext = await assertExternalBeneficiariesInClient(id, [si.charityId]);
+      if (!ext.ok) {
+        return NextResponse.json({ error: ext.reason }, { status: 400 });
+      }
+      const fm = await assertFamilyMembersInClient(id, [
+        si.measuringLife1Id,
+        si.measuringLife2Id,
+      ]);
+      if (!fm.ok) {
+        return NextResponse.json({ error: fm.reason }, { status: 400 });
+      }
+    }
 
     const householdMembers = await db
       .select({ id: familyMembers.id, role: familyMembers.role })
