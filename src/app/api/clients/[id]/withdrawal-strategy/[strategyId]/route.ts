@@ -80,12 +80,20 @@ export async function DELETE(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
-    await db.transaction(async (tx) => {
-      await tx
+    // The prune keys on the bare id, so it runs only once the client-scoped
+    // delete has proven the row was this client's.
+    const deleted = await db.transaction(async (tx) => {
+      const rows = await tx
         .delete(withdrawalStrategies)
-        .where(and(eq(withdrawalStrategies.id, strategyId), eq(withdrawalStrategies.clientId, id)));
+        .where(and(eq(withdrawalStrategies.id, strategyId), eq(withdrawalStrategies.clientId, id)))
+        .returning({ id: withdrawalStrategies.id });
+      if (rows.length === 0) return false;
       await pruneOrphanScenarioChanges(tx, strategyId);
+      return true;
     });
+    if (!deleted) {
+      return NextResponse.json({ error: "Withdrawal strategy not found" }, { status: 404 });
+    }
 
     await recordAudit({
       action: "withdrawal_strategy.delete",

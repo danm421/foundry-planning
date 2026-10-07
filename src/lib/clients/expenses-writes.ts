@@ -464,7 +464,10 @@ export async function deleteExpenseForClient(args: {
     .select()
     .from(expenses)
     .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, clientId)));
-  if (target?.isDefault) {
+  // The prune below keys on the bare id, so a row that is not this client's
+  // stops here.
+  if (!target) return writeError(404, "Expense not found");
+  if (target.isDefault) {
     return writeError(400, "Default living-expense rows cannot be deleted.");
   }
 

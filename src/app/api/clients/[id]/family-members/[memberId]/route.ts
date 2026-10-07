@@ -9,6 +9,7 @@ import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import { assertFamilyMembersInClient } from "@/lib/db-scoping";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +83,12 @@ export async function DELETE(
     const { orgId: callerOrg } = await requireOrgAndUser();
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
+
+    // The cleanup below keys on the bare id, so prove it is this client's first.
+    const owned = await assertFamilyMembersInClient(id, [memberId]);
+    if (!owned.ok) {
+      return NextResponse.json({ error: "Family member not found" }, { status: 404 });
+    }
 
     // Remove any will-recipient rows that point at this family member before
     // deleting it — recipient_id is a polymorphic FK-less column, so a plain

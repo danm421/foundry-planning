@@ -270,12 +270,18 @@ export async function deleteSavingsRuleForClient(args: {
   // wrapping the delete + pruneOrphanScenarioChanges call) — the write-core spec
   // this file was drafted from omitted this; flagged to the reviewer as a
   // discrepancy rather than dropped silently.
-  await db.transaction(async (tx) => {
-    await tx
+  // The prune keys on the bare id, so it runs only once the client-scoped
+  // delete has proven the row was this client's.
+  const deleted = await db.transaction(async (tx) => {
+    const rows = await tx
       .delete(savingsRules)
-      .where(and(eq(savingsRules.id, ruleId), eq(savingsRules.clientId, clientId)));
+      .where(and(eq(savingsRules.id, ruleId), eq(savingsRules.clientId, clientId)))
+      .returning({ id: savingsRules.id });
+    if (rows.length === 0) return false;
     await pruneOrphanScenarioChanges(tx, ruleId);
+    return true;
   });
+  if (!deleted) return writeError(404, "Savings rule not found");
 
   await recordAudit({
     action: "savings_rule.delete",

@@ -16,6 +16,7 @@ import { recordAudit } from "@/lib/audit";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import { assertEntitiesInClient } from "@/lib/db-scoping";
 import { cleanupWillRecipientReferences } from "@/lib/estate/cleanup-will-recipients";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { entityCreateSchema, entityUpdateSchema } from "@/lib/schemas/entities";
@@ -581,6 +582,12 @@ export async function DELETE(
     const { orgId: callerOrg } = await requireOrgAndUser();
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
+
+    // The cleanup below keys on the bare id, so prove it is this client's first.
+    const owned = await assertEntitiesInClient(id, [entityId]);
+    if (!owned.ok) {
+      return NextResponse.json({ error: "Entity not found" }, { status: 404 });
+    }
 
     // Delete the entity's default checking accounts explicitly. The accounts.owner_entity_id
     // FK is ON DELETE SET NULL, so other entity-owned accounts simply become household-

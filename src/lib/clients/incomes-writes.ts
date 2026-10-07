@@ -261,12 +261,18 @@ export async function deleteIncomeForClient(args: {
   }
 
   // No isDefault guard — incomes have no default rows unlike expenses.
-  await db.transaction(async (tx) => {
-    await tx
+  // The prune keys on the bare id, so it runs only once the client-scoped
+  // delete has proven the row was this client's.
+  const deleted = await db.transaction(async (tx) => {
+    const rows = await tx
       .delete(incomes)
-      .where(and(eq(incomes.id, incomeId), eq(incomes.clientId, clientId)));
+      .where(and(eq(incomes.id, incomeId), eq(incomes.clientId, clientId)))
+      .returning({ id: incomes.id });
+    if (rows.length === 0) return false;
     await pruneOrphanScenarioChanges(tx, incomeId);
+    return true;
   });
+  if (!deleted) return writeError(404, "Income not found");
 
   await recordAudit({
     action: "income.delete",
