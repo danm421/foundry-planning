@@ -26,6 +26,7 @@ import { summarizeZodIssues } from "@/lib/schemas/common";
 import { expenseCreateSchema, expenseUpdateSchema } from "@/lib/schemas/expenses";
 import { goalFundingError, defaultPayShortfallOutOfPocket } from "@/lib/goals";
 import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
+import { hasLivingItems, withLivingItemsTotal } from "@/lib/living-expense-items";
 import { baseCaseScenarioId } from "./base-case";
 import { replaceDedicatedAccounts } from "./dedicated-accounts";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
@@ -60,6 +61,11 @@ const ABSORB_NON_LIVING_ERROR =
 // may carry it.
 const ABSORB_RETIREMENT_ERROR =
   "Only the current living expenses row can spend the remaining cash flow.";
+
+// Items only mean anything on a living row: they set its annualAmount. The
+// screens offer them on the Current row alone; the server's rule is the
+// looser "living" so it never has to resolve which slot a row is.
+const LIVING_ITEMS_NON_LIVING_ERROR = "Only living expenses can be itemized.";
 
 /** The base case's plan start year for a (client, scenario), or null when the
  *  scenario has no settings row. Only read on the absorb path, so the ordinary
@@ -138,7 +144,11 @@ export async function createExpenseForClient(args: {
   if (!parsed.success) {
     return writeError(400, summarizeZodIssues(parsed.error));
   }
-  const p = parsed.data;
+  // An items write sets the total from the items (spec rule 1).
+  const p = withLivingItemsTotal(parsed.data);
+  if (hasLivingItems(p.livingItems) && p.type !== "living") {
+    return writeError(400, LIVING_ITEMS_NON_LIVING_ERROR);
+  }
 
   const entCheck = await assertEntitiesInClient(clientId, [p.ownerEntityId]);
   if (!entCheck.ok) return writeError(400, entCheck.reason);
@@ -215,6 +225,7 @@ export async function createExpenseForClient(args: {
         forFamilyMemberId: p.forFamilyMemberId ?? null,
         isGoal: p.isGoal ?? false,
         absorbsRemainingCashFlow: p.absorbsRemainingCashFlow ?? false,
+        livingItems: p.livingItems ?? null,
       })
       .returning();
     if (dedicatedAccountIds && dedicatedAccountIds.length > 0) {
@@ -257,7 +268,8 @@ export async function updateExpenseForClient(args: {
   if (!parsed.success) {
     return writeError(400, summarizeZodIssues(parsed.error));
   }
-  const p = parsed.data;
+  // An items write sets the total from the items (spec rule 1).
+  const p = withLivingItemsTotal(parsed.data);
 
   // Protect the seeded current/retirement living-expense rows — their type is
   // fixed at "living" so the plan always carries pre- and post-retirement
@@ -276,7 +288,11 @@ export async function updateExpenseForClient(args: {
         startYearRef: ExpenseRow["startYearRef"];
       }
     | undefined;
-  if (p.type !== undefined || p.absorbsRemainingCashFlow !== undefined) {
+  if (
+    p.type !== undefined ||
+    p.absorbsRemainingCashFlow !== undefined ||
+    p.livingItems !== undefined
+  ) {
     [target] = await db
       .select({
         isDefault: expenses.isDefault,
@@ -293,6 +309,10 @@ export async function updateExpenseForClient(args: {
   }
   if (p.type !== undefined && target?.isDefault && p.type !== target.type) {
     return writeError(400, "Default living-expense rows cannot change type.");
+  }
+  // `target` is unset only when the row doesn't exist; let the update 404.
+  if (hasLivingItems(p.livingItems) && target && (p.type ?? target.type) !== "living") {
+    return writeError(400, LIVING_ITEMS_NON_LIVING_ERROR);
   }
   if (p.absorbsRemainingCashFlow) {
     // An omitted `type` keeps the stored one.
@@ -414,6 +434,7 @@ export async function updateExpenseForClient(args: {
         ...(p.absorbsRemainingCashFlow !== undefined && {
           absorbsRemainingCashFlow: p.absorbsRemainingCashFlow,
         }),
+        ...(p.livingItems !== undefined && { livingItems: p.livingItems }),
         updatedAt: new Date(),
       })
       .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, clientId)))
