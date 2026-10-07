@@ -1227,6 +1227,19 @@ export interface Income {
   suspended?: SuspensionWindow | null;
 }
 
+/** How often a living-expense line item's `amount` recurs. */
+export type LivingItemFrequency = "monthly" | "annual";
+
+/** One line of an itemized Current Living Expenses row. Entry and display
+ *  only: the projection reads the row's `annualAmount`, which the write layer
+ *  keeps equal to these items' yearly total (src/lib/living-expense-items.ts). */
+export interface LivingExpenseItem {
+  id: string;
+  name: string;
+  amount: number;
+  frequency: LivingItemFrequency;
+}
+
 export interface Expense {
   id: string;
   type: "living" | "other" | "insurance" | "education";
@@ -1282,6 +1295,10 @@ export interface Expense {
    *  month-by-month view. Null/absent = spread across all twelve months.
    *  Engine math ignores this, like everything else in this block. */
   paymentMonth?: number | null;
+  /** Line items behind an itemized living row; null/absent = not itemized.
+   *  Engine math ignores this — it reads `annualAmount`, like everything else
+   *  in this block. See living-items-are-presentation-only.test.ts. */
+  livingItems?: LivingExpenseItem[] | null;
   /** Living rows only. When true the row spends the household's entire
    *  remaining cash flow in each year it is active, and `annualAmount` is a
    *  floor rather than the amount. Consumed by the surplus-allocation phase in
