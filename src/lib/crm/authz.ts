@@ -76,6 +76,21 @@ export async function requireVaultAccess(householdId: string) {
 }
 
 /**
+ * `requireVaultAccess` as a yes/no, for reads that leave vault rows out rather
+ * than refuse the request. Only the vault refusal reads as "no"; any other
+ * failure still throws.
+ */
+export async function canReadVault(householdId: string): Promise<boolean> {
+  try {
+    await requireVaultAccess(householdId);
+    return true;
+  } catch (err) {
+    if (err instanceof ForbiddenError) return false;
+    throw err;
+  }
+}
+
+/**
  * Org-scoped accessor for a CRM task. Mirrors `requireCrmHouseholdAccess` —
  * fetch the row scoped to the caller's firm (Clerk orgId) and throw if it
  * isn't visible. Returns both the row and the firm id so callers can thread

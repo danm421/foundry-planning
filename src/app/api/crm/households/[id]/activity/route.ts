@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listActivity, recordActivity } from "@/lib/crm/activity";
-import { requireCrmHouseholdAccess } from "@/lib/crm/authz";
+import { canReadVault, requireCrmHouseholdAccess } from "@/lib/crm/authz";
 import { createCrmActivitySchema } from "@/lib/crm/schemas";
 import { hydrateRowActors } from "@/lib/activity/resolve-actors";
 import { auth } from "@clerk/nextjs/server";
@@ -18,6 +18,7 @@ export async function GET(
     const rows = await listActivity(id, {
       limit: Number(searchParams.get("limit") ?? 50),
       offset: Number(searchParams.get("offset") ?? 0),
+      includeVaultEvents: await canReadVault(id),
     });
     // `hydrateRowActors` keys on `actorId`; crm_activity stores `actorUserId`.
     // Precedence inside: live Clerk name → metadata.actorName snapshot →

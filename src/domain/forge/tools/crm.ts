@@ -11,6 +11,7 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
+import { canReadVault } from "@/lib/crm/authz";
 import { createNote, listHouseholdNotes, deleteNote } from "@/lib/crm/notes";
 import { createCrmNoteSchema } from "@/lib/crm/schemas";
 import { recordActivity, listActivity } from "@/lib/crm/activity";
@@ -43,6 +44,14 @@ async function gateCrm(
   } catch {
     return { error: "Client not found or access denied." };
   }
+}
+
+/** Whether the feed readers may include vault rows (document uploads and
+ *  deletions) for this caller. `gateCrm` proves client access, not household
+ *  visibility, so any failure of the vault check reads as "no" and the tool
+ *  still answers without those rows. */
+function mayReadVault(householdId: string): Promise<boolean> {
+  return canReadVault(householdId).catch(() => false);
 }
 
 // ── §6 Household-ownership IDOR guards ─────────────────────────────────────
@@ -101,7 +110,9 @@ export function buildCrmTools({ ctx, conversationId }: ForgeToolContext): Struct
       const gate = await gateCrm(ctx);
       if ("error" in gate) return gate.error;
       try {
-        const notes = await listHouseholdNotes(gate.householdId, gate.firmId);
+        const notes = await listHouseholdNotes(gate.householdId, gate.firmId, {
+          includeVaultEvents: await mayReadVault(gate.householdId),
+        });
         return JSON.stringify({ notes: notes.slice(0, limit ?? 10) });
       } catch (e) {
         return e instanceof Error ? e.message : "Failed to load notes.";
@@ -121,7 +132,10 @@ export function buildCrmTools({ ctx, conversationId }: ForgeToolContext): Struct
       const gate = await gateCrm(ctx);
       if ("error" in gate) return gate.error;
       try {
-        const activity = await listActivity(gate.householdId, { limit });
+        const activity = await listActivity(gate.householdId, {
+          limit,
+          includeVaultEvents: await mayReadVault(gate.householdId),
+        });
         return JSON.stringify({ activity });
       } catch (e) {
         return e instanceof Error ? e.message : "Failed to load activity.";
@@ -556,7 +570,9 @@ export function buildCrmTools({ ctx, conversationId }: ForgeToolContext): Struct
       const gate = await gateCrm(ctx);
       if ("error" in gate) return gate.error;
       try {
-        const notes = await listHouseholdNotes(gate.householdId, gate.firmId);
+        const notes = await listHouseholdNotes(gate.householdId, gate.firmId, {
+          includeVaultEvents: await mayReadVault(gate.householdId),
+        });
         return JSON.stringify({ notes: notes.slice(0, limit ?? 10) });
       } catch (e) {
         return e instanceof Error ? e.message : "Failed to summarize notes.";
@@ -576,8 +592,9 @@ export function buildCrmTools({ ctx, conversationId }: ForgeToolContext): Struct
       const gate = await gateCrm(ctx);
       if ("error" in gate) return gate.error;
       try {
+        const includeVaultEvents = await mayReadVault(gate.householdId);
         const [activity, overview] = await Promise.all([
-          listActivity(gate.householdId, { limit: 100 }),
+          listActivity(gate.householdId, { limit: 100, includeVaultEvents }),
           getOverviewData(ctx.clientId, gate.firmId, ctx.scenarioId),
         ]);
 

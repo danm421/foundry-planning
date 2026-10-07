@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { crmActivity, crmHouseholds } from "@/db/schema";
 import { snapshotActorName } from "@/lib/audit/actor-name";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 type RecordActivityInput = {
   householdId: string;
@@ -87,9 +87,23 @@ export async function recordActivityNonFatal(
   }
 }
 
-export async function listActivity(householdId: string, opts?: { limit?: number; offset?: number }) {
+/**
+ * Rows that narrate a vault document: uploads, and the deletion notes that
+ * carry `metadata.documentId`. Their titles name the file, so they are vault
+ * data. Readers leave them out unless the caller passes `requireVaultAccess`
+ * (`canReadVault`) and asks for them with `includeVaultEvents`.
+ */
+export const notVaultEvent = sql`(${crmActivity.kind} <> 'document_uploaded' and ${crmActivity.metadata} ->> 'documentId' is null)`;
+
+export async function listActivity(
+  householdId: string,
+  opts?: { limit?: number; offset?: number; includeVaultEvents?: boolean },
+) {
   return db.query.crmActivity.findMany({
-    where: eq(crmActivity.householdId, householdId),
+    where: and(
+      eq(crmActivity.householdId, householdId),
+      opts?.includeVaultEvents ? undefined : notVaultEvent,
+    ),
     orderBy: [desc(crmActivity.occurredAt)],
     limit: opts?.limit ?? 50,
     offset: opts?.offset ?? 0,

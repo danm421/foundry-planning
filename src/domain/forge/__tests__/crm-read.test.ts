@@ -11,7 +11,9 @@ const getHouseholdCard = vi.fn();
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: () => requireOrgId() }));
 vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: (c: string) => verifyClientAccess(c) }));
 vi.mock("../guards", async (orig) => ({ ...(await orig()), clientToHousehold: (c: string, f: string) => clientToHousehold(c, f) }));
-vi.mock("@/lib/crm/notes", () => ({ listHouseholdNotes: (h: string, f: string) => listHouseholdNotes(h, f) }));
+vi.mock("@/lib/crm/notes", () => ({ listHouseholdNotes: (...a: unknown[]) => listHouseholdNotes(...a) }));
+const canReadVault = vi.fn();
+vi.mock("@/lib/crm/authz", () => ({ canReadVault: (h: string) => canReadVault(h) }));
 vi.mock("@/lib/crm/activity", () => ({ listActivity: (h: string, o: unknown) => listActivity(h, o) }));
 const getTaskById = vi.fn();
 const listTaskComments = vi.fn();
@@ -36,6 +38,7 @@ beforeEach(() => {
   requireOrgId.mockResolvedValue("org_A");
   verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_A", access: "own" });
   clientToHousehold.mockResolvedValue("hh-1");
+  canReadVault.mockReset().mockResolvedValue(false);
   listHouseholdNotes.mockReset();
   listActivity.mockReset();
   listTasks.mockReset();
@@ -50,7 +53,7 @@ describe("crm_recent_notes", () => {
   it("resolves the household and returns recent notes for it", async () => {
     listHouseholdNotes.mockResolvedValue([{ id: "n1", subject: "Met", noteKind: "meeting", noteDate: "2026-06-01", body: "ok" }]);
     const out = JSON.parse(await byName("crm_recent_notes").invoke({ limit: 5 }));
-    expect(listHouseholdNotes).toHaveBeenCalledWith("hh-1", "org_A");
+    expect(listHouseholdNotes).toHaveBeenCalledWith("hh-1", "org_A", { includeVaultEvents: false });
     expect(out.notes[0].id).toBe("n1");
   });
   it("returns an error STRING (never throws) when access is denied", async () => {
@@ -65,8 +68,22 @@ describe("crm_activity_feed", () => {
   it("returns the household timeline scoped to the resolved household", async () => {
     listActivity.mockResolvedValue([{ id: "a1", kind: "meeting", title: "Annual review", occurredAt: "2026-06-01" }]);
     const out = JSON.parse(await byName("crm_activity_feed").invoke({ limit: 20 }));
-    expect(listActivity).toHaveBeenCalledWith("hh-1", { limit: 20 });
+    expect(listActivity).toHaveBeenCalledWith("hh-1", { limit: 20, includeVaultEvents: false });
     expect(out.activity[0].id).toBe("a1");
+  });
+  it("includes document rows only for a caller the vault admits", async () => {
+    canReadVault.mockResolvedValue(true);
+    listActivity.mockResolvedValue([]);
+    await byName("crm_activity_feed").invoke({ limit: 20 });
+    expect(canReadVault).toHaveBeenCalledWith("hh-1");
+    expect(listActivity).toHaveBeenCalledWith("hh-1", { limit: 20, includeVaultEvents: true });
+  });
+  it("still answers, without document rows, when the vault check fails", async () => {
+    canReadVault.mockRejectedValue(new Error("CRM household not found or access denied: hh-1"));
+    listActivity.mockResolvedValue([]);
+    const out = JSON.parse(await byName("crm_activity_feed").invoke({ limit: 20 }));
+    expect(listActivity).toHaveBeenCalledWith("hh-1", { limit: 20, includeVaultEvents: false });
+    expect(out.activity).toEqual([]);
   });
 });
 

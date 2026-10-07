@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { crmActivity, crmHouseholds } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 
+import { notVaultEvent } from "./activity";
 import {
   clampNoteLimit,
   filterNotesWindow,
@@ -80,9 +81,12 @@ async function loadNoteOrThrow(noteId: string, householdId: string, firmId: stri
   return row;
 }
 
+// Document-deletion notes are vault rows (`notVaultEvent`): left out unless
+// the caller passed the vault check and asks for them.
 export async function listHouseholdNotes(
   householdId: string,
   firmId: string,
+  opts: { includeVaultEvents?: boolean } = {},
 ): Promise<NoteRow[]> {
   const rows = await db
     .select()
@@ -92,6 +96,7 @@ export async function listHouseholdNotes(
         eq(crmActivity.householdId, householdId),
         eq(crmActivity.firmId, firmId),
         inArray(crmActivity.kind, [...NOTE_KINDS]),
+        opts.includeVaultEvents ? undefined : notVaultEvent,
       ),
     )
     .orderBy(desc(crmActivity.occurredAt), desc(crmActivity.createdAt));

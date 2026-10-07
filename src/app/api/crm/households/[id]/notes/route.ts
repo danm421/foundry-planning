@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 
-import { requireCrmHouseholdAccess } from "@/lib/crm/authz";
+import { canReadVault, requireCrmHouseholdAccess } from "@/lib/crm/authz";
 import { requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { createCrmNoteSchema } from "@/lib/crm/schemas";
 import { createNote, listHouseholdNotes } from "@/lib/crm/notes";
@@ -16,7 +16,9 @@ export async function GET(
   try {
     const { id } = await params;
     const { orgId } = await requireCrmHouseholdAccess(id);
-    const notes = await listHouseholdNotes(id, orgId);
+    const notes = await listHouseholdNotes(id, orgId, {
+      includeVaultEvents: await canReadVault(id),
+    });
     return NextResponse.json({ notes });
   } catch (err) {
     return mapCrmNoteError(err);

@@ -61,6 +61,8 @@ vi.mock("@/lib/crm-tasks/mutations", () => ({
   postComment: vi.fn(),
   deleteTask: vi.fn(),
 }));
+// The vault check is covered in crm-read; here it simply refuses.
+vi.mock("@/lib/crm/authz", () => ({ canReadVault: vi.fn().mockResolvedValue(false) }));
 vi.mock("@/lib/crm/schemas", () => ({
   createCrmNoteSchema: { parse: (x: unknown) => x },
 }));
