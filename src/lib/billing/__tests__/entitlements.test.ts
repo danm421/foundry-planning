@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { hasForgeEntitlement } from "@/domain/forge/flag";
 import {
   deriveEntitlements,
   deriveUserEntitlements,
@@ -20,6 +21,28 @@ const mkAddon = (over: Partial<StripeItemView>): StripeItemView => ({
 // The always-on base AI set, sorted, reused across expectations. AI ships with
 // every org regardless of subscription — the derivation seeds this set first.
 const BASE = ["ai_copilot", "ai_forge", "ai_import"];
+
+describe("deriveEntitlements — Forge revoke", () => {
+  it("a Forge revoke leaves no key that hasForgeEntitlement accepts", () => {
+    const out = deriveEntitlements({
+      items: [],
+      overrides: [{ entitlement: "ai_forge", mode: "revoke" }],
+    });
+    expect(out).toEqual(["ai_import"]);
+    expect(hasForgeEntitlement(out)).toBe(false);
+  });
+
+  it("a Forge grant after a revoke restores Forge", () => {
+    const out = deriveEntitlements({
+      items: [],
+      overrides: [
+        { entitlement: "ai_forge", mode: "revoke" },
+        { entitlement: "ai_forge", mode: "grant" },
+      ],
+    });
+    expect(hasForgeEntitlement(out)).toBe(true);
+  });
+});
 
 describe("deriveEntitlements — base AI is always granted", () => {
   it("grants the base AI set even with no items (every org gets AI)", () => {
@@ -191,10 +214,21 @@ describe("deriveUserEntitlements — the per-user override layer", () => {
   });
 
   it("does NOT re-seed a base key the firm-level revoke stripped", () => {
-    const firmMinusForge = BASE.filter((k) => k !== "ai_forge");
-    expect(deriveUserEntitlements({ firmEntitlements: firmMinusForge })).not.toContain(
-      "ai_forge",
-    );
+    const firmMinusForge = deriveEntitlements({
+      items: [],
+      overrides: [{ entitlement: "ai_forge", mode: "revoke" }],
+    });
+    const user = deriveUserEntitlements({ firmEntitlements: firmMinusForge });
+    expect(user).not.toContain("ai_forge");
+    expect(hasForgeEntitlement(user)).toBe(false);
+  });
+
+  it("a user-level Forge revoke strips the legacy alias too", () => {
+    const user = deriveUserEntitlements({
+      firmEntitlements: BASE,
+      overrides: [{ entitlement: "ai_forge", mode: "revoke" }],
+    });
+    expect(hasForgeEntitlement(user)).toBe(false);
   });
 
   it("applies overrides in array order, later entries winning", () => {

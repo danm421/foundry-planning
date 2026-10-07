@@ -37,6 +37,24 @@ export type EntitlementsInput = {
  */
 export const BASE_ENTITLEMENTS = ["ai_import", "ai_forge", "ai_copilot"] as const;
 
+const FORGE_KEYS: readonly string[] = ["ai_forge", "ai_copilot"];
+
+/**
+ * Apply overrides to a set in array order (later entries win). `ai_forge` and
+ * the legacy `ai_copilot` are one capability during the rename transition, so an
+ * override aimed at either key applies to both — otherwise a Forge revoke would
+ * leave the alias behind and `hasForgeEntitlement` would still pass.
+ */
+function applyOverrides(set: Set<string>, overrides: EntitlementOverride[] = []): void {
+  for (const o of overrides) {
+    const keys = FORGE_KEYS.includes(o.entitlement) ? FORGE_KEYS : [o.entitlement];
+    for (const k of keys) {
+      if (o.mode === "grant") set.add(k);
+      else set.delete(k);
+    }
+  }
+}
+
 /**
  * The client-portal capability key. Deliberately NOT in BASE_ENTITLEMENTS and
  * not tied to any Stripe price: `deriveEntitlements` seeds only the base set, so
@@ -87,10 +105,7 @@ export function deriveEntitlements(input: EntitlementsInput): string[] {
   // Final step: union in manual overrides (grant adds, revoke removes). Applied
   // last so a revoke can strip a seat-included key and a grant can add one the
   // subscription does not imply. Order matters — later entries win.
-  for (const o of input.overrides ?? []) {
-    if (o.mode === "grant") set.add(o.entitlement);
-    else set.delete(o.entitlement);
-  }
+  applyOverrides(set, input.overrides);
   return Array.from(set).sort();
 }
 
@@ -113,10 +128,7 @@ export function deriveUserEntitlements(input: {
   overrides?: EntitlementOverride[];
 }): string[] {
   const set = new Set(input.firmEntitlements);
-  for (const o of input.overrides ?? []) {
-    if (o.mode === "grant") set.add(o.entitlement);
-    else set.delete(o.entitlement);
-  }
+  applyOverrides(set, input.overrides);
   return Array.from(set).sort();
 }
 
