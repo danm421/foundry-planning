@@ -4,6 +4,8 @@ const mockSelectFirms = vi.fn();
 const mockSelectSubs = vi.fn();
 const mockTosInsert = vi.fn();
 const mockClerkEventInsert = vi.fn(); // returning() result drives svix dedup
+const mockUpdate = vi.fn(); // (table, patch, where)
+const mockDelete = vi.fn(); // (table, where)
 
 vi.mock("@/db", async (orig) => {
   const schema = (await import("@/db/schema")) as Record<string, unknown>;
@@ -30,7 +32,10 @@ vi.mock("@/db", async (orig) => {
           }),
         }),
       }),
-      update: () => ({ set: () => ({ where: () => undefined }) }),
+      update: (tbl: unknown) => ({
+        set: (patch: unknown) => ({ where: (w: unknown) => mockUpdate(tbl, patch, w) }),
+      }),
+      delete: (tbl: unknown) => ({ where: (w: unknown) => mockDelete(tbl, w) }),
     },
   };
 });
@@ -74,13 +79,20 @@ vi.mock("@/lib/onboarding/welcome-email", () => ({
   sendWelcomeEmail: (a: unknown) => mockSendWelcomeEmail(a),
 }));
 
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+import { notificationPreferences, notifications } from "@/db/schema";
 import { dispatchClerkMembership } from "../membership-handlers";
+
+const whereParams = (w: unknown) => new PgDialect().sqlToQuery(w as SQL).params;
 
 beforeEach(() => {
   mockSelectFirms.mockReset();
   mockSelectSubs.mockReset();
   mockTosInsert.mockReset();
   mockClerkEventInsert.mockReset();
+  mockUpdate.mockReset();
+  mockDelete.mockReset();
   mockSubsRetrieve.mockReset();
   mockSubsUpdate.mockReset();
   mockListMembers.mockReset();
@@ -270,6 +282,35 @@ describe("organizationMembership.deleted — absolute seat sync", () => {
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "member.removed" }),
     );
+  });
+});
+
+describe("organizationMembership.deleted — the removed member's alerts", () => {
+  const membershipEvent = (type: string) =>
+    ({
+      type,
+      data: { organization: { id: "org_paid" }, public_user_data: { user_id: "user_z" } },
+    }) as never;
+
+  it("deletes their alert preferences and clears their unsent emails in that firm", async () => {
+    mockSelectFirms.mockResolvedValue([]);
+    await dispatchClerkMembership(membershipEvent("organizationMembership.deleted"), "svix_del_alerts");
+
+    const prefs = mockDelete.mock.calls.find(([tbl]) => tbl === notificationPreferences);
+    expect(prefs).toBeDefined();
+    expect(whereParams(prefs![1])).toEqual(expect.arrayContaining(["org_paid", "user_z"]));
+
+    const pending = mockUpdate.mock.calls.find(([tbl]) => tbl === notifications);
+    expect(pending).toBeDefined();
+    expect(pending![1]).toEqual({ emailPending: false });
+    expect(whereParams(pending![2])).toEqual(expect.arrayContaining(["org_paid", "user_z"]));
+  });
+
+  it("leaves alerts alone when a member is added", async () => {
+    mockSelectFirms.mockResolvedValue([]);
+    await dispatchClerkMembership(membershipEvent("organizationMembership.created"), "svix_add_alerts");
+    expect(mockDelete).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 });
 

@@ -7,6 +7,7 @@ import { clerkClient } from "@clerk/nextjs/server";
 import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { auditLog, clients, firms, subscriptionItems, subscriptions } from "@/db/schema";
+import { memberUserIdsForOrg } from "@/lib/clerk-org-members";
 import { isMissingOrganizationError } from "./clerk-errors";
 import { PAID_STATUSES, type ClerkUserInput, type GrowthInput } from "./types";
 
@@ -36,33 +37,6 @@ async function listAllClerkUsers() {
     });
     out.push(...data);
     if (data.length === 0 || out.length >= totalCount) break;
-  }
-  return out;
-}
-
-/**
- * Every Clerk user id in one organization's membership list, paged.
- * Split out of `membershipsByUser` so that function's try/catch wraps one
- * call rather than sitting inside this inner paging loop — a `continue` in
- * a catch nested in the loop below would restart the CURRENT page forever
- * instead of moving on to the next firm.
- */
-async function memberUserIdsForOrg(
-  cc: Awaited<ReturnType<typeof clerkClient>>,
-  organizationId: string,
-): Promise<string[]> {
-  const out: string[] = [];
-  for (let offset = 0; ; offset += CLERK_PAGE) {
-    const { data, totalCount } = await cc.organizations.getOrganizationMembershipList({
-      organizationId,
-      limit: CLERK_PAGE,
-      offset,
-    });
-    for (const m of data) {
-      const uid = m.publicUserData?.userId;
-      if (uid) out.push(uid);
-    }
-    if (data.length === 0 || offset + data.length >= totalCount) break;
   }
   return out;
 }
