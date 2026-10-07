@@ -153,3 +153,62 @@ describe("Income & Expenses — Current living items", () => {
     expect(document.getElementById("exp-amount")).toBeNull();
   });
 });
+
+describe("Make it a goal", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    global.fetch = fetchMock;
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ id: "new-expense-id" }) });
+  });
+
+  function openGoal() {
+    renderPage([CURRENT]);
+    fireEvent.click(screen.getByRole("button", { name: "Show items for Current Living Expenses" }));
+    fireEvent.click(screen.getByRole("button", { name: "Make Travel a goal" }));
+  }
+
+  it("opens a new goal pre-filled from the item", () => {
+    openGoal();
+    expect(screen.getByRole("heading", { name: "Add Expense" })).toBeInTheDocument();
+    // By id: the expanded list also has inputs labelled "Name of …".
+    expect(document.getElementById("exp-name")).toHaveValue("Travel");
+    expect(document.getElementById("exp-amount")).toHaveValue("12,000");
+    expect(screen.getByLabelText(/show as a goal/i)).toBeChecked();
+  });
+
+  it("saves the goal first, then removes the item", async () => {
+    openGoal();
+    fireEvent.click(screen.getByRole("button", { name: "Add Expense" }));
+    await waitFor(() => expect(bodies("PUT", ROW_URL)).toHaveLength(1));
+
+    const goal = bodies("POST", "/api/clients/c1/expenses")[0];
+    expect(goal).toMatchObject({ name: "Travel", type: "other", isGoal: true, startYear: "2026", endYear: "2041" });
+    expect(Number(goal.annualAmount)).toBe(12000);
+    expect(bodies("PUT", ROW_URL)[0]).toEqual({ livingItems: [HOUSING], annualAmount: "38400" });
+
+    const order = fetchMock.mock.calls.map(([u, init]) => `${init?.method} ${u}`);
+    expect(order.indexOf("POST /api/clients/c1/expenses")).toBeLessThan(order.indexOf(`PUT ${ROW_URL}`));
+  });
+
+  it("closing the editor without saving leaves the item in place", () => {
+    openGoal();
+    // The editor has no Cancel button; its header X (unlabelled) closes it.
+    const header = screen.getByRole("heading", { name: "Add Expense" }).parentElement!;
+    fireEvent.click(within(header).getByRole("button"));
+    expect(bodies("PUT", ROW_URL)).toHaveLength(0);
+    expect(screen.getByLabelText("Name of Travel")).toBeInTheDocument();
+  });
+
+  it("says so when the goal saved but the item could not be removed", async () => {
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) =>
+      init?.method === "PUT"
+        ? { ok: false, json: async () => ({ error: "nope" }) }
+        : { ok: true, json: async () => ({ id: "new-expense-id" }) },
+    );
+    openGoal();
+    fireEvent.click(screen.getByRole("button", { name: "Add Expense" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The goal was saved, but Travel is still in living expenses — remove it there.",
+    );
+  });
+});

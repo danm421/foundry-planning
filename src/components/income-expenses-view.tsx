@@ -28,10 +28,12 @@ import { livingSlotRank } from "@/lib/living-slot-order";
 import LivingExpenseItems from "@/components/income-expenses/living-expense-items";
 import { ChevronIcon } from "@/components/income-expenses/icons";
 import {
+  goalPrefillFromItem,
   hasLivingItems,
   isTotalOverridden,
   livingItemsAnnualTotal,
   livingItemsPatch,
+  type GoalPrefill,
 } from "@/lib/living-expense-items";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 import {
@@ -1161,6 +1163,9 @@ interface ExpenseDialogProps {
   /** Pre-ticks "Show as a goal" on a NEW row — set when the add came from the
    *  Goals step, where every row the advisor creates is a goal by intent. */
   defaultIsGoal?: boolean;
+  /** Seeds a NEW row's fields — "Make it a goal" from a living-expense item.
+   *  Ignored when `editing` is set. */
+  prefill?: GoalPrefill;
   accounts: Account[];
   entities?: Entity[];
   familyMembers?: FamilyMember[];
@@ -1179,6 +1184,7 @@ function ExpenseDialog({
   clientId,
   defaultType = "living",
   defaultIsGoal = false,
+  prefill,
   accounts,
   familyMembers,
   clientInfo,
@@ -1226,11 +1232,15 @@ function ExpenseDialog({
   const [institutionName, setInstitutionName] = useState<string>(editing?.institutionName ?? "");
   const [forFamilyMemberId, setForFamilyMemberId] = useState<string>(editing?.forFamilyMemberId ?? "");
   const [dedicatedAccountIds, setDedicatedAccountIds] = useState<string[]>(editing?.dedicatedAccountIds ?? []);
-  const [name, setName] = useState<string>(editing?.name ?? "");
+  const [name, setName] = useState<string>(editing?.name ?? prefill?.name ?? "");
   const hasSpouse = Boolean(clientInfo?.spouseDob);
   const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
-    editing ? isTodaysDollars(editing.inflationStartYear, editing.startYear) : true
+    editing
+      ? isTodaysDollars(editing.inflationStartYear, editing.startYear)
+      : prefill
+        ? isTodaysDollars(prefill.inflationStartYear, prefill.startYear)
+        : true
   );
   // New expenses default to inflation growth (advisor convention — planned
   // spending tracks inflation unless the advisor sets a custom rate). Editing an
@@ -1238,10 +1248,12 @@ function ExpenseDialog({
   const [growthSource, setGrowthSource] = useState<"custom" | "inflation">(
     editing
       ? editing.growthSource === "inflation" ? "inflation" : "custom"
-      : "inflation"
+      : prefill
+        ? prefill.growthSource === "inflation" ? "inflation" : "custom"
+        : "inflation"
   );
   const [growthRateDisplay, setGrowthRateDisplay] = useState<string>(
-    String(pctFromDecimal(editing?.growthRate, 3))
+    String(pctFromDecimal(editing?.growthRate ?? prefill?.growthRate, 3))
   );
   const [paymentMonth, setPaymentMonth] = useState<number | null>(editing?.paymentMonth ?? null);
   const currentYear = new Date().getFullYear();
@@ -1250,7 +1262,7 @@ function ExpenseDialog({
   // An itemized row's total is set by its items; the Details tab only shows it.
   const itemCount = editing?.livingItems?.length ?? 0;
 
-  const expDefaultRefs = !isEdit ? defaultExpenseRefs(editing?.type ?? defaultType) : null;
+  const expDefaultRefs = !isEdit && !prefill ? defaultExpenseRefs(editing?.type ?? defaultType) : null;
   // A new education goal funds a programme, not a period of the plan: its end
   // is the four-year length measured off the start, so it follows the start
   // when the beneficiary — or the advisor — moves it. Every other expense keeps
@@ -1258,16 +1270,21 @@ function ExpenseDialog({
   // with; re-framing the picker must never silently re-length a saved goal.
   const newEducation = !isEdit && (editing?.type ?? defaultType) === "education";
   const [startYearRef, setStartYearRef] = useState<YearRef | null>(
-    (editing?.startYearRef as YearRef) ?? expDefaultRefs?.startYearRef ?? null
+    (editing?.startYearRef as YearRef) ??
+      (prefill ? (prefill.startYearRef as YearRef | null) : expDefaultRefs?.startYearRef ?? null)
   );
   const [endYearRef, setEndYearRef] = useState<YearRef | null>(
-    (editing?.endYearRef as YearRef) ?? (newEducation ? null : expDefaultRefs?.endYearRef ?? null)
+    (editing?.endYearRef as YearRef) ??
+      (prefill
+        ? (prefill.endYearRef as YearRef | null)
+        : newEducation ? null : expDefaultRefs?.endYearRef ?? null)
   );
   const [startYear, setStartYear] = useState<number>(
-    editing?.startYear ?? (startYearRef && clientInfo?.milestones ? resolveMilestone(startYearRef, clientInfo.milestones, "start") ?? currentYear : currentYear)
+    editing?.startYear ?? prefill?.startYear ?? (startYearRef && clientInfo?.milestones ? resolveMilestone(startYearRef, clientInfo.milestones, "start") ?? currentYear : currentYear)
   );
   const [endYear, setEndYear] = useState<number>(() => {
     if (editing?.endYear != null) return editing.endYear;
+    if (prefill) return prefill.endYear;
     if (newEducation) return startYear + EDUCATION_GOAL_YEARS - 1;
     const resolved =
       endYearRef && clientInfo?.milestones ? resolveMilestone(endYearRef, clientInfo.milestones, "end") : null;
@@ -1632,7 +1649,7 @@ function ExpenseDialog({
                       id="exp-amount"
                       name="annualAmount"
                       required
-                      defaultValue={editing?.annualAmount ?? 0}
+                      defaultValue={editing?.annualAmount ?? prefill?.annualAmount ?? 0}
                       className="mt-1"
                     />
                   )}
@@ -1977,6 +1994,9 @@ export default function IncomeExpensesView({
     editing?: Expense;
     defaultType?: ExpenseType;
     defaultIsGoal?: boolean;
+    prefill?: GoalPrefill;
+    /** Set by "Make it a goal": the item that leaves the list once the goal saves. */
+    fromItem?: { expenseId: string; itemId: string };
   }>(() => {
     if (focusTarget?.dialog === "expense") return { open: true, editing: focusTarget.row };
     if (focusTarget?.dialog === "create" && focusTarget.kind === "expense") return { open: true, defaultType: "living" };
@@ -2119,6 +2139,33 @@ export default function IncomeExpensesView({
     return saveExpenseField(expense, {
       annualAmount: String(livingItemsAnnualTotal(expense.livingItems ?? [])),
     });
+  }
+
+  /** "Make it a goal": open the editor on a new goal built from the item. The
+   *  item leaves the list only once that goal saves (`removeItemAfterGoal`). */
+  function openGoalFromItem(expense: Expense, item: LivingExpenseItem) {
+    setItemsError(null);
+    setExpenseDialog({
+      open: true,
+      defaultType: "other",
+      defaultIsGoal: true,
+      prefill: goalPrefillFromItem(item, expense),
+      fromItem: { expenseId: expense.id, itemId: item.id },
+    });
+  }
+
+  /** Second half of "Make it a goal", after the goal saved. The goal is written
+   *  FIRST on purpose: if this half fails the advisor is told, rather than
+   *  losing the item with no goal to show for it. */
+  async function removeItemAfterGoal(from: { expenseId: string; itemId: string }) {
+    const row = expenseList.find((e) => e.id === from.expenseId);
+    const item = row?.livingItems?.find((i) => i.id === from.itemId);
+    if (!row || !item) return;
+    const ok = await saveLivingItems(row, (row.livingItems ?? []).filter((i) => i.id !== from.itemId));
+    if (!ok) {
+      setItemsOpenFor(row.id);
+      setItemsError(`The goal was saved, but ${item.name} is still in living expenses — remove it there.`);
+    }
   }
 
   const milestones = clientInfo?.milestones;
@@ -2312,9 +2359,7 @@ export default function IncomeExpensesView({
             error={itemsError}
             onSave={(next) => saveLivingItems(expense, next)}
             onUseItemsTotal={() => resetToItemsTotal(expense)}
-            onMakeGoal={() => {
-              /* Task 9 */
-            }}
+            onMakeGoal={(item) => openGoalFromItem(expense, item)}
           />
         )}
       </Fragment>
@@ -2421,7 +2466,7 @@ export default function IncomeExpensesView({
 
   const expenseDialogNode = expenseDialog.open ? (
     <ExpenseDialog
-      key={expenseDialog.editing?.id ?? "new"}
+      key={expenseDialog.editing?.id ?? expenseDialog.fromItem?.itemId ?? "new"}
       clientId={clientId}
       accounts={accounts}
       entities={entities}
@@ -2429,13 +2474,19 @@ export default function IncomeExpensesView({
       clientInfo={clientInfo}
       ownerNames={ownerNames}
       open={expenseDialog.open}
-      onOpenChange={(o) => setExpenseDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
+      onOpenChange={(o) =>
+        setExpenseDialog((d) =>
+          o ? { ...d, open: true } : { open: false, defaultType: d.defaultType, defaultIsGoal: d.defaultIsGoal },
+        )
+      }
       defaultType={expenseDialog.defaultType}
       defaultIsGoal={expenseDialog.defaultIsGoal}
       editing={expenseDialog.editing}
+      prefill={expenseDialog.prefill}
       onSaved={(expense, mode) => {
         if (mode === "create") setExpenseList((prev) => [...prev, expense]);
         else setExpenseList((prev) => prev.map((e) => (e.id === expense.id ? expense : e)));
+        if (mode === "create" && expenseDialog.fromItem) void removeItemAfterGoal(expenseDialog.fromItem);
       }}
       onRequestDelete={
         expenseDialog.editing && !expenseDialog.editing.isDefault
