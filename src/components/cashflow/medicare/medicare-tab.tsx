@@ -17,7 +17,6 @@ interface Props {
   saveError?: string | null;
   estimateMagi?: boolean;
   onEstimateMagiChange?: (value: boolean) => void;
-  onEnableMedicare?: () => void;
 }
 
 export function MedicareTab({
@@ -29,7 +28,6 @@ export function MedicareTab({
   saveError = null,
   estimateMagi,
   onEstimateMagiChange,
-  onEnableMedicare,
 }: Props) {
   const [clickedYear, setClickedYear] = useState<ProjectionYear | null>(null);
 
@@ -38,42 +36,7 @@ export function MedicareTab({
     clientData?.medicarePremiumInflationRate ?? DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE;
   const currentEnabled = clientData?.medicarePremiumInflationEnabled ?? true;
 
-  // Empty-state: no coverage rows yet AND household is Medicare-age → show CTA
   const coverage = clientData?.medicareCoverage ?? [];
-  const someMedicareAge = years.some(
-    (y) => y.ages.client >= 65 || (y.ages.spouse != null && y.ages.spouse >= 65),
-  );
-  const showEmptyState = someMedicareAge && coverage.length === 0;
-  const hasAnySpouseYear = years.some((y) => y.ages.spouse != null);
-  if (showEmptyState) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
-        <p className="text-[14px] text-ink-2 max-w-sm">
-          Medicare modeling is not yet configured for this client. Enable it to project Part B premiums,
-          IRMAA surcharges, and Medigap costs year-by-year.
-        </p>
-        {onEnableMedicare && (
-          <button
-            type="button"
-            onClick={onEnableMedicare}
-            className="px-4 h-9 rounded-[var(--radius-sm)] bg-accent text-accent-on text-[13px] font-medium"
-          >
-            Enable Medicare modeling
-          </button>
-        )}
-        {!onEnableMedicare && (
-          <p className="text-[13px] text-ink-3">
-            Open the Medicare &amp; IRMAA dialog to configure coverage.
-          </p>
-        )}
-        {hasAnySpouseYear && (
-          <p className="text-[11px] text-ink-3">
-            You can set up Medicare for the client, co-client, or both.
-          </p>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col gap-4">

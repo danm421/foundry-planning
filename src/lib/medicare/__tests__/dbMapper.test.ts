@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { rowToMedicareCoverage, medicareCoverageToInsert } from "../dbMapper";
+import { rowToMedicareCoverage, medicareCoverageToInsert, withDefaultMedicareCoverage } from "../dbMapper";
+import type { MedicareCoverage } from "@/engine/types";
 
 const baseRow = {
   id: "r1", clientId: "c1", owner: "client" as const,
@@ -55,12 +56,38 @@ describe("dbMapper estimatePriorYearMagiFromProjection", () => {
     const c = rowToMedicareCoverage({ ...baseRow, estimatePriorYearMagiFromProjection: true });
     expect(c.estimatePriorYearMagiFromProjection).toBe(true);
   });
-  it("writes the flag into the insert, defaulting to false when undefined", () => {
+  it("writes the flag into the insert, defaulting to true when undefined", () => {
     const ins = medicareCoverageToInsert(
       { owner: "client", enrollmentYear: 2025, coverageType: "original",
         medigapMonthlyAt65: 170, partDPlanMonthlyAt65: 46, priorYearMagi: null },
       "c1",
     );
-    expect(ins.estimatePriorYearMagiFromProjection).toBe(false);
+    expect(ins.estimatePriorYearMagiFromProjection).toBe(true);
+  });
+});
+
+describe("withDefaultMedicareCoverage", () => {
+  const saved: MedicareCoverage = {
+    owner: "client", enrollmentYear: 2021, coverageType: "advantage",
+    medigapMonthlyAt65: 0, partDPlanMonthlyAt65: 30, priorYearMagi: 315000,
+    estimatePriorYearMagiFromProjection: false,
+  };
+
+  it("models a person with no saved settings at 65 on national averages, estimating MAGI", () => {
+    expect(withDefaultMedicareCoverage([], false)).toEqual([{
+      owner: "client", enrollmentYear: null, coverageType: "original",
+      medigapMonthlyAt65: null, partDPlanMonthlyAt65: null, priorYearMagi: null,
+      estimatePriorYearMagiFromProjection: true,
+    }]);
+  });
+
+  it("fills in the co-client only when there is one", () => {
+    expect(withDefaultMedicareCoverage([], true).map((c) => c.owner)).toEqual(["client", "spouse"]);
+  });
+
+  it("keeps saved settings untouched, including an unchecked estimate box", () => {
+    const out = withDefaultMedicareCoverage([saved], true);
+    expect(out[0]).toBe(saved);
+    expect(out[1]).toMatchObject({ owner: "spouse", estimatePriorYearMagiFromProjection: true });
   });
 });

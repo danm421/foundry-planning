@@ -90,7 +90,7 @@ import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gi
 import { withSynthesizedDisabilityPremiums } from "@/lib/insurance-policies/disability-premium-expense";
 import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { loadStockOptionPlans } from "./load-equity";
-import { rowToMedicareCoverage } from "@/lib/medicare/dbMapper";
+import { rowToMedicareCoverage, withDefaultMedicareCoverage } from "@/lib/medicare/dbMapper";
 import { DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE } from "@/lib/medicare/constants";
 import { type HoldingInput } from "@/lib/investments/holdings-rollup";
 import { computeHoldingsTotals } from "./holdings-totals";
@@ -1890,7 +1890,10 @@ const loadClientDataCached = cache(
       familyMembers: mappedFamilyMembers,
       notesReceivable: await loadNotesReceivable(id, scenario.id),
       disabilityPolicies: await loadDisabilityPolicies(id),
-      medicareCoverage: medicareCoverageRows.map(rowToMedicareCoverage),
+      medicareCoverage: withDefaultMedicareCoverage(
+        medicareCoverageRows.map(rowToMedicareCoverage),
+        !!spouseDob,
+      ),
       medicarePremiumInflationRate: settings.medicarePremiumInflationRate != null
         ? parseFloat(settings.medicarePremiumInflationRate)
         : DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE,

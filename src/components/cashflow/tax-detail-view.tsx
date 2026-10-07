@@ -49,8 +49,6 @@ interface TaxDetailViewProps {
   estimateMagi?: boolean;
   /** Called when the user toggles "Estimate prior-year MAGI from projection". */
   onEstimateMagiChange?: (value: boolean) => void;
-  /** Opens the MedicareSetupDialog (passed to the empty-state CTA). */
-  onEnableMedicare?: () => void;
 }
 
 export function TaxDetailView({
@@ -72,7 +70,6 @@ export function TaxDetailView({
   medicareAssumptionSaveError,
   estimateMagi,
   onEstimateMagiChange,
-  onEnableMedicare,
 }: TaxDetailViewProps) {
   return (
     <>
@@ -128,7 +125,6 @@ export function TaxDetailView({
           saveError={medicareAssumptionSaveError ?? null}
           estimateMagi={estimateMagi}
           onEstimateMagiChange={onEstimateMagiChange}
-          onEnableMedicare={onEnableMedicare}
         />
       )}
     </>

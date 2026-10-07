@@ -9,19 +9,34 @@ describe("MedicareDialogTab estimate toggle", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("hides the prior-year MAGI field when the estimate checkbox is checked", () => {
+  it("starts with the estimate box checked and the prior-year MAGI field hidden", () => {
     render(<MedicareDialogTab clientId="c1" owner="client" existing={null} ownerDob="1958-01-01" onSaved={() => {}} />);
-    expect(screen.getByLabelText(/prior year magi/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText(/estimate prior-year magi/i));
+    expect(screen.getByLabelText(/estimate prior-year magi/i)).toBeChecked();
     expect(screen.queryByLabelText(/prior year magi/i)).not.toBeInTheDocument();
   });
 
-  it("includes estimatePriorYearMagiFromProjection in the save payload", async () => {
+  it("keeps a saved unchecked box unchecked and shows the MAGI field", () => {
+    const existing = {
+      owner: "client" as const, enrollmentYear: 2023, coverageType: "original" as const,
+      medigapMonthlyAt65: 170, partDPlanMonthlyAt65: 46, priorYearMagi: 250000,
+      estimatePriorYearMagiFromProjection: false,
+    };
+    render(<MedicareDialogTab clientId="c1" owner="client" existing={existing} onSaved={() => {}} />);
+    expect(screen.getByLabelText(/estimate prior-year magi/i)).not.toBeChecked();
+    expect(screen.getByLabelText(/prior year magi/i)).toHaveValue(250000);
+  });
+
+  it("sends the estimate flag in the save payload, true unless unchecked", async () => {
     render(<MedicareDialogTab clientId="c1" owner="client" existing={null} ownerDob="1958-01-01" onSaved={() => {}} />);
-    fireEvent.click(screen.getByLabelText(/estimate prior-year magi/i));
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
-    const body = JSON.parse((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
-    expect(body.estimatePriorYearMagiFromProjection).toBe(true);
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).estimatePriorYearMagiFromProjection).toBe(true);
+
+    await vi.waitFor(() => expect(screen.getByRole("button", { name: /save/i })).toBeEnabled());
+    fireEvent.click(screen.getByLabelText(/estimate prior-year magi/i));
+    expect(screen.getByLabelText(/prior year magi/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).estimatePriorYearMagiFromProjection).toBe(false);
   });
 
   it("renders default values when no existing coverage", () => {

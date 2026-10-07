@@ -49,7 +49,7 @@ export function MedicareDialogTab({
   );
   const [priorMagi, setPriorMagi] = useState<number | null>(existing?.priorYearMagi ?? null);
   const [estimateFromProjection, setEstimateFromProjection] = useState<boolean>(
-    existing?.estimatePriorYearMagiFromProjection ?? false,
+    existing?.estimatePriorYearMagiFromProjection ?? true,
   );
   const [saving, setSaving] = useState(false);
 

@@ -14,10 +14,9 @@
 // as every other income. Its SS-specific columns (ssBenefitMode, claimingAge,
 // claimingAgeMonths, claimingAgeMode, piaMonthly) already live on the `incomes`
 // entity below, each noted as SS-dialog-only. Medicare coverage is edited from
-// a "Medicare" tab INSIDE that same Social Security dialog (and, on the Tax
-// Analysis tab, from a standalone `MedicareSetupDialog` reusing the identical
-// form) — it is its own table/route (`medicare_coverage`) with no scenario
-// column, so it is listed as its own entity.
+// a "Medicare" tab INSIDE that same Social Security dialog — it is its own
+// table/route (`medicare_coverage`) with no scenario column, so it is listed as
+// its own entity.
 import type { DetailEntity } from "./types";
 import { YEAR_REFS as YEAR_REF_VALUES } from "@/lib/milestones";
 
@@ -462,7 +461,7 @@ export const INCOME_EXPENSE_ENTITIES: readonly DetailEntity[] = [
     label: "Medicare Coverage",
     tab: "income-expenses",
     surface:
-      "Inflows & Outflows → Social Security → Edit Social Security → Medicare tab (also reachable, with the identical form, from the Tax Analysis tab's \"Set up Medicare modeling\" empty-state CTA)",
+      "Inflows & Outflows → Social Security → Edit Social Security → Medicare tab. A person with no saved row is still modeled — the plan loader fills in defaults (enroll at 65, national-average premiums, estimate MAGI from projection).",
     table: "medicareCoverage",
     routes: {
       list: "/medicare-coverage",
@@ -477,7 +476,7 @@ export const INCOME_EXPENSE_ENTITIES: readonly DetailEntity[] = [
     fields: [
       {
         key: "owner",
-        label: "(implicit — determined by which person's Social Security dialog is open, or the Client/Co-client toggle in the standalone setup dialog)",
+        label: "(implicit — determined by which person's Social Security dialog is open)",
         kind: "enum",
         enumValues: ["client", "spouse"],
         required: true,
@@ -526,8 +525,8 @@ export const INCOME_EXPENSE_ENTITIES: readonly DetailEntity[] = [
         label: "Estimate prior-year MAGI from projection",
         kind: "boolean",
         required: false,
-        defaultValue: false,
-        notes: "When true, the Prior-year MAGI input is hidden and the engine estimates it from the current-year projection instead.",
+        defaultValue: true,
+        notes: "When true, the Prior-year MAGI input is hidden and the engine estimates it from the current-year projection instead. Defaults on; the column's own DB default is still false, so every writer passes it explicitly.",
       },
     ],
   },

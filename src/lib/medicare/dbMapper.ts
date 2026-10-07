@@ -35,6 +35,29 @@ export function medicareCoverageToInsert(
     medigapMonthlyAt65: c.medigapMonthlyAt65 === null ? null : String(c.medigapMonthlyAt65),
     partDPlanMonthlyAt65: c.partDPlanMonthlyAt65 === null ? null : String(c.partDPlanMonthlyAt65),
     priorYearMagi: c.priorYearMagi === null ? null : String(c.priorYearMagi),
-    estimatePriorYearMagiFromProjection: c.estimatePriorYearMagiFromProjection ?? false,
+    estimatePriorYearMagiFromProjection: c.estimatePriorYearMagiFromProjection ?? true,
   };
+}
+
+/** Medicare is modeled for everyone by default. A person with no saved row
+ *  gets enrollment at 65, national-average premiums (the nulls), and cold-start
+ *  MAGI estimated from the projection. Saved rows always win. */
+export function withDefaultMedicareCoverage(
+  saved: MedicareCoverage[],
+  hasSpouse: boolean,
+): MedicareCoverage[] {
+  const owners = hasSpouse ? (["client", "spouse"] as const) : (["client"] as const);
+  const missing = owners.filter((owner) => !saved.some((c) => c.owner === owner));
+  return [
+    ...saved,
+    ...missing.map((owner): MedicareCoverage => ({
+      owner,
+      enrollmentYear: null,
+      coverageType: "original",
+      medigapMonthlyAt65: null,
+      partDPlanMonthlyAt65: null,
+      priorYearMagi: null,
+      estimatePriorYearMagiFromProjection: true,
+    })),
+  ];
 }
