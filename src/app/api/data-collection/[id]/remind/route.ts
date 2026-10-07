@@ -1,22 +1,16 @@
 // @allow-firm-scope-exception — firm scoping enforced by loadFormForFirm(id, orgId); literal getOrgId/requireOrgId grep doesn't see it.
 
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
-import { db } from "@/db";
-import { clients } from "@/db/schema";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { loadFormForFirm } from "@/lib/intake/queries";
 import { isExpired } from "@/lib/intake/tokens";
 import { sendIntakeLinkEmail } from "@/lib/intake/send-form-email";
-import { resolveClientPortalUserId } from "@/lib/portal/bindings";
+import { resolveFormLink } from "@/lib/intake/form-link";
 import { checkIntakeRemindRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
-
-const APP_URL =
-  process.env.NEXT_PUBLIC_APP_URL ?? "https://app.foundryplanning.com";
 
 /**
  * Nudge a recipient who hasn't finished their form: mail them the same access
@@ -68,43 +62,17 @@ export async function POST(
       );
     }
 
-    // One row, read at two call sites below: the brand the recipient sees, and
-    // the legacy portal-login column. A prospect form has no client behind it.
-    const [client] = form.clientId
-      ? await db
-          .select({ advisorId: clients.advisorId, clerkUserId: clients.clerkUserId })
-          .from(clients)
-          .where(and(eq(clients.id, form.clientId), eq(clients.firmId, orgId)))
-      : [];
+    const { link, brandAdvisorUserId } = await resolveFormLink(form, orgId, userId);
 
-    // The household's own advisor owns the brand — same rule as the first send,
-    // which resolves it off `requireClientEditAccess`; falls back to the sender.
-    const brandAdvisorUserId = client?.advisorId ?? userId;
-
-    // Where the client picks the form back up. A blank form travels on its own
-    // token; a prefilled one lives behind the portal login, so the reminder
-    // points at the portal rather than minting a second way in.
-    let link: string;
-    if (form.mode === "prefilled") {
-      const boundClerkUserId = form.clientId
-        ? await resolveClientPortalUserId(form.clientId, client?.clerkUserId ?? null)
-        : null;
-
-      // No login yet means there is no link to re-send — what's outstanding is
-      // the Clerk invitation, which the Access tab owns. Saying so beats mailing
-      // them a portal URL that can only bounce them to a sign-in they can't pass.
-      if (!boundClerkUserId) {
-        return NextResponse.json(
-          {
-            error:
-              "They haven't set up their Foundry login yet. Resend the invitation from the Access tab on their portal page.",
-          },
-          { status: 409 },
-        );
-      }
-      link = `${APP_URL}/portal/intake`;
-    } else {
-      link = `${APP_URL}/intake/${form.token}`;
+    // Saying so beats mailing a portal URL that bounces to a sign-in they can't pass.
+    if (!link) {
+      return NextResponse.json(
+        {
+          error:
+            "They haven't set up their Foundry login yet. Resend the invitation from the Access tab on their portal page.",
+        },
+        { status: 409 },
+      );
     }
 
     const sent = await sendIntakeLinkEmail({
@@ -114,7 +82,7 @@ export async function POST(
       to: form.recipientEmail,
       link,
       clientName: form.recipientName,
-      reminder: true,
+      followUp: "reminder",
     });
 
     // The first send can shrug off a failed mail — the form row exists and the

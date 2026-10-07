@@ -9,6 +9,13 @@ export const DEFAULT_INTAKE_INTRO =
   "It takes about 10–15 minutes, and you can save and come back anytime. " +
   "There are no wrong answers; just fill in what you know.";
 
+/** Intro for a form the advisor sent back after it was submitted. Not
+ *  advisor-editable — see `FOLLOW_UP` in send-form-email.ts. */
+export const DEFAULT_INTAKE_REOPENED_INTRO =
+  "{{advisorName}} has reopened your form so you can add to it. " +
+  "Everything you entered before is still there — add what's new, " +
+  "then submit it again when you're done.";
+
 export const INTAKE_EMAIL_TOKENS = ["advisorName", "firmName", "clientName"] as const;
 
 /* Footer copy. Not advisor-editable (unlike the subject and intro above), but

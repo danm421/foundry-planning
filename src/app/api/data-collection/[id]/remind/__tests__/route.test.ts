@@ -106,7 +106,7 @@ describe("POST /api/data-collection/[id]/remind", () => {
     // client may already have open.
     expect(arg.link).toContain("/intake/tok-abc");
     expect(arg.to).toBe("sam@client.com");
-    expect(arg.reminder).toBe(true);
+    expect(arg.followUp).toBe("reminder");
 
     expect(recordAuditMock).toHaveBeenCalledWith(
       expect.objectContaining({

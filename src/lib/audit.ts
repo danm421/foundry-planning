@@ -473,6 +473,8 @@ export type AuditAction =
   | "intake.form.linked"
   | "intake.form.export_pdf"
   | "intake.form.discarded"
+  // A submitted form sent back to the client to add more before review.
+  | "intake.form.reopened"
   | "intake.form.revoked"
   // Public-link identity gate: a failed attempt is the signal that someone is
   // guessing against a live link, so it is audited as well as rate-limited.

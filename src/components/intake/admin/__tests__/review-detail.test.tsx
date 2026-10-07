@@ -11,6 +11,11 @@ vi.mock("next/navigation", () => ({
   useRouter: () => router,
 }));
 
+const showToast = vi.hoisted(() => vi.fn());
+vi.mock("@/components/toast", () => ({
+  useToast: () => ({ showToast }),
+}));
+
 function makeForm(overrides: Partial<IntakeFormRow> = {}): IntakeFormRow {
   return {
     id: "form-1",
@@ -235,6 +240,68 @@ describe("ReviewDetail", () => {
     fireEvent.click(screen.getByRole("button", { name: /apply entire form/i }));
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent(/already been applied or discarded/i);
+    });
+  });
+
+  describe("Reopen for changes", () => {
+    it("asks before sending, then POSTs to the reopen route and stays on the page", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, delivered: true }) }),
+      );
+      render(<ReviewDetail form={makeForm()} diff={baseDiff} />);
+
+      fireEvent.click(screen.getByRole("button", { name: /reopen for changes/i }));
+      // Nothing is sent on the first click — it mails the client.
+      expect(fetch).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: /reopen and email/i }));
+
+      await waitFor(() => {
+        expect(fetch).toHaveBeenCalledWith("/api/data-collection/form-1/reopen", { method: "POST" });
+      });
+      await waitFor(() => expect(router.refresh).toHaveBeenCalled());
+      expect(router.push).not.toHaveBeenCalled();
+      expect(showToast).toHaveBeenCalledWith({ message: "Reopened. We emailed Jane Doe their link." });
+    });
+
+    it("says so when no email went out", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, delivered: false }) }),
+      );
+      render(<ReviewDetail form={makeForm()} diff={baseDiff} />);
+      fireEvent.click(screen.getByRole("button", { name: /reopen for changes/i }));
+      fireEvent.click(screen.getByRole("button", { name: /reopen and email/i }));
+
+      await waitFor(() => {
+        expect(showToast).toHaveBeenCalledWith({
+          message: expect.stringMatching(/no email went out.*Remind/),
+        });
+      });
+    });
+
+    it("shows the route's own 409 reason inline", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 409,
+          json: async () => ({ error: "This form is already in the plan. Send a new form to collect more." }),
+        }),
+      );
+      render(<ReviewDetail form={makeForm()} diff={baseDiff} />);
+      fireEvent.click(screen.getByRole("button", { name: /reopen for changes/i }));
+      fireEvent.click(screen.getByRole("button", { name: /reopen and email/i }));
+
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toHaveTextContent(/already in the plan/i);
+      });
+      expect(router.refresh).not.toHaveBeenCalled();
+    });
+
+    it.each(["applied", "discarded", "expired"] as const)("is not offered on a %s form", (status) => {
+      render(<ReviewDetail form={makeForm({ status })} diff={baseDiff} />);
+      expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
     });
   });
 

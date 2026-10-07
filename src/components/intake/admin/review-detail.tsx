@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { IntakeFormRow } from "@/lib/intake/queries";
 import type { IntakeDocumentView } from "@/lib/intake/document-types";
 import type { ClientSearchResult } from "@/lib/client-search";
+import { useToast } from "@/components/toast";
 import { DocumentsSection } from "./documents-section";
 import { ClientPicker } from "./client-picker";
 import type { IntakeDiff, FieldDiff, ListSectionDiff } from "./diff-utils";
@@ -123,14 +124,18 @@ export default function ReviewDetail({
   linkTarget = null,
 }: ReviewDetailProps) {
   const router = useRouter();
+  const { showToast } = useToast();
   const [actionError, setActionError] = useState<string | null>(null);
-  const [acting, setActing] = useState<"apply" | "discard" | null>(null);
+  const [acting, setActing] = useState<"apply" | "discard" | "reopen" | null>(null);
+  const [confirmingReopen, setConfirmingReopen] = useState(false);
   const [picking, setPicking] = useState(false);
   // While the page re-renders for a new pick, `linkTarget` still names the old
   // one — Apply waits, or it would apply to the client on screen a moment ago.
   const [switching, startSwitch] = useTransition();
 
   const alreadyActioned = form.status === "applied" || form.status === "discarded";
+  // Only a form waiting on review goes back — the route refuses the rest.
+  const canReopen = form.status === "submitted";
 
   function setLinkTarget(clientId: string | null) {
     setPicking(false);
@@ -175,6 +180,34 @@ export default function ReviewDetail({
       } else {
         router.push("/data-collection");
       }
+    } finally {
+      setActing(null);
+    }
+  }
+
+  const who = form.recipientName ?? form.recipientEmail;
+
+  // Stays on this page: the refresh re-renders it as the in-flight view.
+  async function handleReopen() {
+    setActionError(null);
+    setActing("reopen");
+    try {
+      const res = await fetch(`/api/data-collection/${form.id}/reopen`, { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; delivered?: boolean };
+      if (!res.ok) {
+        // The 409s name what to do instead (send a new form, reload) — keep them.
+        setActionError(
+          res.status === 409 && body.error ? body.error : "Something went wrong. Please try again.",
+        );
+        return;
+      }
+      setConfirmingReopen(false);
+      showToast({
+        message: body.delivered
+          ? `Reopened. We emailed ${who} their link.`
+          : `Reopened, but no email went out. Use Remind on the Data Collection page to send ${who} their link.`,
+      });
+      router.refresh();
     } finally {
       setActing(null);
     }
@@ -454,6 +487,44 @@ export default function ReviewDetail({
           >
             {acting === "discard" ? "Discarding…" : "Discard"}
           </button>
+          {canReopen && (
+            <button
+              type="button"
+              disabled={acting !== null || switching}
+              aria-expanded={confirmingReopen}
+              onClick={() => setConfirmingReopen((c) => !c)}
+              className="ml-auto text-[13px] font-medium text-ink-2 transition-colors hover:text-accent disabled:opacity-50"
+            >
+              Reopen for changes
+            </button>
+          )}
+        </div>
+      )}
+      {canReopen && confirmingReopen && (
+        <div className="rounded-[var(--radius-sm)] border border-hair bg-card p-4">
+          <p className="text-[14px] text-ink-2">
+            Send this form back to <span className="font-medium text-ink">{who}</span>? We&apos;ll
+            email them their link. Everything they entered stays, so they only add what&apos;s new.
+            It comes back here when they submit again.
+          </p>
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              type="button"
+              disabled={acting !== null}
+              onClick={handleReopen}
+              className="btn-primary rounded-[var(--radius-sm)] bg-accent px-4 py-1.5 text-[13px] font-medium text-accent-on transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {acting === "reopen" ? "Reopening…" : "Reopen and email"}
+            </button>
+            <button
+              type="button"
+              disabled={acting !== null}
+              onClick={() => setConfirmingReopen(false)}
+              className="text-[13px] text-ink-3 transition-colors hover:text-ink disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
       {alreadyActioned && (

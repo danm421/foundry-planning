@@ -6,6 +6,14 @@ import { getAdvisorProfile } from "@/lib/branding/advisor-profile";
 import { resolveFirmName } from "@/lib/activity/resolve-firm-names";
 import { sendIntakeFormEmail, type IntakeEmailResult } from "@/lib/intake/email";
 import { resolveSubject } from "@/lib/intake/email-template";
+import { DEFAULT_INTAKE_REOPENED_INTRO } from "@/lib/intake/defaults";
+
+// The reopened intro replaces the advisor's saved one, which is first-send copy
+// ("takes about 10–15 minutes") — wrong for a client only adding to a form.
+const FOLLOW_UP: Record<"reminder" | "reopened", { prefix: string; intro?: string }> = {
+  reminder: { prefix: "Reminder" },
+  reopened: { prefix: "Reopened", intro: DEFAULT_INTAKE_REOPENED_INTRO },
+};
 
 /**
  * Compose and send "here is your form" to a recipient.
@@ -28,8 +36,11 @@ export async function sendIntakeLinkEmail(args: {
   to: string;
   link: string;
   clientName?: string | null;
-  /** Marks the subject as a nudge rather than a first send. */
-  reminder?: boolean;
+  /**
+   * A mail about a form already out, rather than a first send: a nudge to
+   * finish it, or word that a submitted form was sent back for more.
+   */
+  followUp?: keyof typeof FOLLOW_UP;
 }): Promise<IntakeEmailResult> {
   const { firmId, senderUserId, brandAdvisorUserId, to, link, clientName } = args;
 
@@ -71,9 +82,10 @@ export async function sendIntakeLinkEmail(args: {
     : undefined;
 
   // Resolved first, then prefixed: the advisor's saved subject is optional, and
-  // a nudge that arrived byte-identical to the first mail reads as a glitch.
-  const subject = args.reminder
-    ? `Reminder: ${resolveSubject(settings?.subject ?? undefined)}`
+  // a follow-up that arrived byte-identical to the first mail reads as a glitch.
+  const followUp = args.followUp ? FOLLOW_UP[args.followUp] : undefined;
+  const subject = followUp
+    ? `${followUp.prefix}: ${resolveSubject(settings?.subject ?? undefined)}`
     : (settings?.subject ?? undefined);
 
   return sendIntakeFormEmail({
@@ -82,7 +94,7 @@ export async function sendIntakeLinkEmail(args: {
     fromName: brandFromName ?? settings?.fromName ?? undefined,
     replyTo: brandReplyTo,
     subject,
-    introBody: settings?.introBody ?? undefined,
+    introBody: followUp?.intro ?? settings?.introBody ?? undefined,
     advisorName,
     advisorEmail,
     firmName,
