@@ -25,6 +25,11 @@ vi.mock("@/lib/authz", () => ({
   authErrorResponse: vi.fn(() => null),
 }));
 vi.mock("@/lib/intake/tokens", () => ({ newIntakeToken: () => "tok123", defaultExpiry: () => new Date("2099-01-01") }));
+// Every blank send draws on the firm's email budget; this file is about what
+// the mail says, so the budget always has room (route.test.ts covers a refusal).
+vi.mock("@/lib/rate-limit", () => ({
+  checkClientEmailRateLimit: vi.fn(async () => ({ allowed: true, remaining: 29, reset: 0 })),
+}));
 
 // db: insert(intakeForms) → returning id; select(intakeEmailSettings) → the
 // sender's personal settings row (keyed on firmId+userId, unrelated to the

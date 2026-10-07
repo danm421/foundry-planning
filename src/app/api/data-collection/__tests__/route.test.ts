@@ -44,9 +44,12 @@ vi.mock("@/lib/clients/cross-firm-audit", () => ({
 }));
 
 // ── Rate-limit mock ───────────────────────────────────────────────────────────
+// Prefilled sends draw on the portal-invite budget; blank sends on the email one.
 const checkLimitMock = vi.fn();
+const checkEmailLimitMock = vi.fn();
 vi.mock("@/lib/rate-limit", () => ({
   checkPortalInviteRateLimit: (k: string) => checkLimitMock(k),
+  checkClientEmailRateLimit: (k: string) => checkEmailLimitMock(k),
 }));
 
 // ── Clerk mock ────────────────────────────────────────────────────────────────
@@ -133,6 +136,7 @@ function postReq(body: unknown) {
 
 beforeEach(() => {
   checkLimitMock.mockReset();
+  checkEmailLimitMock.mockReset();
   createInvitationMock.mockReset();
   dbInsertMock.mockReset();
   dbUpdateMock.mockReset();
@@ -146,6 +150,7 @@ beforeEach(() => {
 
   // Happy-path defaults
   checkLimitMock.mockResolvedValue({ allowed: true });
+  checkEmailLimitMock.mockResolvedValue({ allowed: true });
   dbInsertMock.mockResolvedValue([{ id: "form-1" }]);
   selectClientResultMock.mockResolvedValue([{ clerkUserId: null }]); // unbound client
   createInvitationMock.mockResolvedValue({ id: "inv_1" });
@@ -580,20 +585,49 @@ describe("POST /api/data-collection — rate limiting", () => {
 
     expect(res.status).toBe(429);
     expect(dbInsertMock).not.toHaveBeenCalled();
+    // A prefilled send is a portal invite; it never touches the email budget.
+    expect(checkEmailLimitMock).not.toHaveBeenCalled();
   });
 
-  it("does NOT rate-limit blank mode", async () => {
-    // Even if the rate limiter would deny, blank mode doesn't call it
+  // A blank send mails someone from the shared sending address, so it draws on
+  // the firm's email budget — not the portal-invite one.
+  it("refuses a blank send over the firm's email budget, before any form row or email", async () => {
+    checkEmailLimitMock.mockResolvedValue({ allowed: false, reason: "exceeded" });
+
+    const res = await POST(
+      postReq({ mode: "blank", recipientEmail: "a@b.com" }),
+    );
+
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "Rate limit exceeded", reason: "exceeded" });
+    expect(checkEmailLimitMock).toHaveBeenCalledWith("firm-1");
+    expect(dbInsertMock).not.toHaveBeenCalled();
+    expect(sendIntakeFormEmailMock).not.toHaveBeenCalled();
+    expect(recordAuditMock).not.toHaveBeenCalled();
+  });
+
+  it("counts a blank send against the email budget only, and still sends it within budget", async () => {
+    const res = await POST(
+      postReq({ mode: "blank", recipientEmail: "a@b.com" }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(checkEmailLimitMock).toHaveBeenCalledTimes(1);
+    expect(checkEmailLimitMock).toHaveBeenCalledWith("firm-1");
+    expect(checkLimitMock).not.toHaveBeenCalled();
+    expect(sendIntakeFormEmailMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not spend the portal-invite budget on a blank send", async () => {
+    // A full invite budget must not block an emailed form.
     checkLimitMock.mockResolvedValue({ allowed: false, reason: "exceeded" });
 
     const res = await POST(
       postReq({ mode: "blank", recipientEmail: "a@b.com" }),
     );
 
-    // checkLimitMock not called at all for blank
-    expect(checkLimitMock).not.toHaveBeenCalled();
-    // And the request succeeds
     expect(res.status).toBe(200);
+    expect(sendIntakeFormEmailMock).toHaveBeenCalledTimes(1);
   });
 });
 

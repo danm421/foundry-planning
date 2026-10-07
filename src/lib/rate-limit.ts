@@ -483,6 +483,21 @@ export async function checkPortalInviteRateLimit(
   return safeLimit(limiter, key);
 }
 
+// Per-firm cap on emailed intake-form links and risk questionnaires — mail
+// that leaves from the shared sending address with no portal invite behind it.
+// Separate from the invite bucket so onboarding a household (a questionnaire
+// to each spouse plus an intake form) never starves its invites. 30/hr is far
+// above a firm's busiest real hour, and still bounds a runaway sender.
+const getClientEmailLimiter = buildLimiter(30, "1 h", "rl:client-email");
+
+export async function checkClientEmailRateLimit(
+  key: string,
+): Promise<RateLimitResult> {
+  const limiter = getClientEmailLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
 // Per-(client, item) cap on Plaid balance refreshes — protects Plaid
 // Balance/Investments billing and prevents accidental refresh loops.
 const getPortalPlaidItemRefreshLimiter = buildLimiter(

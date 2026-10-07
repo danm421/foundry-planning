@@ -22,6 +22,7 @@ import { OPEN_RTQ_STATUSES } from "@/lib/risk/token-guard";
 import { sendRiskQuestionnaireEmail } from "@/lib/risk/email";
 import { getAdvisorProfile } from "@/lib/branding/advisor-profile";
 import { resolveFirmName } from "@/lib/activity/resolve-firm-names";
+import { checkClientEmailRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       );
     }
     const { subject, recipientEmail, recipientName } = parsed.data;
+
+    // Same per-firm email budget as an emailed intake form: every questionnaire
+    // leaves from the shared sending address. Checked before the old link is
+    // expired or a new row written, so a refused send changes nothing.
+    const limit = await checkClientEmailRateLimit(firmId);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded", reason: limit.reason },
+        { status: 429 },
+      );
+    }
 
     const { userId } = await auth();
     // requireOrgId/requireClientEditAccess have already thrown for an

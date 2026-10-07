@@ -17,7 +17,7 @@ import {
   isExistingAccountError,
 } from "@/lib/clients/portal-invite-errors";
 import { resolveClientPortalUserId } from "@/lib/portal/bindings";
-import { checkPortalInviteRateLimit } from "@/lib/rate-limit";
+import { checkClientEmailRateLimit, checkPortalInviteRateLimit } from "@/lib/rate-limit";
 import { sendPortalInvite } from "@/lib/clients/send-portal-invite";
 import { sendIntakeLinkEmail } from "@/lib/intake/send-form-email";
 import type { IntakeEmailResult } from "@/lib/intake/email";
@@ -156,7 +156,7 @@ export async function POST(req: Request): Promise<Response> {
 
     await requireActiveSubscriptionForFirm(firmId);
 
-    // ── Rate-limit (prefilled only) ────────────────────────────────────────
+    // ── Rate-limit ─────────────────────────────────────────────────────────
     if (mode === "prefilled") {
       // A prefilled send is delivered AS a portal invite (see below), so it is
       // the second way to grant portal access and needs the same entitlement as
@@ -169,6 +169,17 @@ export async function POST(req: Request): Promise<Response> {
       await requireClientPortalEntitlement(firmId);
       await requireClientPortalForAdvisor(firmId, accessedClient?.advisorId ?? "");
       const limit = await checkPortalInviteRateLimit(firmId);
+      if (!limit.allowed) {
+        return NextResponse.json(
+          { error: "Rate limit exceeded", reason: limit.reason },
+          { status: 429 },
+        );
+      }
+    } else {
+      // A blank send needs no portal entitlement, but it still mails someone
+      // from the shared sending address, so it draws on the firm's email
+      // budget — checked before the form row or any mail.
+      const limit = await checkClientEmailRateLimit(firmId);
       if (!limit.allowed) {
         return NextResponse.json(
           { error: "Rate limit exceeded", reason: limit.reason },
