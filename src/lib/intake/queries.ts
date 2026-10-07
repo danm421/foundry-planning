@@ -139,11 +139,32 @@ export const loadSubmittedFormForClient = cache(
 );
 
 /**
- * List a firm's intake forms in the caller's book, newest first. A form bound
- * to a client belongs to that client's advisor; a form with no client yet
- * belongs to the advisor who sent it. `visible` comes from
- * `resolveVisibleAdvisorIds`; a form bound to a colleague's Private client is
- * left out for the caller (`userId`, `orgRole`) as well.
+ * The WHERE clause for a firm's intake forms in the caller's book (needs
+ * `clients` left-joined on `intake_forms.client_id`). A form bound to a client
+ * belongs to that client's advisor; a form with no client yet belongs to the
+ * advisor who sent it. `visible` comes from `resolveVisibleAdvisorIds`; a form
+ * bound to a colleague's Private client is left out for the caller (`userId`,
+ * `orgRole`) as well. Shared by the Data Collection queue and the Home feed.
+ */
+export function intakeFormsInBook(
+  firmId: string,
+  visible: VisibleAdvisors,
+  userId: string,
+  orgRole: string | null | undefined,
+) {
+  const inBook =
+    visible === VISIBLE_ALL
+      ? undefined
+      : or(
+          advisorScopeCondition(clients.advisorId, visible),
+          and(isNull(intakeForms.clientId), advisorScopeCondition(intakeForms.createdByUserId, visible)),
+        );
+  return and(eq(intakeForms.firmId, firmId), inBook, privateClientFilter(userId, orgRole));
+}
+
+/**
+ * List a firm's intake forms in the caller's book, newest first (see
+ * `intakeFormsInBook`).
  * React.cache'd for per-request dedup, consistent with the sibling queries.
  */
 export const listFormsForFirm = cache(
@@ -153,18 +174,11 @@ export const listFormsForFirm = cache(
     userId: string,
     orgRole: string | null | undefined,
   ): Promise<IntakeFormRow[]> => {
-    const inBook =
-      visible === VISIBLE_ALL
-        ? undefined
-        : or(
-            advisorScopeCondition(clients.advisorId, visible),
-            and(isNull(intakeForms.clientId), advisorScopeCondition(intakeForms.createdByUserId, visible)),
-          );
     const rows = await db
       .select({ form: intakeForms })
       .from(intakeForms)
       .leftJoin(clients, eq(clients.id, intakeForms.clientId))
-      .where(and(eq(intakeForms.firmId, firmId), inBook, privateClientFilter(userId, orgRole)))
+      .where(intakeFormsInBook(firmId, visible, userId, orgRole))
       .orderBy(desc(intakeForms.createdAt));
     return rows.map((r) => r.form);
   },

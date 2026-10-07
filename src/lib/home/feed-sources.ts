@@ -10,6 +10,8 @@ import {
   crmTasks,
   intakeForms,
 } from "@/db/schema";
+import { intakeFormsInBook } from "@/lib/intake/queries";
+import { resolveVisibleAdvisorIds } from "@/lib/visibility";
 import { assembleFeed } from "./feed-assemble";
 import { milestonesWithin, nextBirthdayWithin, parseDateOnly, toIsoDate } from "./dates";
 import {
@@ -201,7 +203,13 @@ async function fetchMentionItems(
   return rows.map(mentionToFeedItem);
 }
 
-async function fetchIntakeItems(firmId: string, today: Date): Promise<FeedItem[]> {
+export async function fetchIntakeItems(
+  firmId: string,
+  userId: string,
+  orgRole: string | null | undefined,
+  today: Date,
+): Promise<FeedItem[]> {
+  const visible = await resolveVisibleAdvisorIds(userId, orgRole, firmId);
   const rows = await db
     .select({
       id: intakeForms.id,
@@ -210,9 +218,10 @@ async function fetchIntakeItems(firmId: string, today: Date): Promise<FeedItem[]
       submittedAt: intakeForms.submittedAt,
     })
     .from(intakeForms)
+    .leftJoin(clients, eq(clients.id, intakeForms.clientId))
     .where(
       and(
-        eq(intakeForms.firmId, firmId),
+        intakeFormsInBook(firmId, visible, userId, orgRole),
         eq(intakeForms.status, "submitted"),
         gte(intakeForms.submittedAt, daysAgo(today, RECENT_WINDOW_DAYS)),
       ),
@@ -279,7 +288,7 @@ export async function getHomeFeed(
     fetchMyTaskItems(firmId, userId, today),
     fetchBirthdayAndMilestoneItems(conditionsPromise, today),
     fetchMentionItems(firmId, userId, today),
-    fetchIntakeItems(firmId, today),
+    fetchIntakeItems(firmId, userId, orgRole, today),
     fetchImportItems(conditionsPromise, firmId, today),
   ]);
   const items = settled
