@@ -31,9 +31,9 @@ vi.mock("@/db", () => ({
   },
 }));
 
-const loadFormForFirmMock = vi.fn();
-vi.mock("@/lib/intake/queries", () => ({
-  loadFormForFirm: (id: string, firmId: string) => loadFormForFirmMock(id, firmId),
+const loadFormMock = vi.fn();
+vi.mock("@/lib/intake/form-access", () => ({
+  loadFormForCaller: (id: string, firmId: string) => loadFormMock(id, firmId),
 }));
 
 const sendMock = vi.fn();
@@ -81,7 +81,7 @@ function form(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
-  loadFormForFirmMock.mockReset().mockResolvedValue(form());
+  loadFormMock.mockReset().mockResolvedValue(form());
   updateMock.mockReset().mockResolvedValue([{ id: "form-1" }]);
   selectClientMock.mockReset().mockResolvedValue([]);
   sendMock.mockReset().mockResolvedValue({ delivered: true });
@@ -124,7 +124,7 @@ describe("POST /api/data-collection/[id]/reopen", () => {
   });
 
   it("points a pre-filled form at the portal when the client has a login", async () => {
-    loadFormForFirmMock.mockResolvedValue(form({ mode: "prefilled", clientId: "client-1" }));
+    loadFormMock.mockResolvedValue(form({ mode: "prefilled", clientId: "client-1" }));
     selectClientMock.mockResolvedValue([{ advisorId: "owner-1", clerkUserId: null }]);
     resolveBindingMock.mockResolvedValue("user_portal");
 
@@ -135,7 +135,7 @@ describe("POST /api/data-collection/[id]/reopen", () => {
   });
 
   it("still reopens when there is no login to mail, and says nothing was delivered", async () => {
-    loadFormForFirmMock.mockResolvedValue(form({ mode: "prefilled", clientId: "client-1" }));
+    loadFormMock.mockResolvedValue(form({ mode: "prefilled", clientId: "client-1" }));
 
     const res = await POST(postReq(), ctx);
     expect(res.status).toBe(200);
@@ -157,7 +157,7 @@ describe("POST /api/data-collection/[id]/reopen", () => {
     ["draft", /already open/],
     ["discarded", /discarded/],
   ])("refuses a %s form with 409 and writes nothing", async (status, message) => {
-    loadFormForFirmMock.mockResolvedValue(form({ status }));
+    loadFormMock.mockResolvedValue(form({ status }));
 
     const res = await POST(postReq(), ctx);
     expect(res.status).toBe(409);
@@ -178,7 +178,7 @@ describe("POST /api/data-collection/[id]/reopen", () => {
   });
 
   it("404s a form outside the caller's firm", async () => {
-    loadFormForFirmMock.mockResolvedValue(null);
+    loadFormMock.mockResolvedValue(null);
 
     const res = await POST(postReq(), ctx);
     expect(res.status).toBe(404);

@@ -39,10 +39,10 @@ vi.mock("@/db", () => ({
   },
 }));
 
-// ── loadFormForFirm mock ──────────────────────────────────────────────────────
-const loadFormForFirmMock = vi.fn();
-vi.mock("@/lib/intake/queries", () => ({
-  loadFormForFirm: (id: string, firmId: string) => loadFormForFirmMock(id, firmId),
+// ── loadFormForCaller mock ────────────────────────────────────────────────────
+const loadFormMock = vi.fn();
+vi.mock("@/lib/intake/form-access", () => ({
+  loadFormForCaller: (id: string, firmId: string) => loadFormMock(id, firmId),
 }));
 
 // ── applyIntake mock ──────────────────────────────────────────────────────────
@@ -84,13 +84,13 @@ const ctx = { params: Promise.resolve({ id: "form-1" }) };
 const crossFirmCtx = { params: Promise.resolve({ id: "cross-firm-form" }) };
 
 beforeEach(() => {
-  loadFormForFirmMock.mockReset();
+  loadFormMock.mockReset();
   applyIntakeMock.mockReset();
   requireActiveSubscriptionForFirmMock.mockReset();
   requireActiveSubscriptionForFirmMock.mockResolvedValue(undefined);
 
   // Happy-path default: submitted form
-  loadFormForFirmMock.mockResolvedValue({
+  loadFormMock.mockResolvedValue({
     id: "form-1",
     firmId: "firm-1",
     status: "submitted",
@@ -120,16 +120,16 @@ describe("POST /api/data-collection/[id]/apply", () => {
     });
   });
 
-  it("returns 404 when loadFormForFirm returns null (cross-firm / nonexistent)", async () => {
-    loadFormForFirmMock.mockResolvedValue(null);
+  it("returns 404 when loadFormForCaller returns null (missing, other firm or other book)", async () => {
+    loadFormMock.mockResolvedValue(null);
     const res = await POST(postReq(), crossFirmCtx);
     expect(res.status).toBe(404);
     expect(applyIntakeMock).not.toHaveBeenCalled();
   });
 
-  it("delegates firm scoping to loadFormForFirm (passes orgId as firmId)", async () => {
+  it("delegates scoping to loadFormForCaller (passes orgId as firmId)", async () => {
     await POST(postReq(), ctx);
-    expect(loadFormForFirmMock).toHaveBeenCalledWith("form-1", "firm-1");
+    expect(loadFormMock).toHaveBeenCalledWith("form-1", "firm-1");
   });
 
   it("returns 403 (not 500) when the firm has no active subscription, without applying", async () => {
@@ -140,7 +140,7 @@ describe("POST /api/data-collection/[id]/apply", () => {
     expect(res.status).toBe(403);
     expect(applyIntakeMock).not.toHaveBeenCalled();
     // Gate runs before the form load — a lapsed firm never reaches the DB.
-    expect(loadFormForFirmMock).not.toHaveBeenCalled();
+    expect(loadFormMock).not.toHaveBeenCalled();
   });
 
   it("never links when no clientId is sent", async () => {

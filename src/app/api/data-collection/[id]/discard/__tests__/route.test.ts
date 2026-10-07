@@ -22,10 +22,10 @@ vi.mock("@/db", () => ({
   },
 }));
 
-// ── loadFormForFirm mock ──────────────────────────────────────────────────────
-const loadFormForFirmMock = vi.fn();
-vi.mock("@/lib/intake/queries", () => ({
-  loadFormForFirm: (id: string, firmId: string) => loadFormForFirmMock(id, firmId),
+// ── loadFormForCaller mock ────────────────────────────────────────────────────
+const loadFormMock = vi.fn();
+vi.mock("@/lib/intake/form-access", () => ({
+  loadFormForCaller: (id: string, firmId: string) => loadFormMock(id, firmId),
 }));
 
 // ── Audit mock ────────────────────────────────────────────────────────────────
@@ -47,12 +47,12 @@ const ctx = { params: Promise.resolve({ id: "form-1" }) };
 const crossFirmCtx = { params: Promise.resolve({ id: "cross-firm-form" }) };
 
 beforeEach(() => {
-  loadFormForFirmMock.mockReset();
+  loadFormMock.mockReset();
   dbUpdateMock.mockReset();
   recordAuditMock.mockReset();
 
   // Happy-path default: submitted form with a known clientId
-  loadFormForFirmMock.mockResolvedValue({
+  loadFormMock.mockResolvedValue({
     id: "form-1",
     firmId: "firm-1",
     status: "submitted",
@@ -92,7 +92,7 @@ describe("POST /api/data-collection/[id]/discard", () => {
   });
 
   it("returns 409 when form is already applied", async () => {
-    loadFormForFirmMock.mockResolvedValue({
+    loadFormMock.mockResolvedValue({
       id: "form-1",
       firmId: "firm-1",
       status: "applied",
@@ -105,7 +105,7 @@ describe("POST /api/data-collection/[id]/discard", () => {
   });
 
   it("returns 409 when form is already discarded (terminal — no spurious re-discard)", async () => {
-    loadFormForFirmMock.mockResolvedValue({
+    loadFormMock.mockResolvedValue({
       id: "form-1",
       firmId: "firm-1",
       status: "discarded",
@@ -117,15 +117,15 @@ describe("POST /api/data-collection/[id]/discard", () => {
     expect(recordAuditMock).not.toHaveBeenCalled();
   });
 
-  it("returns 404 when loadFormForFirm returns null (cross-firm / nonexistent)", async () => {
-    loadFormForFirmMock.mockResolvedValue(null);
+  it("returns 404 when loadFormForCaller returns null (missing, other firm or other book)", async () => {
+    loadFormMock.mockResolvedValue(null);
     const res = await POST(postReq(), crossFirmCtx);
     expect(res.status).toBe(404);
     expect(dbUpdateMock).not.toHaveBeenCalled();
   });
 
   it("handles null clientId on form", async () => {
-    loadFormForFirmMock.mockResolvedValue({
+    loadFormMock.mockResolvedValue({
       id: "form-1",
       firmId: "firm-1",
       status: "submitted",

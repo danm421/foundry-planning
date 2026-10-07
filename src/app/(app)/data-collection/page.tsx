@@ -5,6 +5,7 @@ import { currentUserHasClientPortal } from "@/lib/authz";
 import { findClientRecipient } from "@/lib/client-search";
 import { listFormsForFirm, loadAdvisorDefaultSections } from "@/lib/intake/queries";
 import { loadLastRemindedAt } from "@/lib/intake/reminders";
+import { resolveVisibleAdvisorIds } from "@/lib/visibility";
 import Queue, { type QueueGroup } from "@/components/intake/admin/queue";
 import SendIntakeForm from "@/components/intake/admin/send-intake-form";
 import { ExternalLinkIcon, PencilIcon } from "@/components/icons";
@@ -27,7 +28,8 @@ export default async function DataCollectionPage({
   // Four independent reads — none feeds another — so they overlap instead of
   // queueing behind each other on a page an advisor lands on cold.
   const [forms, defaultSections, prefill, portalEnabled] = await Promise.all([
-    listFormsForFirm(orgId),
+    // Only forms in the caller's book.
+    resolveVisibleAdvisorIds(userId, orgRole, orgId).then((visible) => listFormsForFirm(orgId, visible)),
     loadAdvisorDefaultSections(orgId, userId),
     clientId ? findClientRecipient(clientId, orgId, { userId, orgRole }) : null,
     // Gates the pre-filled send, which is delivered as a portal invite. The

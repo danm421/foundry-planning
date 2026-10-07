@@ -23,9 +23,9 @@ vi.mock("@/db", () => ({
   },
 }));
 
-const loadFormForFirmMock = vi.fn();
-vi.mock("@/lib/intake/queries", () => ({
-  loadFormForFirm: (id: string, firmId: string) => loadFormForFirmMock(id, firmId),
+const loadFormMock = vi.fn();
+vi.mock("@/lib/intake/form-access", () => ({
+  loadFormForCaller: (id: string, firmId: string) => loadFormMock(id, firmId),
 }));
 
 const sendMock = vi.fn();
@@ -84,7 +84,7 @@ function form(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
-  loadFormForFirmMock.mockReset().mockResolvedValue(form());
+  loadFormMock.mockReset().mockResolvedValue(form());
   sendMock.mockReset().mockResolvedValue({ delivered: true });
   selectClientMock.mockReset().mockResolvedValue([]);
   resolveBindingMock.mockReset().mockResolvedValue(null);
@@ -120,7 +120,7 @@ describe("POST /api/data-collection/[id]/remind", () => {
   });
 
   it("returns 404 for a form in another firm", async () => {
-    loadFormForFirmMock.mockResolvedValue(null);
+    loadFormMock.mockResolvedValue(null);
     const res = await POST(postReq(), ctx);
     expect(res.status).toBe(404);
     expect(sendMock).not.toHaveBeenCalled();
@@ -129,7 +129,7 @@ describe("POST /api/data-collection/[id]/remind", () => {
   it.each(["submitted", "applied", "discarded", "expired"])(
     "refuses to chase the client over a %s form",
     async (status) => {
-      loadFormForFirmMock.mockResolvedValue(form({ status }));
+      loadFormMock.mockResolvedValue(form({ status }));
       const res = await POST(postReq(), ctx);
       expect(res.status).toBe(409);
       expect(sendMock).not.toHaveBeenCalled();
@@ -138,7 +138,7 @@ describe("POST /api/data-collection/[id]/remind", () => {
   );
 
   it("refuses a draft whose link has already expired", async () => {
-    loadFormForFirmMock.mockResolvedValue(
+    loadFormMock.mockResolvedValue(
       form({ expiresAt: new Date(Date.now() - 1000) }),
     );
     const res = await POST(postReq(), ctx);
@@ -161,7 +161,7 @@ describe("POST /api/data-collection/[id]/remind", () => {
   });
 
   it("points a prefilled form at the portal once the client has a login", async () => {
-    loadFormForFirmMock.mockResolvedValue(form({ mode: "prefilled", clientId: "client-1" }));
+    loadFormMock.mockResolvedValue(form({ mode: "prefilled", clientId: "client-1" }));
     selectClientMock.mockResolvedValue([{ advisorId: "advisor-2", clerkUserId: null }]);
     resolveBindingMock.mockResolvedValue("user_clerk_1");
 
@@ -176,7 +176,7 @@ describe("POST /api/data-collection/[id]/remind", () => {
   });
 
   it("sends nothing for a prefilled form whose client has no login yet", async () => {
-    loadFormForFirmMock.mockResolvedValue(form({ mode: "prefilled", clientId: "client-1" }));
+    loadFormMock.mockResolvedValue(form({ mode: "prefilled", clientId: "client-1" }));
     selectClientMock.mockResolvedValue([{ advisorId: "advisor-2", clerkUserId: null }]);
     resolveBindingMock.mockResolvedValue(null);
 

@@ -1,7 +1,8 @@
 import { cache } from "react";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
-import { intakeEmailSettings, intakeForms } from "@/db/schema";
+import { clients, intakeEmailSettings, intakeForms } from "@/db/schema";
+import { advisorScopeCondition, VISIBLE_ALL, type VisibleAdvisors } from "@/lib/visibility";
 import { portalCollectsNothing, type IntakeSectionKey } from "./sections";
 
 export type IntakeFormRow = typeof intakeForms.$inferSelect;
@@ -133,16 +134,29 @@ export const loadSubmittedFormForClient = cache(
 );
 
 /**
- * List all intake forms for a firm, newest first.
+ * List a firm's intake forms in the caller's book, newest first. A form bound
+ * to a client belongs to that client's advisor; a form with no client yet
+ * belongs to the advisor who sent it. `visible` comes from
+ * `resolveVisibleAdvisorIds`.
  * React.cache'd for per-request dedup, consistent with the sibling queries.
  */
 export const listFormsForFirm = cache(
-  async (firmId: string): Promise<IntakeFormRow[]> =>
-    db
-      .select()
+  async (firmId: string, visible: VisibleAdvisors): Promise<IntakeFormRow[]> => {
+    const inBook =
+      visible === VISIBLE_ALL
+        ? undefined
+        : or(
+            advisorScopeCondition(clients.advisorId, visible),
+            and(isNull(intakeForms.clientId), advisorScopeCondition(intakeForms.createdByUserId, visible)),
+          );
+    const rows = await db
+      .select({ form: intakeForms })
       .from(intakeForms)
-      .where(eq(intakeForms.firmId, firmId))
-      .orderBy(desc(intakeForms.createdAt)),
+      .leftJoin(clients, eq(clients.id, intakeForms.clientId))
+      .where(and(eq(intakeForms.firmId, firmId), inBook))
+      .orderBy(desc(intakeForms.createdAt));
+    return rows.map((r) => r.form);
+  },
 );
 
 /**

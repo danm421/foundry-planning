@@ -5,9 +5,11 @@
  * Always advisor-authenticated, firm-scoped, audited, atomic, and idempotent:
  *
  *  - Firm scoping: the form is loaded via readFormForFirm(formId, firmId), so
- *    form.clientId is guaranteed in-firm. We never call verifyClientAccess /
- *    Clerk auth() here (this runs in non-request contexts too) — the base
- *    scenario is resolved with a DIRECT query inside the transaction, mirroring
+ *    form.clientId is in-firm. In-firm is not authorization: with the book
+ *    silo on, the caller must also reach that client, which the route checks
+ *    first with loadFormForCaller. We never call verifyClientAccess / Clerk
+ *    auth() here (this runs in non-request contexts too) — the base scenario
+ *    is resolved with a DIRECT query inside the transaction, mirroring
  *    snapshotClientToPayload.
  *  - Idempotency: we only apply when status === "submitted". Any other status
  *    (already applied/discarded/expired/draft) short-circuits to a no-op that

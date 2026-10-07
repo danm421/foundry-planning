@@ -1,11 +1,11 @@
-// @allow-firm-scope-exception — firm scoping enforced by loadFormForFirm(id, orgId); literal getOrgId/requireOrgId grep doesn't see it.
+// @allow-firm-scope-exception — firm and book scoping enforced by loadFormForCaller(id, orgId); literal getOrgId/requireOrgId grep doesn't see it.
 
 import { NextResponse } from "next/server";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { uuidRegex } from "@/lib/schemas/common";
-import { loadFormForFirm } from "@/lib/intake/queries";
+import { loadFormForCaller } from "@/lib/intake/form-access";
 import { applyIntake } from "@/lib/intake/apply";
 import { linkIntakeFormToClient } from "@/lib/intake/link-client";
 
@@ -23,7 +23,7 @@ export async function POST(
     await requireActiveSubscriptionForFirm(orgId);
     const { id } = await ctx.params;
 
-    const form = await loadFormForFirm(id, orgId);
+    const form = await loadFormForCaller(id, orgId);
     if (!form) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
