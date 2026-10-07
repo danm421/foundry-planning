@@ -141,3 +141,35 @@ describe("isGoal", () => {
     if (r.success) expect(r.data.isGoal).toBe(false);
   });
 });
+
+describe("livingItems", () => {
+  const base = { type: "living", name: "Current Living Expenses", startYear: 2026, endYear: 2060 };
+  const good = { id: "i1", name: "Housing", amount: 3200, frequency: "monthly" };
+
+  it("accepts a valid list on create and update", () => {
+    expect(expenseCreateSchema.parse({ ...base, livingItems: [good] }).livingItems).toEqual([good]);
+    expect(expenseUpdateSchema.parse({ livingItems: [good] }).livingItems).toEqual([good]);
+  });
+
+  it("accepts null (un-itemize) and leaves an omitted field undefined", () => {
+    expect(expenseUpdateSchema.parse({ livingItems: null }).livingItems).toBeNull();
+    expect(expenseUpdateSchema.parse({}).livingItems).toBeUndefined();
+  });
+
+  it("trims a name and rejects one that is only spaces", () => {
+    const r = expenseUpdateSchema.parse({ livingItems: [{ ...good, name: "  Housing  " }] });
+    expect(r.livingItems?.[0].name).toBe("Housing");
+    expect(expenseUpdateSchema.safeParse({ livingItems: [{ ...good, name: "   " }] }).success).toBe(false);
+  });
+
+  it("rejects a negative amount, a string amount and an unknown frequency", () => {
+    expect(expenseUpdateSchema.safeParse({ livingItems: [{ ...good, amount: -1 }] }).success).toBe(false);
+    expect(expenseUpdateSchema.safeParse({ livingItems: [{ ...good, amount: "3200" }] }).success).toBe(false);
+    expect(expenseUpdateSchema.safeParse({ livingItems: [{ ...good, frequency: "weekly" }] }).success).toBe(false);
+  });
+
+  it("rejects more than 200 items", () => {
+    const many = Array.from({ length: 201 }, (_, i) => ({ ...good, id: `i${i}` }));
+    expect(expenseUpdateSchema.safeParse({ livingItems: many }).success).toBe(false);
+  });
+});

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { uuidSchema } from "./common";
+import { MAX_LIVING_ITEMS } from "@/lib/living-expense-items";
 
 // --- Coercion building blocks (shared by create + update) ---
 // Each GUARDS undefined so an omitted field in a partial update stays undefined
@@ -67,6 +68,21 @@ const paymentMonthOptional = z
     message: "paymentMonth must be null or an integer from 1 to 12",
   });
 
+// One line of an itemized Current Living Expenses row. Strict, not coercing:
+// the page enters items as numbers one field at a time, so a string amount is
+// a bug to surface. The engine never reads these — it reads annualAmount, which
+// the write layer sets from them (src/lib/living-expense-items.ts).
+export const livingExpenseItemSchema = z.object({
+  id: z.string().min(1).max(64),
+  name: z.string().trim().min(1, "Item name is required").max(120),
+  amount: z.number().nonnegative(),
+  frequency: z.enum(["monthly", "annual"]),
+});
+
+export const livingItemsSchema = z
+  .array(livingExpenseItemSchema)
+  .max(MAX_LIVING_ITEMS, `At most ${MAX_LIVING_ITEMS} items`);
+
 // Fields shared by both schemas verbatim (no create-only defaults attached).
 const shared = {
   ownerEntityId: uuidSchema.nullable().optional(),
@@ -84,6 +100,7 @@ const shared = {
   institutionName: z.string().nullable().optional(),
   forFamilyMemberId: uuidSchema.nullable().optional(),
   dedicatedAccountIds: z.array(uuidSchema).optional(),
+  livingItems: livingItemsSchema.nullable().optional(),
 };
 
 function refineBothOwner(
