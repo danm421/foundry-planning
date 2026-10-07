@@ -319,8 +319,16 @@ function ownerDisplayName(o: {
   return "—";
 }
 
-export async function createCrmHousehold(input: CreateCrmHouseholdInput) {
-  const firmId = await requireOrgId();
+/**
+ * `opts.firmId` names the firm that owns the new household. Callers minting a
+ * household for an existing client pass that client's firm: the caller may be
+ * signed in to another firm through a share. Without it, the session's firm.
+ */
+export async function createCrmHousehold(
+  input: CreateCrmHouseholdInput,
+  opts: { firmId?: string } = {},
+) {
+  const firmId = opts.firmId ?? (await requireOrgId());
 
   // Insert the household and any inline contacts atomically, so a failed
   // contact insert never leaves an orphan household behind.

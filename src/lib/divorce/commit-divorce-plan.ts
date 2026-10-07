@@ -10,7 +10,8 @@
 // STRUCTURE. Two side effects are created BEFORE the atomic transaction because
 // their writers run on the module `db` (their own connection) and can't join our
 // `tx`: the snapshot (createSnapshot) and the spouse CRM household
-// (createCrmHousehold, which also resolves the firm via Clerk auth). This mirrors
+// (createCrmHousehold, given the client's firm, since the caller may be signed
+// in to another firm through a share). This mirrors
 // promote-to-base.ts, which snapshots before its transaction and compensating-
 // deletes on failure. Everything that CAN be atomic — the concurrency guard, the
 // spouse client mint (createClientForHousehold accepts our tx), the family-member
@@ -2028,17 +2029,21 @@ export async function commitDivorcePlan(args: {
 
   let spouseHousehold: Awaited<ReturnType<typeof createCrmHousehold>> | undefined;
   try {
-    // ── Step 3a: mint the spouse CRM household (before the tx; module db + auth) ──
-    spouseHousehold = await createCrmHousehold({
-      name:
-        deriveHouseholdNameFromContacts([spousePrimaryContact]) ??
-        `${spouseLastName} Household`,
-      status: "active",
-      advisorId: pClient.advisorId,
-      // Only carry a real USPS code onto the new household; DB free-text is dropped.
-      state: isUSPSStateCode(plan.spouseState) ? plan.spouseState : undefined,
-      contacts: [spousePrimaryContact],
-    });
+    // ── Step 3a: mint the spouse CRM household (before the tx; module db + auth),
+    // in the client's firm so the household and its planning client match. ──
+    spouseHousehold = await createCrmHousehold(
+      {
+        name:
+          deriveHouseholdNameFromContacts([spousePrimaryContact]) ??
+          `${spouseLastName} Household`,
+        status: "active",
+        advisorId: pClient.advisorId,
+        // Only carry a real USPS code onto the new household; DB free-text is dropped.
+        state: isUSPSStateCode(plan.spouseState) ? plan.spouseState : undefined,
+        contacts: [spousePrimaryContact],
+      },
+      { firmId },
+    );
     const spouseHouseholdId = spouseHousehold.id;
 
     // Captured inside the tx, narrated after it commits — recordActivity uses
