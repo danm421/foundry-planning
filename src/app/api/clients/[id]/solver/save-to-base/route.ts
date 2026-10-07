@@ -240,6 +240,24 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     }
     const { source, mutations } = parsed.data;
 
+    // An upsert is classified insert-vs-update by `id` but written by
+    // `value.id`, so the two must name the same row.
+    const idMismatch = mutations.some(
+      (m) =>
+        (m.kind === "account-upsert" ||
+          m.kind === "savings-rule-upsert" ||
+          m.kind === "income-upsert" ||
+          m.kind === "expense-upsert") &&
+        m.value !== null &&
+        m.value.id !== m.id,
+    );
+    if (idMismatch) {
+      return NextResponse.json(
+        { error: "An upsert's value must carry its own id" },
+        { status: 400 },
+      );
+    }
+
     // Load the source tree to classify insert-vs-update, and fetch the base
     // scenario id to scope every write. Base-facts writes always target the
     // base case regardless of which tree the solver worked against.
@@ -433,7 +451,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       }
 
       for (const a of accountUpdates) {
-        await tx
+        const matched = await tx
           .update(accounts)
           .set({
             name: a.name,
@@ -457,16 +475,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
               eq(accounts.clientId, clientId),
               eq(accounts.scenarioId, baseScenarioId),
             ),
-          );
+          )
+          .returning({ id: accounts.id });
 
         // The column update above leaves the account_owners satellite untouched,
         // so a retitle (owners changed — e.g. into a revocable trust) would be
         // lost. Re-materialize owners: delete-then-reinsert, mirroring
         // updateAccountForClient. Guarded on a non-empty owners set so a malformed
-        // ownerless upsert can't orphan an otherwise-owned account. `a.id` is a
-        // base account (it classified as an UPDATE against base membership), so
-        // the by-accountId delete stays within this client.
-        if (a.owners && a.owners.length > 0) {
+        // ownerless upsert can't orphan an otherwise-owned account, and on the
+        // scoped UPDATE having matched: account_owners has no client column, so
+        // that match is what keeps the by-accountId delete inside this client.
+        if (matched.length > 0 && a.owners && a.owners.length > 0) {
           await tx.delete(accountOwners).where(eq(accountOwners.accountId, a.id));
           await insertAccountOwnerRows(tx, a.id, a.owners);
         }
@@ -633,7 +652,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       // (expense-upsert against a row already in base). Re-materialize the
       // dedicated-account join delete-then-reinsert, mirroring updateExpenseForClient.
       for (const e of expenseFullUpdates) {
-        await tx
+        const matched = await tx
           .update(expenses)
           .set({
             type: e.type,
@@ -657,7 +676,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
               eq(expenses.clientId, clientId),
               eq(expenses.scenarioId, baseScenarioId),
             ),
-          );
+          )
+          .returning({ id: expenses.id });
+        // expense_dedicated_accounts has no client column: rewrite the links
+        // only for an expense the scoped UPDATE matched.
+        if (matched.length === 0) continue;
         await tx
           .delete(expenseDedicatedAccounts)
           .where(eq(expenseDedicatedAccounts.expenseId, e.id));

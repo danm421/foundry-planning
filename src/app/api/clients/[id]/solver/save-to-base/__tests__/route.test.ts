@@ -35,12 +35,15 @@ vi.mock("@/lib/clients/authz", () => ({
 
 // Records every tx.insert(table).values(row) and tx.update(table).set(set).where(...)
 // so tests can assert the rows written and that updates are base-scenario scoped.
+// An UPDATE's `.returning()` reports `updateMatched` — set it to [] to model a
+// client-scoped WHERE that matched no row.
 type Insert = { table: unknown; values: unknown };
 type Update = { table: unknown; set: unknown };
 type Delete = { table: unknown };
 const inserts: Insert[] = [];
 const updates: Update[] = [];
 const deletes: Delete[] = [];
+let updateMatched: unknown[] = [];
 
 vi.mock("@/db", () => {
   // db.select(...).from(...).where(...) resolves to the base-scenario lookup.
@@ -59,7 +62,14 @@ vi.mock("@/db", () => {
             },
           }),
           update: (table: unknown) => ({
-            set: (set: unknown) => ({ where: async () => { updates.push({ table, set }); } }),
+            set: (set: unknown) => ({
+              where: () => {
+                updates.push({ table, set });
+                return Object.assign(Promise.resolve(), {
+                  returning: async () => updateMatched,
+                });
+              },
+            }),
           }),
           delete: (table: unknown) => ({ where: async () => { deletes.push({ table }); } }),
         };
@@ -70,6 +80,7 @@ vi.mock("@/db", () => {
 });
 
 import { POST } from "../route";
+import { accountOwners, expenseDedicatedAccounts } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
   findClientInFirm,
@@ -116,6 +127,7 @@ beforeEach(() => {
   inserts.length = 0;
   updates.length = 0;
   deletes.length = 0;
+  updateMatched = [{ id: "matched" }];
   vi.mocked(requireOrgId).mockResolvedValue(FIRM_ID);
   vi.mocked(findClientInFirm).mockResolvedValue({ id: CLIENT_ID } as never);
   vi.mocked(assertAccountsInClient).mockResolvedValue({ ok: true } as never);
@@ -783,5 +795,75 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     expect(res.status).toBe(200);
     const inserted = inserts.find((i) => (i.values as { name?: string }).name === "Car");
     expect(inserted?.values).toMatchObject({ type: "other", isGoal: true });
+  });
+});
+
+/**
+ * An upsert is classified as insert-or-update by its `id`, but the row it
+ * writes is named by `value.id`. The two must agree, and the satellite rows
+ * (account owners, goal funding links) — which carry no client column — are
+ * rewritten only for a parent row the client-scoped UPDATE actually matched.
+ */
+describe("save-to-base — an upsert writes only the client's own base row", () => {
+  const BASE_ACCT = { ...ACCT, id: "base-acct" };
+  const BASE_EXP = {
+    id: "base-exp",
+    name: "College",
+    type: "education",
+    annualAmount: 30000,
+    startYear: 2032,
+    endYear: 2035,
+    growthRate: 0.05,
+    dedicatedAccountIds: ["base-acct"],
+    payShortfallOutOfPocket: false,
+    institutionState: null,
+    institutionName: null,
+  };
+  const save = (mutation: unknown) =>
+    POST(makeRequest({ source: "base", mutations: [mutation] }), ctx as never);
+  const writesTo = (table: unknown) => ({
+    deleted: deletes.filter((d) => d.table === table).length,
+    inserted: inserts.filter((i) => i.table === table).length,
+  });
+
+  beforeEach(() => {
+    vi.mocked(loadEffectiveTree).mockResolvedValue({
+      effectiveTree: { accounts: [BASE_ACCT], expenses: [BASE_EXP], savingsRules: [], incomes: [] },
+      warnings: [],
+    } as never);
+  });
+
+  it("refuses an account upsert whose value names a different row than its id", async () => {
+    const res = await save({
+      kind: "account-upsert",
+      id: "base-acct",
+      value: { ...BASE_ACCT, id: "other-acct" },
+    });
+    expect(res.status).toBe(400);
+    expect({ updates, deletes, inserts }).toEqual({ updates: [], deletes: [], inserts: [] });
+  });
+
+  it("refuses an expense upsert whose value names a different row than its id", async () => {
+    const res = await save({
+      kind: "expense-upsert",
+      id: "base-exp",
+      value: { ...BASE_EXP, id: "other-exp" },
+    });
+    expect(res.status).toBe(400);
+    expect({ updates, deletes, inserts }).toEqual({ updates: [], deletes: [], inserts: [] });
+  });
+
+  it("rewrites account owners only when the scoped update matched the account", async () => {
+    updateMatched = [];
+    const res = await save({ kind: "account-upsert", id: "base-acct", value: BASE_ACCT });
+    expect(res.status).toBe(200);
+    expect(writesTo(accountOwners)).toEqual({ deleted: 0, inserted: 0 });
+  });
+
+  it("rewrites goal funding links only when the scoped update matched the expense", async () => {
+    updateMatched = [];
+    const res = await save({ kind: "expense-upsert", id: "base-exp", value: BASE_EXP });
+    expect(res.status).toBe(200);
+    expect(writesTo(expenseDedicatedAccounts)).toEqual({ deleted: 0, inserted: 0 });
   });
 });
