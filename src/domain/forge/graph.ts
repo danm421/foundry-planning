@@ -2,7 +2,7 @@
 import { StateGraph, START, END, interrupt } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
-import type { StructuredToolInterface } from "@langchain/core/tools";
+import { ToolInputParsingException, type StructuredToolInterface } from "@langchain/core/tools";
 import type { BaseCheckpointSaver, LangGraphRunnableConfig } from "@langchain/langgraph";
 import { ForgeState, type ForgeAuthContext, type ForgeAnyAuthContext } from "./state";
 import { chatModel } from "./llm"; // Phase 0 infra section: AzureChatOpenAI factory
@@ -243,13 +243,35 @@ export function buildGraph(
         }
       } else {
         // A read call mixed into a write turn: execute it immediately (no approval needed).
-        const t = toolsByName.get(c.name);
-        const content = t ? await invokeTool(t, c.args) : "Unknown tool.";
-        if (t) toolErrorCounts[c.name] = isToolFailure(content) ? 1 : 0;
-        messages.push(new ToolMessage({ tool_call_id: id, content }));
+        messages.push(await runBatchedCall(invokeTool, id, c, toolErrorCounts));
       }
     }
     return { messages, toolErrorCounts };
+  }
+
+  /**
+   * Run a call that needs no approval but rode in on an approval turn. Arguments
+   * the tool's schema refuses come back to the model as an error result, as on
+   * the plain tools path — throwing here would fail the resume after the
+   * approved write already ran, and a retry would run that write again.
+   */
+  async function runBatchedCall(
+    invokeTool: ReturnType<typeof toolInvoker>,
+    id: string,
+    c: { name: string; args: unknown },
+    toolErrorCounts: Record<string, number>,
+  ): Promise<ToolMessage> {
+    const t = toolsByName.get(c.name);
+    if (!t) return new ToolMessage({ tool_call_id: id, content: "Unknown tool." });
+    try {
+      const content = await invokeTool(t, c.args);
+      toolErrorCounts[c.name] = isToolFailure(content) ? 1 : 0;
+      return new ToolMessage({ tool_call_id: id, content });
+    } catch (e) {
+      if (!(e instanceof ToolInputParsingException)) throw e;
+      toolErrorCounts[c.name] = 1;
+      return new ToolMessage({ tool_call_id: id, status: "error", content: `Error: ${e.message}` });
+    }
   }
 
   async function meetingReviewNode(
@@ -339,10 +361,7 @@ export function buildGraph(
           }),
         );
       } else {
-        const rt = toolsByName.get(c.name);
-        const rc = rt ? await invokeTool(rt, c.args) : "Unknown tool.";
-        if (rt) toolErrorCounts[c.name] = isToolFailure(rc) ? 1 : 0;
-        messages.push(new ToolMessage({ tool_call_id: c.id, content: rc }));
+        messages.push(await runBatchedCall(invokeTool, c.id, c, toolErrorCounts));
       }
     }
     return { messages, toolErrorCounts };

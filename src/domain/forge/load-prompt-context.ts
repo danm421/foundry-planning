@@ -3,13 +3,13 @@ import { db } from "@/db";
 import { scenarios } from "@/db/schema";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { getStore } from "./store";
-import type { ForgePromptContext } from "./system-prompt";
+import type { ForgePromptContext, SavedNote } from "./system-prompt";
 
 /**
- * Recall durable, non-sensitive preferences from the long-term store for this
- * turn — client facts from the [firmId, clientId] namespace and the advisor's own
- * style prefs from [firmId, userId]. Each entry is scope-prefixed ("Client — …" /
- * "You — …") so the model knows whose preference it is.
+ * Recall the notes saved with write_memory for this turn — client facts from the
+ * [firmId, clientId] namespace and the advisor's own style prefs from
+ * [firmId, userId], at most 25 in all. Each note keeps its scope so the prompt
+ * can say whose it is.
  *
  * Best-effort: a store outage MUST NOT fail the chat turn, so the whole body is
  * wrapped in try/catch and falls open to `[]`. When `userId` is absent (the route
@@ -19,20 +19,19 @@ async function loadKnownPreferences(
   firmId: string,
   clientId: string,
   userId?: string,
-): Promise<string[]> {
+): Promise<SavedNote[]> {
   try {
     const store = getStore();
     const [clientItems, advisorItems] = await Promise.all([
       store.search([firmId, clientId], { limit: 25 }),
       userId ? store.search([firmId, userId], { limit: 25 }) : Promise.resolve([]),
     ]);
-    const fmt = (label: string, items: Array<{ key: string; value: unknown }>) =>
-      (items ?? []).map(
-        (i) => `${label} — ${i.key}: ${(i.value as { value?: string })?.value ?? ""}`,
-      );
-    return [...fmt("Client", clientItems), ...fmt("You", advisorItems)]
-      .filter((s) => s.trim().length > 0)
-      .slice(0, 25);
+    const notes = (scope: SavedNote["scope"], items: Array<{ key: string; value: unknown }>) =>
+      (items ?? []).map((i): SavedNote => {
+        const value = (i.value as { value?: unknown })?.value;
+        return { scope, key: i.key, value: typeof value === "string" ? value : "" };
+      });
+    return [...notes("client", clientItems), ...notes("advisor", advisorItems)].slice(0, 25);
   } catch {
     return []; // memory is best-effort; never dead-end a turn
   }

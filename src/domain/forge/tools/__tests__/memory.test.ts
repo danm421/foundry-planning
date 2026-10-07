@@ -6,6 +6,7 @@ const search = vi.fn();
 vi.mock("../../store", () => ({
   getStore: () => ({ put, get, search }),
 }));
+vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 
 import { buildMemoryTools } from "../memory";
 import { WRITE_TOOL_NAMES } from "../index";
