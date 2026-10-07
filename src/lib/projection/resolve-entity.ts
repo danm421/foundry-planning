@@ -3,6 +3,7 @@ import type {
   BeneficiaryRef,
   Income,
   Expense,
+  LivingExpenseItem,
   SavingsRule,
 } from "@/engine/types";
 import { EDUCATION_529_SENTINEL_OWNER_ID, type AccountOwner } from "@/engine/ownership";
@@ -457,6 +458,7 @@ type RawExpense = {
   isGoal?: boolean | null;
   absorbsRemainingCashFlow?: boolean | null;
   paymentMonth?: number | null;
+  livingItems?: LivingExpenseItem[] | null;
 };
 
 function mapEndsAtMedicareEligibilityOwner(
@@ -495,6 +497,7 @@ export function resolveExpenseFromRaw(
     endYearRef: raw.endYearRef ?? null,
     growthSource: raw.growthSource ?? null,
     paymentMonth: raw.paymentMonth ?? null,
+    livingItems: raw.livingItems ?? null,
     isDefault: raw.isDefault ?? false,
     endsAtMedicareEligibilityOwner: mapEndsAtMedicareEligibilityOwner(raw.endsAtMedicareEligibilityOwner),
     payShortfallOutOfPocket: raw.payShortfallOutOfPocket ?? false,

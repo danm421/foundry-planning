@@ -30,6 +30,7 @@
 
 import { pruneScenarioFields } from "./scenario-fields";
 import type { YearRef } from "@/lib/milestones";
+import type { LivingExpenseItem } from "@/engine/types";
 
 /**
  * The fields the inline flow cells can change.
@@ -66,6 +67,12 @@ export interface FlowPatch {
    * `ssBenefitPatch` sets it.
    */
   piaMonthly?: string;
+  /**
+   * An itemized living row's line items. Expenses only, and only ever sent
+   * together with the `annualAmount` they total — `livingItemsPatch` builds the
+   * pair. Never part of `buildFlowScenarioFields`; see `NON_WRITABLE_KEYS`.
+   */
+  livingItems?: LivingExpenseItem[] | null;
   /**
    * Social Security's claim age, as its THREE persisted columns. They always
    * travel together and nothing but `ssClaimAgePatch` sets any of them — see the
@@ -107,8 +114,13 @@ export type FlowAmountPatch = FlowPatch;
  * depends on apply order. (Savings rules carrying a schedule aren't inline
  * editable at all — `resolveSavings` gives them `editableAmount: null` — but
  * incomes and expenses with one are, so the strip has to be here.)
+ *
+ * `livingItems` is stripped for a different reason: the server recomputes an
+ * itemized row's total whenever items arrive (`withLivingItemsTotal`). Resent
+ * unchanged beside a total the advisor just typed, they would overwrite that
+ * total with their own sum. Only an items edit sends them, as its own patch.
  */
-const NON_WRITABLE_KEYS: ReadonlySet<string> = new Set(["id", "scheduleOverrides"]);
+const NON_WRITABLE_KEYS: ReadonlySet<string> = new Set(["id", "scheduleOverrides", "livingItems"]);
 
 /**
  * Prune an effective engine income / expense / savings-rule row down to the

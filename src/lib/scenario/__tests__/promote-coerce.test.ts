@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { accounts, incomes } from "@/db/schema";
+import { accounts, expenses, incomes } from "@/db/schema";
 import { coerceForTable } from "../promote-coerce";
 
 describe("coerceForTable", () => {
@@ -29,5 +29,13 @@ describe("coerceForTable", () => {
   it("carries paymentMonth through untouched, like any other integer column", () => {
     const out = coerceForTable(incomes, { name: "Consulting", paymentMonth: 6 });
     expect(out.paymentMonth).toBe(6);
+  });
+
+  // Promote-to-base walks getTableColumns, so the jsonb column rides along with
+  // no per-kind mapper. Pinned so a rewrite can't narrow it to a fixed list.
+  it("carries livingItems through untouched, like any other jsonb column", () => {
+    const items = [{ id: "i1", name: "Housing", amount: 3200, frequency: "monthly" }];
+    const out = coerceForTable(expenses, { name: "Current Living Expenses", livingItems: items });
+    expect(out.livingItems).toEqual(items);
   });
 });

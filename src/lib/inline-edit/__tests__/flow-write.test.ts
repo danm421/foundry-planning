@@ -30,6 +30,29 @@ describe("buildFlowScenarioFields", () => {
     expect(out).toEqual({ annualAmount: 250000 });
   });
 
+  // A whole-row resend (Household Map, Income & Expenses inline cells) must
+  // never carry the items: the server recomputes the total whenever items
+  // arrive, which would undo a total the advisor just typed (spec rule 8).
+  it("strips `livingItems` from the scenario field set", () => {
+    const out = buildFlowScenarioFields({
+      id: "e1",
+      annualAmount: 90000,
+      livingItems: [{ id: "i1", name: "Housing", amount: 3200, frequency: "monthly" }],
+    });
+    expect(out).not.toHaveProperty("livingItems");
+    expect(out.annualAmount).toBe(90000);
+  });
+
+  it("still sends `livingItems` when the PATCH carries them", () => {
+    const items = [{ id: "i1", name: "Housing", amount: 3200, frequency: "monthly" as const }];
+    const out = buildFlowScenarioDesiredFields(
+      buildFlowScenarioFields({ id: "e1", annualAmount: 1 }),
+      { livingItems: items, annualAmount: "38400" },
+    );
+    expect(out.livingItems).toEqual(items);
+    expect(out.annualAmount).toBe("38400");
+  });
+
   // The engine resolvers write `x ?? undefined` for every absent optional
   // column. An explicit `undefined` in desiredFields would diff against a base
   // `null` as a change and write undefined over it.

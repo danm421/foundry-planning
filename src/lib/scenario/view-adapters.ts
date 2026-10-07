@@ -21,6 +21,7 @@ import type {
   ClientInfo,
   Expense as EngineExpense,
   Income as EngineIncome,
+  LivingExpenseItem,
   Liability as EngineLiability,
   PlanSettings as EnginePlanSettings,
   SavingsRule as EngineSavingsRule,
@@ -141,6 +142,9 @@ export interface ExpenseView {
    *  evenly. A real persisted column, so the adapter must carry it or a form
    *  hydrated from the effective tree silently clears it on save. */
   paymentMonth?: number | null;
+  /** Itemized Current Living Expenses. A real persisted column, so the
+   *  adapter must carry it or the page cannot show or edit the items. */
+  livingItems?: LivingExpenseItem[] | null;
 }
 
 export function expenseEngineToView(expense: EngineExpense): ExpenseView {
@@ -169,6 +173,7 @@ export function expenseEngineToView(expense: EngineExpense): ExpenseView {
     isGoal: expense.isGoal ?? false,
     absorbsRemainingCashFlow: expense.absorbsRemainingCashFlow ?? false,
     paymentMonth: expense.paymentMonth ?? null,
+    livingItems: expense.livingItems ?? null,
   };
 }
 

@@ -1898,6 +1898,13 @@
       "when": 1791311441869,
       "tag": "0270_welcome_video_seen",
       "breakpoints": true
+    },
+    {
+      "idx": 271,
+      "version": "7",
+      "when": 1791397982152,
+      "tag": "0271_living_expense_items",
+      "breakpoints": true
     }
   ]
 }

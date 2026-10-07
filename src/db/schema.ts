@@ -25,7 +25,7 @@ import {
 import { relations, sql, type InferSelectModel, type InferInsertModel } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { BracketTier, SaversCreditTier } from "@/lib/tax/types";
-import type { IrmaaTier } from "@/engine/types";
+import type { IrmaaTier, LivingExpenseItem } from "@/engine/types";
 import type { TrustSubType } from "@/lib/entities/trust";
 import type { IntakePayload } from "@/lib/intake/schema";
 import type { IntakeSectionKey } from "@/lib/intake/sections";
@@ -3153,6 +3153,10 @@ export const expenses = pgTable("expenses", {
   // existing row does. 1-12 = the whole year's amount lands in that month.
   // NEVER read by src/engine — see payment-month-is-presentation-only.test.ts.
   paymentMonth: smallint("payment_month"),
+  // Itemized Current Living Expenses (spec 2026-10-07). Null = not itemized.
+  // NEVER read by src/engine: the projection reads annual_amount, which every
+  // items write sets to these items' total (src/lib/living-expense-items.ts).
+  livingItems: jsonb("living_items").$type<LivingExpenseItem[]>(),
   // For expenses incurred by a business asset (category = 'business'). Mutually
   // exclusive with ownerEntityId. Enforced by the CHECK below.
   ownerAccountId: uuid("owner_account_id").references(() => accounts.id, {

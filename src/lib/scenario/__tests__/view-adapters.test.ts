@@ -145,6 +145,16 @@ describe("view-adapters", () => {
   });
 
   describe("expenseEngineToView", () => {
+    it("carries livingItems, and null when the row is not itemized", () => {
+      const items = [{ id: "i1", name: "Housing", amount: 3200, frequency: "monthly" as const }];
+      const expense: EngineExpense = {
+        id: "e1", type: "living", name: "Current Living Expenses",
+        annualAmount: 38400, startYear: 2026, endYear: 2040, growthRate: 0.03,
+      };
+      expect(expenseEngineToView({ ...expense, livingItems: items }).livingItems).toEqual(items);
+      expect(expenseEngineToView(expense).livingItems).toBeNull();
+    });
+
     it("coerces numerics and preserves metadata", () => {
       const expense: EngineExpense = {
         id: "e1",

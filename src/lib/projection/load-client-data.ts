@@ -1082,6 +1082,7 @@ const loadClientDataCached = cache(
           endYear: resolvedEnd(e.endYearRef, e.endYear),
           growthSource: e.growthSource,
           paymentMonth: e.paymentMonth,
+          livingItems: e.livingItems,
           growthRate: e.growthRate,
           ownerEntityId: e.ownerEntityId,
           ownerAccountId: e.ownerAccountId,
