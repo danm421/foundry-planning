@@ -1,10 +1,10 @@
 "use server";
 
 import { z } from "zod";
-import { clerkClient } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 import { requireOpsAdmin } from "@/lib/ops/ops-auth";
 import { addOpsAdmin, updateOpsAdmin, OpsAdminError } from "@/lib/ops/ops-admins";
+import { findUserByVerifiedEmail } from "@/lib/clerk-verified-user";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -51,9 +51,7 @@ export async function addOpsAdminAction(input: unknown): Promise<ActionResult> {
 
   // Ops access is keyed by Clerk user id, so the person must already have an
   // account — there is nothing to attach a row to otherwise.
-  const cc = await clerkClient();
-  const { data: users } = await cc.users.getUserList({ emailAddress: [email] });
-  const user = users[0];
+  const user = await findUserByVerifiedEmail(email);
   if (!user) {
     return {
       ok: false,
