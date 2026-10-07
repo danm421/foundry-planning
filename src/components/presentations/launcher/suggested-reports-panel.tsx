@@ -13,7 +13,9 @@ import {
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import {
   keepSlots,
+  missingEssentials,
   pickSuggestions,
+  type DeckPage,
   type ReportSuggestion,
 } from "@/lib/presentations/suggestions/score-reports";
 
@@ -32,6 +34,23 @@ export function suggestedOptions(s: ReportSuggestion): unknown {
     ...s.optionsPatch,
   });
   return parsed.success ? parsed.data : page.defaultOptions;
+}
+
+/** The plan an added (or previewed) suggestion should read. A page that
+ *  follows the deck is pinned to the panel's plan when the two differ — the
+ *  same per-page setting the row's own picker sets — so a card built on
+ *  "New Plan" never prints Base Case. A page that carries its plan in its
+ *  own settings (Roth Conversion, the comparisons, Plan Story) gets it there
+ *  instead, and one fixed to Base Case is added as it is. */
+export function suggestedOverride(
+  pageId: PresentationPageId,
+  options: unknown,
+  plan: string,
+  deckPlan: string,
+): string | undefined {
+  if (plan === deckPlan || !PRESENTATION_PAGES[pageId].supportsScenarioOverride) return undefined;
+  const o = (options ?? {}) as Record<string, unknown>;
+  return "scenarioId" in o || "scenarioIds" in o ? undefined : plan;
 }
 
 // Dollars, percents and years inside a reason print in the number face.
@@ -57,11 +76,13 @@ interface Props {
   clientId: string;
   /** The deck's own plan — the panel follows it until the advisor picks one. */
   deckScenario: string;
-  deckPageIds: readonly PresentationPageId[];
+  /** The deck's pages with their settings — a comparison page counts as the
+   *  scenario's essential only when it points at that scenario. */
+  deckPages: readonly DeckPage[];
   scenarios: ScenarioOption[];
   snapshots: SnapshotOption[];
-  onAdd: (pageId: PresentationPageId, options: unknown) => void;
-  onPreview: (pageId: PresentationPageId, options: unknown) => void;
+  onAdd: (pageId: PresentationPageId, options: unknown, scenarioOverride?: string) => void;
+  onPreview: (pageId: PresentationPageId, options: unknown, scenarioOverride?: string) => void;
 }
 
 export function SuggestedReportsPanel(props: Props) {
@@ -101,7 +122,7 @@ export function SuggestedReportsPanel(props: Props) {
   }
 
   const ready = Array.isArray(entry) ? entry : null;
-  const inDeck = useMemo(() => new Set<string>(props.deckPageIds), [props.deckPageIds]);
+  const inDeck = useMemo(() => new Set<string>(props.deckPages.map((p) => p.pageId)), [props.deckPages]);
   const best = useMemo(
     () => (ready ? pickSuggestions(ready, inDeck, categoryOf, SHOWN) : []),
     [ready, inDeck],
@@ -116,14 +137,19 @@ export function SuggestedReportsPanel(props: Props) {
   if (layout.plan !== plan || shownIds.join() !== layout.ids.join()) {
     setLayout({ plan, ids: shownIds });
   }
+  const essentials = ready ? missingEssentials(ready, props.deckPages, plan, new Set(shownIds)) : [];
 
+  function withPlan(s: ReportSuggestion, fn: Props["onAdd"]) {
+    const options = suggestedOptions(s);
+    fn(s.pageId, options, suggestedOverride(s.pageId, options, plan, props.deckScenario));
+  }
 
   return (
     <section aria-labelledby="suggested-reports-heading" className="rounded border border-hair bg-card p-3">
       <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
         <h2 id="suggested-reports-heading" className="flex items-center gap-1.5 text-sm font-semibold text-ink">
           Suggested reports
-          <FieldTooltip text="Matched to the plan you choose: ages and retirement timing, accounts and debts, trusts, insurance, gifts, Roth conversions, projected estate tax and Medicare surcharges, and your saved scenarios and proposals. Shows the four best matches not already in the deck — add one and the next-best takes its place." />
+          <FieldTooltip text="Matched to the plan you choose. For a scenario, the pages that show what it changes, and how far it moves from Base Case, come first; then ages and retirement timing, accounts and debts, trusts, insurance, gifts, Roth conversions, projected estate tax and Medicare surcharges, and your saved proposals. Shows the four best matches not already in the deck — add one and the next-best takes its place. Below them, any essentials the deck is missing." />
         </h2>
         <label className="ml-auto flex items-center gap-2 text-xs text-ink-3">
           Based on
@@ -179,7 +205,7 @@ export function SuggestedReportsPanel(props: Props) {
                   <button
                     type="button"
                     aria-label={`Preview ${page.title}`}
-                    onClick={() => props.onPreview(s.pageId, suggestedOptions(s))}
+                    onClick={() => withPlan(s, props.onPreview)}
                     className="rounded px-2 py-1 text-xs text-ink-3 transition-colors hover:bg-card-hover hover:text-ink"
                   >
                     Preview
@@ -187,7 +213,7 @@ export function SuggestedReportsPanel(props: Props) {
                   <button
                     type="button"
                     aria-label={`Add ${page.title} to the deck`}
-                    onClick={() => props.onAdd(s.pageId, suggestedOptions(s))}
+                    onClick={() => withPlan(s, props.onAdd)}
                     className="rounded border border-hair px-2.5 py-1 text-xs text-ink-2 transition-colors hover:border-accent hover:text-accent-ink"
                   >
                     + Add
@@ -198,6 +224,31 @@ export function SuggestedReportsPanel(props: Props) {
           })
         )}
       </div>
+
+      {essentials.length > 0 && (
+        <div
+          role="group"
+          aria-label="Missing from this deck"
+          className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-hair pt-3 text-xs text-ink-3"
+        >
+          <span>Missing from this deck:</span>
+          {essentials.map((s) => {
+            const title = PRESENTATION_PAGES[s.pageId].title;
+            return (
+              <button
+                key={s.pageId}
+                type="button"
+                aria-label={`Add ${title} to the deck`}
+                title={s.reason}
+                onClick={() => withPlan(s, props.onAdd)}
+                className="rounded border border-hair px-2 py-0.5 text-ink-2 transition-colors hover:border-accent hover:text-accent-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                + {title}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }

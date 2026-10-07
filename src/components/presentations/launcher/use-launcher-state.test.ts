@@ -5,6 +5,16 @@ import type { LauncherState } from "./use-launcher-state";
 describe("launcherReducer", () => {
   const base: LauncherState = initialLauncherState();
 
+  it("addPage keeps the plan a suggestion pins it to", () => {
+    const next = launcherReducer(base, {
+      type: "addPage",
+      pageId: "medicareSummary",
+      options: {},
+      scenarioOverride: "s1",
+    });
+    expect(next.pages[0].scenarioOverride).toBe("s1");
+  });
+
   it("addPage appends to pages", () => {
     const next = launcherReducer(base, {
       type: "addPage",

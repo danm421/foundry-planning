@@ -511,7 +511,10 @@ export function PresentationsLauncher(props: Props) {
     }
   }
 
-  const deckPageIds = useMemo(() => state.pages.map((p) => p.pageId), [state.pages]);
+  const deckPages = useMemo(
+    () => state.pages.map((p) => ({ pageId: p.pageId, options: p.options })),
+    [state.pages],
+  );
 
   const generateDisabled = generating || state.pages.length === 0;
   const isLoadedTemplateMine =
@@ -711,15 +714,17 @@ export function PresentationsLauncher(props: Props) {
             <SuggestedReportsPanel
               clientId={props.clientId}
               deckScenario={state.topScenarioPickerValue}
-              deckPageIds={deckPageIds}
+              deckPages={deckPages}
               scenarios={props.scenarios}
               snapshots={props.snapshots}
-              onAdd={(pageId, options) => dispatch({ type: "addPage", pageId, options })}
-              onPreview={(pageId, options) =>
+              onAdd={(pageId, options, scenarioOverride) =>
+                dispatch({ type: "addPage", pageId, options, scenarioOverride })
+              }
+              onPreview={(pageId, options, scenarioOverride) =>
                 setPreviewRequest({
                   title: PRESENTATION_PAGES[pageId].title,
                   scenarioId: resolvedScenarioId,
-                  pages: descriptorsFor([{ pageId, options, scenarioOverride: undefined }]),
+                  pages: descriptorsFor([{ pageId, options, scenarioOverride }]),
                 })
               }
             />

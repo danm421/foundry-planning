@@ -30,7 +30,7 @@ export interface LauncherState {
 export type LauncherAction =
   | { type: "setTopScenario"; value: string }
   | { type: "setFilename"; value: string }
-  | { type: "addPage"; pageId: PresentationPageId; options: unknown }
+  | { type: "addPage"; pageId: PresentationPageId; options: unknown; scenarioOverride?: string }
   | { type: "removePage"; index: number }
   | { type: "reorder"; from: number; to: number }
   | { type: "updatePageOptions"; index: number; options: unknown }
@@ -90,7 +90,7 @@ export function launcherReducer(
           {
             pageId: action.pageId,
             options: action.options,
-            scenarioOverride: undefined,
+            scenarioOverride: action.scenarioOverride,
           },
         ],
       });
