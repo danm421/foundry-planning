@@ -97,6 +97,13 @@ describe("Income & Expenses — Current living items", () => {
     expect(screen.queryByRole("button", { name: "Show items for Retirement Living Expenses" })).not.toBeInTheDocument();
   });
 
+  // Typing a start year un-anchors the row from "plan start", so it is no
+  // longer the seeded Current slot; its items must stay reachable.
+  it("keeps the chevron on any row that still has items", () => {
+    renderPage([{ ...CURRENT, startYearRef: null }]);
+    expect(screen.getByRole("button", { name: "Show items for Current Living Expenses" })).toBeInTheDocument();
+  });
+
   it("labels an itemized row and locks its amount", () => {
     renderPage([CURRENT]);
     expect(screen.getByText("2 items · set by items")).toBeInTheDocument();

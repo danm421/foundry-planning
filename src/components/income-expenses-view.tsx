@@ -2262,9 +2262,12 @@ export default function IncomeExpensesView({
       absorbing && Number(expense.annualAmount) > 0
         ? `min ${fmt(expense.annualAmount)}`
         : null;
-    const itemizable = canItemize(expense);
     const items = expense.livingItems ?? [];
     const itemized = hasLivingItems(items);
+    // A row that already has items keeps its chevron even after it stops being
+    // the Current slot (a typed start year drops its "plan start" anchor) —
+    // otherwise its amount is locked with no way to reach the items.
+    const itemizable = canItemize(expense) || itemized;
     const itemsOpen = itemizable && itemsOpenFor === expense.id;
     const itemsMeta = itemized
       ? `${items.length} item${items.length === 1 ? "" : "s"} · ${
