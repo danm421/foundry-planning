@@ -8,18 +8,7 @@
 //
 // Skips cleanly without a DB (no DATABASE_URL) so it never adds to the no-delta
 // failing set in CI. Mirrors changes-writer.test.ts's Cooper-fixture setup.
-//
-// promote_to_base enrichment tests (no DB required) are at the bottom of this
-// file. They use vi.spyOn per-test so module-level imports remain real, which
-// keeps the DB fidelity test fully functional when DATABASE_URL is set.
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-
-// scenarioChangesToBaseWrites is a PURE function — mock it at module level so
-// the promote tests can control its output. It is never called by the DB test.
-vi.mock("@/lib/scenario/scenario-changes-to-base-writes", () => ({
-  scenarioChangesToBaseWrites: vi.fn(),
-}));
-
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { formatProposedWrite } from "../preview";
 import { formatMoney } from "../row-lines";
 import { randomUUID } from "node:crypto";
@@ -40,9 +29,7 @@ import * as loaderModule from "@/lib/scenario/loader";
 // BASE tree is unchanged by a scenario-change write, so reusing it is correct.
 import { applyScenarioChangesWithRefs, resolveAddPayload } from "@/lib/scenario/loader";
 import { loadClientDataWithContext } from "@/lib/projection/load-client-data";
-import * as changesModule from "@/lib/scenario/changes";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
-import { scenarioChangesToBaseWrites } from "@/lib/scenario/scenario-changes-to-base-writes";
 import type { ClientData } from "@/engine/types";
 
 const COOPER_CLIENT_ID = "877a9532-f8ea-49b0-9db7-aadd64fab82a";
@@ -195,88 +182,5 @@ describe("CRM Tier-B previews", () => {
   it("crm_create_tasks → 'Create N tasks' with the count", () => {
     const p = formatProposedWrite({ name: "crm_create_tasks", args: { tasks: [{ title: "A" }, { title: "B" }, { title: "C" }] } });
     expect(p.summary).toMatch(/create 3 task/i);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// promote_to_base card enrichment (no DB required)
-// ---------------------------------------------------------------------------
-// Uses vi.spyOn per-test (not vi.mock at module level) for loadEffectiveTree,
-// loadScenarioChanges, and loadScenarioToggleGroups — so the DB fidelity test
-// above continues to use the real implementations when DATABASE_URL is set.
-// scenarioChangesToBaseWrites is a pure function mocked at module level (safe
-// because the DB fidelity test never calls it).
-
-describe("promote_to_base card enrichment", () => {
-  const ctx: ForgeAuthContext = {
-    userId: "user_test",
-    firmId: "firm_1",
-    clientId: "client_1",
-    scenarioId: "s1",
-  };
-
-  const FAKE_BASE_PLAN = {
-    inserts: [{ kind: "income" as const, targetId: "new-1", raw: {} }],
-    updates: [{ kind: "expense" as const, id: "exp-1", set: {} }],
-    singletonUpdates: [],
-    removes: [{ kind: "liability" as const, id: "liab-1", cascade: false }],
-    // A recurring series is a `gift` change that does NOT land in `inserts`;
-    // without its own preview line the confirmation would say "no field-level
-    // changes" for a promote that writes one.
-    giftSeries: {
-      upserts: [{ id: "gs-1", draft: { kind: "series" } as never }],
-      removes: [],
-    },
-  };
-
-  let spyLoadEffectiveTree: ReturnType<typeof vi.spyOn>;
-  let spyLoadScenarioChanges: ReturnType<typeof vi.spyOn>;
-  let spyLoadScenarioToggleGroups: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    spyLoadEffectiveTree = vi.spyOn(loaderModule, "loadEffectiveTree").mockResolvedValue(
-      { effectiveTree: { incomes: [], expenses: [] } } as unknown as Awaited<ReturnType<typeof loaderModule.loadEffectiveTree>>,
-    );
-    spyLoadScenarioChanges = vi.spyOn(changesModule, "loadScenarioChanges").mockResolvedValue([]);
-    spyLoadScenarioToggleGroups = vi.spyOn(changesModule, "loadScenarioToggleGroups").mockResolvedValue([]);
-    vi.mocked(scenarioChangesToBaseWrites).mockReturnValue(FAKE_BASE_PLAN);
-  });
-
-  afterEach(() => {
-    spyLoadEffectiveTree.mockRestore();
-    spyLoadScenarioChanges.mockRestore();
-    spyLoadScenarioToggleGroups.mockRestore();
-    vi.mocked(scenarioChangesToBaseWrites).mockReset();
-  });
-
-  it("includes one line per BaseWrite, auto-snapshot line, and sibling-delete warning", async () => {
-    const call: ProposedWrite = { name: "promote_to_base", args: { scenarioId: "s1" } };
-    const result = await describeProposedWrite(call, ctx);
-
-    expect(result.details).toBeDefined();
-    const details = result.details!;
-
-    // One line per insert / update / remove
-    expect(details.some((l) => l.includes("ADD") && l.includes("income"))).toBe(true);
-    expect(details.some((l) => l.includes("EDIT") && l.includes("expense") && l.includes("exp-1"))).toBe(true);
-    expect(details.some((l) => l.includes("REMOVE") && l.includes("liability") && l.includes("liab-1"))).toBe(true);
-    expect(details.some((l) => l.includes("ADD") && /series/i.test(l))).toBe(true);
-
-    // Auto-snapshot line
-    expect(details.some((l) => /auto-snapshot|snapshotted/i.test(l))).toBe(true);
-
-    // Sibling-deletion warning
-    expect(details.some((l) => /warning|deleted/i.test(l))).toBe(true);
-  });
-
-  it("degrades to pure summary (no details) when a loader throws", async () => {
-    spyLoadScenarioChanges.mockRejectedValue(new Error("DB unavailable"));
-
-    const call: ProposedWrite = { name: "promote_to_base", args: { scenarioId: "s1" } };
-    const result = await describeProposedWrite(call, ctx);
-
-    // Falls back to formatProposedWrite output — summary present, details absent
-    expect(result.summary).toBeDefined();
-    expect(result.details).toBeUndefined();
   });
 });

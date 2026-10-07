@@ -15,6 +15,9 @@
 // enrichment is BEST-EFFORT — it must never throw or block approval, so all of
 // its IO is wrapped in try/catch and the pure result is the fallback.
 
+import { and, eq } from "drizzle-orm";
+import { db } from "@/db";
+import { scenarios } from "@/db/schema";
 import type { WritePreview } from "@/domain/forge/types";
 import type { ForgeAuthContext } from "@/domain/forge/state";
 import {
@@ -983,6 +986,12 @@ export async function describeProposedWrite(
     if (call.name === "promote_to_base") {
       const scenarioId = str(call.args.scenarioId);
       if (!scenarioId) return base;
+      // The id is model-supplied; read its changes only if it is this client's.
+      const [owned] = await db
+        .select({ id: scenarios.id })
+        .from(scenarios)
+        .where(and(eq(scenarios.id, scenarioId), eq(scenarios.clientId, ctx.clientId)));
+      if (!owned) return base;
       const { effectiveTree: baseTree, resolutionContext } = await loadEffectiveTree(
         ctx.clientId,
         ctx.firmId,
