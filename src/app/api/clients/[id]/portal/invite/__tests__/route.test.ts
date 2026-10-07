@@ -491,4 +491,34 @@ describe("DELETE /api/clients/[id]/portal/invite", () => {
     expect(revokeInvitationMock).toHaveBeenCalledWith("inv_drop");
     expect(revokeInvitationMock).not.toHaveBeenCalledWith("inv_keep");
   });
+
+  it("finds the household's invitation past the first page of the instance-wide list", async () => {
+    // Every firm's pending invitations share one list, newest first; the
+    // household's is the oldest of 600. Clerk pages by `limit` (default 10,
+    // at most 500), so this takes more than one page at any page size.
+    const pending = [
+      ...Array.from({ length: 599 }, (_, i) => ({
+        id: `inv_other_${i}`,
+        status: "pending",
+        publicMetadata: { clientId: `other_${i}` },
+      })),
+      { id: "inv_household", status: "pending", publicMetadata: { clientId: "c1" } },
+    ];
+    getInvitationListMock.mockImplementation(async (args: { limit?: number; offset?: number }) => {
+      const offset = args?.offset ?? 0;
+      const limit = args?.limit ?? 10;
+      return { data: pending.slice(offset, offset + limit), totalCount: pending.length };
+    });
+
+    const res = await DELETE(
+      new Request("http://localhost/api/clients/c1/portal/invite", { method: "DELETE" }),
+      { params: Promise.resolve({ id: "c1" }) },
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, revoked: 1 });
+    expect(revokeInvitationMock).toHaveBeenCalledTimes(1);
+    expect(revokeInvitationMock).toHaveBeenCalledWith("inv_household");
+    expect(getInvitationListMock.mock.calls.length).toBeGreaterThan(1);
+  });
 });

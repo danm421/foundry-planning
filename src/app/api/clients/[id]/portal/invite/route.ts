@@ -130,6 +130,9 @@ export async function POST(
   }
 }
 
+// Clerk's largest page for the invitation list.
+const INVITATION_PAGE = 500;
+
 export async function DELETE(
   _req: Request,
   ctx: { params: Promise<{ id: string }> },
@@ -140,12 +143,24 @@ export async function DELETE(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
+    // Every firm's pending invitations share one instance-wide list, so read
+    // all of it: the default first page alone can miss this household's.
+    // Collect before revoking — a revoke shifts the offsets of later pages.
     const cc = await clerkClient();
-    const list = await cc.invitations.getInvitationList({ status: "pending" });
-    const matches = (list.data ?? []).filter(
-      (inv) =>
-        (inv.publicMetadata as { clientId?: string } | undefined)?.clientId === id,
-    );
+    const matches: { id: string }[] = [];
+    for (let offset = 0; ; offset += INVITATION_PAGE) {
+      const page = await cc.invitations.getInvitationList({
+        status: "pending",
+        limit: INVITATION_PAGE,
+        offset,
+      });
+      matches.push(
+        ...page.data.filter(
+          (inv) => (inv.publicMetadata as { clientId?: string } | undefined)?.clientId === id,
+        ),
+      );
+      if (page.data.length < INVITATION_PAGE) break;
+    }
 
     for (const inv of matches) {
       await cc.invitations.revokeInvitation(inv.id);
