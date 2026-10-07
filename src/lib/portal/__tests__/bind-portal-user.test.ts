@@ -159,28 +159,43 @@ describe("bindClerkUserToClient", () => {
     expect(updateSetMock).not.toHaveBeenCalled();
   });
 
-  it("re-invites the SAME login after a revoke: writes a fresh active row", async () => {
-    // Revoking leaves the legacy column naming the revoked login on purpose
-    // (the dual-read fallback depends on it), so the column cannot be what
-    // decides whether this pair is bound.
+  it("refuses a late WEBHOOK for a login whose access was ended", async () => {
+    // An invitation's sign-up always creates a NEW login (an existing account
+    // is sent an access request, never an invitation), so a revoked row for
+    // this very pair means this delivery is a retry or replay of the event
+    // that first bound it. Revoking leaves the legacy column naming the login
+    // on purpose (the dual-read fallback depends on it), so the column cannot
+    // be what decides.
     clientRows = [{ firmId: "org_1", existing: "user_xyz" }];
     bindingReads = [[{ id: "b1", clerkUserId: "user_xyz", status: "revoked" }]];
 
     const res = await bindClerkUserToClient("client-1", "user_xyz", "webhook");
 
-    expect(res).toEqual({ ok: true, clientId: "client-1", firmId: "org_1" });
-    expect(insertValuesMock).toHaveBeenCalledWith(
-      portalBindings,
-      expect.objectContaining({ clerkUserId: "user_xyz", status: "active" }),
-    );
-    expect(recordAudit).toHaveBeenCalledTimes(1);
+    expect(res).toEqual({ ok: false, reason: "revoked" });
+    expect(insertValuesMock).not.toHaveBeenCalled();
+    expect(updateSetMock).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("leaves the advisor's new access request for the client to answer when a late webhook arrives", async () => {
+    clientRows = [{ firmId: "org_1", existing: "user_xyz" }];
+    bindingReads = [
+      [
+        { id: "b1", clerkUserId: "user_xyz", status: "revoked" },
+        { id: "b2", clerkUserId: "user_xyz", status: "pending" },
+      ],
+    ];
+
+    const res = await bindClerkUserToClient("client-1", "user_xyz", "webhook");
+
+    expect(res).toEqual({ ok: false, reason: "revoked" });
+    expect(updateSetMock).not.toHaveBeenCalled();
+    expect(insertValuesMock).not.toHaveBeenCalled();
   });
 
   it("refuses the SELF-HEAL after a revoke, so an automatic bind cannot undo the client's own act", async () => {
-    // Same fixture as the webhook test above, one argument different. The
-    // advisor re-inviting is a human act of consent; `src/proxy.ts` calling
-    // this on every org-less request is not, and it must never resurrect the
-    // binding a client just ended from their own Settings screen.
+    // `src/proxy.ts` calls this on every org-less request, and it must never
+    // resurrect the binding a client just ended from their own Settings screen.
     clientRows = [{ firmId: "org_1", existing: "user_xyz" }];
     bindingReads = [[{ id: "b1", clerkUserId: "user_xyz", status: "revoked" }]];
 

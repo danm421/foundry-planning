@@ -52,12 +52,9 @@ export async function dispatchClerkInvitation(
     if (result.reason === "client_not_found") {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
-    // Anomalous but harmless — ack so Clerk doesn't retry. Name the reason
-    // actually returned rather than assuming one: `already_bound_other` is the
-    // only refusal reachable here today (`revoked` blocks the middleware
-    // self-heal alone, never this path — an advisor re-inviting is deliberate
-    // consent and binds over a revoked row), but a log line that names a
-    // different cause than the code returned is worse than no log line.
+    // Anomalous but harmless — ack so Clerk doesn't retry. `revoked` is a late
+    // retry or replay for a login whose access was since ended;
+    // `already_bound_other` is another login holding the household.
     console.warn(
       `[webhook.clerk] invitation.accepted refused: ${result.reason}`,
     );

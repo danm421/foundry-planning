@@ -36,14 +36,12 @@ const MAX_ATTEMPTS = 3;
  *  - a `declined` row — a proposal refused, from a firm that never had access.
  *    Over, and no obstacle to binding again on EITHER path;
  *  - a `revoked` row — access that once existed and was deliberately ended.
- *    Whether that blocks depends on WHO is asking, which is what `source` is
- *    for. See the guard below.
+ *    It refuses the bind on both paths. See the guard below.
  */
 async function activateBinding(
   clientId: string,
   clerkUserId: string,
   legacyClerkUserId: string | null,
-  source: "webhook" | "self-heal",
 ): Promise<Activation> {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const rows = await db
@@ -57,22 +55,23 @@ async function activateBinding(
 
     // A `revoked` row for THIS pair is the client's (or their advisor's) own
     // deliberate end of this login's access to this household — the only way
-    // that status is ever written is from an `active` one. The middleware
-    // self-heal runs automatically on every org-less request and reads a Clerk
-    // `publicMetadata.clientId` that nothing ever clears, so without this it
-    // re-binds the household the moment the client presses Disconnect, making
-    // that button a no-op. The webhook path is the opposite case: an advisor
-    // re-inviting is a human act of consent and must still get a working bind
-    // rather than a refusal, so it is deliberately unaffected.
+    // that status is ever written is from an `active` one. Neither path may
+    // undo it:
+    //  - the middleware self-heal runs automatically on every org-less request
+    //    and reads a Clerk `publicMetadata.clientId` that nothing ever clears,
+    //    so without this it re-binds the household the moment the client
+    //    presses Disconnect;
+    //  - an invitation's sign-up always creates a NEW login (an existing
+    //    account gets an access request, never an invitation), so a webhook
+    //    for a login that already has a revoked row here is a retry or replay
+    //    of the event that first bound it, not a fresh invitation. Re-granting
+    //    access to that login goes through an access request it accepts.
     //
     // `declined` is NOT included: it is only ever written from `pending` — a
     // refused proposal from a firm that never had access — and blocking on it
     // would break the one path the self-heal exists for, an invitation whose
     // webhook failed to deliver.
-    if (
-      source === "self-heal" &&
-      rows.some((r) => r.clerkUserId === clerkUserId && r.status === "revoked")
-    ) {
+    if (rows.some((r) => r.clerkUserId === clerkUserId && r.status === "revoked")) {
       return "revoked";
     }
 
@@ -150,10 +149,9 @@ async function activateBinding(
  * active writes nothing and audits nothing, so Clerk's webhook retries are
  * safe.
  *
- * `source` is not just audit metadata — it decides one case. The self-heal is
- * automatic and may never undo a deliberate act, so a `revoked` row for this
- * pair refuses it with `reason: "revoked"`; the webhook is an advisor's
- * re-invitation and binds straight over that same row.
+ * A `revoked` row for this pair refuses either path with `reason: "revoked"`:
+ * access a client or advisor deliberately ended is never restored by an
+ * automatic bind or a late webhook delivery. `source` is audit metadata.
  */
 export async function bindClerkUserToClient(
   clientId: string,
@@ -168,7 +166,7 @@ export async function bindClerkUserToClient(
   const row = rows[0];
   if (!row?.firmId) return { ok: false, reason: "client_not_found" };
 
-  const activation = await activateBinding(clientId, clerkUserId, row.existing, source);
+  const activation = await activateBinding(clientId, clerkUserId, row.existing);
   if (activation === "blocked") return { ok: false, reason: "already_bound_other" };
   if (activation === "revoked") return { ok: false, reason: "revoked" };
 
