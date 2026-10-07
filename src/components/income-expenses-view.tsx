@@ -2477,7 +2477,9 @@ export default function IncomeExpensesView({
       prefill={expenseDialog.prefill}
       onSaved={(expense, mode) => {
         if (mode === "create") setExpenseList((prev) => [...prev, expense]);
-        else setExpenseList((prev) => prev.map((e) => (e.id === expense.id ? expense : e)));
+        // Merge, not replace: a scenario save hands back only the dialog's
+        // fields, which carry neither the row's items nor `isDefault`.
+        else setExpenseList((prev) => prev.map((e) => (e.id === expense.id ? { ...e, ...expense } : e)));
         if (mode === "create" && expenseDialog.fromItem) void removeItemAfterGoal(expenseDialog.fromItem);
       }}
       onRequestDelete={

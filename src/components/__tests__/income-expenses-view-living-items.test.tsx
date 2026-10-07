@@ -2,9 +2,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 
+// Set per test to render the page inside a scenario (`?scenario=<id>`).
+let scenarioParam: string | null = null;
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
-  useSearchParams: () => ({ get: vi.fn(() => null), toString: () => "" }),
+  useSearchParams: () => ({
+    get: vi.fn((k: string) => (k === "scenario" ? scenarioParam : null)),
+    toString: () => "",
+  }),
   usePathname: () => "/clients/c1/details/income-expenses",
 }));
 vi.mock("next/link", () => ({
@@ -81,6 +86,7 @@ const ROW_URL = "/api/clients/c1/expenses/liv-cur";
 describe("Income & Expenses — Current living items", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    scenarioParam = null;
     global.fetch = fetchMock;
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ id: "new-expense-id" }) });
   });
@@ -146,6 +152,18 @@ describe("Income & Expenses — Current living items", () => {
     expect(within(screen.getByTestId("living-items")).getByLabelText("Name of Housing")).toBeInTheDocument();
   });
 
+  // A scenario save hands back only the dialog's fields, which carry neither
+  // the items nor isDefault; the row must keep both.
+  it("saving the row's editor in a scenario keeps its items and chevron", async () => {
+    scenarioParam = "s1";
+    renderPage([CURRENT]);
+    fireEvent.click(screen.getByRole("button", { name: "Edit Current Living Expenses" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Edit Expense" })).toBeNull());
+    expect(screen.getByRole("button", { name: "Show items for Current Living Expenses" })).toBeInTheDocument();
+    expect(screen.getByText("2 items · set by items")).toBeInTheDocument();
+  });
+
   it("the edit window shows the amount as set by items", () => {
     renderPage([CURRENT]);
     fireEvent.click(screen.getByRole("button", { name: "Edit Current Living Expenses" }));
@@ -157,6 +175,7 @@ describe("Income & Expenses — Current living items", () => {
 describe("Make it a goal", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    scenarioParam = null;
     global.fetch = fetchMock;
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ id: "new-expense-id" }) });
   });
