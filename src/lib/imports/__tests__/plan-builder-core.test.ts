@@ -17,6 +17,7 @@ const m = vi.hoisted(() => ({
   recordHouseholdOpen: vi.fn(),
   createClientForHousehold: vi.fn(),
   recordAudit: vi.fn(),
+  verifyClientAccess: vi.fn(),
 }));
 
 vi.mock("@/db", () => ({
@@ -36,10 +37,15 @@ vi.mock("@/lib/audit", () => ({
   recordAudit: (...a: unknown[]) => m.recordAudit(...a),
 }));
 
+vi.mock("@/lib/clients/authz", () => ({
+  verifyClientAccess: (...a: unknown[]) => m.verifyClientAccess(...a),
+}));
+
 import { ensurePlanImport } from "../plan-builder-core";
 
 beforeEach(() => {
   Object.values(m).forEach((fn) => fn.mockReset());
+  m.verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "org1", access: "own" });
   m.insertValues.mockResolvedValue([{ id: "imp1" }]);
 });
 
@@ -84,6 +90,30 @@ describe("ensurePlanImport", () => {
           actorId: "u1",
         }),
       );
+    });
+
+    it.each([
+      ["cannot open the client", { ok: false }],
+      ["only holds a share on the client", { ok: true, permission: "edit", firmId: "org1", access: "shared" }],
+      ["has view-only access", { ok: true, permission: "view", firmId: "org1", access: "own" }],
+    ])("refuses and inserts nothing when the caller %s", async (_label, access) => {
+      m.verifyClientAccess.mockResolvedValue(access);
+      m.where
+        .mockResolvedValueOnce([{ id: "c1" }])
+        .mockResolvedValueOnce([{ id: "base1" }]);
+
+      await expect(
+        ensurePlanImport({
+          mode: "existing",
+          firmId: "org1",
+          actorUserId: "u1",
+          existing: { clientId: "c1" },
+        }),
+      ).rejects.toThrow("Client not found or access denied.");
+
+      expect(m.verifyClientAccess).toHaveBeenCalledWith("c1");
+      expect(m.insertValues).not.toHaveBeenCalled();
+      expect(m.recordAudit).not.toHaveBeenCalled();
     });
 
     it("throws when the client does not belong to the firm", async () => {

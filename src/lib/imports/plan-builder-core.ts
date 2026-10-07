@@ -11,6 +11,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, scenarios, clientImports } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
+import { verifyClientAccess } from "@/lib/clients/authz";
 import { createCrmHousehold, recordHouseholdOpen } from "@/lib/crm/households";
 import { createClientForHousehold, type FilingStatus } from "@/lib/clients/create-client";
 import { isUSPSStateCode } from "@/lib/usps-states";
@@ -49,6 +50,19 @@ export async function ensurePlanImport(
 
   if (args.mode === "existing") {
     if (!args.existing) throw new Error("existing.clientId is required for mode \"existing\".");
+
+    // Same rule as POST /api/clients/[id]/imports: the session's caller must
+    // have own-firm edit access (book silo, Private clients, shares). Checked
+    // here so no caller can skip it.
+    const access = await verifyClientAccess(args.existing.clientId);
+    if (
+      !access.ok ||
+      access.access !== "own" ||
+      access.permission !== "edit" ||
+      access.firmId !== args.firmId
+    ) {
+      throw new Error("Client not found or access denied.");
+    }
 
     // Verify the client belongs to the firm before any insert — never trust
     // the passed clientId blindly.
