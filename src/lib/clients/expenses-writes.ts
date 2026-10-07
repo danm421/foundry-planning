@@ -268,8 +268,7 @@ export async function updateExpenseForClient(args: {
   if (!parsed.success) {
     return writeError(400, summarizeZodIssues(parsed.error));
   }
-  // An items write sets the total from the items (spec rule 1).
-  const p = withLivingItemsTotal(parsed.data);
+  const fields = parsed.data;
 
   // Protect the seeded current/retirement living-expense rows — their type is
   // fixed at "living" so the plan always carries pre- and post-retirement
@@ -286,12 +285,13 @@ export async function updateExpenseForClient(args: {
         startYear: number;
         endYear: number;
         startYearRef: ExpenseRow["startYearRef"];
+        livingItems: ExpenseRow["livingItems"];
       }
     | undefined;
   if (
-    p.type !== undefined ||
-    p.absorbsRemainingCashFlow !== undefined ||
-    p.livingItems !== undefined
+    fields.type !== undefined ||
+    fields.absorbsRemainingCashFlow !== undefined ||
+    fields.livingItems !== undefined
   ) {
     [target] = await db
       .select({
@@ -303,10 +303,14 @@ export async function updateExpenseForClient(args: {
         startYear: expenses.startYear,
         endYear: expenses.endYear,
         startYearRef: expenses.startYearRef,
+        livingItems: expenses.livingItems,
       })
       .from(expenses)
       .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, clientId)));
   }
+  // An items write sets the total from the items (spec rule 1) — unless they
+  // are the row's own items unchanged, when a total sent beside them wins.
+  const p = withLivingItemsTotal(fields, target?.livingItems);
   if (p.type !== undefined && target?.isDefault && p.type !== target.type) {
     return writeError(400, "Default living-expense rows cannot change type.");
   }

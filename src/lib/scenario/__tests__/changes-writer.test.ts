@@ -35,7 +35,7 @@ describe("priorToValues", () => {
 
 // Pure — no DB.
 describe("normalizeExpenseLivingItems", () => {
-  const HOUSING = { id: "i1", name: "Housing", amount: 3200, frequency: "monthly" };
+  const HOUSING = { id: "i1", name: "Housing", amount: 3200, frequency: "monthly" as const };
 
   it("leaves other kinds, and expense writes without items, untouched", () => {
     const f = { annualAmount: "1", livingItems: [HOUSING] };
@@ -55,6 +55,14 @@ describe("normalizeExpenseLivingItems", () => {
       livingItems: null,
       annualAmount: "0",
     });
+  });
+
+  // The Solver's "Update scenario" re-sends a stored edit's keys, so unchanged
+  // items ride along beside its new total; that total must win (spec rule 2).
+  it("keeps the caller's total when the items equal the row's current ones", () => {
+    expect(
+      normalizeExpenseLivingItems("expense", { livingItems: [HOUSING], annualAmount: 60000 }, [HOUSING]),
+    ).toEqual({ livingItems: [HOUSING], annualAmount: 60000 });
   });
 
   it("rejects a malformed list as a 400-class refusal", () => {
@@ -120,6 +128,23 @@ describe.skipIf(!HAS_DB)("changes-writer", () => {
       const payload = row.payload as Record<string, { to: unknown }>;
       expect(payload.livingItems.to).toEqual(items);
       expect(Number(payload.annualAmount.to)).toBe(38400);
+
+      // A later whole-row re-save (the Solver's "Update scenario") carries the
+      // same items beside a new total: the new total wins and the items stay.
+      await applyEntityEdit({
+        scenarioId,
+        firmId: COOPER_FIRM_ID,
+        targetKind: "expense",
+        targetId: living.id,
+        desiredFields: { livingItems: items, annualAmount: "60000" },
+      });
+      const [after] = await db
+        .select()
+        .from(scenarioChanges)
+        .where(and(eq(scenarioChanges.scenarioId, scenarioId), eq(scenarioChanges.targetId, living.id)));
+      const afterPayload = after.payload as Record<string, { to: unknown }>;
+      expect(afterPayload.livingItems.to).toEqual(items);
+      expect(Number(afterPayload.annualAmount.to)).toBe(60000);
     });
 
     it("inserts an edit row with field-level diff vs base", async () => {

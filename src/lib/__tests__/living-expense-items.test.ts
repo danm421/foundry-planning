@@ -102,6 +102,22 @@ describe("withLivingItemsTotal", () => {
       annualAmount: "38400",
     });
   });
+  // An outside total wins (spec rule 2) even when a whole-row resend (the
+  // Solver's "Update scenario") carries the row's unchanged items alongside it.
+  it("keeps the caller's total when the items match the row's current items", () => {
+    expect(
+      withLivingItemsTotal({ livingItems: [item(), TRAVEL], annualAmount: "60000" }, [item(), TRAVEL]),
+    ).toEqual({ livingItems: [item(), TRAVEL], annualAmount: "60000" });
+  });
+  it("still sets the total when the items differ from the current ones", () => {
+    expect(withLivingItemsTotal({ livingItems: [item()], annualAmount: "60000" }, [item(), TRAVEL])).toEqual({
+      livingItems: [item()],
+      annualAmount: "38400",
+    });
+  });
+  it("treats a null current list as different from a non-empty one", () => {
+    expect(withLivingItemsTotal({ livingItems: [TRAVEL], annualAmount: "1" }, null).annualAmount).toBe("12000");
+  });
   it("adds the total when the caller sent none", () => {
     expect(withLivingItemsTotal({ livingItems: [TRAVEL] })).toEqual({
       livingItems: [TRAVEL],

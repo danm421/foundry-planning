@@ -23,7 +23,7 @@ import {
   TARGET_KIND_TO_FIELD,
 } from "@/engine/scenario/applyChanges";
 import type { OpType, TargetKind } from "@/engine/scenario/types";
-import type { PlanSettings } from "@/engine/types";
+import type { LivingExpenseItem, PlanSettings } from "@/engine/types";
 import { ForbiddenError } from "@/lib/authz";
 import { stableStringify } from "@/lib/compute-cache/hash";
 import { findClientInFirm } from "@/lib/db-scoping";
@@ -57,10 +57,13 @@ export class ScenarioChangeRejectedError extends Error {}
  * `withLivingItemsTotal`, so a scenario never stores items that disagree with
  * their own total. Shape only — a scenario-added row has no stored type to
  * check, and the screens offer items on the Current living row alone.
+ * `current` is the row's effective items before this write (see
+ * `withLivingItemsTotal`); omit it for a new row.
  */
 export function normalizeExpenseLivingItems(
   targetKind: TargetKind,
   fields: Record<string, unknown>,
+  current?: LivingExpenseItem[] | null,
 ): Record<string, unknown> {
   if (targetKind !== "expense" || !("livingItems" in fields)) return fields;
   const parsed = livingItemsSchema.nullable().safeParse(fields.livingItems);
@@ -69,7 +72,7 @@ export function normalizeExpenseLivingItems(
       `Invalid living-expense items: ${summarizeZodIssues(parsed.error)}`,
     );
   }
-  return withLivingItemsTotal({ ...fields, livingItems: parsed.data });
+  return withLivingItemsTotal({ ...fields, livingItems: parsed.data }, current);
 }
 
 /**
@@ -331,7 +334,6 @@ export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> 
     );
   }
   const { scenarioId, firmId, targetKind, targetId } = args;
-  const desiredFields = normalizeExpenseLivingItems(targetKind, args.desiredFields);
   const toggleGroupId = args.toggleGroupId ?? null;
 
   const { clientId } = await assertScenarioInFirm(scenarioId, firmId);
@@ -388,13 +390,16 @@ export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> 
         ),
       );
     if (existingAdd) {
+      const addPayload = existingAdd.payload as Record<string, unknown>;
+      const desiredFields = normalizeExpenseLivingItems(
+        targetKind,
+        args.desiredFields,
+        (addPayload.livingItems as LivingExpenseItem[] | null | undefined) ?? null,
+      );
       // Merge desiredFields into the add row's payload. Preserve the add's
       // existing toggleGroupId unless the caller explicitly passed one
       // (undefined = "didn't say"; null = "unlink"; string = "link here").
-      const mergedPayload = {
-        ...(existingAdd.payload as Record<string, unknown>),
-        ...desiredFields,
-      };
+      const mergedPayload = { ...addPayload, ...desiredFields };
       const nextToggleGroupId =
         args.toggleGroupId === undefined ? existingAdd.toggleGroupId : toggleGroupId;
       await tx
@@ -435,10 +440,14 @@ export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> 
         ),
       )
       .for("update");
-    const diff = buildFieldDiff(
-      keepEditable({ ...priorToValues(existingEdit?.payload), ...desiredFields }),
-      baseEntity,
-    );
+    const prior = priorToValues(existingEdit?.payload);
+    // The row's items as they stand: this scenario's earlier edit, else base.
+    const currentItems = ("livingItems" in prior ? prior.livingItems : baseEntity?.livingItems) as
+      | LivingExpenseItem[]
+      | null
+      | undefined;
+    const desiredFields = normalizeExpenseLivingItems(targetKind, args.desiredFields, currentItems ?? null);
+    const diff = buildFieldDiff(keepEditable({ ...prior, ...desiredFields }), baseEntity);
 
     // Idempotent revert: if every desired value matches base, drop any
     // existing edit row for this target.

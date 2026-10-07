@@ -90,6 +90,16 @@ d("expenses-writes — livingItems", () => {
     expect(res.data.livingItems).toEqual([HOUSING, TRAVEL]);
   });
 
+  it("keeps a new total sent beside the row's unchanged items", async () => {
+    const made = await create({ livingItems: [HOUSING, TRAVEL] });
+    if (!made.ok) throw new Error(made.error);
+    const res = await update(made.data.id, { livingItems: [HOUSING, TRAVEL], annualAmount: "90000" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(Number(res.data.annualAmount)).toBe(90000);
+    expect(res.data.livingItems).toEqual([HOUSING, TRAVEL]);
+  });
+
   it("stores an emptied list as null and keeps the caller's total", async () => {
     const made = await create({ livingItems: [HOUSING] });
     if (!made.ok) throw new Error(made.error);

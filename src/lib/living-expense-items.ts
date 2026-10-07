@@ -58,16 +58,31 @@ export function livingItemsPatch(items: readonly LivingExpenseItem[]): {
     : { livingItems: null, annualAmount: "0" };
 }
 
+/** Same items in the same order. `null`, `undefined` and `[]` are all "none". */
+function sameLivingItems(
+  a: readonly LivingExpenseItem[] | null | undefined,
+  b: readonly LivingExpenseItem[] | null | undefined,
+): boolean {
+  const key = (items: readonly LivingExpenseItem[] | null | undefined) =>
+    JSON.stringify((items ?? []).map((i) => [i.id, i.name, i.amount, i.frequency]));
+  return key(a) === key(b);
+}
+
 /**
  * Server half of the same rule, for a write that MAY carry `livingItems`:
  * absent → untouched; empty → stored as null and the caller's total stands;
- * non-empty → the total is set to the items' sum, whatever the caller sent.
+ * non-empty → the total is set to the items' sum, whatever the caller sent —
+ * unless the items equal the row's `current` ones. A whole-row re-save (the
+ * Solver's "Update scenario") carries unchanged items beside a total typed on
+ * another screen, and that total wins (spec rule 2). Omit `current` for a new
+ * row.
  */
 export function withLivingItemsTotal<
   T extends { livingItems?: LivingExpenseItem[] | null; annualAmount?: unknown },
->(fields: T): T {
+>(fields: T, current?: readonly LivingExpenseItem[] | null): T {
   if (fields.livingItems === undefined) return fields;
   if (!hasLivingItems(fields.livingItems)) return { ...fields, livingItems: null } as T;
+  if (current !== undefined && sameLivingItems(fields.livingItems, current)) return fields;
   return { ...fields, annualAmount: String(livingItemsAnnualTotal(fields.livingItems)) } as T;
 }
 
