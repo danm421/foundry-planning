@@ -175,12 +175,12 @@ export default function LivingExpenseItems({
               />
             </>
           ) : (
-            <span className="tabular text-sm text-ink">
+            <span className="text-sm text-ink">
               {money(item.amount)}
               {SHORT[item.frequency]}
             </span>
           )}
-          <span className="tabular w-[88px] shrink-0 text-right text-xs text-ink-3">
+          <span className="w-[88px] shrink-0 text-right text-xs text-ink-3">
             {money(itemAnnualAmount(item))}/yr
           </span>
           {canEdit && (
