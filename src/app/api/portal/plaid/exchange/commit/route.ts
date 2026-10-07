@@ -17,6 +17,11 @@ import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordCreate } from "@/lib/audit/record-helpers";
 import {
+  isPortalVisibleAccount,
+  isPortalVisibleCategory,
+  toPortalAccountVisibility,
+} from "@/lib/portal/account-visibility";
+import {
   syncTransactionsForItem,
   backfillTransactionAccountIds,
   loadAccountIdByPlaidAccountId,
@@ -32,6 +37,7 @@ export const dynamic = "force-dynamic";
 const CATEGORY_VALUES = new Set<string>(accountCategoryEnum.enumValues);
 const SUBTYPE_VALUES = new Set<string>(accountSubTypeEnum.enumValues);
 const LIABILITY_VALUES = new Set<string>(liabilityTypeEnum.enumValues);
+const KNOWN_ACTIONS = new Set<string>(["skip", "link", "link-liability", "create"]);
 
 type Decision =
   | { plaidAccountId: string; action: "skip" }
@@ -120,6 +126,9 @@ export async function POST(req: Request): Promise<Response> {
           id: accounts.id,
           clientId: accounts.clientId,
           plaidItemId: accounts.plaidItemId,
+          category: accounts.category,
+          isDefaultChecking: accounts.isDefaultChecking,
+          parentAccountId: accounts.parentAccountId,
         })
         .from(accounts)
         .where(eq(accounts.id, d.existingAccountId))
@@ -129,6 +138,13 @@ export async function POST(req: Request): Promise<Response> {
         return NextResponse.json(
           { error: `Account ${d.existingAccountId} not found` },
           { status: 404 },
+        );
+      }
+      // Accounts the portal hides from the client can't be bound from here.
+      if (!isPortalVisibleAccount(toPortalAccountVisibility(row))) {
+        return NextResponse.json(
+          { error: "This account can't be linked from the portal" },
+          { status: 403 },
         );
       }
       // Prevent double-linking: account must not already be linked elsewhere.
@@ -171,11 +187,24 @@ export async function POST(req: Request): Promise<Response> {
     // 4c. Validate every `create` decision's client-chosen type against the
     //     schema enum allowlists before any write.
     for (const d of body.decisions) {
+      if (!KNOWN_ACTIONS.has(d.action)) {
+        return NextResponse.json(
+          { error: `Invalid decision for ${d.plaidAccountId}` },
+          { status: 400 },
+        );
+      }
       if (d.action !== "create") continue;
       if (d.kind === "asset") {
         if (!CATEGORY_VALUES.has(d.category) || !SUBTYPE_VALUES.has(d.subType)) {
           return NextResponse.json(
             { error: `Invalid account type for ${d.plaidAccountId}` },
+            { status: 400 },
+          );
+        }
+        // Same rule as adding an account from the portal.
+        if (!isPortalVisibleCategory(d.category)) {
+          return NextResponse.json(
+            { error: `This account type can't be added from the portal (${d.plaidAccountId})` },
             { status: 400 },
           );
         }

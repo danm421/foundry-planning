@@ -116,6 +116,7 @@ beforeEach(() => {
   dbSelect.mockReset();
   txInsertReturning.mockReset();
   txInsert.mockClear();
+  dbTransaction.mockClear();
   txUpdate.mockClear();
   txUpdateWhere.mockClear();
   liabilityInsertValues = null;
@@ -185,7 +186,7 @@ describe("POST /api/portal/plaid/exchange/commit", () => {
       [{ clientId: "client-1", institutionName: "Chase" }], // item
       [{ firmId: "firm-1" }],                                // firmId
       [{ id: "scenario-1" }],                                // base scenario
-      [{ id: "manual-1", clientId: "client-1", plaidItemId: null }], // link target
+      [{ id: "manual-1", clientId: "client-1", plaidItemId: null, category: "cash", isDefaultChecking: false, parentAccountId: null }], // link target
     );
     txInsertReturning.mockResolvedValue([{ id: "new-acct-uuid" }]);
 
@@ -236,7 +237,7 @@ describe("POST /api/portal/plaid/exchange/commit", () => {
       [{ clientId: "client-1", institutionName: "Chase" }],
       [{ firmId: "firm-1" }],
       [{ id: "scenario-1" }],
-      [{ id: "manual-1", clientId: "client-1", plaidItemId: "OTHER-item" }],
+      [{ id: "manual-1", clientId: "client-1", plaidItemId: "OTHER-item", category: "cash", isDefaultChecking: false, parentAccountId: null }],
     );
     const { POST } = await import("../route");
     const res = await POST(
@@ -278,6 +279,26 @@ describe("POST /api/portal/plaid/exchange/commit", () => {
     expect(recordCreate).not.toHaveBeenCalled();
   });
 
+  it("refuses to link an account the portal hides from the client", async () => {
+    nextResponses(
+      [{ clientId: "client-1", institutionName: "Chase" }],
+      [{ firmId: "firm-1" }],
+      [{ id: "scenario-1" }],
+      [{ id: "biz-1", clientId: "client-1", plaidItemId: null, category: "business", isDefaultChecking: false, parentAccountId: null }],
+    );
+    const { POST } = await import("../route");
+    const res = await POST(
+      commitReq({
+        itemId: "item-1",
+        decisions: [{ plaidAccountId: "pa-1", action: "link", existingAccountId: "biz-1" }],
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(dbTransaction).not.toHaveBeenCalled();
+    expect(txUpdate).not.toHaveBeenCalled();
+    expect(recordCreate).not.toHaveBeenCalled();
+  });
+
   it("400s a create decision with an invalid asset type (enum allowlist)", async () => {
     nextResponses(
       [{ clientId: "client-1", institutionName: "Chase" }],
@@ -303,6 +324,55 @@ describe("POST /api/portal/plaid/exchange/commit", () => {
       }),
     );
     expect(res.status).toBe(400);
+    expect(txInsert).not.toHaveBeenCalled();
+    expect(recordCreate).not.toHaveBeenCalled();
+  });
+
+  it("400s a create decision for a category the portal hides", async () => {
+    nextResponses(
+      [{ clientId: "client-1", institutionName: "Chase" }],
+      [{ firmId: "firm-1" }],
+      [{ id: "scenario-1" }],
+    );
+    const { POST } = await import("../route");
+    const res = await POST(
+      commitReq({
+        itemId: "item-1",
+        decisions: [
+          {
+            plaidAccountId: "pa-biz",
+            action: "create",
+            kind: "asset",
+            name: "X",
+            mask: null,
+            balance: 1,
+            category: "business",
+            subType: "sole_proprietorship",
+          },
+        ],
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(dbTransaction).not.toHaveBeenCalled();
+    expect(txInsert).not.toHaveBeenCalled();
+    expect(recordCreate).not.toHaveBeenCalled();
+  });
+
+  it("400s an unknown decision action before writing anything", async () => {
+    nextResponses(
+      [{ clientId: "client-1", institutionName: "Chase" }],
+      [{ firmId: "firm-1" }],
+      [{ id: "scenario-1" }],
+    );
+    const { POST } = await import("../route");
+    const res = await POST(
+      commitReq({
+        itemId: "item-1",
+        decisions: [{ plaidAccountId: "pa-x", action: "bogus" }],
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(dbTransaction).not.toHaveBeenCalled();
     expect(txInsert).not.toHaveBeenCalled();
     expect(recordCreate).not.toHaveBeenCalled();
   });
@@ -459,7 +529,7 @@ describe("POST commit — best-effort initial transactions sync", () => {
       ], // item (now includes accessToken + cursor for the sync)
       [{ firmId: "firm-1" }],
       [{ id: "scenario-1" }],
-      [{ id: "manual-1", clientId: "client-1", plaidItemId: null }], // link target
+      [{ id: "manual-1", clientId: "client-1", plaidItemId: null, category: "cash", isDefaultChecking: false, parentAccountId: null }], // link target
     );
 
     const { POST } = await import("../route");
@@ -521,7 +591,7 @@ describe("POST commit — best-effort initial transactions sync", () => {
       ],
       [{ firmId: "firm-1" }],
       [{ id: "scenario-1" }],
-      [{ id: "manual-1", clientId: "client-1", plaidItemId: null }],
+      [{ id: "manual-1", clientId: "client-1", plaidItemId: null, category: "cash", isDefaultChecking: false, parentAccountId: null }],
     );
 
     const { POST } = await import("../route");
@@ -556,7 +626,7 @@ describe("POST commit — best-effort initial transactions sync", () => {
       ],
       [{ firmId: "firm-1" }],
       [{ id: "scenario-1" }],
-      [{ id: "manual-1", clientId: "client-1", plaidItemId: null }],
+      [{ id: "manual-1", clientId: "client-1", plaidItemId: null, category: "cash", isDefaultChecking: false, parentAccountId: null }],
     );
 
     const { POST } = await import("../route");
@@ -589,7 +659,7 @@ describe("POST commit — best-effort initial transactions sync", () => {
       ],
       [{ firmId: "firm-1" }],
       [{ id: "scenario-1" }],
-      [{ id: "manual-1", clientId: "client-1", plaidItemId: null }],
+      [{ id: "manual-1", clientId: "client-1", plaidItemId: null, category: "cash", isDefaultChecking: false, parentAccountId: null }],
     );
 
     const { POST } = await import("../route");
