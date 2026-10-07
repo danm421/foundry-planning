@@ -94,4 +94,32 @@ describe("scrubSecrets", () => {
     // SDK internals ride along on the event; a class instance is passed through, not rebuilt.
     expect(scrubbed.sdkProcessingMetadata.capturedSpanScope).toBe(scope);
   });
+
+  it("masks the request's auth header and cookies, which sendDefaultPii: false still attaches", () => {
+    const event = {
+      request: {
+        url: "https://app.example.test/api/intake/dummy-token",
+        method: "PATCH",
+        headers: {
+          authorization: "Bearer dummy-cron-secret",
+          Cookie: "fp_ig_0123456789abcdef=1.sig; __session=dummy-session",
+          "content-type": "application/json",
+        },
+        cookies: { fp_ig_0123456789abcdef: "1.sig", __session: "dummy-session" },
+      },
+    };
+
+    const scrubbed = scrubSecrets(event);
+
+    const text = JSON.stringify(scrubbed);
+    expect(text).not.toContain("dummy-cron-secret");
+    expect(text).not.toContain("1.sig");
+    expect(text).not.toContain("dummy-session");
+    expect(scrubbed.request.headers).toEqual({
+      authorization: "[REDACTED]",
+      Cookie: "[REDACTED]",
+      "content-type": "application/json",
+    });
+    expect(scrubbed.request.cookies).toBe("[REDACTED]");
+  });
 });

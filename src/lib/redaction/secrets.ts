@@ -10,16 +10,18 @@
  * `safeErrorFields` keeps only name/message/code/stack, and `redactSecrets`
  * masks any credentials embedded in a URL (`postgres://user:password@host`)
  * in whatever text is left; `scrubSecrets` masks the same URLs, plus any
- * password-named key, across a whole Sentry event. All pure, so they run on
- * Node and Edge alike.
+ * credential-named key (password, auth header, cookies), across a whole Sentry
+ * event. All pure, so they run on Node and Edge alike.
  */
 
 // scheme://user:password@ — the user is kept, the password masked.
 const URL_CREDENTIALS = /\b([a-z][a-z0-9+.-]*:\/\/[^\s:/?#@]*):[^\s/?#@]+@/gi;
 
 // Keys whose value is a credential whatever it looks like (a bare password
-// carries no URL shape to match on).
-const SECRET_KEYS = /^(password|connectionString)$/i;
+// carries no URL shape to match on). Sentry copies the request's headers and
+// parsed cookies onto server events even with sendDefaultPii: false, so the
+// auth header and every cookie (session, intake gate) are masked here too.
+const SECRET_KEYS = /^(password|connectionString|(proxy-)?authorization|cookies?|set-cookie)$/i;
 
 const REDACTED = "[REDACTED]";
 
