@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { requireOpsAdmin } from "@/lib/ops/ops-auth";
+import { findOpsAdmin } from "@/lib/ops/ops-admins";
 import { startImpersonation } from "@/lib/ops/impersonation";
 import { listFirmMembers } from "@/lib/crm-tasks/members";
 
@@ -16,6 +17,11 @@ export async function startImpersonationAction(formData: FormData): Promise<void
   const members = await listFirmMembers(firmId);
   if (!members.some((m) => m.userId === advisorUserId)) {
     throw new Error("That user is not a member of this organization");
+  }
+  // No operator may act under another operator's identity, so any ops_admins
+  // row (disabled or not) rules the target out.
+  if (await findOpsAdmin(advisorUserId)) {
+    throw new Error("Ops console users cannot be impersonated");
   }
 
   const url = await startImpersonation({

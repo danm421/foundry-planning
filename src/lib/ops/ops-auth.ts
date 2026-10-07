@@ -15,7 +15,7 @@ export type OpsAdmin = { clerkUserId: string; email: string; role: OpsRole };
 
 /**
  * Resolve the current Clerk user to an active ops_admins row, or null.
- * Null for: no session, no row, or a disabled row. Read-only — use this in
+ * Null for: no session, an impersonated session, no row, or a disabled row. Read-only — use this in
  * UI/render paths that should degrade gracefully (e.g. show/hide nav).
  *
  * React.cache'd: every `/admin` page gates itself (see `requireOpsAdminPage`),
@@ -25,8 +25,11 @@ export type OpsAdmin = { clerkUserId: string; email: string; role: OpsRole };
  * cache falls through to a plain call, so tests still see each mocked session.
  */
 export const getOpsAdmin = cache(async (): Promise<OpsAdmin | null> => {
-  const { userId } = await auth();
+  const { userId, actor } = await auth();
   if (!userId) return null;
+  // An impersonated session carries no ops authority. `userId` there is the
+  // impersonated user, so their row would hand the operator their rank.
+  if (actor) return null;
   const [row] = await db
     .select()
     .from(opsAdmins)

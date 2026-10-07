@@ -32,7 +32,8 @@ function assertNotSelf(actorId: string, targetId: string): void {
   if (actorId === targetId) throw new OpsAdminError(SELF_EDIT_ERROR);
 }
 
-async function findOpsAdmin(clerkUserId: string): Promise<OpsAdminRow | null> {
+/** The ops_admins row for this Clerk user, disabled or not; null when none. */
+export async function findOpsAdmin(clerkUserId: string): Promise<OpsAdminRow | null> {
   const [row] = await db
     .select()
     .from(opsAdmins)

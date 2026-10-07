@@ -4,10 +4,11 @@ import { ForbiddenError } from "@/lib/authz";
 
 const h = vi.hoisted(() => ({
   userId: "user_op" as string | null,
+  actor: undefined as { sub: string } | undefined,
   rows: [] as Array<{ clerkUserId: string; email: string; role: string; disabledAt: Date | null }>,
 }));
 
-vi.mock("@clerk/nextjs/server", () => ({ auth: () => Promise.resolve({ userId: h.userId }) }));
+vi.mock("@clerk/nextjs/server", () => ({ auth: () => Promise.resolve({ userId: h.userId, actor: h.actor }) }));
 vi.mock("@/db/schema", () => ({ opsAdmins: { clerkUserId: "clerk_user_id" } }));
 vi.mock("@/db", () => ({
   db: { select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve(h.rows) }) }) }) },
@@ -17,6 +18,7 @@ import { getOpsAdmin, requireOpsAdmin } from "../ops-auth";
 
 beforeEach(() => {
   h.userId = "user_op";
+  h.actor = undefined;
   h.rows = [{ clerkUserId: "user_op", email: "op@foundry", role: "superadmin", disabledAt: null }];
 });
 
@@ -38,6 +40,12 @@ describe("getOpsAdmin", () => {
   });
   it("returns null (fail safe) for an unrecognized role", async () => {
     h.rows = [{ clerkUserId: "user_op", email: "op@foundry", role: "owner", disabledAt: null }];
+    expect(await getOpsAdmin()).toBeNull();
+  });
+  it("returns null in an impersonated session, whatever the impersonated user's role", async () => {
+    h.userId = "user_super";
+    h.actor = { sub: "user_support" };
+    h.rows = [{ clerkUserId: "user_super", email: "s@foundry", role: "superadmin", disabledAt: null }];
     expect(await getOpsAdmin()).toBeNull();
   });
 });
@@ -67,5 +75,11 @@ describe("requireOpsAdmin", () => {
   it("throws ForbiddenError (fail safe) for an unrecognized role", async () => {
     h.rows = [{ clerkUserId: "user_op", email: "op@foundry", role: "owner", disabledAt: null }];
     await expect(requireOpsAdmin()).rejects.toBeInstanceOf(ForbiddenError);
+  });
+  it("throws ForbiddenError in an impersonated session", async () => {
+    h.userId = "user_super";
+    h.actor = { sub: "user_support" };
+    h.rows = [{ clerkUserId: "user_super", email: "s@foundry", role: "superadmin", disabledAt: null }];
+    await expect(requireOpsAdmin("superadmin")).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
