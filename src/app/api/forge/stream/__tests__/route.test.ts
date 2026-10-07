@@ -46,6 +46,9 @@ vi.mock("@/domain/forge/checkpointer", () => ({ getCheckpointer: vi.fn(() => ({ 
 
 import { POST } from "../route";
 import { buildGraph } from "@/domain/forge/graph";
+import { recordAudit } from "@/lib/audit";
+import { touchConversation } from "@/domain/forge/conversations";
+import { FORGE_MESSAGE_MAX_CHARS, FORGE_PAGE_MAX_CHARS } from "@/domain/forge/stream-limits";
 
 const post = (body: unknown) =>
   POST(new Request("http://t/api/forge/stream", { method: "POST", body: JSON.stringify(body) }));
@@ -103,5 +106,49 @@ describe("global forge stream route gate chain", () => {
     const res = await post({ message: "hi", conversationId: "conv_other_firm" });
     expect(res.status).toBe(404);
     expect(buildGraph).not.toHaveBeenCalled();
+  });
+});
+
+describe("global forge stream route request size limits", () => {
+  beforeEach(() => {
+    vi.mocked(recordAudit).mockClear();
+    vi.mocked(touchConversation).mockClear();
+    createConversation.mockClear();
+    findOwnedConversation.mockClear();
+    vi.mocked(buildGraph).mockClear();
+  });
+
+  // Nothing about an over-long request may be kept or sent on: no audit row,
+  // no conversation, no graph run.
+  function expectNothingRecordedOrSent() {
+    expect(recordAudit).not.toHaveBeenCalled();
+    expect(createConversation).not.toHaveBeenCalled();
+    expect(findOwnedConversation).not.toHaveBeenCalled();
+    expect(touchConversation).not.toHaveBeenCalled();
+    expect(buildGraph).not.toHaveBeenCalled();
+  }
+
+  it("rejects a message over the length limit with a 400", async () => {
+    const res = await post({ message: "x".repeat(FORGE_MESSAGE_MAX_CHARS + 1) });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: expect.any(String) });
+    expectNothingRecordedOrSent();
+  });
+
+  it("rejects a currentPage over the length limit with a 400", async () => {
+    const res = await post({ message: "hi", currentPage: "p".repeat(FORGE_PAGE_MAX_CHARS + 1) });
+    expect(res.status).toBe(400);
+    expectNothingRecordedOrSent();
+  });
+
+  it("still streams a message and page right at the limits", async () => {
+    const res = await post({
+      message: "x".repeat(FORGE_MESSAGE_MAX_CHARS),
+      currentPage: "p".repeat(FORGE_PAGE_MAX_CHARS),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+    expect(recordAudit).toHaveBeenCalledTimes(1);
+    expect(buildGraph).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,5 +1,6 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { HumanMessage } from "@langchain/core/messages";
+import { z } from "zod";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscription, authErrorResponse } from "@/lib/authz";
 import { checkForgeRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
@@ -16,6 +17,11 @@ import { categorizeForgeError, logForgeError } from "@/domain/forge/safe-error";
 import { maybeLangfuseHandler, flushLangfuse } from "@/domain/forge/observability";
 import { parseApprovalInterrupt } from "@/domain/forge/interrupts";
 import { isForgeEnabled, hasForgeEntitlement } from "@/domain/forge/flag";
+import {
+  FORGE_ID_MAX_CHARS,
+  FORGE_MESSAGE_MAX_CHARS,
+  FORGE_PAGE_MAX_CHARS,
+} from "@/domain/forge/stream-limits";
 import type {
   ForgeAnyAuthContext,
   ForgeAuthContext,
@@ -25,7 +31,15 @@ import type {
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-type StreamBody = { message: string; conversationId?: string; currentPage?: string };
+// Every string here is kept (audit log, conversation checkpoints) and resent to
+// the model, so each has a length limit (stream-limits.ts).
+const StreamBody = z.object({
+  message: z
+    .string({ error: "message is required." })
+    .max(FORGE_MESSAGE_MAX_CHARS, "message is too long."),
+  conversationId: z.string().max(FORGE_ID_MAX_CHARS, "conversationId is too long.").optional(),
+  currentPage: z.string().max(FORGE_PAGE_MAX_CHARS, "currentPage is too long.").optional(),
+});
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -84,15 +98,17 @@ export async function POST(req: Request): Promise<Response> {
 
   // --- Past the gates: body, conversation (IDOR-checked), audit, stream ---
 
-  let body: StreamBody;
+  let raw: unknown;
   try {
-    body = (await req.json()) as StreamBody;
+    raw = await req.json();
   } catch {
     return json(400, { error: "Invalid request body." });
   }
-  if (typeof body.message !== "string") {
-    return json(400, { error: "message is required." });
+  const parsed = StreamBody.safeParse(raw);
+  if (!parsed.success) {
+    return json(400, { error: parsed.error.issues[0]?.message ?? "Invalid request body." });
   }
+  const body = parsed.data;
   const message = body.message.trim();
   if (message.length === 0) return json(400, { error: "message must not be empty." });
 

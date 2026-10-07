@@ -24,6 +24,7 @@ import { NAVIGATE_ALLOWLIST_PREFIXES } from "@/domain/forge/navigate-allowlist";
 // global-system-prompt.ts and the ingest_fact_finder schema, so it lives in the
 // domain layer rather than in this panel — see fact-finder-turn.ts.
 import { buildIngestTurnMessage } from "@/domain/forge/fact-finder-turn";
+import { FORGE_COMPOSER_MAX_CHARS } from "@/domain/forge/stream-limits";
 import { ConversationList } from "./conversation-list";
 import {
   useForgeImport,
@@ -1325,6 +1326,7 @@ export function ForgePanel({
                 ref={composerRef}
                 aria-label="Ask Forge"
                 rows={1}
+                maxLength={FORGE_COMPOSER_MAX_CHARS}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onPaste={(e) => {

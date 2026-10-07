@@ -1,5 +1,6 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { HumanMessage } from "@langchain/core/messages";
+import { z } from "zod";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscription, authErrorResponse } from "@/lib/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
@@ -18,20 +19,32 @@ import { categorizeForgeError, logForgeError } from "@/domain/forge/safe-error";
 import { maybeLangfuseHandler, flushLangfuse } from "@/domain/forge/observability";
 import { parseApprovalInterrupt, parseMeetingReviewInterrupt } from "@/domain/forge/interrupts";
 import { isForgeEnabled, hasForgeEntitlement } from "@/domain/forge/flag";
+import {
+  FORGE_ID_MAX_CHARS,
+  FORGE_MESSAGE_MAX_CHARS,
+  FORGE_PAGE_MAX_CHARS,
+} from "@/domain/forge/stream-limits";
 import type { ForgeAuthContext } from "@/domain/forge/state";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 type RouteCtx = { params: Promise<{ id: string }> };
-type StreamBody = {
-  message: string;
-  conversationId?: string;
-  scenarioId: string;
-  currentPage?: string;
-  pendingImportId?: string;
-  pendingTranscriptId?: string;
-};
+
+// Every string here is kept (audit log, conversation checkpoints) and resent to
+// the model, so each has a length limit (stream-limits.ts).
+const REQUIRED = "message and scenarioId are required.";
+const StreamBody = z.object({
+  message: z.string({ error: REQUIRED }).max(FORGE_MESSAGE_MAX_CHARS, "message is too long."),
+  conversationId: z.string().max(FORGE_ID_MAX_CHARS, "conversationId is too long.").optional(),
+  scenarioId: z.string({ error: REQUIRED }).max(FORGE_ID_MAX_CHARS, "scenarioId is too long."),
+  currentPage: z.string().max(FORGE_PAGE_MAX_CHARS, "currentPage is too long.").optional(),
+  pendingImportId: z.string().max(FORGE_ID_MAX_CHARS, "pendingImportId is too long.").optional(),
+  pendingTranscriptId: z
+    .string()
+    .max(FORGE_ID_MAX_CHARS, "pendingTranscriptId is too long.")
+    .optional(),
+});
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -101,15 +114,17 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
 
   // --- Past the gates: body, conversation (IDOR-checked), audit, stream ---
 
-  let body: StreamBody;
+  let raw: unknown;
   try {
-    body = (await req.json()) as StreamBody;
+    raw = await req.json();
   } catch {
     return json(400, { error: "Invalid request body." });
   }
-  if (typeof body.message !== "string" || typeof body.scenarioId !== "string") {
-    return json(400, { error: "message and scenarioId are required." });
+  const parsed = StreamBody.safeParse(raw);
+  if (!parsed.success) {
+    return json(400, { error: parsed.error.issues[0]?.message ?? "Invalid request body." });
   }
+  const body = parsed.data;
   // Trim once and validate the trimmed value: a whitespace-only message must not
   // create a blank-titled conversation or burn a model turn on empty input —
   // UNLESS a freshly-uploaded import is attached, in which case the document IS
