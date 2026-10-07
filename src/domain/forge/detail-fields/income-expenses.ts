@@ -421,6 +421,14 @@ export const INCOME_EXPENSE_ENTITIES: readonly DetailEntity[] = [
         notes: "Presentation only — never read by src/engine.",
       },
       {
+        key: "livingItems",
+        label: "(no control in this dialog — the items list expanded under the Current Living Expenses row)",
+        kind: "array",
+        nullable: true,
+        notes:
+          "Itemized Current Living Expenses: an ordered list of { id, name, amount (dollars, >= 0), frequency: \"monthly\" | \"annual\" }, at most 200. Living rows only — the write core 400s it on any other type (\"Only living expenses can be itemized.\"). Sent non-empty, the server sets annualAmount to the items' yearly total (a monthly item counts x12), whatever annualAmount came with it; [] is stored as null. A write of annualAmount alone leaves the items in place, and that typed total wins. Never read by src/engine.",
+      },
+      {
         key: "isDefault",
         label: "(shown as a disabled Type select + explanatory caption on seeded rows)",
         kind: "boolean",

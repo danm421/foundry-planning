@@ -130,6 +130,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "institutionState": null,
       "isDefault": false,
       "isGoal": false,
+      "livingItems": null,
       "name": "Living Expenses",
       "ownerAccountId": undefined,
       "ownerEntityId": undefined,
