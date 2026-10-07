@@ -9,6 +9,10 @@ vi.mock("@/lib/db-helpers", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/db-helpers")>();
   return { ...actual, requireOrgId: vi.fn() };
 });
+// The gate reads the session's user and role; an admin sees every book.
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn().mockResolvedValue({ userId: "test_user", orgRole: "org:admin" }),
+}));
 
 describe("requireCrmHouseholdAccess", () => {
   beforeEach(async () => {

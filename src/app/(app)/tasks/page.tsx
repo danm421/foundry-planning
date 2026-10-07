@@ -1,8 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { and, eq, isNull } from "drizzle-orm";
 
-import { db } from "@/db";
-import { crmHouseholds } from "@/db/schema";
 import { resolveActors } from "@/lib/activity/resolve-actors";
 import {
   getTaskById,
@@ -15,6 +12,7 @@ import {
 import { coerceQuickFilter, normalizeQuickFilters } from "@/lib/crm-tasks/filters";
 import { listFirmMembers } from "@/lib/crm-tasks/members";
 import { requireOrgId } from "@/lib/db-helpers";
+import { listHouseholdPickerOptions } from "@/lib/crm/households";
 
 import { TasksPage, type TaskDetailBundle } from "./_components/tasks-page";
 
@@ -30,7 +28,7 @@ export default async function TasksRoute({
 }) {
   const sp = await searchParams;
   const firmId = await requireOrgId();
-  const { userId } = await auth();
+  const { userId, orgRole } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
   const filters = normalizeQuickFilters({
@@ -47,11 +45,7 @@ export default async function TasksRoute({
     ),
     listFirmMembers(firmId),
     listFirmTags(firmId),
-    db
-      .select({ id: crmHouseholds.id, name: crmHouseholds.name })
-      .from(crmHouseholds)
-      .where(and(eq(crmHouseholds.firmId, firmId), isNull(crmHouseholds.deletedAt)))
-      .orderBy(crmHouseholds.name),
+    listHouseholdPickerOptions(firmId, userId, orgRole),
   ]);
 
   // Pre-load the side panel bundle server-side when the URL has `?task=`.

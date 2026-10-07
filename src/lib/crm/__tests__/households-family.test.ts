@@ -8,6 +8,10 @@ vi.mock("@/lib/db-helpers", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/db-helpers")>();
   return { ...actual, requireOrgId: vi.fn().mockResolvedValue("test_org_hhfam") };
 });
+// The household gate reads the session's user and role.
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn().mockResolvedValue({ userId: "test_advisor", orgId: "test_org_hhfam", orgRole: "org:admin" }),
+}));
 
 const FIRM = "test_org_hhfam";
 

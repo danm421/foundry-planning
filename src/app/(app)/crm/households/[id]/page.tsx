@@ -1,10 +1,7 @@
 import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
-import { and, eq, isNull } from "drizzle-orm";
 
-import { db } from "@/db";
-import { crmHouseholds } from "@/db/schema";
-import { getCrmHousehold } from "@/lib/crm/households";
+import { getCrmHousehold, listHouseholdPickerOptions } from "@/lib/crm/households";
 import { listHouseholdRelationships } from "@/lib/crm/household-relationships";
 import { resolveActors } from "@/lib/activity/resolve-actors";
 import {
@@ -59,11 +56,7 @@ export default async function CrmHouseholdPage({
     listTasks(firmId, { householdId: id }, filters),
     listFirmMembers(firmId),
     listFirmTags(firmId),
-    db
-      .select({ id: crmHouseholds.id, name: crmHouseholds.name })
-      .from(crmHouseholds)
-      .where(and(eq(crmHouseholds.firmId, firmId), isNull(crmHouseholds.deletedAt)))
-      .orderBy(crmHouseholds.name),
+    listHouseholdPickerOptions(firmId, userId, orgRole),
     listHouseholdRelationships(id),
   ]);
   const advisorName = advisorActors.get(household.advisorId)?.name ?? household.advisorId;

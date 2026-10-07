@@ -1,6 +1,6 @@
 /**
- * `getCrmHousehold` is firm-scoped only. Every document endpoint is gated by
- * `requireVaultAccess`, which is narrower — advisor-of-record, an explicit
+ * `getCrmHousehold` is gated by `findVisibleCrmHousehold`. Every document
+ * endpoint is gated by `requireVaultAccess`, which is narrower — advisor-of-record, an explicit
  * share, or admin. Eager-loading the `documents` relation here handed a member
  * who is refused on /documents the entire vault index anyway: filenames,
  * descriptions, mime types, sizes and storage keys.
@@ -19,6 +19,10 @@ vi.mock("@/db", () => ({
 }));
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn().mockResolvedValue("firm-1") }));
 vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn().mockResolvedValue({ userId: "u1" }) }));
+// The access gate has its own tests; here it lets the detail query through.
+vi.mock("../authz", () => ({
+  findVisibleCrmHousehold: vi.fn().mockResolvedValue({ household: {}, orgId: "firm-1" }),
+}));
 
 import { getCrmHousehold } from "../households";
 

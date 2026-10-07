@@ -10,20 +10,38 @@ import type { Principal } from "@/lib/clients/authz";
 import { callerMaySeeAdvisor } from "@/lib/clients/authz";
 
 /**
- * Org-scoped accessor for a CRM household. Mirrors the pattern in
- * `requireClientAccess` — fetch the row scoped to the caller's firm
- * (Clerk orgId) and throw if it isn't visible. Returns both the row
- * and the firm id so callers can thread them into audit/recordActivity.
+ * The CRM household with this id, if the caller may see it: in the caller's
+ * firm (Clerk orgId) and in their book under the rule the clients list and the
+ * planning gate use (`callerMaySeeAdvisor`). Null for missing and hidden alike,
+ * so existence never leaks. Throws only when there is no signed-in org.
  */
-export async function requireCrmHouseholdAccess(householdId: string) {
+export async function findVisibleCrmHousehold(householdId: string) {
   const orgId = await requireOrgId();
   const household = await db.query.crmHouseholds.findFirst({
     where: and(eq(crmHouseholds.id, householdId), eq(crmHouseholds.firmId, orgId)),
   });
-  if (!household) {
+  if (!household) return null;
+  const { userId, orgRole } = await auth();
+  if (!userId) return null;
+  const visible = await callerMaySeeAdvisor(
+    { userId, orgId, orgRole: orgRole ?? null },
+    household.advisorId,
+    orgId,
+  );
+  return visible ? { household, orgId } : null;
+}
+
+/**
+ * Throwing form of `findVisibleCrmHousehold`. Mirrors `requireClientAccess`.
+ * Returns both the row and the firm id so callers can thread them into
+ * audit/recordActivity.
+ */
+export async function requireCrmHouseholdAccess(householdId: string) {
+  const access = await findVisibleCrmHousehold(householdId);
+  if (!access) {
     throw new Error(`CRM household not found or access denied: ${householdId}`);
   }
-  return { household, orgId };
+  return access;
 }
 
 /**
