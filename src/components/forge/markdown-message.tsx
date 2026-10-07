@@ -65,6 +65,10 @@ const MD_COMPONENTS: Components = {
   ),
   td: ({ children }) => <td className="border border-hair px-2 py-1">{children}</td>,
   hr: () => <hr className="my-3 border-hair" />,
+  // Images render as their alt text only. Nothing this component shows ever
+  // needs a picture, and a model-written <img> would make the browser fetch its
+  // URL as soon as the bubble paints — no click from the advisor.
+  img: ({ alt }) => <>{alt}</>,
 };
 
 /**

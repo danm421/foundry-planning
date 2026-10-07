@@ -32,4 +32,23 @@ describe("MarkdownMessage", () => {
     expect(screen.getByRole("table")).toBeInTheDocument();
     expect(screen.getByText("PoS")).toBeInTheDocument();
   });
+
+  it("shows an image's alt text instead of loading the image", () => {
+    const url = "https://example.test/p?d=SECRET";
+    const md = [
+      `Inline ![status chart](${url}) here.`,
+      "",
+      "Reference ![ref chart][r] here.",
+      "",
+      `[r]: ${url}`,
+    ].join("\n");
+
+    const { container } = render(<MarkdownMessage text={md} />);
+
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector("[src]")).toBeNull();
+    expect(container.innerHTML).not.toContain("SECRET");
+    expect(screen.getByText(/status chart/)).toBeInTheDocument();
+    expect(screen.getByText(/ref chart/)).toBeInTheDocument();
+  });
 });
