@@ -8,7 +8,7 @@ import {
   tickerPortfolioHoldings,
 } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
-import { assertTickerPortfoliosInFirm } from "@/lib/db-scoping";
+import { assertAccountsInClient, assertTickerPortfoliosInFirm } from "@/lib/db-scoping";
 import { loadEnrichedHoldings } from "@/lib/investments/load-enriched-holdings";
 import { firmSlugToAssetClassId } from "@/lib/investments/holdings-rollup";
 import { monthlyReturns, type MonthlyReturn } from "@/lib/cma-stats";
@@ -80,9 +80,10 @@ async function loadReturns(securityIds: string[]): Promise<Map<string, MonthlyRe
 }
 
 /**
- * The request named a saved fund portfolio this firm cannot use. Distinct from
- * an unclassifiable ticker: nothing about the target is resolvable, so callers
- * answer 400 rather than 422.
+ * The request named a saved fund portfolio this firm cannot use, or a source
+ * account that is not the path client's. Distinct from an unclassifiable
+ * ticker: nothing about the request is resolvable, so callers answer 400
+ * rather than 422.
  */
 export class PortfolioNotAvailableError extends Error {
   constructor(reason: string) {
@@ -270,6 +271,10 @@ export async function loadRebalanceInputs(
     currentHoldings.push(...built.currentHoldings);
     sourceUnresolvedTickers = built.unresolved;
   } else {
+    // The ids are request-supplied and `account_holdings` has no client column,
+    // so every one must belong to the path client before any holdings are read.
+    const owned = await assertAccountsInClient(clientId, body.accountIds);
+    if (!owned.ok) throw new PortfolioNotAvailableError(owned.reason);
     // Account rows and enriched holdings are independent reads — fetch them together.
     const [acctRows, byAccount] = await Promise.all([
       db

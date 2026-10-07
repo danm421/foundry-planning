@@ -93,18 +93,23 @@ vi.mock("@/lib/investments/classification/classify", async (importOriginal) => (
   classifySecurity: async () => null,
 }));
 
-// Firm scoping is a real DB read the table-routed mock above cannot express
-// (it ignores WHERE), so the assert itself is the seam these tests drive.
-vi.mock("@/lib/db-scoping", () => ({ assertTickerPortfoliosInFirm: vi.fn() }));
+// Firm and client scoping are real DB reads the table-routed mock above cannot
+// express (it ignores WHERE), so the asserts themselves are the seams these
+// tests drive.
+vi.mock("@/lib/db-scoping", () => ({
+  assertTickerPortfoliosInFirm: vi.fn(),
+  assertAccountsInClient: vi.fn(async () => ({ ok: true })),
+}));
 
 vi.mock("@/lib/investments/load-enriched-holdings", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/investments/load-enriched-holdings")>()),
-  loadEnrichedHoldings: async () => new Map(),
+  loadEnrichedHoldings: vi.fn(async () => new Map()),
 }));
 
 import { loadRebalanceInputs, PortfolioNotAvailableError } from "./load-inputs";
 import { UnclassifiableTickerError } from "./resolve-target";
-import { assertTickerPortfoliosInFirm } from "@/lib/db-scoping";
+import { assertAccountsInClient, assertTickerPortfoliosInFirm } from "@/lib/db-scoping";
+import { loadEnrichedHoldings } from "@/lib/investments/load-enriched-holdings";
 import type { RebalanceRequest } from "./types";
 
 // --- Fixtures -------------------------------------------------------------
@@ -256,5 +261,44 @@ describe("loadRebalanceInputs — the target portfolio must belong to the caller
       target: { holdings: [{ ticker: "VTI", weight: 1 }] },
     });
     expect(assertTickerPortfoliosInFirm).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The source account ids are request-supplied as well, and `account_holdings`
+ * has no client column — so the ids have to be bound to the path client before
+ * any holdings are read, or the comparison would fold in another client's
+ * positions.
+ */
+describe("loadRebalanceInputs — the source accounts must belong to the path client", () => {
+  const OTHER_ACCOUNT_ID = "55555555-5555-5555-5555-555555555555";
+  const typedTarget = { holdings: [{ ticker: "VTI", weight: 1 }] };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    seedFirm();
+  });
+
+  it("refuses an account that is not this client's without reading its holdings", async () => {
+    vi.mocked(assertAccountsInClient).mockResolvedValueOnce({
+      ok: false,
+      reason: "Account not owned by this client",
+    });
+
+    await expect(
+      loadRebalanceInputs(CLIENT_ID, FIRM_ID, {
+        accountIds: [OTHER_ACCOUNT_ID],
+        target: typedTarget,
+      }),
+    ).rejects.toBeInstanceOf(PortfolioNotAvailableError);
+    expect(loadEnrichedHoldings).not.toHaveBeenCalled();
+  });
+
+  it("checks the ids against the path client", async () => {
+    await loadRebalanceInputs(CLIENT_ID, FIRM_ID, {
+      accountIds: [ACCOUNT_ID],
+      target: typedTarget,
+    });
+    expect(assertAccountsInClient).toHaveBeenCalledWith(CLIENT_ID, [ACCOUNT_ID]);
   });
 });
