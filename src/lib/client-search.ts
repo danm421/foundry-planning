@@ -1,7 +1,11 @@
 import { db } from "@/db";
 import { clients, crmHouseholdContacts, crmHouseholds } from "@/db/schema";
 import { and, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
-import { advisorScopeCondition, resolveVisibleAdvisorIds } from "@/lib/visibility";
+import {
+  advisorScopeCondition,
+  privateClientFilter,
+  resolveVisibleAdvisorIds,
+} from "@/lib/visibility";
 import { containsPattern } from "@/lib/like-pattern";
 import { uuidRegex } from "@/lib/schemas/common";
 
@@ -104,6 +108,7 @@ export async function searchClients(
 
   const visible = await resolveVisibleAdvisorIds(caller.userId, caller.orgRole, firmId);
   const scope = advisorScopeCondition(clients.advisorId, visible);
+  const privacy = privateClientFilter(caller.userId, caller.orgRole);
 
   // CRM contacts are the sole source of truth for identity. Two-step query:
   // 1) Find households whose contacts match the query (any role). 2) Pull
@@ -116,6 +121,7 @@ export async function searchClients(
       and(
         eq(clients.firmId, firmId),
         ...(scope ? [scope] : []),
+        privacy,
         or(
           ilike(crmHouseholdContacts.firstName, pattern),
           ilike(crmHouseholdContacts.lastName, pattern),
@@ -138,6 +144,7 @@ export async function searchClients(
       and(
         eq(clients.firmId, firmId),
         ...(scope ? [scope] : []),
+        privacy,
         inArray(clients.crmHouseholdId, householdIds),
         or(
           eq(crmHouseholdContacts.role, "primary"),
@@ -169,6 +176,7 @@ export async function findClientRecipient(
 
   const visible = await resolveVisibleAdvisorIds(caller.userId, caller.orgRole, firmId);
   const scope = advisorScopeCondition(clients.advisorId, visible);
+  const privacy = privateClientFilter(caller.userId, caller.orgRole);
 
   const rows = await db
     .select(contactColumns)
@@ -182,6 +190,7 @@ export async function findClientRecipient(
         eq(clients.id, clientId),
         eq(clients.firmId, firmId),
         ...(scope ? [scope] : []),
+        privacy,
         or(
           eq(crmHouseholdContacts.role, "primary"),
           eq(crmHouseholdContacts.role, "spouse"),
@@ -249,6 +258,7 @@ export async function searchHouseholds(
         eq(crmHouseholds.firmId, firmId),
         isNull(crmHouseholds.deletedAt),
         scope,
+        privateClientFilter(opts.userId, opts.orgRole),
         or(
           ilike(crmHouseholds.name, pattern),
           ilike(crmHouseholdContacts.firstName, pattern),

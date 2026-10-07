@@ -17,6 +17,7 @@ import {
   resolveVisibleAdvisorIds,
   advisorScopeCondition,
   applyBookSwitcher,
+  privateHouseholdFilter,
 } from "@/lib/visibility";
 import { recordAudit } from "@/lib/audit";
 import { recordDelete } from "@/lib/audit/record-helpers";
@@ -107,6 +108,7 @@ export async function listCrmHouseholds(opts?: {
   visible = applyBookSwitcher(visible, orgRole, opts?.viewAsAdvisorId);
   const scope = advisorScopeCondition(crmHouseholds.advisorId, visible);
   if (scope) conditions.push(scope);
+  conditions.push(privateHouseholdFilter(firmId, userId ?? "", orgRole));
 
   return db.query.crmHouseholds.findMany({
     where: and(...conditions),
@@ -176,6 +178,7 @@ export async function listRecentlyOpenedHouseholds(opts: {
   visible = applyBookSwitcher(visible, orgRole, opts.viewAsAdvisorId);
   const scope = advisorScopeCondition(crmHouseholds.advisorId, visible);
   if (scope) conditions.push(scope);
+  conditions.push(privateHouseholdFilter(firmId, callerId ?? "", orgRole));
 
   const rows = await db.query.crmHouseholds.findMany({
     where: and(...conditions),
@@ -227,6 +230,7 @@ export async function listHouseholdPickerOptions(
         eq(crmHouseholds.firmId, firmId),
         isNull(crmHouseholds.deletedAt),
         advisorScopeCondition(crmHouseholds.advisorId, visible),
+        privateHouseholdFilter(firmId, userId, orgRole),
       ),
     )
     .orderBy(crmHouseholds.name);

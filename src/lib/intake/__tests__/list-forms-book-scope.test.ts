@@ -26,20 +26,27 @@ const rendered = () => new PgDialect().sqlToQuery(captured.where as SQL);
 
 describe("listFormsForFirm", () => {
   it("narrows a siloed advisor to their own clients' forms and their own prospect forms", async () => {
-    await listFormsForFirm("firm-1", new Set(["adv-a"]));
+    await listFormsForFirm("firm-1", new Set(["adv-a"]), "adv-a", "org:member");
     const { sql, params } = rendered();
     expect(sql).toContain('"clients"."advisor_id"');
     expect(sql).toContain('"intake_forms"."created_by_user_id"');
-    expect(params).toEqual(["firm-1", "adv-a", "adv-a"]);
+    expect(params).toEqual(["firm-1", "adv-a", "adv-a", "adv-a"]);
   });
 
   it("matches nothing for a caller with an empty book", async () => {
-    await listFormsForFirm("firm-2", new Set());
+    await listFormsForFirm("firm-2", new Set(), "adv-z", "org:member");
     expect(rendered().sql).toContain("false");
   });
 
+  it("drops a form bound to a colleague's private client for a non-admin member", async () => {
+    await listFormsForFirm("firm-4", VISIBLE_ALL, "adv-b", "org:member");
+    const { sql, params } = rendered();
+    expect(sql).toContain('"clients"."is_private"');
+    expect(params).toContain("adv-b");
+  });
+
   it("lists the whole firm for a caller who sees every book", async () => {
-    await listFormsForFirm("firm-3", VISIBLE_ALL);
+    await listFormsForFirm("firm-3", VISIBLE_ALL, "user-admin", "org:admin");
     const { sql, params } = rendered();
     expect(sql).not.toContain("advisor_id");
     expect(params).toEqual(["firm-3"]);

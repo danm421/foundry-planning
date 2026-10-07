@@ -1,6 +1,7 @@
 import { db } from "@/db";
-import { staffAdvisorVisibility } from "@/db/schema";
-import { and, eq, inArray, sql, type AnyColumn, type SQL } from "drizzle-orm";
+import { clients, crmHouseholds, staffAdvisorVisibility } from "@/db/schema";
+import { and, eq, inArray, ne, notInArray, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { STAFF_ROLES } from "./capabilities";
 import { firmBookSiloEnabled } from "./firm-settings";
 
@@ -34,7 +35,10 @@ export function isFirmWideAdminRole(orgRole: string | null | undefined): boolean
  *   siloed → { self } only. Access to OTHER advisors' books (via share-all or
  *   per-client shares) is resolved separately through resolveSharedClientAccess /
  *   the sharedIds union — that path carries the correct view/edit permission and
- *   excludes isPrivate clients, which this coarse advisor-set filter cannot.
+ *   excludes isPrivate clients from share-all grants.
+ *
+ * This is advisor-level only. Every caller that applies it to clients or
+ * households must also apply the Private client rule below.
  */
 export async function resolveVisibleAdvisorIds(
   userId: string,
@@ -75,6 +79,57 @@ export function advisorScopeCondition(
   const ids = [...visible];
   if (ids.length === 0) return sql`false`;
   return inArray(column, ids);
+}
+
+/**
+ * The Private client rule, layered on the book rule above. A client marked
+ * Private is visible inside its firm only to its own advisor and firm admins —
+ * not to other members, mapped staff included, whatever the firm's book-silo
+ * setting. An explicit per-client share still grants access; that path is
+ * resolved separately (`resolveSharedClientAccess`).
+ */
+export function hidesPrivateClient(
+  caller: { userId: string; orgRole: string | null | undefined },
+  client: { isPrivate: boolean; advisorId: string } | null | undefined,
+): boolean {
+  return !!client?.isPrivate && client.advisorId !== caller.userId && !isFirmWideAdminRole(caller.orgRole);
+}
+
+/**
+ * `hidesPrivateClient` as a WHERE condition over a query that joins `clients`:
+ * keeps only the rows the caller may see. Undefined (no filter) for admins.
+ * `is not true` rather than `= false`, so a LEFT JOIN row with no client has
+ * nothing to hide.
+ */
+export function privateClientFilter(
+  userId: string,
+  orgRole: string | null | undefined,
+): SQL | undefined {
+  if (isFirmWideAdminRole(orgRole)) return undefined;
+  return or(sql`${clients.isPrivate} is not true`, eq(clients.advisorId, userId));
+}
+
+/**
+ * The same rule over `crm_households`: drops a household whose planning client
+ * the caller may not see. Undefined (no filter) for admins. Uncorrelated, so it
+ * also works inside the relational query builder (as `householdSearchCondition`
+ * in crm/households.ts does); a standalone builder, so it needs no `db`.
+ */
+export function privateHouseholdFilter(
+  firmId: string,
+  userId: string,
+  orgRole: string | null | undefined,
+): SQL | undefined {
+  if (isFirmWideAdminRole(orgRole)) return undefined;
+  return notInArray(
+    crmHouseholds.id,
+    new QueryBuilder()
+      .select({ householdId: clients.crmHouseholdId })
+      .from(clients)
+      .where(
+        and(eq(clients.firmId, firmId), eq(clients.isPrivate, true), ne(clients.advisorId, userId)),
+      ),
+  );
 }
 
 /**

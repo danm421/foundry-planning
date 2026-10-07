@@ -29,7 +29,9 @@ export default async function DataCollectionPage({
   // queueing behind each other on a page an advisor lands on cold.
   const [forms, defaultSections, prefill, portalEnabled] = await Promise.all([
     // Only forms in the caller's book.
-    resolveVisibleAdvisorIds(userId, orgRole, orgId).then((visible) => listFormsForFirm(orgId, visible)),
+    resolveVisibleAdvisorIds(userId, orgRole, orgId).then((visible) =>
+      listFormsForFirm(orgId, visible, userId, orgRole),
+    ),
     loadAdvisorDefaultSections(orgId, userId),
     clientId ? findClientRecipient(clientId, orgId, { userId, orgRole }) : null,
     // Gates the pre-filled send, which is delivered as a portal invite. The

@@ -4,7 +4,7 @@ import { clients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { UnauthorizedError } from "@/lib/db-helpers";
 import { ForbiddenError } from "@/lib/authz";
-import { resolveVisibleAdvisorIds, VISIBLE_ALL } from "@/lib/visibility";
+import { hidesPrivateClient, resolveVisibleAdvisorIds, VISIBLE_ALL } from "@/lib/visibility";
 import { resolveSharedClientAccess, type SharePermission } from "./shared-access";
 
 export type Principal = {
@@ -22,6 +22,8 @@ async function principalFromSession(): Promise<Principal | null> {
 
 // Can this principal see this advisor's client? Admin/owner → always.
 // Staff → their mapped set. Advisor in a siloed firm → only their own advisorId.
+// Advisor-level only: a client row goes through callerMaySeeClient, which adds
+// the Private rule.
 export async function callerMaySeeAdvisor(
   p: Principal,
   advisorId: string,
@@ -30,6 +32,16 @@ export async function callerMaySeeAdvisor(
   const visible = await resolveVisibleAdvisorIds(p.userId, p.orgRole ?? undefined, firmId);
   if (visible === VISIBLE_ALL) return true;
   return visible.has(advisorId);
+}
+
+// The own-firm rule for one client: in the caller's book, and not a
+// colleague's Private client. Shares are resolved separately by the callers.
+async function callerMaySeeClient(
+  p: Principal,
+  client: { advisorId: string; firmId: string; isPrivate: boolean },
+): Promise<boolean> {
+  if (hidesPrivateClient(p, client)) return false;
+  return callerMaySeeAdvisor(p, client.advisorId, client.firmId);
 }
 
 export type ClientAccessCheck =
@@ -47,13 +59,13 @@ export async function verifyClientAccessFor(
   clientId: string,
 ): Promise<ClientAccessCheck> {
   const [client] = await db
-    .select({ advisorId: clients.advisorId, firmId: clients.firmId })
+    .select({ advisorId: clients.advisorId, firmId: clients.firmId, isPrivate: clients.isPrivate })
     .from(clients)
     .where(eq(clients.id, clientId));
   if (!client) return { ok: false };
 
   if (p.orgId && client.firmId === p.orgId) {
-    if (await callerMaySeeAdvisor(p, client.advisorId, client.firmId)) {
+    if (await callerMaySeeClient(p, client)) {
       return { ok: true, permission: "edit", firmId: client.firmId, access: "own" };
     }
     // fall through to share resolution (an intra-firm per-client share may grant access)
@@ -73,7 +85,8 @@ export async function verifyClientAccessFor(
 
 /**
  * Non-throwing client access check. Own-firm access depends on ownership,
- * admin/owner role, or (siloed firms) mapped staff visibility; a denied
+ * admin/owner role, or (siloed firms) mapped staff visibility, and on the
+ * Private rule (`hidesPrivateClient`); a denied
  * own-firm caller still falls through to the cross-org share resolver, since
  * an intra-firm per-client share can grant access a siloed book would
  * otherwise deny. Read handlers gate on `ok`; mutation handlers additionally
@@ -100,9 +113,10 @@ export type ClientAccess = {
  *
  * Cross-org callers get access via `clientShares`; own-firm callers pass when
  * they own the client, hold an admin/owner role, or (siloed firms) are mapped
- * staff, and always receive `permission: "edit"`. A denied own-firm caller
- * falls through to the share resolver below rather than throwing immediately,
- * since an intra-firm per-client share can still grant access.
+ * staff, subject to the Private rule (`hidesPrivateClient`), and always receive
+ * `permission: "edit"`. A denied own-firm caller falls through to the share
+ * resolver below rather than throwing immediately, since an intra-firm
+ * per-client share can still grant access.
  */
 export async function requireClientAccess(clientId: string): Promise<ClientAccess> {
   const p = await principalFromSession();
@@ -112,9 +126,9 @@ export async function requireClientAccess(clientId: string): Promise<ClientAcces
   const [client] = await db.select().from(clients).where(eq(clients.id, clientId));
   if (!client) throw new ForbiddenError("Client not found or access denied");
 
-  // Own-firm path: ownership/admin/silo rules, full edit.
+  // Own-firm path: ownership/admin/silo/Private rules, full edit.
   if (p.orgId && client.firmId === p.orgId) {
-    if (await callerMaySeeAdvisor(p, client.advisorId, client.firmId)) {
+    if (await callerMaySeeClient(p, client)) {
       return { client, firmId: client.firmId, permission: "edit", access: "own" };
     }
     // fall through to share resolution (an intra-firm per-client share may grant access)

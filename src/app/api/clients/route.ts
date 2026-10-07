@@ -12,6 +12,7 @@ import {
   resolveVisibleAdvisorIds,
   advisorScopeCondition,
   applyBookSwitcher,
+  privateClientFilter,
 } from "@/lib/visibility";
 import { resolveSharesForRecipient } from "@/lib/clients/shared-access";
 import { resolveActors } from "@/lib/activity/resolve-actors";
@@ -47,6 +48,7 @@ export async function GET(request: NextRequest) {
     const viewAsAdvisorId = request.nextUrl.searchParams.get("advisor");
     visible = applyBookSwitcher(visible, orgRole, viewAsAdvisorId);
     const scope = advisorScopeCondition(clients.advisorId, visible);
+    const privacy = privateClientFilter(userId ?? "", orgRole);
 
     // Single share-map expansion — used for both the inArray filter and tagging.
     const details = await resolveSharesForRecipient(userId ?? "");
@@ -81,7 +83,7 @@ export async function GET(request: NextRequest) {
         and(
           isNull(crmHouseholds.deletedAt),
           or(
-            and(eq(clients.firmId, firmId), ...(scope ? [scope] : [])),
+            and(eq(clients.firmId, firmId), ...(scope ? [scope] : []), privacy),
             sharedIds.length ? inArray(clients.id, sharedIds) : sql`false`,
           ),
         ),
