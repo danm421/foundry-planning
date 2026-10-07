@@ -214,6 +214,42 @@ const handler = createMcpHandler(
 );
 
 /**
+ * Most JSON-RPC messages one POST may carry. Protocol 2025-06-18 dropped
+ * batching, but the installed SDK still serves 2025-03-26 and 2024-11-05
+ * clients (and assumes 2025-03-26 when a request names no version), and those
+ * revisions allow a batch — so a small batch keeps working rather than being
+ * refused outright. Anything larger is refused whole, before any message
+ * reaches the transport, the rate limiter or a tool.
+ */
+const MAX_BATCH_MESSAGES = 10;
+
+async function batchCappedHandler(req: Request): Promise<Response> {
+  if (req.method === "POST") {
+    let body: unknown;
+    try {
+      // A clone, so the transport still reads the untouched body below.
+      body = await req.clone().json();
+    } catch {
+      // Not JSON: the transport answers it exactly as it always has.
+    }
+    if (Array.isArray(body) && body.length > MAX_BATCH_MESSAGES) {
+      return Response.json(
+        {
+          jsonrpc: "2.0",
+          error: {
+            code: -32600,
+            message: `Invalid Request: a batch may carry at most ${MAX_BATCH_MESSAGES} messages`,
+          },
+          id: null,
+        },
+        { status: 400 },
+      );
+    }
+  }
+  return handler(req);
+}
+
+/**
  * Verify the bearer token and resolve the caller. `resolveMcpPrincipal` takes
  * the token alone (D2) — the request object is never passed in, so nothing
  * request-controlled can reach the verifier.
@@ -283,7 +319,7 @@ export const verifyToken = async (_req: Request, bearerToken?: string): Promise<
  * via `bearerAuthChallengeResponse`, i.e. refused (403) with the identical
  * `WWW-Authenticate` + `resource_metadata` challenge, never silently passed.
  */
-const authHandler = withMcpAuth(handler, verifyToken, {
+const authHandler = withMcpAuth(batchCappedHandler, verifyToken, {
   required: true,
   resourceMetadataPath: "/.well-known/oauth-protected-resource",
   requiredScopes: ["user:org:read"],

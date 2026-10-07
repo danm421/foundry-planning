@@ -65,6 +65,7 @@ vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn().mockResolvedValue(undefined
 
 import { POST } from "../route";
 import { ALL_MCP_TOOLS } from "@/domain/mcp/tools";
+import { checkMcpRateLimit } from "@/lib/rate-limit";
 
 // Same dev-instance fixture principal.test.ts uses.
 const PUBLISHABLE_KEY = "pk_test_YXNzdXJpbmctbW9ua2Zpc2gtOTQuY2xlcmsuYWNjb3VudHMuZGV2JA";
@@ -160,7 +161,18 @@ async function readMcpResponse(
   return { status: res.status, json: dataLine ? JSON.parse(dataLine) : null };
 }
 
+/** Every JSON-RPC message in an SSE body, in arrival order — a batch gets one per request. */
+async function readAllSseMessages(res: Response): Promise<Array<McpJsonRpcResponse & { id: number }>> {
+  return (await res.text())
+    .split("\n")
+    .filter((l) => l.startsWith("data:"))
+    .map((l) => l.slice("data:".length).trim())
+    .filter((s) => s.length > 0)
+    .map((s) => JSON.parse(s));
+}
+
 beforeEach(() => {
+  vi.mocked(checkMcpRateLimit).mockClear();
   h.getOrganizationMembershipList.mockReset();
   h.getOrganizationMembershipList.mockResolvedValue(membership("org:member"));
   searchHouseholds.mockReset().mockResolvedValue([
@@ -304,6 +316,59 @@ describe("route.ts auth/wiring boundary, driven over the real authHandler (F3, C
       const { status, json } = await readMcpResponse(res);
       expect(status).toBe(200);
       expect(json?.result?.tools).toHaveLength(ALL_MCP_TOOLS.length);
+    });
+  });
+
+  describe("JSON-RPC batches are held to a handful of messages per request", () => {
+    function batchOf(count: number, method: "tools/call" | "tools/list") {
+      return Array.from({ length: count }, (_, i) => ({
+        jsonrpc: "2.0",
+        id: i + 1,
+        method,
+        params: method === "tools/call" ? { name: "search_clients", arguments: { query: "smith" } } : {},
+      }));
+    }
+
+    it.each(["tools/call", "tools/list"] as const)(
+      "refuses a 100-message %s batch with one Invalid Request error before any message runs",
+      async (method) => {
+        const res = await POST(mcpRequest(batchOf(100, method), { auth: `Bearer ${await mintToken()}` }));
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({
+          jsonrpc: "2.0",
+          error: { code: -32600, message: expect.stringMatching(/batch/i) },
+          id: null,
+        });
+        expect(checkMcpRateLimit).not.toHaveBeenCalled();
+        expect(searchHouseholds).not.toHaveBeenCalled();
+      },
+    );
+
+    it("still answers every message of a 10-message batch, each through the rate limiter", async () => {
+      const res = await POST(mcpRequest(batchOf(10, "tools/call"), { auth: `Bearer ${await mintToken()}` }));
+      expect(res.status).toBe(200);
+      const messages = await readAllSseMessages(res);
+      expect(messages.map((m) => m.id).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+      expect(messages.every((m) => m.result?.isError !== true)).toBe(true);
+      expect(checkMcpRateLimit).toHaveBeenCalledTimes(10);
+      expect(searchHouseholds).toHaveBeenCalledTimes(10);
+    });
+
+    it("leaves a body that is not JSON to the transport's own parse error", async () => {
+      const res = await POST(
+        new Request("https://x.test/api/mcp", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json, text/event-stream",
+            authorization: `Bearer ${await mintToken()}`,
+          },
+          body: "[not json",
+        }),
+      );
+      expect(res.status).toBe(400);
+      expect((await res.json()).error.code).toBe(-32700);
+      expect(searchHouseholds).not.toHaveBeenCalled();
     });
   });
 });
