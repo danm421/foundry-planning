@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useId, useRef, useState } from "react";
-import type { IntakeFormRow } from "@/lib/intake/queries";
+import type { QueueForm } from "@/lib/intake/queue-form";
 import { ChevronRightIcon } from "@/components/icons";
 import { STATUS_META } from "./status-meta";
 
@@ -11,7 +11,7 @@ export type QueueDateColumn = "sent" | "accessed" | "completed" | "closed";
 
 export interface QueueGroup {
   label: string;
-  forms: IntakeFormRow[];
+  forms: QueueForm[];
   /**
    * Date columns this bucket shows, left to right. Required, not defaulted:
    * which dates matter is a property of the bucket, and a silent default would
@@ -50,7 +50,7 @@ function formatDate(d: Date | null | undefined): string {
 // Who the form is FOR, which is `clientId` — not `mode`. A blank form can be
 // addressed to someone already on the roster (its answers merge onto their
 // plan), so reading the recipient off the mode would label those "Prospect".
-const recipientLabel = (form: IntakeFormRow): "Client" | "Prospect" =>
+const recipientLabel = (form: QueueForm): "Client" | "Prospect" =>
   form.clientId ? "Client" : "Prospect";
 
 /**
@@ -58,7 +58,7 @@ const recipientLabel = (form: IntakeFormRow): "Client" | "Prospect" =>
  * column — so its single date stays status-aware. This is the last of the old
  * per-status `at()` map: the other buckets now name their dates outright.
  */
-function closedAt(f: IntakeFormRow): Date | null {
+function closedAt(f: QueueForm): Date | null {
   switch (f.status) {
     case "applied":
       return f.appliedAt ?? f.submittedAt ?? f.createdAt;
@@ -78,7 +78,7 @@ function closedAt(f: IntakeFormRow): Date | null {
  */
 const DATE_COLUMNS: Record<
   QueueDateColumn,
-  { header: string; at: (f: IntakeFormRow) => Date | null }
+  { header: string; at: (f: QueueForm) => Date | null }
 > = {
   sent: { header: "Sent", at: (f) => f.sentAt ?? f.createdAt },
   accessed: { header: "Accessed", at: (f) => f.openedAt },
@@ -236,7 +236,7 @@ function ColumnHeader({ columns }: { columns: QueueDateColumn[] }) {
  * survives it, so three hidden dates would leave three gaps of dead width at
  * 390px. Padding leaves with the cell it's on.
  */
-function DateCell({ column, form }: { column: QueueDateColumn; form: IntakeFormRow }) {
+function DateCell({ column, form }: { column: QueueDateColumn; form: QueueForm }) {
   const { header, at } = DATE_COLUMNS[column];
   const value = at(form);
 
@@ -265,7 +265,7 @@ function FormRow({
   remindable,
   lastRemindedAt,
 }: {
-  form: IntakeFormRow;
+  form: QueueForm;
   columns: QueueDateColumn[];
   remindable?: boolean;
   lastRemindedAt?: Date;
@@ -340,7 +340,7 @@ function RemindCell({
   form,
   lastRemindedAt,
 }: {
-  form: IntakeFormRow;
+  form: QueueForm;
   lastRemindedAt?: Date;
 }) {
   // One request state, not a `busy` flag beside an `error` string: those two are

@@ -4,6 +4,7 @@ import { requireOrgAndUser } from "@/lib/db-helpers";
 import { currentUserHasClientPortal } from "@/lib/authz";
 import { findClientRecipient } from "@/lib/client-search";
 import { listFormsForFirm, loadAdvisorDefaultSections } from "@/lib/intake/queries";
+import { toQueueForm } from "@/lib/intake/queue-form";
 import { loadLastRemindedAt } from "@/lib/intake/reminders";
 import { resolveVisibleAdvisorIds } from "@/lib/visibility";
 import Queue, { type QueueGroup } from "@/components/intake/admin/queue";
@@ -53,7 +54,7 @@ export default async function DataCollectionPage({
   const groups: QueueGroup[] = [
     {
       label: "In flight",
-      forms: inFlight,
+      forms: inFlight.map(toQueueForm),
       // The chasing question: did they get it, and did they look? Sent alone
       // can't tell an ignored invite from one that's half-filled.
       dateColumns: ["sent", "accessed"],
@@ -63,7 +64,7 @@ export default async function DataCollectionPage({
     },
     {
       label: "Needs review",
-      forms: forms.filter((f) => f.status === "submitted"),
+      forms: forms.filter((f) => f.status === "submitted").map(toQueueForm),
       // Adds Completed — how long the whole round trip took, and how stale the
       // answers are by the time you open them.
       dateColumns: ["sent", "accessed", "completed"],
@@ -73,7 +74,7 @@ export default async function DataCollectionPage({
       label: "History",
       forms: forms.filter(
         (f) => f.status === "applied" || f.status === "discarded" || f.status === "expired",
-      ),
+      ).map(toQueueForm),
       // One date: this is the record, and the only question it answers is when
       // the form left the queue. Which timestamp that is varies by end state.
       dateColumns: ["closed"],
