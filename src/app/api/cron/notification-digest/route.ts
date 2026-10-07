@@ -23,6 +23,8 @@ import {
   type PendingRow,
 } from "@/lib/notifications/digest";
 import { sendDigestEmail } from "@/lib/notifications/email";
+import { memberUserIdsForOrg } from "@/lib/clerk-org-members";
+import { isMissingOrganizationError } from "@/lib/ops/growth/clerk-errors";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -43,6 +45,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const pending = await db
     .select({
       id: notifications.id,
+      firmId: notifications.firmId,
       userId: notifications.userId,
       category: notifications.category,
       title: notifications.title,
@@ -61,13 +64,38 @@ export async function GET(req: NextRequest): Promise<Response> {
     return NextResponse.json({ ok: true, usersEmailed: 0, rowsEmailed: 0, usersFailed: 0 });
   }
 
+  // Only a current member of a row's firm may receive it. Membership is read
+  // live from Clerk, once per firm: a removed advisor still owns their old
+  // households, so new alerts keep being addressed to them. Their rows are
+  // unflagged, never sent. A firm whose member list can't be read has no entry
+  // and is held back whole until a later run (fail closed).
+  const cc = await clerkClient();
+  const membersByFirm = new Map<string, Set<string>>();
+  for (const firmId of new Set(pending.map((r) => r.firmId))) {
+    try {
+      membersByFirm.set(firmId, new Set(await memberUserIdsForOrg(cc, firmId)));
+    } catch (err) {
+      // An organization that no longer exists has no members.
+      if (isMissingOrganizationError(err)) membersByFirm.set(firmId, new Set());
+      else console.error(`[notification-digest] member list unreadable for firm ${firmId}:`, err);
+    }
+  }
+  const isMember = (r: (typeof pending)[number]) => membersByFirm.get(r.firmId)?.has(r.userId);
+  const revokedIds = pending.filter((r) => isMember(r) === false).map((r) => r.id);
+  if (revokedIds.length > 0) {
+    await db
+      .update(notifications)
+      .set({ emailPending: false })
+      .where(inArray(notifications.id, revokedIds));
+  }
+  const deliverable = pending.filter((r) => isMember(r) === true);
+
   // There is no local users table — email and display name live in Clerk.
   // Batched lookups, not one call per advisor. Clerk caps the userId filter
   // at 100 per call (UserApi.d.ts), so page rather than sending them all at
   // once -- unpaged, a night with >100 distinct advisors 422s the whole run.
   const CLERK_USER_ID_PAGE = 100;
-  const userIds = Array.from(new Set(pending.map((r) => r.userId)));
-  const cc = await clerkClient();
+  const userIds = Array.from(new Set(deliverable.map((r) => r.userId)));
   const identity = new Map<string, { email: string; displayName: string | null }>();
   for (let i = 0; i < userIds.length; i += CLERK_USER_ID_PAGE) {
     const page = userIds.slice(i, i + CLERK_USER_ID_PAGE);
@@ -80,7 +108,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     }
   }
 
-  const rows: PendingRow[] = pending.map((r) => ({
+  const rows: PendingRow[] = deliverable.map((r) => ({
     ...r,
     email: identity.get(r.userId)?.email ?? "",
     displayName: identity.get(r.userId)?.displayName ?? null,
@@ -130,5 +158,6 @@ export async function GET(req: NextRequest): Promise<Response> {
     rowsEmailed,
     usersFailed,
     rowsUndeliverable: undeliverableIds.length,
+    rowsRevoked: revokedIds.length,
   });
 }

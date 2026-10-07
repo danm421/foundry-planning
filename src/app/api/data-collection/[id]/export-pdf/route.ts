@@ -9,7 +9,7 @@ import type { DocumentProps } from "@react-pdf/renderer";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { checkExportPdfRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
-import { loadFormForFirm } from "@/lib/intake/queries";
+import { loadFormForCaller } from "@/lib/intake/form-access";
 import { listIntakeDocuments } from "@/lib/intake/documents";
 import { intakeSubmitSchemaFor } from "@/lib/intake/schema";
 import { sectionsForForm } from "@/lib/intake/sections";
@@ -37,7 +37,7 @@ export async function POST(
       return rateLimitErrorResponse(rl, "Too many PDF exports. Please wait a moment and try again.");
     }
 
-    const form = await loadFormForFirm(id, orgId);
+    const form = await loadFormForCaller(id, orgId);
     if (!form) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     // `submittedAt`, not a status list — the same predicate the review page

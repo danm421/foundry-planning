@@ -19,6 +19,7 @@ import type { ClientRiskProfileEventRow } from "@/db/schema";
 import {
   resolveVisibleAdvisorIds,
   advisorScopeCondition,
+  privateClientFilter,
   applyBookSwitcher,
 } from "@/lib/visibility";
 import { RISK_LEVEL_LABELS, type RiskLevel } from "@/lib/risk-levels";
@@ -95,6 +96,8 @@ export async function listRiskProfiles(opts?: {
     isNull(crmHouseholds.deletedAt),
   ];
   if (scope) conditions.push(scope);
+  const privacy = privateClientFilter(userId ?? "", orgRole);
+  if (privacy) conditions.push(privacy);
 
   const rows = await db
     .select({

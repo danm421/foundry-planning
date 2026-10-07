@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { findClientRecipient } from "@/lib/client-search";
 import { canLinkToClient } from "@/lib/intake/link-client";
-import { loadFormForFirm } from "@/lib/intake/queries";
+import { loadFormForCaller } from "@/lib/intake/form-access";
 import { findIntakeHousehold, listIntakeDocuments } from "@/lib/intake/documents";
 import { intakeSubmitSchemaFor } from "@/lib/intake/schema";
 import { sectionsForForm } from "@/lib/intake/sections";
@@ -29,7 +29,7 @@ export default async function DataCollectionReviewPage({ params, searchParams }:
   const { orgId, userId } = await requireOrgAndUser();
   const { orgRole } = await auth();
 
-  const form = await loadFormForFirm(id, orgId);
+  const form = await loadFormForCaller(id, orgId);
   if (!form) notFound();
 
   const sections = sectionsForForm(form.sections);

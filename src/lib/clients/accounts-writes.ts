@@ -56,6 +56,7 @@ import { verifyClientAccess } from "@/lib/clients/authz";
 import {
   assertAccountsInClient,
   assertEntitiesInClient,
+  assertFamilyMembersInClient,
   assertModelPortfoliosInFirm,
   assertTickerPortfoliosInFirm,
 } from "@/lib/db-scoping";
@@ -100,6 +101,28 @@ function accountDesignationsWhere(clientId: string, accountId: string) {
     eq(beneficiaryDesignations.targetKind, "account"),
     eq(beneficiaryDesignations.accountId, accountId),
   );
+}
+
+/**
+ * A 529's grantor and beneficiary are household members, and its rollover
+ * target is a household account. The DB foreign keys only check that the rows
+ * exist, so each one is held to `clientId` here. Absent keys are skipped,
+ * which suits a partial update.
+ */
+type Refs529 = {
+  grantorFamilyMemberId?: string | null;
+  beneficiaryFamilyMemberId?: string | null;
+  rothRolloverAccountId?: string | null;
+};
+
+async function check529RefsInClient(clientId: string, refs: Refs529): Promise<string | null> {
+  const people = await assertFamilyMembersInClient(clientId, [
+    refs.grantorFamilyMemberId,
+    refs.beneficiaryFamilyMemberId,
+  ]);
+  if (!people.ok) return people.reason;
+  const rollover = await assertAccountsInClient(clientId, [refs.rothRolloverAccountId]);
+  return rollover.ok ? null : rollover.reason;
 }
 
 function designationRows(clientId: string, accountId: string, defaults: DefaultDesignation[]) {
@@ -185,6 +208,9 @@ export async function createAccountForClient(args: {
 
   const tpCheck = await assertTickerPortfoliosInFirm(firmId, [p.tickerPortfolioId]);
   if (!tpCheck.ok) return writeError(400, tpCheck.reason);
+
+  const refsError = await check529RefsInClient(clientId, p);
+  if (refsError) return writeError(400, refsError);
 
   // parentAccountId may be set on any category. Verify the referenced row is in
   // this client AND is a business account — the DB FK only checks existence.
@@ -449,6 +475,8 @@ export async function updateAccountForClient(args: {
     const c = await assertTickerPortfoliosInFirm(firmId, [safeUpdate.tickerPortfolioId as string | null]);
     if (!c.ok) return writeError(400, c.reason);
   }
+  const refsError = await check529RefsInClient(clientId, safeUpdate as Refs529);
+  if (refsError) return writeError(400, refsError);
 
   const [before] = await db
     .select()

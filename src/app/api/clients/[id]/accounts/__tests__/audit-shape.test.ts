@@ -13,6 +13,8 @@ vi.mock("@/lib/db-scoping", () => ({
   assertEntitiesInClient: vi.fn().mockResolvedValue({ ok: true }),
   assertModelPortfoliosInFirm: vi.fn().mockResolvedValue({ ok: true }),
   assertTickerPortfoliosInFirm: vi.fn().mockResolvedValue({ ok: true }),
+  assertAccountsInClient: vi.fn().mockResolvedValue({ ok: true }),
+  assertFamilyMembersInClient: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 vi.mock("@/lib/audit", async () => {

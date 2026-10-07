@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { crmDocumentFolders, crmHouseholdDocuments } from "@/db/schema";
 import { collectFolderSubtreeIds } from "@/lib/crm/folder-tree";
+import { isReservedFolderName } from "@/lib/crm/folders";
 import { recordCreate, recordUpdate, recordDelete } from "@/lib/audit/record-helpers";
 import type { EntitySnapshot, FieldLabels } from "@/lib/audit/types";
 import {
@@ -28,6 +29,8 @@ const FOLDER_FIELD_LABELS: FieldLabels = {
   name: { label: "Name", format: "text" },
   parentFolderId: { label: "Parent folder", format: "reference" },
 };
+
+const RESERVED_NAME_ERROR = "That folder name is reserved. Choose a different name.";
 
 async function requireFolderInSubtree(ctx: PortalVaultContext, folderId: string) {
   assertInSubtree(ctx.subtree, folderId);
@@ -65,6 +68,7 @@ export async function createPortalFolder(
   assertInSubtree(ctx.subtree, parent);
   const name = input.name.trim();
   if (!name) throw new Error("Folder name is required");
+  if (isReservedFolderName(name)) throw new Error(RESERVED_NAME_ERROR);
   const [folder] = await db.insert(crmDocumentFolders).values({
     householdId: ctx.householdId,
     firmId: ctx.firmId,
@@ -99,6 +103,7 @@ export async function updatePortalFolder(
   if (patch.name !== undefined) {
     const name = patch.name.trim();
     if (!name) throw new Error("Folder name is required");
+    if (isReservedFolderName(name)) throw new Error(RESERVED_NAME_ERROR);
     updates.name = name; before.name = folder.name; after.name = name;
   }
   if (patch.parentFolderId !== undefined) {

@@ -41,7 +41,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     const r = portalVaultErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
     const msg = err instanceof Error ? err.message : "error";
-    if (/required|cycle/i.test(msg)) return NextResponse.json({ error: msg }, { status: 400 });
+    if (/required|cycle|reserved/i.test(msg)) return NextResponse.json({ error: msg }, { status: 400 });
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

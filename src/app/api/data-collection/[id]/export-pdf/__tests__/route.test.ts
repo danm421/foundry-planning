@@ -22,8 +22,8 @@ const rateLimitMocks = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/rate-limit", () => rateLimitMocks);
 
-const loadFormForFirmMock = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/intake/queries", () => ({ loadFormForFirm: loadFormForFirmMock }));
+const loadFormMock = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/intake/form-access", () => ({ loadFormForCaller: loadFormMock }));
 
 vi.mock("@/lib/intake/documents", () => ({ listIntakeDocuments: vi.fn().mockResolvedValue([]) }));
 
@@ -81,7 +81,7 @@ beforeEach(() => {
   subscriptionMock.mockResolvedValue(undefined);
   rateLimitMocks.checkExportPdfRateLimit.mockResolvedValue({ allowed: true });
   renderToBufferMock.mockResolvedValue(Buffer.from("%PDF-1.4 fake"));
-  loadFormForFirmMock.mockResolvedValue(submittedForm());
+  loadFormMock.mockResolvedValue(submittedForm());
 });
 
 describe("POST /api/data-collection/[id]/export-pdf", () => {
@@ -94,7 +94,7 @@ describe("POST /api/data-collection/[id]/export-pdf", () => {
     );
     expect(Buffer.from(await res.arrayBuffer()).toString()).toBe("%PDF-1.4 fake");
 
-    expect(loadFormForFirmMock).toHaveBeenCalledWith("form-1", "firm-1");
+    expect(loadFormMock).toHaveBeenCalledWith("form-1", "firm-1");
     expect(recordAuditMock).toHaveBeenCalledWith({
       action: "intake.form.export_pdf",
       resourceType: "intake_form",
@@ -122,21 +122,21 @@ describe("POST /api/data-collection/[id]/export-pdf", () => {
   });
 
   it("works for a discarded form too — the answers still came back", async () => {
-    loadFormForFirmMock.mockResolvedValue(submittedForm({ status: "discarded", clientId: null }));
+    loadFormMock.mockResolvedValue(submittedForm({ status: "discarded", clientId: null }));
     const res = await post();
     expect(res.status).toBe(200);
     expect(recordAuditMock).toHaveBeenCalledWith(expect.objectContaining({ clientId: null }));
   });
 
   it("404s a form outside the caller's firm", async () => {
-    loadFormForFirmMock.mockResolvedValue(null);
+    loadFormMock.mockResolvedValue(null);
     const res = await post();
     expect(res.status).toBe(404);
     expect(renderToBufferMock).not.toHaveBeenCalled();
   });
 
   it("409s a form the client has not submitted", async () => {
-    loadFormForFirmMock.mockResolvedValue(submittedForm({ status: "draft", submittedAt: null, payload: {} }));
+    loadFormMock.mockResolvedValue(submittedForm({ status: "draft", submittedAt: null, payload: {} }));
     const res = await post();
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "This form hasn't been submitted yet." });
@@ -144,7 +144,7 @@ describe("POST /api/data-collection/[id]/export-pdf", () => {
   });
 
   it("422s a stored payload the submit schema cannot read", async () => {
-    loadFormForFirmMock.mockResolvedValue(submittedForm({ payload: { family: { primary: {} } } }));
+    loadFormMock.mockResolvedValue(submittedForm({ payload: { family: { primary: {} } } }));
     const res = await post();
     expect(res.status).toBe(422);
     expect(recordAuditMock).not.toHaveBeenCalled();
@@ -155,7 +155,7 @@ describe("POST /api/data-collection/[id]/export-pdf", () => {
     rateLimitMocks.rateLimitErrorResponse.mockReturnValue(new Response(null, { status: 429 }));
     const res = await post();
     expect(res.status).toBe(429);
-    expect(loadFormForFirmMock).not.toHaveBeenCalled();
+    expect(loadFormMock).not.toHaveBeenCalled();
   });
 
   it("refuses a firm without an active subscription", async () => {
@@ -164,6 +164,6 @@ describe("POST /api/data-collection/[id]/export-pdf", () => {
     subscriptionMock.mockRejectedValue(err);
     const res = await post();
     expect(res.status).toBe(403);
-    expect(loadFormForFirmMock).not.toHaveBeenCalled();
+    expect(loadFormMock).not.toHaveBeenCalled();
   });
 });

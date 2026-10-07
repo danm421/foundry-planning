@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import * as Sentry from "@sentry/nextjs";
 import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import {
   clerkEvents,
   firms,
+  notificationPreferences,
+  notifications,
   subscriptions,
   tosAcceptances,
 } from "@/db/schema";
@@ -100,6 +102,28 @@ async function syncSeatQuantity(firmId: string): Promise<void> {
 }
 
 /**
+ * A removed member gets no more of the firm's alert emails: drop their alert
+ * preferences in that firm (email opt-ins, digest cadence) and unflag their
+ * unsent emails. The in-app rows stay; they can no longer open the inbox.
+ */
+async function stopAlertEmailsFor(firmId: string, userId: string): Promise<void> {
+  await db
+    .delete(notificationPreferences)
+    .where(and(eq(notificationPreferences.firmId, firmId), eq(notificationPreferences.userId, userId)));
+  await db
+    .update(notifications)
+    .set({ emailPending: false })
+    .where(
+      and(
+        eq(notifications.firmId, firmId),
+        eq(notifications.userId, userId),
+        eq(notifications.emailPending, true),
+        isNull(notifications.emailedAt),
+      ),
+    );
+}
+
+/**
  * Resolve the user's primary email from a Clerk user.created payload. Prefers
  * the address flagged primary_email_address_id; falls back to the first entry.
  * Returns null when no usable address is present.
@@ -130,6 +154,9 @@ export async function dispatchClerkMembership(
     const isNew = await claimSvixDelivery(svixId, t);
     if (!isNew) {
       return NextResponse.json({ ok: true, skipped_duplicate: t }, { status: 200 });
+    }
+    if (t === "organizationMembership.deleted") {
+      await stopAlertEmailsFor(firmId, userId);
     }
     await syncSeatQuantity(firmId);
     // Pin the first admin as the firm's billing contact if none is set yet.

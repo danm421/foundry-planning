@@ -11,12 +11,13 @@ import {
 import { and, desc, eq, ilike, inArray, isNull, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import { containsPattern } from "@/lib/like-pattern";
 import { requireOrgId } from "@/lib/db-helpers";
-import { requireCrmHouseholdAccess } from "./authz";
+import { findVisibleCrmHousehold, requireCrmHouseholdAccess } from "./authz";
 import { auth } from "@clerk/nextjs/server";
 import {
   resolveVisibleAdvisorIds,
   advisorScopeCondition,
   applyBookSwitcher,
+  privateHouseholdFilter,
 } from "@/lib/visibility";
 import { recordAudit } from "@/lib/audit";
 import { recordDelete } from "@/lib/audit/record-helpers";
@@ -107,6 +108,7 @@ export async function listCrmHouseholds(opts?: {
   visible = applyBookSwitcher(visible, orgRole, opts?.viewAsAdvisorId);
   const scope = advisorScopeCondition(crmHouseholds.advisorId, visible);
   if (scope) conditions.push(scope);
+  conditions.push(privateHouseholdFilter(firmId, userId ?? "", orgRole));
 
   return db.query.crmHouseholds.findMany({
     where: and(...conditions),
@@ -176,6 +178,7 @@ export async function listRecentlyOpenedHouseholds(opts: {
   visible = applyBookSwitcher(visible, orgRole, opts.viewAsAdvisorId);
   const scope = advisorScopeCondition(crmHouseholds.advisorId, visible);
   if (scope) conditions.push(scope);
+  conditions.push(privateHouseholdFilter(firmId, callerId ?? "", orgRole));
 
   const rows = await db.query.crmHouseholds.findMany({
     where: and(...conditions),
@@ -212,14 +215,36 @@ export async function recordHouseholdOpen(householdId: string, userId: string) {
     });
 }
 
+/** Id and name of the caller's live households, by name: the task form's household picker. */
+export async function listHouseholdPickerOptions(
+  firmId: string,
+  userId: string,
+  orgRole: string | null | undefined,
+) {
+  const visible = await resolveVisibleAdvisorIds(userId, orgRole, firmId);
+  return db
+    .select({ id: crmHouseholds.id, name: crmHouseholds.name })
+    .from(crmHouseholds)
+    .where(
+      and(
+        eq(crmHouseholds.firmId, firmId),
+        isNull(crmHouseholds.deletedAt),
+        advisorScopeCondition(crmHouseholds.advisorId, visible),
+        privateHouseholdFilter(firmId, userId, orgRole),
+      ),
+    )
+    .orderBy(crmHouseholds.name);
+}
+
 export async function getCrmHousehold(id: string) {
-  const firmId = await requireOrgId();
+  const access = await findVisibleCrmHousehold(id);
+  if (!access) return undefined;
   const household = await db.query.crmHouseholds.findFirst({
-    where: and(eq(crmHouseholds.id, id), eq(crmHouseholds.firmId, firmId)),
+    where: and(eq(crmHouseholds.id, id), eq(crmHouseholds.firmId, access.orgId)),
     with: {
       contacts: true,
-      // NOT `documents`: this query is firm-scoped only, while every document
-      // endpoint goes through `requireVaultAccess`. Eager-loading the relation
+      // NOT `documents`: this query's gate is wider than `requireVaultAccess`,
+      // which every document endpoint goes through. Eager-loading the relation
       // handed a member denied on /documents the whole vault index — filenames,
       // descriptions, sizes and storage keys. The vault tab loads its own list.
       planningClient: {
@@ -298,8 +323,16 @@ function ownerDisplayName(o: {
   return "—";
 }
 
-export async function createCrmHousehold(input: CreateCrmHouseholdInput) {
-  const firmId = await requireOrgId();
+/**
+ * `opts.firmId` names the firm that owns the new household. Callers minting a
+ * household for an existing client pass that client's firm: the caller may be
+ * signed in to another firm through a share. Without it, the session's firm.
+ */
+export async function createCrmHousehold(
+  input: CreateCrmHouseholdInput,
+  opts: { firmId?: string } = {},
+) {
+  const firmId = opts.firmId ?? (await requireOrgId());
 
   // Insert the household and any inline contacts atomically, so a failed
   // contact insert never leaves an orphan household behind.
@@ -383,11 +416,9 @@ export async function updateCrmHousehold(
   id: string,
   patch: Partial<CreateCrmHouseholdInput>,
 ) {
-  const firmId = await requireOrgId();
-  const existing = await db.query.crmHouseholds.findFirst({
-    where: and(eq(crmHouseholds.id, id), eq(crmHouseholds.firmId, firmId)),
-  });
-  if (!existing) throw new Error("Household not found");
+  const access = await findVisibleCrmHousehold(id);
+  if (!access) throw new Error("Household not found");
+  const { household: existing, orgId: firmId } = access;
 
   // Resolve the name server-side. The client may send a `name`, but it only
   // counts when the household ends up locked — an unlocked household's name is

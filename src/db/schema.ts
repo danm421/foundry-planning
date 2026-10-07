@@ -1084,8 +1084,9 @@ export const clients = pgTable("clients", {
   // Advisor-stated willingness to take risk. Nullable; selects the firm's tagged
   // model portfolio for the scenario's taxable+retirement buckets.
   riskTolerance: riskLevelEnum("risk_tolerance"),
-  // Excludes this client from the owner's share-all grants. Default false
-  // (sweepable). An explicit per-client share is honored even when private.
+  // Visible inside the firm only to its advisor and firm admins
+  // (`hidesPrivateClient`), and excluded from the owner's share-all grants.
+  // Default false. An explicit per-client share is honored even when private.
   isPrivate: boolean("is_private").notNull().default(false),
   onboardingState: jsonb("onboarding_state").notNull().default({}),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),

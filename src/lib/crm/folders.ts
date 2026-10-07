@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { crmDocumentFolders, crmHouseholdDocuments } from "@/db/schema";
 import { and, asc, eq } from "drizzle-orm";
 import { requireVaultAccess } from "./authz";
+import { collectFolderSubtreeIds } from "./folder-tree";
 import { recordAudit } from "@/lib/audit";
 
 export const SYSTEM_FOLDERS = [
@@ -36,50 +37,51 @@ export async function ensureSystemFolders(householdId: string, firmId: string) {
   );
 }
 
-/** Find-or-create the household's "Transcripts" system folder. Idempotent on the
- *  specific folder (unlike ensureSystemFolders, which bails if ANY system folder
- *  exists — so it would skip backfilling Transcripts for pre-existing households). */
-export async function ensureTranscriptsFolder(
+/**
+ * Find-or-create a named system folder that advisor-side writers file into.
+ * Idempotent on the specific folder (unlike ensureSystemFolders, which bails if
+ * ANY system folder exists — so it would skip backfilling for pre-existing
+ * households).
+ *
+ * Only an advisor-owned system folder outside the "Shared with Client" subtree
+ * qualifies. The portal client can create and rename folders in that subtree,
+ * so matching on name alone would let a client-made "Meeting Prep" folder catch
+ * the advisor's internal briefs; a system folder moved into the subtree is
+ * passed over for the same reason. Oldest match wins, so the choice is stable.
+ */
+async function ensureNamedSystemFolder(
   householdId: string,
   firmId: string,
+  name: string,
 ): Promise<string> {
-  const existing = await db.query.crmDocumentFolders.findFirst({
-    where: and(
-      eq(crmDocumentFolders.householdId, householdId),
-      eq(crmDocumentFolders.name, "Transcripts"),
-    ),
-    columns: { id: true },
+  const folders = await db.query.crmDocumentFolders.findMany({
+    where: eq(crmDocumentFolders.householdId, householdId),
+    columns: { id: true, name: true, parentFolderId: true, sortOrder: true, isSystem: true, isPortalRoot: true },
+    orderBy: [asc(crmDocumentFolders.createdAt)],
   });
+  const portalRoot = folders.find((f) => f.isPortalRoot);
+  const shared = new Set(portalRoot ? collectFolderSubtreeIds(folders, portalRoot.id) : []);
+  const existing = folders.find((f) => f.name === name && f.isSystem && !shared.has(f.id));
   if (existing) return existing.id;
   const [folder] = await db
     .insert(crmDocumentFolders)
-    .values({ householdId, firmId, name: "Transcripts", isSystem: true })
+    .values({ householdId, firmId, name, isSystem: true })
     .returning({ id: crmDocumentFolders.id });
   return folder.id;
 }
 
+const TRANSCRIPTS_FOLDER_NAME = "Transcripts";
+
+/** Find-or-create the household's "Transcripts" system folder. */
+export function ensureTranscriptsFolder(householdId: string, firmId: string): Promise<string> {
+  return ensureNamedSystemFolder(householdId, firmId, TRANSCRIPTS_FOLDER_NAME);
+}
+
 export const MEETING_PREP_FOLDER_NAME = "Meeting Prep";
 
-/** Find-or-create the household's "Meeting Prep" system folder. Mirrors
- *  ensureTranscriptsFolder (idempotent on this specific folder, unlike
- *  ensureSystemFolders which bails if ANY system folder exists). */
-export async function ensureMeetingPrepFolder(
-  householdId: string,
-  firmId: string,
-): Promise<string> {
-  const existing = await db.query.crmDocumentFolders.findFirst({
-    where: and(
-      eq(crmDocumentFolders.householdId, householdId),
-      eq(crmDocumentFolders.name, MEETING_PREP_FOLDER_NAME),
-    ),
-    columns: { id: true },
-  });
-  if (existing) return existing.id;
-  const [folder] = await db
-    .insert(crmDocumentFolders)
-    .values({ householdId, firmId, name: MEETING_PREP_FOLDER_NAME, isSystem: true })
-    .returning({ id: crmDocumentFolders.id });
-  return folder.id;
+/** Find-or-create the household's "Meeting Prep" system folder. */
+export function ensureMeetingPrepFolder(householdId: string, firmId: string): Promise<string> {
+  return ensureNamedSystemFolder(householdId, firmId, MEETING_PREP_FOLDER_NAME);
 }
 
 export const PORTAL_SHARED_FOLDER_NAME = "Shared with Client";
@@ -115,30 +117,29 @@ export async function ensureSharedFolder(
 export const INTAKE_FOLDER_NAME = "Intake Documents";
 
 /** Find-or-create the household's "Intake Documents" system folder — where
- *  client-uploaded intake files land. Mirrors ensureMeetingPrepFolder
- *  (idempotent on this specific folder, unlike ensureSystemFolders which bails
- *  if ANY system folder exists).
+ *  client-uploaded intake files land.
  *
- *  Deliberately does NOT set isPortalRoot: that flag marks the subtree the
+ *  Never inside the isPortalRoot subtree: that flag marks the subtree the
  *  client portal can browse AND download from. Intake uploads are write-only to
  *  the client, so they must stay outside it. */
-export async function ensureIntakeFolder(
-  householdId: string,
-  firmId: string,
-): Promise<string> {
-  const existing = await db.query.crmDocumentFolders.findFirst({
-    where: and(
-      eq(crmDocumentFolders.householdId, householdId),
-      eq(crmDocumentFolders.name, INTAKE_FOLDER_NAME),
-    ),
-    columns: { id: true },
-  });
-  if (existing) return existing.id;
-  const [folder] = await db
-    .insert(crmDocumentFolders)
-    .values({ householdId, firmId, name: INTAKE_FOLDER_NAME, isSystem: true })
-    .returning({ id: crmDocumentFolders.id });
-  return folder.id;
+export function ensureIntakeFolder(householdId: string, firmId: string): Promise<string> {
+  return ensureNamedSystemFolder(householdId, firmId, INTAKE_FOLDER_NAME);
+}
+
+/**
+ * Folder names advisor-side writers file into by name. The portal refuses them
+ * for client-made folders, so a client's folder can never look like one.
+ */
+const RESERVED_FOLDER_NAMES: readonly string[] = [
+  MEETING_PREP_FOLDER_NAME,
+  TRANSCRIPTS_FOLDER_NAME,
+  INTAKE_FOLDER_NAME,
+];
+
+/** True when `name` matches a reserved folder name, ignoring case and spacing. */
+export function isReservedFolderName(name: string): boolean {
+  const n = name.trim().toLowerCase();
+  return RESERVED_FOLDER_NAMES.some((r) => r.toLowerCase() === n);
 }
 
 export async function listFolders(

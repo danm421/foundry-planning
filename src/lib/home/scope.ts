@@ -5,6 +5,7 @@ import {
   advisorScopeCondition,
   resolveVisibleAdvisorIds,
   applyBookSwitcher,
+  privateHouseholdFilter,
 } from "@/lib/visibility";
 import { AUM_ELIGIBLE_CATEGORIES } from "@/lib/accounts/aum";
 
@@ -17,8 +18,8 @@ export type HouseholdConditions = Awaited<
 
 /**
  * Household-scoped WHERE conditions shared by the KPI queries and the
- * household-derived feed sources: advisor visibility + firm + not-deleted +
- * active/prospect.
+ * household-derived feed sources: advisor visibility + the Private client rule
+ * + firm + not-deleted + active/prospect.
  *
  * `viewAsAdvisorId` is the admin book-switcher's narrowing param — honored
  * ONLY when `orgRole` is admin/owner (see `isFirmWideAdminRole`). A
@@ -41,6 +42,8 @@ export const visibleHouseholdConditions = cache(async function visibleHouseholdC
     inArray(crmHouseholds.status, ["active", "prospect"]),
   ];
   if (scope) conditions.push(scope);
+  const privacy = privateHouseholdFilter(firmId, userId, orgRole);
+  if (privacy) conditions.push(privacy);
   return conditions;
 });
 

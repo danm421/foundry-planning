@@ -1,4 +1,4 @@
-// @allow-firm-scope-exception — firm scoping enforced by loadFormForFirm(id, orgId); literal getOrgId/requireOrgId grep doesn't see it.
+// @allow-firm-scope-exception — firm and book scoping enforced by loadFormForCaller(id, orgId); literal getOrgId/requireOrgId grep doesn't see it.
 
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { intakeForms } from "@/db/schema";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { authErrorResponse } from "@/lib/authz";
-import { loadFormForFirm } from "@/lib/intake/queries";
+import { loadFormForCaller } from "@/lib/intake/form-access";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ export async function POST(
     const { orgId } = await requireOrgAndUser();
     const { id } = await ctx.params;
 
-    const form = await loadFormForFirm(id, orgId);
+    const form = await loadFormForCaller(id, orgId);
     if (!form) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }

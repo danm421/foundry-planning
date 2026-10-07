@@ -4,26 +4,51 @@ import { and, eq } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { auth } from "@clerk/nextjs/server";
 import { ForbiddenError } from "@/lib/authz";
-import { resolveVisibleAdvisorIds, VISIBLE_ALL } from "@/lib/visibility";
+import { hidesPrivateClient, resolveVisibleAdvisorIds, VISIBLE_ALL } from "@/lib/visibility";
 import { STAFF_ROLES } from "@/lib/capabilities";
 import type { Principal } from "@/lib/clients/authz";
 import { callerMaySeeAdvisor } from "@/lib/clients/authz";
 
+// The planning client's Private flag and owner, loaded with the household so
+// the household gates apply the same Private rule as the client gates.
+const planningClientPrivacy = {
+  planningClient: { columns: { isPrivate: true, advisorId: true } },
+} as const;
+
 /**
- * Org-scoped accessor for a CRM household. Mirrors the pattern in
- * `requireClientAccess` — fetch the row scoped to the caller's firm
- * (Clerk orgId) and throw if it isn't visible. Returns both the row
- * and the firm id so callers can thread them into audit/recordActivity.
+ * The CRM household with this id, if the caller may see it: in the caller's
+ * firm (Clerk orgId) and in their book under the rule the clients list and the
+ * planning gate use (`callerMaySeeAdvisor`), and not a colleague's Private
+ * client. Null for missing and hidden alike, so existence never leaks. Throws
+ * only when there is no signed-in org.
+ */
+export async function findVisibleCrmHousehold(householdId: string) {
+  const orgId = await requireOrgId();
+  const row = await db.query.crmHouseholds.findFirst({
+    where: and(eq(crmHouseholds.id, householdId), eq(crmHouseholds.firmId, orgId)),
+    with: planningClientPrivacy,
+  });
+  if (!row) return null;
+  const { planningClient, ...household } = row;
+  const { userId, orgRole } = await auth();
+  if (!userId) return null;
+  const p = { userId, orgId, orgRole: orgRole ?? null };
+  if (hidesPrivateClient(p, planningClient)) return null;
+  const visible = await callerMaySeeAdvisor(p, household.advisorId, orgId);
+  return visible ? { household, orgId } : null;
+}
+
+/**
+ * Throwing form of `findVisibleCrmHousehold`. Mirrors `requireClientAccess`.
+ * Returns both the row and the firm id so callers can thread them into
+ * audit/recordActivity.
  */
 export async function requireCrmHouseholdAccess(householdId: string) {
-  const orgId = await requireOrgId();
-  const household = await db.query.crmHouseholds.findFirst({
-    where: and(eq(crmHouseholds.id, householdId), eq(crmHouseholds.firmId, orgId)),
-  });
-  if (!household) {
+  const access = await findVisibleCrmHousehold(householdId);
+  if (!access) {
     throw new Error(`CRM household not found or access denied: ${householdId}`);
   }
-  return { household, orgId };
+  return access;
 }
 
 /**
@@ -89,11 +114,13 @@ export async function verifyCrmHouseholdAccessFor(
   const household = await db.query.crmHouseholds.findFirst({
     where: eq(crmHouseholds.id, householdId),
     columns: { firmId: true, advisorId: true, deletedAt: true },
+    with: planningClientPrivacy,
   });
-  // Non-existent, trashed, and wrong-firm all return the SAME shape, so a
-  // caller cannot tell them apart and existence never leaks.
+  // Non-existent, trashed, wrong-firm and private all return the SAME shape,
+  // so a caller cannot tell them apart and existence never leaks.
   if (!household || household.deletedAt) return { ok: false };
   if (!p.orgId || household.firmId !== p.orgId) return { ok: false };
+  if (hidesPrivateClient(p, household.planningClient)) return { ok: false };
   if (!(await callerMaySeeAdvisor(p, household.advisorId, household.firmId))) return { ok: false };
   return { ok: true, firmId: household.firmId, advisorId: household.advisorId };
 }
