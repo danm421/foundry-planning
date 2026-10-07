@@ -251,6 +251,43 @@ d("beneficiaries tenant isolation", () => {
     expect(res.status).toBe(400);
   });
 
+  async function postAccount(clientId: string, ownerFamilyMemberId: string) {
+    const { POST } = await import("@/app/api/clients/[id]/accounts/route");
+    const body = { name: "Savings", category: "taxable", subType: "brokerage", ownerFamilyMemberId };
+    return POST(
+      new Request("http://x", {
+        method: "POST",
+        body: JSON.stringify(body),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      }) as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { params: Promise.resolve({ id: clientId }) } as any,
+    );
+  }
+
+  it("Firm A cannot POST an account with Firm B's family member as owner", async () => {
+    const a = await setupFirmWithClient(FIRM_A);
+    const b = await setupFirmWithClient(FIRM_B);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_A);
+    const res = await postAccount(a.clientId, b.fmId);
+    expect(res.status).toBe(400);
+
+    const { db } = dbMod;
+    const { accountOwners } = schema;
+    const owned = await db
+      .select({ accountId: accountOwners.accountId })
+      .from(accountOwners)
+      .where(drizzleOrm.eq(accountOwners.familyMemberId, b.fmId));
+    expect(owned).toHaveLength(0);
+  });
+
+  it("Firm A can POST an account owned by its own family member", async () => {
+    const a = await setupFirmWithClient(FIRM_A);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_A);
+    const res = await postAccount(a.clientId, a.fmId);
+    expect(res.status).toBe(201);
+  });
+
   it("Firm A cannot PATCH its account with Firm B's family member as owner", async () => {
     const a = await setupFirmWithClient(FIRM_A);
     const b = await setupFirmWithClient(FIRM_B);

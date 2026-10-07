@@ -237,6 +237,10 @@ export async function createAccountForClient(args: {
       p.ownerEntityId,
       p.ownerFamilyMemberId,
     );
+    // `ownerFamilyMemberId` is passed through verbatim, so the synthesized
+    // owners get the same tenant check as an explicit owners[] list.
+    const tenantError = await validateOwnersTenant(synthesized, clientId);
+    if (tenantError) return writeError(400, tenantError.error);
     if (synthesized.length > 0) resolvedOwners = synthesized;
   }
   // ── end owners[] validation ───────────────────────────────────────────────
