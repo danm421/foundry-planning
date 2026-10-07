@@ -5,6 +5,7 @@ import {
   crmHouseholds,
   crmHouseholdContacts,
   crmHouseholdViews,
+  intakeForms,
   plaidItems,
   scenarios,
 } from "@/db/schema";
@@ -591,6 +592,22 @@ export async function purgeCrmHouseholdById(
     : [];
 
   await db.transaction(async (tx) => {
+    // intake_forms.client_id / crm_household_id are ON DELETE SET NULL, so the
+    // cascade would leave each form (answers, recipient details, live link)
+    // behind as an unattached prospect form. Erase them explicitly.
+    await tx
+      .delete(intakeForms)
+      .where(
+        and(
+          eq(intakeForms.firmId, firmId),
+          planningClientId
+            ? or(
+                eq(intakeForms.clientId, planningClientId),
+                eq(intakeForms.crmHouseholdId, id),
+              )
+            : eq(intakeForms.crmHouseholdId, id),
+        ),
+      );
     if (planningClientId) {
       await tx.delete(clients).where(eq(clients.id, planningClientId));
     }

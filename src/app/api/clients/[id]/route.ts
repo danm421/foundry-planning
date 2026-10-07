@@ -12,6 +12,7 @@ import {
   trustSplitInterestDetails,
   crmHouseholdContacts,
   plaidItems,
+  intakeForms,
 } from "@/db/schema";
 import { eq, and, or, inArray } from "drizzle-orm";
 import { computePlanEndAge, computePlanEndYear } from "@/lib/plan-horizon";
@@ -312,9 +313,16 @@ export async function DELETE(
       .from(plaidItems)
       .where(eq(plaidItems.clientId, id));
 
-    await db
-      .delete(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
+    // intake_forms.client_id is ON DELETE SET NULL; erase the client's forms
+    // explicitly so their answers and public links don't outlive the client.
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(intakeForms)
+        .where(and(eq(intakeForms.clientId, id), eq(intakeForms.firmId, firmId)));
+      await tx
+        .delete(clients)
+        .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
+    });
 
     await revokePlaidTokens(
       plaidTokenRows.map((r) => r.accessToken),
