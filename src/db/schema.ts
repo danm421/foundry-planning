@@ -919,10 +919,17 @@ export const crmHouseholdDocuments = pgTable("crm_household_documents", {
   scenarioId: uuid("scenario_id").references(() => scenarios.id, {
     onDelete: "set null",
   }),
+  // The Data Collection form a client uploaded this through. Every form sent to
+  // one client lands in the same household, so the public link's list, delete
+  // and caps key on this, not on the household. Null for every other source.
+  intakeFormId: uuid("intake_form_id").references(() => intakeForms.id, {
+    onDelete: "set null",
+  }),
 }, (t) => [
   index("crm_documents_household_idx").on(t.householdId),
   index("crm_documents_version_group_idx").on(t.versionGroupId),
   index("crm_documents_folder_idx").on(t.folderId),
+  index("crm_documents_intake_form_idx").on(t.intakeFormId),
 ]);
 
 export const crmDocumentFolders = pgTable("crm_document_folders", {

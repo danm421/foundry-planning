@@ -8,9 +8,10 @@ vi.mock("@vercel/blob", () => ({
 
 import { randomUUID } from "node:crypto";
 import { db } from "@/db";
-import { crmHouseholds, crmHouseholdDocuments, intakeForms, auditLog } from "@/db/schema";
+import { crmHouseholds, crmHouseholdDocuments, intakeForms, auditLog, clients } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { STORAGE_PROVIDER } from "@/lib/crm/documents";
+import { createClientForHousehold } from "@/lib/clients/create-client";
 import { newIntakeToken, defaultExpiry } from "../tokens";
 import type { IntakePayload } from "../schema";
 import {
@@ -72,6 +73,7 @@ afterAll(async () => {
     await db.delete(crmHouseholdDocuments).where(eq(crmHouseholdDocuments.householdId, hh.id));
   }
   await db.delete(intakeForms).where(eq(intakeForms.firmId, FIRM));
+  await db.delete(clients).where(eq(clients.firmId, FIRM));
   await db.delete(crmHouseholds).where(eq(crmHouseholds.firmId, FIRM));
 });
 
@@ -169,6 +171,7 @@ describe("uploadIntakeDocument", () => {
       folderId: null,
       description: "statement",
       sourceKind: "intake_upload",
+      intakeFormId: formId,
     });
 
     await expect(uploadIntakeDocument(formId, pdf("overflow2.pdf"), "statement")).rejects.toThrow(
@@ -200,6 +203,7 @@ describe("uploadIntakeDocument", () => {
       folderId: null,
       description: "statement",
       sourceKind: "intake_upload",
+      intakeFormId: formId,
     });
 
     await expect(
@@ -329,5 +333,61 @@ describe("deleteIntakeDocument", () => {
 
     expect(await deleteIntakeDocument(formId, randomUUID())).toBe(false);
     expect(await householdCountForFirm()).toBe(before);
+  });
+});
+
+// Every form sent to one existing client routes to that client's household,
+// so the household alone cannot tell one form's uploads from another's.
+describe("two forms for the same client", () => {
+  async function seedClientForms(): Promise<[string, string]> {
+    const [hh] = await db
+      .insert(crmHouseholds)
+      .values({ firmId: FIRM, advisorId: ADVISOR, name: "Two Forms HH" })
+      .returning({ id: crmHouseholds.id });
+    const { clientId } = await createClientForHousehold({
+      household: { id: hh.id, firmId: FIRM, advisorId: ADVISOR, state: "NJ" },
+      primaryContact: { firstName: "Ada", lastName: "Byron", dateOfBirth: "1975-03-02" },
+      spouseContact: null,
+      retirementAge: 65,
+      lifeExpectancy: 95,
+      spouseRetirementAge: null,
+      filingStatus: "single",
+    });
+    const ids: string[] = [];
+    for (const email of ["a@example.com", "b@example.com"]) {
+      const [form] = await db
+        .insert(intakeForms)
+        .values({
+          firmId: FIRM,
+          clientId,
+          mode: "blank",
+          status: "draft",
+          token: newIntakeToken(),
+          recipientEmail: email,
+          payload: {} as unknown as IntakePayload,
+          createdByUserId: ADVISOR,
+          expiresAt: defaultExpiry(new Date()),
+        })
+        .returning({ id: intakeForms.id });
+      ids.push(form.id);
+    }
+    return [ids[0], ids[1]];
+  }
+
+  it("lists and deletes only the presenting form's own uploads", async () => {
+    const [first, second] = await seedClientForms();
+    const firstDoc = await uploadIntakeDocument(first, pdf("first.pdf"), "statement");
+    await db.update(intakeForms).set({ status: "submitted" }).where(eq(intakeForms.id, first));
+
+    expect(await listIntakeDocuments(second)).toEqual([]);
+    expect(await deleteIntakeDocument(second, firstDoc.id)).toBe(false);
+
+    const survivors = await db
+      .select({ id: crmHouseholdDocuments.id })
+      .from(crmHouseholdDocuments)
+      .where(eq(crmHouseholdDocuments.id, firstDoc.id));
+    expect(survivors).toHaveLength(1);
+    // The advisor's review still sees the household's whole intake set.
+    expect(await listIntakeDocuments(second, { wholeHousehold: true })).toHaveLength(1);
   });
 });

@@ -138,6 +138,7 @@ async function uploadOnto(formId: string): Promise<{ placeholder: string; docId:
       storageKey: `crm/${placeholder}/statement.pdf`,
       sourceKind: "intake_upload",
       description: "statement",
+      intakeFormId: formId,
     })
     .returning({ id: crmHouseholdDocuments.id });
   return { placeholder, docId: doc.id };

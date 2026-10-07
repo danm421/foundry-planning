@@ -40,7 +40,10 @@ export default async function DataCollectionReviewPage({ params, searchParams }:
   // Household` is called alongside the list because the vault download link
   // needs the id, and the client-facing document view deliberately omits it.
   const attachments = () =>
-    Promise.all([listIntakeDocuments(form.id), findIntakeHousehold(form.id)]);
+    Promise.all([
+      listIntakeDocuments(form.id, { wholeHousehold: true }),
+      findIntakeHousehold(form.id),
+    ]);
 
   // No submission means nothing to review — and a payload the client is
   // halfway through typing cannot satisfy the submit schema, so the parse

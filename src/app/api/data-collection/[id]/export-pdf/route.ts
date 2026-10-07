@@ -54,7 +54,7 @@ export async function POST(
 
     // Firm branding, not the advisor's: it is what the client saw on the form.
     const [documents, branding, foundryLogo] = await Promise.all([
-      listIntakeDocuments(form.id),
+      listIntakeDocuments(form.id, { wholeHousehold: true }),
       resolveBranding(orgId),
       foundryDefaultLogoDataUrl().catch(() => null),
     ]);

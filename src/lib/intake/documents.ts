@@ -267,6 +267,7 @@ export async function uploadIntakeDocument(
       and(
         eq(crmHouseholdDocuments.householdId, householdId),
         eq(crmHouseholdDocuments.sourceKind, "intake_upload"),
+        eq(crmHouseholdDocuments.intakeFormId, formId),
       ),
     );
 
@@ -305,6 +306,7 @@ export async function uploadIntakeDocument(
       folderId,
       description: docType,
       sourceKind: "intake_upload",
+      intakeFormId: formId,
     })
     .returning();
 
@@ -321,7 +323,16 @@ export async function uploadIntakeDocument(
   return toView(doc);
 }
 
-export async function listIntakeDocuments(formId: string): Promise<IntakeDocumentView[]> {
+/**
+ * A form's own uploads. Every form sent to one client resolves to the same
+ * household, so the public link must never see another form's files. The
+ * advisor's review opts into the household's whole intake set with
+ * `wholeHousehold`, which also covers uploads from before forms were recorded.
+ */
+export async function listIntakeDocuments(
+  formId: string,
+  opts: { wholeHousehold?: boolean } = {},
+): Promise<IntakeDocumentView[]> {
   const householdId = await findIntakeHousehold(formId);
   if (!householdId) return [];
 
@@ -332,6 +343,7 @@ export async function listIntakeDocuments(formId: string): Promise<IntakeDocumen
       and(
         eq(crmHouseholdDocuments.householdId, householdId),
         eq(crmHouseholdDocuments.sourceKind, "intake_upload"),
+        opts.wholeHousehold ? undefined : eq(crmHouseholdDocuments.intakeFormId, formId),
       ),
     )
     .orderBy(desc(crmHouseholdDocuments.createdAt));
@@ -356,6 +368,9 @@ export async function deleteIntakeDocument(formId: string, docId: string): Promi
         eq(crmHouseholdDocuments.householdId, householdId),
         // Only ever the client's own intake uploads — never a file the advisor put here.
         eq(crmHouseholdDocuments.sourceKind, "intake_upload"),
+        // ...and only through the form that uploaded it: another form for the
+        // same client (perhaps already submitted) is out of reach.
+        eq(crmHouseholdDocuments.intakeFormId, formId),
       ),
     );
   if (!doc) return false;
