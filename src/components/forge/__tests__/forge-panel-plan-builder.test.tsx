@@ -566,6 +566,58 @@ describe("ForgePanel — Commit everything now (Task 8)", () => {
     expect(screen.getByRole("button", { name: "Commit everything now" })).toBeInTheDocument();
   });
 
+  it("names the household the plan commits to, taken from the server's frame", async () => {
+    importMocks.runPlanBuild.mockResolvedValueOnce(planBuildResult("imp_1"));
+    mockStreamState = makeStreamState({ lastToolRender: null });
+    const { rerender } = mountGlobalPanel();
+    fireEvent.change(screen.getByTestId("forge-file-input"), {
+      target: { files: [new File(["x"], "fact-finder.pdf")] },
+    });
+
+    mockStreamState = makeStreamState({
+      lastToolRender: {
+        type: "tool_render",
+        name: "ingest_fact_finder",
+        status: "complete",
+        data: { clientId: "c9", importId: "imp_1", mode: "updating", householdName: "Jones-Smith Household" },
+      },
+    });
+    await act(async () => {
+      rerender(<ForgePanel clientId={null} scenarioNames={{}} forceOpenForTest />);
+    });
+
+    expect(screen.getByRole("button", { name: /commit everything/i })).toHaveTextContent(
+      "Commit everything to Jones-Smith Household",
+    );
+  });
+
+  it("names the open client when the build ran in that client's workspace", async () => {
+    importMocks.runPlanBuild.mockResolvedValueOnce({ ...planBuildResult("imp_1"), clientId: "c1" });
+    mockStreamState = makeStreamState({ lastToolRender: null });
+    const { rerender } = render(
+      <ForgePanel clientId="c1" clientName="Smith Household" scenarioNames={{}} forceOpenForTest />,
+    );
+    fireEvent.change(screen.getByTestId("forge-file-input"), {
+      target: { files: [new File(["x"], "stmt.pdf")] },
+    });
+
+    mockStreamState = makeStreamState({
+      lastToolRender: {
+        type: "tool_render",
+        name: "build_plan",
+        status: "complete",
+        data: { clientId: "c1", importId: "imp_1", mode: "existing" },
+      },
+    });
+    await act(async () => {
+      rerender(<ForgePanel clientId="c1" clientName="Smith Household" scenarioNames={{}} forceOpenForTest />);
+    });
+
+    expect(screen.getByRole("button", { name: /commit everything/i })).toHaveTextContent(
+      "Commit everything to Smith Household",
+    );
+  });
+
   it("does not show the committed message when commitAllTabs resolves a partial 'review' status (finding 3)", async () => {
     importMocks.commitAllTabs.mockResolvedValue({ status: "review" });
     await mountWithBuiltPlan("imp_1", planBuildResult("imp_1"));

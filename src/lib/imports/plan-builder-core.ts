@@ -9,7 +9,7 @@
 // try/catch and stringifies for the model.
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, scenarios, clientImports } from "@/db/schema";
+import { clients, crmHouseholds, scenarios, clientImports } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { createCrmHousehold, recordHouseholdOpen } from "@/lib/crm/households";
@@ -41,6 +41,31 @@ export interface EnsurePlanImportResult {
   importId: string;
 }
 
+/** Same rule as POST /api/clients/[id]/imports: the session's caller must
+ *  have own-firm edit access (book silo, Private clients, shares). */
+async function callerMayImportInto(clientId: string, firmId: string): Promise<boolean> {
+  const access = await verifyClientAccess(clientId);
+  return (
+    access.ok && access.access === "own" && access.permission === "edit" && access.firmId === firmId
+  );
+}
+
+/**
+ * The household name of an existing client a plan import may update, or null
+ * when `ensurePlanImport` would refuse that client. Forge's approval card names
+ * the household with this — resolved here from the id, under the import's own
+ * access rule, never taken from text the model wrote.
+ */
+export async function findImportTargetName(clientId: string, firmId: string): Promise<string | null> {
+  if (!(await callerMayImportInto(clientId, firmId))) return null;
+  const [row] = await db
+    .select({ name: crmHouseholds.name })
+    .from(clients)
+    .innerJoin(crmHouseholds, eq(crmHouseholds.id, clients.crmHouseholdId))
+    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
+  return row?.name ?? null;
+}
+
 export async function ensurePlanImport(
   args: EnsurePlanImportArgs,
 ): Promise<EnsurePlanImportResult> {
@@ -51,16 +76,8 @@ export async function ensurePlanImport(
   if (args.mode === "existing") {
     if (!args.existing) throw new Error("existing.clientId is required for mode \"existing\".");
 
-    // Same rule as POST /api/clients/[id]/imports: the session's caller must
-    // have own-firm edit access (book silo, Private clients, shares). Checked
-    // here so no caller can skip it.
-    const access = await verifyClientAccess(args.existing.clientId);
-    if (
-      !access.ok ||
-      access.access !== "own" ||
-      access.permission !== "edit" ||
-      access.firmId !== args.firmId
-    ) {
+    // Checked here so no caller can skip it.
+    if (!(await callerMayImportInto(args.existing.clientId, args.firmId))) {
       throw new Error("Client not found or access denied.");
     }
 

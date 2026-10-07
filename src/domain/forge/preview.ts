@@ -19,7 +19,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { scenarios } from "@/db/schema";
 import type { WritePreview } from "@/domain/forge/types";
-import type { ForgeAuthContext } from "@/domain/forge/state";
+import type { ForgeAuthContext, ForgeAnyAuthContext } from "@/domain/forge/state";
 import {
   describeChangeUnit,
   type ChangeUnit,
@@ -27,6 +27,7 @@ import {
 import { computeRowDiff } from "@/lib/scenario/diff-row";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
+import { findImportTargetName } from "@/lib/imports/plan-builder-core";
 import { scenarioChangesToBaseWrites } from "@/lib/scenario/scenario-changes-to-base-writes";
 import { applyScenarioChanges } from "@/engine/scenario/applyChanges";
 import { runProjection } from "@/engine";
@@ -214,7 +215,16 @@ function previewBuildPlan(a: Record<string, unknown>): WritePreview {
       summary: "Start a plan build for this client from documents you'll upload.",
     };
   }
+  return {
+    name: "build_plan",
+    summary: `Create household "${householdName}" and start a new plan build.`,
+    details: newHouseholdLines(a),
+  };
+}
 
+/** The new household's people and plan basics, one line each, for any tool
+ *  that mints a household from `build_plan`-shaped args. */
+function newHouseholdLines(a: Record<string, unknown>): string[] {
   const primaryName = [str(a.primaryFirstName), str(a.primaryLastName)].filter(Boolean).join(" ");
   const primaryDob = str(a.primaryDob);
   const spouseName = [str(a.spouseFirstName), str(a.spouseLastName)].filter(Boolean).join(" ");
@@ -226,7 +236,7 @@ function previewBuildPlan(a: Record<string, unknown>): WritePreview {
   const spouseRet = typeof a.spouseRetirementAge === "number" ? a.spouseRetirementAge : undefined;
   const spouseLife = typeof a.spouseLifeExpectancy === "number" ? a.spouseLifeExpectancy : undefined;
 
-  const details = [
+  return [
     primaryName && `Primary: ${primaryName}${primaryDob ? ` (DOB ${primaryDob})` : ""}`,
     spouseName && `Co-client: ${spouseName}${spouseDob ? ` (DOB ${spouseDob})` : ""}`,
     state && `State: ${state}`,
@@ -236,11 +246,44 @@ function previewBuildPlan(a: Record<string, unknown>): WritePreview {
     spouseRet != null && `Co-client retirement age: ${spouseRet}`,
     spouseLife != null && `Co-client life expectancy: ${spouseLife}`,
   ].filter(Boolean) as string[];
+}
 
+/**
+ * `ingest_fact_finder` either creates a new household or updates an existing
+ * one, and the model picks which — and, for an update, which household. The
+ * card says both in plain words. `target` is the update's household name as
+ * the server resolved it from `clientId` (`describeProposedWrite`): `null`
+ * when this advisor can't import into that client (the tool refuses it too),
+ * `undefined` when it wasn't looked up. A name the model wrote is never shown
+ * as the target.
+ */
+function previewIngestFactFinder(a: Record<string, unknown>, target?: string | null): WritePreview {
+  const name = "ingest_fact_finder";
+  if (a.mode === "updating") {
+    if (target) {
+      return {
+        name,
+        summary: `Update existing household "${target}" from the attached fact finder.`,
+        details: ["Nothing in the plan changes until you review and apply it."],
+      };
+    }
+    return {
+      name,
+      summary: "Update an existing household from the attached fact finder.",
+      details: [
+        target === null
+          ? "Can't find that household, or you don't have access to it. Approving won't change anything."
+          : "Couldn't confirm which household this updates.",
+      ],
+    };
+  }
+  const householdName = str(a.householdName);
   return {
-    name: "build_plan",
-    summary: `Create household "${householdName}" and start a new plan build.`,
-    details,
+    name,
+    summary: householdName
+      ? `Create a new household, "${householdName}", from the attached fact finder.`
+      : "Create a new household from the attached fact finder.",
+    details: newHouseholdLines(a),
   };
 }
 
@@ -398,6 +441,8 @@ export function formatProposedWrite(call: ProposedWrite): WritePreview {
       return previewSetUpPlan(call.args);
     case "build_plan":
       return previewBuildPlan(call.args);
+    case "ingest_fact_finder":
+      return previewIngestFactFinder(call.args);
     case "tasks_create":
       return previewTasksCreate(call.args);
     case "tasks_delete":
@@ -943,18 +988,29 @@ async function enrichRemove(
  *     row diff (zod + FK asserts, NO write) plus, for liabilities, the ownership
  *     cascade line(s) and, for accounts, the business / holdings / ownership
  *     cascade line(s); or the plain-language validation error when the payload is
- *     invalid.
+ *     invalid;
+ *   • ingest_fact_finder updating an existing household (global mode) — that
+ *     household's name, resolved from `clientId` under the import's access rule.
  * All enrichment is best-effort — wrapped in try/catch so any load/parse/assert
  * failure degrades to the pure preview rather than blocking approval.
  */
 export async function describeProposedWrite(
   call: ProposedWrite,
-  ctx?: ForgeAuthContext,
+  ctx?: ForgeAnyAuthContext,
 ): Promise<WritePreview> {
   const base = formatProposedWrite(call);
   if (!ctx) return base;
 
   try {
+    // Global mode: name the household an update would land on.
+    if (call.name === "ingest_fact_finder" && call.args.mode === "updating") {
+      const clientId = str(call.args.clientId);
+      const target = clientId ? await findImportTargetName(clientId, ctx.firmId) : null;
+      return previewIngestFactFinder(call.args, target);
+    }
+    // Everything below reads the conversation's client.
+    if (!("clientId" in ctx)) return base;
+
     if (call.name === "add_expense") {
       return await enrichAddExpense(base, call.args, ctx.clientId);
     }

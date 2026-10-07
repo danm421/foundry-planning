@@ -161,17 +161,14 @@ export function buildGraph(
     config?: LangGraphRunnableConfig,
   ) {
     const invokeTool = toolInvoker(config);
-    // In client mode ctx carries clientId/scenarioId (enrichment reads them); in
-    // global mode (Plan 2 agentic writes) it does not — pass undefined so
-    // describeProposedWrite falls back to the pure formatter (no clientId deref).
-    const ctx = authContext as ForgeAuthContext;
     const last = state.messages[state.messages.length - 1] as AIMessage;
     const writeCalls = (last.tool_calls ?? []).filter((c) => WRITE_TOOL_NAMES.has(c.name));
     // Rich, best-effort previews for the approval card (field-level diff + plan
-    // impact for propose_changes; pure summary otherwise). describeProposedWrite
-    // never throws — its enrichment IO is wrapped in try/catch.
+    // impact for propose_changes; the target household for a global fact-finder
+    // update; pure summary otherwise). describeProposedWrite takes either scope
+    // and never throws — its enrichment IO is wrapped in try/catch.
     const previews = await Promise.all(
-      writeCalls.map((c) => describeProposedWrite({ name: c.name, args: c.args }, isClient ? ctx : undefined)),
+      writeCalls.map((c) => describeProposedWrite({ name: c.name, args: c.args }, authContext)),
     );
 
     // Pause; the resume value is { decisions: Record<toolCallId, 'confirm'|'reject'> }.
@@ -205,7 +202,7 @@ export function buildGraph(
         resourceType: "forge_conversation",
         resourceId: conversationId,
         clientId: auditClientId,
-        firmId: ctx.firmId,
+        firmId: authContext.firmId,
         metadata: { tool: c.name, toolCallId: c.id },
       });
     }
@@ -234,7 +231,7 @@ export function buildGraph(
             resourceType: "forge_conversation",
             resourceId: conversationId,
             clientId: auditClientId,
-            firmId: ctx.firmId,
+            firmId: authContext.firmId,
             metadata: { tool: c.name, toolCallId: c.id },
           });
           messages.push(

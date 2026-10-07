@@ -94,6 +94,9 @@ function toolStatusLabel(status: string): string {
 
 type Thread = { id: string; title: string; updatedAt?: Date | string };
 
+/** The client + import a `build_plan` / `ingest_fact_finder` frame names. */
+type PlanBuildTarget = { clientId: string; importId: string; mode: string; householdName?: string };
+
 interface ForgePanelProps {
   clientId: string | null;
   /** Household display name (e.g. "Jane & John Smith") for the context line. Optional in global mode. */
@@ -165,8 +168,10 @@ export function ForgePanel({
   // Plan Builder (Phase 1): the client/import minted by a `build_plan` tool
   // call, surfaced via the tool_render frame (see the lastToolRender effect
   // below) — null until that frame lands.
-  const [planBuild, setPlanBuild] = useState<{ clientId: string; importId: string; mode: string } | null>(null);
-  const [planResult, setPlanResult] = useState<PlanBuildResult | null>(null);
+  const [planBuild, setPlanBuild] = useState<PlanBuildTarget | null>(null);
+  // `householdName` rides along from the frame so the commit button can say
+  // whose plan it writes to.
+  const [planResult, setPlanResult] = useState<(PlanBuildResult & { householdName?: string }) | null>(null);
   const [planQuestionsDismissed, setPlanQuestionsDismissed] = useState(false);
   // "Commit everything now" finish button (Task 8) — commits all 11 tabs for
   // the assembled plan in one shot, as an alternative to the per-tab review
@@ -231,6 +236,10 @@ export function ForgePanel({
   // global mode (clientId == null) where an attach kicks the fact-finder ingest
   // flow (identify → build/update). Paste-to-attach stays client-only for now.
   const canAttach = attachTarget != null || clientId == null;
+  // Whose plan "Commit everything" writes to: the household the server named on
+  // the build's frame, or the open client when the build ran on it.
+  const commitTarget =
+    planResult?.householdName ?? (planResult != null && planResult.clientId === clientId ? clientName : undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
   const busy = status === "streaming";
   // While an approval is pending the graph is checkpointed mid-interrupt; the
@@ -372,21 +381,23 @@ export function ForgePanel({
     ) {
       return; // malformed frame — ignore rather than crash the panel
     }
-    const pb = data as { clientId: string; importId: string; mode: string };
+    const pb = data as { clientId: string; importId: string; mode: string; householdName?: unknown };
     // lastToolRender is never cleared by the hook, so it stays set across
     // turns/re-renders — guard so a stale frame never re-triggers a build
     // (e.g. on a later unrelated turn, or a re-mount).
     if (handledPlanBuildRef.current === pb.importId) return;
     handledPlanBuildRef.current = pb.importId;
-    setPlanBuild({ clientId: pb.clientId, importId: pb.importId, mode: pb.mode });
+    const target: PlanBuildTarget = {
+      clientId: pb.clientId,
+      importId: pb.importId,
+      mode: pb.mode,
+      householdName: typeof pb.householdName === "string" ? pb.householdName : undefined,
+    };
+    setPlanBuild(target);
     // If the advisor had already attached files before the tool finished,
     // kick off the build immediately rather than waiting for another Send.
     if (attached.length > 0) {
-      void runPlanBuildTurn(
-        { clientId: pb.clientId, importId: pb.importId, mode: pb.mode },
-        attached,
-        input.trim(),
-      );
+      void runPlanBuildTurn(target, attached, input.trim());
     }
     // Intentionally keyed only on lastToolRender: attached/input/runPlanBuildTurn
     // are read as of the render where the frame arrives (the frame fires once
@@ -496,7 +507,7 @@ export function ForgePanel({
   // upload→extract→assemble pipeline, then fires one chat turn so Forge
   // narrates what it found (mirrors the existing import branch below).
   async function runPlanBuildTurn(
-    target: { clientId: string; importId: string; mode: string },
+    target: PlanBuildTarget,
     files: File[],
     prompt: string,
   ) {
@@ -522,7 +533,7 @@ export function ForgePanel({
     // guarded by handledPlanBuildRef (left untouched), so clearing planBuild
     // cannot make it re-fire.
     setPlanBuild(null);
-    setPlanResult(result);
+    setPlanResult({ ...result, householdName: target.householdName });
     setPendingImportId(result.importId);
     // The attachment alone is a valid turn, so `prompt` is often empty — in
     // which case we'd otherwise narrate the build with a synthetic message.
@@ -651,11 +662,7 @@ export function ForgePanel({
     if (attached.length > 0 && planBuild != null) {
       const files = attached;
       const prompt = input.trim();
-      await runPlanBuildTurn(
-        { clientId: planBuild.clientId, importId: planBuild.importId, mode: planBuild.mode },
-        files,
-        prompt,
-      );
+      await runPlanBuildTurn(planBuild, files, prompt);
       return;
     }
     // Send-with-files: run the import pipeline, then immediately engage the agent.
@@ -998,7 +1005,11 @@ export function ForgePanel({
                         }}
                         className="rounded-[var(--radius-sm)] border border-hair px-3 py-1.5 text-[12px] text-ink hover:bg-card disabled:opacity-40"
                       >
-                        {committing ? "Committing…" : "Commit everything now"}
+                        {committing
+                          ? "Committing…"
+                          : commitTarget
+                            ? `Commit everything to ${commitTarget}`
+                            : "Commit everything now"}
                       </button>
                     )}
                   </div>

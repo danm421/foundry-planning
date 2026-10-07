@@ -22,7 +22,12 @@ const m = vi.hoisted(() => ({
 
 vi.mock("@/db", () => ({
   db: {
-    select: () => ({ from: () => ({ where: (...a: unknown[]) => m.where(...a) }) }),
+    select: () => ({
+      from: () => ({
+        where: (...a: unknown[]) => m.where(...a),
+        innerJoin: () => ({ where: (...a: unknown[]) => m.where(...a) }),
+      }),
+    }),
     insert: () => ({ values: (v: unknown) => ({ returning: () => m.insertValues(v) }) }),
   },
 }));
@@ -41,7 +46,7 @@ vi.mock("@/lib/clients/authz", () => ({
   verifyClientAccess: (...a: unknown[]) => m.verifyClientAccess(...a),
 }));
 
-import { ensurePlanImport } from "../plan-builder-core";
+import { ensurePlanImport, findImportTargetName } from "../plan-builder-core";
 
 beforeEach(() => {
   Object.values(m).forEach((fn) => fn.mockReset());
@@ -341,5 +346,32 @@ describe("ensurePlanImport", () => {
         }),
       );
     });
+  });
+});
+
+describe("findImportTargetName", () => {
+  it("returns the household name of a client the caller may import into", async () => {
+    m.where.mockResolvedValueOnce([{ name: "Jones Household" }]);
+
+    await expect(findImportTargetName("c1", "org1")).resolves.toBe("Jones Household");
+    expect(m.verifyClientAccess).toHaveBeenCalledWith("c1");
+  });
+
+  it.each([
+    ["cannot open the client", { ok: false }],
+    ["only holds a share on the client", { ok: true, permission: "edit", firmId: "org1", access: "shared" }],
+    ["has view-only access", { ok: true, permission: "view", firmId: "org1", access: "own" }],
+    ["is in another firm", { ok: true, permission: "edit", firmId: "org2", access: "own" }],
+  ])("returns null without reading the name when the caller %s", async (_label, access) => {
+    m.verifyClientAccess.mockResolvedValue(access);
+
+    await expect(findImportTargetName("c1", "org1")).resolves.toBeNull();
+    expect(m.where).not.toHaveBeenCalled();
+  });
+
+  it("returns null when the client is not in the firm", async () => {
+    m.where.mockResolvedValueOnce([]);
+
+    await expect(findImportTargetName("c1", "org1")).resolves.toBeNull();
   });
 });
