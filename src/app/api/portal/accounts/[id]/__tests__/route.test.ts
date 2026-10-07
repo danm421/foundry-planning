@@ -184,6 +184,15 @@ describe("PUT /api/portal/accounts/[id]", () => {
     expect(res.status).toBe(404);
   });
 
+  it("refuses to move an account into a category the portal hides", async () => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    const res = await PUT(putReq({ category: "business" }), ctx);
+    expect(res.status).toBe(400);
+    expect(transactionMock).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(recordUpdateMock).not.toHaveBeenCalled();
+  });
+
   it("updates editable fields, replaces owners, and records audit", async () => {
     resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     validateOwnersShapeMock.mockReturnValue({

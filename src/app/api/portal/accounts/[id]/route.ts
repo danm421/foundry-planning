@@ -161,6 +161,21 @@ export async function PUT(
       }
     }
 
+    // Check the row as it will be after the patch, as POST does: a visible
+    // account may not be moved into a category the portal hides.
+    if (
+      !isPortalVisibleAccount({
+        category: (patch.category ?? row.category) as string,
+        isDefaultChecking: row.isDefaultChecking,
+        parentAccountId: row.parentAccountId,
+      })
+    ) {
+      return NextResponse.json(
+        { error: "This account type can't be set from the portal" },
+        { status: 400 },
+      );
+    }
+
     let newOwners: ReturnType<typeof validateOwnersShape> | null = null;
     if ("owners" in body) {
       const shapeResult = validateOwnersShape(body.owners);
