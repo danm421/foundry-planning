@@ -63,13 +63,15 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   clientId: string;
   initialIsPrivate: boolean;
+  /** Firm has the advisor book silo on: members see only their own advisor book. */
+  bookSiloEnabled?: boolean;
 }
 
 // ---------------------------------------------------------------------------
 // ShareDialog
 // ---------------------------------------------------------------------------
 
-export default function ShareDialog({ open, onOpenChange, clientId, initialIsPrivate }: Props) {
+export default function ShareDialog({ open, onOpenChange, clientId, initialIsPrivate, bookSiloEnabled = false }: Props) {
   // Body scroll lock — ref-counted, safe for stacked dialogs.
   useBodyScrollLock(open);
 
@@ -262,8 +264,10 @@ export default function ShareDialog({ open, onOpenChange, clientId, initialIsPri
                 </p>
                 <p className="text-[12px] text-ink-3 leading-snug">
                   {isPrivate
-                    ? "Only you and org admins can see this client."
-                    : "Visible to your firm members."}
+                    ? "Only its advisor and firm admins, plus anyone it is shared with."
+                    : bookSiloEnabled
+                      ? "Visible to its advisor, firm admins, and staff assigned to that advisor."
+                      : "Visible to your firm's advisors and admins, and to staff assigned to its advisor."}
                 </p>
               </div>
             </div>

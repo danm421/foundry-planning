@@ -244,4 +244,31 @@ describe("ShareDialog", () => {
       );
     });
   });
+
+  describe("visibility line", () => {
+    function renderDialog(props: { initialIsPrivate: boolean; bookSiloEnabled?: boolean }) {
+      global.fetch = makeFetchMock() as typeof fetch;
+      render(<ShareDialog open onOpenChange={() => {}} clientId={CLIENT_ID} {...props} />);
+    }
+
+    it("says the whole firm's advisors can see the client in an open firm", () => {
+      renderDialog({ initialIsPrivate: false });
+      expect(screen.getByText(/visible to your firm's advisors and admins, and to staff assigned to its advisor/i)).toBeInTheDocument();
+    });
+
+    it("limits the line to the client's advisor and admins in a siloed firm", () => {
+      renderDialog({ initialIsPrivate: false, bookSiloEnabled: true });
+      expect(screen.queryByText(/visible to your firm/i)).toBeNull();
+      expect(
+        screen.getByText(/visible to its advisor, firm admins, and staff assigned to that advisor/i),
+      ).toBeInTheDocument();
+    });
+
+    it("names only the advisor and firm admins for a Private client", () => {
+      renderDialog({ initialIsPrivate: true, bookSiloEnabled: true });
+      expect(
+        screen.getByText(/only its advisor and firm admins, plus anyone it is shared with/i),
+      ).toBeInTheDocument();
+    });
+  });
 });

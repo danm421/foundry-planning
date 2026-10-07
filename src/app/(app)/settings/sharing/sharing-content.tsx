@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { clientShares, clients, crmHouseholds } from "@/db/schema";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { firmBookSiloEnabled } from "@/lib/firm-settings";
 import { resolveSharesForRecipient } from "@/lib/clients/shared-access";
 import { resolveActors } from "@/lib/activity/resolve-actors";
 import { resolveFirmNames } from "@/lib/activity/resolve-firm-names";
@@ -147,6 +148,11 @@ export async function SharingContent(): Promise<ReactElement> {
     .orderBy(asc(crmHouseholds.name));
 
   return (
-    <SharingPanels outgoing={outgoing} incoming={incoming} shareableClients={shareableRows} />
+    <SharingPanels
+      outgoing={outgoing}
+      incoming={incoming}
+      shareableClients={shareableRows}
+      bookSiloEnabled={await firmBookSiloEnabled(orgId)}
+    />
   );
 }

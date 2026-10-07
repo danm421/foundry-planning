@@ -9,6 +9,7 @@ type Props = {
   outgoing: OutgoingShare[];
   incoming: IncomingShare[];
   shareableClients: ShareableClient[];
+  bookSiloEnabled?: boolean;
 };
 
 function permissionLabel(p: "view" | "edit"): string {
@@ -155,9 +156,11 @@ function ShareAllPanel({
 function IndividualSharesPanel({
   shares,
   shareableClients,
+  bookSiloEnabled,
 }: {
   shares: OutgoingShare[];
   shareableClients: ShareableClient[];
+  bookSiloEnabled: boolean;
 }): React.ReactElement {
   const router = useRouter();
   const [rows, setRows] = useState<OutgoingShare[]>(shares);
@@ -274,6 +277,7 @@ function IndividualSharesPanel({
           onOpenChange={handleDialogChange}
           clientId={selected.id}
           initialIsPrivate={selected.isPrivate}
+          bookSiloEnabled={bookSiloEnabled}
         />
       ) : null}
     </section>
@@ -339,7 +343,7 @@ function SharedWithMePanel({
 // ---------------------------------------------------------------------------
 // Root export
 // ---------------------------------------------------------------------------
-export function SharingPanels({ outgoing, incoming, shareableClients }: Props): React.ReactElement {
+export function SharingPanels({ outgoing, incoming, shareableClients, bookSiloEnabled = false }: Props): React.ReactElement {
   const shareAll = outgoing.filter((r) => r.scope === "all");
   const perClient = outgoing.filter((r) => r.scope === "client");
 
@@ -352,7 +356,11 @@ export function SharingPanels({ outgoing, incoming, shareableClients }: Props): 
       </div>
 
       <div className="rounded border border-hair bg-card p-[var(--pad-card)]">
-        <IndividualSharesPanel shares={perClient} shareableClients={shareableClients} />
+        <IndividualSharesPanel
+          shares={perClient}
+          shareableClients={shareableClients}
+          bookSiloEnabled={bookSiloEnabled}
+        />
       </div>
 
       <div className="rounded border border-hair bg-card p-[var(--pad-card)]">
