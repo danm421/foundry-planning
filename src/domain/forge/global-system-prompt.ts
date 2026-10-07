@@ -4,7 +4,13 @@
 // response-style clauses but swaps the client-plan framing for product-help
 // framing. The model answers "how do I / where do I" questions from the catalog
 // ONLY — it must never invent a button, menu, or page.
-import { GROUNDING_RULES, HELP_VIDEO_RULE, IDENTITY, RESPONSE_STYLE } from "./system-prompt";
+import {
+  GROUNDING_RULES,
+  HELP_VIDEO_RULE,
+  IDENTITY,
+  RESPONSE_STYLE,
+  inlinePromptValue,
+} from "./system-prompt";
 import { helpTopicIndex, walkthroughIndex } from "./help/catalog";
 
 const GLOBAL_PREFIX_CLAUSES: readonly string[] = [
@@ -33,9 +39,9 @@ export function buildGlobalSystemPrompt(ctx: {
   const tail = [
     "",
     "--- Current context (server-provided; authoritative) ---",
-    `Firm: ${ctx.firmName}.`,
+    `Firm: ${inlinePromptValue(ctx.firmName)}.`,
     "No client is selected.",
-    ...(ctx.advisorName ? [`You are assisting ${ctx.advisorName}.`] : []),
+    ...(ctx.advisorName ? [`You are assisting ${inlinePromptValue(ctx.advisorName)}.`] : []),
     ...(ctx.todayISO ? [`Today's date is ${ctx.todayISO}.`] : []),
     "",
     "Available help topics (id — title); call get_help/search_help for steps:",

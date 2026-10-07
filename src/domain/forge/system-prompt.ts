@@ -130,6 +130,15 @@ export const FORGE_PREFIX_CLAUSES: readonly string[] = [
  */
 export const FORGE_SYSTEM_PREFIX: string = FORGE_PREFIX_CLAUSES.join("\n");
 
+// Record values in a context tail are data: the household name is editable
+// by the client in the portal, scenario names can come from Forge itself. Each
+// is flattened to one capped line so it can never add lines — a forged header,
+// fake preferences — to the block the model is told is server-provided.
+export function inlinePromptValue(value: string, max = 200): string {
+  const flat = value.replace(/[\p{Cc}\p{Zl}\p{Zp}\s]+/gu, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
+}
+
 /**
  * Build the full system prompt: the stable prefix verbatim (so prompt caching
  * hits) followed by a short variable tail naming the firm, client, scenario,
@@ -137,10 +146,10 @@ export const FORGE_SYSTEM_PREFIX: string = FORGE_PREFIX_CLAUSES.join("\n");
  */
 export function buildSystemPrompt(ctx: ForgePromptContext): string {
   const scenarioLabel = ctx.scenario.isBaseCase
-    ? `the base case ("${ctx.scenario.name}")`
-    : `the scenario "${ctx.scenario.name}"`;
+    ? `the base case ("${inlinePromptValue(ctx.scenario.name)}")`
+    : `the scenario "${inlinePromptValue(ctx.scenario.name)}"`;
   const pageLine = ctx.currentPage
-    ? `The advisor is currently viewing the "${ctx.currentPage}" page.`
+    ? `The advisor is currently viewing the "${inlinePromptValue(ctx.currentPage)}" page.`
     : "The advisor is not on a specific report page right now.";
   const importLine = ctx.pendingImport
     ? `A document import (id ${ctx.pendingImport.importId}) is pending review — the advisor just attached it in chat. Call read_import to inspect what was extracted and how it matched existing accounts. Answer the advisor's question grounded in that data; if the extraction came back empty or failed, say so in one line with the real reason (e.g. a scanned image with no readable text). If they didn't ask anything specific, give a one- or two-line summary of what was extracted and how it matched. Do NOT commit the import; applying changes happens on the review screen. When the advisor asks to extract everything from an uploaded document, find what's missing, or pull a specific entity type (income, family, entities, real estate) that the initial import didn't capture, call extract_import with the import id. It re-extracts comprehensively and updates the pending import; then report the per-entity counts and direct them to the review screen to apply.`
@@ -154,13 +163,13 @@ export function buildSystemPrompt(ctx: ForgePromptContext): string {
   const tail = [
     "",
     "--- Current context (server-provided; authoritative) ---",
-    `Firm: ${ctx.firmName}.`,
-    `Active client: ${ctx.client.householdTitle}.`,
+    `Firm: ${inlinePromptValue(ctx.firmName)}.`,
+    `Active client: "${inlinePromptValue(ctx.client.householdTitle)}".`,
     `Active scenario: ${scenarioLabel}.`,
     pageLine,
     ...(importLine ? [importLine] : []),
     ...(transcriptLine ? [transcriptLine] : []),
-    ...(ctx.advisorName ? [`You are assisting ${ctx.advisorName}.`] : []),
+    ...(ctx.advisorName ? [`You are assisting ${inlinePromptValue(ctx.advisorName)}.`] : []),
     ...(ctx.todayISO
       ? [
           `Today's date is ${ctx.todayISO} — treat it as authoritative for any "since", "last", or relative-date reasoning; never guess the date.`,
