@@ -489,8 +489,7 @@ export async function deleteExpenseForClient(args: {
     .select()
     .from(expenses)
     .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, clientId)));
-  // The prune below keys on the bare id, so a row that is not this client's
-  // stops here.
+  // A row that is not this client's stops here, before any cleanup.
   if (!target) return writeError(404, "Expense not found");
   if (target.isDefault) {
     return writeError(400, "Default living-expense rows cannot be deleted.");
@@ -500,7 +499,7 @@ export async function deleteExpenseForClient(args: {
     await tx
       .delete(expenses)
       .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, clientId)));
-    await pruneOrphanScenarioChanges(tx, expenseId);
+    await pruneOrphanScenarioChanges(tx, expenseId, clientId);
   });
 
   await recordAudit({

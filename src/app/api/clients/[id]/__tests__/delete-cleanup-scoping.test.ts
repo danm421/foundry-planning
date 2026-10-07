@@ -131,7 +131,7 @@ describe.each(ROUTES)("DELETE $name", (route) => {
     const res = await route.call(OWN_ID);
 
     expect(res.status).toBe(204);
-    expect(pruneOrphanScenarioChanges).toHaveBeenCalledWith(expect.anything(), OWN_ID);
+    expect(pruneOrphanScenarioChanges).toHaveBeenCalledWith(expect.anything(), OWN_ID, CLIENT);
     if ("willKind" in route) {
       expect(cleanupWillRecipientReferences).toHaveBeenCalledWith(
         expect.anything(),

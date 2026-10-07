@@ -72,7 +72,7 @@ export async function DELETE(
         .returning();
       if (!row) return null;
       await cleanupWillRecipientReferences(tx, "external_beneficiary", beneficiaryId);
-      await pruneOrphanScenarioChanges(tx, beneficiaryId);
+      await pruneOrphanScenarioChanges(tx, beneficiaryId, id);
       return row;
     });
     if (!deleted) {

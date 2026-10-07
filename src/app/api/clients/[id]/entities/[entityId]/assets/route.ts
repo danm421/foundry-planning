@@ -258,7 +258,7 @@ export async function POST(
         // As every base-row delete does: a scenario change aimed at a deleted
         // row would point at an id that no longer exists.
         for (const giftId of plan.giftRowIdsToDelete) {
-          await pruneOrphanScenarioChanges(tx, giftId);
+          await pruneOrphanScenarioChanges(tx, giftId, clientId);
         }
       }
     });

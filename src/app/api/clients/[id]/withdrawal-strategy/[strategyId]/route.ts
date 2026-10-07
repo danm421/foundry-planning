@@ -80,15 +80,15 @@ export async function DELETE(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
-    // The prune keys on the bare id, so it runs only once the client-scoped
-    // delete has proven the row was this client's.
+    // The prune runs only once the client-scoped delete has proven the row
+    // was this client's.
     const deleted = await db.transaction(async (tx) => {
       const rows = await tx
         .delete(withdrawalStrategies)
         .where(and(eq(withdrawalStrategies.id, strategyId), eq(withdrawalStrategies.clientId, id)))
         .returning({ id: withdrawalStrategies.id });
       if (rows.length === 0) return false;
-      await pruneOrphanScenarioChanges(tx, strategyId);
+      await pruneOrphanScenarioChanges(tx, strategyId, id);
       return true;
     });
     if (!deleted) {

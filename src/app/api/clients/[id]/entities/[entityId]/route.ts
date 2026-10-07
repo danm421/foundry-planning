@@ -637,7 +637,7 @@ export async function DELETE(
       // recipient_id is a polymorphic FK-less column, so a plain delete would
       // leave a dangling id and silently wrong estate projections (audit F13).
       await cleanupWillRecipientReferences(tx, "entity", entityId);
-      await pruneOrphanScenarioChanges(tx, entityId);
+      await pruneOrphanScenarioChanges(tx, entityId, id);
 
       await tx
         .delete(entities)

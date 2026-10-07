@@ -96,7 +96,7 @@ export async function DELETE(
     // (audit F13). Atomic with the member delete.
     await db.transaction(async (tx) => {
       await cleanupWillRecipientReferences(tx, "family_member", memberId);
-      await pruneOrphanScenarioChanges(tx, memberId);
+      await pruneOrphanScenarioChanges(tx, memberId, id);
       await tx
         .delete(familyMembers)
         .where(and(eq(familyMembers.id, memberId), eq(familyMembers.clientId, id)));

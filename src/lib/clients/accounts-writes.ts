@@ -706,7 +706,7 @@ export async function deleteAccountForClient(args: {
     await tx
       .delete(accounts)
       .where(and(eq(accounts.id, accountId), eq(accounts.clientId, clientId)));
-    await pruneOrphanScenarioChanges(tx, accountId);
+    await pruneOrphanScenarioChanges(tx, accountId, clientId);
   });
 
   await recordDelete({

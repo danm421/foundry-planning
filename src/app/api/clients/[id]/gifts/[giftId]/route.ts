@@ -206,7 +206,7 @@ export async function DELETE(
         .returning();
       row = deleted;
       if (deleted) {
-        await pruneOrphanScenarioChanges(tx, giftId);
+        await pruneOrphanScenarioChanges(tx, giftId, id);
       }
     });
     if (!row) {

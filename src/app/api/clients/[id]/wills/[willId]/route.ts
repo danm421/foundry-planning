@@ -250,7 +250,7 @@ export async function DELETE(
     }
     await db.transaction(async (tx) => {
       await tx.delete(wills).where(eq(wills.id, willId));
-      await pruneOrphanScenarioChanges(tx, willId);
+      await pruneOrphanScenarioChanges(tx, willId, id);
     });
     await recordAudit({
       action: "will.delete",

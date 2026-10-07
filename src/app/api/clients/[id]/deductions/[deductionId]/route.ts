@@ -104,7 +104,7 @@ export async function DELETE(
       await tx
         .delete(clientDeductions)
         .where(and(eq(clientDeductions.id, deductionId), eq(clientDeductions.clientId, id)));
-      await pruneOrphanScenarioChanges(tx, deductionId);
+      await pruneOrphanScenarioChanges(tx, deductionId, id);
     });
 
     await recordAudit({

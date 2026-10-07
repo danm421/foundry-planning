@@ -342,6 +342,7 @@ describe("DELETE /api/clients/[id]/tax-adjustments/[adjustmentId]", () => {
     expect(pruneOrphanScenarioChanges).toHaveBeenCalledWith(
       expect.anything(),
       mine.id,
+      CLIENT_A,
     );
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({

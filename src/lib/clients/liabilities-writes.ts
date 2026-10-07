@@ -352,7 +352,7 @@ export async function deleteLiabilityForClient(args: {
     await tx
       .delete(liabilities)
       .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, clientId)));
-    await pruneOrphanScenarioChanges(tx, liabilityId);
+    await pruneOrphanScenarioChanges(tx, liabilityId, clientId);
   });
 
   await recordDelete({
