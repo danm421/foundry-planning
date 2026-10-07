@@ -9,6 +9,7 @@ function Row({
   editMode,
   onDelete,
   onEdit,
+  leading,
   label,
   meta,
   starts,
@@ -26,6 +27,8 @@ function Row({
   /** When set, opens the full editor — from a pencil button, and from a click
    *  on the row's name. */
   onEdit?: () => void;
+  /** Rendered before the name — the Current living row's items chevron. */
+  leading?: ReactNode;
   label: string;
   meta?: (string | null | undefined)[];
   /** Legacy combined "2026–2035" descriptor. Superseded by `startSlot`/`endSlot`. */
@@ -65,6 +68,7 @@ function Row({
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
+          {leading}
           {/* `title` so a name that still doesn't fit at the narrowest pane
               width is readable on hover rather than lost to the ellipsis. */}
           {nameOpensEditor ? (

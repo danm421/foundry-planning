@@ -150,4 +150,18 @@ describe("income-expenses Row with inline slots", () => {
     );
     expect(screen.queryByRole("button", { name: "Salary" })).not.toBeInTheDocument();
   });
+
+  it("renders a leading slot before the name", () => {
+    render(
+      <Row
+        editMode={false}
+        label="Current Living Expenses"
+        value="$1"
+        leading={<button aria-label="Show items for Current Living Expenses">›</button>}
+      />,
+    );
+    const toggle = screen.getByRole("button", { name: "Show items for Current Living Expenses" });
+    const name = screen.getByText("Current Living Expenses");
+    expect(toggle.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });
