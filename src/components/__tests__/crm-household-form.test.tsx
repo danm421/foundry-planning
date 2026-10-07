@@ -108,6 +108,23 @@ it("bounces back without prompting when returnTo is set", async () => {
   expect(screen.queryByRole("dialog", { name: /household created/i })).toBeNull();
 });
 
+it.each([
+  ["a slash then a backslash", "%2F%5Cevil.example"],
+  ["a slash, a tab, then a slash", "%2F%09%2Fevil.example"],
+  // Dot segments normalise away, leaving "//evil.example".
+  ["a dot segment", "%2F.%2F%2Fevil.example"],
+  ["a parent segment", "%2Fa%2F..%2F%2Fevil.example"],
+  ["an encoded dot segment", "%2F%252e%2F%2Fevil.example"],
+])("ignores a returnTo of %s that would leave the app", async (_label, encoded) => {
+  mockSearch = `returnTo=${encoded}`;
+  const { container } = render(<CrmHouseholdForm mode="create" />);
+  expect(screen.getByRole("link", { name: /cancel/i })).toHaveAttribute("href", "/crm");
+
+  submitCreate(container);
+  await screen.findByRole("dialog", { name: /household created/i });
+  expect(pushMock).not.toHaveBeenCalled();
+});
+
 it("sends an entered email on the primary contact", async () => {
   // The only contact detail this form asks for, and only because it is what a
   // later intake-form send addresses — without it the "Intake form" start path

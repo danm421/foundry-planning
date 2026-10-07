@@ -18,13 +18,25 @@ interface CrmHouseholdFormProps {
   mode: "create";
 }
 
+// A fixed placeholder origin: resolving against it keeps this free of `window`.
+const RETURN_TO_BASE = "https://return-to.invalid";
+
 // Sanitize `returnTo` so an attacker can't bounce the user to an off-site URL
 // by editing the query string. Only allow same-origin absolute paths.
 function safeReturnTo(raw: string | null): string | null {
-  if (!raw) return null;
-  if (!raw.startsWith("/")) return null;
-  if (raw.startsWith("//")) return null; // protocol-relative URL
-  return raw;
+  if (!raw || !raw.startsWith("/")) return null;
+  // The URL parser reads "\" as "/" and drops tabs/newlines, so "/\host" and
+  // "/<tab>/host" both become "//host". Refuse them outright.
+  if (/[\\\u0000-\u001F\u007F]/.test(raw)) return null;
+  try {
+    const u = new URL(raw, RETURN_TO_BASE);
+    // Dot segments normalise away ("/.//host" → "//host"), and a pathname
+    // starting "//" is another site to the router.
+    if (u.origin !== RETURN_TO_BASE || u.pathname.startsWith("//")) return null;
+    return `${u.pathname}${u.search}${u.hash}`;
+  } catch {
+    return null;
+  }
 }
 
 const STATUS_OPTIONS = [
