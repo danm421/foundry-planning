@@ -11,7 +11,7 @@ import {
   intakeForms,
 } from "@/db/schema";
 import { intakeFormsInBook } from "@/lib/intake/queries";
-import { resolveVisibleAdvisorIds } from "@/lib/visibility";
+import { resolveVisibleAdvisorIds, visibleTaskCondition } from "@/lib/visibility";
 import { assembleFeed } from "./feed-assemble";
 import { milestonesWithin, nextBirthdayWithin, parseDateOnly, toIsoDate } from "./dates";
 import {
@@ -171,6 +171,7 @@ export function mentionToFeedItem(row: MentionRow): FeedItem {
 async function fetchMentionItems(
   firmId: string,
   userId: string,
+  orgRole: string | null | undefined,
   today: Date,
 ): Promise<FeedItem[]> {
   // firmId + mentionedUserId live only on the mentions row, and it carries the
@@ -196,6 +197,8 @@ async function fetchMentionItems(
         eq(crmTaskCommentMentions.mentionedUserId, userId),
         ne(crmTaskComments.authorUserId, userId),
         gte(crmTaskCommentMentions.createdAt, daysAgo(today, RECENT_WINDOW_DAYS)),
+        // A mention never surfaces a task the caller may not open.
+        await visibleTaskCondition(firmId, userId, orgRole),
       ),
     )
     .orderBy(desc(crmTaskCommentMentions.createdAt))
@@ -287,7 +290,7 @@ export async function getHomeFeed(
   const settled = await Promise.allSettled([
     fetchMyTaskItems(firmId, userId, today),
     fetchBirthdayAndMilestoneItems(conditionsPromise, today),
-    fetchMentionItems(firmId, userId, today),
+    fetchMentionItems(firmId, userId, orgRole, today),
     fetchIntakeItems(firmId, userId, orgRole, today),
     fetchImportItems(conditionsPromise, firmId, today),
   ]);

@@ -5,6 +5,7 @@ import { getTaskById } from "@/lib/crm-tasks/queries";
 import { deleteTask, updateTaskField } from "@/lib/crm-tasks/mutations";
 import { updateCrmTaskFieldSchema } from "@/lib/crm-tasks/schemas";
 import { mapCrmTaskError } from "@/lib/crm-tasks/route-errors";
+import { requireCrmHouseholdAccess, requireCrmTaskAccess } from "@/lib/crm/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +15,11 @@ export async function GET(
 ) {
   try {
     const firmId = await requireOrgId();
-    const { userId } = await auth();
+    const { userId, orgRole } = await auth();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { taskId } = await params;
-    const result = await getTaskById(taskId, firmId);
+    const result = await getTaskById(taskId, firmId, { userId, orgRole });
     if (!result) {
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
@@ -38,7 +39,9 @@ export async function PATCH(
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { taskId } = await params;
+    await requireCrmTaskAccess(taskId);
     const body = updateCrmTaskFieldSchema.parse(await req.json());
+    if (body.field === "householdId" && body.value) await requireCrmHouseholdAccess(body.value);
     const task = await updateTaskField(taskId, firmId, userId, body);
     return NextResponse.json({ task });
   } catch (err) {
@@ -56,6 +59,7 @@ export async function DELETE(
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { taskId } = await params;
+    await requireCrmTaskAccess(taskId);
     await deleteTask(taskId, firmId);
     return NextResponse.json({ ok: true });
   } catch (err) {

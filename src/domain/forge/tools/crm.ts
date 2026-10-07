@@ -63,10 +63,8 @@ async function assertTaskInHousehold(
   firmId: string,
   householdId: string,
 ): Promise<true | string> {
-  const row = await getTaskById(taskId, firmId);
-  if (!row) return `Task ${taskId} not found.`;
-  if (row.task.householdId !== householdId) return `Task ${taskId} does not belong to this client.`;
-  return true;
+  const row = await getTaskById(taskId, firmId, { householdId });
+  return row ? true : `Task ${taskId} not found for this client.`;
 }
 
 async function assertNoteInHousehold(
@@ -155,7 +153,7 @@ export function buildCrmTools({ ctx, conversationId }: ForgeToolContext): Struct
       if ("error" in gate) return gate.error;
       try {
         const [tasks, openItems] = await Promise.all([
-          listTasks(gate.firmId, { householdId: gate.householdId }, { status: status ?? null, overdueOnly: overdueOnly ?? false, assigneeUserId: null }),
+          listTasks(gate.firmId, { householdId: gate.householdId }, {}, { status: status ?? null, overdueOnly: overdueOnly ?? false, assigneeUserId: null }),
           listOpenItems(ctx.clientId, gate.firmId),
         ]);
         return JSON.stringify({ tasks, openItems });
@@ -215,10 +213,9 @@ export function buildCrmTools({ ctx, conversationId }: ForgeToolContext): Struct
       const gate = await gateCrm(ctx);
       if ("error" in gate) return gate.error;
       try {
-        // Single fetch doubles as the §6 household-ownership guard.
-        const detail = await getTaskById(taskId, gate.firmId);
-        if (!detail) return `Task ${taskId} not found.`;
-        if (detail.task.householdId !== gate.householdId) return `Task ${taskId} does not belong to this client.`;
+        // Scoping the fetch to the household doubles as the §6 ownership guard.
+        const detail = await getTaskById(taskId, gate.firmId, { householdId: gate.householdId });
+        if (!detail) return `Task ${taskId} not found for this client.`;
         const [comments, activity] = await Promise.all([
           listTaskComments(taskId),
           listTaskActivity(taskId),

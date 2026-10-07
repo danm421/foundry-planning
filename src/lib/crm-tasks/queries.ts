@@ -3,8 +3,25 @@ import {
   crmTasks, crmTags, crmTaskTags, crmTaskComments,
   crmTaskActivity, crmTaskFiles, crmHouseholds,
 } from "@/db/schema";
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
+import { visibleTaskCondition } from "@/lib/visibility";
 import type { NormalizedTaskFilters } from "./filters";
+
+/** Who is reading tasks; the CRM task rule (`visibleTaskCondition`) runs for them. */
+export type TaskViewer = { userId: string; orgRole: string | null | undefined };
+
+/**
+ * Which tasks a read may return: those a viewer may see under the CRM task
+ * rule, or — for a caller that already authorized a household — that
+ * household's tasks only (all of them are visible to whoever may see it).
+ */
+export type TaskAccess = TaskViewer | { householdId: string };
+
+async function accessCondition(firmId: string, access: TaskAccess): Promise<SQL | undefined> {
+  return "householdId" in access
+    ? eq(crmTasks.householdId, access.householdId)
+    : visibleTaskCondition(firmId, access.userId, access.orgRole);
+}
 
 export type TaskListRow = {
   id: string;
@@ -22,10 +39,11 @@ export type TaskListRow = {
 
 export async function listTasks(
   firmId: string,
+  access: TaskAccess,
   scope: { householdId?: string; tagId?: string; priority?: "low" | "med" | "high" },
   filters: NormalizedTaskFilters,
 ): Promise<TaskListRow[]> {
-  const conds = [eq(crmTasks.firmId, firmId)];
+  const conds = [eq(crmTasks.firmId, firmId), await accessCondition(firmId, access)];
   if (scope.householdId) conds.push(eq(crmTasks.householdId, scope.householdId));
   if (scope.priority) conds.push(eq(crmTasks.priority, scope.priority));
   if (filters.assigneeUserId) conds.push(eq(crmTasks.assigneeUserId, filters.assigneeUserId));
@@ -65,10 +83,20 @@ export async function listTasks(
   return rows;
 }
 
-export async function getTaskById(taskId: string, firmId: string) {
-  const task = await db.query.crmTasks.findFirst({
-    where: and(eq(crmTasks.id, taskId), eq(crmTasks.firmId, firmId)),
-  });
+/** The task, or null when it is missing, in another firm, or outside `access`. */
+export async function findVisibleTask(taskId: string, firmId: string, access: TaskAccess) {
+  const [task] = await db
+    .select()
+    .from(crmTasks)
+    .where(
+      and(eq(crmTasks.id, taskId), eq(crmTasks.firmId, firmId), await accessCondition(firmId, access)),
+    )
+    .limit(1);
+  return task ?? null;
+}
+
+export async function getTaskById(taskId: string, firmId: string, access: TaskAccess) {
+  const task = await findVisibleTask(taskId, firmId, access);
   if (!task) return null;
   const tags = await db
     .select({ id: crmTags.id, label: crmTags.label, color: crmTags.color })

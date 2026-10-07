@@ -4,6 +4,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { setTaskStatus } from "@/lib/crm-tasks/mutations";
 import { setCrmTaskStatusSchema } from "@/lib/crm-tasks/schemas";
 import { mapCrmTaskError } from "@/lib/crm-tasks/route-errors";
+import { requireCrmTaskAccess } from "@/lib/crm/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ export async function POST(
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { taskId } = await params;
+    await requireCrmTaskAccess(taskId);
     const body = setCrmTaskStatusSchema.parse(await req.json());
     const { task, followOnId } = await setTaskStatus(taskId, firmId, userId, body.status);
     return NextResponse.json({ task, followOnId });

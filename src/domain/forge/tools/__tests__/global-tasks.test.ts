@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn(async () => "org_A") }));
+vi.mock("@/lib/db-helpers", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/db-helpers")>()),
+  requireOrgId: vi.fn(async () => "org_A"),
+}));
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn(async () => ({ userId: "user_1", orgRole: "org:member" })),
+}));
+vi.mock("@/lib/crm/authz", () => ({ requireCrmHouseholdAccess: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn(async () => {}) }));
 vi.mock("@/lib/crm-tasks/queries", () => ({
   listTasks: vi.fn(),
@@ -30,7 +37,10 @@ import {
 } from "@/lib/crm-tasks/queries";
 import { createTask, updateTaskField, setTaskStatus, postComment, deleteTask } from "@/lib/crm-tasks/mutations";
 import { recordAudit } from "@/lib/audit";
+import { requireCrmHouseholdAccess } from "@/lib/crm/authz";
 
+// The live caller every task read runs the CRM task rule for.
+const VIEWER = { userId: "user_1", orgRole: "org:member" };
 const toolCtx = { ctx: { userId: "user_1", firmId: "org_A" }, conversationId: "conv_1" };
 function getTool(name: string) {
   const t = buildGlobalTaskTools(toolCtx).find((x) => x.name === name);
@@ -53,6 +63,7 @@ describe("tasks_list", () => {
     const out = JSON.parse(String(await getTool("tasks_list").invoke({ status: ["open"] })));
     expect(listTasks).toHaveBeenCalledWith(
       "org_A",
+      VIEWER,
       { householdId: undefined, priority: undefined },
       { status: ["open"], overdueOnly: false, assigneeUserId: null },
     );
@@ -66,6 +77,7 @@ describe("tasks_list", () => {
     await getTool("tasks_list").invoke({ assignee: "me" });
     expect(listTasks).toHaveBeenCalledWith(
       "org_A",
+      VIEWER,
       { householdId: undefined, priority: undefined },
       { status: null, overdueOnly: false, assigneeUserId: "user_1" },
     );
@@ -115,7 +127,7 @@ describe("tasks_detail", () => {
       { id: "f_1", taskId: "task_1", filename: "adv-2b.pdf", storageKey: "SECRET", uploadedAt: "2026-06-21" },
     ] as never);
     const out = JSON.parse(String(await getTool("tasks_detail").invoke({ taskId: "task_1" })));
-    expect(getTaskById).toHaveBeenCalledWith("task_1", "org_A");
+    expect(getTaskById).toHaveBeenCalledWith("task_1", "org_A", VIEWER);
     expect(out.task.assigneeName).toBe("Sue Planner");
     expect(out.comments[0].authorName).toBe("Dan Advisor");
     expect(out.comments[0].bodyMarkdown).toBe("Left a voicemail.");
@@ -165,18 +177,22 @@ describe("tasks_create (HITL)", () => {
     expect(createTask).not.toHaveBeenCalled();
   });
 
-  it("passes a household task through with the model-supplied uuid (createTask asserts firm ownership)", async () => {
+  it("creates a task on a household the caller may see", async () => {
     vi.mocked(createTask).mockResolvedValue({ id: "task_10", title: "Call", householdId: "3f0d2f64-0000-4000-8000-000000000001" } as never);
     await getTool("tasks_create").invoke({ title: "Call", householdId: "3f0d2f64-0000-4000-8000-000000000001" });
+    expect(requireCrmHouseholdAccess).toHaveBeenCalledWith("3f0d2f64-0000-4000-8000-000000000001");
     expect(createTask).toHaveBeenCalledWith("org_A", "user_1", expect.objectContaining({
       householdId: "3f0d2f64-0000-4000-8000-000000000001",
     }));
   });
 
-  it("returns the mutation error as a string when the household is not in the firm", async () => {
-    vi.mocked(createTask).mockRejectedValue(new Error("Household not found in firm"));
+  it("refuses a household the caller may not see, before createTask", async () => {
+    vi.mocked(requireCrmHouseholdAccess).mockRejectedValueOnce(
+      new Error("CRM household not found or access denied: 3f0d2f64-0000-4000-8000-000000000002"),
+    );
     const out = String(await getTool("tasks_create").invoke({ title: "Call", householdId: "3f0d2f64-0000-4000-8000-000000000002" }));
-    expect(out).toMatch(/Household not found in firm/);
+    expect(out).toMatch(/not found or access denied/);
+    expect(createTask).not.toHaveBeenCalled();
   });
 });
 
@@ -202,6 +218,19 @@ describe("tasks_update (Tier-A)", () => {
     expect(out.task.assigneeUserId).toBe("user_1");
   });
 
+  it("refuses to move a task onto a household the caller may not see", async () => {
+    vi.mocked(getTaskById).mockResolvedValue({ task: { id: "task_1" }, tags: [] } as never);
+    vi.mocked(requireCrmHouseholdAccess).mockRejectedValueOnce(
+      new Error("CRM household not found or access denied: 3f0d2f64-0000-4000-8000-000000000002"),
+    );
+    const out = String(await getTool("tasks_update").invoke({
+      taskId: "task_1", field: "householdId", value: "3f0d2f64-0000-4000-8000-000000000002",
+    }));
+    expect(getTaskById).toHaveBeenCalledWith("task_1", "org_A", VIEWER);
+    expect(out).toMatch(/not found or access denied/);
+    expect(updateTaskField).not.toHaveBeenCalled();
+  });
+
   it("returns a zod error string for an invalid enum value (priority: urgent)", async () => {
     vi.mocked(getTaskById).mockResolvedValue({ task: { id: "task_1" }, tags: [] } as never);
     const out = String(await getTool("tasks_update").invoke({ taskId: "task_1", field: "priority", value: "urgent" }));
@@ -215,6 +244,7 @@ describe("tasks_set_status (Tier-A)", () => {
     vi.mocked(getTaskById).mockResolvedValue({ task: { id: "task_1" }, tags: [] } as never);
     vi.mocked(setTaskStatus).mockResolvedValue({ task: { id: "task_1", status: "done" }, followOnId: "task_next" } as never);
     const out = JSON.parse(String(await getTool("tasks_set_status").invoke({ taskId: "task_1", status: "done" })));
+    expect(getTaskById).toHaveBeenCalledWith("task_1", "org_A", VIEWER);
     expect(setTaskStatus).toHaveBeenCalledWith("task_1", "org_A", "user_1", "done");
     expect(out.followOnId).toBe("task_next");
     expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({
@@ -244,6 +274,7 @@ describe("tasks_delete (HITL)", () => {
   it("deletes and audits forge.write_approved", async () => {
     vi.mocked(getTaskById).mockResolvedValue({ task: { id: "task_1" }, tags: [] } as never);
     const out = JSON.parse(String(await getTool("tasks_delete").invoke({ taskId: "task_1" })));
+    expect(getTaskById).toHaveBeenCalledWith("task_1", "org_A", VIEWER);
     expect(deleteTask).toHaveBeenCalledWith("task_1", "org_A");
     expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({
       action: "forge.write_approved", resourceType: "crm_task", resourceId: "task_1",

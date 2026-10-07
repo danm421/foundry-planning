@@ -35,7 +35,11 @@ vi.mock("@/lib/crm-tasks/mutations", () => ({
   postComment: (tid: string, fid: string, uid: string, b: string) => postComment(tid, fid, uid, b),
 }));
 vi.mock("@/lib/crm-tasks/queries", () => ({
-  getTaskById: (t: string, f: string) => getTaskById(t, f),
+  // Like the real read, a household-scoped lookup misses another household's task.
+  getTaskById: async (t: string, f: string, access: { householdId?: string }) => {
+    const row = await getTaskById(t, f, access);
+    return row && access.householdId && row.task.householdId !== access.householdId ? null : row;
+  },
   listTasks: vi.fn(),
   listTaskComments: vi.fn(),
   listTaskActivity: vi.fn(),
@@ -189,7 +193,7 @@ describe("crm_update_task (Tier A, ownership-gated)", () => {
   it("IDOR: same-firm task in another household → updateTaskField NEVER called", async () => {
     getTaskById.mockResolvedValue({ task: { id: "t9", householdId: "hh-OTHER" }, tags: [] });
     const out = await byName("crm_update_task").invoke({ taskId: "t9", field: "title", value: "x" });
-    expect(out).toMatch(/does not belong to this client/i);
+    expect(out).toMatch(/not found for this client/i);
     expect(updateTaskField).not.toHaveBeenCalled();
     expect(recordAudit).not.toHaveBeenCalled();
   });
@@ -213,7 +217,7 @@ describe("crm_complete_task (Tier A, ownership-gated)", () => {
   it("IDOR: same-firm task in another household → setTaskStatus NEVER called", async () => {
     getTaskById.mockResolvedValue({ task: { id: "t9", householdId: "hh-OTHER" }, tags: [] });
     const out = await byName("crm_complete_task").invoke({ taskId: "t9" });
-    expect(out).toMatch(/does not belong to this client/i);
+    expect(out).toMatch(/not found for this client/i);
     expect(setTaskStatus).not.toHaveBeenCalled();
     expect(recordAudit).not.toHaveBeenCalled();
   });
@@ -236,7 +240,7 @@ describe("crm_post_task_comment (Tier A, ownership-gated)", () => {
   it("IDOR: same-firm task in another household → postComment NEVER called", async () => {
     getTaskById.mockResolvedValue({ task: { id: "t9", householdId: "hh-OTHER" }, tags: [] });
     const out = await byName("crm_post_task_comment").invoke({ taskId: "t9", body: "comment" });
-    expect(out).toMatch(/does not belong to this client/i);
+    expect(out).toMatch(/not found for this client/i);
     expect(postComment).not.toHaveBeenCalled();
     expect(recordAudit).not.toHaveBeenCalled();
   });

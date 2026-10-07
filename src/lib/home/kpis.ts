@@ -8,10 +8,17 @@ import {
   scenarios,
 } from "@/db/schema";
 import { toIsoDate } from "./dates";
+import { visibleTaskCondition } from "@/lib/visibility";
 import { OPEN_TASK_STATUSES, aumBookWhere, visibleHouseholdConditions } from "./scope";
 import type { BookKpis } from "./types";
 
-async function fetchOpenTaskCounts(firmId: string, weekEnd: Date) {
+async function fetchOpenTaskCounts(
+  firmId: string,
+  userId: string,
+  orgRole: string | null | undefined,
+  weekEnd: Date,
+) {
+  const visible = await visibleTaskCondition(firmId, userId, orgRole);
   return await db
     .select({
       assignee: crmTasks.assigneeUserId,
@@ -24,6 +31,7 @@ async function fetchOpenTaskCounts(firmId: string, weekEnd: Date) {
         inArray(crmTasks.status, [...OPEN_TASK_STATUSES]),
         isNotNull(crmTasks.dueDate),
         lte(crmTasks.dueDate, toIsoDate(weekEnd)),
+        visible,
       ),
     )
     .groupBy(crmTasks.assigneeUserId);
@@ -37,10 +45,10 @@ export async function getBookKpis(
 ): Promise<BookKpis> {
   const weekEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7);
 
-  // Task query doesn't depend on household visibility, so start it before
-  // awaiting the shared conditions (mirrors getHomeFeed's conditionsPromise pattern).
+  // Start the task count before awaiting the shared household conditions
+  // (mirrors getHomeFeed's conditionsPromise pattern).
   const conditionsPromise = visibleHouseholdConditions(firmId, userId, orgRole);
-  const taskPromise = fetchOpenTaskCounts(firmId, weekEnd);
+  const taskPromise = fetchOpenTaskCounts(firmId, userId, orgRole, weekEnd);
 
   const hhConditions = await conditionsPromise;
 

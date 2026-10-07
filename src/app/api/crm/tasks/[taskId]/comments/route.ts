@@ -39,6 +39,7 @@ export async function POST(
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { taskId } = await params;
+    await requireCrmTaskAccess(taskId);
     const body = postCrmTaskCommentSchema.parse(await req.json());
 
     // Tokens naming non-members stay in the text but get no mention row —

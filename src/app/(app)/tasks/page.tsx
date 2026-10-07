@@ -40,6 +40,7 @@ export default async function TasksRoute({
   const [initialRows, members, firmTags, households] = await Promise.all([
     listTasks(
       firmId,
+      { userId, orgRole },
       { tagId: sp.tagId, priority: coercePriority(sp.priority) },
       filters,
     ),
@@ -54,7 +55,7 @@ export default async function TasksRoute({
   // row after the initial render).
   let initialTaskDetail: TaskDetailBundle | null = null;
   if (sp.task) {
-    const found = await getTaskById(sp.task, firmId);
+    const found = await getTaskById(sp.task, firmId, { userId, orgRole });
     if (found) {
       const [comments, activityRows, files] = await Promise.all([
         listTaskComments(sp.task),

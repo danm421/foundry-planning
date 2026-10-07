@@ -42,7 +42,11 @@ vi.mock("@/lib/crm-tasks/mutations", () => ({
   deleteTask: (tid: string, fid: string) => deleteTask(tid, fid),
 }));
 vi.mock("@/lib/crm-tasks/queries", () => ({
-  getTaskById: (t: string, f: string) => getTaskById(t, f),
+  // Like the real read, a household-scoped lookup misses another household's task.
+  getTaskById: async (t: string, f: string, access: { householdId?: string }) => {
+    const row = await getTaskById(t, f, access);
+    return row && access.householdId && row.task.householdId !== access.householdId ? null : row;
+  },
   listTasks: vi.fn(),
   listTaskComments: vi.fn(),
   listTaskActivity: vi.fn(),
@@ -119,7 +123,7 @@ describe("crm_delete_task (Tier B)", () => {
   it("rejects a task from another household (IDOR) and does NOT delete or audit-approve", async () => {
     getTaskById.mockResolvedValue({ task: { id: "t1", householdId: "hh-OTHER" }, tags: [] });
     const out = await byName("crm_delete_task").invoke({ taskId: "t1" });
-    expect(out).toMatch(/does not belong to this client/i);
+    expect(out).toMatch(/not found for this client/i);
     expect(deleteTask).not.toHaveBeenCalled();
     expect(recordAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: "forge.write_approved" }));
   });

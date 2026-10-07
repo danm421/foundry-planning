@@ -115,7 +115,7 @@ export async function loadInsightsBattery(
     .slice(0, 15)
     .map((n) => `[${n.occurredAt.slice(0, 10)}] ${n.kind} — ${n.title}: ${n.body}`)
     .join("\n");
-  const tasks = await listTasks(firmId, { householdId: client.crmHouseholdId }, {
+  const tasks = await listTasks(firmId, { householdId: client.crmHouseholdId }, {}, {
     status: null,
     overdueOnly: false,
     assigneeUserId: null,

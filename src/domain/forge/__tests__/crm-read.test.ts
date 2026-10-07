@@ -19,8 +19,12 @@ const getTaskById = vi.fn();
 const listTaskComments = vi.fn();
 const listTaskActivity = vi.fn();
 vi.mock("@/lib/crm-tasks/queries", () => ({
-  listTasks: (f: string, s: unknown, fl: unknown) => listTasks(f, s, fl),
-  getTaskById: (t: string, f: string) => getTaskById(t, f),
+  listTasks: (f: string, a: unknown, s: unknown, fl: unknown) => listTasks(f, a, s, fl),
+  // Like the real read, a household-scoped lookup misses another household's task.
+  getTaskById: async (t: string, f: string, access: { householdId?: string }) => {
+    const row = await getTaskById(t, f, access);
+    return row && access.householdId && row.task.householdId !== access.householdId ? null : row;
+  },
   listTaskComments: (t: string) => listTaskComments(t),
   listTaskActivity: (t: string) => listTaskActivity(t),
 }));
@@ -92,7 +96,7 @@ describe("crm_list_tasks", () => {
     listTasks.mockResolvedValue([{ id: "t1", title: "Send IPS", status: "open", dueDate: "2026-06-20", householdId: "hh-1" }]);
     listOpenItemsForClient.mockResolvedValue([{ id: "oi1", label: "Gather statements", status: "open" }]);
     const out = JSON.parse(await byName("crm_list_tasks").invoke({ status: ["open"], overdueOnly: false }));
-    expect(listTasks).toHaveBeenCalledWith("org_A", { householdId: "hh-1" }, expect.objectContaining({ status: ["open"], overdueOnly: false }));
+    expect(listTasks).toHaveBeenCalledWith("org_A", { householdId: "hh-1" }, {}, expect.objectContaining({ status: ["open"], overdueOnly: false }));
     expect(out.tasks).toHaveLength(1);
     expect(out.openItems).toHaveLength(1);
   });
@@ -120,7 +124,7 @@ describe("crm_task_detail", () => {
     listTaskComments.mockResolvedValue([{ id: "cm1", authorUserId: "u9", bodyMarkdown: "Waiting on the form.", createdAt: "2026-06-28" }]);
     listTaskActivity.mockResolvedValue([{ id: "ac1", userId: "u9", kind: "created", payload: {}, createdAt: "2026-06-20" }]);
     const out = JSON.parse(await byName("crm_task_detail").invoke({ taskId: "t1" }));
-    expect(getTaskById).toHaveBeenCalledWith("t1", "org_A");
+    expect(getTaskById).toHaveBeenCalledWith("t1", "org_A", { householdId: "hh-1" });
     expect(out.task.title).toBe("Update beneficiaries");
     expect(out.tags[0].label).toBe("insurance");
     expect(out.comments[0].bodyMarkdown).toBe("Waiting on the form.");
@@ -130,7 +134,7 @@ describe("crm_task_detail", () => {
   it("rejects a same-firm task from ANOTHER household (ownership guard)", async () => {
     getTaskById.mockResolvedValue({ task: { id: "t2", householdId: "hh-OTHER" }, tags: [] });
     const out = await byName("crm_task_detail").invoke({ taskId: "t2" });
-    expect(out).toMatch(/does not belong to this client/i);
+    expect(out).toMatch(/not found for this client/i);
     expect(listTaskComments).not.toHaveBeenCalled();
   });
 

@@ -266,7 +266,7 @@ describe("approval node — crm_delete_task (Tier-B CRM write)", () => {
     vi.mocked(verifyClientAccess).mockResolvedValue({ ok: true, permission: "edit", firmId: "org_session", access: "own" });
     vi.mocked(clientToHousehold).mockResolvedValue("hh_1");
     vi.mocked(recordAudit).mockResolvedValue(undefined);
-    // assertTaskInHousehold checks getTaskById then compares householdId
+    // assertTaskInHousehold looks the task up within the resolved household
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(getTaskById).mockResolvedValue({ task: { id: "task_abc", householdId: "hh_1" } as any, tags: [] });
     vi.mocked(deleteTask).mockResolvedValue(undefined);

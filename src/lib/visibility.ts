@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { clients, crmHouseholds, staffAdvisorVisibility } from "@/db/schema";
-import { and, eq, inArray, ne, notInArray, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
+import { clients, crmHouseholds, crmTasks, staffAdvisorVisibility } from "@/db/schema";
+import { and, eq, inArray, isNull, ne, notInArray, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { STAFF_ROLES } from "./capabilities";
 import { firmBookSiloEnabled } from "./firm-settings";
@@ -129,6 +129,37 @@ export function privateHouseholdFilter(
       .where(
         and(eq(clients.firmId, firmId), eq(clients.isPrivate, true), ne(clients.advisorId, userId)),
       ),
+  );
+}
+
+/**
+ * The CRM task rule, as a WHERE condition over `crm_tasks`. A task with no
+ * household is firm-wide, a task assigned to the caller is always theirs, and
+ * any other task follows its household: the book rule plus the Private client
+ * rule. Undefined (no filter) when the caller sees every household. Uncorrelated
+ * standalone builder, like `privateHouseholdFilter`, so it needs no `db`.
+ */
+export async function visibleTaskCondition(
+  firmId: string,
+  userId: string,
+  orgRole: string | null | undefined,
+): Promise<SQL | undefined> {
+  const scope = advisorScopeCondition(
+    crmHouseholds.advisorId,
+    await resolveVisibleAdvisorIds(userId, orgRole, firmId),
+  );
+  const privacy = privateHouseholdFilter(firmId, userId, orgRole);
+  if (!scope && !privacy) return undefined;
+  return or(
+    isNull(crmTasks.householdId),
+    eq(crmTasks.assigneeUserId, userId),
+    inArray(
+      crmTasks.householdId,
+      new QueryBuilder()
+        .select({ id: crmHouseholds.id })
+        .from(crmHouseholds)
+        .where(and(eq(crmHouseholds.firmId, firmId), scope, privacy)),
+    ),
   );
 }
 

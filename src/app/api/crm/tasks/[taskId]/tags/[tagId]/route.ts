@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { detachTag } from "@/lib/crm-tasks/mutations";
 import { mapCrmTaskError } from "@/lib/crm-tasks/route-errors";
+import { requireCrmTaskAccess } from "@/lib/crm/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ export async function DELETE(
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { taskId, tagId } = await params;
+    await requireCrmTaskAccess(taskId);
     await detachTag(taskId, firmId, tagId, userId);
     return NextResponse.json({ ok: true });
   } catch (err) {

@@ -1,13 +1,14 @@
 import { db } from "@/db";
-import { crmHouseholds, crmTasks } from "@/db/schema";
+import { crmHouseholds } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { auth } from "@clerk/nextjs/server";
 import { ForbiddenError } from "@/lib/authz";
 import { hidesPrivateClient, resolveVisibleAdvisorIds, VISIBLE_ALL } from "@/lib/visibility";
 import { STAFF_ROLES } from "@/lib/capabilities";
 import type { Principal } from "@/lib/clients/authz";
 import { callerMaySeeAdvisor } from "@/lib/clients/authz";
+import { findVisibleTask } from "@/lib/crm-tasks/queries";
 
 // The planning client's Private flag and owner, loaded with the household so
 // the household gates apply the same Private rule as the client gates.
@@ -91,16 +92,16 @@ export async function canReadVault(householdId: string): Promise<boolean> {
 }
 
 /**
- * Org-scoped accessor for a CRM task. Mirrors `requireCrmHouseholdAccess` —
- * fetch the row scoped to the caller's firm (Clerk orgId) and throw if it
- * isn't visible. Returns both the row and the firm id so callers can thread
- * them into audit/recordActivity.
+ * Accessor for a CRM task the caller may see: in their firm (Clerk orgId) and
+ * visible under the CRM task rule (`visibleTaskCondition`). Mirrors
+ * `requireCrmHouseholdAccess`, so missing and hidden throw alike. Returns both
+ * the row and the firm id so callers can thread them into audit/recordActivity.
  */
 export async function requireCrmTaskAccess(taskId: string) {
   const orgId = await requireOrgId();
-  const task = await db.query.crmTasks.findFirst({
-    where: and(eq(crmTasks.id, taskId), eq(crmTasks.firmId, orgId)),
-  });
+  const { userId, orgRole } = await auth();
+  if (!userId) throw new UnauthorizedError();
+  const task = await findVisibleTask(taskId, orgId, { userId, orgRole });
   if (!task) {
     throw new Error(`CRM task not found or access denied: ${taskId}`);
   }

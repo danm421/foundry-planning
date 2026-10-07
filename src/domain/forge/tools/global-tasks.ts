@@ -1,9 +1,10 @@
 // src/domain/forge/tools/global-tasks.ts
 //
-// GLOBAL (clientless) firm-wide CRM task tools. Every tool re-derives firmId
-// via requireOrgId() on EVERY call — the model never supplies scope. Mutations
-// verify the task via getTaskById(taskId, firmId) before acting (firm-scope
-// IDOR; no household gate — the global thread is firm-wide by design).
+// GLOBAL (clientless) CRM task tools. Every tool re-derives firmId and the
+// caller on EVERY call — the model never supplies scope. Reads run the CRM task
+// rule for the caller (household-less tasks, their own, and their book's
+// households), mutations verify the task through the same read before acting,
+// and a task is only created on, or moved to, a household the caller may see.
 // tasks_create / tasks_delete are in WRITE_TOOL_NAMES → HITL; tasks_update /
 // tasks_set_status / tasks_comment auto-apply (Tier-A, mirroring the client
 // thread's crm_update_task / crm_complete_task / crm_post_task_comment) and
@@ -12,10 +13,13 @@
 import { tool } from "@langchain/core/tools";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
-import { requireOrgId } from "@/lib/db-helpers";
+import { auth } from "@clerk/nextjs/server";
+import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
+import { requireCrmHouseholdAccess } from "@/lib/crm/authz";
 import {
   listTasks, getTaskById, listTaskComments, listTaskActivity, listTaskFiles,
+  type TaskViewer,
 } from "@/lib/crm-tasks/queries";
 import {
   createTask, updateTaskField, setTaskStatus, postComment, deleteTask,
@@ -28,6 +32,14 @@ const TASK_LIST_CAP = 100;
 
 const statusEnum = z.enum(["open", "in_progress", "blocked", "done"]);
 const priorityEnum = z.enum(["low", "med", "high"]);
+
+/** The firm and the live caller the CRM task rule runs for. */
+async function taskScope(): Promise<{ firmId: string; viewer: TaskViewer }> {
+  const firmId = await requireOrgId();
+  const { userId, orgRole } = await auth();
+  if (!userId) throw new UnauthorizedError();
+  return { firmId, viewer: { userId, orgRole } };
+}
 
 /** userId → displayName map; empty on Clerk failure so names degrade to raw ids. */
 async function memberNameMap(firmId: string): Promise<Map<string, string>> {
@@ -61,13 +73,14 @@ export function buildGlobalTaskTools({ ctx, conversationId }: ForgeGlobalToolCon
   const tasksList = tool(
     async ({ status, overdueOnly, priority, householdId, assignee }) => {
       try {
-        const firmId = await requireOrgId();
+        const { firmId, viewer } = await taskScope();
         let assigneeUserId: string | null = null;
         if (assignee && assignee !== "unassigned") {
           assigneeUserId = assignee === "me" ? ctx.userId : assignee;
         }
         const rows = await listTasks(
           firmId,
+          viewer,
           { householdId: householdId ?? undefined, priority: priority ?? undefined },
           { status: status ?? null, overdueOnly: overdueOnly ?? false, assigneeUserId },
         );
@@ -104,8 +117,8 @@ export function buildGlobalTaskTools({ ctx, conversationId }: ForgeGlobalToolCon
   const tasksDetail = tool(
     async ({ taskId }) => {
       try {
-        const firmId = await requireOrgId();
-        const detail = await getTaskById(taskId, firmId);
+        const { firmId, viewer } = await taskScope();
+        const detail = await getTaskById(taskId, firmId, viewer);
         if (!detail) return `Task ${taskId} not found.`;
         const [comments, activity, files, names] = await Promise.all([
           listTaskComments(taskId),
@@ -179,7 +192,6 @@ export function buildGlobalTaskTools({ ctx, conversationId }: ForgeGlobalToolCon
           if ("error" in resolved) return resolved.error;
           assigneeUserId = resolved.userId;
         }
-        // householdId firm-ownership is asserted inside createTask (assertHouseholdInFirm).
         const input = createCrmTaskSchema.parse({
           title: args.title,
           description: args.description ?? "",
@@ -191,6 +203,7 @@ export function buildGlobalTaskTools({ ctx, conversationId }: ForgeGlobalToolCon
           householdId: args.householdId ?? null,
           assigneeUserId,
         });
+        if (input.householdId) await requireCrmHouseholdAccess(input.householdId);
         const task = await createTask(firmId, ctx.userId, input);
         await recordAudit({
           action: "forge.write_approved",
@@ -228,8 +241,8 @@ export function buildGlobalTaskTools({ ctx, conversationId }: ForgeGlobalToolCon
   const tasksUpdate = tool(
     async ({ taskId, field, value }) => {
       try {
-        const firmId = await requireOrgId();
-        const existing = await getTaskById(taskId, firmId);
+        const { firmId, viewer } = await taskScope();
+        const existing = await getTaskById(taskId, firmId, viewer);
         if (!existing) return `Task ${taskId} not found.`;
         let resolvedValue = value;
         if (field === "assigneeUserId" && value !== null) {
@@ -237,9 +250,10 @@ export function buildGlobalTaskTools({ ctx, conversationId }: ForgeGlobalToolCon
           if ("error" in resolved) return resolved.error;
           resolvedValue = resolved.userId;
         }
-        // householdId firm-ownership is asserted inside updateTaskField; enum/date
-        // values are validated by the discriminated union before any write.
+        // Enum/date/uuid values are validated by the discriminated union before
+        // any read or write.
         const update = updateCrmTaskFieldSchema.parse({ field, value: resolvedValue });
+        if (update.field === "householdId" && update.value) await requireCrmHouseholdAccess(update.value);
         const task = await updateTaskField(taskId, firmId, ctx.userId, update);
         await auditTierA(firmId, taskId, "tasks_update");
         return JSON.stringify({ task });
@@ -265,8 +279,8 @@ export function buildGlobalTaskTools({ ctx, conversationId }: ForgeGlobalToolCon
   const tasksSetStatus = tool(
     async ({ taskId, status }) => {
       try {
-        const firmId = await requireOrgId();
-        const existing = await getTaskById(taskId, firmId);
+        const { firmId, viewer } = await taskScope();
+        const existing = await getTaskById(taskId, firmId, viewer);
         if (!existing) return `Task ${taskId} not found.`;
         const result = await setTaskStatus(taskId, firmId, ctx.userId, status);
         await auditTierA(firmId, taskId, "tasks_set_status");
@@ -287,8 +301,8 @@ export function buildGlobalTaskTools({ ctx, conversationId }: ForgeGlobalToolCon
   const tasksComment = tool(
     async ({ taskId, body }) => {
       try {
-        const firmId = await requireOrgId();
-        const existing = await getTaskById(taskId, firmId);
+        const { firmId, viewer } = await taskScope();
+        const existing = await getTaskById(taskId, firmId, viewer);
         if (!existing) return `Task ${taskId} not found.`;
         const comment = await postComment(taskId, firmId, ctx.userId, body);
         await auditTierA(firmId, taskId, "tasks_comment");
@@ -309,8 +323,8 @@ export function buildGlobalTaskTools({ ctx, conversationId }: ForgeGlobalToolCon
   const tasksDelete = tool(
     async ({ taskId }) => {
       try {
-        const firmId = await requireOrgId();
-        const existing = await getTaskById(taskId, firmId);
+        const { firmId, viewer } = await taskScope();
+        const existing = await getTaskById(taskId, firmId, viewer);
         if (!existing) return `Task ${taskId} not found.`;
         await deleteTask(taskId, firmId);
         await recordAudit({

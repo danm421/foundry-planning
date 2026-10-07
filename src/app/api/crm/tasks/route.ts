@@ -6,6 +6,7 @@ import { createTask } from "@/lib/crm-tasks/mutations";
 import { createCrmTaskSchema } from "@/lib/crm-tasks/schemas";
 import { normalizeQuickFilters, type TaskQuickFilter } from "@/lib/crm-tasks/filters";
 import { mapCrmTaskError } from "@/lib/crm-tasks/route-errors";
+import { requireCrmHouseholdAccess } from "@/lib/crm/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ const QUICK: ReadonlyArray<TaskQuickFilter> = ["all", "mine", "open", "overdue",
 export async function GET(req: NextRequest) {
   try {
     const firmId = await requireOrgId();
-    const { userId } = await auth();
+    const { userId, orgRole } = await auth();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const sp = req.nextUrl.searchParams;
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
       tagId: sp.get("tagId") || undefined,
       priority: (sp.get("priority") as "low" | "med" | "high" | null) || undefined,
     };
-    const rows = await listTasks(firmId, scope, filters);
+    const rows = await listTasks(firmId, { userId, orgRole }, scope, filters);
     return NextResponse.json({ tasks: rows });
   } catch (err) {
     return mapCrmTaskError(err);
@@ -45,6 +46,7 @@ export async function POST(req: NextRequest) {
     const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const body = createCrmTaskSchema.parse(await req.json());
+    if (body.householdId) await requireCrmHouseholdAccess(body.householdId);
     const task = await createTask(firmId, userId, body);
     return NextResponse.json({ task }, { status: 201 });
   } catch (err) {

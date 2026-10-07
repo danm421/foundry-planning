@@ -53,7 +53,7 @@ export default async function CrmHouseholdPage({
     relationships,
   ] = await Promise.all([
     resolveActors([household.advisorId]),
-    listTasks(firmId, { householdId: id }, filters),
+    listTasks(firmId, { householdId: id }, {}, filters),
     listFirmMembers(firmId),
     listFirmTags(firmId),
     listHouseholdPickerOptions(firmId, userId, orgRole),
@@ -63,7 +63,7 @@ export default async function CrmHouseholdPage({
 
   let initialTaskDetail: TaskDetailBundle | null = null;
   if (task) {
-    const found = await getTaskById(task, firmId);
+    const found = await getTaskById(task, firmId, { userId, orgRole });
     if (found) {
       const [comments, activityRows, files] = await Promise.all([
         listTaskComments(task),
