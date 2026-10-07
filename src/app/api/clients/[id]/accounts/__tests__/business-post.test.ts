@@ -14,6 +14,7 @@ vi.mock("@/lib/db-scoping", () => ({
   assertModelPortfoliosInFirm: vi.fn().mockResolvedValue({ ok: true }),
   assertTickerPortfoliosInFirm: vi.fn().mockResolvedValue({ ok: true }),
   assertAccountsInClient: vi.fn().mockResolvedValue({ ok: true }),
+  assertFamilyMembersInClient: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 vi.mock("@/lib/audit", async () => {
@@ -211,10 +212,11 @@ describe("POST /api/clients/[id]/accounts — business category", () => {
   it("rejects a parentAccountId that belongs to a different client (tenant check)", async () => {
     // Issue 1 regression: assertAccountsInClient must gate parentAccountId.
     const mocked = vi.mocked(assertAccountsInClient);
-    mocked.mockResolvedValueOnce({
-      ok: false,
-      reason: `Account ${ACC_OTHER} not owned by this client`,
-    });
+    mocked.mockImplementation(async (_clientId, ids) =>
+      ids.includes(ACC_OTHER)
+        ? { ok: false, reason: `Account ${ACC_OTHER} not owned by this client` }
+        : { ok: true },
+    );
 
     const res = await POST(
       buildReq({
