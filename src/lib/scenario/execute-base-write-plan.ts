@@ -240,6 +240,12 @@ export async function executeBaseWritePlan(
       entry.table,
       remapRefs(translated, idRemap),
     );
+    // Which row, client and scenario this is comes from the change's target and
+    // ctx (the WHERE below), never from the payload — the same rule the insert
+    // path follows via scopeValues.
+    delete set.id;
+    delete set.clientId;
+    delete set.scenarioId;
     if ("updatedAt" in cols) set.updatedAt = new Date();
     const matched = await tx
       .update(entry.table)

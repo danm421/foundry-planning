@@ -487,6 +487,39 @@ describe("executeBaseWritePlan", () => {
     expect(counts.account).toBe(1);
   });
 
+  // An edit's `set` comes off a scenario change payload, and the changes route
+  // accepts that as an open record. Which client and scenario a row belongs to
+  // (and its id) must come from ctx and the change's target, never from the
+  // payload — the rule the insert path already follows via scopeValues.
+  it("keeps an updated row in the promoting client whatever scope the edit names", async () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      updates: [
+        { kind: "entity", id: "e1", set: { name: "Trust", clientId: "c2" } },
+        {
+          kind: "account",
+          id: "a1",
+          set: { value: 250, id: "a2", clientId: "c2", scenarioId: "base2" },
+        },
+      ],
+    };
+    const { tx, ops } = makeTx();
+    await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
+
+    const sets = ops
+      .filter((o) => o.op === "update")
+      .map((o) => o.arg as Record<string, unknown>);
+    expect(sets).toHaveLength(2);
+    for (const set of sets) {
+      expect(set).not.toHaveProperty("id");
+      if ("clientId" in set) expect(set.clientId).toBe("c1");
+      if ("scenarioId" in set) expect(set.scenarioId).toBe("base1");
+    }
+    // The real edits still land.
+    expect(sets[0].name).toBe("Trust");
+    expect(sets[1].value).toBe("250");
+  });
+
   it("routes a plan_settings singleton edit to the planSettings table", async () => {
     const plan: BaseWritePlan = {
       ...emptyPlan(),
