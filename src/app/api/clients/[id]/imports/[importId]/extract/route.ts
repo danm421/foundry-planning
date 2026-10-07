@@ -7,7 +7,7 @@ import {
     clientImportFiles,
 } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
-import { requireActiveSubscription } from "@/lib/authz";
+import { requireActiveSubscription, ForbiddenError as SubscriptionForbiddenError } from "@/lib/authz";
 import {
     requireImportAccess,
     ForbiddenError,
@@ -15,7 +15,7 @@ import {
 } from "@/lib/imports/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
-import { recordAudit } from "@/lib/audit";
+import { refuseUnlessAiImportEntitled } from "@/lib/imports/ai-import-gate";
 import { runImportExtraction } from "@/lib/imports/run-extraction";
 
 export const dynamic = "force-dynamic";
@@ -82,26 +82,15 @@ export async function POST(request: NextRequest, { params }: Params) {
         await requireImportAccess({ importId, clientId, firmId, userId });
 
         // Defense-in-depth: the middleware already blocks this POST for
-        // non-active subscriptions, and every active seat includes the
-        // ai_import entitlement (it's bundled into the plan). This guard fails
-        // closed if the Clerk entitlements metadata is missing or stale.
-        const entitlements =
-          (sessionClaims as { org_public_metadata?: { entitlements?: string[] } } | null)
-            ?.org_public_metadata?.entitlements;
-        if (!entitlements?.includes("ai_import")) {
-            await recordAudit({
-                action: "billing.access_denied",
-                resourceType: "firm",
-                resourceId: firmId,
-                clientId,
-                firmId,
-                metadata: { reason: "ai_import_not_entitled", importId },
-            });
-            return NextResponse.json(
-                { error: "ai_import_not_entitled" },
-                { status: 403 },
-            );
-        }
+        // non-active subscriptions; this fails closed when the firm's
+        // ai_import entitlement is revoked or the Clerk metadata is stale.
+        const denied = await refuseUnlessAiImportEntitled({
+            sessionClaims,
+            firmId,
+            clientId,
+            metadata: { importId },
+        });
+        if (denied) return denied;
 
         const body = (await request.json().catch(() => ({}))) as BodyArgs;
         const model = body.model === "full" ? "full" : "mini";
@@ -165,6 +154,11 @@ export async function POST(request: NextRequest, { params }: Params) {
         }
         if (err instanceof ForbiddenError) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+        // `@/lib/authz`'s ForbiddenError is a different class from the
+        // imports one above; without this, no subscription reads as a 500.
+        if (err instanceof SubscriptionForbiddenError) {
+            return NextResponse.json({ error: err.message }, { status: 403 });
         }
         if (err instanceof NotFoundError) {
             return NextResponse.json({ error: err.message }, { status: 404 });

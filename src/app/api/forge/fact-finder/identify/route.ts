@@ -10,6 +10,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscription, authErrorResponse } from "@/lib/authz";
 import { checkForgeRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { isForgeEnabled, hasForgeEntitlement } from "@/domain/forge/flag";
+import { hasAiImportEntitlement } from "@/lib/imports/ai-import-gate";
 import { detectUploadKind } from "@/lib/extraction/validate-upload";
 import { identifyHousehold } from "@/lib/extraction/identify-household";
 import { listCrmHouseholds } from "@/lib/crm/households";
@@ -33,6 +34,7 @@ export async function POST(req: Request): Promise<Response> {
   // NO client access gate — this is the clientless (global) route.
   let firmId: string;
   let entitlements: string[] | undefined;
+  let aiImportEntitled: boolean;
   try {
     firmId = await requireOrgId();
     await requireActiveSubscription();
@@ -40,6 +42,7 @@ export async function POST(req: Request): Promise<Response> {
     if (!userId) return json(401, { error: "Unauthorized" });
     const claims = sessionClaims as { org_public_metadata?: { entitlements?: string[] } } | null;
     entitlements = claims?.org_public_metadata?.entitlements;
+    aiImportEntitled = hasAiImportEntitlement(sessionClaims);
   } catch (err) {
     const mapped = authErrorResponse(err);
     if (mapped) return json(mapped.status, mapped.body);
@@ -47,6 +50,10 @@ export async function POST(req: Request): Promise<Response> {
   }
   if (!hasForgeEntitlement(entitlements)) {
     return json(403, { error: "Forge is not enabled for your plan." });
+  }
+  // The peek sends the document to the model, so it needs AI import too.
+  if (!aiImportEntitled) {
+    return json(403, { error: "AI document import is not enabled for your plan." });
   }
 
   // 5. Rate limit (fail-closed) — reuse the Forge-family limiter (clientless).

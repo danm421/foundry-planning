@@ -5,6 +5,8 @@ import type { ClientSearchResult } from "@/lib/client-search";
 // --- mocks -----------------------------------------------------------------
 // firmId is re-derived server-side, never trusted from the model. Pin it to
 // the ctx firmId so the search assertion is stable.
+const authMock = vi.fn();
+vi.mock("@clerk/nextjs/server", () => ({ auth: () => authMock() }));
 const requireOrgId = vi.fn<() => Promise<string>>();
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: () => requireOrgId() }));
 
@@ -367,6 +369,22 @@ describe("summarizeImport — dependents count", () => {
 });
 
 describe("read.ts — extract_import", () => {
+  beforeEach(() => {
+    authMock.mockResolvedValue({
+      sessionClaims: { org_public_metadata: { entitlements: ["ai_import"] } },
+    });
+  });
+
+  it("refuses without calling the extractor when the firm's AI import is off", async () => {
+    authMock.mockResolvedValue({
+      sessionClaims: { org_public_metadata: { entitlements: ["ai_forge"] } },
+    });
+    const out = await tool("extract_import").invoke({ importId: "imp1" });
+
+    expect(JSON.parse(out as string).note).toBe("ai_import_not_entitled");
+    expect(runImportExtraction).not.toHaveBeenCalled();
+  });
+
   // The advisor asking Forge to "pull the holdings out of this" is the ONLY
   // signal that reaches this tool — `client_imports.extract_holdings` defaults
   // to false and no Forge entry point ever writes it, so keying off the column

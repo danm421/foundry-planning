@@ -27,13 +27,14 @@ vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 vi.mock("@/lib/extraction/extract", () => ({ extractDocument: vi.fn() }));
 vi.mock("@/lib/imports/blob", () => ({ downloadImportFile: vi.fn() }));
 
-// After the gate, the route queries import files; return [] so an entitled
-// firm short-circuits to a 400 ("No files") — proving it passed the guard
-// without reaching extractDocument.
+// An entitled firm that gets past the guard finds no file and 404s, which
+// proves the guard passed without reaching extractDocument or any write.
 vi.mock("@/db", () => ({
   db: {
     select: vi.fn(() => ({
-      from: vi.fn(() => ({ where: vi.fn(() => Promise.resolve([])) })),
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({ limit: vi.fn(() => Promise.resolve([])) })),
+      })),
     })),
     insert: vi.fn(),
     update: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock("@/db", () => ({
 }));
 
 import { POST } from "../route";
+import { db } from "@/db";
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscription, ForbiddenError } from "@/lib/authz";
@@ -50,11 +52,13 @@ import { extractDocument } from "@/lib/extraction/extract";
 
 function makeReq() {
   return new Request(
-    "https://app.foundryplanning.com/api/clients/c1/imports/i1/extract",
+    "https://app.foundryplanning.com/api/clients/c1/imports/i1/files/f1/extract",
     { method: "POST", headers: { "content-type": "application/json" }, body: "{}" },
   ) as never;
 }
-const params = { params: Promise.resolve({ id: "c1", importId: "i1" }) };
+const params = {
+  params: Promise.resolve({ id: "c1", importId: "i1", fileId: "f1" }),
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -65,17 +69,18 @@ beforeEach(() => {
   vi.mocked(checkImportRateLimit).mockResolvedValue({ allowed: true } as never);
 });
 
-describe("extract route entitlement guard", () => {
+describe("per-file re-extract route guards", () => {
   it("403s with ai_import_not_entitled when the entitlement is absent", async () => {
     vi.mocked(auth).mockResolvedValue({
       userId: "user_1",
-      sessionClaims: { org_public_metadata: { entitlements: [] } },
+      sessionClaims: { org_public_metadata: { entitlements: ["ai_forge"] } },
     } as never);
 
     const res = await POST(makeReq(), params);
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "ai_import_not_entitled" });
     expect(extractDocument).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   it("passes the guard when the firm holds the ai_import entitlement", async () => {
@@ -84,9 +89,8 @@ describe("extract route entitlement guard", () => {
       sessionClaims: { org_public_metadata: { entitlements: ["ai_import"] } },
     } as never);
 
-    // No files → 400 after the gate, proving we passed it without extracting.
     const res = await POST(makeReq(), params);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(404);
     expect(extractDocument).not.toHaveBeenCalled();
   });
 
@@ -98,24 +102,6 @@ describe("extract route entitlement guard", () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "Active subscription required" });
     expect(extractDocument).not.toHaveBeenCalled();
-  });
-
-  it("403s for a shared (cross-org) recipient with access='shared'", async () => {
-    const { verifyClientAccess } = await import("@/lib/clients/authz");
-    vi.mocked(verifyClientAccess).mockResolvedValueOnce({
-      ok: true,
-      permission: "edit",
-      firmId: "org_owner",
-      access: "shared",
-    } as never);
-    vi.mocked(auth).mockResolvedValue({
-      userId: "user_1",
-      sessionClaims: { org_public_metadata: { entitlements: ["ai_import"] } },
-    } as never);
-
-    const res = await POST(makeReq(), params);
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "Cross-organization imports are not supported." });
-    expect(extractDocument).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
   });
 });

@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
-import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
-import { requireActiveSubscriptionForFirm } from "@/lib/authz";
+import { auth } from "@clerk/nextjs/server";
+import { requireOrgId } from "@/lib/db-helpers";
+import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
+import { refuseUnlessAiImportEntitled } from "@/lib/imports/ai-import-gate";
 import { recordAudit } from "@/lib/audit";
 import { extractDocument } from "@/lib/extraction/extract";
 import { normalizeExtractedHolding } from "@/lib/extraction/normalize-holdings";
@@ -44,6 +46,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
     await requireActiveSubscriptionForFirm(access.firmId);
+    const { sessionClaims } = await auth();
+    const denied = await refuseUnlessAiImportEntitled({
+      sessionClaims,
+      firmId,
+      clientId,
+      metadata: { surface: "rebalance_extract_holdings" },
+    });
+    if (denied) return denied;
 
     // Extraction is the expensive, externally-billed step — same limiter the
     // import flow uses. It fails closed when Upstash is unconfigured.
@@ -125,9 +135,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     return NextResponse.json({ accounts, warnings } satisfies ExtractHoldingsResponse);
   } catch (err) {
-    if (err instanceof UnauthorizedError || (err instanceof Error && err.message === "Unauthorized")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    // 401 when signed out, 403 when the firm has no active subscription.
+    const authErr = authErrorResponse(err);
+    if (authErr) return NextResponse.json(authErr.body, { status: authErr.status });
     console.error("POST /api/clients/[id]/rebalance/extract-holdings error:", err);
     return NextResponse.json({ error: "Could not read holdings from that file." }, { status: 500 });
   }

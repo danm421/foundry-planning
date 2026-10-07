@@ -8,6 +8,8 @@ import {
     clientImportExtractions,
 } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import { requireActiveSubscription, ForbiddenError as SubscriptionForbiddenError } from "@/lib/authz";
+import { refuseUnlessAiImportEntitled } from "@/lib/imports/ai-import-gate";
 import {
     requireImportAccess,
     ForbiddenError,
@@ -39,7 +41,8 @@ interface BodyArgs {
 export async function POST(request: NextRequest, { params }: Params) {
     try {
         const firmId = await requireOrgId();
-        const { userId } = await auth();
+        await requireActiveSubscription();
+        const { userId, sessionClaims } = await auth();
         if (!userId) {
             throw new UnauthorizedError();
         }
@@ -84,6 +87,14 @@ export async function POST(request: NextRequest, { params }: Params) {
         }
 
         await requireImportAccess({ importId, clientId, firmId, userId });
+
+        const denied = await refuseUnlessAiImportEntitled({
+            sessionClaims,
+            firmId,
+            clientId,
+            metadata: { importId, fileId },
+        });
+        if (denied) return denied;
 
         const body = (await request.json().catch(() => ({}))) as BodyArgs;
         const model = body.model === "full" ? "full" : "mini";
@@ -268,6 +279,11 @@ export async function POST(request: NextRequest, { params }: Params) {
         }
         if (err instanceof ForbiddenError) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+        // `@/lib/authz`'s ForbiddenError is a different class from the
+        // imports one above; without this, no subscription reads as a 500.
+        if (err instanceof SubscriptionForbiddenError) {
+            return NextResponse.json({ error: err.message }, { status: 403 });
         }
         if (err instanceof NotFoundError) {
             return NextResponse.json({ error: err.message }, { status: 404 });

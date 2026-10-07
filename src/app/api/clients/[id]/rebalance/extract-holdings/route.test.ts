@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/authz", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/authz")>();
   return { ...actual, requireActiveSubscriptionForFirm: vi.fn().mockResolvedValue(undefined) };
@@ -15,6 +16,8 @@ vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 vi.mock("@/lib/extraction/extract", () => ({ extractDocument: vi.fn() }));
 
 import { POST } from "./route";
+import { auth } from "@clerk/nextjs/server";
+import { ForbiddenError, requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
@@ -56,6 +59,10 @@ function extractionResult(accounts: unknown[], warnings: string[] = []) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(auth).mockResolvedValue({
+    userId: "user-1",
+    sessionClaims: { org_public_metadata: { entitlements: ["ai_import"] } },
+  } as never);
   vi.mocked(requireOrgId).mockResolvedValue("firm-1");
   vi.mocked(verifyClientAccess).mockResolvedValue({
     ok: true,
@@ -79,6 +86,18 @@ describe("POST rebalance/extract-holdings", () => {
     expect(vi.mocked(extractDocument)).not.toHaveBeenCalled();
   });
 
+  it("403s with ai_import_not_entitled when the firm's AI import is off", async () => {
+    vi.mocked(auth).mockResolvedValue({
+      userId: "user-1",
+      sessionClaims: { org_public_metadata: { entitlements: ["ai_forge"] } },
+    } as never);
+    const res = await POST(req(pdf()), ctx);
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "ai_import_not_entitled" });
+    expect(vi.mocked(extractDocument)).not.toHaveBeenCalled();
+  });
+
   it("403s a view-only advisor", async () => {
     vi.mocked(verifyClientAccess).mockResolvedValue({
       ok: true,
@@ -89,6 +108,17 @@ describe("POST rebalance/extract-holdings", () => {
     const res = await POST(req(pdf()), ctx);
 
     expect(res.status).toBe(403);
+    expect(vi.mocked(extractDocument)).not.toHaveBeenCalled();
+  });
+
+  it("403s when the firm has no active subscription", async () => {
+    vi.mocked(requireActiveSubscriptionForFirm).mockRejectedValueOnce(
+      new ForbiddenError("Active subscription required"),
+    );
+    const res = await POST(req(pdf()), ctx);
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "Active subscription required" });
     expect(vi.mocked(extractDocument)).not.toHaveBeenCalled();
   });
 

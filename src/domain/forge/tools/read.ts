@@ -9,6 +9,7 @@
 import { tool } from "@langchain/core/tools";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
+import { auth } from "@clerk/nextjs/server";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { scenarios, clientImports } from "@/db/schema";
@@ -19,6 +20,7 @@ import {
   type MatchAnnotation,
 } from "@/lib/imports/types";
 import { runImportExtraction } from "@/lib/imports/run-extraction";
+import { hasAiImportEntitlement } from "@/lib/imports/ai-import-gate";
 import { runImportMatching } from "@/lib/imports/run-matching";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -317,6 +319,13 @@ export function buildReadTools(
     async ({ importId }: { importId: string }) => {
       await assertClientReadable(ctx, ctx.clientId);
       const firmId = await requireOrgId();
+
+      // Same gate as the import routes: a firm with AI import switched off gets
+      // no extraction through Forge either.
+      const { sessionClaims } = await auth();
+      if (!hasAiImportEntitlement(sessionClaims)) {
+        return JSON.stringify({ found: true, importId, note: "ai_import_not_entitled" });
+      }
 
       const [row] = await db
         .select({ id: clientImports.id, status: clientImports.status, mode: clientImports.mode, scenarioId: clientImports.scenarioId })
