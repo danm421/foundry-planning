@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { uuidSchema } from "./common";
+import { MAX_TERM_MONTHS } from "@/lib/loan-math";
 
 // --- Coercion building blocks ---
 // Each GUARDS undefined so an omitted field in a partial update stays undefined
@@ -54,6 +55,9 @@ const coerceToIntOptional = z
   .optional()
   .transform((v) => (v === undefined ? undefined : Number(v)));
 
+// A term past MAX_TERM_MONTHS would be cut short by the schedule, so refuse it.
+const termMonthsValue = z.number().max(MAX_TERM_MONTHS);
+
 // coerceOrNull: number | string | null | undefined → Number(v) when non-null/present; null when null/absent.
 // Mirrors the route's `v != null ? Number(v) : null`.
 const coerceOrNullOptional = z
@@ -89,7 +93,7 @@ const nullableFkUpdate = {
 export const liabilityCreateSchema = z.object({
   name: z.string().min(1),
   startYear: yearValue,
-  termMonths: coerceToIntOptional.pipe(z.number()),
+  termMonths: coerceToIntOptional.pipe(termMonthsValue),
   balance: decOrZeroOptional.default("0"),
   interestRate: decOrZeroOptional.default("0"),
   monthlyPayment: decOrZeroOptional.default("0"),
@@ -108,7 +112,7 @@ export const liabilityCreateSchema = z.object({
 export const liabilityUpdateSchema = z.object({
   name: z.string().min(1).optional(),
   startYear: yearValueOptional,
-  termMonths: coerceToIntOptional,
+  termMonths: coerceToIntOptional.pipe(termMonthsValue.optional()),
   balance: decOrZeroOptional,
   interestRate: decOrZeroOptional,
   monthlyPayment: decOrZeroOptional,

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { uuidSchema } from "./common";
 import { strictPartial } from "./strict-partial";
 import { YEAR_REFS } from "@/lib/milestones";
+import { MAX_TERM_MONTHS } from "@/lib/loan-math";
 
 /**
  * Notes receivable (a.k.a. installment notes) — the lender-side counterpart to
@@ -56,7 +57,7 @@ const base = {
   startYear: z.number().int().gte(1900).lte(2200),
   startMonth: z.number().int().min(1).max(12).default(1),
   startYearRef: yearRefSchema,
-  termMonths: z.number().int().positive(),
+  termMonths: z.number().int().positive().max(MAX_TERM_MONTHS),
   linkedTrustEntityId: uuidSchema.nullable().optional(),
   owners: z.array(ownerSchema).min(1),
   extraPayments: z.array(extraPaymentSchema).optional().default([]),

@@ -43,6 +43,7 @@ import { requireClientEditAccess } from "@/lib/clients/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
 import { applyEntityEdit } from "@/lib/scenario/changes-writer";
+import { MAX_TERM_MONTHS } from "@/lib/loan-math";
 import type { AccountOwner } from "@/engine/ownership";
 
 // Firm scope is already enforced upstream by assertScenarioRouteScope; this
@@ -65,7 +66,7 @@ const BODY = z.object({
   accountId: z.string().uuid(),
   trustEntityId: z.string().uuid(),
   noteInterestRate: z.number().positive().max(1),
-  noteTermMonths: z.number().int().positive(),
+  noteTermMonths: z.number().int().positive().max(MAX_TERM_MONTHS),
   noteStartYear: z.number().int().min(1900).max(2200),
   notePaymentType: z.enum(["amortizing", "interest_only_balloon"]),
 });

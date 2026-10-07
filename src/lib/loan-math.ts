@@ -184,12 +184,21 @@ export function monthsInOriginationYear(startMonth = 1): number {
   return 13 - startMonth;
 }
 
+/**
+ * Longest loan or note term the app models: 1,000 years. Every write schema
+ * rejects a longer term, and `scheduleEndYear` stops there, so a schedule —
+ * which emits one row per year — stays finite even for a row stored before the
+ * limit existed. Far above any real term (saved terms run up to 270 years).
+ */
+export const MAX_TERM_MONTHS = 12_000;
+
 export function scheduleEndYear(
   startYear: number,
   termMonths: number,
   startMonth = 1
 ): number {
-  return startYear + Math.ceil((termMonths + startMonth - 1) / 12) - 1;
+  const months = Math.min(termMonths, MAX_TERM_MONTHS);
+  return startYear + Math.ceil((months + startMonth - 1) / 12) - 1;
 }
 
 /**

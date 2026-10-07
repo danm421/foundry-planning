@@ -12,6 +12,7 @@ import { valuationDiscount } from "@/lib/schemas/common";
 import { isUSPSStateCode } from "@/lib/usps-states";
 import { MAX_RATE_STRESS_POINTS } from "@/lib/tax/rate-stress";
 import { YEAR_REFS } from "@/lib/milestones";
+import { MAX_TERM_MONTHS } from "@/lib/loan-math";
 import { ltcEventSchema } from "@/lib/schemas/ltc-event";
 import type { IncomeTaxType } from "@/engine/tax-adjustments";
 import type { LtcEvent } from "@/engine/types";
@@ -198,7 +199,7 @@ const LIABILITY_VALUE = z
     monthlyPayment: MONEY,
     startYear: YEAR,
     startMonth: z.number().int().min(1).max(12),
-    termMonths: z.number().int().min(0),
+    termMonths: z.number().int().min(0).max(MAX_TERM_MONTHS),
     balanceAsOfMonth: z.number().int().min(1).max(12).optional(),
     balanceAsOfYear: YEAR.optional(),
     linkedPropertyId: z.string().min(1).optional(),
@@ -267,7 +268,7 @@ const NOTE_RECEIVABLE_VALUE = z
     monthlyPayment: MONEY.nullable().optional(),
     startYear: YEAR,
     startMonth: z.number().int().min(1).max(12),
-    termMonths: z.number().int().min(1),
+    termMonths: z.number().int().min(1).max(MAX_TERM_MONTHS),
     // uuid FK columns (db/schema.ts:3334, 3351) — `.min(1)` keeps "" (neither
     // null nor a uuid) from parsing clean and 500ing Task 5's insert.
     linkedTrustEntityId: z.string().min(1).nullable().optional(),
