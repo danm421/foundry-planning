@@ -57,6 +57,7 @@ vi.mock("@/lib/db-scoping", () => ({
   assertModelPortfoliosInFirm: vi.fn().mockResolvedValue({ ok: true }),
   assertTickerPortfoliosInFirm: vi.fn().mockResolvedValue({ ok: true }),
   assertAccountsInClient: vi.fn().mockResolvedValue({ ok: true }),
+  assertFamilyMembersInClient: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 // Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
