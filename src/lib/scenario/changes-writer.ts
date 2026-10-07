@@ -30,6 +30,9 @@ import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "./loader";
 import { businessCashRidersOf } from "./business-cash-rider";
 import { WHOLE_ENTITY_SCHEMAS } from "./whole-entity-kinds";
+import { livingItemsSchema } from "@/lib/schemas/expenses";
+import { summarizeZodIssues } from "@/lib/schemas/common";
+import { withLivingItemsTotal } from "@/lib/living-expense-items";
 
 /**
  * A Drizzle transaction handle (the value passed to a `db.transaction` callback).
@@ -47,6 +50,27 @@ interface BaseEntity {
 
 /** A change the writer refuses on its merits. Routes map it to a 400. */
 export class ScenarioChangeRejectedError extends Error {}
+
+/**
+ * An expense change that carries `livingItems` is validated and given the
+ * items' total here: the scenario twin of the base write core's
+ * `withLivingItemsTotal`, so a scenario never stores items that disagree with
+ * their own total. Shape only — a scenario-added row has no stored type to
+ * check, and the screens offer items on the Current living row alone.
+ */
+export function normalizeExpenseLivingItems(
+  targetKind: TargetKind,
+  fields: Record<string, unknown>,
+): Record<string, unknown> {
+  if (targetKind !== "expense" || !("livingItems" in fields)) return fields;
+  const parsed = livingItemsSchema.nullable().safeParse(fields.livingItems);
+  if (!parsed.success) {
+    throw new ScenarioChangeRejectedError(
+      `Invalid living-expense items: ${summarizeZodIssues(parsed.error)}`,
+    );
+  }
+  return withLivingItemsTotal({ ...fields, livingItems: parsed.data });
+}
 
 /**
  * A scenario gift must name a recipient the base gift routes would accept: a
@@ -306,7 +330,8 @@ export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> 
       `changes-writer: targetKind=${args.targetKind} has no edit (re-save the whole entity as an add)`,
     );
   }
-  const { scenarioId, firmId, targetKind, targetId, desiredFields } = args;
+  const { scenarioId, firmId, targetKind, targetId } = args;
+  const desiredFields = normalizeExpenseLivingItems(targetKind, args.desiredFields);
   const toggleGroupId = args.toggleGroupId ?? null;
 
   const { clientId } = await assertScenarioInFirm(scenarioId, firmId);
@@ -495,6 +520,7 @@ export async function applyEntityAdd(
     }
     entity = parsed.data as typeof entity;
   }
+  entity = normalizeExpenseLivingItems(targetKind, entity) as typeof entity;
   const toggleGroupId = args.toggleGroupId ?? null;
 
   const { clientId } = await assertScenarioInFirm(scenarioId, firmId);

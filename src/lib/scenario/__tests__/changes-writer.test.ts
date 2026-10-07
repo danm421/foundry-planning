@@ -3,12 +3,14 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { clientDeductions, clients, planSettings, scenarios, scenarioChanges, scenarioToggleGroups } from "@/db/schema";
+import { clientDeductions, clients, expenses, planSettings, scenarios, scenarioChanges, scenarioToggleGroups } from "@/db/schema";
 import {
   applyEntityEdit,
   applyEntityAdd,
   applyEntityRemove,
+  normalizeExpenseLivingItems,
   priorToValues,
+  ScenarioChangeRejectedError,
   revertChange,
   type ApplyEntityEditArgs,
 } from "../changes-writer";
@@ -28,6 +30,37 @@ describe("priorToValues", () => {
       cleared: { from: 1, to: null },
       zeroed: { from: 1, to: 0 },
     })).toStrictEqual({ cleared: null, zeroed: 0 });
+  });
+});
+
+// Pure — no DB.
+describe("normalizeExpenseLivingItems", () => {
+  const HOUSING = { id: "i1", name: "Housing", amount: 3200, frequency: "monthly" };
+
+  it("leaves other kinds, and expense writes without items, untouched", () => {
+    const f = { annualAmount: "1", livingItems: [HOUSING] };
+    expect(normalizeExpenseLivingItems("income", f)).toBe(f);
+    const g = { annualAmount: "90000" };
+    expect(normalizeExpenseLivingItems("expense", g)).toBe(g);
+  });
+
+  it("sets the total from the items", () => {
+    expect(
+      normalizeExpenseLivingItems("expense", { livingItems: [HOUSING], annualAmount: "1", name: "x" }),
+    ).toEqual({ livingItems: [HOUSING], annualAmount: "38400", name: "x" });
+  });
+
+  it("stores an emptied list as null", () => {
+    expect(normalizeExpenseLivingItems("expense", { livingItems: [], annualAmount: "0" })).toEqual({
+      livingItems: null,
+      annualAmount: "0",
+    });
+  });
+
+  it("rejects a malformed list as a 400-class refusal", () => {
+    expect(() =>
+      normalizeExpenseLivingItems("expense", { livingItems: [{ ...HOUSING, amount: -5 }] }),
+    ).toThrow(ScenarioChangeRejectedError);
   });
 });
 
@@ -56,6 +89,39 @@ describe.skipIf(!HAS_DB)("changes-writer", () => {
   });
 
   describe("applyEntityEdit", () => {
+    it("stores an expense items edit with the total the items imply", async () => {
+      const [living] = await db
+        .select({ id: expenses.id, scenarioId: expenses.scenarioId })
+        .from(expenses)
+        .innerJoin(scenarios, eq(scenarios.id, expenses.scenarioId))
+        .where(
+          and(
+            eq(expenses.clientId, COOPER_CLIENT_ID),
+            eq(scenarios.isBaseCase, true),
+            eq(expenses.isDefault, true),
+            eq(expenses.startYearRef, "plan_start"),
+          ),
+        );
+      expect(living).toBeDefined();
+      const items = [{ id: "i1", name: "Housing", amount: 3200, frequency: "monthly" }];
+
+      await applyEntityEdit({
+        scenarioId,
+        firmId: COOPER_FIRM_ID,
+        targetKind: "expense",
+        targetId: living.id,
+        desiredFields: { livingItems: items, annualAmount: "1" },
+      });
+
+      const [row] = await db
+        .select()
+        .from(scenarioChanges)
+        .where(and(eq(scenarioChanges.scenarioId, scenarioId), eq(scenarioChanges.targetId, living.id)));
+      const payload = row.payload as Record<string, { to: unknown }>;
+      expect(payload.livingItems.to).toEqual(items);
+      expect(Number(payload.annualAmount.to)).toBe(38400);
+    });
+
     it("inserts an edit row with field-level diff vs base", async () => {
       await applyEntityEdit({
         scenarioId,
