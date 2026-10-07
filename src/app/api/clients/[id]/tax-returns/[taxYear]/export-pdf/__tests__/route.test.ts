@@ -10,7 +10,8 @@ vi.mock("@clerk/nextjs/server", () => ({
   currentUser: vi.fn().mockResolvedValue({ emailAddresses: [{ emailAddress: "advisor@firm.com" }] }),
 }));
 
-vi.mock("@/db", () => ({ db: { select: vi.fn() } }));
+const dbSelectMock = vi.hoisted(() => vi.fn());
+vi.mock("@/db", () => ({ db: { select: dbSelectMock } }));
 
 vi.mock("@/lib/db-helpers", async () => {
   class UnauthorizedError extends Error {
@@ -69,13 +70,11 @@ vi.mock("@/lib/branding/resolve-for-client", () => ({
   resolveBrandingForClient: brandingMocks.resolveBrandingForClient,
 }));
 
-vi.mock("@/lib/crm/vault-plans", () => ({
-  savePlanToVault: vi.fn().mockResolvedValue(null),
-}));
+const savePlanToVaultMock = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/crm/vault-plans", () => ({ savePlanToVault: savePlanToVaultMock }));
 
-vi.mock("@/lib/crm/generation-runs", () => ({
-  recordCompletedRun: vi.fn().mockResolvedValue("run-id"),
-}));
+const recordCompletedRunMock = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/crm/generation-runs", () => ({ recordCompletedRun: recordCompletedRunMock }));
 
 vi.mock("@/lib/audit", () => ({
   recordAudit: vi.fn().mockResolvedValue(undefined),
@@ -105,9 +104,16 @@ describe("POST /api/clients/[id]/tax-returns/[taxYear]/export-pdf", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     renderToBufferMock.mockResolvedValue(Buffer.from("%PDF-1.7 test"));
+    savePlanToVaultMock.mockResolvedValue({ id: "doc-1" });
+    // The household's primary-contact lookup (only runs when the client has a CRM household).
+    dbSelectMock.mockReturnValue({
+      from: () => ({ where: () => Promise.resolve([{ firstName: "Sam", lastName: "Cooper" }]) }),
+    });
+    recordCompletedRunMock.mockResolvedValue("run-id");
     requireClientAccessMock.mockResolvedValue({
       client: { id: "c1", crmHouseholdId: null, advisorId: "adv-99" },
       firmId: "firm_test",
+      permission: "edit",
     });
   });
 
@@ -142,5 +148,38 @@ describe("POST /api/clients/[id]/tax-returns/[taxYear]/export-pdf", () => {
     await POST(makeReq(), { params: params() });
 
     expect(brandingMocks.resolveBrandingForClient).toHaveBeenCalledWith("firm_test", "adv-other");
+  });
+
+  it("files the PDF and logs the run for an edit-level caller", async () => {
+    requireClientAccessMock.mockResolvedValue({
+      client: { id: "c1", crmHouseholdId: "hh-1", advisorId: "adv-99" },
+      firmId: "firm_test",
+      permission: "edit",
+    });
+
+    await POST(makeReq(), { params: params() });
+
+    expect(savePlanToVaultMock).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: "c1", reportType: "tax_analysis" }),
+    );
+    expect(recordCompletedRunMock).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "tax_analysis", resultDocumentId: "doc-1" }),
+    );
+  });
+
+  it("gives a view-only caller the PDF without filing it or logging a run", async () => {
+    requireClientAccessMock.mockResolvedValue({
+      client: { id: "c1", crmHouseholdId: "hh-1", advisorId: "adv-99" },
+      firmId: "firm_test",
+      permission: "view",
+      access: "shared",
+    });
+
+    const res = await POST(makeReq(), { params: params() });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("application/pdf");
+    expect(savePlanToVaultMock).not.toHaveBeenCalled();
+    expect(recordCompletedRunMock).not.toHaveBeenCalled();
   });
 });

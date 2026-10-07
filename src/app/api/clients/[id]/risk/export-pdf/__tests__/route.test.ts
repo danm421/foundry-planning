@@ -61,9 +61,8 @@ vi.mock("@/lib/branding/resolve-for-client", () => ({
 const savePlanToVaultMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/crm/vault-plans", () => ({ savePlanToVault: savePlanToVaultMock }));
 
-vi.mock("@/lib/crm/generation-runs", () => ({
-  recordCompletedRun: vi.fn().mockResolvedValue("run-id"),
-}));
+const recordCompletedRunMock = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/crm/generation-runs", () => ({ recordCompletedRun: recordCompletedRunMock }));
 
 const recordAuditMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/audit", () => ({ recordAudit: recordAuditMock }));
@@ -145,6 +144,7 @@ describe("POST /api/clients/[id]/risk/export-pdf", () => {
     requireClientAccessMock.mockResolvedValue({
       client: { id: "c1", crmHouseholdId: "hh-1", advisorId: "adv-99" },
       firmId: "firm_test",
+      permission: "edit",
     });
     capacityMock.mockImplementation(async () => {
       order.push("capacity");
@@ -156,6 +156,7 @@ describe("POST /api/clients/[id]/risk/export-pdf", () => {
     });
     resolveActorsMock.mockResolvedValue(new Map());
     savePlanToVaultMock.mockResolvedValue({ id: "doc-1" });
+    recordCompletedRunMock.mockResolvedValue("run-id");
   });
 
   it("returns a PDF attachment named for the household", async () => {
@@ -241,5 +242,28 @@ describe("POST /api/clients/[id]/risk/export-pdf", () => {
     expect(savePlanToVaultMock).toHaveBeenCalledWith(
       expect.objectContaining({ clientId: "c1", firmId: "firm_test", reportType: "risk_profile" }),
     );
+  });
+
+  it("logs the run for an edit-level caller", async () => {
+    await POST(makeReq(), { params: params() });
+    expect(recordCompletedRunMock).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "risk_profile", resultDocumentId: "doc-1" }),
+    );
+  });
+
+  it("gives a view-only caller the PDF without filing it or logging a run", async () => {
+    requireClientAccessMock.mockResolvedValue({
+      client: { id: "c1", crmHouseholdId: "hh-1", advisorId: "adv-99" },
+      firmId: "firm_test",
+      permission: "view",
+      access: "shared",
+    });
+
+    const res = await POST(makeReq(), { params: params() });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("application/pdf");
+    expect(savePlanToVaultMock).not.toHaveBeenCalled();
+    expect(recordCompletedRunMock).not.toHaveBeenCalled();
   });
 });

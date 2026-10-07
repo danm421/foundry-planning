@@ -33,7 +33,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { client, firmId } = await requireClientAccess(id);
+    const { client, firmId, permission } = await requireClientAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
     const rl = await checkExportPdfRateLimit(firmId);
@@ -105,17 +105,22 @@ export async function POST(
     const date = new Date().toISOString().slice(0, 10);
     const downloadName = `risk-profile-${slugForFilename(row.householdName)}-${date}.pdf`;
 
-    const vaultDoc = await savePlanToVault({
-      clientId: id,
-      firmId,
-      reportType: "risk_profile",
-      scenarioId: null,
-      filename: downloadName,
-      buffer,
-    });
+    // Filing into the vault and the run log are writes: only edit-level callers
+    // make them. A view-only caller still gets the PDF back.
+    const canFile = permission === "edit";
+    const vaultDoc = canFile
+      ? await savePlanToVault({
+          clientId: id,
+          firmId,
+          reportType: "risk_profile",
+          scenarioId: null,
+          filename: downloadName,
+          buffer,
+        })
+      : null;
     try {
       const householdId = client.crmHouseholdId;
-      if (householdId) {
+      if (householdId && canFile) {
         const { userId } = await auth();
         const u = await currentUser().catch(() => null);
         await recordCompletedRun({

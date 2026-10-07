@@ -36,7 +36,7 @@ export async function POST(
     const taxYear = parseYear(rawYear);
     if (taxYear == null) return NextResponse.json({ error: "Invalid tax year" }, { status: 400 });
 
-    const { client, firmId } = await requireClientAccess(id);
+    const { client, firmId, permission } = await requireClientAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
     const rl = await checkExportPdfRateLimit(firmId);
@@ -109,17 +109,22 @@ export async function POST(
     const date = new Date().toISOString().slice(0, 10);
     const downloadName = `tax-analysis-${taxYear}-${date}.pdf`;
 
-    const vaultDoc = await savePlanToVault({
-      clientId: id,
-      firmId,
-      reportType: "tax_analysis",
-      scenarioId: null,
-      filename: downloadName,
-      buffer,
-    });
+    // Filing into the vault and the run log are writes: only edit-level callers
+    // make them. A view-only caller still gets the PDF back.
+    const canFile = permission === "edit";
+    const vaultDoc = canFile
+      ? await savePlanToVault({
+          clientId: id,
+          firmId,
+          reportType: "tax_analysis",
+          scenarioId: null,
+          filename: downloadName,
+          buffer,
+        })
+      : null;
     try {
       const householdId = client.crmHouseholdId;
-      if (householdId) {
+      if (householdId && canFile) {
         const { userId } = await auth();
         const u = await currentUser().catch(() => null);
         await recordCompletedRun({
