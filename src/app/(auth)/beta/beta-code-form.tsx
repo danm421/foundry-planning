@@ -45,6 +45,7 @@ export function BetaCodeForm({ initialCode }: { initialCode: string }) {
         <input
           value={firmName}
           onChange={(e) => setFirmName(e.target.value)}
+          maxLength={80}
           placeholder="Acme Wealth Advisors"
           className="rounded-md border border-[var(--color-hair-2)] bg-[var(--color-card)] px-3 py-2 text-[var(--color-ink)] focus:border-[var(--color-accent)] focus:outline-none"
         />

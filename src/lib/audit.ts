@@ -321,6 +321,9 @@ export type AuditAction =
   | "firm.purged"
   | "firm.founder_initialized"
   | "beta_code.redeemed"
+  // A redemption whose Clerk org was created but whose founder setup then failed.
+  // The code stays spent and tied to that org; these rows are how ops find it.
+  | "beta_code.org_setup_failed"
   | "beta_code.minted"
   | "beta_code.revoked"
   // Checkout discounts. The objects live in Stripe; these rows are the only

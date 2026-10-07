@@ -3,10 +3,15 @@
 import { auth } from "@clerk/nextjs/server";
 import { headers } from "next/headers";
 import { claimCode, finalizeCode, releaseCode } from "@/lib/billing/beta-codes";
-import { createFounderOrgForUser } from "@/lib/billing/founder-init";
+import { createFounderOrgForUser, FounderOrgSetupError } from "@/lib/billing/founder-init";
 import { readPendingBeta, clearPendingBeta } from "@/lib/billing/beta-cookie";
 import { checkBetaRedeemRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
+
+// Same cap as Settings → Firm rename, so a founder never starts with a name they
+// couldn't save there.
+const FIRM_NAME_MAX_LENGTH = 80;
+const CONTROL_CHARS = /\p{Cc}/u;
 
 export type RedeemResult =
   | { ok: true; orgId: string }
@@ -31,6 +36,16 @@ export async function redeemBetaCode(manual?: { code: string; firmName: string }
 
   const firmName = pending.firmName.trim();
   if (!firmName) return { ok: false, error: "Enter your firm name.", needsManualEntry: true };
+  if (firmName.length > FIRM_NAME_MAX_LENGTH) {
+    return {
+      ok: false,
+      error: `Keep your firm name to ${FIRM_NAME_MAX_LENGTH} characters or fewer.`,
+      needsManualEntry: true,
+    };
+  }
+  if (CONTROL_CHARS.test(firmName)) {
+    return { ok: false, error: "Your firm name has characters we can't use.", needsManualEntry: true };
+  }
 
   const claim = await claimCode(pending.code, userId);
   if (!claim.ok) {
@@ -47,15 +62,41 @@ export async function redeemBetaCode(manual?: { code: string; firmName: string }
       entitlements: claim.entitlements,
     }));
   } catch (err) {
-    // Compensating reset so the tester's code is reusable after a transient failure.
-    // Guard the compensation itself — if releaseCode also fails we still return the
-    // friendly error rather than throwing an unhandled exception at the client.
+    console.error("[beta-redeem] founder org creation failed:", err);
+    if (err instanceof FounderOrgSetupError) {
+      // The org already exists (and may already be comped), so the code stays spent —
+      // releasing it would let the same code set up another workspace. Tie the code to
+      // that org and leave an audit row so the setup can be finished by hand.
+      try {
+        await finalizeCode(claim.id, err.orgId);
+        // Forget the spent code so a refresh doesn't replace this message with
+        // "already used"; the form stays closed for the same reason.
+        await clearPendingBeta();
+      } catch (finalizeErr) {
+        console.error("[beta-redeem] could not record the org on the code:", finalizeErr);
+      }
+      await recordAudit({
+        action: "beta_code.org_setup_failed",
+        resourceType: "firm",
+        resourceId: err.orgId,
+        firmId: err.orgId,
+        actorId: userId,
+        metadata: { betaCodeId: claim.id, entitlements: claim.entitlements },
+      });
+      return {
+        ok: false,
+        error:
+          "We couldn't finish setting up your firm. Please contact support@foundryplanning.com and we'll complete it for you.",
+      };
+    }
+    // No org was created: compensating reset so the tester's code is reusable after a
+    // transient failure. Guard the compensation itself — if releaseCode also fails we
+    // still return the friendly error rather than throwing an unhandled exception.
     try {
       await releaseCode(claim.id);
     } catch (releaseErr) {
       console.error("[beta-redeem] releaseCode compensation failed:", releaseErr);
     }
-    console.error("[beta-redeem] founder org creation failed:", err);
     return {
       ok: false,
       error: "Something went wrong creating your firm. Please try again.",

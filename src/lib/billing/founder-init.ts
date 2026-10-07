@@ -216,11 +216,28 @@ export async function applyFounderState(opts: FounderInitOptions): Promise<void>
 }
 
 /**
+ * Thrown by `createFounderOrgForUser` when setup fails AFTER the Clerk org was
+ * created. The org exists — and may already carry founder metadata — so the
+ * caller must not treat the attempt as if nothing happened.
+ */
+export class FounderOrgSetupError extends Error {
+  readonly orgId: string;
+
+  constructor(orgId: string, cause: unknown) {
+    super(`Founder setup failed after creating org ${orgId}`, { cause });
+    this.name = "FounderOrgSetupError";
+    this.orgId = orgId;
+  }
+}
+
+/**
  * Create a brand-new Clerk org owned by `ownerUserId` and immediately bring it
  * into the founder configuration. Wraps the tested `applyFounderState` so the
  * "what makes an org a founder" logic stays single-sourced. Used by the beta
  * redemption flow, which auto-creates the firm (unlike the manual script, which
  * comps an org that already exists).
+ *
+ * A failure after the org exists throws `FounderOrgSetupError` carrying its id.
  */
 export async function createFounderOrgForUser(opts: {
   ownerUserId: string;
@@ -235,6 +252,10 @@ export async function createFounderOrgForUser(opts: {
     name: displayName,
     createdBy: ownerUserId,
   });
-  await applyFounderState({ firmId: org.id, displayName, ownerUserId, entitlements });
+  try {
+    await applyFounderState({ firmId: org.id, displayName, ownerUserId, entitlements });
+  } catch (err) {
+    throw new FounderOrgSetupError(org.id, err);
+  }
   return { firmId: org.id };
 }
