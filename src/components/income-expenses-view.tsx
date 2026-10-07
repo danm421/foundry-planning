@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 import { useFocusDelete } from "@/hooks/use-focus-delete";
 import GrowthSourceRadio from "./forms/growth-source-radio";
@@ -25,6 +25,14 @@ import {
   type FlowPatch,
 } from "@/lib/inline-edit/flow-write";
 import { livingSlotRank } from "@/lib/living-slot-order";
+import LivingExpenseItems from "@/components/income-expenses/living-expense-items";
+import { ChevronIcon } from "@/components/income-expenses/icons";
+import {
+  hasLivingItems,
+  isTotalOverridden,
+  livingItemsAnnualTotal,
+  livingItemsPatch,
+} from "@/lib/living-expense-items";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 import {
   isGoalExpense,
@@ -35,7 +43,12 @@ import {
   is529Account,
 } from "@/lib/goals";
 import { isTodaysDollars, withoutRestatedInflationStart } from "@/lib/todays-dollars";
-import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@/engine/types";
+import type {
+  ClientInfo as EngineClientInfo,
+  PlanSettings,
+  Income as EngineIncome,
+  LivingExpenseItem,
+} from "@/engine/types";
 import type { IncomeTaxType } from "@/engine/tax-adjustments";
 import type { AccountOwner } from "@/engine/ownership";
 import { SocialSecurityCard } from "./social-security-card";
@@ -143,6 +156,8 @@ interface Expense {
   absorbsRemainingCashFlow?: boolean;
   /** "Paid in" month (1-12); null spreads the year evenly. Presentation only. */
   paymentMonth?: number | null;
+  /** Itemized Current Living Expenses; null/absent = not itemized. */
+  livingItems?: LivingExpenseItem[] | null;
 }
 
 interface SavingsRule {
@@ -321,6 +336,10 @@ const EXPENSE_GROUPS: { label: string; types: ExpenseType[] }[] = [
   { label: "Education", types: ["education"] },
   { label: "Other Expenses", types: ["other"] },
 ];
+
+/** The seeded Current living row is the one row that can be itemized
+ *  (spec 2026-10-07). `livingSlotRank` already pins it as rank 0. */
+const canItemize = (e: Expense) => e.type === "living" && livingSlotRank(e) === 0;
 
 const INCOME_TYPE_LABELS: Partial<Record<IncomeType, string>> = {
   salary: "Salary",
@@ -1228,6 +1247,9 @@ function ExpenseDialog({
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
 
+  // An itemized row's total is set by its items; the Details tab only shows it.
+  const itemCount = editing?.livingItems?.length ?? 0;
+
   const expDefaultRefs = !isEdit ? defaultExpenseRefs(editing?.type ?? defaultType) : null;
   // A new education goal funds a programme, not a period of the plan: its end
   // is the four-year length measured off the start, so it follows the start
@@ -1599,13 +1621,21 @@ function ExpenseDialog({
                       <>Annual Amount ($) <span className="text-crit">*</span></>
                     )}
                   </label>
-                  <CurrencyInput
-                    id="exp-amount"
-                    name="annualAmount"
-                    required
-                    defaultValue={editing?.annualAmount ?? 0}
-                    className="mt-1"
-                  />
+                  {itemCount > 0 ? (
+                    <>
+                      <input type="hidden" name="annualAmount" value={String(editing?.annualAmount ?? 0)} />
+                      <p className="mt-1 text-sm font-medium text-ink">{fmt(editing?.annualAmount ?? 0)}</p>
+                      <p className="text-xs text-ink-3">Set by items — expand the row to change them.</p>
+                    </>
+                  ) : (
+                    <CurrencyInput
+                      id="exp-amount"
+                      name="annualAmount"
+                      required
+                      defaultValue={editing?.annualAmount ?? 0}
+                      className="mt-1"
+                    />
+                  )}
                 </div>
                 <div className={type === "education" ? undefined : "col-span-2"}>
                   <label className={`block ${fieldLabelBaseClassName}`}>Growth Rate</label>
@@ -1952,6 +1982,9 @@ export default function IncomeExpensesView({
     if (focusTarget?.dialog === "create" && focusTarget.kind === "expense") return { open: true, defaultType: "living" };
     return { open: false };
   });
+  // Which itemizable row is expanded, and a message to show inside it.
+  const [itemsOpenFor, setItemsOpenFor] = useState<string | null>(null);
+  const [itemsError, setItemsError] = useState<string | null>(null);
   const [savingsDialog, setSavingsDialog] = useState<{ open: boolean; editing?: SavingsRule }>(() => {
     if (focusTarget?.dialog === "savings_rule") return { open: true, editing: focusTarget.row };
     if (focusTarget?.dialog === "create" && focusTarget.kind === "savings_rule") return { open: true };
@@ -2075,6 +2108,19 @@ export default function IncomeExpensesView({
     }
   }
 
+  /** Any item edit: the whole next list and its total, in one write. */
+  function saveLivingItems(expense: Expense, next: LivingExpenseItem[]): Promise<boolean> {
+    setItemsError(null);
+    return saveExpenseField(expense, livingItemsPatch(next));
+  }
+
+  /** "Use items total": put the row's total back to its items' sum. */
+  function resetToItemsTotal(expense: Expense): Promise<boolean> {
+    return saveExpenseField(expense, {
+      annualAmount: String(livingItemsAnnualTotal(expense.livingItems ?? [])),
+    });
+  }
+
   const milestones = clientInfo?.milestones;
 
   // Exclude SS rows from the visible income list (SS is shown in its own card)
@@ -2177,63 +2223,101 @@ export default function IncomeExpensesView({
       absorbing && Number(expense.annualAmount) > 0
         ? `min ${fmt(expense.annualAmount)}`
         : null;
+    const itemizable = canItemize(expense);
+    const items = expense.livingItems ?? [];
+    const itemized = hasLivingItems(items);
+    const itemsOpen = itemizable && itemsOpenFor === expense.id;
+    const itemsMeta = itemized
+      ? `${items.length} item${items.length === 1 ? "" : "s"} · ${
+          isTotalOverridden(expense.annualAmount, items) ? "total set elsewhere" : "set by items"
+        }`
+      : null;
     return (
-      <Row
-        key={expense.id}
-        onEdit={canEdit ? () => setExpenseDialog({ open: true, editing: expense }) : undefined}
-        amount={inlineAmount && !absorbing ? Number(expense.annualAmount) : undefined}
-        onSaveAmount={
-          canEdit && inlineAmount && !absorbing
-            ? (next) => saveExpenseField(expense, flowAmountPatch(next))
-            : undefined
-        }
-        startSlot={
-          milestones ? (
-            <InlineYearCell
-              year={expense.startYear}
-              yearRef={startRef}
-              milestones={milestones}
-              position="start"
-              showSSRefs={isSsRef(startRef)}
-              label={`start year for ${expense.name}`}
+      <Fragment key={expense.id}>
+        <Row
+          onEdit={canEdit ? () => setExpenseDialog({ open: true, editing: expense }) : undefined}
+          amount={inlineAmount && !absorbing && !itemized ? Number(expense.annualAmount) : undefined}
+          onSaveAmount={
+            canEdit && inlineAmount && !absorbing && !itemized
+              ? (next) => saveExpenseField(expense, flowAmountPatch(next))
+              : undefined
+          }
+          leading={
+            itemizable ? (
+              <button
+                type="button"
+                aria-expanded={itemsOpen}
+                aria-label={`${itemsOpen ? "Hide" : "Show"} items for ${expense.name}`}
+                onClick={() => setItemsOpenFor(itemsOpen ? null : expense.id)}
+                className="shrink-0 text-ink-3 hover:text-accent"
+              >
+                <ChevronIcon open={itemsOpen} />
+              </button>
+            ) : undefined
+          }
+          startSlot={
+            milestones ? (
+              <InlineYearCell
+                year={expense.startYear}
+                yearRef={startRef}
+                milestones={milestones}
+                position="start"
+                showSSRefs={isSsRef(startRef)}
+                label={`start year for ${expense.name}`}
+                canEdit={canEdit}
+                onSave={(year, ref) => saveExpenseField(expense, flowYearPatch("start", year, ref))}
+              />
+            ) : (
+              <PlainYearCell year={expense.startYear} />
+            )
+          }
+          endSlot={
+            milestones ? (
+              <InlineYearCell
+                year={expense.endYear}
+                yearRef={endRef}
+                milestones={milestones}
+                position="end"
+                showSSRefs={isSsRef(endRef)}
+                label={`end year for ${expense.name}`}
+                canEdit={canEdit}
+                onSave={(year, ref) => saveExpenseField(expense, flowYearPatch("end", year, ref))}
+              />
+            ) : (
+              <PlainYearCell year={expense.endYear} />
+            )
+          }
+          rateSlot={
+            <FlowGrowthCell
+              row={expense}
+              resolvedInflationRate={resolvedInflationRate}
               canEdit={canEdit}
-              onSave={(year, ref) => saveExpenseField(expense, flowYearPatch("start", year, ref))}
+              onSave={(patch) => saveExpenseField(expense, patch)}
             />
-          ) : (
-            <PlainYearCell year={expense.startYear} />
-          )
-        }
-        endSlot={
-          milestones ? (
-            <InlineYearCell
-              year={expense.endYear}
-              yearRef={endRef}
-              milestones={milestones}
-              position="end"
-              showSSRefs={isSsRef(endRef)}
-              label={`end year for ${expense.name}`}
-              canEdit={canEdit}
-              onSave={(year, ref) => saveExpenseField(expense, flowYearPatch("end", year, ref))}
-            />
-          ) : (
-            <PlainYearCell year={expense.endYear} />
-          )
-        }
-        rateSlot={
-          <FlowGrowthCell
-            row={expense}
-            resolvedInflationRate={resolvedInflationRate}
+          }
+          editMode={canEdit && expenseEdit}
+          onDelete={canEdit && !expense.isDefault ? () => setDeletingExpense(expense) : undefined}
+          label={expense.name}
+          meta={[entityName ?? businessName ?? null, floorMeta, itemsMeta]}
+          value={valueText}
+          outOfEstate={Boolean(expense.ownerEntityId)}
+        />
+        {itemsOpen && (
+          <LivingExpenseItems
+            rowName={expense.name}
+            items={items}
+            annualAmount={Number(expense.annualAmount)}
             canEdit={canEdit}
-            onSave={(patch) => saveExpenseField(expense, patch)}
+            hasSchedule={(expenseSchedules[expense.id]?.length ?? 0) > 0}
+            error={itemsError}
+            onSave={(next) => saveLivingItems(expense, next)}
+            onUseItemsTotal={() => resetToItemsTotal(expense)}
+            onMakeGoal={() => {
+              /* Task 9 */
+            }}
           />
-        }
-        editMode={canEdit && expenseEdit}
-        onDelete={canEdit && !expense.isDefault ? () => setDeletingExpense(expense) : undefined}
-        label={expense.name}
-        meta={[entityName ?? businessName ?? null, floorMeta]}
-        value={valueText}
-        outOfEstate={Boolean(expense.ownerEntityId)}
-      />
+        )}
+      </Fragment>
     );
   }
 
