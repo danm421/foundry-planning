@@ -342,12 +342,12 @@ export async function commitAccounts(
       updates.externalId = row.externalId ?? null;
       updates.lastSyncedAt = now;
     }
-    // `.returning()` is the tenancy gate for the owners delete below, not a
-    // convenience: `existingId` comes straight off payload JSON, and
-    // account_owners has no clientId of its own to scope a delete by. The
-    // UPDATE is already scoped, so an id belonging to another firm matches
-    // nothing and returns no rows — which is exactly the signal that this
-    // account is not ours to touch.
+    // `.returning()` is the tenancy gate for every write below, not a
+    // convenience: `existingId` comes straight off payload JSON, and neither
+    // account_owners nor account_holdings has a clientId of its own to scope a
+    // delete by. The UPDATE is already scoped, so an id belonging to another
+    // client matches nothing and returns no rows — which is exactly the signal
+    // that this account is not ours to touch.
     const updatedRows = await tx
       .update(accounts)
       .set(updates)
@@ -359,7 +359,12 @@ export async function commitAccounts(
         ),
       )
       .returning({ id: accounts.id, subType: accounts.subType });
-    if (updateIs529 && updatedRows.length > 0) {
+    if (updatedRows.length === 0) {
+      result.skipped += 1;
+      result.warnings.push(`${row.name}: matched account not found for this client — skipped.`);
+      continue;
+    }
+    if (updateIs529) {
       // Reclassifying an existing account INTO a 529 has to clear whatever
       // ownership it used to carry, or the balance stays in the household
       // estate through both doors at once.
@@ -367,13 +372,10 @@ export async function commitAccounts(
     }
     // Ownership is advisor-managed on a normal update, so the field map leaves
     // it alone. An override is the advisor saying the statement wins, so the
-    // rows are REPLACED — gated on `updatedRows` for exactly the reason the
-    // 529 clear above is: `existingId` is a claim off payload JSON, and
-    // account_owners carries no clientId of its own to scope a delete by.
-    // A 529 is excluded outright: it holds no account_owners rows at all (its
-    // beneficiary columns are its ownership) and the branch above just cleared
-    // whatever it had.
-    else if (overrideAll && updatedRows.length > 0) {
+    // rows are REPLACED. A 529 is excluded outright: it holds no account_owners
+    // rows at all (its beneficiary columns are its ownership) and the branch
+    // above just cleared whatever it had.
+    else if (overrideAll) {
       // `subType` off the UPDATE's OWN `returning()`, which is post-update:
       // the incoming sub-type when the row carried one, the stored one when it
       // didn't. Reading it off `row` alone would call a stored IRA "not
