@@ -11,12 +11,8 @@ import type { EstateColumnReady } from "./estate-compare-shell";
 import { useEstateColumnReady } from "@/hooks/use-estate-column-ready";
 import { useEstateTaxColumnData } from "@/hooks/use-estate-tax-column-data";
 import { EstateDeltaChip } from "./estate-delta-chip";
-import {
-  DecedentBreakdown,
-  LineRow,
-  inheritanceTaxOf,
-  irdTaxOf,
-} from "./estate-tax-decedent-breakdown";
+import { DecedentBreakdown, LineRow } from "./estate-tax-decedent-breakdown";
+import { inheritanceTaxOf, irdTaxOf } from "@/lib/estate/death-taxes";
 import type { EstateTaxColumnData } from "@/lib/estate/diff-estate-tax";
 import { BASE_REF, readCompareSelection } from "@/lib/estate/compare-ref";
 import EstateTaxSkeleton from "@/app/(app)/clients/[id]/estate-planning/estate-tax/loading-skeleton";

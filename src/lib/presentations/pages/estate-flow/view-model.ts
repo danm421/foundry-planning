@@ -2,14 +2,26 @@ import type { BuildDataContext } from "@/components/presentations/registry";
 import type { EstatePageOptions } from "@/lib/presentations/pages/estate-shared/options-schema";
 import type { DeathSectionData } from "@/lib/estate/transfer-report";
 import type { OwnershipColumnData } from "@/lib/estate/estate-flow-ownership";
+import { inheritanceTaxOf, irdTaxOf } from "@/lib/estate/death-taxes";
 import { prepEstate } from "@/lib/presentations/shared/estate-context";
 import { pickDeathColumns } from "@/lib/estate/estate-flow-death-columns";
 import type { AsOfValue } from "@/components/report-controls/as-of-dropdown";
 
-/** A death column as the PDF draws it. The PDF shows no tax calculation, and
- *  this data also reaches the Forge as JSON — so the section's full Form 706
- *  result is dropped rather than shipped as tokens. */
-export type EstateFlowDeathColumnData = Omit<DeathSectionData, "estateTax">;
+/** One death's projected tax, as the column's tax box lists it. */
+export interface EstateFlowDeathTax {
+  federal: number;
+  state: number;
+  inheritance: number;
+  /** Income tax heirs owe on inherited pre-tax retirement money. */
+  ird: number;
+}
+
+/** A death column as the PDF draws it. This data also reaches the Forge as
+ *  JSON, so the section's full Form 706 result is swapped for the four figures
+ *  the tax box prints rather than shipped as tokens. */
+export type EstateFlowDeathColumnData = Omit<DeathSectionData, "estateTax"> & {
+  tax: EstateFlowDeathTax;
+};
 
 export interface EstateFlowReportData {
   title: string;
@@ -21,11 +33,18 @@ export interface EstateFlowReportData {
   showHeirDetail: boolean;
 }
 
-function withoutTaxResult(section: DeathSectionData | null): EstateFlowDeathColumnData | null {
+function toDeathColumn(section: DeathSectionData | null): EstateFlowDeathColumnData | null {
   if (!section) return null;
-  const { estateTax: _estateTax, ...column } = section;
-  void _estateTax;
-  return column;
+  const { estateTax, ...column } = section;
+  return {
+    ...column,
+    tax: {
+      federal: estateTax.federalEstateTax,
+      state: estateTax.stateEstateTax,
+      inheritance: inheritanceTaxOf(estateTax),
+      ird: irdTaxOf(estateTax),
+    },
+  };
 }
 
 // `AsOfSelection` ({kind}) → `AsOfValue` (the union pickDeathColumns expects).
@@ -49,8 +68,8 @@ export function buildEstateFlowReportData(
     subtitle: `${ctx.scenarioLabel} · As of ${asOfYear}`,
     ownership,
     asOfYear,
-    firstColumn: withoutTaxResult(firstColumn),
-    secondColumn: withoutTaxResult(secondColumn),
+    firstColumn: toDeathColumn(firstColumn),
+    secondColumn: toDeathColumn(secondColumn),
     showHeirDetail: options.showHeirDetail,
   };
 }

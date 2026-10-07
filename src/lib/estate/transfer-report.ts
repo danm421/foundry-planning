@@ -143,7 +143,9 @@ export interface DeathSectionData {
  * diverge whenever a scenario changes that debt, which is why a comparison
  * chip beside the headline must not be fed the asset number.
  */
-export function estateAtDeathOf(section: DeathSectionData): number {
+export function estateAtDeathOf(
+  section: Pick<DeathSectionData, "assetEstateValue" | "reconciliation">,
+): number {
   return section.assetEstateValue + section.reconciliation.sumLiabilityTransfers;
 }
 
@@ -153,7 +155,7 @@ export function estateAtDeathOf(section: DeathSectionData): number {
  * `reconciliation.sumRecipients` — that is their GROSS total and equals
  * `estateAtDeathOf` whenever the ledger reconciles.
  */
-export function netToRecipientsOf(section: DeathSectionData): number {
+export function netToRecipientsOf(section: Pick<DeathSectionData, "recipients">): number {
   return section.recipients.reduce((s, r) => s + r.netTotal, 0);
 }
 

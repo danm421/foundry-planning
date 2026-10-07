@@ -2,11 +2,8 @@
 
 import { useState } from "react";
 import type { EstateTaxResult } from "@/engine/types";
-import {
-  DecedentTaxCalculation,
-  inheritanceTaxOf,
-  irdTaxOf,
-} from "@/components/estate-tax-decedent-breakdown";
+import { DecedentTaxCalculation } from "@/components/estate-tax-decedent-breakdown";
+import { inheritanceTaxOf, irdTaxOf } from "@/lib/estate/death-taxes";
 import { ShareBandButton } from "@/components/estate-flow-share-band";
 
 const fmt = new Intl.NumberFormat("en-US", {

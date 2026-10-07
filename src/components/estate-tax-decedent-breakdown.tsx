@@ -8,6 +8,7 @@ import {
   grossEstateLineKeys,
   type LineStatus,
 } from "@/lib/estate/diff-estate-tax";
+import { inheritanceTaxOf, irdTaxOf } from "@/lib/estate/death-taxes";
 
 // One decedent's Form 706 calculation — gross estate down to total taxes and
 // expenses. Rendered full-size on the Estate Tax page and compact inside the
@@ -431,18 +432,6 @@ export function DecedentBreakdown({
       />
     </section>
   );
-}
-
-export function inheritanceTaxOf(r: EstateTaxResult): number {
-  return r.stateInheritanceTax && !r.stateInheritanceTax.inactive
-    ? r.stateInheritanceTax.totalTax
-    : 0;
-}
-
-export function irdTaxOf(r: EstateTaxResult): number {
-  return (r.drainAttributions ?? [])
-    .filter((a) => a.drainKind === "ird_tax")
-    .reduce((s, a) => s + a.amount, 0);
 }
 
 /**
