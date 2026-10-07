@@ -18,6 +18,7 @@ import { recordAudit } from "@/lib/audit";
 import { sendPortalInvite } from "@/lib/clients/send-portal-invite";
 import { createPendingBinding, deletePendingBinding } from "@/lib/portal/bindings";
 import { sendPortalAccessRequest } from "@/lib/clients/send-portal-access-request";
+import { findUserByVerifiedEmail } from "@/lib/clerk-verified-user";
 
 export const dynamic = "force-dynamic";
 
@@ -61,10 +62,9 @@ export async function POST(
 
     // An email that already has a Foundry account cannot be invited — Clerk
     // rejects it, and we do not want a second account for one person anyway.
-    // Ask the account holder instead: only they can create a binding.
-    const cc = await clerkClient();
-    const existing = await cc.users.getUserList({ emailAddress: [body.email] });
-    const existingUser = existing.data[0];
+    // Ask the account holder instead: only they can create a binding. Only an
+    // account that VERIFIED the address is its holder; with none, invite it.
+    const existingUser = await findUserByVerifiedEmail(body.email);
 
     if (existingUser) {
       const pending = await createPendingBinding({

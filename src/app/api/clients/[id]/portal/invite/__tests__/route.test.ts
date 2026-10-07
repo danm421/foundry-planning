@@ -317,9 +317,37 @@ describe("POST /api/clients/[id]/portal/invite — existing account", () => {
   beforeEach(() => {
     checkLimitMock.mockResolvedValue({ allowed: true });
     getUserListMock.mockResolvedValue({
-      data: [{ id: "user_existing" }],
+      data: [
+        {
+          id: "user_existing",
+          emailAddresses: [{ emailAddress: "taken@example.com", verification: { status: "verified" } }],
+        },
+      ],
       totalCount: 1,
     });
+  });
+
+  it("invites the email instead of asking an account that never verified it", async () => {
+    getUserListMock.mockResolvedValue({
+      data: [
+        {
+          id: "user_unverified",
+          emailAddresses: [
+            { emailAddress: "someone@example.test", verification: { status: "verified" } },
+            { emailAddress: "taken@example.com", verification: { status: "unverified" } },
+          ],
+        },
+      ],
+      totalCount: 1,
+    });
+    createInvitationMock.mockResolvedValue({ id: "inv_1" });
+
+    const res = await POST(postReq({ email: "taken@example.com" }), ctx());
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, mode: "invited", invitationId: "inv_1" });
+    expect(createPendingBindingMock).not.toHaveBeenCalled();
+    expect(sendAccessRequestMock).not.toHaveBeenCalled();
   });
 
   it("sends an access request instead of a 409 when the email already has an account", async () => {
