@@ -4,6 +4,7 @@ import DetailsViewModeToggle from "@/components/details-view-mode-toggle";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 interface ClientDataLayoutProps {
   children: React.ReactNode;
@@ -15,6 +16,7 @@ export default async function ClientDataLayout({
   params,
 }: ClientDataLayoutProps) {
   const { id } = await params;
+  await requireClientPageAccess(id);
   const firmId = await requireOrgId();
 
   const [row] = await db

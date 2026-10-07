@@ -7,6 +7,7 @@ import { getOrgId } from "@/lib/db-helpers";
 import { InvestmentsContent } from "./investments-content";
 import InvestmentsSkeleton from "./loading-skeleton";
 import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -16,6 +17,7 @@ interface PageProps {
 export default async function InvestmentsPage({ params, searchParams }: PageProps) {
   const firmId = await getOrgId();
   const { id: clientId } = await params;
+  await requireClientPageAccess(clientId);
   const { group, scenario, view } = await searchParams;
   // The Rebalance tab became Proposals; keep old links and bookmarks landing on
   // the tab that replaced it rather than silently falling back to Allocation.

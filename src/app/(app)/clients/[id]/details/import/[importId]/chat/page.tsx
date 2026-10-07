@@ -8,6 +8,7 @@ import DetailsPageShell from "@/components/details-page-shell";
 import { ChatSurface } from "@/components/statement-chat/chat-surface";
 import type { RowsByEntity } from "@/lib/entity-extraction/types";
 import { loadChatReviewContext } from "@/lib/statement-chat/review-context";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 interface PageProps {
   params: Promise<{ id: string; importId: string }>;
@@ -28,6 +29,7 @@ interface PageProps {
  */
 export default async function StatementChatPage({ params, searchParams }: PageProps) {
   const { id: clientId, importId } = await params;
+  await requireClientPageAccess(clientId);
   const sp = await searchParams;
   const firmId = await getOrgId();
 

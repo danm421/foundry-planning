@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import { Suspense } from "react";
 import { requireOrgId } from "@/lib/db-helpers";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 import type { ActionKind, DateRange } from "@/lib/activity/list-client-activity";
 import { ActivityContent } from "./activity-content";
 import ActivitySkeleton from "./loading-skeleton";
@@ -22,6 +23,7 @@ export default async function ActivityRoute({
     requireOrgId(),
     searchParams,
   ]);
+  await requireClientPageAccess(clientId);
 
   const get = (k: string): string | null => {
     const v = sp[k];

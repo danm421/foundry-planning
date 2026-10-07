@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
 import YearlyLiquidityReportView from "@/components/yearly-liquidity-report-view";
 import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -14,6 +15,7 @@ interface PageProps {
 export default async function EstateLiquidityPage({ params, searchParams }: PageProps) {
   const firmId = await requireOrgId();
   const { id } = await params;
+  await requireClientPageAccess(id);
   const sp = await searchParams;
 
   const [client] = await db

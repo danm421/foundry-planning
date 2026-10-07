@@ -7,6 +7,7 @@ import { getOrgId } from "@/lib/db-helpers";
 import { NetWorthContent } from "./net-worth-content";
 import NetWorthSkeleton from "./loading-skeleton";
 import DetailsPageShell from "@/components/details-page-shell";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -16,6 +17,7 @@ interface PageProps {
 export default async function BalanceSheetPage({ params, searchParams }: PageProps) {
   const firmId = await getOrgId();
   const { id } = await params;
+  await requireClientPageAccess(id);
   const sp = await searchParams;
 
   const [client] = await db

@@ -23,6 +23,7 @@ import {
 import { portalFeatureColumns } from "@/lib/portal/load-features";
 import SendClientForm from "@/components/intake/send-client-form";
 import { loadAdvisorDefaultSections, loadSubmittedFormForClient } from "@/lib/intake/queries";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -49,6 +50,7 @@ function PortalNotEnabled(): ReactElement {
 
 export default async function PortalManagePage({ params }: Props): Promise<ReactElement> {
   const { id } = await params;
+  await requireClientPageAccess(id);
   const { orgId, userId } = await requireOrgAndUser();
   // Off until ops switches it on for this firm or this advisor. Only the
   // portal-specific panels go dark — the Intake form panel below works without

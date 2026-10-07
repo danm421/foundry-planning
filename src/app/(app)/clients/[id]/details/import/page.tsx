@@ -7,6 +7,7 @@ import { getOrgId } from "@/lib/db-helpers";
 import { ImportContent } from "./import-content";
 import ImportListSkeleton from "./loading-skeleton";
 import DetailsPageShell from "@/components/details-page-shell";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 interface ImportPageProps {
   params: Promise<{ id: string }>;
@@ -15,6 +16,7 @@ interface ImportPageProps {
 
 export default async function ImportPage({ params, searchParams }: ImportPageProps) {
   const { id } = await params;
+  await requireClientPageAccess(id);
   const sp = await searchParams;
   const firmId = await getOrgId();
 

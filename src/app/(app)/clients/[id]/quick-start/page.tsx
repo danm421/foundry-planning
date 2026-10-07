@@ -17,10 +17,12 @@ import { loadClientIdentity } from "@/lib/quick-start/load-identity";
 import { buildModelPortfolioOptions } from "@/lib/cma/model-portfolio-options";
 import type { GrowthCategorySource, FlatGrowthSource } from "@/lib/quick-start/types";
 import { QuickStartWizard, type QsBootstrap } from "./quick-start-wizard";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 export default async function QuickStartPage({ params }: { params: Promise<{ id: string }> }) {
   const firmId = await getOrgId();
   const { id } = await params;
+  await requireClientPageAccess(id);
 
   const [client] = await db
     .select({ id: clients.id })

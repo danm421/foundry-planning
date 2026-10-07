@@ -7,6 +7,7 @@ import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 import { loadAnalysisDataset } from "@/lib/investments/load-analysis-dataset";
 import { buildBreakdown, buildWhereHeld } from "@/lib/investments/analysis-detail";
 import PortfolioAnalysisDetail, { type DetailMemberAccount } from "../../../portfolio-analysis-detail";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 interface PageProps {
   params: Promise<{ id: string; type: string; entityId: string }>;
@@ -16,6 +17,7 @@ interface PageProps {
 export default async function PortfolioAnalysisDetailPage({ params, searchParams }: PageProps) {
   const firmId = await getOrgId();
   const { id: clientId, type, entityId } = await params;
+  await requireClientPageAccess(clientId);
   const { group, scenario } = await searchParams;
 
   const [client] = await db

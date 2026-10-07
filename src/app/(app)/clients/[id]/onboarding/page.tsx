@@ -7,6 +7,7 @@ import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { deriveStepStatuses } from "@/lib/onboarding/step-status";
 import { isStepSlug, type OnboardingState } from "@/lib/onboarding/types";
 import { STEPS } from "@/lib/onboarding/steps";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -15,6 +16,7 @@ interface PageProps {
 export default async function OnboardingResumePage({ params }: PageProps) {
   const firmId = await requireOrgId();
   const { id } = await params;
+  await requireClientPageAccess(id);
 
   const [row] = await db
     .select({ id: clients.id, state: clients.onboardingState })

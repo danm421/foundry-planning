@@ -5,6 +5,7 @@ import { findClientInFirm } from "@/lib/db-scoping";
 import { TimelineContent } from "./timeline-content";
 import TimelineSkeleton from "./loading-skeleton";
 import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -14,6 +15,7 @@ interface PageProps {
 export default async function TimelineReportPage({ params, searchParams }: PageProps) {
   const firmId = await requireOrgId();
   const { id } = await params;
+  await requireClientPageAccess(id);
   const sp = await searchParams;
 
   const inFirm = await findClientInFirm(id, firmId);

@@ -7,6 +7,7 @@ import EstateTransferTabbedView from "@/components/estate-transfer-tabbed-view";
 import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 import { hasSpouseForEstate } from "@/lib/estate/spousal-household";
 import { loadScenarioOptions } from "@/lib/scenario/load-scenario-options";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -16,6 +17,7 @@ interface PageProps {
 export default async function EstateTransferReportPage({ params, searchParams }: PageProps) {
   const firmId = await requireOrgId();
   const { id } = await params;
+  await requireClientPageAccess(id);
   const sp = await searchParams;
 
   const [client] = await db

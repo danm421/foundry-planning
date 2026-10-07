@@ -7,6 +7,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { isStepSlug, type OnboardingState } from "@/lib/onboarding/types";
 import { OnboardingStepContent } from "./onboarding-step-content";
 import OnboardingStepSkeleton from "./loading-skeleton";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 interface PageProps {
   params: Promise<{ id: string; step: string }>;
@@ -14,6 +15,7 @@ interface PageProps {
 
 export default async function OnboardingStepPage({ params }: PageProps) {
   const { id, step } = await params;
+  await requireClientPageAccess(id);
   if (!isStepSlug(step)) notFound();
 
   const firmId = await requireOrgId();

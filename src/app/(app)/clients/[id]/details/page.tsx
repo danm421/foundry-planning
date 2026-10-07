@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -11,6 +12,7 @@ interface PageProps {
 
 export default async function ClientDataIndex({ params, searchParams }: PageProps) {
   const { id } = await params;
+  await requireClientPageAccess(id);
   const sp = await searchParams;
   const qs = sp.scenario ? `?scenario=${encodeURIComponent(sp.scenario)}` : "";
 

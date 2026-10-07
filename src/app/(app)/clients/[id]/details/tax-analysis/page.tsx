@@ -3,6 +3,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { parseYear } from "@/lib/tax-returns/assemble-analysis";
 import { TaxAnalysisContent } from "./tax-analysis-content";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -12,6 +13,7 @@ interface PageProps {
 export default async function TaxAnalysisPage({ params, searchParams }: PageProps) {
   const firmId = await requireOrgId();
   const { id } = await params;
+  await requireClientPageAccess(id);
   const sp = await searchParams;
   if (!(await findClientInFirm(id, firmId))) notFound();
 

@@ -17,6 +17,7 @@ import { loadEntityPickerOptions } from "@/lib/presentations/entity-picker-optio
 import { loadProposalPickerOptions } from "@/lib/presentations/investment-proposal-bundle";
 import { PresentationsLauncher } from "./launcher";
 import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 export default async function PresentationsPage({
   params,
@@ -26,6 +27,7 @@ export default async function PresentationsPage({
   searchParams: Promise<{ scenario?: string }>;
 }) {
   const { id: clientId } = await params;
+  await requireClientPageAccess(clientId);
   const sp = await searchParams;
   const firmId = await requireOrgId();
   const { userId } = await auth();

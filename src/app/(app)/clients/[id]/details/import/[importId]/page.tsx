@@ -7,6 +7,7 @@ import { getOrgId } from "@/lib/db-helpers";
 import { ImportFlowContent } from "./import-flow-content";
 import ImportFlowSkeleton from "./loading-skeleton";
 import DetailsPageShell from "@/components/details-page-shell";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 interface PageProps {
   params: Promise<{ id: string; importId: string }>;
@@ -15,6 +16,7 @@ interface PageProps {
 
 export default async function ImportFlowPage({ params, searchParams }: PageProps) {
   const { id, importId } = await params;
+  await requireClientPageAccess(id);
   const sp = await searchParams;
   const firmId = await getOrgId();
 

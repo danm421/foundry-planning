@@ -4,6 +4,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import AssetLedgerReport from "@/components/asset-ledger-report";
 import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 interface AssetLedgerPageProps {
   params: Promise<{ id: string }>;
@@ -12,6 +13,7 @@ interface AssetLedgerPageProps {
 
 export default async function AssetLedgerPage({ params, searchParams }: AssetLedgerPageProps) {
   const { id } = await params;
+  await requireClientPageAccess(id);
   const sp = await searchParams;
   const firmId = await requireOrgId();
   if (!(await findClientInFirm(id, firmId))) notFound();

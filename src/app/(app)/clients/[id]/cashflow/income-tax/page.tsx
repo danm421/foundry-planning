@@ -3,6 +3,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import IncomeTaxReport from "@/components/income-tax-report";
 import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 interface IncomeTaxPageProps {
   params: Promise<{ id: string }>;
@@ -14,6 +15,7 @@ export default async function IncomeTaxPage({
   searchParams,
 }: IncomeTaxPageProps) {
   const { id } = await params;
+  await requireClientPageAccess(id);
   const sp = await searchParams;
   const firmId = await requireOrgId();
   if (!(await findClientInFirm(id, firmId))) notFound();

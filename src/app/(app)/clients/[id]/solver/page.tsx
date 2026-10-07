@@ -5,6 +5,7 @@ import { findClientInFirm } from "@/lib/db-scoping";
 import { SolverContent } from "./solver-content";
 import SolverSkeleton from "./loading-skeleton";
 import { resolveInputTab, resolveReportParam } from "./report-tab-link";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ interface PageProps {
 export default async function SolverPage({ params, searchParams }: PageProps) {
   const { orgId: firmId, userId } = await requireOrgAndUser();
   const { id: clientId } = await params;
+  await requireClientPageAccess(clientId);
   const { scenario, tab, report } = await searchParams;
 
   const inFirm = await findClientInFirm(clientId, firmId);

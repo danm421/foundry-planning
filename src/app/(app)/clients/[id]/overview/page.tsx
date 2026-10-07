@@ -5,6 +5,7 @@ import { findClientInFirm } from "@/lib/db-scoping";
 import { OverviewContent } from "./overview-content";
 import OverviewSkeleton from "./loading-skeleton";
 import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
+import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ export default async function ClientOverviewPage({
 }) {
   const firmId = await getOrgId();
   const { id } = await params;
+  await requireClientPageAccess(id);
   const sp = await searchParams;
   const scenarioId = sp.scenario ?? "base";
   if (!(await findClientInFirm(id, firmId))) notFound();
