@@ -16,6 +16,7 @@ import {
   willBequests,
   willBequestRecipients,
   disabilityPolicies,
+  ltcPolicies,
   beneficiaryDesignations,
   lifeInsurancePolicies,
 } from "@/db/schema";
@@ -943,5 +944,78 @@ describe("collectClientRefs", () => {
       accountIds: ["acc-base", "acc-edit"],
       liabilityIds: ["liab-base", "liab-edit"],
     });
+  });
+});
+
+describe("executeBaseWritePlan — ltc_policy", () => {
+  const LTC = {
+    id: "ltc-syn", name: "Genworth", insured: "client", carrier: "Genworth", kind: "standalone",
+    lifePolicyAccountId: null, issueYear: 2018, benefitAmount: 6000, benefitUnit: "month",
+    riderBenefitMode: null, riderMonthlyPct: null, benefitPeriodMode: "years", benefitPeriodYears: 3,
+    riderMaxPct: null, extensionYears: 0, residualDeathBenefit: 0, eliminationDays: 90, homeCarePct: 1,
+    inflationRider: "compound", inflationRate: 0.03, benefitType: "reimbursement", sharedCare: false,
+    annualPremium: 2400, premiumPayMode: "lifetime", premiumPayToAge: null, premiumPayYears: null,
+    partnership: false, notes: "n",
+  };
+
+  it("inserts a scenario-added policy into its columns, scoped to the client", async () => {
+    const plan: BaseWritePlan = { ...emptyPlan(), inserts: [{ kind: "ltc_policy", targetId: "ltc-syn", raw: LTC }] };
+    const { tx, ops } = makeTx();
+    await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
+    const insert = ops.find((o) => o.op === "insert")!;
+    expect(insert.table).toBe(ltcPolicies);
+    expect(insert.arg).toMatchObject({
+      clientId: "c1", name: "Genworth", carrier: "Genworth", benefitAmount: "6000",
+      benefitPeriodYears: 3, inflationRate: "0.03", annualPremium: "2400", notes: "n",
+    });
+    expect(insert.arg).not.toHaveProperty("scenarioId");
+  });
+
+  // Review Focus 5: a rider on a life policy the same scenario added must land
+  // on that account's GENERATED id, or the FK fails and promote 500s.
+  it("remaps a rider's lifePolicyAccountId onto an account added in the same batch", async () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        // Listed first on purpose: kind ranking, not plan order, must put the account first.
+        { kind: "ltc_policy", targetId: "rider-syn", raw: { ...LTC, id: "rider-syn", kind: "life_rider", lifePolicyAccountId: "acct-syn" } },
+        { kind: "account", targetId: "acct-syn", raw: { id: "acct-syn", name: "Whole life" } },
+      ],
+    };
+    const { tx, ops } = makeTx();
+    await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
+    const inserts = ops.filter((o) => o.op === "insert");
+    expect(inserts[0].table).toBe(accounts);
+    const rider = inserts.find((o) => o.table === ltcPolicies)!;
+    expect((rider.arg as Record<string, unknown>).lifePolicyAccountId).toBe("db-1");
+  });
+
+  it("updates only the edited column, scoped by id and client", async () => {
+    const plan: BaseWritePlan = { ...emptyPlan(), updates: [{ kind: "ltc_policy", id: "ltc-1", set: { annualPremium: 3000 } }] };
+    const { tx, ops } = makeTx([{ id: "ltc-1" }]);
+    await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
+    const update = ops.find((o) => o.op === "update")!;
+    expect(update.table).toBe(ltcPolicies);
+    expect(update.arg).toEqual({ annualPremium: "3000", updatedAt: expect.any(Date) });
+    expect(update.where).toEqual(and(eq(ltcPolicies.id, "ltc-1"), eq(ltcPolicies.clientId, "c1")));
+  });
+
+  // The tenant guard. ltc_policies.life_policy_account_id is a GLOBAL FK and the
+  // changes route validates no payload ids, so a rider's life policy is checked
+  // against the client like any other account ref: from inserts and updates,
+  // skipping an account this batch creates (remapped in the txn), and ignoring
+  // a standalone's null.
+  it("collects a rider's lifePolicyAccountId for the tenant guard, skipping a same-batch account", () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        { kind: "account", targetId: "acct-syn", raw: { id: "acct-syn" } },
+        { kind: "ltc_policy", targetId: "ltc-syn", raw: LTC },
+        { kind: "ltc_policy", targetId: "rider-syn", raw: { ...LTC, kind: "life_rider", lifePolicyAccountId: "acct-syn" } },
+        { kind: "ltc_policy", targetId: "rider-foreign", raw: { ...LTC, kind: "life_rider", lifePolicyAccountId: "acct-foreign" } },
+      ],
+      updates: [{ kind: "ltc_policy", id: "ltc-1", set: { lifePolicyAccountId: "acct-edit" } }],
+    };
+    expect(collectClientRefs(plan).accountIds).toEqual(["acct-foreign", "acct-edit"]);
   });
 });

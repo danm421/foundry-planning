@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { TARGET_KIND_TO_FIELD } from "@/engine/scenario/applyChanges";
+import { ltcPolicies } from "@/db/schema";
 import {
   PROMOTE_TABLE_REGISTRY,
   NESTED_ONLY_KINDS,
@@ -32,6 +33,14 @@ describe("PROMOTE_TABLE_REGISTRY", () => {
   it("translates disability_policy payloads on insert and on update", () => {
     expect(PROMOTE_TABLE_REGISTRY.disability_policy?.translate).toBeTypeOf("function");
     expect(PROMOTE_TABLE_REGISTRY.disability_policy?.translateSet).toBeTypeOf("function");
+  });
+
+  // One shape: the payload's keys ARE the columns, so `coerceForTable` keeps
+  // every field and no translator may sit in between.
+  it("registers ltc_policy on its table with no translator", () => {
+    expect(PROMOTE_TABLE_REGISTRY.ltc_policy?.table).toBe(ltcPolicies);
+    expect(PROMOTE_TABLE_REGISTRY.ltc_policy?.translate).toBeUndefined();
+    expect(PROMOTE_TABLE_REGISTRY.ltc_policy?.translateSet).toBeUndefined();
   });
 
   it("covers every overlayable array kind", () => {

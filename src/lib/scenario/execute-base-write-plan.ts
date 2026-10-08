@@ -76,6 +76,7 @@ const REF_COLUMNS = [
   "sourcePolicyAccountId",
   "businessAccountId",
   "fundingAccountId",
+  "lifePolicyAccountId",
   // → entities
   "ownerEntityId",
   "recipientEntityId",
@@ -386,12 +387,14 @@ export interface ClientRefs {
  * `owners` or `beneficiaries` array in the plan's inserts and updates, every
  * account a reinvestment picks (`reinvestmentPicksKey`: the picks, or a legacy
  * `accountIds`; never the unstored union beside the picks), every source
- * account a Roth conversion names, and every account, entity and liability a
- * will's bequests name. Those land in `account_owners`, `liability_owners`,
- * `beneficiary_designations`, `reinvestment_accounts`, `roth_conversion_sources`
- * and `will_bequests`, whose foreign keys are GLOBAL, and the scenario changes
- * route validates nothing — so without a check a crafted id could attach
- * another firm's person, trust, account or liability to this client's rows.
+ * account a Roth conversion names, every account, entity and liability a
+ * will's bequests name, and the life policy an LTC rider sits on. Those land in
+ * `account_owners`, `liability_owners`, `beneficiary_designations`,
+ * `reinvestment_accounts`, `roth_conversion_sources`, `will_bequests` and
+ * `ltc_policies.life_policy_account_id`, whose foreign keys are GLOBAL, and the
+ * scenario changes route validates nothing — so without a check a crafted id
+ * could attach another firm's person, trust, account or liability to this
+ * client's rows.
  *
  * Ids that a same-batch insert of the matching kind satisfies are left out: they
  * are synthetic, only exist once the transaction has inserted them, and a
@@ -399,7 +402,7 @@ export interface ClientRefs {
  *
  * INVARIANT: every consumer of a skipped id must remap it through `idRemap`
  * (the account, liability, reinvestment, Roth conversion and will child writers
- * do). A consumer that
+ * do, and `remapRefs` does for a rider's `lifePolicyAccountId`). A consumer that
  * writes the raw id lets a crafted add whose targetId is another firm's real
  * row smuggle that id past this guard.
  */
@@ -442,6 +445,7 @@ export function collectClientRefs(plan: BaseWritePlan): ClientRefs {
         add("liabilityIds", b.liabilityId);
       }
     }
+    if (kind === "ltc_policy") add("accountIds", payload.lifePolicyAccountId);
     for (const o of (payload.owners as Record<string, unknown>[] | undefined) ?? []) {
       add("familyMemberIds", o.familyMemberId);
       add("externalBeneficiaryIds", o.externalBeneficiaryId);

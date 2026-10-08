@@ -28,3 +28,22 @@ describe("applyScenarioChangesWithRefs — LTC premium re-synthesis", () => {
     expect(rows[0]).toMatchObject({ annualAmount: 2400, endYear: 2060 });
   });
 });
+
+describe("applyScenarioChangesWithRefs — scenario-added and removed LTC policies", () => {
+  const add = (payload: unknown) => ({
+    id: "ch-add", scenarioId: "scn1", opType: "add" as const, targetKind: "ltc_policy" as const,
+    targetId: "ltc-2", payload, toggleGroupId: null, orderIndex: 0,
+  });
+
+  it("bills a premium for a policy only the scenario holds", () => {
+    const tree = { ...baseTree([]), ltcPolicies: [] };
+    const { effectiveTree } = applyScenarioChangesWithRefs(tree, [add({ ...policy, id: "ltc-2", annualPremium: 900 })], {}, []);
+    expect(effectiveTree.expenses.filter((e) => e.id === "ltc-premium-ltc-2").map((e) => e.annualAmount)).toEqual([900]);
+  });
+
+  it("stops billing a base policy the scenario removed", () => {
+    const remove = { ...add(null), opType: "remove" as const, targetId: "ltc-1" };
+    const { effectiveTree } = applyScenarioChangesWithRefs(baseTree([]), [remove], {}, []);
+    expect(ltcRows(effectiveTree)).toEqual([]);
+  });
+});

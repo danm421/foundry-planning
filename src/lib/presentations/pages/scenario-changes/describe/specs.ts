@@ -66,6 +66,8 @@ export const SPEC: Record<TargetKind, KindSpec> = {
     whyAdd: "A life insurance policy is added.", whyRemove: "This policy is removed.", whyEdit: "Adjusts this policy." },
   ltc_event: { area: "Plan & Assumptions", noun: "long-term care event", whatMode: "name",
     whyAdd: "A long-term care stress test is added to the plan.", whyRemove: "This long-term care stress test is removed.", whyEdit: "Adjusts this long-term care stress test." },
+  ltc_policy: { area: "Insurance", noun: "long-term care policy", whatMode: "name",
+    whyAdd: "A long-term care policy is added.", whyRemove: "This long-term care policy is removed.", whyEdit: "Adjusts this long-term care policy." },
   plan_settings: { area: "Plan & Assumptions", noun: "plan assumption", whatMode: "field",
     whyAdd: "A planning assumption is added.", whyRemove: "A planning assumption is removed.", whyEdit: "Updates a planning assumption." },
   reinvestment: { area: "Savings", noun: "reinvestment", whatMode: "name",

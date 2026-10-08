@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { resolveEffectiveToggleState } from "../applyChanges";
 import { applyScenarioChanges } from "../applyChanges";
 import type { ToggleGroup } from "../types";
-import type { ClientData, Account, DisabilityPolicy, StressTest } from "@/engine/types";
+import type { ClientData, Account, DisabilityPolicy, LtcPolicy, StressTest } from "@/engine/types";
 import type { ScenarioChange } from "../types";
 import { STRESS_TEST_IDS } from "@/engine/stress-tests";
 
@@ -1241,5 +1241,40 @@ describe("applyScenarioChanges — stress_test", () => {
       minimalClientData(), [add({ toggleGroupId: "g1" })], { g1: false }, [group],
     );
     expect(effectiveTree.planSettings.marketShock).toBeUndefined();
+  });
+});
+
+describe("applyScenarioChanges — ltc_policy", () => {
+  // Flat, as the dialog and the base loader both emit it.
+  const LTC_BASE: LtcPolicy = {
+    id: "ltc-base", name: "Genworth", insured: "client", carrier: null, kind: "standalone",
+    lifePolicyAccountId: null, issueYear: 2018, benefitAmount: 6000, benefitUnit: "month",
+    riderBenefitMode: null, riderMonthlyPct: null, benefitPeriodMode: "years", benefitPeriodYears: 3,
+    riderMaxPct: null, extensionYears: 0, residualDeathBenefit: 0, eliminationDays: 90, homeCarePct: 1,
+    inflationRider: "compound", inflationRate: 0.03, benefitType: "reimbursement", sharedCare: false,
+    annualPremium: 2400, premiumPayMode: "lifetime", premiumPayToAge: null, premiumPayYears: null,
+    partnership: false, notes: null,
+  };
+  const change = (over: Partial<ScenarioChange>): ScenarioChange => ({
+    id: "ch1", scenarioId: "s1", opType: "add", targetKind: "ltc_policy", targetId: LTC_BASE.id,
+    payload: null, toggleGroupId: null, orderIndex: 0, ...over,
+  });
+
+  it("adds, edits and removes an LTC policy, and an edit's string number reaches the engine as a number", () => {
+    const tree = { ...minimalClientData(), ltcPolicies: [LTC_BASE] };
+    const out = applyScenarioChanges(
+      tree,
+      [
+        change({ id: "ch-add", targetId: "ltc-new", payload: { ...LTC_BASE, id: "ltc-new", name: "New" } }),
+        change({ id: "ch-edit", opType: "edit", payload: { annualPremium: { from: 2400, to: "3000" } }, orderIndex: 1 }),
+      ],
+      {},
+      [],
+    );
+    expect(out.effectiveTree.ltcPolicies!.map((p) => p.id)).toEqual(["ltc-base", "ltc-new"]);
+    expect(out.effectiveTree.ltcPolicies![0].annualPremium).toBe(3000);
+
+    const removed = applyScenarioChanges(tree, [change({ opType: "remove" })], {}, []);
+    expect(removed.effectiveTree.ltcPolicies).toEqual([]);
   });
 });

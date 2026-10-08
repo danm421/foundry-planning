@@ -31,6 +31,7 @@ import {
   entities,
   relocations,
   disabilityPolicies,
+  ltcPolicies,
 } from "@/db/schema";
 import type { DisabilityPolicy } from "@/engine/types";
 import {
@@ -188,4 +189,8 @@ export const PROMOTE_TABLE_REGISTRY: Partial<Record<TargetKind, RegistryEntry>> 
     translate: (raw) => disabilityPolicyToRow(raw as unknown as DisabilityPolicy),
     translateSet: (set) => disabilitySetToColumns(set as Partial<DisabilityPolicy>),
   },
+  // Flat engine shape = the row's columns, so no translator: `coerceForTable`
+  // keeps every key. `lifePolicyAccountId` is remapped through `REF_COLUMNS`
+  // (execute-base-write-plan.ts) for a rider on a scenario-added life policy.
+  ltc_policy: { table: ltcPolicies },
 };
