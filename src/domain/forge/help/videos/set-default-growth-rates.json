@@ -1,0 +1,97 @@
+{
+  "slug": "set-default-growth-rates",
+  "title": "Set default growth rates for each type of account",
+  "summary": "Accounts grow at inflation by default. Change one account at a time, or set a default rate for each category in Assumptions.",
+  "screens": [
+    {
+      "route": "/clients/:id/details/net-worth",
+      "label": "Net Worth"
+    },
+    {
+      "route": "/clients/:id/details/assumptions",
+      "label": "Assumptions"
+    }
+  ],
+  "tags": [
+    "accounts"
+  ],
+  "searchTerms": [
+    "rate of return",
+    "return assumption",
+    "growth assumptions",
+    "model portfolio",
+    "inflation rate",
+    "plan default",
+    "80/20",
+    "asset allocation",
+    "custom rate",
+    "Growth & Inflation"
+  ],
+  "chapters": [
+    {
+      "at": 0,
+      "label": "By default, every account just grows at inflation, 2.40% a year."
+    },
+    {
+      "at": 5.8,
+      "label": "A new account starts on Plan default, which means inflation."
+    },
+    {
+      "at": 16.5,
+      "label": "To change it, go account by account: open one and pick a rate."
+    },
+    {
+      "at": 27.4,
+      "label": "Or set one default for each category, in the plan's Assumptions."
+    },
+    {
+      "at": 36.2,
+      "label": "Every account on Plan default follows its category's rate."
+    },
+    {
+      "at": 41.3,
+      "label": "Modeling them in an 80/20 mix? Set Taxable to Growth (80/20)."
+    },
+    {
+      "at": 48.6,
+      "label": "Do the same for Retirement. Changes save as you go."
+    },
+    {
+      "at": 57.3,
+      "label": "Or type your own rate. Cash gets 3% a year."
+    },
+    {
+      "at": 69.3,
+      "label": "Back on Net Worth, the warning is gone."
+    },
+    {
+      "at": 77.1,
+      "label": "Every account in those categories now grows at the 80/20 rate."
+    }
+  ],
+  "steps": [
+    "**See the default.** A new account's **Growth Rate** starts on **Plan default**, and on a new plan that's the inflation rate. **Net Worth** shows a warning while taxable or retirement accounts still grow at inflation.",
+    "**Change one account.** On **Net Worth**, open an account. Its **Growth Rate** offers your firm's model portfolios, the inflation rate and **Custom %**. Pick one and save.",
+    "**Or set a default for each category.** Go to **Assumptions** and open **Growth & Inflation**. The **Default Growth Rates** table has one row per category. You can also select **Set growth rates** in the warning.",
+    "**Choose a source for each category.** In the **Source** column, pick a model portfolio, for example **Growth (80/20)**, for **Taxable** and **Retirement**. Changes save automatically.",
+    "**Or enter your own rate.** Choose **Custom %** and type a rate in the **Rate** column.",
+    "**Check the accounts.** Back on **Net Worth**, the warning is gone and every account on **Plan default** shows its category's new rate."
+  ],
+  "goodToKnow": [
+    "An account with its own growth rate keeps it. To put every taxable, cash and retirement account back on its category default, select **Reset all accounts to defaults** below the table. It clears account-level rates and portfolios, and works on the base plan only.",
+    "Real Estate, Business and Life Insurance grow at inflation or a custom rate.",
+    "Plan Confidence varies returns year to year only for accounts on a model portfolio or asset mix. An inflation or custom rate grows the same every year."
+  ],
+  "durationSec": 83.8,
+  "recordedOn": "2026-10-07",
+  "appCommit": "bbda3341e",
+  "video": {
+    "path": "knowledge-hub/set-default-growth-rates/a3466b3ec1bc.mp4",
+    "sha256": "a3466b3ec1bcafcd43c9a88b90e81b4730144229de9ffb4534570e74c0f27524",
+    "bytes": 6417814
+  },
+  "poster": {
+    "path": "knowledge-hub/set-default-growth-rates/6a41a967a022.jpg",
+    "sha256": "6a41a967a0223740ecf7c595ecf3d66d5c4e5139c695a3de917e90af7a666974"
+  }
+}

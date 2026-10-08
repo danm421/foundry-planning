@@ -12,6 +12,7 @@ import addRothConversion from "./add-roth-conversion.json";
 import inviteClientToPortal from "./invite-client-to-portal.json";
 import readMonthlyCashFlow from "./read-monthly-cash-flow.json";
 import sellHomeBuyWithMortgage from "./sell-home-buy-with-mortgage.json";
+import setDefaultGrowthRates from "./set-default-growth-rates.json";
 import solverSaveScenario from "./solver-save-scenario.json";
 
 export const HELP_VIDEOS: readonly HelpVideo[] = [
@@ -21,6 +22,7 @@ export const HELP_VIDEOS: readonly HelpVideo[] = [
   inviteClientToPortal as HelpVideo,
   readMonthlyCashFlow as HelpVideo,
   sellHomeBuyWithMortgage as HelpVideo,
+  setDefaultGrowthRates as HelpVideo,
   solverSaveScenario as HelpVideo,
 ];
 
