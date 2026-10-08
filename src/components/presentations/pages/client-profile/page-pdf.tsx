@@ -79,6 +79,7 @@ const styles = StyleSheet.create({
   td: { fontFamily: "Inter", fontSize: 9, color: PRESENTATION_THEME.ink2 },
   tdStrong: { fontFamily: "Inter", fontSize: 9, fontWeight: 700, color: PRESENTATION_THEME.ink },
   right: { textAlign: "right" },
+  note: { fontFamily: "Inter", fontSize: 7.5, color: PRESENTATION_THEME.ink3, lineHeight: 1.35, marginTop: 4 },
 });
 
 function mmddyyyy(iso: string | null): string {
@@ -123,7 +124,7 @@ function ChildCard({ c }: { c: ProfileChildCard }) {
   );
 }
 
-function IncomeTable({ rows }: { rows: ProfileIncomeRow[] }) {
+function IncomeTable({ rows, notes }: { rows: ProfileIncomeRow[]; notes: string[] }) {
   return (
     <View style={styles.table}>
       <View style={styles.headerRow}>
@@ -141,6 +142,9 @@ function IncomeTable({ rows }: { rows: ProfileIncomeRow[] }) {
           <Text style={[styles.td, { width: 50 }, styles.right]}>{r.active ? "Active" : String(r.startYear)}</Text>
           <Text style={[styles.td, { width: 40 }, styles.right]}>{r.endYear == null ? "—" : String(r.endYear)}</Text>
         </View>
+      ))}
+      {notes.map((n) => (
+        <Text key={n} style={styles.note}>{n}</Text>
       ))}
     </View>
   );
@@ -215,7 +219,7 @@ export function ClientProfilePagePdf({
       {data.income.length > 0 && (
         <>
           <Text style={styles.sectionLabel}>INCOME SOURCES</Text>
-          <IncomeTable rows={data.income} />
+          <IncomeTable rows={data.income} notes={data.incomeNotes} />
         </>
       )}
 

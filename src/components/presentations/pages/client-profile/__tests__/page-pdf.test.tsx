@@ -19,6 +19,10 @@ const couple: ClientProfilePageData = {
   income: [
     { name: "John Salary", typeLabel: "Salary", amount: 120000, active: true, startYear: 2020, endYear: 2032 },
     { name: "Pension", typeLabel: "Deferred Comp", amount: 30000, active: false, startYear: 2033, endYear: null },
+    { name: "SS — Jane", typeLabel: "Social Security (spousal)", amount: 21600, active: false, startYear: 2037, endYear: null },
+  ],
+  incomeNotes: [
+    "Jane draws a spousal benefit of $21,600/yr on John's work record, starting in 2037 once both have filed.",
   ],
   expenses: [
     { label: "Living", current: 52400, retirement: 60000, isTotal: false },
@@ -33,6 +37,7 @@ const single: ClientProfilePageData = {
   persons: [couple.persons[0]],
   children: [],
   income: [],
+  incomeNotes: [],
   expenses: [],
 };
 

@@ -212,6 +212,25 @@ export interface SsEntryPreview {
   topUps: { client: number | null; spouse: number | null };
 }
 
+/** The spousal top-up `row` draws on `other`'s record — monthly, today's
+ *  dollars, in the first year both are paid all twelve months — and the year
+ *  it switches on: the LATER of the two filings, since deeming needs both on
+ *  the rolls. 0 = no top-up. Null = no other row, or either never files. */
+export function spousalTopUp(
+  row: Income,
+  other: Income | null,
+  client: ClientInfo,
+): { monthly: number; startYear: number } | null {
+  if (!other || other.ssBenefitMode === "no_benefit") return null;
+  const a = resolveEntitlementMonth(row, client);
+  const b = resolveEntitlementMonth(other, client);
+  if (!a || !b) return null;
+  const startYear = Math.max(a.year, b.year);
+  const flat = (r: Income): Income => ({ ...r, growthRate: 0 });
+  const { spousal } = resolveAnnualBenefit({ row: flat(row), spouseRow: flat(other), client, year: startYear + 1 });
+  return { monthly: spousal / 12, startYear };
+}
+
 /** The editor's live preview, priced by the engine's own functions so it can
  *  never disagree with the projection. COLA is zeroed: today's dollars. Null
  *  while a stated benefit's box is blank or $0 — that is no answer yet, where
@@ -226,20 +245,12 @@ export function ssEntryPreview(draft: Income, other: Income | null, client: Clie
     dob && claim != null ? computeOwnMonthlyBenefit({ piaMonthly: pia, claimAgeMonths: claim, dob }) * 12 : null;
 
   const topUps: SsEntryPreview["topUps"] = { client: null, spouse: null };
-  if (other && other.ssBenefitMode !== "no_benefit") {
-    const a = resolveEntitlementMonth(draft, client);
-    const b = resolveEntitlementMonth(other, client);
-    if (a && b) {
-      // The first year both are paid all twelve months — a steady-state figure.
-      const year = Math.max(a.year, b.year) + 1;
-      const flat = (r: Income): Income => ({ ...r, growthRate: 0 });
-      const mine = resolveAnnualBenefit({ row: flat(draft), spouseRow: flat(other), client, year });
-      const theirs = resolveAnnualBenefit({ row: flat(other), spouseRow: flat(draft), client, year });
-      const me = draft.owner === "spouse" ? "spouse" : "client";
-      const them = me === "client" ? "spouse" : "client";
-      topUps[me] = mine.spousal / 12;
-      topUps[them] = theirs.spousal / 12;
-    }
+  const mine = spousalTopUp(draft, other, client);
+  if (other && mine) {
+    const me = draft.owner === "spouse" ? "spouse" : "client";
+    const them = me === "client" ? "spouse" : "client";
+    topUps[me] = mine.monthly;
+    topUps[them] = spousalTopUp(other, draft, client)?.monthly ?? null;
   }
   return {
     piaMonthly: pia,

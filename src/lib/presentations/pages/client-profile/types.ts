@@ -47,6 +47,9 @@ export interface ClientProfilePageData {
   persons: ProfilePersonCard[]; // 1 (single) or 2 (couple)
   children: ProfileChildCard[];
   income: ProfileIncomeRow[];
+  /** One line per spousal benefit folded into an income row's amount, saying
+   *  whose record it is drawn on and when it starts. Printed under the table. */
+  incomeNotes: string[];
   expenses: ProfileExpenseRow[];
 }
 

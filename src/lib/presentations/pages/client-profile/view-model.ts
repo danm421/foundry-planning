@@ -2,8 +2,10 @@
 // Framework-free. Drives the cards and tables in the Client Profile page.
 
 import type { ClientData, ClientInfo, Income, ProjectionYear } from "@/engine/types";
-import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
+import { resolveEntitlementMonth } from "@/engine/socialSecurity/claimAge";
 import { endInclusionAndFactor } from "@/engine/retirement-proration";
+import { spousalTopUp } from "@/lib/social-security/benefit-entry";
+import { exactCurrency } from "@/lib/presentations/format";
 import type {
   BuildClientProfileInput,
   ClientProfilePageData,
@@ -12,7 +14,7 @@ import type {
   ProfileIncomeRow,
   ProfilePersonCard,
 } from "./types";
-import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
+import { CO_CLIENT_LABEL, personLabel } from "@/lib/owner-labels";
 
 const INCOME_TYPE_LABELS: Record<Income["type"], string> = {
   salary: "Salary",
@@ -24,17 +26,24 @@ const INCOME_TYPE_LABELS: Record<Income["type"], string> = {
   other: "Other",
 };
 
-// Buckets shown in the expenses table, in render order. Keys index
-// ProjectionYear.expenses; zero-in-both-columns rows are dropped downstream.
-const EXPENSE_BUCKETS: { label: string; key: keyof ProjectionYear["expenses"] }[] = [
-  { label: "Living", key: "living" },
-  { label: "Insurance", key: "insurance" },
-  { label: "Real Estate", key: "realEstate" },
-  { label: "Debt Payments", key: "liabilities" },
-  { label: "Taxes", key: "taxes" },
-  { label: "Cash Gifts", key: "cashGifts" },
-  { label: "Discretionary", key: "discretionary" },
-  { label: "Other", key: "other" },
+type YearExpenses = ProjectionYear["expenses"];
+
+// The engine folds modeled Medicare premiums into `insurance`; the profile
+// shows them on their own line, as the Cash Flow report does.
+const medicare = (e: YearExpenses): number => e.bySource?.medicarePremiums ?? 0;
+
+// Buckets shown in the expenses table, in render order. Rows that would print
+// $0 in both columns are dropped downstream.
+const EXPENSE_BUCKETS: { label: string; amount: (e: YearExpenses) => number }[] = [
+  { label: "Living", amount: (e) => e.living },
+  { label: "Insurance", amount: (e) => e.insurance - medicare(e) },
+  { label: "Medicare", amount: medicare },
+  { label: "Real Estate", amount: (e) => e.realEstate },
+  { label: "Debt Payments", amount: (e) => e.liabilities },
+  { label: "Taxes", amount: (e) => e.taxes },
+  { label: "Cash Gifts", amount: (e) => e.cashGifts },
+  { label: "Discretionary", amount: (e) => e.discretionary },
+  { label: "Other", amount: (e) => e.other },
 ];
 
 function birthYear(iso: string | null | undefined): number | null {
@@ -75,7 +84,7 @@ export function buildClientProfileData(input: BuildClientProfileInput): ClientPr
     subtitle: scenarioLabel,
     persons: buildPersons(ci, years, clientName, spouseFullName),
     children: buildChildren(clientData, firstYear),
-    income: buildIncome(clientData, firstYear, lastYear),
+    ...buildIncome(clientData, firstYear, lastYear),
     expenses: buildExpenses(ci, years),
   };
 }
@@ -138,27 +147,69 @@ function buildIncome(
   clientData: ClientData,
   firstYear: number,
   lastYear: number,
-): ProfileIncomeRow[] {
+): { income: ProfileIncomeRow[]; incomeNotes: string[] } {
   const ci = clientData.client;
+  const nameOf = (who: "client" | "spouse") =>
+    personLabel(who, { clientName: ci.firstName, spouseName: ci.spouseName ?? null });
+  const notes: string[] = [];
   const rows = clientData.incomes.map((inc): ProfileIncomeRow => {
     // Social Security is anchored at plan start, but the benefit doesn't begin
     // until the claim age — so its Start column and amount must reflect the
     // resolved claim year and PIA, not the plan-start anchor (which would show
     // "Active" + $0).
-    const startYear = inc.type === "social_security" ? ssClaimYear(inc, ci) ?? inc.startYear : inc.startYear;
-    const amount =
+    let startYear = inc.type === "social_security" ? ssClaimYear(inc, ci) ?? inc.startYear : inc.startYear;
+    let amount =
       inc.type === "social_security" ? ssAnnualAmount(inc) : enteredAnnualAmount(inc, startYear);
+    let typeLabel = INCOME_TYPE_LABELS[inc.type] ?? "Other";
+
+    // A spousal benefit is paid on the OTHER spouse's record, so it never shows
+    // in this row's own entry — a co-client with no work record read $0. Add it
+    // (the editor preview's figure), name it in the Type column, and explain it
+    // in a note. A benefit that is ALL spousal starts when both have filed.
+    const topUp = inc.type === "social_security" ? ssSpousalTopUp(inc, clientData) : null;
+    if (topUp) {
+      const me = inc.owner === "spouse" ? "spouse" : "client";
+      const them = me === "client" ? "spouse" : "client";
+      const spousal = exactCurrency(topUp.annual);
+      if (amount > 0) {
+        typeLabel = "Social Security + spousal";
+        notes.push(`${nameOf(me)}'s amount includes a ${spousal}/yr spousal top-up on ${nameOf(them)}'s work record, starting in ${topUp.startYear}.`);
+      } else {
+        typeLabel = "Social Security (spousal)";
+        startYear = topUp.startYear;
+        notes.push(`${nameOf(me)} draws a spousal benefit of ${spousal}/yr on ${nameOf(them)}'s work record, starting in ${topUp.startYear} once both have filed.`);
+      }
+      amount += topUp.annual;
+    }
+
     const endYear = effectiveEndYear(inc, ci);
     return {
       name: inc.name,
-      typeLabel: INCOME_TYPE_LABELS[inc.type] ?? "Other",
+      typeLabel,
       amount,
       active: startYear <= firstYear,
       startYear,
       endYear: endYear >= lastYear ? null : endYear,
     };
   });
-  return rows.sort((a, b) => a.startYear - b.startYear || a.name.localeCompare(b.name));
+  return {
+    income: rows.sort((a, b) => a.startYear - b.startYear || a.name.localeCompare(b.name)),
+    incomeNotes: notes,
+  };
+}
+
+// The spousal top-up a Social Security row draws on the other spouse's record,
+// annual, today's dollars — null when there is none. Pairs rows the way the
+// engine does (computeIncome: the first SS row of the other owner).
+function ssSpousalTopUp(inc: Income, clientData: ClientData): { annual: number; startYear: number } | null {
+  if (inc.ssBenefitMode === "no_benefit") return null;
+  const otherOwner = inc.owner === "spouse" ? "client" : "spouse";
+  const other = clientData.incomes.find(
+    (o) => o.id !== inc.id && o.type === "social_security" && o.owner === otherOwner,
+  ) ?? null;
+  const topUp = spousalTopUp(inc, other, clientData.client);
+  if (!topUp || !(topUp.monthly > 0)) return null;
+  return { annual: Math.round(topUp.monthly * 12), startYear: topUp.startYear };
 }
 
 // The Amount column shows the figure the advisor ENTERED, not the projection's
@@ -185,21 +236,16 @@ function effectiveEndYear(inc: Income, ci: ClientInfo): number {
   return endInclusionAndFactor(inc.endYearRef, next, inc.endYear, ci).included ? next : inc.endYear;
 }
 
-// First calendar year a Social Security row actually pays, mirroring the engine's
-// claim gate (computeIncome: pays once year*12 >= birthYear*12 + claimAgeMonths).
-// Returns null for legacy/unresolvable rows so callers fall back to inc.startYear.
+// First calendar year a Social Security row actually pays: the year of its
+// entitlement month, as computeIncome gates it. A claim at 67y 6mo starts paying
+// partway through the 67th year, not the next one. Returns null for
+// legacy/unresolvable rows so callers fall back to inc.startYear.
 function ssClaimYear(inc: Income, ci: ClientInfo): number | null {
   // Mirror the engine's delay gate (income.ts): SS only pays at the claim age
   // when claimingAge is set; otherwise it's treated as a regular income paying
   // from its startYear, so fall back to that.
   if (inc.claimingAge == null) return null;
-  const ownerDob = inc.owner === "spouse" ? ci.spouseDob : ci.dateOfBirth;
-  if (!ownerDob) return null;
-  const claimAgeMonths = resolveClaimAgeMonths(inc, ci);
-  if (claimAgeMonths == null) return null;
-  const by = birthYear(ownerDob);
-  if (by == null) return null;
-  return by + Math.ceil(claimAgeMonths / 12);
+  return resolveEntitlementMonth(inc, ci)?.year ?? null;
 }
 
 // Headline annual SS benefit. For PIA-mode rows show PIA×12 (today's dollars,
@@ -239,10 +285,10 @@ function buildExpenses(ci: ClientInfo, years: ProjectionYear[]): ProfileExpenseR
 
   const rows: ProfileExpenseRow[] = EXPENSE_BUCKETS.map((b) => ({
     label: b.label,
-    current: currentPy.expenses[b.key] as number,
-    retirement: retirementPy.expenses[b.key] as number,
+    current: b.amount(currentPy.expenses),
+    retirement: b.amount(retirementPy.expenses),
     isTotal: false,
-  })).filter((r) => r.current !== 0 || r.retirement !== 0);
+  })).filter((r) => Math.round(r.current) !== 0 || Math.round(r.retirement) !== 0);
 
   rows.push({
     label: "Total",

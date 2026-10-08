@@ -194,6 +194,89 @@ describe("buildClientProfileData — social security", () => {
     // born 1958, claim 67 -> claim year 2025, before firstYear 2026 -> active
     expect(ss).toMatchObject({ active: true, startYear: 2025, amount: 36000 });
   });
+
+  it("starts a claim at a fractional age in the year the first check arrives", () => {
+    // Born March 1968, claims at 67y 6mo -> first payment in late 2035, not 2036.
+    const data = buildClientProfileData({
+      ...base,
+      clientData: clientData({ dateOfBirth: "1968-03-12" }, {
+        incomes: [
+          {
+            id: "ss", type: "social_security", name: "SS — John", annualAmount: 0,
+            startYear: 2020, endYear: 2060, owner: "client", growthRate: 0,
+            ssBenefitMode: "pia_at_fra", piaMonthly: 3600, claimingAge: 67, claimingAgeMonths: 6,
+            claimingAgeMode: "years",
+          },
+        ] as ClientData["incomes"],
+      }),
+    });
+    expect(data.income.find((r) => r.name === "SS — John")!.startYear).toBe(2035);
+  });
+
+  describe("a co-client drawing a spousal benefit", () => {
+    // John (1968, FRA 67) claims at 67 in 2035; Jane (1970, FRA 67) at 67 in 2037.
+    const couple = (janePia: number) =>
+      clientData(
+        { dateOfBirth: "1968-03-12", spouseName: "Jane", spouseDob: "1970-07-04", spouseLifeExpectancy: 94 },
+        {
+          incomes: [
+            {
+              id: "ss-john", type: "social_security", name: "SS — John", annualAmount: 0,
+              startYear: 2020, endYear: 2060, owner: "client", growthRate: 0.02,
+              ssBenefitMode: "pia_at_fra", piaMonthly: 3600, claimingAge: 67, claimingAgeMode: "years",
+            },
+            {
+              id: "ss-jane", type: "social_security", name: "SS — Jane", annualAmount: 0,
+              startYear: 2020, endYear: 2064, owner: "spouse", growthRate: 0.02,
+              ssBenefitMode: "pia_at_fra", piaMonthly: janePia, claimingAge: 67, claimingAgeMode: "years",
+            },
+          ] as ClientData["incomes"],
+        },
+      );
+
+    it("shows the spousal benefit as the amount when the co-client has no work record", () => {
+      const data = buildClientProfileData({ ...base, clientData: couple(0) });
+      const jane = data.income.find((r) => r.name === "SS — Jane")!;
+      // Half of John's $3,600 PIA at Jane's FRA = $1,800/mo, in today's dollars.
+      expect(jane).toMatchObject({
+        typeLabel: "Social Security (spousal)",
+        amount: 21600,
+        startYear: 2037,
+        active: false,
+      });
+      expect(data.incomeNotes).toEqual([
+        "Jane draws a spousal benefit of $21,600/yr on John's work record, starting in 2037 once both have filed.",
+      ]);
+    });
+
+    it("waits for the other spouse to file before a pure spousal benefit starts", () => {
+      // Jane claims at 62 (2032) but John not until 70 (2038): nothing is paid
+      // until John files, so the row cannot read 2032.
+      const cd = couple(0);
+      cd.incomes[0].claimingAge = 70;
+      cd.incomes[1].claimingAge = 62;
+      const jane = buildClientProfileData({ ...base, clientData: cd }).income.find((r) => r.name === "SS — Jane")!;
+      expect(jane.startYear).toBe(2038);
+      expect(jane.typeLabel).toBe("Social Security (spousal)");
+    });
+
+    it("adds a spousal top-up to a smaller own benefit and says so", () => {
+      const data = buildClientProfileData({ ...base, clientData: couple(1000) });
+      const jane = data.income.find((r) => r.name === "SS — Jane")!;
+      // Own $1,000/mo + top-up ($1,800 − $1,000) = $800/mo -> $12,000 + $9,600.
+      expect(jane).toMatchObject({ typeLabel: "Social Security + spousal", amount: 21600, startYear: 2037 });
+      expect(data.incomeNotes).toEqual([
+        "Jane's amount includes a $9,600/yr spousal top-up on John's work record, starting in 2037.",
+      ]);
+    });
+
+    it("leaves the higher earner's row and the notes alone when no one draws a top-up", () => {
+      const data = buildClientProfileData({ ...base, clientData: couple(2000) });
+      expect(data.income.find((r) => r.name === "SS — John")).toMatchObject({ typeLabel: "Social Security", amount: 43200 });
+      expect(data.income.find((r) => r.name === "SS — Jane")).toMatchObject({ typeLabel: "Social Security", amount: 24000 });
+      expect(data.incomeNotes).toEqual([]);
+    });
+  });
 });
 
 describe("buildClientProfileData — income", () => {
@@ -272,6 +355,44 @@ describe("buildClientProfileData — expenses", () => {
     // retirement year 2033 < first projection year -> use first year >= 2033 = 2034
     expect(total.current).toBe(60000);
     expect(total.retirement).toBe(60000);
+  });
+
+  it("breaks Medicare premiums out of Insurance, right below it", () => {
+    // The engine folds modeled Medicare premiums into `insurance` and keys them
+    // `medicarePremiums` in bySource. Retirement-year insurance = $6,000 of
+    // policies + $10,456.37 of Medicare.
+    const medicareYears = [
+      py({ year: 2026, expenses: { living: 52400, insurance: 6000, total: 58400 } }),
+      py({ year: 2033, expenses: {
+        living: 60000, insurance: 16456.37, total: 76456.37,
+        bySource: { medicarePremiums: 10456.37 },
+      } }),
+    ];
+    const data = buildClientProfileData({ ...base, years: medicareYears, clientData: clientData({}) });
+    expect(data.expenses.map((r) => r.label)).toEqual(["Living", "Insurance", "Medicare", "Total"]);
+    expect(data.expenses.find((r) => r.label === "Insurance")).toMatchObject({ current: 6000 });
+    expect(data.expenses.find((r) => r.label === "Insurance")!.retirement).toBeCloseTo(6000, 6);
+    expect(data.expenses.find((r) => r.label === "Medicare")).toMatchObject({ current: 0, retirement: 10456.37 });
+    expect(data.expenses.find((r) => r.isTotal)).toMatchObject({ current: 58400, retirement: 76456.37 });
+  });
+
+  it("drops the Insurance row when Medicare is the only insurance cost", () => {
+    // The engine's order: two pre-Medicare health policies are summed, both
+    // pre-empted at enrollment, then Medicare is added. What is left of
+    // insurance after removing Medicare is float dust, not a clean 0 — it must
+    // not surface as a "$0" Insurance row.
+    const medicare = 10358.38;
+    const insurance = 9755.18 + 6472.19 - 9755.18 - 6472.19 + medicare;
+    expect(insurance - medicare).not.toBe(0);
+    const onlyMedicare = [
+      py({ year: 2026, expenses: { living: 52400, total: 52400 } }),
+      py({ year: 2033, expenses: {
+        living: 60000, insurance, total: 60000 + medicare,
+        bySource: { medicarePremiums: medicare },
+      } }),
+    ];
+    const data = buildClientProfileData({ ...base, years: onlyMedicare, clientData: clientData({}) });
+    expect(data.expenses.map((r) => r.label)).toEqual(["Living", "Medicare", "Total"]);
   });
 });
 
