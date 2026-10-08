@@ -2771,7 +2771,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           clientLifeExpectancy={ltcTree?.client.lifeExpectancy}
           spouseLifeExpectancy={ltcTree?.client.spouseLifeExpectancy}
           clientData={{
-            incomes: clientData?.incomes ?? [],
+            incomes: (ltcTree ?? clientData)?.incomes ?? [],
             accounts: clientData?.accounts ?? [],
             entities: clientData?.entities ?? [],
             rothConversions: clientData?.rothConversions ?? [],
@@ -2786,7 +2786,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           year={taxDrillModal.year}
           detail={taxDrillModal.detail}
           accountNames={accountNames}
-          incomes={clientData?.incomes ?? []}
+          incomes={(ltcTree ?? clientData)?.incomes ?? []}
           entityNames={(clientData?.entities ?? []).reduce<Record<string, string>>(
             (acc, e) => {
               if (e.name) acc[e.id] = e.name;

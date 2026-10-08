@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { runProjection } from "@/engine";
+import { applyLtcEvent } from "@/engine/ltc-event";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { FilingStatus } from "@/lib/tax/types";
 import type { CellDrillContext } from "@/lib/tax/cell-drill/types";
@@ -59,12 +60,19 @@ export default function TaxLedgerReport({ clientId }: Props) {
     load();
   }, [clientId, searchParams]);
 
+  // LTC benefit rows exist only on the expanded tree (the one runProjection
+  // builds), so name income sources from it. Never feed it back to runProjection.
+  const ltcTree = useMemo(
+    () => (clientData ? applyLtcEvent(clientData).data : null),
+    [clientData],
+  );
+
   const ctx: CellDrillContext = useMemo(() => {
     const accountNames: Record<string, string> = {};
     for (const acc of clientData?.accounts ?? []) accountNames[acc.id] = acc.name;
     return {
       accountNames,
-      incomes: clientData?.incomes ?? [],
+      incomes: (ltcTree ?? clientData)?.incomes ?? [],
       accounts: clientData?.accounts ?? [],
       entityNames: (clientData?.entities ?? []).reduce<Record<string, string>>((acc, e) => { if (e.name) acc[e.id] = e.name; return acc; }, {}),
       rothConversionNames: (clientData?.rothConversions ?? []).reduce<Record<string, string>>((acc, r) => { if (r.name) acc[r.id] = r.name; return acc; }, {}),
@@ -72,7 +80,7 @@ export default function TaxLedgerReport({ clientId }: Props) {
       equityPlanNames: (clientData?.stockOptionPlans ?? []).reduce<Record<string, string>>((acc, p) => { if (p.accountId) acc[p.accountId] = equityPlanLabel(p); return acc; }, {}),
       taxAdjustmentNames: (clientData?.taxAdjustments ?? []).reduce<Record<string, string>>((acc, a) => { if (a.name) acc[a.id] = a.name; return acc; }, {}),
     };
-  }, [clientData]);
+  }, [clientData, ltcTree]);
 
   const ledger = useMemo(() => {
     const year = years.find((y) => y.year === selectedYear);

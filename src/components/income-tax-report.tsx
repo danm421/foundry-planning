@@ -62,10 +62,20 @@ export default function IncomeTaxReport({ clientId }: Props) {
   } | null>(null);
   const [cellDrill, setCellDrill] = useState<CellDrill | null>(null);
 
+  // runProjection expands the LTC event itself (care-shortened lifespan,
+  // possibly a later plan end). Read the same expanded tree for the year range
+  // and the age column, so the report shows every year the projection ran.
+  // LTC benefit rows exist only on the expanded tree, so the drill-downs
+  // name income sources from it. Never feed it back to runProjection.
+  const ltcTree = useMemo(
+    () => (clientData ? applyLtcEvent(clientData).data : null),
+    [clientData],
+  );
+
   const ctx: CellDrillContext = useMemo(
     () => ({
       accountNames,
-      incomes: clientData?.incomes ?? [],
+      incomes: (ltcTree ?? clientData)?.incomes ?? [],
       accounts: clientData?.accounts ?? [],
       entityNames: (clientData?.entities ?? []).reduce<Record<string, string>>(
         (acc, e) => {
@@ -104,7 +114,7 @@ export default function IncomeTaxReport({ clientId }: Props) {
       ),
       filingStatus: clientData?.client.filingStatus,
     }),
-    [accountNames, clientData],
+    [accountNames, clientData, ltcTree],
   );
 
   const drillProps = useMemo(() => {
@@ -129,15 +139,6 @@ export default function IncomeTaxReport({ clientId }: Props) {
       ctx,
     });
   }, [cellDrill, ctx]);
-
-  // runProjection expands the LTC event itself (care-shortened lifespan,
-  // possibly a later plan end). Read the same expanded tree for the year range
-  // and the age column, so the report shows every year the projection ran.
-  // Never feed it back to runProjection.
-  const ltcTree = useMemo(
-    () => (clientData ? applyLtcEvent(clientData).data : null),
-    [clientData],
-  );
 
   const planStartYear =
     clientData?.planSettings.planStartYear ?? new Date().getFullYear();
@@ -345,7 +346,7 @@ export default function IncomeTaxReport({ clientId }: Props) {
           year={taxDrill.year}
           detail={taxDrill.detail}
           accountNames={accountNames}
-          incomes={clientData?.incomes ?? []}
+          incomes={(ltcTree ?? clientData)?.incomes ?? []}
           entityNames={(clientData?.entities ?? []).reduce<Record<string, string>>(
             (acc, e) => {
               if (e.name) acc[e.id] = e.name;
