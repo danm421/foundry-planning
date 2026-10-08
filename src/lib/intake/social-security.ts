@@ -95,6 +95,8 @@ export function ssBenefitPatch(pia: number | undefined, benefitAge: number | und
     ssBenefitMode: "pia_at_fra" as const,
     ssStatedAge: null,
     ssStatedAgeMonths: null,
+    // A monthly PIA displays monthly, even on a row that held a yearly figure.
+    ssAmountUnit: "monthly" as const,
   };
 }
 

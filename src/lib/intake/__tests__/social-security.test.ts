@@ -110,12 +110,13 @@ describe("ssBenefitPatch / ssAnswerFromRow", () => {
     ).toEqual({});
   });
 
-  it("writes a full-retirement-age figure as a PIA and clears any stated age", () => {
+  it("writes a full-retirement-age figure as a monthly PIA and clears any stated age", () => {
     expect(ssBenefitPatch(2800, undefined)).toEqual({
       piaMonthly: "2800",
       ssBenefitMode: "pia_at_fra",
       ssStatedAge: null,
       ssStatedAgeMonths: null,
+      ssAmountUnit: "monthly",
     });
     expect(ssBenefitPatch(undefined, 70)).toEqual({});
   });

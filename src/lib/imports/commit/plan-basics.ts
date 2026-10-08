@@ -158,6 +158,9 @@ export async function commitPlanBasics(
     if (row.pia.value != null) {
       patch.ssBenefitMode = "pia_at_fra";
       patch.piaMonthly = String(row.pia.value);
+      // A monthly figure displays monthly, even on a row whose earlier stated
+      // benefit was typed per year.
+      patch.ssAmountUnit = "monthly";
     }
     if (row.claimingAge.value != null) {
       patch.claimingAge = row.claimingAge.value;

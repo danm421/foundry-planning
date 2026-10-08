@@ -58,6 +58,9 @@ describe("commitPlanBasics — Social Security through the PIA path", () => {
     expect(incomeCalls[0].patch).toMatchObject({
       ssBenefitMode: "pia_at_fra",
       piaMonthly: "3200",
+      // The figure is monthly, so it displays monthly even on a row that held
+      // a yearly stated benefit before.
+      ssAmountUnit: "monthly",
     });
     expect(incomeCalls[0].patch.updatedAt).toBeInstanceOf(Date);
   });
@@ -195,5 +198,6 @@ describe("commitPlanBasics — Social Security through the PIA path", () => {
     // already reads it as, rather than claiming pia_at_fra with a null PIA.
     expect(incomeCalls[0].patch).not.toHaveProperty("ssBenefitMode");
     expect(incomeCalls[0].patch).not.toHaveProperty("piaMonthly");
+    expect(incomeCalls[0].patch).not.toHaveProperty("ssAmountUnit");
   });
 });
