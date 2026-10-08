@@ -2,6 +2,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { LtcPolicy } from "@/engine/types";
 import { LTC_RIDER_DEFAULTS, LTC_STANDALONE_DEFAULTS, ltcPolicyCreateSchema } from "@/lib/schemas/ltc-policies";
 
@@ -181,5 +182,51 @@ describe("LTC policy dialog — field ranges and the life-policy pick", () => {
     fireEvent.change(select, { target: { value: WHOLE.id } });
     expect(screen.queryByText("The life policy must insure the same person as the rider.")).toBeNull();
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+});
+
+// A controlled number box handed a string is rewritten whenever its text and
+// the string differ, so "1.0" snapped to "1" and the next key made "15".
+describe("LTC policy dialog — typing decimals", () => {
+  // user-event writes String(Number(text)) into a number box (its own jsdom
+  // workaround), so it can never show "1.0" — these two pin the end result.
+  it("keeps '1.05' in Inflation rate as typed and saves 0.0105", async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    render(<LtcPolicyDialog {...props({ onSaved })} />);
+    fireEvent.change(screen.getByLabelText("Policy name"), { target: { value: "G" } });
+    const box = screen.getByLabelText("Inflation rate (%)") as HTMLInputElement;
+    await user.clear(box);
+    await user.type(box, "1.05");
+    expect(box.value).toBe("1.05");
+    await save(onSaved);
+    expect(sent().inflationRate).toBe(0.0105);
+  });
+
+  it("keeps '0.5' in a rider's Monthly share of death benefit as typed and saves 0.005", async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    render(<LtcPolicyDialog {...props({ onSaved })} />);
+    fireEvent.change(screen.getByLabelText("Policy name"), { target: { value: "LTC rider" } });
+    fireEvent.change(screen.getByLabelText("Type"), { target: { value: "life_rider" } });
+    const box = screen.getByLabelText("Monthly share of death benefit (%)") as HTMLInputElement;
+    await user.clear(box);
+    await user.type(box, "0.5");
+    expect(box.value).toBe("0.5");
+    await save(onSaved);
+    expect(sent().riderMonthlyPct).toBe(0.005);
+  });
+
+  // The snap itself: a browser hands over each keystroke's text as typed,
+  // which fireEvent.change reproduces in jsdom.
+  it("shows the advisor's own text while typing, then re-reads the form on blur", () => {
+    render(<LtcPolicyDialog {...props()} />);
+    const box = screen.getByLabelText("Inflation rate (%)") as HTMLInputElement;
+    for (const typed of ["1", "1.0", "1.05", "1.050"]) {
+      fireEvent.change(box, { target: { value: typed } });
+      expect(box.value).toBe(typed);
+    }
+    fireEvent.blur(box);
+    expect(box.value).toBe("1.05");
   });
 });

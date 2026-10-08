@@ -316,8 +316,8 @@ export default function LtcPolicyDialog(props: LtcPolicyDialogProps) {
             </Field>
           )}
           <Field label="Issue year" help="Inflation protection grows the benefit from this year.">
-            <input type="number" aria-label="Issue year" className={inputClassName} value={asNumber(form.issueYear)}
-              onChange={(e) => set({ issueYear: fromNumberOrNull(e.target.value) })} />
+            <NumberBox label="Issue year" value={asNumber(form.issueYear)}
+              onChange={(v) => set({ issueYear: fromNumberOrNull(v) })} />
           </Field>
         </Section>
 
@@ -333,25 +333,23 @@ export default function LtcPolicyDialog(props: LtcPolicyDialogProps) {
               </Field>
               {form.riderBenefitMode === "pct_of_face" ? (
                 <Field label="Monthly share of death benefit (%)">
-                  <input type="number" aria-label="Monthly share of death benefit (%)" className={inputClassName}
-                    value={asPercent(form.riderMonthlyPct)}
-                    onChange={(e) => set({ riderMonthlyPct: fromPercentOrNull(e.target.value) })} />
+                  <NumberBox label="Monthly share of death benefit (%)" value={asPercent(form.riderMonthlyPct)}
+                    onChange={(v) => set({ riderMonthlyPct: fromPercentOrNull(v) })} />
                 </Field>
               ) : (
                 <BenefitAmountFields form={form} set={set} />
               )}
               <Field label="Can pay out up to (% of death benefit)">
-                <input type="number" aria-label="Can pay out up to (% of death benefit)" className={inputClassName}
-                  value={asPercent(form.riderMaxPct)} onChange={(e) => set({ riderMaxPct: fromPercentOrNull(e.target.value) })} />
+                <NumberBox label="Can pay out up to (% of death benefit)" value={asPercent(form.riderMaxPct)}
+                  onChange={(v) => set({ riderMaxPct: fromPercentOrNull(v) })} />
               </Field>
               <Field label="Extension (years)" help="Hybrid policies keep paying for these years after the death benefit is used up.">
-                <input type="number" aria-label="Extension (years)" className={inputClassName}
-                  value={String(form.extensionYears)} onChange={(e) => set({ extensionYears: fromNumber(e.target.value) })} />
+                <NumberBox label="Extension (years)" value={String(form.extensionYears)}
+                  onChange={(v) => set({ extensionYears: fromNumber(v) })} />
               </Field>
               <Field label="Guaranteed death benefit" help="The least the policy still pays at death, however much care it paid for.">
-                <input type="number" aria-label="Guaranteed death benefit" className={inputClassName}
-                  value={String(form.residualDeathBenefit)}
-                  onChange={(e) => set({ residualDeathBenefit: fromNumber(e.target.value) })} />
+                <NumberBox label="Guaranteed death benefit" value={String(form.residualDeathBenefit)}
+                  onChange={(v) => set({ residualDeathBenefit: fromNumber(v) })} />
               </Field>
             </>
           ) : (
@@ -366,9 +364,8 @@ export default function LtcPolicyDialog(props: LtcPolicyDialogProps) {
               </Field>
               {form.benefitPeriodMode === "years" && (
                 <Field label="Benefit years" help="Sets the policy's pool: the monthly benefit × 12 × these years.">
-                  <input type="number" aria-label="Benefit years" className={inputClassName}
-                    value={asNumber(form.benefitPeriodYears)}
-                    onChange={(e) => set({ benefitPeriodYears: fromNumberOrNull(e.target.value) })} />
+                  <NumberBox label="Benefit years" value={asNumber(form.benefitPeriodYears)}
+                    onChange={(v) => set({ benefitPeriodYears: fromNumberOrNull(v) })} />
                 </Field>
               )}
             </>
@@ -377,12 +374,12 @@ export default function LtcPolicyDialog(props: LtcPolicyDialogProps) {
 
         <Section title="When it pays">
           <Field label="Waiting period (days)" help="Care days the household pays for before benefits start.">
-            <input type="number" aria-label="Waiting period (days)" className={inputClassName}
-              value={String(form.eliminationDays)} onChange={(e) => set({ eliminationDays: fromNumber(e.target.value) })} />
+            <NumberBox label="Waiting period (days)" value={String(form.eliminationDays)}
+              onChange={(v) => set({ eliminationDays: fromNumber(v) })} />
           </Field>
           <Field label="Home care pays (% of limit)">
-            <input type="number" aria-label="Home care pays (% of limit)" className={inputClassName}
-              value={asPercent(form.homeCarePct)} onChange={(e) => set({ homeCarePct: fromPercent(e.target.value) })} />
+            <NumberBox label="Home care pays (% of limit)" value={asPercent(form.homeCarePct)}
+              onChange={(v) => set({ homeCarePct: fromPercent(v) })} />
           </Field>
           <Field label="Policy pays" help="Most policies pay actual care costs up to the limit. A cash (indemnity) policy pays the full limit.">
             <select aria-label="Policy pays" className={selectClassName} value={form.benefitType}
@@ -414,8 +411,8 @@ export default function LtcPolicyDialog(props: LtcPolicyDialogProps) {
           </Field>
           {form.inflationRider !== "none" && (
             <Field label="Inflation rate (%)">
-              <input type="number" aria-label="Inflation rate (%)" className={inputClassName}
-                value={asPercent(form.inflationRate)} onChange={(e) => set({ inflationRate: fromPercent(e.target.value) })} />
+              <NumberBox label="Inflation rate (%)" value={asPercent(form.inflationRate)}
+                onChange={(v) => set({ inflationRate: fromPercent(v) })} />
             </Field>
           )}
         </Section>
@@ -423,8 +420,8 @@ export default function LtcPolicyDialog(props: LtcPolicyDialogProps) {
         {!isRider && (
           <Section title="Premium">
             <Field label="Annual premium">
-              <input type="number" aria-label="Annual premium" className={inputClassName}
-                value={String(form.annualPremium)} onChange={(e) => set({ annualPremium: fromNumber(e.target.value) })} />
+              <NumberBox label="Annual premium" value={String(form.annualPremium)}
+                onChange={(v) => set({ annualPremium: fromNumber(v) })} />
             </Field>
             <Field label="Premiums paid">
               <select aria-label="Premiums paid" className={selectClassName} value={form.premiumPayMode}
@@ -437,16 +434,14 @@ export default function LtcPolicyDialog(props: LtcPolicyDialogProps) {
             </Field>
             {form.premiumPayMode === "to_age" && (
               <Field label="Premiums paid to age">
-                <input type="number" aria-label="Premiums paid to age" className={inputClassName}
-                  value={asNumber(form.premiumPayToAge)}
-                  onChange={(e) => set({ premiumPayToAge: fromNumberOrNull(e.target.value) })} />
+                <NumberBox label="Premiums paid to age" value={asNumber(form.premiumPayToAge)}
+                  onChange={(v) => set({ premiumPayToAge: fromNumberOrNull(v) })} />
               </Field>
             )}
             {form.premiumPayMode === "years" && (
               <Field label="Premiums paid for (years)" help="Counted from the issue year.">
-                <input type="number" aria-label="Premiums paid for (years)" className={inputClassName}
-                  value={asNumber(form.premiumPayYears)}
-                  onChange={(e) => set({ premiumPayYears: fromNumberOrNull(e.target.value) })} />
+                <NumberBox label="Premiums paid for (years)" value={asNumber(form.premiumPayYears)}
+                  onChange={(v) => set({ premiumPayYears: fromNumberOrNull(v) })} />
               </Field>
             )}
           </Section>
@@ -482,8 +477,8 @@ function BenefitAmountFields({
   return (
     <>
       <Field label="Benefit amount">
-        <input type="number" aria-label="Benefit amount" className={inputClassName}
-          value={String(form.benefitAmount)} onChange={(e) => set({ benefitAmount: fromNumber(e.target.value) })} />
+        <NumberBox label="Benefit amount" value={String(form.benefitAmount)}
+          onChange={(v) => set({ benefitAmount: fromNumber(v) })} />
       </Field>
       <Field label="Benefit per">
         <select aria-label="Benefit per" className={selectClassName} value={form.benefitUnit}
@@ -493,6 +488,23 @@ function BenefitAmountFields({
         </select>
       </Field>
     </>
+  );
+}
+
+/** Every numeric box. Handed a string rebuilt from the parsed number, a
+ *  controlled `type="number"` input is rewritten whenever the two differ as
+ *  text, so "1.0" snapped to "1" and "1.05" or "3.5" could not be typed. While
+ *  the advisor types, the box shows their own text; the form still gets the
+ *  parsed number on every keystroke, and on blur the box re-reads the form. */
+function NumberBox({ label, value, onChange }: { label: string; value: string; onChange: (typed: string) => void }) {
+  const [typed, setTyped] = useState<string | null>(null);
+  return (
+    <input type="number" aria-label={label} className={inputClassName} value={typed ?? value}
+      onChange={(e) => {
+        setTyped(e.target.value);
+        onChange(e.target.value);
+      }}
+      onBlur={() => setTyped(null)} />
   );
 }
 
