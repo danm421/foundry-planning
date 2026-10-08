@@ -30,7 +30,7 @@ describe("ltcCoverageLines", () => {
     // 198,000 / 360,000 = 55%
     expect(ltcCoverageLines({ includePolicies: true, people: [person()] }, baseClient)).toEqual([
       "Covered: Genworth pays up to $6,000/mo in 2055.",
-      "Over care (2055–2057) the policy pays about $198,000 of the $360,000 cost (55%).",
+      "Over care (2055–2057), the policy pays about $198,000 of the $360,000 cost (55%).",
     ]);
   });
 
@@ -48,7 +48,7 @@ describe("ltcCoverageLines", () => {
       "Whole life rider pays up to $10,000/mo in 2055.",
       "Late policy isn't in force during this care, so it pays nothing.",
       "Traditional policies pay first, so the rider uses as little of the death benefit as it can.",
-      "Over care (2055–2057) the policies pay about $318,000 of the $360,000 cost (88%).",
+      "Over care (2055–2057), the policies pay about $318,000 of the $360,000 cost (88%).",
     ]);
   });
 
@@ -56,7 +56,7 @@ describe("ltcCoverageLines", () => {
     const jane = person({ person: "spouse", startYear: 2058, endYear: 2058, totalCost: 125_400, totalCovered: 0, policies: [] });
     expect(ltcCoverageLines({ includePolicies: true, people: [person({ startYear: 2055, endYear: 2055 }), jane] }, baseClient)).toEqual([
       "Covered: Genworth pays up to $6,000/mo in 2055.",
-      "Over John's care (2055) the policy pays about $198,000 of the $360,000 cost (55%).",
+      "Over John's care (2055), the policy pays about $198,000 of the $360,000 cost (55%).",
       "No LTC coverage on file for Jane. The household pays the full cost of their care.",
     ]);
   });

@@ -42,7 +42,7 @@ export function ltcCoverageLines(coverage: LtcCoverage, client: ClientInfo): str
     const pct = p.totalCost > 0 ? Math.round((p.totalCovered / p.totalCost) * 100) : 0;
     const payer = p.policies.length === 1 ? "the policy pays" : "the policies pay";
     lines.push(
-      `Over ${named ? `${who}'s care` : "care"} (${span}) ${payer} about ${aboutDollars(p.totalCovered)} of the ${aboutDollars(p.totalCost)} cost (${pct}%).`,
+      `Over ${named ? `${who}'s care` : "care"} (${span}), ${payer} about ${aboutDollars(p.totalCovered)} of the ${aboutDollars(p.totalCost)} cost (${pct}%).`,
     );
   }
   return lines;

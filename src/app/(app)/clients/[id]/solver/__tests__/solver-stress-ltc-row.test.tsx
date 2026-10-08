@@ -275,7 +275,7 @@ describe("LtcStressRow (policies)", () => {
     // Default event: John 85–87 (2055–2057), private nursing room 129,575 growing 5% from 2026:
     // 129,575 × (1.05^29 + 1.05^30 + 1.05^31) = 533,348 + 560,016 + 588,016 ≈ 1,681,381 → "$1,681,000".
     // Benefits 54,000 + 72,000 + 72,000 = 198,000; 198,000 / 1,681,381 = 11.8% → 12%.
-    expect(screen.getByText("Over care (2055–2057) the policy pays about $198,000 of the $1,681,000 cost (12%).")).toBeTruthy();
+    expect(screen.getByText("Over care (2055–2057), the policy pays about $198,000 of the $1,681,000 cost (12%).")).toBeTruthy();
   });
 
   it("unticking it shows the uninsured case", () => {
@@ -300,6 +300,9 @@ describe("LtcStressRow (policies)", () => {
     render(<Harness base={{ ...plan, ltcPolicies: [orphan] }} />);
     fireEvent.click(screen.getByRole("checkbox", { name: /long-term care/i }));
     expect(screen.getByText("Whole life rider: its life policy isn't in this scenario, so it pays nothing.")).toBeTruthy();
+    // The coverage line names the rider too; "No LTC coverage on file" would be false.
+    expect(screen.getByText("Whole life rider isn't in force during this care, so it pays nothing.")).toBeTruthy();
+    expect(screen.queryByText(/No LTC coverage on file/)).toBeNull();
   });
 
   it("the saved state shows the same coverage line while the event is on", () => {
@@ -317,8 +320,9 @@ describe("LtcStressRow (policies)", () => {
 
   it("the saved state shows no coverage line while the event is switched off", () => {
     const ev = defaultLtcEvent(insuredPlan);
+    // The tree carries the event, so only the switched-off guard keeps the line away.
     render(
-      <LtcStressRow tree={insuredPlan} projectionYears={[]} scenarioId="s1" scenarioName="With care" clientId="c1"
+      <LtcStressRow tree={{ ...insuredPlan, ltcEvents: [ev] }} projectionYears={[]} scenarioId="s1" scenarioName="With care" clientId="c1"
         savedChange={{ ...saved(false), payload: ev, targetId: ev.id } as ChangesPanelChange}
         onChange={vi.fn()} onResetField={vi.fn()} onSaved={vi.fn()} onEditOnChangesTab={vi.fn()} />,
     );
