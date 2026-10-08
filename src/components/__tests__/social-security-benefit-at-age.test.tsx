@@ -126,11 +126,24 @@ describe("Benefit at a specific age", () => {
     expect(body.ssAmountUnit).toBe("monthly");
   });
 
-  it("a legacy row with no stored mode but a PIA opens as a monthly PIA", () => {
-    const { ssBenefitMode: _mode, ...legacy } = { ...PAUL, piaMonthly: 4500 } as Income;
+  it("a legacy row with no stored mode but a PIA opens as a monthly PIA, showing the PIA", async () => {
+    const { ssBenefitMode: _mode, ...legacy } = { ...PAUL, piaMonthly: 4500, annualAmount: 68478 } as Income;
     void _mode;
     open(legacy as Income);
-    expect(screen.getByLabelText(/^PIA$/i)).toBeTruthy();
+    expect(amountBox().value).toBe("4500");
     expect(unitBtn("/mo").getAttribute("aria-pressed")).toBe("true");
+    const body = await saved();
+    expect(body.piaMonthly).toBe(4500);
+  });
+
+  it("a no-mode row with only an annual amount shows it in the selected unit once switched to a specific age", async () => {
+    const { ssBenefitMode: _mode, ...legacy } = PAUL as Income;
+    void _mode;
+    open(legacy as Income);
+    fireEvent.click(screen.getByRole("radio", { name: /Benefit at a specific age/i }));
+    expect(amountBox().value).toBe("5706.5");
+    expect(unitBtn("/mo").getAttribute("aria-pressed")).toBe("true");
+    const body = await saved();
+    expect(body.annualAmount).toBe(68478);
   });
 });

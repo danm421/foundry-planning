@@ -87,14 +87,23 @@ export function SocialSecurityDialog({
 
   // One amount box and one unit for every mode; the unit is display only and
   // storage stays canonical (PIA monthly, stated benefit annual) at save.
-  const [amount, setAmount] = useState<string>(() => initialEntryAmount(existingRow));
-  const [unit, setUnit] = useState<SsAmountUnit>(() =>
-    // A stored unit wins; otherwise the unit follows the mode the dialog opens in.
-    entryUnit({
+  // Box and unit are seeded from ONE reading of the row, so the text always
+  // matches its label: a stated figure when the row opens on one (or opens on
+  // the estimate while holding only an annual amount, so switching to
+  // "Benefit at a specific age" shows the advisor's own figure), else the PIA.
+  const [seed] = useState(() => {
+    const holdsStated = openingMode === "estimate_from_salary" && Number(existingRow?.annualAmount ?? 0) > 0;
+    const seedMode = openingMode === "pia_at_fra" || (openingMode === "estimate_from_salary" && !holdsStated)
+      ? "pia_at_fra"
+      : "manual_amount";
+    const unit = entryUnit({
       ssBenefitMode: openingMode === "estimate_from_salary" ? "pia_at_fra" : openingMode,
       ssAmountUnit: existingRow?.ssAmountUnit,
-    }),
-  );
+    });
+    return { unit, amount: initialEntryAmount(existingRow && { ...existingRow, ssBenefitMode: seedMode, ssAmountUnit: unit }) };
+  });
+  const [amount, setAmount] = useState<string>(seed.amount);
+  const [unit, setUnit] = useState<SsAmountUnit>(seed.unit);
   const [statedAge, setStatedAge] = useState(() => initialStatedAge(existingRow, clientInfo));
 
   const [claimingAgeMode, setClaimingAgeMode] = useState<ClaimAgeMode>(() => {
