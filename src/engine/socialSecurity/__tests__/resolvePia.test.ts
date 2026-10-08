@@ -100,4 +100,18 @@ describe("statedAgeMonths", () => {
     expect(statedAgeMonths(row({ ssStatedAge: 68, ssStatedAgeMonths: 6 }), client)).toBe(822);
     expect(statedAgeMonths(row({ claimingAge: 67, claimingAgeMonths: 3 }), client)).toBe(807);
   });
+
+  // An unvalidated Forge scenario overlay can leave "" in the column; "" * 12
+  // is 0, which priced the row at the earliest payable age (~43% too high).
+  it("a blank stated age prices exactly like a NULL one (the claim age)", () => {
+    const blank = row({ annualAmount: 68478, ssStatedAge: "" as unknown as number });
+    const legacy = row({ annualAmount: 68478, ssStatedAge: null });
+    expect(statedAgeMonths(blank, client)).toBe(840);
+    expect(resolvePiaMonthly(blank, client)).toBe(resolvePiaMonthly(legacy, client));
+  });
+
+  it("a non-number month count reads as 0", () => {
+    const r = row({ ssStatedAge: 68, ssStatedAgeMonths: "" as unknown as number });
+    expect(statedAgeMonths(r, client)).toBe(816);
+  });
 });

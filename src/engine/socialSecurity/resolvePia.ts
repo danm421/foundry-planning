@@ -8,9 +8,12 @@ import { resolveClaimAgeMonths } from "./claimAge";
  * at. An explicit stated age wins; NULL means the row's own claim age — what
  * every amount entered before stated ages existed meant, and what a writer
  * that does not know the age (a scenario change, the AI) still means.
+ * Anything but a finite number counts as NULL: an unvalidated scenario overlay
+ * can leave "" here, and "" * 12 = 0 would price at the earliest payable age.
  */
 export function statedAgeMonths(row: Income, client: ClientInfo): number | null {
-  if (row.ssStatedAge != null) return row.ssStatedAge * 12 + (row.ssStatedAgeMonths ?? 0);
+  const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+  if (isNum(row.ssStatedAge)) return row.ssStatedAge * 12 + (isNum(row.ssStatedAgeMonths) ? row.ssStatedAgeMonths : 0);
   return resolveClaimAgeMonths(row, client);
 }
 
