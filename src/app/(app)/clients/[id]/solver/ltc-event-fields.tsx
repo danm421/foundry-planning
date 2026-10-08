@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type {
   CareSetting,
   ClientData,
@@ -9,7 +9,7 @@ import type {
   LtcHomeSale,
   ProjectionYear,
 } from "@/engine/types";
-import { resolveLtcEvent, type LtcWarning } from "@/engine/ltc-event";
+import { applyLtcEvent, resolveLtcEvent, type LtcWarning } from "@/engine/ltc-event";
 import {
   CARE_SETTING_LABELS,
   DEFAULT_SELLING_COST_PCT,
@@ -19,6 +19,8 @@ import {
 import { ltcEventName, ltcPersonFirstName } from "@/lib/ltc/ltc-event-name";
 import { homeSalePreview } from "@/lib/ltc/home-sale-preview";
 import { exactCurrency } from "@/lib/presentations/format";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
+import { LtcCoverageLine } from "./ltc-coverage-line";
 import { DollarField, PercentField, SelectField, YearField } from "./solver-stress-fields";
 
 const SETTING_OPTIONS = (Object.keys(CARE_SETTING_LABELS) as CareSetting[]).map((value) => ({
@@ -27,6 +29,9 @@ const SETTING_OPTIONS = (Object.keys(CARE_SETTING_LABELS) as CareSetting[]).map(
 }));
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 const CHECKBOX = "h-4 w-4 accent-accent";
+
+export const INCLUDE_POLICIES_HINT =
+  "Off runs the same care with no LTC coverage: no benefits and no LTC premiums. Compare the two to see what the policies are worth.";
 
 function warningText(w: LtcWarning, tree: ClientData): string | null {
   switch (w.kind) {
@@ -64,6 +69,11 @@ export function LtcEventFields({
     onChange({ ...next, name: ltcEventName(next, tree.client) });
   };
   const resolution = resolveLtcEvent({ ...tree, ltcEvents: [event] });
+  // The walk the projection pays on, so the line can't drift from the chart.
+  const coverage = useMemo(
+    () => applyLtcEvent({ ...tree, ltcEvents: [event] }).resolution?.coverage ?? null,
+    [tree, event],
+  );
   // With nobody's care in the plan the engine applies nothing — no cut, no
   // sale. The cut and the sale say why, in the same words as the warnings.
   const notApplied =
@@ -293,6 +303,26 @@ export function LtcEventFields({
           )}
         </fieldset>
       )}
+
+      <fieldset className="space-y-2 border-t border-hair pt-3">
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              className={CHECKBOX}
+              checked={event.includePolicies}
+              onChange={(e) => commit({ includePolicies: e.target.checked })}
+            />
+            <span className="text-[12px] font-medium text-ink">Include LTC policies</span>
+          </label>
+          <FieldTooltip text={INCLUDE_POLICIES_HINT} />
+        </div>
+        {coverage && (
+          <div className="pl-6">
+            <LtcCoverageLine coverage={coverage} client={tree.client} />
+          </div>
+        )}
+      </fieldset>
 
       <LtcWarnings warnings={resolution?.warnings ?? []} tree={tree} />
     </div>

@@ -5,11 +5,12 @@ import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
 import type { ChangesPanelChange } from "@/components/scenario/changes-panel";
 import { useClientAccess } from "@/components/client-access-provider";
-import { resolveLtcEvent } from "@/engine/ltc-event";
+import { applyLtcEvent, resolveLtcEvent } from "@/engine/ltc-event";
 import { defaultLtcEvent } from "@/lib/ltc/default-ltc-event";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { AddAsChangeButton, StressRow } from "./solver-stress-fields";
 import { LtcEventFields, LtcWarnings } from "./ltc-event-fields";
+import { LtcCoverageLine } from "./ltc-coverage-line";
 import { saveLtcEvent } from "./save-ltc-event";
 
 export const LTC_HINT =
@@ -58,6 +59,7 @@ export function LtcStressRow(props: {
     // Switched on, the working tree carries the saved event: show what the
     // engine had to drop. Switched off, nothing of it applies.
     const warnings = enabled ? (resolveLtcEvent(props.tree)?.warnings ?? []) : [];
+    const coverage = enabled ? (applyLtcEvent(props.tree).resolution?.coverage ?? null) : null;
     return (
       <div className="border-t border-hair pt-4">
         <div className="flex items-center gap-2">
@@ -72,6 +74,11 @@ export function LtcStressRow(props: {
         {warnings.length > 0 && (
           <div className="mt-1 space-y-1">
             <LtcWarnings warnings={warnings} tree={props.tree} />
+          </div>
+        )}
+        {coverage && (
+          <div className="mt-2">
+            <LtcCoverageLine coverage={coverage} client={props.tree.client} />
           </div>
         )}
         <button

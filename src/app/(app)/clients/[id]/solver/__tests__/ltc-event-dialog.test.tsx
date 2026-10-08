@@ -73,4 +73,16 @@ describe("LtcEventDialog", () => {
     await screen.findByRole("alert");
     expect(onDone).not.toHaveBeenCalled();
   });
+
+  it("unticking Include LTC policies saves includePolicies: false", async () => {
+    fetchMock.mockResolvedValue({ ok: true });
+    const onDone = renderDialog();
+    const box = screen.getByRole("checkbox", { name: /include ltc policies/i }) as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    fireEvent.click(box);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init.body).entity.includePolicies).toBe(false);
+  });
 });

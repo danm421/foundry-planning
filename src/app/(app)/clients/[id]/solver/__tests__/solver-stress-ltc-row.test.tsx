@@ -5,7 +5,11 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { runProjection } from "@/engine/projection";
 import { buildClientData, baseClient, basePlanSettings } from "@/engine/__tests__/fixtures";
-import type { ClientData } from "@/engine/types";
+import type { ClientData, LtcPolicy } from "@/engine/types";
+import { LTC_STANDALONE_DEFAULTS, LTC_RIDER_DEFAULTS } from "@/lib/schemas/ltc-policies";
+import { applyLtcEvent } from "@/engine/ltc-event";
+import { ltcCoverageLines } from "@/lib/ltc/ltc-coverage-text";
+import { defaultLtcEvent } from "@/lib/ltc/default-ltc-event";
 import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
 import type { ChangesPanelChange } from "@/components/scenario/changes-panel";
 import { ClientAccessProvider } from "@/components/client-access-provider";
@@ -253,5 +257,71 @@ describe("LtcStressRow (saved)", () => {
     fireEvent.click(screen.getByRole("button", { name: /add as change/i }));
     expect(await screen.findByText(/couldn.t save/i)).toBeTruthy();
     expect(onResetField).not.toHaveBeenCalled();
+  });
+});
+
+const genworth: LtcPolicy = {
+  id: "trad", name: "Genworth", insured: "client", carrier: null, issueYear: 2020,
+  ...LTC_STANDALONE_DEFAULTS, inflationRider: "none", annualPremium: 0, partnership: false, notes: null,
+};
+const insuredPlan: ClientData = { ...plan, ltcPolicies: [genworth] };
+
+describe("LtcStressRow (policies)", () => {
+  it("includes LTC policies by default and says what they pay over the whole care", () => {
+    render(<Harness base={insuredPlan} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /long-term care/i }));
+    expect((screen.getByRole("checkbox", { name: /include ltc policies/i }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByText("Covered: Genworth pays up to $6,000/mo in 2055.")).toBeTruthy();
+    // Default event: John 85–87 (2055–2057), private nursing room 129,575 growing 5% from 2026:
+    // 129,575 × (1.05^29 + 1.05^30 + 1.05^31) = 533,348 + 560,016 + 588,016 ≈ 1,681,381 → "$1,681,000".
+    // Benefits 54,000 + 72,000 + 72,000 = 198,000; 198,000 / 1,681,381 = 11.8% → 12%.
+    expect(screen.getByText("Over care (2055–2057) the policy pays about $198,000 of the $1,681,000 cost (12%).")).toBeTruthy();
+  });
+
+  it("unticking it shows the uninsured case", () => {
+    render(<Harness base={insuredPlan} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /long-term care/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /include ltc policies/i }));
+    expect(screen.getByText("LTC policies are left out of this test. The household pays the full cost.")).toBeTruthy();
+    expect(screen.queryByText(/Covered:/)).toBeNull();
+  });
+
+  it("with no policies on file it says the household pays the full cost", () => {
+    render(<Harness base={plan} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /long-term care/i }));
+    expect(screen.getByText("No LTC coverage on file. The household pays the full cost.")).toBeTruthy();
+  });
+
+  it("names a rider whose life policy isn't in this scenario", () => {
+    const orphan: LtcPolicy = {
+      id: "r", name: "Whole life rider", insured: "client", carrier: null, issueYear: 2020,
+      ...LTC_RIDER_DEFAULTS, lifePolicyAccountId: "gone", partnership: false, notes: null,
+    };
+    render(<Harness base={{ ...plan, ltcPolicies: [orphan] }} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /long-term care/i }));
+    expect(screen.getByText("Whole life rider: its life policy isn't in this scenario, so it pays nothing.")).toBeTruthy();
+  });
+
+  it("the saved state shows the same coverage line while the event is on", () => {
+    const ev = defaultLtcEvent(insuredPlan);
+    const tree = { ...insuredPlan, ltcEvents: [ev] };
+    render(
+      <LtcStressRow tree={tree} projectionYears={[]} scenarioId="s1" scenarioName="With care" clientId="c1"
+        savedChange={{ ...saved(true), payload: ev, targetId: ev.id } as ChangesPanelChange}
+        onChange={vi.fn()} onResetField={vi.fn()} onSaved={vi.fn()} onEditOnChangesTab={vi.fn()} />,
+    );
+    const expected = ltcCoverageLines(applyLtcEvent(tree).resolution!.coverage!, tree.client);
+    expect(expected.length).toBeGreaterThan(0);
+    for (const line of expected) expect(screen.getByText(line)).toBeTruthy();
+  });
+
+  it("the saved state shows no coverage line while the event is switched off", () => {
+    const ev = defaultLtcEvent(insuredPlan);
+    render(
+      <LtcStressRow tree={insuredPlan} projectionYears={[]} scenarioId="s1" scenarioName="With care" clientId="c1"
+        savedChange={{ ...saved(false), payload: ev, targetId: ev.id } as ChangesPanelChange}
+        onChange={vi.fn()} onResetField={vi.fn()} onSaved={vi.fn()} onEditOnChangesTab={vi.fn()} />,
+    );
+    expect(screen.queryByText(/Covered:/)).toBeNull();
   });
 });
