@@ -17,6 +17,7 @@ WHERE "type" = 'social_security'
 -- A stated amount claimed AT FULL RETIREMENT AGE is, by definition, the PIA.
 -- Convert it outright (no DOB arithmetic in SQL). Rounded to cents: own benefit
 -- moves by at most $0.06 a year.
+-- A $0 or year-by-year row stays a stated amount at its claim age, so its own benefit cannot move.
 UPDATE "incomes"
 SET "ss_benefit_mode" = 'pia_at_fra',
     "pia_monthly" = ROUND("annual_amount" / 12, 2),
@@ -24,4 +25,6 @@ SET "ss_benefit_mode" = 'pia_at_fra',
 WHERE "type" = 'social_security'
   AND COALESCE("ss_benefit_mode", 'manual_amount') = 'manual_amount'
   AND "claiming_age" IS NOT NULL
-  AND "claiming_age_mode" = 'fra';
+  AND "claiming_age_mode" = 'fra'
+  AND "annual_amount" > 0
+  AND NOT EXISTS (SELECT 1 FROM "income_schedule_overrides" o WHERE o."income_id" = "incomes"."id");
