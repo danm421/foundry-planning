@@ -4,6 +4,7 @@ import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadLifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
 import { loadDisabilityPolicies } from "@/lib/insurance-policies/load-disability-policies";
+import { loadLtcPolicies } from "@/lib/insurance-policies/load-ltc-policies";
 import type { ClientData, FamilyMember } from "@/engine/types";
 import { defineTool, type McpTool } from "../define-tool";
 
@@ -200,7 +201,7 @@ const getInsurance = defineTool({
   title: "Insurance coverage",
   description:
     "The household's life insurance policies (type, owner, insured, death benefit, cash value, " +
-    "premium, term expiry, beneficiaries) and disability policies. Both are read from the " +
+    "premium, term expiry, beneficiaries) disability policies and long-term care policies. All are read from the " +
     "household's base data, not any what-if scenario — this tool takes no scenarioId.",
   inputSchema: z.object({
     clientId: z
@@ -215,17 +216,20 @@ const getInsurance = defineTool({
     const client = await getClientWithContacts(clientId, firmId);
     const primaryName = joinName(client?.firstName, client?.lastName) ?? "Client";
     const spouseName = joinName(client?.spouseFirstName, client?.spouseLastName);
-    // NOTE: loadDisabilityPolicies takes no firmId and trusts its caller.
-    // defineTool has already run assertClientReadableForPrincipal by here.
-    const [life, disability] = await Promise.all([
+    // NOTE: loadDisabilityPolicies / loadLtcPolicies take no firmId and trust
+    // their caller. defineTool has already run assertClientReadableForPrincipal.
+    const [life, disability, ltc] = await Promise.all([
       loadLifeInsuranceInventory(clientId, firmId, primaryName, spouseName),
       loadDisabilityPolicies(clientId),
+      loadLtcPolicies(clientId),
     ]);
     return {
       lifePolicies: life.policies,
       lifePolicyCount: life.policies.length,
       disabilityPolicies: disability,
       disabilityPolicyCount: disability.length,
+      ltcPolicies: ltc,
+      ltcPolicyCount: ltc.length,
     };
   },
 });

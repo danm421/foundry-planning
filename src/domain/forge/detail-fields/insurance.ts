@@ -3,7 +3,7 @@ import { YEAR_REFS as YEAR_REF_VALUES } from "@/lib/milestones";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Insurance tab (`src/app/(app)/clients/[id]/details/insurance/page.tsx`)
-// Views: `insurance-panel.tsx` (life insurance) and `disability-panel.tsx`.
+// Views: `insurance-panel.tsx` (life insurance), `disability-panel.tsx` and `ltc-panel.tsx`.
 //
 // TRAP 1 — a life-insurance policy is TWO rows, not one. Creating/editing a
 // policy writes an `accounts` row (category "life_insurance") AND a
@@ -667,6 +667,99 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
           "disability-policy-dialog.tsx or disability-panel.tsx today. Schema/route/column " +
           "accept it (trimmed, max 2000 chars); label above is inferred from the field name, not copied from the UI.",
       },
+    ],
+  },
+
+  {
+    id: "ltc_policy",
+    label: "Long-term care policy",
+    tab: "insurance",
+    surface: "Insurance → Long-term care → Add policy",
+    table: "ltcPolicies",
+    routes: {
+      list: "/ltc-policies",
+      create: "/ltc-policies",
+      update: "/ltc-policies/[policyId]",
+      delete: "/ltc-policies/[policyId]",
+    },
+    createSchema: { module: "@/lib/schemas/ltc-policies", export: "ltcPolicyCreateSchema" },
+    // Client-level (clientId column, no scenarioId): a write lands in the one
+    // base row set, and a scenario overlays it through `ltc_policy` changes.
+    // Not document evidence yet — reading LTC policies from statements is
+    // future work, so Statement Chat never sees this entity.
+    scenarioScoped: false,
+    scopePath: { via: "column" },
+    fields: [
+      { key: "name", label: "Policy name", kind: "string", required: true },
+      { key: "insured", label: "Who is covered", kind: "enum", enumValues: ["client", "spouse"], required: true },
+      { key: "carrier", label: "Carrier", kind: "string", nullable: true, defaultValue: null },
+      {
+        key: "kind", label: "Type", kind: "enum", enumValues: ["standalone", "life_rider"], defaultValue: "standalone",
+        notes: "Options read \"Traditional policy\" / \"Rider on a life policy\".",
+      },
+      {
+        key: "lifePolicyAccountId", label: "Life policy", kind: "uuid", nullable: true, defaultValue: null,
+        notes: "Required for a rider, null otherwise. Must be a life-insurance account that insures the same person and is not joint — the route refuses anything else.",
+      },
+      { key: "issueYear", label: "Issue year", kind: "year", required: true, range: { min: 1950, max: 2100 } },
+      {
+        key: "benefitAmount", label: "Benefit amount", kind: "money", defaultValue: 0, range: { min: 0 },
+        notes: "Per benefitUnit. Required (>0) for a traditional policy and a set-amount rider; 0 for a share-of-death-benefit rider.",
+        aliases: ["Daily Benefit", "Monthly Benefit", "Maximum Daily Benefit", "Maximum Monthly Benefit"],
+      },
+      { key: "benefitUnit", label: "Benefit per", kind: "enum", enumValues: ["day", "month"], defaultValue: "month" },
+      {
+        key: "riderBenefitMode", label: "Rider pays", kind: "enum", enumValues: ["pct_of_face", "fixed"], nullable: true,
+        defaultValue: null, notes: "Rider only.",
+      },
+      {
+        key: "riderMonthlyPct", label: "Monthly share of death benefit (%)", kind: "rate", nullable: true, defaultValue: null,
+        range: { max: 0.25 }, notes: "Decimal (0.02 = 2%). A share-of-death-benefit rider only.",
+      },
+      {
+        key: "benefitPeriodMode", label: "Benefits last", kind: "enum", enumValues: ["years", "lifetime"], nullable: true,
+        defaultValue: null, notes: "Traditional only. Options read \"For a number of years\" / \"For life\".",
+      },
+      {
+        key: "benefitPeriodYears", label: "Benefit years", kind: "number", nullable: true, defaultValue: null,
+        range: { min: 1, max: 20 }, aliases: ["Benefit Period"],
+      },
+      {
+        key: "riderMaxPct", label: "Can pay out up to (% of death benefit)", kind: "rate", nullable: true, defaultValue: null,
+        range: { max: 1 }, notes: "Rider only. Decimal (1 = 100%).",
+      },
+      { key: "extensionYears", label: "Extension (years)", kind: "number", defaultValue: 0, range: { min: 0, max: 10 } },
+      { key: "residualDeathBenefit", label: "Guaranteed death benefit", kind: "money", defaultValue: 0, range: { min: 0 } },
+      {
+        key: "eliminationDays", label: "Waiting period (days)", kind: "number", defaultValue: 90, range: { min: 0, max: 730 },
+        aliases: ["Elimination Period", "Waiting Period"],
+      },
+      { key: "homeCarePct", label: "Home care pays (% of limit)", kind: "rate", defaultValue: 1, range: { min: 0, max: 1 } },
+      {
+        key: "inflationRider", label: "Inflation protection", kind: "enum", enumValues: ["none", "simple", "compound"],
+        defaultValue: "none",
+      },
+      { key: "inflationRate", label: "Inflation rate (%)", kind: "rate", defaultValue: 0.03, range: { min: 0, max: 0.1 } },
+      {
+        key: "benefitType", label: "Policy pays", kind: "enum", enumValues: ["reimbursement", "indemnity"],
+        defaultValue: "reimbursement",
+      },
+      { key: "sharedCare", label: "Shared care", kind: "boolean", defaultValue: false, notes: "Traditional only." },
+      {
+        key: "annualPremium", label: "Annual premium", kind: "money", defaultValue: 0, range: { min: 0 },
+        notes: "Traditional only — a rider's must be 0 (its cost is inside the life premium).",
+      },
+      {
+        key: "premiumPayMode", label: "Premiums paid", kind: "enum", enumValues: ["lifetime", "to_age", "years", "paid_up"],
+        defaultValue: "lifetime",
+      },
+      { key: "premiumPayToAge", label: "Premiums paid to age", kind: "number", nullable: true, defaultValue: null, range: { min: 40, max: 110 } },
+      {
+        key: "premiumPayYears", label: "Premiums paid for (years)", kind: "number", nullable: true, defaultValue: null,
+        range: { min: 1, max: 60 }, notes: "Counted from the issue year.",
+      },
+      { key: "partnership", label: "State partnership policy", kind: "boolean", defaultValue: false },
+      { key: "notes", label: "Notes", kind: "text", nullable: true, defaultValue: null },
     ],
   },
 ];

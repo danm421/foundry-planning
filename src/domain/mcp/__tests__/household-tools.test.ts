@@ -12,6 +12,7 @@ const {
   loadEffectiveTree,
   loadLifeInsuranceInventory,
   loadDisabilityPolicies,
+  loadLtcPolicies,
   verifyClientAccessFor,
 } = vi.hoisted(() => ({
   getOverviewData: vi.fn(),
@@ -19,6 +20,7 @@ const {
   loadEffectiveTree: vi.fn(),
   loadLifeInsuranceInventory: vi.fn(),
   loadDisabilityPolicies: vi.fn(),
+  loadLtcPolicies: vi.fn(),
   verifyClientAccessFor: vi.fn(),
 }));
 
@@ -27,6 +29,7 @@ vi.mock("@/lib/clients/get-client-with-contacts", () => ({ getClientWithContacts
 vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree }));
 vi.mock("@/lib/insurance-policies/load-li-inventory", () => ({ loadLifeInsuranceInventory }));
 vi.mock("@/lib/insurance-policies/load-disability-policies", () => ({ loadDisabilityPolicies }));
+vi.mock("@/lib/insurance-policies/load-ltc-policies", () => ({ loadLtcPolicies }));
 vi.mock("@/lib/clients/authz", () => ({ verifyClientAccessFor }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/rate-limit", () => ({
@@ -55,6 +58,7 @@ beforeEach(() => {
   loadEffectiveTree.mockReset();
   loadLifeInsuranceInventory.mockReset();
   loadDisabilityPolicies.mockReset();
+  loadLtcPolicies.mockReset();
 });
 
 describe("get_client_summary", () => {
@@ -499,6 +503,8 @@ describe("get_insurance", () => {
     loadLifeInsuranceInventory.mockResolvedValue({ policies });
     const disability = [{ id: "d1", name: "LTD", insured: "client" }];
     loadDisabilityPolicies.mockResolvedValue(disability);
+    const ltc = [{ id: "l1", name: "Genworth", insured: "client" }];
+    loadLtcPolicies.mockResolvedValue(ltc);
 
     const out = await byName("get_insurance").run({ clientId: "c1" }, principal);
 
@@ -507,11 +513,14 @@ describe("get_insurance", () => {
     // exactly one argument reaches it, so a firmId can never be smuggled in.
     expect(loadDisabilityPolicies).toHaveBeenCalledWith("c1");
     expect(loadDisabilityPolicies.mock.calls[0]).toHaveLength(1);
+    expect(loadLtcPolicies).toHaveBeenCalledWith("c1");
     expect(out).toEqual({
       lifePolicies: policies,
       lifePolicyCount: 1,
       disabilityPolicies: disability,
       disabilityPolicyCount: 1,
+      ltcPolicies: ltc,
+      ltcPolicyCount: 1,
       foundryUrl: foundryUrl("c1", "insurance"),
     });
   });
@@ -520,6 +529,7 @@ describe("get_insurance", () => {
     getClientWithContacts.mockResolvedValue(null);
     loadLifeInsuranceInventory.mockResolvedValue({ policies: [] });
     loadDisabilityPolicies.mockResolvedValue([]);
+    loadLtcPolicies.mockResolvedValue([]);
     const out = (await byName("get_insurance").run({ clientId: "c1" }, principal)) as Record<
       string,
       unknown
@@ -527,6 +537,7 @@ describe("get_insurance", () => {
     expect(loadLifeInsuranceInventory).toHaveBeenCalledWith("c1", "org_1", "Client", null);
     expect(out.lifePolicyCount).toBe(0);
     expect(out.disabilityPolicyCount).toBe(0);
+    expect(out.ltcPolicyCount).toBe(0);
   });
 
   it("rejects when the caller cannot access the household", async () => {
@@ -536,6 +547,7 @@ describe("get_insurance", () => {
     );
     expect(loadLifeInsuranceInventory).not.toHaveBeenCalled();
     expect(loadDisabilityPolicies).not.toHaveBeenCalled();
+    expect(loadLtcPolicies).not.toHaveBeenCalled();
   });
 
   it("carries read-only annotations and a real title", () => {

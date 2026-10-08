@@ -437,3 +437,11 @@ describe("phase 3A people entities", () => {
     expect(findEntity("family_member")?.scopePath).toEqual({ via: "column" });
   });
 });
+
+describe("the LTC policy entity", () => {
+  it("is on the Insurance tab, client-level, and not read from documents (yet)", () => {
+    const e = findEntity("ltc_policy");
+    expect(e).toMatchObject({ tab: "insurance", table: "ltcPolicies", scenarioScoped: false });
+    expect(e?.documentEvidence).toBeUndefined();
+  });
+});
