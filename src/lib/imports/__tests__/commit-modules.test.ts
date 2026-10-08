@@ -1270,6 +1270,8 @@ describe("commitIncomes — Social Security reconciliation", () => {
     expect(v.ssBenefitMode).toBe("manual_amount");
     expect(v.claimingAge).toBe(70);
     expect(v.claimingAgeMode).toBe("years");
+    // The extracted figure is the benefit at the extracted claim age.
+    expect(v).toMatchObject({ ssStatedAge: 70, ssStatedAgeMonths: 0, ssAmountUnit: "annual" });
     expect(callsForTable(calls, "incomes").filter((c) => c.op === "insert")).toHaveLength(0);
     expect(result.updated).toBe(1);
   });
@@ -1495,6 +1497,43 @@ describe("commitIncomes — Social Security reconciliation", () => {
     const v = values(callsForTable(calls, "incomes").filter((c) => c.op === "update")[0]);
     expect(v).toMatchObject({ ssBenefitMode: "manual_amount", annualAmount: "40000" });
     expect(result.warnings).toHaveLength(0);
+  });
+
+  it("pins the stated benefit to the extracted claim age, and leaves it NULL (follows the claim age) when none was extracted", async () => {
+    for (const [claimingAge, expected] of [
+      [67, { ssStatedAge: 67, ssStatedAgeMonths: 0, ssAmountUnit: "annual" }],
+      [undefined, { ssStatedAge: null, ssStatedAgeMonths: null, ssAmountUnit: "annual" }],
+    ] as const) {
+      for (const slots of [[ssSlot("client")], []]) {
+        const { tx, calls, setSelectResult } = makeFakeTx();
+        setSelectResult("incomes", slots);
+        const payload: ImportPayload = {
+          ...emptyPayload(),
+          incomes: [
+            { name: "Social Security", type: "social_security", owner: "client", annualAmount: 30000, claimingAge, match: { kind: "new" } },
+          ],
+        };
+        await commitIncomes(tx, payload, ctx);
+        const op = slots.length ? "update" : "insert";
+        const v = values(callsForTable(calls, "incomes").filter((c) => c.op === op)[0]);
+        expect(v).toMatchObject({ ssBenefitMode: "manual_amount", annualAmount: "30000", ...expected });
+      }
+    }
+  });
+
+  it("does not stamp a stated age on a slot kept on the PIA path", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("incomes", [ssSlot("client", { ssBenefitMode: "pia_at_fra", piaMonthly: "3333.33" })]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      incomes: [
+        { name: "Social Security", type: "social_security", owner: "client", annualAmount: 30000, claimingAge: 67, match: { kind: "new" } },
+      ],
+    };
+    await commitIncomes(tx, payload, ctx);
+    const v = values(callsForTable(calls, "incomes").filter((c) => c.op === "update")[0]);
+    expect(v).not.toHaveProperty("ssStatedAge");
+    expect(v).not.toHaveProperty("ssAmountUnit");
   });
 
   it("still inserts a manual_amount row when no slot exists — a new row has no PIA to preserve", async () => {

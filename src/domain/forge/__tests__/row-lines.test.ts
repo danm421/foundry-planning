@@ -137,6 +137,16 @@ describe("newRowLines — expense and income", () => {
     ]);
   });
 
+  it("a stated Social Security benefit prints the age it is quoted at", () => {
+    const lines = newRowLines("income", {
+      type: "social_security", name: "Jane SS", owner: "client", annualAmount: "60000",
+      startYear: 2035, endYear: 2060, growthSource: "inflation",
+      claimingAge: 67, ssBenefitMode: "manual_amount", ssStatedAge: 70,
+    });
+    expect(lines).toContain("Benefit quoted at age: 70");
+    expect(lines.indexOf("Benefit quoted at age: 70")).toBe(lines.indexOf("Claiming age: 67") + 1);
+  });
+
   it("income shows the owner and the Social Security facts", () => {
     expect(
       newRowLines("income", {

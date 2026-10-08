@@ -294,6 +294,12 @@ async function reconcileSocialSecurity(
     } else {
       fields.annualAmount = String(t.amount);
       fields.ssBenefitMode = "manual_amount";
+      // The extracted figure is the benefit at the extracted claim age — pin
+      // it there so a later claim-age change prices early/late correctly.
+      // With no extracted age, leave it NULL: it then follows the claim age.
+      fields.ssStatedAge = t.claimingAge ?? null;
+      fields.ssStatedAgeMonths = t.claimingAge != null ? 0 : null;
+      fields.ssAmountUnit = "annual";
     }
     if (t.growthRate != null) fields.growthRate = String(t.growthRate);
 
@@ -326,6 +332,9 @@ async function reconcileSocialSecurity(
         claimingAge: t.claimingAge ?? 67,
         claimingAgeMode: "years",
         ssBenefitMode: "manual_amount",
+        ssStatedAge: t.claimingAge ?? null,
+        ssStatedAgeMonths: t.claimingAge != null ? 0 : null,
+        ssAmountUnit: "annual",
         source: "extracted",
       });
       result.created += 1;

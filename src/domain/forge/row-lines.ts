@@ -45,6 +45,8 @@ const LABELS: Record<string, string> = {
   startMonth: "Start month",
   claimingAge: "Claiming age",
   claimingAgeMonths: "Claiming age (extra months)",
+  ssStatedAge: "Benefit quoted at age",
+  ssStatedAgeMonths: "Benefit quoted at age (extra months)",
   piaMonthly: "PIA (monthly)",
   taxType: "Tax treatment",
   deductionType: "Deduction",
@@ -258,6 +260,7 @@ function flowLines(row: Row, kind: "expense" | "income"): string[] {
   if (growth) out.push(growth);
   if (kind === "income") {
     if (!isBlank(row.claimingAge)) out.push(line("claimingAge", row.claimingAge));
+    if (!isBlank(row.ssStatedAge)) out.push(line("ssStatedAge", row.ssStatedAge));
     if (!isBlank(row.piaMonthly) && !isZero(row.piaMonthly)) out.push(line("piaMonthly", row.piaMonthly));
     if (!isBlank(row.taxType)) out.push(line("taxType", row.taxType));
   } else {

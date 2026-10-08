@@ -65,4 +65,19 @@ describe("computeIncome routes stated benefits through the orchestrator", () => 
     expect(r.bySource.c ?? 0).toBe(0);
     expect(r.socialSecurityDetail?.client.spousal).toBe(0);
   });
+
+  // Tax reconciliation's "Set benefit to the return's figure" writes the check ACTUALLY PAID and
+  // clears the stated age. A row left pinned at 70 would be reduced again from a 67 claim.
+  it("a row written with the return's figure and no stated age pays exactly that figure", () => {
+    const gross = 30000;
+    const set: Income = {
+      ...paul, id: "t", annualAmount: gross, growthRate: 0, inflationStartYear: 2030,
+      claimingAge: 67, ssStatedAge: null, ssStatedAgeMonths: null,
+    };
+    const r = computeIncome([set], 2032, douglas);
+    expect(r.bySource.t).toBeCloseTo(gross, 6);
+    // Control: the same figure still pinned at 70 would be re-reduced for the 67 claim.
+    const pinned = computeIncome([{ ...set, ssStatedAge: 70 }], 2032, douglas);
+    expect(pinned.bySource.t).toBeLessThan(gross);
+  });
 });

@@ -210,6 +210,18 @@ const incomeFields = {
     .optional()
     .describe("additional months past the claiming-age year"),
   claimingAgeMode: z.string().optional().describe("how the claiming age is interpreted"),
+  ssStatedAge: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("Social Security, manual_amount rows: the age (62-70) the annual amount is quoted at; omit to mean the claim age"),
+  ssStatedAgeMonths: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("extra months (0-11) beyond ssStatedAge"),
+  ssAmountUnit: z
+    .enum(["monthly", "annual"])
+    .optional()
+    .describe("which unit the advisor typed the Social Security amount in; display only"),
   ownerEntityId: z.string().optional().describe("owning entity id; mutually exclusive with ownerAccountId"),
   ownerAccountId: z.string().optional().describe("owning business-account id; mutually exclusive with ownerEntityId"),
   cashAccountId: z.string().optional().describe("cash account this income flows into"),

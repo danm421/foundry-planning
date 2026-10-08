@@ -353,6 +353,23 @@ describe("add_income", () => {
     expect(String(result)).toBe("Added income \"Salary\" at $95,000/yr (id inc-1).");
   });
 
+  it("accepts the stated-benefit fields and hands them to the core", async () => {
+    vi.mocked(createIncomeForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "inc-2", name: "SS", annualAmount: "60000" } as never,
+      resourceId: "inc-2",
+    });
+    await getTool("add_income").invoke({
+      type: "social_security", name: "SS", startYear: 2030, endYear: 2060,
+      ssBenefitMode: "manual_amount", ssStatedAge: 70, ssStatedAgeMonths: 0, ssAmountUnit: "monthly",
+    });
+    expect(createIncomeForClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({ ssStatedAge: 70, ssStatedAgeMonths: 0, ssAmountUnit: "monthly" }),
+      }),
+    );
+  });
+
   it("description says the advisor approves it on a card — call it directly", () => {
     expect(getTool("add_income").description).toMatch(/approves it on a confirmation card.*call it directly/);
   });

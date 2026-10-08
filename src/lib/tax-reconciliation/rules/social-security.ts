@@ -34,7 +34,7 @@ export const socialSecurityRules: Rule = (input) => {
     if (claimingAge == null) return [];
     return [{
       owner: r.owner, incomeId: r.id,
-      patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge, startYear: Math.min(r.startYear, plan.planSettings.planStartYear), inflationStartYear: taxYear },
+      patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge, ssStatedAge: claimingAge, ssStatedAgeMonths: 0, ssAmountUnit: "annual", startYear: Math.min(r.startYear, plan.planSettings.planStartYear), inflationStartYear: taxYear },
     }];
   });
 
@@ -96,8 +96,11 @@ export const socialSecurityRules: Rule = (input) => {
           headline,
           meaning: `Setting the row to the return's figure switches it to a stated annual amount and grows it from the tax year. ${partialYearNote}`,
           returnFigure, planFigure, delta: makeDelta(gross, p),
+          // The return's figure is the check ACTUALLY PAID — the benefit at the
+          // claim age. Clear any stated age so it is not reduced or credited a
+          // second time (NULL = the claim age).
           action: { label: `Set benefit to ${money(gross)}`, describe: `Sets ${row.name} to ${money(gross)} (${taxYear} dollars)`, amountEditable: true, defaultAmount: gross,
-            target: { kind: "income.update", incomeId: row.id, patch: { ssBenefitMode: "manual_amount", annualAmount: gross, inflationStartYear: taxYear }, amountField: "annualAmount" } } });
+            target: { kind: "income.update", incomeId: row.id, patch: { ssBenefitMode: "manual_amount", annualAmount: gross, ssStatedAge: null, ssStatedAgeMonths: null, ssAmountUnit: "annual", inflationStartYear: taxYear }, amountField: "annualAmount" } } });
       }
     } else {
       const p = sum(active.map(inTaxYear));

@@ -24,7 +24,7 @@ describe("socialSecurityRules", () => {
     expect(s.action?.ownerChoices).toBeUndefined();
     expect(s.action?.target).toEqual({
       kind: "income.socialSecurity.claim", amount: 30_000,
-      rows: [{ owner: "client", incomeId: "s1", patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge: 67, startYear: 2026, inflationStartYear: 2025 } }],
+      rows: [{ owner: "client", incomeId: "s1", patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge: 67, ssStatedAge: 67, ssStatedAgeMonths: 0, ssAmountUnit: "annual", startYear: 2026, inflationStartYear: 2025 } }],
     });
     // Which side is which. The return figure is the benefit received; the plan figure is zero. A
     // swap would leave a card headlined "not in the plan yet" above a plan figure of $30,000.
@@ -113,7 +113,7 @@ describe("socialSecurityRules", () => {
     const r = socialSecurityRules(inputFixture({ facts: factsWith(30_000), plan, engineYear }));
     const s = r.suggestions.find((x) => x.id === "income.socialSecurity.amount")!;
     expect(s.planFigure.amount).toBeCloseTo(40_000, 0);
-    expect(s.action?.target).toEqual({ kind: "income.update", incomeId: "s1", patch: { ssBenefitMode: "manual_amount", annualAmount: 30_000, inflationStartYear: 2025 }, amountField: "annualAmount" });
+    expect(s.action?.target).toEqual({ kind: "income.update", incomeId: "s1", patch: { ssBenefitMode: "manual_amount", annualAmount: 30_000, ssStatedAge: null, ssStatedAgeMonths: null, ssAmountUnit: "annual", inflationStartYear: 2025 }, amountField: "annualAmount" });
     // The row grows at 2%; the PLAN inflates at 3%. Deflating by the plan's rate would give $39,612,
     // so the assertion above is what separates "the row's own growth" from "the plan's inflation".
     expect(s.returnFigure.amount).toBe(30_000);
@@ -202,8 +202,8 @@ describe("socialSecurityRules", () => {
     const plan = planFixture({ incomes: [ss("s1", "client", { startYear: 2024 }), ss("s2", "spouse", { startYear: 2030 })] });
     const t = claim(socialSecurityRules(inputFixture({ facts: factsWith(62_000), plan })).suggestions[0]);
     expect(t.rows).toEqual([
-      { owner: "client", incomeId: "s1", patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge: 65, startYear: 2024, inflationStartYear: 2025 } },
-      { owner: "spouse", incomeId: "s2", patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge: 63, startYear: 2026, inflationStartYear: 2025 } },
+      { owner: "client", incomeId: "s1", patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge: 65, ssStatedAge: 65, ssStatedAgeMonths: 0, ssAmountUnit: "annual", startYear: 2024, inflationStartYear: 2025 } },
+      { owner: "spouse", incomeId: "s2", patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge: 63, ssStatedAge: 63, ssStatedAgeMonths: 0, ssAmountUnit: "annual", startYear: 2026, inflationStartYear: 2025 } },
     ]);
   });
 
