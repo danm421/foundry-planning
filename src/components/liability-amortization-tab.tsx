@@ -15,8 +15,8 @@ import {
 import { useThemeName, chartChrome, dataPalette, statusColors } from "@/lib/chart-colors";
 import { BasePlanOnlyNote } from "@/components/base-plan-only";
 import {
-  computeAmortizationSchedule,
-  calcOriginalBalance,
+  liabilityAmortizationSchedule,
+  amortizationTotals,
   type AmortizationScheduleRow,
   type ScheduleExtraPayment,
 } from "@/lib/loan-math";
@@ -143,44 +143,26 @@ export default function LiabilityAmortizationTab({
     [extraPaymentRecords]
   );
 
-  // Back-calculate original balance at loan origination
   const currentYear = new Date().getFullYear();
-  const { originalBalance, elapsedMonths } = useMemo(() => {
-    const asOfMonth = balanceAsOfMonth || new Date().getMonth() + 1;
-    const asOfYear = balanceAsOfYear || currentYear;
-    const elapsed = Math.max(0, (asOfYear - startYear) * 12 + (asOfMonth - (startMonth || 1)));
-    const origBal = calcOriginalBalance(balance, interestRate, monthlyPayment, elapsed);
-    return { originalBalance: origBal, elapsedMonths: elapsed };
-  }, [balance, interestRate, monthlyPayment, startYear, startMonth, balanceAsOfMonth, balanceAsOfYear, currentYear]);
 
-  // Compute amortization schedule from original balance at origination
-  const schedule: AmortizationScheduleRow[] = useMemo(() => {
-    const term = termMonths || 360;
-    if (balance <= 0 || monthlyPayment <= 0) return [];
-
-    // startMonth matters: an October origination makes 3 payments in its first
-    // calendar year, not 12. Omitting it drew the loan as if it had started
-    // that January, which both shifted every year's payment and ended the
-    // schedule a year early — disagreeing with the cash-flow projection, which
-    // has always passed it.
-    return computeAmortizationSchedule(
-      originalBalance,
-      interestRate,
-      monthlyPayment,
-      startYear,
-      term,
-      scheduleExtraPayments,
-      startMonth || 1,
-      // A real term is required, not the `|| 360` fallback above. The form
-      // gates the checkbox's `disabled` but not its `checked`, so a liability
-      // whose term was cleared after the box was ticked still posts `true`.
-      // The engine holds such a row flat (isHeldFlatLiability covers
-      // termMonths <= 0) and builds no schedule at all, so modelling
-      // forgiveness here would draw a write-off ~30 years out that the
-      // projection does not have.
-      forgiveAtTermEnd && termMonths > 0
-    );
-  }, [originalBalance, balance, interestRate, monthlyPayment, startYear, startMonth, termMonths, scheduleExtraPayments, forgiveAtTermEnd]);
+  const schedule: AmortizationScheduleRow[] = useMemo(
+    () =>
+      liabilityAmortizationSchedule(
+        {
+          balance,
+          interestRate,
+          monthlyPayment,
+          startYear,
+          startMonth,
+          termMonths,
+          balanceAsOfMonth,
+          balanceAsOfYear,
+          forgiveAtTermEnd,
+        },
+        scheduleExtraPayments
+      ),
+    [balance, interestRate, monthlyPayment, startYear, startMonth, termMonths, balanceAsOfMonth, balanceAsOfYear, forgiveAtTermEnd, scheduleExtraPayments]
+  );
 
   // Chart data
   const chartData = useMemo(() => {
@@ -297,19 +279,7 @@ export default function LiabilityAmortizationTab({
     return map;
   }, [extraPaymentRecords]);
 
-  // Totals
-  const totals = useMemo(() => {
-    return schedule.reduce(
-      (acc, row) => ({
-        payment: acc.payment + row.payment,
-        interest: acc.interest + row.interest,
-        principal: acc.principal + row.principal,
-        forgivenAmount: acc.forgivenAmount + row.forgivenAmount,
-        extraPayment: acc.extraPayment + row.extraPayment,
-      }),
-      { payment: 0, interest: 0, principal: 0, forgivenAmount: 0, extraPayment: 0 }
-    );
-  }, [schedule]);
+  const totals = useMemo(() => amortizationTotals(schedule), [schedule]);
 
   const forgiven = useMemo(
     () => schedule.find((row) => row.forgivenAmount > 0) ?? null,

@@ -487,6 +487,25 @@ import { estimateEarlyYearsTidbitsPageCount } from "@/lib/presentations/pages/ea
 import { buildEarlyYearsTidbitsData } from "@/lib/presentations/pages/early-years-tidbits/view-model";
 import { EarlyYearsTidbitsPagePdf } from "./pages/early-years-tidbits/page-pdf";
 import { EarlyYearsTidbitsOptionsControl } from "./pages/early-years-tidbits/options-control";
+import {
+  LIABILITY_AMORTIZATION_OPTIONS_DEFAULT,
+  type LiabilityAmortizationPageData,
+  type LiabilityAmortizationPageOptions,
+} from "@/lib/presentations/pages/liability-amortization/types";
+import {
+  liabilityAmortizationOptionsSchema,
+  summarizeLiabilityAmortizationOptions,
+  isLiabilityAmortizationUnconfigured,
+} from "@/lib/presentations/pages/liability-amortization/options-schema";
+import {
+  PAGE_TITLE as LIABILITY_AMORTIZATION_TITLE,
+  buildLiabilityAmortizationData,
+  estimateLiabilityAmortizationPageCount,
+  liabilityAmortizationTocSections,
+  selectedLoans,
+} from "@/lib/presentations/pages/liability-amortization/view-model";
+import { LiabilityAmortizationPagePdf } from "./pages/liability-amortization/page-pdf";
+import { LiabilityAmortizationOptionsControl } from "./pages/liability-amortization/options-control";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -1388,6 +1407,31 @@ export const entitiesBalanceSheetPage: PresentationPage<BalanceSheetPageData, Ba
   renderPdf: (input) => <EntitiesBalanceSheetPagePdf {...input} />,
 };
 
+export const liabilityAmortizationPage: PresentationPage<
+  LiabilityAmortizationPageData,
+  LiabilityAmortizationPageOptions
+> = {
+  id: "liabilityAmortization",
+  title: LIABILITY_AMORTIZATION_TITLE,
+  description:
+    "Payoff schedule for each chosen loan or mortgage — a balance and interest chart, and payment, interest, principal and balance by year.",
+  category: "Assets",
+  defaultOptions: LIABILITY_AMORTIZATION_OPTIONS_DEFAULT,
+  optionsSchema: liabilityAmortizationOptionsSchema,
+  summarizeOptions: summarizeLiabilityAmortizationOptions,
+  estimatePageCount: (data) => estimateLiabilityAmortizationPageCount(data),
+  tocSections: (data) => liabilityAmortizationTocSections(data),
+  OptionsControl: LiabilityAmortizationOptionsControl,
+  supportsScenarioOverride: true,
+  isUnconfigured: isLiabilityAmortizationUnconfigured,
+  unconfiguredHint: "Open Options and choose at least one loan before generating the PDF.",
+  // A plan with none of the chosen loans has nothing to print.
+  omitFromDeck: (ctx, options) => selectedLoans(ctx.clientData, options).length === 0,
+  buildData: (ctx, options) =>
+    buildLiabilityAmortizationData(ctx.clientData, options, ctx.scenarioLabel),
+  renderPdf: (input) => <LiabilityAmortizationPagePdf {...input} />,
+};
+
 export const scenarioChangesPage: PresentationPage<ScenarioChangesPageData, ScenarioChangesOptions> = {
   id: "scenarioChanges",
   title: "Plan Changes",
@@ -2007,6 +2051,7 @@ export const PRESENTATION_PAGES = {
   holdings: holdingsPage,
   balanceSheet: balanceSheetPage,
   entitiesBalanceSheet: entitiesBalanceSheetPage,
+  liabilityAmortization: liabilityAmortizationPage,
   scenarioChanges: scenarioChangesPage,
   retirementComparison: retirementComparisonPage,
   scenarioComparison: scenarioComparisonPage,

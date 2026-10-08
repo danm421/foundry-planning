@@ -44,6 +44,7 @@ import { useClientAccess } from "@/components/client-access-provider";
 import type { InvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
 import type { EntityPickerOption } from "@/lib/presentations/entity-picker-options";
 import type { ProposalOption } from "@/lib/presentations/investment-proposal-bundle";
+import type { LiabilityPickerOption } from "@/lib/presentations/liability-picker-options";
 import type { UnreviewedStoryPage } from "@/lib/presentations/story/export-gate";
 
 interface Props {
@@ -62,6 +63,7 @@ interface Props {
   investmentCatalog: InvestmentOptionCatalog;
   entities?: EntityPickerOption[];
   proposals?: ProposalOption[];
+  liabilities?: LiabilityPickerOption[];
 }
 
 /**
@@ -528,7 +530,7 @@ export function PresentationsLauncher(props: Props) {
   );
 
   return (
-    <PresentationOptionsProvider value={{ investmentCatalog: props.investmentCatalog, scenarios: props.scenarios, clientId: props.clientId, entities: props.entities ?? [], proposals: props.proposals ?? [] }}>
+    <PresentationOptionsProvider value={{ investmentCatalog: props.investmentCatalog, scenarios: props.scenarios, clientId: props.clientId, entities: props.entities ?? [], proposals: props.proposals ?? [], liabilities: props.liabilities ?? [] }}>
     <div className="p-6">
       <h1 className="text-2xl font-semibold text-ink mb-4">
         Presentations<span className="dot">.</span>

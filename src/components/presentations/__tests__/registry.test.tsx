@@ -83,6 +83,7 @@ describe("registry — Cash Flow page", () => {
         "incomeTaxOtherTaxes",
         "investmentProposal",
         "incomeTaxState",
+        "liabilityAmortization",
         "lifeInsuranceSummary",
         "mapCashFlow",
         "mapGoals",

@@ -6,6 +6,7 @@ import {
 } from "@/lib/presentations/investment-option-catalog";
 import type { ScenarioOption } from "@/components/scenario/scenario-picker-dropdown";
 import type { EntityPickerOption } from "@/lib/presentations/entity-picker-options";
+import type { LiabilityPickerOption } from "@/lib/presentations/liability-picker-options";
 import type { ProposalOption } from "@/lib/presentations/investment-proposal-bundle";
 
 interface PresentationOptionsValue {
@@ -14,6 +15,7 @@ interface PresentationOptionsValue {
   clientId: string;
   entities?: EntityPickerOption[];
   proposals?: ProposalOption[];
+  liabilities?: LiabilityPickerOption[];
 }
 
 const Ctx = createContext<PresentationOptionsValue | null>(null);
@@ -46,4 +48,8 @@ export function useEntityOptions(): EntityPickerOption[] {
 
 export function useProposalOptions(): ProposalOption[] {
   return useContext(Ctx)?.proposals ?? [];
+}
+
+export function useLiabilityOptions(): LiabilityPickerOption[] {
+  return useContext(Ctx)?.liabilities ?? [];
 }

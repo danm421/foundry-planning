@@ -334,3 +334,91 @@ export function computeAmortizationSchedule(
 
   return rows;
 }
+
+/** The loan fields a liability's schedule is built from. A `Liability` from
+ *  the engine and the liability form's live values both satisfy it. */
+export interface LiabilityScheduleTerms {
+  balance: number;
+  interestRate: number;
+  monthlyPayment: number;
+  startYear: number;
+  startMonth: number;
+  termMonths: number;
+  balanceAsOfMonth?: number;
+  balanceAsOfYear?: number;
+  forgiveAtTermEnd?: boolean;
+}
+
+/**
+ * A liability's year-by-year schedule from origination to payoff.
+ *
+ * The stored balance is as of `balanceAsOf*` (today when unset), so the
+ * schedule starts from the balance at origination, back-calculated through the
+ * months elapsed since. Empty when there is no balance or no payment.
+ *
+ * The liability dialog's Amortization tab and the presentation's Loan
+ * Amortization sheet both draw this, so the two cannot print different numbers.
+ */
+export function liabilityAmortizationSchedule(
+  terms: LiabilityScheduleTerms,
+  extraPayments: ScheduleExtraPayment[] = [],
+  today: Date = new Date()
+): AmortizationScheduleRow[] {
+  if (terms.balance <= 0 || terms.monthlyPayment <= 0) return [];
+
+  const startMonth = terms.startMonth || 1;
+  const asOfMonth = terms.balanceAsOfMonth || today.getMonth() + 1;
+  const asOfYear = terms.balanceAsOfYear || today.getFullYear();
+  const elapsed = Math.max(0, (asOfYear - terms.startYear) * 12 + (asOfMonth - startMonth));
+  const originalBalance = calcOriginalBalance(
+    terms.balance,
+    terms.interestRate,
+    terms.monthlyPayment,
+    elapsed
+  );
+
+  // startMonth matters: an October origination makes 3 payments in its first
+  // calendar year, not 12. Omitting it drew the loan as if it had started
+  // that January, which both shifted every year's payment and ended the
+  // schedule a year early — disagreeing with the cash-flow projection, which
+  // has always passed it.
+  return computeAmortizationSchedule(
+    originalBalance,
+    terms.interestRate,
+    terms.monthlyPayment,
+    terms.startYear,
+    terms.termMonths || 360,
+    extraPayments,
+    startMonth,
+    // A real term is required, not the `|| 360` fallback above. The form
+    // gates the checkbox's `disabled` but not its `checked`, so a liability
+    // whose term was cleared after the box was ticked still posts `true`.
+    // The engine holds such a row flat (isHeldFlatLiability covers
+    // termMonths <= 0) and builds no schedule at all, so modelling
+    // forgiveness here would draw a write-off ~30 years out that the
+    // projection does not have.
+    !!terms.forgiveAtTermEnd && terms.termMonths > 0
+  );
+}
+
+export interface AmortizationTotals {
+  payment: number;
+  interest: number;
+  principal: number;
+  extraPayment: number;
+  forgivenAmount: number;
+}
+
+/** Column totals for a schedule's footer row. */
+export function amortizationTotals(rows: AmortizationScheduleRow[]): AmortizationTotals {
+  return rows.reduce(
+    (acc, row) => ({
+      payment: acc.payment + row.payment,
+      interest: acc.interest + row.interest,
+      principal: acc.principal + row.principal,
+      extraPayment: acc.extraPayment + row.extraPayment,
+      forgivenAmount: acc.forgivenAmount + row.forgivenAmount,
+    }),
+    { payment: 0, interest: 0, principal: 0, extraPayment: 0, forgivenAmount: 0 }
+  );
+}
