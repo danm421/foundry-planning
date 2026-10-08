@@ -20,15 +20,15 @@ const client = { firstName: "Cooper", retirementAge: 65 } as ClientData["client"
 
 describe("ssAmountLabel", () => {
   it("renders the PIA headline", () => {
-    expect(ssAmountLabel(ssRow({}))).toBe("$3,600/mo PIA");
+    expect(ssAmountLabel(ssRow({}), client)).toBe("$3,600/mo PIA");
   });
-  it("renders a manual annual amount", () => {
-    expect(ssAmountLabel(ssRow({ ssBenefitMode: "manual_amount", annualAmount: 30000 }))).toBe(
-      "$30,000/yr",
+  it("renders a stated amount with the age it is quoted at", () => {
+    expect(ssAmountLabel(ssRow({ ssBenefitMode: "manual_amount", annualAmount: 30000 }), client)).toBe(
+      "$30,000/yr at 67",
     );
   });
   it("renders No benefit", () => {
-    expect(ssAmountLabel(ssRow({ ssBenefitMode: "no_benefit" }))).toBe("No benefit");
+    expect(ssAmountLabel(ssRow({ ssBenefitMode: "no_benefit" }), client)).toBe("No benefit");
   });
 });
 

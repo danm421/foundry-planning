@@ -577,6 +577,12 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     person: PERSON,
     rate: RATE,
   }),
+  z.object({
+    kind: z.literal("ss-stated-age"),
+    person: PERSON,
+    age: z.number().int().min(62).max(70),
+    months: z.number().int().min(0).max(11),
+  }),
 
   // Expenses
   z.object({

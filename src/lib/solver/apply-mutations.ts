@@ -168,6 +168,14 @@ export function applyMutations(
         );
         break;
       }
+      case "ss-stated-age": {
+        result.incomes = result.incomes.map((i) =>
+          i.type === "social_security" && i.owner === m.person
+            ? { ...i, ssStatedAge: m.age, ssStatedAgeMonths: m.months }
+            : i,
+        );
+        break;
+      }
       case "savings-contribution": {
         result.savingsRules = result.savingsRules.map((r) =>
           r.accountId === m.accountId ? { ...r, annualAmount: m.annualAmount } : r,

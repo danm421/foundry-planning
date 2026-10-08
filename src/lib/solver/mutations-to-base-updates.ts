@@ -449,6 +449,14 @@ export function mutationsToBaseUpdates(
         if (id) incomePatch(id).growthRate = dec(m.rate);
         break;
       }
+      case "ss-stated-age": {
+        const id = ssIdFor(m.person);
+        if (id) {
+          incomePatch(id).ssStatedAge = m.age;
+          incomePatch(id).ssStatedAgeMonths = m.months;
+        }
+        break;
+      }
 
       // ── Savings rule field edits (keyed by accountId) ─────────────────
       case "savings-contribution":

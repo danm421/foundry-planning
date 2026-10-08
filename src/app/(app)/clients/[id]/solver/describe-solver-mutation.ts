@@ -67,7 +67,7 @@ const CLAIM_AGE_MODE = {
 
 const BENEFIT_MODE = {
   pia_at_fra: "from PIA",
-  manual_amount: "an annual amount",
+  manual_amount: "a benefit at a set age",
   no_benefit: "no benefit",
 } as const;
 
@@ -139,6 +139,10 @@ export function describeSolverMutation(m: SolverMutation, names: MutationNames):
       return `SS benefit (${who(m.person)}) → ${money(m.amount)}/yr`;
     case "ss-cola":
       return `SS cost-of-living raise (${who(m.person)}) → ${pct(m.rate)} a year`;
+    case "ss-stated-age":
+      return `SS benefit quoted at (${who(m.person)}) → age ${m.age}${
+        m.months ? ` and ${m.months} month${m.months === 1 ? "" : "s"}` : ""
+      }`;
     case "savings-contribution":
       return `${named("Savings", m.accountId)} → ${money(m.annualAmount)}/yr`;
     case "savings-annual-percent":

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ClientData, Income } from "@/engine";
 import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
+import { ssEntryLabel } from "@/lib/social-security/benefit-entry";
 import {
   mutationKey,
   type SolverMutation,
@@ -67,6 +68,7 @@ export function SolverRowSocialSecurity({
             label={`${workingClient.firstName}'s SS`}
             row={workingClientSs ?? baseClientSs}
             client={workingClient}
+            incomes={workingIncomes}
             baseRow={baseClientSs}
             baseClient={baseClient}
             person="client"
@@ -82,6 +84,7 @@ export function SolverRowSocialSecurity({
             label={`${workingClient.spouseName ?? CO_CLIENT_LABEL}'s SS`}
             row={workingSpouseSs ?? baseSpouseSs}
             client={workingClient}
+            incomes={workingIncomes}
             baseRow={baseSpouseSs}
             baseClient={baseClient}
             person="spouse"
@@ -101,7 +104,7 @@ function ssFor(incomes: ClientData["incomes"], owner: SolverPerson): Income | un
   return incomes.find((i) => i.type === "social_security" && i.owner === owner);
 }
 
-/** The six mutation keys a single person's SS edit can write — reset clears all
+/** The seven mutation keys a single person's SS edit can write — reset clears all
  *  so a partial reset can't leave half the change behind. */
 function ssResetKeys(person: SolverPerson): SolverMutationKey[] {
   return [
@@ -111,6 +114,7 @@ function ssResetKeys(person: SolverPerson): SolverMutationKey[] {
     mutationKey({ kind: "ss-claim-age-mode", person, mode: "years" }),
     mutationKey({ kind: "ss-claim-age", person, age: 0 }),
     mutationKey({ kind: "ss-cola", person, rate: 0 }),
+    mutationKey({ kind: "ss-stated-age", person, age: 0, months: 0 }),
   ];
 }
 
@@ -124,6 +128,8 @@ function ssChanged(base: Income, working: Income): boolean {
     (base.claimingAge ?? 67) !== (working.claimingAge ?? 67) ||
     (base.claimingAgeMonths ?? 0) !== (working.claimingAgeMonths ?? 0) ||
     (base.piaMonthly ?? null) !== (working.piaMonthly ?? null) ||
+    (base.ssStatedAge ?? null) !== (working.ssStatedAge ?? null) ||
+    (base.ssStatedAgeMonths ?? null) !== (working.ssStatedAgeMonths ?? null) ||
     base.annualAmount !== working.annualAmount ||
     (base.growthRate ?? null) !== (working.growthRate ?? null)
   );
@@ -133,6 +139,7 @@ function EditableSummary({
   label,
   row,
   client,
+  incomes,
   baseRow,
   baseClient,
   person,
@@ -145,6 +152,7 @@ function EditableSummary({
   label: string;
   row: Income;
   client: ClientData["client"];
+  incomes: ClientData["incomes"];
   baseRow: Income;
   baseClient: ClientData["client"];
   person: SolverPerson;
@@ -160,7 +168,7 @@ function EditableSummary({
     activeSolve?.target.kind === "ss-claim-age" &&
     (activeSolve.target as { kind: "ss-claim-age"; person: SolverPerson }).person === person;
   const otherSolveActive = activeSolve !== null && !isSolvingHere;
-  const amountLabel = ssAmountLabel(row);
+  const amountLabel = ssAmountLabel(row, client);
   const detailRows = ssDetailRows(row, client, person);
 
   // Once a person is already collecting, their claim age is locked in the past
@@ -254,6 +262,7 @@ function EditableSummary({
           person={person}
           client={client}
           workingRow={row}
+          incomes={incomes}
         />
       ) : null}
     </div>
@@ -281,17 +290,12 @@ function colaPct(row: Income): string | null {
   return `${(row.growthRate * 100).toFixed((row.growthRate * 100) % 1 === 0 ? 0 : 1)}%`;
 }
 
-export function ssAmountLabel(row: Income): string {
+export function ssAmountLabel(row: Income, client: ClientData["client"]): string {
   const benefitMode = row.ssBenefitMode ?? "manual_amount";
-  if (benefitMode === "no_benefit") return "No benefit";
-  if (benefitMode === "pia_at_fra") {
-    return row.piaMonthly != null
-      ? `$${Math.round(row.piaMonthly).toLocaleString()}/mo PIA`
-      : "PIA";
-  }
-  return row.annualAmount > 0
-    ? `$${Math.round(row.annualAmount).toLocaleString()}/yr`
-    : "Manual amount";
+  return (
+    ssEntryLabel(row, client) ??
+    (benefitMode === "no_benefit" ? "No benefit" : benefitMode === "pia_at_fra" ? "PIA" : "Benefit at an age")
+  );
 }
 
 export function ssDetailRows(
@@ -317,7 +321,7 @@ function renderSummary(
   const cola = colaPct(row);
   return (
     <span className="tabular">
-      <span>{ssAmountLabel(row)}</span>
+      <span>{ssAmountLabel(row, client)}</span>
       <span className="text-ink-3"> · </span>
       <span>Claim at {claimLabelFor(row, client, person)}</span>
       {cola ? (

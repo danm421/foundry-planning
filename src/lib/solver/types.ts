@@ -60,6 +60,7 @@ export type SolverMutation =
   | { kind: "ss-pia-monthly"; person: SolverPerson; amount: number }
   | { kind: "ss-annual-amount"; person: SolverPerson; amount: number }
   | { kind: "ss-cola"; person: SolverPerson; rate: number }
+  | { kind: "ss-stated-age"; person: SolverPerson; age: number; months: number }
   | { kind: "savings-contribution"; accountId: string; annualAmount: number }
   | { kind: "savings-annual-percent"; accountId: string; percent: number | null }
   /** Which salaries a percent-of-salary contribution (and a percent employer
@@ -226,6 +227,7 @@ export type SolverMutationKey =
   | `ss-pia-monthly:${SolverPerson}`
   | `ss-annual-amount:${SolverPerson}`
   | `ss-cola:${SolverPerson}`
+  | `ss-stated-age:${SolverPerson}`
   | `savings-contribution:${string}`
   | `savings-annual-percent:${string}`
   | `savings-salary-basis:${string}`
@@ -303,6 +305,8 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `ss-annual-amount:${m.person}`;
     case "ss-cola":
       return `ss-cola:${m.person}`;
+    case "ss-stated-age":
+      return `ss-stated-age:${m.person}`;
     case "savings-contribution":
       return `savings-contribution:${m.accountId}`;
     case "savings-annual-percent":

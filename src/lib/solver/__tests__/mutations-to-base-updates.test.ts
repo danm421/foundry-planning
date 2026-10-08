@@ -377,6 +377,7 @@ describe("every base-savable mutation kind produces a write", () => {
     "ss-pia-monthly": { kind: "ss-pia-monthly", person: "client", amount: 3200 },
     "ss-annual-amount": { kind: "ss-annual-amount", person: "client", amount: 20000 },
     "ss-cola": { kind: "ss-cola", person: "client", rate: 0.02 },
+    "ss-stated-age": { kind: "ss-stated-age", person: "client", age: 70, months: 0 },
     "savings-contribution": { kind: "savings-contribution", accountId: "acct1", annualAmount: 2500 },
     "savings-annual-percent": { kind: "savings-annual-percent", accountId: "acct1", percent: 0.1 },
     "savings-roth-percent": { kind: "savings-roth-percent", accountId: "acct1", rothPercent: 0.5 },

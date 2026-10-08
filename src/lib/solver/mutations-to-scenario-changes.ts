@@ -344,6 +344,13 @@ export function mutationsToScenarioChanges(
         accumulateSs(m.person, "growthRate", row.growthRate, m.rate);
         break;
       }
+      case "ss-stated-age": {
+        const row = ssRowFor(m.person);
+        if (!row) break;
+        accumulateSs(m.person, "ssStatedAge", row.ssStatedAge ?? null, m.age);
+        accumulateSs(m.person, "ssStatedAgeMonths", row.ssStatedAgeMonths ?? null, m.months);
+        break;
+      }
       case "savings-contribution": {
         const rule = savingsRuleFor(m.accountId);
         if (!rule) break;
