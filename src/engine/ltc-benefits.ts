@@ -199,10 +199,15 @@ export function synthesizeLtcBenefits(input: LtcBenefitsInput): LtcBenefitsResul
     poolBase.set(p.id, Math.max(0, base - take / factor));
     return take;
   };
-  // Shared care: the other person's first shared traditional policy with a pool.
-  const sharedPartner = (p: LtcPolicy): LtcPolicy | undefined =>
+  // Shared care: the other person's first shared traditional policy with a
+  // pool that is issued by `year` (a policy pays from its issue year, Dan,
+  // 2026-10-08).
+  const sharedPartner = (p: LtcPolicy, year: number): LtcPolicy | undefined =>
     p.sharedCare
-      ? input.policies.find((q) => q.insured !== p.insured && q.kind === "standalone" && q.sharedCare && poolBase.has(q.id))
+      ? input.policies.find(
+          (q) =>
+            q.insured !== p.insured && q.kind === "standalone" && q.sharedCare && poolBase.has(q.id) && q.issueYear <= year,
+        )
       : undefined;
 
   interface Slot {
@@ -244,7 +249,7 @@ export function synthesizeLtcBenefits(input: LtcBenefitsInput): LtcBenefitsResul
   const drawStandalone = (s: Slot, want: number, year: number): number => {
     const own = takeFromPool(s.policy, want, year);
     if (want - own < DUST) return own;
-    const partner = sharedPartner(s.policy);
+    const partner = sharedPartner(s.policy, year);
     if (!partner) return own;
     // v1 does not move a deceased partner's pool to the survivor (spec).
     const partnerDeath = input.deathYearByPerson[partner.insured];

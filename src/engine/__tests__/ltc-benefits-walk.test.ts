@@ -160,6 +160,13 @@ describe("shared care", () => {
     expect(paid(r, "j")).toEqual({ 2055: 72_000, 2056: 72_000 });
   });
 
+  it("a partner's pool can't be drawn before the partner's policy is issued (Dan, 2026-10-08)", () => {
+    // Jane's shared 3-year policy is issued 2057. 2055: 12 × 6,000 = 72,000 from John's own pool (now empty).
+    // 2056: her policy doesn't exist yet → nothing. 2057: 12 × 6,000 = 72,000 from her 216,000 pool.
+    const r = run([john(3, 10_000)], [johnPolicy, { ...janePolicy, issueYear: 2057 }]);
+    expect(paid(r, "j")).toEqual({ 2055: 72_000, 2057: 72_000 });
+  });
+
   it("both in care: the client draws first when one pool can't cover both in a month", () => {
     // John 6,000/mo from a 72,000 pool; Jane 5,500/mo from 5,500 × 12 × 2 = 132,000. Both 2055–2057.
     // 2055: John 72,000 (his pool now empty), Jane 66,000 (66,000 left).
