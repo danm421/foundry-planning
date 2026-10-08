@@ -1,4 +1,5 @@
-import ExcelJS from "exceljs";
+import type ExcelJS from "exceljs";
+import { loadXlsxWorkbook } from "@/lib/xlsx-workbook";
 
 /** xlsx files are zip containers — sniff the PK signature. */
 function isXlsx(buffer: Buffer): boolean {
@@ -77,16 +78,7 @@ function normalizeXlsxCell(v: ExcelJS.CellValue): string | number {
 }
 
 async function readXlsxRows(buffer: Buffer): Promise<(string | number)[][]> {
-  const wb = new ExcelJS.Workbook();
-  // exceljs types load() against an older Buffer interface; hand it the
-  // runtime-compatible ArrayBuffer view it actually accepts (same cast as
-  // src/lib/extraction/excel-parser.ts).
-  await wb.xlsx.load(
-    buffer.buffer.slice(
-      buffer.byteOffset,
-      buffer.byteOffset + buffer.byteLength,
-    ) as ArrayBuffer,
-  );
+  const wb = await loadXlsxWorkbook(buffer);
   const sheet = wb.worksheets[0];
   if (!sheet) {
     throw new Error("Empty workbook");

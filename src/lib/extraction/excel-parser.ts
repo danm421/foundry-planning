@@ -1,4 +1,4 @@
-import ExcelJS from "exceljs";
+import { loadXlsxWorkbook } from "@/lib/xlsx-workbook";
 
 /**
  * Extract text from an Excel/CSV buffer as tab-separated rows.
@@ -7,13 +7,7 @@ export async function extractExcelText(buffer: Buffer): Promise<string> {
   if (buffer.length === 0) return "";
 
   try {
-    const workbook = new ExcelJS.Workbook();
-    // ExcelJS types its load() arg as an older Buffer interface; cast to the
-     // runtime-compatible ArrayBuffer view it actually accepts.
-    await workbook.xlsx.load(buffer.buffer.slice(
-      buffer.byteOffset,
-      buffer.byteOffset + buffer.byteLength
-    ) as ArrayBuffer);
+    const workbook = await loadXlsxWorkbook(buffer);
 
     const parts: string[] = [];
     const sheetCount = workbook.worksheets.length;
