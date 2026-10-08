@@ -107,6 +107,21 @@ export function ssEntitlementMonth(dob: string, claimAgeMonths: number): Entitle
 }
 
 /**
+ * The age, in total months, a worker attains in `month` — the inverse of the
+ * attainment rule above, so `ssEntitlementMonth(dob, claimAgeMonthsAt(dob, m))`
+ * is `m` for any month at or after the earliest payable month. Used to price a
+ * benefit that starts on someone ELSE's filing (the spousal top-up).
+ *
+ * Null when the date of birth cannot be parsed.
+ */
+export function claimAgeMonthsAt(dob: string, month: EntitlementMonth): number | null {
+  const parsed = parseDob(dob);
+  if (!parsed) return null;
+  const age = toIndex(month.year, month.month) - toIndex(parsed.year, parsed.month);
+  return parsed.day === 1 ? age + 1 : age;
+}
+
+/**
  * How many months of benefit fall inside `year` for a stream that begins at
  * `entitlement`. Zero before the start year, `13 - month` in the start year,
  * and a full 12 in every year after.

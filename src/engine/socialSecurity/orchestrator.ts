@@ -6,7 +6,7 @@ import { computeSpousalMonthlyBenefit, topUp } from "./spousal";
 import { computeSurvivorMonthlyBenefit } from "./survivor";
 import { AGE_60_MONTHS, AGE_70_MONTHS } from "./constants";
 import { resolveClaimAgeMonths, resolveEntitlementMonth } from "./claimAge";
-import { monthsPaidInYear, type EntitlementMonth } from "./entitlement";
+import { claimAgeMonthsAt, monthsPaidInYear, type EntitlementMonth } from "./entitlement";
 import { resolvePiaMonthly } from "./resolvePia";
 
 export interface ResolveAnnualBenefitInput {
@@ -213,16 +213,21 @@ export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): Resolved
     dob: thisDob,
   });
   if (otherRow && otherHasClaimed && otherPia != null) {
+    // Deeming needs BOTH spouses on the rolls, so the top-up starts at the
+    // later of the two entitlement months — and SSA reduces the spousal excess
+    // by this worker's age THEN, not by the age they took their own benefit.
+    // Someone who files at 62 and picks up spousal at 66 is 12 months early on
+    // the spousal part, not 59.
+    const spousalStart = laterOf(thisEntitlement, otherEntitlement);
+    const spousalAgeMonths =
+      (spousalStart ? claimAgeMonthsAt(thisDob, spousalStart) : null) ?? thisClaimAgeMonths;
     const spousal = computeSpousalMonthlyBenefit({
       otherPiaMonthly: otherPia,
       otherSpouseHasClaimed: true,
-      claimAgeMonths: thisClaimAgeMonths,
+      claimAgeMonths: spousalAgeMonths,
       dob: thisDob,
     });
-    // Deeming needs BOTH spouses on the rolls, so the top-up starts at the
-    // later of the two entitlement months — never before this worker's own
-    // benefit, which is why spousalMonths <= ownMonths.
-    const spousalMonths = monthsPaidInYear(laterOf(thisEntitlement, otherEntitlement), input.year);
+    const spousalMonths = monthsPaidInYear(spousalStart, input.year);
     const t = topUp(own, spousal);
     const retirement = annualize(t.retirement, ownMonths);
     const spousalPortion = annualize(t.spousalPortion, spousalMonths);

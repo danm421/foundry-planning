@@ -3,6 +3,7 @@ import {
   ssEntitlementMonth,
   monthsPaidInYear,
   effectiveClaimAgeMonths,
+  claimAgeMonthsAt,
 } from "../entitlement";
 
 const AT_62 = 62 * 12;
@@ -126,5 +127,20 @@ describe("effectiveClaimAgeMonths", () => {
 
   it("falls back to the requested claim age when the DOB is unparseable", () => {
     expect(effectiveClaimAgeMonths("", AT_67)).toBe(AT_67);
+  });
+});
+
+describe("claimAgeMonthsAt", () => {
+  it("is the age attained in a month — the inverse of the attainment rule", () => {
+    expect(claimAgeMonthsAt("1960-06-15", { year: 2026, month: 6 })).toBe(66 * 12);
+    // Born on the 1st: attains each age the PRIOR month (day-before rule).
+    expect(claimAgeMonthsAt("1960-06-01", { year: 2026, month: 5 })).toBe(66 * 12);
+  });
+  it("round-trips through ssEntitlementMonth at or after 62", () => {
+    const m = ssEntitlementMonth("1958-02-24", 800)!;
+    expect(claimAgeMonthsAt("1958-02-24", m)).toBe(800);
+  });
+  it("is null for an unparseable date", () => {
+    expect(claimAgeMonthsAt("not-a-date", { year: 2026, month: 1 })).toBeNull();
   });
 });
