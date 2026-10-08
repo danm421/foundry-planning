@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import type { Income, ClientInfo } from "@/engine/types";
 import {
   asSsIncome, otherSsRow, entryUnit, toMonthly, toAnnual, convertAmountText,
-  initialEntryAmount, initialStatedAge, statedAgeYear, ageLabel, ssEntryLabel, ssEntryPreview,
+  initialEntryAmount, initialStatedAge, statedAgeYear, ageLabel, ssEntryLabel, ssEntryPreview, ssDraftRow, claimTracksStatedAge,
 } from "../benefit-entry";
 
 const douglas: ClientInfo = {
@@ -120,5 +120,40 @@ describe("REVIEW FOCUS 5 — raw rows, single clients, No benefit", () => {
 
   it("nothing priceable → null", () => {
     expect(ssEntryPreview({ ...paul, ssBenefitMode: "no_benefit" } as Income, null, douglas)).toBeNull();
+  });
+});
+
+describe("ssDraftRow", () => {
+  const base = {
+    unit: "monthly" as const, statedAge: { years: 70, months: 6 }, claimingAge: 67, claimingAgeMonths: 0,
+    claimingAgeMode: "years" as const, owner: "client" as const, id: "d", year: 2026,
+  };
+  it("stated: canonical annual amount and the stated age set", () => {
+    const row = ssDraftRow({ ...base, amount: "5706.5", mode: "manual_amount" });
+    expect(row.annualAmount).toBeCloseTo(68478, 6);
+    expect(row.piaMonthly).toBeUndefined();
+    expect(row.ssStatedAge).toBe(70);
+    expect(row.ssStatedAgeMonths).toBe(6);
+  });
+  it("PIA typed per year: monthly piaMonthly, no stated age", () => {
+    const row = ssDraftRow({ ...base, amount: "36000", unit: "annual", mode: "pia_at_fra" });
+    expect(row.piaMonthly).toBe(3000);
+    expect(row.annualAmount).toBe(0);
+    expect(row.ssStatedAge).toBeNull();
+    expect(row.ssStatedAgeMonths).toBeNull();
+  });
+});
+
+describe("claimTracksStatedAge", () => {
+  const stated = { years: 67, months: 0 };
+  it("is true when the claim age equals the stated age", () => {
+    expect(claimTracksStatedAge({ claimingAgeMode: "years", claimingAge: 67, claimingAgeMonths: 0 }, stated)).toBe(true);
+  });
+  it("is false when they differ", () => {
+    expect(claimTracksStatedAge({ claimingAgeMode: "years", claimingAge: 68, claimingAgeMonths: 0 }, stated)).toBe(false);
+    expect(claimTracksStatedAge({ claimingAgeMode: "years", claimingAge: 67, claimingAgeMonths: 3 }, stated)).toBe(false);
+  });
+  it("is false when the claim mode is not a specific age", () => {
+    expect(claimTracksStatedAge({ claimingAgeMode: "fra", claimingAge: 67, claimingAgeMonths: 0 }, stated)).toBe(false);
   });
 });

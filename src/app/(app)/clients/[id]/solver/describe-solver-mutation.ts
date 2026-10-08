@@ -67,7 +67,7 @@ const CLAIM_AGE_MODE = {
 
 const BENEFIT_MODE = {
   pia_at_fra: "from PIA",
-  manual_amount: "a benefit at a set age",
+  manual_amount: "a benefit at a specific age",
   no_benefit: "no benefit",
 } as const;
 

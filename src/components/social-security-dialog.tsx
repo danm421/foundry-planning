@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { Income, ClientInfo, PlanSettings, MedicareCoverage } from "@/engine/types";
 import { fraForBirthDate } from "@/engine/socialSecurity/fra";
-import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
 import { personLabel } from "@/lib/owner-labels";
 import {
   estimatePiaFromSalary,
@@ -13,12 +12,13 @@ import {
   type SalaryLike,
 } from "@/lib/social-security/estimate-from-salary";
 import {
-  ageLabel,
+  claimTracksStatedAge,
   convertAmountText,
   entryUnit,
   initialEntryAmount,
   initialStatedAge,
   otherSsRow,
+  ssDraftRow,
   ssEntryPreview,
   toAnnual,
   toMonthly,
@@ -28,6 +28,7 @@ import {
 import DialogShell from "./dialog-shell";
 import { inputBaseClassName, selectClassName, fieldLabelClassName } from "./forms/input-styles";
 import { SocialSecurityAmountFields } from "./social-security-amount-fields";
+import { SocialSecurityPreview } from "./social-security-preview";
 import { MedicareDialogTab } from "./medicare/medicare-dialog-tab";
 
 type SsBenefitMode = "pia_at_fra" | "manual_amount" | "no_benefit";
@@ -150,34 +151,20 @@ export function SocialSecurityDialog({
     return `Full Retirement Age: ${fra.years}y ${fra.months}mo (born ${ownerDob.slice(0, 4)})`;
   }, [ownerDob]);
 
-  const draftRow: Income = useMemo(() => {
-    const typed = parseFloat(piaFieldValue);
-    const isStated = ssBenefitMode === "manual_amount";
-    return {
-      id: existingRow?.id ?? "draft", type: "social_security", name: "",
-      annualAmount: isStated && !isNaN(typed) ? toAnnual(typed, unit) : 0,
-      startYear: currentYear, endYear: 2099, growthRate: 0, owner,
-      claimingAge, claimingAgeMonths, claimingAgeMode,
-      ssBenefitMode: ssBenefitMode === "estimate_from_salary" ? "pia_at_fra" : ssBenefitMode,
-      piaMonthly: !isStated && !isNaN(typed) ? toMonthly(typed, unit) : undefined,
-      ssStatedAge: isStated ? statedAge.years : null,
-      ssStatedAgeMonths: isStated ? statedAge.months : null,
-    };
-  }, [piaFieldValue, unit, ssBenefitMode, statedAge, claimingAge, claimingAgeMonths, claimingAgeMode, owner, currentYear, existingRow?.id]);
+  const draftRow: Income = useMemo(() => ssDraftRow({
+    amount: piaFieldValue, unit,
+    mode: ssBenefitMode === "estimate_from_salary" ? "pia_at_fra" : ssBenefitMode,
+    statedAge, claimingAge, claimingAgeMonths, claimingAgeMode, owner,
+    id: existingRow?.id ?? "draft", year: currentYear,
+  }), [piaFieldValue, unit, ssBenefitMode, statedAge, claimingAge, claimingAgeMonths, claimingAgeMode, owner, currentYear, existingRow?.id]);
 
   const preview = useMemo(
     () => (ssBenefitMode === "no_benefit" ? null : ssEntryPreview(draftRow, otherSsRow(incomes, owner), clientInfo)),
     [draftRow, incomes, owner, clientInfo, ssBenefitMode],
   );
-  const claimMonths = resolveClaimAgeMonths(draftRow, clientInfo);
-  const claimLabel = claimMonths != null ? ageLabel(Math.floor(claimMonths / 12), claimMonths % 12) : "the claim age";
-  const nameFor = (who: "client" | "spouse") =>
-    personLabel(who, { clientName: clientInfo.firstName, spouseName: clientInfo.spouseName ?? null });
-
   /** The claim age follows the stated age only while the two match. */
   function changeStatedAge(next: { years: number; months: number }) {
-    const tracking =
-      claimingAgeMode === "years" && claimingAge === statedAge.years && claimingAgeMonths === statedAge.months;
+    const tracking = claimTracksStatedAge({ claimingAgeMode, claimingAge, claimingAgeMonths }, statedAge);
     setStatedAge(next);
     if (tracking) {
       setClaimingAge(next.years);
@@ -406,22 +393,7 @@ export function SocialSecurityDialog({
           )}
 
           {/* Preview */}
-          {preview != null && (
-            <div className="text-[14px] text-ink-2 mb-4 space-y-0.5">
-              <p>
-                PIA ${Math.round(preview.piaMonthly).toLocaleString()}/mo
-                {preview.ownAnnual != null && ` · At ${claimLabel}: $${Math.round(preview.ownAnnual).toLocaleString()}/yr`}
-              </p>
-              {(["client", "spouse"] as const).map((who) => {
-                const v = preview.topUps[who];
-                if (v == null || v <= 0) return null;
-                return <p key={who}>{nameFor(who)}&apos;s spousal top-up: ${Math.round(v).toLocaleString()}/mo</p>;
-              })}
-              {preview.topUps.client === 0 && preview.topUps.spouse === 0 && (
-                <p className="text-ink-3">No spousal top-up — each benefit is larger than half the other&apos;s PIA.</p>
-              )}
-            </div>
-          )}
+          {preview != null && <SocialSecurityPreview preview={preview} draftRow={draftRow} client={clientInfo} />}
         </div>
       )}
 

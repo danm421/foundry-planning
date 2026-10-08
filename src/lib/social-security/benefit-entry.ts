@@ -193,3 +193,41 @@ export function ssEntryPreview(draft: Income, other: Income | null, client: Clie
   }
   return { piaMonthly: pia, ownAnnual, topUps };
 }
+
+/** The engine row an editor previews: the typed amount read in its unit and
+ *  stored canonically (a stated benefit annual, a PIA monthly). The stated age
+ *  is set only for a stated benefit; null = the row's own claim age. */
+export function ssDraftRow(p: {
+  amount: string;
+  unit: SsAmountUnit;
+  mode: NonNullable<Income["ssBenefitMode"]>;
+  statedAge: { years: number; months: number };
+  claimingAge: number;
+  claimingAgeMonths: number;
+  claimingAgeMode: NonNullable<Income["claimingAgeMode"]>;
+  owner: "client" | "spouse";
+  id: string;
+  year: number;
+}): Income {
+  const typed = parseFloat(p.amount);
+  const isStated = p.mode === "manual_amount";
+  return {
+    id: p.id, type: "social_security", name: "",
+    annualAmount: isStated && !isNaN(typed) ? toAnnual(typed, p.unit) : 0,
+    startYear: p.year, endYear: 2099, growthRate: 0, owner: p.owner,
+    claimingAge: p.claimingAge, claimingAgeMonths: p.claimingAgeMonths, claimingAgeMode: p.claimingAgeMode,
+    ssBenefitMode: p.mode,
+    piaMonthly: !isStated && !isNaN(typed) ? toMonthly(typed, p.unit) : undefined,
+    ssStatedAge: isStated ? p.statedAge.years : null,
+    ssStatedAgeMonths: isStated ? p.statedAge.months : null,
+  };
+}
+
+/** True while the claim age is a specific age equal to the stated age — the
+ *  claim age then follows the stated age as the advisor changes it. */
+export function claimTracksStatedAge(
+  claim: { claimingAgeMode: string; claimingAge: number; claimingAgeMonths: number },
+  stated: { years: number; months: number },
+): boolean {
+  return claim.claimingAgeMode === "years" && claim.claimingAge === stated.years && claim.claimingAgeMonths === stated.months;
+}

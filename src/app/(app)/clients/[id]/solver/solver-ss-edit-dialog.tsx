@@ -3,15 +3,16 @@
 import { useMemo, useState } from "react";
 import type { ClientData, Income } from "@/engine/types";
 import { fraForBirthDate } from "@/engine/socialSecurity/fra";
-import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
 import DialogShell from "@/components/dialog-shell";
 import { SocialSecurityAmountFields } from "@/components/social-security-amount-fields";
+import { SocialSecurityPreview } from "@/components/social-security-preview";
 import {
-  ageLabel,
+  claimTracksStatedAge,
   entryUnit,
   initialEntryAmount,
   initialStatedAge,
   otherSsRow,
+  ssDraftRow,
   ssEntryPreview,
   toAnnual,
   toMonthly,
@@ -28,7 +29,7 @@ import type {
   SsBenefitMode,
   SsClaimAgeMode,
 } from "@/lib/solver/types";
-import { CO_CLIENT_LABEL, personLabel } from "@/lib/owner-labels";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 interface Props {
   open: boolean;
@@ -94,34 +95,18 @@ export function SolverSsEditDialog({
     return `Full Retirement Age: ${fra.years}y ${fra.months}mo (born ${ownerDob.slice(0, 4)})`;
   }, [ownerDob]);
 
-  const draftRow: Income = useMemo(() => {
-    const typed = parseFloat(amount);
-    const isStated = benefitMode === "manual_amount";
-    return {
-      id: workingRow.id, type: "social_security", name: "",
-      annualAmount: isStated && !isNaN(typed) ? toAnnual(typed, unit) : 0,
-      startYear: currentYear, endYear: 2099, growthRate: 0, owner: person,
-      claimingAge, claimingAgeMonths, claimingAgeMode,
-      ssBenefitMode: benefitMode,
-      piaMonthly: !isStated && !isNaN(typed) ? toMonthly(typed, unit) : undefined,
-      ssStatedAge: isStated ? statedAge.years : null,
-      ssStatedAgeMonths: isStated ? statedAge.months : null,
-    };
-  }, [amount, unit, benefitMode, statedAge, claimingAge, claimingAgeMonths, claimingAgeMode, person, currentYear, workingRow.id]);
+  const draftRow: Income = useMemo(() => ssDraftRow({
+    amount, unit, mode: benefitMode, statedAge, claimingAge, claimingAgeMonths, claimingAgeMode,
+    owner: person, id: workingRow.id, year: currentYear,
+  }), [amount, unit, benefitMode, statedAge, claimingAge, claimingAgeMonths, claimingAgeMode, person, currentYear, workingRow.id]);
 
   const preview = useMemo(
     () => (benefitMode === "no_benefit" ? null : ssEntryPreview(draftRow, otherSsRow(incomes, person), client)),
     [draftRow, incomes, person, client, benefitMode],
   );
-  const claimMonths = resolveClaimAgeMonths(draftRow, client);
-  const claimLabel = claimMonths != null ? ageLabel(Math.floor(claimMonths / 12), claimMonths % 12) : "the claim age";
-  const nameFor = (who: SolverPerson) =>
-    personLabel(who, { clientName: client.firstName, spouseName: client.spouseName ?? null });
-
   /** The claim age follows the stated age only while the two match. */
   function changeStatedAge(next: { years: number; months: number }) {
-    const tracking =
-      claimingAgeMode === "years" && claimingAge === statedAge.years && claimingAgeMonths === statedAge.months;
+    const tracking = claimTracksStatedAge({ claimingAgeMode, claimingAge, claimingAgeMonths }, statedAge);
     setStatedAge(next);
     if (tracking) {
       setClaimingAge(next.years);
@@ -343,22 +328,7 @@ export function SolverSsEditDialog({
         </div>
       )}
 
-      {preview != null && (
-        <div className="text-[14px] text-ink-2 mb-4 space-y-0.5">
-          <p>
-            PIA ${Math.round(preview.piaMonthly).toLocaleString()}/mo
-            {preview.ownAnnual != null && ` · At ${claimLabel}: $${Math.round(preview.ownAnnual).toLocaleString()}/yr`}
-          </p>
-          {(["client", "spouse"] as const).map((who) => {
-            const v = preview.topUps[who];
-            if (v == null || v <= 0) return null;
-            return <p key={who}>{nameFor(who)}&apos;s spousal top-up: ${Math.round(v).toLocaleString()}/mo</p>;
-          })}
-          {preview.topUps.client === 0 && preview.topUps.spouse === 0 && (
-            <p className="text-ink-3">No spousal top-up — each benefit is larger than half the other&apos;s PIA.</p>
-          )}
-        </div>
-      )}
+      {preview != null && <SocialSecurityPreview preview={preview} draftRow={draftRow} client={client} />}
     </DialogShell>
   );
 }
