@@ -23,6 +23,7 @@ const tree = {
   savingsRules: [{ id: "r1", accountId: "a-tax", annualAmount: 6000 }],
   notesReceivable: [{ id: "n1", name: "Note to Sam" }],
   disabilityPolicies: [{ id: "d1", name: "LTD" }],
+  ltcPolicies: [{ id: "l1", name: "Genworth" }],
   entities: [{ id: "t1", name: "Family Trust", entityType: "trust" }],
   wills: [{ id: "w1", grantor: "client", bequests: [] }],
   familyMembers: [{ id: "f-k", role: "child", firstName: "Kim", lastName: "Lee" }],

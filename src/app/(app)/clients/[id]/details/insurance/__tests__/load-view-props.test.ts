@@ -175,6 +175,25 @@ describe("loadInsuranceViewProps", () => {
     expect(disabilityProps.policies).toEqual([{ id: "d1", name: "LTD", insured: "client" }]);
   });
 
+  it("hands the LTC panel the tree's policies and the life policies a rider can name", async () => {
+    const ltc = [{ id: "l1", name: "Genworth", insured: "client" }];
+    mountTree(tree({
+      ltcPolicies: ltc,
+      accounts: [
+        lifeAccount("li-1", "Whole Life", policy({ faceValue: 750000 })),
+        lifeAccount("li-2", "Survivorship", policy(), { insuredPerson: "joint" }),
+        { id: "brk", name: "Brokerage", category: "taxable", owners: [] },
+      ],
+    }));
+    const { ltcProps } = await ok("scn-9");
+    expect(ltcProps.policies).toEqual(ltc);
+    expect(ltcProps.lifePolicies).toEqual([
+      { id: "li-2", name: "Survivorship", insuredPerson: "joint", faceValue: 500000 },
+      { id: "li-1", name: "Whole Life", insuredPerson: "client", faceValue: 750000 },
+    ]);
+    expect(ltcProps).toMatchObject({ clientFirstName: "Cooper", spouseFirstName: "Jane", spouseDob: "1972-01-01" });
+  });
+
   it("prefers the raw rate a scenario ADD was saved with over the portfolio's resolved one", async () => {
     mountTree(tree({ accounts: [lifeAccount("scn-added", "New", policy({ postPayoutGrowthRate: 0.0544, postPayoutModelPortfolioId: MP }))] }));
     seedChanges([

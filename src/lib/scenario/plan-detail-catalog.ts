@@ -27,7 +27,7 @@ export type DetailGroup =
 export type DetailTypeKey =
   | "income" | "social_security" | "expense" | "savings_rule"
   | "account" | "business" | "note_receivable" | "liability"
-  | "life_policy" | "disability_policy"
+  | "life_policy" | "disability_policy" | "ltc_policy"
   | "trust" | "gift" | "gift_series" | "will" | "family_member" | "external_beneficiary"
   | "roth_conversion" | "asset_transaction" | "relocation" | "transfer" | "reinvestment"
   | "deduction" | "tax_adjustment" | "tax_rates" | "growth_inflation" | "savings_withdrawals"
@@ -108,6 +108,7 @@ export const DETAIL_TYPES: readonly DetailType[] = [
     createVariant: "life_insurance",
   }),
   row("disability_policy", "Insurance", "Disability policy", "insurance", "disability_policy"),
+  row("ltc_policy", "Insurance", "Long-term care policy", "insurance", "ltc_policy"),
 
   // No Add: EntityDialog always renders AddTrustForm, whose `saveAsyncImpl`
   // refuses every create while a scenario is active.

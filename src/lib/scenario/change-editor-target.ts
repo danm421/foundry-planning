@@ -75,7 +75,7 @@ export const PAGE_FOCUS_KINDS: Record<DetailsEditorPage, readonly FocusKind[]> =
   techniques: ["roth_conversion", "transfer", "reinvestment", "relocation", "asset_transaction"],
   family: ["client", "family_member", "entity", "gift", "external_beneficiary"],
   wills: ["will"],
-  insurance: ["account", "disability_policy"],
+  insurance: ["account", "disability_policy", "ltc_policy"],
   assumptions: ["plan_settings", "client_deduction", "client_tax_adjustment", "withdrawal_strategy"],
 };
 
@@ -138,6 +138,7 @@ const DETAILS_PAGE_BY_KIND: Partial<Record<TargetKind, DetailsEditorPage>> = {
   external_beneficiary: "family",
   will: "wills",
   disability_policy: "insurance",
+  ltc_policy: "insurance",
   client_deduction: "assumptions",
   client_tax_adjustment: "assumptions",
   withdrawal_strategy: "assumptions",

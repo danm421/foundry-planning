@@ -23,6 +23,7 @@ import {
   type InsurancePanelModelPortfolio,
 } from "@/components/insurance-panel";
 import type { DisabilityPanelProps } from "@/components/disability-panel";
+import type { LtcPanelProps } from "@/components/ltc-panel";
 import { resolveCoveredEarnings } from "@/engine/disability-benefits";
 import type { DisabilityPolicy } from "@/engine/types";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
@@ -31,7 +32,7 @@ import { ownerRefFromOwners } from "@/lib/insurance-policies/owner-ref";
 import { treeMilestones } from "@/lib/milestones";
 
 export type InsuranceViewPropsResult =
-  | { status: "ok"; props: InsurancePanelProps; disabilityProps: DisabilityPanelProps }
+  | { status: "ok"; props: InsurancePanelProps; disabilityProps: DisabilityPanelProps; ltcProps: LtcPanelProps }
   | { status: "no-base-case" };
 
 /**
@@ -270,6 +271,18 @@ export async function loadInsuranceViewProps(
       inflationRate: resolvedInflationRate,
     });
 
+  // The rider picker's choices: every life policy in THIS scenario's tree, with
+  // the face value the rider's benefit is a share of. The dialog narrows them to
+  // the insured's own, non-joint policies.
+  const ltcLifePolicies = accountRows
+    .filter((a) => a.category === "life_insurance" && a.lifeInsurance)
+    .map((a) => ({
+      id: a.id,
+      name: a.name,
+      insuredPerson: a.insuredPerson ?? null,
+      faceValue: a.lifeInsurance!.faceValue,
+    }));
+
   return {
     status: "ok",
     props: {
@@ -298,6 +311,15 @@ export async function loadInsuranceViewProps(
       inflationRate: resolvedInflationRate,
       planEndYear,
       client: effectiveTree.client,
+    },
+    ltcProps: {
+      clientId: id,
+      policies: effectiveTree.ltcPolicies ?? [],
+      lifePolicies: ltcLifePolicies,
+      clientFirstName: effectiveTree.client.firstName,
+      spouseFirstName: effectiveTree.client.spouseName ?? null,
+      spouseDob: effectiveTree.client.spouseDob ?? null,
+      currentYear,
     },
   };
 }

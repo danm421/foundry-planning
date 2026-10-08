@@ -29,6 +29,7 @@ import type { FamilyViewProps } from "@/components/family-view";
 import type { WillsPanelProps } from "@/components/wills-panel";
 import type { InsurancePanelProps } from "@/components/insurance-panel";
 import type { DisabilityPanelProps } from "@/components/disability-panel";
+import type { LtcPanelProps } from "@/components/ltc-panel";
 import type { AssumptionsClientProps } from "@/app/(app)/clients/[id]/details/assumptions/assumptions-client";
 
 /** One Details view's props — never the page's sibling data (banners, firmId). */
@@ -38,7 +39,7 @@ export type ChangeEditorViewProps =
   | { page: "techniques"; props: TechniquesViewProps }
   | { page: "family"; props: FamilyViewProps }
   | { page: "wills"; props: WillsPanelProps }
-  | { page: "insurance"; props: InsurancePanelProps; disabilityProps: DisabilityPanelProps }
+  | { page: "insurance"; props: InsurancePanelProps; disabilityProps: DisabilityPanelProps; ltcProps: LtcPanelProps }
   | { page: "assumptions"; props: AssumptionsClientProps };
 
 // A server action is a public endpoint: check the shape before any query (a
@@ -84,12 +85,12 @@ export async function loadChangeEditorProps(
   }
 }
 
-/** Both of the Insurance page's panels: life policies and disability policies. */
+/** The Insurance page's three panels: life, disability and long-term care policies. */
 function insuranceProps(
   result: Awaited<ReturnType<typeof loadInsuranceViewProps>>,
 ): Extract<ChangeEditorViewProps, { page: "insurance" }> {
   if (result.status !== "ok") throw new Error("This plan has no base case");
-  return { page: "insurance", props: result.props, disabilityProps: result.disabilityProps };
+  return { page: "insurance", props: result.props, disabilityProps: result.disabilityProps, ltcProps: result.ltcProps };
 }
 
 /** The view props of a loader's "ok" result; any early return is a failure here. */

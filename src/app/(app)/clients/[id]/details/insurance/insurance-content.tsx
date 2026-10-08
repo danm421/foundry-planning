@@ -1,5 +1,6 @@
 import InsurancePanel from "@/components/insurance-panel";
 import DisabilityPanel from "@/components/disability-panel";
+import LtcPanel from "@/components/ltc-panel";
 import { loadInsuranceViewProps } from "./load-view-props";
 
 interface InsuranceContentProps {
@@ -22,6 +23,7 @@ export async function InsuranceContent({ clientId: id, scenarioParam }: Insuranc
     <div className="flex flex-col gap-10">
       <InsurancePanel {...result.props} />
       <DisabilityPanel {...result.disabilityProps} />
+      <LtcPanel {...result.ltcProps} />
     </div>
   );
 }

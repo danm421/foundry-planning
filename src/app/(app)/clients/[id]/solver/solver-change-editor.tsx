@@ -57,6 +57,7 @@ const FamilyView = dynamic(() => import("@/components/family-view"), { loading: 
 const WillsPanel = dynamic(() => import("@/components/wills-panel"), { loading: LoadingLine });
 const InsurancePanel = dynamic(() => import("@/components/insurance-panel"), { loading: LoadingLine });
 const DisabilityPanel = dynamic(() => import("@/components/disability-panel"), { loading: LoadingLine });
+const LtcPanel = dynamic(() => import("@/components/ltc-panel"), { loading: LoadingLine });
 const AssumptionsClient = dynamic(
   () => import("@/app/(app)/clients/[id]/details/assumptions/assumptions-client"),
   { loading: LoadingLine },
@@ -241,13 +242,14 @@ function renderView(
     case "wills":
       return <WillsPanel key={key} {...loaded.props} focus={focus} onFocusClose={onFocusClose} />;
     case "insurance":
-      // One page, two panels: a disability policy's editor is the disability
-      // panel, so the focus decides which of the two mounts.
-      return focus.kind === "disability_policy" ? (
-        <DisabilityPanel key={key} {...loaded.disabilityProps} focus={focus} onFocusClose={onFocusClose} />
-      ) : (
-        <InsurancePanel key={key} {...loaded.props} focus={focus} onFocusClose={onFocusClose} />
-      );
+      // One page, three panels: the focus decides which one mounts.
+      if (focus.kind === "disability_policy") {
+        return <DisabilityPanel key={key} {...loaded.disabilityProps} focus={focus} onFocusClose={onFocusClose} />;
+      }
+      if (focus.kind === "ltc_policy") {
+        return <LtcPanel key={key} {...loaded.ltcProps} focus={focus} onFocusClose={onFocusClose} />;
+      }
+      return <InsurancePanel key={key} {...loaded.props} focus={focus} onFocusClose={onFocusClose} />;
     case "assumptions":
       return <AssumptionsClient key={key} {...loaded.props} focus={focus} onFocusClose={onFocusClose} />;
   }

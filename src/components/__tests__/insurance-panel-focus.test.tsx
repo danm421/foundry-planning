@@ -127,10 +127,10 @@ describe("InsurancePanel focus mode", () => {
     await expectUnavailable(renderFocused({ kind: "account", id: "p-whole" }, { permission: "view" }));
   });
 
-  // The Insurance page hosts two focus views: this panel (life policies, which
-  // are `account` rows) and the disability panel (`disability_policy`). The
-  // page's list is their union, pinned once, here.
-  it("PAGE_FOCUS_KINDS lists exactly the kinds the Insurance page's two panels handle", () => {
-    expect(PAGE_FOCUS_KINDS["insurance"]).toEqual(["account", "disability_policy"]);
+  // The Insurance page hosts three focus views: this panel (life policies, which
+  // are `account` rows), the disability panel (`disability_policy`) and the LTC
+  // panel (`ltc_policy`). The page's list is their union, pinned once, here.
+  it("PAGE_FOCUS_KINDS lists exactly the kinds the Insurance page's three panels handle", () => {
+    expect(PAGE_FOCUS_KINDS["insurance"]).toEqual(["account", "disability_policy", "ltc_policy"]);
   });
 });

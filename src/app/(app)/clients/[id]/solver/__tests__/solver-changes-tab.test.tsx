@@ -95,6 +95,7 @@ vi.mock("@/lib/scenario/plan-detail-catalog", async (importOriginal) => {
 vi.mock("@/components/wills-panel", () => ({ default: makeStubView("wills") }));
 vi.mock("@/components/insurance-panel", () => ({ default: makeStubView("insurance") }));
 vi.mock("@/components/disability-panel", () => ({ default: makeStubView("disability") }));
+vi.mock("@/components/ltc-panel", () => ({ default: makeStubView("ltc") }));
 vi.mock("@/app/(app)/clients/[id]/details/assumptions/assumptions-client", () => ({
   default: makeStubView("assumptions"),
 }));
@@ -571,6 +572,20 @@ describe("SolverChangesTab — opening a Details editor", () => {
     const view = await screen.findByTestId("view-disability");
     expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ kind: "disability_policy", id: TARGET_ID });
     expect(loadChangeEditorPropsMock.mock.calls.map((c) => c[2])).toEqual(["insurance"]);
+    expect(screen.queryByTestId("view-insurance")).not.toBeInTheDocument();
+  });
+
+  it("an LTC change opens the LTC panel on the Insurance page's props", async () => {
+    loadChangeEditorPropsMock.mockResolvedValue({
+      page: "insurance",
+      props: { clientId: CLIENT_ID },
+      disabilityProps: { clientId: CLIENT_ID },
+      ltcProps: { clientId: CLIENT_ID },
+    });
+    renderTab([makeChange({ targetKind: "ltc_policy" })]);
+    fireEvent.click(screen.getByRole("button", { name: /^Edit / }));
+    const view = await screen.findByTestId("view-ltc");
+    expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ kind: "ltc_policy", id: TARGET_ID });
     expect(screen.queryByTestId("view-insurance")).not.toBeInTheDocument();
   });
 

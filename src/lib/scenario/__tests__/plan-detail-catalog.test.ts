@@ -12,7 +12,7 @@ describe("plan detail catalog", () => {
   it("has one row per type key, each in a known group", () => {
     const keys = DETAIL_TYPES.map((t) => t.key);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(keys).toHaveLength(27);
+    expect(keys).toHaveLength(28);
     for (const t of DETAIL_TYPES) expect(DETAIL_GROUP_ORDER).toContain(t.group);
   });
 
@@ -79,5 +79,12 @@ describe("NOT_YET_READY", () => {
 
   it("holds the types whose workstream is still open", () => {
     expect([...NOT_YET_READY].sort()).toEqual(["note_receivable"]);
+  });
+
+  it("lists LTC policies in the Insurance group, with Add, Edit and Delete", () => {
+    expect(detailType("ltc_policy")).toMatchObject({
+      group: "Insurance", label: "Long-term care policy", page: "insurance", kind: "ltc_policy",
+      add: true, edit: true, delete: true,
+    });
   });
 });

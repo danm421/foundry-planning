@@ -32,6 +32,7 @@ const raw = {
     { id: "x-trip", name: "Trips", type: "other" },
     { id: "premium-x", name: "Premium", type: "insurance", source: "policy" },
     { id: "disability-premium-x", name: "LTD premium", type: "insurance", source: "policy" },
+    { id: "ltc-premium-l1", name: "Genworth premium", type: "insurance", source: "policy" },
     { id: "x-ent", name: "Trust expense", type: "other", ownerEntityId: "t1" },
     { id: "x-biz", name: "Biz expense", type: "other", ownerAccountId: "a-biz" },
     { id: "x-ret", name: "Retirement living", type: "living", startYear: 2040, endYear: 2060 },
@@ -44,6 +45,7 @@ const raw = {
   savingsRules: [{ id: "r1", accountId: "a-tax", annualAmount: 6000 }],
   notesReceivable: [{ id: "n1", name: "Note to Sam" }],
   disabilityPolicies: [{ id: "d1", name: "LTD" }],
+  ltcPolicies: [{ id: "l1", name: "Genworth" }],
   entities: [
     { id: "t1", name: "Family Trust", entityType: "trust", includeInPortfolio: false, isGrantor: false },
     { id: "e2", name: "Acme LLC", entityType: "llc" },
@@ -94,6 +96,11 @@ describe("buildPlanInventory", () => {
     expect(all).not.toContain("disability-premium-x");
     expect(all).not.toContain("policy-income-x");
     expect(all).not.toContain("entity-checking-e1");
+  });
+
+  it("lists LTC policies, never their synthesized premium", () => {
+    expect(ids("ltc_policy")).toEqual(["l1"]);
+    expect(items.map((i) => i.id)).not.toContain("ltc-premium-l1");
   });
 
   it("locks delete on the default checking and default living rows", () => {

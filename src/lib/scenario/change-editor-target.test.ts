@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   resolveChangeEditor,
+  PAGE_FOCUS_KINDS,
   focusRowId,
   isEditFocus,
   type ChangeEditorInput,
@@ -48,6 +49,7 @@ describe("resolveChangeEditor", () => {
     ["gift", "family"],
     ["will", "wills"],
     ["disability_policy", "insurance"],
+    ["ltc_policy", "insurance"],
     ["client_deduction", "assumptions"],
     ["client_tax_adjustment", "assumptions"],
     ["withdrawal_strategy", "assumptions"],
@@ -450,5 +452,9 @@ describe("resolveChangeEditor — stress_test", () => {
     expect(
       resolveChangeEditor({ id: "chg-1", opType: "add", targetKind: "stress_test", targetId: id, payload, enabled: false }),
     ).toBeNull();
+  });
+
+  it("the Insurance page focuses life, disability and LTC policies", () => {
+    expect(PAGE_FOCUS_KINDS.insurance).toEqual(["account", "disability_policy", "ltc_policy"]);
   });
 });

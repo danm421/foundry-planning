@@ -165,6 +165,7 @@ export function buildPlanInventory(
     add("liability", l.id, l.name);
   }
   for (const d of tree.disabilityPolicies ?? []) add("disability_policy", d.id, d.name);
+  for (const l of tree.ltcPolicies ?? []) add("ltc_policy", l.id, l.name);
 
   // Every entity type opens the Family page's entity dialog, so all are "trust / entity".
   for (const e of tree.entities ?? []) add("trust", e.id, e.name ?? "Entity");
