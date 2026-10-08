@@ -155,6 +155,13 @@ describe("shared care", () => {
     expect(paid(run([john(3, 10_000)], [johnPolicy, { ...janePolicy, sharedCare: false }]), "j")).toEqual({ 2055: 72_000 });
   });
 
+  it("a partner's LIFETIME policy has no pool to share", () => {
+    // Jane's shared policy is lifetime: no pool (Refinement 5). John gets only his own pool,
+    // 12 × 6,000 = 72,000 in 2055. Sharing an unlimited policy would pay 72,000 in 2056 and 2057 too.
+    const r = run([john(3, 10_000)], [johnPolicy, { ...janePolicy, benefitPeriodMode: "lifetime", benefitPeriodYears: null }]);
+    expect(paid(r, "j")).toEqual({ 2055: 72_000 });
+  });
+
   it("a partner's pool can't be drawn after the partner's death (not moved to the survivor in v1)", () => {
     const r = run([john(3, 10_000)], [johnPolicy, janePolicy], { deathYearByPerson: { spouse: 2056 } });
     expect(paid(r, "j")).toEqual({ 2055: 72_000, 2056: 72_000 });
@@ -228,9 +235,13 @@ describe("riders", () => {
     expect(paid(later, "rider")).toEqual({ 2056: 120_000, 2057: 120_000 });
   });
 
-  it("a rider whose life policy isn't in the plan pays nothing", () => {
+  it("a rider whose life policy isn't in the plan pays nothing, and is listed as never in force", () => {
     const r = run([john(3, 12_000)], [rider()], { lifePolicies: {} });
-    expect(r.byPolicy).toEqual([]);
+    // Listed (so the coverage line names it), not dropped: an empty list reads "No LTC coverage on file".
+    expect(r.byPolicy).toEqual([{
+      policyId: "rider", name: "Whole life rider", kind: "life_rider", person: "client",
+      firstYear: null, monthlyLimit: 0, paidByYear: {}, total: 0,
+    }]);
     expect(r.incomes).toEqual([]);
     expect(r.accelerationByAccount).toEqual({});
   });
@@ -246,6 +257,22 @@ describe("which policy pays first", () => {
     expect(paid(r, "rider")).toEqual({ 2055: 108_000 }); // 12 × 9,000
     expect(r.accelerationByAccount["life-1"].byYear).toEqual({ 2055: 108_000 });
     expect(r.coveredByPersonYear.client).toEqual({ 2055: 180_000 }); // the whole 15,000 × 12
+  });
+
+  it("within a kind, indemnity pays before reimbursement, whatever order they're listed in", () => {
+    // Cost 10,000/mo; two 6,000/mo traditional policies, no wait, one care year (the 216,000 pools
+    // never run out). Indemnity pays its 6,000 limit; reimbursement pays the 10,000 − 6,000 = 4,000
+    // still unpaid. 12 × 6,000 = 72,000 and 12 × 4,000 = 48,000: together the 120,000 cost.
+    // The loader lists policies by name, so the order must not change the figures.
+    const reimb = traditional({ id: "reimb", name: "A reimbursement", eliminationDays: 0 });
+    const indem = traditional({ id: "indem", name: "B indemnity", benefitType: "indemnity", eliminationDays: 0 });
+    for (const listed of [[reimb, indem], [indem, reimb]]) {
+      const r = run([john(1, 10_000)], listed);
+      expect(paid(r, "indem")).toEqual({ 2055: 72_000 });
+      expect(paid(r, "reimb")).toEqual({ 2055: 48_000 });
+      expect(r.coveredByPersonYear.client).toEqual({ 2055: 120_000 });
+      expect(r.byPolicy.map((b) => b.policyId)).toEqual(["indem", "reimb"]);
+    }
   });
 
   it("an indemnity rider pays its full limit regardless of the order", () => {

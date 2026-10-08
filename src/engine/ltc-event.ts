@@ -79,6 +79,14 @@ export interface LtcCoverage {
   people: LtcCoveragePerson[];
 }
 
+/** An enabled sale of the WHOLE account. It takes effect at the start of its
+ *  year. A partial sale leaves the account in the plan. */
+const isFullSaleOf = (t: AssetTransaction, accountId: string): boolean =>
+  t.type === "sell" &&
+  t.enabled !== false &&
+  t.accountId === accountId &&
+  (t.fractionSold == null || t.fractionSold >= 1);
+
 function toRanges(years: number[]): { startYear: number; endYear: number }[] {
   const sorted = [...new Set(years)].sort((a, b) => a - b);
   const ranges: { startYear: number; endYear: number }[] = [];
@@ -139,14 +147,7 @@ export function resolveLtcEvent(data: ClientData): LtcResolution | null {
     if (!data.accounts.some((a) => a.id === accountId)) {
       warnings.push({ kind: "home_missing", accountId });
     } else {
-      const earlier = (data.assetTransactions ?? []).find(
-        (t) =>
-          t.type === "sell" &&
-          t.enabled !== false &&
-          t.accountId === accountId &&
-          (t.fractionSold == null || t.fractionSold >= 1) &&
-          t.year <= saleYear,
-      );
+      const earlier = (data.assetTransactions ?? []).find((t) => isFullSaleOf(t, accountId) && t.year <= saleYear);
       if (earlier) warnings.push({ kind: "home_already_sold", accountId, soldYear: earlier.year });
       else homeSale = { accountId, saleYear };
     }
@@ -199,7 +200,7 @@ export function applyLtcEvent(data: ClientData): {
         people: resolution.people,
         careCostByPersonYear: careCost,
         policies,
-        lifePolicies: riderLifePolicies(data.accounts, policies, client),
+        lifePolicies: riderLifePolicies(data.accounts, data.assetTransactions ?? [], policies, client),
         deathYearByPerson: lastYearAlive(client),
       })
     : null;
@@ -304,6 +305,7 @@ export function applyLtcEvent(data: ClientData): {
  *  with no co-client retirement age, and nothing else needs it here. */
 function riderLifePolicies(
   accounts: Account[],
+  transactions: AssetTransaction[],
   policies: LtcPolicy[],
   client: ClientInfo,
 ): Record<string, LtcLifePolicyTerms> {
@@ -314,11 +316,16 @@ function riderLifePolicies(
   for (const a of accounts) {
     const li = a.lifeInsurance;
     if (!named.has(a.id) || a.category !== "life_insurance" || !li) continue;
+    // In force through its term's end (the projection drops an expired term
+    // policy by this same rule) and until an enabled full sale, which takes
+    // effect at the start of its year. Infinity = no end.
+    const termEnd = computeTermEndYear({ policy: li, insured: a.insuredPerson ?? "client", client }) ?? Infinity;
+    const firstSale = Math.min(...transactions.filter((t) => isFullSaleOf(t, a.id)).map((t) => t.year));
+    const lastYear = Math.min(termEnd, firstSale - 1);
     out[a.id] = {
       faceForYear: (year) => contractDeathBenefitForYear(li, year),
       firstYear: a.activationYear ?? null,
-      // The projection drops an expired term policy by this same rule.
-      lastYear: computeTermEndYear({ policy: li, insured: a.insuredPerson ?? "client", client }),
+      lastYear: Number.isFinite(lastYear) ? lastYear : null,
     };
   }
   return out;

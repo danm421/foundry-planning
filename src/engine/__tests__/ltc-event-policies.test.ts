@@ -4,7 +4,7 @@ import { runProjection } from "../projection";
 import { ltcBenefitIncomeId, ltcPremiumExpenseId } from "../ltc-benefits";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 import { buildClientData, baseClient, basePlanSettings, sampleAccounts, sampleExpenses } from "./fixtures";
-import type { Account, ClientData, Expense, LtcPolicy } from "../types";
+import type { Account, AssetTransaction, ClientData, Expense, LtcPolicy } from "../types";
 
 const ID = "3f1c2d7e-8a1b-4c5d-9e0f-112233445566";
 // John (born 1970) in care from 85 for 3 years: 2055–2057, a flat $120,000 a
@@ -49,12 +49,16 @@ const wholeLife: Account = {
   },
 };
 
-function plan(over: { policies?: LtcPolicy[]; includePolicies?: boolean; expenses?: Expense[]; accounts?: Account[] } = {}): ClientData {
+function plan(over: {
+  policies?: LtcPolicy[]; includePolicies?: boolean; expenses?: Expense[]; accounts?: Account[];
+  assetTransactions?: AssetTransaction[];
+} = {}): ClientData {
   return buildClientData({
     client: { ...baseClient, lifeExpectancy: 95, spouseLifeExpectancy: 95 },
     planSettings: { ...basePlanSettings, planEndYear: 2067 },
     accounts: over.accounts ?? [...sampleAccounts, checking],
     expenses: over.expenses ?? sampleExpenses,
+    assetTransactions: over.assetTransactions,
     ltcPolicies: over.policies ?? [],
     ltcEvents: [{ id: ID, name: "LTC", people: [john], livingExpenseCutPct: null, homeSale: null, includePolicies: over.includePolicies ?? true }],
   });
@@ -117,10 +121,62 @@ describe("applyLtcEvent with LTC policies", () => {
     expect(input.accounts.find((a) => a.id === "life-1")!.lifeInsurance!.ltcAcceleration).toBeUndefined();
   });
 
+  it("a rider's limit and cap come from the life policy's death-benefit SCHEDULE, not its face", () => {
+    // Schedule: 300,000 (one row, flat either side of it); face 500,000.
+    // Limit 2% × 300,000 = 6,000/mo; cap 50% × 300,000 = 150,000. Cost 10,000/mo > the limit.
+    // 2055: 12 × 6,000 = 72,000; 2056: 72,000; 2057: 150,000 − 144,000 = 6,000 (January), then the cap binds.
+    // Read off the face instead: 10,000/mo and a 250,000 cap → 120,000, 120,000, 10,000.
+    const scheduled: Account = {
+      ...wholeLife,
+      lifeInsurance: {
+        ...wholeLife.lifeInsurance!,
+        deathBenefitScheduleMode: "scheduled",
+        cashValueSchedule: [{ year: 2050, deathBenefit: 300_000 }],
+      },
+    };
+    const { data, resolution } = applyLtcEvent(
+      plan({ policies: [rider({ riderMaxPct: 0.5 })], accounts: [...sampleAccounts, checking, scheduled] }),
+    );
+    expect(data.incomes.find((i) => i.id === ltcBenefitIncomeId("rider"))!.scheduleOverrides).toEqual({
+      2055: 72_000, 2056: 72_000, 2057: 6_000,
+    });
+    expect(data.accounts.find((a) => a.id === "life-1")!.lifeInsurance!.ltcAcceleration).toEqual({
+      byYear: { 2055: 72_000, 2056: 72_000, 2057: 6_000 }, minimumDeathBenefit: 0,
+    });
+    expect(resolution!.coverage!.people[0].policies[0]).toMatchObject({ monthlyLimit: 6_000, total: 150_000 });
+  });
+
   it("a rider whose life policy starts after care began draws from that year", () => {
     const { data } = applyLtcEvent(plan({ policies: [rider()], accounts: [...sampleAccounts, checking, { ...wholeLife, activationYear: 2056 }] }));
     // Nothing in 2055 (not in force yet); then 2% × 500,000 = 10,000/mo = 120,000 a year.
     expect(data.accounts.find((a) => a.id === "life-1")!.lifeInsurance!.ltcAcceleration!.byYear).toEqual({ 2056: 120_000, 2057: 120_000 });
+  });
+
+  it("a rider stops once the plan sells its life policy (a sale counts from the start of its year)", () => {
+    const accounts = [...sampleAccounts, checking, wholeLife];
+    const sell = (year: number, over: Partial<AssetTransaction> = {}): AssetTransaction =>
+      ({ id: `sell-${year}`, name: "Sell whole life", type: "sell", year, accountId: "life-1", ...over });
+    const run = (sale: AssetTransaction) => applyLtcEvent(plan({ policies: [rider()], accounts, assetTransactions: [sale] }));
+    const benefit = (d: ClientData) => d.incomes.find((i) => i.id === ltcBenefitIncomeId("rider"))?.scheduleOverrides;
+    const draws = (d: ClientData) => d.accounts.find((a) => a.id === "life-1")!.lifeInsurance!.ltcAcceleration?.byYear;
+
+    // Sold 2040, before care: never in force during it. No benefit, no draw, and
+    // the coverage line reads it as not in force (firstYear null).
+    const before = run(sell(2040));
+    expect(benefit(before.data)).toBeUndefined();
+    expect(draws(before.data)).toBeUndefined();
+    expect(before.resolution!.coverage!.people[0]).toMatchObject({
+      totalCovered: 0, policies: [{ policyId: "rider", firstYear: null, monthlyLimit: 0, total: 0 }],
+    });
+
+    // Sold 2056, the second care year: only 2055 pays, 2% × 500,000 = 10,000/mo × 12 = 120,000.
+    const during = run(sell(2056));
+    expect(benefit(during.data)).toEqual({ 2055: 120_000 });
+    expect(draws(during.data)).toEqual({ 2055: 120_000 });
+
+    // A switched-off sale changes nothing: 10,000/mo × 12 = 120,000 in each of 2055–2057.
+    const off = run(sell(2040, { enabled: false }));
+    expect(benefit(off.data)).toEqual({ 2055: 120_000, 2056: 120_000, 2057: 120_000 });
   });
 
   it("a co-client with no life expectancy keeps a shared pool open to 95, as the engine's death rule does", () => {

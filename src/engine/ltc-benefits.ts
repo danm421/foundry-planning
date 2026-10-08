@@ -91,7 +91,7 @@ export interface LtcLifePolicyTerms {
   faceForYear(year: number): number;
   /** First year in force (a policy that starts later), or null = from the plan start. */
   firstYear: number | null;
-  /** Last year in force (a term policy), or null = no end. */
+  /** Last year in force (a term policy, or one the plan sells), or null = no end. */
   lastYear: number | null;
 }
 
@@ -146,8 +146,9 @@ export interface LtcBenefitsResult {
 /** The first care year a policy can pay: care start, or later when the policy
  *  (or a rider's life policy) only starts later. A policy issued after care
  *  began pays from its issue year (Dan, 2026-10-08). Null = never in force
- *  during the care. */
+ *  during the care, as for a rider whose life policy isn't in the plan. */
 function firstPayingYear(policy: LtcPolicy, life: LtcLifePolicyTerms | null, care: LtcCarePeriod): number | null {
+  if (policy.kind === "life_rider" && !life) return null;
   const start = Math.max(care.startYear, policy.issueYear, life?.firstYear ?? care.startYear);
   if (start > care.endYear) return null;
   if (life?.lastYear != null && start > life.lastYear) return null;
@@ -219,14 +220,18 @@ export function synthesizeLtcBenefits(input: LtcBenefitsInput): LtcBenefitsResul
   }
   const slotsByPerson = new Map<Person, Slot[]>();
   for (const care of people) {
-    const own = input.policies.filter((p) => p.insured === care.person);
     // Pay order: traditional first, then riders, so a rider draws as little of
-    // the death benefit as it can.
-    const ordered = [...own.filter((p) => p.kind === "standalone"), ...own.filter((p) => p.kind === "life_rider")];
+    // the death benefit as it can. Within each kind, indemnity first: it pays
+    // its limit whatever is unpaid, and a reimbursement policy after it pays
+    // only what is left. Otherwise as listed (a stable sort), so the order the
+    // policies are listed in never changes what they pay.
+    const payRank = (p: LtcPolicy) => (p.kind === "standalone" ? 0 : 2) + (p.benefitType === "indemnity" ? 0 : 1);
+    const ordered = input.policies
+      .filter((p) => p.insured === care.person)
+      .sort((a, b) => payRank(a) - payRank(b));
     const slots: Slot[] = [];
     for (const policy of ordered) {
       const life = policy.kind === "life_rider" ? (input.lifePolicies[policy.lifePolicyAccountId ?? ""] ?? null) : null;
-      if (policy.kind === "life_rider" && !life) continue;
       const firstYear = firstPayingYear(policy, life, care);
       const payout: LtcPolicyPayout = {
         policyId: policy.id,
@@ -260,7 +265,7 @@ export function synthesizeLtcBenefits(input: LtcBenefitsInput): LtcBenefitsResul
   const drawnByAccount = new Map<string, number>();
   const drawRider = (s: Slot, want: number, year: number): number => {
     const life = s.life!;
-    if (life.lastYear != null && year > life.lastYear) return 0; // the life policy has lapsed
+    if (life.lastYear != null && year > life.lastYear) return 0; // the life policy has lapsed or been sold
     const accountId = s.policy.lifePolicyAccountId!;
     const drawn = drawnByAccount.get(accountId) ?? 0;
     const room = ltcRiderCap(s.policy, life.faceForYear(year)) - drawn;
