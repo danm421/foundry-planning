@@ -43,6 +43,17 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 const money = (n: number) =>
   `$${Math.round(n).toLocaleString("en-US")}`;
 
+/** An annual figure from a MONTHLY one held to the cent. `pia_monthly` is
+ *  stored at cents, so $54,001/yr saves as 4500.08/mo and × 12 reads
+ *  54000.96. Within 6¢ of a dollar (the most cent-rounding a monthly figure
+ *  can drift over 12 months) snaps to the dollar; otherwise keeps the cents.
+ *  Integer cents so the 6¢ test never meets float noise. */
+function annualFromMonthlyCents(monthly: number): number {
+  const cents = Math.round(monthly * 1200);
+  const dollars = Math.round(cents / 100);
+  return Math.abs(cents - dollars * 100) <= 6 ? dollars : cents / 100;
+}
+
 export function asSsIncome(raw: SsRowLike): Income {
   return {
     id: raw.id ?? "other",
@@ -89,7 +100,7 @@ export const toAnnual = (amount: number, unit: SsAmountUnit) => (unit === "annua
 export function convertAmountText(text: string, from: SsAmountUnit, to: SsAmountUnit): string {
   const n = parseFloat(text);
   if (from === to || text.trim() === "" || isNaN(n)) return text;
-  return String(round2(to === "monthly" ? n / 12 : n * 12));
+  return String(to === "monthly" ? round2(n / 12) : annualFromMonthlyCents(n));
 }
 
 /** The figure an existing row opens on, in its display unit. Rounded to cents
@@ -100,7 +111,7 @@ export function initialEntryAmount(row: Income | null): string {
   if (row.ssBenefitMode === "pia_at_fra") {
     const pia = num(row.piaMonthly as number | string | null | undefined);
     if (pia == null) return "";
-    return String(round2(unit === "monthly" ? pia : pia * 12));
+    return String(unit === "monthly" ? round2(pia) : annualFromMonthlyCents(pia));
   }
   const annual = num(row.annualAmount as number | string | null);
   if (annual == null || !(annual > 0)) return "";
@@ -134,7 +145,8 @@ export function ssEntryLabel(row: Income, client: ClientInfo): string | null {
   const suffix = unit === "monthly" ? "/mo" : "/yr";
   if (mode === "pia_at_fra") {
     const pia = num(row.piaMonthly as number | string | null | undefined);
-    if (pia == null || !(pia > 0)) return null;
+    // $0 is a real PIA (no work record) — only an unset one is "nothing entered".
+    if (pia == null) return null;
     return `${money(unit === "monthly" ? pia : pia * 12)}${suffix} PIA`;
   }
   const annual = num(row.annualAmount as number | string | null) ?? 0;

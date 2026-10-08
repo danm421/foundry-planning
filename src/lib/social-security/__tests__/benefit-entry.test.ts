@@ -32,6 +32,9 @@ describe("units", () => {
     expect(convertAmountText("5706.5", "monthly", "annual")).toBe("68478");
     expect(convertAmountText("", "annual", "monthly")).toBe("");
   });
+  it("a monthly figure flipped to annual snaps off the cent-rounding noise", () => {
+    expect(convertAmountText("3333.33", "monthly", "annual")).toBe("40000");
+  });
 });
 
 describe("opening an existing row", () => {
@@ -46,6 +49,14 @@ describe("opening an existing row", () => {
   it("a PIA typed annually reopens annually", () => {
     const pia = { ...paul, ssBenefitMode: "pia_at_fra", piaMonthly: 4500, ssAmountUnit: "annual" } as Income;
     expect(initialEntryAmount(pia)).toBe("54000");
+  });
+  it("a PIA typed annually reopens as the dollars typed, despite monthly-cents storage", () => {
+    // $54,001/yr saves as 4500.08/mo; × 12 = 54000.96, within 6¢ of 54001.
+    const snapped = { ...paul, ssBenefitMode: "pia_at_fra", piaMonthly: 4500.08, ssAmountUnit: "annual" } as Income;
+    expect(initialEntryAmount(snapped)).toBe("54001");
+    // 4500.04 × 12 = 54000.48, not within 6¢ of a dollar: keeps its cents.
+    const cents = { ...paul, ssBenefitMode: "pia_at_fra", piaMonthly: 4500.04, ssAmountUnit: "annual" } as Income;
+    expect(initialEntryAmount(cents)).toBe("54000.48");
   });
   it("an FRA-mode claim opens its stated age at FRA (Paul: 66y 8m)", () => {
     const fra = { ...paul, claimingAgeMode: "fra" } as Income;
@@ -64,6 +75,12 @@ describe("ssEntryLabel", () => {
     expect(ssEntryLabel({ ...paul, ssAmountUnit: "monthly", ssStatedAge: 70 } as Income, douglas)).toBe("$5,707/mo at 70");
     expect(ssEntryLabel({ ...paul, ssBenefitMode: "pia_at_fra", piaMonthly: 4505 } as Income, douglas)).toBe("$4,505/mo PIA");
     expect(ssEntryLabel({ ...paul, ssBenefitMode: "no_benefit" } as Income, douglas)).toBeNull();
+  });
+  it("a $0 PIA is a real entry (no work record); an unset PIA is not", () => {
+    const pia = { ...paul, ssBenefitMode: "pia_at_fra" } as Income;
+    expect(ssEntryLabel({ ...pia, piaMonthly: 0 }, douglas)).toBe("$0/mo PIA");
+    expect(ssEntryLabel({ ...pia, piaMonthly: undefined }, douglas)).toBeNull();
+    expect(ssEntryLabel({ ...pia, piaMonthly: null } as unknown as Income, douglas)).toBeNull();
   });
 });
 
