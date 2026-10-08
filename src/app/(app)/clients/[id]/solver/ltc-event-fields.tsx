@@ -38,6 +38,8 @@ function warningText(w: LtcWarning, tree: ClientData): string | null {
       return "The home picked for the sale is no longer in this plan.";
     case "home_already_sold":
       return `This plan already sells that home in ${w.soldYear}, so it can't be sold again.`;
+    case "rider_life_policy_missing":
+      return `${w.policyName}: its life policy isn't in this scenario, so it pays nothing.`;
     case "multiple_events":
       return null; // the UI never writes a second event
   }

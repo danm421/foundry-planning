@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
 import { LEGACY_FM_CLIENT } from "../ownership";
 import { buildClientData, baseClient, basePlanSettings, FIXTURE_TAX_PARAMS } from "./fixtures";
-import type { Account, ClientData, Income } from "../types";
+import type { Account, ClientData, Income, LtcPolicy } from "../types";
 
 const ID = "3f1c2d7e-8a1b-4c5d-9e0f-112233445566";
 const CARE = 150_000;
@@ -24,7 +24,7 @@ const tradIra: Account = {
   owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
 };
 
-function plan(withCare: boolean, socialSecurity = 0): ClientData {
+function plan(withCare: boolean, socialSecurity = 0, ltcPolicies: LtcPolicy[] = []): ClientData {
   const ss: Income = {
     id: "inc-ss", type: "social_security", name: "Solo SS", annualAmount: socialSecurity,
     startYear: 2026, endYear: 2050, growthRate: 0, owner: "client", claimingAge: 62,
@@ -49,6 +49,7 @@ function plan(withCare: boolean, socialSecurity = 0): ClientData {
     withdrawalStrategy: [{ accountId: "acct-ira", priorityOrder: 1, startYear: 2026, endYear: 2050 }],
     planSettings: { ...basePlanSettings, planEndYear: 2050, taxEngineMode: "bracket" },
     taxYearRows: FIXTURE_TAX_PARAMS,
+    ltcPolicies,
     ltcEvents: withCare
       ? [{
           id: ID, name: "LTC", livingExpenseCutPct: null, homeSale: null, includePolicies: true,
@@ -88,5 +89,28 @@ describe("medical deduction in the projection", () => {
     const bd = y.deductionBreakdown!.belowLine;
     expect(Math.abs(bd.bySource.medical.amount - Math.max(0, CARE - 0.075 * agi))).toBeLessThan(5);
     expect(bd.taxDeductions).toBe(bd.itemizedTotal);
+  });
+
+  it("LTC benefits are tax-free and the deduction counts only the uncovered cost", () => {
+    // $6,000/mo, 90-day wait, issued 2020, no inflation: 9 × 6,000 = 54,000 in 2027.
+    const policy: LtcPolicy = {
+      id: "p", name: "Genworth", insured: "client", carrier: null, kind: "standalone",
+      lifePolicyAccountId: null, issueYear: 2020, benefitAmount: 6000, benefitUnit: "month",
+      riderBenefitMode: null, riderMonthlyPct: null, benefitPeriodMode: "years", benefitPeriodYears: 3,
+      riderMaxPct: null, extensionYears: 0, residualDeathBenefit: 0, eliminationDays: 90, homeCarePct: 1,
+      inflationRider: "none", inflationRate: 0.03, benefitType: "reimbursement", sharedCare: false,
+      annualPremium: 0, premiumPayMode: "paid_up", premiumPayToAge: null, premiumPayYears: null,
+      partnership: false, notes: null,
+    };
+    const y = runProjection(plan(true, 0, [policy])).find((p) => p.year === CARE_YEAR)!;
+    const control = runProjection(plan(true)).find((p) => p.year === CARE_YEAR)!;
+    expect(y.income.bySource["ltc-benefit-p"]).toBe(54_000);
+    // Tax-exempt, and the fixture has no other tax-exempt source (control shows 0).
+    expect(control.taxDetail!.taxExempt).toBe(0);
+    expect(y.taxDetail!.taxExempt).toBeCloseTo(54_000, 2);
+    // Medical = (150,000 − 54,000) above 7.5% of the same pass's AGI.
+    const agi = y.taxResult!.flow.adjustedGrossIncome;
+    const bd = y.deductionBreakdown!.belowLine;
+    expect(Math.abs(bd.bySource.medical.amount - Math.max(0, 96_000 - 0.075 * agi))).toBeLessThan(5);
   });
 });
