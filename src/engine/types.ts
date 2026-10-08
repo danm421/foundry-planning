@@ -546,6 +546,11 @@ export interface ClientData {
    *  add / edit / remove changes, so this is the scenario's effective set.
    *  Consumed only when `planSettings.disabilityEvent` is set. */
   disabilityPolicies?: DisabilityPolicy[];
+  /** Long-term care policies. Client-level base rows, overlaid by a scenario's
+   *  `ltc_policy` changes, so this is the scenario's effective set. Part 1 bills
+   *  standalone premiums from it (`withSynthesizedLtcPremiums`); the LTC stress
+   *  test pays nothing from it until Part 2. */
+  ltcPolicies?: LtcPolicy[];
   /** Long-term care stress events from the active scenario's `ltc_event`
    *  changes. Scenario-only — never in the base plan, never promoted. The
    *  engine uses the first; the UI never writes a second. */
@@ -861,6 +866,59 @@ export interface DisabilityPolicy {
   colaRate: number;
   annualPremium: number;
   premiumPayer: "employer" | "insured";
+}
+
+/** A long-term care policy. Like `DisabilityPolicy` it is NOT an account.
+ *
+ *  FLAT on purpose: these are the `ltc_policies` columns as numbers, so a
+ *  scenario payload, the base row and this type are one shape and promote needs
+ *  no translator. A field the policy's kind does not use is null (the two rider
+ *  amounts are 0 on a standalone policy). Part 1 only carries and bills it;
+ *  the LTC stress test pays benefits from it in Part 2. */
+export interface LtcPolicy {
+  id: string;
+  name: string;
+  insured: "client" | "spouse";
+  /** Display only; the engine never reads it. */
+  carrier: string | null;
+  kind: "standalone" | "life_rider";
+  /** life_rider only: the life-insurance account the rider sits on. */
+  lifePolicyAccountId: string | null;
+  /** Inflation riders grow from this year, not from the claim year. */
+  issueYear: number;
+  /** Standalone, or a `fixed` rider: the benefit per `benefitUnit`. 0 for a
+   *  `pct_of_face` rider. */
+  benefitAmount: number;
+  /** A daily benefit is day × 365 / 12 a month (`ltcMonthlyFromUnit`). */
+  benefitUnit: "day" | "month";
+  riderBenefitMode: "pct_of_face" | "fixed" | null;
+  /** Share of the face paid per month (0.02 = 2%). `pct_of_face` riders only. */
+  riderMonthlyPct: number | null;
+  /** Standalone only. */
+  benefitPeriodMode: "years" | "lifetime" | null;
+  benefitPeriodYears: number | null;
+  /** Rider only: the share of the face that can be paid out. */
+  riderMaxPct: number | null;
+  /** Hybrid riders: years paid after the face cap, at the same limit. */
+  extensionYears: number;
+  /** Hybrid riders: the guaranteed minimum death benefit. */
+  residualDeathBenefit: number;
+  eliminationDays: number;
+  /** Share of the limit paid when care is at home. */
+  homeCarePct: number;
+  inflationRider: "none" | "simple" | "compound";
+  inflationRate: number;
+  benefitType: "reimbursement" | "indemnity";
+  sharedCare: boolean;
+  /** Standalone only — a rider's cost is inside the life premium. Level. */
+  annualPremium: number;
+  premiumPayMode: "lifetime" | "to_age" | "years" | "paid_up";
+  premiumPayToAge: number | null;
+  premiumPayYears: number | null;
+  /** Informational only: Medicaid is not modeled. */
+  partnership: boolean;
+  /** Display only. */
+  notes: string | null;
 }
 
 export interface Account {

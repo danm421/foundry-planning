@@ -221,6 +221,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "termMonths": 360,
     },
   ],
+  "ltcPolicies": [],
   "medicareCoverage": [
     {
       "coverageType": "original",

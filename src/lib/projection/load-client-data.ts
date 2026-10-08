@@ -84,6 +84,7 @@ import { planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
 import { loadAnnuityContractsByAccountIds } from "@/lib/annuities/load-annuity-contracts";
 import { loadDisabilityPolicies } from "@/lib/insurance-policies/load-disability-policies";
+import { loadLtcPolicies } from "@/lib/insurance-policies/load-ltc-policies";
 import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expense";
 import { withSynthesizedPolicyIncome } from "@/lib/insurance-policies/policy-income";
 import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
@@ -1891,6 +1892,7 @@ const loadClientDataCached = cache(
       familyMembers: mappedFamilyMembers,
       notesReceivable: await loadNotesReceivable(id, scenario.id),
       disabilityPolicies: await loadDisabilityPolicies(id),
+      ltcPolicies: await loadLtcPolicies(id),
       medicareCoverage: withDefaultMedicareCoverage(
         medicareCoverageRows.map(rowToMedicareCoverage),
         !!spouseDob,

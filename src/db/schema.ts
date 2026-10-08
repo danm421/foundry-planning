@@ -270,6 +270,18 @@ export const disabilityPremiumPayerEnum = pgEnum("disability_premium_payer", [
   "insured",
 ]);
 
+// ── Long-term care policies ──────────────────────────────────────────────
+// Every enum is `ltc_`-prefixed so it never collides with the life-side or
+// disability-side enums. See the `ltcPolicies` table.
+export const ltcInsuredEnum = pgEnum("ltc_insured", ["client", "spouse"]);
+export const ltcPolicyKindEnum = pgEnum("ltc_policy_kind", ["standalone", "life_rider"]);
+export const ltcBenefitUnitEnum = pgEnum("ltc_benefit_unit", ["day", "month"]);
+export const ltcRiderBenefitModeEnum = pgEnum("ltc_rider_benefit_mode", ["pct_of_face", "fixed"]);
+export const ltcBenefitPeriodEnum = pgEnum("ltc_benefit_period", ["years", "lifetime"]);
+export const ltcInflationRiderEnum = pgEnum("ltc_inflation_rider", ["none", "simple", "compound"]);
+export const ltcBenefitTypeEnum = pgEnum("ltc_benefit_type", ["reimbursement", "indemnity"]);
+export const ltcPremiumPayEnum = pgEnum("ltc_premium_pay", ["lifetime", "to_age", "years", "paid_up"]);
+
 export const cashValueGrowthModeEnum = pgEnum("cash_value_growth_mode", [
   "basic",
   "free_form",
@@ -2725,6 +2737,68 @@ export const disabilityPoliciesRelations = relations(disabilityPolicies, ({ one 
 
 export type DisabilityPolicyRow = InferSelectModel<typeof disabilityPolicies>;
 export type NewDisabilityPolicyRow = InferInsertModel<typeof disabilityPolicies>;
+
+/** Long-term care policies. Client-level like `disability_policies` (no
+ *  scenario_id); a scenario overlays them through `ltc_policy` changes.
+ *
+ *  ONE SHAPE: the columns are the engine's flat `LtcPolicy` fields, so a
+ *  scenario payload, this row and the engine type match and promote needs no
+ *  translator. A kind-specific column the kind does not use is NULL — the
+ *  nullable ones carry no default, so nothing reads a value nobody entered. */
+export const ltcPolicies = pgTable(
+  "ltc_policies",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    insured: ltcInsuredEnum("insured").notNull(),
+    carrier: text("carrier"),
+    kind: ltcPolicyKindEnum("kind").notNull().default("standalone"),
+    // life_rider only. Cascade: a rider is part of its life policy.
+    lifePolicyAccountId: uuid("life_policy_account_id").references(() => accounts.id, {
+      onDelete: "cascade",
+    }),
+    issueYear: integer("issue_year").notNull(),
+    benefitAmount: decimal("benefit_amount", { precision: 15, scale: 2 }).notNull().default("0"),
+    benefitUnit: ltcBenefitUnitEnum("benefit_unit").notNull().default("month"),
+    riderBenefitMode: ltcRiderBenefitModeEnum("rider_benefit_mode"),
+    riderMonthlyPct: decimal("rider_monthly_pct", { precision: 6, scale: 5 }),
+    benefitPeriodMode: ltcBenefitPeriodEnum("benefit_period_mode"),
+    benefitPeriodYears: integer("benefit_period_years"),
+    riderMaxPct: decimal("rider_max_pct", { precision: 5, scale: 4 }),
+    extensionYears: integer("extension_years").notNull().default(0),
+    residualDeathBenefit: decimal("residual_death_benefit", { precision: 15, scale: 2 })
+      .notNull()
+      .default("0"),
+    eliminationDays: integer("elimination_days").notNull().default(90),
+    homeCarePct: decimal("home_care_pct", { precision: 5, scale: 4 }).notNull().default("1"),
+    inflationRider: ltcInflationRiderEnum("inflation_rider").notNull().default("none"),
+    inflationRate: decimal("inflation_rate", { precision: 5, scale: 4 }).notNull().default("0.03"),
+    benefitType: ltcBenefitTypeEnum("benefit_type").notNull().default("reimbursement"),
+    sharedCare: boolean("shared_care").notNull().default(false),
+    annualPremium: decimal("annual_premium", { precision: 15, scale: 2 }).notNull().default("0"),
+    premiumPayMode: ltcPremiumPayEnum("premium_pay_mode").notNull().default("lifetime"),
+    premiumPayToAge: integer("premium_pay_to_age"),
+    premiumPayYears: integer("premium_pay_years"),
+    partnership: boolean("partnership").notNull().default(false),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("ltc_policies_client_idx").on(t.clientId)],
+);
+
+export const ltcPoliciesRelations = relations(ltcPolicies, ({ one }) => ({
+  client: one(clients, {
+    fields: [ltcPolicies.clientId],
+    references: [clients.id],
+  }),
+}));
+
+export type LtcPolicyRow = InferSelectModel<typeof ltcPolicies>;
+export type NewLtcPolicyRow = InferInsertModel<typeof ltcPolicies>;
 
 // ── Stock options (equity compensation) ──────────────────────────────────
 // 1:1 extension on a stock_options account. Mirrors lifeInsurancePolicies.
