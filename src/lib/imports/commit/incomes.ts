@@ -1,16 +1,13 @@
 import { and, eq } from "drizzle-orm";
 
 import { incomes } from "@/db/schema";
+import { statedAgeFields } from "@/lib/social-security/benefit-entry";
 
 import { getExistingId, linkCreated, type ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 import { resolveImportTiming } from "./timing";
 
 type SsPerson = "client" | "spouse";
-
-// A misread age outside 62-70 must not become a stated age: the income validator rejects it on the next save.
-const statedAgeOf = (claimingAge: number | null): number | null =>
-  claimingAge != null && Number.isInteger(claimingAge) && claimingAge >= 62 && claimingAge <= 70 ? claimingAge : null;
 
 /**
  * Commits the incomes tab.
@@ -290,6 +287,12 @@ async function reconcileSocialSecurity(
     };
     // Whole-age statement figure: stale months on the slot must not re-price it.
     if (t.claimingAge != null) fields.claimingAgeMonths = 0;
+    // The extracted figure is the benefit at the extracted claim age — pin it
+    // there so a later claim-age change prices early/late correctly. With no
+    // extracted age, leave it NULL: it then follows the claim age. A misread
+    // age outside 62-70 is NULL too: the income validator rejects it on the
+    // next save.
+    const stated = statedAgeFields(t.claimingAge, "annual");
     if (preservePia) {
       result.warnings.push(
         `Social Security (${person}): kept the PIA-based benefit already saved ` +
@@ -300,12 +303,7 @@ async function reconcileSocialSecurity(
     } else {
       fields.annualAmount = String(t.amount);
       fields.ssBenefitMode = "manual_amount";
-      // The extracted figure is the benefit at the extracted claim age — pin
-      // it there so a later claim-age change prices early/late correctly.
-      // With no extracted age, leave it NULL: it then follows the claim age.
-      fields.ssStatedAge = statedAgeOf(t.claimingAge);
-      fields.ssStatedAgeMonths = fields.ssStatedAge != null ? 0 : null;
-      fields.ssAmountUnit = "annual";
+      Object.assign(fields, stated);
     }
     if (t.growthRate != null) fields.growthRate = String(t.growthRate);
 
@@ -339,9 +337,7 @@ async function reconcileSocialSecurity(
         claimingAgeMonths: 0,
         claimingAgeMode: "years",
         ssBenefitMode: "manual_amount",
-        ssStatedAge: statedAgeOf(t.claimingAge),
-        ssStatedAgeMonths: statedAgeOf(t.claimingAge) != null ? 0 : null,
-        ssAmountUnit: "annual",
+        ...stated,
         source: "extracted",
       });
       result.created += 1;

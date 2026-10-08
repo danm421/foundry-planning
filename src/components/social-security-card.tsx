@@ -4,10 +4,9 @@ import { useState } from "react";
 import type { Income, ClientInfo, PlanSettings } from "@/engine/types";
 import { SocialSecurityDialog } from "./social-security-dialog";
 import { fraForBirthDate } from "@/engine/socialSecurity/fra";
-import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement";
 import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
-import { resolvePiaMonthly } from "@/engine/socialSecurity/resolvePia";
 import { asSsIncome, ssEntryLabel } from "@/lib/social-security/benefit-entry";
+import { ssEstimatedAnnual } from "@/lib/household-map/social-security";
 import { withEstimatedPia } from "@/lib/social-security/estimate-from-salary";
 import { personLabel } from "@/lib/owner-labels";
 
@@ -64,12 +63,8 @@ function claimAgeLabel(row: Income, clientInfo: ClientInfo, owner: "client" | "s
 }
 
 function previewAmount(row: Income, clientInfo: ClientInfo): number | null {
-  if (row.ssBenefitMode === "no_benefit") return null;
-  const pia = resolvePiaMonthly(asSsIncome(row), clientInfo);
-  const dob = row.owner === "spouse" ? clientInfo.spouseDob : clientInfo.dateOfBirth;
   const claim = resolveClaimAgeMonths(row, clientInfo);
-  if (pia == null || !(pia > 0) || !dob || claim == null) return null;
-  return Math.round(computeOwnMonthlyBenefit({ piaMonthly: pia, claimAgeMonths: claim, dob }) * 12);
+  return claim != null ? ssEstimatedAnnual(row, clientInfo, claim) : null;
 }
 
 export function SocialSecurityCard({ clientId, clientInfo, planSettings, incomes, onSaved, canEdit = true }: SocialSecurityCardProps) {

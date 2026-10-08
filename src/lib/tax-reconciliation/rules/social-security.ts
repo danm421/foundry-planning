@@ -1,5 +1,6 @@
 import { ROW, ageAtYearEnd, deflate, detailsHref, differs, isActiveInYear, makeDelta, money, n, ref, rowAmountInYear, sum } from "../compare";
 import type { Check, PlanIncome, Rule, Suggestion } from "../types";
+import { statedAgeFields } from "@/lib/social-security/benefit-entry";
 
 export const socialSecurityRules: Rule = (input) => {
   const { facts, plan, taxYear, planYear, engineYear } = input;
@@ -38,7 +39,7 @@ export const socialSecurityRules: Rule = (input) => {
       // and the return's figure is the check actually paid. A NULL stated age (= the claim age)
       // prices the same, never trips the 62-70 check on an SSDI or 71+ client, and makes any
       // leftover claim months harmless.
-      patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge, ssStatedAge: null, ssStatedAgeMonths: null, ssAmountUnit: "annual", startYear: Math.min(r.startYear, plan.planSettings.planStartYear), inflationStartYear: taxYear },
+      patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge, ...statedAgeFields(null, "annual"), startYear: Math.min(r.startYear, plan.planSettings.planStartYear), inflationStartYear: taxYear },
     }];
   });
 
@@ -104,7 +105,7 @@ export const socialSecurityRules: Rule = (input) => {
           // claim age. Clear any stated age so it is not reduced or credited a
           // second time (NULL = the claim age).
           action: { label: `Set benefit to ${money(gross)}`, describe: `Sets ${row.name} to ${money(gross)} (${taxYear} dollars)`, amountEditable: true, defaultAmount: gross,
-            target: { kind: "income.update", incomeId: row.id, patch: { ssBenefitMode: "manual_amount", annualAmount: gross, ssStatedAge: null, ssStatedAgeMonths: null, ssAmountUnit: "annual", inflationStartYear: taxYear }, amountField: "annualAmount" } } });
+            target: { kind: "income.update", incomeId: row.id, patch: { ssBenefitMode: "manual_amount", annualAmount: gross, ...statedAgeFields(null, "annual"), inflationStartYear: taxYear }, amountField: "annualAmount" } } });
       }
     } else {
       const p = sum(active.map(inTaxYear));

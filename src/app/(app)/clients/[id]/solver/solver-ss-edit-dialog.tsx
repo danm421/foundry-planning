@@ -7,16 +7,16 @@ import DialogShell from "@/components/dialog-shell";
 import { SocialSecurityAmountFields } from "@/components/social-security-amount-fields";
 import { SocialSecurityPreview } from "@/components/social-security-preview";
 import {
-  claimTracksStatedAge,
-  entryUnit,
-  initialEntryAmount,
+  claimAfterStatedAgeChange,
+  claimOnSelectStated,
+  initialEntry,
   initialStatedAge,
   otherSsRow,
+  round2,
   ssDraftRow,
   ssEntryPreview,
   toAnnual,
   toMonthly,
-  type SsAmountUnit,
 } from "@/lib/social-security/benefit-entry";
 import {
   inputBaseClassName,
@@ -60,19 +60,10 @@ export function SolverSsEditDialog({
   const [benefitMode, setBenefitMode] = useState<SsBenefitMode>(
     workingRow.ssBenefitMode ?? "manual_amount",
   );
-  // One amount box and one unit, seeded from ONE reading of the row so the
-  // text always matches its label (a PIA when the row opens on one, else the
-  // stated figure). The Solver does not persist the unit; it shows the row's.
-  const [seed] = useState(() => {
-    const seedMode = workingRow.ssBenefitMode === "pia_at_fra" ? "pia_at_fra" : "manual_amount";
-    const unit = entryUnit({ ssBenefitMode: seedMode, ssAmountUnit: workingRow.ssAmountUnit });
-    return {
-      unit,
-      amount: initialEntryAmount({ ...workingRow, ssBenefitMode: seedMode, ssAmountUnit: unit }),
-    };
-  });
-  const [amount, setAmount] = useState<string>(seed.amount);
-  const [unit, setUnit] = useState<SsAmountUnit>(seed.unit);
+  // One amount box and one unit. The Solver does not persist the unit; it
+  // shows the row's.
+  const [entry, setEntry] = useState(() => initialEntry(workingRow, benefitMode));
+  const { amount, unit } = entry;
   const [statedAge, setStatedAge] = useState(() => initialStatedAge(workingRow, client));
   const [claimingAgeMode, setClaimingAgeMode] = useState<SsClaimAgeMode>(
     workingRow.claimingAgeMode ?? "years",
@@ -101,16 +92,16 @@ export function SolverSsEditDialog({
   }), [amount, unit, benefitMode, statedAge, claimingAge, claimingAgeMonths, claimingAgeMode, person, currentYear, workingRow.id]);
 
   const preview = useMemo(
-    () => (benefitMode === "no_benefit" ? null : ssEntryPreview(draftRow, otherSsRow(incomes, person), client)),
-    [draftRow, incomes, person, client, benefitMode],
+    () => ssEntryPreview(draftRow, otherSsRow(incomes, person), client),
+    [draftRow, incomes, person, client],
   );
   /** The claim age follows the stated age only while the two match. */
   function changeStatedAge(next: { years: number; months: number }) {
-    const tracking = claimTracksStatedAge({ claimingAgeMode, claimingAge, claimingAgeMonths }, statedAge);
+    const claim = claimAfterStatedAgeChange({ claimingAgeMode, claimingAge, claimingAgeMonths }, statedAge, next);
     setStatedAge(next);
-    if (tracking) {
-      setClaimingAge(next.years);
-      setClaimingAgeMonths(next.months);
+    if (claim) {
+      setClaimingAge(claim.claimingAge);
+      setClaimingAgeMonths(claim.claimingAgeMonths);
     }
   }
 
@@ -121,14 +112,13 @@ export function SolverSsEditDialog({
       out.push({ kind: "ss-benefit-mode", person, mode: benefitMode });
     }
     const typed = parseFloat(amount);
-    const cents = (x: number) => Math.round(x * 100) / 100;
     if (benefitMode === "pia_at_fra") {
-      const pia = cents(toMonthly(typed, unit));
+      const pia = round2(toMonthly(typed, unit));
       if (!isNaN(typed) && pia !== (workingRow.piaMonthly ?? null)) {
         out.push({ kind: "ss-pia-monthly", person, amount: pia });
       }
     } else if (benefitMode === "manual_amount") {
-      const annual = cents(toAnnual(typed, unit));
+      const annual = round2(toAnnual(typed, unit));
       if (!isNaN(typed) && annual !== workingRow.annualAmount) {
         out.push({ kind: "ss-annual-amount", person, amount: annual });
       }
@@ -200,9 +190,10 @@ export function SolverSsEditDialog({
             checked={benefitMode === "manual_amount"}
             onChange={() => {
               setBenefitMode("manual_amount");
-              setClaimingAgeMode("years");
-              setClaimingAge(statedAge.years);
-              setClaimingAgeMonths(statedAge.months);
+              const claim = claimOnSelectStated(statedAge);
+              setClaimingAgeMode(claim.claimingAgeMode);
+              setClaimingAge(claim.claimingAge);
+              setClaimingAgeMonths(claim.claimingAgeMonths);
             }}
             className="mr-2"
           />
@@ -226,7 +217,7 @@ export function SolverSsEditDialog({
           placeholder={benefitMode === "manual_amount" ? "e.g. 3500" : "e.g. 2800"}
           amount={amount}
           unit={unit}
-          onChange={(next) => { setAmount(next.amount); setUnit(next.unit); }}
+          onChange={setEntry}
           statedAge={benefitMode === "manual_amount"
             ? { ...statedAge, dob: ownerDob, onChange: changeStatedAge }
             : undefined}
@@ -328,7 +319,7 @@ export function SolverSsEditDialog({
         </div>
       )}
 
-      {preview != null && <SocialSecurityPreview preview={preview} draftRow={draftRow} client={client} />}
+      {preview != null && <SocialSecurityPreview preview={preview} client={client} />}
     </DialogShell>
   );
 }

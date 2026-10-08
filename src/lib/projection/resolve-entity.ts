@@ -7,6 +7,7 @@ import type {
   SavingsRule,
 } from "@/engine/types";
 import { EDUCATION_529_SENTINEL_OWNER_ID, type AccountOwner } from "@/engine/ownership";
+import { asAmountUnit } from "@/lib/social-security/benefit-entry";
 import type { createGrowthSourceResolver } from "./resolve-growth-source";
 
 export type GrowthSourceResolver = ReturnType<typeof createGrowthSourceResolver>;
@@ -425,8 +426,7 @@ export function resolveIncomeFromRaw(
     claimingAgeMode: (raw.claimingAgeMode as Income["claimingAgeMode"]) ?? undefined,
     ssStatedAge: raw.ssStatedAge ?? null,
     ssStatedAgeMonths: raw.ssStatedAgeMonths ?? null,
-    ssAmountUnit:
-      raw.ssAmountUnit === "monthly" || raw.ssAmountUnit === "annual" ? raw.ssAmountUnit : null,
+    ssAmountUnit: asAmountUnit(raw.ssAmountUnit),
     scheduleOverrides: raw.scheduleOverrides,
     startYearRef: raw.startYearRef ?? null,
     endYearRef: raw.endYearRef ?? null,

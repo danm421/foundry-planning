@@ -4,6 +4,8 @@ import type { Income, ClientInfo } from "@/engine/types";
 import {
   asSsIncome, otherSsRow, entryUnit, toMonthly, toAnnual, convertAmountText,
   initialEntryAmount, initialStatedAge, statedAgeYear, ageLabel, ssEntryLabel, ssEntryPreview, ssDraftRow, claimTracksStatedAge,
+  SS_STATED_AGES, isStatedAge, statedAgeFields, asAmountUnit, round2, initialEntry,
+  claimAfterStatedAgeChange, claimOnSelectStated,
 } from "../benefit-entry";
 
 const douglas: ClientInfo = {
@@ -184,5 +186,83 @@ describe("claimTracksStatedAge", () => {
   });
   it("is false when the claim mode is not a specific age", () => {
     expect(claimTracksStatedAge({ claimingAgeMode: "fra", claimingAge: 67, claimingAgeMonths: 0 }, stated)).toBe(false);
+  });
+});
+
+describe("the stated-age rule every writer shares", () => {
+  it("accepts whole ages 62-70 only", () => {
+    expect(SS_STATED_AGES).toEqual([62, 63, 64, 65, 66, 67, 68, 69, 70]);
+    for (const age of SS_STATED_AGES) expect(isStatedAge(age)).toBe(true);
+    for (const v of [61, 71, 66.5, NaN, "67", null, undefined]) expect(isStatedAge(v)).toBe(false);
+  });
+  it("writes an in-range age with 0 months, anything else as NULL; the unit passes through", () => {
+    expect(statedAgeFields(67, "annual")).toEqual({ ssStatedAge: 67, ssStatedAgeMonths: 0, ssAmountUnit: "annual" });
+    expect(statedAgeFields(null, "annual")).toEqual({ ssStatedAge: null, ssStatedAgeMonths: null, ssAmountUnit: "annual" });
+    expect(statedAgeFields(undefined, "monthly")).toEqual({ ssStatedAge: null, ssStatedAgeMonths: null, ssAmountUnit: "monthly" });
+    for (const misread of [75, 61, 67.5]) {
+      expect(statedAgeFields(misread, null)).toEqual({ ssStatedAge: null, ssStatedAgeMonths: null, ssAmountUnit: null });
+    }
+  });
+  it("reads a stored unit, and anything else as NULL", () => {
+    expect(asAmountUnit("monthly")).toBe("monthly");
+    expect(asAmountUnit("annual")).toBe("annual");
+    for (const v of ["weekly", "", null, undefined, 12]) expect(asAmountUnit(v)).toBeNull();
+  });
+  it("rounds to cents", () => {
+    expect(round2(5706.499999)).toBe(5706.5);
+    expect(round2(4500.083333)).toBe(4500.08);
+  });
+});
+
+describe("initialEntry", () => {
+  it("a stated row opens on its figure in its unit", () => {
+    expect(initialEntry(paul, "manual_amount")).toEqual({ amount: "68478", unit: "annual" });
+    const monthly = { ...paul, ssAmountUnit: "monthly", ssStatedAge: 70 } as Income;
+    expect(initialEntry(monthly, "manual_amount")).toEqual({ amount: "5706.5", unit: "monthly" });
+  });
+  it("a PIA row opens on the PIA, monthly unless typed per year", () => {
+    const pia = { ...paul, ssBenefitMode: "pia_at_fra", piaMonthly: 4500 } as Income;
+    expect(initialEntry(pia, "pia_at_fra")).toEqual({ amount: "4500", unit: "monthly" });
+    expect(initialEntry({ ...pia, ssAmountUnit: "annual" }, "pia_at_fra")).toEqual({ amount: "54000", unit: "annual" });
+  });
+  it("a No-benefit row seeds the stated figure, as the Solver always has", () => {
+    const none = { ...paul, ssBenefitMode: "no_benefit" } as Income;
+    expect(initialEntry(none, "no_benefit")).toEqual({ amount: "68478", unit: "annual" });
+    expect(initialEntry({ ...none, ssAmountUnit: "monthly" }, "no_benefit")).toEqual({ amount: "5706.5", unit: "monthly" });
+  });
+  it("opening on the estimate seeds the advisor's own stated figure in the PIA's unit", () => {
+    const { ssBenefitMode: _mode, ...legacy } = paul;
+    void _mode;
+    expect(initialEntry(legacy as Income, "estimate_from_salary")).toEqual({ amount: "5706.5", unit: "monthly" });
+  });
+  it("opening on the estimate with no stated figure seeds the (unset) PIA", () => {
+    const seeded = { ...paul, ssBenefitMode: "pia_at_fra", annualAmount: 0 } as Income;
+    expect(initialEntry(seeded, "estimate_from_salary")).toEqual({ amount: "", unit: "monthly" });
+    expect(initialEntry(null, "estimate_from_salary")).toEqual({ amount: "", unit: "monthly" });
+  });
+});
+
+describe("the claim age following the stated age", () => {
+  const atSixtySeven = { claimingAgeMode: "years", claimingAge: 67, claimingAgeMonths: 0 };
+  it("moves with the stated age while the two match", () => {
+    expect(claimAfterStatedAgeChange(atSixtySeven, { years: 67, months: 0 }, { years: 70, months: 6 }))
+      .toEqual({ claimingAge: 70, claimingAgeMonths: 6 });
+  });
+  it("is left alone when it was set apart, or is not a specific age", () => {
+    expect(claimAfterStatedAgeChange(atSixtySeven, { years: 70, months: 0 }, { years: 68, months: 0 })).toBeNull();
+    expect(claimAfterStatedAgeChange({ ...atSixtySeven, claimingAgeMode: "fra" }, { years: 67, months: 0 }, { years: 70, months: 0 }))
+      .toBeNull();
+  });
+  it("choosing a benefit at a specific age claims at the stated age", () => {
+    expect(claimOnSelectStated({ years: 68, months: 6 }))
+      .toEqual({ claimingAgeMode: "years", claimingAge: 68, claimingAgeMonths: 6 });
+  });
+});
+
+describe("ssEntryPreview claim age", () => {
+  it("carries the claim age it priced at", () => {
+    expect(ssEntryPreview(paul, null, douglas)!.claimAgeMonths).toBe(840);
+    const fra = { ...paul, claimingAgeMode: "fra" } as Income;
+    expect(ssEntryPreview(fra, null, douglas)!.claimAgeMonths).toBe(66 * 12 + 8);
   });
 });

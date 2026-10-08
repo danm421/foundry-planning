@@ -26,7 +26,8 @@ export interface SocialSecurityAmountFieldsProps {
 }
 
 export function SocialSecurityAmountFields(p: SocialSecurityAmountFieldsProps) {
-  const year = p.statedAge ? statedAgeYear(p.statedAge.dob, p.statedAge.years, p.statedAge.months) : null;
+  const stated = p.statedAge;
+  const year = stated ? statedAgeYear(stated.dob, stated.years, stated.months) : null;
   return (
     <div className="mb-4">
       <label htmlFor={`${p.idPrefix}-amount`} className={fieldLabelClassName}>{p.label}</label>
@@ -46,21 +47,21 @@ export function SocialSecurityAmountFields(p: SocialSecurityAmountFieldsProps) {
           onChange={(next) => p.onChange({ amount: convertAmountText(p.amount, p.unit, next), unit: next })}
         />
       </div>
-      {p.statedAge && (
+      {stated && (
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[14px] text-ink-2">
           <span>paid if claimed at age</span>
           <select
             aria-label="Age this benefit is quoted at"
-            value={p.statedAge.years}
-            onChange={(e) => p.statedAge!.onChange({ years: parseInt(e.target.value, 10), months: p.statedAge!.months })}
+            value={stated.years}
+            onChange={(e) => stated.onChange({ years: parseInt(e.target.value, 10), months: stated.months })}
             className={selectBaseClassName}
           >
             {SS_STATED_AGES.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
           <select
             aria-label="Extra months"
-            value={p.statedAge.months}
-            onChange={(e) => p.statedAge!.onChange({ years: p.statedAge!.years, months: parseInt(e.target.value, 10) })}
+            value={stated.months}
+            onChange={(e) => stated.onChange({ years: stated.years, months: parseInt(e.target.value, 10) })}
             className={selectBaseClassName}
           >
             {Array.from({ length: 12 }, (_, i) => <option key={i} value={i}>{i} mo</option>)}
@@ -69,7 +70,7 @@ export function SocialSecurityAmountFields(p: SocialSecurityAmountFieldsProps) {
         </div>
       )}
       {p.hint && <p className="text-[12px] text-ink-3 mt-1">{p.hint}</p>}
-      {p.statedAge && (
+      {stated && (
         <p className="text-[12px] text-ink-3 mt-1">
           Already collecting? Enter the current check and the age they started.
           {" "}Figures from an SSA statement are in today&apos;s dollars.

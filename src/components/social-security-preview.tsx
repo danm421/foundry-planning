@@ -1,16 +1,14 @@
-import type { ClientInfo, Income } from "@/engine/types";
-import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
+import type { ClientInfo } from "@/engine/types";
 import { personLabel } from "@/lib/owner-labels";
 import { ageLabel, type SsEntryPreview } from "@/lib/social-security/benefit-entry";
 
 /** The Social Security editors' live preview: PIA, the benefit at the claim
  *  age, and each person's spousal top-up. Shared by the app and Solver dialogs. */
-export function SocialSecurityPreview({ preview, draftRow, client }: {
+export function SocialSecurityPreview({ preview, client }: {
   preview: SsEntryPreview;
-  draftRow: Income;
   client: ClientInfo;
 }) {
-  const claimMonths = resolveClaimAgeMonths(draftRow, client);
+  const claimMonths = preview.claimAgeMonths;
   const claimLabel = claimMonths != null ? ageLabel(Math.floor(claimMonths / 12), claimMonths % 12) : "the claim age";
   const nameFor = (who: "client" | "spouse") =>
     personLabel(who, { clientName: client.firstName, spouseName: client.spouseName ?? null });

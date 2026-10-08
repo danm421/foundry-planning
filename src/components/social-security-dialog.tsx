@@ -13,17 +13,17 @@ import {
   type SalaryLike,
 } from "@/lib/social-security/estimate-from-salary";
 import {
-  claimTracksStatedAge,
+  claimAfterStatedAgeChange,
+  claimOnSelectStated,
   convertAmountText,
-  entryUnit,
-  initialEntryAmount,
+  initialEntry,
   initialStatedAge,
   otherSsRow,
+  round2,
   ssDraftRow,
   ssEntryPreview,
   toAnnual,
   toMonthly,
-  type SsAmountUnit,
   type SsRowLike,
 } from "@/lib/social-security/benefit-entry";
 import DialogShell from "./dialog-shell";
@@ -89,23 +89,8 @@ export function SocialSecurityDialog({
 
   // One amount box and one unit for every mode; the unit is display only and
   // storage stays canonical (PIA monthly, stated benefit annual) at save.
-  // Box and unit are seeded from ONE reading of the row, so the text always
-  // matches its label: a stated figure when the row opens on one (or opens on
-  // the estimate while holding only an annual amount, so switching to
-  // "Benefit at a specific age" shows the advisor's own figure), else the PIA.
-  const [seed] = useState(() => {
-    const holdsStated = openingMode === "estimate_from_salary" && Number(existingRow?.annualAmount ?? 0) > 0;
-    const seedMode = openingMode === "pia_at_fra" || (openingMode === "estimate_from_salary" && !holdsStated)
-      ? "pia_at_fra"
-      : "manual_amount";
-    const unit = entryUnit({
-      ssBenefitMode: openingMode === "estimate_from_salary" ? "pia_at_fra" : openingMode,
-      ssAmountUnit: existingRow?.ssAmountUnit,
-    });
-    return { unit, amount: initialEntryAmount(existingRow && { ...existingRow, ssBenefitMode: seedMode, ssAmountUnit: unit }) };
-  });
-  const [amount, setAmount] = useState<string>(seed.amount);
-  const [unit, setUnit] = useState<SsAmountUnit>(seed.unit);
+  const [entry, setEntry] = useState(() => initialEntry(existingRow, openingMode));
+  const { amount, unit } = entry;
   const [statedAge, setStatedAge] = useState(() => initialStatedAge(existingRow, clientInfo));
 
   const [claimingAgeMode, setClaimingAgeMode] = useState<ClaimAgeMode>(() => {
@@ -166,16 +151,16 @@ export function SocialSecurityDialog({
     return other && withEstimatedPia(other, incomes, currentYear);
   }, [incomes, owner, currentYear]);
   const preview = useMemo(
-    () => (ssBenefitMode === "no_benefit" ? null : ssEntryPreview(draftRow, otherRow, clientInfo)),
-    [draftRow, otherRow, clientInfo, ssBenefitMode],
+    () => ssEntryPreview(draftRow, otherRow, clientInfo),
+    [draftRow, otherRow, clientInfo],
   );
   /** The claim age follows the stated age only while the two match. */
   function changeStatedAge(next: { years: number; months: number }) {
-    const tracking = claimTracksStatedAge({ claimingAgeMode, claimingAge, claimingAgeMonths }, statedAge);
+    const claim = claimAfterStatedAgeChange({ claimingAgeMode, claimingAge, claimingAgeMonths }, statedAge, next);
     setStatedAge(next);
-    if (tracking) {
-      setClaimingAge(next.years);
-      setClaimingAgeMonths(next.months);
+    if (claim) {
+      setClaimingAge(claim.claimingAge);
+      setClaimingAgeMonths(claim.claimingAgeMonths);
     }
   }
 
@@ -184,9 +169,8 @@ export function SocialSecurityDialog({
     const growthPct = parseFloat(growthRate) / 100 || 0;
     const typed = parseFloat(piaFieldValue);
     const stated = ssBenefitMode === "manual_amount";
-    const cents = (x: number) => Math.round(x * 100) / 100;
-    const annual = stated ? (isNaN(typed) ? 0 : cents(toAnnual(typed, unit))) : (existingRow?.annualAmount ?? 0);
-    const pia = usesPia ? (isNaN(typed) ? 0 : cents(toMonthly(typed, unit))) : null;
+    const annual = stated ? (isNaN(typed) ? 0 : round2(toAnnual(typed, unit))) : (existingRow?.annualAmount ?? 0);
+    const pia = usesPia ? (isNaN(typed) ? 0 : round2(toMonthly(typed, unit))) : null;
 
     const payload = {
       type: "social_security",
@@ -271,7 +255,7 @@ export function SocialSecurityDialog({
                 onChange={() => {
                   // Hand the estimate over on the way out, so the advisor edits
                   // the figure they were just shown rather than an empty box.
-                  if (ssBenefitMode === "estimate_from_salary") setAmount(convertAmountText(estimateText, "monthly", unit));
+                  if (ssBenefitMode === "estimate_from_salary") setEntry({ amount: convertAmountText(estimateText, "monthly", unit), unit });
                   setSsBenefitMode("pia_at_fra");
                 }}
                 className="mr-2"
@@ -284,9 +268,10 @@ export function SocialSecurityDialog({
                 checked={ssBenefitMode === "manual_amount"}
                 onChange={() => {
                   setSsBenefitMode("manual_amount");
-                  setClaimingAgeMode("years");
-                  setClaimingAge(statedAge.years);
-                  setClaimingAgeMonths(statedAge.months);
+                  const claim = claimOnSelectStated(statedAge);
+                  setClaimingAgeMode(claim.claimingAgeMode);
+                  setClaimingAge(claim.claimingAge);
+                  setClaimingAgeMonths(claim.claimingAgeMonths);
                 }}
                 className="mr-2"
               />
@@ -309,8 +294,9 @@ export function SocialSecurityDialog({
                 // Under the estimate the box shows the estimate, not `amount`:
                 // re-express the advisor's own figure instead, so switching to
                 // another mode still finds it.
-                setAmount(ssBenefitMode === "estimate_from_salary" ? convertAmountText(amount, unit, next.unit) : next.amount);
-                setUnit(next.unit);
+                setEntry(ssBenefitMode === "estimate_from_salary"
+                  ? { amount: convertAmountText(amount, unit, next.unit), unit: next.unit }
+                  : next);
               }}
               readOnly={ssBenefitMode === "estimate_from_salary"}
               statedAge={ssBenefitMode === "manual_amount"
@@ -406,7 +392,7 @@ export function SocialSecurityDialog({
           )}
 
           {/* Preview */}
-          {preview != null && <SocialSecurityPreview preview={preview} draftRow={draftRow} client={clientInfo} />}
+          {preview != null && <SocialSecurityPreview preview={preview} client={clientInfo} />}
         </div>
       )}
 

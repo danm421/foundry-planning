@@ -8,7 +8,7 @@
 import { useState } from "react";
 import type { LivingExpenseItem, LivingItemFrequency } from "@/engine/types";
 import { CurrencyInput } from "@/components/currency-input";
-import { FrequencyToggle } from "@/components/forms/frequency-toggle";
+import { FrequencyToggle, SHORT } from "@/components/forms/frequency-toggle";
 import { InlineAmount } from "@/components/forms/inline-amount";
 import {
   isTotalOverridden,
@@ -19,8 +19,6 @@ import { TrashIcon } from "./icons";
 
 const money = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
-
-const SHORT: Record<LivingItemFrequency, string> = { monthly: "/mo", annual: "/yr" };
 
 function newItemId(): string {
   return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"

@@ -1,6 +1,6 @@
 "use client";
 
-const SHORT = { monthly: "/mo", annual: "/yr" } as const;
+export const SHORT = { monthly: "/mo", annual: "/yr" } as const;
 
 export function FrequencyToggle({
   value,

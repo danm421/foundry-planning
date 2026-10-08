@@ -7,6 +7,7 @@
 
 import type { IntakeSocialSecurity } from "@/lib/intake/schema";
 import { personLabel } from "@/lib/owner-labels";
+import { statedAgeFields } from "@/lib/social-security/benefit-entry";
 
 type Answer = IntakeSocialSecurity["client"];
 
@@ -85,18 +86,14 @@ export function ssBenefitPatch(pia: number | undefined, benefitAge: number | und
       ssBenefitMode: "manual_amount" as const,
       annualAmount: String(pia * 12),
       piaMonthly: null,
-      ssStatedAge: benefitAge,
-      ssStatedAgeMonths: 0,
-      ssAmountUnit: "monthly" as const,
+      ...statedAgeFields(benefitAge, "monthly"),
     };
   }
   return {
     piaMonthly: String(pia),
     ssBenefitMode: "pia_at_fra" as const,
-    ssStatedAge: null,
-    ssStatedAgeMonths: null,
     // A monthly PIA displays monthly, even on a row that held a yearly figure.
-    ssAmountUnit: "monthly" as const,
+    ...statedAgeFields(null, "monthly"),
   };
 }
 

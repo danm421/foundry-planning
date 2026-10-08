@@ -14,6 +14,7 @@ import { MAX_RATE_STRESS_POINTS } from "@/lib/tax/rate-stress";
 import { YEAR_REFS } from "@/lib/milestones";
 import { MAX_TERM_MONTHS } from "@/lib/loan-math";
 import { ltcEventSchema } from "@/lib/schemas/ltc-event";
+import { SS_STATED_AGE_MAX, SS_STATED_AGE_MIN } from "@/lib/social-security/benefit-entry";
 import type { IncomeTaxType } from "@/engine/tax-adjustments";
 import type { LtcEvent } from "@/engine/types";
 
@@ -580,7 +581,7 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("ss-stated-age"),
     person: PERSON,
-    age: z.number().int().min(62).max(70),
+    age: z.number().int().min(SS_STATED_AGE_MIN).max(SS_STATED_AGE_MAX),
     months: z.number().int().min(0).max(11),
   }),
 

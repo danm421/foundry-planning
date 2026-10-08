@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { uuidSchema } from "./common";
+import { SS_STATED_AGE_MAX, SS_STATED_AGE_MIN } from "@/lib/social-security/benefit-entry";
 
 // --- Coercion building blocks (shared by create + update) ---
 // Each GUARDS undefined so an omitted field in a partial update stays undefined
@@ -94,27 +95,26 @@ const piaMonthlyOptional = z
   .optional()
   .transform((v) => (v === undefined ? undefined : v != null ? String(v) : null));
 
+// A whole number in [min, max]; "" / null → null, absent stays absent.
+const optionalIntInRange = (min: number, max: number, message: string) =>
+  z
+    .union([z.number(), z.string()])
+    .nullable()
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === null || v === "" ? null : Number(v)))
+    .refine((v) => v == null || (Number.isInteger(v) && v >= min && v <= max), { message });
+
 // ssStatedAge: the age a stated Social Security amount is quoted at. Whole
 // years 62-70; null clears it (the row then follows its claim age). REJECTS
 // out-of-range rather than clamping — a silently clamped 75 is a different
 // benefit with no warning.
-const ssStatedAgeOptional = z
-  .union([z.number(), z.string()])
-  .nullable()
-  .optional()
-  .transform((v) => (v === undefined ? undefined : v === null || v === "" ? null : Number(v)))
-  .refine((v) => v == null || (Number.isInteger(v) && v >= 62 && v <= 70), {
-    message: "ssStatedAge must be null or a whole age from 62 to 70",
-  });
+const ssStatedAgeOptional = optionalIntInRange(
+  SS_STATED_AGE_MIN,
+  SS_STATED_AGE_MAX,
+  `ssStatedAge must be null or a whole age from ${SS_STATED_AGE_MIN} to ${SS_STATED_AGE_MAX}`,
+);
 
-const ssStatedAgeMonthsOptional = z
-  .union([z.number(), z.string()])
-  .nullable()
-  .optional()
-  .transform((v) => (v === undefined ? undefined : v === null || v === "" ? null : Number(v)))
-  .refine((v) => v == null || (Number.isInteger(v) && v >= 0 && v <= 11), {
-    message: "ssStatedAgeMonths must be null or an integer from 0 to 11",
-  });
+const ssStatedAgeMonthsOptional = optionalIntInRange(0, 11, "ssStatedAgeMonths must be null or an integer from 0 to 11");
 
 // Presentation only — which unit the advisor typed. Never read by src/engine.
 const ssAmountUnitOptional = z.enum(["monthly", "annual"]).nullable().optional();
