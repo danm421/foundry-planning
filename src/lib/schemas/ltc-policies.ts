@@ -1,6 +1,7 @@
 // src/lib/schemas/ltc-policies.ts
 import { z } from "zod";
 import { strictPartial } from "@/lib/schemas/strict-partial";
+import type { LtcPolicyFields } from "@/lib/insurance-policies/ltc-policy-fields";
 
 /**
  * Long-term care policy request shapes. Client-level, like disability.
@@ -9,8 +10,12 @@ import { strictPartial } from "@/lib/schemas/strict-partial";
  * scenario payload and the engine read one shape. Fields a kind does not use
  * travel as null (or 0) — see `normalizeLtcPolicyFields`.
  *
- * CLIENT-SAFE: imports only zod and strict-partial. The dialog imports it.
+ * CLIENT-SAFE: imports only zod and strict-partial (plus an erased type). The
+ * dialog imports it.
  */
+// `satisfies` checks both ways: a new `LtcPolicy` field missing here, or a key
+// here the policy lacks, fails tsc — `ltcFieldsToColumns` and PATCH map only
+// these keys, so a missing one would be dropped silently.
 const base = {
   name: z.string().trim().min(1).max(200),
   insured: z.enum(["client", "spouse"]),
@@ -39,7 +44,7 @@ const base = {
   premiumPayYears: z.number().int().gte(1).lte(60).nullable().optional(),
   partnership: z.boolean().default(false),
   notes: z.string().trim().max(2000).nullable().optional(),
-};
+} satisfies Record<keyof LtcPolicyFields, z.ZodType>;
 
 /** Every writable field, in one list. The routes map ONLY these keys to
  *  columns — never `.set(parsed.data)`. */

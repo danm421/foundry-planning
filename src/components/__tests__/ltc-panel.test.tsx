@@ -11,7 +11,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/clients/c1/details/insurance",
 }));
 
-import LtcPanel, { type LtcPanelProps } from "@/components/ltc-panel";
+import LtcPanel, { ltcRowWarning, type LtcPanelProps } from "@/components/ltc-panel";
 import { ClientAccessProvider } from "@/components/client-access-provider";
 
 const WHOLE = { id: "a1", name: "Whole Life", insuredPerson: "client" as const, faceValue: 500_000 };
@@ -77,5 +77,30 @@ describe("LtcPanel", () => {
     renderPanel({}, "view");
     expect(screen.queryByRole("button", { name: "Add policy" })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Edit / })).toBeNull();
+  });
+});
+
+// The co-client warning names the one premium `ltcPremiumWindow` would bill
+// but can't place. Each row flips one condition, so dropping it goes RED —
+// without `insured === "spouse"` every single-client household would warn.
+describe("ltcRowWarning", () => {
+  const NO_DOB = "No date of birth on file, so this premium isn't in the cash flow.";
+  const unplaced: LtcPolicy = { ...STANDALONE, insured: "spouse" };
+
+  it("warns for a co-client's billed standalone premium with no date of birth", () => {
+    expect(ltcRowWarning(unplaced, [WHOLE], null)).toBe(NO_DOB);
+  });
+
+  it.each<[string, Partial<LtcPolicy>]>([
+    ["a rider (its cost is in the life premium)", { kind: "life_rider", lifePolicyAccountId: "a1" }],
+    ["a policy on the client", { insured: "client" }],
+    ["a $0 premium", { annualPremium: 0 }],
+    ["a paid-up policy", { premiumPayMode: "paid_up" }],
+  ])("stays quiet for %s", (_, over) => {
+    expect(ltcRowWarning({ ...unplaced, ...over }, [WHOLE], null)).toBeNull();
+  });
+
+  it("stays quiet once the co-client has a date of birth", () => {
+    expect(ltcRowWarning(unplaced, [WHOLE], "1972-01-01")).toBeNull();
   });
 });

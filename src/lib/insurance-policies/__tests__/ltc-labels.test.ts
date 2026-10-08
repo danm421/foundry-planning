@@ -22,6 +22,12 @@ describe("LTC labels", () => {
     expect(ltcPremiumText({ ...standalone, premiumPayMode: "to_age", premiumPayToAge: 65 })).toBe("$2,400/yr to age 65");
   });
 
+  it("reads a $0 premium as not entered, and only a paid-up policy as paid up", () => {
+    expect(ltcPremiumText({ ...standalone, annualPremium: 0 })).toBe("No premium entered");
+    expect(ltcPremiumText({ ...standalone, premiumPayMode: "paid_up" })).toBe("Paid up");
+    expect(ltcPremiumText({ ...standalone, annualPremium: 0, premiumPayMode: "paid_up" })).toBe("Paid up");
+  });
+
   it("words a rider, with and without the face value", () => {
     expect(ltcTypeText(rider, "Whole Life")).toBe("Rider on Whole Life");
     expect(ltcBenefitText(rider, 500_000)).toBe("2% of $500,000/mo");

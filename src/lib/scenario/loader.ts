@@ -269,7 +269,7 @@ export function applyScenarioChangesWithRefs(
   // nowhere to route its cash (audit F13). Runs LAST so it mirrors the live
   // ordering exactly — the solver calls loadEffectiveTree (this whole chain)
   // and only then applyMutations, whose entity-upsert branch synthesizes the
-  // same account. Nothing downstream of here reads accounts, so the four
+  // same account. Nothing downstream of here reads accounts, so the five
   // policy synthesizers above are provably unaffected. Idempotent, and returns
   // the same tree when every entity already has one.
   const withEntityChecking = withSynthesizedEntityChecking(withLtcPremiums);

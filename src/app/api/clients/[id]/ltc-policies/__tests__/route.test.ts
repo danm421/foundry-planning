@@ -214,6 +214,18 @@ describe("PATCH /ltc-policies/[policyId]", () => {
     expect(state.policies[0]).toMatchObject({ annualPremium: "3000", benefitAmount: "6000", benefitPeriodYears: 3 });
   });
 
+  // The dialog sends the whole form on every save; the audit names what moved.
+  it("audits only the field that changed, though the body carries the whole policy", async () => {
+    const { policy } = await (await create(STANDALONE)).json();
+    vi.mocked(recordAudit).mockClear();
+    const res = await PATCH(req({ ...STANDALONE, annualPremium: 3000 }), params(CLIENT_A, policy.id));
+    expect(res.status).toBe(200);
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: "ltc_policy.update",
+      metadata: expect.objectContaining({ fieldsChanged: ["annualPremium"] }),
+    }));
+  });
+
   // Review Focus 4: the body alone parses, but the merged row would be a rider
   // with no life policy — validated on the MERGE, it is refused.
   it("refuses a one-key change that would leave the stored row invalid", async () => {

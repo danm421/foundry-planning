@@ -35,7 +35,9 @@ export function ltcInflationText(p: LtcPolicy): string {
 
 export function ltcPremiumText(p: LtcPolicy): string {
   if (p.kind === "life_rider") return "In the life premium";
-  if (p.premiumPayMode === "paid_up" || p.annualPremium <= 0) return "Paid up";
+  if (p.premiumPayMode === "paid_up") return "Paid up";
+  // The Add dialog starts at $0: "Paid up" would state a fact nobody entered.
+  if (p.annualPremium <= 0) return "No premium entered";
   const when =
     p.premiumPayMode === "lifetime"
       ? "for life"

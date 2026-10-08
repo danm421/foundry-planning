@@ -148,8 +148,45 @@ describe("LTC policy describer", () => {
     const text = row.detail.join(" | ");
     for (const code of ["standalone", "life_rider", "pct_of_face", "paid_up"]) expect(text).not.toContain(code);
     expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
-    expect(text).toContain("Kind: Traditional → Rider");
+    expect(text).toContain("Type: Traditional → Rider");
     expect(text).toContain("Life policy: — → Whole Life");
+  });
+
+  it("labels every edited field with the dialog's own words, minus the unit suffixes", () => {
+    const label = (field: string) => describeChange(ch({
+      targetKind: "ltc_policy", targetId: "l1", opType: "edit",
+      payload: { [field]: { from: null, to: null } },
+    }), named).what.replace("Genworth LTC · ", "");
+    const fields = Object.keys(payload).filter((f) => f !== "id");
+    expect(Object.fromEntries(fields.map((f) => [f, label(f)]))).toEqual({
+      name: "Policy name",
+      insured: "Who is covered",
+      carrier: "Carrier",
+      kind: "Type",
+      lifePolicyAccountId: "Life policy",
+      issueYear: "Issue year",
+      benefitAmount: "Benefit amount",
+      benefitUnit: "Benefit per",
+      riderBenefitMode: "Rider pays",
+      riderMonthlyPct: "Monthly share of death benefit",
+      benefitPeriodMode: "Benefits last",
+      benefitPeriodYears: "Benefit years",
+      riderMaxPct: "Can pay out up to",
+      extensionYears: "Extension (years)",
+      residualDeathBenefit: "Guaranteed death benefit",
+      eliminationDays: "Waiting period (days)",
+      homeCarePct: "Home care pays",
+      inflationRider: "Inflation protection",
+      inflationRate: "Inflation rate",
+      benefitType: "Policy pays",
+      sharedCare: "Shared care",
+      annualPremium: "Annual premium",
+      premiumPayMode: "Premiums paid",
+      premiumPayToAge: "Premiums paid to age",
+      premiumPayYears: "Premiums paid for (years)",
+      partnership: "State partnership policy",
+      notes: "Notes",
+    });
   });
 
   it("names a life policy this scenario added, and never prints an id it cannot name", () => {

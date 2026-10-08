@@ -55,7 +55,8 @@ describe("synthesizeLtcPremiums", () => {
     expect(billedYears(policy({ premiumPayMode: "years", premiumPayYears: 10, issueYear: 2010 }))).toBeNull();
     expect(billedYears(policy({ premiumPayMode: "paid_up" }))).toBeNull();
     expect(billedYears(policy({ annualPremium: 0 }))).toBeNull();
-    expect(billedYears(policy({ ...LTC_RIDER_DEFAULTS, annualPremium: 2400 }))).toBeNull();
+    // A premium and a billing mode, so only the kind guard keeps the rider off.
+    expect(billedYears(policy({ ...LTC_RIDER_DEFAULTS, annualPremium: 2400, premiumPayMode: "lifetime" }))).toBeNull();
   });
 
   it("follows the co-client's own birth year and life expectancy, falling back to the client's expectancy", () => {

@@ -123,6 +123,38 @@ const LTC_EDIT_FORMAT: Record<string, (v: unknown) => string> = {
   riderMaxPct: pct,
 };
 
+/** Each LTC field by the dialog's own label, without its "(%)" unit suffix —
+ *  typed so a new field cannot reach the deck under a humanized key name. */
+const LTC_FIELD_LABELS: Record<keyof Omit<LtcPolicy, "id">, string> = {
+  name: "Policy name",
+  insured: "Who is covered",
+  carrier: "Carrier",
+  kind: "Type",
+  lifePolicyAccountId: "Life policy",
+  issueYear: "Issue year",
+  benefitAmount: "Benefit amount",
+  benefitUnit: "Benefit per",
+  riderBenefitMode: "Rider pays",
+  riderMonthlyPct: "Monthly share of death benefit",
+  benefitPeriodMode: "Benefits last",
+  benefitPeriodYears: "Benefit years",
+  riderMaxPct: "Can pay out up to",
+  extensionYears: "Extension (years)",
+  residualDeathBenefit: "Guaranteed death benefit",
+  eliminationDays: "Waiting period (days)",
+  homeCarePct: "Home care pays",
+  inflationRider: "Inflation protection",
+  inflationRate: "Inflation rate",
+  benefitType: "Policy pays",
+  sharedCare: "Shared care",
+  annualPremium: "Annual premium",
+  premiumPayMode: "Premiums paid",
+  premiumPayToAge: "Premiums paid to age",
+  premiumPayYears: "Premiums paid for (years)",
+  partnership: "State partnership policy",
+  notes: "Notes",
+};
+
 /** The life policy a rider sits on, by name: a base-plan account, or one this
  *  scenario added. Null when it names neither. */
 function lifePolicyName(id: unknown, ctx: DescribeContext): string | null {
@@ -130,9 +162,9 @@ function lifePolicyName(id: unknown, ctx: DescribeContext): string | null {
   return ctx.resolve.accountInfo(id)?.name ?? ctx.targetNames[`account:${id}`] ?? null;
 }
 
-/** The life policy reads by name, never by its id. */
+/** Fields read in the dialog's words; the life policy by name, never by its id. */
 const ltcEditFormat = (ctx: DescribeContext): EditFormat => ({
-  label: (f) => (f === "lifePolicyAccountId" ? "Life policy" : fieldLabel(f)),
+  label: (f) => LTC_FIELD_LABELS[f as keyof typeof LTC_FIELD_LABELS] ?? fieldLabel(f),
   value: (f, v) => {
     if (f === "lifePolicyAccountId") return v == null || v === "" ? "—" : (lifePolicyName(v, ctx) ?? "A life policy");
     return LTC_EDIT_FORMAT[f]?.(v) ?? fmtFieldValue(f, v);

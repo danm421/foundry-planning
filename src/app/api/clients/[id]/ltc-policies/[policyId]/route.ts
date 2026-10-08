@@ -99,7 +99,7 @@ export async function PATCH(
       firmId,
       metadata: crossFirmAuditMeta({ access }, callerOrg, {
         name: row.name,
-        fieldsChanged: Object.keys(d),
+        fieldsChanged: Object.keys(changed),
       }),
     });
 

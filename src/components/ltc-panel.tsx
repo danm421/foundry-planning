@@ -57,7 +57,13 @@ function findFocusTarget(focus: EditorFocus, policies: LtcPolicy[]): FocusTarget
   return isEditFocus(focus) ? { mode: "edit", policy } : null;
 }
 
-/** At most one warning per row, most blocking first. */
+/** At most one warning per row, most blocking first.
+ *
+ *  The date-of-birth one mirrors the one `ltcPremiumWindow` "bills nothing"
+ *  case that is missing data, not the policy's own terms: a premium it would
+ *  bill (standalone, above $0, not paid up) for a co-client with no date of
+ *  birth. The client's is always on file. Pay years that ended, or a window
+ *  past the insured's life expectancy, bill nothing by design: no warning. */
 export function ltcRowWarning(
   p: LtcPolicy,
   lifePolicies: LtcLifePolicyOption[],

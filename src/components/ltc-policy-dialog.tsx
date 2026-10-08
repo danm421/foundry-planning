@@ -147,7 +147,8 @@ export type LtcPolicyDialogProps = BaseProps & ({ mode: "create" } | { mode: "ed
 
 export default function LtcPolicyDialog(props: LtcPolicyDialogProps) {
   const writer = useScenarioWriter(props.clientId);
-  // Minted once per create dialog, so a retry re-sends the SAME id.
+  // Minted once per create dialog, so a scenario add's retry re-sends the SAME
+  // id. A base POST ignores it: a retry after an unclear failure can duplicate.
   const [newId] = useState(() => (props.mode === "create" ? crypto.randomUUID() : null));
   const [form, setForm] = useState<LtcFormValues>(() =>
     props.mode === "edit" ? policyToForm(props.policy) : emptyForm(props.currentYear),
@@ -455,7 +456,7 @@ export default function LtcPolicyDialog(props: LtcPolicyDialogProps) {
         </Section>
 
         {errors.length > 0 && (
-          <ul className="flex flex-col gap-1 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
+          <ul aria-live="polite" className="flex flex-col gap-1 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
             {errors.map((e) => (
               <li key={e}>{e}</li>
             ))}
