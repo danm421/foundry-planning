@@ -148,3 +148,38 @@ describe("LTC policy dialog — in a scenario", () => {
     expect(sent()).toEqual({ op: "remove", targetKind: "ltc_policy", targetId: "ltc-1" });
   });
 });
+
+describe("LTC policy dialog — field ranges and the life-policy pick", () => {
+  it("starting values produce no range sentence", () => {
+    render(<LtcPolicyDialog {...props()} />);
+    expect(screen.queryByText(/must be (at least|at most|more than|a whole)/)).toBeNull();
+  });
+
+  it("names an issue year below the schema's minimum and blocks Save", () => {
+    render(<LtcPolicyDialog {...props()} />);
+    fireEvent.change(screen.getByLabelText("Policy name"), { target: { value: "G" } });
+    fireEvent.change(screen.getByLabelText("Issue year"), { target: { value: "218" } });
+    expect(screen.getByText("Issue year must be at least 1950.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("names a home-care share above 100% and blocks Save", () => {
+    render(<LtcPolicyDialog {...props()} />);
+    fireEvent.change(screen.getByLabelText("Policy name"), { target: { value: "G" } });
+    fireEvent.change(screen.getByLabelText("Home care pays (% of limit)"), { target: { value: "150" } });
+    expect(screen.getByText("Home care pays (% of limit) must be at most 100%.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("offers 'Pick a policy' for a rider linked to an ineligible life policy, and lets the advisor fix it", () => {
+    const stale: LtcPolicy = { ...POLICY, ...LTC_RIDER_DEFAULTS, lifePolicyAccountId: JOINT.id };
+    render(<LtcPolicyDialog {...props({ mode: "edit", policy: stale })} />);
+    const select = screen.getByLabelText("Life policy") as HTMLSelectElement;
+    expect(select.value).toBe("");
+    expect(Array.from(select.options).map((o) => o.textContent)).toContain("Pick a policy");
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    fireEvent.change(select, { target: { value: WHOLE.id } });
+    expect(screen.queryByText("The life policy must insure the same person as the rider.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+});

@@ -22,7 +22,7 @@ import {
   textareaClassName,
 } from "@/components/forms/input-styles";
 import type { LtcPolicy } from "@/engine/types";
-import { LTC_STANDALONE_DEFAULTS, ltcPolicyProblems } from "@/lib/schemas/ltc-policies";
+import { LTC_STANDALONE_DEFAULTS, ltcPolicyCreateSchema, ltcPolicyProblems } from "@/lib/schemas/ltc-policies";
 import {
   normalizeLtcPolicyFields,
   withLtcKind,
@@ -61,13 +61,59 @@ function policyToForm(p: LtcPolicy): LtcFormValues {
   return fields as LtcFormValues;
 }
 
+/** What each numeric field is called on screen, and whether its bounds read as percentages. */
+const RANGE_FIELDS: Record<string, { label: string; percent?: true }> = {
+  issueYear: { label: "Issue year" },
+  benefitAmount: { label: "Benefit amount" },
+  riderMonthlyPct: { label: "Monthly share of death benefit (%)", percent: true },
+  benefitPeriodYears: { label: "Benefit years" },
+  riderMaxPct: { label: "Can pay out up to (% of death benefit)", percent: true },
+  extensionYears: { label: "Extension (years)" },
+  residualDeathBenefit: { label: "Guaranteed death benefit" },
+  eliminationDays: { label: "Waiting period (days)" },
+  homeCarePct: { label: "Home care pays (% of limit)", percent: true },
+  inflationRate: { label: "Inflation rate (%)", percent: true },
+  annualPremium: { label: "Annual premium" },
+  premiumPayToAge: { label: "Premiums paid to age" },
+  premiumPayYears: { label: "Premiums paid for (years)" },
+};
+
+/** One sentence per out-of-range number, with the bound read from the schema's
+ *  own issue so the ranges live in exactly one place. */
+function rangeSentences(f: LtcFormValues, issueYear: number, skip: Set<string>): string[] {
+  const parsed = ltcPolicyCreateSchema.safeParse(normalizeLtcPolicyFields({ ...f, issueYear }));
+  if (parsed.success) return [];
+  const seen = new Set<string>(skip);
+  const out: string[] = [];
+  for (const issue of parsed.error.issues) {
+    const key = String(issue.path[0]);
+    const field = RANGE_FIELDS[key];
+    if (!field || seen.has(key)) continue;
+    const bound = (n: unknown) => (field.percent ? `${Math.round(Number(n) * 10000) / 100}%` : String(n));
+    let sentence: string | null = null;
+    if (issue.code === "too_small") {
+      sentence = `${field.label} must be ${issue.inclusive ? "at least" : "more than"} ${bound(issue.minimum)}.`;
+    } else if (issue.code === "too_big") {
+      sentence = `${field.label} must be at most ${bound(issue.maximum)}.`;
+    } else if (issue.code === "invalid_type" && issue.expected === "int") {
+      sentence = `${field.label} must be a whole number.`;
+    }
+    if (sentence === null) continue;
+    seen.add(key);
+    out.push(sentence);
+  }
+  return out;
+}
+
 /** Sentences for everything that blocks a save: the schema's own cross-field
  *  rules (one list, shared with the routes) plus what only this screen knows. */
 export function ltcFormErrors(f: LtcFormValues, lifePolicies: LtcLifePolicyOption[]): string[] {
   const out: string[] = [];
   if (f.name.trim() === "") out.push("Give the policy a name.");
   if (f.issueYear == null) out.push("Enter the year the policy was issued.");
-  for (const p of ltcPolicyProblems(f)) out.push(p.message);
+  const problems = ltcPolicyProblems(f);
+  for (const p of problems) out.push(p.message);
+  if (f.issueYear != null) out.push(...rangeSentences(f, f.issueYear, new Set(problems.map((p) => p.path))));
   if (f.kind === "life_rider" && f.lifePolicyAccountId) {
     const linked = lifePolicies.find((o) => o.id === f.lifePolicyAccountId);
     if (!linked) out.push("Its life policy isn't in this scenario. Pick another one.");
@@ -125,6 +171,9 @@ export default function LtcPolicyDialog(props: LtcPolicyDialogProps) {
       ? null
       : ltcSummaryText({ id: "draft", ...form, issueYear: form.issueYear }, linked?.faceValue ?? null, props.currentYear);
   const isRider = form.kind === "life_rider";
+  // "" unless the stored id is one of the options, so a stale link shows the
+  // placeholder and picking a real policy always fires a change.
+  const pickedLife = eligible.find((o) => o.id === form.lifePolicyAccountId)?.id ?? "";
 
   function setInsured(insured: "client" | "spouse") {
     // A rider's life policy must be the insured's own; drop one that is not.
@@ -254,12 +303,12 @@ export default function LtcPolicyDialog(props: LtcPolicyDialogProps) {
           </Field>
           {isRider && (
             <Field label="Life policy">
-              {/* `linked?.id`, not the stored id: a rider whose life policy left
-                  this scenario shows "Pick a policy" instead of a value no
-                  option carries. */}
-              <select aria-label="Life policy" className={selectClassName} value={linked?.id ?? ""}
+              {/* `pickedLife`, not the stored id: a rider whose life policy left
+                  this scenario, or is no longer eligible, shows "Pick a policy"
+                  instead of a value no option carries. */}
+              <select aria-label="Life policy" className={selectClassName} value={pickedLife}
                 onChange={(e) => set({ lifePolicyAccountId: e.target.value || null })}>
-                {linked === null && <option value="">Pick a policy</option>}
+                {pickedLife === "" && <option value="">Pick a policy</option>}
                 {eligible.map((o) => (
                   <option key={o.id} value={o.id}>{o.name}</option>
                 ))}
@@ -349,7 +398,7 @@ export default function LtcPolicyDialog(props: LtcPolicyDialogProps) {
             </Field>
           )}
           <Field label="State partnership policy" help="Recorded for reference. Medicaid is not modeled.">
-            <SwitchControl ariaLabel="Partnership policy" stateLabel={form.partnership ? "Yes" : "No"}
+            <SwitchControl ariaLabel="State partnership policy" stateLabel={form.partnership ? "Yes" : "No"}
               checked={form.partnership} onChange={(next) => set({ partnership: next })} />
           </Field>
         </Section>
