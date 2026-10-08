@@ -175,6 +175,10 @@ export type AuditAction =
   | "disability_policy.create"
   | "disability_policy.update"
   | "disability_policy.delete"
+  // Long-term care insurance (client-level policies; a scenario overlays them)
+  | "ltc_policy.create"
+  | "ltc_policy.update"
+  | "ltc_policy.delete"
   // CMA (firm-level, admin-gated)
   | "cma.asset_class.create"
   | "cma.asset_class.update"

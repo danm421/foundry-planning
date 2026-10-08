@@ -1,7 +1,8 @@
 import { db } from "@/db";
-import { ltcPolicies, type LtcPolicyRow } from "@/db/schema";
-import { asc, eq } from "drizzle-orm";
+import { accounts, ltcPolicies, type LtcPolicyRow } from "@/db/schema";
+import { and, asc, eq } from "drizzle-orm";
 import type { LtcPolicy } from "@/engine/types";
+import type { RiderLifePolicy } from "./ltc-rider-link";
 
 /** decimal-as-string → number; `null` stays `null` (an unset rider percentage
  *  is not 0%). */
@@ -51,4 +52,17 @@ export async function loadLtcPolicies(clientId: string): Promise<LtcPolicy[]> {
     .where(eq(ltcPolicies.clientId, clientId))
     .orderBy(asc(ltcPolicies.name));
   return rows.map(rowToLtcPolicy);
+}
+
+/** The account a rider names, scoped to the client: another household's id
+ *  reads as missing, never as a match. */
+export async function loadRiderLifePolicy(
+  clientId: string,
+  accountId: string,
+): Promise<RiderLifePolicy | null> {
+  const [row] = await db
+    .select({ id: accounts.id, category: accounts.category, insuredPerson: accounts.insuredPerson })
+    .from(accounts)
+    .where(and(eq(accounts.id, accountId), eq(accounts.clientId, clientId)));
+  return row ?? null;
 }
