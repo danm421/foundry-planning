@@ -3,6 +3,7 @@ import { disabilitySuspension } from "./disability-event";
 import { resolveAnnualBenefit } from "./socialSecurity/orchestrator";
 import { resolveEntitlementMonth } from "./socialSecurity/claimAge";
 import { monthsPaidInYear } from "./socialSecurity/entitlement";
+import { resolvePiaMonthly } from "./socialSecurity/resolvePia";
 import { itemProrationGate } from "./retirement-proration";
 
 interface IncomeBreakdown {
@@ -15,7 +16,7 @@ interface IncomeBreakdown {
   other: number;
   total: number;
   bySource: Record<string, number>;
-  /** SS detail aggregated across all pia_at_fra rows this year. */
+  /** SS detail aggregated across every PIA-backed row this year. */
   socialSecurityDetail?: {
     client:  { retirement: number; spousal: number; survivor: number };
     spouse?: { retirement: number; spousal: number; survivor: number };
@@ -174,8 +175,12 @@ export function computeIncome(
         if (year > clientBy + client.lifeExpectancy) continue;
       }
 
-      // pia_at_fra mode → delegate to orchestrator (handles own, spousal, survivor)
-      if (inc.ssBenefitMode === "pia_at_fra" && inc.piaMonthly != null) {
+      // Every row priced off a PIA — an entered PIA, a salary estimate, or a
+      // benefit stated at an age — goes through the orchestrator, which owns
+      // own/spousal/survivor math. Only rows with no PIA behind them (a
+      // year-by-year schedule, no DOB, no resolvable age) fall through to the
+      // literal amount below.
+      if (resolvePiaMonthly(inc, client) != null) {
         // Locate the other spouse's SS row, if any, for spousal/survivor math
         const otherOwner = inc.owner === "spouse" ? "client" : "spouse";
         const spouseRow = incomes.find(
@@ -216,9 +221,9 @@ export function computeIncome(
     amount *= gate.factor;
     if (inc.type === "social_security") {
       amount *= ssFactor;
-      // Legacy rows carry a flat annual figure instead of a PIA, so they never
-      // reach the orchestrator. Prorate their claim year here. `ssMonthsPaid`
-      // is 12 for every row that is not a claim-year Social Security row.
+      // Rows the orchestrator cannot price (no PIA behind them) never reach it.
+      // Prorate their claim year here. `ssMonthsPaid` is 12 for every row that
+      // is not a claim-year Social Security row.
       amount *= ssMonthsPaid / 12;
     }
     const key = incomeTypeToKey[inc.type];

@@ -7,9 +7,10 @@ import { computeSurvivorMonthlyBenefit } from "./survivor";
 import { AGE_60_MONTHS, AGE_70_MONTHS } from "./constants";
 import { resolveClaimAgeMonths, resolveEntitlementMonth } from "./claimAge";
 import { monthsPaidInYear, type EntitlementMonth } from "./entitlement";
+import { resolvePiaMonthly } from "./resolvePia";
 
 export interface ResolveAnnualBenefitInput {
-  row: Income;                 // This spouse's SS income row (pia_at_fra mode)
+  row: Income;                 // This spouse's SS income row — any mode resolvePiaMonthly can price
   spouseRow: Income | null;    // The other spouse's SS income row (any mode, or null for single clients)
   client: ClientInfo;
   year: number;
@@ -82,6 +83,9 @@ function claimAgeMonthsOf(row: Income): number {
  * needs both on the rolls. Survivor onset stays year-granular: death is modeled
  * as `birthYear + lifeExpectancy`, which carries no month to prorate against.
  *
+ * Both spouses' PIAs come from `resolvePiaMonthly`, so a benefit stated at an
+ * age supports spousal and survivor math exactly like an entered PIA.
+ *
  * @returns `{ retirement, spousal, survivor, total }` — all in annual dollars.
  */
 export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): ResolvedBenefit {
@@ -94,6 +98,7 @@ export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): Resolved
   const ageMonthsThisYear = ageThisYear * 12;
   const thisClaimAgeMonths = resolveClaimAgeMonths(input.row, input.client);
   if (thisClaimAgeMonths == null) return zero;
+  const thisPia = resolvePiaMonthly(input.row, input.client);
   const thisEntitlement = resolveEntitlementMonth(input.row, input.client);
   const ownMonths = monthsPaidInYear(thisEntitlement, input.year);
   const hasClaimed = ownMonths > 0;
@@ -106,6 +111,7 @@ export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): Resolved
   let otherIsDead = false;
   let otherHasClaimed = false;
   let otherEntitlement: EntitlementMonth | null = null;
+  let otherPia: number | null = null;
 
   if (otherRow && otherDob) {
     otherBy = birthYear(otherDob);
@@ -119,6 +125,7 @@ export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): Resolved
     otherIsDead = otherLifeExpectancy != null && input.year > otherBy + otherLifeExpectancy;
     otherEntitlement = resolveEntitlementMonth(otherRow, input.client);
     otherHasClaimed = monthsPaidInYear(otherEntitlement, input.year) > 0;
+    otherPia = resolvePiaMonthly(otherRow, input.client);
   }
 
   const growthFactor = Math.pow(1 + input.row.growthRate, input.year - (input.row.inflationStartYear ?? input.row.startYear));
@@ -152,15 +159,15 @@ export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): Resolved
 
     // Deceased's reduced benefit (for Case A) or full benefit (for Case B)
     let deceasedReducedBenefit = 0;
-    if (otherRow.ssBenefitMode === "pia_at_fra" && otherRow.piaMonthly != null) {
+    if (otherPia != null) {
       deceasedReducedBenefit = computeOwnMonthlyBenefit({
-        piaMonthly: otherRow.piaMonthly,
+        piaMonthly: otherPia,
         claimAgeMonths: deceasedClaimAgeMonths,
         dob: otherDob!,
       });
     }
 
-    const deceasedPia = otherRow.piaMonthly ?? 0;
+    const deceasedPia = otherPia ?? 0;
     const survivor = deceasedPia > 0
       ? computeSurvivorMonthlyBenefit({
           deceasedPiaMonthly: deceasedPia,
@@ -173,9 +180,9 @@ export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): Resolved
         })
       : 0;
 
-    const own = hasClaimed && input.row.piaMonthly != null
+    const own = hasClaimed && thisPia != null
       ? computeOwnMonthlyBenefit({
-          piaMonthly: input.row.piaMonthly,
+          piaMonthly: thisPia,
           claimAgeMonths: thisClaimAgeMonths,
           dob: thisDob,
         })
@@ -199,15 +206,15 @@ export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): Resolved
   }
 
   // ── Case 2: other spouse alive and has claimed ───────────────────
-  if (!hasClaimed || input.row.piaMonthly == null) return zero;
+  if (!hasClaimed || thisPia == null) return zero;
   const own = computeOwnMonthlyBenefit({
-    piaMonthly: input.row.piaMonthly,
+    piaMonthly: thisPia,
     claimAgeMonths: thisClaimAgeMonths,
     dob: thisDob,
   });
-  if (otherRow && otherHasClaimed && otherRow.ssBenefitMode === "pia_at_fra" && otherRow.piaMonthly != null) {
+  if (otherRow && otherHasClaimed && otherPia != null) {
     const spousal = computeSpousalMonthlyBenefit({
-      otherPiaMonthly: otherRow.piaMonthly,
+      otherPiaMonthly: otherPia,
       otherSpouseHasClaimed: true,
       claimAgeMonths: thisClaimAgeMonths,
       dob: thisDob,
