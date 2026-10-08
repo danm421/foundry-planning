@@ -118,17 +118,21 @@ export function initialEntryAmount(row: Income | null): string {
   return String(round2(unit === "annual" ? annual : annual / 12));
 }
 
-/** The age a stated benefit is quoted at — the stored one, else the row's
- *  resolved claim age (legacy meaning), clamped to the 62-70 selects. The
- *  stored one is clamped too: Save sends it back, and the API rejects any
- *  age outside 62-70. */
+/** The age a stated benefit is quoted at — the stored one (when it is a real
+ *  number, as the engine counts it), else the row's resolved claim age (legacy
+ *  meaning). Years outside the 62-70 selects snap to that boundary with 0
+ *  months; within them the months are kept, clamped to 0-11. Save sends this
+ *  back, and the API rejects any age outside 62-70. */
 export function initialStatedAge(row: Income | null, client: ClientInfo): { years: number; months: number } {
-  const m = row?.ssStatedAge != null
-    ? row.ssStatedAge * 12 + (row.ssStatedAgeMonths ?? 0)
+  const stored = typeof row?.ssStatedAge === "number" && Number.isFinite(row.ssStatedAge);
+  const m = stored
+    ? row!.ssStatedAge! * 12 + (Number.isFinite(row!.ssStatedAgeMonths) ? row!.ssStatedAgeMonths! : 0)
     : row ? resolveClaimAgeMonths(row, client) : null;
   if (m == null) return { years: 67, months: 0 };
-  const clamped = Math.min(Math.max(m, 62 * 12), 70 * 12);
-  return { years: Math.floor(clamped / 12), months: clamped % 12 };
+  const years = Math.floor(m / 12);
+  if (years < 62) return { years: 62, months: 0 };
+  if (years > 70) return { years: 70, months: 0 };
+  return { years, months: Math.min(Math.max(Math.trunc(m - years * 12), 0), 11) };
 }
 
 /** The calendar year a benefit claimed at this age starts, for the "· 2028" hint. */

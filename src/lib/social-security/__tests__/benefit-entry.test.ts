@@ -67,6 +67,15 @@ describe("opening an existing row", () => {
     expect(initialStatedAge({ ...paul, ssStatedAge: 60, ssStatedAgeMonths: 0 } as Income, douglas)).toEqual({ years: 62, months: 0 });
     expect(initialStatedAge({ ...paul, ssStatedAge: 68, ssStatedAgeMonths: 6 } as Income, douglas)).toEqual({ years: 68, months: 6 });
   });
+  it("a stored 70y with months reopens with its months; out-of-range years snap to the boundary", () => {
+    expect(initialStatedAge({ ...paul, ssStatedAge: 70, ssStatedAgeMonths: 6 } as Income, douglas)).toEqual({ years: 70, months: 6 });
+    expect(initialStatedAge({ ...paul, ssStatedAge: 75, ssStatedAgeMonths: 0 } as Income, douglas)).toEqual({ years: 70, months: 0 });
+    expect(initialStatedAge({ ...paul, ssStatedAge: 61, ssStatedAgeMonths: 5 } as Income, douglas)).toEqual({ years: 62, months: 0 });
+  });
+  it("a blank stored stated age falls back to the claim age", () => {
+    const blank = { ...paul, ssStatedAge: "", claimingAge: 67, claimingAgeMonths: 3 } as unknown as Income;
+    expect(initialStatedAge(blank, douglas)).toEqual({ years: 67, months: 3 });
+  });
   it("labels the year the stated age falls in", () => {
     expect(statedAgeYear("1958-02-24", 70, 0)).toBe(2028);
     expect(ageLabel(70, 0)).toBe("70");
@@ -80,6 +89,9 @@ describe("ssEntryLabel", () => {
     expect(ssEntryLabel({ ...paul, ssAmountUnit: "monthly", ssStatedAge: 70 } as Income, douglas)).toBe("$5,707/mo at 70");
     expect(ssEntryLabel({ ...paul, ssBenefitMode: "pia_at_fra", piaMonthly: 4505 } as Income, douglas)).toBe("$4,505/mo PIA");
     expect(ssEntryLabel({ ...paul, ssBenefitMode: "no_benefit" } as Income, douglas)).toBeNull();
+  });
+  it("labels a stated age with its months", () => {
+    expect(ssEntryLabel({ ...paul, ssStatedAge: 70, ssStatedAgeMonths: 6 } as Income, douglas)).toBe("$68,478/yr at 70y 6mo");
   });
   it("a $0 PIA is a real entry (no work record); an unset PIA is not", () => {
     const pia = { ...paul, ssBenefitMode: "pia_at_fra" } as Income;
