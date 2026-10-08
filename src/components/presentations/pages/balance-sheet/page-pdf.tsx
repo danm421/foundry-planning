@@ -65,7 +65,7 @@ function Badge({ yoy }: { yoy: YoyResult | null }) {
   const color = yoy.badge === "up" ? T.good : yoy.badge === "down" ? T.crit : T.ink3;
   const arrow = yoy.badge === "up" ? "▲" : yoy.badge === "down" ? "▼" : "·";
   const sign = yoy.value > 0 ? "+" : "";
-  return <Text style={[S.badge, { color }]}>{`${arrow} ${sign}${yoy.value.toFixed(1)}%`}</Text>;
+  return <Text style={[S.badge, { color }]}>{`${arrow} ${sign}${yoy.value.toFixed(2)}%`}</Text>;
 }
 
 function Kpi({

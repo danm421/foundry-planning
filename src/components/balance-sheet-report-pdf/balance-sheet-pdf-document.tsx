@@ -103,7 +103,7 @@ function Badge({ yoy }: { yoy: YoyResult | null }) {
   const sign = yoy.value > 0 ? "+" : "";
   return (
     <Text style={[styles.badge, { color: palette.fg, backgroundColor: palette.bg, borderColor: palette.border }]}>
-      {arrow} {sign}{yoy.value.toFixed(1)}%
+      {arrow} {sign}{yoy.value.toFixed(2)}%
     </Text>
   );
 }
