@@ -37,10 +37,15 @@ export function synthesizeLtcPremiums(tree: ClientData): Expense[] {
 
 /** The years a standalone policy bills, or null when it bills none.
  *
+ *  Every window also stops in the insured's life-expectancy year: the engine
+ *  never ends an `insurance` expense at a death, so a pay-to-age or pay-years
+ *  premium would otherwise bill the survivor for a dead person's policy.
+ *
  *  Null — no row at all — when the insured's date of birth is missing or
- *  malformed, or their life expectancy is unknown on a lifetime premium. No
- *  silent fallback to the plan end or to the client's birth year (the
- *  disability rule): billing years nobody can place is the bug. */
+ *  malformed, their life expectancy is unknown on a lifetime premium, or the
+ *  window ends before it starts. No silent fallback to the plan end or to the
+ *  client's birth year (the disability rule): billing years nobody can place
+ *  is the bug. */
 export function ltcPremiumWindow(
   policy: LtcPolicy,
   tree: ClientData,
@@ -50,23 +55,23 @@ export function ltcPremiumWindow(
   if (!dob) return null;
   const birthYear = parseInt(dob.slice(0, 4), 10);
   if (!Number.isFinite(birthYear)) return null;
+  // A co-client's missing expectancy falls back to the client's — the same
+  // rule the engine and the life-insurance premium use.
+  const le =
+    policy.insured === "spouse"
+      ? (client.spouseLifeExpectancy ?? client.lifeExpectancy)
+      : client.lifeExpectancy;
+  const deathYear = le == null ? null : birthYear + le;
 
   const startYear = Math.max(planSettings.planStartYear, policy.issueYear);
   let endYear: number;
   switch (policy.premiumPayMode) {
     case "paid_up":
       return null;
-    case "lifetime": {
-      // A co-client's missing expectancy falls back to the client's — the same
-      // rule the engine and the life-insurance premium use.
-      const le =
-        policy.insured === "spouse"
-          ? (client.spouseLifeExpectancy ?? client.lifeExpectancy)
-          : client.lifeExpectancy;
-      if (le == null) return null;
-      endYear = birthYear + le;
+    case "lifetime":
+      if (deathYear == null) return null;
+      endYear = deathYear;
       break;
-    }
     case "to_age":
       if (policy.premiumPayToAge == null) return null;
       endYear = birthYear + policy.premiumPayToAge - 1;
@@ -76,6 +81,7 @@ export function ltcPremiumWindow(
       endYear = policy.issueYear + policy.premiumPayYears - 1;
       break;
   }
+  if (deathYear != null) endYear = Math.min(endYear, deathYear);
   return endYear >= startYear ? { startYear, endYear } : null;
 }
 

@@ -35,6 +35,22 @@ describe("synthesizeLtcPremiums", () => {
     expect(billedYears(policy({ premiumPayMode: "years", premiumPayYears: 10, issueYear: 2020 }))).toEqual([2026, 2029]);
   });
 
+  // The engine never ends an `insurance` expense at a death, so the window must.
+  it("stops a pay-years premium in the insured's life-expectancy year", () => {
+    const le82 = { ...client, lifeExpectancy: 82 }; // dies 2052
+    const tenPay = (issueYear: number) => policy({ premiumPayMode: "years", premiumPayYears: 10, issueYear });
+    expect(billedYears(tenPay(2045), le82)).toEqual([2045, 2052]);
+    expect(billedYears(tenPay(2055), le82)).toBeNull();
+  });
+
+  it("stops a pay-to-age premium in the insured's life-expectancy year, the co-client falling back to the client's", () => {
+    const le60 = { ...client, lifeExpectancy: 60 }; // client dies 2030
+    const payTo65 = (over: Partial<LtcPolicy> = {}) => policy({ premiumPayMode: "to_age", premiumPayToAge: 65, ...over });
+    expect(billedYears(payTo65(), le60)).toEqual([2026, 2030]);
+    // Co-client born 1972, no expectancy of their own → the client's 60 → 2032.
+    expect(billedYears(payTo65({ insured: "spouse" }), { ...le60, spouseLifeExpectancy: null })).toEqual([2026, 2032]);
+  });
+
   it("bills nothing once the pay years ended before the plan, for paid-up, for $0, or for a rider", () => {
     expect(billedYears(policy({ premiumPayMode: "years", premiumPayYears: 10, issueYear: 2010 }))).toBeNull();
     expect(billedYears(policy({ premiumPayMode: "paid_up" }))).toBeNull();
