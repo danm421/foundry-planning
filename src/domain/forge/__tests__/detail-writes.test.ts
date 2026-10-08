@@ -61,7 +61,7 @@ import {
 } from "@/lib/clients/accounts-writes";
 import { recordAudit } from "@/lib/audit";
 import { expenseCreateSchema } from "@/lib/schemas/expenses";
-import { incomeCreateSchema } from "@/lib/schemas/incomes";
+import { incomeCreateSchema, incomeUpdateSchema } from "@/lib/schemas/incomes";
 import { liabilityCreateSchema } from "@/lib/schemas/liabilities";
 import { accountCreateSchema } from "@/lib/schemas/accounts";
 import type { ForgeAuthContext } from "@/domain/forge/context";
@@ -485,6 +485,30 @@ describe("update_income", () => {
       }),
     );
     expect(String(result)).toContain("inc-1");
+  });
+
+  // null is how the AI clears a stated age (the amount then follows the claim
+  // age). A tool schema without .nullable() rejects it before the core.
+  it("accepts null for the stated age and its months, and hands it to the core", async () => {
+    vi.mocked(updateIncomeForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "inc-1", name: "SS" } as never,
+      resourceId: "inc-1",
+    });
+    await getTool("update_income").invoke({ incomeId: "inc-1", ssStatedAge: null, ssStatedAgeMonths: null });
+    expect(updateIncomeForClient).toHaveBeenCalledWith(
+      expect.objectContaining({ input: expect.objectContaining({ ssStatedAge: null, ssStatedAgeMonths: null }) }),
+    );
+    // …and the core's own schema takes it.
+    expect(incomeUpdateSchema.safeParse({ ssStatedAge: null, ssStatedAgeMonths: null }).success).toBe(true);
+  });
+
+  it("tells the AI what null and omitting the stated age each mean", () => {
+    type Shaped = { shape: Record<string, { description?: string }> };
+    expect((getTool("update_income").schema as unknown as Shaped).shape.ssStatedAge.description).toBe(
+      "Social Security, manual_amount rows: the age (62-70) the annual amount is quoted at. " +
+        "null clears it (the amount then follows the claim age); omit to leave it unchanged.",
+    );
   });
 
   it("returns the core error verbatim on {ok:false}", async () => {

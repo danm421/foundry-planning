@@ -212,10 +212,15 @@ const incomeFields = {
   claimingAgeMode: z.string().optional().describe("how the claiming age is interpreted"),
   ssStatedAge: z
     .union([z.number(), z.string()])
+    .nullable()
     .optional()
-    .describe("Social Security, manual_amount rows: the age (62-70) the annual amount is quoted at; omit to mean the claim age"),
+    .describe(
+      "Social Security, manual_amount rows: the age (62-70) the annual amount is quoted at. " +
+        "null clears it (the amount then follows the claim age); omit to leave it unchanged.",
+    ),
   ssStatedAgeMonths: z
     .union([z.number(), z.string()])
+    .nullable()
     .optional()
     .describe("extra months (0-11) beyond ssStatedAge"),
   ssAmountUnit: z
