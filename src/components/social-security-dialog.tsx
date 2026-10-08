@@ -75,19 +75,26 @@ export function SocialSecurityDialog({
   // No stored PIA means the row was never configured — `create-client` seeds
   // every new household that way, which is what makes the estimate their
   // default. A stored amount always wins; never overwrite an SSA figure.
-  const [ssBenefitMode, setSsBenefitMode] = useState<BenefitChoice>(() => {
+  const [openingMode] = useState<BenefitChoice>(() => {
     const stored = existingRow?.ssBenefitMode;
     if (stored === "manual_amount" || stored === "no_benefit") return stored;
     const hasPia = existingRow?.piaMonthly != null && Number(existingRow.piaMonthly) > 0;
     return hasPia ? "pia_at_fra" : "estimate_from_salary";
   });
+  const [ssBenefitMode, setSsBenefitMode] = useState<BenefitChoice>(openingMode);
 
   const usesPia = ssBenefitMode === "pia_at_fra" || ssBenefitMode === "estimate_from_salary";
 
   // One amount box and one unit for every mode; the unit is display only and
   // storage stays canonical (PIA monthly, stated benefit annual) at save.
   const [amount, setAmount] = useState<string>(() => initialEntryAmount(existingRow));
-  const [unit, setUnit] = useState<SsAmountUnit>(() => entryUnit(existingRow));
+  const [unit, setUnit] = useState<SsAmountUnit>(() =>
+    // A stored unit wins; otherwise the unit follows the mode the dialog opens in.
+    entryUnit({
+      ssBenefitMode: openingMode === "estimate_from_salary" ? "pia_at_fra" : openingMode,
+      ssAmountUnit: existingRow?.ssAmountUnit,
+    }),
+  );
   const [statedAge, setStatedAge] = useState(() => initialStatedAge(existingRow, clientInfo));
 
   const [claimingAgeMode, setClaimingAgeMode] = useState<ClaimAgeMode>(() => {

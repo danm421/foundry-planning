@@ -30,7 +30,7 @@ const CYNTHIA_RAW = {
   growthRate: "0.0200", ssBenefitMode: "pia_at_fra", claimingAge: 67, claimingAgeMode: "fra", endYear: 2071,
 };
 
-function open(row: Income = PAUL) {
+function open(row: Income | null = PAUL) {
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => [], text: async () => "" })));
   return render(
     <SocialSecurityDialog clientId="c1" owner="client" existingRow={row} clientInfo={DOUGLAS}
@@ -116,5 +116,21 @@ describe("Benefit at a specific age", () => {
     expect(screen.getByText(/PIA \$4,505\/mo/)).toBeTruthy();
     expect(screen.getByText(/At 70: \$68,478\/yr/)).toBeTruthy();
     expect(screen.getByText(/Cynthia's spousal top-up: \$2,253\/mo/)).toBeTruthy();
+  });
+
+  it("a brand-new entry opens its PIA monthly and saves monthly", async () => {
+    open(null);
+    expect(unitBtn("/mo").getAttribute("aria-pressed")).toBe("true");
+    const body = await saved();
+    expect(body.ssBenefitMode).toBe("pia_at_fra");
+    expect(body.ssAmountUnit).toBe("monthly");
+  });
+
+  it("a legacy row with no stored mode but a PIA opens as a monthly PIA", () => {
+    const { ssBenefitMode: _mode, ...legacy } = { ...PAUL, piaMonthly: 4500 } as Income;
+    void _mode;
+    open(legacy as Income);
+    expect(screen.getByLabelText(/^PIA$/i)).toBeTruthy();
+    expect(unitBtn("/mo").getAttribute("aria-pressed")).toBe("true");
   });
 });
