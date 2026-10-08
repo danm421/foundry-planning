@@ -545,8 +545,9 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
           clientInfo={props.clientInfo}
           planSettings={props.planSettings}
           // Scenario-effective rows, per the seeding rule in `map-content.tsx`:
-          // a base-scoped GET would estimate off the wrong salary here.
-          incomes={Object.values(incomeRows)}
+          // a base-scoped GET would estimate off the wrong salary here. The SS
+          // rows ride along — the spousal preview reads the other person's.
+          incomes={[...Object.values(incomeRows), ...Object.values(ssIncomeRows)]}
           onClose={() => setEditingSs(null)}
           onSaved={() => setEditingSs(null)}
         />

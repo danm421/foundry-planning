@@ -73,10 +73,13 @@ vi.mock("@/components/forms/savings-rule-dialog", () => ({
 // `ssBenefitMode`): asserting only that "a dialog opened" would still pass if the
 // Map handed the dialog a row hydrated from `IncomeView`, which carries neither —
 // and every scenario would then open at "claim at FRA" and save that back.
+// `incomes` is captured by id: the dialog's spousal preview reads the OTHER
+// person's SS row out of it, so a list without SS rows previews no top-up.
 vi.mock("@/components/social-security-dialog", () => ({
   SocialSecurityDialog: (props: {
     owner: string;
     existingRow: { id: string; claimingAge?: number; ssBenefitMode?: string } | null;
+    incomes: readonly { id?: string }[];
   }) => (
     <div
       data-testid="mock-social-security-dialog"
@@ -84,6 +87,7 @@ vi.mock("@/components/social-security-dialog", () => ({
       data-existing-id={props.existingRow?.id ?? ""}
       data-claiming-age={String(props.existingRow?.claimingAge ?? "")}
       data-benefit-mode={props.existingRow?.ssBenefitMode ?? ""}
+      data-income-ids={props.incomes.map((i) => i.id).join(",")}
     />
   ),
 }));
@@ -753,6 +757,30 @@ describe("HouseholdMapView — Social Security card routing", () => {
 
     expect(screen.getByTestId("mock-quick-edit-drawer").dataset.id).toBe("inc-1");
     expect(screen.queryByTestId("mock-social-security-dialog")).not.toBeInTheDocument();
+  });
+
+  // The spousal preview needs the other person's SS row, which lives in
+  // `ssIncomeRows`, not `incomeRows` — and the salary the estimate reads, which
+  // lives in `incomeRows`. The dialog gets both.
+  it("hands the dialog the salaries AND both Social Security rows", () => {
+    render(
+      <HouseholdMapView
+        {...baseProps({
+          items: [ssItem()],
+          incomeRows: { "inc-1": incomeRow("inc-1") },
+          ssIncomeRows: {
+            "inc-ss": ssIncomeRow("inc-ss"),
+            "inc-ss-spouse": ssIncomeRow("inc-ss-spouse", { owner: "spouse" }),
+          },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Cash Flow"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Alex Social Security" }));
+
+    const ids = screen.getByTestId("mock-social-security-dialog").dataset.incomeIds!.split(",");
+    expect(ids.sort()).toEqual(["inc-1", "inc-ss", "inc-ss-spouse"]);
   });
 
   it("does not open the SS dialog on a read-only board", () => {

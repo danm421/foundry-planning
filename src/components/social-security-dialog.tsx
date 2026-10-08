@@ -8,6 +8,7 @@ import { personLabel } from "@/lib/owner-labels";
 import {
   estimatePiaFromSalary,
   ownerAnnualSalary,
+  withEstimatedPia,
   FULL_CAREER_YEARS,
   type SalaryLike,
 } from "@/lib/social-security/estimate-from-salary";
@@ -158,9 +159,15 @@ export function SocialSecurityDialog({
     id: existingRow?.id ?? "draft", year: currentYear,
   }), [piaFieldValue, unit, ssBenefitMode, statedAge, claimingAge, claimingAgeMonths, claimingAgeMode, owner, currentYear, existingRow?.id]);
 
+  // The other person's row as the projection prices it: a raw list-GET row on
+  // "Estimate from Salary" stores no PIA, and the loader fills in the estimate.
+  const otherRow = useMemo(() => {
+    const other = otherSsRow(incomes, owner);
+    return other && withEstimatedPia(other, incomes, currentYear);
+  }, [incomes, owner, currentYear]);
   const preview = useMemo(
-    () => (ssBenefitMode === "no_benefit" ? null : ssEntryPreview(draftRow, otherSsRow(incomes, owner), clientInfo)),
-    [draftRow, incomes, owner, clientInfo, ssBenefitMode],
+    () => (ssBenefitMode === "no_benefit" ? null : ssEntryPreview(draftRow, otherRow, clientInfo)),
+    [draftRow, otherRow, clientInfo, ssBenefitMode],
   );
   /** The claim age follows the stated age only while the two match. */
   function changeStatedAge(next: { years: number; months: number }) {
@@ -298,7 +305,13 @@ export function SocialSecurityDialog({
               placeholder={ssBenefitMode === "manual_amount" ? "e.g. 3500" : "e.g. 2800"}
               amount={piaFieldValue}
               unit={unit}
-              onChange={(next) => { setAmount(next.amount); setUnit(next.unit); }}
+              onChange={(next) => {
+                // Under the estimate the box shows the estimate, not `amount`:
+                // re-express the advisor's own figure instead, so switching to
+                // another mode still finds it.
+                setAmount(ssBenefitMode === "estimate_from_salary" ? convertAmountText(amount, unit, next.unit) : next.amount);
+                setUnit(next.unit);
+              }}
               readOnly={ssBenefitMode === "estimate_from_salary"}
               statedAge={ssBenefitMode === "manual_amount"
                 ? { ...statedAge, dob: ownerDob, onChange: changeStatedAge }

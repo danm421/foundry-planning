@@ -101,3 +101,15 @@ export function estimatedPiaMonthly(
   const pia = estimatePiaFromSalary(ownerAnnualSalary(rows, row.owner, currentYear));
   return pia > 0 ? pia : null;
 }
+
+/** The row as the projection prices it: `estimatedPiaMonthly` filled in where
+ *  it applies, else the row itself. The loader runs every row through this,
+ *  so a surface holding raw rows calls it to show what the projection pays. */
+export function withEstimatedPia<T extends SsRowLike>(
+  row: T,
+  rows: readonly SalaryLike[],
+  currentYear: number,
+): T {
+  const pia = estimatedPiaMonthly(row, rows, currentYear);
+  return pia == null ? row : { ...row, piaMonthly: pia };
+}

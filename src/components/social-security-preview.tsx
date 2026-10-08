@@ -14,6 +14,9 @@ export function SocialSecurityPreview({ preview, draftRow, client }: {
   const claimLabel = claimMonths != null ? ageLabel(Math.floor(claimMonths / 12), claimMonths % 12) : "the claim age";
   const nameFor = (who: "client" | "spouse") =>
     personLabel(who, { clientName: client.firstName, spouseName: client.spouseName ?? null });
+  // The reason holds only when both have a benefit to compare; two $0 PIAs
+  // also draw no top-up, for a different reason.
+  const bothHavePia = preview.piaMonthly > 0 && (preview.otherPiaMonthly ?? 0) > 0;
   return (
     <div className="text-[14px] text-ink-2 mb-4 space-y-0.5">
       <p>
@@ -25,7 +28,7 @@ export function SocialSecurityPreview({ preview, draftRow, client }: {
         if (v == null || v <= 0) return null;
         return <p key={who}>{nameFor(who)}&apos;s spousal top-up: ${Math.round(v).toLocaleString()}/mo</p>;
       })}
-      {preview.topUps.client === 0 && preview.topUps.spouse === 0 && (
+      {bothHavePia && preview.topUps.client === 0 && preview.topUps.spouse === 0 && (
         <p className="text-ink-3">No spousal top-up — each benefit is larger than half the other&apos;s PIA.</p>
       )}
     </div>

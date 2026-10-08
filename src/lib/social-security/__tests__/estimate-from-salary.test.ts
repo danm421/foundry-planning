@@ -3,6 +3,7 @@ import {
   estimatedPiaMonthly,
   estimatePiaFromSalary,
   ownerAnnualSalary,
+  withEstimatedPia,
 } from "../estimate-from-salary";
 
 const YEAR = 2026;
@@ -157,5 +158,20 @@ describe("estimatedPiaMonthly", () => {
   it("returns null for a jointly-owned SS row — there is no such earnings record", () => {
     const joint = { ...ssRow, owner: "joint" };
     expect(estimatedPiaMonthly(joint, [salary, joint], YEAR)).toBeNull();
+  });
+});
+
+describe("withEstimatedPia", () => {
+  const salary = { type: "salary", owner: "spouse", annualAmount: "40000.00", endYear: 2040 };
+  const ssRow = { type: "social_security", owner: "spouse", annualAmount: "0", ssBenefitMode: "pia_at_fra", piaMonthly: null };
+
+  it("fills an unset PIA the way the projection loader does", () => {
+    expect(withEstimatedPia(ssRow, [salary, ssRow], YEAR)).toEqual({ ...ssRow, piaMonthly: 1778 });
+  });
+
+  it("returns a row it does not fill unchanged", () => {
+    const entered = { ...ssRow, piaMonthly: "2400.00" };
+    expect(withEstimatedPia(entered, [salary, entered], YEAR)).toBe(entered);
+    expect(withEstimatedPia(ssRow, [ssRow], YEAR)).toBe(ssRow);
   });
 });

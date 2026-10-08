@@ -8,6 +8,7 @@ import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement"
 import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
 import { resolvePiaMonthly } from "@/engine/socialSecurity/resolvePia";
 import { asSsIncome, ssEntryLabel } from "@/lib/social-security/benefit-entry";
+import { withEstimatedPia } from "@/lib/social-security/estimate-from-salary";
 import { personLabel } from "@/lib/owner-labels";
 
 export interface SocialSecurityCardProps {
@@ -25,6 +26,13 @@ function findRow(incomes: Income[], owner: "client" | "spouse"): Income | null {
   if (rows.length === 0) return null;
   // If multiple exist, take the first (legacy edge case, unlikely for test data)
   return rows[0];
+}
+
+/** The row as the projection prices it — after a refresh the list holds raw
+ *  rows, and an "Estimate from Salary" row stores no PIA until the loader
+ *  fills one in. Summary only: the dialog opens on the row as stored. */
+function pricedRow(row: Income | null, incomes: Income[]): Income | null {
+  return row && withEstimatedPia(row, incomes, new Date().getFullYear());
 }
 
 function summaryLabel(row: Income | null, clientInfo: ClientInfo, owner: "client" | "spouse"): string {
@@ -74,7 +82,7 @@ export function SocialSecurityCard({ clientId, clientInfo, planSettings, incomes
   const rowContent = (owner: "client" | "spouse", row: ReturnType<typeof findRow>) => (
     <span className="text-sm">
       <span className="font-medium text-ink">{personLabel(owner, { clientName: clientInfo.firstName, spouseName: clientInfo.spouseName ?? null })}</span>
-      <span className="text-ink-3 ml-2">{summaryLabel(row, clientInfo, owner)}</span>
+      <span className="text-ink-3 ml-2">{summaryLabel(pricedRow(row, incomes), clientInfo, owner)}</span>
     </span>
   );
 

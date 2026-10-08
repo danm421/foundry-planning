@@ -59,7 +59,7 @@ import {
   revocableTrusts,
   relocations,
 } from "@/db/schema";
-import { estimatedPiaMonthly } from "@/lib/social-security/estimate-from-salary";
+import { withEstimatedPia } from "@/lib/social-security/estimate-from-salary";
 import type {
   AccountFlowOverride,
   BeneficiaryRef,
@@ -1069,10 +1069,7 @@ const loadClientDataCached = cache(
     // salary and an entered PIA always wins — `estimatedPiaMonthly` owns which
     // rows qualify. It reads the WHOLE set because a PIA sums all the owner's
     // salaries, so this cannot fold into the resolve pass above.
-    const mappedIncomes = resolvedIncomes.map((inc) => {
-      const pia = estimatedPiaMonthly(inc, resolvedIncomes, settings.planStartYear);
-      return pia == null ? inc : { ...inc, piaMonthly: pia };
-    });
+    const mappedIncomes = resolvedIncomes.map((inc) => withEstimatedPia(inc, resolvedIncomes, settings.planStartYear));
 
     const mappedExpenses = expenseRows.map((e) =>
       resolveExpenseFromRaw(

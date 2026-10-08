@@ -62,6 +62,11 @@ describe("opening an existing row", () => {
     const fra = { ...paul, claimingAgeMode: "fra" } as Income;
     expect(initialStatedAge(fra, douglas)).toEqual({ years: 66, months: 8 });
   });
+  it("a stored stated age outside 62-70 opens clamped, so Save can never send it back", () => {
+    expect(initialStatedAge({ ...paul, ssStatedAge: 72, ssStatedAgeMonths: 4 } as Income, douglas)).toEqual({ years: 70, months: 0 });
+    expect(initialStatedAge({ ...paul, ssStatedAge: 60, ssStatedAgeMonths: 0 } as Income, douglas)).toEqual({ years: 62, months: 0 });
+    expect(initialStatedAge({ ...paul, ssStatedAge: 68, ssStatedAgeMonths: 6 } as Income, douglas)).toEqual({ years: 68, months: 6 });
+  });
   it("labels the year the stated age falls in", () => {
     expect(statedAgeYear("1958-02-24", 70, 0)).toBe(2028);
     expect(ageLabel(70, 0)).toBe("70");
@@ -120,6 +125,18 @@ describe("REVIEW FOCUS 5 — raw rows, single clients, No benefit", () => {
 
   it("nothing priceable → null", () => {
     expect(ssEntryPreview({ ...paul, ssBenefitMode: "no_benefit" } as Income, null, douglas)).toBeNull();
+  });
+
+  it("a blank or $0 benefit-at-age box previews nothing; a $0 PIA is a real answer and does", () => {
+    expect(ssEntryPreview({ ...paul, annualAmount: 0 } as Income, null, douglas)).toBeNull();
+    const zeroPia = { ...paul, ssBenefitMode: "pia_at_fra", piaMonthly: 0 } as Income;
+    expect(ssEntryPreview(zeroPia, null, douglas)?.piaMonthly).toBe(0);
+  });
+
+  it("carries the other row's resolved PIA (null with no other row)", () => {
+    const cynthia = { ...paul, id: "c", owner: "spouse", ssBenefitMode: "pia_at_fra", piaMonthly: 1778 } as Income;
+    expect(ssEntryPreview(paul, cynthia, douglas)!.otherPiaMonthly).toBe(1778);
+    expect(ssEntryPreview(paul, null, douglas)!.otherPiaMonthly).toBeNull();
   });
 });
 

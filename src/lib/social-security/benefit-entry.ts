@@ -119,10 +119,13 @@ export function initialEntryAmount(row: Income | null): string {
 }
 
 /** The age a stated benefit is quoted at — the stored one, else the row's
- *  resolved claim age (legacy meaning), clamped to the 62-70 selects. */
+ *  resolved claim age (legacy meaning), clamped to the 62-70 selects. The
+ *  stored one is clamped too: Save sends it back, and the API rejects any
+ *  age outside 62-70. */
 export function initialStatedAge(row: Income | null, client: ClientInfo): { years: number; months: number } {
-  if (row?.ssStatedAge != null) return { years: row.ssStatedAge, months: row.ssStatedAgeMonths ?? 0 };
-  const m = row ? resolveClaimAgeMonths(row, client) : null;
+  const m = row?.ssStatedAge != null
+    ? row.ssStatedAge * 12 + (row.ssStatedAgeMonths ?? 0)
+    : row ? resolveClaimAgeMonths(row, client) : null;
   if (m == null) return { years: 67, months: 0 };
   const clamped = Math.min(Math.max(m, 62 * 12), 70 * 12);
   return { years: Math.floor(clamped / 12), months: clamped % 12 };
@@ -158,6 +161,9 @@ export function ssEntryLabel(row: Income, client: ClientInfo): string | null {
 export interface SsEntryPreview {
   /** The PIA every adjustment runs off, monthly, today's dollars. */
   piaMonthly: number;
+  /** The other person's PIA, resolved the same way; null = no other row or
+   *  not priced off a PIA. */
+  otherPiaMonthly: number | null;
   /** Own benefit at the claim age, annual, today's dollars. */
   ownAnnual: number | null;
   /** Monthly spousal top-up each person draws off the other's record once both
@@ -166,8 +172,11 @@ export interface SsEntryPreview {
 }
 
 /** The editor's live preview, priced by the engine's own functions so it can
- *  never disagree with the projection. COLA is zeroed: today's dollars. */
+ *  never disagree with the projection. COLA is zeroed: today's dollars. Null
+ *  while a stated benefit's box is blank or $0 — that is no answer yet, where
+ *  a $0 PIA is a real one (no work record). */
 export function ssEntryPreview(draft: Income, other: Income | null, client: ClientInfo): SsEntryPreview | null {
+  if ((draft.ssBenefitMode ?? "manual_amount") === "manual_amount" && !(draft.annualAmount > 0)) return null;
   const pia = resolvePiaMonthly(draft, client);
   if (pia == null) return null;
   const dob = draft.owner === "spouse" ? client.spouseDob : client.dateOfBirth;
@@ -191,7 +200,7 @@ export function ssEntryPreview(draft: Income, other: Income | null, client: Clie
       topUps[them] = theirs.spousal / 12;
     }
   }
-  return { piaMonthly: pia, ownAnnual, topUps };
+  return { piaMonthly: pia, otherPiaMonthly: other ? resolvePiaMonthly(other, client) : null, ownAnnual, topUps };
 }
 
 /** The engine row an editor previews: the typed amount read in its unit and

@@ -43,4 +43,17 @@ describe("SocialSecurityCard summary", () => {
     expect(summary({ ssBenefitMode: "pia_at_fra", piaMonthly: 4505 }))
       .toBe("$4,505/mo PIA · claim 70y 0mo · $68,476/yr est.");
   });
+
+  // A raw list-GET row on "Estimate from Salary" stores no PIA; the projection
+  // pays the salary estimate ($3,218/mo off $100,000), so the card says so.
+  it("shows an unset PIA as the salary estimate the projection pays", () => {
+    const salary = { id: "s", type: "salary", owner: "client", annualAmount: "100000.00", endYear: 2099 };
+    render(
+      <SocialSecurityCard clientId="c1" clientInfo={DOUGLAS} planSettings={{} as PlanSettings}
+        incomes={[{ ...ROW, ssBenefitMode: "pia_at_fra", piaMonthly: null }, salary] as unknown as Income[]}
+        onSaved={() => {}} canEdit={false} />,
+    );
+    expect(screen.getByText(/claim 70y 0mo/).textContent)
+      .toBe("$3,218/mo PIA · claim 70y 0mo · $48,914/yr est.");
+  });
 });
