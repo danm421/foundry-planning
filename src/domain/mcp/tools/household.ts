@@ -201,7 +201,7 @@ const getInsurance = defineTool({
   title: "Insurance coverage",
   description:
     "The household's life insurance policies (type, owner, insured, death benefit, cash value, " +
-    "premium, term expiry, beneficiaries) disability policies and long-term care policies. All are read from the " +
+    "premium, term expiry, beneficiaries), disability policies and long-term care policies. All are read from the " +
     "household's base data, not any what-if scenario — this tool takes no scenarioId.",
   inputSchema: z.object({
     clientId: z

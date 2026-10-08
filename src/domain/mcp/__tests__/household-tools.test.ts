@@ -489,7 +489,7 @@ describe("list_plan_details", () => {
 });
 
 describe("get_insurance", () => {
-  it("returns life and disability policies by value, with names resolved and a deep link", async () => {
+  it("returns life, disability and long-term care policies by value, with names resolved and a deep link", async () => {
     getClientWithContacts.mockResolvedValue({
       firstName: "John", lastName: "Smith", spouseFirstName: "Susan", spouseLastName: "Smith",
     });

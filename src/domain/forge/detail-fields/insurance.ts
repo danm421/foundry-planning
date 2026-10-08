@@ -710,26 +710,32 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
       { key: "benefitUnit", label: "Benefit per", kind: "enum", enumValues: ["day", "month"], defaultValue: "month" },
       {
         key: "riderBenefitMode", label: "Rider pays", kind: "enum", enumValues: ["pct_of_face", "fixed"], nullable: true,
-        defaultValue: null, notes: "Rider only.",
+        defaultValue: null, notes: "Rider only. Required for a rider; null on a traditional policy.",
       },
       {
         key: "riderMonthlyPct", label: "Monthly share of death benefit (%)", kind: "rate", nullable: true, defaultValue: null,
-        range: { max: 0.25 }, notes: "Decimal (0.02 = 2%). A share-of-death-benefit rider only.",
+        range: { max: 0.25 },
+        notes: "Decimal (0.02 = 2%). A share-of-death-benefit rider only; required then. Must be more than 0.",
       },
       {
         key: "benefitPeriodMode", label: "Benefits last", kind: "enum", enumValues: ["years", "lifetime"], nullable: true,
-        defaultValue: null, notes: "Traditional only. Options read \"For a number of years\" / \"For life\".",
+        defaultValue: null, notes: "Traditional only; required for a traditional policy. Options read \"For a number of years\" / \"For life\".",
       },
       {
         key: "benefitPeriodYears", label: "Benefit years", kind: "number", nullable: true, defaultValue: null,
         range: { min: 1, max: 20 }, aliases: ["Benefit Period"],
+        notes: "Traditional only. Required when benefitPeriodMode is \"years\".",
       },
       {
         key: "riderMaxPct", label: "Can pay out up to (% of death benefit)", kind: "rate", nullable: true, defaultValue: null,
-        range: { max: 1 }, notes: "Rider only. Decimal (1 = 100%).",
+        range: { max: 1 }, notes: "Rider only; required for a rider. Decimal (1 = 100%). Must be more than 0.",
       },
-      { key: "extensionYears", label: "Extension (years)", kind: "number", defaultValue: 0, range: { min: 0, max: 10 } },
-      { key: "residualDeathBenefit", label: "Guaranteed death benefit", kind: "money", defaultValue: 0, range: { min: 0 } },
+      { key: "extensionYears", label: "Extension (years)", kind: "number", defaultValue: 0, range: { min: 0, max: 10 },
+        notes: "Rider only (hybrid policies). A traditional policy's is stored as 0.",
+      },
+      { key: "residualDeathBenefit", label: "Guaranteed death benefit", kind: "money", defaultValue: 0, range: { min: 0 },
+        notes: "Rider only (hybrid policies). A traditional policy's is stored as 0.",
+      },
       {
         key: "eliminationDays", label: "Waiting period (days)", kind: "number", defaultValue: 90, range: { min: 0, max: 730 },
         aliases: ["Elimination Period", "Waiting Period"],
@@ -751,12 +757,16 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
       },
       {
         key: "premiumPayMode", label: "Premiums paid", kind: "enum", enumValues: ["lifetime", "to_age", "years", "paid_up"],
-        defaultValue: "lifetime",
+        defaultValue: "lifetime", notes: "Traditional only. A rider's is stored as \"paid_up\".",
       },
-      { key: "premiumPayToAge", label: "Premiums paid to age", kind: "number", nullable: true, defaultValue: null, range: { min: 40, max: 110 } },
+      {
+        key: "premiumPayToAge", label: "Premiums paid to age", kind: "number", nullable: true, defaultValue: null,
+        range: { min: 40, max: 110 },
+        notes: "Traditional only. Required when premiumPayMode is \"to_age\"; null on a rider.",
+      },
       {
         key: "premiumPayYears", label: "Premiums paid for (years)", kind: "number", nullable: true, defaultValue: null,
-        range: { min: 1, max: 60 }, notes: "Counted from the issue year.",
+        range: { min: 1, max: 60 }, notes: "Traditional only. Required when premiumPayMode is \"years\"; null on a rider. Counted from the issue year.",
       },
       { key: "partnership", label: "State partnership policy", kind: "boolean", defaultValue: false },
       { key: "notes", label: "Notes", kind: "text", nullable: true, defaultValue: null },
