@@ -85,6 +85,7 @@ import { noteDateToOccurredAt } from "@/lib/crm/notes";
 import { syncHouseholdNameFromContacts } from "@/lib/crm/sync-household-name";
 import { deriveHouseholdNameFromContacts } from "@/lib/crm/household-name";
 import { upsertPrimaryAndSpouseContacts } from "@/lib/crm/upsert-household-contact";
+import { ssBenefitPatch } from "@/lib/intake/social-security";
 
 // Drizzle transaction handle — same convention as create-client.ts / ownership.ts.
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -201,27 +202,10 @@ async function applyIntakeSocialSecurity(
     if (owner === "spouse" && !args.hasSpouse) continue;
     const pia = args.ss[owner]?.piaMonthly || undefined;
     const age = args.ss[owner]?.claimingAge;
-    const benefitAge = args.ss[owner]?.benefitAge;
     if (pia === undefined && age === undefined) continue;
 
-    // A figure quoted at another age is a benefit-at-age entry; the engine
-    // prices it off the PIA it implies.
-    const benefitPatch =
-      pia !== undefined && benefitAge !== undefined
-        ? {
-            ssBenefitMode: "manual_amount" as const,
-            annualAmount: String(pia * 12),
-            piaMonthly: null,
-            ssStatedAge: benefitAge,
-            ssStatedAgeMonths: 0,
-            ssAmountUnit: "monthly" as const,
-          }
-        : pia !== undefined
-          ? { piaMonthly: String(pia), ssBenefitMode: "pia_at_fra" as const }
-          : {};
-
     const patch = {
-      ...benefitPatch,
+      ...ssBenefitPatch(pia, args.ss[owner]?.benefitAge),
       ...(age !== undefined && {
         claimingAge: age,
         claimingAgeMonths: 0,

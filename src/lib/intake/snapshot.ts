@@ -22,6 +22,7 @@ import {
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import type { IntakePayload } from "@/lib/intake/schema";
+import { ssAnswerFromRow } from "@/lib/intake/social-security";
 import {
   INTAKE_ACCOUNT_CATEGORY_VALUES,
   isSubTypeOfCategory,
@@ -154,46 +155,6 @@ function mapIncomeType(dbType: string): IntakeIncomeType {
       // deferred, capital_gains, trust, other → other
       return "other";
   }
-}
-
-/**
- * A Social Security row as the step's two answers — only what the step can
- * show exactly. Apply writes back whatever the form carries, so seeding an
- * approximation would rewrite the plan on an untouched form: a claim at
- * 66y 6mo would come back as 66, and a row claiming at FRA would be pinned to
- * a fixed age. Those read "Not sure", which apply leaves alone.
- */
-function ssAnswerFromRow(row: {
-  piaMonthly: string | null;
-  annualAmount: string | null;
-  ssBenefitMode: string | null;
-  ssStatedAge: number | null;
-  ssStatedAgeMonths: number | null;
-  claimingAge: number | null;
-  claimingAgeMonths: number | null;
-  claimingAgeMode: string | null;
-}): NonNullable<IntakePayload["socialSecurity"]>["client"] {
-  const pia = Number(row.piaMonthly ?? 0);
-  const age = row.claimingAge;
-  return {
-    ...(row.ssBenefitMode === "pia_at_fra" && pia > 0 ? { piaMonthly: pia } : {}),
-    // A benefit quoted at a whole age reads back as that age. One with no stated
-    // age is priced at its own claim age, which the step cannot show: "Not sure".
-    ...(row.ssBenefitMode === "manual_amount" &&
-    row.ssStatedAge !== null &&
-    (row.ssStatedAgeMonths ?? 0) === 0 &&
-    Number(row.annualAmount) > 0
-      ? { piaMonthly: Number(row.annualAmount) / 12, benefitAge: row.ssStatedAge }
-      : {}),
-    // A NULL mode reads as "years" in the engine (`claimAge.ts`), so it counts.
-    ...((row.claimingAgeMode ?? "years") === "years" &&
-    (row.claimingAgeMonths ?? 0) === 0 &&
-    age !== null &&
-    age >= 62 &&
-    age <= 70
-      ? { claimingAge: age }
-      : {}),
-  };
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────

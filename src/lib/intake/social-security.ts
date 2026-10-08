@@ -27,6 +27,77 @@ export function socialSecurityAnswerLabel(a: Answer): string | null {
   return line[0].toUpperCase() + line.slice(1);
 }
 
+type StatedRow = {
+  piaMonthly: string | null;
+  annualAmount: string | null;
+  ssBenefitMode: string | null;
+  ssStatedAge: number | null;
+  ssStatedAgeMonths: number | null;
+  ssAmountUnit: string | null;
+  claimingAge: number | null;
+  claimingAgeMonths: number | null;
+  claimingAgeMode: string | null;
+};
+
+/**
+ * A Social Security row as the step's answers — only what the step can show
+ * exactly. Apply writes back whatever the form carries, so seeding an
+ * approximation would rewrite the plan on an untouched form: a claim at
+ * 66y 6mo would come back as 66, and a row claiming at FRA would be pinned to
+ * a fixed age. Those read "Not sure", which apply leaves alone.
+ */
+export function ssAnswerFromRow(row: StatedRow): Answer {
+  const pia = Number(row.piaMonthly ?? 0);
+  const age = row.claimingAge;
+  return {
+    ...(row.ssBenefitMode === "pia_at_fra" && pia > 0 ? { piaMonthly: pia } : {}),
+    // A benefit quoted at a whole age, in monthly terms, reads back as that age.
+    // A yearly figure would show as a per-month one; one with no stated age is
+    // priced at its own claim age. The step can show neither: "Not sure".
+    ...(row.ssBenefitMode === "manual_amount" &&
+    row.ssStatedAge !== null &&
+    (row.ssStatedAgeMonths ?? 0) === 0 &&
+    row.ssAmountUnit === "monthly" &&
+    Number(row.annualAmount) > 0
+      ? { piaMonthly: Number(row.annualAmount) / 12, benefitAge: row.ssStatedAge }
+      : {}),
+    // A NULL mode reads as "years" in the engine (`claimAge.ts`), so it counts.
+    ...((row.claimingAgeMode ?? "years") === "years" &&
+    (row.claimingAgeMonths ?? 0) === 0 &&
+    age !== null &&
+    age >= 62 &&
+    age <= 70
+      ? { claimingAge: age }
+      : {}),
+  };
+}
+
+/**
+ * The benefit half of the income-row patch for an answer. A figure quoted at
+ * another age is a benefit-at-age entry (the engine prices it off the PIA it
+ * implies); otherwise it is the PIA at full retirement age, which also clears
+ * any stated age an earlier answer left on the row.
+ */
+export function ssBenefitPatch(pia: number | undefined, benefitAge: number | undefined) {
+  if (pia === undefined) return {};
+  if (benefitAge !== undefined) {
+    return {
+      ssBenefitMode: "manual_amount" as const,
+      annualAmount: String(pia * 12),
+      piaMonthly: null,
+      ssStatedAge: benefitAge,
+      ssStatedAgeMonths: 0,
+      ssAmountUnit: "monthly" as const,
+    };
+  }
+  return {
+    piaMonthly: String(pia),
+    ssBenefitMode: "pia_at_fra" as const,
+    ssStatedAge: null,
+    ssStatedAgeMonths: null,
+  };
+}
+
 /**
  * One entry per person who answered, client first, named the way the step
  * named them. The co-client's answer is dropped when the form has no co-client
