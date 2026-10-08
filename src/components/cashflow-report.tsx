@@ -374,7 +374,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     [years, yearRange]
   );
 
-  // True when at least one visible year has structured SS detail (pia_at_fra mode).
+  // True when at least one visible year has structured SS detail (any PIA-priced row).
   // When false, the SS row renders exactly as before — no expand affordance.
   const hasSocialSecurityDetail = visibleYears.some((y) => y.socialSecurityDetail != null);
 
@@ -1463,9 +1463,9 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     // ── Income drill-down ──────────────────────────────────────────────────
 
     if (level === "income") {
-      // ── Social Security detail drill (pia_at_fra mode) ─────────────────
+      // ── Social Security detail drill (PIA-priced rows) ─────────────────
       // Only shown when at least one visible year carries structured SS detail.
-      // Legacy clients (manual_amount) fall through to the per-source handler below.
+      // Clients with no PIA-priced row fall through to the per-source handler below.
       if (subLevel === "socialSecurity" && hasSocialSecurityDetail) {
         const clientName = clientData?.client.firstName ?? "Client";
         const spouseName = clientData?.client.spouseName ?? CO_CLIENT_LABEL;
@@ -1522,11 +1522,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             (r) => r.socialSecurityDetail?.spouse?.survivor ?? 0,
             (info) => fmtSS(info.getValue() as number)
           )] : []),
-          // Reconciling column: when some SS rows are in pia_at_fra mode
-          // (captured in socialSecurityDetail) and others are in
-          // manual_amount mode (NOT captured there), the per-spouse columns
-          // sum to less than income.socialSecurity. Surface that residual
-          // explicitly so the drill reconciles with the parent.
+          // Reconciling column: rows the engine cannot price off a PIA (a
+          // year-by-year schedule, or no claim age) are NOT captured in
+          // socialSecurityDetail, so the per-spouse columns sum to less than
+          // income.socialSecurity. Every other entry has its own Retirement /
+          // Spousal / Survivor columns. Surface the residual explicitly so the
+          // drill reconciles with the parent.
           ...(visibleYears.some((y) => {
             const d = y.socialSecurityDetail;
             const detailed =
@@ -1535,7 +1536,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             return y.income.socialSecurity - detailed > 0.5; // >$0.5 tolerance
           }) ? [col(
             "ss_manual_residual",
-            "Manual / Legacy SS",
+            "Fixed amount",
             (r) => {
               const d = r.socialSecurityDetail;
               const detailed =

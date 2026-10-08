@@ -308,10 +308,18 @@ describe("buildMapGoals", () => {
       claimAgeLabel: "67",
       claimAgeYears: 67,
       claimAgeMode: "years",
-      // Null in manual mode — `amount` IS the annual figure, and a second copy
-      // of it is only somewhere for the two to drift.
-      estimatedAnnual: null,
+      // Own benefit off the PIA the stated amount implies: $48,000/yr quoted at
+      // the claim age 67 (Dan's FRA) is a PIA of $4,000/mo, paid unadjusted.
+      estimatedAnnual: 48000,
     });
+  });
+
+  it("estimates a benefit stated at an age off its PIA, and says so on the read-only line", () => {
+    // $68,478/yr claimed at 70 (stated age = claim age) round-trips to itself.
+    const card = buildMapGoals(withSs([ssIncome({ annualAmount: 68478, claimingAge: 70 })]))
+      .find((g) => g.id === "milestone:client_social_security");
+    expect(card?.socialSecurity?.estimatedAnnual).toBe(68478);
+    expect(card?.detail).toContain("est. $68,478/yr");
   });
 
   // ── the claim-age editor's payload ──────────────────────────────────────
@@ -446,8 +454,10 @@ describe("buildMapGoals", () => {
   // exists for.
   it("writes a detail line carrying the claim age and the benefit", () => {
     const manual = buildMapGoals(withSs([ssIncome({ annualAmount: 48000 })]));
+    // The est. part appears for a stated amount too: $48,000/yr at 67 (Dan's
+    // FRA) is a $4,000/mo PIA paid unadjusted, so the estimate is $48,000.
     expect(manual.find((g) => g.id === "milestone:client_social_security")?.detail).toBe(
-      "age 67 · $48,000/yr",
+      "age 67 · $48,000/yr · est. $48,000/yr",
     );
 
     const pia = buildMapGoals(
@@ -465,7 +475,7 @@ describe("buildMapGoals", () => {
   it("names a DERIVED claim-age mode in the detail line, and stays quiet for years", () => {
     const fra = buildMapGoals(withSs([ssIncome({ claimingAgeMode: "fra" })]));
     expect(fra.find((g) => g.id === "milestone:client_social_security")?.detail).toBe(
-      "age 67 (FRA) · $48,000/yr",
+      "age 67 (FRA) · $48,000/yr · est. $48,000/yr",
     );
 
     const atRetirement = buildMapGoals(
@@ -473,13 +483,13 @@ describe("buildMapGoals", () => {
     );
     expect(
       atRetirement.find((g) => g.id === "milestone:client_social_security")?.detail,
-    ).toBe("age 65 (at retirement) · $48,000/yr");
+    ).toBe("age 65 (at retirement) · $48,000/yr · est. $48,000/yr");
 
     // No hint in `years` mode — the age IS the stored choice, so a parenthetical
     // would be noise on every card that has one.
     const years = buildMapGoals(withSs([ssIncome({ claimingAgeMode: "years" })]));
     expect(years.find((g) => g.id === "milestone:client_social_security")?.detail).toBe(
-      "age 67 · $48,000/yr",
+      "age 67 · $48,000/yr · est. $48,000/yr",
     );
   });
 

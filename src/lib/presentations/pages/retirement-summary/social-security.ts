@@ -6,6 +6,7 @@
 import type { ClientData, ClientInfo, Income } from "@/engine/types";
 import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement";
 import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
+import { resolvePiaMonthly } from "@/engine/socialSecurity/resolvePia";
 import { birthYear } from "./aggregate";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
@@ -31,7 +32,7 @@ function buildOne(
   nowYear: number,
 ): SsClient | null {
   if (!income || !dob) return null;
-  const pia = income.piaMonthly ?? 0;
+  const pia = resolvePiaMonthly(income, client) ?? 0;
   if (pia <= 0) return null;
 
   const selectedMonths = resolveClaimAgeMonths(income, client) ?? (income.claimingAge ?? 67) * 12;

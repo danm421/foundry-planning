@@ -5,7 +5,7 @@ import { buildSocialSecurity } from "../social-security";
 function ssIncome(over: Partial<Income>): Income {
   return {
     id: "ss1", type: "social_security", owner: "client", name: "Social Security",
-    piaMonthly: 2800, claimingAge: 67, claimingAgeMonths: 0, claimingAgeMode: "years",
+    ssBenefitMode: "pia_at_fra", piaMonthly: 2800, claimingAge: 67, claimingAgeMonths: 0, claimingAgeMode: "years",
     growthRate: 0.025, startYear: 2031, endYear: 2099,
     ...over,
   } as unknown as Income;
@@ -74,5 +74,21 @@ describe("buildSocialSecurity", () => {
     expect(res.spouse).not.toBeNull();
     expect(res.spouse!.piaMonthly).toBe(2100);
     expect(res.spouse!.ladder.find((r) => r.selected)!.age).toBe(70);
+  });
+
+  it("builds a ladder for a benefit stated at an age, off the PIA it implies", () => {
+    // Paul: born 1958-02-24 (FRA 66y8mo). $68,478/yr claimed at 70 is
+    // 5706.50/mo ÷ 1.26667 (40 months of 2/3% credits) = a PIA of 4505.13.
+    const data = cd({
+      client: { dateOfBirth: "1958-02-24", retirementAge: 70, spouseDob: null, spouseRetirementAge: null } as never,
+      incomes: [ssIncome({
+        ssBenefitMode: "manual_amount", piaMonthly: undefined, annualAmount: 68478, claimingAge: 70,
+      })],
+    });
+    const c = buildSocialSecurity(data, 2026).client!;
+    expect(c).not.toBeNull();
+    expect(c.piaMonthly).toBeCloseTo(4505.13, 1);
+    expect(c.ladder.find((r) => r.age === 70)!.monthly).toBeCloseTo(5706.5, 1);
+    expect(c.ladder.find((r) => r.selected)!.age).toBe(70);
   });
 });

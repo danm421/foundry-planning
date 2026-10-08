@@ -6,6 +6,8 @@
 // its editor is a different dialog from every other flow's.
 import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
 import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement";
+import { resolvePiaMonthly } from "@/engine/socialSecurity/resolvePia";
+import { asSsIncome } from "@/lib/social-security/benefit-entry";
 import { birthYearFromDob } from "@/lib/age-year";
 import type { ClientInfo, Income } from "@/engine/types";
 import type { FlowStartNote } from "./types";
@@ -102,7 +104,7 @@ export function ssClaim(row: Income, client: ClientInfo): SsClaim | null {
 }
 
 /**
- * The first-year annual benefit a `pia_at_fra` row implies at `claimAgeMonths`,
+ * The first-year annual benefit any PIA-priced row implies at `claimAgeMonths`,
  * or null when the PIA is unset/zero or the owner has no DOB.
  *
  * OWN retirement only — no spousal or survivor top-up, which
@@ -115,7 +117,7 @@ export function ssEstimatedAnnual(
   client: ClientInfo,
   claimAgeMonths: number,
 ): number | null {
-  const pia = row.piaMonthly == null ? null : Number(row.piaMonthly);
+  const pia = resolvePiaMonthly(asSsIncome(row), client);
   if (pia == null || !(pia > 0)) return null;
   const dob = ownerDob(row, client);
   if (!dob) return null;

@@ -6,6 +6,8 @@ import { SocialSecurityDialog } from "./social-security-dialog";
 import { fraForBirthDate } from "@/engine/socialSecurity/fra";
 import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement";
 import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
+import { resolvePiaMonthly } from "@/engine/socialSecurity/resolvePia";
+import { asSsIncome, ssEntryLabel } from "@/lib/social-security/benefit-entry";
 import { personLabel } from "@/lib/owner-labels";
 
 export interface SocialSecurityCardProps {
@@ -30,11 +32,12 @@ function summaryLabel(row: Income | null, clientInfo: ClientInfo, owner: "client
   const mode = row.ssBenefitMode ?? "manual_amount";
   if (mode === "no_benefit") return "No Benefit";
 
-  const modeLabel = mode === "pia_at_fra" ? "PIA" : "Annual";
-  const claimLabel = claimAgeLabel(row, clientInfo, owner);
   const preview = previewAmount(row, clientInfo);
-  const previewLabel = preview != null ? ` · $${preview.toLocaleString()}/yr est.` : "";
-  return `${modeLabel} · ${claimLabel}${previewLabel}`;
+  return [
+    ssEntryLabel(asSsIncome(row), clientInfo) ?? (mode === "pia_at_fra" ? "PIA not set" : "Amount not set"),
+    `claim ${claimAgeLabel(row, clientInfo, owner)}`,
+    preview != null ? `$${preview.toLocaleString()}/yr est.` : null,
+  ].filter(Boolean).join(" · ");
 }
 
 function claimAgeLabel(row: Income, clientInfo: ClientInfo, owner: "client" | "spouse"): string {
@@ -54,15 +57,11 @@ function claimAgeLabel(row: Income, clientInfo: ClientInfo, owner: "client" | "s
 
 function previewAmount(row: Income, clientInfo: ClientInfo): number | null {
   if (row.ssBenefitMode === "no_benefit") return null;
-  if (row.ssBenefitMode === "manual_amount") return row.annualAmount ? Number(row.annualAmount) : null;
-
+  const pia = resolvePiaMonthly(asSsIncome(row), clientInfo);
   const dob = row.owner === "spouse" ? clientInfo.spouseDob : clientInfo.dateOfBirth;
-  if (!dob || row.piaMonthly == null || Number(row.piaMonthly) <= 0) return null;
-  const claimAgeMonths = resolveClaimAgeMonths(row, clientInfo);
-  if (claimAgeMonths == null) return null;
-
-  const monthly = computeOwnMonthlyBenefit({ piaMonthly: Number(row.piaMonthly), claimAgeMonths, dob });
-  return Math.round(monthly * 12);
+  const claim = resolveClaimAgeMonths(row, clientInfo);
+  if (pia == null || !(pia > 0) || !dob || claim == null) return null;
+  return Math.round(computeOwnMonthlyBenefit({ piaMonthly: pia, claimAgeMonths: claim, dob }) * 12);
 }
 
 export function SocialSecurityCard({ clientId, clientInfo, planSettings, incomes, onSaved, canEdit = true }: SocialSecurityCardProps) {

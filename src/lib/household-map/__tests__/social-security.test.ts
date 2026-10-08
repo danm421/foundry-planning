@@ -1,6 +1,6 @@
 // src/lib/household-map/__tests__/social-security.test.ts
 import { describe, it, expect } from "vitest";
-import { isSocialSecurityIncome, ssStartNote } from "../social-security";
+import { isSocialSecurityIncome, ssEstimatedAnnual, ssStartNote } from "../social-security";
 import type { ClientInfo, Income } from "@/engine/types";
 
 const CLIENT: ClientInfo = {
@@ -135,5 +135,24 @@ describe("ssStartNote", () => {
 
   it("returns null for a non-social-security income", () => {
     expect(ssStartNote(ssRow({ type: "salary" }), CLIENT, 2026)).toBeNull();
+  });
+});
+
+describe("ssEstimatedAnnual", () => {
+  // Paul: born 1958-02-24, FRA 66y8mo. $68,478/yr stated at 70 is a PIA of
+  // 4505.1316 (5706.50 / 1.26667); claimed at 67 (4 months past FRA) it pays
+  // PIA × (1 + 4 × 2/300).
+  const PAUL: ClientInfo = { ...CLIENT, dateOfBirth: "1958-02-24" };
+
+  it("prices a benefit stated at an age through its PIA", () => {
+    const row = ssRow({
+      ssBenefitMode: "manual_amount", piaMonthly: undefined, annualAmount: 68478,
+      claimingAge: 70, ssStatedAge: 70, ssStatedAgeMonths: 0,
+    });
+    expect(ssEstimatedAnnual(row, PAUL, 67 * 12)).toBe(Math.round(4505.1316 * (1 + (4 * 2) / 300) * 12));
+  });
+
+  it("still prices a PIA row off the stored PIA", () => {
+    expect(ssEstimatedAnnual(ssRow({ piaMonthly: 2800 }), PAUL, 800)).toBe(33600);
   });
 });

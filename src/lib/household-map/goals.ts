@@ -92,9 +92,9 @@ export interface GoalSocialSecurity {
    */
   claimAgeMode: SsClaimAgeMode;
   /**
-   * The first-year benefit the PIA implies at this claim age — `pia_at_fra` only,
-   * and null when the PIA is unset. Null in `manual_amount` too, where `amount`
-   * IS the annual figure and a second copy of it would only invite drift.
+   * The first-year benefit the PIA implies at this claim age, for both modes (a
+   * stated benefit is priced through the PIA it implies, so its claim-age figure
+   * can differ from `amount`). Null when there is no PIA to price off.
    *
    * Own retirement only; see `ssEstimatedAnnual`. Always rendered as an estimate.
    */
@@ -439,8 +439,7 @@ function socialSecurityMilestones(input: BuildMapGoalsInput): MapGoal[] {
       row.ssBenefitMode === "pia_at_fra" ? "pia_at_fra" : "manual_amount";
     const amount =
       mode === "pia_at_fra" ? Number(row.piaMonthly ?? 0) : Number(row.annualAmount ?? 0);
-    const estimatedAnnual =
-      mode === "pia_at_fra" ? ssEstimatedAnnual(row, clientInfo, claim.claimAgeMonths) : null;
+    const estimatedAnnual = ssEstimatedAnnual(row, clientInfo, claim.claimAgeMonths);
 
     // The read-only fallback line, for a board rendered without a writer (the
     // client portal's Organizer). It has to carry the same three facts the
@@ -449,7 +448,7 @@ function socialSecurityMilestones(input: BuildMapGoalsInput): MapGoal[] {
     const detail = [
       modeHint ? `age ${claim.ageLabel} (${modeHint})` : `age ${claim.ageLabel}`,
       mode === "pia_at_fra" && amount <= 0 ? "PIA not set" : benefitLabel(mode, amount),
-      mode === "pia_at_fra" && estimatedAnnual != null
+      estimatedAnnual != null
         ? `est. ${currency.format(estimatedAnnual)}/yr`
         : null,
     ]
