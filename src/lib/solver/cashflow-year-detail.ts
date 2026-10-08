@@ -50,13 +50,13 @@ function sum(items: CashFlowLineItem[]): number {
 
 /** Build id→name maps from the working client data (mirrors cashflow-report.tsx). */
 export function buildNameMaps(clientData: ClientData) {
-  // runProjection expands the LTC event itself (care rows, home sale). Name
+  // runProjection expands the LTC event itself (care rows, home sale, LTC benefit rows). Name
   // them from the same expanded tree, or they count in totals but vanish from
   // drill-downs. Never feed it back to runProjection.
   const ltcTree = applyLtcEvent(clientData).data;
 
   const incomeNames: Record<string, string> = {};
-  for (const inc of clientData.incomes ?? []) {
+  for (const inc of ltcTree.incomes ?? []) {
     if (inc.type === "business" && inc.ownerEntityId != null) continue;
     incomeNames[inc.id] = inc.name;
   }
@@ -121,7 +121,7 @@ export function buildNameMaps(clientData: ClientData) {
   for (const exp of ltcTree.expenses ?? []) expenseTypeById[exp.id] = exp.type;
 
   const incomeTypeById: Record<string, Income["type"]> = {};
-  for (const inc of clientData.incomes ?? []) incomeTypeById[inc.id] = inc.type;
+  for (const inc of ltcTree.incomes ?? []) incomeTypeById[inc.id] = inc.type;
 
   const noteNames: Record<string, string> = {};
   for (const note of clientData.notesReceivable ?? []) noteNames[note.id] = note.name;

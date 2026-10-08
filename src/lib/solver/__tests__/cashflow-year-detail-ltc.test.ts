@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { runProjection } from "@/engine/projection";
 import { ltcCareExpenseId, ltcHomeSaleId } from "@/engine/ltc-event";
 import { buildClientData, baseClient, basePlanSettings } from "@/engine/__tests__/fixtures";
-import { buildCashFlowYearDetail } from "../cashflow-year-detail";
+import type { LtcPolicy } from "@/engine/types";
+import { buildCashFlowYearDetail, buildNameMaps } from "../cashflow-year-detail";
 
 const ID = "3f1c2d7e-8a1b-4c5d-9e0f-112233445566";
 const tree = buildClientData({
@@ -42,5 +43,26 @@ describe("year detail lists the LTC care row by name", () => {
       label: "Net Proceeds: Home sale — long-term care",
       amount: expect.any(Number),
     });
+  });
+});
+
+const genworth: LtcPolicy = {
+  id: "trad", name: "Genworth", insured: "client", carrier: null, kind: "standalone",
+  lifePolicyAccountId: null, issueYear: 2020, benefitAmount: 6000, benefitUnit: "month",
+  riderBenefitMode: null, riderMonthlyPct: null, benefitPeriodMode: "years", benefitPeriodYears: 3,
+  riderMaxPct: null, extensionYears: 0, residualDeathBenefit: 0, eliminationDays: 90, homeCarePct: 1,
+  inflationRider: "none", inflationRate: 0.03, benefitType: "reimbursement", sharedCare: false,
+  annualPremium: 0, premiumPayMode: "paid_up", premiumPayToAge: null, premiumPayYears: null,
+  partnership: false, notes: null,
+};
+
+describe("year detail names an LTC policy's benefit", () => {
+  it("lists 'Genworth benefit' with the year's payment", () => {
+    const insured = { ...tree, ltcPolicies: [genworth] };
+    // 2056 is a full year of benefits: 12 x 6,000 = 72,000 (care costs far more).
+    const year = runProjection(insured).find((y) => y.year === 2056)!;
+    const items = buildCashFlowYearDetail(year, insured).inflows.flatMap((c) => c.items);
+    expect(items).toContainEqual({ id: "ltc-benefit-trad", label: "Genworth benefit", amount: 72_000 });
+    expect(buildNameMaps(insured).incomeTypeById["ltc-benefit-trad"]).toBe("other");
   });
 });

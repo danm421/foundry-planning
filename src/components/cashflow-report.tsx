@@ -336,7 +336,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   // runProjection expands the LTC event itself (care rows, home sale,
   // care-shortened lifespan, possibly a later plan end). Read the same expanded
   // tree for row names, the year range and the age column, so the report
-  // matches the projection. Never feed it back to runProjection.
+  // matches the projection. LTC benefit rows exist only on the expanded tree.
+  // Never feed it back to runProjection.
   const ltcTree = useMemo(
     () => (clientData ? applyLtcEvent(clientData).data : null),
     [clientData]
@@ -691,7 +692,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   const techniqueIncomeIds: string[] = [];
   const techniqueExpenseIds: string[] = [];
   if (clientData) {
-    for (const inc of clientData.incomes) {
+    for (const inc of (ltcTree ?? clientData).incomes) {
       // Skip entity-owned business incomes from the household drill-down — the
       // Business column now shows entity distributions (keyed by entity id), not
       // gross income (keyed by income row id). Including these would create
