@@ -5903,8 +5903,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     // 6. Route each income to its cash account (override or default for owner).
     // Prefer the per-source amount already resolved by `computeIncome` — that
-    // handles pia_at_fra (orchestrator), schedule overrides, spousal / survivor
-    // logic, and the no_benefit / deceased-spouse suppressions. Falling back
+    // handles PIA-priced rows (an entered PIA, a salary estimate, or a benefit
+    // stated at an age — all through the orchestrator), schedule overrides,
+    // spousal / survivor logic, and the no_benefit / deceased-spouse
+    // suppressions. Falling back
     // to `annualAmount × growth^N` here would re-derive SS with legacy rules
     // and credit a different number than `income.socialSecurity` shows (and
     // than `socialSecurityGross` fed into the tax calc), producing three

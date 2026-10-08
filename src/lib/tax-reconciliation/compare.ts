@@ -63,9 +63,10 @@ export function deflate(amount: number, rate: number, years: number): number {
  *
  *  Two engine paths never reach that formula, so this is not the whole rule:
  *  a row carrying year-by-year `scheduleOverrides` reads its amount straight
- *  out of the schedule, and a Social Security row in `pia_at_fra` mode is
- *  resolved by the benefit orchestrator instead. Callers comparing those rows
- *  against a return get the growth-branch figure, not the engine's. */
+ *  out of the schedule, and a PIA-priced Social Security row (an entered PIA,
+ *  a salary estimate, or a benefit stated at an age) is resolved by the
+ *  benefit orchestrator instead. Callers comparing those rows against a
+ *  return get the growth-branch figure, not the engine's. */
 export function rowAmountInYear(
   row: { annualAmount: number; growthRate: number; startYear: number; inflationStartYear: number | null },
   year: number,
