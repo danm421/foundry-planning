@@ -176,7 +176,7 @@ describe("Estimate from Salary", () => {
       CLIENT_SALARY,
     );
 
-    expect(radio(/Annual benefit amount/i).checked).toBe(true);
+    expect(radio(/Benefit at a specific age/i).checked).toBe(true);
     expect(screen.queryByPlaceholderText("e.g. 2800")).toBeNull();
   });
 });

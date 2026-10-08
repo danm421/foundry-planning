@@ -8,6 +8,7 @@
 import { useState } from "react";
 import type { LivingExpenseItem, LivingItemFrequency } from "@/engine/types";
 import { CurrencyInput } from "@/components/currency-input";
+import { FrequencyToggle } from "@/components/forms/frequency-toggle";
 import { InlineAmount } from "@/components/forms/inline-amount";
 import {
   isTotalOverridden,
@@ -41,36 +42,6 @@ export interface LivingExpenseItemsProps {
   onSave: (next: LivingExpenseItem[]) => Promise<boolean>;
   onUseItemsTotal: () => Promise<boolean>;
   onMakeGoal: (item: LivingExpenseItem) => void;
-}
-
-function FrequencyToggle({
-  value,
-  onChange,
-  label,
-}: {
-  value: LivingItemFrequency;
-  onChange: (next: LivingItemFrequency) => void;
-  label: string;
-}) {
-  return (
-    <div role="group" aria-label={`How often for ${label}`} className="inline-flex shrink-0 gap-0.5 rounded-md border border-hair p-0.5 text-xs">
-      {(["monthly", "annual"] as const).map((f) => (
-        <button
-          key={f}
-          type="button"
-          aria-pressed={value === f}
-          onClick={() => {
-            if (value !== f) onChange(f);
-          }}
-          className={`rounded border px-1.5 ${
-            value === f ? "border-accent bg-accent/15 text-accent" : "border-transparent text-ink-3 hover:text-ink-2"
-          }`}
-        >
-          {SHORT[f]}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 export default function LivingExpenseItems({

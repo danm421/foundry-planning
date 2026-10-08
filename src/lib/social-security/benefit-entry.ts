@@ -26,7 +26,7 @@ export interface SsRowLike {
   piaMonthly?: number | string | null;
   growthRate?: number | string | null;
   startYear?: number;
-  endYear?: number;
+  endYear?: number | null;
   inflationStartYear?: number | null;
   ssBenefitMode?: string | null;
   claimingAge?: number | null;
