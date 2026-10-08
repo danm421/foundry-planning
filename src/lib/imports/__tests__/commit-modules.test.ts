@@ -1521,6 +1521,39 @@ describe("commitIncomes — Social Security reconciliation", () => {
     }
   });
 
+  it("pins a stated age only for a whole claim age from 62 to 70", async () => {
+    for (const claimingAge of [72, 61, 0]) {
+      const { tx, calls, setSelectResult } = makeFakeTx();
+      setSelectResult("incomes", [ssSlot("client")]);
+      await commitIncomes(tx, {
+        ...emptyPayload(),
+        incomes: [{ name: "Social Security", type: "social_security", owner: "client", annualAmount: 30000, claimingAge, match: { kind: "new" } }],
+      }, ctx);
+      const v = values(callsForTable(calls, "incomes").filter((c) => c.op === "update")[0]);
+      expect(v).toMatchObject({ ssStatedAge: null, ssStatedAgeMonths: null });
+    }
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("incomes", []);
+    await commitIncomes(tx, {
+      ...emptyPayload(),
+      incomes: [{ name: "Social Security", type: "social_security", owner: "client", annualAmount: 30000, claimingAge: 72, match: { kind: "new" } }],
+    }, ctx);
+    expect(values(callsForTable(calls, "incomes").filter((c) => c.op === "insert")[0])).toMatchObject({ ssStatedAge: null, ssStatedAgeMonths: null });
+  });
+
+  it("resets stale claim months when it writes the extracted claim age", async () => {
+    for (const slots of [[ssSlot("client", { claimingAgeMonths: 4 })], []]) {
+      const { tx, calls, setSelectResult } = makeFakeTx();
+      setSelectResult("incomes", slots);
+      await commitIncomes(tx, {
+        ...emptyPayload(),
+        incomes: [{ name: "Social Security", type: "social_security", owner: "client", annualAmount: 30000, claimingAge: 67, match: { kind: "new" } }],
+      }, ctx);
+      const v = values(callsForTable(calls, "incomes").filter((c) => c.op === (slots.length ? "update" : "insert"))[0]);
+      expect(v).toMatchObject({ claimingAge: 67, claimingAgeMonths: 0, ssStatedAge: 67, ssStatedAgeMonths: 0 });
+    }
+  });
+
   it("does not stamp a stated age on a slot kept on the PIA path", async () => {
     const { tx, calls, setSelectResult } = makeFakeTx();
     setSelectResult("incomes", [ssSlot("client", { ssBenefitMode: "pia_at_fra", piaMonthly: "3333.33" })]);

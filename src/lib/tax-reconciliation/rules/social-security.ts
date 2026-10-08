@@ -34,7 +34,11 @@ export const socialSecurityRules: Rule = (input) => {
     if (claimingAge == null) return [];
     return [{
       owner: r.owner, incomeId: r.id,
-      patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge, ssStatedAge: claimingAge, ssStatedAgeMonths: 0, ssAmountUnit: "annual", startYear: Math.min(r.startYear, plan.planSettings.planStartYear), inflationStartYear: taxYear },
+      // The claim age here is the person's CURRENT age, a stand-in rather than a known quote age,
+      // and the return's figure is the check actually paid. A NULL stated age (= the claim age)
+      // prices the same, never trips the 62-70 check on an SSDI or 71+ client, and makes any
+      // leftover claim months harmless.
+      patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge, ssStatedAge: null, ssStatedAgeMonths: null, ssAmountUnit: "annual", startYear: Math.min(r.startYear, plan.planSettings.planStartYear), inflationStartYear: taxYear },
     }];
   });
 

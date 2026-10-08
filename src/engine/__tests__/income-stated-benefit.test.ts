@@ -66,6 +66,14 @@ describe("computeIncome routes stated benefits through the orchestrator", () => 
     expect(r.socialSecurityDetail?.client.spousal).toBe(0);
   });
 
+  it("an imported whole-age figure (claim 67y0m, quoted 67y0m) pays exactly that figure", () => {
+    const imported: Income = {
+      ...paul, id: "i", annualAmount: 30000, growthRate: 0, inflationStartYear: 2030,
+      claimingAge: 67, claimingAgeMonths: 0, ssStatedAge: 67, ssStatedAgeMonths: 0,
+    };
+    expect(computeIncome([imported], 2032, douglas).bySource.i).toBeCloseTo(30000, 6);
+  });
+
   // Tax reconciliation's "Set benefit to the return's figure" writes the check ACTUALLY PAID and
   // clears the stated age. A row left pinned at 70 would be reduced again from a 67 claim.
   it("a row written with the return's figure and no stated age pays exactly that figure", () => {

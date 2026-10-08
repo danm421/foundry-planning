@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
+import { incomeUpdateSchema } from "@/lib/schemas/incomes";
 import { socialSecurityRules } from "../rules/social-security";
 import { CLIENT_ID, engineYearFixture, income, inputFixture, planFixture } from "./fixtures";
 import type { ActionTarget, PlanIncome, Suggestion } from "../types";
@@ -24,7 +25,7 @@ describe("socialSecurityRules", () => {
     expect(s.action?.ownerChoices).toBeUndefined();
     expect(s.action?.target).toEqual({
       kind: "income.socialSecurity.claim", amount: 30_000,
-      rows: [{ owner: "client", incomeId: "s1", patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge: 67, ssStatedAge: 67, ssStatedAgeMonths: 0, ssAmountUnit: "annual", startYear: 2026, inflationStartYear: 2025 } }],
+      rows: [{ owner: "client", incomeId: "s1", patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge: 67, ssStatedAge: null, ssStatedAgeMonths: null, ssAmountUnit: "annual", startYear: 2026, inflationStartYear: 2025 } }],
     });
     // Which side is which. The return figure is the benefit received; the plan figure is zero. A
     // swap would leave a card headlined "not in the plan yet" above a plan figure of $30,000.
@@ -195,6 +196,13 @@ describe("socialSecurityRules", () => {
     expect(planOnly.suggestions[0].action).toBeUndefined();
   });
 
+  it("claims a client aged 75 without a stated age, so the patch passes the update schema", () => {
+    const plan = planFixture({ client: { filingStatus: "single", dateOfBirth: "1950-03-01", spouseDob: null }, familyMembers: [], incomes: [ss("s1", "client", { startYear: 2026 })] });
+    const t = claim(socialSecurityRules(inputFixture({ facts: factsWith(30_000), plan })).suggestions[0]);
+    expect(t.rows[0].patch).toMatchObject({ claimingAge: 75, ssStatedAge: null, ssStatedAgeMonths: null });
+    expect(incomeUpdateSchema.safeParse(t.rows[0].patch).success).toBe(true);
+  });
+
   it("pulls a not-yet-started row's start back to the plan start and leaves an earlier start alone", () => {
     // Math.min in the claim patch, exercised in BOTH directions against a 2026 plan start: the row
     // seeded in 2024 keeps 2024, and the row that does not begin until 2030 is pulled back to 2026
@@ -202,8 +210,8 @@ describe("socialSecurityRules", () => {
     const plan = planFixture({ incomes: [ss("s1", "client", { startYear: 2024 }), ss("s2", "spouse", { startYear: 2030 })] });
     const t = claim(socialSecurityRules(inputFixture({ facts: factsWith(62_000), plan })).suggestions[0]);
     expect(t.rows).toEqual([
-      { owner: "client", incomeId: "s1", patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge: 65, ssStatedAge: 65, ssStatedAgeMonths: 0, ssAmountUnit: "annual", startYear: 2024, inflationStartYear: 2025 } },
-      { owner: "spouse", incomeId: "s2", patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge: 63, ssStatedAge: 63, ssStatedAgeMonths: 0, ssAmountUnit: "annual", startYear: 2026, inflationStartYear: 2025 } },
+      { owner: "client", incomeId: "s1", patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge: 65, ssStatedAge: null, ssStatedAgeMonths: null, ssAmountUnit: "annual", startYear: 2024, inflationStartYear: 2025 } },
+      { owner: "spouse", incomeId: "s2", patch: { ssBenefitMode: "manual_amount", claimingAgeMode: "years", claimingAge: 63, ssStatedAge: null, ssStatedAgeMonths: null, ssAmountUnit: "annual", startYear: 2026, inflationStartYear: 2025 } },
     ]);
   });
 

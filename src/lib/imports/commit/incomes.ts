@@ -8,6 +8,10 @@ import { resolveImportTiming } from "./timing";
 
 type SsPerson = "client" | "spouse";
 
+// A misread age outside 62-70 must not become a stated age: the income validator rejects it on the next save.
+const statedAgeOf = (claimingAge: number | null): number | null =>
+  claimingAge != null && Number.isInteger(claimingAge) && claimingAge >= 62 && claimingAge <= 70 ? claimingAge : null;
+
 /**
  * Commits the incomes tab.
  *
@@ -284,6 +288,8 @@ async function reconcileSocialSecurity(
         t.claimingAge != null ? "years" : (slot?.claimingAgeMode ?? "years"),
       updatedAt: now,
     };
+    // Whole-age statement figure: stale months on the slot must not re-price it.
+    if (t.claimingAge != null) fields.claimingAgeMonths = 0;
     if (preservePia) {
       result.warnings.push(
         `Social Security (${person}): kept the PIA-based benefit already saved ` +
@@ -297,8 +303,8 @@ async function reconcileSocialSecurity(
       // The extracted figure is the benefit at the extracted claim age — pin
       // it there so a later claim-age change prices early/late correctly.
       // With no extracted age, leave it NULL: it then follows the claim age.
-      fields.ssStatedAge = t.claimingAge ?? null;
-      fields.ssStatedAgeMonths = t.claimingAge != null ? 0 : null;
+      fields.ssStatedAge = statedAgeOf(t.claimingAge);
+      fields.ssStatedAgeMonths = fields.ssStatedAge != null ? 0 : null;
       fields.ssAmountUnit = "annual";
     }
     if (t.growthRate != null) fields.growthRate = String(t.growthRate);
@@ -330,10 +336,11 @@ async function reconcileSocialSecurity(
         growthRate: t.growthRate != null ? String(t.growthRate) : "0.02",
         owner: person,
         claimingAge: t.claimingAge ?? 67,
+        claimingAgeMonths: 0,
         claimingAgeMode: "years",
         ssBenefitMode: "manual_amount",
-        ssStatedAge: t.claimingAge ?? null,
-        ssStatedAgeMonths: t.claimingAge != null ? 0 : null,
+        ssStatedAge: statedAgeOf(t.claimingAge),
+        ssStatedAgeMonths: statedAgeOf(t.claimingAge) != null ? 0 : null,
         ssAmountUnit: "annual",
         source: "extracted",
       });
