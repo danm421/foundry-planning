@@ -1532,6 +1532,10 @@ describe("applyIntake — Social Security", () => {
       .select({
         owner: incomes.owner,
         piaMonthly: incomes.piaMonthly,
+        annualAmount: incomes.annualAmount,
+        ssStatedAge: incomes.ssStatedAge,
+        ssStatedAgeMonths: incomes.ssStatedAgeMonths,
+        ssAmountUnit: incomes.ssAmountUnit,
         ssBenefitMode: incomes.ssBenefitMode,
         claimingAge: incomes.claimingAge,
         claimingAgeMonths: incomes.claimingAgeMonths,
@@ -1578,6 +1582,23 @@ describe("applyIntake — Social Security", () => {
       claimingAgeMonths: 0,
       claimingAgeMode: "years",
     });
+  });
+
+  it("stores a benefit quoted at another age as a benefit-at-age entry, not a PIA", async () => {
+    const clientId = await applyWith(["income"], {
+      client: { piaMonthly: 5706.5, benefitAge: 70, claimingAge: 70 },
+    });
+
+    const [row] = await ssRows(clientId);
+    expect(row).toMatchObject({
+      ssBenefitMode: "manual_amount",
+      piaMonthly: null,
+      ssStatedAge: 70,
+      ssStatedAgeMonths: 0,
+      ssAmountUnit: "monthly",
+      claimingAge: 70,
+    });
+    expect(Number(row.annualAmount)).toBe(5706.5 * 12);
   });
 
   it("leaves the claim at full retirement age when only the benefit was given", async () => {

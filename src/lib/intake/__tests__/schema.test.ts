@@ -408,3 +408,15 @@ describe("the risk payload slice", () => {
     expect(draft.risk?.rtqVersion).toBeUndefined();
   });
 });
+
+describe("the Social Security benefit age", () => {
+  const parse = (client: unknown) => intakeDraftSchema.safeParse({ socialSecurity: { client } });
+
+  it("accepts a benefit quoted at any age from 62 to 70", () => {
+    expect(parse({ piaMonthly: 5706.5, benefitAge: 70 }).success).toBe(true);
+  });
+
+  it("rejects an age outside 62-70", () => {
+    expect(parse({ piaMonthly: 5706.5, benefitAge: 71 }).success).toBe(false);
+  });
+});

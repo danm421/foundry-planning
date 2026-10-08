@@ -11,6 +11,12 @@ describe("socialSecurityAnswerLabel", () => {
     );
   });
 
+  it("names the age the benefit is quoted at when it is not full retirement age", () => {
+    expect(
+      socialSecurityAnswerLabel({ piaMonthly: 5706.5, benefitAge: 70, claimingAge: 70 }),
+    ).toBe("$5,707/mo at 70 · start at 70");
+  });
+
   it("reads either half alone", () => {
     expect(socialSecurityAnswerLabel({ piaMonthly: 1950.4 })).toBe("$1,950/mo at FRA");
     expect(socialSecurityAnswerLabel({ claimingAge: 62 })).toBe("Start at 62");

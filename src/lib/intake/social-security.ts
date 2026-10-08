@@ -17,7 +17,9 @@ type Answer = IntakeSocialSecurity["client"];
  */
 export function socialSecurityAnswerLabel(a: Answer): string | null {
   const parts = [
-    a?.piaMonthly ? `$${Math.round(a.piaMonthly).toLocaleString()}/mo at FRA` : null,
+    a?.piaMonthly
+      ? `$${Math.round(a.piaMonthly).toLocaleString()}/mo at ${a.benefitAge ?? "FRA"}`
+      : null,
     a?.claimingAge !== undefined ? `start at ${a.claimingAge}` : null,
   ].filter((p): p is string => p !== null);
   if (parts.length === 0) return null;

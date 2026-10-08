@@ -468,5 +468,41 @@ describe("IncomeStep", () => {
         client: { piaMonthly: 3100, claimingAge: undefined },
       });
     });
+
+    it("asks which age the benefit is quoted at, defaulting to full retirement age", () => {
+      render(<IncomeStep {...makeProps()} clientName="Cooper" />);
+
+      const select = screen.getByRole("combobox", { name: "Cooper benefit is at age" });
+      const labels = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
+      expect(labels).toEqual([
+        "at full retirement age",
+        ...[62, 63, 64, 65, 66, 67, 68, 69, 70].map((a) => `at ${a}`),
+      ]);
+      expect(select).toHaveValue("");
+    });
+
+    it("reports the benefit age, and clears it on 'at full retirement age'", () => {
+      const onSocialSecurityChange = vi.fn();
+      render(
+        <IncomeStep
+          {...makeProps({
+            onSocialSecurityChange,
+            socialSecurity: { client: { piaMonthly: 5706.5 } },
+          })}
+          clientName="Cooper"
+        />,
+      );
+
+      const select = screen.getByRole("combobox", { name: "Cooper benefit is at age" });
+      fireEvent.change(select, { target: { value: "70" } });
+      expect(onSocialSecurityChange).toHaveBeenLastCalledWith({
+        client: { piaMonthly: 5706.5, benefitAge: 70 },
+      });
+
+      fireEvent.change(select, { target: { value: "" } });
+      expect(onSocialSecurityChange).toHaveBeenLastCalledWith({
+        client: { piaMonthly: 5706.5, benefitAge: undefined },
+      });
+    });
   });
 });

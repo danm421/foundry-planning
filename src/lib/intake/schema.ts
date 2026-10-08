@@ -82,7 +82,7 @@ export const intakeIncomeSchema = z.object({
 });
 
 // Social Security, asked on the Income step as one row per person: the monthly
-// benefit at full retirement age off their SSA statement, and the age they plan
+// benefit off their SSA statement, at full retirement age unless they say another age, and the age they plan
 // to start. Apply writes both onto that person's Social Security income row.
 //
 // Every field is optional even on submit — "I don't know yet" is a real answer
@@ -93,6 +93,8 @@ export const INTAKE_SS_CLAIMING_AGES = [62, 63, 64, 65, 66, 67, 68, 69, 70] as c
 
 const intakeSocialSecurityPersonSchema = z.object({
   piaMonthly: z.number().nonnegative().max(1e6).optional(),
+  // The age piaMonthly is quoted at. Absent = full retirement age.
+  benefitAge: z.number().int().min(62).max(70).optional(),
   claimingAge: z.number().int().min(62).max(70).optional(),
 });
 

@@ -306,6 +306,54 @@ describe("snapshotClientToPayload", () => {
     }
   });
 
+  it("reads a benefit quoted at an age back with that age, and a stated row with no age as 'Not sure'", async () => {
+    const ss = await db
+      .insert(incomes)
+      .values([
+        {
+          clientId,
+          scenarioId,
+          type: "social_security",
+          name: "Social Security — Alice",
+          annualAmount: String(5706.5 * 12),
+          owner: "client",
+          startYear: 2026,
+          endYear: 2065,
+          ssBenefitMode: "manual_amount",
+          ssStatedAge: 70,
+          ssStatedAgeMonths: 0,
+          ssAmountUnit: "monthly",
+          claimingAge: 70,
+          claimingAgeMonths: 0,
+          claimingAgeMode: "years",
+        },
+        // A stated amount with no stated age is priced at its own claim age —
+        // the step cannot show that, so it reads back with no benefit fields.
+        {
+          clientId,
+          scenarioId,
+          type: "social_security",
+          name: "Social Security — Sam",
+          annualAmount: "30000",
+          owner: "spouse",
+          startYear: 2026,
+          endYear: 2065,
+          ssBenefitMode: "manual_amount",
+          claimingAgeMode: "fra",
+        },
+      ])
+      .returning({ id: incomes.id });
+    try {
+      const payload = await snapshotClientToPayload(clientId, FIRM, ALL);
+      expect(payload.socialSecurity).toEqual({
+        client: { piaMonthly: 5706.5, benefitAge: 70, claimingAge: 70 },
+        spouse: {},
+      });
+    } finally {
+      await db.delete(incomes).where(inArray(incomes.id, ss.map((r) => r.id)));
+    }
+  });
+
   it("returns goals.clientRetirementAge from client row", async () => {
     const payload = await snapshotClientToPayload(clientId, FIRM, ALL);
     expect(payload.goals.clientRetirementAge).toBe(65);

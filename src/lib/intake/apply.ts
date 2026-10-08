@@ -201,10 +201,27 @@ async function applyIntakeSocialSecurity(
     if (owner === "spouse" && !args.hasSpouse) continue;
     const pia = args.ss[owner]?.piaMonthly || undefined;
     const age = args.ss[owner]?.claimingAge;
+    const benefitAge = args.ss[owner]?.benefitAge;
     if (pia === undefined && age === undefined) continue;
 
+    // A figure quoted at another age is a benefit-at-age entry; the engine
+    // prices it off the PIA it implies.
+    const benefitPatch =
+      pia !== undefined && benefitAge !== undefined
+        ? {
+            ssBenefitMode: "manual_amount" as const,
+            annualAmount: String(pia * 12),
+            piaMonthly: null,
+            ssStatedAge: benefitAge,
+            ssStatedAgeMonths: 0,
+            ssAmountUnit: "monthly" as const,
+          }
+        : pia !== undefined
+          ? { piaMonthly: String(pia), ssBenefitMode: "pia_at_fra" as const }
+          : {};
+
     const patch = {
-      ...(pia !== undefined && { piaMonthly: String(pia), ssBenefitMode: "pia_at_fra" as const }),
+      ...benefitPatch,
       ...(age !== undefined && {
         claimingAge: age,
         claimingAgeMonths: 0,

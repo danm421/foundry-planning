@@ -268,8 +268,8 @@ export function IncomeStep({
 // ─── Social Security ──────────────────────────────────────────────────────────
 //
 // One row per person rather than a card in the list above: everyone has exactly
-// one benefit, and the two numbers an advisor needs — the monthly amount at full
-// retirement age off the SSA statement, and when they plan to start — fit on a
+// one benefit, and the two numbers an advisor needs — the monthly amount off the
+// SSA statement (at any age they name), and when they plan to start — fit on a
 // single line. Both are optional; "Not sure" is a real answer here.
 
 type SsOwner = keyof IntakeSocialSecurity;
@@ -299,8 +299,8 @@ function SocialSecuritySection({
         <div className="grid grid-cols-2 items-center gap-x-4 gap-y-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.75fr)_minmax(0,1fr)]">
           <span aria-hidden="true" className="hidden sm:block" />
           <span className={`${colHeadCls} flex items-center gap-1.5 self-end`}>
-            Monthly benefit at 67 (FRA)
-            <FieldTooltip text="The monthly amount your Social Security statement shows at full retirement age — 67 for anyone born in 1960 or later. You can find it at ssa.gov/myaccount." />
+            Monthly benefit
+            <FieldTooltip text="The monthly amount your Social Security statement shows. Most statements list it at 62, at full retirement age, and at 70 — enter any one and tell us which age." />
           </span>
           <span className={`${colHeadCls} self-end`}>Start age</span>
 
@@ -311,13 +311,33 @@ function SocialSecuritySection({
                 <span className="col-span-2 truncate text-[14px] font-medium text-ink sm:col-span-1">
                   {label}
                 </span>
-                <MoneyInput
-                  id={`ss-${owner}-pia`}
-                  value={answer?.piaMonthly}
-                  onChange={(num) => update(owner, { piaMonthly: num })}
-                  ariaLabel={`${label} monthly benefit at 67`}
-                  placeholder="0"
-                />
+                <div className="flex flex-col gap-1">
+                  <MoneyInput
+                    id={`ss-${owner}-pia`}
+                    value={answer?.piaMonthly}
+                    onChange={(num) => update(owner, { piaMonthly: num })}
+                    ariaLabel={`${label} monthly benefit at 67`}
+                    placeholder="0"
+                  />
+                  <select
+                    id={`ss-${owner}-benefit-age`}
+                    className={selectCls}
+                    value={answer?.benefitAge ?? ""}
+                    onChange={(e) =>
+                      update(owner, {
+                        benefitAge: e.target.value === "" ? undefined : Number(e.target.value),
+                      })
+                    }
+                    aria-label={`${label} benefit is at age`}
+                  >
+                    <option value="">at full retirement age</option>
+                    {INTAKE_SS_CLAIMING_AGES.map((age) => (
+                      <option key={age} value={age}>
+                        at {age}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <select
                   id={`ss-${owner}-age`}
                   className={`${selectCls} tabular`}

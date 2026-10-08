@@ -165,7 +165,10 @@ function mapIncomeType(dbType: string): IntakeIncomeType {
  */
 function ssAnswerFromRow(row: {
   piaMonthly: string | null;
+  annualAmount: string | null;
   ssBenefitMode: string | null;
+  ssStatedAge: number | null;
+  ssStatedAgeMonths: number | null;
   claimingAge: number | null;
   claimingAgeMonths: number | null;
   claimingAgeMode: string | null;
@@ -174,6 +177,14 @@ function ssAnswerFromRow(row: {
   const age = row.claimingAge;
   return {
     ...(row.ssBenefitMode === "pia_at_fra" && pia > 0 ? { piaMonthly: pia } : {}),
+    // A benefit quoted at a whole age reads back as that age. One with no stated
+    // age is priced at its own claim age, which the step cannot show: "Not sure".
+    ...(row.ssBenefitMode === "manual_amount" &&
+    row.ssStatedAge !== null &&
+    (row.ssStatedAgeMonths ?? 0) === 0 &&
+    Number(row.annualAmount) > 0
+      ? { piaMonthly: Number(row.annualAmount) / 12, benefitAge: row.ssStatedAge }
+      : {}),
     // A NULL mode reads as "years" in the engine (`claimAge.ts`), so it counts.
     ...((row.claimingAgeMode ?? "years") === "years" &&
     (row.claimingAgeMonths ?? 0) === 0 &&
