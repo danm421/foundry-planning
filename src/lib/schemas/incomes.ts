@@ -94,6 +94,31 @@ const piaMonthlyOptional = z
   .optional()
   .transform((v) => (v === undefined ? undefined : v != null ? String(v) : null));
 
+// ssStatedAge: the age a stated Social Security amount is quoted at. Whole
+// years 62-70; null clears it (the row then follows its claim age). REJECTS
+// out-of-range rather than clamping — a silently clamped 75 is a different
+// benefit with no warning.
+const ssStatedAgeOptional = z
+  .union([z.number(), z.string()])
+  .nullable()
+  .optional()
+  .transform((v) => (v === undefined ? undefined : v === null || v === "" ? null : Number(v)))
+  .refine((v) => v == null || (Number.isInteger(v) && v >= 62 && v <= 70), {
+    message: "ssStatedAge must be null or a whole age from 62 to 70",
+  });
+
+const ssStatedAgeMonthsOptional = z
+  .union([z.number(), z.string()])
+  .nullable()
+  .optional()
+  .transform((v) => (v === undefined ? undefined : v === null || v === "" ? null : Number(v)))
+  .refine((v) => v == null || (Number.isInteger(v) && v >= 0 && v <= 11), {
+    message: "ssStatedAgeMonths must be null or an integer from 0 to 11",
+  });
+
+// Presentation only — which unit the advisor typed. Never read by src/engine.
+const ssAmountUnitOptional = z.enum(["monthly", "annual"]).nullable().optional();
+
 // survivorshipPct: fraction in [0,1]. null/absent → passes through; present → String(v).
 // Rejects out-of-range so a 50 (percent) typo can't slip through as 5000%.
 const survivorshipPctOptional = z
@@ -170,6 +195,9 @@ export const incomeCreateSchema = z
     claimingAge: claimingAgeOptional.default(null),
     claimingAgeMonths: claimingAgeMonthsOptional.default(0),
     piaMonthly: piaMonthlyOptional.default(null),
+    ssStatedAge: ssStatedAgeOptional,
+    ssStatedAgeMonths: ssStatedAgeMonthsOptional,
+    ssAmountUnit: ssAmountUnitOptional,
     survivorshipPct: survivorshipPctOptional,
     survivorAnnuityQtipElectOut: survivorAnnuityQtipElectOutOptional,
     paymentMonth: paymentMonthOptional,
@@ -202,6 +230,9 @@ export const incomeUpdateSchema = z
     claimingAge: claimingAgeOptional,
     claimingAgeMonths: claimingAgeMonthsOptional,
     piaMonthly: piaMonthlyOptional,
+    ssStatedAge: ssStatedAgeOptional,
+    ssStatedAgeMonths: ssStatedAgeMonthsOptional,
+    ssAmountUnit: ssAmountUnitOptional,
     survivorshipPct: survivorshipPctOptional,
     survivorAnnuityQtipElectOut: survivorAnnuityQtipElectOutOptional,
     paymentMonth: paymentMonthOptional,

@@ -66,6 +66,9 @@ export interface IncomeView {
   taxType?: string | null;
   ssBenefitMode?: string | null;
   piaMonthly?: string | null;
+  ssStatedAge?: number | null;
+  ssStatedAgeMonths?: number | null;
+  ssAmountUnit?: string | null;
   survivorshipPct?: string | null;
   survivorAnnuityQtipElectOut?: boolean | null;
   /** The "Paid in" month (1-12) the flow dialogs write; null spreads the year
@@ -98,6 +101,9 @@ export function incomeEngineToView(income: EngineIncome): IncomeView {
     taxType: income.taxType ?? null,
     ssBenefitMode: income.ssBenefitMode ?? null,
     piaMonthly: income.piaMonthly != null ? String(income.piaMonthly) : null,
+    ssStatedAge: income.ssStatedAge ?? null,
+    ssStatedAgeMonths: income.ssStatedAgeMonths ?? null,
+    ssAmountUnit: income.ssAmountUnit ?? null,
     survivorshipPct: income.survivorshipPct != null ? String(income.survivorshipPct) : null,
     survivorAnnuityQtipElectOut: income.survivorAnnuityQtipElectOut ?? null,
     paymentMonth: income.paymentMonth ?? null,

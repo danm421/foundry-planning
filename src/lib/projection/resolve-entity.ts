@@ -386,6 +386,9 @@ type RawIncome = {
   survivorAnnuityQtipElectOut?: boolean | null;
   claimingAgeMonths?: number | null;
   claimingAgeMode?: string | null;
+  ssStatedAge?: number | null;
+  ssStatedAgeMonths?: number | null;
+  ssAmountUnit?: string | null;
   startYearRef?: string | null;
   endYearRef?: string | null;
   scheduleOverrides?: Record<number, number>;
@@ -420,6 +423,10 @@ export function resolveIncomeFromRaw(
     survivorAnnuityQtipElectOut: raw.survivorAnnuityQtipElectOut ?? null,
     claimingAgeMonths: raw.claimingAgeMonths ?? 0,
     claimingAgeMode: (raw.claimingAgeMode as Income["claimingAgeMode"]) ?? undefined,
+    ssStatedAge: raw.ssStatedAge ?? null,
+    ssStatedAgeMonths: raw.ssStatedAgeMonths ?? null,
+    ssAmountUnit:
+      raw.ssAmountUnit === "monthly" || raw.ssAmountUnit === "annual" ? raw.ssAmountUnit : null,
     scheduleOverrides: raw.scheduleOverrides,
     startYearRef: raw.startYearRef ?? null,
     endYearRef: raw.endYearRef ?? null,

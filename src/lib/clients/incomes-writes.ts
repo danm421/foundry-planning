@@ -18,8 +18,8 @@
 //     Treatment dropdown must persist (a changed type, e.g. → tax_exempt, is
 //     what the engine reads to bucket the income as taxable vs non-taxable).
 //   • SS fields (owner, claimingAge, claimingAgeMonths, claimingAgeMode,
-//     ssBenefitMode, piaMonthly) are included in both create and update where
-//     the route includes them.
+//     ssBenefitMode, piaMonthly, ssStatedAge, ssStatedAgeMonths, ssAmountUnit)
+//     are included in both create and update where the route includes them.
 import { db } from "@/db";
 import { incomes } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -104,6 +104,9 @@ export async function createIncomeForClient(args: {
       taxType: (p.taxType ?? null) as IncomeRow["taxType"],
       ssBenefitMode: (p.ssBenefitMode ?? null) as IncomeRow["ssBenefitMode"],
       piaMonthly: p.piaMonthly ?? null,
+      ssStatedAge: p.ssStatedAge ?? null,
+      ssStatedAgeMonths: p.ssStatedAgeMonths ?? null,
+      ssAmountUnit: p.ssAmountUnit ?? null,
       survivorshipPct: p.survivorshipPct ?? null,
       survivorAnnuityQtipElectOut: p.survivorAnnuityQtipElectOut ?? null,
       claimingAgeMonths: p.claimingAgeMonths ?? 0,
@@ -214,6 +217,9 @@ export async function updateIncomeForClient(args: {
         ssBenefitMode: (p.ssBenefitMode ?? null) as IncomeRow["ssBenefitMode"],
       }),
       ...(p.piaMonthly !== undefined && { piaMonthly: p.piaMonthly ?? null }),
+      ...(p.ssStatedAge !== undefined && { ssStatedAge: p.ssStatedAge }),
+      ...(p.ssStatedAgeMonths !== undefined && { ssStatedAgeMonths: p.ssStatedAgeMonths }),
+      ...(p.ssAmountUnit !== undefined && { ssAmountUnit: p.ssAmountUnit }),
       ...(p.survivorshipPct !== undefined && { survivorshipPct: p.survivorshipPct ?? null }),
       ...(p.survivorAnnuityQtipElectOut !== undefined && {
         survivorAnnuityQtipElectOut: p.survivorAnnuityQtipElectOut ?? null,

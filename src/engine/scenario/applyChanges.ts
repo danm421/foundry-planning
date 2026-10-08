@@ -115,6 +115,8 @@ const NUMERIC_FIELDS_BY_KIND: Partial<Record<TargetKind, readonly string[]>> = {
     "claimingAge",
     "claimingAgeMonths",
     "piaMonthly",
+    "ssStatedAge",
+    "ssStatedAgeMonths",
     "survivorshipPct",
   ],
   expense: [

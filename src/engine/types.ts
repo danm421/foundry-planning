@@ -1185,7 +1185,8 @@ export interface Income {
    *  rows are built inside the engine, after loading, so they never meet it;
    *  this field keeps the two provenances distinguishable regardless. */
   sourceDisabilityPolicyId?: string;
-  /** SS-specific. When unset, engine treats as "manual_amount" (legacy). */
+  /** SS-specific. `manual_amount` = a benefit stated at an age (UI: "Benefit at
+   *  a specific age"). When unset, engine treats as "manual_amount" (legacy). */
   ssBenefitMode?: "manual_amount" | "pia_at_fra" | "no_benefit";
   /** SS-specific. Monthly PIA in today's dollars. Required when ssBenefitMode=pia_at_fra. */
   piaMonthly?: number;
@@ -1203,6 +1204,13 @@ export interface Income {
   /** SS-specific. Resolves effective claim age at projection time.
    *  When unset, engine treats as "years" (legacy). */
   claimingAgeMode?: "years" | "fra" | "at_retirement";
+  /** SS-specific, `manual_amount` rows: the age (years, 62-70) `annualAmount`
+   *  is quoted at. Null/absent = the row's own claim age (legacy meaning). */
+  ssStatedAge?: number | null;
+  /** Additional months beyond `ssStatedAge` (0-11). Null/absent = 0. */
+  ssStatedAgeMonths?: number | null;
+  /** Presentation only — the unit the advisor typed. Never read in src/engine. */
+  ssAmountUnit?: "monthly" | "annual" | null;
   /** Self-employment income flag. When true, the year's amount counts as
    *  net SE earnings for SECA tax (both halves of FICA, plus deductible
    *  half above-line). Does NOT change the cash-flow routing or how the
