@@ -824,6 +824,16 @@ export interface LifeInsurancePayout {
   faceValue: number;
 }
 
+/** What LTC riders drew from one life policy's death benefit, by year. Written
+ *  only by the LTC pre-pass (`applyLtcEvent`) onto its own copy of the tree;
+ *  never loaded or saved. Read through `deathBenefitForYear` /
+ *  `ltcCashValueShare` (life-insurance-schedule.ts). */
+export interface LtcAcceleration {
+  byYear: Record<number, number>;
+  /** The highest guaranteed minimum death benefit among the riders that drew. */
+  minimumDeathBenefit: number;
+}
+
 /** A disability income policy. Unlike life insurance this is NOT an account —
  *  it holds no value and never reaches the balance sheet. It pays only while a
  *  `planSettings.disabilityEvent` is active for the insured person.
@@ -1243,6 +1253,11 @@ export interface Income {
    *  rows are built inside the engine, after loading, so they never meet it;
    *  this field keeps the two provenances distinguishable regardless. */
   sourceDisabilityPolicyId?: string;
+  /** When set, the LTC policy whose benefit produced this row. Like
+   *  `sourceDisabilityPolicyId`, kept apart from `source: "policy"`, which
+   *  `withSynthesizedPolicyIncome` strips and re-derives from life-insurance
+   *  accounts. Built by the LTC pre-pass, after loading. */
+  sourceLtcPolicyId?: string;
   /** SS-specific. `manual_amount` = a benefit stated at an age (UI: "Benefit at
    *  a specific age"). When unset, engine treats as "manual_amount" (legacy). */
   ssBenefitMode?: "manual_amount" | "pia_at_fra" | "no_benefit";
