@@ -47,13 +47,15 @@ export function ltcPremiumText(p: LtcPolicy): string {
 
 /** The dialog's one-line read-back of what the policy pays in `year`, or null
  *  when there is not enough to say it honestly (no benefit yet; a rider with no
- *  face value to work from). */
+ *  face value to work from). A policy issued after `year` is not in force yet,
+ *  so it is described as of its issue year. */
 export function ltcSummaryText(p: LtcPolicy, faceValue: number | null, year: number): string | null {
-  const factor = ltcInflationFactor(p, year);
+  const asOf = Math.max(year, p.issueYear);
+  const factor = ltcInflationFactor(p, asOf);
   if (p.kind === "standalone") {
     if (p.benefitAmount <= 0) return null;
     const monthly = ltcMonthlyFromUnit(p.benefitAmount, p.benefitUnit) * factor;
-    const head = `Pays up to ${usd.format(monthly)}/mo in ${year}`;
+    const head = `Pays up to ${usd.format(monthly)}/mo in ${asOf}`;
     if (p.benefitPeriodMode === "lifetime") return `${head}, with no limit on total benefits.`;
     if (p.benefitPeriodYears == null) return `${head}.`;
     return `${head}, from a pool of about ${usd.format(monthly * 12 * p.benefitPeriodYears)}.`;
@@ -68,5 +70,8 @@ export function ltcSummaryText(p: LtcPolicy, faceValue: number | null, year: num
   const cap = Math.max(0, Math.min(faceValue * (p.riderMaxPct ?? 1), faceValue - p.residualDeathBenefit));
   const months = Math.floor(cap / monthly);
   const extension = p.extensionYears > 0 ? `, then ${p.extensionYears * 12} more months` : "";
-  return `Pays up to ${usd.format(monthly)}/mo for about ${months} months${extension}; at least ${usd.format(faceValue - cap)} left to heirs.`;
+  const heirs = `at least ${usd.format(faceValue - cap)} left to heirs.`;
+  // A pool smaller than one month's limit never pays the limit: name the total.
+  if (months < 1) return `Pays at most ${usd.format(cap)} in total${extension}; ${heirs}`;
+  return `Pays up to ${usd.format(monthly)}/mo for about ${months} months${extension}; ${heirs}`;
 }

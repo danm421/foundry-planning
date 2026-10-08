@@ -96,7 +96,14 @@ describe("insurance describers", () => {
 });
 
 describe("LTC policy describer", () => {
-  const named = { targetNames: { "ltc_policy:l1": "Genworth LTC" }, resolve: ctx.resolve };
+  const LIFE_ID = "9f1c2d3e-4b5a-4789-abcd-ef0123456789";
+  const named = {
+    targetNames: { "ltc_policy:l1": "Genworth LTC" },
+    resolve: buildResolveContext({
+      ...EMPTY_RESOLVE_DATA,
+      accountsById: { [LIFE_ID]: { name: "Whole Life", category: "life_insurance" } },
+    }),
+  };
   const payload = {
     id: "l1", name: "Genworth LTC", insured: "client", carrier: null, kind: "standalone",
     lifePolicyAccountId: null, issueYear: 2026, benefitAmount: 6000, benefitUnit: "month",
@@ -117,14 +124,60 @@ describe("LTC policy describer", () => {
   it("formats money and rate edits instead of printing bare numbers", () => {
     const premium = describeChange(ch({
       targetKind: "ltc_policy", targetId: "l1", opType: "edit",
-      payload: { annualPremium: { from: 2400, to: 3000 } },
+      payload: { annualPremium: { from: 900, to: 2100 } },
     }), named);
-    expect(premium.before).toMatch(/^\$/);
-    expect(premium.after).toMatch(/^\$/);
+    // The generic formatter prints 900 bare and reads 2100 as a year.
+    expect([premium.before, premium.after]).toEqual(["$900", "$2,100"]);
     const rate = describeChange(ch({
       targetKind: "ltc_policy", targetId: "l1", opType: "edit",
       payload: { inflationRate: { from: 0.03, to: 0.05 } },
     }), named);
     expect([rate.before, rate.after]).toEqual(["3%", "5%"]);
+  });
+
+  it("words a Traditional → Rider switch without stored codes or the life policy's id", () => {
+    const row = describeChange(ch({
+      targetKind: "ltc_policy", targetId: "l1", opType: "edit",
+      payload: {
+        kind: { from: "standalone", to: "life_rider" },
+        riderBenefitMode: { from: null, to: "pct_of_face" },
+        premiumPayMode: { from: "lifetime", to: "paid_up" },
+        lifePolicyAccountId: { from: null, to: LIFE_ID },
+      },
+    }), named);
+    const text = row.detail.join(" | ");
+    for (const code of ["standalone", "life_rider", "pct_of_face", "paid_up"]) expect(text).not.toContain(code);
+    expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+    expect(text).toContain("Kind: Traditional → Rider");
+    expect(text).toContain("Life policy: — → Whole Life");
+  });
+
+  it("names a life policy this scenario added, and never prints an id it cannot name", () => {
+    const edit = (to: string, targetNames: Record<string, string>) => describeChange(ch({
+      targetKind: "ltc_policy", targetId: "l1", opType: "edit",
+      payload: { lifePolicyAccountId: { from: LIFE_ID, to } },
+    }), { ...named, targetNames: { ...named.targetNames, ...targetNames } });
+    const added = edit("new-life", { "account:new-life": "Survivorship" });
+    expect(added.what).toBe("Genworth LTC · Life policy");
+    expect([added.before, added.after]).toEqual(["Whole Life", "Survivorship"]);
+    expect(edit("gone", {}).after).toBe("A life policy");
+  });
+
+  it("reads switches as Yes / No", () => {
+    const row = describeChange(ch({
+      targetKind: "ltc_policy", targetId: "l1", opType: "edit",
+      payload: { sharedCare: { from: false, to: true } },
+    }), named);
+    expect([row.before, row.after]).toEqual(["No", "Yes"]);
+  });
+
+  it("names the life policy on an added rider, as the panel does", () => {
+    const rider = {
+      ...payload, kind: "life_rider", lifePolicyAccountId: LIFE_ID, benefitAmount: 0,
+      riderBenefitMode: "pct_of_face", riderMonthlyPct: 0.02, benefitPeriodMode: null, benefitPeriodYears: null,
+      riderMaxPct: 1, inflationRider: "none", annualPremium: 0, premiumPayMode: "paid_up",
+    };
+    const row = describeChange(ch({ targetKind: "ltc_policy", targetId: "l1", payload: rider }), named);
+    expect(row.detail.join(" ")).toBe("Rider on Whole Life · 2% of the death benefit/mo");
   });
 });

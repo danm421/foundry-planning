@@ -41,4 +41,20 @@ describe("LTC labels", () => {
     // No face value (its life policy is missing): say nothing rather than invent one.
     expect(ltcSummaryText(rider, null, 2026)).toBeNull();
   });
+
+  it("names the total when a rider's pool is smaller than one month's benefit", () => {
+    const thin = { ...rider, residualDeathBenefit: 495_000 };
+    expect(ltcSummaryText(thin, 500_000, 2026)).toBe(
+      "Pays at most $5,000 in total; at least $495,000 left to heirs.",
+    );
+    expect(ltcSummaryText({ ...thin, extensionYears: 2 }, 500_000, 2026)).toBe(
+      "Pays at most $5,000 in total, then 24 more months; at least $495,000 left to heirs.",
+    );
+  });
+
+  it("describes a policy issued in a later year as of its issue year", () => {
+    expect(ltcSummaryText({ ...standalone, issueYear: 2030 }, null, 2026)).toBe(
+      "Pays up to $6,000/mo in 2030, from a pool of about $216,000.",
+    );
+  });
 });

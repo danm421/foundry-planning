@@ -1,8 +1,9 @@
 import type { DisabilityPolicy, LtcPolicy } from "@/engine/types";
 import { benefitPeriodText } from "@/lib/insurance-policies/disability-labels";
 import { ltcBenefitText, ltcPremiumText, ltcTypeText } from "@/lib/insurance-policies/ltc-labels";
-import { addRow, removeRow, editRow } from "../generic";
-import { nameFor } from "../format";
+import { exactCurrency } from "@/lib/presentations/format";
+import { addRow, removeRow, editRow, type DescribeContext, type EditFormat } from "../generic";
+import { nameFor, fieldLabel, fmtFieldValue, fmtValue } from "../format";
 import { money, pct, joinSegments, toNum } from "../labels";
 import { SPEC } from "../specs";
 import { DESCRIBERS, simpleDescriber, type Describer } from "../registry";
@@ -86,35 +87,67 @@ DESCRIBERS.life_insurance_policy = simpleDescriber({
   segments: [],
 });
 
-/** Money and rates an LTC edit would otherwise print as bare numbers. */
+/** A stored code in the panel's or the dialog's own words. An unknown code
+ *  falls through to the generic formatter rather than being guessed at. */
+const words = (m: Record<string, string>) => (v: unknown): string =>
+  (typeof v === "string" && m[v]) || fmtValue(v);
+
+/** Whole dollars: LTC amounts are small enough that "$2.4k" → "$2.4k" would
+ *  hide a real change. */
+const dollars = (v: unknown): string => {
+  const n = toNum(v);
+  return n == null ? "—" : exactCurrency(n);
+};
+
+/** How each LTC field reads in an edit row. Without it, money and rates print
+ *  as bare numbers and the enums as stored codes ("life_rider"). */
 const LTC_EDIT_FORMAT: Record<string, (v: unknown) => string> = {
-  benefitAmount: money,
-  residualDeathBenefit: money,
-  annualPremium: money,
+  kind: words({ standalone: "Traditional", life_rider: "Rider" }),
+  riderBenefitMode: words({ pct_of_face: "A share of the death benefit each month", fixed: "A set amount" }),
+  benefitPeriodMode: words({ years: "For a number of years", lifetime: "For life" }),
+  benefitUnit: words({ month: "Month", day: "Day" }),
+  benefitType: words({
+    reimbursement: "Actual care costs, up to the limit",
+    indemnity: "The full limit, whatever care costs",
+  }),
+  inflationRider: words({ none: "None", simple: "Simple", compound: "Compound" }),
+  premiumPayMode: words({
+    lifetime: "For life", to_age: "To an age", years: "For a number of years", paid_up: "Paid up",
+  }),
+  benefitAmount: dollars,
+  residualDeathBenefit: dollars,
+  annualPremium: dollars,
   inflationRate: pct,
   homeCarePct: pct,
   riderMonthlyPct: pct,
   riderMaxPct: pct,
 };
 
+/** The life policy a rider sits on, by name: a base-plan account, or one this
+ *  scenario added. Null when it names neither. */
+function lifePolicyName(id: unknown, ctx: DescribeContext): string | null {
+  if (typeof id !== "string" || !id) return null;
+  return ctx.resolve.accountInfo(id)?.name ?? ctx.targetNames[`account:${id}`] ?? null;
+}
+
+/** The life policy reads by name, never by its id. */
+const ltcEditFormat = (ctx: DescribeContext): EditFormat => ({
+  label: (f) => (f === "lifePolicyAccountId" ? "Life policy" : fieldLabel(f)),
+  value: (f, v) => {
+    if (f === "lifePolicyAccountId") return v == null || v === "" ? "—" : (lifePolicyName(v, ctx) ?? "A life policy");
+    return LTC_EDIT_FORMAT[f]?.(v) ?? fmtFieldValue(f, v);
+  },
+});
+
 /** The add row reads like the Insurance panel's row: the payload IS the flat
  *  policy, so it goes straight through the shared labels. */
 const ltcPolicy: Describer = (c, ctx) => {
   const name = nameFor(c, ctx.targetNames) ?? "Long-term care policy";
   if (c.opType === "remove") return removeRow("Insurance", name, ["No longer in this plan"]);
-  if (c.opType === "edit") {
-    const diff = (c.payload ?? {}) as Record<string, { from: unknown; to: unknown }>;
-    const shown = Object.fromEntries(
-      Object.entries(diff).map(([field, d]) => {
-        const fmt = LTC_EDIT_FORMAT[field];
-        return [field, fmt ? { from: fmt(d?.from), to: fmt(d?.to) } : d];
-      }),
-    );
-    return editRow({ ...c, payload: shown }, { ...SPEC.ltc_policy }, name);
-  }
+  if (c.opType === "edit") return editRow(c, SPEC.ltc_policy, name, ltcEditFormat(ctx));
   const p = (c.payload ?? {}) as LtcPolicy;
   const summary = joinSegments([
-    ltcTypeText(p, null),
+    ltcTypeText(p, lifePolicyName(p.lifePolicyAccountId, ctx)),
     ltcBenefitText(p, null),
     p.kind === "standalone" && p.annualPremium > 0 ? ltcPremiumText(p) : null,
   ]);
