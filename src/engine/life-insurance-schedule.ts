@@ -1,4 +1,4 @@
-import type { LifeInsuranceCashValueScheduleRow } from "./types";
+import type { LifeInsuranceCashValueScheduleRow, LifeInsurancePolicy } from "./types";
 
 type ScheduleColumn = "cashValue" | "premiumAmount" | "income" | "deathBenefit";
 
@@ -53,4 +53,44 @@ export function resolveCashValueForYear(
     throw new Error("resolveCashValueForYear: empty cash-value schedule");
   }
   return v;
+}
+
+/** The death benefit the contract states for `year`: the schedule's figure
+ *  when the policy uses a death-benefit schedule, else the face value. Before
+ *  any LTC rider draw. */
+export function contractDeathBenefitForYear(policy: LifeInsurancePolicy, year: number): number {
+  const scheduled =
+    policy.deathBenefitScheduleMode === "scheduled"
+      ? resolveScheduledColumnForYear(policy.cashValueSchedule, year, "deathBenefit")
+      : null;
+  return scheduled ?? policy.faceValue;
+}
+
+/** Dollars LTC riders have drawn from this policy through the end of `year`. */
+export function ltcAcceleratedThrough(policy: LifeInsurancePolicy, year: number): number {
+  let total = 0;
+  for (const [y, amount] of Object.entries(policy.ltcAcceleration?.byYear ?? {})) {
+    if (Number(y) <= year) total += amount;
+  }
+  return total;
+}
+
+/** The death benefit paid if the insured dies in `year`: the contract figure
+ *  less every rider draw so far, never below the rider's guaranteed minimum,
+ *  and never above the contract figure. The one place the engine computes it
+ *  (payout, §2035). */
+export function deathBenefitForYear(policy: LifeInsurancePolicy, year: number): number {
+  const contract = contractDeathBenefitForYear(policy, year);
+  const drawn = ltcAcceleratedThrough(policy, year);
+  if (drawn <= 0) return contract;
+  return Math.max(contract - drawn, Math.min(contract, policy.ltcAcceleration!.minimumDeathBenefit));
+}
+
+/** The share of the cash value left after rider draws: 1 − drawn ÷ the
+ *  contract death benefit, within [0, 1]. 1 with no draws. */
+export function ltcCashValueShare(policy: LifeInsurancePolicy, year: number): number {
+  const drawn = ltcAcceleratedThrough(policy, year);
+  if (drawn <= 0) return 1;
+  const contract = contractDeathBenefitForYear(policy, year);
+  return contract > 0 ? Math.min(1, Math.max(0, 1 - drawn / contract)) : 0;
 }

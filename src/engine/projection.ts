@@ -149,7 +149,7 @@ import {
   emptyHypotheticalEstateTax,
 } from "./what-if/hypothetical-estate-tax";
 import { calcSeca, calcSeAdditionalMedicare, ficaWagesOf } from "../lib/tax/fica";
-import { resolveCashValueForYear } from "./life-insurance-schedule";
+import { ltcCashValueShare, resolveCashValueForYear } from "./life-insurance-schedule";
 import { computeTermEndYear } from "./life-insurance-expiry";
 import {
   computePortfolioSnapshot,
@@ -1417,6 +1417,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // block and phase 14 — because the two must agree on the same row.
     const absorbingRow = absorbingLivingRow(data.expenses, year, data.client);
 
+    // LTC rider: draws on the death benefit shrink a basic-mode policy's cash
+    // value in proportion (1 − drawn ÷ death benefit). Applied to the opening
+    // balance so the year's ledger opens on the reduced value and reconciles.
+    // A free-form policy is scaled after its schedule overwrite below.
+    for (const acct of workingAccounts) {
+      const li = acct.lifeInsurance;
+      if (acct.category !== "life_insurance" || !li?.ltcAcceleration || li.cashValueGrowthMode !== "basic") continue;
+      const before = ltcCashValueShare(li, year - 1);
+      if (before <= 0) continue;
+      accountBalances[acct.id] = (accountBalances[acct.id] ?? 0) * (ltcCashValueShare(li, year) / before);
+    }
+
     // Initialize per-account ledgers with the year-start balances. Ledgers are
     // populated first so that BoY sales/purchases (next) can append their entries
     // before the growth pass adds its own.
@@ -1934,10 +1946,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         acct.lifeInsurance &&
         acct.lifeInsurance.cashValueGrowthMode === "free_form"
       ) {
-        accountBalances[acct.id] = resolveCashValueForYear(
-          acct.lifeInsurance.cashValueSchedule,
-          year,
-        );
+        accountBalances[acct.id] =
+          resolveCashValueForYear(acct.lifeInsurance.cashValueSchedule, year) *
+          ltcCashValueShare(acct.lifeInsurance, year);
         scheduleOverriddenAccounts.add(acct.id);
       }
     }

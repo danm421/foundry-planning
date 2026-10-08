@@ -814,6 +814,9 @@ export interface LifeInsurancePolicy {
     turnoverPct: number;
   };
   cashValueSchedule: LifeInsuranceCashValueScheduleRow[];
+  /** LTC rider draws on this policy's death benefit. Set only by the LTC
+   *  pre-pass on its own copy of the tree; absent everywhere else. */
+  ltcAcceleration?: LtcAcceleration;
 }
 
 /** A life-insurance death benefit paid out by a death event. */

@@ -1,4 +1,4 @@
-import { resolveScheduledColumnForYear } from "../life-insurance-schedule";
+import { deathBenefitForYear } from "../life-insurance-schedule";
 import type { Account, EntitySummary, LifeInsurancePayout } from "../types";
 
 export interface PreparePayoutsInput {
@@ -71,11 +71,9 @@ export function prepareLifeInsurancePayouts(
 
     const policy = account.lifeInsurance;
     const { postPayoutGrowthRate } = policy;
-    const scheduledDb =
-      policy.deathBenefitScheduleMode === "scheduled"
-        ? resolveScheduledColumnForYear(policy.cashValueSchedule, input.year, "deathBenefit")
-        : null;
-    const faceValue = scheduledDb ?? policy.faceValue;
+    // The schedule's figure when the policy uses one, else face — less what
+    // an LTC rider drew, never below its guaranteed minimum.
+    const faceValue = deathBenefitForYear(policy, input.year);
     const policyId = account.id;
 
     // §101(a): proceeds are income-tax-free, so basis = faceValue. The account
