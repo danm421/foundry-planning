@@ -91,6 +91,7 @@ const BY_KIND: Partial<Record<TargetKind, ChangeType>> = {
   liability: "debts",
   extra_payment: "debts",
   disability_policy: "insurance",
+  ltc_policy: "insurance",
   life_insurance_policy: "insurance",
   life_insurance_cash_value_schedule: "insurance",
   client_deduction: "taxSettings",

@@ -1,5 +1,6 @@
-import type { DisabilityPolicy } from "@/engine/types";
+import type { DisabilityPolicy, LtcPolicy } from "@/engine/types";
 import { benefitPeriodText } from "@/lib/insurance-policies/disability-labels";
+import { ltcBenefitText, ltcPremiumText, ltcTypeText } from "@/lib/insurance-policies/ltc-labels";
 import { addRow, removeRow, editRow } from "../generic";
 import { nameFor } from "../format";
 import { money, pct, joinSegments, toNum } from "../labels";
@@ -84,3 +85,40 @@ DESCRIBERS.life_insurance_policy = simpleDescriber({
   area: "Insurance", noun: "life insurance policy", whatMode: "name",
   segments: [],
 });
+
+/** Money and rates an LTC edit would otherwise print as bare numbers. */
+const LTC_EDIT_FORMAT: Record<string, (v: unknown) => string> = {
+  benefitAmount: money,
+  residualDeathBenefit: money,
+  annualPremium: money,
+  inflationRate: pct,
+  homeCarePct: pct,
+  riderMonthlyPct: pct,
+  riderMaxPct: pct,
+};
+
+/** The add row reads like the Insurance panel's row: the payload IS the flat
+ *  policy, so it goes straight through the shared labels. */
+const ltcPolicy: Describer = (c, ctx) => {
+  const name = nameFor(c, ctx.targetNames) ?? "Long-term care policy";
+  if (c.opType === "remove") return removeRow("Insurance", name, ["No longer in this plan"]);
+  if (c.opType === "edit") {
+    const diff = (c.payload ?? {}) as Record<string, { from: unknown; to: unknown }>;
+    const shown = Object.fromEntries(
+      Object.entries(diff).map(([field, d]) => {
+        const fmt = LTC_EDIT_FORMAT[field];
+        return [field, fmt ? { from: fmt(d?.from), to: fmt(d?.to) } : d];
+      }),
+    );
+    return editRow({ ...c, payload: shown }, { ...SPEC.ltc_policy }, name);
+  }
+  const p = (c.payload ?? {}) as LtcPolicy;
+  const summary = joinSegments([
+    ltcTypeText(p, null),
+    ltcBenefitText(p, null),
+    p.kind === "standalone" && p.annualPremium > 0 ? ltcPremiumText(p) : null,
+  ]);
+  return addRow("Insurance", name, summary ? [summary] : []);
+};
+
+DESCRIBERS.ltc_policy = ltcPolicy;

@@ -144,6 +144,7 @@ export function buildTargetNames(
   put("client_deduction", tree.deductions as unknown as ReadonlyArray<{ id: string }>);
   put("client_tax_adjustment", tree.taxAdjustments as unknown as ReadonlyArray<{ id: string }>);
   put("disability_policy", tree.disabilityPolicies ?? []);
+  put("ltc_policy", tree.ltcPolicies ?? []);
   put("ltc_event", tree.ltcEvents);
   put("stress_test", tree.stressTests);
 

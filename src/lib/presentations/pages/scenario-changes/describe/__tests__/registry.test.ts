@@ -94,3 +94,37 @@ describe("insurance describers", () => {
     expect(row.area).toBe("Insurance");
   });
 });
+
+describe("LTC policy describer", () => {
+  const named = { targetNames: { "ltc_policy:l1": "Genworth LTC" }, resolve: ctx.resolve };
+  const payload = {
+    id: "l1", name: "Genworth LTC", insured: "client", carrier: null, kind: "standalone",
+    lifePolicyAccountId: null, issueYear: 2026, benefitAmount: 6000, benefitUnit: "month",
+    riderBenefitMode: null, riderMonthlyPct: null, benefitPeriodMode: "years", benefitPeriodYears: 3,
+    riderMaxPct: null, extensionYears: 0, residualDeathBenefit: 0, eliminationDays: 90, homeCarePct: 1,
+    inflationRider: "compound", inflationRate: 0.03, benefitType: "reimbursement", sharedCare: false,
+    annualPremium: 2400, premiumPayMode: "lifetime", premiumPayToAge: null, premiumPayYears: null,
+    partnership: false, notes: null,
+  };
+
+  it("describes an added policy in the Insurance area in the panel's words", () => {
+    const row = describeChange(ch({ targetKind: "ltc_policy", targetId: "l1", payload }), named);
+    expect(row.area).toBe("Insurance");
+    expect(row.what).toBe("+ Genworth LTC");
+    expect(row.detail.join(" ")).toBe("Traditional · $6,000/mo · 3 yrs · $2,400/yr for life");
+  });
+
+  it("formats money and rate edits instead of printing bare numbers", () => {
+    const premium = describeChange(ch({
+      targetKind: "ltc_policy", targetId: "l1", opType: "edit",
+      payload: { annualPremium: { from: 2400, to: 3000 } },
+    }), named);
+    expect(premium.before).toMatch(/^\$/);
+    expect(premium.after).toMatch(/^\$/);
+    const rate = describeChange(ch({
+      targetKind: "ltc_policy", targetId: "l1", opType: "edit",
+      payload: { inflationRate: { from: 0.03, to: 0.05 } },
+    }), named);
+    expect([rate.before, rate.after]).toEqual(["3%", "5%"]);
+  });
+});
