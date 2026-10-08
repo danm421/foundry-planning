@@ -4,7 +4,7 @@
 // dialog and the scenario change rows, so one policy reads the same everywhere.
 // Client-safe.
 import type { LtcPolicy } from "@/engine/types";
-import { ltcInflationFactor, ltcMonthlyFromUnit } from "@/engine/ltc-benefits";
+import { ltcRiderCap, ltcRiderMonthly, ltcStandaloneMonthly, ltcStandalonePool } from "@/engine/ltc-benefits";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 /** decimal 0.035 → "3.5%", without float drift. */
@@ -53,23 +53,19 @@ export function ltcPremiumText(p: LtcPolicy): string {
  *  so it is described as of its issue year. */
 export function ltcSummaryText(p: LtcPolicy, faceValue: number | null, year: number): string | null {
   const asOf = Math.max(year, p.issueYear);
-  const factor = ltcInflationFactor(p, asOf);
   if (p.kind === "standalone") {
     if (p.benefitAmount <= 0) return null;
-    const monthly = ltcMonthlyFromUnit(p.benefitAmount, p.benefitUnit) * factor;
+    const monthly = ltcStandaloneMonthly(p, asOf);
     const head = `Pays up to ${usd.format(monthly)}/mo in ${asOf}`;
     if (p.benefitPeriodMode === "lifetime") return `${head}, with no limit on total benefits.`;
-    if (p.benefitPeriodYears == null) return `${head}.`;
-    return `${head}, from a pool of about ${usd.format(monthly * 12 * p.benefitPeriodYears)}.`;
+    const pool = ltcStandalonePool(p, asOf);
+    if (pool == null) return `${head}.`;
+    return `${head}, from a pool of about ${usd.format(pool)}.`;
   }
   if (faceValue == null || faceValue <= 0) return null;
-  const base =
-    p.riderBenefitMode === "pct_of_face"
-      ? (p.riderMonthlyPct ?? 0) * faceValue
-      : ltcMonthlyFromUnit(p.benefitAmount, p.benefitUnit);
-  const monthly = base * factor;
+  const monthly = ltcRiderMonthly(p, faceValue, asOf);
   if (monthly <= 0) return null;
-  const cap = Math.max(0, Math.min(faceValue * (p.riderMaxPct ?? 1), faceValue - p.residualDeathBenefit));
+  const cap = ltcRiderCap(p, faceValue);
   const months = Math.floor(cap / monthly);
   const extension = p.extensionYears > 0 ? `, then ${p.extensionYears * 12} more months` : "";
   const heirs = `at least ${usd.format(faceValue - cap)} left to heirs.`;

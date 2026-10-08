@@ -1,4 +1,5 @@
 import type { ClientData, Expense, LtcPolicy } from "@/engine/types";
+import { LTC_PREMIUM_ID_PREFIX, ltcPremiumExpenseId } from "@/engine/ltc-benefits";
 
 /**
  * Standalone LTC premiums as household `insurance` expenses. Level (growth 0):
@@ -13,7 +14,7 @@ import type { ClientData, Expense, LtcPolicy } from "@/engine/types";
  * scenario/loader.ts. Pinned by "survives only when it runs AFTER" in the test.
  *
  * Waiver of premium during an LTC stress event is Part 2's: the engine
- * pre-pass ends these rows (found by the `ltc-premium-` id prefix).
+ * pre-pass ends these rows (found by `LTC_PREMIUM_ID_PREFIX`).
  */
 export function synthesizeLtcPremiums(tree: ClientData): Expense[] {
   const out: Expense[] = [];
@@ -22,7 +23,7 @@ export function synthesizeLtcPremiums(tree: ClientData): Expense[] {
     const years = ltcPremiumWindow(policy, tree);
     if (!years) continue;
     out.push({
-      id: `ltc-premium-${policy.id}`,
+      id: ltcPremiumExpenseId(policy.id),
       type: "insurance",
       name: `${policy.name} premium`,
       annualAmount: policy.annualPremium,
@@ -89,6 +90,6 @@ export function ltcPremiumWindow(
  *  prefix, not `source` — a `source` filter would also eat the life and
  *  disability premiums. Idempotent. Must run AFTER `withSynthesizedPremiums`. */
 export function withSynthesizedLtcPremiums(tree: ClientData): ClientData {
-  const kept = tree.expenses.filter((e) => !e.id.startsWith("ltc-premium-"));
+  const kept = tree.expenses.filter((e) => !e.id.startsWith(LTC_PREMIUM_ID_PREFIX));
   return { ...tree, expenses: [...kept, ...synthesizeLtcPremiums(tree)] };
 }
