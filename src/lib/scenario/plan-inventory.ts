@@ -6,7 +6,7 @@
 //
 // Two kinds of row are dropped:
 //   - Synthesized rows the advisor never created: `withSynthesizedPremiums` and
-//     `withSynthesizedDisabilityPremiums` (premium expenses),
+//     `withSynthesizedDisabilityPremiums`, `withSynthesizedLtcPremiums` (premium expenses),
 //     `withSynthesizedPolicyIncome` (policy income, all `source: "policy"`) and
 //     `withSynthesizedEntityChecking` (`isSyntheticEntityChecking` accounts).
 //   - Rows their Details view refuses to open (spec R5: an item that can't open

@@ -29,6 +29,7 @@ import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expens
 import { withSynthesizedPolicyIncome } from "@/lib/insurance-policies/policy-income";
 import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
 import { withSynthesizedDisabilityPremiums } from "@/lib/insurance-policies/disability-premium-expense";
+import { withSynthesizedLtcPremiums } from "@/lib/insurance-policies/ltc-premium-expense";
 import { withSynthesizedEntityChecking } from "@/lib/entities/entity-checking";
 import { resolveRefYears } from "@/lib/year-refs";
 import { applyLifeExpectancyHorizon } from "@/lib/plan-horizon";
@@ -257,6 +258,11 @@ export function applyScenarioChangesWithRefs(
   // life-insurance accounts — never regenerates. Placed here rather than
   // outermost so `withSynthesizedEntityChecking` keeps its "runs LAST" contract.
   const withDisabilityPremiums = withSynthesizedDisabilityPremiums(withPremiumGifts);
+  // Re-synthesize LTC premium expenses over the effective tree, so a scenario
+  // that adds, edits or removes an `ltc_policy` bills the right premium. Same
+  // ordering rule as the disability link: these rows carry `source: "policy"`,
+  // so this must run after `withSynthesizedPremiums`. Idempotent.
+  const withLtcPremiums = withSynthesizedLtcPremiums(withDisabilityPremiums);
   // Give every entity on the effective tree a default checking account. A saved
   // scenario persists an entity as a lone `targetKind: "entity"` row, so an
   // entity the solver created arrives here with no account and the engine has
@@ -266,7 +272,7 @@ export function applyScenarioChangesWithRefs(
   // same account. Nothing downstream of here reads accounts, so the four
   // policy synthesizers above are provably unaffected. Idempotent, and returns
   // the same tree when every entity already has one.
-  const withEntityChecking = withSynthesizedEntityChecking(withDisabilityPremiums);
+  const withEntityChecking = withSynthesizedEntityChecking(withLtcPremiums);
 
   return { effectiveTree: withEntityChecking, warnings };
 }

@@ -89,6 +89,7 @@ import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expens
 import { withSynthesizedPolicyIncome } from "@/lib/insurance-policies/policy-income";
 import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
 import { withSynthesizedDisabilityPremiums } from "@/lib/insurance-policies/disability-premium-expense";
+import { withSynthesizedLtcPremiums } from "@/lib/insurance-policies/ltc-premium-expense";
 import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { loadStockOptionPlans } from "./load-equity";
 import { rowToMedicareCoverage, withDefaultMedicareCoverage } from "@/lib/medicare/dbMapper";
@@ -1904,9 +1905,11 @@ const loadClientDataCached = cache(
     };
 
     return {
-      clientData: withSynthesizedDisabilityPremiums(
-        withSynthesizedPremiumGifts(
-          withSynthesizedPolicyIncome(withSynthesizedPremiums(clientData)),
+      clientData: withSynthesizedLtcPremiums(
+        withSynthesizedDisabilityPremiums(
+          withSynthesizedPremiumGifts(
+            withSynthesizedPolicyIncome(withSynthesizedPremiums(clientData)),
+          ),
         ),
       ),
       resolutionContext: resolutionCtx,
