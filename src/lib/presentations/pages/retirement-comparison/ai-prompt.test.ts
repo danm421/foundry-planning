@@ -37,6 +37,13 @@ describe("buildRetirementComparisonAiPrompt", () => {
     expect(user).toContain("Roth Conversion Strategy");
   });
 
+  it("tells the model an age is not a dollar amount", () => {
+    // The Douglas deck read "By retiring at $72 instead of $70" — the dollar
+    // format rule alone let the model put a $ on the retirement ages.
+    const { system } = buildRetirementComparisonAiPrompt(args);
+    expect(system).toContain('never "retiring at $72"');
+  });
+
   it("appends advisor instructions when present", () => {
     const { system } = buildRetirementComparisonAiPrompt({ ...args, customInstructions: "Mention the legacy goal." });
     expect(system).toContain("Advisor instructions: Mention the legacy goal.");

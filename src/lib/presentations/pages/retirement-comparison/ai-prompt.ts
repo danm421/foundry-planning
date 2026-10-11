@@ -60,6 +60,7 @@ export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiAr
     'Output: clean Markdown only. No preamble like "Here is your analysis" or headings unless asked for.',
     "Only use numbers from the data below. Never invent figures.",
     "Format every dollar amount as $X.XM or $XXX K or $X,XXX with commas. Never show raw decimals.",
+    'Ages, years and counts are plain numbers, never dollar amounts — write "retiring at 72", never "retiring at $72".',
     "Format percentages with at most one decimal place.",
     "Round numbers — the reader does not need cents.",
     "Focus on the impact on the household's total portfolio assets and on the plan confidence.",
