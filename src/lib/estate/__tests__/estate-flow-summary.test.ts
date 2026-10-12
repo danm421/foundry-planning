@@ -21,8 +21,9 @@ import type {
 import { runProjectionWithEvents, type ProjectionResult } from "@/engine/projection";
 import { buildClientData, basePlanSettings, baseClient } from "@/engine/__tests__/fixtures";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
-import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import { applyGiftsToClientData, type EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { buildEstateFlowSummary } from "@/lib/estate/estate-flow-summary";
+import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
 
 const ZERO_DRAINS: RecipientGroup["drainsByKind"] = {
   federal_estate_tax: 0,
@@ -1066,22 +1067,21 @@ describe("buildEstateFlowSummary — heir composition rules 4 & 5: lifetime gift
       { id: "fm-caroline", role: "child", firstName: "Caroline", lastName: "Sample" },
     ] as ClientData["familyMembers"];
 
-    const gifts: EstateFlowGift[] = [
+    // Cash gifts to people are read from the engine's gift list.
+    clientData.gifts = [
       {
-        kind: "cash-once",
         id: "g1",
         year: 2026,
         amount: 18_000,
         grantor: "client",
-        recipient: { kind: "family_member", id: "fm-caroline" },
-        crummey: false,
+        recipientFamilyMemberId: "fm-caroline",
+        useCrummeyPowers: false,
       },
     ];
 
     const summary = buildEstateFlowSummary({
       ...baseInput({}),
       clientData,
-      gifts,
     })!;
 
     const caroline = summary.heirBoxes.find((h) =>
@@ -1140,6 +1140,291 @@ describe("buildEstateFlowSummary — heir composition rules 4 & 5: lifetime gift
     expect(kevin.outright).toBe(0);
     expect(kevin.inTrust).toBe(250_000);
     expect(kevin.total).toBe(250_000);
+  });
+});
+
+describe("buildEstateFlowSummary — cash gifts to people tally across Out of Estate and the heir boxes", () => {
+  /** The gifts as the engine holds them: a one-off cash gift on
+   *  `clientData.gifts`, a recurring gift as one `giftEvents` row per year with
+   *  the amount already resolved (the indexed annual exclusion, $19k then $20k). */
+  function giftingClientData(): ClientData {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper", lastName: "Sample" },
+      { id: "fm-alyssa", role: "child", firstName: "Alyssa", lastName: "Sample" },
+      { id: "fm-joey", role: "child", firstName: "Joey", lastName: "Sample" },
+    ] as ClientData["familyMembers"];
+    clientData.externalBeneficiaries = [
+      { id: "ext-nora", name: "Nora Quinn", kind: "individual", charityType: "public" },
+    ];
+    clientData.gifts = [
+      {
+        id: "g-joey",
+        year: 2027,
+        amount: 50_000,
+        grantor: "client",
+        recipientFamilyMemberId: "fm-joey",
+        useCrummeyPowers: false,
+      },
+    ];
+    clientData.giftEvents = [];
+    for (let year = 2026; year <= 2035; year++) {
+      clientData.giftEvents.push({
+        kind: "cash",
+        year,
+        amount: year === 2026 ? 19_000 : 20_000,
+        grantor: "client",
+        recipientFamilyMemberId: "fm-alyssa",
+        useCrummeyPowers: false,
+        seriesId: "s-alyssa",
+      });
+    }
+    return clientData;
+  }
+
+  /** The same two gifts as the editor holds them. */
+  const editorDrafts: EstateFlowGift[] = [
+    {
+      kind: "series",
+      id: "s-alyssa",
+      startYear: 2026,
+      endYear: 2035,
+      annualAmount: 19_000,
+      amountMode: "annual_exclusion",
+      inflationAdjust: false,
+      grantor: "client",
+      recipient: { kind: "family_member", id: "fm-alyssa" },
+      crummey: false,
+    },
+    {
+      kind: "cash-once",
+      id: "g-joey",
+      year: 2027,
+      amount: 50_000,
+      grantor: "client",
+      recipient: { kind: "family_member", id: "fm-joey" },
+      crummey: false,
+    },
+  ];
+
+  const summaryAt = (
+    asOfYear: number,
+    extras: Partial<Parameters<typeof buildEstateFlowSummary>[0]> = {},
+  ) =>
+    buildEstateFlowSummary({
+      ...baseInput(),
+      clientData: giftingClientData(),
+      asOfYear,
+      ...extras,
+    })!;
+
+  it("puts a recurring gift to a child in Out of Estate → Heirs, summed through the as-of year", () => {
+    const summary = summaryAt(2028);
+
+    expect(summary.outOfEstate.heirs.entities).toEqual([
+      {
+        entityId: "fm-alyssa",
+        entityLabel: "Alyssa Sample",
+        amount: 59_000,
+        assets: [{ label: "Annual gifts (2026–2028)", amount: 59_000 }],
+      },
+      {
+        entityId: "fm-joey",
+        entityLabel: "Joey Sample",
+        amount: 50_000,
+        assets: [{ label: "Cash gift (2027)", amount: 50_000 }],
+      },
+    ]);
+    expect(summary.outOfEstate.heirs.total).toBe(109_000);
+  });
+
+  it("counts the same gifts in each child's heir box and in Total to Heirs", () => {
+    const summary = summaryAt(2028);
+
+    const alyssa = summary.heirBoxes.find((h) => h.recipientKey === "fm-alyssa")!;
+    const joey = summary.heirBoxes.find((h) => h.recipientKey === "fm-joey")!;
+    expect(alyssa.outright).toBe(59_000);
+    expect(alyssa.sections).toEqual([
+      {
+        title: "Prior Transfers",
+        lines: [{ label: "Annual gifts (2026–2028)", amount: 59_000 }],
+        subtotal: 59_000,
+      },
+    ]);
+    expect(joey.outright).toBe(50_000);
+    expect(summary.totals.totalToHeirs).toBe(summary.outOfEstate.heirs.total);
+  });
+
+  it("leaves out gifts not yet made by the as-of year — on both sides", () => {
+    // AsOf "today" resolves to the year before the plan starts.
+    const summary = summaryAt(2025, { gifts: editorDrafts });
+
+    expect(summary.outOfEstate.heirs.entities).toEqual([]);
+    expect(summary.heirBoxes).toEqual([]);
+    expect(summary.totals.totalToHeirs).toBe(0);
+  });
+
+  it("counts each gift once when the editor's drafts are passed alongside the engine data", () => {
+    const summary = summaryAt(2028, { gifts: editorDrafts });
+
+    expect(summary.outOfEstate.heirs.total).toBe(109_000);
+    expect(summary.totals.totalToHeirs).toBe(109_000);
+  });
+
+  it("counts an asset gift to a child at its gift-year value, from the year it is made — on both sides", () => {
+    const clientData = giftingClientData();
+    clientData.gifts = [];
+    clientData.accounts = [
+      { id: "brokerage-1", name: "Brokerage", subType: "brokerage", value: 400_000,
+        owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }] },
+    ] as unknown as ClientData["accounts"];
+    clientData.giftEvents = [
+      { kind: "asset", year: 2030, accountId: "brokerage-1", percent: 0.25, grantor: "client",
+        recipientFamilyMemberId: "fm-alyssa" },
+    ];
+    // The brokerage has grown to $480k by the end of the gift year.
+    const projection = {
+      years: [{ year: 2030, accountLedgers: { "brokerage-1": { endingValue: 480_000 } } }],
+    } as unknown as ProjectionResult;
+    const at = (asOfYear: number) => summaryAt(asOfYear, { clientData, projection });
+
+    expect(at(2029).heirBoxes).toEqual([]);
+    const summary = at(2030);
+    expect(summary.heirBoxes[0]).toMatchObject({
+      recipientKey: "fm-alyssa",
+      outright: 120_000,
+      sections: [
+        { title: "Prior Transfers", lines: [{ label: "Asset gift (2030)", amount: 120_000 }] },
+      ],
+    });
+    expect(summary.outOfEstate.heirs.total).toBe(120_000);
+  });
+
+  it("gives a trust's beneficiaries nothing for a gift switched off in the editor", () => {
+    const clientData = giftingClientData();
+    clientData.gifts = [];
+    clientData.giftEvents = [];
+    clientData.entities = [
+      { id: "slat", entityType: "trust", isIrrevocable: true, name: "SLAT",
+        remainderBeneficiaries: [{ familyMemberId: "fm-joey", percentage: 1 }] },
+    ] as ClientData["entities"];
+    const trustGift = (enabled: boolean): EstateFlowGift[] => [
+      { kind: "cash-once", id: "g-slat", year: 2027, amount: 250_000, grantor: "client",
+        recipient: { kind: "entity", id: "slat" }, crummey: false, enabled },
+    ];
+
+    expect(summaryAt(2028, { clientData, gifts: trustGift(true) }).totals.totalToHeirs).toBe(250_000);
+    expect(summaryAt(2028, { clientData, gifts: trustGift(false) }).totals.totalToHeirs).toBe(0);
+  });
+
+  it("ties to the projection: the gifts the engine made move from the estate to the heirs, the total holds", () => {
+    // $2M of cash, no growth, spending or tax, so every dollar is a gift or an
+    // inheritance. Cooper dies 2035, Susan 2042; Alyssa, the only child, takes
+    // the estate by default.
+    const JOINT: Account["owners"] = [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+      { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+    ];
+    const plan = buildClientData({
+      client: { ...baseClient, dateOfBirth: "1960-01-01", spouseDob: "1962-06-15",
+        lifeExpectancy: 75, spouseLifeExpectancy: 80 },
+      familyMembers: [
+        { id: LEGACY_FM_CLIENT, role: "client", relationship: "other",
+          firstName: "Cooper", lastName: "Sample", dateOfBirth: "1960-01-01" },
+        { id: LEGACY_FM_SPOUSE, role: "spouse", relationship: "other",
+          firstName: "Susan", lastName: "Sample", dateOfBirth: "1962-06-15" },
+        { id: "fm-alyssa", role: "child", relationship: "child",
+          firstName: "Alyssa", lastName: "Sample", dateOfBirth: "1990-01-01" },
+      ],
+      accounts: [
+        { id: "acc-checking", name: "Checking", category: "cash", subType: "checking",
+          titlingType: "jtwros", value: 2_000_000, basis: 2_000_000, growthRate: 0,
+          rmdEnabled: false, isDefaultChecking: true, owners: JOINT },
+      ],
+      entities: [], incomes: [], liabilities: [], savingsRules: [], expenses: [],
+      withdrawalStrategy: [], giftEvents: [], wills: [],
+      planSettings: { ...basePlanSettings, flatFederalRate: 0, flatStateRate: 0,
+        planStartYear: 2026, planEndYear: 2045 },
+    });
+    // $19k a year to Alyssa for ten years, growing with 3% inflation.
+    const gifts: EstateFlowGift[] = [
+      { kind: "series", id: "s-alyssa", startYear: 2026, endYear: 2035, annualAmount: 19_000,
+        amountMode: "fixed", inflationAdjust: true, grantor: "client",
+        recipient: { kind: "family_member", id: "fm-alyssa" }, crummey: false },
+    ];
+    const ownerNames = { clientName: "Cooper", spouseName: "Susan" };
+    const chartAt = (data: ClientData, chartGifts: EstateFlowGift[], asOfYear: number) => {
+      const projection = runProjectionWithEvents(data);
+      const reportData = buildEstateTransferReportData({
+        projection, asOf: { kind: "year", year: asOfYear }, ordering: "primaryFirst",
+        clientData: data, ownerNames,
+      });
+      const summary = buildEstateFlowSummary({
+        reportData, clientData: data, gifts: chartGifts, ownerNames, asOfYear, projection,
+      })!;
+      const giftsDrained = projection.years
+        .filter((y) => y.year <= asOfYear)
+        .reduce((t, y) => t + y.expenses.cashGifts, 0);
+      return { summary, giftsDrained };
+    };
+
+    const without = chartAt(plan, [], 2030);
+    const withGifts = chartAt(applyGiftsToClientData(plan, gifts, 0.03), gifts, 2030);
+
+    // 2026–2030 at 3% growth ≈ $100,874 — not the nominal $19k × 5.
+    expect(withGifts.giftsDrained).toBeCloseTo(100_873.58, 0);
+    expect(withGifts.summary.outOfEstate.heirs.total).toBeCloseTo(withGifts.giftsDrained, 2);
+    expect(without.summary.totals.totalToHeirs).toBeCloseTo(2_000_000, 0);
+    expect(withGifts.summary.totals.totalToHeirs).toBeCloseTo(2_000_000, 0);
+  });
+
+  it("adds a recurring gift to a non-family heir to the same box as their inheritance", () => {
+    const clientData = giftingClientData();
+    clientData.gifts = [];
+    clientData.giftEvents = [2026, 2027].map((year) => ({
+      kind: "cash" as const,
+      year,
+      amount: 10_000,
+      grantor: "client" as const,
+      recipientExternalBeneficiaryId: "ext-nora",
+      useCrummeyPowers: false,
+      seriesId: "s-nora",
+    }));
+    const secondDeath = deathSection({
+      decedent: "spouse",
+      decedentName: "Susan",
+      year: 2030,
+      recipients: [
+        group({
+          key: "ext-nora",
+          kind: "external_beneficiary",
+          recipientId: "ext-nora",
+          label: "Nora Quinn",
+          byMechanism: [mech("will", [asset("Brokerage", 100_000)])],
+        }),
+      ],
+      reductions: [],
+    });
+
+    const summary = summaryAt(2030, {
+      reportData: baseInput({ secondDeath }).reportData,
+      clientData,
+    });
+
+    expect(summary.outOfEstate.heirs.entities).toEqual([
+      {
+        entityId: "ext-nora",
+        entityLabel: "Nora Quinn",
+        amount: 20_000,
+        assets: [{ label: "Annual gifts (2026–2027)", amount: 20_000 }],
+      },
+    ]);
+    expect(summary.heirBoxes).toHaveLength(1);
+    expect(summary.heirBoxes[0]).toMatchObject({
+      recipientKey: "ext-nora",
+      outright: 120_000,
+      total: 120_000,
+    });
   });
 });
 
@@ -2026,15 +2311,14 @@ describe("buildEstateFlowSummary — year-aware OOE (gifts + projection)", () =>
       { id: "fm-caroline", role: "child", firstName: "Caroline", lastName: "Sample" },
     ] as ClientData["familyMembers"];
 
-    const gifts: EstateFlowGift[] = [
+    clientData.gifts = [
       {
-        kind: "cash-once",
         id: "g1",
         year: 2025,
         amount: 100_000,
         grantor: "client",
-        recipient: { kind: "family_member", id: "fm-caroline" },
-        crummey: false,
+        recipientFamilyMemberId: "fm-caroline",
+        useCrummeyPowers: false,
       },
     ];
 
@@ -2042,7 +2326,6 @@ describe("buildEstateFlowSummary — year-aware OOE (gifts + projection)", () =>
     const summary = buildEstateFlowSummary({
       ...baseInput(),
       clientData,
-      gifts,
       asOfYear: 2027,
       projection: projectionAt(2027, {}),
     })!;
@@ -2067,22 +2350,20 @@ describe("buildEstateFlowSummary — year-aware OOE (gifts + projection)", () =>
       { id: "fm-caroline", role: "child", firstName: "Caroline" },
     ] as ClientData["familyMembers"];
 
-    const gifts: EstateFlowGift[] = [
+    clientData.gifts = [
       {
-        kind: "cash-once",
         id: "g1",
         year: 2030,
         amount: 100_000,
         grantor: "client",
-        recipient: { kind: "family_member", id: "fm-caroline" },
-        crummey: false,
+        recipientFamilyMemberId: "fm-caroline",
+        useCrummeyPowers: false,
       },
     ];
 
     const summary = buildEstateFlowSummary({
       ...baseInput(),
       clientData,
-      gifts,
       asOfYear: 2026,
       projection: projectionAt(2026, {}),
     })!;

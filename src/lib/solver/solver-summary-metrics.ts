@@ -3,12 +3,21 @@
 // Pure read-only derivations for the Solver KPI row. The funded/tax metrics run
 // over a projection's ProjectionYear[] and mirror the Retirement Analysis logic
 // so the two tools report the same numbers; `netToHeirsEol` composes the estate
-// transfer report and mirrors the Estate Summary's headline figure.
+// transfer report, as the Estate Summary's headline figure does, and adds the
+// lifetime gifts made to heirs.
 
 import type { ProjectionYear, ProjectionResult, ClientData } from "@/engine";
 import { liquidPortfolioTotal } from "@/engine/monteCarlo/trial";
 import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
+import { lifetimeGiftsToHeirs } from "@/lib/estate/lifetime-gifts-to-people";
 import { summarizeHousehold } from "@/lib/presentations/pages/estate-summary/aggregate";
+
+/** The year end-of-life heirs figures are read at: the second death, or the
+ *  projection's last year when there is none (a single client's projection
+ *  ends at their death). */
+export function endOfLifeYear(projection: Pick<ProjectionResult, "secondDeathEvent" | "years">): number | undefined {
+  return projection.secondDeathEvent?.year ?? projection.years.at(-1)?.year;
+}
 
 /** Count of plan years whose liquid portfolio is non-negative (no shortfall). */
 export function yearsFullyFunded(years: ProjectionYear[]): number {
@@ -23,8 +32,9 @@ export function lifetimeTaxes(years: ProjectionYear[]): number {
 /**
  * End-of-life "Net to Heirs" for a projection that carries death events —
  * total dollars reaching heirs at each spouse's projected death year, net of
- * estate taxes & costs. Uses `asOf: "split"`, so it matches the Estate Summary
- * deck's headline `netToHeirsEol` and the two surfaces report the same figure.
+ * estate taxes & costs, plus the gifts made to heirs during life (through
+ * `endOfLifeYear`). The at-death part uses `asOf: "split"`, as the Estate
+ * Summary deck's headline `netToHeirsEol` does; that deck does not add gifts.
  *
  * Requires a `ProjectionResult` from `runProjectionWithEvents` (fetched with
  * `includeEvents: true`); the plain ProjectionYear[] the other KPIs read has no
@@ -41,7 +51,8 @@ export function netToHeirsEol(
 
 /** What reaches the heirs, and the income tax already taken out of it. */
 export interface EstateHeirTotals {
-  /** Same figure `netToHeirsEol` returns. */
+  /** Same figure `netToHeirsEol` returns: what reaches heirs at death plus
+   *  the lifetime gifts made to them (`lifetimeGiftsToHeirs`). */
   netToHeirs: number;
   /**
    * Income tax the heirs owe on inherited pre-tax retirement balances — income
@@ -83,7 +94,12 @@ export function estateHeirTotalsEol(
   });
   if (report.isEmpty) return null;
   const household = summarizeHousehold(report);
-  return { netToHeirs: household.netToHeirs, heirIncomeTax: household.ird };
+  // Plus what was given to heirs during life, cut off at the same year the
+  // Solver's Total to Heirs tile reads (that tile also leaves charity out).
+  const eolYear = endOfLifeYear(projection);
+  const lifetimeGifts =
+    eolYear != null ? lifetimeGiftsToHeirs(clientData, eolYear, projection) : 0;
+  return { netToHeirs: household.netToHeirs + lifetimeGifts, heirIncomeTax: household.ird };
 }
 
 /**

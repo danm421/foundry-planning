@@ -53,6 +53,29 @@ describe("netToHeirsEol", () => {
   });
 });
 
+describe("netToHeirsEol — lifetime gifts", () => {
+  it("adds the gifts made to heirs through the last death", () => {
+    buildEstateTransferReportData.mockReturnValue({ isEmpty: false });
+    summarizeHousehold.mockReturnValue({ netToHeirs: 2_400_000 });
+    const giving = {
+      client: { firstName: "Frank" },
+      familyMembers: [{ id: "kid", role: "child", firstName: "Kim" }],
+      gifts: [
+        { id: "g1", year: 2030, amount: 50_000, grantor: "client", recipientFamilyMemberId: "kid", useCrummeyPowers: false },
+        // After the last death — never made.
+        { id: "g2", year: 2045, amount: 70_000, grantor: "client", recipientFamilyMemberId: "kid", useCrummeyPowers: false },
+      ],
+      giftEvents: [],
+    } as unknown as ClientData;
+    const lastDeath2040 = {
+      years: [{ year: 2026 }],
+      secondDeathEvent: { year: 2040 },
+    } as unknown as ProjectionResult;
+
+    expect(netToHeirsEol(lastDeath2040, giving, ownerNames)).toBe(2_450_000);
+  });
+});
+
 describe("estateHeirTotalsEol", () => {
   beforeEach(() => {
     buildEstateTransferReportData.mockReset();

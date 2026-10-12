@@ -3,6 +3,7 @@ import type { ProjectionResult, ClientData } from "@/engine";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import { estateDistributionAtYear } from "@/lib/estate/estate-distribution-at-year";
 import { parseProjectionResponse } from "@/lib/solver/projection-wire";
+import { endOfLifeYear } from "@/lib/solver/solver-summary-metrics";
 
 interface Args {
   clientId: string;
@@ -69,9 +70,7 @@ export function useSolverNetToHeirs(args: Args) {
         // final projected year if unmarried/single-death), routed through the
         // shared builder so the KPI equals the estate chart at its max slider
         // year by construction.
-        const Y =
-          data.projectionResult?.secondDeathEvent?.year ??
-          data.projectionResult?.years.at(-1)?.year;
+        const Y = data.projectionResult && endOfLifeYear(data.projectionResult);
         setWorking(
           data.projectionResult && Y != null
             ? estateDistributionAtYear({
@@ -118,9 +117,7 @@ export function useSolverNetToHeirs(args: Args) {
         const data = parseProjectionResponse<{ projectionResult?: ProjectionResult }>(
           await res.text(),
         );
-        const Y =
-          data.projectionResult?.secondDeathEvent?.year ??
-          data.projectionResult?.years.at(-1)?.year;
+        const Y = data.projectionResult && endOfLifeYear(data.projectionResult);
         setBase(
           data.projectionResult && Y != null
             ? estateDistributionAtYear({

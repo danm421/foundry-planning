@@ -1,11 +1,17 @@
 import type { ProjectionResult, ClientData } from "@/engine";
 import { collectCharityExternalBeneficiaryIds } from "./charity-recipients";
+import { lifetimeGiftsToHeirs } from "./lifetime-gifts-to-people";
 import { buildEstateTransferReportData, type RecipientGroup } from "./transfer-report";
 import { summarizeHousehold } from "@/lib/presentations/pages/estate-summary/aggregate";
 
 export interface EstateDistribution {
   year: number;
+  /** What heirs receive at the year's deaths PLUS `lifetimeGifts` — gifting
+   *  moves wealth to heirs early, so it must not read as a loss to them. */
   toHeirs: number;
+  /** Gifts already made to heirs (people other than the couple and charities)
+   *  on or before `year`, inside `toHeirs`. See `lifetimeGiftsToHeirs`. */
+  lifetimeGifts: number;
   taxesAndExpenses: number;
   /** The income tax an heir owes on an inherited pre-tax account, already
    *  inside `taxesAndExpenses`. Broken out because it is usually the largest
@@ -37,7 +43,15 @@ export function estateDistributionAtYear(args: {
     ownerNames: args.ownerNames,
   });
   if (report.isEmpty) {
-    return { year: args.year, toHeirs: 0, taxesAndExpenses: 0, ird: 0, toCharity: 0, isEmpty: true };
+    return {
+      year: args.year,
+      toHeirs: 0,
+      lifetimeGifts: 0,
+      taxesAndExpenses: 0,
+      ird: 0,
+      toCharity: 0,
+      isEmpty: true,
+    };
   }
   const h = summarizeHousehold(report);
 
@@ -65,9 +79,12 @@ export function estateDistributionAtYear(args: {
     .filter(isCharity)
     .reduce((s, r) => s + r.netTotal, 0);
 
+  const lifetimeGifts = lifetimeGiftsToHeirs(args.clientData, args.year, args.projection);
+
   return {
     year: args.year,
-    toHeirs: h.netToHeirs - toCharity,
+    toHeirs: h.netToHeirs - toCharity + lifetimeGifts,
+    lifetimeGifts,
     taxesAndExpenses: h.taxAndCosts,
     ird: h.ird,
     toCharity,
