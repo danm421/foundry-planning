@@ -430,6 +430,10 @@ describe("active-subscription lint", () => {
       // calls requirePortalActiveSubscription unconditionally before it
       // returns, so a route using it is gated without naming the helper.
       if (body.includes("resolvePortalWriteContext")) continue;
+      // Fact finder import routes run `factFinderGate`
+      // (src/lib/fact-finder/gate.ts), which calls requireActiveSubscription
+      // before it returns ok — each route's own test pins the 403.
+      if (body.includes("factFinderGate")) continue;
       violations.push(rel);
     }
 

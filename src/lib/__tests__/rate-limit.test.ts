@@ -228,6 +228,20 @@ describe("checkImportRateLimit", () => {
     expect(windows[0][0]).toBe(5);
     expect(windows[1][0]).toBeGreaterThanOrEqual(60);
   });
+
+  // A typed fact finder edit is one debounced PATCH per pause in typing, so its
+  // bucket is sized for a person typing, not for clicks — and kept apart from
+  // `view` so a busy editing session can't starve page loads.
+  it("spends typed fact finder edits from their own generous bucket", async () => {
+    mockLimit.mockResolvedValue({ success: true, remaining: 1, reset: 1 });
+    const { checkImportRateLimit } = await import("../rate-limit");
+    await checkImportRateLimit("firm-1", "edit");
+    expect(mockLimit).toHaveBeenCalledWith("firm-1:edit");
+    const built = RatelimitMock.mock.calls as unknown as [{ prefix: string }][];
+    expect(built.map((c) => c[0].prefix)).toEqual(["rl:import:edit"]);
+    const windows = RatelimitMock.slidingWindow.mock.calls as unknown as [number][];
+    expect(windows[0][0]).toBeGreaterThanOrEqual(240);
+  });
 });
 
 describe("rateLimitErrorResponse", () => {

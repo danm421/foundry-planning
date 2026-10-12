@@ -137,6 +137,10 @@ const getImportMapLimiter = buildLimiter(60, "1 m", "rl:import:map");
 // graph; this surface stays independent" split. Same 20/min/firm generosity
 // as Forge's own turns, its own bucket.
 const getImportTurnLimiter = buildLimiter(20, "1 m", "rl:import:turn");
+// Fact finder typed edits: the screen sends one debounced PATCH (~400 ms) per
+// pause in typing, so a fast advisor fills a whole section in a minute. Sized
+// for typing, and kept off `view` so editing never starves page loads.
+const getImportEditLimiter = buildLimiter(240, "1 m", "rl:import:edit");
 
 // Projection / Monte Carlo. Both endpoints run the engine end-to-end on
 // every request (loadEffectiveTree + runProjection / runMonteCarlo). 30/min
@@ -317,7 +321,8 @@ export type ImportRateLimitOp =
   | "view"
   | "match"
   | "commit"
-  | "turn";
+  | "turn"
+  | "edit";
 
 /**
  * Multi-bucket rate-limit dispatcher for the import tool v2. The `op`
@@ -339,6 +344,7 @@ export async function checkImportRateLimit(
     match: getImportMatchLimiter,
     commit: getImportCommitLimiter,
     turn: getImportTurnLimiter,
+    edit: getImportEditLimiter,
   } as const;
   const limiter = factories[op]();
   if (!limiter) return { allowed: false, reason: "unconfigured" };
