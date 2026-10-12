@@ -394,6 +394,22 @@ describe("buildClientProfileData — expenses", () => {
     const data = buildClientProfileData({ ...base, years: onlyMedicare, clientData: clientData({}) });
     expect(data.expenses.map((r) => r.label)).toEqual(["Living", "Medicare", "Total"]);
   });
+
+  it("breaks Cash Gifts out of Other so the rows still add up to the Total", () => {
+    // The engine rolls cash gifts into `other` and also surfaces them as
+    // `cashGifts`. Other = $13,200 of other costs + $38,000 of gifts.
+    const giftYears = [
+      py({ year: 2026, expenses: { living: 250000, other: 51200, cashGifts: 38000, total: 301200 } }),
+      py({ year: 2033, expenses: { living: 280000, other: 56000, cashGifts: 42000, total: 336000 } }),
+    ];
+    const data = buildClientProfileData({ ...base, years: giftYears, clientData: clientData({}) });
+    expect(data.expenses.find((r) => r.label === "Cash Gifts")).toMatchObject({ current: 38000, retirement: 42000 });
+    expect(data.expenses.find((r) => r.label === "Other")).toMatchObject({ current: 13200, retirement: 14000 });
+    const rows = data.expenses.filter((r) => !r.isTotal);
+    const total = data.expenses.find((r) => r.isTotal)!;
+    expect(rows.reduce((s, r) => s + r.current, 0)).toBe(total.current);
+    expect(rows.reduce((s, r) => s + r.retirement, 0)).toBe(total.retirement);
+  });
 });
 
 describe("buildClientProfileData — mid-year retirement", () => {

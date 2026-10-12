@@ -1016,13 +1016,28 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
   if (view === "consolidated") {
     liabilityRows = [];
     outOfEstateLiabilityRows = [];
+    // A liability owned by more than one in-estate family member (a
+    // client+spouse joint mortgage) collapses into one household "Joint" row,
+    // as joint accounts do above — otherwise it prints as two half-balance rows.
+    const jointByLiability = new Map<string, LiabilityRow>();
     for (const ls of liabilitySlices) {
       if (ls.kind === "family") {
         if (!isInEstateFamilyRole(ls.rawRole)) {
           outOfEstateLiabilityRows.push(ls.row);
           ooeAdd(`fm:${ls.familyMemberId}`, ls.firstName ?? "Other", "person", 0, ls.row.balance);
         } else {
-          liabilityRows.push(ls.row);
+          const joint = jointByLiability.get(ls.row.liabilityId);
+          if (joint) {
+            joint.rowKey = joint.liabilityId;
+            joint.owner = "joint";
+            joint.ownerLabel = "Joint";
+            joint.ownerPercent += ls.row.ownerPercent;
+            joint.balance += ls.row.balance;
+          } else {
+            const row = { ...ls.row };
+            jointByLiability.set(row.liabilityId, row);
+            liabilityRows.push(row);
+          }
         }
         continue;
       }

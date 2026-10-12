@@ -43,7 +43,8 @@ const EXPENSE_BUCKETS: { label: string; amount: (e: YearExpenses) => number }[] 
   { label: "Taxes", amount: (e) => e.taxes },
   { label: "Cash Gifts", amount: (e) => e.cashGifts },
   { label: "Discretionary", amount: (e) => e.discretionary },
-  { label: "Other", amount: (e) => e.other },
+  // `other` already includes the cash gifts shown on their own line above.
+  { label: "Other", amount: (e) => e.other - e.cashGifts },
 ];
 
 function birthYear(iso: string | null | undefined): number | null {

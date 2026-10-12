@@ -138,6 +138,14 @@ describe("buildViewModel (consolidated)", () => {
     expect(cash.rows[0].owner).toBe("joint");
   });
 
+  it("collapses a joint (client+spouse) liability into one 'Joint' row in the consolidated view", () => {
+    const mortgages = vm.liabilityRows.filter((r) => r.liabilityId === "l-mort");
+    expect(mortgages.length).toBe(1);
+    expect(mortgages[0].balance).toBe(400_000); // full balance, not two halves
+    expect(mortgages[0].ownerLabel).toBe("Joint");
+    expect(mortgages[0].owner).toBe("joint");
+  });
+
   it("surfaces irrevocable-trust slices in outOfEstateRows", () => {
     expect(vm.outOfEstateRows.map((r) => r.accountId)).toEqual(["a-trust"]);
     expect(vm.outOfEstateRows[0].value).toBe(300_000);
