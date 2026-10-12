@@ -173,6 +173,39 @@ export function headlineFigure(kind: RowKind, row: Row): string {
   }
 }
 
+/** The household-profile fields update_client_profile writes: whose they are
+ *  and what the card calls them. */
+export const PROFILE_FIELDS: Record<string, { person: "client" | "spouse"; label: string }> = {
+  dateOfBirth: { person: "client", label: "date of birth" },
+  retirementAge: { person: "client", label: "retirement age" },
+  retirementMonth: { person: "client", label: "retirement month" },
+  spouseDob: { person: "spouse", label: "date of birth" },
+  spouseRetirementAge: { person: "spouse", label: "retirement age" },
+  spouseRetirementMonth: { person: "spouse", label: "retirement month" },
+};
+
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** A profile value as an advisor reads it: a retirement month by name. */
+export function formatProfileValue(key: string, v: unknown): string {
+  if (v == null || v === "") return "—";
+  return PROFILE_FIELDS[key]?.label === "retirement month"
+    ? (MONTHS[Number(v) - 1] ?? String(v))
+    : String(v);
+}
+
+/** One Current Living Expenses item as typed: "Groceries: $800/mo". */
+export function livingItemLine(item: { name: string; amount: number; frequency: string }): string {
+  return `${item.name}: ${livingItemAmount(item)}`;
+}
+
+export function livingItemAmount(item: { amount: number; frequency: string }): string {
+  return `${formatMoney(item.amount)}/${item.frequency === "monthly" ? "mo" : "yr"}`;
+}
+
 function formatTerm(v: unknown): string {
   const n = toNumber(v);
   if (n == null) return String(v);

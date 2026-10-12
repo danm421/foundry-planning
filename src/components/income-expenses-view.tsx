@@ -24,7 +24,7 @@ import {
   flowYearPatch,
   type FlowPatch,
 } from "@/lib/inline-edit/flow-write";
-import { livingSlotRank } from "@/lib/living-slot-order";
+import { isItemizableLivingRow, livingSlotRank } from "@/lib/living-slot-order";
 import LivingExpenseItems from "@/components/income-expenses/living-expense-items";
 import { ChevronIcon } from "@/components/income-expenses/icons";
 import {
@@ -338,10 +338,6 @@ const EXPENSE_GROUPS: { label: string; types: ExpenseType[] }[] = [
   { label: "Education", types: ["education"] },
   { label: "Other Expenses", types: ["other"] },
 ];
-
-/** The seeded Current living row is the one row that can be itemized
- *  (spec 2026-10-07). `livingSlotRank` already pins it as rank 0. */
-const canItemize = (e: Expense) => e.type === "living" && livingSlotRank(e) === 0;
 
 const INCOME_TYPE_LABELS: Partial<Record<IncomeType, string>> = {
   salary: "Salary",
@@ -2315,7 +2311,7 @@ export default function IncomeExpensesView({
     // A row that already has items keeps its chevron even after it stops being
     // the Current slot (a typed start year drops its "plan start" anchor) —
     // otherwise its amount is locked with no way to reach the items.
-    const itemizable = canItemize(expense) || itemized;
+    const itemizable = isItemizableLivingRow(expense) || itemized;
     const itemsOpen = itemizable && itemsOpenFor === expense.id;
     const itemsMeta = itemized
       ? `${items.length} item${items.length === 1 ? "" : "s"} · ${

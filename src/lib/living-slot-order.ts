@@ -39,3 +39,9 @@ export function livingSlotRank(e: LivingSlotRankable): 0 | 1 | 2 {
   if (role === "retirement") return 1;
   return 2;
 }
+
+/** The seeded Current living row is the one row that can be itemized (spec
+ *  2026-10-07) — on the page and through the Forge alike. */
+export function isItemizableLivingRow(e: LivingSlotRankable & { type: string }): boolean {
+  return e.type === "living" && livingSlotRank(e) === 0;
+}

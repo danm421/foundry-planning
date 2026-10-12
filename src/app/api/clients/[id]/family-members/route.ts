@@ -3,12 +3,10 @@ import { db } from "@/db";
 import { familyMembers } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { requireOrgAndUser } from "@/lib/db-helpers";
-import { recordAudit } from "@/lib/audit";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
-import { summarizeZodIssues } from "@/lib/schemas/common";
-import { familyMemberCreateSchema } from "@/lib/schemas/family-members";
+import { createFamilyMemberForClient } from "@/lib/clients/family-members-writes";
 
 export const dynamic = "force-dynamic";
 
@@ -47,39 +45,15 @@ export async function POST(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
-    const parsed = familyMemberCreateSchema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json({ error: summarizeZodIssues(parsed.error) }, { status: 400 });
-    }
-    const {
-      firstName, lastName, relationship, dateOfBirth, notes,
-      domesticPartner, inheritanceClassOverride,
-    } = parsed.data;
-
-    const [member] = await db
-      .insert(familyMembers)
-      .values({
-        clientId: id,
-        firstName,
-        lastName: lastName ?? null,
-        relationship: relationship ?? "child",
-        dateOfBirth: dateOfBirth || null,
-        notes: notes ?? null,
-        domesticPartner: !!domesticPartner,
-        inheritanceClassOverride: inheritanceClassOverride ?? {},
-      })
-      .returning();
-
-    await recordAudit({
-      action: "family_member.create",
-      resourceType: "family_member",
-      resourceId: member.id,
+    const result = await createFamilyMemberForClient({
       clientId: id,
       firmId,
-      metadata: crossFirmAuditMeta({ access }, callerOrg, { firstName: member.firstName, relationship: member.relationship }),
+      input: await request.json(),
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
-
-    return NextResponse.json(member, { status: 201 });
+    return result.ok
+      ? NextResponse.json(result.data, { status: 201 })
+      : NextResponse.json({ error: result.error }, { status: result.status });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

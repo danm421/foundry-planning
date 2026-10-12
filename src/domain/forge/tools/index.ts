@@ -99,6 +99,10 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "add_account",
   "update_account",
   "remove_account",
+  // Phase-3 detail (plan-data) writes — household + itemized living, HITL-gated
+  "add_family_member",
+  "set_living_expense_items",
+  "update_client_profile",
   // Tier-B CRM destructive / bulk writes — route through HITL approval node
   "crm_delete_note",
   "crm_delete_task",

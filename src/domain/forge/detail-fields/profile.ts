@@ -44,7 +44,10 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
     surface: "Profile → Household → Edit profile",
     table: "clients",
     routes: { list: "/", update: "/", delete: "/" },
+    writeCore: "@/lib/clients/client-profile-writes",
     scenarioScoped: false,
+    // Dates of birth and retirement ages/months only — see update_client_profile.
+    forgeTool: { update: "update_client_profile" },
     documentEvidence: true,
     documentHints: [
       "a fact finder or client profile page printing the client's and spouse's legal names",
@@ -316,7 +319,9 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
       delete: "/family-members/[memberId]",
     },
     createSchema: { module: "@/lib/schemas/family-members", export: "familyMemberCreateSchema" },
+    writeCore: "@/lib/clients/family-members-writes",
     scenarioScoped: false,
+    forgeTool: { add: "add_family_member" },
     documentEvidence: true,
     documentHints: [
       "a list of children, dependants or family members with dates of birth",

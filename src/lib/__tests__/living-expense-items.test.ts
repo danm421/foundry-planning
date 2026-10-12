@@ -7,6 +7,7 @@ import {
   itemAnnualAmount,
   livingItemsAnnualTotal,
   livingItemsPatch,
+  mergeLivingItems,
   withLivingItemsTotal,
 } from "../living-expense-items";
 
@@ -155,5 +156,48 @@ describe("goalPrefillFromItem", () => {
     expect(p.endYearRef).toBeNull();
     expect(p.growthSource).toBeNull();
     expect(p.inflationStartYear).toBeNull();
+  });
+});
+
+describe("mergeLivingItems", () => {
+  let n = 0;
+  const newId = () => `new-${++n}`;
+  const groceries = { name: "Groceries", amount: 900, frequency: "monthly" as const };
+
+  it("add appends a new item with a minted id and a trimmed name", () => {
+    n = 0;
+    expect(mergeLivingItems([item()], [{ ...groceries, name: "  Groceries " }], "add", newId)).toEqual([
+      item(),
+      { id: "new-1", ...groceries },
+    ]);
+  });
+
+  it("add updates an item of the same name in place, whatever its case", () => {
+    const out = mergeLivingItems(
+      [item(), TRAVEL],
+      [{ name: "housing", amount: 3500, frequency: "monthly" }],
+      "add",
+      newId,
+    );
+    expect(out).toEqual([item({ amount: 3500 }), TRAVEL]);
+  });
+
+  it("replace drops every existing item", () => {
+    n = 0;
+    expect(mergeLivingItems([item(), TRAVEL], [groceries], "replace", newId)).toEqual([
+      { id: "new-1", ...groceries },
+    ]);
+  });
+
+  it("a name given twice keeps its last amount", () => {
+    n = 0;
+    const out = mergeLivingItems([], [groceries, { ...groceries, amount: 1000 }], "add", newId);
+    expect(out).toEqual([{ id: "new-1", ...groceries, amount: 1000 }]);
+  });
+
+  it("never mutates the current list", () => {
+    const current = [item()];
+    mergeLivingItems(current, [{ name: "Housing", amount: 1, frequency: "annual" }], "add", newId);
+    expect(current).toEqual([item()]);
   });
 });

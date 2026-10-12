@@ -86,6 +86,32 @@ export function withLivingItemsTotal<
   return { ...fields, annualAmount: String(livingItemsAnnualTotal(fields.livingItems)) } as T;
 }
 
+/** An item as someone types it in a list: no id yet. */
+export type LivingItemInput = Pick<LivingExpenseItem, "name" | "amount" | "frequency">;
+
+const nameKey = (name: string) => name.trim().toLowerCase();
+
+/**
+ * Fold a typed list into a row's items. "add" keeps every existing item and
+ * updates one whose name matches (case-insensitively) in place, so repeating a
+ * list never duplicates it; "replace" starts from an empty list. A name given
+ * twice keeps its last amount. New items take their id from `newId`.
+ */
+export function mergeLivingItems(
+  current: readonly LivingExpenseItem[],
+  incoming: readonly LivingItemInput[],
+  mode: "add" | "replace",
+  newId: () => string,
+): LivingExpenseItem[] {
+  const result = mode === "replace" ? [] : current.map((item) => ({ ...item }));
+  for (const { name, amount, frequency } of incoming) {
+    const hit = result.find((item) => nameKey(item.name) === nameKey(name));
+    if (hit) Object.assign(hit, { amount, frequency });
+    else result.push({ id: newId(), name: name.trim(), amount, frequency });
+  }
+  return result;
+}
+
 /** What "Make it a goal" pre-fills in the expense editor. */
 export interface GoalPrefill {
   name: string;

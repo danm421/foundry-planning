@@ -3,8 +3,9 @@
 // Phase 3 DETAIL (plan-data) WRITE TOOLS — the expense sub-phase
 // (add_/update_/remove_expense), the income sub-phase
 // (add_/update_/remove_income), the liability sub-phase
-// (add_/update_/remove_liability), and the account sub-phase
-// (add_/update_/remove_account). These mutate base-case plan data, so they
+// (add_/update_/remove_liability), the account sub-phase
+// (add_/update_/remove_account), add_family_member, set_living_expense_items
+// and update_client_profile. These mutate base-case plan data, so they
 // route through the human-approval gate (WRITE_TOOL_NAMES) exactly like the
 // Phase-2 scenario writes, and they share that surface's security posture:
 //
@@ -31,7 +32,12 @@ import { z } from "zod";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
-import { headlineFigure } from "@/domain/forge/row-lines";
+import {
+  PROFILE_FIELDS,
+  formatProfileValue,
+  headlineFigure,
+  livingItemLine,
+} from "@/domain/forge/row-lines";
 import {
   createExpenseForClient,
   updateExpenseForClient,
@@ -52,6 +58,12 @@ import {
   updateAccountForClient,
   deleteAccountForClient,
 } from "@/lib/clients/accounts-writes";
+import { createFamilyMemberForClient } from "@/lib/clients/family-members-writes";
+import { setLivingItemsForClient } from "@/lib/clients/living-items-writes";
+import { updateClientProfileForClient } from "@/lib/clients/client-profile-writes";
+import { clientProfileUpdateSchema } from "@/lib/schemas/client-profile";
+import { FAMILY_RELATIONSHIPS, resolveBirthDate } from "@/lib/schemas/family-members";
+import { MAX_LIVING_ITEMS } from "@/lib/living-expense-items";
 import type { ForgeToolContext } from "../context";
 
 /** Every write tool's description ends with this so the UI can flag approval. */
@@ -882,6 +894,185 @@ export function buildDetailWriteTools({
     },
   );
 
+  const addFamilyMember = tool(
+    async ({ age, ...input }) => {
+      try {
+        const gate = await gateAccess(ctx.clientId);
+        if ("error" in gate) return gate.error;
+
+        const { dateOfBirth, estimated } = resolveBirthDate(input.dateOfBirth, age, new Date());
+        const r = await createFamilyMemberForClient({
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          input: { ...input, dateOfBirth },
+        });
+        if (!r.ok) return r.error;
+
+        await recordAudit({
+          action: "forge.write_approved",
+          resourceType: "family_member",
+          resourceId: r.resourceId,
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          metadata: { tool: "add_family_member", firstName: r.data.firstName },
+        });
+
+        const who = [r.data.firstName, r.data.lastName].filter(Boolean).join(" ");
+        const born = r.data.dateOfBirth
+          ? `, date of birth ${r.data.dateOfBirth}${estimated ? ` (estimated from age ${age})` : ""}`
+          : "";
+        return `Added ${r.data.relationship.replace(/_/g, " ")} "${who}"${born} (id ${r.resourceId}).`;
+      } catch {
+        return "Sorry — that action couldn't be completed.";
+      }
+    },
+    {
+      name: "add_family_member",
+      description:
+        "Add a child or other family member to the current client's household. Only the first " +
+        "name is required — a name alone is enough, so never ask for a last name, birth date or " +
+        "age the advisor didn't give. Call once per person. " +
+        APPROVAL_SUFFIX,
+      schema: z.object({
+        firstName: z.string().min(1).describe("first name"),
+        lastName: z.string().optional().describe("last name, only if the advisor gave one"),
+        relationship: z
+          .enum(FAMILY_RELATIONSHIPS)
+          .optional()
+          .describe("relationship to the clients (defaults to 'child')"),
+        dateOfBirth: z
+          .string()
+          .optional()
+          .describe("date of birth as yyyy-mm-dd, only when the advisor gave an actual date"),
+        age: z
+          .number()
+          .int()
+          .min(0)
+          .max(120)
+          .optional()
+          .describe(
+            "current age in years, when the advisor gave an age instead of a birth date — the " +
+              "date of birth is then estimated as January 1 of the birth year",
+          ),
+        notes: z.string().optional().describe("free-text notes, only if the advisor gave any"),
+      }),
+    },
+  );
+
+  const setLivingExpenseItems = tool(
+    async ({ items, mode }) => {
+      try {
+        const gate = await gateAccess(ctx.clientId);
+        if ("error" in gate) return gate.error;
+
+        const r = await setLivingItemsForClient({
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          items,
+          mode: mode ?? "add",
+        });
+        if (!r.ok) return r.error;
+
+        await recordAudit({
+          action: "forge.write_approved",
+          resourceType: "expense",
+          resourceId: r.resourceId,
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          metadata: { tool: "set_living_expense_items", itemCount: items.length },
+        });
+
+        const list = (r.data.livingItems ?? []).map(livingItemLine).join("; ");
+        return `Itemized "${r.data.name}": ${list}. Its total is now ${headlineFigure("expense", r.data)} (id ${r.resourceId}).`;
+      } catch {
+        return "Sorry — that action couldn't be completed.";
+      }
+    },
+    {
+      name: "set_living_expense_items",
+      description:
+        "Put a list of spending items (groceries, utilities, travel…) on the current client's " +
+        "Current Living Expenses row. The items' yearly total becomes that row's annual amount " +
+        "(a monthly item counts 12 times). Pass the advisor's whole list in ONE call. " +
+        APPROVAL_SUFFIX,
+      schema: z.object({
+        items: z
+          .array(
+            z.object({
+              name: z.string().trim().min(1).max(120).describe("item name, e.g. 'Groceries'"),
+              amount: z.number().nonnegative().describe("dollars per period, as the advisor gave it"),
+              frequency: z
+                .enum(["monthly", "annual"])
+                .describe(
+                  "the period the amount is for. A heading such as 'monthly budget' covers the " +
+                    "whole list; if the advisor gave no period at all, ask once for the list.",
+                ),
+            }),
+          )
+          .min(1)
+          .max(MAX_LIVING_ITEMS),
+        mode: z
+          .enum(["add", "replace"])
+          .optional()
+          .describe(
+            "'add' (default) keeps the row's existing items and updates any with the same name; " +
+              "'replace' swaps the whole list — only when the advisor says to replace or start over",
+          ),
+      }),
+    },
+  );
+
+  const updateClientProfile = tool(
+    async (input) => {
+      if (Object.keys(input).length === 0) return "Nothing to change — no profile field was given.";
+      try {
+        const gate = await gateAccess(ctx.clientId);
+        if ("error" in gate) return gate.error;
+
+        const r = await updateClientProfileForClient({
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          body: input,
+        });
+        if (!r.ok) return r.error;
+
+        await recordAudit({
+          action: "forge.write_approved",
+          resourceType: "client",
+          resourceId: ctx.clientId,
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          metadata: { tool: "update_client_profile", fields: Object.keys(input) },
+        });
+
+        const changes = Object.entries(input)
+          .map(([key, v]) => {
+            const f = PROFILE_FIELDS[key];
+            return `${f.person === "spouse" ? "co-client's" : "client's"} ${f.label} ${formatProfileValue(key, v)}`;
+          })
+          .join("; ");
+        return `Updated the household profile: ${changes}.`;
+      } catch {
+        return "Sorry — that action couldn't be completed.";
+      }
+    },
+    {
+      name: "update_client_profile",
+      description:
+        "Change the client's or co-client's date of birth, retirement age or retirement month in " +
+        "the current client's base-case plan. Pass only the fields to change. A new date of birth " +
+        "also moves the plan's end year. For a what-if, use a scenario instead. " +
+        APPROVAL_SUFFIX,
+      schema: clientProfileUpdateSchema,
+    },
+  );
+
   return [
     addExpense,
     updateExpense,
@@ -895,5 +1086,8 @@ export function buildDetailWriteTools({
     addAccount,
     updateAccount,
     removeAccount,
+    addFamilyMember,
+    setLivingExpenseItems,
+    updateClientProfile,
   ];
 }

@@ -42,6 +42,30 @@ tests:
       - type: javascript
         value: file://./assertions.ts:noUnapprovedWrite
   - vars:
+      message: "Add their kids Emma, who is 8, and Jack"
+      expectTool: "add_family_member"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:noUnapprovedWrite
+  - vars:
+      message: "Itemize their current living expenses — monthly: groceries $900, utilities $350, dining out $400"
+      expectTool: "set_living_expense_items"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:noUnapprovedWrite
+  - vars:
+      message: "Both of them now plan to retire at 67, and the client's birthday is actually March 3, 1961"
+      expectTool: "update_client_profile"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:noUnapprovedWrite
+  - vars:
       message: "How do I add a one-time expense, like a kitchen remodel next year?"
       expectTool: suggest_help_video
     assert:

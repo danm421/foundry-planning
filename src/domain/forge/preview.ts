@@ -56,7 +56,21 @@ import {
   accountCreateSchema,
   accountUpdateSchema,
 } from "@/lib/schemas/accounts";
-import { editLines, newRowLines, ownershipLines, type ProposedOwner } from "./row-lines";
+import { familyMemberCreateSchema, resolveBirthDate } from "@/lib/schemas/family-members";
+import { mergeLivingItems, livingItemsAnnualTotal, type LivingItemInput } from "@/lib/living-expense-items";
+import { findCurrentLivingExpense, NO_CURRENT_LIVING_ROW } from "@/lib/clients/living-items-writes";
+import { clientProfileUpdateSchema } from "@/lib/schemas/client-profile";
+import {
+  PROFILE_FIELDS,
+  editLines,
+  formatMoney,
+  formatProfileValue,
+  livingItemAmount,
+  livingItemLine,
+  newRowLines,
+  ownershipLines,
+  type ProposedOwner,
+} from "./row-lines";
 import type {
   OpType,
   ScenarioChange,
@@ -370,6 +384,73 @@ function previewRemoveAccount(a: Record<string, unknown>): WritePreview {
   return { name: "remove_account", summary: `Remove account (id ${id}).` };
 }
 
+function previewAddFamilyMember(a: Record<string, unknown>): WritePreview {
+  const who = [str(a.firstName), str(a.lastName)].filter(Boolean).join(" ") || "(unnamed)";
+  const relationship = (str(a.relationship) ?? "child").replace(/_/g, " ");
+  const age = typeof a.age === "number" ? a.age : undefined;
+  const { dateOfBirth, estimated } = resolveBirthDate(str(a.dateOfBirth), age, new Date());
+  const details: string[] = [];
+  if (dateOfBirth) {
+    details.push(`Date of birth: ${dateOfBirth}${estimated ? ` (estimated from age ${age})` : ""}`);
+  }
+  const notes = str(a.notes);
+  if (notes) details.push(`Notes: ${notes}`);
+  return { name: "add_family_member", summary: `Add ${relationship} “${who}”.`, details };
+}
+
+/** The model's raw `items`, minus anything that is not a well-formed item. */
+function readLivingItems(a: Record<string, unknown>): LivingItemInput[] {
+  if (!Array.isArray(a.items)) return [];
+  return a.items.filter(
+    (i): i is LivingItemInput =>
+      !!i &&
+      typeof i === "object" &&
+      typeof i.name === "string" &&
+      typeof i.amount === "number" &&
+      (i.frequency === "monthly" || i.frequency === "annual"),
+  );
+}
+
+function livingItemsSummary(rowName: string, count: number, replace: boolean): string {
+  const items = `${count} item${count === 1 ? "" : "s"}`;
+  return replace
+    ? `Replace the items on “${rowName}” with ${items}.`
+    : `Add ${items} to “${rowName}”.`;
+}
+
+function previewSetLivingItems(a: Record<string, unknown>): WritePreview {
+  const items = readLivingItems(a);
+  return {
+    name: "set_living_expense_items",
+    summary: livingItemsSummary("Current Living Expenses", items.length, a.mode === "replace"),
+    details: items.map(livingItemLine),
+  };
+}
+
+/** One line per profile field the call sets, "Tom's retirement age: 65 → 67"
+ *  when the current values are known. */
+function profileLines(
+  a: Record<string, unknown>,
+  names: { client: string; spouse: string },
+  current?: Record<string, unknown>,
+): string[] {
+  return Object.entries(a)
+    .filter(([key]) => key in PROFILE_FIELDS)
+    .map(([key, v]) => {
+      const f = PROFILE_FIELDS[key];
+      const was = current ? `${formatProfileValue(key, current[key])} → ` : "";
+      return `${names[f.person]}'s ${f.label}: ${was}${formatProfileValue(key, v)}`;
+    });
+}
+
+function previewUpdateClientProfile(a: Record<string, unknown>): WritePreview {
+  return {
+    name: "update_client_profile",
+    summary: "Update the household profile.",
+    details: profileLines(a, { client: "Client", spouse: "Co-client" }),
+  };
+}
+
 function previewPromoteToBase(args: Record<string, unknown>): WritePreview {
   const id = str(args.scenarioId) ?? "(scenario)";
   return {
@@ -429,6 +510,12 @@ export function formatProposedWrite(call: ProposedWrite): WritePreview {
       return previewUpdateAccount(call.args);
     case "remove_account":
       return previewRemoveAccount(call.args);
+    case "add_family_member":
+      return previewAddFamilyMember(call.args);
+    case "set_living_expense_items":
+      return previewSetLivingItems(call.args);
+    case "update_client_profile":
+      return previewUpdateClientProfile(call.args);
     case "crm_delete_note":
       return previewCrmDeleteNote(call.args);
     case "crm_delete_task":
@@ -965,6 +1052,78 @@ async function enrichUpdateAccount(
 }
 
 /**
+ * Dry run for set_living_expense_items: merge the list into the live Current
+ * Living Expenses row exactly as the write will (NO write), then show only what
+ * changes — items added, amounts changed, items dropped by a replace — and the
+ * row's total before and after, since the items set it.
+ */
+async function enrichSetLivingItems(
+  base: WritePreview,
+  args: Record<string, unknown>,
+  ctx: ForgeAuthContext,
+): Promise<WritePreview> {
+  const row = await findCurrentLivingExpense(ctx.clientId);
+  if (!row) return { ...base, summary: NO_CURRENT_LIVING_ROW };
+
+  const current = row.livingItems ?? [];
+  const replace = args.mode === "replace";
+  const incoming = readLivingItems(args);
+  let n = 0;
+  const merged = mergeLivingItems(current, incoming, replace ? "replace" : "add", () => `new-${n++}`);
+  const before = new Map(current.map((i) => [i.id, i]));
+  const details: string[] = [];
+  for (const item of merged) {
+    const was = before.get(item.id);
+    if (!was) details.push(`Add ${livingItemLine(item)}`);
+    else if (was.amount !== item.amount || was.frequency !== item.frequency) {
+      details.push(`${item.name}: ${livingItemAmount(was)} → ${livingItemAmount(item)}`);
+    }
+  }
+  const kept = new Set(merged.map((i) => i.id));
+  for (const item of current) if (!kept.has(item.id)) details.push(`Remove ${livingItemLine(item)}`);
+  details.push(
+    `Total: ${formatMoney(row.annualAmount)}/yr → ${formatMoney(livingItemsAnnualTotal(merged))}/yr`,
+  );
+  return { ...base, summary: livingItemsSummary(row.name, incoming.length, replace), details };
+}
+
+/**
+ * Dry run for update_client_profile: the same validation the tool runs, then
+ * each change against the base plan's current values under the people's own
+ * names. A spouse field on a household with no co-client is refused here, where
+ * the advisor can see it, rather than silently dropped by the save.
+ */
+async function enrichUpdateClientProfile(
+  base: WritePreview,
+  args: Record<string, unknown>,
+  ctx: ForgeAuthContext,
+): Promise<WritePreview> {
+  const parsed = clientProfileUpdateSchema.safeParse(args);
+  if (!parsed.success) return { ...base, summary: zodErrorMessage(parsed.error) };
+
+  const { effectiveTree } = await loadEffectiveTree(ctx.clientId, ctx.firmId, "base", {});
+  const c = effectiveTree.client;
+  const keys = Object.keys(parsed.data);
+  if (!c.spouseName && keys.some((k) => PROFILE_FIELDS[k].person === "spouse")) {
+    return { ...base, summary: "This household has no co-client to update." };
+  }
+  const current = {
+    ...c,
+    retirementMonth: c.retirementMonth ?? 1,
+    spouseRetirementMonth: c.spouseRetirementMonth ?? 1,
+  };
+  const details = profileLines(
+    parsed.data,
+    { client: c.firstName, spouse: c.spouseName ?? "Co-client" },
+    current,
+  );
+  if (keys.includes("dateOfBirth") || keys.includes("spouseDob")) {
+    details.push("The plan's end year is recalculated from the new date of birth.");
+  }
+  return { ...base, details };
+}
+
+/**
  * A remove preview has nothing to diff, but "Remove account (id 3d55…)" is not
  * something an advisor can approve with confidence — name the row instead.
  */
@@ -1034,6 +1193,17 @@ export async function describeProposedWrite(
     }
     if (call.name === "update_account") {
       return await enrichUpdateAccount(base, call.args, ctx);
+    }
+    if (call.name === "set_living_expense_items") {
+      return await enrichSetLivingItems(base, call.args, ctx);
+    }
+    if (call.name === "update_client_profile") {
+      return await enrichUpdateClientProfile(base, call.args, ctx);
+    }
+    if (call.name === "add_family_member") {
+      // A typed date the create schema would 400 shows here, before approval.
+      const parsed = familyMemberCreateSchema.safeParse(call.args);
+      return parsed.success ? base : { ...base, summary: zodErrorMessage(parsed.error) };
     }
     if (call.name === "remove_expense") return await enrichRemove(base, call.args.expenseId, ctx);
     if (call.name === "remove_income") return await enrichRemove(base, call.args.incomeId, ctx);

@@ -451,7 +451,7 @@ export const INCOME_EXPENSE_ENTITIES: readonly DetailEntity[] = [
         kind: "array",
         nullable: true,
         notes:
-          "Itemized Current Living Expenses: an ordered list of { id, name, amount (dollars, >= 0), frequency: \"monthly\" | \"annual\" }, at most 200. Living rows only — the write core 400s it on any other type (\"Only living expenses can be itemized.\"). Sent non-empty, the server sets annualAmount to the items' yearly total (a monthly item counts x12), whatever annualAmount came with it; [] is stored as null. A write of annualAmount alone leaves the items in place, and that typed total wins. Never read by src/engine.",
+          "Itemized Current Living Expenses: an ordered list of { id, name, amount (dollars, >= 0), frequency: \"monthly\" | \"annual\" }, at most 200. Living rows only — the write core 400s it on any other type (\"Only living expenses can be itemized.\"). Sent non-empty, the server sets annualAmount to the items' yearly total (a monthly item counts x12), whatever annualAmount came with it; [] is stored as null. A write of annualAmount alone leaves the items in place, and that typed total wins. Never read by src/engine. Forge writes it with set_living_expense_items, which finds the Current row itself and merges a typed list (ids minted server-side).",
       },
       {
         key: "isDefault",

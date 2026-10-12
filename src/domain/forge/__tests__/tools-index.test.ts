@@ -43,6 +43,9 @@ vi.mock("@/lib/clients/accounts-writes", () => ({
   updateAccountForClient: vi.fn(),
   deleteAccountForClient: vi.fn(),
 }));
+vi.mock("@/lib/clients/family-members-writes", () => ({ createFamilyMemberForClient: vi.fn() }));
+vi.mock("@/lib/clients/living-items-writes", () => ({ setLivingItemsForClient: vi.fn() }));
+vi.mock("@/lib/clients/client-profile-writes", () => ({ updateClientProfileForClient: vi.fn() }));
 // CRM tool deps (assembly test stays pure — no DB, no CRM IO)
 vi.mock("@/lib/crm/notes", () => ({ createNote: vi.fn(), listHouseholdNotes: vi.fn(), deleteNote: vi.fn() }));
 vi.mock("@/lib/crm/schemas", () => ({ createCrmNoteSchema: { parse: vi.fn() } }));
@@ -149,6 +152,9 @@ const EXPECTED_DETAIL_WRITE_TOOL_NAMES = [
   "add_account",
   "update_account",
   "remove_account",
+  "add_family_member",
+  "set_living_expense_items",
+  "update_client_profile",
 ];
 
 const EXPECTED_CRM_TIER_B_TOOL_NAMES = [
@@ -193,7 +199,7 @@ const EXPECTED_NAVIGATE = ["open_page", "cite_page"];
 const EXPECTED_PLAN_BUILDER_TOOL_NAMES = ["get_plan_status", "build_plan"];
 
 describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + book + navigate)", () => {
-  it("returns exactly the 68 named tools (20 Phase-1 + 5 scenario writes + 12 detail writes + 20 CRM + 1 report + 2 memory + 1 book + 2 navigate + 2 meetings + 2 plan builder + 1 help video = 68, + 1 meeting save)", () => {
+  it("returns exactly the 71 named tools (20 Phase-1 + 5 scenario writes + 15 detail writes + 20 CRM + 1 report + 2 memory + 1 book + 2 navigate + 2 meetings + 2 plan builder + 1 help video = 71, + 1 meeting save)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
     // Phase-1, scenario-write, detail-write, report, memory, navigate, meetings, and plan-builder tools all present
@@ -211,7 +217,7 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
     ]) {
       expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
     }
-    expect(tools).toHaveLength(68);
+    expect(tools).toHaveLength(71);
   });
 
   it("suggest_help_video is NOT a write tool (read-only, no HITL)", () => {
@@ -226,7 +232,7 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
     }
   });
 
-  it("buildTools includes the 12 detail-write (expense + income + liability + account) tool names", () => {
+  it("buildTools includes the 15 detail-write (expense + income + liability + account + family member + living items + client profile) tool names", () => {
     const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
     for (const n of EXPECTED_DETAIL_WRITE_TOOL_NAMES) {
       expect(names.has(n), `expected detail-write tool ${n} in buildTools output`).toBe(true);
@@ -261,13 +267,13 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
     expect(routeAfterAgent([{ name: "build_plan" }], WRITE_TOOL_NAMES)).toBe("approval");
   });
 
-  it("WRITE_TOOL_NAMES is a non-empty Set (27 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes + 1 meeting save + 4 global writes + 1 plan builder write + 1 fact-finder ingest write)", () => {
+  it("WRITE_TOOL_NAMES is a non-empty Set (30 entries: 5 scenario writes + 15 detail writes + 3 Tier-B CRM writes + 1 meeting save + 4 global writes + 1 plan builder write + 1 fact-finder ingest write)", () => {
     expect(WRITE_TOOL_NAMES instanceof Set).toBe(true);
-    expect(WRITE_TOOL_NAMES.size).toBe(27);
+    expect(WRITE_TOOL_NAMES.size).toBe(30);
     expect(WRITE_TOOL_NAMES.has("save_meeting_record")).toBe(true);
   });
 
-  it("WRITE_TOOL_NAMES contains the 12 detail-write (expense + income + liability + account) tool names", () => {
+  it("WRITE_TOOL_NAMES contains the 15 detail-write (expense + income + liability + account + family member + living items + client profile) tool names", () => {
     for (const n of EXPECTED_DETAIL_WRITE_TOOL_NAMES) {
       expect(WRITE_TOOL_NAMES.has(n), `expected ${n} in WRITE_TOOL_NAMES`).toBe(true);
     }
@@ -396,8 +402,8 @@ describe("buildTools (navigate bundle)", () => {
 });
 
 describe("buildTools bundles", () => {
-  it("buildTools() with no bundle arg returns the full set (unchanged count 68)", () => {
-    expect(buildTools(TOOL_CTX)).toHaveLength(68);
+  it("buildTools() with no bundle arg returns the full set (unchanged count 71)", () => {
+    expect(buildTools(TOOL_CTX)).toHaveLength(71);
   });
 
   it("buildTools(ctx, ['read']) returns only the read bundle", () => {

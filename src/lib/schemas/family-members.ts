@@ -70,3 +70,18 @@ export const familyMemberCreateSchema = z.object({
 });
 
 export type FamilyMemberCreateInput = z.infer<typeof familyMemberCreateSchema>;
+
+/**
+ * The date of birth to store: the stated one, else — for someone known only by
+ * age — January 1 of the year that makes them that age today. Jan 1 so they
+ * are already the stated age for the rest of this year, and so the date reads
+ * as an estimate.
+ */
+export function resolveBirthDate(
+  dateOfBirth: string | undefined,
+  age: number | undefined,
+  today: Date,
+): { dateOfBirth: string | undefined; estimated: boolean } {
+  if (dateOfBirth !== undefined || age === undefined) return { dateOfBirth, estimated: false };
+  return { dateOfBirth: `${today.getFullYear() - age}-01-01`, estimated: true };
+}

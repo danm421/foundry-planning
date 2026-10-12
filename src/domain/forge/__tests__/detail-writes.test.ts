@@ -34,6 +34,9 @@ vi.mock("@/lib/clients/accounts-writes", () => ({
   updateAccountForClient: vi.fn(),
   deleteAccountForClient: vi.fn(),
 }));
+vi.mock("@/lib/clients/family-members-writes", () => ({ createFamilyMemberForClient: vi.fn() }));
+vi.mock("@/lib/clients/living-items-writes", () => ({ setLivingItemsForClient: vi.fn() }));
+vi.mock("@/lib/clients/client-profile-writes", () => ({ updateClientProfileForClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 
 import { buildDetailWriteTools } from "../tools/detail-writes";
@@ -59,7 +62,11 @@ import {
   updateAccountForClient,
   deleteAccountForClient,
 } from "@/lib/clients/accounts-writes";
+import { createFamilyMemberForClient } from "@/lib/clients/family-members-writes";
+import { setLivingItemsForClient } from "@/lib/clients/living-items-writes";
+import { updateClientProfileForClient } from "@/lib/clients/client-profile-writes";
 import { recordAudit } from "@/lib/audit";
+import { familyMemberCreateSchema } from "@/lib/schemas/family-members";
 import { expenseCreateSchema } from "@/lib/schemas/expenses";
 import { incomeCreateSchema, incomeUpdateSchema } from "@/lib/schemas/incomes";
 import { liabilityCreateSchema } from "@/lib/schemas/liabilities";
@@ -985,6 +992,7 @@ describe("add_* tools require what their write cores require", () => {
     ["add_income", incomeCreateSchema],
     ["add_liability", liabilityCreateSchema],
     ["add_account", accountCreateSchema],
+    ["add_family_member", familyMemberCreateSchema],
   ] as const;
 
   for (const [toolName, coreSchema] of PAIRS) {
@@ -1038,5 +1046,194 @@ describe("add_* tools require what their write cores require", () => {
     });
     await getTool("update_liability").invoke({ liabilityId: "liab-1", monthlyPayment: 50 });
     expect(updateLiabilityForClient).toHaveBeenCalled();
+  });
+});
+
+describe("add_family_member", () => {
+  const member = (over: Record<string, unknown> = {}) =>
+    ({
+      ok: true,
+      data: { id: "fm-1", firstName: "Emma", lastName: null, relationship: "child", dateOfBirth: null, ...over },
+      resourceId: "fm-1",
+    }) as never;
+
+  it("adds a child from a first name alone", async () => {
+    vi.mocked(createFamilyMemberForClient).mockResolvedValue(member());
+    const result = await getTool("add_family_member").invoke({ firstName: "Emma" });
+
+    expect(createFamilyMemberForClient).toHaveBeenCalledWith({
+      clientId: "client_1",
+      firmId: "org_session",
+      actorId: "u1",
+      input: { firstName: "Emma", dateOfBirth: undefined },
+    });
+    expect(String(result)).toBe('Added child "Emma" (id fm-1).');
+  });
+
+  it("estimates the date of birth as January 1 of the birth year from an age", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 12));
+    try {
+      vi.mocked(createFamilyMemberForClient).mockResolvedValue(member({ dateOfBirth: "2018-01-01" }));
+      const result = await getTool("add_family_member").invoke({ firstName: "Emma", age: 8 });
+
+      expect(vi.mocked(createFamilyMemberForClient).mock.calls[0][0].input).toEqual({
+        firstName: "Emma",
+        dateOfBirth: "2018-01-01",
+      });
+      expect(String(result)).toBe(
+        'Added child "Emma", date of birth 2018-01-01 (estimated from age 8) (id fm-1).',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a stated date of birth over an age", async () => {
+    vi.mocked(createFamilyMemberForClient).mockResolvedValue(member({ dateOfBirth: "2018-06-30" }));
+    await getTool("add_family_member").invoke({ firstName: "Emma", age: 8, dateOfBirth: "2018-06-30" });
+    expect(vi.mocked(createFamilyMemberForClient).mock.calls[0][0].input).toMatchObject({
+      dateOfBirth: "2018-06-30",
+    });
+  });
+
+  it("gates access BEFORE the core and audits forge.write_approved", async () => {
+    vi.mocked(createFamilyMemberForClient).mockResolvedValue(member());
+    await getTool("add_family_member").invoke({ firstName: "Emma" });
+
+    const accessOrder = vi.mocked(verifyClientAccess).mock.invocationCallOrder[0];
+    const writeOrder = vi.mocked(createFamilyMemberForClient).mock.invocationCallOrder[0];
+    expect(accessOrder).toBeLessThan(writeOrder);
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "forge.write_approved",
+        resourceType: "family_member",
+        resourceId: "fm-1",
+        actorId: "u1",
+      }),
+    );
+  });
+
+  it("returns the core's error verbatim and does not audit", async () => {
+    vi.mocked(createFamilyMemberForClient).mockResolvedValue({
+      ok: false,
+      status: 400,
+      error: "Date of Birth: Must be a real date in yyyy-mm-dd form",
+    });
+    const result = await getTool("add_family_member").invoke({ firstName: "Emma", dateOfBirth: "2018-02-31" });
+    expect(String(result)).toMatch(/real date/);
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("set_living_expense_items", () => {
+  const ITEMS = [
+    { name: "Groceries", amount: 900, frequency: "monthly" as const },
+    { name: "Travel", amount: 6000, frequency: "annual" as const },
+  ];
+
+  it("hands the list to the core in add mode by default and echoes every item and the new total", async () => {
+    vi.mocked(setLivingItemsForClient).mockResolvedValue({
+      ok: true,
+      data: {
+        id: "exp-cur",
+        name: "Current Living Expenses",
+        annualAmount: "16800",
+        livingItems: ITEMS.map((i, n) => ({ id: `i${n}`, ...i })),
+      } as never,
+      resourceId: "exp-cur",
+    });
+    const result = await getTool("set_living_expense_items").invoke({ items: ITEMS });
+
+    expect(setLivingItemsForClient).toHaveBeenCalledWith({
+      clientId: "client_1",
+      firmId: "org_session",
+      actorId: "u1",
+      items: ITEMS,
+      mode: "add",
+    });
+    expect(String(result)).toBe(
+      'Itemized "Current Living Expenses": Groceries: $900/mo; Travel: $6,000/yr. ' +
+        "Its total is now $16,800/yr (id exp-cur).",
+    );
+  });
+
+  it("returns the core's error verbatim and does not audit", async () => {
+    vi.mocked(setLivingItemsForClient).mockResolvedValue({
+      ok: false,
+      status: 404,
+      error: "This plan has no Current Living Expenses row to itemize.",
+    });
+    const result = await getTool("set_living_expense_items").invoke({ items: ITEMS, mode: "replace" });
+    expect(String(result)).toMatch(/no Current Living Expenses row/);
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("refuses an item with no period at the schema, before the core", async () => {
+    await expect(
+      getTool("set_living_expense_items").invoke({ items: [{ name: "Groceries", amount: 900 }] }),
+    ).rejects.toThrow();
+    expect(setLivingItemsForClient).not.toHaveBeenCalled();
+  });
+});
+
+describe("update_client_profile", () => {
+  beforeEach(() => {
+    vi.mocked(updateClientProfileForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "client_1" } as never,
+      resourceId: "client_1",
+    });
+  });
+
+  it("sends only the fields given, after the access gate, and names them back", async () => {
+    const result = await getTool("update_client_profile").invoke({
+      retirementAge: 67,
+      spouseDob: "1962-03-04",
+    });
+
+    expect(updateClientProfileForClient).toHaveBeenCalledWith({
+      clientId: "client_1",
+      firmId: "org_session",
+      actorId: "u1",
+      body: { retirementAge: 67, spouseDob: "1962-03-04" },
+    });
+    const accessOrder = vi.mocked(verifyClientAccess).mock.invocationCallOrder[0];
+    const writeOrder = vi.mocked(updateClientProfileForClient).mock.invocationCallOrder[0];
+    expect(accessOrder).toBeLessThan(writeOrder);
+    expect(String(result)).toBe(
+      "Updated the household profile: client's retirement age 67; co-client's date of birth 1962-03-04.",
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "forge.write_approved", resourceType: "client", actorId: "u1" }),
+    );
+  });
+
+  it("names a retirement month", async () => {
+    const result = await getTool("update_client_profile").invoke({ retirementMonth: 6 });
+    expect(String(result)).toBe("Updated the household profile: client's retirement month June.");
+  });
+
+  it("refuses an impossible date and an out-of-range age at the schema, before the core", async () => {
+    await expect(getTool("update_client_profile").invoke({ dateOfBirth: "1961-02-30" })).rejects.toThrow();
+    await expect(getTool("update_client_profile").invoke({ retirementAge: 150 })).rejects.toThrow();
+    expect(updateClientProfileForClient).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when no field was given", async () => {
+    const result = await getTool("update_client_profile").invoke({});
+    expect(String(result)).toMatch(/Nothing to change/);
+    expect(updateClientProfileForClient).not.toHaveBeenCalled();
+  });
+
+  it("returns the core's error verbatim and does not audit", async () => {
+    vi.mocked(updateClientProfileForClient).mockResolvedValue({
+      ok: false,
+      status: 422,
+      error: "CRM household is missing a primary contact with a date of birth",
+    });
+    const result = await getTool("update_client_profile").invoke({ retirementAge: 67 });
+    expect(String(result)).toMatch(/missing a primary contact/);
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 });
