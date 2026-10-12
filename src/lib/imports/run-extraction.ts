@@ -17,6 +17,7 @@ import type { DocumentType, ExtractionResult } from "@/lib/extraction/types";
 import type { UploadKind } from "@/lib/extraction/validate-upload";
 import { downloadImportFile } from "@/lib/imports/blob";
 import { summarizeExtraction } from "@/lib/imports/extract-summary";
+import { mergePayloadJson } from "@/lib/imports/payload-json-sql";
 import type { ImportPayloadJson } from "@/lib/imports/types";
 import { bridgeTaxReturn } from "./tax-bridge";
 
@@ -134,9 +135,7 @@ export async function runImportExtraction(
 
     if (!importRow) throw new Error(`Import not found: ${importId}`);
 
-    // Read the FULL prior payload, not just `fileResults` — `chat` (the
-    // statement-chat surface's slice, Task 6+) must survive the wholesale
-    // write below (C11), and this is the only read of the pre-extraction row.
+    // Seeds `fileResults` with what earlier runs stored.
     const priorPayload = (importRow.payloadJson ?? {}) as ImportPayloadJson;
 
     const fileResults: Record<string, ExtractionResult> = {
@@ -364,15 +363,13 @@ export async function runImportExtraction(
         .update(clientImports)
         .set({
             status: summary.status,
-            // `payload` and `assemble` are deliberately dropped here, as
-            // before (see the "Nothing new to read" comment above) — but `chat`
-            // (Task 6+'s statement-chat slice) did NOT exist when that
-            // wholesale-replace write was first added, and dropping it is
-            // NOT deliberate: it silently reverts a chat-surface import to
-            // the ordinary wizard the moment extraction re-runs (C11). Carry
-            // it forward when present; a wizard import has none, so its
-            // persisted value stays byte-identical.
-            payloadJson: { fileResults, ...(priorPayload.chat ? { chat: priorPayload.chat } : {}) },
+            // Replace `fileResults` and drop the derived `payload`/`assemble`
+            // (stale once the files change — see the "Nothing new to read"
+            // comment above), but leave every other slice as the database has
+            // it NOW. A run can take minutes: `chat` and the fact finder's
+            // `factFinder` slice may be written meanwhile, and a whole-value
+            // write here would silently undo those edits.
+            payloadJson: mergePayloadJson({ fileResults }, ["payload", "assemble"]),
             updatedAt: new Date(),
         })
         .where(eq(clientImports.id, importId));

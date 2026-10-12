@@ -97,6 +97,12 @@ vi.mock("@/db", () => ({
 /** Captures every `db.update(clientImports).set(...)` patch, in call order. */
 let clientImportsUpdateCalls: Array<{ payloadJson: unknown }> = [];
 
+// The aggregate write is a jsonb merge built in SQL; expose its patch and
+// dropped keys so the assertions below can read what it writes.
+vi.mock("@/lib/imports/payload-json-sql", () => ({
+  mergePayloadJson: (patch: Record<string, unknown>, drop: readonly string[] = []) => ({ __merge: patch, drop }),
+}));
+
 import { runImportExtraction } from "../run-extraction";
 import { extractDocument } from "@/lib/extraction/extract";
 import { recordAudit } from "@/lib/audit";
@@ -271,33 +277,21 @@ describe("runImportExtraction", () => {
     expect(extractDocument).not.toHaveBeenCalled();
   });
 
-  // C11: the aggregate write at the end of a run is a WHOLESALE
-  // `payloadJson` replacement (`{ fileResults, ... }`), not a merge. `chat`
-  // (the statement-chat surface's slice, Task 6+) did not exist when that
-  // write was first added, so preserving it has to be added explicitly —
-  // dropping it silently reverts a chat-surface import to the ordinary
-  // wizard the moment extraction re-runs on it.
-  describe("C11: preserves payloadJson.chat across the aggregate write", () => {
-    const chatSlice = {
-      surface: "chat" as const,
-      transcript: [],
-      decisions: [],
-      excludedRows: [],
-      committedRowIds: ["r1"],
-    };
-
-    it("an import row carrying a chat slice still carries it after extraction", async () => {
+  // C11, revised: the aggregate write MERGES — it replaces `fileResults`,
+  // drops the stale `payload`/`assemble`, and leaves every other slice
+  // (`chat`, the fact finder's `factFinder`) to the database. Proven against
+  // real SQL in src/lib/fact-finder/__tests__/persist.test.ts.
+  describe("C11: the aggregate write touches only fileResults", () => {
+    it("patches fileResults and drops payload and assemble", async () => {
       importRowResult = [
         {
           id: "imp1",
-          payloadJson: { fileResults: {}, chat: chatSlice },
+          payloadJson: { fileResults: {}, chat: { surface: "chat" } },
           extractHoldings: false,
           status: "draft",
         },
       ];
-      vi.mocked(extractDocument).mockResolvedValue(
-        storedResult("a.pdf", "new") as never,
-      );
+      vi.mocked(extractDocument).mockResolvedValue(storedResult("a.pdf", "new") as never);
 
       await runImportExtraction({
         importId: "imp1",
@@ -309,32 +303,12 @@ describe("runImportExtraction", () => {
 
       expect(clientImportsUpdateCalls).toHaveLength(1);
       const written = clientImportsUpdateCalls[0].payloadJson as {
-        fileResults: Record<string, unknown>;
-        chat?: unknown;
+        __merge: { fileResults: Record<string, unknown> };
+        drop: string[];
       };
-      expect(written.chat).toEqual(chatSlice);
-      expect(Object.keys(written.fileResults)).toEqual(["f1"]);
-    });
-
-    it("an import row with no chat key still persists exactly { fileResults }", async () => {
-      importRowResult = [
-        { id: "imp1", payloadJson: null, extractHoldings: false, status: "draft" },
-      ];
-      vi.mocked(extractDocument).mockResolvedValue(
-        storedResult("a.pdf", "new") as never,
-      );
-
-      await runImportExtraction({
-        importId: "imp1",
-        clientId: "c1",
-        firmId: "org_A",
-        model: "mini",
-        extractHoldings: false,
-      });
-
-      expect(clientImportsUpdateCalls).toHaveLength(1);
-      const written = clientImportsUpdateCalls[0].payloadJson as Record<string, unknown>;
-      expect(Object.keys(written).sort()).toEqual(["fileResults"]);
+      expect(Object.keys(written.__merge)).toEqual(["fileResults"]);
+      expect(Object.keys(written.__merge.fileResults)).toEqual(["f1"]);
+      expect(written.drop).toEqual(["payload", "assemble"]);
     });
   });
 
@@ -491,9 +465,9 @@ describe("runImportExtraction", () => {
       // `db.update` ever runs, leaving clientImportsUpdateCalls empty.
       expect(clientImportsUpdateCalls).toHaveLength(1);
       const written = clientImportsUpdateCalls[0].payloadJson as {
-        fileResults: Record<string, unknown>;
+        __merge: { fileResults: Record<string, unknown> };
       };
-      expect(Object.keys(written.fileResults)).toHaveLength(5);
+      expect(Object.keys(written.__merge.fileResults)).toHaveLength(5);
     });
 
     it("runs every chunk when the signal never aborts", async () => {

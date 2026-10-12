@@ -70,6 +70,19 @@ function fileRow(id: string, name: string) {
   };
 }
 
+// runImportExtraction's aggregate write is a jsonb merge built in SQL. Hand the
+// fake row the patch instead, and apply it below the way Postgres would.
+vi.mock("@/lib/imports/payload-json-sql", () => ({
+  mergePayloadJson: (patch: Record<string, unknown>, drop: readonly string[] = []) => ({ __merge: patch, drop }),
+}));
+
+function applyPayloadWrite(current: unknown, written: unknown): unknown {
+  const merge = written as { __merge?: Record<string, unknown>; drop?: readonly string[] } | null;
+  if (!merge?.__merge) return written;
+  const kept = Object.entries((current ?? {}) as Record<string, unknown>).filter(([k]) => !(merge.drop ?? []).includes(k));
+  return { ...Object.fromEntries(kept), ...merge.__merge };
+}
+
 vi.mock("@/db", () => ({
   db: {
     select: vi.fn(() => {
@@ -101,7 +114,11 @@ vi.mock("@/db", () => ({
           // Only a clientImports write ever carries `payloadJson`; the
           // per-file clientImportExtractions updates never do.
           if ("payloadJson" in patch) {
-            currentImportRow = { ...currentImportRow, ...patch } as typeof currentImportRow;
+            currentImportRow = {
+              ...currentImportRow,
+              ...patch,
+              payloadJson: applyPayloadWrite(currentImportRow.payloadJson, patch.payloadJson),
+            } as typeof currentImportRow;
             payloadJsonUpdateCount++;
           }
           return Promise.resolve();
