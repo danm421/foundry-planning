@@ -144,22 +144,19 @@ export async function runImportExtraction(
 
     if (!importRow) throw new Error(`Import not found: ${importId}`);
 
-    // Seeds `fileResults` with what earlier runs stored.
+    // What earlier runs stored — used to skip files already extracted.
     const priorPayload = (importRow.payloadJson ?? {}) as ImportPayloadJson;
-
-    const fileResults: Record<string, ExtractionResult> = {
-        ...(priorPayload.fileResults ?? {}),
-    };
+    const prior: Record<string, ExtractionResult> = priorPayload.fileResults ?? {};
 
     const pending = files.filter(
-        (f) => (!skipExtracted || !fileResults[f.id]) && (!fileIds || fileIds.includes(f.id)),
+        (f) => (!skipExtracted || !prior[f.id]) && (!fileIds || fileIds.includes(f.id)),
     );
 
     // Nothing new to read. Return the standing summary rather than rewriting
     // payloadJson — that write drops the annotated `payload`, and the caller
     // would be re-running matching for no reason.
     if (pending.length === 0) {
-        const summary = summarizeExtraction(fileResults);
+        const summary = summarizeExtraction(prior);
         return {
             succeeded: 0,
             failed: 0,
@@ -358,7 +355,6 @@ export async function runImportExtraction(
         const outcomes = await Promise.all(chunk.map(extractOne));
         for (const outcome of outcomes) {
             if (outcome.ok) {
-                fileResults[outcome.fileId] = outcome.result;
                 produced[outcome.fileId] = outcome.result;
                 succeeded += 1;
             } else {
@@ -371,7 +367,7 @@ export async function runImportExtraction(
     // "succeeds" but yields nothing (e.g. an un-OCR-able scan) drops the
     // import to draft so the UI surfaces the warning instead of an empty
     // Review screen.
-    const summary = summarizeExtraction(fileResults);
+    const summary = summarizeExtraction({ ...prior, ...produced });
     await db
         .update(clientImports)
         .set({

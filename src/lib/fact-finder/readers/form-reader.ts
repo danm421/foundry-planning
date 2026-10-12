@@ -131,15 +131,6 @@ function readCell(column: FFColumn, field: FormField, fileId: string): FFReadCel
   return { value: result.text, confidence: UNREADABLE_CONFIDENCE, source, issue: result.issue };
 }
 
-const HOLDING_KEYS: Record<string, keyof FFReadHolding> = {
-  ticker: "ticker",
-  securityName: "name",
-  shares: "shares",
-  price: "price",
-  marketValue: "marketValue",
-  costBasis: "costBasis",
-};
-
 /** Pure: form fields → readings. Field order doesn't matter. */
 export function readingsFromFormFields(fileId: string, fields: FormField[]): FFReaderOutput {
   const groups = new Map<string, FFReading>();
@@ -156,10 +147,11 @@ export function readingsFromFormFields(fileId: string, fields: FormField[]): FFR
       const entry = holdingRows.get(slot.holdingsRow) ?? { hint: "", holding: {}, page: field.page };
       if (slot.column.id === "account") entry.hint = String(cell.value);
       else {
-        const k = HOLDING_KEYS[slot.column.id];
+        // Every holdings column but the account is a holding field of the same id; only securityName is renamed.
+        const k = (slot.column.id === "securityName" ? "name" : slot.column.id) as keyof FFReadHolding;
         if (k === "ticker" || k === "name") entry.holding[k] = String(cell.value);
-        else if (k && typeof cell.value === "number") entry.holding[k] = cell.value;
-        else if (k && cell.issue) {
+        else if (typeof cell.value === "number") entry.holding[k] = cell.value;
+        else if (cell.issue) {
           // FFReadHolding can't carry text, so say so rather than drop it silently.
           warnings.push(`Holdings row ${slot.holdingsRow}: couldn't read ${slot.column.label} "${String(cell.value)}".`);
         }

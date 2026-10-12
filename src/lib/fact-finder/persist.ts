@@ -4,7 +4,6 @@ import { db } from "@/db";
 import { clientImportFiles, clientImports } from "@/db/schema";
 import type { ExtractionResult } from "@/lib/extraction/types";
 import { mergePayloadJson } from "@/lib/imports/payload-json-sql";
-import type { ImportPayloadJson } from "@/lib/imports/types";
 import { readFactFinderState } from "./state";
 import type { FactFinderState } from "./types";
 
@@ -40,13 +39,22 @@ function scoped(scope: FactFinderScope): SQL | undefined {
 
 const storedVersion = sql`COALESCE((${clientImports.payloadJson} -> 'factFinder' ->> 'version')::int, 0)`;
 
-export async function loadFactFinder(scope: FactFinderScope): Promise<FactFinderState | null> {
+/** One top-level key of the import's payload — not the whole (large) document. */
+async function selectPayloadKey(
+  scope: FactFinderScope,
+  key: "factFinder" | "fileResults",
+): Promise<{ found: false } | { found: true; slice: unknown }> {
   const [row] = await db
-    .select({ payloadJson: clientImports.payloadJson })
+    .select({ slice: sql`${clientImports.payloadJson} -> ${key}::text` })
     .from(clientImports)
     .where(scoped(scope))
     .limit(1);
-  return row ? readFactFinderState(row.payloadJson) : null;
+  return row ? { found: true, slice: row.slice } : { found: false };
+}
+
+export async function loadFactFinder(scope: FactFinderScope): Promise<FactFinderState | null> {
+  const row = await selectPayloadKey(scope, "factFinder");
+  return row.found ? readFactFinderState({ factFinder: row.slice ?? undefined }) : null;
 }
 
 /** Compare-and-set: writes only if the stored version still equals `baseVersion`. */
@@ -108,10 +116,6 @@ export async function listLiveFiles(importId: string): Promise<ImportFileRow[]> 
 
 /** The statement reader's stored per-file results (written by runImportExtraction). */
 export async function loadFileResults(scope: FactFinderScope): Promise<Record<string, ExtractionResult>> {
-  const [row] = await db
-    .select({ payloadJson: clientImports.payloadJson })
-    .from(clientImports)
-    .where(scoped(scope))
-    .limit(1);
-  return ((row?.payloadJson ?? {}) as ImportPayloadJson).fileResults ?? {};
+  const row = await selectPayloadKey(scope, "fileResults");
+  return (row.found ? (row.slice as Record<string, ExtractionResult> | null) : null) ?? {};
 }

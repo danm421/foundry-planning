@@ -89,14 +89,13 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
     }
   };
 
-  const start = await loadFactFinder(scope);
-  if (!start) throw new FactFinderNotFoundError();
-  const files = await listLiveFiles(scope.importId);
-  const todo = files.filter((f) => needsReading(start.readings[f.id], now()));
-  if (todo.length === 0) return { summary: "Nothing new to read.", caveats: [], version: start.version, filesRead: 0 };
+  const nothingNew = (version: number): RunReadResult => ({ summary: "Nothing new to read.", caveats: [], version, filesRead: 0 });
 
-  const scenarioId = await resolveBaseCaseScenarioId(scope.clientId);
-  const records = scenarioId ? await loadExistingRecords(scope.clientId, scenarioId) : emptyExistingRecords();
+  const [start, files] = await Promise.all([loadFactFinder(scope), listLiveFiles(scope.importId)]);
+  if (!start) throw new FactFinderNotFoundError();
+  const liveIds = new Set(files.map((f) => f.id));
+  const todo = files.filter((f) => needsReading(start.readings[f.id], now()));
+  if (todo.length === 0) return nothingNew(start.version);
 
   // Claim against the fresh state: an overlapping read may have claimed some
   // of these files since `start` was loaded. `mutate` can run more than once,
@@ -114,7 +113,10 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
       },
     };
   });
-  if (claimed.length === 0) return { summary: "Nothing new to read.", caveats: [], version: afterClaim.version, filesRead: 0 };
+  if (claimed.length === 0) return nothingNew(afterClaim.version);
+
+  const scenarioId = await resolveBaseCaseScenarioId(scope.clientId);
+  const records = scenarioId ? await loadExistingRecords(scope.clientId, scenarioId) : emptyExistingRecords();
   for (const f of claimed) emit({ type: "file", fileId: f.id, fileName: f.originalFilename, status: "reading" });
 
   const decisions: FFMergeDecision[] = [];
@@ -167,9 +169,14 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
       metadata: { importId: scope.importId, surface: "fact_finder", ...metadata },
     });
 
-  const readAsSections = async (file: ImportFileRow, extraWarnings: string[] = []) => {
+  const downloadOrThrow = async (file: ImportFileRow) => {
     const buffer = await downloadImportFile(file.blobUrl);
     if (!buffer) throw new Error("Couldn't download this file.");
+    return buffer;
+  };
+
+  const readAsSections = async (file: ImportFileRow, extraWarnings: string[] = []) => {
+    const buffer = await downloadOrThrow(file);
     const { pages, warnings } = await pagesForSectionReader(buffer, file.detectedKind);
     const output = await readSections({ fileId: file.id, pages });
     output.warnings.unshift(...warnings, ...extraWarnings);
@@ -181,8 +188,7 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
     await eachLimited(claimed, FILE_CONCURRENCY, async (file) => {
       if (signal?.aborted) return;
       try {
-        const buffer = await downloadImportFile(file.blobUrl);
-        if (!buffer) throw new Error("Couldn't download this file.");
+        const buffer = await downloadOrThrow(file);
         const route = await routeFile({
           buffer,
           fileName: file.originalFilename,
@@ -224,7 +230,7 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
       } catch (err) {
         for (const f of statementFiles) extractionErrors.set(f.id, errorText(err));
       }
-      const fileResults = await loadFileResults(scope);
+      const [fileResults, current] = await Promise.all([loadFileResults(scope), loadFactFinder(scope)]);
 
       const fresh: ImportFileRow[] = [];
       for (const f of statementFiles) {
@@ -247,13 +253,12 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
         // Re-merge every statement read so far: newest statement wins and
         // rollups are found across files. Merging is idempotent, so rows the
         // advisor already edited or removed stay as they are.
-        const current = await loadFactFinder(scope);
         const earlier = Object.entries(current?.readings ?? {})
           .filter(([, r]) => r.reader === "statement" && r.status === "done")
           .map(([id]) => id);
         // Live files only: deleting a file leaves its stored result behind.
         const ids = [...new Set([...earlier, ...fresh.map((f) => f.id)])].filter(
-          (id) => fileResults[id] && files.some((f) => f.id === id),
+          (id) => fileResults[id] && liveIds.has(id),
         );
         const merged = mergeAcrossFiles(Object.fromEntries(ids.map((id) => [id, fileResults[id]])));
         const rollups = detectRollups(merged.payload.accounts);
@@ -292,8 +297,6 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
         }
       }
     }
-
-    await updateFactFinder(scope, (s) => applyLinkScores(s, records));
   } finally {
     for (const f of claimed.filter((x) => !settled.has(x.id))) {
       await settle(f, undefined, null, "Stopped before this file was read.");
@@ -301,7 +304,8 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
   }
 
   let built = { summary: "", caveats: [] as string[] };
-  const final = await updateFactFinder(scope, (s) => {
+  const final = await updateFactFinder(scope, (state) => {
+    const s = applyLinkScores(state, records);
     built = buildReadSummary({ state: s, decisions, filesRead: claimed.length, failed, caveats });
     const text = [built.summary, ...built.caveats.map((c) => `• ${c}`)].join("\n");
     return { ...s, transcript: [...s.transcript, { id: randomUUID(), role: "assistant", text, at: iso() }] };
