@@ -43,6 +43,26 @@ describe("ApprovalCard", () => {
     expect(screen.getByText("Add Roth conversion: $40,000 in 2026")).toBeInTheDocument();
   });
 
+  it("shows a preview's warning as a note above its details", () => {
+    render(
+      <ApprovalCard
+        previews={[
+          {
+            summary: "Add 1 item to “Current Living Expenses”.",
+            name: "set_living_expense_items",
+            details: ["Add Groceries: $900/mo"],
+            warning: "Approving replaces the $200,000/yr total set on this row with the items' sum, $10,800/yr.",
+          },
+        ]}
+        calls={[calls[0]]}
+        busy={false}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("note")).toHaveTextContent(/replaces the \$200,000\/yr total/);
+  });
+
   it("renders a short 'Label: value' detail as a label and a mono value", () => {
     render(
       <ApprovalCard

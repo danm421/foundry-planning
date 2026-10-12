@@ -81,6 +81,38 @@ describe("set_living_expense_items card", () => {
       "Add Groceries: $900/mo",
       "Total: $38,400/yr → $52,800/yr",
     ]);
+    // The total was already the items' sum — nothing typed is lost.
+    expect(out.warning).toBeUndefined();
+  });
+
+  it("warns when the items would replace a total typed on the row", async () => {
+    vi.mocked(findCurrentLivingExpense).mockResolvedValue({
+      id: "exp-cur",
+      name: "Current Living Expenses",
+      annualAmount: "200000",
+      livingItems: null,
+    } as never);
+    const out = await describeProposedWrite(
+      { name: "set_living_expense_items", args: { items: [GROCERIES] } },
+      CTX,
+    );
+    expect(out.warning).toBe(
+      "Approving replaces the $200,000/yr total set on this row with the items' sum, $10,800/yr.",
+    );
+  });
+
+  it("does not warn when the items add up to the typed total", async () => {
+    vi.mocked(findCurrentLivingExpense).mockResolvedValue({
+      id: "exp-cur",
+      name: "Current Living Expenses",
+      annualAmount: "10800",
+      livingItems: null,
+    } as never);
+    const out = await describeProposedWrite(
+      { name: "set_living_expense_items", args: { items: [GROCERIES] } },
+      CTX,
+    );
+    expect(out.warning).toBeUndefined();
   });
 
   it("names the row as the advisor renamed it and lists what a replace drops", async () => {

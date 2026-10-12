@@ -11,6 +11,15 @@ describe("interrupt schemas", () => {
     expect(parseApprovalInterrupt(v).calls[0].name).toBe("add_expense");
   });
 
+  it("keeps a preview's warning through the parse", () => {
+    const v = {
+      type: "approval_required",
+      previews: [{ summary: "Add 1 item", name: "set_living_expense_items", warning: "Approving replaces the total." }],
+      calls: [{ id: "t1", name: "set_living_expense_items", args: {} }],
+    };
+    expect(parseApprovalInterrupt(v).previews[0].warning).toBe("Approving replaces the total.");
+  });
+
   it("rejects a malformed resume payload", () => {
     expect(() => parseResumeDecisions({ decisions: { t1: "maybe" } })).toThrow();
   });

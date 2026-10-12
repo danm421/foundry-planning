@@ -20,7 +20,8 @@
 //
 // Detail lines arrive as strings from the server. A short "Label: value" line
 // renders as a two-column row with the value in mono when it carries a number;
-// anything longer (a cascade note, a sentence) renders as a plain line.
+// anything longer (a cascade note, a sentence) renders as a plain line. A
+// preview's `warning` sits above them in the warning tint.
 //
 // Owns only the per-row inclusion state; the panel decides where to mount it.
 
@@ -76,13 +77,25 @@ function DetailLine({ text }: { text: string }) {
 }
 
 function Details({ preview }: { preview: WritePreview }) {
-  if (!preview.details || preview.details.length === 0) return null;
+  const lines = preview.details ?? [];
   return (
-    <ul className="mt-1.5 space-y-0.5">
-      {preview.details.map((line, j) => (
-        <DetailLine key={j} text={line} />
-      ))}
-    </ul>
+    <>
+      {preview.warning && (
+        <p
+          role="note"
+          className="mt-1.5 rounded-md bg-warn/10 px-2.5 py-1.5 text-[12px] leading-5 text-ink-2"
+        >
+          {preview.warning}
+        </p>
+      )}
+      {lines.length > 0 && (
+        <ul className="mt-1.5 space-y-0.5">
+          {lines.map((line, j) => (
+            <DetailLine key={j} text={line} />
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 

@@ -1081,10 +1081,21 @@ async function enrichSetLivingItems(
   }
   const kept = new Set(merged.map((i) => i.id));
   for (const item of current) if (!kept.has(item.id)) details.push(`Remove ${livingItemLine(item)}`);
-  details.push(
-    `Total: ${formatMoney(row.annualAmount)}/yr → ${formatMoney(livingItemsAnnualTotal(merged))}/yr`,
-  );
-  return { ...base, summary: livingItemsSummary(row.name, incoming.length, replace), details };
+  const total = livingItemsAnnualTotal(merged);
+  details.push(`Total: ${formatMoney(row.annualAmount)}/yr → ${formatMoney(total)}/yr`);
+  // Items set the row's total, so a total typed on the row — not the sum of its
+  // current items — is about to be overwritten. Say so where it can't be missed.
+  const typed = Number(row.annualAmount);
+  const overwritesTypedTotal =
+    Math.abs(typed - livingItemsAnnualTotal(current)) >= 0.005 && Math.abs(typed - total) >= 0.005;
+  return {
+    ...base,
+    summary: livingItemsSummary(row.name, incoming.length, replace),
+    details,
+    ...(overwritesTypedTotal && {
+      warning: `Approving replaces the ${formatMoney(typed)}/yr total set on this row with the items' sum, ${formatMoney(total)}/yr.`,
+    }),
+  };
 }
 
 /**

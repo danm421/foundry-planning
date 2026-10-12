@@ -10,6 +10,7 @@ export const WritePreviewSchema = z.object({
   summary: z.string(),
   name: z.string(),
   details: z.array(z.string()).optional(),
+  warning: z.string().optional(),
 });
 export const ApprovalCallSchema = z.object({
   id: z.string(),

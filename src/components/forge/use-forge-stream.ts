@@ -16,6 +16,7 @@ export interface WritePreview {
   summary: string;
   name: string;
   details?: string[];
+  warning?: string;
 }
 export interface ApprovalCall {
   id: string;

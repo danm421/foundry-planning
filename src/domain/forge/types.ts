@@ -5,4 +5,7 @@ export type WritePreview = {
   summary: string;
   name: string;
   details?: string[];
+  /** A consequence the advisor should see before approving, shown above the
+   *  details in the warning tint. */
+  warning?: string;
 };
