@@ -14,6 +14,7 @@ import type {
 } from "@/lib/extraction/types";
 import type { AssembleGoals, AssemblePlanBasics, AssembleState } from "./assemble/types";
 import type { MergeDecision } from "./assemble/decisions";
+import type { FactFinderState } from "@/lib/fact-finder/types";
 
 export type Provenance = {
   sourceFileId: string;
@@ -261,6 +262,11 @@ export interface ImportPayloadJson {
   payload?: PersistedImportPayload;
   assemble?: AssembleState;   // NEW — Forge Plan Builder sub-state
   chat?: ChatState;           // NEW — statement-chat surface sub-state (Task 6+)
+  /**
+   * Fact Finder Import (src/lib/fact-finder). `lib/fact-finder/types.ts` is a
+   * leaf module, so this type import cannot close a cycle.
+   */
+  factFinder?: FactFinderState;
 }
 
 /**
