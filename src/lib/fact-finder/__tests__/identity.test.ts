@@ -17,6 +17,12 @@ describe("sameIdentity", () => {
     expect(sameIdentity("retirement", { last4: "2201" }, { last4: "2202" })).toBe(false);
   });
 
+  it("needs owners to agree only when matching accounts by name", () => {
+    expect(sameIdentity("retirement", { accountName: "Roth IRA", owner: "Client" }, { accountName: "Roth IRA", owner: "Co-client" })).toBe(false);
+    expect(sameIdentity("retirement", { accountName: "Roth IRA", owner: "Client" }, { accountName: "Roth IRA" })).toBe(true);
+    expect(sameIdentity("retirement", { last4: "2201", owner: "Client" }, { last4: "2201", owner: "Co-client" })).toBe(true);
+  });
+
   it("falls back to the account name when either side has no last 4", () => {
     expect(sameIdentity("taxable", { accountName: "Joint Brokerage" }, { accountName: "joint  brokerage", last4: "7731" })).toBe(true);
     expect(sameIdentity("taxable", { accountName: "Brokerage" }, { accountName: "Trust Brokerage" })).toBe(false);

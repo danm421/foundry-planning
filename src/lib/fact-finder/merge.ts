@@ -152,6 +152,22 @@ function newRow(reading: FFReading, values: Record<string, FFCellValue>, ctx: Me
   };
 }
 
+/**
+ * A document value just written into a column the identity lacks (a last 4 a
+ * statement filled in) joins the identity, so a second account of the same
+ * name can't match on name alone. Advisor edits never get here (pinned cells
+ * aren't written). Returns the same object when nothing was learned.
+ */
+function learnIdentity(
+  identity: Record<string, FFCellValue>,
+  columns: readonly string[],
+  cells: Record<string, FFCell>,
+): Record<string, FFCellValue> {
+  const learned = columns.filter((columnId) => isBlank(identity[columnId]));
+  if (learned.length === 0) return identity;
+  return { ...identity, ...Object.fromEntries(learned.map((columnId) => [columnId, cells[columnId].value])) };
+}
+
 const isNewer = (a: string | undefined, b: string | undefined) => !!a && (!b || a > b);
 const isOlder = (a: string | undefined, b: string | undefined) => !!a && !!b && a < b;
 
@@ -205,7 +221,12 @@ function updateRow(state: FactFinderState, section: FFSection, row: FFRow, readi
 
   const newFile = !row.sourceFileIds.includes(reading.fileId);
   const statementDate = newer ? reading.statementDate : row.statementDate;
-  const identity = row.identity ?? (section.layout === "fixedRows" || section.layout === "notes" ? undefined : readingValues(reading));
+  const identity =
+    section.layout === "fixedRows" || section.layout === "notes"
+      ? row.identity
+      : row.identity
+        ? learnIdentity(row.identity, columns, cells)
+        : readingValues(reading);
   if (columns.length === 0 && !holdingsChanged && !newFile && statementDate === row.statementDate && identity === row.identity) {
     return { state };
   }
@@ -251,6 +272,14 @@ function placeUnassigned(state: FactFinderState, u: FFUnassignedReading, ctx: Me
     const holding = { ...toHolding(u.holding, u.fileId, ctx), source: u.source };
     return { state: setRow(state, sectionId, { ...row, holdings: [...(row.holdings ?? []), holding] }) };
   }
+  // The advisor already placed it (an advisor-placed holding is pinned). Document-placed
+  // holdings don't count: one file can list the same security under two accounts.
+  const placedByAdvisor = HOLDING_SECTIONS.some((s) =>
+    (state.sections[s.id] ?? []).some((r) =>
+      (r.holdings ?? []).some((h) => h.pinned && holdingKey(h) === key && h.source?.fileId === u.fileId),
+    ),
+  );
+  if (placedByAdvisor) return { state };
   if (state.unassignedHoldings.some((h) => normText(h.accountHint) === hint && holdingKey(h) === key)) return { state };
   const holding = { ...toHolding(u.holding, u.fileId, ctx), source: u.source, accountHint: u.accountHint };
   return {

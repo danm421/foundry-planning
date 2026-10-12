@@ -59,6 +59,30 @@ describe("mergeReadings — new and repeated readings", () => {
   });
 });
 
+describe("mergeReadings — accounts with the same name", () => {
+  it("keeps same-named accounts with different owners apart", () => {
+    const roth = (owner: string, value: number): FFReading => ({
+      sectionId: "retirement",
+      fileId: "ff",
+      cells: { accountName: cell("Roth IRA", 0.9, "ff"), owner: cell(owner, 0.9, "ff"), currentValue: cell(value, 0.9, "ff") },
+    });
+    const { state, decisions } = mergeReadings(emptyFactFinderState(), [roth("Client", 50000), roth("Co-client", 80000)], ctx);
+    expect(state.sections.retirement.map((r) => r.cells.owner.value)).toEqual(["Client", "Co-client"]);
+    expect(decisions.map((d) => d.kind)).toEqual(["added", "added"]);
+  });
+
+  it("learns the last 4 a statement fills in, so a second account of that name gets its own row", () => {
+    const ff: FFReading = { sectionId: "retirement", fileId: "ff", cells: { accountName: cell("Fidelity 401(k)", 0.9, "ff") } };
+    const statement = (fileId: string, last4: string, owner: string, value: number) =>
+      fidelity({ fileId }, { last4: cell(last4, 0.9, fileId), owner: cell(owner, 0.9, fileId), currentValue: cell(value, 0.9, fileId) });
+    const readings = [ff, statement("s1", "2201", "Client", 600000), statement("s2", "3301", "Co-client", 250000)];
+    const first = mergeReadings(emptyFactFinderState(), readings, ctx);
+    expect(first.state.sections.retirement.map((r) => r.sourceFileIds)).toEqual([["ff", "s1"], ["s2"]]);
+    expect(first.decisions.map((d) => d.kind)).toEqual(["added", "updated", "added"]);
+    expect(mergeReadings(first.state, readings, ctx).state).toBe(first.state);
+  });
+});
+
 describe("mergeReadings — precedence", () => {
   const base = () => mergeReadings(emptyFactFinderState(), [fidelity()], ctx).state;
 
@@ -66,8 +90,10 @@ describe("mergeReadings — precedence", () => {
     const pinned = applyOps(base(), [
       { op: "setCell", sectionId: "retirement", rowId: "id-1", columnId: "currentValue", value: 650000 },
     ], advisor);
-    const { state } = mergeReadings(pinned, [fidelity({ statementDate: "2026-09-30" }, { currentValue: cell(640000) })], ctx);
+    const reading = fidelity({ statementDate: "2026-09-30" }, { currentValue: cell(640000) });
+    const { state } = mergeReadings(pinned, [reading], ctx);
     expect(state.sections.retirement[0].cells.currentValue).toEqual({ value: 650000, by: "advisor", pinned: true });
+    expect(mergeReadings(state, [reading], ctx).state).toBe(state);
   });
 
   it("lets a newer statement replace values and an older one only fill blanks", () => {
@@ -116,15 +142,15 @@ describe("mergeReadings — removed and excluded rows", () => {
       fidelity({ fileId: "f2" }, { accountName: cell("401k x2299", 0.9, "f2"), last4: cell("2299", 0.9, "f2") }),
     ], ctx).state;
     s = applyOps(s, [{ op: "mergeRows", sectionId: "retirement", keepRowId: "id-1", dropRowId: "id-2" }], advisor);
-    const { state } = mergeReadings(s, [
-      fidelity({ fileId: "f3", statementDate: "2026-09-30" }, {
-        accountName: cell("401k x2299", 0.9, "f3"),
-        last4: cell("2299", 0.9, "f3"),
-        currentValue: cell(611000, 0.9, "f3"),
-      }),
-    ], ctx);
+    const reading = fidelity({ fileId: "f3", statementDate: "2026-09-30" }, {
+      accountName: cell("401k x2299", 0.9, "f3"),
+      last4: cell("2299", 0.9, "f3"),
+      currentValue: cell(611000, 0.9, "f3"),
+    });
+    const { state } = mergeReadings(s, [reading], ctx);
     expect(state.sections.retirement.map((r) => r.id)).toEqual(["id-1"]);
     expect(state.sections.retirement[0].cells.currentValue.value).toBe(611000);
+    expect(mergeReadings(state, [reading], ctx).state).toBe(state);
   });
 
   it("puts an excluded reading straight in the tray, once", () => {
@@ -183,6 +209,22 @@ describe("mergeReadings — holdings", () => {
     expect(newer.sections.taxable[0].holdings?.map((h) => h.ticker)).toEqual(["VTI"]);
   });
 
+  it("never puts a holding the advisor moved to another account back on the first one", () => {
+    const first = mergeReadings(emptyFactFinderState(), [
+      withHoldings("2026-06-30", [vti]),
+      fidelity({ sectionId: "taxable", fileId: "f2" }, { accountName: cell("Trust Brokerage", 0.9, "f2"), last4: cell("8842", 0.9, "f2") }),
+    ], ctx).state;
+    const [a, b] = first.sections.taxable;
+    const moved = applyOps(first, [
+      { op: "assignHolding", holdingId: a.holdings![0].id, from: { sectionId: "taxable", rowId: a.id }, to: { sectionId: "taxable", rowId: b.id } },
+    ], advisor);
+    const tickers = (s: FactFinderState) => s.sections.taxable.map((r) => r.holdings?.map((h) => h.ticker) ?? []);
+    const again = mergeReadings(moved, [withHoldings("2026-06-30", [vti])], ctx).state;
+    expect(tickers(again)).toEqual([[], ["VTI"]]);
+    expect(mergeReadings(again, [withHoldings("2026-06-30", [vti])], ctx).state).toBe(again);
+    expect(tickers(mergeReadings(again, [withHoldings("2026-09-30", [vti])], ctx).state)).toEqual([[], ["VTI"]]);
+  });
+
   it("changes nothing when a statement arrives again after the advisor removed every holding", () => {
     const first = mergeReadings(emptyFactFinderState(), [withHoldings("2026-06-30", [vti])], ctx).state;
     const row = first.sections.taxable[0];
@@ -217,5 +259,26 @@ describe("mergeReadings — unassigned holdings", () => {
     expect(first.state.unassignedHoldings).toMatchObject([{ ticker: "AAPL", accountHint: "x9999", by: "document" }]);
     expect(first.decisions).toEqual([{ kind: "holdingUnassigned", fileId: "f9", accountHint: "x9999" }]);
     expect(mergeReadings(first.state, [], ctx, [holdingFor("x9999", "AAPL")]).state).toBe(first.state);
+  });
+
+  it("doesn't bring back a holding the advisor already placed on an account", () => {
+    const first = mergeReadings(brokerage(), [], ctx, [holdingFor("x9999", "AAPL")]).state;
+    const placed = applyOps(first, [
+      {
+        op: "assignHolding",
+        holdingId: first.unassignedHoldings[0].id,
+        from: "unassigned",
+        to: { sectionId: "taxable", rowId: first.sections.taxable[0].id },
+      },
+    ], advisor);
+    const again = mergeReadings(placed, [], ctx, [holdingFor("x9999", "AAPL")]);
+    expect(again.state).toBe(placed);
+    expect(again.decisions).toEqual([]);
+  });
+
+  it("still lists a holding for an unknown account when the same file put that security on a known one", () => {
+    const { state } = mergeReadings(brokerage(), [], ctx, [holdingFor("7731", "AAPL"), holdingFor("x9999", "AAPL")]);
+    expect(state.sections.taxable[0].holdings?.map((h) => h.ticker)).toEqual(["AAPL"]);
+    expect(state.unassignedHoldings).toMatchObject([{ ticker: "AAPL", accountHint: "x9999" }]);
   });
 });

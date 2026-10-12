@@ -406,9 +406,12 @@ function applyOne(state: FactFinderState, op: FFOp, ctx: OpContext): FactFinderS
         const at = (fromRow.holdings ?? []).findIndex((h) => h.id === op.holdingId);
         if (at < 0) throw new FactFinderOpError("That holding isn't on this account.");
         holding = fromRow.holdings![at];
+        // Like removeHolding: a later reading of the source account must not put it back there.
+        const key = holdingKey(holding);
         next = replaceRow(next, fromSection.id, fromIndex, {
           ...fromRow,
           holdings: fromRow.holdings!.filter((_, i) => i !== at),
+          ...(key ? { droppedHoldingKeys: union(fromRow.droppedHoldingKeys, [key]) } : {}),
         });
       }
       const toIndex = rowIndexOrThrow(next, toSection, op.to.rowId);

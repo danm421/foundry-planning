@@ -46,7 +46,8 @@ function sameAccount(a: Values, b: Values, nameColumn: string, custodianColumn: 
   const la = last4Of(a.last4);
   const lb = last4Of(b.last4);
   if (la && lb) return la === lb && custodiansAgree(a[custodianColumn], b[custodianColumn]);
-  return eq(a[nameColumn], b[nameColumn]);
+  // By name alone, owners must not contradict: a Client "Roth IRA" and a Co-client "Roth IRA" are two accounts.
+  return eq(a[nameColumn], b[nameColumn]) && agrees(a.owner, b.owner);
 }
 
 function samePolicyNumber(a: FFCellValue | undefined, b: FFCellValue | undefined): boolean | null {
