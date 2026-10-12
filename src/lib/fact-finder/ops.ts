@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { FACT_FINDER_SECTIONS, findColumn, findSection, type FFColumn, type FFSection } from "./schema";
 import { normalizeCell, parseMoney, parseNumber } from "./normalize";
-import { holdingKey, isBlank, rowLabel, sameJson } from "./state";
+import { holdingKey, isBlank, locateRow, rowLabel, sameJson } from "./state";
 import {
   HOLDING_FIELDS,
   type FactFinderState,
@@ -212,6 +212,33 @@ function releaseOtherClaims(state: FactFinderState, section: FFSection, keepRowI
   return next;
 }
 
+/**
+ * Rows coming back (restore, undo) yield: a returning row confirmed to a record
+ * that another live row of the same record kind already confirms comes back as
+ * a suggestion. The live row keeps its claim.
+ */
+function yieldTakenClaims(state: FactFinderState, returningIds: ReadonlySet<string>): FactFinderState {
+  const claimedElsewhere = (kind: FFSection["links"], recordId: string) =>
+    FACT_FINDER_SECTIONS.some(
+      (s) =>
+        s.links === kind &&
+        rowsOf(state, s.id).some(
+          (r) => !returningIds.has(r.id) && r.link?.kind === "existing" && r.link.recordId === recordId && r.link.confirmed,
+        ),
+    );
+  let next = state;
+  for (const rowId of returningIds) {
+    const at = locateRow(next, rowId);
+    if (!at) continue;
+    const row = rowsOf(next, at.sectionId)[at.index];
+    const kind = findSection(at.sectionId)?.links;
+    if (kind && row.link?.kind === "existing" && row.link.confirmed && claimedElsewhere(kind, row.link.recordId)) {
+      next = replaceRow(next, at.sectionId, at.index, { ...row, link: { ...row.link, confirmed: false } });
+    }
+  }
+  return next;
+}
+
 function applyOne(state: FactFinderState, op: FFOp, ctx: OpContext): FactFinderState {
   switch (op.op) {
     case "setCell":
@@ -263,12 +290,19 @@ function applyOne(state: FactFinderState, op: FFOp, ctx: OpContext): FactFinderS
       if (at < 0) throw new FactFinderOpError("That row isn't in the Removed tray.");
       const entry = state.removed[at];
       sectionOrThrow(entry.sectionId);
+      if (locateRow(state, op.rowId)) {
+        throw new FactFinderOpError("That row is already in the fact finder — it can't be restored again.");
+      }
       const next = { ...state, removed: state.removed.filter((_, i) => i !== at) };
-      return withRows(next, entry.sectionId, [...rowsOf(next, entry.sectionId), entry.row]);
+      const restored = withRows(next, entry.sectionId, [...rowsOf(next, entry.sectionId), entry.row]);
+      return yieldTakenClaims(restored, new Set([op.rowId]));
     }
 
     case "mergeRows": {
       const section = sectionOrThrow(op.sectionId);
+      if (!isListLike(section)) {
+        throw new FactFinderOpError(`${section.label} rows can't be merged — edit or clear their values instead.`);
+      }
       if (op.keepRowId === op.dropRowId) throw new FactFinderOpError("Pick two different rows to merge.");
       const keepIndex = rowIndexOrThrow(state, section, op.keepRowId);
       const dropIndex = rowIndexOrThrow(state, section, op.dropRowId);
@@ -292,7 +326,12 @@ function applyOne(state: FactFinderState, op: FFOp, ctx: OpContext): FactFinderS
         holdingsAsOf: keepHasHoldings ? keep.holdingsAsOf : drop.holdingsAsOf,
         ...(dropped.length > 0 ? { droppedHoldingKeys: dropped } : {}),
         link: keep.link ?? drop.link,
-        linkCandidates: keep.link ? keep.linkCandidates : drop.linkCandidates,
+        // Suggestions travel with the link they belong to; with no link on either row, keep's win.
+        linkCandidates: keep.link
+          ? keep.linkCandidates
+          : drop.link
+            ? drop.linkCandidates
+            : (keep.linkCandidates ?? drop.linkCandidates),
       };
       const entry: FFRemoved = {
         sectionId: section.id,
@@ -395,7 +434,8 @@ function applyOne(state: FactFinderState, op: FFOp, ctx: OpContext): FactFinderS
         }
         next = putLocation(removeLocation(next, snap.rowId), snap.before);
       }
-      return next;
+      // After every row is back, so rows restored together never yield to each other.
+      return yieldTakenClaims(next, new Set(op.snapshots.flatMap((s) => (s.kind === "row" ? [s.rowId] : []))));
     }
   }
 }

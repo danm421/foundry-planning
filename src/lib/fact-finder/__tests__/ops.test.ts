@@ -1,7 +1,7 @@
 // src/lib/fact-finder/__tests__/ops.test.ts
 import { beforeEach, describe, expect, it } from "vitest";
 import { FactFinderOpError, applyOps, diffSnapshots, parseOps, type FFOp, type OpContext } from "../ops";
-import { emptyFactFinderState, sameJson } from "../state";
+import { emptyFactFinderState, linkNeedsClick, sameJson } from "../state";
 import type { FactFinderState, FFCell, FFCellValue, FFRow } from "../types";
 
 let n = 0;
@@ -28,6 +28,10 @@ function withRows(rows: Record<string, FFRow[]>): FactFinderState {
 }
 const ira = () =>
   row("r1", { accountName: doc("Fidelity IRA"), currentValue: doc(640000), accountType: doc("Traditional IRA") });
+const confirmedTo = (id: string, recordId: string) =>
+  row(id, { accountName: doc(`Account ${id}`) }, {
+    link: { kind: "existing", recordId, score: 0.95, confirmed: true, by: "auto" },
+  });
 
 describe("setCell / clearCell", () => {
   it("normalizes the value and pins the cell", () => {
@@ -137,6 +141,36 @@ describe("rows", () => {
     expect(merged[0].holdings?.map((h) => h.id)).toEqual(["h1"]);
     expect(s.removed[0]).toMatchObject({ sectionId: "retirement", reason: "Merged into Schwab IRA", mergedInto: "k" });
   });
+
+  it("merging two unlinked rows keeps the kept row's link suggestions", () => {
+    const keep = row("k", { accountName: doc("Schwab IRA") }, {
+      linkCandidates: [{ recordId: "acct-1", label: "Schwab IRA", score: 0.7 }],
+    });
+    const drop = row("d", { accountName: doc("IRA x2201") });
+    const s = applyOps(withRows({ retirement: [keep, drop] }), [
+      { op: "mergeRows", sectionId: "retirement", keepRowId: "k", dropRowId: "d" },
+    ], ctx);
+    expect(s.sections.retirement[0].linkCandidates).toEqual(keep.linkCandidates);
+  });
+
+  it("won't merge fixed rows", () => {
+    expect(() =>
+      applyOps(emptyFactFinderState(), [
+        { op: "mergeRows", sectionId: "people", keepRowId: "people:Client", dropRowId: "people:Co-client" },
+      ], ctx),
+    ).toThrow(/can't be merged/);
+  });
+
+  it("won't restore a row that's already back", () => {
+    // A tray copy of a fixed row that a reload has already filled back in.
+    const start = emptyFactFinderState();
+    const coClient = start.sections.people[1];
+    const trayCopy: FactFinderState = {
+      ...start,
+      removed: [{ sectionId: "people", row: coClient, reason: "Removed", by: "advisor", at: ctx.now }],
+    };
+    expect(() => applyOps(trayCopy, [{ op: "restoreRow", rowId: coClient.id }], ctx)).toThrow(/already in the fact finder/);
+  });
 });
 
 describe("links", () => {
@@ -163,6 +197,19 @@ describe("links", () => {
     expect(() =>
       applyOps(items, [{ op: "setLink", sectionId: "living_items", rowId: "i1", link: { kind: "new" } }], ctx),
     ).toThrow(/don't link/);
+  });
+
+  it("a restored row whose record another row has claimed since comes back as a suggestion", () => {
+    const start = withRows({ taxable: [confirmedTo("a", "acct-1"), row("b", { accountName: doc("Brokerage") })] });
+    const s = applyOps(start, [
+      { op: "removeRow", sectionId: "taxable", rowId: "a" },
+      { op: "setLink", sectionId: "taxable", rowId: "b", link: { kind: "existing", recordId: "acct-1" } },
+      { op: "restoreRow", rowId: "a" },
+    ], ctx);
+    expect(s.sections.taxable.map((r) => r.id)).toEqual(["b", "a"]);
+    expect(s.sections.taxable[0].link).toMatchObject({ recordId: "acct-1", confirmed: true });
+    expect(s.sections.taxable[1].link).toMatchObject({ recordId: "acct-1", confirmed: false });
+    expect(linkNeedsClick(s.sections.taxable[1])).toBe(true);
   });
 });
 
@@ -260,6 +307,28 @@ describe("undo snapshots", () => {
       { op: "setCell", sectionId: "retirement", rowId: "r1", columnId: "currentValue", value: 2 },
     ], ctx);
     expect(() => applyOps(edited, [{ op: "restoreSnapshots", snapshots }], ctx)).toThrow(/changed since/);
+  });
+
+  it("brings back a removed row unconfirmed when another row has claimed its record since", () => {
+    const start = withRows({ taxable: [confirmedTo("a", "acct-1")], cash: [row("c1", { accountName: doc("Brokerage cash") })] });
+    const reply = applyOps(start, [{ op: "removeRow", sectionId: "taxable", rowId: "a" }], { ...ctx, by: "chat" });
+    const snapshots = diffSnapshots(start, reply);
+    const advisor = applyOps(reply, [
+      { op: "setLink", sectionId: "cash", rowId: "c1", link: { kind: "existing", recordId: "acct-1" } },
+    ], ctx);
+    const undone = applyOps(advisor, [{ op: "restoreSnapshots", snapshots }], ctx);
+    expect(undone.sections.taxable[0].link).toMatchObject({ recordId: "acct-1", confirmed: false });
+    expect(linkNeedsClick(undone.sections.taxable[0])).toBe(true);
+    expect(undone.sections.cash[0].link).toMatchObject({ recordId: "acct-1", confirmed: true });
+  });
+
+  it("undoing a link that released another row's claim gives the claim back", () => {
+    const start = withRows({ taxable: [confirmedTo("a", "acct-1"), row("b", { accountName: doc("Brokerage") })] });
+    const after = applyOps(start, [
+      { op: "setLink", sectionId: "taxable", rowId: "b", link: { kind: "existing", recordId: "acct-1" } },
+    ], ctx);
+    const undone = applyOps(after, [{ op: "restoreSnapshots", snapshots: diffSnapshots(start, after) }], ctx);
+    expect(sameJson(undone.sections, start.sections)).toBe(true);
   });
 });
 
