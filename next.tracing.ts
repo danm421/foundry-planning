@@ -60,6 +60,9 @@ export const outputFileTracingIncludes: Record<string, string[]> = {
     // The map-entity pass reads a SCANNED policy the same way: a genuine
     // carrier document has no text layer, so the route falls back to OCR.
     "/api/clients/*/imports/*/chat/map-pass": OCR_CANVAS_FILES,
+    // Fact finder import: its read route OCRs scanned PDFs and images for
+    // the section reader (src/lib/fact-finder/readers/route-file.ts).
+    "/api/clients/*/imports/*/fact-finder/read": OCR_CANVAS_FILES,
     "/api/clients/*/rebalance/extract-holdings": OCR_CANVAS_FILES,
     "/api/clients/*/tax-returns": OCR_CANVAS_FILES,
     "/api/clients/*/tax-returns/*/documents": OCR_CANVAS_FILES,
