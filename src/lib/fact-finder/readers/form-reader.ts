@@ -143,6 +143,7 @@ const HOLDING_KEYS: Record<string, keyof FFReadHolding> = {
 /** Pure: form fields → readings. Field order doesn't matter. */
 export function readingsFromFormFields(fileId: string, fields: FormField[]): FFReaderOutput {
   const groups = new Map<string, FFReading>();
+  const warnings: string[] = [];
   const holdingRows = new Map<number, { hint: string; holding: FFReadHolding; page: number | null }>();
 
   for (const field of fields) {
@@ -158,6 +159,10 @@ export function readingsFromFormFields(fileId: string, fields: FormField[]): FFR
         const k = HOLDING_KEYS[slot.column.id];
         if (k === "ticker" || k === "name") entry.holding[k] = String(cell.value);
         else if (k && typeof cell.value === "number") entry.holding[k] = cell.value;
+        else if (k && cell.issue) {
+          // FFReadHolding can't carry text, so say so rather than drop it silently.
+          warnings.push(`Holdings row ${slot.holdingsRow}: couldn't read ${slot.column.label} "${String(cell.value)}".`);
+        }
       }
       holdingRows.set(slot.holdingsRow, entry);
       continue;
@@ -185,5 +190,5 @@ export function readingsFromFormFields(fileId: string, fields: FormField[]): FFR
       holding: h.holding,
       source: { fileId, ...(h.page !== null ? { page: h.page } : {}) },
     }));
-  return { readings, unassignedHoldings, warnings: [] };
+  return { readings, unassignedHoldings, warnings };
 }

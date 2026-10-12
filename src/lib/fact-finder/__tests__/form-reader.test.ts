@@ -94,6 +94,22 @@ describe("readingsFromFormFields", () => {
     ]);
   });
 
+  it("warns about an unreadable holdings number instead of dropping it silently", () => {
+    const out = readingsFromFormFields("f1", [
+      field("holdings_r3_c1", "7731", "text", 10),
+      field("holdings_r3_c2", "VTI", "text", 10),
+      field("holdings_r3_c4", "820 sh", "text", 10),
+      field("holdings_r4_c4", "lots", "text", 10),
+    ]);
+    expect(out.unassignedHoldings).toEqual([
+      { fileId: "f1", accountHint: "7731", holding: { ticker: "VTI" }, source: { fileId: "f1", page: 10 } },
+    ]);
+    expect(out.warnings).toEqual([
+      'Holdings row 3: couldn\'t read Shares "820 sh".',
+      'Holdings row 4: couldn\'t read Shares "lots".',
+    ]);
+  });
+
   it("ignores fields it doesn't know", () => {
     expect(readingsFromFormFields("f1", [field("signature", "M.H."), field("zzz_r1_c1", "x")]).readings).toEqual([]);
   });
