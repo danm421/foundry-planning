@@ -32,6 +32,7 @@ vi.mock("@/db", () => ({ db: {} }));
 import { downloadImportFile } from "@/lib/imports/blob";
 import { runImportExtraction } from "@/lib/imports/run-extraction";
 import { applyOps } from "../ops";
+import { updateFactFinder } from "../persist";
 import { needsReading, runFactFinderRead, type ReadEvent } from "../read-run";
 import { pagesForSectionReader, routeFile } from "../readers/route-file";
 import { readSections } from "../readers/section-reader";
@@ -70,6 +71,25 @@ function extractionWrites(results: Record<string, ExtractionResult>) {
       args.onFile?.({ fileId: id, fileName: `${id}.pdf`, accountCount: results[id]?.extracted.accounts.length ?? 0 });
     }
     return { succeeded: 1, failed: 0, status: "review", warnings: [], filesProcessed: 1 };
+  });
+}
+const NOW = new Date("2026-10-12T12:00:00Z");
+const THEIR_CLAIM = { status: "reading" as const, startedAt: "2026-10-12T11:59:30Z" };
+/**
+ * Another read claims `ids` while this one is claiming: this run's first
+ * compare-and-set loses, and its retry starts from the state with that claim.
+ */
+function anotherReadClaimsFirst(ids: string[]) {
+  vi.mocked(updateFactFinder).mockImplementationOnce(async (_scope, mutate) => {
+    mutate(store.state!); // this attempt's write loses the race
+    store.state = {
+      ...store.state!,
+      version: store.state!.version + 1,
+      readings: { ...store.state!.readings, ...Object.fromEntries(ids.map((id) => [id, THEIR_CLAIM])) },
+    };
+    const next = mutate(store.state!);
+    if (next !== store.state) store.state = { ...next, version: store.state!.version + 1 };
+    return store.state!;
   });
 }
 async function run(extra: { signal?: AbortSignal; now?: () => Date } = {}) {
@@ -214,6 +234,68 @@ describe("runFactFinderRead", () => {
     expect(routeFile).not.toHaveBeenCalled();
     expect(state.readings.f1).toMatchObject({ status: "failed", reason: "Stopped before this file was read." });
     expect(events).toContainEqual(expect.objectContaining({ fileId: "f1", status: "failed" }));
+  });
+
+  it("reads only the files it claims when an overlapping read claims some first", async () => {
+    store.files = [file("f1"), file("f2")];
+    anotherReadClaimsFirst(["f1"]);
+    vi.mocked(routeFile).mockResolvedValue({ reader: "section", pages: ["p"], warnings: [] });
+    vi.mocked(readSections).mockImplementation(async ({ fileId }) => charity(fileId, fileId));
+
+    const { result, events, state } = await run({ now: () => NOW });
+
+    expect(vi.mocked(readSections).mock.calls.map(([a]) => a.fileId)).toEqual(["f2"]);
+    expect(events.flatMap((e) => (e.type === "file" ? [e.fileId] : []))).toEqual(["f2", "f2"]);
+    expect(state.readings.f1).toEqual(THEIR_CLAIM);
+    expect(result).toMatchObject({ filesRead: 1, summary: expect.stringMatching(/^Read 1 document\./) });
+  });
+
+  it("does nothing when an overlapping read claimed every file first", async () => {
+    store.files = [file("f1")];
+    anotherReadClaimsFirst(["f1"]);
+
+    const { result, events, state } = await run({ now: () => NOW });
+
+    expect(result).toEqual({ summary: "Nothing new to read.", caveats: [], version: 1, filesRead: 0 });
+    expect(routeFile).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+    expect(state.readings.f1).toEqual(THEIR_CLAIM);
+    expect(state.transcript).toEqual([]);
+  });
+
+  it("a stopped read marks only its own files stopped, not an overlapping read's", async () => {
+    store.files = [file("f1"), file("f2")];
+    anotherReadClaimsFirst(["f1"]);
+    const controller = new AbortController();
+    controller.abort();
+
+    const { state } = await run({ signal: controller.signal, now: () => NOW });
+
+    expect(state.readings.f1).toEqual(THEIR_CLAIM);
+    expect(state.readings.f2).toMatchObject({ status: "failed", reason: "Stopped before this file was read." });
+  });
+
+  it("leaves a deleted statement out of the re-merge", async () => {
+    vi.mocked(routeFile).mockResolvedValue({ reader: "statement" });
+    store.files = [file("f1")];
+    extractionWrites({
+      f1: statement("f1", [
+        account({ name: "Vanguard IRA", subType: "traditional_ira", value: 120000, accountNumberLast4: "9054", custodian: "Vanguard", statementDate: "2026-09-30" }),
+      ]),
+    });
+    await run();
+
+    // The advisor deletes f1. Deleting only hides the file; its stored result stays.
+    store.files = [file("f2")];
+    extractionWrites({
+      f2: statement("f2", [
+        account({ name: "Fidelity 401(k)", subType: "401k", value: 640000, accountNumberLast4: "2201", custodian: "Fidelity", statementDate: "2026-09-30" }),
+      ]),
+    });
+    const { result } = await run();
+
+    expect(store.fileResults).toHaveProperty("f1");
+    expect(result.caveats).toEqual(["Read 1 statement covering 1 account."]);
   });
 
   it("does nothing when every file is already read", async () => {

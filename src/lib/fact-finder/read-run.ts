@@ -98,15 +98,24 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
   const scenarioId = await resolveBaseCaseScenarioId(scope.clientId);
   const records = scenarioId ? await loadExistingRecords(scope.clientId, scenarioId) : emptyExistingRecords();
 
+  // Claim against the fresh state: an overlapping read may have claimed some
+  // of these files since `start` was loaded. `mutate` can run more than once,
+  // so `claimed` holds the list from the attempt that was committed.
   const startedAt = iso();
-  await updateFactFinder(scope, (s) => ({
-    ...s,
-    readings: {
-      ...s.readings,
-      ...Object.fromEntries(todo.map((f): [string, FFFileReading] => [f.id, { status: "reading", startedAt }])),
-    },
-  }));
-  for (const f of todo) emit({ type: "file", fileId: f.id, fileName: f.originalFilename, status: "reading" });
+  let claimed: ImportFileRow[] = [];
+  const afterClaim = await updateFactFinder(scope, (s) => {
+    claimed = todo.filter((f) => needsReading(s.readings[f.id], now()));
+    if (claimed.length === 0) return s;
+    return {
+      ...s,
+      readings: {
+        ...s.readings,
+        ...Object.fromEntries(claimed.map((f): [string, FFFileReading] => [f.id, { status: "reading", startedAt }])),
+      },
+    };
+  });
+  if (claimed.length === 0) return { summary: "Nothing new to read.", caveats: [], version: afterClaim.version, filesRead: 0 };
+  for (const f of claimed) emit({ type: "file", fileId: f.id, fileName: f.originalFilename, status: "reading" });
 
   const decisions: FFMergeDecision[] = [];
   const caveats: string[] = [];
@@ -169,7 +178,7 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
 
   const statementFiles: ImportFileRow[] = [];
   try {
-    await eachLimited(todo, FILE_CONCURRENCY, async (file) => {
+    await eachLimited(claimed, FILE_CONCURRENCY, async (file) => {
       if (signal?.aborted) return;
       try {
         const buffer = await downloadImportFile(file.blobUrl);
@@ -242,7 +251,10 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
         const earlier = Object.entries(current?.readings ?? {})
           .filter(([, r]) => r.reader === "statement" && r.status === "done")
           .map(([id]) => id);
-        const ids = [...new Set([...earlier, ...fresh.map((f) => f.id)])].filter((id) => fileResults[id]);
+        // Live files only: deleting a file leaves its stored result behind.
+        const ids = [...new Set([...earlier, ...fresh.map((f) => f.id)])].filter(
+          (id) => fileResults[id] && files.some((f) => f.id === id),
+        );
         const merged = mergeAcrossFiles(Object.fromEntries(ids.map((id) => [id, fileResults[id]])));
         const rollups = detectRollups(merged.payload.accounts);
         const readings = readingsFromStatements({
@@ -283,16 +295,16 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
 
     await updateFactFinder(scope, (s) => applyLinkScores(s, records));
   } finally {
-    for (const f of todo.filter((x) => !settled.has(x.id))) {
+    for (const f of claimed.filter((x) => !settled.has(x.id))) {
       await settle(f, undefined, null, "Stopped before this file was read.");
     }
   }
 
   let built = { summary: "", caveats: [] as string[] };
   const final = await updateFactFinder(scope, (s) => {
-    built = buildReadSummary({ state: s, decisions, filesRead: todo.length, failed, caveats });
+    built = buildReadSummary({ state: s, decisions, filesRead: claimed.length, failed, caveats });
     const text = [built.summary, ...built.caveats.map((c) => `• ${c}`)].join("\n");
     return { ...s, transcript: [...s.transcript, { id: randomUUID(), role: "assistant", text, at: iso() }] };
   });
-  return { summary: built.summary, caveats: built.caveats, version: final.version, filesRead: todo.length };
+  return { summary: built.summary, caveats: built.caveats, version: final.version, filesRead: claimed.length };
 }
