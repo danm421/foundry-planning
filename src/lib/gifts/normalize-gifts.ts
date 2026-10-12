@@ -35,6 +35,8 @@ export interface CanonicalGift {
   /** Provenance for labeling / debugging. */
   source: "legacy" | "event";
   sourcePolicyAccountId?: string;
+  /** Set on a cash row fanned out from a recurring (series) gift. */
+  seriesId?: string;
   /** Non-outright gift kind (e.g. CLT remainder interest), preserved for labeling. */
   eventKind?: GiftEventKind;
 }
@@ -162,11 +164,12 @@ export function toCanonicalGifts(
         {
           year: ev.year,
           recipientEntityId: ev.recipientEntityId ?? null,
-          recipientFamilyMemberId: null,
-          recipientExternalBeneficiaryId: null,
+          recipientFamilyMemberId: ev.recipientFamilyMemberId ?? null,
+          recipientExternalBeneficiaryId: ev.recipientExternalBeneficiaryId ?? null,
           useCrummeyPowers: ev.useCrummeyPowers,
           source: "event",
           sourcePolicyAccountId: ev.sourcePolicyAccountId,
+          seriesId: ev.seriesId,
         },
         ev.grantor,
         ev.amount,
@@ -182,8 +185,8 @@ export function toCanonicalGifts(
         {
           year: ev.year,
           recipientEntityId: ev.recipientEntityId ?? null,
-          recipientFamilyMemberId: null,
-          recipientExternalBeneficiaryId: null,
+          recipientFamilyMemberId: ev.recipientFamilyMemberId ?? null,
+          recipientExternalBeneficiaryId: ev.recipientExternalBeneficiaryId ?? null,
           useCrummeyPowers: false,
           source: "event",
         },

@@ -510,6 +510,35 @@ describe("computeGiftLedger — §2503(b) one exclusion per donee per year (BUG 
     const row = ledger.find((r) => r.year === 2026)!;
     expect(row.perGrantor.client.taxableGiftsThisYear).toBe(0);
   });
+
+  it("annual gifts to two different children each keep their own exclusion", () => {
+    // Two $19k series, one per child: the fanned-out rows must carry the
+    // child, or both pool as one unnamed donee and $19k reads as taxable.
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      annualExclusionsByYear: { 2026: 19_000 },
+      giftEvents: [
+        { kind: "cash", year: 2026, amount: 19_000, grantor: "client", useCrummeyPowers: false, recipientFamilyMemberId: "fm-alyssa", seriesId: "s-alyssa" },
+        { kind: "cash", year: 2026, amount: 19_000, grantor: "client", useCrummeyPowers: false, recipientFamilyMemberId: "fm-joey", seriesId: "s-joey" },
+      ],
+    });
+    const row = ledger.find((r) => r.year === 2026)!;
+    expect(row.perGrantor.client.taxableGiftsThisYear).toBe(0);
+  });
+
+  it("an annual gift and an asset gift to a charity use no exemption", () => {
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      annualExclusionsByYear: { 2026: 19_000 },
+      externalBeneficiaries: [{ id: "charity-1", kind: "charity" }],
+      giftEvents: [
+        { kind: "cash", year: 2026, amount: 50_000, grantor: "client", useCrummeyPowers: false, recipientExternalBeneficiaryId: "charity-1", seriesId: "s-charity" },
+        { kind: "asset", year: 2026, grantor: "client", accountId: "acct-1", percent: 1, amountOverride: 200_000, recipientExternalBeneficiaryId: "charity-1" },
+      ],
+    });
+    const row = ledger.find((r) => r.year === 2026)!;
+    expect(row.perGrantor.client.taxableGiftsThisYear).toBe(0);
+  });
 });
 
 describe("computeGiftLedger — valuation discounts pool DISCOUNTED amounts", () => {

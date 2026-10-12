@@ -40,6 +40,16 @@ describe("toCanonicalGifts — dedup invariant", () => {
     const out = toCanonicalGifts([], events, ctx());
     expect(out).toHaveLength(2);
   });
+
+  it("keeps a person or charity recipient on series and asset events", () => {
+    const events: GiftEvent[] = [
+      { kind: "cash", year: 2030, amount: 19_000, grantor: "client", useCrummeyPowers: false, recipientFamilyMemberId: "k1", seriesId: "s1" },
+      { kind: "asset", year: 2030, accountId: "a1", percent: 1, amountOverride: 50_000, grantor: "client", recipientExternalBeneficiaryId: "charity1" },
+    ];
+    const [series, asset] = toCanonicalGifts([], events, ctx());
+    expect(series).toMatchObject({ recipientFamilyMemberId: "k1", recipientExternalBeneficiaryId: null });
+    expect(asset).toMatchObject({ recipientExternalBeneficiaryId: "charity1", external: { kind: "charity" } });
+  });
 });
 
 describe("toCanonicalGifts — joint split (§2513)", () => {
