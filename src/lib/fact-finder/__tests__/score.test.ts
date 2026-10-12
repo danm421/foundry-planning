@@ -121,6 +121,42 @@ describe("applyLinkScores — one record, one live row", () => {
     expect(s.removed).toBe(start.removed);
   });
 
+  it("settles automatic links first, so an earlier row never suggests a record a later row confirms", () => {
+    const r = records();
+    r.disabilityPolicies = [
+      { id: "d-x", name: "Acme LTD", insured: "client", carrier: "Unum" },
+      { id: "d-y", name: "Acme STD", insured: "client", carrier: null },
+    ];
+    const once = applyLinkScores(
+      stateWith({
+        disability: [
+          row("a", { policyName: "Acme Group", whoIsCovered: "Client", carrier: "Unum" }),
+          row("b", { policyName: "Acme LTD", whoIsCovered: "Client", carrier: "Unum" }),
+        ],
+      }),
+      r,
+    );
+    expect(linkOf(once, "disability", 0)).toMatchObject({ recordId: "d-y", confirmed: false });
+    expect(linkOf(once, "disability", 1)).toMatchObject({ recordId: "d-x", confirmed: true });
+    expect(applyLinkScores(once, r)).toBe(once);
+  });
+
+  it("an exact account-number match wins the record over an earlier row's strong name match", () => {
+    const r = records();
+    r.candidates.accounts = r.candidates.accounts.map((a) => (a.id === "a-brk" ? { ...a, accountNumberLast4: "7788" } : a));
+    const s = applyLinkScores(
+      stateWith({
+        taxable: [
+          row("by-name", { accountName: "Joint Brokerage", owner: "Joint", currentValue: 300000 }),
+          row("by-number", { accountName: "Schwab", last4: "7788", custodian: "Charles Schwab" }),
+        ],
+      }),
+      r,
+    );
+    expect(linkOf(s, "taxable", 0)).toMatchObject({ confirmed: false });
+    expect(linkOf(s, "taxable", 1)).toMatchObject({ recordId: "a-brk", confirmed: true });
+  });
+
   it("a fixed row whose record another live row already confirms needs a click", () => {
     const start = emptyFactFinderState();
     start.sections.salary[0] = row(start.sections.salary[0].id, { annualSalary: 165000 });

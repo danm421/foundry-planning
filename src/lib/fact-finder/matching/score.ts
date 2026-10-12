@@ -249,15 +249,28 @@ function needsScoring(row: FFRow): boolean {
   return link.by === "auto";
 }
 
-function pickLink(scored: ScoredCandidate[], claimed: Set<string>): FFLink {
-  if (scored.length === 0) return { kind: "new", by: "auto" };
-  const best = scored.find((c) => !claimed.has(c.recordId));
-  if (best && (best.exact || best.score >= AUTO_LINK_SCORE)) {
-    claimed.add(best.recordId);
-    return { kind: "existing", recordId: best.recordId, score: best.score, confirmed: true, by: "auto" };
+/**
+ * Links for one record kind's rows, in two passes so neither row order nor a
+ * second run changes the result. First every automatic confirm settles: exact
+ * before fuzzy, then by score, ties in section and row order. Then each other
+ * row suggests its best unclaimed candidate ("needs a click"), or says New.
+ */
+function pickLinks(scoredRows: ScoredCandidate[][], claimed: Set<string>): FFLink[] {
+  const confirmed: Array<FFLink | undefined> = [];
+  const autos = scoredRows
+    .flatMap((scored, i) => scored.filter((c) => c.exact || c.score >= AUTO_LINK_SCORE).map((c) => ({ i, c })))
+    .sort((a, b) => Number(b.c.exact) - Number(a.c.exact) || b.c.score - a.c.score);
+  for (const { i, c } of autos) {
+    if (confirmed[i] || claimed.has(c.recordId)) continue;
+    claimed.add(c.recordId);
+    confirmed[i] = { kind: "existing", recordId: c.recordId, score: c.score, confirmed: true, by: "auto" };
   }
-  const pick = best ?? scored[0];
-  return { kind: "existing", recordId: pick.recordId, score: pick.score, confirmed: false, by: "auto" };
+  return scoredRows.map((scored, i): FFLink => {
+    if (confirmed[i]) return confirmed[i];
+    if (scored.length === 0) return { kind: "new", by: "auto" };
+    const pick = scored.find((c) => !claimed.has(c.recordId)) ?? scored[0];
+    return { kind: "existing", recordId: pick.recordId, score: pick.score, confirmed: false, by: "auto" };
+  });
 }
 
 function withLink(row: FFRow, link: FFLink, scored: ScoredCandidate[]): FFRow {
@@ -291,38 +304,37 @@ function liveClaims(sections: Record<string, FFRow[]>, kind: RecordKind): Set<st
   return claimed;
 }
 
+/** A fixed row's candidates: the one record that plays its role is exact; several are a toss-up. Null = not a fixed row. */
+function implicitCandidates(section: FFSection, row: FFRow, records: ExistingRecords): ScoredCandidate[] | null {
+  const implicit = IMPLICIT[section.id];
+  const label = fixedLabelOfRow(section.id, row.id);
+  if (!implicit || !label) return null;
+  const found = implicit(label, records);
+  return found.map((f) => ({ recordId: f.id, label: f.label, score: found.length === 1 ? 1 : 0.5, exact: found.length === 1 }));
+}
+
 export function applyLinkScores(state: FactFinderState, records: ExistingRecords): FactFinderState {
   let sections = state.sections;
   const kinds = [...new Set(FACT_FINDER_SECTIONS.flatMap((s) => (s.links ? [s.links] : [])))];
 
   for (const kind of kinds) {
-    const group = sectionsLinkingTo(kind).filter((s) => fixedLabelsOf(s).length === 0);
-    const claimed = liveClaims(sections, kind);
-    for (const s of group) {
-      const rows = sections[s.id] ?? [];
-      const next = rows.map((row) => {
-        if (!needsScoring(row) || !rowHasValues(row)) return row;
-        const scored = scoreCandidates(s, row, records);
-        return withLink(row, pickLink(scored, claimed), scored);
+    const pending: Array<{ sectionId: string; index: number; row: FFRow; scored: ScoredCandidate[] }> = [];
+    for (const s of sectionsLinkingTo(kind)) {
+      const fixed = fixedLabelsOf(s).length > 0;
+      (sections[s.id] ?? []).forEach((row, index) => {
+        if (!needsScoring(row) || !rowHasValues(row)) return;
+        const scored = fixed ? implicitCandidates(s, row, records) : scoreCandidates(s, row, records);
+        if (scored) pending.push({ sectionId: s.id, index, row, scored });
       });
-      if (next.some((r, i) => r !== rows[i])) sections = { ...sections, [s.id]: next };
     }
-  }
-
-  for (const s of FACT_FINDER_SECTIONS) {
-    const implicit = IMPLICIT[s.id];
-    if (!implicit || !s.links) continue;
-    const claimed = liveClaims(sections, s.links);
-    const rows = sections[s.id] ?? [];
-    const next = rows.map((row) => {
-      if (!needsScoring(row) || !rowHasValues(row)) return row;
-      const label = fixedLabelOfRow(s.id, row.id);
-      if (!label) return row;
-      const found = implicit(label, records);
-      const scored = found.map((f) => ({ recordId: f.id, label: f.label, score: found.length === 1 ? 1 : 0.5, exact: found.length === 1 }));
-      return withLink(row, pickLink(scored, claimed), scored);
+    const links = pickLinks(pending.map((p) => p.scored), liveClaims(sections, kind));
+    pending.forEach(({ sectionId, index, row, scored }, i) => {
+      const next = withLink(row, links[i], scored);
+      if (next === row) return;
+      const rows = [...sections[sectionId]];
+      rows[index] = next;
+      sections = { ...sections, [sectionId]: rows };
     });
-    if (next.some((r, i) => r !== rows[i])) sections = { ...sections, [s.id]: next };
   }
 
   return sections === state.sections ? state : { ...state, sections };
