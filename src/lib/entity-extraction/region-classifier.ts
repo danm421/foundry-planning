@@ -3,7 +3,15 @@ import { z } from "zod";
 import { callAIExtraction } from "@/lib/extraction/azure-client";
 import { usageStage } from "@/lib/ai/usage";
 import { parseAIResponse } from "@/lib/extraction/parse-response";
-import type { DetailEntity } from "@/domain/forge/detail-fields";
+/**
+ * What the classifier needs to know about each region it can return. A
+ * DetailEntity fits; so does a fact finder section (src/lib/fact-finder).
+ */
+export interface RegionVocabularyEntry {
+  id: string;
+  label: string;
+  documentHints?: readonly string[];
+}
 
 export type DocumentRegions = Record<string, Array<[number, number]>>;
 
@@ -17,7 +25,7 @@ const pageRangeSchema = z
   .tuple([z.number().int().positive(), z.number().int().positive()])
   .refine(([start, end]) => end >= start, { message: "endPage must be >= startPage" });
 
-function schemaFor(entities: DetailEntity[]) {
+function schemaFor(entities: readonly RegionVocabularyEntry[]) {
   const shape: Record<string, z.ZodTypeAny> = {};
   for (const entity of entities) {
     shape[entity.id] = z.array(pageRangeSchema).max(MAX_RANGES_PER_ENTITY).default([]);
@@ -27,7 +35,7 @@ function schemaFor(entities: DetailEntity[]) {
   return z.object(shape);
 }
 
-export function buildRegionClassifierPrompt(entities: DetailEntity[]): string {
+export function buildRegionClassifierPrompt(entities: readonly RegionVocabularyEntry[]): string {
   return [
     "You segment financial documents into per-entity page ranges so that focused extractors can run on each slice.",
     "",
@@ -61,7 +69,7 @@ export function buildRegionClassifierPrompt(entities: DetailEntity[]): string {
 export async function classifyRegions(args: {
   outline: string;
   anchors: string;
-  entities: DetailEntity[];
+  entities: readonly RegionVocabularyEntry[];
 }): Promise<DocumentRegions | null> {
   const { outline, anchors, entities } = args;
   if (entities.length === 0) return null;

@@ -103,3 +103,12 @@ describe("classifyRegions", () => {
     expect(await classifyRegions({ outline: "o", anchors: "a", entities })).toBeNull();
   });
 });
+
+describe("classifyRegions vocabulary", () => {
+  it("accepts any {id, label, documentHints} vocabulary, not only Details entities", () => {
+    const prompt = buildRegionClassifierPrompt([
+      { id: "retirement", label: "Retirement Accounts", documentHints: ["columns: Account name, Current value"] },
+    ]);
+    expect(prompt).toContain('- "retirement" — Retirement Accounts — looks like: columns: Account name, Current value');
+  });
+});
