@@ -29,6 +29,26 @@ describe("sameIdentity", () => {
     expect(sameIdentity("annuity", { contractName: "Jackson VA" }, { contractName: "Jackson VA" })).toBe(true);
   });
 
+  it("needs custodians to agree when matching accounts by name", () => {
+    expect(sameIdentity("cash", { accountName: "Checking", custodian: "Chase" }, { accountName: "Checking", custodian: "Wells Fargo" })).toBe(false);
+    expect(sameIdentity("cash", { accountName: "Checking", custodian: "Chase" }, { accountName: "Checking", custodian: "JPMorgan Chase Bank" })).toBe(true);
+    expect(sameIdentity("cash", { accountName: "Checking", custodian: "Chase" }, { accountName: "Checking" })).toBe(true);
+  });
+
+  it("matches loans on name, refusing a different property", () => {
+    expect(sameIdentity("liab", { loanName: "Mortgage", propertyName: "1450 Aspen Ridge Dr" }, { loanName: "Mortgage", propertyName: "88 Rental Ln" })).toBe(false);
+    expect(sameIdentity("liab", { loanName: "Mortgage", propertyName: "1450 Aspen Ridge Dr" }, { loanName: "mortgage" })).toBe(true);
+  });
+
+  it("tells same-day equity grants apart by type, and will provisions by condition", () => {
+    const grant = { company: "Acme", grantDate: "2024-03-01" };
+    expect(sameIdentity("equity", { ...grant, grantType: "RSU" }, { ...grant, grantType: "NQSO" })).toBe(false);
+    expect(sameIdentity("equity", { ...grant, grantType: "RSU" }, grant)).toBe(true);
+    const rest = { willOf: "Client", gift: "Remaining estate" };
+    expect(sameIdentity("bequests", { ...rest, condition: "If co-client survives" }, { ...rest, condition: "If co-client predeceases" })).toBe(false);
+    expect(sameIdentity("bequests", { ...rest, condition: "Always" }, rest)).toBe(true);
+  });
+
   it("matches family on first name plus date of birth, else last name", () => {
     expect(sameIdentity("family", { firstName: "Emma", dateOfBirth: "2004-05-21" }, { firstName: "emma", dateOfBirth: "2004-05-21" })).toBe(true);
     expect(sameIdentity("family", { firstName: "Emma", dateOfBirth: "2004-05-21" }, { firstName: "Emma", dateOfBirth: "2006-01-01" })).toBe(false);

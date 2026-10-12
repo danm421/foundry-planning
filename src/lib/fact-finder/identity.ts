@@ -43,11 +43,13 @@ function custodiansAgree(a: FFCellValue | undefined, b: FFCellValue | undefined)
 }
 
 function sameAccount(a: Values, b: Values, nameColumn: string, custodianColumn: string): boolean {
+  const custodians = custodiansAgree(a[custodianColumn], b[custodianColumn]);
   const la = last4Of(a.last4);
   const lb = last4Of(b.last4);
-  if (la && lb) return la === lb && custodiansAgree(a[custodianColumn], b[custodianColumn]);
-  // By name alone, owners must not contradict: a Client "Roth IRA" and a Co-client "Roth IRA" are two accounts.
-  return eq(a[nameColumn], b[nameColumn]) && agrees(a.owner, b.owner);
+  if (la && lb) return la === lb && custodians;
+  // By name alone, owners must not contradict either: a Client "Roth IRA" and a
+  // Co-client "Roth IRA" are two accounts, and so are a Chase "Checking" and a Wells Fargo one.
+  return eq(a[nameColumn], b[nameColumn]) && agrees(a.owner, b.owner) && custodians;
 }
 
 function samePolicyNumber(a: FFCellValue | undefined, b: FFCellValue | undefined): boolean | null {
@@ -77,11 +79,11 @@ const RULES: Record<string, (a: Values, b: Values) => boolean> = {
   equity: (a, b) =>
     normText(a.grantNumber) && normText(b.grantNumber)
       ? eq(a.grantNumber, b.grantNumber)
-      : eq(a.company, b.company) && agrees(a.grantDate, b.grantDate),
+      : eq(a.company, b.company) && agrees(a.grantDate, b.grantDate) && agrees(a.grantType, b.grantType),
   notes_rec: (a, b) => eq(a.borrower, b.borrower),
   realestate: (a, b) => eq(a.propertyName, b.propertyName) || eq(a.address, b.address),
   business: (a, b) => eq(a.businessName, b.businessName),
-  liab: (a, b) => eq(a.loanName, b.loanName),
+  liab: (a, b) => eq(a.loanName, b.loanName) && agrees(a.propertyName, b.propertyName),
   income: (a, b) => eq(a.incomeName, b.incomeName) && agrees(a.owner, b.owner) && agrees(a.type, b.type),
   living_items: (a, b) => eq(a.item, b.item),
   expenses: (a, b) => eq(a.expenseName, b.expenseName) && agrees(a.type, b.type),
@@ -94,7 +96,8 @@ const RULES: Record<string, (a: Values, b: Values) => boolean> = {
   disability: insurer,
   ltc: insurer,
   trusts: (a, b) => eq(a.trustName, b.trustName),
-  bequests: (a, b) => eq(a.willOf, b.willOf) && eq(a.gift, b.gift) && agrees(a.asset, b.asset),
+  bequests: (a, b) =>
+    eq(a.willOf, b.willOf) && eq(a.gift, b.gift) && agrees(a.asset, b.asset) && agrees(a.condition, b.condition),
   gifts: (a, b) => a.year != null && a.year === b.year && eq(a.from, b.from) && eq(a.recipient, b.recipient),
 };
 

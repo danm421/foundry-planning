@@ -14,6 +14,7 @@ import {
   TAXABLE_TYPE_MAP,
   labelFor,
 } from "../enums";
+import { normText } from "../identity";
 import type { FFCellValue, FFReadCell, FFReadHolding, FFReading, FFSource } from "../types";
 
 /** Statement values are read by today's tuned statement reader. */
@@ -174,6 +175,16 @@ function guessLiabilityType(name: string): string | undefined {
   return undefined;
 }
 
+/**
+ * "Mortgage · Wells Fargo": statements name debts generically, so the lender is
+ * what keeps two lenders' mortgages apart (as a last 4 does for accounts).
+ */
+function loanName(row: ExtractedLiability): string {
+  const lender = row.lender?.trim();
+  if (!lender || normText(row.name).includes(normText(lender))) return row.name;
+  return row.name ? `${row.name} · ${lender}` : lender;
+}
+
 export function readingFromLiability(row: Annotated<ExtractedLiability>): FFReading {
   const source = sourceOf(row);
   const cell = cellMaker(source);
@@ -189,7 +200,7 @@ export function readingFromLiability(row: Annotated<ExtractedLiability>): FFRead
     sectionId: "liab",
     fileId: source.fileId,
     cells: compact({
-      loanName: cell(row.name),
+      loanName: cell(loanName(row)),
       type: cell(guessLiabilityType(row.name), GUESSED_CONFIDENCE),
       balance: cell(row.balance),
       balanceAsOf: cell(row.balanceAsOfDate?.slice(0, 7)),

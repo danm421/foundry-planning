@@ -57,6 +57,27 @@ describe("mergeReadings — new and repeated readings", () => {
     expect(state.sections.people[1].id).toBe("people:Co-client");
     expect(state.sections.people[1].cells.firstName.value).toBe("Laura");
   });
+
+  it("keeps every row one document lists, even rows that look alike, and re-reading it changes nothing", () => {
+    const read = (sectionId: string, values: Record<string, FFReadCell["value"]>): FFReading => ({
+      sectionId,
+      fileId: "ff",
+      cells: Object.fromEntries(Object.entries(values).map(([k, v]) => [k, cell(v, 1, "ff")])),
+    });
+    const readings = [
+      read("cash", { accountName: "Checking", currentValue: 12000, custodian: "Chase" }),
+      read("cash", { accountName: "Checking", currentValue: 45000, owner: "Joint", custodian: "Credit Union" }),
+      read("bequests", { willOf: "Client", gift: "Remaining estate", recipients: "Laura Hendricks 100%", condition: "If co-client survives" }),
+      read("bequests", { willOf: "Client", gift: "Remaining estate", recipients: "Children equally", condition: "If co-client predeceases" }),
+      read("liab", { loanName: "Car loan", balance: 12000 }),
+      read("liab", { loanName: "Car loan", balance: 9000 }),
+    ];
+    const first = mergeReadings(emptyFactFinderState(), readings, ctx);
+    expect(first.state.sections.cash.map((r) => r.cells.currentValue.value)).toEqual([12000, 45000]);
+    expect(first.state.sections.bequests.map((r) => r.cells.recipients.value)).toEqual(["Laura Hendricks 100%", "Children equally"]);
+    expect(first.state.sections.liab.map((r) => r.cells.balance.value)).toEqual([12000, 9000]);
+    expect(mergeReadings(first.state, readings, ctx).state).toBe(first.state);
+  });
 });
 
 describe("mergeReadings — accounts with the same name", () => {
@@ -69,6 +90,29 @@ describe("mergeReadings — accounts with the same name", () => {
     const { state, decisions } = mergeReadings(emptyFactFinderState(), [roth("Client", 50000), roth("Co-client", 80000)], ctx);
     expect(state.sections.retirement.map((r) => r.cells.owner.value)).toEqual(["Client", "Co-client"]);
     expect(decisions.map((d) => d.kind)).toEqual(["added", "added"]);
+  });
+
+  it("keeps two same-named statements at different banks apart when neither prints a last 4", () => {
+    const checking = (fileId: string, custodian: string, value: number) =>
+      fidelity({ sectionId: "cash", fileId }, {
+        accountName: cell("Checking", 0.9, fileId), custodian: cell(custodian, 0.9, fileId), currentValue: cell(value, 0.9, fileId), last4: cell(null),
+      });
+    const readings = [checking("s1", "Chase", 12000), checking("s2", "Wells Fargo", 8000)];
+    const { state } = mergeReadings(emptyFactFinderState(), readings, ctx);
+    expect(state.sections.cash.map((r) => r.cells.currentValue.value)).toEqual([12000, 8000]);
+    expect(mergeReadings(state, readings, ctx).state).toBe(state);
+  });
+
+  it("keeps a different account out of a row once the advisor types its last 4", () => {
+    const ff: FFReading = { sectionId: "retirement", fileId: "ff", cells: { accountName: cell("Fidelity 401(k)", 0.9, "ff") } };
+    const typed = applyOps(mergeReadings(emptyFactFinderState(), [ff], ctx).state, [
+      { op: "setCell", sectionId: "retirement", rowId: "id-1", columnId: "last4", value: "1111" },
+    ], advisor);
+    const other = mergeReadings(typed, [fidelity({ fileId: "s1" }, { last4: cell("2222", 0.9, "s1") })], ctx).state;
+    expect(other.sections.retirement.map((r) => r.cells.last4.value)).toEqual(["1111", "2222"]);
+    const same = mergeReadings(typed, [fidelity({ fileId: "s1" }, { last4: cell("1111", 0.9, "s1") })], ctx).state;
+    expect(same.sections.retirement).toHaveLength(1);
+    expect(same.sections.retirement[0].cells.currentValue.value).toBe(600000);
   });
 
   it("learns the last 4 a statement fills in, so a second account of that name gets its own row", () => {
@@ -105,6 +149,15 @@ describe("mergeReadings — precedence", () => {
     ], ctx).state;
     expect(older.sections.retirement[0].cells.currentValue.value).toBe(640000);
     expect(older.sections.retirement[0].cells.afterTaxBasis.value).toBe(1200);
+  });
+
+  it("keeps a statement's value over an undated reading, whichever was read first", () => {
+    const statement = fidelity({ fileId: "s1" }, { currentValue: cell(655123.45, 0.9, "s1") });
+    const form = fidelity({ fileId: "ff", statementDate: undefined }, { currentValue: cell(640000, 1, "ff") });
+    const value = (readings: FFReading[]) =>
+      mergeReadings(emptyFactFinderState(), readings, ctx).state.sections.retirement[0].cells.currentValue.value;
+    expect(value([statement, form])).toBe(655123.45);
+    expect(value([form, statement])).toBe(655123.45);
   });
 
   it("uses confidence when neither reading is newer", () => {
@@ -151,6 +204,23 @@ describe("mergeReadings — removed and excluded rows", () => {
     expect(state.sections.retirement.map((r) => r.id)).toEqual(["id-1"]);
     expect(state.sections.retirement[0].cells.currentValue.value).toBe(611000);
     expect(mergeReadings(state, [reading], ctx).state).toBe(state);
+  });
+
+  it("re-reading a document whose two look-alike rows the advisor merged adds nothing back", () => {
+    const loan = (balance: number): FFReading => ({
+      sectionId: "liab",
+      fileId: "ff",
+      cells: { loanName: cell("Car loan", 0.9, "ff"), balance: cell(balance, 0.9, "ff") },
+    });
+    const readings = [loan(12000), loan(9000)];
+    const read = mergeReadings(emptyFactFinderState(), readings, ctx).state;
+    const [a, b] = read.sections.liab;
+    for (const [keepRowId, dropRowId] of [[a.id, b.id], [b.id, a.id]]) {
+      const merged = applyOps(read, [{ op: "mergeRows", sectionId: "liab", keepRowId, dropRowId }], advisor);
+      const again = mergeReadings(merged, readings, ctx);
+      expect(again.state).toBe(merged);
+      expect(again.decisions).toEqual([]);
+    }
   });
 
   it("puts an excluded reading straight in the tray, once", () => {

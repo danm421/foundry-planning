@@ -38,12 +38,18 @@ export function mergeReadings(
 ): MergeResult {
   let next = state;
   const decisions: FFMergeDecision[] = [];
+  // Rows each file has matched or added in this call: one document's readings are
+  // different rows, even when they look alike (two "Car loan"s, two "Checking"s).
+  const claims = new Map<string, Set<string>>();
   for (const reading of readings) {
     const section = findSection(reading.sectionId);
     if (!section) continue;
-    const result = mergeOne(next, section, reading, ctx);
+    let claimed = claims.get(reading.fileId);
+    if (!claimed) claims.set(reading.fileId, (claimed = new Set()));
+    const result = mergeOne(next, section, reading, ctx, claimed);
     next = result.state;
     if (result.decision) decisions.push(result.decision);
+    if (result.claim) claimed.add(result.claim);
   }
   for (const holding of unassigned) {
     const result = placeUnassigned(next, holding, ctx);
@@ -56,6 +62,8 @@ export function mergeReadings(
 interface OneResult {
   state: FactFinderState;
   decision?: FFMergeDecision;
+  /** The live or Removed-tray row this reading matched or added. */
+  claim?: string;
 }
 
 function readingValues(reading: FFReading): Record<string, FFCellValue> {
@@ -64,8 +72,14 @@ function readingValues(reading: FFReading): Record<string, FFCellValue> {
   return out;
 }
 
+/**
+ * The row's learned identity wins over its cells, but a cell the identity lacks
+ * (a last 4 the advisor typed) still counts; the cells alone also match, so an
+ * advisor's correction of a misread name is found too.
+ */
 const matches = (sectionId: string, values: Record<string, FFCellValue>, row: FFRow) =>
-  sameIdentity(sectionId, values, row.identity ?? {}) || sameIdentity(sectionId, values, rowValues(row));
+  sameIdentity(sectionId, values, { ...rowValues(row), ...(row.identity ?? {}) }) ||
+  sameIdentity(sectionId, values, rowValues(row));
 
 function setRow(state: FactFinderState, sectionId: string, row: FFRow): FactFinderState {
   const rows = state.sections[sectionId] ?? [];
@@ -74,7 +88,14 @@ function setRow(state: FactFinderState, sectionId: string, row: FFRow): FactFind
   return { ...state, sections: { ...state.sections, [sectionId]: nextRows } };
 }
 
-function mergeOne(state: FactFinderState, section: FFSection, reading: FFReading, ctx: MergeContext): OneResult {
+/** `claimed`: rows this reading's file already matched or added in this merge — never matched again. */
+function mergeOne(
+  state: FactFinderState,
+  section: FFSection,
+  reading: FFReading,
+  ctx: MergeContext,
+  claimed: ReadonlySet<string>,
+): OneResult {
   const fixed = fixedLabelsOf(section);
   if (fixed.length > 0) {
     const label = reading.fixedRow ?? fixed[0];
@@ -85,15 +106,18 @@ function mergeOne(state: FactFinderState, section: FFSection, reading: FFReading
   }
 
   const values = readingValues(reading);
-  const live = (state.sections[section.id] ?? []).find((r) => matches(section.id, values, r));
-  if (live) return updateRow(state, section, live, reading, ctx);
+  const open = (row: FFRow) => !claimed.has(row.id) && matches(section.id, values, row);
+  const live = (state.sections[section.id] ?? []).find(open);
+  if (live) return { ...updateRow(state, section, live, reading, ctx), claim: live.id };
 
-  const trayIndex = state.removed.findIndex((e) => e.sectionId === section.id && matches(section.id, values, e.row));
+  const trayIndex = state.removed.findIndex((e) => e.sectionId === section.id && open(e.row));
   if (trayIndex >= 0) {
     const entry = state.removed[trayIndex];
+    // The tray entry is the claim, not the row it was merged into: that row's own reading still finds it.
+    const claim = entry.row.id;
     const kept = entry.mergedInto ? (state.sections[section.id] ?? []).find((r) => r.id === entry.mergedInto) : undefined;
-    if (kept) return updateRow(state, section, kept, reading, ctx);
-    if (entry.row.sourceFileIds.includes(reading.fileId)) return { state };
+    if (kept) return { ...updateRow(state, section, kept, reading, ctx), claim };
+    if (entry.row.sourceFileIds.includes(reading.fileId)) return { state, claim };
     const absorbed: FFRemoved = {
       ...entry,
       absorbed: (entry.absorbed ?? 0) + 1,
@@ -102,6 +126,7 @@ function mergeOne(state: FactFinderState, section: FFSection, reading: FFReading
     return {
       state: { ...state, removed: state.removed.map((e, i) => (i === trayIndex ? absorbed : e)) },
       decision: { kind: "keptRemoved", sectionId: section.id, rowId: entry.row.id, label: rowLabel(section, entry.row), fileId: reading.fileId },
+      claim,
     };
   }
 
@@ -112,11 +137,13 @@ function mergeOne(state: FactFinderState, section: FFSection, reading: FFReading
     return {
       state: { ...state, removed: [...state.removed, entry] },
       decision: { kind: "excluded", sectionId: section.id, rowId: row.id, label, fileId: reading.fileId, reason: reading.exclude.reason },
+      claim: row.id,
     };
   }
   return {
     state: setRow(state, section.id, row),
     decision: { kind: "added", sectionId: section.id, rowId: row.id, label, fileId: reading.fileId },
+    claim: row.id,
   };
 }
 
@@ -169,7 +196,8 @@ function learnIdentity(
 }
 
 const isNewer = (a: string | undefined, b: string | undefined) => !!a && (!b || a > b);
-const isOlder = (a: string | undefined, b: string | undefined) => !!a && !!b && a < b;
+/** An undated reading (a client-filled form) is older than any dated statement. */
+const isOlder = (a: string | undefined, b: string | undefined) => !!b && (!a || a < b);
 
 function updateRow(state: FactFinderState, section: FFSection, row: FFRow, reading: FFReading, ctx: MergeContext): OneResult {
   const columns: string[] = [];

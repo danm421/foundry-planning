@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import type { ExtractedAccount, ExtractedLiability } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
 import type { OwnerMatchFamilyMember } from "@/lib/imports/owner-match";
+import { mergeReadings } from "../merge";
 import { readingFromAccount, readingFromLiability, readingsFromStatements } from "../readers/statement-adapter";
+import { emptyFactFinderState } from "../state";
 
 const FAMILY: OwnerMatchFamilyMember[] = [
   { id: "fm-c", role: "client", firstName: "Mark", lastName: "Hendricks" },
@@ -114,6 +116,32 @@ describe("readingFromLiability", () => {
     expect(r.cells.termYears.value).toBe(30);
     expect(r.cells.type).toMatchObject({ value: "Mortgage", confidence: 0.6 });
     expect(r.cells.propertyName.value).toBe("1450 Aspen Ridge Dr");
+  });
+});
+
+describe("readingFromLiability — the lender", () => {
+  const loan = (fileId: string, row: Partial<ExtractedLiability>): Annotated<ExtractedLiability> => ({
+    name: "Mortgage",
+    __provenance: { sourceFileId: fileId, section: "liabilities" },
+    ...row,
+  });
+
+  it("names a loan by its lender, once", () => {
+    expect(readingFromLiability(loan("f1", { lender: "Wells Fargo" })).cells.loanName.value).toBe("Mortgage · Wells Fargo");
+    expect(readingFromLiability(loan("f1", { name: "Chase Mortgage", lender: "Chase" })).cells.loanName.value).toBe("Chase Mortgage");
+    expect(readingFromLiability(loan("f1", {})).cells.loanName.value).toBe("Mortgage");
+  });
+
+  it("keeps two lenders' mortgages as two rows, and the same mortgage read again as one", () => {
+    const primary = readingFromLiability(loan("s1", { lender: "Wells Fargo", balance: 412000, balanceAsOfDate: "2026-09-01" }));
+    const rental = readingFromLiability(
+      loan("s2", { lender: "Rocket Mortgage", balance: 238000, balanceAsOfDate: "2026-09-01", propertyAddress: "88 Rental Ln" }),
+    );
+    let n = 0;
+    const ctx = { now: "2026-10-12T12:00:00.000Z", newId: () => `id-${++n}` };
+    const { state } = mergeReadings(emptyFactFinderState(), [primary, rental], ctx);
+    expect(state.sections.liab.map((r) => r.cells.balance.value)).toEqual([412000, 238000]);
+    expect(mergeReadings(state, [primary, rental], ctx).state).toBe(state);
   });
 });
 
