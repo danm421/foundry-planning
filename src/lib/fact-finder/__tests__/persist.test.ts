@@ -110,4 +110,14 @@ describe.skipIf(!HAS_DB)("fact finder persistence (live DB)", () => {
     const [row] = await db.select({ p: clientImports.payloadJson }).from(clientImports).where(eq(clientImports.id, scope.importId));
     expect(row.p).toEqual({ chat: { c: 3 }, factFinder: { version: 4 }, fileResults: { f9: {} } });
   });
+
+  it("mergePayloadJson merges the mergeInto keys per sub-key, so a concurrent run's file results survive", async () => {
+    const scope = await newImport({ fileResults: { fA: { a: 1 } }, payload: { x: 1 }, chat: { c: 3 } });
+    await db
+      .update(clientImports)
+      .set({ payloadJson: mergePayloadJson({ fileResults: { fB: { b: 2 } } }, ["payload"], ["fileResults"]) })
+      .where(eq(clientImports.id, scope.importId));
+    const [row] = await db.select({ p: clientImports.payloadJson }).from(clientImports).where(eq(clientImports.id, scope.importId));
+    expect(row.p).toEqual({ chat: { c: 3 }, fileResults: { fA: { a: 1 }, fB: { b: 2 } } });
+  });
 });

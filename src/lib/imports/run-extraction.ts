@@ -29,6 +29,8 @@ import { bridgeTaxReturn } from "./tax-bridge";
  * none, and the event tolerates that (undefined, not a crash).
  */
 export interface ExtractionFileProgress {
+    /** The `client_import_files` id — file names are not unique within an import. */
+    fileId: string;
     fileName: string;
     accountCount: number;
     statementDate?: string;
@@ -52,6 +54,12 @@ export interface RunExtractionArgs {
      * route's 300s ceiling once a handful of files are in play.
      */
     skipExtracted?: boolean;
+    /**
+     * Read only these files. The fact finder import routes each upload to one
+     * reader and sends only account statements (and spreadsheets) here; the
+     * rest go to its form and section readers.
+     */
+    fileIds?: readonly string[];
     /**
      * Invoked once per file as it settles (success or failure) — additive,
      * so the wizard (which passes nothing) is unaffected (Task 9 / C3).
@@ -111,6 +119,7 @@ export async function runImportExtraction(
         extractHoldings,
         comprehensive = false,
         skipExtracted = false,
+        fileIds,
         onFile,
         signal,
     } = args;
@@ -142,9 +151,9 @@ export async function runImportExtraction(
         ...(priorPayload.fileResults ?? {}),
     };
 
-    const pending = skipExtracted
-        ? files.filter((f) => !fileResults[f.id])
-        : files;
+    const pending = files.filter(
+        (f) => (!skipExtracted || !fileResults[f.id]) && (!fileIds || fileIds.includes(f.id)),
+    );
 
     // Nothing new to read. Return the standing summary rather than rewriting
     // payloadJson — that write drops the annotated `payload`, and the caller
@@ -162,6 +171,8 @@ export async function runImportExtraction(
 
     let succeeded = 0;
     let failed = 0;
+    // Only what THIS run read — the final write merges these per file id.
+    const produced: Record<string, ExtractionResult> = {};
 
     // Bounded by Azure OpenAI per-deployment TPM and downstream Neon/Blob
     // request concurrency. Tune in concert with rate limit budgets.
@@ -322,6 +333,7 @@ export async function runImportExtraction(
         // down with it over a bug in a caller-supplied progress callback.
         try {
             onFile?.({
+                fileId: file.id,
                 fileName: file.originalFilename,
                 accountCount: progress.accountCount,
                 statementDate: progress.statementDate,
@@ -347,6 +359,7 @@ export async function runImportExtraction(
         for (const outcome of outcomes) {
             if (outcome.ok) {
                 fileResults[outcome.fileId] = outcome.result;
+                produced[outcome.fileId] = outcome.result;
                 succeeded += 1;
             } else {
                 failed += 1;
@@ -363,13 +376,14 @@ export async function runImportExtraction(
         .update(clientImports)
         .set({
             status: summary.status,
-            // Replace `fileResults` and drop the derived `payload`/`assemble`
-            // (stale once the files change — see the "Nothing new to read"
-            // comment above), but leave every other slice as the database has
-            // it NOW. A run can take minutes: `chat` and the fact finder's
-            // `factFinder` slice may be written meanwhile, and a whole-value
-            // write here would silently undo those edits.
-            payloadJson: mergePayloadJson({ fileResults }, ["payload", "assemble"]),
+            // Merge this run's `fileResults` per file id and drop the derived
+            // `payload`/`assemble` (stale once the files change — see the
+            // "Nothing new to read" comment above), but leave every other
+            // slice as the database has it NOW. A run can take minutes: `chat`,
+            // the fact finder's `factFinder` slice, and a concurrent run's
+            // `fileResults` entries may be written meanwhile, and a whole-value
+            // write here would silently undo them.
+            payloadJson: mergePayloadJson({ fileResults: produced }, ["payload", "assemble"], ["fileResults"]),
             updatedAt: new Date(),
         })
         .where(eq(clientImports.id, importId));

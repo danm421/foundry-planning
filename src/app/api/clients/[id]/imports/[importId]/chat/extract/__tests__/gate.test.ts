@@ -73,14 +73,27 @@ function fileRow(id: string, name: string) {
 // runImportExtraction's aggregate write is a jsonb merge built in SQL. Hand the
 // fake row the patch instead, and apply it below the way Postgres would.
 vi.mock("@/lib/imports/payload-json-sql", () => ({
-  mergePayloadJson: (patch: Record<string, unknown>, drop: readonly string[] = []) => ({ __merge: patch, drop }),
+  mergePayloadJson: (patch: Record<string, unknown>, drop: readonly string[] = [], mergeInto: readonly string[] = []) => ({
+    __merge: patch,
+    drop,
+    mergeInto,
+  }),
 }));
 
 function applyPayloadWrite(current: unknown, written: unknown): unknown {
-  const merge = written as { __merge?: Record<string, unknown>; drop?: readonly string[] } | null;
+  const merge = written as {
+    __merge?: Record<string, unknown>;
+    drop?: readonly string[];
+    mergeInto?: readonly string[];
+  } | null;
   if (!merge?.__merge) return written;
-  const kept = Object.entries((current ?? {}) as Record<string, unknown>).filter(([k]) => !(merge.drop ?? []).includes(k));
-  return { ...Object.fromEntries(kept), ...merge.__merge };
+  const cur = (current ?? {}) as Record<string, unknown>;
+  const kept = Object.entries(cur).filter(([k]) => !(merge.drop ?? []).includes(k));
+  const out: Record<string, unknown> = { ...Object.fromEntries(kept), ...merge.__merge };
+  for (const k of merge.mergeInto ?? []) {
+    out[k] = { ...((cur[k] as object | undefined) ?? {}), ...((merge.__merge[k] as object | undefined) ?? {}) };
+  }
+  return out;
 }
 
 vi.mock("@/db", () => ({

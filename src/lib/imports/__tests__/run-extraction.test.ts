@@ -100,7 +100,11 @@ let clientImportsUpdateCalls: Array<{ payloadJson: unknown }> = [];
 // The aggregate write is a jsonb merge built in SQL; expose its patch and
 // dropped keys so the assertions below can read what it writes.
 vi.mock("@/lib/imports/payload-json-sql", () => ({
-  mergePayloadJson: (patch: Record<string, unknown>, drop: readonly string[] = []) => ({ __merge: patch, drop }),
+  mergePayloadJson: (patch: Record<string, unknown>, drop: readonly string[] = [], mergeInto: readonly string[] = []) => ({
+    __merge: patch,
+    drop,
+    mergeInto,
+  }),
 }));
 
 import { runImportExtraction } from "../run-extraction";
@@ -161,6 +165,26 @@ describe("runImportExtraction", () => {
     const auditCalls = vi.mocked(recordAudit).mock.calls.map((c) => c[0].action);
     expect(auditCalls).toContain("import.extraction.started");
     expect(auditCalls).toContain("import.extraction.completed");
+  });
+
+  it("reads only the files named in fileIds", async () => {
+    filesResult = [fileRow("f1", "statement.pdf"), fileRow("f2", "fact-finder.pdf")];
+    vi.mocked(extractDocument).mockImplementation(async (_buf, fileName) =>
+      storedResult(fileName as string, "x") as never,
+    );
+
+    const res = await runImportExtraction({
+      importId: "imp1",
+      clientId: "c1",
+      firmId: "org_A",
+      model: "mini",
+      extractHoldings: true,
+      fileIds: ["f1"],
+    });
+
+    expect(extractDocument).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(extractDocument).mock.calls[0][1]).toBe("statement.pdf");
+    expect(res.filesProcessed).toBe(1);
   });
 
   // The onboarding drawer lets an advisor add documents to an import that has
@@ -305,8 +329,10 @@ describe("runImportExtraction", () => {
       const written = clientImportsUpdateCalls[0].payloadJson as {
         __merge: { fileResults: Record<string, unknown> };
         drop: string[];
+        mergeInto: string[];
       };
       expect(Object.keys(written.__merge)).toEqual(["fileResults"]);
+      expect(written.mergeInto).toEqual(["fileResults"]);
       expect(Object.keys(written.__merge.fileResults)).toEqual(["f1"]);
       expect(written.drop).toEqual(["payload", "assemble"]);
     });
@@ -349,7 +375,7 @@ describe("runImportExtraction", () => {
       });
 
       expect(events).toEqual([
-        { fileName: "a.pdf", accountCount: 2, statementDate: "2026-03-31" },
+        { fileId: "f1", fileName: "a.pdf", accountCount: 2, statementDate: "2026-03-31" },
       ]);
     });
 
@@ -370,7 +396,7 @@ describe("runImportExtraction", () => {
       });
 
       expect(events).toEqual([
-        { fileName: "corrupt.pdf", accountCount: 0, error: "Unsupported PDF encoding" },
+        { fileId: "f1", fileName: "corrupt.pdf", accountCount: 0, error: "Unsupported PDF encoding" },
       ]);
       // The batch still finishes and still records the failure normally.
       expect(res.failed).toBe(1);
