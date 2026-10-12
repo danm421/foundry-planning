@@ -12,7 +12,7 @@ import {
   type ColumnKind,
   type FFColumn,
 } from "../schema";
-import { expandTwoDigitYear, normalizeCell } from "../normalize";
+import { expandTwoDigitYear, normalizeCell, parseDate, parseMonthYear } from "../normalize";
 
 const col = (kind: ColumnKind, options?: readonly string[]): FFColumn =>
   ({ id: "x", label: "Value", kind, ...(options ? { options } : {}) }) as FFColumn;
@@ -133,5 +133,23 @@ describe("expandTwoDigitYear", () => {
     const now = new Date("2026-10-12T00:00:00Z");
     expect(expandTwoDigitYear(36, now)).toBe(2036);
     expect(expandTwoDigitYear(37, now)).toBe(1937);
+  });
+});
+
+describe("two-digit years with a fixed now", () => {
+  const now = new Date("2026-10-12T00:00:00Z");
+
+  it("reads a two-digit date year as a birth date, not a far-future date", () => {
+    // date columns are past dates or near-term expiries, so the now+10 pivot applies
+    expect(parseDate("8/1/41", now)).toBe("1941-08-01");
+  });
+
+  it("looks 35 years ahead for month/year, so a 30-year loan maturity reads right", () => {
+    expect(parseMonthYear("8/51", now)).toBe("2051-08");
+    expect(parseMonthYear("8/61", now)).toBe("2061-08");
+    expect(parseMonthYear("8/62", now)).toBe("1962-08");
+    expect(parseMonthYear("8/95", now)).toBe("1995-08");
+    expect(expandTwoDigitYear(61, now, 35)).toBe(2061);
+    expect(expandTwoDigitYear(62, now, 35)).toBe(1962);
   });
 });

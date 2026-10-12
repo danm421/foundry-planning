@@ -139,10 +139,13 @@ function isoMonth(y: number, m: number): string | null {
 }
 
 /** "62" → 1962 and "27" → 2027: a two-digit year more than ten years out is last century. */
-export function expandTwoDigitYear(yy: number, now: Date = new Date()): number {
+export function expandTwoDigitYear(yy: number, now: Date = new Date(), horizonYears = 10): number {
   const full = 2000 + yy;
-  return full > now.getUTCFullYear() + 10 ? full - 100 : full;
+  return full > now.getUTCFullYear() + horizonYears ? full - 100 : full;
 }
+
+/** Month/year columns include loan maturities, so they look further ahead than dates do (a 30-year "Matures 8/51" is 2051). */
+const MONTH_YEAR_HORIZON_YEARS = 35;
 
 /** ISO, M/D/YYYY, M/D/YY, "Aug 1, 2041", "1 Aug 2041" → yyyy-mm-dd. US month-first order. */
 export function parseDate(raw: string, now: Date = new Date()): string | null {
@@ -175,7 +178,7 @@ export function parseMonthYear(raw: string, now: Date = new Date()): string | nu
   m = /^(\d{1,2})[/.-](\d{4})$/.exec(s);
   if (m) return isoMonth(Number(m[2]), Number(m[1]));
   m = /^(\d{1,2})[/.-](\d{2})$/.exec(s);
-  if (m) return isoMonth(expandTwoDigitYear(Number(m[2]), now), Number(m[1]));
+  if (m) return isoMonth(expandTwoDigitYear(Number(m[2]), now, MONTH_YEAR_HORIZON_YEARS), Number(m[1]));
   m = /^([A-Za-z]{3,9})\.?,?\s+(\d{4})$/.exec(s);
   if (m) {
     const month = monthFromName(m[1]);
