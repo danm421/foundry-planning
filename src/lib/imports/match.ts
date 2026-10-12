@@ -180,7 +180,7 @@ export async function runMatchingPass(
  * empty, so we resolve the base-case scenario the same way the commit route
  * does — the slot ids MUST match the rows the commit will update.
  */
-async function loadLivingSlots(
+export async function loadLivingSlots(
   clientId: string,
   scenarioId: string,
 ): Promise<LivingSlot[]> {
@@ -218,7 +218,7 @@ async function loadLivingSlots(
   return slots;
 }
 
-async function loadCandidates(
+export async function loadCandidates(
   clientId: string,
   scenarioId: string,
 ): Promise<MatchCandidates> {
