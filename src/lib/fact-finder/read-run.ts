@@ -97,6 +97,10 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
   const todo = files.filter((f) => needsReading(start.readings[f.id], now()));
   if (todo.length === 0) return nothingNew(start.version);
 
+  // Before the claim: a failure here must not leave files "reading" with no Retry.
+  const scenarioId = await resolveBaseCaseScenarioId(scope.clientId);
+  const records = scenarioId ? await loadExistingRecords(scope.clientId, scenarioId) : emptyExistingRecords();
+
   // Claim against the fresh state: an overlapping read may have claimed some
   // of these files since `start` was loaded. `mutate` can run more than once,
   // so `claimed` holds the list from the attempt that was committed.
@@ -115,8 +119,6 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
   });
   if (claimed.length === 0) return nothingNew(afterClaim.version);
 
-  const scenarioId = await resolveBaseCaseScenarioId(scope.clientId);
-  const records = scenarioId ? await loadExistingRecords(scope.clientId, scenarioId) : emptyExistingRecords();
   for (const f of claimed) emit({ type: "file", fileId: f.id, fileName: f.originalFilename, status: "reading" });
 
   const decisions: FFMergeDecision[] = [];

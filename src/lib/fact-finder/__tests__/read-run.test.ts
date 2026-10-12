@@ -147,6 +147,27 @@ describe("runFactFinderRead", () => {
     expect(result.caveats).toContain("Couldn't read f1.pdf: Couldn't read any text from this file.");
   });
 
+  it("marks a file failed when its reader throws, so the next read retries it", async () => {
+    store.files = [file("f1")];
+    vi.mocked(routeFile).mockResolvedValue({ reader: "section", pages: ["p"], warnings: [] });
+    vi.mocked(readSections).mockRejectedValue(new Error("Couldn't read this document — try again."));
+
+    const { state } = await run({ now: () => NOW });
+
+    expect(state.readings.f1).toMatchObject({ status: "failed", reason: "Couldn't read this document — try again." });
+    expect(needsReading(state.readings.f1, NOW)).toBe(true);
+  });
+
+  it("claims no file when loading the plan's records fails", async () => {
+    store.files = [file("f1")];
+    vi.mocked(loadExistingRecords).mockRejectedValue(new Error("connection reset"));
+
+    await expect(run()).rejects.toThrow("connection reset");
+
+    expect(store.state!.readings.f1).toBeUndefined();
+    expect(routeFile).not.toHaveBeenCalled();
+  });
+
   it("reads statements through the statement reader and never fills an IRA's after-tax basis", async () => {
     store.files = [file("f1")];
     vi.mocked(routeFile).mockResolvedValue({ reader: "statement" });

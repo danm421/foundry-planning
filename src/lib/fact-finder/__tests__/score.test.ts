@@ -157,6 +157,29 @@ describe("applyLinkScores — one record, one live row", () => {
     expect(linkOf(s, "taxable", 1)).toMatchObject({ recordId: "a-brk", confirmed: true });
   });
 
+  it("a row whose best record another row confirms needs a click, never auto-confirms its runner-up", () => {
+    const r = records();
+    r.candidates.accounts = [
+      ...r.candidates.accounts.map((a) => (a.id === "a-brk" ? { ...a, accountNumberLast4: "7788" } : a)),
+      { id: "a-brk2", name: "Joint Brokerage", category: "taxable", accountNumberLast4: null, custodian: null, value: 270000, ownerIds: ["fm-c", "fm-s"] },
+    ];
+    const once = applyLinkScores(
+      stateWith({
+        taxable: [
+          row("by-name", { accountName: "Joint Brokerage", owner: "Joint", currentValue: 300000 }),
+          row("by-number", { accountName: "Schwab", last4: "7788", custodian: "Charles Schwab" }),
+        ],
+      }),
+      r,
+    );
+    const scored = once.sections.taxable[0].linkCandidates!;
+    expect(scored.map((c) => c.recordId)).toEqual(["a-brk", "a-brk2"]);
+    expect(scored[1].score).toBeGreaterThanOrEqual(0.9);
+    expect(linkOf(once, "taxable", 1)).toMatchObject({ recordId: "a-brk", confirmed: true });
+    expect(linkOf(once, "taxable", 0)).toMatchObject({ recordId: "a-brk2", confirmed: false });
+    expect(applyLinkScores(once, r)).toBe(once);
+  });
+
   it("a fixed row whose record another live row already confirms needs a click", () => {
     const start = emptyFactFinderState();
     start.sections.salary[0] = row(start.sections.salary[0].id, { annualSalary: 165000 });
@@ -194,6 +217,26 @@ describe("applyLinkScores — other record kinds", () => {
     );
     expect(linkOf(s, "external")).toMatchObject({ recordId: "x-1", confirmed: true });
     expect(linkOf(s, "disability")).toMatchObject({ recordId: "d-1", confirmed: true });
+  });
+
+  it("links same-day equity grants of different types to their own records", () => {
+    const r = records();
+    r.stockOptionGrants = [
+      { id: "g-rsu", accountName: "Acme Corp", grantNumber: null, grantDate: "2024-03-01", grantType: "rsu" },
+      { id: "g-nqso", accountName: "Acme Corp", grantNumber: null, grantDate: "2024-03-01", grantType: "nqso" },
+    ];
+    const s = applyLinkScores(
+      stateWith({
+        equity: [
+          row("nqso", { company: "Acme Corp", grantType: "NQSO", grantDate: "2024-03-01" }),
+          row("rsu", { company: "Acme Corp", grantType: "RSU", grantDate: "2024-03-01" }),
+        ],
+      }),
+      r,
+    );
+    expect(linkOf(s, "equity", 0)).toMatchObject({ recordId: "g-nqso", confirmed: true });
+    expect(linkOf(s, "equity", 1)).toMatchObject({ recordId: "g-rsu", confirmed: true });
+    expect(s.sections.equity[0].linkCandidates?.map((c) => c.recordId)).toEqual(["g-nqso"]);
   });
 
   it("links fixed rows implicitly to that person's income or the living-expense slot", () => {

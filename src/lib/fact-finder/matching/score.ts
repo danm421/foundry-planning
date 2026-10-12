@@ -219,8 +219,11 @@ function scoreByKind(kind: RecordKind, section: FFSection, v: Record<string, FFC
       const grantNumber = str(v.grantNumber);
       const company = str(v.company);
       const grantDate = str(v.grantDate);
+      const grantType = normText(v.grantType);
       return records.stockOptionGrants.flatMap((g): ScoredCandidate[] => {
         const label = `${g.accountName} ${g.grantType.toUpperCase()} ${g.grantDate}`;
+        // An RSU and an NQSO granted the same day are two grants.
+        if (grantType && grantType !== normText(g.grantType)) return [];
         if (grantNumber && g.grantNumber) {
           return normText(grantNumber) === normText(g.grantNumber) ? [{ recordId: g.id, label, score: 1, exact: true }] : [];
         }
@@ -251,17 +254,22 @@ function needsScoring(row: FFRow): boolean {
 
 /**
  * Links for one record kind's rows, in two passes so neither row order nor a
- * second run changes the result. First every automatic confirm settles: exact
- * before fuzzy, then by score, ties in section and row order. Then each other
- * row suggests its best unclaimed candidate ("needs a click"), or says New.
+ * second run changes the result. First every automatic confirm settles: only a
+ * row's best candidate can auto-confirm, exact before fuzzy, then by score,
+ * ties in section and row order. Then each other row — including one whose best
+ * candidate another row took — suggests its best unclaimed candidate ("needs a
+ * click"), or says New.
  */
 function pickLinks(scoredRows: ScoredCandidate[][], claimed: Set<string>): FFLink[] {
   const confirmed: Array<FFLink | undefined> = [];
   const autos = scoredRows
-    .flatMap((scored, i) => scored.filter((c) => c.exact || c.score >= AUTO_LINK_SCORE).map((c) => ({ i, c })))
+    .flatMap((scored, i) => {
+      const best = scored[0];
+      return best && (best.exact || best.score >= AUTO_LINK_SCORE) ? [{ i, c: best }] : [];
+    })
     .sort((a, b) => Number(b.c.exact) - Number(a.c.exact) || b.c.score - a.c.score);
   for (const { i, c } of autos) {
-    if (confirmed[i] || claimed.has(c.recordId)) continue;
+    if (claimed.has(c.recordId)) continue;
     claimed.add(c.recordId);
     confirmed[i] = { kind: "existing", recordId: c.recordId, score: c.score, confirmed: true, by: "auto" };
   }

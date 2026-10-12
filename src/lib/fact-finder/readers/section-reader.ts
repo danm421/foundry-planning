@@ -31,10 +31,14 @@ function sliceRegion(pages: string[], ranges: Array<[number, number]>): { text: 
   return { text: sorted.map((p) => pages[p - 1]).join("\n\n"), firstPage: sorted[0] ?? 1 };
 }
 
+const UNREADABLE = "Couldn't read this document — try again.";
+
 /**
  * Reader 3: find which fact finder sections a document covers, then read each
  * one with its own prompt. `pages` is the document's text, one string per
- * page (or per OCR batch).
+ * page (or per OCR batch). Throws — so the file shows "couldn't read" with a
+ * Retry — when finding the sections fails or every section read fails; one
+ * failed section among others is a warning.
  */
 export async function readSections(args: { fileId: string; pages: string[] }): Promise<FFReaderOutput> {
   const pages = args.pages.map((p) => redactSsns(p).text);
@@ -43,9 +47,7 @@ export async function readSections(args: { fileId: string; pages: string[] }): P
     anchors: anchorsOf(pages),
     entities: sectionVocabulary(),
   });
-  if (!regions) {
-    return { readings: [], unassignedHoldings: [], warnings: ["Couldn't tell which fact finder sections this document covers."] };
-  }
+  if (!regions) throw new Error(UNREADABLE);
   const jobs = Object.entries(regions).flatMap(([sectionId, ranges]) => {
     const section = findSection(sectionId);
     if (!section || ranges.length === 0) return [];
@@ -53,6 +55,7 @@ export async function readSections(args: { fileId: string; pages: string[] }): P
     return region.text.trim() ? [{ section, ...region }] : [];
   });
   const results = await Promise.all(jobs.map((job) => readRegion(args.fileId, job.section, job.text, job.firstPage)));
+  if (results.length > 0 && results.every((r) => r.failed)) throw new Error(UNREADABLE);
   return {
     readings: results.flatMap((r) => r.readings),
     unassignedHoldings: [],
@@ -65,7 +68,7 @@ async function readRegion(
   section: FFSection,
   text: string,
   firstPage: number,
-): Promise<{ readings: FFReading[]; warnings: string[] }> {
+): Promise<{ readings: FFReading[]; warnings: string[]; failed?: true }> {
   try {
     const { prompt } = buildSectionPrompt(section);
     const raw = await usageStage("fact-finder-section", () =>
@@ -74,7 +77,7 @@ async function readRegion(
     return readingsFromSectionReply({ section, fileId, firstPage, regionText: text, reply: parseAIResponse(raw) });
   } catch (err) {
     const message = err instanceof Error ? err.message.slice(0, 200) : "unknown error";
-    return { readings: [], warnings: [`Could not read ${section.label}: ${message}`] };
+    return { readings: [], warnings: [`Could not read ${section.label}: ${message}`], failed: true };
   }
 }
 

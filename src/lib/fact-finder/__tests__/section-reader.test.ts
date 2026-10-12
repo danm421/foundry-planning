@@ -120,10 +120,15 @@ describe("readSections", () => {
     expect(out.warnings).toEqual(["Could not read Life Insurance: model timed out"]);
   });
 
-  it("returns a warning and no rows when the classifier can't place any section", async () => {
+  it("fails, so the file can be retried, when finding the sections fails", async () => {
     vi.mocked(classifyRegions).mockResolvedValue(null);
-    const out = await readSections({ fileId: "f1", pages });
-    expect(out).toEqual({ readings: [], unassignedHoldings: [], warnings: ["Couldn't tell which fact finder sections this document covers."] });
+    await expect(readSections({ fileId: "f1", pages })).rejects.toThrow("Couldn't read this document — try again.");
     expect(callAIExtraction).not.toHaveBeenCalled();
+  });
+
+  it("fails, so the file can be retried, when every section read fails", async () => {
+    vi.mocked(classifyRegions).mockResolvedValue({ retirement: [[2, 2]], life: [[3, 3]] });
+    vi.mocked(callAIExtraction).mockRejectedValue(new Error("429 Too Many Requests"));
+    await expect(readSections({ fileId: "f1", pages })).rejects.toThrow("Couldn't read this document — try again.");
   });
 });
