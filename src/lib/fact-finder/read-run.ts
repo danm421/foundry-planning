@@ -34,6 +34,12 @@ export type { ReadEvent } from "./api-types";
 
 const FILE_CONCURRENCY = 3;
 
+/**
+ * The read route stops starting new files after this long: its maxDuration
+ * (300 s) less 30 s to finish the files in flight and write the summary.
+ */
+export const READ_BUDGET_MS = 270_000;
+
 export interface RunReadArgs {
   scope: FactFinderScope;
   extractHoldings: boolean;
@@ -183,6 +189,8 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
           detectedKind: file.detectedKind,
           documentType: file.documentType,
         });
+        // Past the time budget: leave it for the next read rather than start a model read now.
+        if (signal?.aborted) return;
         if (route.reader === "statement") {
           statementFiles.push(file);
           return;
@@ -261,12 +269,17 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
           lifePolicies: merged.payload.lifePolicies,
           family: records.candidates.family,
         });
-        // The statement reader's own narration: which statements replaced
-        // older ones, values that disagreed, undated statements.
+        // The statement reader's own narration of THIS read's statements (earlier
+        // ones were narrated when they were read): which replaced older ones,
+        // values that disagreed, undated statements. Rollups are left to the
+        // summary, which notes each once, when it lands in the Removed tray.
+        // Rows go in without `basis`: the fact finder shows no IRA basis for
+        // narrate's basis note to explain.
+        const ofThisRead = mergeAcrossFiles(Object.fromEntries(fresh.map((f) => [f.id, fileResults[f.id]])));
         const narration = narrate({
-          fileCount: ids.length,
-          decisions: [...merged.decisions, ...rollups.excluded.map((e) => e.decision)],
-          rows: rollups.kept,
+          fileCount: fresh.length,
+          decisions: ofThisRead.decisions,
+          rows: detectRollups(ofThisRead.payload.accounts).kept.map((row) => ({ ...row, basis: undefined })),
         });
         caveats.push(narration.summary, ...narration.caveats);
         const rowsFor = (fileId: string) => readings.filter((r) => r.fileId === fileId).length;
@@ -296,12 +309,13 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
     }
   }
 
+  const filesRead = claimed.length - failed.length;
   let built = { summary: "", caveats: [] as string[] };
   const final = await updateFactFinder(scope, (state) => {
     const s = applyLinkScores(state, records);
-    built = buildReadSummary({ state: s, decisions, filesRead: claimed.length, failed, caveats });
+    built = buildReadSummary({ state: s, decisions, filesRead, failed, caveats });
     const text = [built.summary, ...built.caveats.map((c) => `• ${c}`)].join("\n");
     return { ...s, transcript: [...s.transcript, { id: randomUUID(), role: "assistant", text, at: iso() }] };
   });
-  return { summary: built.summary, caveats: built.caveats, version: final.version, filesRead: claimed.length };
+  return { summary: built.summary, caveats: built.caveats, version: final.version, filesRead };
 }

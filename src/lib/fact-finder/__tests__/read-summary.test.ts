@@ -25,7 +25,9 @@ describe("buildReadSummary", () => {
       failed: [{ fileName: "scan.pdf", reason: "Couldn't read any text from this file." }],
       caveats: ["This PDF had no text layer, so its text was read with OCR — check the figures."],
     });
-    expect(out.summary).toBe("Read 3 documents. 2 sections have values; 1 value to check; 1 link to confirm.");
+    expect(out.summary).toBe(
+      "Read 3 documents. 1 couldn't be read — Retry it. 2 sections have values; 1 value to check; 1 link to confirm.",
+    );
     expect(out.caveats).toEqual([
       'Left out "Total Accounts": It repeats 3 accounts above.',
       "1 holding couldn't be matched to an account — pick one under Unassigned holdings.",
@@ -37,5 +39,19 @@ describe("buildReadSummary", () => {
   it("keeps it short when there's nothing to check", () => {
     const out = buildReadSummary({ state: emptyFactFinderState(), decisions: [], filesRead: 1, failed: [], caveats: [] });
     expect(out).toEqual({ summary: "Read 1 document. 0 sections have values.", caveats: [] });
+  });
+
+  it("never counts a document it couldn't read as read", () => {
+    const failed = [
+      { fileName: "a.pdf", reason: "Stopped before this file was read." },
+      { fileName: "b.pdf", reason: "Couldn't read this document — try again." },
+    ];
+    expect(buildReadSummary({ state: emptyFactFinderState(), decisions: [], filesRead: 0, failed, caveats: [] })).toEqual({
+      summary: "Couldn't read 2 documents — Retry them. 0 sections have values.",
+      caveats: ["Couldn't read a.pdf: Stopped before this file was read.", "Couldn't read b.pdf: Couldn't read this document — try again."],
+    });
+    expect(buildReadSummary({ state: emptyFactFinderState(), decisions: [], filesRead: 2, failed: failed.slice(1), caveats: [] }).summary).toBe(
+      "Read 2 documents. 1 couldn't be read — Retry it. 0 sections have values.",
+    );
   });
 });

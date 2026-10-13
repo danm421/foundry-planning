@@ -33,7 +33,7 @@ import { downloadImportFile } from "@/lib/imports/blob";
 import { runImportExtraction } from "@/lib/imports/run-extraction";
 import { applyOps } from "../ops";
 import { updateFactFinder } from "../persist";
-import { needsReading, runFactFinderRead, type ReadEvent } from "../read-run";
+import { READ_BUDGET_MS, needsReading, runFactFinderRead, type ReadEvent } from "../read-run";
 import { pagesForSectionReader, routeFile } from "../readers/route-file";
 import { readSections } from "../readers/section-reader";
 import { loadExistingRecords, resolveBaseCaseScenarioId } from "../records/load";
@@ -144,6 +144,8 @@ describe("runFactFinderRead", () => {
     expect(state.readings.f1).toMatchObject({ status: "failed", reason: "Couldn't read any text from this file." });
     expect(state.readings.f2).toMatchObject({ status: "done" });
     expect(events).toContainEqual(expect.objectContaining({ fileId: "f1", status: "failed" }));
+    expect(result.summary).toBe("Read 1 document. 1 couldn't be read — Retry it. 1 section has values.");
+    expect(result.filesRead).toBe(1);
     expect(result.caveats).toContain("Couldn't read f1.pdf: Couldn't read any text from this file.");
   });
 
@@ -168,7 +170,7 @@ describe("runFactFinderRead", () => {
     expect(routeFile).not.toHaveBeenCalled();
   });
 
-  it("reads statements through the statement reader and never fills an IRA's after-tax basis", async () => {
+  it("reads statements through the statement reader and never fills or explains an IRA's basis", async () => {
     store.files = [file("f1")];
     vi.mocked(routeFile).mockResolvedValue({ reader: "statement" });
     extractionWrites({
@@ -177,13 +179,57 @@ describe("runFactFinderRead", () => {
       ]),
     });
 
-    const { state } = await run();
+    const { result, state } = await run();
 
     expect(vi.mocked(runImportExtraction).mock.calls[0][0]).toMatchObject({ fileIds: ["f1"], skipExtracted: true, extractHoldings: true });
     expect(state.sections.retirement).toHaveLength(1);
     expect(state.sections.retirement[0].cells.currentValue.value).toBe(640000);
     expect(state.sections.retirement[0].cells.afterTaxBasis).toBeUndefined();
     expect(state.readings.f1).toMatchObject({ status: "done", reader: "statement", rows: 1 });
+    expect(result.caveats).toEqual(["Read 1 statement covering 1 account."]);
+  });
+
+  it("notes a statement's total once, when it lands in the Removed tray", async () => {
+    vi.mocked(routeFile).mockResolvedValue({ reader: "statement" });
+    const vanguard = (name: string, value: number) =>
+      account({ name, category: "taxable", value, custodian: "Vanguard", statementDate: "2026-09-30" });
+    store.files = [file("f1")];
+    extractionWrites({ f1: statement("f1", [vanguard("Vanguard Brokerage", 120000), vanguard("Total Accounts", 120000)]) });
+    const first = await run();
+
+    store.files = [file("f1"), file("f2")];
+    extractionWrites({
+      f2: statement("f2", [
+        account({ name: "Fidelity 401(k)", subType: "401k", value: 640000, accountNumberLast4: "2201", custodian: "Fidelity", statementDate: "2026-09-30" }),
+      ]),
+    });
+    const second = await run();
+
+    expect(second.state.removed.map((e) => e.row.cells.accountName.value)).toEqual(["Total Accounts"]);
+    expect(first.result.caveats.filter((c) => c.includes("Total Accounts"))).toEqual([
+      'Left out "Total Accounts": a total covering 1 account already listed',
+    ]);
+    expect(second.result.caveats.filter((c) => c.includes("Total Accounts"))).toEqual([]);
+  });
+
+  it("notes only this read's statements, not the ones read before", async () => {
+    vi.mocked(routeFile).mockResolvedValue({ reader: "statement" });
+    const fidelity = (value: number, statementDate: string) =>
+      account({ name: "Fidelity 401(k)", subType: "401k", value, accountNumberLast4: "2201", custodian: "Fidelity", statementDate });
+    store.files = [file("f1"), file("f2")];
+    extractionWrites({ f1: statement("f1", [fidelity(600000, "2026-06-30")]), f2: statement("f2", [fidelity(640000, "2026-09-30")]) });
+    const first = await run();
+
+    store.files = [file("f1"), file("f2"), file("f3")];
+    extractionWrites({
+      f3: statement("f3", [
+        account({ name: "Vanguard IRA", subType: "traditional_ira", value: 120000, accountNumberLast4: "9054", custodian: "Vanguard", statementDate: "2026-09-30" }),
+      ]),
+    });
+    const second = await run();
+
+    expect(first.result.caveats[0]).toMatch(/^Read 2 statements covering 1 account\. Used the 09\/30\/2026 statement/);
+    expect(second.result.caveats).toEqual(["Read 1 statement covering 1 account."]);
   });
 
   it("puts a statement's life policy in Life Insurance, even when it's all the statement holds", async () => {
@@ -216,7 +262,7 @@ describe("runFactFinderRead", () => {
     expect(state.readings.f1).toMatchObject({ status: "done", reader: "section" });
   });
 
-  it("reads only unread files: new, failed, or stuck reading for over ten minutes", async () => {
+  it("reads only unread files: new, failed, or stuck reading for over six minutes", async () => {
     const now = new Date("2026-10-12T12:00:00Z");
     store.files = [file("done"), file("failed"), file("stuck"), file("busy"), file("new")];
     store.state = {
@@ -262,6 +308,28 @@ describe("runFactFinderRead", () => {
     expect(state.sections.retirement[0].cells.currentValue).toMatchObject({ value: 650000, pinned: true });
     expect(state.removed).toHaveLength(1);
     expect(state.removed[0].row.id).toBe(vanguardRow.id);
+  });
+
+  it("stops starting new files 30 s before the read route's 300 s limit", () => {
+    expect(READ_BUDGET_MS).toBe(270_000);
+  });
+
+  it("stops before a model read once the time budget runs out, and leaves the file to read again", async () => {
+    store.files = [file("f1")];
+    const budget = new AbortController();
+    vi.mocked(routeFile).mockImplementation(async () => {
+      budget.abort();
+      return { reader: "section", pages: ["p"], warnings: [] };
+    });
+
+    const { result, state } = await run({ signal: budget.signal, now: () => NOW });
+
+    expect(readSections).not.toHaveBeenCalled();
+    expect(state.readings.f1).toMatchObject({ status: "failed", reason: "Stopped before this file was read." });
+    expect(needsReading(state.readings.f1, NOW)).toBe(true);
+    expect(result.summary).toBe("Couldn't read 1 document — Retry it. 0 sections have values.");
+    expect(result.caveats).toContain("Couldn't read f1.pdf: Stopped before this file was read.");
+    expect(state.transcript.at(-1)).toMatchObject({ role: "assistant", text: expect.stringMatching(/^Couldn't read 1 document — Retry it\./) });
   });
 
   it("marks files it never reached as failed when the read is stopped", async () => {
@@ -324,15 +392,16 @@ describe("runFactFinderRead", () => {
     await run();
 
     // The advisor deletes f1. Deleting only hides the file; its stored result stays.
+    // Merged in, f1's IRA would make f2's "Total Accounts" a total of it (Removed tray).
     store.files = [file("f2")];
     extractionWrites({
-      f2: statement("f2", [
-        account({ name: "Fidelity 401(k)", subType: "401k", value: 640000, accountNumberLast4: "2201", custodian: "Fidelity", statementDate: "2026-09-30" }),
-      ]),
+      f2: statement("f2", [account({ name: "Total Accounts", category: "taxable", value: 150000, custodian: "Vanguard", statementDate: "2026-09-30" })]),
     });
-    const { result } = await run();
+    const { result, state } = await run();
 
     expect(store.fileResults).toHaveProperty("f1");
+    expect(state.removed).toEqual([]);
+    expect(state.sections.taxable.map((r) => r.cells.accountName.value)).toEqual(["Total Accounts"]);
     expect(result.caveats).toEqual(["Read 1 statement covering 1 account."]);
   });
 

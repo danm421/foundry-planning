@@ -3,8 +3,11 @@
 // the read route, the chat route and the screen all ask the same question.
 import type { FactFinderState, FFFileReading } from "./types";
 
-/** A file still "reading" after this long is treated as abandoned and read again. */
-export const STALE_READING_MS = 10 * 60 * 1000;
+/**
+ * A file still "reading" after this long is treated as abandoned and read
+ * again: the read route's maxDuration (300 s) plus 60 s.
+ */
+export const STALE_READING_MS = 6 * 60 * 1000;
 
 export function needsReading(status: FFFileReading | undefined, now: Date): boolean {
   if (!status || status.status === "failed") return true;

@@ -1,6 +1,9 @@
 // src/app/api/clients/[id]/imports/[importId]/fact-finder/read/route.ts
-import { factFinderGate } from "@/lib/fact-finder/gate";
-import { runFactFinderRead, type ReadEvent } from "@/lib/fact-finder/read-run";
+import { READ_BUSY_MESSAGE, type ReadFrame } from "@/lib/fact-finder/api-types";
+import { factFinderGate, jsonResponse } from "@/lib/fact-finder/gate";
+import { READ_BUDGET_MS, runFactFinderRead } from "@/lib/fact-finder/read-run";
+import { filesReading } from "@/lib/fact-finder/reading-status";
+import { readFactFinderState } from "@/lib/fact-finder/state";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -10,35 +13,33 @@ type Params = { params: Promise<{ id: string; importId: string }> };
 /**
  * Pass 1: read the import's unread files into the fact finder, streaming one
  * `file` event per file as it starts and settles, then `done` (or `error`).
- * Every gate resolves before the stream opens, so refusals are plain JSON.
+ * Every gate resolves before the stream opens, so refusals are plain JSON —
+ * including the 409 while another read of this import is under way. After
+ * READ_BUDGET_MS the read starts no new files, so it still ends with `done`
+ * (naming the files left to retry) before maxDuration.
  */
 export async function POST(request: Request, { params }: Params) {
   const gate = await factFinderGate(params, "extract");
   if (!gate.ok) return gate.response;
   const { firmId, clientId, importId, imp } = gate;
+  if (filesReading(readFactFinderState(gate.payloadJson), new Date()).length > 0) {
+    return jsonResponse(409, { error: READ_BUSY_MESSAGE });
+  }
 
   const encoder = new TextEncoder();
+  // The advisor left: stop the read and send nothing more (enqueue throws once the stream is cancelled).
+  const cancelled = new AbortController();
+  let open = true;
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      let closed = false;
-      const send = (event: ReadEvent | { type: "error"; message: string }) => {
-        if (closed) return;
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+      const send = (frame: ReadFrame) => {
+        if (open) controller.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`));
       };
-      const onAbort = () => {
-        closed = true;
-        try {
-          controller.close();
-        } catch {
-          // already closed
-        }
-      };
-      request.signal.addEventListener("abort", onAbort);
       try {
         const result = await runFactFinderRead({
           scope: { importId, clientId, firmId },
           extractHoldings: imp.extractHoldings === true,
-          signal: request.signal,
+          signal: AbortSignal.any([request.signal, cancelled.signal, AbortSignal.timeout(READ_BUDGET_MS)]),
           onEvent: send,
         });
         send({ type: "done", summary: result.summary, caveats: result.caveats, version: result.version });
@@ -47,9 +48,15 @@ export async function POST(request: Request, { params }: Params) {
         console.error(`POST /api/clients/${clientId}/imports/${importId}/fact-finder/read failed:`, message);
         send({ type: "error", message });
       } finally {
-        request.signal.removeEventListener("abort", onAbort);
-        if (!closed) controller.close();
+        if (open) {
+          open = false;
+          controller.close();
+        }
       }
+    },
+    cancel() {
+      open = false;
+      cancelled.abort();
     },
   });
 

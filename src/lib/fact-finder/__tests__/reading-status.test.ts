@@ -10,6 +10,12 @@ const reading = (startedMsAgo: number): FFFileReading => ({ status: "reading", s
 const done: FFFileReading = { status: "done", startedAt: ago(60_000), finishedAt: ago(30_000), rows: 2 };
 const failed: FFFileReading = { status: "failed", startedAt: ago(60_000), finishedAt: ago(30_000), reason: "Couldn't read this file." };
 
+describe("STALE_READING_MS", () => {
+  it("is the read route's 300 s limit plus a minute", () => {
+    expect(STALE_READING_MS).toBe(6 * 60 * 1000);
+  });
+});
+
 describe("needsReading", () => {
   it("reads a new file, a failed one, and one stuck reading past the stale limit", () => {
     expect(needsReading(undefined, NOW)).toBe(true);
