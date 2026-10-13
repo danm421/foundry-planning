@@ -63,6 +63,9 @@ export const outputFileTracingIncludes: Record<string, string[]> = {
     // Fact finder import: its read route OCRs scanned PDFs and images for
     // the section reader (src/lib/fact-finder/readers/route-file.ts).
     "/api/clients/*/imports/*/fact-finder/read": OCR_CANVAS_FILES,
+    // …and its chat's `reread_document` reads a scan's pages the same way
+    // (src/lib/fact-finder/chat/document-text.ts).
+    "/api/clients/*/imports/*/fact-finder/turn": OCR_CANVAS_FILES,
     "/api/clients/*/rebalance/extract-holdings": OCR_CANVAS_FILES,
     "/api/clients/*/tax-returns": OCR_CANVAS_FILES,
     "/api/clients/*/tax-returns/*/documents": OCR_CANVAS_FILES,

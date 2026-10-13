@@ -264,6 +264,8 @@ export type AuditAction =
   // (Task 11) — the transcript append and any tool-driven row edit both land
   // in the same `payloadJson` write this audits.
   | "import.chat.turn"
+  // A fact finder chat reply undone: its rows put back as they were before it.
+  | "import.chat.undo"
   // One map-driven entity pass over ONE uploaded file (Task 14a) — several
   // billable Azure reads whose extracted rows land in the import's
   // `payloadJson`. Distinct from "import.extraction.*", which is the wizard's
