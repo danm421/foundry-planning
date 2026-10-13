@@ -29,6 +29,8 @@ import {
   portalCollectsNothing,
   type IntakeSectionKey,
 } from "@/lib/intake/sections";
+import { brandChoiceSchema, householdBrand } from "@/lib/branding/brand-choice";
+import { assertBrandChoiceAllowed } from "@/lib/branding/brand-options";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -64,6 +66,7 @@ export async function POST(req: Request): Promise<Response> {
       recipientEmail?: unknown;
       recipientName?: unknown;
       sections?: unknown;
+      brand?: unknown;
     };
 
     // ── Validate body ──────────────────────────────────────────────────────
@@ -135,14 +138,20 @@ export async function POST(req: Request): Promise<Response> {
       );
     }
 
+    // ── Brand (shape) ──────────────────────────────────────────────────────
+    // Absent means "the default", resolved below once we know whose it is.
+    const brandParse = brandChoiceSchema.optional().safeParse(body.brand);
+    if (!brandParse.success) {
+      return NextResponse.json({ error: "brand must be a brand id" }, { status: 400 });
+    }
+
     // ── Auth ───────────────────────────────────────────────────────────────
     const { orgId, userId } = await requireOrgAndUser();
 
     let firmId: string;
     const callerOrg: string = orgId;
     let access: "own" | "shared" = "own";
-    // Captured for the blank branch's advisor-brand resolution below — the
-    // client's advisor, not the sender, is who a brand resolves by.
+    // Captured for the default brand below.
     let accessedClient: typeof clients.$inferSelect | undefined;
 
     if (clientIdStr) {
@@ -155,6 +164,14 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     await requireActiveSubscriptionForFirm(firmId);
+
+    // ── Brand (who may use it) ─────────────────────────────────────────────
+    // The household's brand for an existing client, the sender's own for a
+    // prospect. A picked brand must be one this caller may use; the default
+    // always passes and costs no lookup, so an advisor's ordinary send is free.
+    const defaultBrand = accessedClient ? householdBrand(accessedClient) : userId;
+    const brand = brandParse.data ?? defaultBrand;
+    await assertBrandChoiceAllowed(firmId, brand, defaultBrand);
 
     // ── Rate-limit ─────────────────────────────────────────────────────────
     if (mode === "prefilled") {
@@ -203,6 +220,7 @@ export async function POST(req: Request): Promise<Response> {
         recipientEmail,
         recipientName: recipientNameStr ?? null,
         sections: sectionsToStore,
+        brand,
         createdByUserId: userId,
         sentAt: now,
         expiresAt,
@@ -222,12 +240,10 @@ export async function POST(req: Request): Promise<Response> {
     let mail: IntakeEmailResult | undefined;
 
     if (mode === "blank") {
-      // Brand resolves by the CLIENT's advisor, not the sender (matches Tasks
-      // 11/12). A blank invite carrying no clientId falls back to the sender.
       mail = await sendIntakeLinkEmail({
         firmId,
         senderUserId: userId,
-        brandAdvisorUserId: accessedClient?.advisorId ?? userId,
+        brand,
         to: recipientEmail,
         link: `${APP_URL}/intake/${token}`,
         clientName: recipientNameStr,
@@ -288,6 +304,7 @@ export async function POST(req: Request): Promise<Response> {
               resourceId: formId,
               clientId: clientIdStr ?? null,
               firmId,
+              metadata: { brand },
             });
             return NextResponse.json(
               {
@@ -312,7 +329,7 @@ export async function POST(req: Request): Promise<Response> {
         mail = await sendIntakeLinkEmail({
           firmId,
           senderUserId: userId,
-          brandAdvisorUserId: accessedClient?.advisorId ?? userId,
+          brand,
           to: recipientEmail,
           link: `${APP_URL}/portal/intake`,
           clientName: recipientNameStr,
@@ -330,7 +347,7 @@ export async function POST(req: Request): Promise<Response> {
       resourceId: formId,
       clientId: clientIdStr ?? null,
       firmId,
-      ...(mail ? { metadata: { delivered: mail.delivered } } : {}),
+      metadata: { brand, ...(mail ? { delivered: mail.delivered } : {}) },
     });
 
     // The form row is the primary artifact and exists either way, so mail that

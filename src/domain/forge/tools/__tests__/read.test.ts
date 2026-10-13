@@ -160,6 +160,7 @@ describe("read.ts — find_client", () => {
         primaryFirstName: "Jane",
         primaryLastName: "Doe",
         primaryEmail: "jane@doe.test",
+        brand: "user_jane",
       },
     ]);
 

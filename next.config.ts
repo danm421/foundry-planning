@@ -33,7 +33,8 @@ const csp = [
   "font-src 'self' data:",
   // Sentry ingest domains are only needed as a fallback — browser ingestion
   // normally tunnels through /monitoring (see `tunnelRoute` below).
-  "connect-src 'self' https://clerk.foundryplanning.com https://*.clerk.accounts.dev https://*.clerk.com https://clerk-telemetry.com https://*.neon.tech https://*.openai.azure.com https://*.upstash.io https://*.sentry.io https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.plaid.com",
+  // vercel.com: portal document uploads go browser → Blob via vercel.com/api/blob.
+  "connect-src 'self' https://clerk.foundryplanning.com https://*.clerk.accounts.dev https://*.clerk.com https://clerk-telemetry.com https://*.neon.tech https://*.openai.azure.com https://*.upstash.io https://*.sentry.io https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.plaid.com https://vercel.com",
   "frame-src 'self' https://challenges.cloudflare.com https://*.plaid.com",
   "worker-src 'self' blob:",
   "frame-ancestors 'none'",

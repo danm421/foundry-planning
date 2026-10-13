@@ -3,6 +3,8 @@ import { auth } from "@clerk/nextjs/server";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { currentUserHasClientPortal } from "@/lib/authz";
 import { findClientRecipient } from "@/lib/client-search";
+import { normalizeBrand } from "@/lib/branding/brand-choice";
+import { loadBrandPicker } from "@/lib/branding/brand-options";
 import { listFormsForFirm, loadAdvisorDefaultSections } from "@/lib/intake/queries";
 import { toQueueForm } from "@/lib/intake/queue-form";
 import { loadLastRemindedAt } from "@/lib/intake/reminders";
@@ -26,9 +28,9 @@ export default async function DataCollectionPage({
   const { orgId, userId } = await requireOrgAndUser();
   const { orgRole } = await auth();
   const { clientId } = await searchParams;
-  // Four independent reads — none feeds another — so they overlap instead of
+  // Five independent reads — none feeds another — so they overlap instead of
   // queueing behind each other on a page an advisor lands on cold.
-  const [forms, defaultSections, prefill, portalEnabled] = await Promise.all([
+  const [forms, defaultSections, prefill, portalEnabled, brandPicker] = await Promise.all([
     // Only forms in the caller's book.
     resolveVisibleAdvisorIds(userId, orgRole, orgId).then((visible) =>
       listFormsForFirm(orgId, visible, userId, orgRole),
@@ -39,6 +41,7 @@ export default async function DataCollectionPage({
     // effective entitlement for THIS advisor — the firm's, with their own
     // per-user override applied.
     currentUserHasClientPortal(),
+    loadBrandPicker(orgId),
   ]);
 
   // Only the In-flight bucket can be chased, so only its forms need the lookup.
@@ -122,6 +125,7 @@ export default async function DataCollectionPage({
           defaultSections={defaultSections}
           prefill={prefill}
           portalEnabled={portalEnabled}
+          brand={{ picker: brandPicker, prospectDefault: normalizeBrand(userId, brandPicker.allBrands) }}
         />
         <Queue groups={groups} />
       </div>

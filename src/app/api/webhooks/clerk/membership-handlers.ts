@@ -4,6 +4,7 @@ import * as Sentry from "@sentry/nextjs";
 import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import {
+  advisorProfiles,
   clerkEvents,
   clientShares,
   firms,
@@ -32,6 +33,8 @@ type UserCreatedData = {
   email_addresses?: Array<{ id?: string; email_address?: string }>;
   primary_email_address_id?: string | null;
   legal_consent?: { tos_accepted_at?: string; tos_version?: string };
+  /** Copied by Clerk from the portal invitation (send-portal-invite.ts). */
+  public_metadata?: { clientId?: string };
 };
 
 /**
@@ -129,6 +132,37 @@ async function stopAlertEmailsFor(firmId: string, userId: string): Promise<void>
         isNull(notifications.emailedAt),
       ),
     );
+}
+
+/**
+ * A removed member's brand stops being offered and stops resolving: with
+ * their branding off, every household, form and deck that named them falls
+ * back to the firm brand, and intake mail is signed by whoever sends it.
+ * Update, not upsert — a member who never had a brand row needs none; it only
+ * flips a brand that is on, and audits that flip.
+ */
+async function turnOffAdvisorBranding(firmId: string, userId: string): Promise<void> {
+  const flipped = await db
+    .update(advisorProfiles)
+    .set({ brandingEnabled: false, updatedBy: "clerk:webhook", updatedAt: new Date() })
+    .where(
+      and(
+        eq(advisorProfiles.firmId, firmId),
+        eq(advisorProfiles.advisorUserId, userId),
+        eq(advisorProfiles.brandingEnabled, true),
+      ),
+    )
+    .returning({ id: advisorProfiles.id });
+  if (flipped.length > 0) {
+    await recordAudit({
+      action: "advisor_branding.grant",
+      resourceType: "advisor_profile",
+      resourceId: userId,
+      firmId,
+      actorId: "clerk:webhook",
+      metadata: { enabled: false, reason: "member_left_firm" },
+    });
+  }
 }
 
 /**
@@ -232,6 +266,7 @@ export async function dispatchClerkMembership(
       const metadata: Record<string, unknown> = { user_id: userId };
       if (t === "organizationMembership.deleted") {
         await stopAlertEmailsFor(firmId, userId);
+        await turnOffAdvisorBranding(firmId, userId);
         await revokeSharesReceivedBy(firmId, userId);
         metadata.issued_shares = await listSharesIssuedBy(firmId, userId);
       }
@@ -318,8 +353,11 @@ export async function dispatchClerkMembership(
     }
 
     // Welcome the new user. Best-effort — sendWelcomeEmail never throws.
+    // Not a client signing up from a portal invite: the founder's note is for
+    // advisors, and a white-labelled firm's clients must not hear from Foundry.
     const email = resolvePrimaryEmail(d);
-    if (email) {
+    const isPortalClient = Boolean(d.public_metadata?.clientId);
+    if (email && !isPortalClient) {
       await sendWelcomeEmail({ to: email, firstName: d.first_name ?? null });
     }
 

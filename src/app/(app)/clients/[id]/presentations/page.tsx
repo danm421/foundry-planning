@@ -18,6 +18,8 @@ import { loadProposalPickerOptions } from "@/lib/presentations/investment-propos
 import { loadLiabilityPickerOptions } from "@/lib/presentations/liability-picker-options";
 import { PresentationsLauncher } from "./launcher";
 import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
+import { loadBrandPicker } from "@/lib/branding/brand-options";
+import { householdBrand, normalizeBrand } from "@/lib/branding/brand-choice";
 import { requireClientPageAccess } from "@/lib/clients/page-access";
 
 export default async function PresentationsPage({
@@ -35,15 +37,21 @@ export default async function PresentationsPage({
   if (!userId) throw new UnauthorizedError();
 
   // Firm-scope gate + the household id we need for the primary contact's last
-  // name (drives the auto filename in the launcher).
+  // name (drives the auto filename in the launcher) + the advisor/brand that
+  // seed the launcher's Brand default.
   const [clientRow] = await db
-    .select({ id: clients.id, crmHouseholdId: clients.crmHouseholdId })
+    .select({
+      id: clients.id,
+      crmHouseholdId: clients.crmHouseholdId,
+      advisorId: clients.advisorId,
+      brand: clients.brand,
+    })
     .from(clients)
     .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)))
     .limit(1);
   if (!clientRow) notFound();
 
-  const [scenarioRows, snapshotRows, templates, investmentCatalog, primaryContactRows, entityPickerOptions, dismissedSlugs, proposalOptions, liabilityOptions] = await Promise.all([
+  const [scenarioRows, snapshotRows, templates, investmentCatalog, primaryContactRows, entityPickerOptions, dismissedSlugs, proposalOptions, liabilityOptions, brandPicker] = await Promise.all([
     db
       .select({
         id: scenariosTable.id,
@@ -76,6 +84,7 @@ export default async function PresentationsPage({
     listDismissedSlugs(firmId, userId),
     loadProposalPickerOptions(clientId),
     loadLiabilityPickerOptions(clientId),
+    loadBrandPicker(firmId),
   ]);
 
   const clientLastName = primaryContactRows[0]?.lastName ?? "";
@@ -95,6 +104,10 @@ export default async function PresentationsPage({
         entities={entityPickerOptions}
         proposals={proposalOptions}
         liabilities={liabilityOptions}
+        brand={{
+          picker: brandPicker,
+          defaultValue: normalizeBrand(householdBrand(clientRow), brandPicker.allBrands),
+        }}
       />
     </ScenarioDrawerShell>
   );

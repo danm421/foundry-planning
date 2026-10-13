@@ -78,6 +78,7 @@ function form(overrides: Record<string, unknown> = {}) {
     token: "tok-abc",
     recipientEmail: "sam@client.com",
     recipientName: "Sam Client",
+    createdByUserId: "creator-1",
     expiresAt: FAR_FUTURE,
     ...overrides,
   };
@@ -172,7 +173,27 @@ describe("POST /api/data-collection/[id]/remind", () => {
     // The token never travels for a prefilled form — the portal login is the door.
     expect(arg.link).not.toContain("tok-abc");
     // Brand follows the household's advisor, not whoever clicked Remind.
-    expect(arg.brandAdvisorUserId).toBe("advisor-2");
+    expect(arg.brand).toBe("advisor-2");
+  });
+
+  it("a form sent under a brand is reminded under it", async () => {
+    loadFormMock.mockResolvedValue(form({ clientId: "client-1", brand: "firm" }));
+    selectClientMock.mockResolvedValue([{ advisorId: "advisor-2", brand: null, clerkUserId: null }]);
+    await POST(postReq(), ctx);
+    expect((sendMock.mock.calls[0]![0] as Record<string, unknown>).brand).toBe("firm");
+  });
+
+  it("an old prospect form (no brand) is reminded under its creator's brand, as before the picker", async () => {
+    await POST(postReq(), ctx);
+    expect((sendMock.mock.calls[0]![0] as Record<string, unknown>).brand).toBe("creator-1");
+  });
+
+  it("records the brand on the reminder's audit row", async () => {
+    loadFormMock.mockResolvedValue(form({ brand: "firm" }));
+    await POST(postReq(), ctx);
+    expect(recordAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "intake.form.reminded", metadata: { brand: "firm" } }),
+    );
   });
 
   it("sends nothing for a prefilled form whose client has no login yet", async () => {

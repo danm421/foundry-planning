@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
+import { randomUUID } from "node:crypto";
 import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -22,16 +23,18 @@ const {
   mockResolvePortalClient,
   mockRequirePortalActiveSubscription,
   mockRequireEditEnabled,
-  mockPut,
   mockDel,
   mockGet,
+  mockHead,
+  mockGenerateClientToken,
 } = vi.hoisted(() => ({
   mockResolvePortalClient: vi.fn(),
   mockRequirePortalActiveSubscription: vi.fn(),
   mockRequireEditEnabled: vi.fn(),
-  mockPut: vi.fn(),
   mockDel: vi.fn(),
   mockGet: vi.fn(),
+  mockHead: vi.fn(),
+  mockGenerateClientToken: vi.fn(),
 }));
 
 vi.mock("@/lib/portal/resolve-portal-client", () => ({
@@ -44,9 +47,12 @@ vi.mock("@/lib/portal/require-edit-enabled", () => ({
   requireEditEnabled: (...args: unknown[]) => mockRequireEditEnabled(...args),
 }));
 vi.mock("@vercel/blob", () => ({
-  put: (...args: unknown[]) => mockPut(...args),
   del: (...args: unknown[]) => mockDel(...args),
   get: (...args: unknown[]) => mockGet(...args),
+  head: (...args: unknown[]) => mockHead(...args),
+}));
+vi.mock("@vercel/blob/client", () => ({
+  generateClientTokenFromReadWriteToken: (...args: unknown[]) => mockGenerateClientToken(...args),
 }));
 
 function streamOf(text: string): ReadableStream<Uint8Array> {
@@ -63,6 +69,7 @@ const FIRM_ID = "org_portal_doc_routes_test";
 const ctx = (docId: string) => ({ params: Promise.resolve({ docId }) });
 
 let clientId: string;
+let householdId: string;
 let rootId: string;
 let siblingId: string;
 let rootDocId: string;
@@ -87,6 +94,7 @@ beforeEach(async () => {
     .insert(crmHouseholds)
     .values({ firmId: FIRM_ID, advisorId: "advisor_portal_doc_routes", name: "Portal Doc Routes Test HH" })
     .returning();
+  householdId = household.id;
 
   const [client] = await db
     .insert(clients)
@@ -192,5 +200,89 @@ describe("DELETE /api/portal/documents/[docId]", () => {
     expect(await res.json()).toEqual({ error: "Not found" });
     const row = await db.query.crmHouseholdDocuments.findFirst({ where: eq(crmHouseholdDocuments.id, siblingDocId) });
     expect(row).toBeDefined();
+  });
+});
+
+const postJson = (body: unknown) =>
+  new NextRequest("http://x", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+describe("POST /api/portal/documents/upload-token", () => {
+  it("issues a token for a fresh pathname in the household's portal folder, capped at 50 MB", async () => {
+    mockGenerateClientToken.mockResolvedValue("client-token");
+    const { POST } = await import("../upload-token/route");
+    const res = await POST(postJson({ filename: "scan.pdf", folderId: null }));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.clientToken).toBe("client-token");
+    expect(json.pathname).toMatch(new RegExp(`^crm/${householdId}/portal/\\d+-[0-9a-f-]{36}-scan\\.pdf$`));
+    expect(mockGenerateClientToken).toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: json.pathname, maximumSizeInBytes: 50 * 1024 * 1024 }),
+    );
+  });
+
+  it("404s an advisor-only folder", async () => {
+    const { POST } = await import("../upload-token/route");
+    const res = await POST(postJson({ filename: "scan.pdf", folderId: siblingId }));
+    expect(res.status).toBe(404);
+    expect(mockGenerateClientToken).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/portal/documents (file an uploaded blob)", () => {
+  const issued = () => `crm/${householdId}/portal/${Date.now()}-${randomUUID()}-scan.pdf`;
+
+  it("files a PDF the browser uploaded, with the size Blob reports", async () => {
+    const pathname = issued();
+    mockHead.mockResolvedValue({ size: 6_000_000, contentType: "application/pdf" });
+    mockGet.mockResolvedValue({ statusCode: 200, stream: streamOf("%PDF-1.7") });
+    const { POST } = await import("../route");
+    const res = await POST(postJson({ pathname, filename: "scan.pdf", folderId: null }));
+    expect(res.status).toBe(201);
+    const { document } = await res.json();
+    expect(document).toMatchObject({ filename: "scan.pdf", sizeBytes: 6_000_000, folderId: rootId });
+    const row = await db.query.crmHouseholdDocuments.findFirst({ where: eq(crmHouseholdDocuments.id, document.id) });
+    expect(row).toMatchObject({ storageKey: pathname, mimeType: "application/pdf" });
+    expect(mockGet).toHaveBeenCalledWith(pathname, { access: "private", headers: { Range: "bytes=0-4095" } });
+  });
+
+  it("404s a pathname outside this household's portal folder without touching Blob", async () => {
+    const { POST } = await import("../route");
+    const other = randomUUID();
+    const tail = `${Date.now()}-${randomUUID()}-scan.pdf`;
+    for (const pathname of [
+      `crm/${other}/portal/${tail}`,
+      `crm/${householdId}/${tail}`, // an advisor upload's shape
+      `crm/${householdId}/portal/${tail}/../../../${other}/portal/${tail}`,
+      `crm/${householdId}/portal/${tail}\\..\\..\\${other}`,
+    ]) {
+      const res = await POST(postJson({ pathname, filename: "scan.pdf", folderId: null }));
+      expect(res.status, pathname).toBe(404);
+    }
+    expect(mockHead).not.toHaveBeenCalled();
+  });
+
+  it("refuses to file the same blob twice", async () => {
+    const pathname = issued();
+    mockHead.mockResolvedValue({ size: 100, contentType: "application/pdf" });
+    mockGet.mockImplementation(async () => ({ statusCode: 200, stream: streamOf("%PDF-1.7") }));
+    const { POST } = await import("../route");
+    expect((await POST(postJson({ pathname, filename: "scan.pdf", folderId: null }))).status).toBe(201);
+    expect((await POST(postJson({ pathname, filename: "scan.pdf", folderId: null }))).status).toBe(404);
+  });
+
+  it("deletes a blob whose bytes are not an allowed file type", async () => {
+    const pathname = issued();
+    mockHead.mockResolvedValue({ size: 40, contentType: "application/pdf" });
+    mockGet.mockResolvedValue({ statusCode: 200, stream: streamOf("<svg onload=alert(1)>") });
+    const { POST } = await import("../route");
+    const res = await POST(postJson({ pathname, filename: "scan.pdf", folderId: null }));
+    expect(res.status).toBe(400);
+    expect(mockDel).toHaveBeenCalledWith(pathname);
+    const row = await db.query.crmHouseholdDocuments.findFirst({ where: eq(crmHouseholdDocuments.storageKey, pathname) });
+    expect(row).toBeUndefined();
   });
 });

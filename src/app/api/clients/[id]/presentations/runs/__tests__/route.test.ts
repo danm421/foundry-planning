@@ -8,7 +8,8 @@ import { renderPresentationPdf } from "@/components/presentations/render-present
 
 // Capture after() callbacks so the test can await the background work
 // deterministically instead of racing the real DB.
-const { afterTasks, unreviewed, flatLadder } = vi.hoisted(() => ({
+const { afterTasks, unreviewed, flatLadder, assertBrandMock } = vi.hoisted(() => ({
+  assertBrandMock: vi.fn(),
   afterTasks: [] as Array<Promise<unknown>>,
   // The soft gate's one DB read, mocked here rather than seeded through real
   // `plan_story_chapters` rows — this suite is about the ROUTE's wiring
@@ -50,6 +51,9 @@ vi.mock("@/lib/authz", async (importOriginal) => {
     }),
   };
 });
+vi.mock("@/lib/branding/brand-options", () => ({
+  assertBrandChoiceAllowed: (...a: unknown[]) => assertBrandMock(...a),
+}));
 vi.mock("@/lib/clients/cross-firm-audit", () => ({
   crossFirmAuditMeta: vi.fn().mockImplementation((_a: unknown, _b: unknown, base?: unknown) => base ?? {}),
 }));
@@ -118,6 +122,7 @@ beforeEach(async () => {
   vi.mocked(savePlanToVault).mockClear();
   vi.mocked(savePlanToVault).mockResolvedValue({ id: documentId } as never);
   vi.mocked(recordAudit).mockClear();
+  assertBrandMock.mockReset().mockResolvedValue(undefined);
   // Default: no story page in the deck, so the gate has nothing to report —
   // matches `unreviewedStoryChapters`'s own real behaviour for a deck that
   // never mentions "planStory".
@@ -179,6 +184,29 @@ describe("POST presentations/runs", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe("done");
     expect(rows[0].resultDocumentId).toBe(documentId);
+  });
+
+  it("checks a picked brand and persists it in the saved request", async () => {
+    const res = await POST(req({ ...validBody, brand: "firm" }), {
+      params: Promise.resolve({ id: clientId }),
+    });
+    expect(res.status).toBe(202);
+    expect(assertBrandMock).toHaveBeenCalledWith(ORG, "firm", "u");
+    const json = await res.json();
+    await Promise.all(afterTasks);
+    const [row] = await db.select().from(generationRuns).where(eq(generationRuns.id, json.runId));
+    expect((row.requestPayload as { brand?: string }).brand).toBe("firm");
+  });
+
+  it("refuses a brand the caller can't use with 403 and creates no run", async () => {
+    const { ForbiddenError } = await vi.importActual<typeof import("@/lib/authz")>("@/lib/authz");
+    assertBrandMock.mockRejectedValue(new ForbiddenError("That brand isn't available to you for this household."));
+    const res = await POST(req({ ...validBody, brand: "user_other" }), {
+      params: Promise.resolve({ id: clientId }),
+    });
+    expect(res.status).toBe(403);
+    const rows = await db.select().from(generationRuns).where(eq(generationRuns.clientId, clientId));
+    expect(rows).toHaveLength(0);
   });
 
   it("403s for a client outside the firm", async () => {

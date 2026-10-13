@@ -73,6 +73,7 @@ function form(overrides: Record<string, unknown> = {}) {
     token: "tok-abc",
     recipientEmail: "sam@client.com",
     recipientName: "Sam Client",
+    createdByUserId: "creator-1",
     // Nearly lapsed — reopening must not hand the client a link that dies tomorrow.
     expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     submittedAt: new Date(),
@@ -131,7 +132,7 @@ describe("POST /api/data-collection/[id]/reopen", () => {
     await POST(postReq(), ctx);
     const arg = sendMock.mock.calls[0]![0] as Record<string, unknown>;
     expect(arg.link).toMatch(/\/portal\/intake$/);
-    expect(arg.brandAdvisorUserId).toBe("owner-1");
+    expect(arg.brand).toBe("owner-1");
   });
 
   it("still reopens when there is no login to mail, and says nothing was delivered", async () => {
@@ -174,6 +175,16 @@ describe("POST /api/data-collection/[id]/reopen", () => {
     const res = await POST(postReq(), ctx);
     expect(res.status).toBe(409);
     expect(sendMock).not.toHaveBeenCalled();
+    expect(recordAuditMock).not.toHaveBeenCalled();
+  });
+
+  it("leaves the form submitted when the link lookup fails, so a reopen is never unaudited", async () => {
+    loadFormMock.mockResolvedValue(form({ mode: "prefilled", clientId: "client-1" }));
+    selectClientMock.mockRejectedValue(new Error("db down"));
+
+    const res = await POST(postReq(), ctx);
+    expect(res.status).toBe(500);
+    expect(updateMock).not.toHaveBeenCalled();
     expect(recordAuditMock).not.toHaveBeenCalled();
   });
 

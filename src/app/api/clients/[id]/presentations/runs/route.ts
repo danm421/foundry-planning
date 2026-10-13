@@ -4,6 +4,8 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { checkExportPdfRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { requireClientEditAccess } from "@/lib/clients/authz";
+import { assertBrandChoiceAllowed } from "@/lib/branding/brand-options";
+import { householdBrand } from "@/lib/branding/brand-choice";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import {
   BodySchema,
@@ -68,6 +70,13 @@ export async function POST(
         { error: "Invalid request body", issues: parsed.error.issues },
         { status: 400 },
       );
+    }
+
+    // A picked brand must be one this caller may use (the household's own
+    // needs no check). Checked before the run exists, so a refusal leaves
+    // nothing in Recent runs.
+    if (parsed.data.brand) {
+      await assertBrandChoiceAllowed(firmId, parsed.data.brand, householdBrand(client));
     }
 
     const rl = await checkExportPdfRateLimit(firmId);
@@ -174,6 +183,7 @@ export async function POST(
         metadata: crossFirmAuditMeta({ access }, callerOrg, {
           pages: parsed.data.pages.map((p) => p.pageId),
           via: "sync-download",
+          brand: parsed.data.brand ?? null,
         }),
       });
       await auditUnreviewedStory();
@@ -237,7 +247,7 @@ export async function POST(
           resourceId: id,
           clientId: id,
           firmId,
-          metadata: crossFirmAuditMeta({ access }, callerOrg, { pages: parsed.data.pages.map((p) => p.pageId), via: "background-run" }),
+          metadata: crossFirmAuditMeta({ access }, callerOrg, { pages: parsed.data.pages.map((p) => p.pageId), via: "background-run", brand: parsed.data.brand ?? null }),
         });
         await auditUnreviewedStory();
         await markDone(runId, doc?.id ?? null);

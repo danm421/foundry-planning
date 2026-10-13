@@ -1134,6 +1134,11 @@ export const clients = pgTable("clients", {
   portalBudgetEnabled: boolean("portal_budget_enabled").notNull().default(true),
   portalDocumentsEnabled: boolean("portal_documents_enabled").notNull().default(true),
   portalCalculatorsEnabled: boolean("portal_calculators_enabled").notNull().default(true),
+  // Which brand this household sees — its portal and client PDFs — and where
+  // intake sends and presentations for it start. NULL = its advisor's brand,
+  // which is what every pre-existing row means; "firm" = the firm's own;
+  // otherwise any advisor's Clerk user id (the household's own included). See lib/branding/brand-choice.ts.
+  brand: text("brand"),
 }, (t) => [
   index("clients_firm_idx").on(t.firmId),
 ]);
@@ -6443,6 +6448,10 @@ export const intakeForms = pgTable("intake_forms", {
   // Snapshotted at SEND time on purpose: editing your saved default must never
   // reshape a form already out with a client.
   sections: jsonb("sections").$type<IntakeSectionKey[]>(),
+  // The brand this form was sent under: its email, its page, its reminders.
+  // Written on every send; NULL only on forms sent before the picker, which
+  // resolve as they always did (`formBrand` in lib/branding/brand-choice.ts).
+  brand: text("brand"),
   createdByUserId: text("created_by_user_id").notNull(),
   sentAt: timestamp("sent_at"),
   // First time the recipient loaded the form by token. `sent_at` records that

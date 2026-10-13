@@ -228,6 +228,20 @@ describe("POST /api/clients/[id]/exports/pdf", () => {
     expect(doc.props.firmName).toBe("Advisor Brand");
   });
 
+  it("brands the PDF with the household's saved brand", async () => {
+    const { requireClientEditAccess } = await import("@/lib/clients/authz");
+    (requireClientEditAccess as ReturnType<typeof vi.fn>).mockImplementationOnce(async (clientId: string) => ({
+      client: { id: clientId, crmHouseholdId: "hh-test", advisorId: "adv-1", brand: "firm" },
+      firmId: "firm_test",
+      access: "own",
+    }));
+
+    const res = await POST(makeReq({ reportId: "investments", variant: "data" }), { params });
+
+    expect(res.status).toBe(200);
+    expect(brandingMocks.resolveBrandingForClient).toHaveBeenCalledWith("firm_test", "firm");
+  });
+
   it("captures the PDF export to the vault as reportType 'report:<id>'", async () => {
     const { savePlanToVault } = await import("@/lib/crm/vault-plans");
     const res = await POST(makeReq({ reportId: "investments", variant: "data" }), { params });

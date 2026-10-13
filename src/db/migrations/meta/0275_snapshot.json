@@ -1,5 +1,5 @@
 {
-  "id": "136b8b1a-9e27-43e1-a3ad-f362e261285a",
+  "id": "18b66a62-d7eb-4a1e-8441-599e98133fdc",
   "prevId": "eff8a6e5-305c-4b39-b931-fbd672ec09b7",
   "version": "7",
   "dialect": "postgresql",
@@ -1012,27 +1012,6 @@
           "notNull": true,
           "default": "'0'"
         },
-        "margin_balance": {
-          "name": "margin_balance",
-          "type": "numeric(15, 2)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "margin_interest_rate": {
-          "name": "margin_interest_rate",
-          "type": "numeric(5, 4)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "margin_call_pct": {
-          "name": "margin_call_pct",
-          "type": "numeric(5, 4)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0.3'"
-        },
         "override_pct_oi": {
           "name": "override_pct_oi",
           "type": "numeric(5, 4)",
@@ -1444,10 +1423,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "accounts_margin_taxable_only": {
-          "name": "accounts_margin_taxable_only",
-          "value": "\"accounts\".\"margin_balance\" = 0 OR \"accounts\".\"category\" = 'taxable'"
-        },
         "accounts_inherited_fields_paired": {
           "name": "accounts_inherited_fields_paired",
           "value": "(\"accounts\".\"inherited_death_year\" IS NULL) = (\"accounts\".\"inherited_owner_birth_year\" IS NULL)"
@@ -5180,6 +5155,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
+        },
+        "brand": {
+          "name": "brand",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -11485,6 +11466,12 @@
         "sections": {
           "name": "sections",
           "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "brand": {
+          "name": "brand",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },

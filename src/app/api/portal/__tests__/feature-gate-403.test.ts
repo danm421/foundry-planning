@@ -64,7 +64,7 @@ vi.mock("@/lib/portal/vault-documents", async () => {
       await resolvePortalVaultContext();
       return [];
     },
-    uploadPortalDocument: () => Promise.resolve({}),
+    registerPortalUpload: () => Promise.resolve({}),
   };
 });
 

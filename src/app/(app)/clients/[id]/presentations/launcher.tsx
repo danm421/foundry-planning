@@ -37,6 +37,14 @@ import {
   type LauncherState,
   type LoadedTemplate,
 } from "@/components/presentations/launcher/use-launcher-state";
+import { BrandSelect } from "@/components/brand-select";
+import {
+  brandChoicesFor,
+  canPickBrand,
+  FIRM_BRAND,
+  type BrandChoice,
+  type BrandPicker,
+} from "@/lib/branding/brand-choice";
 import { useLauncherDraft } from "@/components/presentations/launcher/use-launcher-draft";
 import { PresentationOptionsProvider } from "@/components/presentations/options-context";
 import { RecentRunsPanel } from "@/components/presentations/recent-runs-panel";
@@ -64,6 +72,10 @@ interface Props {
   entities?: EntityPickerOption[];
   proposals?: ProposalOption[];
   liabilities?: LiabilityPickerOption[];
+  /** The brand picker, starting on the household's brand. Absent or with
+   *  nothing to choose, the dropdown is hidden and requests carry no brand,
+   *  so the server uses the household's. */
+  brand?: { picker: BrandPicker; defaultValue: BrandChoice };
 }
 
 /**
@@ -163,6 +175,13 @@ export function PresentationsLauncher(props: Props) {
   // Restore/persist the in-progress deck per client+advisor so leaving and
   // returning to this tab brings it back exactly as they left it.
   useLauncherDraft(props.clientId, props.currentUserId, state, dispatch);
+
+  // Outside the launcher state on purpose: the saved draft and templates never
+  // carry it — a deck starts on the household's brand every visit, and a
+  // template is shared across households.
+  const [brand, setBrand] = useState<BrandChoice>(props.brand?.defaultValue ?? FIRM_BRAND);
+  const showBrand = props.brand ? canPickBrand(props.brand.picker) : false;
+  const brandField = showBrand ? { brand } : {};
 
   // Pre-warm the compute cache for configured Retirement Comparison and
   // Scenario Comparison pages so the eventual "Generate PDF" hits a warm MC +
@@ -484,6 +503,7 @@ export function PresentationsLauncher(props: Props) {
                 new Date(),
               ),
             pages: descriptorsFor(state.pages),
+            ...brandField,
           }),
         },
       );
@@ -549,6 +569,20 @@ export function PresentationsLauncher(props: Props) {
             ariaLabel="Scenario for presentation"
           />
         </label>
+        {props.brand && showBrand && (
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-2">
+              Brand
+            </span>
+            <BrandSelect
+              id="presentation-brand"
+              choices={brandChoicesFor(props.brand.picker, props.brand.defaultValue)}
+              value={brand}
+              onChange={setBrand}
+              className="rounded border border-hair bg-card-2 px-2 py-1.5 text-sm text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
+            />
+          </label>
+        )}
         <label className="flex w-80 max-w-full flex-col gap-1 text-sm">
           <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-2">
             Filename
@@ -602,6 +636,7 @@ export function PresentationsLauncher(props: Props) {
                 title: "Full presentation",
                 scenarioId: resolvedScenarioId,
                 pages: descriptorsFor(state.pages),
+                ...brandField,
               });
             }}
             className="rounded border border-hair bg-card-2 px-3 py-2 text-sm text-ink-2 transition-colors hover:bg-card-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
@@ -667,6 +702,7 @@ export function PresentationsLauncher(props: Props) {
                           title: PRESENTATION_PAGES[p.pageId].title,
                           scenarioId: resolvedScenarioId,
                           pages: descriptorsFor([p]),
+                          ...brandField,
                         });
                       }}
                       onDownload={canEdit ? async () => {
@@ -686,6 +722,7 @@ export function PresentationsLauncher(props: Props) {
                               scenarioId: resolvedScenarioId,
                               filename: `${slug(pageTitle)}.pdf`,
                               pages: descriptorsFor([p]),
+                              ...brandField,
                             }),
                           },
                         );
@@ -727,6 +764,7 @@ export function PresentationsLauncher(props: Props) {
                   title: PRESENTATION_PAGES[pageId].title,
                   scenarioId: resolvedScenarioId,
                   pages: descriptorsFor([{ pageId, options, scenarioOverride }]),
+                  ...brandField,
                 })
               }
             />

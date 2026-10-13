@@ -135,6 +135,7 @@ describe("searchClients", () => {
       primaryFirstName: "Alice",
       primaryLastName: "Anderson",
       primaryEmail: "alice@anderson.test",
+      brand: ADVISOR_A,
     });
   });
 

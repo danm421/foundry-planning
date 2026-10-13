@@ -26,7 +26,8 @@ const TABS: readonly Tab[] = [
 ] as const;
 
 /** A null slot drops its tab from the nav — used when the firm has no client
- *  portal, where only Access (the "not enabled" notice) and Intake apply. */
+ *  portal, where only Access (the "not enabled" notice) and Intake apply
+ *  (plus Features, when the viewer has a Brand card to show). */
 interface Props {
   access: ReactNode;
   intake: ReactNode;

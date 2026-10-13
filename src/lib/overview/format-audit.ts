@@ -24,6 +24,7 @@ const LABELS: Record<string, string> = {
   "savings_rule.delete": "Deleted savings rule",
   "client.update": "Updated client details",
   "client.base_facts.update": "Updated client details",
+  "client.brand.updated": "Changed the household brand",
   "client.extract": "Imported document",
   "family_member.create": "Added family member",
   // Client edits in the portal. Ones that mirror an advisor action

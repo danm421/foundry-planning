@@ -62,7 +62,7 @@ export async function POST(
       );
     }
 
-    const { link, brandAdvisorUserId } = await resolveFormLink(form, orgId, userId);
+    const { link, brand } = await resolveFormLink(form, orgId);
 
     // Saying so beats mailing a portal URL that bounces to a sign-in they can't pass.
     if (!link) {
@@ -78,7 +78,7 @@ export async function POST(
     const sent = await sendIntakeLinkEmail({
       firmId: orgId,
       senderUserId: userId,
-      brandAdvisorUserId,
+      brand,
       to: form.recipientEmail,
       link,
       clientName: form.recipientName,
@@ -109,6 +109,7 @@ export async function POST(
       resourceId: form.id,
       clientId: form.clientId ?? null,
       firmId: orgId,
+      metadata: { brand },
     });
 
     return NextResponse.json({ ok: true, remindedAt: new Date().toISOString() });

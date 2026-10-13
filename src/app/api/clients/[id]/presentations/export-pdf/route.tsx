@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { authErrorResponse } from "@/lib/authz";
+import { assertBrandChoiceAllowed } from "@/lib/branding/brand-options";
+import { loadHouseholdBrand } from "@/lib/branding/household-brand";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import {
   checkPreviewPdfRateLimit,
@@ -61,6 +63,16 @@ export async function POST(
       );
     }
 
+    // A picked brand must be one this caller may use; no brand means the
+    // household's, which needs no check.
+    if (parsed.data.brand) {
+      await assertBrandChoiceAllowed(
+        access.firmId,
+        parsed.data.brand,
+        await loadHouseholdBrand(id, access.firmId),
+      );
+    }
+
     const rl = await checkPreviewPdfRateLimit(callerOrg);
     if (!rl.allowed) {
       return rateLimitErrorResponse(
@@ -96,6 +108,7 @@ export async function POST(
         scenarioId: parsed.data.scenarioId,
         hasOverrides: parsed.data.pages.some((p) => p.scenarioOverride !== undefined),
         distinctScenarioCount,
+        brand: parsed.data.brand ?? null,
       }),
     });
 

@@ -47,6 +47,14 @@ vi.mock("@/db", () => ({
 // shape only serves the intake_email_settings query and is table-blind.
 vi.mock("@/lib/branding/advisor-profile", () => ({ getAdvisorProfile: vi.fn(async () => null) }));
 
+// Whose name signs: a brand that is on, for a current member, signs as them.
+vi.mock("@/lib/crm-tasks/members", () => ({
+  listFirmMembers: vi.fn(async () => [
+    { userId: "user_1", displayName: "Jane Advisor", email: "jane@acme.com", imageUrl: null, role: "Admin", roleKey: "org:admin" },
+    { userId: "adv_2", displayName: "Jane Smith", email: "jane@smithwealth.com", imageUrl: null, role: "Member", roleKey: "org:member" },
+  ]),
+}));
+
 // Only reached when a blank invite carries a clientId (case 5 below) — blank
 // invites without one never call it.
 vi.mock("@/lib/clients/authz", () => ({ requireClientEditAccess: vi.fn() }));
@@ -221,17 +229,5 @@ it("case 5: blank invite WITH a clientId resolves brand by the CLIENT's advisor,
   const payload = vi.mocked(sendIntakeFormEmail).mock.calls[0][0];
   expect(payload.fromName).toBe("Jane Smith CFP");
   expect(payload.replyTo).toBe("jane@smithwealth.com");
-});
-
-it("case 6: blank invite WITH a clientId whose row has advisorId null falls back to the sender's id", async () => {
-  vi.mocked(requireClientEditAccess).mockResolvedValue({
-    firmId: "firm_1",
-    access: "own",
-    client: { advisorId: null },
-  } as unknown as Awaited<ReturnType<typeof requireClientEditAccess>>);
-
-  const res = await POST(postReq({ clientId: "client_1" }));
-
-  expect(res.status).toBe(200);
-  expect(vi.mocked(getAdvisorProfile)).toHaveBeenCalledWith("firm_1", "user_1");
+  expect(payload.advisorName).toBe("Jane Smith");
 });

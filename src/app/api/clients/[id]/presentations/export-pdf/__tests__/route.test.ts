@@ -58,15 +58,7 @@ vi.mock("@/lib/crm/vault-plans", () => ({
   savePlanToVault: vi.fn().mockResolvedValue(null),
 }));
 
-// Firm branding + default cover logo (the route resolves these for the cover).
-vi.mock("@/lib/branding/branding", () => ({
-  resolveBranding: vi.fn().mockResolvedValue({
-    primaryColor: "#b87f1f",
-    firmName: "Acme Wealth Management",
-    logoDataUrl: null,
-  }),
-}));
-
+// Default cover logo (the route resolves it for the cover).
 vi.mock("@/lib/presentations/default-logo", () => ({
   foundryDefaultLogoDataUrl: vi.fn().mockResolvedValue("data:image/png;base64,AAAA"),
 }));
@@ -80,6 +72,24 @@ vi.mock("@/lib/projection/load-monte-carlo-data", () => ({
 // tests behave exactly as before (route catches, renders "unavailable" frame).
 vi.mock("@/lib/compute-cache/monte-carlo", () => ({
   getOrComputeMonteCarlo: vi.fn().mockRejectedValue(new Error("stub: skip MC body")),
+}));
+
+const assertBrandMock = vi.fn();
+vi.mock("@/lib/branding/brand-options", () => ({
+  assertBrandChoiceAllowed: (...a: unknown[]) => assertBrandMock(...a),
+}));
+vi.mock("@/lib/branding/household-brand", () => ({
+  loadHouseholdBrand: vi.fn(async () => "adv-1"),
+}));
+
+// The renderer now shares the mocked loadHouseholdBrand ("adv-1"); resolve its
+// cover branding without the real advisor-profile lookup.
+vi.mock("@/lib/branding/resolve-for-client", () => ({
+  resolveBrandingForClient: vi.fn().mockResolvedValue({
+    primaryColor: "#b87f1f",
+    firmName: "Acme Wealth Management",
+    logoDataUrl: null,
+  }),
 }));
 
 // Keep a benign @/db mock so importing the route doesn't open a real connection.
@@ -433,5 +443,44 @@ describe("POST /api/clients/[id]/presentations/export-pdf — preview mode", () 
       params: Promise.resolve({ id: "client-1" }),
     });
     expect(savePlanToVault).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/clients/[id]/presentations/export-pdf — brand", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    assertBrandMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  const params = Promise.resolve({ id: "client-1" });
+  const previewReq = (extra: Record<string, unknown>) =>
+    makeReq({
+      scenarioId: null,
+      preview: true,
+      pages: [
+        { pageId: "cashFlow", options: { range: "retirement", showCallout: true } },
+      ],
+      ...extra,
+    }) as never;
+
+  it("checks a picked brand against the household's", async () => {
+    const { POST } = await import("../route");
+    const res = await POST(previewReq({ brand: "firm" }), { params });
+    expect(res.status).toBe(200);
+    expect(assertBrandMock).toHaveBeenCalledWith(expect.any(String), "firm", "adv-1");
+  });
+
+  it("refuses a brand the caller can't use with 403", async () => {
+    const { POST } = await import("../route");
+    const { ForbiddenError } = await vi.importActual<typeof import("@/lib/authz")>("@/lib/authz");
+    assertBrandMock.mockRejectedValue(new ForbiddenError("That brand isn't available to you for this household."));
+    const res = await POST(previewReq({ brand: "user_other" }), { params });
+    expect(res.status).toBe(403);
+  });
+
+  it("skips the check when no brand is sent", async () => {
+    const { POST } = await import("../route");
+    await POST(previewReq({}), { params });
+    expect(assertBrandMock).not.toHaveBeenCalled();
   });
 });

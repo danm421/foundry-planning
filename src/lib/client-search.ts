@@ -8,6 +8,7 @@ import {
 } from "@/lib/visibility";
 import { containsPattern } from "@/lib/like-pattern";
 import { uuidRegex } from "@/lib/schemas/common";
+import { householdBrand } from "@/lib/branding/brand-choice";
 
 export interface ClientSearchResult {
   id: string;
@@ -22,6 +23,9 @@ export interface ClientSearchResult {
   primaryFirstName: string;
   primaryLastName: string;
   primaryEmail: string | null;
+  /** The household's brand (its saved choice, else its advisor) — where the
+   *  intake sender's Brand dropdown starts when this client is picked. */
+  brand: string;
 }
 
 const MAX_RESULTS = 8;
@@ -31,6 +35,8 @@ const MAX_RESULTS = 8;
  *  household title differently. */
 const contactColumns = {
   id: clients.id,
+  clientAdvisorId: clients.advisorId,
+  clientBrand: clients.brand,
   contactRole: crmHouseholdContacts.role,
   contactFirstName: crmHouseholdContacts.firstName,
   contactLastName: crmHouseholdContacts.lastName,
@@ -39,6 +45,8 @@ const contactColumns = {
 
 type ContactRow = {
   id: string;
+  clientAdvisorId: string;
+  clientBrand: string | null;
   contactRole: string;
   contactFirstName: string;
   contactLastName: string;
@@ -54,11 +62,12 @@ function toSearchResults(rows: ContactRow[]): ClientSearchResult[] {
   }
   const byClient = new Map<
     string,
-    { id: string; primary: Contact | null; spouse: Contact | null }
+    { id: string; brand: string; primary: Contact | null; spouse: Contact | null }
   >();
   for (const row of rows) {
     const entry = byClient.get(row.id) ?? {
       id: row.id,
+      brand: householdBrand({ brand: row.clientBrand, advisorId: row.clientAdvisorId }),
       primary: null,
       spouse: null,
     };
@@ -90,6 +99,7 @@ function toSearchResults(rows: ContactRow[]): ClientSearchResult[] {
       primaryFirstName: firstName,
       primaryLastName: lastName,
       primaryEmail: entry.primary.email ?? null,
+      brand: entry.brand,
     });
   }
   results.sort((a, b) => a.householdTitle.localeCompare(b.householdTitle));

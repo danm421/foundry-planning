@@ -6,12 +6,13 @@ import type { ExportPdfBody } from "../render-presentation-pdf";
 
 // Task 11: renderPresentationPdf resolves branding by the CLIENT'S advisor
 // (Task 10's resolveBrandingForClient), not the firm alone. This file mocks
-// every dependency the function touches EXCEPT the new advisor lookup + the
-// two branding resolvers, so the assertions exercise real wiring rather than
-// mock behavior. A single "cover"-only page with scenarioId=null and no
-// spouse keeps every other conditional branch (scenario names, investments,
-// life insurance, observations, scenario-changes) unreached, so the ONLY
-// `db.select` call in the whole function is the new advisor-id lookup.
+// the branding resolver and the advisor lookup (`db.select`) as well as the
+// rest of what the function touches, and asserts on what it passes them: which
+// advisor id, or "firm", it resolves branding for. A single "cover"-only page
+// with scenarioId=null and no spouse keeps every other conditional branch
+// (scenario names, investments, life insurance, observations,
+// scenario-changes) unreached, so the ONLY `db.select` call in the whole
+// function is the advisor-id lookup.
 
 const dbMocks = vi.hoisted(() => ({
   select: vi.fn(),
@@ -21,11 +22,7 @@ const dbMocks = vi.hoisted(() => ({
 vi.mock("@/db", () => ({ db: { select: dbMocks.select } }));
 
 const brandingMocks = vi.hoisted(() => ({
-  resolveBranding: vi.fn(),
   resolveBrandingForClient: vi.fn(),
-}));
-vi.mock("@/lib/branding/branding", () => ({
-  resolveBranding: brandingMocks.resolveBranding,
 }));
 vi.mock("@/lib/branding/resolve-for-client", () => ({
   resolveBrandingForClient: brandingMocks.resolveBrandingForClient,
@@ -80,7 +77,7 @@ const body = {
   pages: [{ pageId: "cover", options: {}, scenarioOverride: undefined }],
 } as unknown as ExportPdfBody;
 
-function seedAdvisorLookup(rows: Array<{ advisorId: string }>) {
+function seedAdvisorLookup(rows: Array<{ advisorId: string; brand: string | null }>) {
   dbMocks.select.mockReturnValue({ from: dbMocks.from });
   dbMocks.from.mockReturnValue({ where: dbMocks.where });
   dbMocks.where.mockResolvedValue(rows);
@@ -93,16 +90,11 @@ describe("renderPresentationPdf — advisor-aware branding", () => {
   });
 
   it("resolves the client's advisor and uses their brand over the firm's", async () => {
-    seedAdvisorLookup([{ advisorId: "adv-77" }]);
+    seedAdvisorLookup([{ advisorId: "adv-77", brand: null }]);
     brandingMocks.resolveBrandingForClient.mockResolvedValue({
       firmName: "Advisor Brand",
       primaryColor: "#111111",
       logoDataUrl: "data:image/png;base64,ADV",
-    });
-    brandingMocks.resolveBranding.mockResolvedValue({
-      firmName: "Firm Brand",
-      primaryColor: "#222222",
-      logoDataUrl: "data:image/png;base64,FIRM",
     });
 
     await renderPresentationPdf(CLIENT_ID, FIRM_ID, body);
@@ -110,7 +102,6 @@ describe("renderPresentationPdf — advisor-aware branding", () => {
     // Positional call — NOT an object literal (would break React `cache()`
     // identity in the sibling web-branding resolver this mirrors).
     expect(brandingMocks.resolveBrandingForClient).toHaveBeenCalledWith("firm-1", "adv-77");
-    expect(brandingMocks.resolveBranding).not.toHaveBeenCalled();
 
     const doc = renderToBufferMock.mock.calls[0][0];
     expect(doc.props.firmName).toBe("Advisor Brand");
@@ -122,7 +113,7 @@ describe("renderPresentationPdf — advisor-aware branding", () => {
     // each column somewhere, which would still pass even if only one clause
     // made it into the final `.where()` call. This is scoped by BOTH
     // clientId and firmId, never clientId alone.
-    expect(dbMocks.select).toHaveBeenCalledWith({ advisorId: clients.advisorId });
+    expect(dbMocks.select).toHaveBeenCalledWith({ advisorId: clients.advisorId, brand: clients.brand });
     expect(dbMocks.from).toHaveBeenCalledWith(clients);
     expect(dbMocks.where).toHaveBeenCalledWith(
       and(eq(clients.id, CLIENT_ID), eq(clients.firmId, FIRM_ID)),
@@ -131,7 +122,7 @@ describe("renderPresentationPdf — advisor-aware branding", () => {
 
   it("falls back to firm branding when the client row can't be found", async () => {
     seedAdvisorLookup([]);
-    brandingMocks.resolveBranding.mockResolvedValue({
+    brandingMocks.resolveBrandingForClient.mockResolvedValue({
       firmName: "Firm Brand",
       primaryColor: "#222222",
       logoDataUrl: "data:image/png;base64,FIRM",
@@ -139,12 +130,25 @@ describe("renderPresentationPdf — advisor-aware branding", () => {
 
     await renderPresentationPdf(CLIENT_ID, FIRM_ID, body);
 
-    expect(brandingMocks.resolveBrandingForClient).not.toHaveBeenCalled();
-    expect(brandingMocks.resolveBranding).toHaveBeenCalledWith(FIRM_ID);
+    expect(brandingMocks.resolveBrandingForClient).toHaveBeenCalledWith(FIRM_ID, "firm");
 
     const doc = renderToBufferMock.mock.calls[0][0];
     expect(doc.props.firmName).toBe("Firm Brand");
     expect(doc.props.accentColor).toBe("#222222");
     expect(doc.props.firmLogoDataUrl).toBe("data:image/png;base64,FIRM");
+  });
+
+  it("uses the household's saved brand", async () => {
+    seedAdvisorLookup([{ advisorId: "adv-77", brand: "firm" }]);
+    brandingMocks.resolveBrandingForClient.mockResolvedValue({ firmName: "Firm Brand", primaryColor: "#222222", logoDataUrl: null });
+    await renderPresentationPdf(CLIENT_ID, FIRM_ID, body);
+    expect(brandingMocks.resolveBrandingForClient).toHaveBeenCalledWith("firm-1", "firm");
+  });
+
+  it("uses the request's brand without looking the household up", async () => {
+    brandingMocks.resolveBrandingForClient.mockResolvedValue({ firmName: "Jane", primaryColor: "#111111", logoDataUrl: null });
+    await renderPresentationPdf(CLIENT_ID, FIRM_ID, { ...body, brand: "adv-9" });
+    expect(dbMocks.select).not.toHaveBeenCalled();
+    expect(brandingMocks.resolveBrandingForClient).toHaveBeenCalledWith("firm-1", "adv-9");
   });
 });

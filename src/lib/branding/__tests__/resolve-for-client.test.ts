@@ -82,6 +82,15 @@ describe("resolveIntakeBrandingForClient", () => {
     mocks.getOrganization.mockResolvedValue({ name: "" });
   });
 
+  it("the firm brand skips the advisor overlay entirely", async () => {
+    mocks.getBranding.mockResolvedValue(FIRM);
+
+    const res = await resolveIntakeBrandingForClient("org_a", "firm");
+
+    expect(mocks.getAdvisorProfile).not.toHaveBeenCalled();
+    expect(res).toEqual({ logoUrl: FIRM.logoUrl, firmName: FIRM.displayName, faviconUrl: FIRM.faviconUrl });
+  });
+
   it("uses firm branding when advisor branding is disabled", async () => {
     mocks.getBranding.mockResolvedValue(FIRM);
     mocks.getAdvisorProfile.mockResolvedValue(
@@ -234,6 +243,16 @@ describe("resolveBrandingForClient", () => {
   afterEach(() => {
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
+  });
+
+  it("the firm brand skips the advisor overlay entirely", async () => {
+    mockLogoFetch();
+    mocks.getBranding.mockResolvedValue(FIRM);
+
+    const res = await resolveBrandingForClient("org_a", "firm");
+
+    expect(mocks.getAdvisorProfile).not.toHaveBeenCalled();
+    expect(res.firmName).toBe(FIRM.displayName);
   });
 
   it("uses firm branding when advisor branding is disabled", async () => {

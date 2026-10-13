@@ -1,16 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { put, del } from "@vercel/blob";
+import { del, get, head } from "@vercel/blob";
+import { generateClientTokenFromReadWriteToken } from "@vercel/blob/client";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { crmHouseholdDocuments } from "@/db/schema";
+import { MAX_DIRECT_UPLOAD_SIZE_BYTES } from "@/lib/crm/document-constants";
 import {
-  MAX_DOCUMENT_SIZE_BYTES,
   STORAGE_PROVIDER,
   sanitizeFilename,
   resolveDocumentBlobPathname,
   type CrmDocumentRow,
 } from "@/lib/crm/documents";
-import { validateDocumentUpload } from "@/lib/files/content-type";
+import { SNIFF_BYTES, validateDocumentUpload } from "@/lib/files/content-type";
 import { toSafeDisplayFilename } from "@/lib/files/safe-filename";
 import { recordActivity } from "@/lib/crm/activity";
 import { recordCreate, recordDelete, recordUpdate } from "@/lib/audit/record-helpers";
@@ -80,30 +81,83 @@ export async function listPortalDocuments(folderId: string | null): Promise<Port
   return rows.map(toDTO);
 }
 
-export async function uploadPortalDocument(
-  file: File,
-  opts: { folderId: string | null },
-): Promise<PortalDocDTO> {
+// Portal uploads get their own folder; the file part is one path segment of
+// exactly the shape step 1 issues, so a pathname echoed back by the browser
+// can't climb (`/`, `\`, `..`) into another household's blobs.
+const portalUploadPrefix = (householdId: string) => `crm/${householdId}/portal/`;
+const ISSUED_FILE_PART = /^\d+-[0-9a-f-]{36}-[A-Za-z0-9._-]+$/;
+
+/**
+ * Step 1 of a portal upload. The browser sends the file straight to Blob (a
+ * function request body caps at 4.5 MB), so the server only issues a token for
+ * one fresh, non-overwritable pathname under this household. Blob itself
+ * enforces the size cap on the upload.
+ */
+export async function preparePortalUpload(opts: {
+  filename: string;
+  folderId: string | null;
+}): Promise<{ pathname: string; clientToken: string }> {
+  const ctx = await resolvePortalVaultContext();
+  assertInSubtree(ctx.subtree, opts.folderId ?? ctx.sharedRootId);
+  const pathname = `${portalUploadPrefix(ctx.householdId)}${Date.now()}-${randomUUID()}-${sanitizeFilename(opts.filename)}`;
+  const clientToken = await generateClientTokenFromReadWriteToken({
+    pathname,
+    maximumSizeInBytes: MAX_DIRECT_UPLOAD_SIZE_BYTES,
+    // The SDK's own default is 30 seconds — too short for a large file.
+    validUntil: Date.now() + 60 * 60 * 1000,
+  });
+  return { pathname, clientToken };
+}
+
+/** The leading bytes `detectDocumentKind` reads, without fetching the rest. */
+async function readBlobHead(pathname: string): Promise<Buffer> {
+  const res = await get(pathname, { access: "private", headers: { Range: `bytes=0-${SNIFF_BYTES - 1}` } });
+  if (!res?.stream) throw new PortalVaultNotFoundError();
+  return Buffer.from(await new Response(res.stream).arrayBuffer());
+}
+
+/**
+ * Step 2: file the uploaded blob as a document. The pathname comes back from
+ * the browser, so it must be one step 1 could have issued for THIS household
+ * and must not already back a document. The bytes are sniffed here, after the
+ * fact; a rejected blob is deleted.
+ */
+export async function registerPortalUpload(opts: {
+  pathname: string;
+  filename: string;
+  folderId: string | null;
+}): Promise<PortalDocDTO> {
   const ctx = await resolvePortalVaultContext();
   const target = opts.folderId ?? ctx.sharedRootId;
   assertInSubtree(ctx.subtree, target);
-  if (file.size > MAX_DOCUMENT_SIZE_BYTES) {
-    throw new Error(`File too large. Maximum size is ${Math.floor(MAX_DOCUMENT_SIZE_BYTES / (1024 * 1024))}MB.`);
+  const prefix = portalUploadPrefix(ctx.householdId);
+  if (!opts.pathname.startsWith(prefix) || !ISSUED_FILE_PART.test(opts.pathname.slice(prefix.length))) {
+    throw new PortalVaultNotFoundError();
   }
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const { mimeType } = validateDocumentUpload(file, buffer);
-  const safe = sanitizeFilename(file.name || "document");
-  const displayName = toSafeDisplayFilename(file.name || "document");
-  const storageKey = `crm/${ctx.householdId}/${Date.now()}-${randomUUID()}-${safe}`;
-  const result = await put(storageKey, file, { access: "private", addRandomSuffix: false });
+  const taken = await db.query.crmHouseholdDocuments.findFirst({
+    where: eq(crmHouseholdDocuments.storageKey, opts.pathname),
+    columns: { id: true },
+  });
+  if (taken) throw new PortalVaultNotFoundError();
+  const blob = await head(opts.pathname).catch(() => null);
+  if (!blob) throw new PortalVaultNotFoundError();
+
+  const leadingBytes = await readBlobHead(opts.pathname);
+  let mimeType: string;
+  try {
+    ({ mimeType } = validateDocumentUpload({ type: blob.contentType }, leadingBytes));
+  } catch (err) {
+    await del(opts.pathname).catch(() => {});
+    throw err;
+  }
 
   const [doc] = await db.insert(crmHouseholdDocuments).values({
     householdId: ctx.householdId,
-    filename: displayName,
+    filename: toSafeDisplayFilename(opts.filename),
     storageProvider: STORAGE_PROVIDER,
-    storageKey: result.pathname,
+    storageKey: opts.pathname,
     mimeType,
-    sizeBytes: file.size,
+    sizeBytes: blob.size,
     uploadedBy: ctx.clerkUserId,
     folderId: target,
     sourceKind: "upload",

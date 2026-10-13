@@ -94,7 +94,7 @@ vi.mock("@/lib/onboarding/welcome-email", () => ({
 
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-import { clerkEvents, clientShares, notificationPreferences, notifications } from "@/db/schema";
+import { advisorProfiles, clerkEvents, clientShares, notificationPreferences, notifications } from "@/db/schema";
 import { dispatchClerkMembership } from "../membership-handlers";
 
 const whereParams = (w: unknown) => new PgDialect().sqlToQuery(w as SQL).params;
@@ -326,6 +326,42 @@ describe("organizationMembership.deleted — the removed member's alerts", () =>
     expect(pending).toBeDefined();
     expect(pending![1]).toEqual({ emailPending: false });
     expect(whereParams(pending![2])).toEqual(expect.arrayContaining(["org_paid", "user_z"]));
+  });
+
+  it("turns the removed member's advisor branding off in that firm", async () => {
+    mockSelectFirms.mockResolvedValue([]);
+    await dispatchClerkMembership(membershipEvent("organizationMembership.deleted"), "svix_del_brand");
+
+    const brand = mockUpdate.mock.calls.find(([tbl]) => tbl === advisorProfiles);
+    expect(brand).toBeDefined();
+    expect(brand![1]).toMatchObject({ brandingEnabled: false, updatedBy: "clerk:webhook" });
+    expect(whereParams(brand![2])).toEqual(expect.arrayContaining(["org_paid", "user_z"]));
+  });
+
+  it("audits the branding-off when a brand was actually on", async () => {
+    mockSelectFirms.mockResolvedValue([]);
+    mockUpdate.mockImplementation(async (tbl: unknown) => (tbl === advisorProfiles ? [{ id: "ap_1" }] : []));
+    await dispatchClerkMembership(membershipEvent("organizationMembership.deleted"), "svix_del_brand_audit");
+
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "advisor_branding.grant",
+        resourceType: "advisor_profile",
+        resourceId: "user_z",
+        firmId: "org_paid",
+        actorId: "clerk:webhook",
+        metadata: { enabled: false, reason: "member_left_firm" },
+      }),
+    );
+  });
+
+  it("audits nothing when no brand was on", async () => {
+    mockSelectFirms.mockResolvedValue([]);
+    await dispatchClerkMembership(membershipEvent("organizationMembership.deleted"), "svix_del_brand_noop");
+
+    expect(mockRecordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "advisor_branding.grant" }),
+    );
   });
 
   it("leaves alerts alone when a member is added", async () => {
@@ -781,6 +817,24 @@ describe("user.created", () => {
       to: "first@example.com",
       firstName: null,
     });
+  });
+
+  it("does not welcome a client who signed up from a portal invite", async () => {
+    // Clerk copies the invitation's public_metadata onto the new user.
+    await dispatchClerkMembership(
+      {
+        type: "user.created",
+        data: {
+          id: "user_portal",
+          first_name: "Sarah",
+          email_addresses: [{ id: "idn_1", email_address: "sarah@example.com" }],
+          primary_email_address_id: "idn_1",
+          public_metadata: { clientId: "client_1" },
+        },
+      } as never,
+      "svix_portal",
+    );
+    expect(mockSendWelcomeEmail).not.toHaveBeenCalled();
   });
 
   it("does not send when the payload has no email address", async () => {
