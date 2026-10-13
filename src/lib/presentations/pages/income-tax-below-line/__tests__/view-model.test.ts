@@ -27,7 +27,7 @@ describe("buildTaxBelowLineDrillData", () => {
     const d = buildTaxBelowLineDrillData(base);
     expect(d.chartSpec).toBeDefined();
     expect(d.chartSpec!.stacks.map((s) => s.seriesId)).toEqual([
-      "charitable", "taxesPaid", "propertyTaxes", "interestPaid", "investmentInterest", "otherItemized",
+      "charitable", "taxesPaid", "propertyTaxes", "interestPaid", "otherItemized",
     ]);
     expect(d.chartSpec!.lines.map((l) => l.seriesId)).toEqual(["standard"]);
     const r = d.table.rows.find((row) => row.year === 2026)!;
@@ -38,7 +38,7 @@ describe("buildTaxBelowLineDrillData", () => {
     // the raw component sum rather than itemizedTotal.
     const rawSum =
       r.cells.charitable + r.cells.taxesPaid + r.cells.propertyTaxes +
-      r.cells.interestPaid + r.cells.investmentInterest + r.cells.otherItemized;
+      r.cells.interestPaid + (r.cells.investmentInterest ?? 0) + r.cells.otherItemized;
     expect(stackSum).toBeCloseTo(rawSum);
     expect(d.chartSpec!.lines[0].values[i]).toBeCloseTo(r.cells.standard);
   });
@@ -51,6 +51,16 @@ describe("buildTaxBelowLineDrillData", () => {
     };
     const d = buildTaxBelowLineDrillData({ ...base, years });
     expect(d.table.columns.map((c) => c.key)).toContain("investmentInterest");
+    expect(d.chartSpec!.stacks.map((s) => s.seriesId)).toContain("investmentInterest");
     expect(d.table.rows.find((row) => row.year === years[0].year)!.cells.investmentInterest).toBe(35_000);
+  });
+
+  it("leaves a no-margin household's table as it was: no Investment Interest column or stack", () => {
+    const d = buildTaxBelowLineDrillData(base);
+    expect(d.table.columns.map((c) => c.key)).toEqual([
+      "charitable", "taxesPaid", "propertyTaxes", "interestPaid", "otherItemized",
+      "itemizedTotal", "standard", "deductionTaken",
+    ]);
+    expect(d.table.rows[0].cells).not.toHaveProperty("investmentInterest");
   });
 });

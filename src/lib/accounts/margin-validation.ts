@@ -10,6 +10,11 @@ import { DEFAULT_MARGIN_CALL_PCT } from "@/engine/margin";
 
 export const MAX_MARGIN_INTEREST_RATE = 0.25;
 
+/** R8 — the one rule the DB also enforces (`accounts_margin_taxable_only`).
+ *  Exported for writers that check only this rule (the portal). */
+export const MARGIN_TAXABLE_ONLY_MESSAGE =
+  "Only taxable brokerage accounts can carry a margin loan. Remove the margin loan before changing the account type.";
+
 /** Raw values as the create schema and the write core hold them (decimal
  *  strings or numbers); null/undefined/"" take the column default. */
 export interface MarginFieldsInput {
@@ -32,7 +37,7 @@ export function validateMarginFields(raw: MarginFieldsInput): string | null {
     return "Margin loan balance can't be negative.";
   }
   if (f.marginBalance > 0 && f.category !== "taxable") {
-    return "Only taxable brokerage accounts can carry a margin loan. Remove the margin loan before changing the account type.";
+    return MARGIN_TAXABLE_ONLY_MESSAGE;
   }
   if (f.marginBalance > 0 && f.marginBalance >= f.value) {
     return "The margin loan must be less than the account's value.";

@@ -334,3 +334,85 @@ describe("margin loans at death — projection", () => {
     expect(basisFrom(today.primaryFirst.finalDeathTransfers, 2)).toBeCloseTo(1_000_000, 2);
   });
 });
+
+// The REAL deaths must read the live loan in `marginMap` (final review I4).
+// Every test above runs at rate 0 or compares against the same post-death map,
+// so a death call that dropped `marginMap` would pass them all: a bystander
+// margined account (here: a trust's, not routed at the death) would lose its
+// loan, and a routed one would fall back to its authored loan. A 5% rate moves
+// the live loan off the authored one every year, so only the live loan passes.
+describe("margin loans at the real deaths — the live loan carries through", () => {
+  const TRUST_ACC = "acct-trust-margin";
+  const RATE = 0.05;
+
+  function twoMarginedPlan() {
+    const routed: Account = {
+      id: ACC, name: "Brokerage", category: "taxable", subType: "brokerage", titlingType: "jtwros",
+      value: 1_000_000, basis: 400_000, growthRate: 0, rmdEnabled: false, owners: CLIENT_SOLE,
+      marginBalance: PROJ_LOAN, marginInterestRate: RATE,
+    };
+    const trustOwned: Account = {
+      id: TRUST_ACC, name: "Trust Brokerage", category: "taxable", subType: "brokerage",
+      titlingType: "jtwros", value: 500_000, basis: 500_000, growthRate: 0, rmdEnabled: false,
+      owners: [{ kind: "entity", entityId: TRUST, percent: 1 }],
+      marginBalance: 100_000, marginInterestRate: RATE,
+    };
+    const checking: Account = {
+      id: "acct-checking", name: "Checking", category: "cash", subType: "checking",
+      titlingType: "jtwros", value: 1000, basis: 1000, growthRate: 0,
+      rmdEnabled: false, isDefaultChecking: true, owners: JOINT,
+    };
+    // Client dies 2029 (1960 + 69); the spouse 2031 (1972 + 59), the final death.
+    return buildClientData({
+      client: { ...baseClient, dateOfBirth: "1960-01-01", spouseDob: "1972-06-15",
+        lifeExpectancy: 69, spouseLifeExpectancy: 59 },
+      familyMembers: FAMILY, accounts: [checking, routed, trustOwned], entities: [trust],
+      incomes: [], liabilities: [], savingsRules: [], expenses: [], withdrawalStrategy: [],
+      giftEvents: [], wills: [],
+      planSettings: { ...basePlanSettings, flatFederalRate: 0, flatStateRate: 0,
+        planStartYear: 2026, planEndYear: 2033, estateAdminExpenses: 0 },
+    });
+  }
+
+  const years = runProjection(twoMarginedPlan());
+  const y2029 = at(years, 2029);
+  const y2030 = at(years, 2030);
+  /** Every ledger the routed account became: not the trust's, not checking. */
+  const routedLedgers = (y: ProjectionYear) =>
+    Object.entries(y.accountLedgers).filter(
+      ([id]) => id !== TRUST_ACC && id !== "acct-checking",
+    );
+
+  it("a trust's margined account the first death doesn't route keeps its live loan", () => {
+    const eoy = y2029.accountLedgers[TRUST_ACC].marginEoY!;
+    expect(eoy).toBeCloseTo(100_000 * compounded(4), 2); // four years of interest, not the authored $100k
+    expect(y2030.accountLedgers[TRUST_ACC].marginBoY).toBeCloseTo(eoy, 2);
+  });
+
+  it("the account routed through the first death carries its live loan, not the authored one", () => {
+    const eoy = y2029.accountLedgers[ACC].marginEoY!;
+    expect(eoy).toBeCloseTo(PROJ_LOAN * compounded(4), 2);
+    const boy = routedLedgers(y2030).reduce((t, [, l]) => t + (l.marginBoY ?? 0), 0);
+    expect(boy).toBeCloseTo(eoy, 2);
+  });
+
+  it("the final death steps the routed account up to net EoY + the LIVE loan", () => {
+    // The projection truncates at the final death, so the loan shows in the
+    // step-up it gets there.
+    const y2031 = at(years, 2031);
+    const routed = routedLedgers(y2031);
+    const securities = routed.reduce((t, [, l]) => t + l.endingValue + (l.marginEoY ?? 0), 0);
+    const liveLoan = routed.reduce((t, [, l]) => t + (l.marginEoY ?? 0), 0);
+    expect(liveLoan).toBeCloseTo(PROJ_LOAN * compounded(6), 2);
+    const ids = new Set(routed.map(([id]) => id));
+    const basis = (y2031.deathTransfers ?? [])
+      .filter((t) => t.deathOrder === 2 && ids.has(t.sourceAccountId ?? ""))
+      .reduce((s, t) => s + t.basis, 0);
+    expect(basis).toBeCloseTo(securities, 2);
+  });
+});
+
+/** Growth factor of a loan after `n` years of capitalized interest at 5%. */
+function compounded(n: number): number {
+  return 1.05 ** n;
+}

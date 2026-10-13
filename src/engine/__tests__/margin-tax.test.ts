@@ -220,3 +220,36 @@ describe("investment-interest deduction in the projection", () => {
       .toBeCloseTo(m2.marginInterest! + carry1, 2);
   });
 });
+
+// Plan R6 (final review recommendation): an entity co-owner bears its own share
+// of the interest. A 40% non-trust LLC co-owner's share never reaches the
+// household's Form 4952 — only the household's 60% does.
+describe("investment interest on an account co-owned by a business entity", () => {
+  it("deducts only the household's share of the interest", () => {
+    const data = baseScenario();
+    data.entities = [{
+      id: "llc", name: "Family LLC", entityType: "llc", isGrantor: false,
+      isIrrevocable: false, includeInPortfolio: false,
+    }] as ClientData["entities"];
+    data.accounts.push({
+      ...margined,
+      owners: [
+        { kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 0.6 },
+        { kind: "entity", entityId: "llc", percent: 0.4 },
+      ],
+    });
+    // A short-term gain lifts NII far above the interest, so the cap never
+    // binds and the allowed amount IS the household's share of the interest.
+    data.incomes.push({
+      id: "inc-stcg", name: "Trading gains", type: "other", taxType: "stcg", owner: "client",
+      annualAmount: 2_000_000, growthRate: 0, startYear: 2026, endYear: 2026,
+    } as ClientData["incomes"][number]);
+
+    const [y1] = runProjection(data);
+    const interest = y1.accountLedgers["acct-margin"].marginInterest!;
+    expect(interest).toBeCloseTo(2_000_000 * 0.08, 2);
+    expect(y1.deductionBreakdown!.belowLine.investmentInterest).toBeCloseTo(0.6 * interest, 2);
+    expect(y1.deductionBreakdown!.belowLine.bySource["investment-interest:acct-margin"]?.amount)
+      .toBeCloseTo(0.6 * interest, 2);
+  });
+});

@@ -274,10 +274,21 @@ export async function commitAccounts(
     // subType edit to anything else, with category left untouched by the
     // review step, must NOT fall through resolveAccountCategory's `?? "taxable"`
     // default and clobber an existing category the advisor never touched.
+    // A margined account can't leave Taxable (`accounts_margin_taxable_only`,
+    // margin loans R8): writing the row's category would trip the CHECK and
+    // roll back the whole import. Keep the stored type — category, sub-type,
+    // and no 529 conversion — and say so. The loan is never touched.
+    let keptTaxable = false;
     if (row.category !== undefined || is529Account(row)) {
-      updates.category = resolveAccountCategory(row);
+      const category = resolveAccountCategory(row);
+      if (category !== "taxable" && (await carriesMarginLoan(tx, existingId, ctx))) {
+        keptTaxable = true;
+        result.warnings.push(`${row.name}: Kept as Taxable because it carries a margin loan.`);
+      } else {
+        updates.category = category;
+      }
     }
-    if (row.subType !== undefined) updates.subType = row.subType;
+    if (row.subType !== undefined && !keptTaxable) updates.subType = row.subType;
     if (row.value !== undefined) updates.value = String(row.value);
     if (row.basis !== undefined) updates.basis = String(row.basis);
     if (row.accountNumberLast4 !== undefined) updates.accountNumberLast4 = row.accountNumberLast4;
@@ -297,7 +308,7 @@ export async function commitAccounts(
     // the 529 columns are written only when the incoming row itself says 529.
     // A non-529 row must not null them out: it would strip the beneficiary off
     // an existing 529 the extraction simply failed to classify.
-    const updateIs529 = is529Account(row);
+    const updateIs529 = is529Account(row) && !keptTaxable;
     if (updateIs529) {
       Object.assign(updates, education529Columns(row, family.allFmIds));
       updates.rmdEnabled = false;
@@ -423,6 +434,22 @@ export async function commitAccounts(
   }
 
   return result;
+}
+
+/** Does the matched account carry a margin loan? Scoped like the UPDATE, so an
+ *  id that isn't this client's reads as no loan (the UPDATE then skips it). */
+async function carriesMarginLoan(tx: Tx, accountId: string, ctx: CommitContext): Promise<boolean> {
+  const [held] = await tx
+    .select({ marginBalance: accounts.marginBalance })
+    .from(accounts)
+    .where(
+      and(
+        eq(accounts.id, accountId),
+        eq(accounts.clientId, ctx.clientId),
+        eq(accounts.scenarioId, ctx.scenarioId),
+      ),
+    );
+  return Number(held?.marginBalance ?? 0) > 0;
 }
 
 /**

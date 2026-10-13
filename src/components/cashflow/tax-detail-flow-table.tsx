@@ -326,8 +326,8 @@ export function otherColumns(years: ProjectionYear[]): Column[] {
   );
 }
 
-export function belowLineColumns(): Column[] {
-  return [
+export function belowLineColumns(years: ProjectionYear[]): Column[] {
+  const cols: Column[] = [
     {
       key: "bl_charitable",
       label: "Charitable",
@@ -377,6 +377,12 @@ export function belowLineColumns(): Column[] {
       value: (y) => y.deductionBreakdown?.belowLine.taxDeductions ?? 0,
     },
   ];
+  // Investment Interest (margin loans) hides when every year is $0, like
+  // otherColumns' zero-suppress, so a household without a margin loan keeps
+  // the table it always had. The other below-line columns always show.
+  return cols.filter(
+    (col) => col.key !== "bl_investment_interest" || years.some((y) => col.value(y) !== 0),
+  );
 }
 
 function DrillHeader({ label, onClick }: { label: string; onClick: () => void }) {
@@ -536,7 +542,7 @@ export function TaxDetailFlowTable({
   const activeColumns: Column[] = drillLevel === "above_line"
     ? aboveLineColumns(years)
     : drillLevel === "below_line"
-      ? belowLineColumns()
+      ? belowLineColumns(years)
       : drillLevel === "other"
         ? otherColumns(years)
         : topLevelColumns(years);

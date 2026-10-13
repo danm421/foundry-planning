@@ -232,3 +232,74 @@ describe("a matched row WITH the override box ticked", () => {
     expect(ownerCalls(fake, "insert")).toHaveLength(1);
   });
 });
+
+// `accounts_margin_taxable_only` (margin loans, R8): a matched account that
+// carries a margin loan can't leave Taxable. Writing a reviewed row's other
+// category would trip the CHECK and roll the whole import back, so the commit
+// keeps the stored category and says so. The loan is never zeroed.
+describe("a matched row whose account carries a margin loan", () => {
+  function marginedAccount(fake: FakeTx, marginBalance: string) {
+    existingAccount(fake, "brokerage");
+    fake.setSelectResult("accounts", [{ marginBalance }]);
+  }
+
+  it("keeps Taxable — writes no category, sub-type or loan — and warns in plain words", async () => {
+    const fake = makeFakeTx();
+    marginedAccount(fake, "2000000.00");
+    const result = await commitAccounts(
+      fake.tx,
+      payloadOf(matchedRow({ category: "cash", subType: "savings" })),
+      CTX,
+      FAMILY,
+    );
+
+    const set = updateSet(fake);
+    expect(set).not.toHaveProperty("category");
+    expect(set).not.toHaveProperty("subType");
+    expect(set).not.toHaveProperty("marginBalance");
+    expect(set.value).toBe("250000"); // the statement's other facts still land
+    expect(result.updated).toBe(1);
+    expect(result.warnings).toEqual([
+      "Schwab Brokerage ...4321: Kept as Taxable because it carries a margin loan.",
+    ]);
+  });
+
+  it("never turns a margined account into a 529", async () => {
+    const fake = makeFakeTx();
+    marginedAccount(fake, "2000000.00");
+    await commitAccounts(
+      fake.tx,
+      payloadOf(matchedRow({ category: "education_savings", subType: "529", beneficiaryName: "Ada" })),
+      CTX,
+      FAMILY,
+    );
+
+    const set = updateSet(fake);
+    expect(set).not.toHaveProperty("category");
+    expect(set).not.toHaveProperty("rmdEnabled");
+    expect(ownerCalls(fake, "delete")).toHaveLength(0);
+  });
+
+  it("writes the new category as before when the account has no loan", async () => {
+    const fake = makeFakeTx();
+    marginedAccount(fake, "0.00");
+    const result = await commitAccounts(
+      fake.tx,
+      payloadOf(matchedRow({ category: "cash", subType: "savings" })),
+      CTX,
+      FAMILY,
+    );
+
+    expect(updateSet(fake)).toMatchObject({ category: "cash", subType: "savings" });
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("writes Taxable without looking the loan up", async () => {
+    const fake = makeFakeTx();
+    marginedAccount(fake, "2000000.00");
+    await commitAccounts(fake.tx, payloadOf(matchedRow({ category: "taxable" })), CTX, FAMILY);
+
+    expect(updateSet(fake).category).toBe("taxable");
+    expect(callsForTable(fake.calls, "accounts").filter((c) => c.op === "select")).toHaveLength(0);
+  });
+});

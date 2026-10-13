@@ -22,6 +22,7 @@ import { PLAID_LOCKED_FIELDS } from "@/lib/portal/plaid-locked-fields";
 import { recordUpdate, recordDelete } from "@/lib/audit/record-helpers";
 import type { EntitySnapshot } from "@/lib/audit/types";
 import { isPortalVisibleAccount } from "@/lib/portal/account-visibility";
+import { MARGIN_TAXABLE_ONLY_MESSAGE } from "@/lib/accounts/margin-validation";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ type AccountRow = {
   category: string;
   subType: string;
   value: string;
+  marginBalance: string;
   accountNumberLast4: string | null;
   custodian: string | null;
   plaidItemId: string | null;
@@ -72,6 +74,7 @@ async function loadOwnedRow(
     category: row.category,
     subType: row.subType,
     value: row.value,
+    marginBalance: row.marginBalance,
     accountNumberLast4: row.accountNumberLast4,
     custodian: (row as { custodian?: string | null }).custodian ?? null,
     plaidItemId: (row as { plaidItemId?: string | null }).plaidItemId ?? null,
@@ -174,6 +177,13 @@ export async function PUT(
         { error: "This account type can't be set from the portal" },
         { status: 400 },
       );
+    }
+    // A margin loan needs a taxable account; the DB CHECK would 500 instead.
+    if (
+      Number(row.marginBalance ?? 0) > 0 &&
+      (patch.category ?? row.category) !== "taxable"
+    ) {
+      return NextResponse.json({ error: MARGIN_TAXABLE_ONLY_MESSAGE }, { status: 400 });
     }
 
     let newOwners: ReturnType<typeof validateOwnersShape> | null = null;
@@ -315,6 +325,7 @@ export async function DELETE(
       category: raw.category,
       subType: raw.subType,
       value: raw.value,
+      marginBalance: raw.marginBalance,
       accountNumberLast4: raw.accountNumberLast4,
       custodian: (raw as { custodian?: string | null }).custodian ?? null,
       plaidItemId,

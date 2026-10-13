@@ -156,9 +156,29 @@ describe("tax-detail-flow-table — investment interest (margin loan)", () => {
   const dy = base as never;
 
   it("has an Investment Interest column carrying belowLine.investmentInterest", () => {
-    const col = belowLineColumns().find((c) => c.key === "bl_investment_interest")!;
+    const col = belowLineColumns([dy]).find((c) => c.key === "bl_investment_interest")!;
     expect(col.label).toBe("Investment Interest");
     expect(col.value(dy)).toBe(35_000);
+  });
+
+  // A household with no margin loan keeps the below-line table it always had.
+  const zero = {
+    deductionBreakdown: {
+      belowLine: { ...base.deductionBreakdown.belowLine, investmentInterest: 0, bySource: {} },
+    },
+  } as never;
+
+  it("drops the Investment Interest column when no year has any — and only that column", () => {
+    const keys = belowLineColumns([zero, zero]).map((c) => c.key);
+    expect(keys).not.toContain("bl_investment_interest");
+    expect(keys).toEqual([
+      "bl_charitable", "bl_taxes_paid", "bl_interest_paid", "bl_other",
+      "bl_itemized_total", "bl_standard", "bl_tax_deductions",
+    ]);
+  });
+
+  it("keeps it when one year carries investment interest", () => {
+    expect(belowLineColumns([zero, dy]).map((c) => c.key)).toContain("bl_investment_interest");
   });
 
   it("its drill lists only the investment-interest entries", () => {
