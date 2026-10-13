@@ -113,6 +113,9 @@ export interface AccountFormInitial {
   modelPortfolioId?: string | null;
   tickerPortfolioId?: string | null;
   turnoverPct?: string;
+  marginBalance?: string;
+  marginInterestRate?: string;
+  marginCallPct?: string;
   overridePctOi?: string | null;
   overridePctLtCg?: string | null;
   overridePctQdiv?: string | null;
@@ -675,6 +678,13 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const [turnoverPct, setTurnoverPct] = useState<string>(
     initial?.turnoverPct ? (Number(initial.turnoverPct) * 100).toFixed(2) : "0",
   );
+  const [marginBalance, setMarginBalance] = useState<string>(initial?.marginBalance ?? "0");
+  const [marginInterestRate, setMarginInterestRate] = useState<string>(
+    initial?.marginInterestRate ? (Number(initial.marginInterestRate) * 100).toFixed(2) : "0",
+  );
+  const [marginCallPct, setMarginCallPct] = useState<string>(
+    initial?.marginCallPct ? (Number(initial.marginCallPct) * 100).toFixed(2) : "30",
+  );
   const [custodian, setCustodian] = useState<string>(initial?.custodian ?? "");
   const [accountNumberLast4, setAccountNumberLast4] = useState<string>(
     initial?.accountNumberLast4 ?? "",
@@ -813,6 +823,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     defaultSellStartYear,
     overridePctTaxExempt,
     turnoverPct,
+    marginBalance,
+    marginInterestRate,
+    marginCallPct,
     customAllocations,
     custodian,
     accountNumberLast4,
@@ -837,7 +850,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     inheritedPayoutPlan, inheritedPayoutFromYear, inheritedPayoutThroughYear,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
-    turnoverPct, customAllocations, custodian, accountNumberLast4,
+    turnoverPct, marginBalance, marginInterestRate, marginCallPct, customAllocations, custodian, accountNumberLast4,
     ticker, isPublic, pricePerShare, autoCreateDestination, sellToCover,
     withholdingRate, defaultExerciseTiming, defaultExerciseYear, defaultSellTiming,
     defaultSellYear, defaultSellPercentPerYear, defaultSellStartYear,
@@ -1483,6 +1496,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       tickerPortfolioId: growthSource === "ticker_portfolio" ? tickerPortfolioId : null,
       deriveFromHoldings,
       turnoverPct: toPctOrNull(turnoverPct) ?? "0",
+      marginBalance: category === "taxable" ? (marginBalance || "0") : "0",
+      marginInterestRate: category === "taxable" ? (toPctOrNull(marginInterestRate) ?? "0") : "0",
+      marginCallPct: toPctOrNull(marginCallPct) ?? "0.3",
       overridePctOi: toPctOrNull(overridePctOi),
       overridePctLtCg: toPctOrNull(overridePctLtCg),
       overridePctQdiv: toPctOrNull(overridePctQdiv),
@@ -1611,7 +1627,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     usesGrowthDropdown, name, owners, titlingType, parentBusinessId, accountValue, accountBasis, accountRothValue,
     rmdEnabled, countsTowardAum, priorYearEndValue, realEstateGrowthSource, modelPortfolioId, tickerPortfolioId, deriveFromHoldings,
     inheritedFields, inheritedActive,
-    turnoverPct, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
+    turnoverPct, marginBalance, marginInterestRate, marginCallPct, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     effectiveAccountId, clientId, writer, showAssetMixTab, customAllocations, drivenByHoldings,
     currentSerialized, onAutoSaved, custodian, accountNumberLast4, isHsa, hsaCoverage,
@@ -1725,6 +1741,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       modelPortfolioId: growthSource === "model_portfolio" ? modelPortfolioId : null,
       tickerPortfolioId: growthSource === "ticker_portfolio" ? tickerPortfolioId : null,
       turnoverPct: toPctOrNull("turnoverPct") ?? "0",
+      marginBalance:
+        (data.get("category") as string) === "taxable" ? ((data.get("marginBalance") as string) || "0") : "0",
+      marginInterestRate:
+        (data.get("category") as string) === "taxable" ? (toPctOrNull("marginInterestRate") ?? "0") : "0",
+      marginCallPct: toPctOrNull("marginCallPct") ?? "0.3",
       overridePctOi: toPctOrNull("overridePctOi"),
       overridePctLtCg: toPctOrNull("overridePctLtCg"),
       overridePctQdiv: toPctOrNull("overridePctQdiv"),
@@ -2627,6 +2648,30 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 </div>
               )}
             </div>
+            )}
+
+            {category === "taxable" && (
+              <fieldset className="col-span-2 grid grid-cols-3 gap-4 rounded-md border border-hair p-3">
+                <legend className="px-1 text-sm font-medium text-ink-2">Margin loan</legend>
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="margin-balance">Margin loan balance ($)</label>
+                  <CurrencyInput id="margin-balance" name="marginBalance" value={marginBalance}
+                    onChange={(raw) => setMarginBalance(raw)} className={inputClassName} />
+                </div>
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="margin-interest-rate">Margin interest rate (%)</label>
+                  <PercentInput id="margin-interest-rate" name="marginInterestRate" value={marginInterestRate}
+                    onChange={(raw) => setMarginInterestRate(raw)} className={inputClassName} />
+                </div>
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="margin-call-pct">
+                    Margin call level (%) <FieldTooltip text="We flag any year the account's net value falls below this share of its securities. Brokerages typically require 25–30%." />
+                  </label>
+                  <PercentInput id="margin-call-pct" name="marginCallPct" value={marginCallPct}
+                    onChange={(raw) => setMarginCallPct(raw)} className={inputClassName} />
+                </div>
+                <p className="col-span-3 text-xs text-ink-3">Interest is added to the loan each year, as brokerages do.</p>
+              </fieldset>
             )}
 
             {category !== "stock_options" && <div className={`col-span-2 grid gap-4 ${category === "real_estate" ? "grid-cols-3" : "grid-cols-2"}`}>

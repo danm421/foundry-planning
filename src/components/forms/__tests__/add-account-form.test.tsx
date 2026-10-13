@@ -1453,3 +1453,48 @@ describe("AddAccountForm — basis auto-mirror", () => {
     expect(basisDigits()).toBe("400000");
   });
 });
+
+
+describe("AddAccountForm — margin loan group", () => {
+  it("shows the Margin loan group only for taxable accounts", () => {
+    render(
+      <AddAccountForm clientId="client-123" category="cash" mode="create" familyMembers={FAMILY_MEMBERS} entities={[]} categoryDefaults={CATEGORY_DEFAULTS} />,
+    );
+    expect(screen.queryByText("Margin loan")).toBeNull();
+  });
+
+  it("submits margin fields as decimals", async () => {
+    render(
+      <AddAccountForm clientId="client-123" category="taxable" mode="create" familyMembers={FAMILY_MEMBERS} entities={[]} categoryDefaults={CATEGORY_DEFAULTS} />,
+    );
+    expect(screen.getByText("Margin loan")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/Current Value/), { target: { value: "10000000" } });
+    fireEvent.change(screen.getByLabelText(/Margin loan balance/), { target: { value: "2000000" } });
+    fireEvent.change(screen.getByLabelText(/Margin interest rate/), { target: { value: "2" } });
+    fireEvent.submit(document.getElementById("add-account-form")!);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/clients/client-123/accounts", expect.objectContaining({ method: "POST" })),
+    );
+    const body = JSON.parse(
+      fetchMock.mock.calls.find((a) => String(a[0]) === "/api/clients/client-123/accounts")![1].body as string,
+    );
+    expect(body.marginBalance).toBe("2000000");
+    expect(body.marginInterestRate).toBe("0.02");
+    expect(body.marginCallPct).toBe("0.3");
+  });
+
+  it("hydrates an edit from decimals", () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="taxable"
+        mode="edit"
+        initial={{ ...BASE_INITIAL, marginBalance: "2000000", marginInterestRate: "0.02", marginCallPct: "0.35" }}
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+        categoryDefaults={CATEGORY_DEFAULTS}
+      />,
+    );
+    expect((screen.getByRole("textbox", { name: /Margin call level/ }) as HTMLInputElement).value).toBe("35.00");
+  });
+});
