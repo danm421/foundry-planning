@@ -247,6 +247,81 @@ describe("mergeReadings — removed and excluded rows", () => {
   });
 });
 
+describe("mergeReadings — look-alike rows from one document, after the advisor edits them", () => {
+  // Two "Auto Loan · Ally" with no property: only their other values tell them apart.
+  const loan = (values: Record<string, FFReadCell["value"]>, confidence = 0.9, fileId = "ff"): FFReading => ({
+    sectionId: "liab",
+    fileId,
+    cells: Object.fromEntries(
+      Object.entries({ loanName: "Auto Loan · Ally", ...values }).map(([k, v]) => [k, cell(v, confidence, fileId)]),
+    ),
+  });
+  const twoLoans = (fileId = "ff") => [loan({ balance: 12000, interestRate: 5.9 }, 0.9, fileId), loan({ balance: 9000 }, 0.9, fileId)];
+  const removeFirst = (state: FactFinderState) =>
+    applyOps(state, [{ op: "removeRow", sectionId: "liab", rowId: "id-1", reason: "Paid off" }], advisor);
+
+  it("leaves the live row's own values alone on a re-read after the advisor removes the first look-alike", () => {
+    const removed = removeFirst(mergeReadings(emptyFactFinderState(), twoLoans(), ctx).state);
+    const again = mergeReadings(removed, twoLoans(), ctx);
+    expect(again.state.sections.liab[0].cells.balance.value).toBe(9000);
+    expect(again.state.sections.liab[0].cells.interestRate).toBeUndefined();
+    expect(again.state).toBe(removed);
+    expect(again.decisions).toEqual([]);
+  });
+
+  it("keeps the live row's own balance when the removed look-alike's balance was read with more confidence", () => {
+    const readings = [loan({ balance: 12000 }, 0.95), loan({ balance: 9000 }, 0.8)];
+    const removed = removeFirst(mergeReadings(emptyFactFinderState(), readings, ctx).state);
+    const again = mergeReadings(removed, readings, ctx);
+    expect(again.state.sections.liab.map((r) => r.cells.balance.value)).toEqual([9000]);
+    expect(again.state).toBe(removed);
+  });
+
+  it("changes nothing on a re-read after the advisor removes and restores a look-alike, now listed after its sibling", () => {
+    const restored = applyOps(mergeReadings(emptyFactFinderState(), twoLoans(), ctx).state, [
+      { op: "removeRow", sectionId: "liab", rowId: "id-1" },
+      { op: "restoreRow", rowId: "id-1" },
+    ], advisor);
+    expect(restored.sections.liab.map((r) => r.id)).toEqual(["id-2", "id-1"]);
+    const again = mergeReadings(restored, twoLoans(), ctx);
+    expect(again.state).toBe(restored);
+    expect(again.decisions).toEqual([]);
+  });
+
+  it("changes nothing on a re-read after the advisor merges two of three look-alikes, whichever two", () => {
+    const readings = [
+      loan({ balance: 12000, interestRate: 5.9 }),
+      loan({ balance: 9000, monthlyPI: 310 }),
+      loan({ balance: 5000, termYears: 5 }),
+    ];
+    const read = mergeReadings(emptyFactFinderState(), readings, ctx).state;
+    const ids = read.sections.liab.map((r) => r.id);
+    for (const keepRowId of ids) {
+      for (const dropRowId of ids.filter((id) => id !== keepRowId)) {
+        const merged = applyOps(read, [{ op: "mergeRows", sectionId: "liab", keepRowId, dropRowId }], advisor);
+        const again = mergeReadings(merged, readings, ctx);
+        expect(again.state, `${dropRowId} merged into ${keepRowId}`).toBe(merged);
+        expect(again.decisions).toEqual([]);
+      }
+    }
+  });
+
+  it("records a second copy of the document once — the removed look-alike absorbs its reading — and merging it again changes nothing", () => {
+    const removed = removeFirst(mergeReadings(emptyFactFinderState(), twoLoans(), ctx).state);
+    const copy = twoLoans("ff2");
+    const once = mergeReadings(removed, copy, ctx);
+    expect(once.state.sections.liab[0].cells).toEqual(removed.sections.liab[0].cells);
+    expect(once.state.sections.liab[0].sourceFileIds).toEqual(["ff", "ff2"]);
+    expect(once.state.removed[0]).toMatchObject({ absorbed: 1, row: { id: "id-1", sourceFileIds: ["ff", "ff2"] } });
+    expect(once.decisions).toEqual([
+      { kind: "keptRemoved", sectionId: "liab", rowId: "id-1", label: "Auto Loan · Ally", fileId: "ff2" },
+    ]);
+    const twice = mergeReadings(once.state, copy, ctx);
+    expect(twice.state).toBe(once.state);
+    expect(twice.decisions).toEqual([]);
+  });
+});
+
 describe("mergeReadings — holdings", () => {
   const vti = { ticker: "VTI", name: "Vanguard Total", shares: 10, marketValue: 2500 };
   const bnd = { ticker: "BND", name: "Vanguard Bond", shares: 5, marketValue: 400 };

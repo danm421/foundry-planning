@@ -81,6 +81,12 @@ const matches = (sectionId: string, values: Record<string, FFCellValue>, row: FF
   sameIdentity(sectionId, values, { ...rowValues(row), ...(row.identity ?? {}) }) ||
   sameIdentity(sectionId, values, rowValues(row));
 
+/** The row's identity holds every value of the reading (compared as identity.ts compares words). */
+const holdsEvery = (values: Record<string, FFCellValue>, { identity = {} }: FFRow) =>
+  Object.entries(values).every(
+    ([columnId, value]) => !isBlank(identity[columnId]) && normText(identity[columnId]) === normText(value),
+  );
+
 function setRow(state: FactFinderState, sectionId: string, row: FFRow): FactFinderState {
   const rows = state.sections[sectionId] ?? [];
   const index = rows.findIndex((r) => r.id === row.id);
@@ -107,10 +113,19 @@ function mergeOne(
 
   const values = readingValues(reading);
   const open = (row: FFRow) => !claimed.has(row.id) && matches(section.id, values, row);
-  const live = (state.sections[section.id] ?? []).find(open);
+  // The row this reading created (its identity holds every value) beats an earlier look-alike,
+  // so a re-read after the advisor removed, restored or merged one of them fills each row from its own reading.
+  const exact = (row: FFRow) => open(row) && holdsEvery(values, row);
+  let live: FFRow | undefined;
+  let trayIndex = -1;
+  for (const fits of [exact, open]) {
+    live = (state.sections[section.id] ?? []).find(fits);
+    if (live) break;
+    trayIndex = state.removed.findIndex((e) => e.sectionId === section.id && fits(e.row));
+    if (trayIndex >= 0) break;
+  }
   if (live) return { ...updateRow(state, section, live, reading, ctx), claim: live.id };
 
-  const trayIndex = state.removed.findIndex((e) => e.sectionId === section.id && open(e.row));
   if (trayIndex >= 0) {
     const entry = state.removed[trayIndex];
     // The tray entry is the claim, not the row it was merged into: that row's own reading still finds it.
