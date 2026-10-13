@@ -87,3 +87,21 @@ export function TrashIcon({ className }: IconProps) {
     </Outline>
   );
 }
+
+/** Lucide `check`. */
+export function CheckIcon({ className }: IconProps) {
+  return (
+    <Outline className={className}>
+      <path d="M20 6 9 17l-5-5" />
+    </Outline>
+  );
+}
+
+/** Lucide `chevron-down`. */
+export function ChevronDownIcon({ className }: IconProps) {
+  return (
+    <Outline className={className}>
+      <path d="m6 9 6 6 6-6" />
+    </Outline>
+  );
+}

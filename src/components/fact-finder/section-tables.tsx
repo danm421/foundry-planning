@@ -3,15 +3,17 @@
 // The body of one fact finder section, by layout: a list (columns across, a
 // row per entry), fixed rows (row labels down), transposed (fields down, a
 // policy per column) or notes (one text box). Every value is a CellEditor;
-// list and transposed rows can be removed or merged into another row.
+// list and transposed rows can be removed or merged into another row. Sections
+// that link to records get a "Links to" column (a field row when transposed).
 import type { ReactNode } from "react";
 import { selectChevronClassName } from "@/components/forms/input-styles";
 import type { ClientOp } from "@/lib/fact-finder/ops";
-import type { ColumnKind, FFColumn, FFSection } from "@/lib/fact-finder/schema";
+import type { ColumnKind, FFColumn, FFSection, OWNER } from "@/lib/fact-finder/schema";
 import { fixedLabelOfRow, rowLabel } from "@/lib/fact-finder/state";
 import type { FFRow } from "@/lib/fact-finder/types";
 import { CellEditor } from "./cell-editor";
 import { TrashIcon } from "./icons";
+import { LinkCell } from "./link-cell";
 
 export interface SectionBodyProps {
   section: FFSection;
@@ -22,7 +24,12 @@ export interface SectionBodyProps {
   fileName: (fileId: string) => string | undefined;
   /** Id of the section's heading; it names the table. */
   labelledBy: string;
+  /** What "Which trust / entity" offers: the Trusts section's names, then the client's existing trusts and entities. */
+  ownerEntities: readonly string[];
 }
+
+/** The Owner choice that asks which trust or entity. */
+const TRUST_OWNER: (typeof OWNER)[number] = "Trust / entity";
 
 /** Narrowest a column gets, so its editor stays usable when the table scrolls sideways. */
 const MIN_WIDTH: Record<ColumnKind, string> = {
@@ -48,17 +55,35 @@ const MERGE_SELECT =
   "h-7 w-28 rounded-[var(--radius-sm)] border border-hair bg-paper pl-2 text-xs text-ink-2 outline-none " +
   `hover:border-hair-2 focus:border-accent focus:ring-2 focus:ring-accent/25 ${selectChevronClassName}`;
 
-function cellFor({ section, changed, onApply, fileName }: SectionBodyProps, row: FFRow, column: FFColumn) {
+function cellFor({ section, changed, onApply, fileName, ownerEntities }: SectionBodyProps, row: FFRow, column: FFColumn) {
+  let shown = column;
+  if (column.id === "ownerEntity") {
+    if (row.cells.owner?.value !== TRUST_OWNER) {
+      return (
+        <span title={`Choose one when Owner is “${TRUST_OWNER}”`} className="flex h-8 items-center px-2 text-ink-4">
+          —
+        </span>
+      );
+    }
+    // Picked, not typed: the cell stores the chosen name.
+    shown = { ...column, kind: "choice", options: ownerEntities };
+  }
   return (
     <CellEditor
       sectionId={section.id}
       rowId={row.id}
-      column={column}
+      column={shown}
       cell={row.cells[column.id]}
       onApply={onApply}
       highlighted={changed.has(`${row.id}:${column.id}`)}
       fileName={fileName}
     />
+  );
+}
+
+function linkFor({ section, changed, onApply }: SectionBodyProps, row: FFRow) {
+  return (
+    <LinkCell sectionId={section.id} row={row} onApply={onApply} highlighted={changed.has(`${row.id}:link`)} />
   );
 }
 
@@ -139,6 +164,11 @@ function ListTable(props: SectionBodyProps) {
         <tr>
           <td className={HEAD} />
           <ColumnHeads columns={section.columns} />
+          {section.links && (
+            <th scope="col" className={HEAD}>
+              Links to
+            </th>
+          )}
           <td className={`${HEAD} ${STICKY_END}`} />
         </tr>
       </thead>
@@ -153,6 +183,7 @@ function ListTable(props: SectionBodyProps) {
                 {cellFor(props, row, column)}
               </td>
             ))}
+            {section.links && <td className={CELL}>{linkFor(props, row)}</td>}
             <td className={`${CELL} ${STICKY_END}`}>
               <RowActions section={section} rows={rows} row={row} onApply={onApply} />
             </td>
@@ -171,6 +202,11 @@ function FixedRowsTable(props: SectionBodyProps) {
         <tr>
           <td className={HEAD} />
           <ColumnHeads columns={section.columns} />
+          {section.links && (
+            <th scope="col" className={HEAD}>
+              Links to
+            </th>
+          )}
         </tr>
       </thead>
       <tbody className="[&>tr:last-child>*]:border-b-0">
@@ -184,6 +220,7 @@ function FixedRowsTable(props: SectionBodyProps) {
                 {cellFor(props, row, column)}
               </td>
             ))}
+            {section.links && <td className={CELL}>{linkFor(props, row)}</td>}
           </tr>
         ))}
       </tbody>
@@ -216,6 +253,18 @@ function TransposedTable(props: SectionBodyProps) {
         </tr>
       </thead>
       <tbody className="[&>tr:last-child>*]:border-b-0">
+        {section.links && (
+          <tr>
+            <th scope="row" className={ROW_HEAD}>
+              Links to
+            </th>
+            {rows.map((row) => (
+              <td key={row.id} className={CELL}>
+                {linkFor(props, row)}
+              </td>
+            ))}
+          </tr>
+        )}
         {section.columns.map((column) => (
           <tr key={column.id}>
             <th scope="row" className={ROW_HEAD}>

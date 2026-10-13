@@ -32,7 +32,8 @@ export interface MatchCandidate {
 interface MatchLinkPickerProps {
   currentMatch: MatchAnnotation | undefined;
   candidates: MatchCandidate[];
-  entityKind: MatchEntityKind;
+  /** Not read by the picker; the fact finder's record kinds aren't all in this union, so it passes none. */
+  entityKind?: MatchEntityKind;
   onPick: (next: MatchAnnotation) => void;
   onClose: () => void;
 }

@@ -28,7 +28,7 @@ function reviewBlockedReason(reading: boolean, linksToClick: number): string {
   return "Review arrives in the next update.";
 }
 
-export function FactFinderScreen({ clientId, importId, initialState, initialFiles }: FactFinderScreenProps) {
+export function FactFinderScreen({ clientId, importId, initialState, initialFiles, entities }: FactFinderScreenProps) {
   const store = useFactFinder({ clientId, importId, initialState });
   const state = store.state;
   const reading = filesReading(state, new Date()).length > 0;
@@ -92,7 +92,7 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
 
         <div className="flex min-w-0 flex-col gap-4">
           <h2 className="text-lg font-semibold text-ink">{pageLabel}</h2>
-          <PageView page={page} state={state} onApply={store.apply} fileName={fileName} />
+          <PageView page={page} state={state} onApply={store.apply} fileName={fileName} entities={entities} />
         </div>
 
         <SidePanel id={PANEL_ID} title={PANEL_TITLE} open={panelOpen} overlay={narrow} onOpenChange={setPanelOpen}>

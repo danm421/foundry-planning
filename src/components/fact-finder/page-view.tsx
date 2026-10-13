@@ -8,6 +8,7 @@ import { FieldTooltip } from "@/components/forms/field-tooltip";
 import type { ClientOp } from "@/lib/fact-finder/ops";
 import { findSection, sectionsOnPage, type FFPage, type FFSection } from "@/lib/fact-finder/schema";
 import { changedCellsOf } from "@/lib/fact-finder/screen-summary";
+import { cellValue } from "@/lib/fact-finder/state";
 import type { FactFinderState, FFRow } from "@/lib/fact-finder/types";
 import { PlusIcon } from "./icons";
 import { RemovedTray } from "./removed-tray";
@@ -20,15 +21,33 @@ export interface PageViewProps {
   onApply: (ops: ClientOp[]) => boolean;
   /** Uploaded file id → its name; undefined once the file is gone. */
   fileName: (fileId: string) => string | undefined;
+  /** The client's existing trusts and entities. */
+  entities: { id: string; name: string }[];
 }
 
-interface SectionCardProps extends Omit<PageViewProps, "page" | "state"> {
+interface SectionCardProps extends Omit<PageViewProps, "page" | "state" | "entities"> {
   section: FFSection;
   rows: FFRow[];
   changed: ReadonlySet<string>;
+  ownerEntities: readonly string[];
 }
 
-function SectionCard({ section, rows, changed, onApply, fileName }: SectionCardProps) {
+/**
+ * What an owner's "Which trust / entity" offers: the names in this fact
+ * finder's Trusts section, then the client's existing trusts and entities —
+ * each name once.
+ */
+function ownerEntityNames(state: FactFinderState, entities: PageViewProps["entities"]): string[] {
+  const names = new Map<string, string>();
+  const trustNames = (state.sections.trusts ?? []).map((row) => cellValue(row, "trustName"));
+  for (const value of [...trustNames, ...entities.map((e) => e.name)]) {
+    const name = typeof value === "string" ? value.trim() : "";
+    if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), name);
+  }
+  return [...names.values()];
+}
+
+function SectionCard({ section, rows, changed, onApply, fileName, ownerEntities }: SectionCardProps) {
   const headingId = `fact-finder-section-${section.id}`;
   const canAdd = section.layout === "list" || section.layout === "transposed";
   // An empty list folds to its header; fixed rows and notes always show.
@@ -62,14 +81,16 @@ function SectionCard({ section, rows, changed, onApply, fileName }: SectionCardP
           onApply={onApply}
           fileName={fileName}
           labelledBy={headingId}
+          ownerEntities={ownerEntities}
         />
       )}
     </Card>
   );
 }
 
-export function PageView({ page, state, onApply, fileName }: PageViewProps) {
+export function PageView({ page, state, onApply, fileName, entities }: PageViewProps) {
   const changed = changedCellsOf(state);
+  const ownerEntities = ownerEntityNames(state, entities);
   const removed = state.removed.flatMap((entry) => {
     const section = findSection(entry.sectionId);
     return section?.page === page ? [{ entry, section }] : [];
@@ -84,6 +105,7 @@ export function PageView({ page, state, onApply, fileName }: PageViewProps) {
           changed={changed}
           onApply={onApply}
           fileName={fileName}
+          ownerEntities={ownerEntities}
         />
       ))}
       {removed.length > 0 && <RemovedTray entries={removed} onApply={onApply} />}

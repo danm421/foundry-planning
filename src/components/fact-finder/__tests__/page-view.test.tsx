@@ -7,7 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { applyOps, FactFinderOpError, type ClientOp } from "@/lib/fact-finder/ops";
 import { findSection, type FFPage } from "@/lib/fact-finder/schema";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
-import type { FactFinderState, FFCell, FFCellValue, FFRemoved, FFRow } from "@/lib/fact-finder/types";
+import type { FactFinderState, FFCell, FFCellValue, FFLink, FFRemoved, FFRow } from "@/lib/fact-finder/types";
 import { PageView } from "../page-view";
 
 const AT = "2026-10-13T12:00:00.000Z";
@@ -35,7 +35,7 @@ const savings = row("c2", { accountName: "Savings", currentValue: 5000 });
  * useFactFinder's apply does — false on a refused edit) and the page
  * re-renders from the new state.
  */
-function renderPage(page: FFPage, initial: FactFinderState) {
+function renderPage(page: FFPage, initial: FactFinderState, entities: { id: string; name: string }[] = []) {
   const applied = vi.fn<(ops: ClientOp[]) => void>();
   function Harness() {
     const [state, setState] = useState(initial);
@@ -49,7 +49,7 @@ function renderPage(page: FFPage, initial: FactFinderState) {
         throw e;
       }
     };
-    return <PageView page={page} state={state} onApply={onApply} fileName={() => undefined} />;
+    return <PageView page={page} state={state} onApply={onApply} fileName={() => undefined} entities={entities} />;
   }
   render(<Harness />);
   return { applied };
@@ -62,9 +62,10 @@ describe("PageView — one component per layout", () => {
   it("list: the columns go across and each entry is a row, named by its row header", () => {
     renderPage("accounts", stateWith({ cash: [joint, savings] }));
     const table = screen.getByRole("table", { name: "Cash Accounts" });
-    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(
-      findSection("cash")!.columns.map((c) => c.label),
-    );
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
+      ...findSection("cash")!.columns.map((c) => c.label),
+      "Links to",
+    ]);
     expect(within(table).getAllByRole("rowheader")).toHaveLength(2);
     const savingsRow = rowOf(within(table).getByRole("rowheader", { name: "Savings" }));
     expect(within(savingsRow).getByRole("textbox", { name: "Account name" })).toHaveValue("Savings");
@@ -91,9 +92,10 @@ describe("PageView — one component per layout", () => {
     const table = screen.getByRole("table", { name: "Life Insurance" });
     expect(within(table).getByRole("columnheader", { name: "Term Life" })).toHaveTextContent("Policy 1");
     expect(within(table).getByRole("columnheader", { name: "Whole Life" })).toHaveTextContent("Policy 2");
-    expect(within(table).getAllByRole("rowheader").map((h) => h.textContent)).toEqual(
-      findSection("life")!.columns.map((c) => c.label),
-    );
+    expect(within(table).getAllByRole("rowheader").map((h) => h.textContent)).toEqual([
+      "Links to",
+      ...findSection("life")!.columns.map((c) => c.label),
+    ]);
     const carrierRow = rowOf(within(table).getByRole("rowheader", { name: "Carrier" }));
     expect(
       within(carrierRow)
@@ -210,5 +212,68 @@ describe("PageView — rows and the Removed tray", () => {
       "Changed by the last chat reply",
     );
     expect(within(jointRow).getByRole("textbox", { name: "Account name" })).toHaveAccessibleDescription("");
+  });
+});
+
+describe("PageView — Links to and the owner's trust / entity", () => {
+  it("fixed rows that link (salary, Social Security) have a Links to column too", () => {
+    renderPage("income", emptyFactFinderState());
+    const salary = screen.getByRole("table", { name: "Salary & Wages" });
+    expect(within(salary).getByRole("columnheader", { name: "Links to" })).toBeInTheDocument();
+    expect(within(salary).getAllByRole("button", { name: "Links to: not linked yet" })).toHaveLength(2);
+    expect(within(screen.getByRole("table", { name: "Social Security" })).getByRole("columnheader", { name: "Links to" }))
+      .toBeInTheDocument();
+  });
+
+  it("a policy's suggested link is confirmed from its column", async () => {
+    const suggested: FFLink = { kind: "existing", recordId: "pol-1", score: 0.62, confirmed: false, by: "auto" };
+    const term: FFRow = {
+      ...row("l1", { policyName: "Term Life" }),
+      link: suggested,
+      linkCandidates: [{ recordId: "pol-1", label: "Banner Term 20", score: 0.62 }],
+    };
+    const { applied } = renderPage("insurance", stateWith({ life: [term] }));
+    const table = screen.getByRole("table", { name: "Life Insurance" });
+    expect(within(table).getByRole("button", { name: "Links to: 62%? Banner Term 20" })).toBeInTheDocument();
+    await userEvent.click(within(table).getByRole("button", { name: "Confirm the link to Banner Term 20" }));
+    expect(applied).toHaveBeenLastCalledWith([
+      { op: "setLink", sectionId: "life", rowId: "l1", link: { kind: "existing", recordId: "pol-1" } },
+    ]);
+    expect(within(table).getByRole("button", { name: "Links to: Linked · Banner Term 20" })).toBeInTheDocument();
+  });
+
+  it("Which trust / entity picks from the Trusts section and the client's entities, once Owner is Trust / entity", async () => {
+    const trusts = [
+      row("t1", { trustName: "Mueller Family Trust" }),
+      row("t2", { trustName: "ILIT 2019" }),
+      row("t3", { trustType: "CRT" }),
+    ];
+    const entities = [
+      { id: "e1", name: "Mueller Family Trust" },
+      { id: "e2", name: "Acme Holdings LLC" },
+    ];
+    const held = row("c1", { accountName: "Trust Checking", owner: "Trust / entity" });
+    const own = row("c2", { accountName: "Savings", owner: "Client" });
+    const { applied } = renderPage("accounts", stateWith({ cash: [held, own], trusts }), entities);
+
+    const heldRow = rowOf(screen.getByRole("rowheader", { name: "Trust Checking" }));
+    const picker = within(heldRow).getByRole("combobox", { name: "Which trust / entity" });
+    expect(within(picker).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "—",
+      "Mueller Family Trust",
+      "ILIT 2019",
+      "Acme Holdings LLC",
+    ]);
+    await userEvent.selectOptions(picker, "ILIT 2019");
+    expect(applied).toHaveBeenLastCalledWith([
+      { op: "setCell", sectionId: "cash", rowId: "c1", columnId: "ownerEntity", value: "ILIT 2019" },
+    ]);
+    expect(picker).toHaveValue("ILIT 2019");
+
+    const ownRow = rowOf(screen.getByRole("rowheader", { name: "Savings" }));
+    expect(within(ownRow).queryByRole("combobox", { name: "Which trust / entity" })).toBeNull();
+    expect(within(ownRow).getByTitle("Choose one when Owner is “Trust / entity”")).toHaveTextContent("—");
+    await userEvent.selectOptions(within(ownRow).getByRole("combobox", { name: "Owner" }), "Trust / entity");
+    expect(within(ownRow).getByRole("combobox", { name: "Which trust / entity" })).toHaveValue("");
   });
 });
