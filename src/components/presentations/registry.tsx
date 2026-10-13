@@ -46,6 +46,7 @@ import { buildClientProfileData } from "@/lib/presentations/pages/client-profile
 import { clientProfileOptionsSchema } from "@/lib/presentations/pages/client-profile/options-schema";
 import { summarizeClientProfileOptions } from "@/lib/presentations/pages/client-profile/summarize-options";
 import { estimateClientProfilePageCount } from "@/lib/presentations/pages/client-profile/estimate-page-count";
+import { ClientProfileOptionsControl } from "./pages/client-profile/options-control";
 import {
   CLIENT_PROFILE_PAGE_OPTIONS_DEFAULT,
   type ClientProfilePageData,
@@ -776,14 +777,15 @@ export const tocPage: PresentationPage<TocPageData, TocPageOptions> = {
 export const clientProfilePage: PresentationPage<ClientProfilePageData, ClientProfilePageOptions> = {
   id: "clientProfile",
   title: "Client Profile",
-  description: "Household snapshot: principals, children, cash inflows, and current vs. retirement expenses.",
+  description: "Household snapshot: principals, children, cash inflows, and expenses for the years you choose (current vs. retirement by default).",
   category: "Framing",
   defaultOptions: CLIENT_PROFILE_PAGE_OPTIONS_DEFAULT,
   optionsSchema: clientProfileOptionsSchema,
   summarizeOptions: summarizeClientProfileOptions,
   estimatePageCount: estimateClientProfilePageCount,
+  OptionsControl: ClientProfileOptionsControl,
   supportsScenarioOverride: true,
-  buildData: (ctx) =>
+  buildData: (ctx, options) =>
     buildClientProfileData({
       years: ctx.years,
       clientData: ctx.clientData,
@@ -791,6 +793,7 @@ export const clientProfilePage: PresentationPage<ClientProfilePageData, ClientPr
       clientName: ctx.clientName,
       spouseName: ctx.spouseName,
       spouseLastName: ctx.spouseLastName,
+      expenseColumns: options.expenseColumns,
     }),
   renderPdf: (input) => <ClientProfilePagePdf {...input} />,
 };

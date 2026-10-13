@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { buildClientProfileData } from "../view-model";
-import type { BuildClientProfileInput } from "../types";
+import { clientProfileOptionsSchema, resolveClientProfileOptions } from "../options-schema";
+import { summarizeClientProfileOptions } from "../summarize-options";
+import { CLIENT_PROFILE_PAGE_OPTIONS_DEFAULT, type BuildClientProfileInput } from "../types";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 
 // Minimal ProjectionYear fixture — the view-model only reads year, ages,
@@ -44,6 +46,7 @@ const base: Omit<BuildClientProfileInput, "clientData"> = {
   clientName: "John Smith",
   spouseName: "Jane Smith",
   spouseLastName: null,
+  expenseColumns: CLIENT_PROFILE_PAGE_OPTIONS_DEFAULT.expenseColumns,
 };
 
 describe("buildClientProfileData — persons", () => {
@@ -320,10 +323,10 @@ describe("buildClientProfileData — expenses", () => {
     expect(labels).toContain("Insurance");
     expect(labels).not.toContain("Real Estate"); // zero in both columns -> omitted
     const total = data.expenses.find((r) => r.isTotal)!;
-    expect(total).toMatchObject({ current: 99400, retirement: 88000 });
+    expect(total).toMatchObject({ amounts: [99400, 88000] });
     // Current column = first projection year; Retirement column = retirement year (2033)
     const living = data.expenses.find((r) => r.label === "Living")!;
-    expect(living).toMatchObject({ current: 52400, retirement: 60000 });
+    expect(living).toMatchObject({ amounts: [52400, 60000] });
   });
 
   it("anchors the Retirement column to the LAST Co-client to retire, not the first", () => {
@@ -341,7 +344,7 @@ describe("buildClientProfileData — expenses", () => {
       clientData: clientData({ spouseDob: "1970-07-04", spouseRetirementAge: 61 }), // spouse retires 2031
     });
     const living = data.expenses.find((r) => r.label === "Living")!;
-    expect(living).toMatchObject({ current: 52400, retirement: 60000 });
+    expect(living).toMatchObject({ amounts: [52400, 60000] });
   });
 
   it("falls back to the last projection year when already retired (no retirement year ahead)", () => {
@@ -353,8 +356,7 @@ describe("buildClientProfileData — expenses", () => {
     const data = buildClientProfileData({ ...base, years: lateYears, clientData: clientData({}) });
     const total = data.expenses.find((r) => r.isTotal)!;
     // retirement year 2033 < first projection year -> use first year >= 2033 = 2034
-    expect(total.current).toBe(60000);
-    expect(total.retirement).toBe(60000);
+    expect(total.amounts).toEqual([60000, 60000]);
   });
 
   it("breaks Medicare premiums out of Insurance, right below it", () => {
@@ -370,10 +372,10 @@ describe("buildClientProfileData — expenses", () => {
     ];
     const data = buildClientProfileData({ ...base, years: medicareYears, clientData: clientData({}) });
     expect(data.expenses.map((r) => r.label)).toEqual(["Living", "Insurance", "Medicare", "Total"]);
-    expect(data.expenses.find((r) => r.label === "Insurance")).toMatchObject({ current: 6000 });
-    expect(data.expenses.find((r) => r.label === "Insurance")!.retirement).toBeCloseTo(6000, 6);
-    expect(data.expenses.find((r) => r.label === "Medicare")).toMatchObject({ current: 0, retirement: 10456.37 });
-    expect(data.expenses.find((r) => r.isTotal)).toMatchObject({ current: 58400, retirement: 76456.37 });
+    expect(data.expenses.find((r) => r.label === "Insurance")!.amounts[0]).toBe(6000);
+    expect(data.expenses.find((r) => r.label === "Insurance")!.amounts[1]).toBeCloseTo(6000, 6);
+    expect(data.expenses.find((r) => r.label === "Medicare")).toMatchObject({ amounts: [0, 10456.37] });
+    expect(data.expenses.find((r) => r.isTotal)).toMatchObject({ amounts: [58400, 76456.37] });
   });
 
   it("drops the Insurance row when Medicare is the only insurance cost", () => {
@@ -403,12 +405,99 @@ describe("buildClientProfileData — expenses", () => {
       py({ year: 2033, expenses: { living: 280000, other: 56000, cashGifts: 42000, total: 336000 } }),
     ];
     const data = buildClientProfileData({ ...base, years: giftYears, clientData: clientData({}) });
-    expect(data.expenses.find((r) => r.label === "Cash Gifts")).toMatchObject({ current: 38000, retirement: 42000 });
-    expect(data.expenses.find((r) => r.label === "Other")).toMatchObject({ current: 13200, retirement: 14000 });
+    expect(data.expenses.find((r) => r.label === "Cash Gifts")).toMatchObject({ amounts: [38000, 42000] });
+    expect(data.expenses.find((r) => r.label === "Other")).toMatchObject({ amounts: [13200, 14000] });
     const rows = data.expenses.filter((r) => !r.isTotal);
     const total = data.expenses.find((r) => r.isTotal)!;
-    expect(rows.reduce((s, r) => s + r.current, 0)).toBe(total.current);
-    expect(rows.reduce((s, r) => s + r.retirement, 0)).toBe(total.retirement);
+    for (const col of [0, 1]) {
+      expect(rows.reduce((s, r) => s + r.amounts[col], 0)).toBe(total.amounts[col]);
+    }
+  });
+});
+
+describe("buildClientProfileData — expense columns", () => {
+  // Already retired (retirement 2033, plan starts 2034): "Retirement" would
+  // repeat the first year, so the advisor asks for "In 4 Years" instead.
+  const retiredYears = [2034, 2035, 2036, 2037, 2038, 2039].map((year) =>
+    py({ year, expenses: { living: 60000 + (year - 2034) * 1000, total: 60000 + (year - 2034) * 1000 } }),
+  );
+
+  it("heads the default columns Current and Retirement with the year each samples", () => {
+    const data = buildClientProfileData({
+      ...base,
+      years: [py({ year: 2026 }), py({ year: 2033 })],
+      clientData: clientData({}),
+    });
+    expect(data.expenseColumns).toEqual([
+      { label: "Current", year: 2026 },
+      { label: "Retirement", year: 2033 },
+    ]);
+  });
+
+  it("samples a years-from-now column that many years after the first year", () => {
+    const data = buildClientProfileData({
+      ...base,
+      years: retiredYears,
+      clientData: clientData({}),
+      expenseColumns: [{ kind: "current" }, { kind: "yearsFromNow", years: 4 }],
+    });
+    expect(data.expenseColumns).toEqual([
+      { label: "Current", year: 2034 },
+      { label: "In 4 Years", year: 2038 },
+    ]);
+    expect(data.expenses.find((r) => r.isTotal)!.amounts).toEqual([60000, 64000]);
+  });
+
+  it("labels a column past the plan's end by the year it actually shows", () => {
+    const data = buildClientProfileData({
+      ...base,
+      years: retiredYears,
+      clientData: clientData({}),
+      expenseColumns: [{ kind: "yearsFromNow", years: 1 }, { kind: "yearsFromNow", years: 30 }],
+    });
+    expect(data.expenseColumns).toEqual([
+      { label: "In 1 Year", year: 2035 },
+      { label: "In 5 Years", year: 2039 },
+    ]);
+  });
+
+  it("prints one amount per column and keeps a row that is non-zero in any column", () => {
+    const years = [
+      py({ year: 2026, expenses: { living: 50000, total: 50000 } }),
+      py({ year: 2028, expenses: { living: 51000, realEstate: 8000, total: 59000 } }),
+      py({ year: 2033, expenses: { living: 60000, total: 60000 } }),
+    ];
+    const data = buildClientProfileData({
+      ...base,
+      years,
+      clientData: clientData({}),
+      expenseColumns: [{ kind: "current" }, { kind: "yearsFromNow", years: 2 }, { kind: "retirement" }],
+    });
+    expect(data.expenses.map((r) => r.label)).toEqual(["Living", "Real Estate", "Total"]);
+    expect(data.expenses.find((r) => r.label === "Real Estate")!.amounts).toEqual([0, 8000, 0]);
+    expect(data.expenses.find((r) => r.isTotal)!.amounts).toEqual([50000, 59000, 60000]);
+  });
+});
+
+describe("Client Profile options", () => {
+  it("gives a deck saved before the option existed Current vs. Retirement", () => {
+    expect(clientProfileOptionsSchema.parse({})).toEqual(CLIENT_PROFILE_PAGE_OPTIONS_DEFAULT);
+    expect(resolveClientProfileOptions({})).toEqual(CLIENT_PROFILE_PAGE_OPTIONS_DEFAULT);
+    expect(summarizeClientProfileOptions({})).toBe("Household snapshot · expenses: Current, Retirement");
+  });
+
+  it("rejects more than four columns and a zero-year offset", () => {
+    const five = Array.from({ length: 5 }, () => ({ kind: "current" as const }));
+    expect(clientProfileOptionsSchema.safeParse({ expenseColumns: five }).success).toBe(false);
+    expect(
+      clientProfileOptionsSchema.safeParse({ expenseColumns: [{ kind: "yearsFromNow", years: 0 }] }).success,
+    ).toBe(false);
+  });
+
+  it("names a years-from-now column in the launcher summary", () => {
+    expect(
+      summarizeClientProfileOptions({ expenseColumns: [{ kind: "current" }, { kind: "yearsFromNow", years: 4 }] }),
+    ).toBe("Household snapshot · expenses: Current, In 4 Years");
   });
 });
 

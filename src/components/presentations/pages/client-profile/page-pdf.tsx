@@ -2,6 +2,7 @@ import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import type {
   ClientProfilePageData,
   ProfileChildCard,
+  ProfileExpenseColumn,
   ProfileExpenseRow,
   ProfileIncomeRow,
   ProfilePersonCard,
@@ -76,6 +77,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   th: { fontFamily: "Inter", fontSize: 8, fontWeight: 700, color: PRESENTATION_THEME.ink },
+  thYear: { fontFamily: "Inter", fontSize: 7, color: PRESENTATION_THEME.ink3 },
   td: { fontFamily: "Inter", fontSize: 9, color: PRESENTATION_THEME.ink2 },
   tdStrong: { fontFamily: "Inter", fontSize: 9, fontWeight: 700, color: PRESENTATION_THEME.ink },
   right: { textAlign: "right" },
@@ -150,21 +152,26 @@ function IncomeTable({ rows, notes }: { rows: ProfileIncomeRow[]; notes: string[
   );
 }
 
-function ExpenseTable({ rows }: { rows: ProfileExpenseRow[] }) {
+function ExpenseTable({ columns, rows }: { columns: ProfileExpenseColumn[]; rows: ProfileExpenseRow[] }) {
   return (
     <View style={styles.table}>
       <View style={styles.headerRow}>
         <Text style={[styles.th, { flex: 2 }]}>Name</Text>
-        <Text style={[styles.th, { flex: 1 }, styles.right]}>Current</Text>
-        <Text style={[styles.th, { flex: 1 }, styles.right]}>Retirement</Text>
+        {columns.map((c, i) => (
+          <View key={i} style={{ flex: 1 }}>
+            <Text style={[styles.th, styles.right]}>{c.label}</Text>
+            <Text style={[styles.thYear, styles.right]}>{c.year}</Text>
+          </View>
+        ))}
       </View>
       {rows.map((r, i) => {
         const cell = r.isTotal ? styles.tdStrong : styles.td;
         return (
           <View key={`${r.label}-${i}`} style={styles.dataRow} wrap={false}>
             <Text style={[cell, { flex: 2 }]}>{r.label}</Text>
-            <Text style={[cell, { flex: 1 }, styles.right]}>{exactCurrency(r.current)}</Text>
-            <Text style={[cell, { flex: 1 }, styles.right]}>{exactCurrency(r.retirement)}</Text>
+            {r.amounts.map((a, j) => (
+              <Text key={j} style={[cell, { flex: 1 }, styles.right]}>{exactCurrency(a)}</Text>
+            ))}
           </View>
         );
       })}
@@ -226,7 +233,7 @@ export function ClientProfilePagePdf({
       {data.expenses.length > 0 && (
         <>
           <Text style={styles.sectionLabel}>EXPENSES</Text>
-          <ExpenseTable rows={data.expenses} />
+          <ExpenseTable columns={data.expenseColumns} rows={data.expenses} />
         </>
       )}
     </PageFrame>

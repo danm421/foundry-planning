@@ -6,13 +6,16 @@ import { resolveEntitlementMonth } from "@/engine/socialSecurity/claimAge";
 import { endInclusionAndFactor } from "@/engine/retirement-proration";
 import { spousalTopUp } from "@/lib/social-security/benefit-entry";
 import { exactCurrency } from "@/lib/presentations/format";
-import type {
-  BuildClientProfileInput,
-  ClientProfilePageData,
-  ProfileChildCard,
-  ProfileExpenseRow,
-  ProfileIncomeRow,
-  ProfilePersonCard,
+import {
+  expenseColumnLabel,
+  type BuildClientProfileInput,
+  type ClientProfilePageData,
+  type ExpenseColumnSpec,
+  type ProfileChildCard,
+  type ProfileExpenseColumn,
+  type ProfileExpenseRow,
+  type ProfileIncomeRow,
+  type ProfilePersonCard,
 } from "./types";
 import { CO_CLIENT_LABEL, personLabel } from "@/lib/owner-labels";
 
@@ -33,7 +36,7 @@ type YearExpenses = ProjectionYear["expenses"];
 const medicare = (e: YearExpenses): number => e.bySource?.medicarePremiums ?? 0;
 
 // Buckets shown in the expenses table, in render order. Rows that would print
-// $0 in both columns are dropped downstream.
+// $0 in every column are dropped downstream.
 const EXPENSE_BUCKETS: { label: string; amount: (e: YearExpenses) => number }[] = [
   { label: "Living", amount: (e) => e.living },
   { label: "Insurance", amount: (e) => e.insurance - medicare(e) },
@@ -68,7 +71,7 @@ function isChildMember(m: { role?: string | null; relationship?: string | null }
 }
 
 export function buildClientProfileData(input: BuildClientProfileInput): ClientProfilePageData {
-  const { years, clientData, scenarioLabel, clientName, spouseName, spouseLastName } = input;
+  const { years, clientData, scenarioLabel, clientName, spouseName, spouseLastName, expenseColumns } = input;
   const ci = clientData.client;
   const firstYear = years[0]?.year ?? new Date().getUTCFullYear();
   const lastYear = years[years.length - 1]?.year ?? firstYear;
@@ -86,7 +89,7 @@ export function buildClientProfileData(input: BuildClientProfileInput): ClientPr
     persons: buildPersons(ci, years, clientName, spouseFullName),
     children: buildChildren(clientData, firstYear),
     ...buildIncome(clientData, firstYear, lastYear),
-    expenses: buildExpenses(ci, years),
+    ...buildExpenses(ci, years, expenseColumns),
   };
 }
 
@@ -275,27 +278,44 @@ function lastRetirementYear(ci: ClientInfo): number | null {
   return candidates.length ? Math.max(...candidates) : null;
 }
 
-function buildExpenses(ci: ClientInfo, years: ProjectionYear[]): ProfileExpenseRow[] {
-  const currentPy = years[0];
-  const retYear = lastRetirementYear(ci);
-  const retirementPy =
-    (retYear != null ? years.find((y) => y.year >= retYear) : undefined) ??
-    years[years.length - 1];
+// The projection year a column samples: the first year at or after its target,
+// or the plan's last year when the target falls past the end. A household
+// already retired samples the first year for "Retirement".
+function sampleYear(
+  spec: ExpenseColumnSpec,
+  ci: ClientInfo,
+  years: ProjectionYear[],
+): { column: ProfileExpenseColumn; py: ProjectionYear } {
+  const first = years[0].year;
+  const target =
+    spec.kind === "current" ? first
+    : spec.kind === "retirement" ? lastRetirementYear(ci)
+    : first + spec.years;
+  const py = (target != null ? years.find((y) => y.year >= target) : undefined) ?? years[years.length - 1];
+  // A years-from-now column cut short by the plan's end is labelled with the
+  // offset it actually shows, not the one requested.
+  const label = expenseColumnLabel(spec.kind === "yearsFromNow" ? { ...spec, years: py.year - first } : spec);
+  return { column: { label, year: py.year }, py };
+}
 
-  if (!currentPy || !retirementPy) return [];
+function buildExpenses(
+  ci: ClientInfo,
+  years: ProjectionYear[],
+  specs: ExpenseColumnSpec[],
+): { expenseColumns: ProfileExpenseColumn[]; expenses: ProfileExpenseRow[] } {
+  if (years.length === 0) return { expenseColumns: [], expenses: [] };
+  const sampled = specs.map((spec) => sampleYear(spec, ci, years));
 
   const rows: ProfileExpenseRow[] = EXPENSE_BUCKETS.map((b) => ({
     label: b.label,
-    current: b.amount(currentPy.expenses),
-    retirement: b.amount(retirementPy.expenses),
+    amounts: sampled.map(({ py }) => b.amount(py.expenses)),
     isTotal: false,
-  })).filter((r) => Math.round(r.current) !== 0 || Math.round(r.retirement) !== 0);
+  })).filter((r) => r.amounts.some((a) => Math.round(a) !== 0));
 
   rows.push({
     label: "Total",
-    current: currentPy.expenses.total,
-    retirement: retirementPy.expenses.total,
+    amounts: sampled.map(({ py }) => py.expenses.total),
     isTotal: true,
   });
-  return rows;
+  return { expenseColumns: sampled.map(({ column }) => column), expenses: rows };
 }
