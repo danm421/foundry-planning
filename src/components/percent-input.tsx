@@ -2,7 +2,7 @@
 
 import { forwardRef, useState, useEffect, useRef } from "react";
 import type { InputHTMLAttributes } from "react";
-import { inputClassName } from "./forms/input-styles";
+import { inputClassName, inputCompactClassName } from "./forms/input-styles";
 import { useScenarioInputClass } from "./scenario/scenario-input-styling";
 
 interface PercentInputProps
@@ -13,6 +13,8 @@ interface PercentInputProps
   name?: string;
   /** Max decimal places to keep (default 4). */
   decimals?: number;
+  /** One step shorter (h-8), for an input inside a table cell. */
+  compact?: boolean;
 }
 
 function cleanInput(input: string, decimals: number): string {
@@ -29,7 +31,7 @@ function cleanInput(input: string, decimals: number): string {
 
 export const PercentInput = forwardRef<HTMLInputElement, PercentInputProps>(
   function PercentInput(
-    { value, defaultValue, onChange, name, className, placeholder, decimals = 4, ...rest },
+    { value, defaultValue, onChange, name, className, placeholder, decimals = 4, compact = false, ...rest },
     ref
   ) {
     const isControlled = value !== undefined;
@@ -67,9 +69,11 @@ export const PercentInput = forwardRef<HTMLInputElement, PercentInputProps>(
           value={raw}
           onChange={handleChange}
           placeholder={placeholder}
-          className={`${inputClassName} pr-7 ${scenarioClass} ${className ?? ""}`}
+          className={`${compact ? `${inputCompactClassName} pr-6` : `${inputClassName} pr-7`} ${scenarioClass} ${className ?? ""}`}
         />
-        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">
+        <span
+          className={`pointer-events-none absolute ${compact ? "right-2" : "right-3"} top-1/2 -translate-y-1/2 text-[13px] text-ink-3`}
+        >
           %
         </span>
         {name && <input type="hidden" name={name} value={raw} />}

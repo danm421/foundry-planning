@@ -2,7 +2,7 @@
 
 import { forwardRef, useState, useEffect, useRef } from "react";
 import type { InputHTMLAttributes } from "react";
-import { inputClassName } from "./forms/input-styles";
+import { inputClassName, inputCompactClassName } from "./forms/input-styles";
 import { useScenarioInputClass } from "./scenario/scenario-input-styling";
 
 interface CurrencyInputProps
@@ -11,6 +11,8 @@ interface CurrencyInputProps
   defaultValue?: number | string;
   onChange?: (raw: string) => void;
   name?: string;
+  /** One step shorter (h-8), for an input inside a table cell. */
+  compact?: boolean;
 }
 
 export function formatDisplay(raw: string): string {
@@ -38,7 +40,7 @@ export function cleanInput(input: string): string {
 
 export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
   function CurrencyInput(
-    { value, defaultValue, onChange, name, className, placeholder, ...rest },
+    { value, defaultValue, onChange, name, className, placeholder, compact = false, ...rest },
     ref
   ) {
     const isControlled = value !== undefined;
@@ -67,7 +69,9 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
 
     return (
       <div className="relative">
-        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">
+        <span
+          className={`pointer-events-none absolute ${compact ? "left-2" : "left-3"} top-1/2 -translate-y-1/2 text-[13px] text-ink-3`}
+        >
           $
         </span>
         <input
@@ -82,7 +86,7 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
           value={display}
           onChange={handleChange}
           placeholder={placeholder}
-          className={`${inputClassName} pl-7 ${scenarioClass} ${className ?? ""}`}
+          className={`${compact ? `${inputCompactClassName} pl-6` : `${inputClassName} pl-7`} ${scenarioClass} ${className ?? ""}`}
         />
         {name && <input type="hidden" name={name} value={raw} />}
       </div>
