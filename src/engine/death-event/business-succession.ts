@@ -157,6 +157,9 @@ export function applyBusinessSuccession(input: {
   /** Projection start year — gifts before it are assumed already reflected in
    *  the static owners. Required alongside `giftEvents`. */
   planStartYear?: number;
+  /** Live margin loan per account id: a margined child account steps up to
+   *  its securities value (net + loan). */
+  marginMap?: Record<string, number>;
 }): BusinessSuccessionResult {
   const transfers: DeathTransfer[] = [];
   const ownerUpdates: BusinessOwnerSuccession[] = [];
@@ -272,7 +275,7 @@ export function applyBusinessSuccession(input: {
 
     for (const childAcct of collectBusinessTree(business.id, input.accounts)) {
       if (childAcct.id === business.id) continue;
-      const fmv = input.accountBalances[childAcct.id] ?? 0;
+      const fmv = (input.accountBalances[childAcct.id] ?? 0) + (input.marginMap?.[childAcct.id] ?? 0);
       if (fmv <= 0) continue;
       const oldChildBasis = input.basisMap[childAcct.id] ?? 0;
       const stepped = computeSteppedUpBasis(childAcct.category, fmv, oldChildBasis, {

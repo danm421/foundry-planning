@@ -8871,6 +8871,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
             entityAccountSharesEoY: lockedEntityShareCarry,
             familyAccountSharesEoY: lockedFamilyShareCarry,
+            marginMap,
           })
         : computeHypotheticalEstateTax({
             year,
@@ -8892,6 +8893,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             annualExclusionsByYear,
             entityAccountSharesEoY: lockedEntityShareCarry,
             familyAccountSharesEoY: lockedFamilyShareCarry,
+            marginMap,
           });
 
     // Stamp end-of-year basis onto each ledger now that all sales, growth
@@ -9190,6 +9192,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
         entityAccountSharesEoY: lockedEntityShareCarry,
         familyAccountSharesEoY: lockedFamilyShareCarry,
+        marginMap,
         // Survivor birth year + LE so first-death can extend a continued
         // deferred income to the survivor's death year. Mirrors
         // computeFirstDeathYear's arithmetic (spouseLifeExpectancy ?? 95).
@@ -9228,6 +9231,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       Object.assign(accountBalances, deathResult.accountBalances);
       for (const key of Object.keys(basisMap)) delete (basisMap as Record<string, number>)[key];
       Object.assign(basisMap, deathResult.basisMap);
+      for (const key of Object.keys(marginMap)) delete marginMap[key];
+      Object.assign(marginMap, deathResult.marginMap);
       currentIncomes = deathResult.incomes;
       currentLiabilities = deathResult.liabilities.map(normalizeOwners);
       // The death's liability partition cut these rows out of a gifted debt: a
@@ -9343,6 +9348,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
         entityAccountSharesEoY: lockedEntityShareCarry,
         familyAccountSharesEoY: lockedFamilyShareCarry,
+        marginMap,
       });
 
       // Rev. Rul. 74-175 with no survivor: the whole carryover expires. The
@@ -9358,6 +9364,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       Object.assign(accountBalances, finalResult.accountBalances);
       for (const key of Object.keys(basisMap)) delete (basisMap as Record<string, number>)[key];
       Object.assign(basisMap, finalResult.basisMap);
+      for (const key of Object.keys(marginMap)) delete marginMap[key];
+      Object.assign(marginMap, finalResult.marginMap);
       currentIncomes = finalResult.incomes;
       currentLiabilities = finalResult.liabilities.map(normalizeOwners);
       // Adopt grantor-succession entity flips at final death. The loop breaks
@@ -9709,9 +9717,11 @@ function computeTodayHypotheticalEstateTax(
 
   const accountBalances: Record<string, number> = {};
   const basisMap: Record<string, number> = {};
+  const marginMap: MarginMap = {};
   for (const acct of todayAccounts) {
-    accountBalances[acct.id] = acct.value;
+    accountBalances[acct.id] = netSeedValue(acct);
     basisMap[acct.id] = acct.basis;
+    if ((acct.marginBalance ?? 0) > 0) marginMap[acct.id] = acct.marginBalance!;
   }
 
   // Match the runProjection liability-init: each balance is the schedule's
@@ -9751,6 +9761,7 @@ function computeTodayHypotheticalEstateTax(
     gifts: data.gifts ?? [],
     giftEvents: data.giftEvents,
     annualExclusionsByYear: buildAnnualExclusionsMap(data.taxYearRows ?? [], data.planSettings),
+    marginMap,
   });
 }
 

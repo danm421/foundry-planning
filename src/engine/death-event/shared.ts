@@ -1730,6 +1730,9 @@ export interface DeathEventInput {
    *  survivor-annuity estate inclusion. Optional for back-compat with fixtures. */
   survivorBirthYear?: number;
   survivorLifeExpectancy?: number;
+  /** Live margin loan per account id (see engine/margin.ts). Absent → each
+   *  account's own `marginBalance`, which is the live loan at plan start. */
+  marginMap?: Record<string, number>;
 }
 
 export interface DeathEventResult {
@@ -1749,6 +1752,10 @@ export interface DeathEventResult {
    *  non-grantor) re-evaluates against post-death state in subsequent years.
    *  When no entityUpdates fire, this is identity-equal to `input.entities`. */
   entities: EntitySummary[];
+  /** Live margin loan per account id after the death: each routed account's
+   *  loan re-keyed to the accounts it became (a share that left the household
+   *  took its part with it); every other entry carried as it was. */
+  marginMap: Record<string, number>;
 }
 
 /** Step 4: Fallback chain. Routes the undisposed residual to:
@@ -1880,6 +1887,8 @@ export interface RunPourOutInput {
   externalBeneficiaries: ExternalBeneficiarySummary[];
   entities: EntitySummary[];
   year: number;
+  /** Live margin loan per account id, keyed like `accounts`. */
+  marginMap?: Record<string, number>;
 }
 
 export interface RunPourOutResult {
@@ -1925,8 +1934,9 @@ export function runPourOut(input: RunPourOutInput): RunPourOutResult {
       // isJointAtFirstDeath is always false. Retirement-in-trust is an
       // edge case: the helper returns originalBasis unchanged.
       const originalBasis = input.basisMap[acct.id] ?? acct.basis;
+      // §1014 steps up to the securities' FMV: net plus any margin loan.
       const steppedBasis = computeSteppedUpBasis(
-        acct.category, balance, originalBasis,
+        acct.category, balance + (input.marginMap?.[acct.id] ?? 0), originalBasis,
         { isJointAtFirstDeath: false, titlingType: acct.titlingType },
       );
 

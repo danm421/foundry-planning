@@ -21,6 +21,7 @@ import {
   type DeathEventResult,
 } from "./shared";
 import { controllingEntity, isFullyEntityOwned, ownedByHousehold, controllingFamilyMember } from "../ownership";
+import { withLiveMargin } from "../margin";
 import {
   buildEstateTaxResult,
   computeDeductions,
@@ -51,6 +52,7 @@ interface FinalDeathChainResult {
   accounts: Account[];
   accountBalances: Record<string, number>;
   basisMap: Record<string, number>;
+  marginMap: Record<string, number>;
   incomes: Income[];
   liabilities: Liability[];
   transfers: DeathTransfer[];
@@ -114,6 +116,7 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
   const nextLiabilities: Liability[] = [...liabilities];
   const nextAccountBalances: Record<string, number> = { ...accountBalances };
   const nextBasisMap: Record<string, number> = { ...basisMap };
+  const nextMarginMap: Record<string, number> = { ...(input.marginMap ?? {}) };
   const assetTransfers: DeathTransfer[] = [];
   const warnings: string[] = [];
 
@@ -167,7 +170,8 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
     // transfer — double-counting it against the consolidated business line.
     // Gift-resolved (see `routeAtDeath`): a wholly gifted account stays as it
     // is; a partly gifted one is partitioned like any other mixed account.
-    const route = routeAtDeath(acct, balance, originalBasis, input);
+    // On the LIVE loan: every split below carries its share of it.
+    const route = routeAtDeath(withLiveMargin(acct, input.marginMap), balance, originalBasis, input);
     if (route == null) {
       nextAccounts.push(acct);
       continue;
@@ -176,6 +180,7 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
       nextAccounts.push(slice);
       nextAccountBalances[slice.id] = slice.value;
       nextBasisMap[slice.id] = slice.basis;
+      if ((slice.marginBalance ?? 0) > 0) nextMarginMap[slice.id] = slice.marginBalance!;
     }
     const routedAcct = route.account;
     const routedBalance = route.balance;
@@ -186,7 +191,7 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
     // titlingType is a no-op when isJointAtFirstDeath is false, but the
     // helper signature requires it — pass through the account's value.
     const steppedBasis = computeSteppedUpBasis(
-      routedAcct.category, routedBalance, routedBasis,
+      routedAcct.category, routedBalance + (routedAcct.marginBalance ?? 0), routedBasis,
       { isJointAtFirstDeath: false, titlingType: routedAcct.titlingType },
     );
     const effectiveAcct: Account = { ...routedAcct, value: routedBalance, basis: steppedBasis };
@@ -283,10 +288,12 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
 
     delete nextAccountBalances[acct.id];
     delete nextBasisMap[acct.id];
+    delete nextMarginMap[acct.id];
     for (const a of stepAccts) {
       nextAccounts.push(a);
       nextAccountBalances[a.id] = a.value;
       nextBasisMap[a.id] = a.basis;
+      if ((a.marginBalance ?? 0) > 0) nextMarginMap[a.id] = a.marginBalance!;
     }
 
     if (linkedLiability) {
@@ -305,6 +312,7 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
     accounts: nextAccounts,
     accountBalances: nextAccountBalances,
     basisMap: nextBasisMap,
+    marginMap: nextMarginMap,
     incomes: nextIncomes,
     liabilities: nextLiabilities,
     transfers: assetTransfers,
@@ -444,6 +452,7 @@ export function applyFinalDeath(rawInput: DeathEventInput): DeathEventResult {
     // transfer to the heirs again at death.
     giftEvents: input.giftEvents ?? [],
     planStartYear: input.planSettings.planStartYear,
+    marginMap: input.marginMap,
   });
   warnings.push(...businessSuccession.warnings);
 
@@ -719,6 +728,7 @@ export function applyFinalDeath(rawInput: DeathEventInput): DeathEventResult {
       externalBeneficiaries: input.externalBeneficiaries,
       entities: mutatedEntities,
       year: input.year,
+      marginMap: input.marginMap,
     });
     ledger = ledger.concat(pourOut.transfers);
     workingLiabs = pourOut.liabilities;
@@ -864,6 +874,9 @@ export function applyFinalDeath(rawInput: DeathEventInput): DeathEventResult {
     dsueGenerated: 0,
     lifeInsurancePayouts: li.lifeInsurancePayouts,
     entities: mutatedEntities,
+    // From the chain, not the pre-drain state: the estate drains spend net
+    // value and never touch a loan.
+    marginMap: chainResult.marginMap,
   };
 }
 
