@@ -819,6 +819,24 @@ describe("user.created", () => {
     });
   });
 
+  it("does not welcome a client who signed up from a portal invite", async () => {
+    // Clerk copies the invitation's public_metadata onto the new user.
+    await dispatchClerkMembership(
+      {
+        type: "user.created",
+        data: {
+          id: "user_portal",
+          first_name: "Sarah",
+          email_addresses: [{ id: "idn_1", email_address: "sarah@example.com" }],
+          primary_email_address_id: "idn_1",
+          public_metadata: { clientId: "client_1" },
+        },
+      } as never,
+      "svix_portal",
+    );
+    expect(mockSendWelcomeEmail).not.toHaveBeenCalled();
+  });
+
   it("does not send when the payload has no email address", async () => {
     await dispatchClerkMembership(
       { type: "user.created", data: { id: "user_noemail", first_name: "Sarah" } } as never,
