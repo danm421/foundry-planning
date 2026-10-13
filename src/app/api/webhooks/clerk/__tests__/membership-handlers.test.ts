@@ -338,6 +338,32 @@ describe("organizationMembership.deleted — the removed member's alerts", () =>
     expect(whereParams(brand![2])).toEqual(expect.arrayContaining(["org_paid", "user_z"]));
   });
 
+  it("audits the branding-off when a brand was actually on", async () => {
+    mockSelectFirms.mockResolvedValue([]);
+    mockUpdate.mockImplementation(async (tbl: unknown) => (tbl === advisorProfiles ? [{ id: "ap_1" }] : []));
+    await dispatchClerkMembership(membershipEvent("organizationMembership.deleted"), "svix_del_brand_audit");
+
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "advisor_branding.grant",
+        resourceType: "advisor_profile",
+        resourceId: "user_z",
+        firmId: "org_paid",
+        actorId: "clerk:webhook",
+        metadata: { enabled: false, reason: "member_left_firm" },
+      }),
+    );
+  });
+
+  it("audits nothing when no brand was on", async () => {
+    mockSelectFirms.mockResolvedValue([]);
+    await dispatchClerkMembership(membershipEvent("organizationMembership.deleted"), "svix_del_brand_noop");
+
+    expect(mockRecordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "advisor_branding.grant" }),
+    );
+  });
+
   it("leaves alerts alone when a member is added", async () => {
     mockSelectFirms.mockResolvedValue([]);
     await dispatchClerkMembership(membershipEvent("organizationMembership.created"), "svix_add_alerts");

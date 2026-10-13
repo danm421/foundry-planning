@@ -136,13 +136,31 @@ async function stopAlertEmailsFor(firmId: string, userId: string): Promise<void>
  * A removed member's brand stops being offered and stops resolving: with
  * their branding off, every household, form and deck that named them falls
  * back to the firm brand, and intake mail is signed by whoever sends it.
- * Update, not upsert — a member who never had a brand row needs none.
+ * Update, not upsert — a member who never had a brand row needs none; it only
+ * flips a brand that is on, and audits that flip.
  */
 async function turnOffAdvisorBranding(firmId: string, userId: string): Promise<void> {
-  await db
+  const flipped = await db
     .update(advisorProfiles)
     .set({ brandingEnabled: false, updatedBy: "clerk:webhook", updatedAt: new Date() })
-    .where(and(eq(advisorProfiles.firmId, firmId), eq(advisorProfiles.advisorUserId, userId)));
+    .where(
+      and(
+        eq(advisorProfiles.firmId, firmId),
+        eq(advisorProfiles.advisorUserId, userId),
+        eq(advisorProfiles.brandingEnabled, true),
+      ),
+    )
+    .returning({ id: advisorProfiles.id });
+  if (flipped.length > 0) {
+    await recordAudit({
+      action: "advisor_branding.grant",
+      resourceType: "advisor_profile",
+      resourceId: userId,
+      firmId,
+      actorId: "clerk:webhook",
+      metadata: { enabled: false, reason: "member_left_firm" },
+    });
+  }
 }
 
 /**
