@@ -3,10 +3,12 @@
  * Fact Finder Import — the stored state (`client_imports.payload_json.factFinder`)
  * and the reader → merge contract.
  *
- * A LEAF module: it imports nothing. `src/lib/imports/types.ts` imports it for
- * `ImportPayloadJson.factFinder`, and lib/fact-finder imports lib/imports at
- * runtime, so any import added here could close a cycle.
+ * A LEAF module: it imports nothing at runtime (type-only imports are erased).
+ * `src/lib/imports/types.ts` imports it for `ImportPayloadJson.factFinder`, and
+ * lib/fact-finder imports lib/imports at runtime, so a runtime import added
+ * here could close a cycle.
  */
+import type { ChangeSet } from "./change-set";
 
 export type FFCellValue = string | number | boolean | null;
 
@@ -140,6 +142,8 @@ export interface FactFinderState {
   undo: Record<string, FFSnapshot[]>;
   /** Per uploaded file id. */
   readings: Record<string, FFFileReading>;
+  /** Pass 2's change list (Plan 3). Only the review writes it; a write that changes the rows or unassigned holdings drops it. */
+  changeSet?: ChangeSet;
 }
 
 // ---- reader → merge contract -------------------------------------------------

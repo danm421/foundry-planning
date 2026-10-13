@@ -16,8 +16,9 @@ import {
   writeFactFinder,
   type FactFinderScope,
 } from "../persist";
+import type { ChangeSet } from "../change-set";
 import { emptyFactFinderState } from "../state";
-import type { FFRow } from "../types";
+import type { FactFinderState, FFChatTurn, FFRow, FFUnassignedHolding } from "../types";
 
 const FIRM = "firm_test_fact_finder_persist";
 const HAS_DB = !!process.env.DATABASE_URL;
@@ -43,6 +44,64 @@ const cashRow = (id: string): FFRow => ({
   cells: { accountName: { value: id, by: "advisor", pinned: true } },
   sourceFileIds: [],
 });
+
+const changeSet: ChangeSet = {
+  builtAtVersion: 1,
+  builtAt: "2026-10-13T12:00:00.000Z",
+  lines: [
+    {
+      id: "r1/account",
+      page: "accounts",
+      sectionId: "cash",
+      rowId: "r1",
+      target: "account",
+      action: "create",
+      recordId: null,
+      label: "Joint Checking",
+      fixed: { category: "cash" },
+      fields: [
+        {
+          key: "value",
+          label: "Current value",
+          next: 12000,
+          shown: { next: "$12,000" },
+          ticked: true,
+          from: [{ sectionId: "cash", rowId: "r1", columnId: "currentValue" }],
+        },
+      ],
+      warnings: [],
+    },
+  ],
+  notices: [],
+};
+
+/** The stored slice's keys — what is in the database, not the reader's view of it. */
+async function storedKeys(scope: FactFinderScope): Promise<string[]> {
+  const [row] = await db.select({ p: clientImports.payloadJson }).from(clientImports).where(eq(clientImports.id, scope.importId));
+  return Object.keys((row.p as { factFinder: Record<string, unknown> }).factFinder);
+}
+
+/** What the review writes: one cash row and its change set, at version 1. */
+async function reviewed(): Promise<{ scope: FactFinderScope; state: FactFinderState }> {
+  const scope = await newImport();
+  const empty = emptyFactFinderState();
+  await writeFactFinder(scope, 0, { ...empty, sections: { ...empty.sections, cash: [cashRow("r1")] }, changeSet }, { keepChangeSet: true });
+  return { scope, state: (await loadFactFinder(scope))! };
+}
+
+const question: FFChatTurn = { id: "t1", role: "user", text: "What's left to check?", at: "2026-10-13T12:05:00.000Z" };
+
+const holding: FFUnassignedHolding = {
+  id: "h1",
+  ticker: "VTI",
+  name: "Vanguard Total Stock Market ETF",
+  shares: 10,
+  price: 250,
+  marketValue: 2500,
+  costBasis: null,
+  by: "document",
+  accountHint: "…1234",
+};
 
 describe.skipIf(!HAS_DB)("fact finder persistence (live DB)", () => {
   beforeAll(async () => {
@@ -84,6 +143,66 @@ describe.skipIf(!HAS_DB)("fact finder persistence (live DB)", () => {
     const final = await loadFactFinder(scope);
     expect(final?.sections.cash.map((r) => r.id).sort()).toEqual(["reading", "typed"]);
     expect(final?.version).toBe(2);
+  });
+
+  it("stores the change set when the review keeps it; a plain write that changes a row drops it", async () => {
+    const { scope, state } = await reviewed();
+    expect(state.changeSet).toEqual(changeSet);
+
+    const patched = await writeFactFinder(scope, 1, { ...state, sections: { ...state.sections, cash: [cashRow("r1"), cashRow("r2")] } });
+    expect(patched?.version).toBe(2);
+    expect("changeSet" in patched!).toBe(false);
+    expect(await storedKeys(scope)).not.toContain("changeSet");
+  });
+
+  it("keeps the change set through a plain write that changes only readings and the transcript", async () => {
+    const { scope, state } = await reviewed();
+    const failed = { status: "failed" as const, startedAt: "2026-10-13T12:01:00.000Z", reason: "Couldn't read" };
+    const written = await writeFactFinder(scope, 1, { ...state, readings: { f1: failed }, transcript: [question] });
+    expect(written?.changeSet).toEqual(changeSet);
+
+    const loaded = await loadFactFinder(scope);
+    expect(loaded?.version).toBe(2);
+    expect(loaded?.changeSet).toEqual(changeSet);
+    expect(loaded?.changeSet?.builtAtVersion).toBe(1);
+  });
+
+  it("keeps the change set when updateFactFinder rebuilds the rows with the same content (a reading, a chat turn that edits nothing)", async () => {
+    const { scope } = await reviewed();
+    const turn = await updateFactFinder(scope, (s) => ({
+      ...s,
+      sections: JSON.parse(JSON.stringify(s.sections)) as FactFinderState["sections"],
+      transcript: [...s.transcript, question],
+    }));
+    expect(turn.version).toBe(2);
+    expect(turn.changeSet).toEqual(changeSet);
+    expect(await storedKeys(scope)).toContain("changeSet");
+  });
+
+  it("drops the change set when an updateFactFinder edit changes a cell", async () => {
+    const { scope } = await reviewed();
+    const edited = await updateFactFinder(scope, (s) => ({
+      ...s,
+      sections: { ...s.sections, cash: [{ ...s.sections.cash[0], cells: { accountName: { value: "Joint Checking", by: "advisor", pinned: true } } }] },
+    }));
+    expect(edited.version).toBe(2);
+    expect("changeSet" in edited).toBe(false);
+    expect(await storedKeys(scope)).not.toContain("changeSet");
+  });
+
+  it("drops the change set when an updateFactFinder write changes the unassigned holdings", async () => {
+    const { scope } = await reviewed();
+    const read = await updateFactFinder(scope, (s) => ({ ...s, unassignedHoldings: [holding] }));
+    expect(read.version).toBe(2);
+    expect("changeSet" in read).toBe(false);
+    expect(await storedKeys(scope)).not.toContain("changeSet");
+  });
+
+  it("compares a stored fact finder with no unassigned holdings as an empty list", async () => {
+    const scope = await newImport({ factFinder: { version: 1, sections: emptyFactFinderState().sections, changeSet } });
+    const turn = await updateFactFinder(scope, (s) => ({ ...s, transcript: [question] }));
+    expect(turn.version).toBe(2);
+    expect(turn.changeSet).toEqual(changeSet);
   });
 
   it("skips the write when nothing changed", async () => {

@@ -51,6 +51,7 @@ export function readFactFinderState(payloadJson: unknown): FactFinderState {
     transcript: stored.transcript ?? [],
     undo: stored.undo ?? {},
     readings: stored.readings ?? {},
+    ...(stored.changeSet ? { changeSet: stored.changeSet } : {}),
   };
 }
 

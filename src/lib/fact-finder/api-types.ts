@@ -64,5 +64,18 @@ export type ReadEvent =
 /** One SSE frame of the read stream: an event, or the error that ended it. */
 export type ReadFrame = ReadEvent | { type: "error"; message: string };
 
+/** POST …/fact-finder/review: the fact finder with its new `changeSet`. */
+export interface ReviewResponse {
+  factFinder: FactFinderState;
+}
+/** 409 from review: why it didn't run. `factFinder` when the route changed it (dropped links); `rows` = the rows to check. */
+export interface ReviewRefusal {
+  error: string;
+  factFinder?: FactFinderState;
+  rows?: string[];
+}
+
 export const READ_BUSY_MESSAGE = "Already reading these documents — wait for that to finish.";
 export const TURN_BUSY_MESSAGE = "Still reading your documents — wait for that to finish, then ask again.";
+export const REVIEW_READING_MESSAGE = "Wait for the documents to finish reading, then review.";
+export const REVIEW_STALE_MESSAGE = "The fact finder changed while reviewing — review again.";

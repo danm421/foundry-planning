@@ -57,13 +57,40 @@ export async function loadFactFinder(scope: FactFinderScope): Promise<FactFinder
   return row.found ? readFactFinderState({ factFinder: row.slice ?? undefined }) : null;
 }
 
-/** Compare-and-set: writes only if the stored version still equals `baseVersion`. */
+/**
+ * Whether the stored rows and unassigned holdings at `baseVersion` equal
+ * `next`'s — the only parts of the fact finder the review reads. Compared as
+ * jsonb, so key order and number formatting don't matter.
+ */
+async function rowsUnchanged(scope: FactFinderScope, baseVersion: number, next: FactFinderState): Promise<boolean> {
+  const stored = sql`${clientImports.payloadJson} -> 'factFinder'`;
+  const [row] = await db
+    .select({
+      same: sql<boolean>`(${stored} -> 'sections') = ${JSON.stringify(next.sections)}::jsonb
+        AND COALESCE(${stored} -> 'unassignedHoldings', '[]'::jsonb) = ${JSON.stringify(next.unassignedHoldings)}::jsonb`,
+    })
+    .from(clientImports)
+    .where(and(scoped(scope), sql`${storedVersion} = ${baseVersion}`))
+    .limit(1);
+  return row?.same === true;
+}
+
+/**
+ * Compare-and-set: writes only if the stored version still equals `baseVersion`.
+ * Keeps a carried `changeSet` when `keepChangeSet` (the review) or when the
+ * write leaves the rows and unassigned holdings as stored (a reading that
+ * failed, a chat turn that edits nothing); any other write drops it. Here, so
+ * every caller (PATCH, chat turn, undo, reading: `updateFactFinder`) gets it.
+ */
 export async function writeFactFinder(
   scope: FactFinderScope,
   baseVersion: number,
   next: FactFinderState,
+  options: { keepChangeSet?: boolean } = {},
 ): Promise<FactFinderState | null> {
   const written: FactFinderState = { ...next, version: baseVersion + 1 };
+  const keep = options.keepChangeSet || (next.changeSet !== undefined && (await rowsUnchanged(scope, baseVersion, next)));
+  if (!keep) delete written.changeSet;
   const rows = await db
     .update(clientImports)
     .set({ payloadJson: mergePayloadJson({ factFinder: written }), updatedAt: new Date() })

@@ -18,6 +18,7 @@ import {
   rowValues,
   sameJson,
 } from "../state";
+import type { ChangeSet } from "../change-set";
 import type { FFRow } from "../types";
 
 describe("emptyFactFinderState", () => {
@@ -55,6 +56,17 @@ describe("readFactFinderState", () => {
     expect(s.unassignedHoldings).toEqual([]);
     expect(s.transcript).toEqual([]);
     expect(s.undo).toEqual({});
+  });
+
+  it("carries a stored change set as-is, and adds no key when there is none", () => {
+    const changeSet: ChangeSet = {
+      builtAtVersion: 3,
+      builtAt: "2026-10-13T12:00:00.000Z",
+      lines: [],
+      notices: ["2 holdings aren't assigned to an account and won't be saved."],
+    };
+    expect(readFactFinderState({ factFinder: { version: 3, changeSet } }).changeSet).toEqual(changeSet);
+    expect("changeSet" in readFactFinderState({ factFinder: { version: 3 } })).toBe(false);
   });
 });
 
