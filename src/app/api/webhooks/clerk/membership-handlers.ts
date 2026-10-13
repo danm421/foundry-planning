@@ -5,6 +5,7 @@ import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import {
   clerkEvents,
+  clientShares,
   firms,
   notificationPreferences,
   notifications,
@@ -47,6 +48,12 @@ async function claimSvixDelivery(
     .onConflictDoNothing()
     .returning({ id: clerkEvents.id });
   return rows.length > 0;
+}
+
+/** Undo a claim whose handling failed, so Clerk's retry of the same delivery
+ *  runs it again instead of being skipped as a duplicate. */
+async function releaseSvixDelivery(svixId: string): Promise<void> {
+  await db.delete(clerkEvents).where(eq(clerkEvents.svixId, svixId));
 }
 
 /**
@@ -124,6 +131,59 @@ async function stopAlertEmailsFor(firmId: string, userId: string): Promise<void>
 }
 
 /**
+ * A removed member keeps no access through this firm's client shares: every
+ * active grant they RECEIVED on its clients is revoked. Grants from other
+ * firms are untouched. Only active rows match, so a retry revokes nothing new.
+ */
+async function revokeSharesReceivedBy(firmId: string, userId: string): Promise<void> {
+  const revoked = await db
+    .update(clientShares)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(clientShares.firmId, firmId),
+        eq(clientShares.recipientUserId, userId),
+        isNull(clientShares.revokedAt),
+      ),
+    )
+    .returning({ id: clientShares.id, clientId: clientShares.clientId, scope: clientShares.scope });
+  for (const share of revoked) {
+    await recordAudit({
+      action: "client_share.revoke",
+      resourceType: "client_share",
+      resourceId: share.id,
+      clientId: share.clientId,
+      firmId,
+      actorId: "clerk:webhook",
+      metadata: { scope: share.scope, reason: "recipient_left_firm" },
+    });
+  }
+}
+
+/**
+ * The active grants a removed member ISSUED stay in force (the firm's clients
+ * stay shared); they are listed on the member.removed audit row for review.
+ */
+function listSharesIssuedBy(firmId: string, userId: string) {
+  return db
+    .select({
+      id: clientShares.id,
+      scope: clientShares.scope,
+      clientId: clientShares.clientId,
+      recipientUserId: clientShares.recipientUserId,
+      recipientEmail: clientShares.recipientEmail,
+    })
+    .from(clientShares)
+    .where(
+      and(
+        eq(clientShares.firmId, firmId),
+        eq(clientShares.ownerUserId, userId),
+        isNull(clientShares.revokedAt),
+      ),
+    );
+}
+
+/**
  * Resolve the user's primary email from a Clerk user.created payload. Prefers
  * the address flagged primary_email_address_id; falls back to the first entry.
  * Returns null when no usable address is present.
@@ -155,32 +215,41 @@ export async function dispatchClerkMembership(
     if (!isNew) {
       return NextResponse.json({ ok: true, skipped_duplicate: t }, { status: 200 });
     }
-    if (t === "organizationMembership.deleted") {
-      await stopAlertEmailsFor(firmId, userId);
-    }
-    await syncSeatQuantity(firmId);
-    // Pin the first admin as the firm's billing contact if none is set yet.
-    // Handles the sales checkout flow, where the buyer's userId only exists
-    // after they accept the org:admin invite (self-serve buyers are pinned by
-    // checkout-session-completed). Only fills an empty pin — never overwrites.
-    if (t === "organizationMembership.created" && d.role === "org:admin") {
-      const cc = await clerkClient();
-      const org = await cc.organizations.getOrganization({ organizationId: firmId });
-      const meta = (org.publicMetadata ?? {}) as Record<string, unknown>;
-      if (typeof meta.billing_contact_userId !== "string") {
-        await cc.organizations.updateOrganizationMetadata(firmId, {
-          publicMetadata: { ...meta, billing_contact_userId: userId },
-        });
+    // Every step below is safe to repeat, so a failure releases the claim.
+    try {
+      const metadata: Record<string, unknown> = { user_id: userId };
+      if (t === "organizationMembership.deleted") {
+        await stopAlertEmailsFor(firmId, userId);
+        await revokeSharesReceivedBy(firmId, userId);
+        metadata.issued_shares = await listSharesIssuedBy(firmId, userId);
       }
+      await syncSeatQuantity(firmId);
+      // Pin the first admin as the firm's billing contact if none is set yet.
+      // Handles the sales checkout flow, where the buyer's userId only exists
+      // after they accept the org:admin invite (self-serve buyers are pinned by
+      // checkout-session-completed). Only fills an empty pin — never overwrites.
+      if (t === "organizationMembership.created" && d.role === "org:admin") {
+        const cc = await clerkClient();
+        const org = await cc.organizations.getOrganization({ organizationId: firmId });
+        const meta = (org.publicMetadata ?? {}) as Record<string, unknown>;
+        if (typeof meta.billing_contact_userId !== "string") {
+          await cc.organizations.updateOrganizationMetadata(firmId, {
+            publicMetadata: { ...meta, billing_contact_userId: userId },
+          });
+        }
+      }
+      await recordAudit({
+        action: t === "organizationMembership.created" ? "member.invited" : "member.removed",
+        resourceType: "membership",
+        resourceId: `${firmId}:${userId}`,
+        firmId,
+        actorId: "clerk:webhook",
+        metadata,
+      });
+    } catch (err) {
+      await releaseSvixDelivery(svixId);
+      throw err;
     }
-    await recordAudit({
-      action: t === "organizationMembership.created" ? "member.invited" : "member.removed",
-      resourceType: "membership",
-      resourceId: `${firmId}:${userId}`,
-      firmId,
-      actorId: "clerk:webhook",
-      metadata: { user_id: userId },
-    });
     return NextResponse.json({ ok: true, handled: t }, { status: 200 });
   }
 
