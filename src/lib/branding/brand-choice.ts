@@ -34,7 +34,7 @@ export function brandAdvisorOf(choice: BrandChoice): string | null {
 }
 
 /** A household's brand: its saved choice, else its own advisor's. */
-export function householdBrand(client: { brand?: string | null; advisorId: string }): BrandChoice {
+export function householdBrand(client: { brand: string | null; advisorId: string }): BrandChoice {
   return client.brand ?? client.advisorId;
 }
 

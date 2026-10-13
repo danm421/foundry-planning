@@ -6,12 +6,13 @@ import type { ExportPdfBody } from "../render-presentation-pdf";
 
 // Task 11: renderPresentationPdf resolves branding by the CLIENT'S advisor
 // (Task 10's resolveBrandingForClient), not the firm alone. This file mocks
-// every dependency the function touches EXCEPT the new advisor lookup + the
-// branding resolver, so the assertions exercise real wiring rather than
-// mock behavior. A single "cover"-only page with scenarioId=null and no
-// spouse keeps every other conditional branch (scenario names, investments,
-// life insurance, observations, scenario-changes) unreached, so the ONLY
-// `db.select` call in the whole function is the new advisor-id lookup.
+// the branding resolver and the advisor lookup (`db.select`) as well as the
+// rest of what the function touches, and asserts on what it passes them: which
+// advisor id, or "firm", it resolves branding for. A single "cover"-only page
+// with scenarioId=null and no spouse keeps every other conditional branch
+// (scenario names, investments, life insurance, observations,
+// scenario-changes) unreached, so the ONLY `db.select` call in the whole
+// function is the advisor-id lookup.
 
 const dbMocks = vi.hoisted(() => ({
   select: vi.fn(),

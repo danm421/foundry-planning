@@ -269,7 +269,7 @@ describe("IntakePage server component branching", () => {
     expect(screen.getByTestId("recipient")).toHaveTextContent("anonymous");
   });
 
-  it("passes firm branding to the client wrapper when the firm has a logo", async () => {
+  it("passes the form's branding to the client wrapper when the brand has a logo", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockLoadFormByToken.mockResolvedValue(makeForm() as any);
     mockIsExpired.mockReturnValue(false);

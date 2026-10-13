@@ -585,6 +585,28 @@ describe("PresentationsLauncher", () => {
     });
   });
 
+  it("shows no Brand dropdown and sends no brand when the picker is empty", async () => {
+    render(
+      <PresentationsLauncher
+        clientId="c1"
+        currentUserId="me"
+        clientLastName="Sample"
+        householdId="hh-test"
+        scenarios={[]}
+        snapshots={[]}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
+        brand={{ picker: { options: [], allBrands: [] }, defaultValue: "user_jane" }}
+      />,
+    );
+    expect(screen.queryByLabelText("Brand")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Generate PDF/i }));
+    await waitFor(() => {
+      const runsCall = vi.mocked(global.fetch).mock.calls.find((c) => String(c[0]).includes("/presentations/runs"));
+      expect(JSON.parse((runsCall![1] as RequestInit).body as string)).not.toHaveProperty("brand");
+    });
+  });
+
   it("keeps the household's brand in the list after picking another", () => {
     // Bob's brand is the household's but not on this viewer's own list.
     const picker = {

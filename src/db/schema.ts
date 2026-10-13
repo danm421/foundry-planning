@@ -1137,7 +1137,7 @@ export const clients = pgTable("clients", {
   // Which brand this household sees — its portal and client PDFs — and where
   // intake sends and presentations for it start. NULL = its advisor's brand,
   // which is what every pre-existing row means; "firm" = the firm's own;
-  // otherwise another advisor's Clerk user id. See lib/branding/brand-choice.ts.
+  // otherwise any advisor's Clerk user id (the household's own included). See lib/branding/brand-choice.ts.
   brand: text("brand"),
 }, (t) => [
   index("clients_firm_idx").on(t.firmId),

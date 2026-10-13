@@ -134,6 +134,15 @@ describe("loadBrandPicker", () => {
   it("hands an advisor nothing, so no brand names reach their browser", async () => {
     m.auth.mockResolvedValue(advisor);
     expect(await loadBrandPicker(FIRM_ID)).toEqual({ options: [], allBrands: [] });
+    expect(m.listFirmMembers).not.toHaveBeenCalled();
+    expect(m.listAdvisorProfiles).not.toHaveBeenCalled();
+  });
+
+  it("hands an admin nothing, rather than crashing the page, when the member lookup fails", async () => {
+    m.auth.mockResolvedValue(admin);
+    m.listFirmMembers.mockRejectedValue(new Error("clerk down"));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await loadBrandPicker(FIRM_ID)).toEqual({ options: [], allBrands: [] });
   });
 
   it("hands a signed-out request nothing", async () => {

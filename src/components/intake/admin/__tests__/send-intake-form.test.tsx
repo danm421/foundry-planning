@@ -93,6 +93,20 @@ describe("SendIntakeForm", () => {
     expect(screen.queryByLabelText("Brand")).toBeNull();
   });
 
+  it("shows no Brand dropdown, and sends no brand, when there's nothing to choose", async () => {
+    render(
+      <SendIntakeForm defaultSections={null} brand={{ picker: { options: [], allBrands: [] }, prospectDefault: "firm" }} />,
+    );
+    expect(screen.queryByLabelText("Brand")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "p@x.test" } });
+    fireEvent.click(screen.getByRole("button", { name: /^send$/i }));
+    await waitFor(() => {
+      const body = JSON.parse((vi.mocked(fetch).mock.calls.at(-1)![1] as RequestInit).body as string);
+      expect(body).not.toHaveProperty("brand");
+    });
+  });
+
   it("renders first name, last name, and email inputs", () => {
     render(<SendIntakeForm defaultSections={null} />);
     expect(screen.getByLabelText(/first name/i)).toBeInTheDocument();

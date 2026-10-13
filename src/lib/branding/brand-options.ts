@@ -43,6 +43,10 @@ export const listFirmBrands = cache(async (firmId: string): Promise<BrandOption[
   return [{ value: FIRM_BRAND, label: `${firmName} (firm)` }, ...advisors];
 });
 
+function choosesAmongAdvisors(orgRole: string | null): boolean {
+  return isFirmWideAdminRole(orgRole) || (!!orgRole && STAFF_ROLES.has(orgRole));
+}
+
 /**
  * The brands `caller` may pick for work in `firmId`. Owners/admins: all.
  * Staff: the firm plus the advisors they're assigned to. Anyone else: the firm.
@@ -96,10 +100,15 @@ const NO_PICKER: BrandPicker = { options: [], allBrands: [] };
 export async function loadBrandPicker(firmId: string): Promise<BrandPicker> {
   const caller = await sessionCaller();
   // Plain advisors only ever get the firm brand: skip the Clerk + DB lookups.
-  if (!caller || !(isFirmWideAdminRole(caller.orgRole) || (caller.orgRole && STAFF_ROLES.has(caller.orgRole)))) {
+  if (!caller || !choosesAmongAdvisors(caller.orgRole)) return NO_PICKER;
+  // Branding never blocks the work: a Clerk or DB failure drops the picker
+  // rather than the page. (assertBrandChoiceAllowed stays fail-closed.)
+  try {
+    const options = await listBrandOptions(firmId, caller);
+    if (options.length < 2) return NO_PICKER;
+    return { options, allBrands: await listFirmBrands(firmId) };
+  } catch (err) {
+    console.warn("[brand-picker] lookup failed; showing no picker", err);
     return NO_PICKER;
   }
-  const options = await listBrandOptions(firmId, caller);
-  if (options.length < 2) return NO_PICKER;
-  return { options, allBrands: await listFirmBrands(firmId) };
 }

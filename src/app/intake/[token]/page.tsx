@@ -16,12 +16,9 @@ import { IntakeClient } from "./intake-client";
 // Accessible at /intake/<token> — no auth required.
 // Branches on form state; never passes live advisor/client plan data to the
 // client wrapper (blank mode only passes the client's own saved draft).
-// Every state carries the form's brand letterhead (or the Foundry lockup when the
-// firm hasn't uploaded a logo, or the token is unknown).
-//
-// Branded by the form's own brand (`intake_forms.brand`), which the sender
-// picked at send time. An unknown token has no form and so no brand: the
-// Foundry lockup.
+// Every state carries the letterhead of the form's own brand
+// (`intake_forms.brand`, picked by the sender at send time), or the Foundry
+// lockup when the brand has no logo or the token is unknown (no form, no brand).
 
 // ─── Tab chrome ───────────────────────────────────────────────────────────────
 // loadFormByToken, resolveFormBrand and resolveIntakeBrandingForClient are all

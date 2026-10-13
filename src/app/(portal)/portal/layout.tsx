@@ -70,11 +70,11 @@ export default async function PortalLayout({
   const displayName = portalGreetingName(contacts);
   const letterheadName = portalGreetingFullName(contacts);
 
-  // Letterhead for the portal chrome, keyed by the household's brand (its saved choice, else its advisor) — an
-  // advisor with branding enabled overlays their own logo/name/favicon over
-  // the firm's; null → Foundry lockup (same fallback semantics as the intake
-  // pages). Runs alongside the connection-alert read below — neither depends
-  // on the other's result.
+  // Letterhead for the portal chrome, keyed by the household's brand (its saved
+  // choice, else its advisor) — an advisor with branding enabled overlays their
+  // own logo/name/favicon over the firm's; null → Foundry lockup (same fallback
+  // semantics as the intake pages). Runs alongside the connection-alert read
+  // below — neither depends on the other's result.
   const [branding, connectionAlert, householdOptions] = await Promise.all([
     row ? resolveIntakeBrandingForClient(row.firmId, householdBrand(row)) : Promise.resolve(null),
     // The dot is a decoration. There is no error.tsx under (portal), so an

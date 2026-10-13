@@ -24,8 +24,8 @@ const FOLLOW_UP: Record<"reminder" | "reopened", { prefix: string; intro?: strin
  * (POST /api/data-collection) and the reminder (POST /api/data-collection/
  * [id]/remind). One composer on purpose — a reminder that resolved its brand,
  * saved copy or signature differently from the original would reach the client
- * looking like mail from someone else. The household's advisor no longer owns
- * the brand: the form's `brand` decides who speaks.
+ * looking like mail from someone else. The form's `brand` decides the
+ * letterhead and who speaks on the sender line, whoever owns the household.
  */
 export async function sendIntakeLinkEmail(args: {
   firmId: string;

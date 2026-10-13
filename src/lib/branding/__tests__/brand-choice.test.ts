@@ -24,7 +24,6 @@ describe("brand-choice", () => {
 
   it("a household's brand is its saved choice, else its advisor", () => {
     expect(householdBrand({ brand: null, advisorId: "user_bob" })).toBe("user_bob");
-    expect(householdBrand({ advisorId: "user_bob" })).toBe("user_bob");
     expect(householdBrand({ brand: "firm", advisorId: "user_bob" })).toBe("firm");
   });
 

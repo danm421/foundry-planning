@@ -178,6 +178,16 @@ describe("POST /api/data-collection/[id]/reopen", () => {
     expect(recordAuditMock).not.toHaveBeenCalled();
   });
 
+  it("leaves the form submitted when the link lookup fails, so a reopen is never unaudited", async () => {
+    loadFormMock.mockResolvedValue(form({ mode: "prefilled", clientId: "client-1" }));
+    selectClientMock.mockRejectedValue(new Error("db down"));
+
+    const res = await POST(postReq(), ctx);
+    expect(res.status).toBe(500);
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(recordAuditMock).not.toHaveBeenCalled();
+  });
+
   it("404s a form outside the caller's firm", async () => {
     loadFormMock.mockResolvedValue(null);
 

@@ -43,6 +43,10 @@ export async function POST(
 
     await requireActiveSubscriptionForFirm(orgId);
 
+    // Read-only, and resolved before the write: were it to throw after the
+    // UPDATE, the form would be reopened with no audit row.
+    const { link, brand } = await resolveFormLink(form, orgId);
+
     // A fresh 30 days: the client asked to add something, and a form submitted
     // on day 29 would otherwise reopen onto a link that dies tomorrow.
     //
@@ -66,8 +70,6 @@ export async function POST(
         { status: 409 },
       );
     }
-
-    const { link, brand } = await resolveFormLink(form, orgId);
 
     await recordAudit({
       action: "intake.form.reopened",
