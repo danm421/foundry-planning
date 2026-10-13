@@ -8,6 +8,8 @@ import PortalCard, { portalBtn, portalInput } from "@/components/portal/portal-c
 import { MailIcon } from "@/components/portal/portal-icons";
 import { SectionPicker } from "@/components/intake/admin/section-picker";
 import { sectionsForForm, type IntakeSectionKey } from "@/lib/intake/sections";
+import { BrandSelect } from "@/components/brand-select";
+import { brandChoicesFor, canPickBrand, type BrandChoice, type BrandPicker } from "@/lib/branding/brand-choice";
 
 interface Props {
   clientId: string;
@@ -23,6 +25,10 @@ interface Props {
    *  the firm's setting with their own per-user override applied. False hides
    *  the pre-filled send, which is delivered as a portal invite. */
   portalEnabled: boolean;
+  /** The brand picker for this household, starting on its brand. Absent or
+   *  with nothing to choose, the dropdown is hidden and the send carries no
+   *  brand, so the server uses the household's. */
+  brand?: { picker: BrandPicker; defaultValue: BrandChoice };
 }
 
 export default function SendClientForm({
@@ -35,6 +41,7 @@ export default function SendClientForm({
   pendingFormId,
   defaultSections = null,
   portalEnabled,
+  brand,
 }: Props) {
   const router = useRouter();
   const [recipientEmail, setRecipientEmail] = useState(primaryEmail);
@@ -44,6 +51,16 @@ export default function SendClientForm({
   const [sections, setSections] = useState<IntakeSectionKey[]>(() =>
     sectionsForForm(defaultSections),
   );
+  const showBrand = brand ? canPickBrand(brand.picker) : false;
+  const [brandValue, setBrandValue] = useState<BrandChoice>(brand?.defaultValue ?? "");
+  // Follow the household's brand when the Brand card on this page changes it
+  // (it saves, then refreshes the server props). Adjusting state during render
+  // is React's pattern for this, not an effect.
+  const [seenDefault, setSeenDefault] = useState(brand?.defaultValue);
+  if (brand && brand.defaultValue !== seenDefault) {
+    setSeenDefault(brand.defaultValue);
+    setBrandValue(brand.defaultValue);
+  }
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -75,6 +92,7 @@ export default function SendClientForm({
           // Deliberately absent on a pre-filled send: that stores NULL, which
           // means the default set, which is what the portal wizard renders.
           ...(mode === "blank" ? { sections } : {}),
+          ...(showBrand ? { brand: brandValue } : {}),
         }),
       });
 
@@ -138,6 +156,21 @@ export default function SendClientForm({
           )}
         </div>
       </div>
+
+      {brand && showBrand && (
+        <div className="mt-4">
+          <label htmlFor="send-brand" className="mb-1 block text-[12px] text-ink-3">
+            Brand
+          </label>
+          <BrandSelect
+            id="send-brand"
+            choices={brandChoicesFor(brand.picker, brandValue)}
+            value={brandValue}
+            onChange={setBrandValue}
+            className={portalInput}
+          />
+        </div>
+      )}
 
       <div className="mt-4">
         <span className="mb-1 block text-[12px] text-ink-3">Form steps (blank form)</span>

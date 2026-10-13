@@ -24,6 +24,9 @@ import { portalFeatureColumns } from "@/lib/portal/load-features";
 import SendClientForm from "@/components/intake/send-client-form";
 import { loadAdvisorDefaultSections, loadSubmittedFormForClient } from "@/lib/intake/queries";
 import { requireClientPageAccess } from "@/lib/clients/page-access";
+import HouseholdBrandCard from "@/components/portal/household-brand-card";
+import { loadBrandPicker } from "@/lib/branding/brand-options";
+import { brandChoicesFor, canPickBrand, householdBrand, normalizeBrand, FIRM_BRAND } from "@/lib/branding/brand-choice";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -61,6 +64,9 @@ export default async function PortalManagePage({ params }: Props): Promise<React
   const [row] = await db
     .select({
       clerkUserId: clients.clerkUserId,
+      firmId: clients.firmId,
+      advisorId: clients.advisorId,
+      brand: clients.brand,
       portalInvitedAt: clients.portalInvitedAt,
       portalEditEnabled: clients.portalEditEnabled,
       crmHouseholdId: clients.crmHouseholdId,
@@ -78,12 +84,28 @@ export default async function PortalManagePage({ params }: Props): Promise<React
   // Active again the moment the advisor removes access, and the disconnected
   // state below can never appear. Removed in Task 15.
   //
-  // Three indexed lookups, run together rather than in sequence.
-  const [portalUserId, pendingRequest, disconnectedAt] = await Promise.all([
+  // Indexed lookups, run together rather than in sequence. The brand picker is
+  // the CLIENT's firm, not the caller's org: a shared household from another
+  // firm gets nothing.
+  const [portalUserId, pendingRequest, disconnectedAt, brandPicker] = await Promise.all([
     resolveClientPortalUserId(id, row?.clerkUserId ?? null),
     getPendingRequestForClient(id),
     getClientDisconnectedAt(id),
+    row ? loadBrandPicker(row.firmId) : Promise.resolve({ options: [], allBrands: [] }),
   ]);
+
+  // The household's brand as the picker shows it: an advisor brand that is
+  // off reads as the firm's, since that is what the household actually sees.
+  const householdDefault = row
+    ? normalizeBrand(householdBrand(row), brandPicker.allBrands)
+    : FIRM_BRAND;
+  const brandCard = canPickBrand(brandPicker) ? (
+    <HouseholdBrandCard
+      clientId={id}
+      choices={brandChoicesFor(brandPicker, householdDefault)}
+      initialValue={householdDefault}
+    />
+  ) : null;
 
   // Kicked off here, awaited below: it is a Clerk round-trip that depends only
   // on the resolved login, so it overlaps the contacts and intake queries
@@ -193,11 +215,17 @@ export default async function PortalManagePage({ params }: Props): Promise<React
             pendingFormId={pending?.id ?? null}
             defaultSections={defaultSections}
             portalEnabled={portalEnabled}
+            brand={{ picker: brandPicker, defaultValue: householdDefault }}
           />
         }
         features={
-          portalEnabled ? (
-            <PortalFeatureToggles clientId={id} initialFeatures={toPortalFeatures(row)} />
+          portalEnabled || brandCard ? (
+            <div className="space-y-6">
+              {brandCard}
+              {portalEnabled && (
+                <PortalFeatureToggles clientId={id} initialFeatures={toPortalFeatures(row)} />
+              )}
+            </div>
           ) : null
         }
         editing={

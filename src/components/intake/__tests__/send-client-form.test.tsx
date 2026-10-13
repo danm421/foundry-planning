@@ -267,4 +267,39 @@ describe("SendClientForm — the server's warning", () => {
 
     expect(await screen.findByText(/Form sent to jane@example\.com\./)).toBeInTheDocument();
   });
+
+  const PICKER = {
+    options: [
+      { value: "firm", label: "Acme Wealth (firm)" },
+      { value: "user_jane", label: "Smith Wealth" },
+    ],
+    allBrands: [
+      { value: "firm", label: "Acme Wealth (firm)" },
+      { value: "user_jane", label: "Smith Wealth" },
+    ],
+  };
+
+  it("starts the Brand dropdown on the household's brand and sends the pick", async () => {
+    render(<SendClientForm {...defaultProps} brand={{ picker: PICKER, defaultValue: "user_jane" }} />);
+    const select = screen.getByLabelText("Brand") as HTMLSelectElement;
+    expect(select.value).toBe("user_jane");
+
+    fireEvent.change(select, { target: { value: "firm" } });
+    fireEvent.click(screen.getByRole("button", { name: /send blank form/i }));
+
+    await waitFor(() => {
+      const body = JSON.parse((vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string);
+      expect(body.brand).toBe("firm");
+    });
+  });
+
+  it("shows no Brand dropdown, and sends no brand, when there's nothing to choose", async () => {
+    render(<SendClientForm {...defaultProps} brand={{ picker: { options: [], allBrands: [] }, defaultValue: "firm" }} />);
+    expect(screen.queryByLabelText("Brand")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /send blank form/i }));
+    await waitFor(() => {
+      const body = JSON.parse((vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string);
+      expect(body).not.toHaveProperty("brand");
+    });
+  });
 });
