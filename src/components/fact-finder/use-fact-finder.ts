@@ -30,6 +30,8 @@ export interface FactFinderStore {
   /** What the screen shows: the server's state plus every edit not yet saved. */
   state: FactFinderState;
   status: AutosaveState;
+  /** True while any edit isn't saved yet: waiting to send, on its way, or after a failed save. */
+  pending: boolean;
   /** Why the last edit was refused, or why saving failed. */
   error: string | null;
   /** Set when edits were dropped because the same values changed underneath them. */
@@ -54,6 +56,7 @@ function advisorContext(): OpContext {
 interface Display {
   setState(state: FactFinderState): void;
   setStatus(status: AutosaveState): void;
+  setPending(pending: boolean): void;
   setFailure(message: string | null): void;
   setRefusal(message: string | null): void;
   setNotice(message: string | null): void;
@@ -76,6 +79,11 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
     show.setState(view);
   }
 
+  function setQueue(next: ClientOp[]) {
+    queue = next;
+    show.setPending(next.length > 0);
+  }
+
   /** A failed save is moot once nothing is left to save (a newer state already holds it all). */
   function clearMootFailure() {
     if (!failed || sending || queue.length > 0) return;
@@ -88,7 +96,7 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
   function moveTo(next: FactFinderState, madeAgainst: FactFinderState) {
     const { kept, dropped } = rebaseOps(queue, madeAgainst, next, advisorContext());
     server = next;
-    queue = kept;
+    setQueue(kept);
     if (dropped.length > 0) show.setNotice(DROPPED_NOTICE);
     render();
     clearMootFailure();
@@ -100,7 +108,7 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
 
   function forget(batch: readonly ClientOp[]) {
     const sent = new Set(batch);
-    queue = queue.filter((op) => !sent.has(op));
+    setQueue(queue.filter((op) => !sent.has(op)));
   }
 
   async function resync() {
@@ -189,7 +197,7 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
       return false;
     }
     // Copies, so each queued edit is its own object: a reply removes exactly the edits it carried.
-    queue = [...queue, ...ops.map((op) => ({ ...op }))];
+    setQueue([...queue, ...ops.map((op) => ({ ...op }))]);
     view = next;
     show.setState(next);
     show.setRefusal(null);
@@ -254,6 +262,7 @@ export function useFactFinder({
 }): FactFinderStore {
   const [state, setState] = useState(initialState);
   const [status, setStatus] = useState<AutosaveState>("idle");
+  const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -261,6 +270,7 @@ export function useFactFinder({
     createSync(factFinderUrl(clientId, importId), initialState, {
       setState,
       setStatus,
+      setPending,
       setFailure,
       setRefusal,
       setNotice,
@@ -279,6 +289,7 @@ export function useFactFinder({
   return {
     state,
     status,
+    pending,
     error: failure ?? refusal,
     notice,
     apply: sync.apply,

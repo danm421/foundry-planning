@@ -23,7 +23,8 @@ function CountChip({ count, label, tone, children }: { count: number; label: str
 
 interface PageRailProps {
   counts: Record<FFPage, PageCounts>;
-  selected: FFPage;
+  /** The page the main area shows; null while it shows something else (the change list). */
+  selected: FFPage | null;
   onSelect: (page: FFPage) => void;
 }
 

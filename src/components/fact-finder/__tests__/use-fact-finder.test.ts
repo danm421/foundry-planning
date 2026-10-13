@@ -196,6 +196,26 @@ describe("useFactFinder — saving", () => {
     expect(result.current.error).toBeNull();
     expect(server.applied).toEqual([setCell("c1", "currentValue", 100)]);
   });
+  it("says an edit is pending from the moment it shows until the server holds it, through a failed save", async () => {
+    const server = fakeServer(start());
+    server.faults.push("network");
+    const { result } = renderStore();
+    expect(result.current.pending).toBe(false);
+
+    act(() => {
+      result.current.apply([setCell("c1", "currentValue", 100)]);
+    });
+    expect(result.current.pending).toBe(true);
+    await settle();
+    expect(result.current.status).toBe("error");
+    expect(result.current.pending).toBe(true);
+
+    await act(async () => result.current.retry());
+    await settle(0);
+    expect(result.current.status).toBe("saved");
+    expect(result.current.pending).toBe(false);
+  });
+
   it("edits queued while offline all save once it's back, in order, at most 200 to a request (I1)", async () => {
     const server = fakeServer(start());
     server.offline = true;
@@ -392,6 +412,7 @@ describe("useFactFinder — refusals and conflicts", () => {
     expect(result.current.error).toBe("That row isn't in Cash Accounts any more.");
     expect(result.current.state).toBe(fresh);
     expect(result.current.status).toBe("idle");
+    expect(result.current.pending).toBe(false);
     let drained: boolean | undefined;
     await act(async () => {
       drained = await result.current.flushNow();

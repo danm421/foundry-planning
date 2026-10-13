@@ -52,8 +52,13 @@ export function useDocuments({
 }): Documents {
   const [known, setKnown] = useState(initialFiles);
   const [removedIds, setRemovedIds] = useState<string[]>([]);
+  // Files never read, or abandoned mid-read. A failed file waits for Retry: reading it
+  // on every open would fail it again, and add another chat message saying so.
   const [readsOnOpen] = useState(() =>
-    initialFiles.some((file) => needsReading(state.readings[file.id], new Date())),
+    initialFiles.some((file) => {
+      const reading = state.readings[file.id];
+      return reading?.status !== "failed" && needsReading(reading, new Date());
+    }),
   );
   const [, setChecks] = useState(0);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

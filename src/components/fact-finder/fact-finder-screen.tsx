@@ -1,33 +1,84 @@
 "use client";
 // src/components/fact-finder/fact-finder-screen.tsx
 // The fact finder import screen — the client entry the server page renders:
-// header, page rail, the selected page, and the documents & chat panel.
+// header, page rail, the selected page (or the review's change list), and the
+// documents & chat panel.
 // Imports only client-safe leaf modules from src/lib/fact-finder.
 import { useState } from "react";
+import { flushSync } from "react-dom";
 import Link from "next/link";
+import { Card } from "@/components/card";
+import type { CellRef } from "@/lib/fact-finder/change-set";
 import { filesReading } from "@/lib/fact-finder/reading-status";
-import { PAGE_ORDER, type FFPage } from "@/lib/fact-finder/schema";
+import { PAGE_ORDER, findSection, type FFPage } from "@/lib/fact-finder/schema";
 import { pageCounts } from "@/lib/fact-finder/screen-summary";
 import { countLinksNeedingClick } from "@/lib/fact-finder/state";
+import { ChangeList } from "./change-list";
 import { ChatComposerBar, ChatPanel, useChat } from "./chat-panel";
 import { DocumentsPanel, useDocuments } from "./documents-panel";
-import { PanelIcon } from "./icons";
+import { AlertIcon, LoaderIcon, PanelIcon } from "./icons";
 import { PageRail } from "./page-rail";
 import { PageView } from "./page-view";
 import { SaveStatus } from "./save-status";
 import type { FactFinderScreenProps } from "./screen-types";
 import { BESIDE_GRID_STYLE, SidePanel, useNarrowScreen } from "./side-panel";
+import { useChangeTicks } from "./use-change-ticks";
 import { useFactFinder } from "./use-fact-finder";
+import { useReview } from "./use-review";
 
 const PANEL_ID = "fact-finder-panel";
 const PANEL_TITLE = "Documents & chat";
 const REVIEW_REASON_ID = "fact-finder-review-reason";
+const PRIMARY_BUTTON =
+  "inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on transition-colors " +
+  "enabled:cursor-pointer enabled:hover:bg-accent-ink disabled:cursor-not-allowed disabled:opacity-50";
+const GHOST_BUTTON =
+  "inline-flex cursor-pointer items-center gap-1.5 rounded-[var(--radius-sm)] border border-hair px-3 py-2 text-sm text-ink-2 transition-colors hover:border-hair-2 hover:text-ink";
 
-/** Why "Review changes →" can't be pressed yet. */
-function reviewBlockedReason(reading: boolean, linksToClick: number): string {
+/** Why "Review changes →" can't be pressed yet; null when it can. */
+function reviewBlockedReason(reading: boolean, linksToClick: number, pending: boolean): string | null {
   if (reading) return "Wait for the documents to finish reading.";
   if (linksToClick > 0) return `${linksToClick} ${linksToClick === 1 ? "link needs" : "links need"} a click first.`;
-  return "Review arrives in the next update.";
+  if (pending) return "Wait for your edits to save.";
+  return null;
+}
+
+/** The ring Fix in fact finder puts on its cell: focus after a mouse click shows none of its own. */
+const FIX_RING = ["outline-2", "-outline-offset-2", "outline-accent"];
+
+/**
+ * Centres a list cell between its table's left edge and the row's sticky
+ * actions, which cover the scroller's right end; a cell wider than that gap
+ * starts at the left edge. Scrolling is instant, so the cell has already moved.
+ */
+function clearRowActions(target: HTMLElement) {
+  const actions = target.closest("tr")?.querySelector<HTMLElement>("[data-row-actions]");
+  const scroller = actions?.closest("table")?.parentElement; // the table's sideways scroller
+  if (!actions || !scroller) return;
+  const left = scroller.getBoundingClientRect().left;
+  const gap = actions.getBoundingClientRect().left - left;
+  const box = target.getBoundingClientRect();
+  scroller.scrollLeft += box.width > gap ? box.left - left : box.left + box.width / 2 - (left + gap / 2);
+}
+
+/**
+ * Scrolls a fact finder cell (else its section's heading) into the middle of
+ * the view, clear of a table's sticky row actions, focuses it (or the control
+ * in it) and rings it until focus moves on.
+ */
+function focusCell(cell: CellRef | undefined, sectionId: string) {
+  const target =
+    (cell && document.querySelector<HTMLElement>(`[data-cell="${cell.rowId}:${cell.columnId}"]`)) ??
+    document.getElementById(`fact-finder-section-${sectionId}`);
+  if (!target) return;
+  const control = target.querySelector<HTMLElement>("input, select, textarea, button") ?? target;
+  // A heading, or a cell with nothing to edit, takes focus only with a tabindex.
+  if (control === target && !target.hasAttribute("tabindex")) target.tabIndex = -1;
+  target.scrollIntoView?.({ block: "center", inline: "center" });
+  clearRowActions(target);
+  target.classList.add(...FIX_RING);
+  target.addEventListener("focusout", () => target.classList.remove(...FIX_RING), { once: true });
+  control.focus({ preventScroll: true });
 }
 
 export function FactFinderScreen({ clientId, importId, initialState, initialFiles, entities }: FactFinderScreenProps) {
@@ -37,9 +88,50 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
   const reading = docs.read.running || filesReading(state, new Date()).length > 0;
   const chat = useChat({ clientId, importId, flushNow: store.flushNow, adopt: store.adopt });
   const [page, setPage] = useState<FFPage>("household");
-  const [panelOpen, setPanelOpen] = useState(reading || docs.readsOnOpen);
+  // Open while a document is reading or about to, and when one couldn't be read, so its Retry shows.
+  const [panelOpen, setPanelOpen] = useState(
+    () => reading || docs.readsOnOpen || docs.files.some((file) => state.readings[file.id]?.status === "failed"),
+  );
+  // The change list in place of the page: on opening with one, after a review, and on "Review changes →".
+  const [showChanges, setShowChanges] = useState(initialState.changeSet !== undefined);
   const narrow = useNarrowScreen();
   const pageLabel = PAGE_ORDER.find((p) => p.id === page)?.label;
+
+  // An edit not yet saved still shows the change set it is about to drop (applyOps keeps it), so it's not current.
+  const changes = store.pending ? undefined : state.changeSet;
+  const ticks = useChangeTicks(importId, changes);
+  const review = useReview({
+    clientId,
+    importId,
+    flushNow: store.flushNow,
+    adopt(fresh) {
+      store.adopt(fresh);
+      if (fresh.changeSet) setShowChanges(true);
+    },
+  });
+  const blockedReason = reviewBlockedReason(reading, countLinksNeedingClick(state), store.pending);
+  const canReview = blockedReason === null && !review.reviewing;
+
+  function startReview() {
+    // The change set held with no edit since is the current one: show it again, ticks and all.
+    if (changes) setShowChanges(true);
+    else void review.review();
+  }
+
+  function showPage(next: FFPage) {
+    setPage(next);
+    setShowChanges(false);
+  }
+
+  function fix(cell: CellRef | undefined, sectionId: string) {
+    const target = findSection(cell?.sectionId ?? sectionId)?.page;
+    // The page renders now, so the cell is there to focus.
+    flushSync(() => {
+      setShowChanges(false);
+      if (target) setPage(target);
+    });
+    focusCell(cell, sectionId);
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -71,18 +163,43 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
             <PanelIcon />
             {PANEL_TITLE}
           </button>
-          <p id={REVIEW_REASON_ID} className="text-xs text-ink-3">
-            {reviewBlockedReason(reading, countLinksNeedingClick(state))}
-          </p>
+          {blockedReason && (
+            <p id={REVIEW_REASON_ID} className="text-xs text-ink-3">
+              {blockedReason}
+            </p>
+          )}
           <button
             type="button"
-            disabled
-            aria-describedby={REVIEW_REASON_ID}
-            className="rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!canReview}
+            onClick={startReview}
+            aria-describedby={blockedReason ? REVIEW_REASON_ID : undefined}
+            className={PRIMARY_BUTTON}
           >
-            Review changes →
+            {review.reviewing ? (
+              <>
+                <LoaderIcon className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+                Reviewing…
+              </>
+            ) : (
+              "Review changes →"
+            )}
           </button>
         </div>
+        {review.error && (
+          <div className="flex w-full items-start justify-end gap-3 text-sm">
+            <p role="alert" className="flex items-start gap-2 text-crit">
+              <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
+              {review.error}
+            </p>
+            <button
+              type="button"
+              onClick={review.dismiss}
+              className="shrink-0 text-ink-3 underline underline-offset-2 hover:text-ink hover:no-underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
       </header>
 
       <div
@@ -91,11 +208,48 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
         }`}
         style={panelOpen && !narrow ? BESIDE_GRID_STYLE : undefined}
       >
-        <PageRail counts={pageCounts(state)} selected={page} onSelect={setPage} />
+        <PageRail counts={pageCounts(state)} selected={showChanges ? null : page} onSelect={showPage} />
 
         <div className="flex min-w-0 flex-col gap-4">
-          <h2 className="text-lg font-semibold text-ink">{pageLabel}</h2>
-          <PageView page={page} state={state} onApply={store.apply} fileName={docs.fileName} entities={entities} />
+          {showChanges && changes ? (
+            <ChangeList
+              changeSet={changes}
+              ticks={ticks.ticks}
+              onToggleField={ticks.toggleField}
+              onToggleLine={ticks.toggleLine}
+              onFix={fix}
+              onBack={() => setShowChanges(false)}
+            />
+          ) : showChanges ? (
+            <>
+              <h2 className="text-lg font-semibold text-ink">Changes to the plan</h2>
+              <Card className="flex flex-wrap items-center justify-between gap-3 px-[var(--pad-card)] py-4">
+                <p role="status" className="text-sm text-ink-2">
+                  The fact finder changed — review again.
+                </p>
+                <div className="flex items-center gap-3">
+                  <button type="button" onClick={() => setShowChanges(false)} className={GHOST_BUTTON}>
+                    <span aria-hidden="true">←</span>
+                    Back to fact finder
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canReview}
+                    onClick={() => void review.review()}
+                    aria-describedby={blockedReason ? REVIEW_REASON_ID : undefined}
+                    className={PRIMARY_BUTTON}
+                  >
+                    Review again
+                  </button>
+                </div>
+              </Card>
+            </>
+          ) : (
+            <>
+              <h2 className="text-lg font-semibold text-ink">{pageLabel}</h2>
+              <PageView page={page} state={state} onApply={store.apply} fileName={docs.fileName} entities={entities} />
+            </>
+          )}
         </div>
 
         <SidePanel

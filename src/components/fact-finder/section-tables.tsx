@@ -216,12 +216,12 @@ function ListTable(props: SectionBodyProps) {
                   <NumberedLabel text={String(i + 1)} label={rowLabel(section, row)} />
                 </th>
                 {section.columns.map((column) => (
-                  <td key={column.id} className={CELL}>
+                  <td key={column.id} data-cell={`${row.id}:${column.id}`} className={CELL}>
                     {cellFor(props, row, column)}
                   </td>
                 ))}
-                {section.links && <td className={CELL}>{linkFor(props, row)}</td>}
-                <td className={STICKY_END}>
+                {section.links && <td data-cell={`${row.id}:link`} className={CELL}>{linkFor(props, row)}</td>}
+                <td data-row-actions className={STICKY_END}>
                   <RowActions section={section} rows={rows} row={row} onApply={onApply} />
                 </td>
               </tr>
@@ -264,11 +264,11 @@ function FixedRowsTable(props: SectionBodyProps) {
               {fixedLabelOfRow(section.id, row.id)}
             </th>
             {section.columns.map((column) => (
-              <td key={column.id} className={CELL}>
+              <td key={column.id} data-cell={`${row.id}:${column.id}`} className={CELL}>
                 {cellFor(props, row, column)}
               </td>
             ))}
-            {section.links && <td className={CELL}>{linkFor(props, row)}</td>}
+            {section.links && <td data-cell={`${row.id}:link`} className={CELL}>{linkFor(props, row)}</td>}
           </tr>
         ))}
       </tbody>
@@ -307,7 +307,7 @@ function TransposedTable(props: SectionBodyProps) {
               Links to
             </th>
             {rows.map((row) => (
-              <td key={row.id} className={CELL}>
+              <td key={row.id} data-cell={`${row.id}:link`} className={CELL}>
                 {linkFor(props, row)}
               </td>
             ))}
@@ -319,7 +319,7 @@ function TransposedTable(props: SectionBodyProps) {
               <div className="min-w-40">{column.label}</div>
             </th>
             {rows.map((row) => (
-              <td key={row.id} className={CELL}>
+              <td key={row.id} data-cell={`${row.id}:${column.id}`} className={CELL}>
                 {cellFor(props, row, column)}
               </td>
             ))}
@@ -334,7 +334,8 @@ function TransposedTable(props: SectionBodyProps) {
 function NotesBox(props: SectionBodyProps) {
   const [row] = props.rows;
   if (!row) return null;
-  return <div className="px-[var(--pad-card)] py-3">{cellFor(props, row, props.section.columns[0])}</div>;
+  const [column] = props.section.columns;
+  return <div data-cell={`${row.id}:${column.id}`} className="px-[var(--pad-card)] py-3">{cellFor(props, row, column)}</div>;
 }
 
 export function SectionBody(props: SectionBodyProps) {

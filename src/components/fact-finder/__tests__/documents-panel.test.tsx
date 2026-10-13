@@ -136,7 +136,7 @@ describe("reading on open", () => {
       stream.write(fileFrame("f2", "done", { reader: "statement", rows: 5 }), finished());
       stream.close();
     });
-    await waitFor(() => expect(review()).toHaveAccessibleDescription("Review arrives in the next update."));
+    await waitFor(() => expect(review()).toBeEnabled());
     expect(line("schwab-june.pdf")).toHaveTextContent("Read · 5 rows");
     expect(net.gets()).toBe(1);
   });
@@ -147,6 +147,26 @@ describe("reading on open", () => {
 
     expect(screen.getByRole("button", { name: "Documents & chat" })).toHaveAttribute("aria-expanded", "false");
     expect(net.reads()).toBe(0);
+  });
+
+  it("reads a document abandoned mid-read", () => {
+    const net = stubFetch([liveStream().response]);
+    const abandoned: FFFileReading = { status: "reading", startedAt: new Date(Date.now() - STALE_READING_MS - 1000).toISOString() };
+    renderScreen(withReadings({ f1: DONE, f2: abandoned }));
+
+    expect(net.reads()).toBe(1);
+  });
+
+  it("a failed document opens the panel without reading: it waits for its Retry, so opening the screen doesn't fail it again", async () => {
+    const net = stubFetch([liveStream().response]);
+    renderScreen(withReadings({ f1: DONE, f2: { status: "failed", startedAt: AT, reason: "Couldn't read this document — try again." } }));
+
+    expect(panel()).toBeInTheDocument();
+    expect(line("schwab-june.pdf")).toHaveTextContent("Couldn't read");
+    expect(net.reads()).toBe(0);
+
+    await userEvent.click(screen.getByRole("button", { name: "Retry reading schwab-june.pdf" }));
+    expect(net.reads()).toBe(1);
   });
 
   it("shows a refused read's message with a Retry that reads again", async () => {
@@ -347,7 +367,7 @@ describe("a read started elsewhere", () => {
     await elapse(5000);
     expect(net.gets()).toBe(2);
     expect(line("schwab-june.pdf")).toHaveTextContent("Read · 5 rows");
-    expect(review()).toHaveAccessibleDescription("Review arrives in the next update.");
+    expect(review()).toBeEnabled();
 
     await elapse(20000);
     expect(net.gets()).toBe(2);
@@ -431,7 +451,7 @@ describe("a read started elsewhere", () => {
     await elapse(5000);
     expect(net.gets()).toBe(2);
     expect(line("schwab-june.pdf")).toHaveTextContent("Waiting to read");
-    expect(review()).toHaveAccessibleDescription("Review arrives in the next update.");
+    expect(review()).toBeEnabled();
 
     await elapse(20000);
     expect(net.gets()).toBe(2);
