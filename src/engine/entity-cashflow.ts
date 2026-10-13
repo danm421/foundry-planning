@@ -313,6 +313,7 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
             ledger: {
               beginningValue: ledger.beginningValue,
               growth: ledger.growth,
+              marginInterest: ledger.marginInterest,
               endingValue: ledger.endingValue,
             },
             percent: share,

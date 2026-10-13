@@ -40,6 +40,7 @@ import {
 import { computeBusinessYearFlow } from "./business/year-flow";
 import { buildGiftValueAtYear } from "./business/business-tree";
 import { accrueLockedEntityShare } from "./locked-shares";
+import { type MarginMap, netSeedValue, grossValue, chargeMarginInterest } from "./margin";
 import { buildOwnershipSnapshot } from "./ownership-snapshot";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
@@ -855,7 +856,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   const accountBalances: Record<string, number> = {};
   for (const acct of data.accounts) {
     if (isPreActivation(acct, planSettings.planStartYear)) continue;
-    accountBalances[acct.id] = acct.value;
+    accountBalances[acct.id] = netSeedValue(acct);
   }
 
   // Per-contract annuity state, threaded across years alongside accountBalances.
@@ -931,6 +932,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   for (const acct of data.accounts) {
     if (isPreActivation(acct, planSettings.planStartYear)) continue;
     basisMap[acct.id] = acct.basis;
+  }
+
+  // Live margin loan per account (spec 2026-10-13). Carries across years like
+  // basisMap; NEVER cleared per year (unlike freshBasisMap).
+  const marginMap: MarginMap = {};
+  for (const acct of data.accounts) {
+    if (isPreActivation(acct, planSettings.planStartYear)) continue;
+    if ((acct.marginBalance ?? 0) > 0) marginMap[acct.id] = acct.marginBalance!;
   }
 
   // Per-year, per-account unspent basisIncrease pool. Reset at top of each
@@ -1275,9 +1284,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const acct of data.accounts) {
       if (acct.activationYear === year && !workingAccounts.some((w) => w.id === acct.id)) {
         workingAccounts.push(acct);
-        accountBalances[acct.id] = acct.value;
+        accountBalances[acct.id] = netSeedValue(acct);
         basisMap[acct.id] = acct.basis;
         rothValueMap[acct.id] = acct.rothValue ?? 0;
+        if ((acct.marginBalance ?? 0) > 0) marginMap[acct.id] = acct.marginBalance!;
         // A joining annuity needs its contract state seeded HERE, not lazily in
         // the contract step below: transfers and draws run first and consume
         // §72 basis, and without an entry to write into, that consumption is
@@ -1451,6 +1461,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // stamp). Non-cash accounts keep their tracked cost basis.
         basisBoY: acct.category === "cash" ? beginningValue : (basisMap[acct.id] ?? acct.basis),
         rothValueBoY: rothValueMap[acct.id] ?? acct.rothValue ?? 0,
+        ...(marginMap[acct.id] != null ? { marginBoY: marginMap[acct.id] } : {}),
       };
     }
 
@@ -2064,7 +2075,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         overriddenRate != null && Number.isFinite(overriddenRate)
           ? overriddenRate
           : acct.growthRate;
-      const growth = currentBalance * effectiveGrowthRate;
+      // Margin: the whole securities position grows, not just the net.
+      const growthBase = grossValue(currentBalance, marginMap, acct.id);
+      const growth = growthBase * effectiveGrowthRate;
 
       // Defensive: ensure a ledger exists (applyAssetPurchases initializes one
       // for new accounts; this covers any edge case where it didn't).
@@ -2081,6 +2094,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           endingValue: currentBalance,
           entries: [],
           basisBoY: basisMap[acct.id] ?? acct.basis,
+          ...(marginMap[acct.id] != null ? { marginBoY: marginMap[acct.id] } : {}),
         };
       }
 
@@ -2208,7 +2222,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       accountLedgers[acct.id].endingValue += growth;
       accountLedgers[acct.id].entries.push({
         category: "growth",
-        label: `Growth (${(effectiveGrowthRate * 100).toFixed(2)}%)`,
+        label: (marginMap[acct.id] ?? 0) > 0
+          ? `Growth (${(effectiveGrowthRate * 100).toFixed(2)}% on securities incl. margin loan)`
+          : `Growth (${(effectiveGrowthRate * 100).toFixed(2)}%)`,
         amount: growth,
         basis: growthBasisDelta,
       });
@@ -2224,6 +2240,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (rothBefore > 0) {
         rothValueMap[acct.id] = rothBefore + rothBefore * effectiveGrowthRate;
       }
+    }
+
+    // ── Margin interest (spec 2026-10-13) ──────────────────────────────────
+    // Its own loop: the growth loop `continue`s on 0% growth and on scheduled
+    // accounts, and interest is owed regardless.
+    for (const acct of workingAccounts) {
+      chargeMarginInterest(acct, accountBalances, marginMap, accountLedgers[acct.id]);
     }
 
     // stock_options base accounts hold only not-yet-acquired value (the equity
@@ -5139,6 +5162,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           ledger: {
             beginningValue: wLedger?.beginningValue ?? balance,
             growth: wLedger?.growth ?? 0,
+            marginInterest: wLedger?.marginInterest,
             endingValue: balance,
           },
           percent: o.percent,
@@ -8747,6 +8771,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           ledger: {
             beginningValue: ledger.beginningValue,
             growth: ledger.growth,
+            marginInterest: ledger.marginInterest,
             endingValue: ledger.endingValue,
           },
           percent: o.percent,
@@ -8862,6 +8887,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           ? accountLedgers[acctId].endingValue
           : (basisMap[acctId] ?? 0);
       accountLedgers[acctId].rothValueEoY = rothValueMap[acctId] ?? 0;
+      if (marginMap[acctId] != null) accountLedgers[acctId].marginEoY = marginMap[acctId];
     }
 
     // Surface per-grantor-entity realized asset-sale cap gains so

@@ -7,9 +7,9 @@ export interface AccrueLockedEntityShareInput {
    *  the carry as-is. */
   carriedPercent?: number;
   /** This year's account ledger snapshot — only `beginningValue`, `growth`,
-   *  and `endingValue` are read; all flow entries are treated as
-   *  household-attributable. */
-  ledger: { beginningValue: number; growth: number; endingValue: number };
+   *  `marginInterest`, and `endingValue` are read; all flow entries are
+   *  treated as household-attributable. */
+  ledger: { beginningValue: number; growth: number; endingValue: number; marginInterest?: number };
   /** Entity owner's share of the account (0..1). */
   percent: number;
 }
@@ -41,7 +41,9 @@ export function accrueLockedEntityShare(
       : 0;
   const lockedBoY =
     carriedBoY === undefined ? ledger.beginningValue * percent : carriedBoY + topUp;
-  const lockedGrowth = ledger.growth * percent;
+  // Margin interest is a passive cost of the position, borne pro rata like
+  // growth (spec R6) — otherwise the household would carry the entity's share.
+  const lockedGrowth = (ledger.growth - (ledger.marginInterest ?? 0)) * percent;
   const lockedEoY = Math.min(
     lockedBoY + lockedGrowth,
     Math.max(0, ledger.endingValue),

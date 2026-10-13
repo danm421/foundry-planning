@@ -2330,6 +2330,13 @@ export interface AccountLedger {
    * end of the year, after growth, contributions, withdrawals, and any
    * Roth conversions out have settled. */
   rothValueEoY?: number;
+  /** Margin interest charged this year (capitalized onto the loan). Kept OUT
+   *  of `growth`: family-cashflow distributes non-growth entries pro rata, so
+   *  adding it to growth as well would count it twice. */
+  marginInterest?: number;
+  /** Margin loan at the start / end of the year. Present only on margined accounts. */
+  marginBoY?: number;
+  marginEoY?: number;
   /**
    * Itemized entries for everything that happened in this account this year,
    * in the order it was applied. Amounts are signed: positive = inflow, negative = outflow.
@@ -2372,7 +2379,8 @@ export interface AccountLedgerEntry {
     | "entity_distribution"
     | "discretionary"
     | "surplus_transfer"
-    | "surplus_retained";
+    | "surplus_retained"
+    | "margin_interest";
   label: string;
   amount: number;
   sourceId?: string;
