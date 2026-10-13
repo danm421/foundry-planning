@@ -53,6 +53,16 @@ describe("PUT /api/clients/[id]/brand", () => {
     const res = await PUT(req({ brand: "user_bob" }), ctx);
     expect(res.status).toBe(200);
     expect(setMock).toHaveBeenCalledWith({ brand: null });
+    expect(assertBrand).toHaveBeenCalledWith("org_a", "user_bob", "firm");
+    expect(auditMock).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { from: "firm", to: "user_bob" } }),
+    );
+  });
+
+  it("checks the pick against the household's current brand, not its advisor", async () => {
+    client.brand = "firm";
+    await PUT(req({ brand: "user_jane" }), ctx);
+    expect(assertBrand).toHaveBeenCalledWith("org_a", "user_jane", "firm");
   });
 
   it("refuses a brand the caller can't use, and writes nothing", async () => {

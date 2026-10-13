@@ -36,10 +36,10 @@ export async function PUT(
     }
     const next = parsed.data;
 
-    // The household's own advisor is always allowed: it is the default.
-    await assertBrandChoiceAllowed(firmId, next, client.advisorId);
-
+    // The household's current brand is always allowed: it is the default.
     const before = householdBrand(client);
+    await assertBrandChoiceAllowed(firmId, next, before);
+
     await db
       .update(clients)
       .set({ brand: next === client.advisorId ? null : next })
