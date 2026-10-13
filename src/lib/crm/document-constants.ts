@@ -8,5 +8,12 @@
  * pre-submit validation, so it lives here.
  */
 
-/** Maximum upload size for CRM household documents (10 MB). */
+/**
+ * Maximum upload size for CRM household documents (10 MB). Routes that post the
+ * file through a function never reach it: Vercel caps a function request body
+ * at 4.5 MB. Only a browser → Blob direct upload escapes that cap.
+ */
 export const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024;
+
+/** Maximum size for a browser → Blob direct upload (the client portal's). */
+export const MAX_DIRECT_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024;

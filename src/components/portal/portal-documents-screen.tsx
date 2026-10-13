@@ -1,7 +1,8 @@
 "use client";
 import { useMemo, useState } from "react";
 import type { ReactElement } from "react";
-import { MAX_DOCUMENT_SIZE_BYTES } from "@/lib/crm/document-constants";
+import { put } from "@vercel/blob/client";
+import { MAX_DIRECT_UPLOAD_SIZE_BYTES } from "@/lib/crm/document-constants";
 import ConfirmDeleteDialog from "@/components/confirm-delete-dialog";
 import { portalBtn } from "@/components/portal/portal-card";
 import { usePortalVault, type VaultDoc } from "./documents/use-portal-vault";
@@ -35,7 +36,7 @@ async function messageFor(res: Response, fallback: string): Promise<string> {
 
 export function PortalDocumentsScreen({ editEnabled }: { editEnabled: boolean }): ReactElement {
   const v = usePortalVault();
-  const [uploading, setUploading] = useState<string | null>(null);
+  const [uploading, setUploading] = useState<{ name: string; percent: number } | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
@@ -61,17 +62,35 @@ export function PortalDocumentsScreen({ editEnabled }: { editEnabled: boolean })
   const atRoot = v.currentFolderId === null;
 
   async function handleUpload(file: File): Promise<void> {
-    if (file.size > MAX_DOCUMENT_SIZE_BYTES) {
-      v.setError(`"${file.name}" is ${formatBytes(file.size)} — the limit is 10 MB.`);
+    if (file.size > MAX_DIRECT_UPLOAD_SIZE_BYTES) {
+      v.setError(
+        `"${file.name}" is ${formatBytes(file.size)} — the limit is ${formatBytes(MAX_DIRECT_UPLOAD_SIZE_BYTES)}.`,
+      );
       return;
     }
-    setUploading(file.name);
+    setUploading({ name: file.name, percent: 0 });
     v.setError(null);
+    const postJson = (url: string, body: unknown) =>
+      v.portalFetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      if (v.currentFolderId) fd.append("folderId", v.currentFolderId);
-      const res = await v.portalFetch("/api/portal/documents", { method: "POST", body: fd });
+      const folderId = v.currentFolderId;
+      const ticket = await postJson("/api/portal/documents/upload-token", { filename: file.name, folderId });
+      if (!ticket.ok) {
+        v.setError(await messageFor(ticket, "Upload failed. Please try again."));
+        return;
+      }
+      const { pathname, clientToken } = (await ticket.json()) as { pathname: string; clientToken: string };
+      // Straight to file storage: a request through our server caps at 4.5 MB.
+      await put(pathname, file, {
+        access: "private",
+        token: clientToken,
+        onUploadProgress: ({ percentage }) => setUploading({ name: file.name, percent: Math.round(percentage) }),
+      });
+      const res = await postJson("/api/portal/documents", { pathname, filename: file.name, folderId });
       if (!res.ok) {
         v.setError(await messageFor(res, "Upload failed. Please try again."));
         return;
@@ -196,7 +215,9 @@ export function PortalDocumentsScreen({ editEnabled }: { editEnabled: boolean })
 
       {uploading !== null && (
         <div className="space-y-1.5" role="status" aria-live="polite">
-          <p className="truncate text-[12px] text-ink-3">Uploading {uploading}…</p>
+          <p className="truncate text-[12px] text-ink-3">
+            Uploading {uploading.name}… <span className="tabular">{uploading.percent}%</span>
+          </p>
           <div className="h-1 w-full animate-pulse rounded-full bg-accent/40" />
         </div>
       )}
