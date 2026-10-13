@@ -15,5 +15,6 @@
  */
 export const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024;
 
-/** Maximum size for a browser → Blob direct upload (the client portal's). */
+/** Maximum size for a browser → Blob direct upload (the client portal's, and
+ *  every `@/lib/uploads/staged-upload` caller's). */
 export const MAX_DIRECT_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024;
