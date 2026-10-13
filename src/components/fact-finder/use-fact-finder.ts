@@ -14,12 +14,14 @@ import type {
   PatchFactFinderResponse,
 } from "@/lib/fact-finder/api-types";
 import { rebaseOps } from "@/lib/fact-finder/client-ops";
-import { FactFinderOpError, applyOps, type ClientOp, type OpContext } from "@/lib/fact-finder/ops";
+import { FactFinderOpError, MAX_OPS_PER_SAVE, applyOps, type ClientOp, type OpContext } from "@/lib/fact-finder/ops";
 import type { FactFinderState } from "@/lib/fact-finder/types";
 import { JSON_HEADERS, OFFLINE_MESSAGE, factFinderUrl, refusalText } from "./http";
 
 /** How long the screen sits still before queued edits are sent. */
 export const SAVE_DEBOUNCE_MS = 400;
+
+const UNEXPECTED_MESSAGE = "Something went wrong while saving.";
 
 const DROPPED_NOTICE =
   "Some of your edits weren't kept: the same values changed at the same time from a reading or the chat. Check them and edit again if needed.";
@@ -74,6 +76,14 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
     show.setState(view);
   }
 
+  /** A failed save is moot once nothing is left to save (a newer state already holds it all). */
+  function clearMootFailure() {
+    if (!failed || sending || queue.length > 0) return;
+    failed = false;
+    show.setFailure(null);
+    show.setStatus("saved");
+  }
+
   /** Moves to a newer server state and re-applies the queue on it; edits whose ground moved are dropped. */
   function moveTo(next: FactFinderState, madeAgainst: FactFinderState) {
     const { kept, dropped } = rebaseOps(queue, madeAgainst, next, advisorContext());
@@ -81,6 +91,7 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
     queue = kept;
     if (dropped.length > 0) show.setNotice(DROPPED_NOTICE);
     render();
+    clearMootFailure();
   }
 
   function adopt(fresh: FactFinderState) {
@@ -137,19 +148,28 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
 
   function send(): Promise<void> {
     if (sending) return sending;
-    if (queue.length === 0) return Promise.resolve();
+    if (queue.length === 0) {
+      clearMootFailure();
+      return Promise.resolve();
+    }
     failed = false;
     show.setFailure(null);
     show.setStatus("saving");
-    sending = attempt(queue.slice(), server).then((outcome) => {
-      sending = null;
-      failed = outcome === "failed";
-      if (failed) show.setStatus("error");
-      else if (queue.length > 0) {
-        // Edits made while this was in flight; a pending debounce sends them itself.
-        if (!timer) void send();
-      } else show.setStatus(outcome === "ok" ? "saved" : "idle");
-    });
+    // The oldest edits first, as many as the route takes; the rest follow below.
+    sending = attempt(queue.slice(0, MAX_OPS_PER_SAVE), server)
+      .catch((): Outcome => {
+        show.setFailure(UNEXPECTED_MESSAGE);
+        return "failed";
+      })
+      .then((outcome) => {
+        sending = null;
+        failed = outcome === "failed";
+        if (failed) show.setStatus("error");
+        else if (queue.length > 0) {
+          // The rest of a long queue, or edits made while this was in flight; a pending debounce sends them itself.
+          if (!timer) void send();
+        } else show.setStatus(outcome === "ok" ? "saved" : "idle");
+      });
     return sending;
   }
 
@@ -190,11 +210,12 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
   /**
    * The page is going away (or into the back/forward cache): the browser
    * delivers what's unsaved. Safe beside a request in flight — both carry the
-   * same base version, so at most one of them lands.
+   * same base version, so at most one of them lands. Only the oldest
+   * MAX_OPS_PER_SAVE go: the route refuses a longer batch outright.
    */
   function sendOnExit() {
     if (queue.length === 0) return;
-    const body: PatchFactFinderBody = { baseVersion: server.version, ops: queue };
+    const body: PatchFactFinderBody = { baseVersion: server.version, ops: queue.slice(0, MAX_OPS_PER_SAVE) };
     void fetch(url, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(body), keepalive: true }).catch(
       () => {},
     );

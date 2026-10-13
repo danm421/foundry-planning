@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { SAVE_DEBOUNCE_MS, useFactFinder } from "../use-fact-finder";
 import type { PatchFactFinderBody } from "@/lib/fact-finder/api-types";
-import { applyOps, type ClientOp, type OpContext } from "@/lib/fact-finder/ops";
+import { FactFinderOpError, MAX_OPS_PER_SAVE, applyOps, parseOps, type ClientOp, type OpContext } from "@/lib/fact-finder/ops";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
 import type { FactFinderState, FFCell } from "@/lib/fact-finder/types";
 
@@ -51,6 +51,8 @@ function fakeServer(initial: FactFinderState) {
     requests: [] as PatchFactFinderBody[],
     /** Per PATCH, in order: fail before applying, or apply and then lose the reply. */
     faults: [] as Array<"network" | "lostReply" | undefined>,
+    /** Every PATCH fails before it arrives. */
+    offline: false,
     write(ops: ClientOp[], by: OpContext["by"]) {
       server.state = { ...applyOps(server.state, ops, ctx(by)), version: server.state.version + 1 };
     },
@@ -60,7 +62,14 @@ function fakeServer(initial: FactFinderState) {
     const body = JSON.parse(String(init.body)) as PatchFactFinderBody;
     server.requests.push(body);
     const fault = server.faults.shift();
-    if (fault === "network") throw new TypeError("Failed to fetch");
+    if (fault === "network" || server.offline) throw new TypeError("Failed to fetch");
+    // The route's own check: at most MAX_OPS_PER_SAVE ops, each well formed.
+    try {
+      parseOps(body.ops);
+    } catch (err) {
+      if (err instanceof FactFinderOpError) return reply(400, { error: err.message });
+      throw err;
+    }
     if (body.baseVersion !== server.state.version) return reply(409, { error: "conflict", factFinder: server.state });
     server.write(body.ops, "advisor");
     server.applied.push(...body.ops);
@@ -186,6 +195,72 @@ describe("useFactFinder — saving", () => {
     expect(result.current.status).toBe("saved");
     expect(result.current.error).toBeNull();
     expect(server.applied).toEqual([setCell("c1", "currentValue", 100)]);
+  });
+  it("edits queued while offline all save once it's back, in order, at most 200 to a request (I1)", async () => {
+    const server = fakeServer(start());
+    server.offline = true;
+    const { result } = renderStore();
+    const edits = Array.from({ length: 250 }, (_, i) => setCell(ROWS[i % ROWS.length], "currentValue", i));
+
+    // Typed in two spells while "Not saved": each save fails again.
+    act(() => {
+      for (const op of edits.slice(0, 125)) result.current.apply([op]);
+    });
+    await settle();
+    act(() => {
+      for (const op of edits.slice(125)) result.current.apply([op]);
+    });
+    await settle();
+    expect(result.current.status).toBe("error");
+
+    server.offline = false;
+    await act(async () => result.current.retry());
+    await settle(0);
+
+    expect(server.requests.map((r) => r.ops.length)).toEqual([125, 200, 200, 50]);
+    expect(server.requests.slice(2).map((r) => r.baseVersion)).toEqual([4, 5]);
+    expect(server.applied).toEqual(edits);
+    expect(result.current.status).toBe("saved");
+    expect(result.current.error).toBeNull();
+    expect(result.current.state).toEqual(server.state);
+    expect(MAX_OPS_PER_SAVE).toBe(200); // the route's cap, shared
+  });
+
+  it("a save that throws unexpectedly shows Not saved, and Retry, later saves and flushNow still work", async () => {
+    const server = fakeServer(start());
+    // A 409 without the fact finder in it: reading the reply throws.
+    vi.mocked(fetch).mockResolvedValueOnce(reply(409, { error: "conflict" }));
+    const { result } = renderStore();
+    act(() => {
+      result.current.apply([setCell("c1", "currentValue", 100)]);
+    });
+    await settle();
+    expect(result.current.status).toBe("error");
+    expect(result.current.error).toBe("Something went wrong while saving.");
+
+    await act(async () => result.current.retry());
+    await settle(0);
+    expect(result.current.status).toBe("saved");
+    expect(server.applied).toEqual([setCell("c1", "currentValue", 100)]);
+
+    act(() => {
+      result.current.apply([setCell("c2", "currentValue", 200)]);
+    });
+    await settle();
+    act(() => {
+      result.current.apply([setCell("c3", "currentValue", 300)]);
+    });
+    let drained: boolean | undefined;
+    await act(async () => {
+      drained = await result.current.flushNow();
+    });
+    expect(drained).toBe(true);
+    expect(server.applied).toEqual([
+      setCell("c1", "currentValue", 100),
+      setCell("c2", "currentValue", 200),
+      setCell("c3", "currentValue", 300),
+    ]);
+    expect(result.current.status).toBe("saved");
   });
 });
 
@@ -346,6 +421,29 @@ describe("useFactFinder — refusals and conflicts", () => {
       ops: [setCell("c1", "currentValue", 100)],
     });
   });
+  it("once a newer fact finder already holds every unsaved edit, Not saved gives way to Saved and Retry sends nothing", async () => {
+    const server = fakeServer(start());
+    server.faults.push("lostReply");
+    const { result } = renderStore();
+    act(() => {
+      result.current.apply([setCell("c1", "currentValue", 100)]);
+    });
+    await settle();
+    expect(result.current.status).toBe("error");
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    // A chat reply's fact finder: the server took the edit, so nothing is left to save.
+    act(() => result.current.adopt(server.state));
+    expect(result.current.status).toBe("saved");
+    expect(result.current.error).toBeNull();
+    expect(result.current.notice).toBeNull();
+    expect(cell(result.current.state, "c1", "currentValue")).toBe(100);
+
+    await act(async () => result.current.retry());
+    await settle();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe("saved");
+  });
 });
 
 describe("useFactFinder — leaving the page", () => {
@@ -366,5 +464,20 @@ describe("useFactFinder — leaving the page", () => {
     unmount();
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(vi.mocked(fetch).mock.calls[1][1]).toEqual(expect.objectContaining({ keepalive: true }));
+  });
+
+  it("hands over at most 200 edits on pagehide (the route refuses more), the oldest first", () => {
+    vi.mocked(fetch).mockResolvedValue(reply(200, {}));
+    const { result } = renderStore();
+    const edits = Array.from({ length: 250 }, (_, i) => setCell(ROWS[i % ROWS.length], "currentValue", i));
+    act(() => {
+      for (const op of edits) result.current.apply([op]);
+    });
+
+    window.dispatchEvent(new Event("pagehide"));
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))).toEqual({
+      baseVersion: 4,
+      ops: edits.slice(0, 200),
+    });
   });
 });

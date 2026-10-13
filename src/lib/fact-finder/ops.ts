@@ -76,7 +76,10 @@ export type ClientOp = z.infer<typeof clientOp>;
 /** `restoreSnapshots` is server-only (undo); `parseOps` never accepts it. */
 export type FFOp = ClientOp | { op: "restoreSnapshots"; snapshots: FFSnapshot[] };
 
-const clientOps = z.array(clientOp).min(1).max(200);
+/** The most ops one save (PATCH) carries; the screen sends a longer queue in turns. */
+export const MAX_OPS_PER_SAVE = 200;
+
+const clientOps = z.array(clientOp).min(1).max(MAX_OPS_PER_SAVE);
 
 export function parseOps(input: unknown): FFOp[] {
   const parsed = clientOps.safeParse(input);
