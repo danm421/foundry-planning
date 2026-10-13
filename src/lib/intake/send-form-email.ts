@@ -3,6 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { intakeEmailSettings } from "@/db/schema";
 import { getAdvisorProfile } from "@/lib/branding/advisor-profile";
+import { brandAdvisorOf, type BrandChoice } from "@/lib/branding/brand-choice";
+import { listFirmMembers } from "@/lib/crm-tasks/members";
 import { resolveFirmName } from "@/lib/activity/resolve-firm-names";
 import { sendIntakeFormEmail, type IntakeEmailResult } from "@/lib/intake/email";
 import { resolveSubject } from "@/lib/intake/email-template";
@@ -22,17 +24,20 @@ const FOLLOW_UP: Record<"reminder" | "reopened", { prefix: string; intro?: strin
  * (POST /api/data-collection) and the reminder (POST /api/data-collection/
  * [id]/remind). One composer on purpose — a reminder that resolved its brand,
  * saved copy or signature differently from the original would reach the client
- * looking like mail from someone else.
+ * looking like mail from someone else. The household's advisor no longer owns
+ * the brand: the form's `brand` decides who speaks.
  */
 export async function sendIntakeLinkEmail(args: {
   firmId: string;
-  /** The advisor sending right now: their saved copy and their signature. */
+  /** The person clicking Send — who signs when no advisor brand is in effect. */
   senderUserId: string;
   /**
-   * The household's OWN advisor, whose brand the recipient should see. A send
-   * with no client behind it passes the sender.
+   * The form's brand. An advisor brand that is on, for an advisor still in
+   * the firm, speaks as that advisor: their saved wording, their signature,
+   * their brand name. Anything else — the firm brand, a brand turned off, an
+   * advisor who has left — speaks as the sender, under the firm's name.
    */
-  brandAdvisorUserId: string;
+  brand: BrandChoice;
   to: string;
   link: string;
   clientName?: string | null;
@@ -42,47 +47,52 @@ export async function sendIntakeLinkEmail(args: {
    */
   followUp?: keyof typeof FOLLOW_UP;
 }): Promise<IntakeEmailResult> {
-  const { firmId, senderUserId, brandAdvisorUserId, to, link, clientName } = args;
+  const { firmId, senderUserId, to, link, clientName } = args;
 
-  // Four round-trips — two Clerk, two DB — and none reads another's result, so
-  // they overlap rather than queue. Both callers pay this, and the send route
-  // pays it while an advisor waits on a button.
-  //
-  // `currentUser()` is the ambient request session, which is the same person as
-  // `senderUserId` at both call sites today. A caller with no session (an
-  // auto-nudge cron) would need `users.getUser(senderUserId)` instead.
-  const [firmName, advisor, settingsRows, advisorProfile] = await Promise.all([
+  // Who signs is settled first, because it decides whose saved copy to read.
+  // Clerk's member list is asked only when an advisor brand is actually on, so
+  // a send with no brand in effect costs what it did before.
+  const brandAdvisorId = brandAdvisorOf(args.brand);
+  const profile = brandAdvisorId ? await getAdvisorProfile(firmId, brandAdvisorId) : null;
+  const signer = profile?.brandingEnabled
+    ? ((await listFirmMembers(firmId)).find((m) => m.userId === brandAdvisorId) ?? null)
+    : null;
+  const brandProfile = signer ? profile : null;
+
+  // `currentUser()` is the ambient session — the sender at every call site
+  // today. A caller with no session (an auto-nudge cron) would need
+  // `users.getUser(senderUserId)` instead.
+  const [firmName, sender, settingsRows] = await Promise.all([
     resolveFirmName(firmId),
-    currentUser(),
+    signer ? null : currentUser(),
     db
       .select()
       .from(intakeEmailSettings)
       .where(
         and(
           eq(intakeEmailSettings.firmId, firmId),
-          eq(intakeEmailSettings.userId, senderUserId),
+          eq(intakeEmailSettings.userId, signer?.userId ?? senderUserId),
         ),
       ),
-    getAdvisorProfile(firmId, brandAdvisorUserId),
   ]);
 
-  const advisorName =
-    [advisor?.firstName, advisor?.lastName].filter(Boolean).join(" ") || undefined;
-  const advisorEmail = advisor?.primaryEmailAddress?.emailAddress ?? undefined;
+  const advisorName = signer
+    ? signer.displayName
+    : [sender?.firstName, sender?.lastName].filter(Boolean).join(" ") || undefined;
+  const advisorEmail = signer
+    ? (signer.email ?? undefined)
+    : (sender?.primaryEmailAddress?.emailAddress ?? undefined);
   const settings = settingsRows[0];
 
   // Per-field fall-through, brand wins: a blank/unset brand field must never
   // clobber a working intake_email_settings value, so trim-then-truthy rather
   // than `??` (a stored "" would otherwise win).
-  const brandFromName = advisorProfile?.brandingEnabled
-    ? advisorProfile.emailFromName?.trim() || undefined
-    : undefined;
-  const brandReplyTo = advisorProfile?.brandingEnabled
-    ? advisorProfile.emailReplyTo?.trim() || undefined
-    : undefined;
+  const brandFromName = brandProfile?.emailFromName?.trim() || undefined;
+  const brandReplyTo = brandProfile?.emailReplyTo?.trim() || undefined;
+  const brandName = brandProfile?.brandName?.trim() || undefined;
 
-  // Resolved first, then prefixed: the advisor's saved subject is optional, and
-  // a follow-up that arrived byte-identical to the first mail reads as a glitch.
+  // Resolved first, then prefixed: the saved subject is optional, and a
+  // follow-up that arrived byte-identical to the first mail reads as a glitch.
   const followUp = args.followUp ? FOLLOW_UP[args.followUp] : undefined;
   const subject = followUp
     ? `${followUp.prefix}: ${resolveSubject(settings?.subject ?? undefined)}`
@@ -97,7 +107,7 @@ export async function sendIntakeLinkEmail(args: {
     introBody: followUp?.intro ?? settings?.introBody ?? undefined,
     advisorName,
     advisorEmail,
-    firmName,
+    firmName: brandName ?? firmName,
     clientName: clientName ?? undefined,
   });
 }
