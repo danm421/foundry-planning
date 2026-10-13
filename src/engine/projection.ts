@@ -80,6 +80,7 @@ import {
   deriveItemizedFromExpenses,
   deriveMortgageInterestFromLiabilities,
   deriveStudentLoanInterest,
+  deriveInvestmentInterest,
   derivePropertyTaxFromAccounts,
   sumItemizedFromEntries,
   aggregateDeductions,
@@ -1167,6 +1168,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     shortTerm: Math.max(0, planSettings.capitalLossCarryforwardShortTerm ?? 0),
     longTerm: Math.max(0, planSettings.capitalLossCarryforwardLongTerm ?? 0),
   };
+  // Form 4952 investment-interest carryforward (margin loans). Same rule as
+  // the two carryforwards above: read freely, advanced exactly ONCE per year
+  // at the single commit point below — never inside the convergence loop.
+  let investmentInterestCarryforward = 0;
 
   // Cap-gains realized by step 12c (entity gap-fill) liquidations of trust-owned
   // taxable accounts. Tax on the gain is recognized in the FOLLOWING year — at
@@ -2071,6 +2076,25 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       grantorTrustIncomeByEntity.set(gt.entityId, { ordinary: 0, dividends: 0, taxExempt: 0, recognizedCapGains: 0 });
     }
 
+    // Household + grantor-trust share of an account this year (CRT shares are
+    // §664(c)-exempt). Shared by realization routing and the Form 4952 pass.
+    // `yearOwners` is a parameter only so the realization block, which needs
+    // the owner list anyway, doesn't compose it twice.
+    const householdLikeShareOf = (
+      acct: Account,
+      yearOwners: AccountOwner[] = ownersForYear(acct, data.giftEvents, year, planSettings.planStartYear),
+    ): number => {
+      // Family first, then grantor entities, summed separately — the same
+      // addition order the realization block always used.
+      let householdShare = 0;
+      let grantorShare = 0;
+      for (const o of yearOwners) {
+        if (o.kind === "family_member") householdShare += o.percent;
+        else if (o.kind === "entity" && !isTaxExemptTrust(o.entityId) && effectiveIsGrantor(o.entityId, year)) grantorShare += o.percent;
+      }
+      return householdShare + grantorShare;
+    };
+
     for (const acct of workingAccounts) {
       const currentBalance = accountBalances[acct.id] ?? 0;
       if (scheduleOverriddenAccounts.has(acct.id)) continue;
@@ -2146,17 +2170,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           // entries for the trust-tax pass to consume. Grantor-entity portions also
           // populate grantorTrustIncomeByEntity for pct_income distribution.
           const yearOwners = ownersForYear(acct, data.giftEvents, year, planSettings.planStartYear);
-          const householdShare = yearOwners
-            .filter((o) => o.kind === "family_member")
-            .reduce((s, o) => s + o.percent, 0);
-          let grantorShare = 0;
-          for (const owner of yearOwners) {
-            if (owner.kind !== "entity") continue;
-            // §664(c): CRT shares are exempt — excluded from householdLikeShare. (F1)
-            if (isTaxExemptTrust(owner.entityId)) continue;
-            if (effectiveIsGrantor(owner.entityId, year)) grantorShare += owner.percent;
-          }
-          const householdLikeShare = householdShare + grantorShare;
+          // §664(c): CRT shares are exempt — excluded from householdLikeShare. (F1)
+          const householdLikeShare = householdLikeShareOf(acct, yearOwners);
 
           if (householdLikeShare > 0) {
             const oiHH = oi * householdLikeShare;
@@ -2249,8 +2264,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // ── Margin interest (spec 2026-10-13) ──────────────────────────────────
     // Its own loop: the growth loop `continue`s on 0% growth and on scheduled
     // accounts, and interest is owed regardless.
+    // Household-like share of each account's interest, for Form 4952 below.
+    // An entity co-owner bears its own share (plan R6); only the household +
+    // grantor-trust share lands on the household return.
+    const marginInterestHouseholdByAccount: Record<string, { label: string; amount: number }> = {};
     for (const acct of workingAccounts) {
-      chargeMarginInterest(acct, accountBalances, marginMap, accountLedgers[acct.id]);
+      const interest = chargeMarginInterest(acct, accountBalances, marginMap, accountLedgers[acct.id]);
+      const hh = interest > 0 ? interest * householdLikeShareOf(acct) : 0;
+      if (hh > 0) marginInterestHouseholdByAccount[acct.id] = { label: acct.name, amount: hh };
     }
 
     // stock_options base accounts hold only not-yet-acquired value (the equity
@@ -4415,6 +4436,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let aboveLineDeductions = 0;
     let itemizedDeductions = 0;
     let deductionBreakdownResult: DeductionBreakdown | undefined;
+    // Set by the bracket block below; flat mode models no itemized deductions,
+    // so there the carryforward simply does not move (plan R5).
+    let investmentInterestCarryforwardOut = investmentInterestCarryforward;
     /** The year's MAGIs + IRC 219(g) coverage flags, resolved in the bracket
      *  block below and consumed by the household assembly after it.
      *
@@ -4678,6 +4702,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         ),
       };
 
+      // Form 4952 — margin interest, capped at net investment income; the
+      // excess carries to next year. The carry is only STAGED here and
+      // committed once, after the convergence loop.
+      const investmentInterestContribution = deriveInvestmentInterest({
+        interestByAccount: marginInterestHouseholdByAccount,
+        carryforwardIn: investmentInterestCarryforward,
+        // R4: interest + non-qualified dividends from growth, plus every
+        // short-term gain on the return (pre capital-loss netting).
+        netInvestmentIncome: realizationOI + taxDetail.stCapitalGains,
+      });
+      investmentInterestCarryforwardOut = investmentInterestContribution.carryforwardOut;
+
       const contributions = [
         savingsContribution,
         taggedExpenseContribution,
@@ -4728,8 +4764,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         ),
         manualEntryContribution,
         // APPEND-ONLY: `contributions` is read positionally below ([0], [1],
-        // [3], [4], [5]). New sources go on the end so no existing index moves.
+        // [3], [4], [5], [7]). New sources go on the end so no existing index moves.
         studentLoanInterestContribution,
+        investmentInterestContribution,
       ];
       // Estimate state income tax for SALT pool before aggregation.
       // Student-loan interest is deliberately left OUT of preAGI. preAGI feeds
@@ -4785,11 +4822,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
 
       const interestPaid = contributions[3].itemized;
+      const investmentInterest = contributions[7].itemized;
       const rawPropertyTax = contributions[2].saltPool + contributions[4].saltPool + contributions[5].saltPool;
       // estStateTax already computed above for aggregateDeductions
       const rawSalt = rawPropertyTax + estStateTax;
       const taxesPaid = Math.min(rawSalt, saltCap(year));
-      const itemizedTotal = charitable + taxesPaid + interestPaid + otherItemized;
+      const itemizedTotal = charitable + taxesPaid + interestPaid + otherItemized + investmentInterest;
 
       const aboveLineBySource: Record<string, { label: string; amount: number }> = {};
       for (const rule of data.savingsRules) {
@@ -4802,6 +4840,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (controllingEntity(acct) != null && !effectiveIsGrantor(controllingEntity(acct)!, year)) continue;
         aboveLineBySource[rule.id] = { label: acct.name, amount: rule.annualAmount * ruleGate.factor };
       }
+
+      Object.assign(belowLineBySource, investmentInterestContribution.bySource);
 
       const stdDed = resolved!.params.stdDeduction[filingStatus];
       deductionBreakdownResult = {
@@ -4819,6 +4859,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           stateIncomeTax: estStateTax,
           propertyTaxes: rawPropertyTax,
           interestPaid,
+          investmentInterest,
           otherItemized,
           itemizedTotal,
           standardDeduction: stdDed,
@@ -7724,6 +7765,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // The ONLY write-back of the capital-loss carryforward. Must stay here,
     // outside the iterative supplemental-withdrawal solve above.
     capitalLossCarryforward = taxOutForIter.capitalLossCarryforwardOut;
+    // Likewise the ONLY write-back of the Form 4952 carryforward.
+    investmentInterestCarryforward = investmentInterestCarryforwardOut;
     deductionBreakdownResult = taxOutForIter.deductionBreakdown ?? undefined;
     const supplementalEarlyPenalty = supplementalPlan.recognizedIncome.earlyWithdrawalPenalty;
 
@@ -9216,6 +9259,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         shortTerm: capitalLossCarryforward.shortTerm / 2,
         longTerm: capitalLossCarryforward.longTerm / 2,
       };
+      // Same rule for disallowed investment interest (plan R2).
+      investmentInterestCarryforward *= 0.5;
 
       // Death-event creates synthetic accounts/liabilities mid-projection with
       // legacy ownership fields populated but `owners[]` empty. Normalize so
@@ -9360,6 +9405,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // — kept for the same reason as the entity-map sync a few lines down:
       // post-death state stays honest for any future post-loop read.
       capitalLossCarryforward = { shortTerm: 0, longTerm: 0 };
+      investmentInterestCarryforward = 0; // plan R2
 
       // Same normalization as first-death — keeps fractional reads consistent
       // for the truncated final-year processing below.

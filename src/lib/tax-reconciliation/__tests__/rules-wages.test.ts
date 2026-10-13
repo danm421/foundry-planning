@@ -11,7 +11,7 @@ const salary = (id: string, name: string, amount: number, over: Partial<PlanInco
 const engineDeferring = (retirementContributions: number) => engineYearFixture({
   deductionBreakdown: {
     aboveLine: { retirementContributions, taggedExpenses: 0, manualEntries: 0, studentLoanInterest: 0, total: retirementContributions, bySource: {} },
-    belowLine: { charitable: 0, taxesPaid: 0, stateIncomeTax: 0, propertyTaxes: 0, interestPaid: 0, otherItemized: 0, itemizedTotal: 0, standardDeduction: 0, taxDeductions: 0, bySource: {} },
+    belowLine: { charitable: 0, taxesPaid: 0, stateIncomeTax: 0, propertyTaxes: 0, interestPaid: 0, investmentInterest: 0, otherItemized: 0, itemizedTotal: 0, standardDeduction: 0, taxDeductions: 0, bySource: {} },
   },
 });
 

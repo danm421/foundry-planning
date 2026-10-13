@@ -11,7 +11,7 @@ const factsWith = (a: Partial<ReturnType<typeof emptyScheduleA>>) => {
 };
 const breakdown = (stateIncomeTax: number, propertyTaxes: number) => ({
   aboveLine: { retirementContributions: 0, taggedExpenses: 0, manualEntries: 0, studentLoanInterest: 0, total: 0, bySource: {} },
-  belowLine: { charitable: 0, taxesPaid: 0, stateIncomeTax, propertyTaxes, interestPaid: 0, otherItemized: 0, itemizedTotal: 0, standardDeduction: 0, taxDeductions: 0, bySource: {} },
+  belowLine: { charitable: 0, taxesPaid: 0, stateIncomeTax, propertyTaxes, interestPaid: 0, investmentInterest: 0, otherItemized: 0, itemizedTotal: 0, standardDeduction: 0, taxDeductions: 0, bySource: {} },
 });
 // `over` is typed, not `{}`: an untyped bag silently swallows a misspelled override, so a test could
 // think it was pinning `endYear` while the row kept the default.

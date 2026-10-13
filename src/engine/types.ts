@@ -2434,6 +2434,9 @@ export interface DeductionBreakdown {
     stateIncomeTax: number;      // estimated state income tax (AGI × flat rate), pre-cap
     propertyTaxes: number;       // property taxes from all sources, pre-cap
     interestPaid: number;
+    /** Schedule A line 9 — margin interest allowed under Form 4952 (capped at
+     *  net investment income; the excess carries forward). */
+    investmentInterest: number;
     otherItemized: number;
     itemizedTotal: number;
     standardDeduction: number;

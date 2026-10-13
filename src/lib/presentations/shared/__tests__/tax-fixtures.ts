@@ -77,6 +77,7 @@ export function makeDeductionBreakdown(over: {
     },
     belowLine: {
       charitable: 0, taxesPaid: 0, stateIncomeTax: 0, propertyTaxes: 0, interestPaid: 0,
+      investmentInterest: 0,
       otherItemized: 0, itemizedTotal: 0, standardDeduction: 0, taxDeductions: 0,
       bySource: {}, ...over.belowLine,
     },
