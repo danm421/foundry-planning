@@ -67,23 +67,25 @@ export async function POST(
       );
     }
 
+    const { link, brand } = await resolveFormLink(form, orgId);
+
     await recordAudit({
       action: "intake.form.reopened",
       resourceType: "intake_form",
       resourceId: form.id,
       clientId: form.clientId ?? null,
       firmId: orgId,
+      metadata: { brand },
     });
 
     // Tell them it's open. Unlike Remind, a failed mail does not fail the
     // request — the form IS reopened, and the advisor can send the link with
     // Remind from the queue. `delivered` says which happened.
-    const { link, brandAdvisorUserId } = await resolveFormLink(form, orgId, userId);
     const mail = link
       ? await sendIntakeLinkEmail({
           firmId: orgId,
           senderUserId: userId,
-          brandAdvisorUserId,
+          brand,
           to: form.recipientEmail,
           link,
           clientName: form.recipientName,

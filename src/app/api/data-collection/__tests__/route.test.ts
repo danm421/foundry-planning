@@ -24,6 +24,11 @@ vi.mock("@/lib/branding/advisor-profile", () => ({
   getAdvisorProfile: async () => null,
 }));
 
+const assertBrandMock = vi.fn();
+vi.mock("@/lib/branding/brand-options", () => ({
+  assertBrandChoiceAllowed: (...a: unknown[]) => assertBrandMock(...a),
+}));
+
 const portalEntitlementMock = vi.fn();
 const portalForAdvisorMock = vi.fn();
 vi.mock("@/lib/authz", () => ({
@@ -147,6 +152,7 @@ beforeEach(() => {
   resolveClientPortalUserIdMock.mockResolvedValue(null);
   portalEntitlementMock.mockReset();
   portalForAdvisorMock.mockReset();
+  assertBrandMock.mockReset().mockResolvedValue(undefined);
 
   // Happy-path defaults
   checkLimitMock.mockResolvedValue({ allowed: true });
@@ -177,6 +183,38 @@ describe("POST /api/data-collection — input validation", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toMatch(/clientId/i);
+  });
+});
+
+describe("POST /api/data-collection — brand", () => {
+  const blank = { mode: "blank", clientId: "client-1", recipientEmail: "sam@client.com", recipientName: "Sam" };
+
+  it("with no brand sent, stores and checks the household's brand", async () => {
+    const res = await POST(postReq(blank));
+    expect(res.status).toBe(200);
+    expect(assertBrandMock).toHaveBeenCalledWith("firm-1", "advisor-2", "advisor-2");
+    expect(dbInsertMock).toHaveBeenCalledWith(expect.objectContaining({ brand: "advisor-2" }));
+  });
+
+  it("stores a picked brand once it passes the check", async () => {
+    const res = await POST(postReq({ ...blank, brand: "firm" }));
+    expect(res.status).toBe(200);
+    expect(assertBrandMock).toHaveBeenCalledWith("firm-1", "firm", "advisor-2");
+    expect(dbInsertMock).toHaveBeenCalledWith(expect.objectContaining({ brand: "firm" }));
+  });
+
+  it("refuses a brand the caller can't use, before any form exists", async () => {
+    const { ForbiddenError } = await vi.importActual<typeof import("@/lib/authz")>("@/lib/authz");
+    assertBrandMock.mockRejectedValue(new ForbiddenError("That brand isn't available to you for this household."));
+    const res = await POST(postReq({ ...blank, brand: "user_other" }));
+    expect(res.status).toBe(403);
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a brand that isn't a brand id", async () => {
+    const res = await POST(postReq({ ...blank, brand: 42 }));
+    expect(res.status).toBe(400);
+    expect(dbInsertMock).not.toHaveBeenCalled();
   });
 });
 

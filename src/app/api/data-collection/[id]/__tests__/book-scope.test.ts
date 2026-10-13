@@ -48,7 +48,7 @@ vi.mock("@/lib/intake/apply", () => ({ applyIntake: spies.applyIntake }));
 vi.mock("@/lib/intake/link-client", () => ({ linkIntakeFormToClient: vi.fn() }));
 vi.mock("@/lib/intake/send-form-email", () => ({ sendIntakeLinkEmail: spies.sendMail }));
 vi.mock("@/lib/intake/form-link", () => ({
-  resolveFormLink: async () => ({ link: "https://x/f", brandAdvisorUserId: null }),
+  resolveFormLink: async () => ({ link: "https://x/f", brand: "firm" }),
 }));
 vi.mock("@/lib/rate-limit", () => ({
   checkIntakeRemindRateLimit: async () => ({ allowed: true }),
