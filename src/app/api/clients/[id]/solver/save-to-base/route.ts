@@ -156,6 +156,15 @@ function accountGrowthBasis(a: Account): {
   };
 }
 
+/** Margin loan columns — shared by the insert and update paths. */
+function marginLoanFields(a: Account) {
+  return {
+    marginBalance: decOrZero(a.marginBalance),
+    marginInterestRate: decOrZero(a.marginInterestRate),
+    marginCallPct: a.marginCallPct != null ? String(a.marginCallPct) : "0.3",
+  };
+}
+
 function accountInsertValues(
   a: Account,
   clientId: string,
@@ -174,6 +183,7 @@ function accountInsertValues(
     value: decOrZero(a.value),
     basis: decOrZero(a.basis),
     rothValue: decOrZero(a.rothValue),
+    ...marginLoanFields(a),
     hsaCoverage: a.hsaCoverage ?? null,
     // null = inherit the default growth rate for this category from plan_settings.
     growthRate: a.growthRate != null ? String(a.growthRate) : null,
@@ -459,6 +469,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             value: decOrZero(a.value),
             basis: decOrZero(a.basis),
             rothValue: decOrZero(a.rothValue),
+            ...marginLoanFields(a),
             hsaCoverage: a.hsaCoverage ?? null,
             growthRate: a.growthRate != null ? String(a.growthRate) : null,
             ...accountGrowthBasis(a),

@@ -317,6 +317,18 @@ const accountFields = {
     .union([z.number(), z.string()])
     .optional()
     .describe("Roth portion of the value, if applicable (defaults to 0)"),
+  marginBalance: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("Margin loan balance in dollars — taxable accounts only; must be below value"),
+  marginInterestRate: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("Annual margin interest rate as a decimal, e.g. 0.08"),
+  marginCallPct: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("Margin call warning level as a decimal, default 0.3"),
   growthRate: z
     .union([z.number(), z.string()])
     .nullable()

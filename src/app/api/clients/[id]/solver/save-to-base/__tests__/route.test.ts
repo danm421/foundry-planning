@@ -327,6 +327,78 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     expect(inserts[0].values).toMatchObject({ growthRate: "0.08", growthSource: "custom" });
   });
 
+  it("writes margin loan fields on insert, and loan-free defaults otherwise", async () => {
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [
+          {
+            kind: "account-upsert",
+            id: "synthetic-new",
+            value: { ...ACCT, marginBalance: 2_000_000, marginInterestRate: 0.08, marginCallPct: 0.25 },
+          },
+        ],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    expect(inserts[0].values).toMatchObject({
+      marginBalance: "2000000",
+      marginInterestRate: "0.08",
+      marginCallPct: "0.25",
+    });
+
+    inserts.length = 0;
+    const res2 = await POST(
+      makeRequest({ source: "base", mutations: [{ kind: "account-upsert", id: "synthetic-new", value: ACCT }] }),
+      ctx as never,
+    );
+    expect(res2.status).toBe(200);
+    expect(inserts[0].values).toMatchObject({
+      marginBalance: "0",
+      marginInterestRate: "0",
+      marginCallPct: "0.3",
+    });
+  });
+
+  it("writes margin loan fields on update, and loan-free defaults otherwise", async () => {
+    vi.mocked(loadEffectiveTree).mockResolvedValue({
+      effectiveTree: { accounts: [{ ...ACCT }], savingsRules: [] },
+      warnings: [],
+    } as never);
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [
+          {
+            kind: "account-upsert",
+            id: "synthetic-new",
+            value: { ...ACCT, marginBalance: 500_000, marginInterestRate: 0.07, marginCallPct: 0.2 },
+          },
+        ],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    expect(updates[0].set).toMatchObject({
+      marginBalance: "500000",
+      marginInterestRate: "0.07",
+      marginCallPct: "0.2",
+    });
+
+    updates.length = 0;
+    const res2 = await POST(
+      makeRequest({ source: "base", mutations: [{ kind: "account-upsert", id: "synthetic-new", value: ACCT }] }),
+      ctx as never,
+    );
+    expect(res2.status).toBe(200);
+    expect(updates[0].set).toMatchObject({
+      marginBalance: "0",
+      marginInterestRate: "0",
+      marginCallPct: "0.3",
+    });
+  });
+
   it("classifies an account already in the source tree as an update and re-materializes its owners", async () => {
     vi.mocked(loadEffectiveTree).mockResolvedValue({
       effectiveTree: { accounts: [{ ...ACCT }], savingsRules: [] },

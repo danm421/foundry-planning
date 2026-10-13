@@ -51,6 +51,7 @@ type DbState = {
     basis: string;
     category?: string;
     subType?: string;
+    marginBalance?: string;
   };
   // FM owner rows for the account (joint = 2 rows)
   accountOwnerRows: Array<{ familyMemberId: string | null; entityId: string | null }>;
@@ -416,5 +417,34 @@ describe("POST /api/clients/[id]/accounts/[accountId]/split", () => {
       "Joint Brokerage (Patricia share)",
       "Joint Brokerage (Co-client share)",
     ]);
+  });
+
+  it("splits a margin loan at clientShare, summing to the original", async () => {
+    seedJoint({ value: "10000000.00", basis: "9000000.00", marginBalance: "2000000.01" });
+
+    const captured: Array<{ marginBalance?: string; value?: string }> = [];
+    mockInsert.mockImplementation(() => ({
+      values: vi.fn((vals: { marginBalance?: string; value?: string }) => {
+        if (vals.value !== undefined) captured.push(vals);
+        return {
+          returning: vi.fn(() => {
+            const id = `acc_new_${dbState.insertedCount++}`;
+            return Promise.resolve([{ id }]);
+          }),
+        };
+      }),
+    }));
+
+    const res = await POST(buildReq({ clientShare: 0.6 }) as never, {
+      params: Promise.resolve({ id: "cli_a", accountId: "acc_joint" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(captured).toHaveLength(2);
+    expect(captured[0]!.marginBalance).toBe("1200000.01");
+    expect(captured[1]!.marginBalance).toBe("800000.00");
+    expect(
+      parseFloat(captured[0]!.marginBalance!) + parseFloat(captured[1]!.marginBalance!),
+    ).toBeCloseTo(2000000.01, 10);
   });
 });

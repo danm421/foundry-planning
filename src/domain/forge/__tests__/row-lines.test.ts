@@ -306,3 +306,14 @@ describe("headlineFigure", () => {
     expect(headlineFigure("liability", { balance: null })).toBe("$0");
   });
 });
+
+describe("margin loan fields", () => {
+  it("formats margin fields as money / rate with plain labels", () => {
+    expect(formatFieldValue("marginBalance", "2000000")).toMatch(/\$2,000,000/);
+    expect(formatFieldValue("marginInterestRate", "0.02")).toMatch(/2(\.00)?%/);
+    expect(formatFieldValue("marginCallPct", "0.3")).toMatch(/30(\.00)?%/);
+    expect(fieldLabel("marginBalance")).toBe("Margin loan balance");
+    expect(fieldLabel("marginInterestRate")).toBe("Margin interest rate");
+    expect(fieldLabel("marginCallPct")).toBe("Margin call level");
+  });
+});

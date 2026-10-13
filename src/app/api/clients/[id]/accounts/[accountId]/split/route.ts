@@ -119,6 +119,11 @@ export async function POST(
     const spouseBasisRounded = +(basis - clientBasisRounded).toFixed(2);
     const clientRothValueRounded = +(rothValue * clientShare).toFixed(2);
     const spouseRothValueRounded = +(rothValue - clientRothValueRounded).toFixed(2);
+    // The margin loan splits with the account; without this `...targetRest`
+    // would copy the FULL loan onto both halves.
+    const marginBalance = parseFloat(target.marginBalance ?? "0");
+    const clientMarginRounded = +(marginBalance * clientShare).toFixed(2);
+    const spouseMarginRounded = +(marginBalance - clientMarginRounded).toFixed(2);
 
     const snapshot = await toAccountSnapshot(target);
 
@@ -133,6 +138,7 @@ export async function POST(
           value: clientValueRounded.toFixed(2),
           basis: clientBasisRounded.toFixed(2),
           rothValue: clientRothValueRounded.toFixed(2),
+          marginBalance: clientMarginRounded.toFixed(2),
           name: `${target.name} (${clientFirstName ?? "Client"} share)`,
         })
         .returning();
@@ -144,6 +150,7 @@ export async function POST(
           value: spouseValueRounded.toFixed(2),
           basis: spouseBasisRounded.toFixed(2),
           rothValue: spouseRothValueRounded.toFixed(2),
+          marginBalance: spouseMarginRounded.toFixed(2),
           name: `${target.name} (${spouseFirstName ?? CO_CLIENT_LABEL} share)`,
         })
         .returning();

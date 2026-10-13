@@ -237,6 +237,27 @@ export const NET_WORTH_ACCOUNT_ENTITIES: readonly DetailEntity[] = [
           "Last year of the even-payout window, paired with inheritedPayoutFromYear; the write path rejects one before the first year. Under the 10-year rule the projection treats a later year as the deadline year.",
       },
       {
+        key: "marginBalance",
+        label: "Margin loan balance",
+        kind: "money",
+        defaultValue: "0",
+        notes: "Taxable only. Must be below value. Interest is capitalized onto it each year.",
+      },
+      {
+        key: "marginInterestRate",
+        label: "Margin interest rate",
+        kind: "rate",
+        defaultValue: "0",
+        notes: "Decimal fraction.",
+      },
+      {
+        key: "marginCallPct",
+        label: "Margin call level",
+        kind: "rate",
+        defaultValue: "0.3",
+        notes: "Decimal fraction; warns when net ÷ securities falls below it.",
+      },
+      {
         key: "turnoverPct",
         label: "Turnover %",
         kind: "rate",

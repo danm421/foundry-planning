@@ -51,11 +51,16 @@ export function computeSideTotals(
     const alloc = resolved.get(allocationKey(obj.kind, obj.id));
     if (!alloc) continue;
     if (alloc.disposition === "split" && alloc.splitPercentToSpouse != null) {
-      const r = splitAmounts(obj.value, obj.basis, obj.rothValue, alloc.splitPercentToSpouse);
+      const r = splitAmounts(
+        obj.value,
+        obj.basis,
+        obj.rothValue,
+        alloc.splitPercentToSpouse,
+        obj.marginBalance ?? 0,
+      );
       // The margin loan splits with the account, at the same percentage.
-      const loanToSpouse = (obj.marginBalance ?? 0) * (alloc.splitPercentToSpouse / 100);
-      add("primary", r.primary.value - ((obj.marginBalance ?? 0) - loanToSpouse));
-      add("spouse", r.spouse.value - loanToSpouse);
+      add("primary", r.primary.value - r.primary.marginBalance);
+      add("spouse", r.spouse.value - r.spouse.marginBalance);
     } else if (alloc.disposition === "duplicate") {
       add("primary", obj.value - (obj.marginBalance ?? 0));
       add("spouse", obj.value - (obj.marginBalance ?? 0));
