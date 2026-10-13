@@ -6,6 +6,7 @@ import {
   deriveItemizedFromExpenses,
   deriveMortgageInterestFromLiabilities,
   deriveStudentLoanInterest,
+  deriveInvestmentInterest,
   derivePropertyTaxFromAccounts,
   aggregateDeductions,
   saltCap,
@@ -963,5 +964,31 @@ describe("deriveStudentLoanInterest", () => {
       100000, slParams, "married_joint",
     );
     expect(res.aboveLine).toBe(2500);
+  });
+});
+
+describe("deriveInvestmentInterest (Form 4952)", () => {
+  const acct = { "acct-1": { label: "Schwab Brokerage", amount: 160_000 } };
+  it("allows interest up to net investment income and carries the rest", () => {
+    const r = deriveInvestmentInterest({ interestByAccount: acct, carryforwardIn: 0, netInvestmentIncome: 35_000 });
+    expect(r.itemized).toBe(35_000);
+    expect(r.carryforwardOut).toBe(125_000);
+    expect(r.bySource["investment-interest:acct-1"]).toEqual({ label: "Investment interest — Schwab Brokerage", amount: 35_000 });
+  });
+  it("uses carryforward when this year's NII has room", () => {
+    const r = deriveInvestmentInterest({ interestByAccount: acct, carryforwardIn: 50_000, netInvestmentIncome: 500_000 });
+    expect(r.itemized).toBe(210_000);
+    expect(r.carryforwardOut).toBe(0);
+    expect(r.bySource["investment-interest:carryforward"].amount).toBeCloseTo(50_000, 6);
+  });
+  it("zero NII allows nothing and carries everything", () => {
+    const r = deriveInvestmentInterest({ interestByAccount: acct, carryforwardIn: 10_000, netInvestmentIncome: 0 });
+    expect(r.itemized).toBe(0);
+    expect(r.carryforwardOut).toBe(170_000);
+    expect(r.bySource).toEqual({});
+  });
+  it("is never above-line or SALT", () => {
+    const r = deriveInvestmentInterest({ interestByAccount: acct, carryforwardIn: 0, netInvestmentIncome: 1e9 });
+    expect([r.aboveLine, r.saltPool]).toEqual([0, 0]);
   });
 });

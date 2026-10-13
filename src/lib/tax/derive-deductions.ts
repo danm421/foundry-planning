@@ -1,13 +1,14 @@
 /**
  * Pure helpers that derive deduction inputs for the bracket tax engine.
  *
- * Six sources aggregate into a unified DeductionContribution:
+ * Seven sources aggregate into a unified DeductionContribution:
  *   1. Savings rules → 401k/IRA above-line (existing)
  *   2. Expenses tagged with a deductionType
  *   3. Manual client_deductions rows
  *   4. Mortgage interest from liabilities with isInterestDeductible
  *   5. Real estate account property taxes
  *   6. Student-loan interest from `student` liabilities (IRC 221, above-line)
+ *   7. Investment interest (Form 4952) — margin loans
  *
  * All SALT contributions pool before a single statutory cap ($40k OBBBA 2026+,
  * $10k TCJA pre-2026). The cap is a flat dollar amount — no inflation.
@@ -501,4 +502,41 @@ export function deriveStudentLoanInterest(
     itemized: 0,
     saltPool: 0,
   };
+}
+
+// ── Source 7: Investment interest (Form 4952) — margin loans ─────────────────
+
+export interface InvestmentInterestInput {
+  /** This year's household-like margin interest, by account id. */
+  interestByAccount: Record<string, { label: string; amount: number }>;
+  /** Interest disallowed in earlier years (Form 4952 line 2). */
+  carryforwardIn: number;
+  /** §163(d)(4) net investment income: interest + non-qualified dividends +
+   *  short-term gains (no election to add qualified dividends / LTCG). */
+  netInvestmentIncome: number;
+}
+
+export type InvestmentInterestContribution = DeductionContribution & {
+  /** Interest over the NII limit — carried to next year (Form 4952 line 7).
+   *  In a standard-deduction year the ALLOWED part is simply lost; only this
+   *  over-limit excess carries. */
+  carryforwardOut: number;
+  /** Allowed amount for the tax-detail drill, keyed `investment-interest:<id>`. */
+  bySource: Record<string, { label: string; amount: number }>;
+};
+
+export function deriveInvestmentInterest(input: InvestmentInterestInput): InvestmentInterestContribution {
+  const current = Object.values(input.interestByAccount).reduce((s, r) => s + Math.max(0, r.amount), 0);
+  const carryIn = Math.max(0, input.carryforwardIn);
+  const total = current + carryIn;
+  const allowed = Math.min(total, Math.max(0, input.netInvestmentIncome));
+  const bySource: Record<string, { label: string; amount: number }> = {};
+  if (allowed > 0) {
+    const scale = allowed / total;
+    for (const [id, r] of Object.entries(input.interestByAccount)) {
+      if (r.amount > 0) bySource[`investment-interest:${id}`] = { label: `Investment interest — ${r.label}`, amount: r.amount * scale };
+    }
+    if (carryIn > 0) bySource["investment-interest:carryforward"] = { label: "Investment interest — carried forward", amount: carryIn * scale };
+  }
+  return { aboveLine: 0, itemized: allowed, saltPool: 0, carryforwardOut: total - allowed, bySource };
 }

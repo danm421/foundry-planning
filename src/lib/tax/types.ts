@@ -269,6 +269,9 @@ export interface CalcInput {
    *  Itemizing callers MUST supply this — when omitted it defaults to 0, understating AMTI
    *  (the SALT add-back is silently skipped). */
   saltDeducted?: number;
+  /** Allowed investment interest on Schedule A (Form 4952). Reduces the NIIT
+   *  base in itemizing years only (Form 8960 line 9a). */
+  investmentInterestDeducted?: number;
   /** Household composition for the federal credit layer. Optional because dozens
    *  of existing callers predate it — when absent no credits are computed and
    *  the federal roll-up is identical to the pre-credit behaviour. */

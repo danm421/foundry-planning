@@ -194,6 +194,18 @@ describe("calculateTaxYear — Scenario 6: MFJ day trader with STCG (NIIT regres
   });
 });
 
+describe("calculateTaxYear — investment interest and NIIT (Form 8960 line 9a)", () => {
+  const niitInput = makeInput({ earnedIncome: 100000, shortTermCapitalGains: 200000, flatStateRate: 0 });
+  it("deducted investment interest lowers the NIIT base only when itemizing", () => {
+    const itemizing = { ...niitInput, itemizedDeductions: 500_000, investmentInterestDeducted: 100_000 };
+    const standard = { ...niitInput, itemizedDeductions: 0, investmentInterestDeducted: 100_000 };
+    expect(calculateTaxYear(itemizing).diag.netInvestmentIncome)
+      .toBeCloseTo(calculateTaxYear({ ...itemizing, investmentInterestDeducted: 0 }).diag.netInvestmentIncome! - 100_000, 2);
+    expect(calculateTaxYear(standard).diag.netInvestmentIncome)
+      .toBeCloseTo(calculateTaxYear({ ...standard, investmentInterestDeducted: 0 }).diag.netInvestmentIncome!, 2);
+  });
+});
+
 describe("calculateTaxYear — preferential base capped at taxable income (Bug #4/#5)", () => {
   // Per the Qualified Dividends & Capital Gain Tax Worksheet, the amount taxed at
   // preferential 0/15/20% rates is min(net cap gain + qual div, taxable income).
