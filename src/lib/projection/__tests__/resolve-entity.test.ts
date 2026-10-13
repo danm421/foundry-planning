@@ -244,7 +244,7 @@ describe("resolveAccountFromRaw", () => {
       ...baseRawAccount,
       id: "a-margin",
       name: "Brokerage",
-      category: "taxable",
+      category: "taxable" as const,
       subType: "individual",
       value: "10000000",
       basis: "5000000",
