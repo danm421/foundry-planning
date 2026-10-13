@@ -141,10 +141,14 @@ function RowActions({ section, rows, row, onApply }: Pick<SectionBodyProps, "sec
   );
 }
 
-/** Wide sections scroll sideways inside their card. */
+/**
+ * Wide sections scroll sideways inside their card. `relative` makes the
+ * scroller clip what's absolutely positioned in its cells too (the
+ * screen-reader labels): otherwise those widen the whole page.
+ */
 function TableFrame({ labelledBy, children }: { labelledBy: string; children: ReactNode }) {
   return (
-    <div className="overflow-x-auto px-[calc(var(--pad-card)-0.5rem)] pb-2">
+    <div className="relative overflow-x-auto px-[calc(var(--pad-card)-0.5rem)] pb-2">
       <table aria-labelledby={labelledBy} className="min-w-full border-separate border-spacing-0 text-sm">
         {children}
       </table>

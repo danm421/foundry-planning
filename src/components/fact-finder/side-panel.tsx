@@ -2,11 +2,16 @@
 // src/components/fact-finder/side-panel.tsx
 // The collapsible panel on the right of the fact finder screen. Beside the page
 // at 1100 px and wider; below that, an overlay drawer (the CRM task panel's idiom).
-import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { CloseIcon } from "./icons";
 
 const NARROW_QUERY = "(max-width: 1099px)";
+/** Where the panel sticks: its `top-[100px]`. */
+const STICKY_TOP = 100;
+/** The app's Forge button sits fixed 24 px from the window's bottom and is 48 px tall; the panel stops 12 px above it. */
+const FORGE_CLEARANCE = 84;
+const MIN_HEIGHT = 240;
 
 function subscribeNarrow(onChange: () => void): () => void {
   const mq = window.matchMedia?.(NARROW_QUERY);
@@ -31,12 +36,37 @@ interface SidePanelProps {
   overlay: boolean;
   onOpenChange: (open: boolean) => void;
   children: ReactNode;
+  /** Pinned under the part that scrolls (the chat composer). */
+  footer?: ReactNode;
 }
 
-export function SidePanel({ id, title, open, overlay, onOpenChange, children }: SidePanelProps) {
+export function SidePanel({ id, title, open, overlay, onOpenChange, children, footer }: SidePanelProps) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const asideRef = useRef<HTMLElement | null>(null);
+  const [maxHeight, setMaxHeight] = useState<number>();
   const drawer = open && overlay;
+  const beside = open && !overlay;
   useBodyScrollLock(drawer);
+
+  // Beside the page, the panel ends above the Forge button, so its composer stays
+  // in view: its height runs from where its top is now (lower until the page
+  // scrolls it up to its sticky line) to the window's bottom. Scrolls are caught
+  // on the way down, so a pane that scrolls on its own counts too. The class's
+  // max-height holds until the first measure.
+  useLayoutEffect(() => {
+    if (!beside) return;
+    function fit() {
+      const top = Math.max(asideRef.current?.getBoundingClientRect().top ?? STICKY_TOP, STICKY_TOP);
+      setMaxHeight(Math.max(MIN_HEIGHT, window.innerHeight - top - FORGE_CLEARANCE));
+    }
+    fit();
+    window.addEventListener("scroll", fit, { capture: true, passive: true });
+    window.addEventListener("resize", fit);
+    return () => {
+      window.removeEventListener("scroll", fit, { capture: true });
+      window.removeEventListener("resize", fit);
+    };
+  }, [beside]);
 
   // The drawer takes focus, closes on Escape, and hands focus back to whatever opened it.
   useEffect(() => {
@@ -68,7 +98,12 @@ export function SidePanel({ id, title, open, overlay, onOpenChange, children }: 
       </button>
     </div>
   );
-  const body = <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>;
+  const body = (
+    <>
+      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      {footer && <div className="shrink-0">{footer}</div>}
+    </>
+  );
 
   if (drawer) {
     return (
@@ -92,8 +127,10 @@ export function SidePanel({ id, title, open, overlay, onOpenChange, children }: 
 
   return (
     <aside
+      ref={asideRef}
       id={id}
       aria-label={title}
+      style={{ maxHeight }}
       className="sticky top-[100px] flex max-h-[calc(100vh-120px)] flex-col rounded border border-hair bg-card"
     >
       {header}

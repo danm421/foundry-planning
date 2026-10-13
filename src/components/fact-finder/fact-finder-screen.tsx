@@ -9,6 +9,7 @@ import { filesReading } from "@/lib/fact-finder/reading-status";
 import { PAGE_ORDER, type FFPage } from "@/lib/fact-finder/schema";
 import { pageCounts } from "@/lib/fact-finder/screen-summary";
 import { countLinksNeedingClick } from "@/lib/fact-finder/state";
+import { ChatComposerBar, ChatPanel, useChat } from "./chat-panel";
 import { DocumentsPanel, useDocuments } from "./documents-panel";
 import { PanelIcon } from "./icons";
 import { PageRail } from "./page-rail";
@@ -34,6 +35,7 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
   const state = store.state;
   const docs = useDocuments({ clientId, importId, initialFiles, state, adopt: store.adopt });
   const reading = docs.read.running || filesReading(state, new Date()).length > 0;
+  const chat = useChat({ clientId, importId, flushNow: store.flushNow, adopt: store.adopt });
   const [page, setPage] = useState<FFPage>("household");
   const [panelOpen, setPanelOpen] = useState(reading || docs.readsOnOpen);
   const narrow = useNarrowScreen();
@@ -95,8 +97,16 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
           <PageView page={page} state={state} onApply={store.apply} fileName={docs.fileName} entities={entities} />
         </div>
 
-        <SidePanel id={PANEL_ID} title={PANEL_TITLE} open={panelOpen} overlay={narrow} onOpenChange={setPanelOpen}>
+        <SidePanel
+          id={PANEL_ID}
+          title={PANEL_TITLE}
+          open={panelOpen}
+          overlay={narrow}
+          onOpenChange={setPanelOpen}
+          footer={<ChatComposerBar chat={chat} reading={reading} />}
+        >
           <DocumentsPanel clientId={clientId} importId={importId} docs={docs} state={state} />
+          <ChatPanel chat={chat} state={state} />
         </SidePanel>
       </div>
     </div>

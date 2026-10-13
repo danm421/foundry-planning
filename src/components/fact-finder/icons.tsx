@@ -134,3 +134,13 @@ export function ClockIcon({ className }: IconProps) {
     </Outline>
   );
 }
+
+/** Lucide `undo-2`. */
+export function UndoIcon({ className }: IconProps) {
+  return (
+    <Outline className={className}>
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" />
+    </Outline>
+  );
+}

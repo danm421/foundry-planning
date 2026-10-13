@@ -19,6 +19,9 @@ export interface ChatComposerProps {
   /** True only while THIS composer's own request is in flight — lets the
    *  button say "Sending…" rather than just "disabled for some reason". */
   sending: boolean;
+  /** Defaults to statement chat's wording. */
+  placeholder?: string;
+  ariaLabel?: string;
 }
 
 /** Caps how tall the box grows for a long Shift+Enter question — beyond
@@ -34,7 +37,13 @@ const MAX_ROWS = 6;
  * `rows={1}`, so a multi-line question got typed into a box that never
  * expanded to show it.
  */
-export function ChatComposer({ onSend, disabled, sending }: ChatComposerProps) {
+export function ChatComposer({
+  onSend,
+  disabled,
+  sending,
+  placeholder = "Ask a question about these statements…",
+  ariaLabel = "Ask a follow-up question",
+}: ChatComposerProps) {
   const [value, setValue] = useState("");
   const isDisabled = disabled || sending;
   const rows = Math.min(MAX_ROWS, Math.max(1, value.split("\n").length));
@@ -56,7 +65,7 @@ export function ChatComposer({ onSend, disabled, sending }: ChatComposerProps) {
       }}
     >
       <textarea
-        aria-label="Ask a follow-up question"
+        aria-label={ariaLabel}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
@@ -66,7 +75,7 @@ export function ChatComposer({ onSend, disabled, sending }: ChatComposerProps) {
           }
         }}
         disabled={isDisabled}
-        placeholder="Ask a question about these statements…"
+        placeholder={placeholder}
         rows={rows}
         className={textareaBaseClassName + " flex-1 resize-none"}
       />

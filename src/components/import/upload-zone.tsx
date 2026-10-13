@@ -353,45 +353,48 @@ function UploadRow({ file, onRetry, onRemove, onTypeChange, disabled }: UploadRo
 
   return (
     <div className="rounded-md border border-hair bg-card px-3 py-2">
-      <div className="flex items-center gap-3">
+      {/* In a narrow panel the controls wrap under the name rather than squeezing it to nothing. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <FileIcon />
-        <span className="min-w-0 flex-1 truncate text-sm text-ink-2">
+        <span className="min-w-[8rem] flex-1 truncate text-sm text-ink-2">
           {file.name}
         </span>
-        <select
-          value={file.documentType}
-          onChange={(e) => onTypeChange(e.target.value as DocumentType | "auto")}
-          disabled={pickerDisabled}
-          className="rounded border border-hair-2 bg-paper px-2 py-1 text-xs text-ink-3 focus:border-accent focus:outline-none disabled:opacity-60"
-        >
-          <option value="auto">Auto-detect</option>
-          {DOCUMENT_TYPES.map((dt) => (
-            <option key={dt} value={dt}>
-              {DOCUMENT_TYPE_LABELS[dt]}
-            </option>
-          ))}
-        </select>
-        <StateBadge file={file} />
-        {file.state === "failed" && (
-          <button
-            onClick={onRetry}
-            disabled={disabled}
-            className="text-xs text-accent underline hover:text-accent-ink disabled:opacity-50"
+        <div className="ml-auto flex items-center gap-3">
+          <select
+            value={file.documentType}
+            onChange={(e) => onTypeChange(e.target.value as DocumentType | "auto")}
+            disabled={pickerDisabled}
+            className="rounded border border-hair-2 bg-paper px-2 py-1 text-xs text-ink-3 focus:border-accent focus:outline-none disabled:opacity-60"
           >
-            Retry
+            <option value="auto">Auto-detect</option>
+            {DOCUMENT_TYPES.map((dt) => (
+              <option key={dt} value={dt}>
+                {DOCUMENT_TYPE_LABELS[dt]}
+              </option>
+            ))}
+          </select>
+          <StateBadge file={file} />
+          {file.state === "failed" && (
+            <button
+              onClick={onRetry}
+              disabled={disabled}
+              className="text-xs text-accent underline hover:text-accent-ink disabled:opacity-50"
+            >
+              Retry
+            </button>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            disabled={disabled}
+            className="text-ink-3 hover:text-ink disabled:opacity-50"
+            title="Remove file"
+          >
+            <XIcon />
           </button>
-        )}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          disabled={disabled}
-          className="text-white hover:text-white disabled:opacity-50"
-          title="Remove file"
-        >
-          <XIcon />
-        </button>
+        </div>
       </div>
 
       {file.state === "uploading" && (

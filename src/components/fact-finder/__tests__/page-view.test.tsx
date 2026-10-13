@@ -111,6 +111,16 @@ describe("PageView — one component per layout", () => {
     expect(within(card).queryByRole("table")).toBeNull();
     expect(within(card).queryAllByRole("button")).toHaveLength(0);
   });
+
+  it("a wide table scrolls sideways inside its card, and so does everything positioned in it", () => {
+    renderPage("accounts", stateWith({ cash: [joint] }));
+    const frame = screen.getByRole("table", { name: "Cash Accounts" }).parentElement;
+    expect(frame).toHaveClass("overflow-x-auto");
+    // The scroller is a positioning context (`relative`): without one, absolutely
+    // positioned text in the far-right cells (the screen-reader labels) isn't
+    // clipped by it and widens the whole page. jsdom can't measure layout.
+    expect(frame).toHaveClass("relative");
+  });
 });
 
 describe("PageView — rows and the Removed tray", () => {
