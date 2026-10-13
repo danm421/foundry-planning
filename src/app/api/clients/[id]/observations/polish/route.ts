@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { requireAiAvailableForFirm, withAiForFirm } from "@/lib/ai/resolve";
 import { checkObservationsAiRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { parseBody } from "@/lib/schemas/common";
 import { observationPolishSchema } from "@/lib/schemas/observations";
@@ -24,6 +25,7 @@ export async function POST(
     // a cross-firm share) — mirrors the draft-runs route's gate exactly.
     const { firmId } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
+    await requireAiAvailableForFirm(firmId);
 
     const rl = await checkObservationsAiRateLimit(firmId);
     if (!rl.allowed) {
@@ -36,7 +38,7 @@ export async function POST(
     const parsed = await parseBody(observationPolishSchema, request);
     if (!parsed.ok) return parsed.response;
 
-    const rewritten = await polishObservationBody(parsed.data.body);
+    const rewritten = await withAiForFirm(firmId, () => polishObservationBody(parsed.data.body));
     return NextResponse.json({ body: rewritten });
   } catch (err) {
     const r = authErrorResponse(err);

@@ -6,6 +6,7 @@ import { planObservationContext, scenarios } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { requireAiAvailableForFirm, withAiForFirm } from "@/lib/ai/resolve";
 import { checkObservationsAiRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjectionWithEvents } from "@/engine/projection";
@@ -45,6 +46,9 @@ export async function POST(
     await requireOrgId();
     const { client, firmId } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
+    // Before the run is queued: refused inside after() it could only surface as
+    // a generic failed draft, never as a 403 that says why.
+    await requireAiAvailableForFirm(firmId);
 
     const rl = await checkObservationsAiRateLimit(firmId);
     if (!rl.allowed) {
@@ -158,7 +162,10 @@ export async function POST(
           { clientData: effectiveTree, projection, monteCarlo: mc?.payload.summary ?? null },
           extras,
         );
-        const draft = await generateObservationsDraft(facts, { section });
+        // Declared inside the callback, so the scope is this job's own.
+        const draft = await withAiForFirm(firmId, () =>
+          generateObservationsDraft(facts, { section }),
+        );
         await markDone(runId, null, { suggestions: draft.suggestions });
       } catch (err) {
         // The full error goes to the log; the run stores only what an advisor

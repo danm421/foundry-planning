@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { requireAiAvailableForFirm, withAiForFirm } from "@/lib/ai/resolve";
 import { checkPlanStoryRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
@@ -35,6 +36,9 @@ export async function POST(
     const { orgId: callerOrg, userId } = await requireOrgAndUser();
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
+    // Up front, not left to the model call: each chapter swallows its own
+    // failure, so a refusal there would read as an outage, not as the reason.
+    await requireAiAvailableForFirm(firmId);
 
     const parsed = await parseBody(planStoryGenerateSchema, request);
     if (!parsed.ok) return parsed.response;
@@ -170,21 +174,23 @@ export async function POST(
 
     // Chapters are independent — generate them concurrently. Each one already
     // swallows its own failure and falls back, so this never rejects.
-    const generated = await Promise.all(
-      chapters.map((chapterId) =>
-        generateChapter({
-          clientId: id,
-          chapterId,
-          ctx,
-          // From the run, not a literal: it is an input to the stored
-          // `sourceHash`, and the staleness route rebuilds that hash from the
-          // same object (`run-context.ts`).
-          voice,
-          // …and the second hash input, which does NOT come off the run: style
-          // is per-chapter and travels on this request.
-          style: chapterStyles[chapterId],
-          force: parsed.data.force ?? false,
-        }),
+    const generated = await withAiForFirm(firmId, () =>
+      Promise.all(
+        chapters.map((chapterId) =>
+          generateChapter({
+            clientId: id,
+            chapterId,
+            ctx,
+            // From the run, not a literal: it is an input to the stored
+            // `sourceHash`, and the staleness route rebuilds that hash from the
+            // same object (`run-context.ts`).
+            voice,
+            // …and the second hash input, which does NOT come off the run: style
+            // is per-chapter and travels on this request.
+            style: chapterStyles[chapterId],
+            force: parsed.data.force ?? false,
+          }),
+        ),
       ),
     );
 

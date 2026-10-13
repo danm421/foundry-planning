@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
+import { authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import {
   checkPreviewPdfRateLimit,
@@ -111,6 +112,10 @@ export async function POST(
     if (err instanceof ClientNotFoundError) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    // Includes commentary that needed a model call on a client shared in from a
+    // firm that runs AI in its own tenant (ensure-ai-summaries rethrows it).
+    const authResp = authErrorResponse(err);
+    if (authResp) return NextResponse.json(authResp.body, { status: authResp.status });
     if (err instanceof ProjectionInputError) {
       return NextResponse.json(
         { error: "Client data is incomplete or invalid for this projection." },

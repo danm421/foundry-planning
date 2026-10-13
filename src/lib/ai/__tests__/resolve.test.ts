@@ -12,7 +12,10 @@ import {
   resolveAiCredentials,
   foundrySystemCredentials,
   clearAiCredentialCache,
+  withAiForFirm,
+  requireAiAvailableForFirm,
 } from "../resolve";
+import { SharedClientAiError } from "../shared-client-error";
 
 const FIRM_CONFIG = JSON.stringify({
   endpoint: "https://acme-ria.openai.azure.com",
@@ -361,6 +364,141 @@ describe("resolveAiCredentials", () => {
 
     const again = await resolveAiCredentials();
     expect(again.apiKey).toBe("key-frozen");
+  });
+});
+
+// ---- Another firm's client (a cross-firm share) ----
+//
+// The caller is in org_b; the client, and every figure in the prompt, belong to
+// org_a, declared with `withAiForFirm`. The call must never run in org_b's own
+// tenant (not org_a's choice) nor in org_a's (a share does not license it).
+
+describe("resolveAiCredentials on another firm's client", () => {
+  /** getConnection answers per firm; a firm left out has no row. */
+  function rows(byFirm: Record<string, unknown>) {
+    mockGetConnection.mockImplementation(async (firmId: string) => byFirm[firmId] ?? null);
+  }
+  const asOrgA = () => withAiForFirm("org_a", () => resolveAiCredentials());
+
+  beforeEach(() => mockAuth.mockResolvedValue({ orgId: "org_b" }));
+
+  it("REFUSES when the owning firm runs AI in its own tenant", async () => {
+    rows({ org_a: connectedRow("key-a") });
+
+    await expect(asOrgA()).rejects.toBeInstanceOf(SharedClientAiError);
+    expect(mockGetConnection).toHaveBeenCalledWith("org_a", "azure_openai");
+  });
+
+  it("REFUSES when the owning firm's connection is in error — it still opted in", async () => {
+    rows({ org_a: { status: "error", accessToken: null, scope: FIRM_CONFIG } });
+
+    await expect(asOrgA()).rejects.toBeInstanceOf(SharedClientAiError);
+  });
+
+  it("uses FOUNDRY's tenant when the owning firm has none — never the caller's own", async () => {
+    rows({ org_b: connectedRow("key-b") });
+
+    const creds = await asOrgA();
+
+    expect(creds.source).toBe("foundry");
+    expect(creds.apiKey).toBe("foundry-key");
+    // The caller's connection is not even consulted.
+    expect(mockGetConnection).not.toHaveBeenCalledWith("org_b", "azure_openai");
+  });
+
+  it("treats a disconnected owning firm as not connected", async () => {
+    rows({ org_a: { ...connectedRow("key-a"), status: "disconnected" }, org_b: connectedRow("key-b") });
+
+    expect((await asOrgA()).source).toBe("foundry");
+  });
+
+  it("THROWS when the owning firm's row cannot be read — unknown is not a fallback", async () => {
+    mockGetConnection.mockRejectedValue(new Error("db down"));
+
+    await expect(asOrgA()).rejects.toThrow("ai_firm_connection_unavailable");
+  });
+
+  it("never reads the caller's cached tenant, and never plants one", async () => {
+    rows({ org_b: connectedRow("key-b") });
+    // A same-firm call caches org_b's own credentials…
+    expect((await resolveAiCredentials()).apiKey).toBe("key-b");
+
+    // …which the cross-firm call must not be served from…
+    expect((await asOrgA()).apiKey).toBe("foundry-key");
+
+    // …nor overwrite: org_b's own next call is still its own cached tenant.
+    mockGetConnection.mockClear();
+    expect((await resolveAiCredentials()).apiKey).toBe("key-b");
+    expect(mockGetConnection).not.toHaveBeenCalled();
+  });
+
+  it("changes nothing for a caller IN the declared firm", async () => {
+    mockAuth.mockResolvedValue({ orgId: "org_a" });
+    rows({ org_a: connectedRow("key-a") });
+
+    const creds = await asOrgA();
+
+    expect(creds.source).toBe("firm");
+    expect(creds.apiKey).toBe("key-a");
+  });
+
+  it("leaves an undeclared call on the caller's own org, as before", async () => {
+    rows({ org_a: connectedRow("key-a"), org_b: connectedRow("key-b") });
+
+    expect((await resolveAiCredentials()).apiKey).toBe("key-b");
+  });
+
+  it("still THROWS with no org at all, declared firm or not", async () => {
+    mockAuth.mockResolvedValue({ orgId: null });
+
+    await expect(asOrgA()).rejects.toThrow("ai_no_firm_context");
+  });
+
+  it("holds the declared firm across awaits inside the scope, and not after it", async () => {
+    rows({ org_a: connectedRow("key-a"), org_b: connectedRow("key-b") });
+
+    await expect(
+      withAiForFirm("org_a", async () => {
+        await new Promise((r) => setTimeout(r, 1));
+        return resolveAiCredentials();
+      }),
+    ).rejects.toBeInstanceOf(SharedClientAiError);
+    expect((await resolveAiCredentials()).apiKey).toBe("key-b");
+  });
+});
+
+describe("requireAiAvailableForFirm", () => {
+  it("is a no-op for a caller in that firm, without reading any row", async () => {
+    mockAuth.mockResolvedValue({ orgId: "org_a" });
+
+    await requireAiAvailableForFirm("org_a");
+
+    expect(mockGetConnection).not.toHaveBeenCalled();
+  });
+
+  it("is a no-op with no org — the resolver's own no-org rule still applies later", async () => {
+    mockAuth.mockResolvedValue({ orgId: null });
+
+    await requireAiAvailableForFirm("org_a");
+
+    expect(mockGetConnection).not.toHaveBeenCalled();
+  });
+
+  it("REFUSES a caller from another firm when the owning firm runs its own AI", async () => {
+    mockAuth.mockResolvedValue({ orgId: "org_b" });
+    mockGetConnection.mockResolvedValue(connectedRow("key-a"));
+
+    await expect(requireAiAvailableForFirm("org_a")).rejects.toThrow(
+      "AI features aren't available on a client shared from a firm that uses its own AI connection.",
+    );
+    expect(mockGetConnection).toHaveBeenCalledWith("org_a", "azure_openai");
+  });
+
+  it("lets a caller from another firm through when the owning firm has no connection", async () => {
+    mockAuth.mockResolvedValue({ orgId: "org_b" });
+    mockGetConnection.mockResolvedValue(null);
+
+    await expect(requireAiAvailableForFirm("org_a")).resolves.toBeUndefined();
   });
 });
 

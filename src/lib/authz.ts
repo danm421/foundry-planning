@@ -8,6 +8,7 @@ import { pastDueWithinGrace } from "@/lib/billing/access-policy";
 import { pastDueStart, type OrgMeta } from "@/lib/billing/subscription-state";
 import { hasClientPortalEntitlement, deriveUserEntitlements } from "@/lib/billing/entitlements";
 import { getActiveUserOverrides } from "@/lib/entitlements/user-overrides";
+import { SharedClientAiError } from "@/lib/ai/shared-client-error";
 
 /**
  * Forbidden — the caller is authenticated but lacks the required role
@@ -342,6 +343,8 @@ export function authErrorResponse(err: unknown):
   | null {
   if (err instanceof UnauthorizedError) return { status: 401, body: { error: "Unauthorized" } };
   if (err instanceof ForbiddenError) return { status: 403, body: { error: err.message } };
+  // An AI call refused on a client shared in from another firm (src/lib/ai/resolve.ts).
+  if (err instanceof SharedClientAiError) return { status: 403, body: { error: err.message } };
   // Legacy thrown Error("Unauthorized") instances.
   if (err instanceof Error && err.message === "Unauthorized") {
     return { status: 401, body: { error: "Unauthorized" } };

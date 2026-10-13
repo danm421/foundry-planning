@@ -5,6 +5,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
+import { requireAiAvailableForFirm, withAiForFirm } from "@/lib/ai/resolve";
 import { checkExtractRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { auth } from "@clerk/nextjs/server";
@@ -79,6 +80,9 @@ export async function POST(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     await requireActiveSubscriptionForFirm(access.firmId);
+    // Before the battery compute: a client shared in from a firm that runs AI
+    // in its own tenant is refused (403) rather than computed and then refused.
+    await requireAiAvailableForFirm(access.firmId);
 
     const parsed = Body.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
@@ -94,7 +98,9 @@ export async function POST(
     const battery = await loadInsightsBattery(id, access.firmId);
     const inputHash = hashBattery(battery);
     const { userId } = await auth();
-    const { sections, generatedAt } = await generateInsights(battery);
+    const { sections, generatedAt } = await withAiForFirm(access.firmId, () =>
+      generateInsights(battery),
+    );
     await saveInsightProfile({
       clientId: id,
       sections,

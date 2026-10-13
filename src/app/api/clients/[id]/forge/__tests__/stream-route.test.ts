@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // --- Clerk auth() seam (requireActiveSubscription runs REAL against this mock) ---
 const auth = vi.fn();
@@ -47,6 +47,13 @@ vi.mock("@/lib/audit", () => ({ recordAudit: (...a: unknown[]) => recordAudit(..
 
 vi.mock("@/domain/forge/checkpointer", () => ({ getCheckpointer: () => ({}) }));
 
+// The Azure connection rows the AI resolver reads — none by default.
+const getConnection = vi.fn<(firmId: string, provider: string) => Promise<unknown>>(async () => null);
+vi.mock("@/lib/integrations/connections", () => ({
+  getConnection: (firmId: string, provider: string) => getConnection(firmId, provider),
+  setConnectionStatus: vi.fn(),
+}));
+
 // Default happy-path token stream. Restored in beforeEach so per-test overrides
 // (e.g. the stream-side error case) don't leak across tests.
 const defaultStreamEvents = async function* () {
@@ -64,6 +71,8 @@ const buildGraph = vi.fn(() => fakeGraph);
 vi.mock("@/domain/forge/graph", () => ({ buildGraph: () => buildGraph() }));
 
 import { POST } from "../stream/route";
+import { resolveAiCredentials, clearAiCredentialCache } from "@/lib/ai/resolve";
+import type { AiCredentials } from "@/lib/ai/credentials";
 import { FORGE_MESSAGE_MAX_CHARS, FORGE_PAGE_MAX_CHARS } from "@/domain/forge/stream-limits";
 
 function makeReq(body: unknown): Request {
@@ -338,5 +347,72 @@ describe("POST /api/clients/[id]/forge/stream — request size limits", () => {
     expect(await drain(res)).toContain('"type":"done"');
     expect(recordAudit).toHaveBeenCalledTimes(1);
     expect(buildGraph).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("POST /api/clients/[id]/forge/stream — a client shared in from another firm", () => {
+  /** A connected row in the stored shape, naming the firm's own resource. */
+  const connectedRow = (instance: string) => ({
+    status: "connected",
+    accessToken: JSON.stringify({ apiKey: `key-${instance}` }),
+    scope: JSON.stringify({
+      endpoint: `https://${instance}.openai.azure.com`,
+      apiVersion: "2024-12-01-preview",
+      chatDeployment: "chat",
+      miniDeployment: "mini",
+      embeddingDeployment: "embed",
+    }),
+  });
+
+  beforeEach(() => {
+    clearAiCredentialCache();
+    // The caller is in org_B; the client belongs to org_A, shared with edit rights.
+    auth.mockResolvedValue({
+      userId: "u1",
+      orgId: "org_B",
+      sessionClaims: {
+        org_public_metadata: { entitlements: ["ai_copilot"], subscription_status: "active" },
+      },
+    });
+    requireOrgId.mockResolvedValue("org_B");
+    verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_A", access: "shared" });
+    vi.stubEnv("AZURE_ENDPOINT", "https://foundry.openai.azure.com");
+    vi.stubEnv("AZURE_API_KEY", "key-foundry");
+    vi.stubEnv("AZURE_ANALYSIS_MODEL", "gpt-5.4");
+    vi.stubEnv("AZURE_MODEL", "gpt-5.4-mini");
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("returns 403 with the plain reason, before any stream, when the owning firm runs its own AI", async () => {
+    getConnection.mockImplementation(async (firmId) => (firmId === "org_A" ? connectedRow("firm-a") : null));
+
+    const res = await POST(makeReq({ message: "hi", scenarioId: "base" }), ctx);
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: "AI features aren't available on a client shared from a firm that uses its own AI connection.",
+    });
+    expect(createConversation).not.toHaveBeenCalled();
+    expect(buildGraph).not.toHaveBeenCalled();
+  });
+
+  it("runs the turn in Foundry's tenant — not the caller's own — when the owning firm has none", async () => {
+    getConnection.mockImplementation(async (firmId) => (firmId === "org_B" ? connectedRow("firm-b") : null));
+    // Resolve credentials from INSIDE the graph run, after an await, exactly
+    // where the model factory does — that is the scope that has to hold.
+    let seen: AiCredentials | undefined;
+    fakeGraph.streamEvents = async function* () {
+      await new Promise((r) => setTimeout(r, 1));
+      seen = await resolveAiCredentials();
+      yield { event: "on_chat_model_stream", data: { chunk: { content: "ok" } }, name: "model" };
+    };
+
+    const res = await POST(makeReq({ message: "hi", scenarioId: "base" }), ctx);
+    expect(res.status).toBe(200);
+    await drain(res);
+
+    expect(seen?.source).toBe("foundry");
+    expect(seen?.endpoint).toBe("https://foundry.openai.azure.com");
   });
 });
