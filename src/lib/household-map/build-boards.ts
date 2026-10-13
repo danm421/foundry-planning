@@ -7,6 +7,7 @@
 //
 // Pure: no DB, no React, no `new Date()`. The caller passes `today` so ages are
 // reproducible in tests and cannot drift a Jan-1 DOB across timezones.
+import { netAccountValue } from "@/lib/accounts/net-value";
 import { withDerivedEquityValues } from "@/lib/accounts/equity-derived-values";
 import { ageOnDate, birthYearFromDob, yearForAge } from "@/lib/age-year";
 import { buildClientMilestones } from "@/lib/milestones";
@@ -169,7 +170,7 @@ export function buildMapBoards(input: MapBoardsInput): MapBoards {
   // the SAME derived `accounts` the cards are drawn from, so the total can
   // never disagree with the cards that make it up.
   const netWorth =
-    accounts.reduce((sum, a) => sum + a.value, 0) -
+    accounts.reduce((sum, a) => sum + netAccountValue(a), 0) -
     effectiveTree.liabilities.reduce((sum, l) => sum + l.balance, 0);
 
   const people = {

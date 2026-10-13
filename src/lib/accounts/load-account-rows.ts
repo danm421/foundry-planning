@@ -96,6 +96,9 @@ type EngineAccountLike = Parameters<typeof controllingEntity>[0] & {
   rothValue?: number | null;
   hsaCoverage?: "self" | "family" | null;
   growthRate: number;
+  marginBalance?: number | null;
+  marginInterestRate?: number | null;
+  marginCallPct?: number | null;
   rmdEnabled?: boolean | null;
   priorYearEndValue?: number | null;
   inheritedDeathYear?: number | null;
@@ -177,6 +180,9 @@ export function buildAccountRows({
       rothValue: a.rothValue != null ? String(a.rothValue) : null,
       hsaCoverage: a.hsaCoverage ?? null,
       growthRate: a.growthRate == null ? null : String(a.growthRate),
+      marginBalance: a.marginBalance != null ? String(a.marginBalance) : null,
+      marginInterestRate: a.marginInterestRate != null ? String(a.marginInterestRate) : null,
+      marginCallPct: a.marginCallPct != null ? String(a.marginCallPct) : null,
       rmdEnabled: a.rmdEnabled ?? null,
       priorYearEndValue: a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,
       ...inheritedIraRowFields(a),

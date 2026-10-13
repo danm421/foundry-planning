@@ -5,6 +5,7 @@
 // here, so a rule never reaches back into the tree — which keeps the rules a
 // table of plain conditions and keeps this the one place that knows the
 // engine's shapes.
+import { netAccountValue } from "@/lib/accounts/net-value";
 import type { ProjectionResult } from "@/engine/projection";
 import type { ClientData, GiftEvent, Liability } from "@/engine/types";
 import { ageOnDate } from "@/lib/age-year";
@@ -337,10 +338,10 @@ export function buildPlanFacts(input: {
     retirement.filter((a) => a.subType !== "roth_ira" && a.subType !== "hsa"),
     (a) => a.value - (a.rothValue ?? 0),
   );
-  const liquidPortfolio = sumBy(accountsIn("taxable", "cash", "retirement", "annuity"), (a) => a.value);
+  const liquidPortfolio = sumBy(accountsIn("taxable", "cash", "retirement", "annuity"), netAccountValue);
   const realEstate = sumBy(accountsIn("real_estate"), (a) => a.value);
   const business = sumBy(accountsIn("business"), (a) => a.value);
-  const assets = sumBy(tree.accounts, (a) => a.value);
+  const assets = sumBy(tree.accounts, netAccountValue);
   const debts = sumBy(tree.liabilities, (l) => l.balance);
 
   // Only a loan the Debt-or-Invest sheet can reach — a held-flat debt (credit

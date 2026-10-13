@@ -21,6 +21,7 @@ import { NOTES_SCENARIO_BLOCKED_MSG, type NoteReceivableFormInitial } from "./fo
 import { computeAmortizationSchedule, calcOriginalBalance } from "@/lib/loan-math";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 import { inheritedIraRowFields } from "@/lib/accounts/inherited-ira";
+import { netAccountValue } from "@/lib/accounts/net-value";
 import { toSalaryOptions } from "@/lib/savings/salary-options";
 import { LIQUID_PORTFOLIO_CATEGORIES } from "@/engine/portfolio-snapshot";
 import type { ClientMilestones } from "@/lib/milestones";
@@ -84,6 +85,11 @@ export interface AccountRow {
    * "self" (which would overwrite a persisted "family" on the next save). */
   hsaCoverage?: "self" | "family" | null;
   growthRate: string | null;
+  /** Margin loan on a taxable account (decimal strings). Value above stays
+   *  gross; net-worth/portfolio sums use `netAccountValue`. */
+  marginBalance?: string | null;
+  marginInterestRate?: string | null;
+  marginCallPct?: string | null;
   /** The STORED `growth_rate` column (the meta row), where `growthRate` above is
    *  the RESOLVED rate. Only Edit Business reads it — see
    *  `accountRowToBusinessAccount`. Never written back: it is not a field. */
@@ -362,6 +368,9 @@ export function accountToInitial(a: AccountRow): AccountFormInitial {
     rothValue: a.rothValue ?? undefined,
     hsaCoverage: a.hsaCoverage ?? null,
     growthRate: a.growthRate,
+    marginBalance: a.marginBalance ?? undefined,
+    marginInterestRate: a.marginInterestRate ?? undefined,
+    marginCallPct: a.marginCallPct ?? undefined,
     rmdEnabled: a.rmdEnabled ?? null,
     countsTowardAum: a.countsTowardAum ?? false,
     priorYearEndValue: a.priorYearEndValue ?? null,
@@ -1061,11 +1070,11 @@ export default function BalanceSheetView({
   );
 
   const totalInEstate =
-    inEstate.reduce((s, a) => s + Number(a.value), 0) +
+    inEstate.reduce((s, a) => s + netAccountValue(a), 0) +
     inEstateBusinessEntityTotal +
     notesReceivableTotal;
   const totalOutOfEstate =
-    outOfEstate.reduce((s, a) => s + Number(a.value), 0) + outOfEstateBusinessEntityTotal;
+    outOfEstate.reduce((s, a) => s + netAccountValue(a), 0) + outOfEstateBusinessEntityTotal;
   const totalAssets = totalInEstate + totalOutOfEstate;
   // Merged rows, so the panel total and the net-worth KPI move with an inline
   // balance edit instead of lagging a round-trip behind the row above them.
@@ -1079,7 +1088,7 @@ export default function BalanceSheetView({
   const liquidAccounts = inEstate.filter((a) =>
     LIQUID_PORTFOLIO_CATEGORIES.has(a.category),
   );
-  const portfolioAssets = liquidAccounts.reduce((s, a) => s + Number(a.value), 0);
+  const portfolioAssets = liquidAccounts.reduce((s, a) => s + netAccountValue(a), 0);
   const realEstateAccounts = accounts
     .filter((a) => a.category === "real_estate")
     .map((a) => ({ id: a.id, name: a.name }));
@@ -1506,7 +1515,7 @@ export default function BalanceSheetView({
                 return null;
               const accountSubtotal = items.reduce(
                 (s, a) =>
-                  s + (cat === "business" ? consolidatedBusinessValue(a) : Number(a.value)),
+                  s + (cat === "business" ? consolidatedBusinessValue(a) : netAccountValue(a)),
                 0,
               );
               const flatSubtotal = flatBusinessRows.reduce(
@@ -1566,7 +1575,9 @@ export default function BalanceSheetView({
                         subLabel={
                           cat === "education_savings"
                             ? `${a.beneficiaryDisplayName ?? "Unnamed beneficiary"} (beneficiary)`
-                            : undefined
+                            : Number(a.marginBalance ?? 0) > 0
+                              ? `Margin −${fmt(String(a.marginBalance))} · Net ${fmt(String(netAccountValue(a)))}`
+                              : undefined
                         }
                         ownerSlot={
                           <InlineOwnerCell
@@ -1810,7 +1821,7 @@ export default function BalanceSheetView({
 
           <div className="space-y-3">
             {Array.from(outByEntity.entries()).map(([entityId, rows]) => {
-              const subtotal = rows.reduce((s, a) => s + Number(a.value), 0);
+              const subtotal = rows.reduce((s, a) => s + netAccountValue(a), 0);
               const entityName = entityMap[entityId]?.name ?? "Unknown entity";
               const expanded = expandedOutOfEstate.has(entityId);
               return (

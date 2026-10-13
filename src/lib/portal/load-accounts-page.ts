@@ -1,4 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
+import { netAccountValue } from "@/lib/accounts/net-value";
 import { db } from "@/db";
 import {
   accountHoldings,
@@ -103,6 +104,7 @@ export async function loadAccountsPage(clientId: string): Promise<AccountsPageDT
       category: accounts.category,
       subType: accounts.subType,
       value: accounts.value,
+      marginBalance: accounts.marginBalance,
       accountNumberLast4: accounts.accountNumberLast4,
       plaidItemId: accounts.plaidItemId,
       isDefaultChecking: accounts.isDefaultChecking,
@@ -127,7 +129,7 @@ export async function loadAccountsPage(clientId: string): Promise<AccountsPageDT
     category: r.category,
     subType: r.subType,
     last4: r.accountNumberLast4,
-    value: Number(r.value || "0"),
+    value: netAccountValue(r),
     isPlaidLinked: r.plaidItemId != null,
   }));
 

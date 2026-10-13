@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
@@ -95,12 +95,12 @@ const ACCOUNTS = [
   acct("a-biz", "business", "800000", "operating"),
 ];
 
-function renderView() {
+function renderView(accounts: typeof ACCOUNTS = ACCOUNTS) {
   return render(
     <ClientAccessProvider value={{ permission: "edit", access: "shared" }}>
       <BalanceSheetView
         clientId="test-client-id"
-        accounts={ACCOUNTS}
+        accounts={accounts}
         liabilities={[]}
         entities={[]}
         categoryDefaults={CATEGORY_DEFAULTS}
@@ -141,5 +141,18 @@ describe("BalanceSheetView — Portfolio assets KPI", () => {
   it("counts every portfolio account in the subtitle", () => {
     renderView();
     expect(screen.getByText("5 liquid accounts")).toBeTruthy();
+  });
+
+  it("counts a margined taxable account at net value in Net Worth and Portfolio assets", () => {
+    const margined = {
+      ...acct("a-margin", "taxable", "10000000", "individual"),
+      marginBalance: "2000000",
+    };
+    renderView([margined]);
+    expect(portfolioKpiValue()).toBe("$8,000,000");
+    const netWorth = screen.getByText("Net Worth", { selector: "p" }).nextElementSibling?.textContent;
+    expect(netWorth).toBe("$8,000,000");
+    fireEvent.click(screen.getByRole("button", { name: /Taxable/ }));
+    expect(screen.getByText("Margin −$2,000,000 · Net $8,000,000")).toBeTruthy();
   });
 });

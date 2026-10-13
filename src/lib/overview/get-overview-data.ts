@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { netAccountValue } from "@/lib/accounts/net-value";
 import { accounts, clients, crmHouseholdContacts, entities, entityOwners } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { listOpenItems } from "./list-open-items";
@@ -65,6 +66,7 @@ export async function getOverviewData(
           id: accounts.id,
           category: accounts.category,
           value: accounts.value,
+          marginBalance: accounts.marginBalance,
         })
         .from(accounts)
         .where(eq(accounts.clientId, clientId)),
@@ -112,10 +114,10 @@ export async function getOverviewData(
   }, 0);
 
   const netWorth =
-    accountRows.reduce((sum, a) => sum + Number(a.value ?? 0), 0) + businessFlatInEstate;
+    accountRows.reduce((sum, a) => sum + netAccountValue(a), 0) + businessFlatInEstate;
   const liquidPortfolio = accountRows
     .filter((a) => !LIQUID_CATEGORY_EXCLUDE.has(String(a.category)))
-    .reduce((sum, a) => sum + Number(a.value ?? 0), 0);
+    .reduce((sum, a) => sum + netAccountValue(a), 0);
 
   // Per-person retirement age + calendar year — the single source of truth for
   // retirement timing. `yearsToRetirement` alone is ambiguous downstream (the

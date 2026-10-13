@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import { netAccountValue } from "@/lib/accounts/net-value";
 import { db } from "@/db";
 import { accounts, scenarios } from "@/db/schema";
 import { isPortalVisibleAccount } from "@/lib/portal/account-visibility";
@@ -31,6 +32,7 @@ export async function loadAccountsOverview(clientId: string): Promise<AccountsOv
       category: accounts.category,
       subType: accounts.subType,
       value: accounts.value,
+      marginBalance: accounts.marginBalance,
       accountNumberLast4: accounts.accountNumberLast4,
       plaidItemId: accounts.plaidItemId,
       isDefaultChecking: accounts.isDefaultChecking,
@@ -53,7 +55,7 @@ export async function loadAccountsOverview(clientId: string): Promise<AccountsOv
       category: r.category,
       subType: r.subType,
       last4: r.accountNumberLast4,
-      value: Number(r.value || "0"),
+      value: netAccountValue(r),
       isPlaidLinked: r.plaidItemId != null,
     }));
 

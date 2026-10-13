@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { netAccountValue } from "@/lib/accounts/net-value";
 import { getOverviewData } from "@/lib/overview/get-overview-data";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
@@ -123,15 +124,15 @@ const getBalanceSheet = defineTool({
   page: "balanceSheet",
   handler: async ({ clientId, scenarioId }, { firmId }) => {
     const { effectiveTree } = await loadEffectiveTree(clientId, firmId, scenarioId ?? "base", {});
-    const accounts = (effectiveTree.accounts ?? []) as { name?: string; category?: string; value?: number }[];
+    const accounts = (effectiveTree.accounts ?? []) as { name?: string; category?: string; value?: number; marginBalance?: number }[];
     const liabilities = (effectiveTree.liabilities ?? []) as { name?: string; balance?: number }[];
 
     const byCategory = new Map<string, number>();
     for (const a of accounts) {
       const key = a.category ?? "other";
-      byCategory.set(key, (byCategory.get(key) ?? 0) + (a.value ?? 0));
+      byCategory.set(key, (byCategory.get(key) ?? 0) + netAccountValue({ value: a.value ?? 0, marginBalance: a.marginBalance }));
     }
-    const totalAccountValue = accounts.reduce((s, a) => s + (a.value ?? 0), 0);
+    const totalAccountValue = accounts.reduce((s, a) => s + netAccountValue({ value: a.value ?? 0, marginBalance: a.marginBalance }), 0);
     const totalLiabilities = liabilities.reduce((s, l) => s + (l.balance ?? 0), 0);
 
     return {

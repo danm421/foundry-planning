@@ -251,6 +251,9 @@ export interface AccountViewEngineFields {
   basis: string;
   rothValue: string;
   growthRate: string | null;
+  marginBalance: string;
+  marginInterestRate: string;
+  marginCallPct: string;
   rmdEnabled: boolean | null;
   ownerEntityId: string | null;
   /** Ownership rows verbatim. `ownerEntityId` above is a lossy reduction of
@@ -271,6 +274,9 @@ export function accountEngineToView(account: EngineAccount): AccountViewEngineFi
     basis: String(account.basis),
     rothValue: String(account.rothValue ?? 0),
     growthRate: account.growthRate != null ? String(account.growthRate) : null,
+    marginBalance: String(account.marginBalance ?? 0),
+    marginInterestRate: String(account.marginInterestRate ?? 0),
+    marginCallPct: String(account.marginCallPct ?? 0.3),
     rmdEnabled: account.rmdEnabled ?? null,
     ownerEntityId: controllingEntity(account) ?? null,
     owners: account.owners,
