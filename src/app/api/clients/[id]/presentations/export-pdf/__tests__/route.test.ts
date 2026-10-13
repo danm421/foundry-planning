@@ -82,6 +82,14 @@ vi.mock("@/lib/compute-cache/monte-carlo", () => ({
   getOrComputeMonteCarlo: vi.fn().mockRejectedValue(new Error("stub: skip MC body")),
 }));
 
+const assertBrandMock = vi.fn();
+vi.mock("@/lib/branding/brand-options", () => ({
+  assertBrandChoiceAllowed: (...a: unknown[]) => assertBrandMock(...a),
+}));
+vi.mock("@/lib/branding/household-brand", () => ({
+  loadHouseholdBrand: vi.fn(async () => "adv-1"),
+}));
+
 // Keep a benign @/db mock so importing the route doesn't open a real connection.
 // The route issues batched scenarios/scenarioSnapshots name lookups via
 // db.select(...).from(...).where(...); stub the chain to resolve to no rows
@@ -433,5 +441,44 @@ describe("POST /api/clients/[id]/presentations/export-pdf — preview mode", () 
       params: Promise.resolve({ id: "client-1" }),
     });
     expect(savePlanToVault).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/clients/[id]/presentations/export-pdf — brand", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    assertBrandMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  const params = Promise.resolve({ id: "client-1" });
+  const previewReq = (extra: Record<string, unknown>) =>
+    makeReq({
+      scenarioId: null,
+      preview: true,
+      pages: [
+        { pageId: "cashFlow", options: { range: "retirement", showCallout: true } },
+      ],
+      ...extra,
+    }) as never;
+
+  it("checks a picked brand against the household's", async () => {
+    const { POST } = await import("../route");
+    const res = await POST(previewReq({ brand: "firm" }), { params });
+    expect(res.status).toBe(200);
+    expect(assertBrandMock).toHaveBeenCalledWith(expect.any(String), "firm", "adv-1");
+  });
+
+  it("refuses a brand the caller can't use with 403", async () => {
+    const { POST } = await import("../route");
+    const { ForbiddenError } = await vi.importActual<typeof import("@/lib/authz")>("@/lib/authz");
+    assertBrandMock.mockRejectedValue(new ForbiddenError("That brand isn't available to you for this household."));
+    const res = await POST(previewReq({ brand: "user_other" }), { params });
+    expect(res.status).toBe(403);
+  });
+
+  it("skips the check when no brand is sent", async () => {
+    const { POST } = await import("../route");
+    await POST(previewReq({}), { params });
+    expect(assertBrandMock).not.toHaveBeenCalled();
   });
 });

@@ -4,7 +4,7 @@ import type { DocumentProps } from "@react-pdf/renderer";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
-import { resolveBranding } from "@/lib/branding/branding";
+import { brandChoiceSchema, householdBrand, FIRM_BRAND } from "@/lib/branding/brand-choice";
 import { resolveBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { foundryDefaultLogoDataUrl } from "@/lib/presentations/default-logo";
 import { runProjectionWithEvents } from "@/engine/projection";
@@ -84,6 +84,7 @@ export const BodySchema = z.object({
   scenarioId: z.string().nullable().default(null),
   filename: z.string().trim().min(1).max(120).optional(),
   preview: z.boolean().optional().default(false),
+  brand: brandChoiceSchema.optional(),
   pages: z.array(pageDescriptorSchema).min(1),
 });
 
@@ -446,22 +447,20 @@ export async function renderPresentationPdf(
     );
   }
 
-  // Branding for the cover: resolved by the client's OWN advisor (an advisor
-  // override wins field-by-field over the firm's branding; no override falls
-  // through to the firm, identical to today). Resolved here — via a narrow
-  // select scoped by BOTH clientId and firmId, never clientId alone — rather
-  // than threaded through as a 4th parameter, so all five renderPresentationPdf
-  // callers stay unchanged; this function already touches the DB for
-  // client/projection data. Falls back to firm branding if the row is
-  // somehow missing — branding must never be the thing that fails an export
-  // (the ClientNotFoundError path above already owns "no such client").
-  const [clientRow] = await db
-    .select({ advisorId: clients.advisorId })
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  const branding = clientRow
-    ? await resolveBrandingForClient(firmId, clientRow.advisorId)
-    : await resolveBranding(firmId);
+  // Branding for the cover: the brand the request names (the launcher's
+  // picker — the route has already checked the caller may use it), else the
+  // household's own brand (its saved choice, else its advisor's). The lookup
+  // is scoped by BOTH clientId and firmId, never clientId alone, and a missing
+  // row is the firm brand: branding must never be the thing that fails an export.
+  let brand = body.brand;
+  if (!brand) {
+    const [clientRow] = await db
+      .select({ advisorId: clients.advisorId, brand: clients.brand })
+      .from(clients)
+      .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
+    brand = clientRow ? householdBrand(clientRow) : FIRM_BRAND;
+  }
+  const branding = await resolveBrandingForClient(firmId, brand);
   const firmName = branding.firmName;
   const firmLogoDataUrl = branding.logoDataUrl ?? (await foundryDefaultLogoDataUrl());
 
