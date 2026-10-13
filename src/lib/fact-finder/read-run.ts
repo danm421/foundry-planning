@@ -238,6 +238,8 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
           result.extracted.liabilities.length === 0 &&
           result.extracted.lifePolicies.length === 0
         ) {
+          // Past the time budget: leave it for the next read, which skips straight to this fallback.
+          if (signal?.aborted) continue;
           try {
             const note = `${f.originalFilename} had no accounts a statement reader could find, so it was read as a general document.`;
             await settle(f, "section", await readAsSections(f, [note]));

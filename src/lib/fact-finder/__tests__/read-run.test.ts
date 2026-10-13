@@ -332,6 +332,29 @@ describe("runFactFinderRead", () => {
     expect(state.transcript.at(-1)).toMatchObject({ role: "assistant", text: expect.stringMatching(/^Couldn't read 1 document — Retry it\./) });
   });
 
+  it("doesn't start a statement's fallback read once the time budget runs out, and leaves the file to read again", async () => {
+    store.files = [file("f1")];
+    const budget = new AbortController();
+    vi.mocked(routeFile).mockResolvedValue({ reader: "statement" });
+    // The statement reader finds nothing in f1, and the budget runs out while it reads.
+    vi.mocked(runImportExtraction).mockImplementation(async (args) => {
+      store.fileResults = { f1: statement("f1", []) };
+      args.onFile?.({ fileId: "f1", fileName: "f1.pdf", accountCount: 0 });
+      budget.abort();
+      return { succeeded: 1, failed: 0, status: "review", warnings: [], filesProcessed: 1 };
+    });
+
+    const { result, state } = await run({ signal: budget.signal, now: () => NOW });
+
+    expect(runImportExtraction).toHaveBeenCalled();
+    expect(pagesForSectionReader).not.toHaveBeenCalled();
+    expect(readSections).not.toHaveBeenCalled();
+    expect(state.readings.f1).toMatchObject({ status: "failed", reason: "Stopped before this file was read." });
+    expect(needsReading(state.readings.f1, NOW)).toBe(true);
+    expect(result.summary).toBe("Couldn't read 1 document — Retry it. 0 sections have values.");
+    expect(result.caveats).toContain("Couldn't read f1.pdf: Stopped before this file was read.");
+  });
+
   it("marks files it never reached as failed when the read is stopped", async () => {
     store.files = [file("f1")];
     const controller = new AbortController();
