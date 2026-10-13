@@ -1249,6 +1249,8 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       const retained = 1 - (giftedAwayByBusiness.get(b.id) ?? 0);
       const assetRows: AssetRow[] = tree.map((acct) => {
         const full = accountValueForYear(yearData, acct.id, asOfMode);
+        const ledger = yearData.accountLedgers[acct.id];
+        const wholeLoan = (asOfMode === "today" ? ledger?.marginBoY : ledger?.marginEoY) ?? 0;
         return {
           rowKey: acct.id === b.id ? `biz:${acct.id}` : `bizchild:${acct.id}`,
           accountId: acct.id,
@@ -1258,6 +1260,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
           ownerPercent: retained,
           ownerLabel: acct.name,
           value: full * retained,
+          ...(wholeLoan > 0 ? { marginLoan: wholeLoan * retained } : {}),
           hasLinkedMortgage: false,
           isFlatBusinessValue: false,
           accountHasMultipleOwners: false,

@@ -146,7 +146,7 @@ export function BalanceSheetPdfDocument({
                 {cat.rows.map((r) => (
                   <View key={r.rowKey} style={styles.itemRow}>
                     <View>
-                      <Text>
+                      <Text style={{ fontSize: 10 }}>
                         {r.accountName}
                         {r.hasLinkedMortgage ? " (M)" : ""}
                         {r.revocableTrustName ? `  ·  ${r.revocableTrustName}` : ""}

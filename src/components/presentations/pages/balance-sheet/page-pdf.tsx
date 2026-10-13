@@ -45,6 +45,8 @@ const S = StyleSheet.create({
     borderBottomColor: T.hair2,
   },
   rowName: { fontSize: 8, color: T.ink2, flex: 2 },
+  rowNameCell: { flex: 2 },
+  rowNameText: { fontSize: 8, color: T.ink2 },
   rowSub: { fontSize: 7, color: T.ink3 },
   rowVal: { fontSize: 8, fontFamily: "JetBrains Mono", color: T.ink2, flex: 1, textAlign: "right" },
   totalRow: {
@@ -126,8 +128,8 @@ export function BalanceSheetPagePdf({
               </View>
               {cat.rows.map((r) => (
                 <View key={r.rowKey} style={S.row}>
-                  <View style={S.rowName}>
-                    <Text>
+                  <View style={S.rowNameCell}>
+                    <Text style={S.rowNameText}>
                       {r.accountName}
                       {r.hasLinkedMortgage ? " (M)" : ""}
                     </Text>

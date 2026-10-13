@@ -844,4 +844,37 @@ describe("margin loan sub-line data", () => {
     expect(row.value).toBe(8_660_000);
     expect(row.marginLoan).toBeCloseTo(2_040_000, 2);
   });
+
+  it("a margined taxable account inside a business tree shows net value and its loan", () => {
+    const bizParent = {
+      id: "biz-1", name: "Consulting Business", category: "business",
+      parentAccountId: null, businessType: "llc",
+      owners: [{ kind: "family_member" as const, familyMemberId: FM_CLIENT, percent: 1 }],
+    };
+    const bizBrokerage = {
+      id: "biz-brk", name: "Consulting Business — Brokerage", category: "taxable",
+      parentAccountId: "biz-1", owners: [] as AccountOwner[],
+    };
+    const vm = buildViewModel({
+      ...baseInput,
+      accounts: [...accounts, bizParent, bizBrokerage],
+      projectionYears: [
+        priorYear,
+        {
+          ...projectionYear,
+          accountLedgers: {
+            ...projectionYear.accountLedgers,
+            "biz-1": { beginningValue: 50_000, endingValue: 50_000 },
+            "biz-brk": { beginningValue: 800_000, endingValue: 866_000, marginBoY: 200_000, marginEoY: 204_000 },
+          },
+        },
+      ],
+      view: "entities",
+    });
+    const biz = vm.entityGroups!.find((g) => g.entityId === "biz-1")!;
+    const row = biz.assetRows.find((r) => r.accountId === "biz-brk")!;
+    expect(row.value).toBe(866_000);
+    expect(row.marginLoan).toBeCloseTo(204_000, 2);
+    expect(biz.assetRows.find((r) => r.accountId === "biz-1")!.marginLoan ?? 0).toBe(0);
+  });
 });
