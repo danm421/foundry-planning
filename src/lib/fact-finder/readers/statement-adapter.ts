@@ -1,5 +1,5 @@
 // src/lib/fact-finder/readers/statement-adapter.ts
-import type { ExtractedAccount, ExtractedHolding, ExtractedLiability } from "@/lib/extraction/types";
+import type { ExtractedAccount, ExtractedHolding, ExtractedLiability, ExtractedLifePolicy } from "@/lib/extraction/types";
 import { resolveAccountCategory } from "@/lib/imports/commit/account-category";
 import { livingHoldings } from "@/lib/imports/living-rows";
 import { resolveOwnersFromHint, type OwnerMatchFamilyMember } from "@/lib/imports/owner-match";
@@ -8,13 +8,15 @@ import {
   ANNUITY_TAX_MAP,
   BUSINESS_SUBTYPE_MAP,
   CASH_TYPE_MAP,
+  INSURED_MAP,
+  LIFE_POLICY_TYPE_MAP,
   LIFE_SUBTYPE_MAP,
   PROPERTY_TYPE_MAP,
   RETIRE_TYPE_MAP,
   TAXABLE_TYPE_MAP,
   labelFor,
 } from "../enums";
-import { normText } from "../identity";
+import { last4Of, normText } from "../identity";
 import type { FFCellValue, FFReadCell, FFReadHolding, FFReading, FFSource } from "../types";
 
 /** Statement values are read by today's tuned statement reader. */
@@ -152,9 +154,11 @@ export function readingFromAccount(
         currentValue: cell(row.value), costBasis: cell(row.basis),
       });
     case "life_insurance":
+      // Keyed by policy number like a statement's policy, so a re-read finds the same row.
       return reading("life", {
         policyName: cell(row.name), carrier: cell(row.custodian),
         policyType: cell(labelFor(LIFE_SUBTYPE_MAP, subType)), cashValue: cell(row.value),
+        policyNumber: cell(last4Of(row.accountNumberLast4)),
       });
     case "notes_receivable":
       return reading("notes_rec", { borrower: cell(row.name), currentBalance: cell(row.value), owner: owner() });
@@ -215,10 +219,35 @@ export function readingFromLiability(row: Annotated<ExtractedLiability>): FFRead
   };
 }
 
+/** A statement's life policy. The insured is the reader's client/co-client guess, so it shows "check this". */
+function readingFromLifePolicy(row: Annotated<ExtractedLifePolicy>): FFReading {
+  const source = sourceOf(row);
+  const cell = cellMaker(source);
+  return {
+    sectionId: "life",
+    fileId: source.fileId,
+    cells: compact({
+      policyName: cell(row.accountName),
+      carrier: cell(row.carrier),
+      policyType: cell(labelFor(LIFE_POLICY_TYPE_MAP, row.policyType)),
+      insured: cell(labelFor(INSURED_MAP, row.insuredPerson), GUESSED_CONFIDENCE),
+      deathBenefit: cell(row.faceValue),
+      cashValue: cell(row.cashValue),
+      costBasis: cell(row.costBasis),
+      annualPremium: cell(row.premiumAmount),
+      premiumPaymentYears: cell(row.premiumYears),
+      termIssueYear: cell(row.termIssueYear),
+      termLengthYears: cell(row.termLengthYears),
+      policyNumber: cell(last4Of(row.policyNumberLast4)),
+    }),
+  };
+}
+
 export function readingsFromStatements(input: {
   accounts: Annotated<ExtractedAccount>[];
   excluded: Array<{ row: Annotated<ExtractedAccount>; reason: string }>;
   liabilities: Annotated<ExtractedLiability>[];
+  lifePolicies: Annotated<ExtractedLifePolicy>[];
   family: OwnerMatchFamilyMember[];
 }): FFReading[] {
   const kept = input.accounts.flatMap((a) => readingFromAccount(a, input.family) ?? []);
@@ -226,5 +255,10 @@ export function readingsFromStatements(input: {
     const r = readingFromAccount(row, input.family);
     return r ? [{ ...r, exclude: { reason } }] : [];
   });
-  return [...kept, ...excluded, ...input.liabilities.map(readingFromLiability)];
+  return [
+    ...kept,
+    ...excluded,
+    ...input.liabilities.map(readingFromLiability),
+    ...input.lifePolicies.map(readingFromLifePolicy),
+  ];
 }

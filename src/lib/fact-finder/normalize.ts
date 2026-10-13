@@ -247,6 +247,17 @@ const SYNONYMS: Record<string, string> = {
   fullretirementage: "At full retirement age",
   livingtrust: "Revocable living trust",
   rlt: "Revocable living trust",
+  rsus: "RSU",
+  restrictedstockunit: "RSU",
+  restrictedstockunits: "RSU",
+  nso: "NQSO",
+  nsos: "NQSO",
+  nonqualified: "NQSO",
+  nonqualifiedstockoption: "NQSO",
+  nonqualifiedstockoptions: "NQSO",
+  incentivestockoption: "ISO",
+  incentivestockoptions: "ISO",
+  isos: "ISO",
 };
 
 const STATE_CODES_BY_NAME: Record<string, string> = {

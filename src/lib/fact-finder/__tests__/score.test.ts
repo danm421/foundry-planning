@@ -239,6 +239,17 @@ describe("applyLinkScores — other record kinds", () => {
     expect(s.sections.equity[0].linkCandidates?.map((c) => c.recordId)).toEqual(["g-nqso"]);
   });
 
+  it("still suggests a grant whose type the document named in a way that isn't an option", () => {
+    const r = records();
+    r.stockOptionGrants = [{ id: "g-rsu", accountName: "Acme Corp", grantNumber: null, grantDate: "2024-03-01", grantType: "rsu" }];
+    const scored = scoreCandidates(
+      findSection("equity")!,
+      row("e", { company: "Acme Corp", grantType: "Performance shares", grantDate: "2024-03-01" }),
+      r,
+    );
+    expect(scored.map((c) => c.recordId)).toEqual(["g-rsu"]);
+  });
+
   it("links fixed rows implicitly to that person's income or the living-expense slot", () => {
     const start = emptyFactFinderState();
     const fill = (sectionId: string, index: number, values: Record<string, FFCellValue>) => {

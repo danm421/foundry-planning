@@ -20,7 +20,7 @@ import {
   SECTION_ACCOUNT_CATEGORY,
   valueFor,
 } from "../enums";
-import { last4Of, normText } from "../identity";
+import { grantTypesAgree, last4Of, normText } from "../identity";
 import type { ExistingRecords } from "../records/types";
 import { FACT_FINDER_SECTIONS, fixedLabelsOf, sectionsLinkingTo, type FFSection, type RecordKind } from "../schema";
 import { fixedLabelOfRow, rowHasValues, rowValues, sameJson } from "../state";
@@ -219,11 +219,10 @@ function scoreByKind(kind: RecordKind, section: FFSection, v: Record<string, FFC
       const grantNumber = str(v.grantNumber);
       const company = str(v.company);
       const grantDate = str(v.grantDate);
-      const grantType = normText(v.grantType);
       return records.stockOptionGrants.flatMap((g): ScoredCandidate[] => {
         const label = `${g.accountName} ${g.grantType.toUpperCase()} ${g.grantDate}`;
         // An RSU and an NQSO granted the same day are two grants.
-        if (grantType && grantType !== normText(g.grantType)) return [];
+        if (!grantTypesAgree(v.grantType, g.grantType)) return [];
         if (grantNumber && g.grantNumber) {
           return normText(grantNumber) === normText(g.grantNumber) ? [{ recordId: g.id, label, score: 1, exact: true }] : [];
         }

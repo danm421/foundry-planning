@@ -186,6 +186,23 @@ describe("runFactFinderRead", () => {
     expect(state.readings.f1).toMatchObject({ status: "done", reader: "statement", rows: 1 });
   });
 
+  it("puts a statement's life policy in Life Insurance, even when it's all the statement holds", async () => {
+    store.files = [file("f1")];
+    vi.mocked(routeFile).mockResolvedValue({ reader: "statement" });
+    const onlyPolicy = statement("f1", []);
+    onlyPolicy.extracted.lifePolicies = [
+      { accountName: "Brighthouse Whole Life", carrier: "Brighthouse", policyNumberLast4: "7781", policyType: "whole", insuredPerson: "spouse", faceValue: 3000000 },
+    ];
+    extractionWrites({ f1: onlyPolicy });
+
+    const { state } = await run();
+
+    expect(readSections).not.toHaveBeenCalled();
+    expect(state.sections.life).toHaveLength(1);
+    expect(state.sections.life[0].cells.policyNumber.value).toBe("7781");
+    expect(state.readings.f1).toMatchObject({ status: "done", reader: "statement", rows: 1 });
+  });
+
   it("re-reads a statement the statement reader found nothing in with the section reader", async () => {
     store.files = [file("f1")];
     vi.mocked(routeFile).mockResolvedValue({ reader: "statement" });

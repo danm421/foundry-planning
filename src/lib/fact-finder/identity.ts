@@ -1,5 +1,7 @@
 // src/lib/fact-finder/identity.ts
 import { custodianMatches, normalizeCustodian } from "@/lib/imports/normalize-custodian";
+import { matchOption } from "./normalize";
+import { GRANT_TYPE } from "./schema";
 import type { FFCellValue } from "./types";
 
 type Values = Record<string, FFCellValue>;
@@ -52,6 +54,19 @@ function sameAccount(a: Values, b: Values, nameColumn: string, custodianColumn: 
   return eq(a[nameColumn], b[nameColumn]) && agrees(a.owner, b.owner) && custodians;
 }
 
+const grantTypeOf = (v: FFCellValue | undefined) => (typeof v === "string" ? matchOption(v, GRANT_TYPE) : null);
+
+/**
+ * Grant types contradict only when both sides are one of the options (an app
+ * record's "rsu" counts): a type no option covers ("Performance shares")
+ * can't keep a row apart or block a link.
+ */
+export function grantTypesAgree(a: FFCellValue | undefined, b: FFCellValue | undefined): boolean {
+  const x = grantTypeOf(a);
+  const y = grantTypeOf(b);
+  return x === null || y === null || x === y;
+}
+
 function samePolicyNumber(a: FFCellValue | undefined, b: FFCellValue | undefined): boolean | null {
   const x = normText(a).replace(/ /g, "");
   const y = normText(b).replace(/ /g, "");
@@ -79,7 +94,7 @@ const RULES: Record<string, (a: Values, b: Values) => boolean> = {
   equity: (a, b) =>
     normText(a.grantNumber) && normText(b.grantNumber)
       ? eq(a.grantNumber, b.grantNumber)
-      : eq(a.company, b.company) && agrees(a.grantDate, b.grantDate) && agrees(a.grantType, b.grantType),
+      : eq(a.company, b.company) && agrees(a.grantDate, b.grantDate) && grantTypesAgree(a.grantType, b.grantType),
   notes_rec: (a, b) => eq(a.borrower, b.borrower),
   realestate: (a, b) => eq(a.propertyName, b.propertyName) || eq(a.address, b.address),
   business: (a, b) => eq(a.businessName, b.businessName),
@@ -91,7 +106,12 @@ const RULES: Record<string, (a: Values, b: Values) => boolean> = {
   life: (a, b) => {
     const byNumber = samePolicyNumber(a.policyNumber, b.policyNumber);
     if (byNumber !== null) return byNumber;
-    return eq(a.carrier, b.carrier) && eq(a.insured, b.insured) && agrees(a.policyName, b.policyName);
+    // Or, like accounts, the same name with nothing contradicting it: a statement can
+    // print neither number nor carrier, and every read re-merges earlier statements.
+    return (
+      (eq(a.carrier, b.carrier) && eq(a.insured, b.insured) && agrees(a.policyName, b.policyName)) ||
+      (eq(a.policyName, b.policyName) && agrees(a.carrier, b.carrier) && agrees(a.insured, b.insured))
+    );
   },
   disability: insurer,
   ltc: insurer,

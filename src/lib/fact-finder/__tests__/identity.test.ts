@@ -49,6 +49,13 @@ describe("sameIdentity", () => {
     expect(sameIdentity("bequests", { ...rest, condition: "Always" }, rest)).toBe(true);
   });
 
+  it("lets a grant type split rows only when both sides name a known type", () => {
+    const grant = { company: "Acme", grantDate: "2024-03-01" };
+    expect(sameIdentity("equity", { ...grant, grantType: "Performance shares" }, { ...grant, grantType: "RSU" })).toBe(true);
+    expect(sameIdentity("equity", { ...grant, grantType: "Restricted Stock Units" }, { ...grant, grantType: "RSU" })).toBe(true);
+    expect(sameIdentity("equity", { ...grant, grantType: "Restricted Stock Units" }, { ...grant, grantType: "NQSO" })).toBe(false);
+  });
+
   it("matches family on first name plus date of birth, else last name", () => {
     expect(sameIdentity("family", { firstName: "Emma", dateOfBirth: "2004-05-21" }, { firstName: "emma", dateOfBirth: "2004-05-21" })).toBe(true);
     expect(sameIdentity("family", { firstName: "Emma", dateOfBirth: "2004-05-21" }, { firstName: "Emma", dateOfBirth: "2006-01-01" })).toBe(false);
@@ -59,6 +66,12 @@ describe("sameIdentity", () => {
     expect(sameIdentity("life", { policyNumber: "NM-55820013" }, { policyNumber: "0013" })).toBe(true);
     expect(sameIdentity("life", { policyNumber: "NM-55820013" }, { policyNumber: "NM-1" })).toBe(false);
     expect(sameIdentity("life", { carrier: "Unum", insured: "Client" }, { carrier: "unum", insured: "Client" })).toBe(true);
+  });
+
+  it("matches a life policy with no number or carrier on its name, unless the insured differs", () => {
+    expect(sameIdentity("life", { policyName: "Term Life", insured: "Client" }, { policyName: "term life" })).toBe(true);
+    expect(sameIdentity("life", { policyName: "Term Life", insured: "Client" }, { policyName: "Term Life", insured: "Co-client" })).toBe(false);
+    expect(sameIdentity("life", { policyName: "Term Life", carrier: "Unum" }, { policyName: "Term Life", carrier: "MetLife" })).toBe(false);
   });
 
   it("matches income on name plus any owner and type both sides have", () => {

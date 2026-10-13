@@ -1,7 +1,9 @@
 // src/lib/fact-finder/__tests__/normalize.test.ts
 import { describe, expect, it } from "vitest";
 import {
+  ANNUITY_TAX,
   FILING,
+  GRANT_TYPE,
   INSURED,
   MONTHS,
   OWNER,
@@ -103,6 +105,26 @@ describe("normalizeCell", () => {
     [INSURED, "joint", "Joint (survivorship)"],
   ])("choice %#: %s", (options, raw, want) => {
     expect(normalizeCell(col("choice", options), raw)).toEqual(ok(want));
+  });
+
+  it.each([
+    ["RSUs", "RSU"],
+    ["Restricted Stock Units", "RSU"],
+    ["Restricted stock unit", "RSU"],
+    ["NSO", "NQSO"],
+    ["NSOs", "NQSO"],
+    ["Non-qualified", "NQSO"],
+    ["Nonqualified stock options", "NQSO"],
+    ["Non-Qualified Stock Option", "NQSO"],
+    ["Incentive stock option", "ISO"],
+    ["Incentive Stock Options", "ISO"],
+    ["ISOs", "ISO"],
+  ])("grant type %s", (raw, want) => {
+    expect(normalizeCell(col("choice", GRANT_TYPE), raw)).toEqual(ok(want));
+  });
+
+  it("still reads an annuity's Non-qualified as itself", () => {
+    expect(normalizeCell(col("choice", ANNUITY_TAX), "non-qualified")).toEqual(ok("Non-qualified"));
   });
 
   it("keeps an off-list choice as text, flagged — never dropped", () => {

@@ -225,7 +225,11 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
         const result = fileResults[f.id];
         if (!result) {
           await settle(f, "statement", null, extractionErrors.get(f.id) ?? "Couldn't read this statement.");
-        } else if (result.extracted.accounts.length === 0 && result.extracted.liabilities.length === 0) {
+        } else if (
+          result.extracted.accounts.length === 0 &&
+          result.extracted.liabilities.length === 0 &&
+          result.extracted.lifePolicies.length === 0
+        ) {
           try {
             const note = `${f.originalFilename} had no accounts a statement reader could find, so it was read as a general document.`;
             await settle(f, "section", await readAsSections(f, [note]));
@@ -254,6 +258,7 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
           accounts: rollups.kept,
           excluded: rollups.excluded.map((e) => ({ row: e.row, reason: e.reason })),
           liabilities: merged.payload.liabilities,
+          lifePolicies: merged.payload.lifePolicies,
           family: records.candidates.family,
         });
         // The statement reader's own narration: which statements replaced

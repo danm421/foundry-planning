@@ -1,6 +1,6 @@
 // src/lib/fact-finder/__tests__/statement-adapter.test.ts
 import { describe, expect, it } from "vitest";
-import type { ExtractedAccount, ExtractedLiability } from "@/lib/extraction/types";
+import type { ExtractedAccount, ExtractedLiability, ExtractedLifePolicy } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
 import type { OwnerMatchFamilyMember } from "@/lib/imports/owner-match";
 import { mergeReadings } from "../merge";
@@ -143,6 +143,14 @@ describe("readingFromLiability — the lender", () => {
     expect(state.sections.liab.map((r) => r.cells.balance.value)).toEqual([412000, 238000]);
     expect(mergeReadings(state, [primary, rental], ctx).state).toBe(state);
   });
+
+  it("folds two loans from the same lender with no property into one row across statements (no loan number to tell them apart)", () => {
+    const car = readingFromLiability(loan("s1", { name: "Auto Loan", lender: "Ally", balance: 18000 }));
+    const truck = readingFromLiability(loan("s2", { name: "Auto Loan", lender: "Ally", balance: 9000 }));
+    let n = 0;
+    const { state } = mergeReadings(emptyFactFinderState(), [car, truck], { now: "2026-10-12T12:00:00.000Z", newId: () => `id-${++n}` });
+    expect(state.sections.liab).toHaveLength(1);
+  });
 });
 
 describe("readingsFromStatements", () => {
@@ -151,11 +159,71 @@ describe("readingsFromStatements", () => {
       accounts: [acct({ name: "IRA", category: "retirement" })],
       excluded: [{ row: acct({ name: "Total Accounts", category: "taxable" }), reason: "Repeats the accounts above" }],
       liabilities: [],
+      lifePolicies: [],
       family: FAMILY,
     });
     expect(readings.map((r) => [r.cells.accountName?.value, r.exclude?.reason])).toEqual([
       ["IRA", undefined],
       ["Total Accounts", "Repeats the accounts above"],
     ]);
+  });
+});
+
+describe("readingsFromStatements — life policies", () => {
+  const policy = (row: Partial<ExtractedLifePolicy>): Annotated<ExtractedLifePolicy> => ({
+    accountName: "Brighthouse Whole Life",
+    policyType: "whole",
+    insuredPerson: "spouse",
+    faceValue: 3000000,
+    __provenance: { sourceFileId: "f1", section: "lifePolicies", pageRange: [4, 4] },
+    ...row,
+  });
+  const read = (lifePolicies: Annotated<ExtractedLifePolicy>[], accounts: Annotated<ExtractedAccount>[] = []) =>
+    readingsFromStatements({ accounts, excluded: [], liabilities: [], lifePolicies, family: FAMILY });
+  const values = (r: { cells: Record<string, { value: unknown }> }) =>
+    Object.fromEntries(Object.entries(r.cells).map(([k, c]) => [k, c.value]));
+
+  it("reads a statement's policy into Life Insurance, keeping only the policy number's last 4", () => {
+    const [whole, term] = read([
+      policy({ carrier: "Brighthouse", policyNumberLast4: "x0013", cashValue: 588000, costBasis: 400000, premiumAmount: 12000, premiumYears: 10 }),
+      policy({ accountName: "Term Life", policyType: "term", insuredPerson: "client", faceValue: 1000000, termIssueYear: 2015, termLengthYears: 20 }),
+    ]);
+    expect(whole.sectionId).toBe("life");
+    expect(values(whole)).toEqual({
+      policyName: "Brighthouse Whole Life", carrier: "Brighthouse", policyType: "Whole life", insured: "Co-client",
+      deathBenefit: 3000000, cashValue: 588000, costBasis: 400000, annualPremium: 12000, premiumPaymentYears: 10,
+      policyNumber: "0013",
+    });
+    expect(whole.cells.deathBenefit).toEqual({ value: 3000000, confidence: 0.9, source: { fileId: "f1", page: 4 } });
+    expect(whole.cells.insured.confidence).toBe(0.6);
+    expect(values(term)).toMatchObject({ policyType: "Term", insured: "Client", termIssueYear: 2015, termLengthYears: 20 });
+  });
+
+  it("keys a life insurance account by its last 4, so it fills the policy the fact finder already has", () => {
+    let n = 0;
+    const ctx = { now: "2026-10-12T12:00:00.000Z", newId: () => `id-${++n}` };
+    const fromForm = mergeReadings(
+      emptyFactFinderState(),
+      [{ sectionId: "life", fileId: "form", cells: { policyName: { value: "Whole Life", confidence: 0.9, source: { fileId: "form" } }, policyNumber: { value: "NM-55820013", confidence: 0.9, source: { fileId: "form" } } } }],
+      ctx,
+    ).state;
+    const account = acct({ name: "NWM Whole Life", category: "life_insurance", subType: "whole_life", accountNumberLast4: "0013", value: 52000 });
+    expect(readingFromAccount(account, FAMILY)!.cells.policyNumber.value).toBe("0013");
+
+    const { state } = mergeReadings(fromForm, read([], [account]), ctx);
+    expect(state.sections.life).toHaveLength(1);
+    expect(state.sections.life[0].cells.cashValue.value).toBe(52000);
+  });
+
+  it("re-merging the same statement adds nothing the second time, with or without a policy number", () => {
+    const readings = read(
+      [policy({ carrier: "Brighthouse", policyNumberLast4: "7781" }), policy({ accountName: "Term Life", policyType: "term", insuredPerson: "client", faceValue: 1000000 })],
+      [acct({ name: "NWM Whole Life", category: "life_insurance", subType: "whole_life", accountNumberLast4: "0013", value: 52000 })],
+    );
+    let n = 0;
+    const ctx = { now: "2026-10-12T12:00:00.000Z", newId: () => `id-${++n}` };
+    const once = mergeReadings(emptyFactFinderState(), readings, ctx).state;
+    expect(once.sections.life).toHaveLength(3);
+    expect(mergeReadings(once, readings, ctx).state).toBe(once);
   });
 });
