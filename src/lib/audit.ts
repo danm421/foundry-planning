@@ -25,6 +25,8 @@ export type AuditAction =
   | "client.onboarding.finish"
   | "client.quick_start_state.update"
   | "client.base_facts.update"
+  // Which brand the household sees (portal, client PDFs, where sends start).
+  | "client.brand.updated"
   // Accounts (balance-sheet line items)
   | "account.create"
   | "account.update"
