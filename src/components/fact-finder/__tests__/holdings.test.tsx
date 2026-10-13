@@ -2,7 +2,7 @@
 // src/components/fact-finder/__tests__/holdings.test.tsx
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { applyOps, FactFinderOpError, type ClientOp } from "@/lib/fact-finder/ops";
 import { findSection, type FFPage } from "@/lib/fact-finder/schema";
@@ -222,11 +222,39 @@ describe("unassigned holdings on the Accounts page", () => {
     expect(within(picker).getByRole("group", { name: "Retirement Accounts" })).toHaveTextContent("1. Rollover IRA");
 
     await userEvent.selectOptions(picker, "1. Rollover IRA");
+    expect(applied).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Move AAPL" }));
+    expect(applied).toHaveBeenCalledTimes(1);
     expect(applied).toHaveBeenLastCalledWith([
       { op: "assignHolding", holdingId: "u1", from: "unassigned", to: { sectionId: "retirement", rowId: "r1" } },
     ]);
     expect(screen.queryByRole("region", { name: "Unassigned holdings" })).toBeNull();
     expect(toggleOf("1 holding in Rollover IRA").toggle).toHaveAccessibleDescription("Adds up to $9,000 of $9,000");
+  });
+
+  it("choosing an account only chooses: nothing moves until Move is pressed (a stray digit or arrow key is harmless)", async () => {
+    const { applied } = renderPage(
+      stateWith(
+        { taxable: [brokerage(15000)], retirement: [account("r1", { accountName: "Rollover IRA", currentValue: 9000 })] },
+        [aapl],
+      ),
+    );
+    const block = screen.getByRole("region", { name: "Unassigned holdings" });
+    const picker = within(block).getByRole("combobox", { name: "Account for AAPL" });
+    const move = within(block).getByRole("button", { name: "Move AAPL" });
+    expect(move).toBeDisabled();
+
+    fireEvent.change(picker, { target: { value: "t1" } });
+    fireEvent.change(picker, { target: { value: "r1" } });
+    expect(applied).not.toHaveBeenCalled();
+    expect(within(block).getByText("AAPL · Apple Inc")).toBeInTheDocument();
+    expect(move).toBeEnabled();
+
+    await userEvent.click(move);
+    expect(applied).toHaveBeenCalledTimes(1);
+    expect(applied).toHaveBeenCalledWith([
+      { op: "assignHolding", holdingId: "u1", from: "unassigned", to: { sectionId: "retirement", rowId: "r1" } },
+    ]);
   });
 
   it("says to add an account first when there is none to move it to", () => {

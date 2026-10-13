@@ -2,7 +2,7 @@
 // src/components/fact-finder/__tests__/page-view.test.tsx
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { applyOps, FactFinderOpError, type ClientOp } from "@/lib/fact-finder/ops";
 import { findSection, type FFPage } from "@/lib/fact-finder/schema";
@@ -168,11 +168,33 @@ describe("PageView — rows and the Removed tray", () => {
   it("Merge folds a row into another row of its section; the merged row waits in the tray", async () => {
     const { applied } = renderPage("accounts", stateWith({ cash: [joint, savings] }));
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Merge Savings into…" }), "1. Joint Checking");
+    await userEvent.click(screen.getByRole("button", { name: "Merge Savings" }));
+    expect(applied).toHaveBeenCalledTimes(1);
     expect(applied).toHaveBeenLastCalledWith([{ op: "mergeRows", sectionId: "cash", keepRowId: "c1", dropRowId: "c2" }]);
     expect(screen.queryByRole("rowheader", { name: "Savings" })).toBeNull();
     const jointRow = rowOf(screen.getByRole("rowheader", { name: "Joint Checking" }));
     expect(within(jointRow).getByRole("textbox", { name: "Current value" })).toHaveValue("5,000");
     expect(within(region("Removed")).getByText("Cash Accounts · Merged into Joint Checking")).toBeInTheDocument();
+  });
+
+  it("choosing a row under Merge into… only chooses: nothing merges until Merge is pressed (a stray digit or arrow key is harmless)", async () => {
+    const third = row("c3", { accountName: "CD" });
+    const { applied } = renderPage("accounts", stateWith({ cash: [joint, savings, third] }));
+    const picker = screen.getByRole("combobox", { name: "Merge Savings into…" });
+    const merge = screen.getByRole("button", { name: "Merge Savings" });
+    expect(merge).toBeDisabled();
+
+    // What a type-ahead "1" or a ↓ on the closed select does: it changes the value.
+    fireEvent.change(picker, { target: { value: "c1" } });
+    fireEvent.change(picker, { target: { value: "c3" } });
+    expect(applied).not.toHaveBeenCalled();
+    expect(screen.getByRole("rowheader", { name: "Savings" })).toBeInTheDocument();
+    expect(picker).toHaveValue("c3");
+    expect(merge).toBeEnabled();
+
+    await userEvent.click(merge);
+    expect(applied).toHaveBeenCalledTimes(1);
+    expect(applied).toHaveBeenCalledWith([{ op: "mergeRows", sectionId: "cash", keepRowId: "c3", dropRowId: "c2" }]);
   });
 
   it("a section's only row can be removed but has nothing to merge into", () => {
@@ -188,6 +210,8 @@ describe("PageView — rows and the Removed tray", () => {
     const table = screen.getByRole("table", { name: "Life Insurance" });
     expect(within(table).getByRole("button", { name: "Remove Term Life" })).toBeInTheDocument();
     await userEvent.selectOptions(within(table).getByRole("combobox", { name: "Merge Whole Life into…" }), "1. Term Life");
+    expect(applied).not.toHaveBeenCalled();
+    await userEvent.click(within(table).getByRole("button", { name: "Merge Whole Life" }));
     expect(applied).toHaveBeenLastCalledWith([{ op: "mergeRows", sectionId: "life", keepRowId: "l1", dropRowId: "l2" }]);
     expect(within(table).queryByRole("columnheader", { name: "Whole Life" })).toBeNull();
   });

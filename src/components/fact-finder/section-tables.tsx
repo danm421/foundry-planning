@@ -6,7 +6,7 @@
 // list and transposed rows can be removed or merged into another row. Sections
 // that link to records get a "Links to" column (a field row when transposed);
 // an account with holdings gets a holdings line under its row.
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { selectChevronClassName } from "@/components/forms/input-styles";
 import type { ClientOp } from "@/lib/fact-finder/ops";
 import type { ColumnKind, FFColumn, FFSection, OWNER } from "@/lib/fact-finder/schema";
@@ -58,6 +58,10 @@ const JOINED = "[&>*]:border-b-0";
 const MERGE_SELECT =
   "h-7 w-28 rounded-[var(--radius-sm)] border border-hair bg-paper pl-2 text-xs text-ink-2 outline-none " +
   `hover:border-hair-2 focus:border-accent focus:ring-2 focus:ring-accent/25 ${selectChevronClassName}`;
+const MERGE_BUTTON =
+  "inline-flex h-7 shrink-0 items-center rounded-[var(--radius-sm)] border border-hair px-2 text-xs font-medium text-accent " +
+  "transition-colors enabled:cursor-pointer enabled:hover:border-accent enabled:hover:bg-accent-wash enabled:hover:text-accent-ink " +
+  "disabled:text-ink-4";
 
 function cellFor({ section, changed, onApply, fileName, ownerEntities }: SectionBodyProps, row: FFRow, column: FFColumn) {
   let shown = column;
@@ -106,27 +110,43 @@ function NumberedLabel({ text, label }: { text: string; label: string }) {
 /**
  * Remove (to the tray) and Merge into another row of the section. Merge is a
  * native select: its list opens outside the page, so a table that scrolls
- * sideways can't clip it the way it would a dropdown menu.
+ * sideways can't clip it the way it would a dropdown menu. The select only
+ * chooses the row (a typed digit or an arrow key changes a closed select);
+ * the Merge button beside it merges.
  */
 function RowActions({ section, rows, row, onApply }: Pick<SectionBodyProps, "section" | "rows" | "onApply"> & { row: FFRow }) {
+  const [choice, setChoice] = useState("");
   const label = rowLabel(section, row);
   const others = rows.filter((r) => r.id !== row.id);
+  // A chosen row that has since gone counts as no choice.
+  const keepRowId = others.some((r) => r.id === choice) ? choice : "";
   return (
     <div className="flex items-center gap-1">
       {others.length > 0 && (
-        <select
-          aria-label={`Merge ${label} into…`}
-          value=""
-          onChange={(e) => onApply([{ op: "mergeRows", sectionId: section.id, keepRowId: e.target.value, dropRowId: row.id }])}
-          className={MERGE_SELECT}
-        >
-          <option value="">Merge into…</option>
-          {others.map((other) => (
-            <option key={other.id} value={other.id}>
-              {`${rows.indexOf(other) + 1}. ${rowLabel(section, other)}`}
-            </option>
-          ))}
-        </select>
+        <>
+          <select
+            aria-label={`Merge ${label} into…`}
+            value={keepRowId}
+            onChange={(e) => setChoice(e.target.value)}
+            className={MERGE_SELECT}
+          >
+            <option value="">Merge into…</option>
+            {others.map((other) => (
+              <option key={other.id} value={other.id}>
+                {`${rows.indexOf(other) + 1}. ${rowLabel(section, other)}`}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            aria-label={`Merge ${label}`}
+            disabled={!keepRowId}
+            onClick={() => onApply([{ op: "mergeRows", sectionId: section.id, keepRowId, dropRowId: row.id }])}
+            className={MERGE_BUTTON}
+          >
+            Merge
+          </button>
+        </>
       )}
       <button
         type="button"
