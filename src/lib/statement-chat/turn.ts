@@ -2,6 +2,7 @@ import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/
 import type { BaseMessage } from "@langchain/core/messages";
 import { chatModel } from "@/domain/forge/llm";
 import { recordAiUsage } from "@/lib/ai/usage";
+import { fenceUntrusted, scrubFenceMarkers } from "@/lib/fact-finder/chat/fence";
 import type { Annotated, ChatState, ChatTurn, PersistedImportPayload } from "@/lib/imports/types";
 import type {
   ExtractedAccount,
@@ -224,32 +225,6 @@ export const TOOL_DEFS = [
  *  Runnable type, wide enough that `AzureChatOpenAI` satisfies it as-is. */
 export interface TurnModel {
   bindTools(defs: unknown[]): { invoke(messages: BaseMessage[]): Promise<AIMessage> };
-}
-
-/** The fence around document-derived text — the ONE pair of markers every
- *  fenced block below uses, and the pair `systemPrompt`'s prose names. */
-const FENCE_OPEN = "<<<UNTRUSTED DATA — extracted from client documents>>>";
-const FENCE_CLOSE = "<<<END UNTRUSTED DATA>>>";
-
-/** Text a reader could take for either marker, in any case or spacing, with
- *  or without its angle brackets. */
-const FENCE_MARKER_TEXT = /(?:<+\s*)?(?:END[\s_-]*)?UNTRUSTED[\s_-]*DATA(?:\s*>+)?/gi;
-
-/** Replace marker-like text, so a quoted value can't end a fence or open a fake one. */
-function scrubFenceMarkers(text: string): string {
-  return text.replace(FENCE_MARKER_TEXT, "[marker removed]");
-}
-
-/**
- * Wrap document-derived text in the fence. Any marker-like text INSIDE it is
- * replaced first, so a value carrying the closing marker (a custodian, an
- * account name, a re-read proposal) cannot end the fence early or open a
- * fake one — the only markers the model sees are the two this adds. The
- * text being wrapped never needs the phrase for itself: the grammar
- * `describeRows` and the tools add around the values does not use it.
- */
-function fenceUntrusted(text: string): string {
-  return `${FENCE_OPEN}\n${scrubFenceMarkers(text)}\n${FENCE_CLOSE}`;
 }
 
 function fileNameMap(fileResults: Record<string, ExtractionResult>): Record<string, string> {
