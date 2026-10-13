@@ -94,7 +94,7 @@ vi.mock("@/lib/onboarding/welcome-email", () => ({
 
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-import { clerkEvents, clientShares, notificationPreferences, notifications } from "@/db/schema";
+import { advisorProfiles, clerkEvents, clientShares, notificationPreferences, notifications } from "@/db/schema";
 import { dispatchClerkMembership } from "../membership-handlers";
 
 const whereParams = (w: unknown) => new PgDialect().sqlToQuery(w as SQL).params;
@@ -326,6 +326,16 @@ describe("organizationMembership.deleted — the removed member's alerts", () =>
     expect(pending).toBeDefined();
     expect(pending![1]).toEqual({ emailPending: false });
     expect(whereParams(pending![2])).toEqual(expect.arrayContaining(["org_paid", "user_z"]));
+  });
+
+  it("turns the removed member's advisor branding off in that firm", async () => {
+    mockSelectFirms.mockResolvedValue([]);
+    await dispatchClerkMembership(membershipEvent("organizationMembership.deleted"), "svix_del_brand");
+
+    const brand = mockUpdate.mock.calls.find(([tbl]) => tbl === advisorProfiles);
+    expect(brand).toBeDefined();
+    expect(brand![1]).toMatchObject({ brandingEnabled: false, updatedBy: "clerk:webhook" });
+    expect(whereParams(brand![2])).toEqual(expect.arrayContaining(["org_paid", "user_z"]));
   });
 
   it("leaves alerts alone when a member is added", async () => {

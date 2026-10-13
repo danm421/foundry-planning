@@ -4,6 +4,7 @@ import * as Sentry from "@sentry/nextjs";
 import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import {
+  advisorProfiles,
   clerkEvents,
   clientShares,
   firms,
@@ -132,6 +133,19 @@ async function stopAlertEmailsFor(firmId: string, userId: string): Promise<void>
 }
 
 /**
+ * A removed member's brand stops being offered and stops resolving: with
+ * their branding off, every household, form and deck that named them falls
+ * back to the firm brand, and intake mail is signed by whoever sends it.
+ * Update, not upsert — a member who never had a brand row needs none.
+ */
+async function turnOffAdvisorBranding(firmId: string, userId: string): Promise<void> {
+  await db
+    .update(advisorProfiles)
+    .set({ brandingEnabled: false, updatedBy: "clerk:webhook", updatedAt: new Date() })
+    .where(and(eq(advisorProfiles.firmId, firmId), eq(advisorProfiles.advisorUserId, userId)));
+}
+
+/**
  * A removed member keeps no access through this firm's client shares: every
  * active grant they RECEIVED on its clients is revoked. Grants from other
  * firms are untouched. Only active rows match, so a retry revokes nothing new.
@@ -232,6 +246,7 @@ export async function dispatchClerkMembership(
       const metadata: Record<string, unknown> = { user_id: userId };
       if (t === "organizationMembership.deleted") {
         await stopAlertEmailsFor(firmId, userId);
+        await turnOffAdvisorBranding(firmId, userId);
         await revokeSharesReceivedBy(firmId, userId);
         metadata.issued_shares = await listSharesIssuedBy(firmId, userId);
       }
