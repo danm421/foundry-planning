@@ -277,7 +277,7 @@ export async function commitAccounts(
     // A margined account can't leave Taxable (`accounts_margin_taxable_only`,
     // margin loans R8): writing the row's category would trip the CHECK and
     // roll back the whole import. Keep the stored type — category, sub-type,
-    // and no 529 conversion — and say so. The loan is never touched.
+    // RMD flag, and no 529 conversion — and say so. The loan is never touched.
     let keptTaxable = false;
     if (row.category !== undefined || is529Account(row)) {
       const category = resolveAccountCategory(row);
@@ -297,7 +297,7 @@ export async function commitAccounts(
     if (row.growthSource !== undefined) updates.growthSource = row.growthSource;
     if (row.modelPortfolioId !== undefined) updates.modelPortfolioId = row.modelPortfolioId;
     if (row.tickerPortfolioId !== undefined) updates.tickerPortfolioId = row.tickerPortfolioId;
-    if (row.rmdEnabled != null) updates.rmdEnabled = row.rmdEnabled;
+    if (row.rmdEnabled != null && !keptTaxable) updates.rmdEnabled = row.rmdEnabled;
     if (row.propertyAddress != null) updates.propertyAddress = row.propertyAddress;
     // Never blank a figure the advisor typed on the account form: an import
     // that derived nothing from an escrow must leave the existing value alone.

@@ -280,6 +280,21 @@ describe("a matched row whose account carries a margin loan", () => {
     expect(ownerCalls(fake, "delete")).toHaveLength(0);
   });
 
+  it("does not switch on RMDs for an account it kept Taxable", async () => {
+    const fake = makeFakeTx();
+    marginedAccount(fake, "2000000.00");
+    await commitAccounts(
+      fake.tx,
+      payloadOf(matchedRow({ category: "retirement", subType: "traditional_ira", rmdEnabled: true })),
+      CTX,
+      FAMILY,
+    );
+
+    const set = updateSet(fake);
+    expect(set).not.toHaveProperty("category");
+    expect(set).not.toHaveProperty("rmdEnabled");
+  });
+
   it("writes the new category as before when the account has no loan", async () => {
     const fake = makeFakeTx();
     marginedAccount(fake, "0.00");
