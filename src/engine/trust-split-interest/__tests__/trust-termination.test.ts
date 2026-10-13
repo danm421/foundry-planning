@@ -4,7 +4,7 @@ import {
   isTrustTerminationYear,
   distributeAtTermination,
 } from "../trust-termination";
-import type { BeneficiaryRef, EntitySummary } from "@/engine/types";
+import type { BeneficiaryRef, ClientData, EntitySummary } from "@/engine/types";
 import { runProjection } from "@/engine/projection";
 import {
   buildCltLifecycleFixture,
@@ -187,6 +187,37 @@ describe("CLT trust-termination integration in projection", () => {
     expect(term.toBeneficiaries).toHaveLength(2);
     const sum = term.toBeneficiaries.reduce((s, b) => s + b.amount, 0);
     expect(sum).toBeCloseTo(term.totalDistributed, 2);
+  });
+
+  it("repays a wholly trust-owned margined account's loan at termination (R9)", () => {
+    const data = buildCltLifecycleFixture({
+      inceptionYear: 2026,
+      payoutPercent: 0.06,
+      termYears: 5,
+      inceptionValue: 1_000_000,
+      charityType: "public",
+      grantorAgi: 5_000_000,
+      remainderBeneficiaries: [{ childIndex: 1, percentage: 100 }],
+    });
+    const brokerageId = "clt-margined-brokerage";
+    data.accounts.push({
+      id: brokerageId,
+      name: "CLT Brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      value: 1_000_000,
+      basis: 1_000_000,
+      growthRate: 0.05,
+      rmdEnabled: false,
+      owners: [{ kind: "entity", entityId: CLT_FIXTURE_IDS.CLT_ENTITY_ID, percent: 1 }],
+      marginBalance: 500_000,
+      marginInterestRate: 0.02,
+      marginCallPct: 0.3,
+    } as ClientData["accounts"][number]);
+    const years = runProjection(data);
+    const terminationYear = years.find((y) => y.year === 2031)!;
+    expect(terminationYear.trustTerminations).toHaveLength(1);
+    expect(terminationYear.accountLedgers[brokerageId].marginEoY).toBe(0);
   });
 
   it("does not emit trustTerminations during the term", () => {

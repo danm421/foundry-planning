@@ -1525,6 +1525,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           accountLedgers,
           year,
           defaultCheckingId: defaultChecking?.id ?? "",
+          marginMap,
           // An irrevocable trust's slice deposits into that trust's own
           // checking, not the household's.
           entityCheckingByEntityId,
@@ -1582,6 +1583,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             firstDeathYear,
             year,
           ),
+          marginMap,
           // Entity-owned asset sales with no explicit proceeds destination route
           // to the owning entity's own checking, not the household default.
           entityCheckingByEntityId,
@@ -4050,6 +4052,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           label: `CLT termination distribution`,
           sourceId: trust.id,
         });
+        // R9: the trust's share of the securities goes, so its share of the loan is repaid.
+        if ((marginMap[acct.id] ?? 0) > 0) marginMap[acct.id] *= 1 - trustShare;
       }
     }
 
@@ -4108,6 +4112,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           label: `CRT termination distribution to charity`,
           sourceId: trust.id,
         });
+        // R9: the trust's share of the securities goes, so its share of the loan is repaid.
+        if ((marginMap[acct.id] ?? 0) > 0) marginMap[acct.id] *= 1 - trustShare;
       }
     }
 

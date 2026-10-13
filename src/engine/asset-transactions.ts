@@ -59,19 +59,25 @@ export interface SellAccountFractionInput {
   overrideBasis?: number;
   transactionCostPct?: number;
   transactionCostFlat?: number;
+  /** Live margin loan per account (`accountBalances` is net of it). The sale is
+   *  on the securities (net + loan) and repays the same share of the loan;
+   *  mutated in place. */
+  marginMap?: Record<string, number>;
 }
 
 export interface SellAccountFractionResult {
   saleValue: number;
   basis: number;
   transactionCosts: number;
-  /** Net proceeds = saleValue − transactionCosts − mortgagePaidOff. */
+  /** Net proceeds = saleValue − transactionCosts − marginRepaid − mortgagePaidOff. */
   netProceeds: number;
   /** Raw signed capital gain (saleValue − transactionCosts − basis), before any
    *  exclusion or §165(c) disallowance. Negative when sold below basis. */
   capitalGain: number;
   /** Sum of EVERY loan linked to the property, paid off on a full sale; 0 on a partial one. */
   mortgagePaidOff: number;
+  /** Margin loan repaid from the proceeds; 0 for an account without a loan. */
+  marginRepaid: number;
   /** Set when this sale fully drained the account (fraction ≥ 1 or residual < $1). */
   removedAccountId?: string;
   removedLiabilityIds: string[];
@@ -94,14 +100,20 @@ export function sellAccountFraction(
     overrideBasis,
     transactionCostPct,
     transactionCostFlat,
+    marginMap,
   } = input;
 
   const currentBalance = accountBalances[accountId] ?? 0;
   const currentBasis = basisMap[accountId] ?? 0;
+  const loan = marginMap?.[accountId] ?? 0;
 
   // Determine sale value and basis (use overrides when provided; else
   // prorate by fraction).
-  const saleValue = overrideSaleValue ?? currentBalance * fraction;
+  // Margin (R1): selling securities pays the debit first, like the brokerage.
+  // The sale is on the securities (net + loan); the same share of the loan is
+  // repaid from the proceeds, so net falls by `fraction` of net.
+  const saleValue = overrideSaleValue ?? (currentBalance + loan) * fraction;
+  let marginRepaid = loan * Math.min(1, fraction);
   const basis = overrideBasis ?? currentBasis * fraction;
 
   // Calculate transaction costs
@@ -115,8 +127,8 @@ export function sellAccountFraction(
   // account category and the home-sale-exclusion flag.
   const capitalGain = saleValue - transactionCosts - basis;
 
-  // Net proceeds after costs
-  let netProceeds = saleValue - transactionCosts;
+  // Net proceeds after costs and the margin repayment
+  let netProceeds = saleValue - transactionCosts - marginRepaid;
 
   // Pay off every linked loan only on full sales. Partial real-estate sales
   // route net proceeds to checking; the mortgage continues amortizing.
@@ -135,8 +147,9 @@ export function sellAccountFraction(
 
   // Drain the sold portion. fraction === 1 (or remaining < $1 from float
   // drift) zeroes the account and signals removal; partial sales leave
-  // the residual.
-  const newBalance = Math.max(0, currentBalance - saleValue);
+  // the residual. Net falls by the sale less the loan it repaid.
+  const netDrain = saleValue - marginRepaid;
+  const newBalance = Math.max(0, currentBalance - netDrain);
   const newBasis = Math.max(0, currentBasis - basis);
   accountBalances[accountId] = newBalance;
   basisMap[accountId] = newBasis;
@@ -146,14 +159,25 @@ export function sellAccountFraction(
     removedAccountId = accountId;
   }
 
+  if (marginMap && loan > 0) {
+    if (removedAccountId) {
+      // An account that leaves the plan repays its whole loan.
+      const leftover = loan - marginRepaid;
+      if (leftover > 0) { netProceeds -= leftover; marginRepaid = loan; }
+      delete marginMap[accountId];
+    } else {
+      marginMap[accountId] = loan - marginRepaid;
+    }
+  }
+
   // Update sold account ledger
   if (accountLedgers[accountId]) {
-    accountLedgers[accountId].distributions -= saleValue;
+    accountLedgers[accountId].distributions -= netDrain;
     accountLedgers[accountId].endingValue = newBalance;
     accountLedgers[accountId].entries.push({
       category: "withdrawal",
       label: saleLabel,
-      amount: -saleValue,
+      amount: -netDrain,
       sourceId: saleId,
       basis: -basis, // remove the sold lot's basis from the source account
     });
@@ -166,6 +190,7 @@ export function sellAccountFraction(
     netProceeds,
     capitalGain,
     mortgagePaidOff,
+    marginRepaid,
     removedAccountId,
     removedLiabilityIds,
     newBalance,
@@ -223,6 +248,8 @@ export interface ApplyAssetSalesInput {
   year: number;
   defaultCheckingId: string;
   filingStatus: FilingStatus;
+  /** Live margin loan per account; a margined account's sale repays its share. */
+  marginMap?: Record<string, number>;
   /** Map of entity id → that entity's default-checking account id. When a sold
    *  account is fully owned by an entity and the sale has no explicit
    *  `proceedsAccountId`, proceeds route to the entity's own checking rather
@@ -252,6 +279,7 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
     year,
     defaultCheckingId,
     filingStatus,
+    marginMap,
     entityCheckingByEntityId,
   } = input;
 
@@ -320,6 +348,7 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
       overrideBasis: sale.overrideBasis,
       transactionCostPct: sale.transactionCostPct,
       transactionCostFlat: sale.transactionCostFlat,
+      marginMap,
     });
 
     const {
@@ -764,6 +793,8 @@ export interface ApplyBusinessSalesInput {
   accountLedgers: Record<string, AccountLedger>;
   year: number;
   defaultCheckingId: string;
+  /** Live margin loan per account; a margined child's cascade sale repays its share. */
+  marginMap?: Record<string, number>;
   /** Entity id → that entity's default-checking account id. Reached only by
    *  an owner `entitiesById` marks as an irrevocable trust; every other
    *  entity owner's slice goes to household checking instead. */
@@ -806,6 +837,7 @@ export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSale
     accountLedgers,
     year,
     defaultCheckingId,
+    marginMap,
     entityCheckingByEntityId,
     entitiesById,
     giftEvents,
@@ -881,6 +913,7 @@ export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSale
         saleId: sale.id,
         transactionCostPct: 0,
         transactionCostFlat: 0,
+        marginMap,
       });
       cascadedGross += cascadeResult.netProceeds;
       cascadedGain += cascadeResult.capitalGain;

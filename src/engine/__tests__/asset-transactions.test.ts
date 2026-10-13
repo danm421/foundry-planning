@@ -1078,3 +1078,26 @@ describe("sellAccountFraction — every linked loan", () => {
     expect(r.removedLiabilityIds).toEqual([]);
   });
 });
+
+describe("sellAccountFraction — margined account (R1)", () => {
+  const base = () => ({ accountId: "m", liabilities: [], accountBalances: { m: 8_000_000 }, basisMap: { m: 9_000_000 },
+    accountLedgers: { m: makeLedger(8_000_000) }, saleLabel: "Sale", saleId: "s1", marginMap: { m: 2_000_000 } as Record<string, number> });
+  it("a 50% sale sells half the securities and repays half the loan", () => {
+    const input = { ...base(), fraction: 0.5 };
+    const r = sellAccountFraction(input);
+    expect(r.saleValue).toBeCloseTo(5_000_000, 2);
+    expect(r.marginRepaid).toBeCloseTo(1_000_000, 2);
+    expect(r.netProceeds).toBeCloseTo(4_000_000, 2);
+    expect(r.capitalGain).toBeCloseTo(500_000, 2);
+    expect(input.accountBalances.m).toBeCloseTo(4_000_000, 2);
+    expect(input.marginMap.m).toBeCloseTo(1_000_000, 2);
+  });
+  it("a whole sale repays the loan, credits net, and removes the account", () => {
+    const input = { ...base(), fraction: 1 };
+    const r = sellAccountFraction(input);
+    expect(r.netProceeds).toBeCloseTo(8_000_000, 2);
+    expect(r.capitalGain).toBeCloseTo(1_000_000, 2);
+    expect(r.removedAccountId).toBe("m");
+    expect(input.marginMap.m).toBeUndefined();
+  });
+});
