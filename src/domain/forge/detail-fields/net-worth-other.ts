@@ -54,6 +54,15 @@ const liabilityEntity: DetailEntity = {
   forgeTool: { add: "add_liability", update: "update_liability", remove: "remove_liability" },
   fields: [
     { key: "name", label: "Liability Name", kind: "string", required: true },
+    {
+      key: "liabilityType",
+      label: "Type",
+      kind: "enum",
+      enumValues: ["mortgage", "heloc", "auto", "student", "personal", "credit_card", "other"],
+      writable: false,
+      notes:
+        "Stored (liabilities.liability_type, nullable) but no Details route writes it: liabilityCreateSchema and the update core's field-by-field set both leave it out. The client portal's linked debts and the fact finder import's save write it.",
+    },
     { key: "balance", label: "Outstanding Balance ($)", kind: "money", required: false, defaultValue: 0 },
     {
       key: "linkedPropertyId",

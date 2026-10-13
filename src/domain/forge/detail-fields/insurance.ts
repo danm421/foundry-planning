@@ -62,6 +62,22 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
         notes: "min 1 / max 200 chars (trimmed).",
       },
       {
+        key: "carrier",
+        label: "Carrier",
+        kind: "string",
+        writable: false,
+        notes:
+          "Stored (life_insurance_policies.carrier) but the Insurance routes don't take it — the create and update schemas drop it. The statement import's life-insurance commit and the fact finder import's save write it.",
+      },
+      {
+        key: "policyNumberLast4",
+        label: "Policy number (last 4)",
+        kind: "string",
+        writable: false,
+        notes:
+          "The last 4 digits only — never the full number. Stored (life_insurance_policies.policy_number_last4) but the Insurance routes don't take it. The statement import's life-insurance commit and the fact finder import's save write it.",
+      },
+      {
         key: "policyType",
         label: "Policy type",
         kind: "enum",

@@ -89,6 +89,22 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
         notes:
           "Optional (zod .optional(), no default — distinct from bequests' .default([]), though both read back as \"no rows\" either way). Each item has the shape of the `will_residuary_recipients` entity below. An empty/omitted array is a valid, meaningful state: the UI shows \"No remainder clause specified. Residual assets are distributed by the default order — surviving spouse, then children, then other heirs.\" Same FULL REPLACE semantics as `bequests` on PATCH.",
       },
+      {
+        key: "executor",
+        label: "Executor",
+        kind: "string",
+        writable: false,
+        notes:
+          "Stored (wills.executor) but the Wills routes don't take it — POST /wills and PATCH /wills/[willId] carry only grantor, bequests and residuaryRecipients. Only the statement import's will commit writes it, and its update NULLS it when the payload leaves it out. The fact finder doesn't ask it, so the fact finder import's save must leave it as it is.",
+      },
+      {
+        key: "executionDate",
+        label: "Date signed",
+        kind: "date",
+        writable: false,
+        notes:
+          "Stored (wills.execution_date) but the Wills routes don't take it; only the statement import's will commit writes it, and its update NULLS it when the payload leaves it out. The fact finder's \"Last updated (year)\" is not a signing date — the fact finder import saves it as a plan note, never here.",
+      },
     ],
   },
   {

@@ -273,6 +273,15 @@ export const NET_WORTH_ACCOUNT_ENTITIES: readonly DetailEntity[] = [
         defaultValue: null,
       },
       {
+        key: "propertyAddress",
+        appliesTo: "update",
+        label: "Property address",
+        kind: "string",
+        nullable: true,
+        notes:
+          "UPDATE ONLY — the create schema drops it; the PUT's mass-assign stores it. Real-estate accounts only: the street address, which the mortgage link prefers when it matches a loan to its property. No Details input shows it; the statement import and the fact finder import's save write it.",
+      },
+      {
         key: "annualPropertyTax",
         label: "Annual Property Tax",
         kind: "money",
