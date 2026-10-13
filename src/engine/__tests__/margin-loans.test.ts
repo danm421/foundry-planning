@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { MARGINED, runMargin } from "./_fixtures/margin";
+import { LEGACY_FM_CLIENT } from "../ownership";
+import type { Account } from "../types";
 
 describe("margin loans — yearly math", () => {
   it("year 1: net seed, growth on gross, interest added to the loan", () => {
@@ -42,5 +44,33 @@ describe("margin loans — yearly math", () => {
   it("an account with marginBalance 0 is identical to one with no margin fields", () => {
     const { marginBalance: _a, marginInterestRate: _b, marginCallPct: _c, ...plain } = MARGINED;
     expect(runMargin([{ ...MARGINED, marginBalance: 0 }])).toEqual(runMargin([plain]));
+  });
+});
+
+describe("margin loans — sale gains use the securities value", () => {
+  // Flat year: net $8M + $2M loan = $10M securities against $9M basis, so
+  // every dollar drawn realizes a 10% gain. Net-based math would book a loss.
+  const SPENDER: Account = { ...MARGINED, basis: 9_000_000, growthRate: 0, marginInterestRate: 0 };
+  const CHECKING: Account = {
+    id: "acct-checking", name: "Checking", category: "cash", subType: "checking",
+    titlingType: "jtwros", value: 0, basis: 0, growthRate: 0, rmdEnabled: false,
+    isDefaultChecking: true,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  };
+
+  it.each([
+    ["the checking-account refill", [CHECKING, SPENDER]],
+    ["the no-checking (legacy) path", [SPENDER]],
+  ])("a supplemental draw realizes gain on the securities ratio via %s", (_path, accounts) => {
+    const [y1] = runMargin(accounts, 1, {}, {
+      expenses: [{
+        id: "exp-living", type: "living", name: "Living", annualAmount: 1_000_000,
+        startYear: 2026, endYear: 2026, growthRate: 0,
+      }],
+      withdrawalStrategy: [{ accountId: "acct-margin", priorityOrder: 1, startYear: 2026, endYear: 2026 }],
+    });
+    const drawn = y1.withdrawals.byAccount["acct-margin"];
+    expect(y1.taxDetail!.bySource["withdrawal:acct-margin"].amount).toBeCloseTo(drawn * 0.1, 2);
+    expect(drawn).toBeGreaterThan(1_000_000); // the expense plus the tax on that gain
   });
 });

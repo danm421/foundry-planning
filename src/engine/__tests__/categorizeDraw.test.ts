@@ -196,3 +196,18 @@ describe("categorizeDraw taxable — fresh-basis-first (spec 2026-05-11)", () =>
     expect(draw.capitalGains + draw.basisReturn).toBeCloseTo(284_651, 0);
   });
 });
+
+describe("categorizeDraw taxable — margined account (spec 2026-10-13)", () => {
+  const margined = baseAccount({ id: "m", category: "taxable", subType: "brokerage" });
+
+  it("a margined draw's gain ratio uses the securities value, not net", () => {
+    // Net $8M + $2M loan = $10M securities against $9M basis → 10% gain ratio.
+    // Net-based math would read 1 − 9/8 and report a $125K LOSS.
+    const draw = categorizeDraw({
+      account: margined, amount: 1_000_000, balance: 8_000_000, grossBalance: 10_000_000,
+      basisMap: { m: 9_000_000 }, rothValueMap: {}, ownerAge: 60,
+    });
+    expect(draw.capitalGains).toBeCloseTo(100_000, 2);
+    expect(draw.basisReturn).toBeCloseTo(900_000, 2);
+  });
+});

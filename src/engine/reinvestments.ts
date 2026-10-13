@@ -6,6 +6,9 @@ export interface ReinvestmentsInput {
   accounts: Account[];
   accountBalances: Record<string, number>;
   basisMap: Record<string, number>;
+  /** Live margin loan per account (`accountBalances` is net of it). A taxed
+   *  switch sells the securities, which are net + loan. */
+  marginMap?: Record<string, number>;
   accountLedgers: Record<string, AccountLedger>;
   year: number;
 }
@@ -39,7 +42,7 @@ export function applyReinvestments(input: ReinvestmentsInput): ReinvestmentsResu
       if (!acct) continue; // account removed earlier this projection (sold, etc.)
 
       if (ri.realizeTaxesOnSwitch && acct.category === "taxable") {
-        const bal = input.accountBalances[acct.id] ?? 0;
+        const bal = (input.accountBalances[acct.id] ?? 0) + (input.marginMap?.[acct.id] ?? 0);
         const basis = input.basisMap[acct.id] ?? 0;
         const fraction = ri.soldFractionByAccount[acct.id] ?? 0;
         // Signed: a sell-and-rebuy of an underwater sleeve realizes a LOSS and

@@ -183,3 +183,20 @@ describe("HSA 65 gate", () => {
     expect(plan.recognizedIncome.earlyWithdrawalPenalty).toBe(0);
   });
 });
+
+describe("planSupplementalWithdrawal — margined account (spec 2026-10-13)", () => {
+  it("draws stop at a margined account's net value", () => {
+    const accounts = [acct("m", { category: "taxable", subType: "brokerage", value: 10_000_000, basis: 9_000_000 })];
+    const strategy: WithdrawalPriority[] = [
+      { accountId: "m", priorityOrder: 1, startYear: 2026, endYear: 2060 },
+    ];
+    const plan = planSupplementalWithdrawal({
+      shortfall: 9_000_000, strategy,
+      householdBalances: { m: 8_000_000 }, grossBalances: { m: 10_000_000 },
+      basisMap: { m: 9_000_000 }, accounts,
+      ages: { client: 65, spouse: null }, isSpouseAccount: () => false, year: 2026,
+    });
+    expect(plan.byAccount.m).toBeCloseTo(8_000_000, 2);
+    expect(plan.recognizedIncome.capitalGains).toBeCloseTo(800_000, 2); // 8M × (1 − 9/10)
+  });
+});

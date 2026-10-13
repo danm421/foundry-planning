@@ -466,6 +466,9 @@ export interface ApplyAssetPurchasesInput {
   liabilities: Liability[];
   accountBalances: Record<string, number>;
   basisMap: Record<string, number>;
+  /** Live margin loan per account (`accountBalances` is net of it). The
+   *  funding account's basis sheds on its securities value, net + loan. */
+  marginMap?: Record<string, number>;
   accountLedgers: Record<string, AccountLedger>;
   year: number;
   /** Anchor for the property-tax deflation. `AssetTransaction.annualPropertyTax`
@@ -501,6 +504,7 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
     purchases,
     accountBalances,
     basisMap,
+    marginMap,
     accountLedgers,
     year,
     planStartYear,
@@ -538,9 +542,10 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
     // produces the same number there.
     const fundingBalance = accountBalances[fundingAccountId] ?? 0;
     const fundingBasis = basisMap[fundingAccountId] ?? 0;
+    const fundingGross = fundingBalance + (marginMap?.[fundingAccountId] ?? 0);
     const basisDebit =
       fundingBalance > 0
-        ? Math.min(fundingBasis, fundingBasis * (equity / fundingBalance))
+        ? Math.min(fundingBasis, fundingBasis * (equity / fundingGross))
         : equity;
     accountBalances[fundingAccountId] = fundingBalance - equity;
     basisMap[fundingAccountId] = Math.max(0, fundingBasis - basisDebit);

@@ -457,6 +457,29 @@ describe("applyAssetPurchases", () => {
 
     expect(balances["checking-1"]).toBe(50000);
   });
+
+  it("a purchase funded from a margined account sheds basis on the securities ratio", () => {
+    // Net $8M + $2M loan = $10M securities, basis $9M. $1M of equity is 10% of
+    // the securities → $900K of basis leaves (net-based math would take $1.125M).
+    const margined: Account = { ...brokerageAccount, id: "m", value: 10_000_000, basis: 9_000_000, marginBalance: 2_000_000 };
+    const buy: AssetTransaction = {
+      id: "buy-1", name: "Buy Rental", type: "buy", year: 2028,
+      assetName: "New Rental", assetCategory: "real_estate", assetSubType: "rental_property",
+      purchasePrice: 1_000_000, growthRate: 0.03, fundingAccountId: "m",
+    };
+    const balances: Record<string, number> = { m: 8_000_000 };
+    const basisMap: Record<string, number> = { m: 9_000_000 };
+    const ledgers: Record<string, AccountLedger> = { m: makeLedger(8_000_000) };
+
+    applyAssetPurchases({
+      purchases: [buy], accounts: [margined], liabilities: [],
+      accountBalances: balances, basisMap, marginMap: { m: 2_000_000 }, accountLedgers: ledgers,
+      year: 2028, planStartYear: 2026, defaultCheckingId: "checking-1", ownerFmId: LEGACY_FM_CLIENT,
+    });
+
+    expect(balances.m).toBe(7_000_000);
+    expect(basisMap.m).toBeCloseTo(8_100_000, 2);
+  });
 });
 
 describe("applyAssetPurchases — deterministic synthetic ids", () => {

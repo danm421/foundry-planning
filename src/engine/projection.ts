@@ -40,7 +40,7 @@ import {
 import { computeBusinessYearFlow } from "./business/year-flow";
 import { buildGiftValueAtYear } from "./business/business-tree";
 import { accrueLockedEntityShare } from "./locked-shares";
-import { type MarginMap, netSeedValue, grossValue, chargeMarginInterest } from "./margin";
+import { type MarginMap, netSeedValue, grossValue, grossBalancesFor, chargeMarginInterest } from "./margin";
 import { buildOwnershipSnapshot } from "./ownership-snapshot";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
@@ -1614,6 +1614,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           liabilities: currentLiabilities,
           accountBalances,
           basisMap,
+          marginMap,
           accountLedgers,
           year,
           planStartYear: planSettings.planStartYear,
@@ -1998,6 +1999,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         accounts: workingAccounts,
         accountBalances,
         basisMap,
+        marginMap,
         accountLedgers,
         year,
       });
@@ -2295,6 +2297,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         accounts: workingAccounts,
         accountBalances,
         basisMap,
+        marginMap,
         freshBasisMap,
         rothValueMap,
         annuityBasisMap,
@@ -6483,6 +6486,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               account: acct,
               amount,
               balance: accountBalances[id] ?? 0,
+              grossBalance: grossValue(accountBalances[id] ?? 0, marginMap, id),
               basisMap,
               rothValueMap,
               // Same live-basis read as the supplemental waterfall: an annuity
@@ -7298,6 +7302,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           shortfall: cumulativeShortfall,
           strategy: effectiveWithdrawalStrategy,
           householdBalances: reservedBalances,
+          grossBalances: grossBalancesFor(accountBalances, marginMap),
           basisMap,
           freshBasisMap,
           rothValueMap,
@@ -7491,6 +7496,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             shortfall: target,
             strategy: effectiveWithdrawalStrategy,
             householdBalances: householdWithdrawBalances,
+            grossBalances: grossBalancesFor(accountBalances, marginMap),
             basisMap,
             freshBasisMap,
             rothValueMap,
@@ -8197,7 +8203,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const acct = liquidatableAcctById.get(acctId);
         const liqTaxable = acct?.category === "taxable" && preBalance > 0;
         const liqBasisBefore = basisMap[acctId] ?? preBalance;
-        const liqFraction = preBalance > 0 ? Math.min(1, amount / preBalance) : 0;
+        const liqGross = preBalance + (marginMap[acctId] ?? 0);
+        const liqFraction = preBalance > 0 ? Math.min(1, amount / liqGross) : 0;
         const sourceBasisDelta = liqTaxable ? -liqBasisBefore * liqFraction : 0;
 
         // Symmetric to the supplemental-draw block above: entity gap-fill draws

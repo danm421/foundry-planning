@@ -45,6 +45,9 @@ export interface CategorizeDrawInput {
    *  taken at projection start and drifts from the truth as the plan runs —
    *  callers must pass the current balance from their ledger. */
   balance: number;
+  /** Taxable only: the securities value (net + margin loan) for the gain
+   *  ratio. Omitted ⇒ `balance` (no loan: net == gross). */
+  grossBalance?: number;
   basisMap: Record<string, number>;
   /** Unspent portion of this year's basisIncrease for taxable/cash accounts.
    *  When > 0, dollars up to this amount are drawn from the fresh pool first
@@ -92,10 +95,11 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
     if (balance <= 0) {
       return { ...empty, capitalGains: amount, basisReturn: 0 };
     }
+    const ratioValue = input.grossBalance ?? balance;
 
     const freshDraw = Math.min(amount, fresh);
     const legacyDraw = amount - freshDraw;
-    const legacyValue = balance - fresh;
+    const legacyValue = ratioValue - fresh;
     const legacyBasis = basis - fresh;
 
     // Signed: a ratio below 0 means the lot is underwater and the draw
@@ -245,6 +249,10 @@ export interface PlanSupplementalWithdrawalInput {
   shortfall: number;
   strategy: WithdrawalPriority[];
   householdBalances: Record<string, number>;
+  /** Securities value (net + margin loan) per margined account, from
+   *  `grossBalancesFor` — the gain-ratio denominator. Draws are still capped
+   *  at `householdBalances` (net). */
+  grossBalances?: Record<string, number>;
   basisMap: Record<string, number>;
   /** Per-account unspent fresh-basis pool (current-year basisIncrease that
    *  hasn't been consumed by an earlier in-year withdrawal/transfer).
@@ -263,7 +271,7 @@ export interface PlanSupplementalWithdrawalInput {
 }
 
 export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInput): SupplementalWithdrawalPlan {
-  const { shortfall, strategy, householdBalances, basisMap, freshBasisMap, rothValueMap, annuityBasisMap, accounts, ages, isSpouseAccount, year } = input;
+  const { shortfall, strategy, householdBalances, grossBalances, basisMap, freshBasisMap, rothValueMap, annuityBasisMap, accounts, ages, isSpouseAccount, year } = input;
 
   const empty: SupplementalWithdrawalPlan = {
     byAccount: {}, total: 0, draws: [],
@@ -323,6 +331,7 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
     const tradIraPool = tradIraPoolFor(account);
     const draw = categorizeDraw({
       account, amount: drawAmount, balance: available,
+      grossBalance: grossBalances?.[account.id],
       basisMap, rothValueMap, ownerAge,
       freshBasisRemaining: localFresh[account.id] ?? 0,
       annuityRemainingBasis: localAnnuityBasis[account.id],

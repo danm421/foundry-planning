@@ -299,6 +299,24 @@ describe("Entity gap-fill (step 12c)", () => {
     );
   });
 
+  it("Case 2b: a margined taxable sheds basis on the securities ratio (spec 2026-10-13)", () => {
+    // Net $200k + $50k loan = $250k securities, basis $100k. The $150k
+    // liquidation is 60% of the securities → $60k of basis leaves (net-based
+    // math would take 75% = $75k). The draw still comes out of net.
+    const data = buildData({
+      accounts: [trustChecking(100_000), { ...trustTaxable(250_000, 100_000), marginBalance: 50_000 }],
+      expenses: [trustExpense(250_000)],
+      entities: [nonGrantorTrust()],
+    });
+
+    const year0 = runProjection(data)[0];
+    const ledger = year0.accountLedgers["trust-taxable"];
+    expect(ledger.endingValue).toBeCloseTo(50_000, 2);
+    const liquidation = ledger.entries.find((e) => e.label === "Entity gap-fill");
+    expect(liquidation!.amount).toBeCloseTo(-150_000, 2);
+    expect(liquidation!.basis).toBeCloseTo(-60_000, 2);
+  });
+
   it("Case 3: expense within cash — no liquidation, taxable untouched", () => {
     // Cash $100k, taxable $200k, expense $80k. Cash covers it; gap-fill is a no-op.
     const data = buildData({
