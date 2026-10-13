@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { clients, plaidItems, intakeForms } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
-import { recordDelete } from "@/lib/audit";
-import { toClientSnapshot } from "@/lib/audit/snapshots/client";
+import { auth } from "@clerk/nextjs/server";
 import { requireClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
-import { requireActiveSubscriptionForFirm, authErrorResponse, nullOnAccessDenial } from "@/lib/authz";
+import {
+  requireActiveSubscriptionForFirm,
+  requireOrgAdminOrOwner,
+  ForbiddenError,
+  authErrorResponse,
+  nullOnAccessDenial,
+} from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { updateClientProfileForClient } from "@/lib/clients/client-profile-writes";
-import { revokePlaidTokens } from "@/lib/plaid/revoke";
+import { softDeleteCrmHousehold } from "@/lib/crm/households";
 
 export const dynamic = "force-dynamic";
 
@@ -68,52 +70,26 @@ export async function PUT(
   }
 }
 
-// DELETE /api/clients/[id] — delete client
+// DELETE /api/clients/[id] — move the client's household to the Trash. The
+// same lifecycle as deleting the household from the clients list: a firm admin
+// only, restorable until the Trash purge permanently deletes it. Only the
+// owning firm's own access qualifies; access through a share never does,
+// whatever its permission.
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await requireOrgAdminOrOwner();
     const { id } = await params;
-    const callerOrg = await requireOrgId();
-    const { client: existing, firmId, access } = await requireClientEditAccess(id);
+    const { client, firmId, access } = await requireClientAccess(id);
+    if (access !== "own") {
+      throw new ForbiddenError("Only the owning firm can delete this client");
+    }
     await requireActiveSubscriptionForFirm(firmId);
 
-    const snapshot = toClientSnapshot(existing);
-
-    // Plaid access tokens, collected BEFORE the cascade drops plaid_items —
-    // afterwards the encrypted tokens are gone and the vendor-side connection
-    // can never be severed (audit F3).
-    const plaidTokenRows = await db
-      .select({ accessToken: plaidItems.accessToken })
-      .from(plaidItems)
-      .where(eq(plaidItems.clientId, id));
-
-    // intake_forms.client_id is ON DELETE SET NULL; erase the client's forms
-    // explicitly so their answers and public links don't outlive the client.
-    await db.transaction(async (tx) => {
-      await tx
-        .delete(intakeForms)
-        .where(and(eq(intakeForms.clientId, id), eq(intakeForms.firmId, firmId)));
-      await tx
-        .delete(clients)
-        .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-    });
-
-    await revokePlaidTokens(
-      plaidTokenRows.map((r) => r.accessToken),
-      `client-delete ${id}`,
-    );
-
-    await recordDelete({
-      action: "client.delete",
-      resourceType: "client",
-      resourceId: id,
-      clientId: id,
-      firmId,
-      snapshot,
-      extraMetadata: crossFirmAuditMeta({ access }, callerOrg),
-    });
+    const { userId } = await auth();
+    await softDeleteCrmHousehold(client.crmHouseholdId, userId ?? "system");
 
     return NextResponse.json({ success: true });
   } catch (err) {
