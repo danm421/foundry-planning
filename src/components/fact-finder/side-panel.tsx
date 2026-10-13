@@ -2,7 +2,7 @@
 // src/components/fact-finder/side-panel.tsx
 // The collapsible panel on the right of the fact finder screen. Beside the page
 // at 1100 px and wider; below that, an overlay drawer (the CRM task panel's idiom).
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { CloseIcon } from "./icons";
 
@@ -12,6 +12,13 @@ const STICKY_TOP = 100;
 /** The app's Forge button sits fixed 24 px from the window's bottom and is 48 px tall; the panel stops 12 px above it. */
 const FORGE_CLEARANCE = 84;
 const MIN_HEIGHT = 240;
+
+/**
+ * For the grid the panel sits in beside the page: at least as tall as the
+ * panel can be. A shorter page would otherwise end where the panel ends, and
+ * the panel would measure itself as the grid's end.
+ */
+export const BESIDE_GRID_STYLE: CSSProperties = { minHeight: `calc(100vh - ${STICKY_TOP + FORGE_CLEARANCE}px)` };
 
 function subscribeNarrow(onChange: () => void): () => void {
   const mq = window.matchMedia?.(NARROW_QUERY);
@@ -50,14 +57,20 @@ export function SidePanel({ id, title, open, overlay, onOpenChange, children, fo
 
   // Beside the page, the panel ends above the Forge button, so its composer stays
   // in view: its height runs from where its top is now (lower until the page
-  // scrolls it up to its sticky line) to the window's bottom. Scrolls are caught
-  // on the way down, so a pane that scrolls on its own counts too. The class's
-  // max-height holds until the first measure.
+  // scrolls it up to its sticky line) to the window's bottom. Near the page's
+  // end the grid it sits in (BESIDE_GRID_STYLE) ends first, and a sticky box
+  // can't leave its grid: the panel then ends with the grid, so the grid's end
+  // never pushes it up under the app's header. Scrolls are caught on the way
+  // down, so a pane that scrolls on its own counts too. The class's max-height
+  // holds until the first measure.
   useLayoutEffect(() => {
     if (!beside) return;
     function fit() {
-      const top = Math.max(asideRef.current?.getBoundingClientRect().top ?? STICKY_TOP, STICKY_TOP);
-      setMaxHeight(Math.max(MIN_HEIGHT, window.innerHeight - top - FORGE_CLEARANCE));
+      const aside = asideRef.current;
+      const top = Math.max(aside?.getBoundingClientRect().top ?? STICKY_TOP, STICKY_TOP);
+      const gridBottom = aside?.parentElement?.getBoundingClientRect().bottom ?? Infinity;
+      const bottom = Math.min(window.innerHeight - FORGE_CLEARANCE, gridBottom);
+      setMaxHeight(Math.max(MIN_HEIGHT, bottom - top));
     }
     fit();
     window.addEventListener("scroll", fit, { capture: true, passive: true });

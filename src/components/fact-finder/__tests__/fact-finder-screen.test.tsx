@@ -177,11 +177,18 @@ describe("side panel", () => {
     expect(toggle).toHaveFocus();
   });
 
-  it("stays beside the page at 1100 px and wider", async () => {
+  it("stays beside the page at 1100 px and wider, in a grid at least as tall as the panel can be", async () => {
     stubScreenWidth(false);
     renderScreen();
+    const grid = screen.getByRole("navigation", { name: "Fact finder pages" }).parentElement as HTMLElement;
+    expect(grid.style.minHeight).toBe("");
+
     await userEvent.click(screen.getByRole("button", { name: "Documents & chat" }));
-    expect(screen.getByRole("complementary", { name: "Documents & chat" })).toBeInTheDocument();
+    const panel = screen.getByRole("complementary", { name: "Documents & chat" });
     expect(screen.queryByRole("dialog")).toBeNull();
+    // At most the window less its 100 px sticky line and 84 px Forge clearance: so the grid's end
+    // is always the page's, which the panel measures to stay under the app's header.
+    expect(panel.parentElement).toBe(grid);
+    expect(grid.style.minHeight).toBe("calc(100vh - 184px)");
   });
 });

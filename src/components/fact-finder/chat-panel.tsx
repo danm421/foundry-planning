@@ -125,7 +125,7 @@ export function ChatComposerBar({ chat, reading }: { chat: Chat; reading: boolea
         onSend={chat.send}
         disabled={reading || chat.undoing !== null}
         sending={chat.pending !== null}
-        placeholder="Ask a question or say what to change…"
+        placeholder="Ask, or say what to change…"
         ariaLabel="Chat message"
       />
       {(reading || chat.error) && (

@@ -168,7 +168,8 @@ describe("the conversation", () => {
     renderScreen({ ...emptyFactFinderState(), readings: { f1: READ } });
     await openPanel(user);
     expect(within(chat()).getByText("Ask a question about this fact finder, or say what to change.")).toBeInTheDocument();
-    expect(composer()).toHaveAttribute("placeholder", "Ask a question or say what to change…");
+    // Short enough for one line of the composer in the 360 px panel and drawer (about 28 characters fit).
+    expect(composer()).toHaveAttribute("placeholder", "Ask, or say what to change…");
     expect(composer()).toBeEnabled();
   });
 });

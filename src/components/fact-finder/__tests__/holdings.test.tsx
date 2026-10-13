@@ -72,13 +72,32 @@ function toggleOf(name: string) {
 }
 
 describe("holdings under an account row", () => {
+  it("a long holding name wraps inside the Name column instead of widening it", async () => {
+    const long = "Apple Inc. common stock held in the self-directed brokerage window of the Acme Industrial 401(k) plan";
+    renderPage(stateWith({ taxable: [account("t1", { accountName: "Joint Brokerage", currentValue: 9000 }, [holding("h9", { ticker: "AAPL", name: long })])] }));
+    await userEvent.click(screen.getByRole("button", { name: "1 holding in Joint Brokerage" }));
+    const name = screen.getByRole("button", { name: `Edit name for AAPL: ${long}` });
+    expect(name).toHaveClass("max-w-80", "break-words");
+    expect(name).not.toHaveClass("whitespace-nowrap");
+    // Figures stay on one line.
+    expect(screen.getByRole("button", { name: "Edit shares for AAPL: blank" })).toHaveClass("whitespace-nowrap");
+  });
+
   it("shows N holdings under the row, collapsed, and expands to the holdings table", async () => {
     renderPage(stateWith({ taxable: [brokerage(15000), account("t2", { accountName: "Empty Brokerage" })] }));
     const accounts = screen.getByRole("table", { name: "Taxable Investment Accounts" });
     const toggle = within(accounts).getByRole("button", { name: "2 holdings in Joint Brokerage" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
-    // The holdings line spans the row header, every column, Links to and the actions cell.
-    expect((toggle.closest("td") as HTMLTableCellElement).colSpan).toBe(findSection("taxable")!.columns.length + 3);
+    // The holdings line spans the row header, every column and Links to; the
+    // row-actions column carries on beside it, so nothing scrolls through it.
+    const line = toggle.closest("td") as HTMLTableCellElement;
+    expect(line.colSpan).toBe(findSection("taxable")!.columns.length + 2);
+    const actionsColumn = line.nextElementSibling as HTMLTableCellElement;
+    expect(actionsColumn).toBe(line.parentElement!.lastElementChild);
+    expect(actionsColumn).toHaveClass("sticky", "right-0", "border-l", "border-hair", "bg-card");
+    expect(actionsColumn.className).toBe(
+      (within(accounts).getByRole("button", { name: "Remove Joint Brokerage" }).closest("td") as HTMLElement).className,
+    );
     expect(within(accounts).queryByRole("button", { name: /in Empty Brokerage$/ })).toBeNull();
     expect(screen.queryByRole("table", { name: "Holdings in Joint Brokerage" })).toBeNull();
 

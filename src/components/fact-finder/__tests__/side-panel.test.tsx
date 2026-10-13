@@ -6,12 +6,16 @@ import { SidePanel } from "../side-panel";
 
 /** The panel's top edge in the window; a test moves it as the page would. */
 let top = 230;
+/** The bottom of the grid the panel sits in (what a sticky box can't leave); far below unless a test scrolls to it. */
+let gridBottom = 5000;
 
 beforeEach(() => {
   top = 230;
-  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
-    () => ({ top, bottom: top + 400, left: 1056, right: 1416, width: 360, height: 400 }) as DOMRect,
-  );
+  gridBottom = 5000;
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    if (this.tagName === "ASIDE") return { top, bottom: top + 400, left: 1056, right: 1416, width: 360, height: 400 } as DOMRect;
+    return { top: -2000, bottom: gridBottom, left: 0, right: 1416, width: 1416, height: gridBottom + 2000 } as DOMRect;
+  });
   vi.stubGlobal("innerHeight", 900);
 });
 
@@ -64,6 +68,24 @@ describe("beside the page, the panel ends above the Forge button (window height 
     top = -300; // the end of the page pushes it up past its sticky line
     fireEvent.scroll(window);
     expect(aside().style.maxHeight).toBe("716px");
+  });
+
+  it("at the very bottom of the page, where the grid's end pushes it up, it's sized to stay at its sticky line, under the app's header", () => {
+    render(panel());
+    top = 100;
+    gridBottom = 850; // the grid's end is in view, but below the Forge line
+    fireEvent.scroll(window);
+    expect(aside().style.maxHeight).toBe("716px"); // 900 − 100 − 84
+
+    top = 34; // the page's end: a 716 px panel would be pushed up under the header
+    gridBottom = 750;
+    fireEvent.scroll(window);
+    expect(aside().style.maxHeight).toBe("650px"); // 750 − 100: it ends with the grid, its top at 100
+
+    top = 230; // and back up the page
+    gridBottom = 5000;
+    fireEvent.scroll(window);
+    expect(aside().style.maxHeight).toBe("586px");
   });
 
   it("stops listening once it closes, and once it's gone", () => {

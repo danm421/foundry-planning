@@ -72,6 +72,18 @@ describe("PageView — one component per layout", () => {
     expect(within(savingsRow).getByRole("textbox", { name: "Current value" })).toHaveValue("5,000");
   });
 
+  it("list: the row-actions column sticks flush to the card's right edge — the scroller has no right padding for cells to show through", () => {
+    renderPage("accounts", stateWith({ cash: [joint, savings] }));
+    const table = screen.getByRole("table", { name: "Cash Accounts" });
+    const scroller = table.parentElement as HTMLElement;
+    expect(scroller).toHaveClass("overflow-x-auto", "pl-[calc(var(--pad-card)-0.5rem)]");
+    expect(scroller.className).not.toMatch(/(^|\s)(px|pr)-/);
+    const actions = screen.getByRole("button", { name: "Remove Savings" }).closest("td") as HTMLElement;
+    // The card's inset moves inside the sticky cell.
+    expect(actions).toHaveClass("sticky", "right-0", "bg-card", "pl-2", "pr-[var(--pad-card)]");
+    expect(actions.className).not.toMatch(/(^|\s)px-/);
+  });
+
   it("fixed rows: the row labels go down; nothing to add, remove or merge", () => {
     const s = emptyFactFinderState();
     const [client, coClient] = s.sections.people;

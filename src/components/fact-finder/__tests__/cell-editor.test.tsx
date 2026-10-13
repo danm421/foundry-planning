@@ -335,6 +335,34 @@ describe("CellEditor — clear, source, Check this, highlight", () => {
   describe("source note placement", () => {
     afterEach(() => {
       vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+    });
+
+    /** The cell's box, and the note's own height (it's laid out, if hidden, the whole time). */
+    function boxes(cell: { top: number; bottom: number }, noteHeight: number) {
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+        const note = this.getAttribute("role") === "tooltip";
+        const r = note ? { top: 0, bottom: noteHeight, height: noteHeight } : { ...cell, height: cell.bottom - cell.top };
+        return { ...r, left: 40, right: note ? 296 : 200, width: note ? 256 : 160, x: 40, y: r.top, toJSON: () => ({}) } as DOMRect;
+      });
+    }
+
+    it("opens above the cell when the window has no room for it below", async () => {
+      vi.stubGlobal("innerHeight", 900);
+      boxes({ top: 840, bottom: 872 }, 90);
+      renderCell("cash", "r1", "accountName", { accountName: doc("Joint Checking") });
+      await userEvent.hover(screen.getByRole("textbox", { name: "Account name" }));
+      const tip = screen.getByRole("tooltip");
+      expect(tip.style.top).toBe("746px"); // 840 − 4 − 90: its bottom 4 px above the cell
+      expect(tip.style.left).toBe("40px");
+    });
+
+    it("stays below the cell while it fits there, down to 8 px from the window's bottom", async () => {
+      vi.stubGlobal("innerHeight", 900);
+      boxes({ top: 766, bottom: 798 }, 90); // 798 + 4 + 90 = 892
+      renderCell("cash", "r1", "accountName", { accountName: doc("Joint Checking") });
+      await userEvent.hover(screen.getByRole("textbox", { name: "Account name" }));
+      expect(screen.getByRole("tooltip").style.top).toBe("802px");
     });
 
     it("is fixed under the cell while it's hovered or focused, so a table that scrolls sideways can't clip it; any scroll hides it", async () => {

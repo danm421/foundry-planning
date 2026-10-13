@@ -52,7 +52,12 @@ const HEAD = "border-b border-hair px-2 py-2 text-left align-bottom text-xs font
 // py-2 keeps a cell's × (6 px outside its corner) inside the table.
 const CELL = "border-b border-hair px-2 py-2 align-top";
 const ROW_HEAD = `${CELL} text-left text-sm font-medium text-ink-2`;
-const STICKY_END = "sticky right-0 z-10 border-l border-hair bg-card";
+/**
+ * A list's row-actions column, stuck to the card's right edge. Its scroller has
+ * no right padding — cells scrolled there would show to the right of the
+ * column — so the card's inset is padding inside this cell instead.
+ */
+const STICKY_END = "sticky right-0 z-10 border-b border-l border-hair bg-card py-2 pl-2 pr-[var(--pad-card)] align-top";
 // A row whose holdings line follows it: no rule between the two.
 const JOINED = "[&>*]:border-b-0";
 const MERGE_SELECT =
@@ -164,11 +169,12 @@ function RowActions({ section, rows, row, onApply }: Pick<SectionBodyProps, "sec
 /**
  * Wide sections scroll sideways inside their card. `relative` makes the
  * scroller clip what's absolutely positioned in its cells too (the
- * screen-reader labels): otherwise those widen the whole page.
+ * screen-reader labels): otherwise those widen the whole page. A list's
+ * scroller has no right padding: its sticky actions column pads itself.
  */
-function TableFrame({ labelledBy, children }: { labelledBy: string; children: ReactNode }) {
+function TableFrame({ labelledBy, list = false, children }: { labelledBy: string; list?: boolean; children: ReactNode }) {
   return (
-    <div className="relative overflow-x-auto px-[calc(var(--pad-card)-0.5rem)] pb-2">
+    <div className={`relative overflow-x-auto pb-2 pl-[calc(var(--pad-card)-0.5rem)] ${list ? "" : "pr-[calc(var(--pad-card)-0.5rem)]"}`}>
       <table aria-labelledby={labelledBy} className="min-w-full border-separate border-spacing-0 text-sm">
         {children}
       </table>
@@ -187,7 +193,7 @@ function ColumnHeads({ columns }: { columns: readonly FFColumn[] }) {
 function ListTable(props: SectionBodyProps) {
   const { section, rows, onApply, labelledBy } = props;
   return (
-    <TableFrame labelledBy={labelledBy}>
+    <TableFrame labelledBy={labelledBy} list>
       <thead>
         <tr>
           <td className={HEAD} />
@@ -197,7 +203,7 @@ function ListTable(props: SectionBodyProps) {
               Links to
             </th>
           )}
-          <td className={`${HEAD} ${STICKY_END}`} />
+          <td className={STICKY_END} />
         </tr>
       </thead>
       <tbody className="[&>tr:last-child>*]:border-b-0">
@@ -215,7 +221,7 @@ function ListTable(props: SectionBodyProps) {
                   </td>
                 ))}
                 {section.links && <td className={CELL}>{linkFor(props, row)}</td>}
-                <td className={`${CELL} ${STICKY_END}`}>
+                <td className={STICKY_END}>
                   <RowActions section={section} rows={rows} row={row} onApply={onApply} />
                 </td>
               </tr>
@@ -223,7 +229,8 @@ function ListTable(props: SectionBodyProps) {
                 <HoldingsRow
                   section={section}
                   row={row}
-                  colSpan={section.columns.length + (section.links ? 3 : 2)}
+                  colSpan={section.columns.length + (section.links ? 2 : 1)}
+                  actionsClassName={STICKY_END}
                   onApply={onApply}
                 />
               )}

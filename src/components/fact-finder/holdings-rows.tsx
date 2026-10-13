@@ -191,7 +191,8 @@ function HoldingFigure({
       aria-label={`Edit ${column.label.toLowerCase()} for ${name}: ${value === null ? "blank" : text}`}
       onClick={() => setEditing(true)}
       className={`flex min-h-7 w-full cursor-pointer items-center rounded-[var(--radius-sm)] border border-transparent px-1.5 transition-colors hover:border-hair-2 hover:bg-card-2 ${
-        numeric ? "tabular justify-end whitespace-nowrap" : "text-left"
+        // A long name wraps rather than widening its column across the account's whole wide table.
+        numeric ? "tabular justify-end whitespace-nowrap" : "max-w-80 text-left break-words"
       } ${value === null ? "text-ink-4" : "text-ink"}`}
     >
       {text}
@@ -203,14 +204,16 @@ export interface HoldingsRowProps {
   section: FFSection;
   /** An account row with at least one holding. */
   row: FFRow;
-  /** Cells across the account's row, so the holdings line spans all of them. */
+  /** Cells across the account's row before its actions, so the holdings line spans them. */
   colSpan: number;
+  /** The account row's actions cell: an empty one beside the line carries that sticky column on down. */
+  actionsClassName: string;
   /** `useFactFinder`'s `apply`: false when the edit was refused. */
   onApply: (ops: ClientOp[]) => boolean;
 }
 
 /** The holdings line under an account row (a table row of its own). */
-export function HoldingsRow({ section, row, colSpan, onApply }: HoldingsRowProps) {
+export function HoldingsRow({ section, row, colSpan, actionsClassName, onApply }: HoldingsRowProps) {
   const id = useId();
   const [open, setOpen] = useState(false);
   const holdings = row.holdings ?? [];
@@ -288,6 +291,7 @@ export function HoldingsRow({ section, row, colSpan, onApply }: HoldingsRowProps
           </table>
         )}
       </td>
+      <td className={actionsClassName} />
     </tr>
   );
 }

@@ -16,7 +16,7 @@ import { PageRail } from "./page-rail";
 import { PageView } from "./page-view";
 import { SaveStatus } from "./save-status";
 import type { FactFinderScreenProps } from "./screen-types";
-import { SidePanel, useNarrowScreen } from "./side-panel";
+import { BESIDE_GRID_STYLE, SidePanel, useNarrowScreen } from "./side-panel";
 import { useFactFinder } from "./use-fact-finder";
 
 const PANEL_ID = "fact-finder-panel";
@@ -89,6 +89,7 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
         className={`grid items-start gap-6 ${
           panelOpen && !narrow ? "grid-cols-[200px_minmax(0,1fr)_360px]" : "grid-cols-[200px_minmax(0,1fr)]"
         }`}
+        style={panelOpen && !narrow ? BESIDE_GRID_STYLE : undefined}
       >
         <PageRail counts={pageCounts(state)} selected={page} onSelect={setPage} />
 

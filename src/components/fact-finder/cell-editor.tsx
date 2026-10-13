@@ -4,7 +4,7 @@
 // it empty, where a document value came from, "Check this", and the highlight
 // for cells the last chat reply changed. Every edit is one op through
 // `onApply`; a refused edit (false) shows the stored value again.
-import { useEffect, useId, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type SyntheticEvent } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type SyntheticEvent } from "react";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import { inputCompactClassName, selectChevronClassName, textareaClassName } from "@/components/forms/input-styles";
@@ -27,6 +27,10 @@ export interface CellEditorProps {
   fileName: (fileId: string) => string | undefined;
 }
 
+/** The source note's gap from its cell, and the least room it leaves at the window's edge. */
+const NOTE_GAP = 4;
+const NOTE_EDGE = 8;
+
 const NUMBER_KEYPAD: Partial<Record<ColumnKind, "decimal" | "numeric">> = {
   number: "decimal",
   integer: "numeric",
@@ -43,9 +47,11 @@ export function CellEditor({ sectionId, rowId, column, cell, onApply, highlighte
   const id = useId();
   // What the advisor is typing; null = show the stored value.
   const [draft, setDraft] = useState<string | null>(null);
-  // Where the source note shows: `fixed` under the cell, so a table that
-  // scrolls sideways never clips it. Set on hover/focus; any scroll hides it.
+  // Where the source note shows: `fixed` under the cell (above it when the
+  // window has no room below), so a table that scrolls sideways never clips
+  // it. Set on hover/focus; any scroll hides it.
   const [notePlace, setNotePlace] = useState<CSSProperties | null>(null);
+  const note = useRef<HTMLDivElement>(null);
   const placed = notePlace !== null;
   useEffect(() => {
     if (!placed) return;
@@ -55,7 +61,11 @@ export function CellEditor({ sectionId, rowId, column, cell, onApply, highlighte
   }, [placed]);
   const placeNote = (e: SyntheticEvent<HTMLElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
-    setNotePlace({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - 264)) });
+    // The note is laid out (hidden) the whole time, so its real height is known.
+    const height = note.current?.getBoundingClientRect().height ?? 0;
+    const below = r.bottom + NOTE_GAP;
+    const top = below + height <= window.innerHeight - NOTE_EDGE ? below : Math.max(NOTE_EDGE, r.top - NOTE_GAP - height);
+    setNotePlace({ top, left: Math.max(NOTE_EDGE, Math.min(r.left, window.innerWidth - 264)) });
   };
   const stored = textOf(cell);
   const shown = draft ?? stored;
@@ -205,6 +215,7 @@ export function CellEditor({ sectionId, rowId, column, cell, onApply, highlighte
       )}
       {source && (
         <div
+          ref={note}
           id={`${id}-source`}
           role="tooltip"
           style={notePlace ?? undefined}
