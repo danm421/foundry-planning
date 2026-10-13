@@ -164,7 +164,7 @@ export default function SendClientForm({
           </label>
           <BrandSelect
             id="send-brand"
-            choices={brandChoicesFor(brand.picker, brandValue)}
+            choices={brandChoicesFor(brand.picker, brand.defaultValue)}
             value={brandValue}
             onChange={setBrandValue}
             className={portalInput}

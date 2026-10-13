@@ -302,4 +302,27 @@ describe("SendClientForm — the server's warning", () => {
       expect(body).not.toHaveProperty("brand");
     });
   });
+
+  it("keeps the household's brand in the list after another brand is picked", () => {
+    // Bob is the household's brand but not one this viewer could pick.
+    const picker = {
+      options: [
+        { value: "firm", label: "Acme Wealth (firm)" },
+        { value: "user_jane", label: "Smith Wealth" },
+      ],
+      allBrands: [
+        { value: "firm", label: "Acme Wealth (firm)" },
+        { value: "user_jane", label: "Smith Wealth" },
+        { value: "user_bob", label: "Bob Advisory" },
+      ],
+    };
+    render(<SendClientForm {...defaultProps} brand={{ picker, defaultValue: "user_bob" }} />);
+    const select = screen.getByLabelText("Brand") as HTMLSelectElement;
+    expect(select.value).toBe("user_bob");
+
+    fireEvent.change(select, { target: { value: "firm" } });
+
+    const values = Array.from(select.options).map((o) => o.value);
+    expect(values).toContain("user_bob");
+  });
 });
