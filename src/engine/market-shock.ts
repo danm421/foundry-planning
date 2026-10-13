@@ -28,6 +28,9 @@ export interface MarketShock {
  * render a normal positive growth number with the crash visible only in the
  * drill-down underneath it.
  *
+ * For a margined account (`marginMap`, net balance + loan = securities) the
+ * drawdown applies to the securities and the whole loss comes out of net.
+ *
  * `rothValueMap` is written down by the same factor: it tracks the balance so
  * the Roth-designated fraction of a 401(k)/403(b) holds constant absent
  * contributions or withdrawals. Skipping it leaves the Roth slice larger than
@@ -45,15 +48,20 @@ export function applyMarketShock(
   shock: MarketShock | undefined,
   accountLedgers: Record<string, AccountLedger>,
   rothValueMap: Record<string, number>,
+  marginMap?: Record<string, number>,
 ): void {
   if (!shock || year !== shock.year || !(shock.drawdownPct > 0)) return;
   const factor = Math.max(0, 1 - shock.drawdownPct);
   const pctLabel = `${Math.round(shock.drawdownPct * 100)}% drawdown`;
   for (const acct of accounts) {
     if (!MARKET_EXPOSED_CATEGORIES.has(acct.category)) continue;
+    const loan = marginMap?.[acct.id] ?? 0;
     const before = accountBalances[acct.id] ?? 0;
-    if (before === 0) continue;
-    const after = before * factor;
+    const gross = before + loan;
+    if (gross === 0) continue;
+    // Margin (spec 2026-10-13): the drawdown hits the securities; the loan is
+    // owed in full, so net falls by the whole loss. loan 0 ⇒ unchanged math.
+    const after = gross * factor - loan;
     const delta = after - before; // negative
     accountBalances[acct.id] = after;
     if (rothValueMap[acct.id] > 0) rothValueMap[acct.id] *= factor;
