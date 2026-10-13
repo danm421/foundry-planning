@@ -2155,6 +2155,9 @@ export interface ProjectionYear {
       saleValue: number;
       transactionCosts: number;
       mortgagePaidOff: number;
+      /** Margin loan repaid from the proceeds; present only when the sold
+       *  account carried a loan. */
+      marginRepaid?: number;
       netProceeds: number;
       capitalGain: number;
     }[];

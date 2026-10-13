@@ -207,3 +207,51 @@ describe("F10 review fix — co-owned trusts don't compound-drain the same accou
     expect(totalDistributed).toBeCloseTo(1_000_000, 2);
   });
 });
+
+/**
+ * R9 — a terminating trust repays its share of a margined account's loan. The
+ * shares are of the PRE-termination loan, like the drains above: a CLT and a
+ * CRT co-owning one account and terminating together must not compound
+ * (multiplying the live loan by 0.4 then 0.6 strands 24% of it).
+ */
+describe("R9 — co-owned trusts repay their shares of the margin loan", () => {
+  function withMarginedAccount(owners: ClientData["accounts"][number]["owners"]) {
+    const data = buildCoOwnedTerminationFixture();
+    data.accounts.push({
+      id: "shared-brokerage",
+      name: "Shared Brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      value: 1_000_000,
+      basis: 1_000_000,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners,
+      marginBalance: 500_000,
+      marginInterestRate: 0,
+      marginCallPct: 0.3,
+    } as ClientData["accounts"][number]);
+    const t = runProjection(data).find((y) => y.year === TERMINATION_YEAR)!;
+    expect(t.trustTerminations).toHaveLength(2);
+    return t.accountLedgers["shared-brokerage"];
+  }
+
+  it("a 60/40 CLT + CRT account repays the whole loan", () => {
+    const ledger = withMarginedAccount([
+      { kind: "entity", entityId: CLT_FIXTURE_IDS.CLT_ENTITY_ID, percent: 0.6 },
+      { kind: "entity", entityId: CO_OWNED_TRUST_B_ID, percent: 0.4 },
+    ]);
+    expect(ledger.endingValue).toBeCloseTo(0, 2);
+    expect(ledger.marginEoY).toBeCloseTo(0, 6);
+  });
+
+  it("a family-owned 20% keeps its 20% of the loan", () => {
+    const ledger = withMarginedAccount([
+      { kind: "entity", entityId: CLT_FIXTURE_IDS.CLT_ENTITY_ID, percent: 0.5 },
+      { kind: "entity", entityId: CO_OWNED_TRUST_B_ID, percent: 0.3 },
+      { kind: "family_member", familyMemberId: CLT_FIXTURE_IDS.CLIENT_FM_ID, percent: 0.2 },
+    ]);
+    expect(ledger.endingValue).toBeCloseTo(100_000, 2);
+    expect(ledger.marginEoY).toBeCloseTo(100_000, 2);
+  });
+});

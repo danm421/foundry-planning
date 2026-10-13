@@ -1100,4 +1100,42 @@ describe("sellAccountFraction — margined account (R1)", () => {
     expect(r.removedAccountId).toBe("m");
     expect(input.marginMap.m).toBeUndefined();
   });
+  it("an underwater partial sale keeps net negative and the account open", () => {
+    // Net −$500K + $2M loan = $1.5M securities. Half of them sell for $750K and
+    // half the loan ($1M) is repaid, so $250K comes in from the proceeds side.
+    const input = { ...base(), accountBalances: { m: -500_000 }, fraction: 0.5 };
+    const r = sellAccountFraction(input);
+    expect(r.saleValue).toBeCloseTo(750_000, 2);
+    expect(r.marginRepaid).toBeCloseTo(1_000_000, 2);
+    expect(r.netProceeds).toBeCloseTo(-250_000, 2);
+    expect(r.removedAccountId).toBeUndefined();
+    expect(input.accountBalances.m).toBeCloseTo(-250_000, 2);
+    expect(input.marginMap.m).toBeCloseTo(1_000_000, 2);
+  });
+});
+
+describe("applyAssetSales — margin repaid on the sale breakdown", () => {
+  const margined: Account = { ...brokerageAccount, id: "m", value: 10_000_000, basis: 9_000_000, marginBalance: 2_000_000 };
+  const sell = (accountId: string): AssetTransaction => ({ id: `sale-${accountId}`, name: "Sell", type: "sell", year: 2028, accountId });
+
+  it("reports the repaid loan on a margined sale and leaves a loan-less sale's row unchanged", () => {
+    const balances: Record<string, number> = { m: 8_000_000, "brokerage-1": 200_000, "checking-1": 0 };
+    const result = applyAssetSales({
+      sales: [sell("m"), sell("brokerage-1")],
+      accounts: [margined, brokerageAccount, checkingAccount],
+      liabilities: [],
+      accountBalances: balances,
+      basisMap: { m: 9_000_000, "brokerage-1": 150_000, "checking-1": 0 },
+      marginMap: { m: 2_000_000 },
+      accountLedgers: {},
+      year: 2028,
+      defaultCheckingId: "checking-1",
+      filingStatus: "married_joint",
+    });
+    const [m, plain] = result.breakdown;
+    expect(m.marginRepaid).toBeCloseTo(2_000_000, 2);
+    expect(m.netProceeds).toBeCloseTo(8_000_000, 2);
+    expect(plain).not.toHaveProperty("marginRepaid");
+    expect(balances["checking-1"]).toBeCloseTo(8_200_000, 2);
+  });
 });

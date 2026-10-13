@@ -4002,6 +4002,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
       return terminationBalanceSnapshot[id] ?? 0;
     };
+    // R9: a terminating trust repays its share of a margined account's loan.
+    // Shares are of the PRE-termination loan, like the drains: multiplying the
+    // live loan would compound across trusts that co-own one account.
+    const terminationLoanSnapshot: MarginMap = { ...marginMap };
+    const repayTerminatedLoanShare = (id: string, trustShare: number) => {
+      const repaid = (terminationLoanSnapshot[id] ?? 0) * trustShare;
+      if (repaid > 0) marginMap[id] = Math.max(0, (marginMap[id] ?? 0) - repaid);
+    };
     const yearTrustTerminations: TrustTerminationResult[] = [];
     for (const trust of currentEntities) {
       if (trust.trustSubType !== "clt" || !trust.splitInterest) continue;
@@ -4052,8 +4060,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           label: `CLT termination distribution`,
           sourceId: trust.id,
         });
-        // R9: the trust's share of the securities goes, so its share of the loan is repaid.
-        if ((marginMap[acct.id] ?? 0) > 0) marginMap[acct.id] *= 1 - trustShare;
+        repayTerminatedLoanShare(acct.id, trustShare);
       }
     }
 
@@ -4112,8 +4119,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           label: `CRT termination distribution to charity`,
           sourceId: trust.id,
         });
-        // R9: the trust's share of the securities goes, so its share of the loan is repaid.
-        if ((marginMap[acct.id] ?? 0) > 0) marginMap[acct.id] *= 1 - trustShare;
+        repayTerminatedLoanShare(acct.id, trustShare);
       }
     }
 
@@ -9098,6 +9104,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 saleValue: s.saleValue,
                 transactionCosts: s.transactionCosts,
                 mortgagePaidOff: s.mortgagePaidOff,
+                ...(s.marginRepaid ? { marginRepaid: s.marginRepaid } : {}),
                 netProceeds: s.netProceeds,
                 capitalGain: s.capitalGain,
               })),

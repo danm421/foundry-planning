@@ -147,15 +147,18 @@ export function sellAccountFraction(
 
   // Drain the sold portion. fraction === 1 (or remaining < $1 from float
   // drift) zeroes the account and signals removal; partial sales leave
-  // the residual. Net falls by the sale less the loan it repaid.
+  // the residual. Net falls by the sale less the loan it repaid. A margined
+  // account's net may be negative (underwater), so it is not floored, and
+  // what remains is judged on its securities (net + the loan left).
   const netDrain = saleValue - marginRepaid;
-  const newBalance = Math.max(0, currentBalance - netDrain);
+  const newBalance = loan > 0 ? currentBalance - netDrain : Math.max(0, currentBalance - netDrain);
   const newBasis = Math.max(0, currentBasis - basis);
   accountBalances[accountId] = newBalance;
   basisMap[accountId] = newBasis;
 
+  const remaining = loan > 0 ? newBalance + loan - marginRepaid : newBalance;
   let removedAccountId: string | undefined;
-  if (fraction >= 1 || newBalance < 1) {
+  if (fraction >= 1 || remaining < 1) {
     removedAccountId = accountId;
   }
 
@@ -219,6 +222,9 @@ export interface AssetSaleBreakdown {
   /** Gain (or allowed loss) that actually flows into taxable capital gains for the year. */
   taxableCapitalGain: number;
   mortgagePaidOff: number;
+  /** Margin loan repaid from the proceeds. Present only when the sold account
+   *  carried a loan; netProceeds is already net of it. */
+  marginRepaid?: number;
   proceedsAccountId: string;
   fractionSold: number;
   skipped?: "orphaned" | "no-source-balance" | "entity-cash";
@@ -358,6 +364,7 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
       netProceeds,
       capitalGain,
       mortgagePaidOff,
+      marginRepaid,
       removedAccountId,
       removedLiabilityIds: saleRemovedLiabilityIds,
     } = result;
@@ -453,6 +460,7 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
       disallowedLoss,
       taxableCapitalGain,
       mortgagePaidOff,
+      ...(marginRepaid > 0 ? { marginRepaid } : {}),
       proceedsAccountId,
       fractionSold: sale.fractionSold ?? 1,
     });

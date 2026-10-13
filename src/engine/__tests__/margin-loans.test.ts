@@ -74,3 +74,21 @@ describe("margin loans — sale gains use the securities value", () => {
     expect(drawn).toBeGreaterThan(1_000_000); // the expense plus the tax on that gain
   });
 });
+
+describe("margin loans — a sale repays the loan", () => {
+  it("the year's technique breakdown carries the repaid loan", () => {
+    const CHECKING: Account = {
+      id: "acct-checking", name: "Checking", category: "cash", subType: "checking",
+      titlingType: "jtwros", value: 0, basis: 0, growthRate: 0, rmdEnabled: false,
+      isDefaultChecking: true,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const [y1] = runMargin([CHECKING, MARGINED], 1, {}, {
+      assetTransactions: [{ id: "sale-m", name: "Sell brokerage", type: "sell", year: 2026, accountId: "acct-margin" }],
+    });
+    const sale = y1.techniqueBreakdown!.sales[0];
+    expect(sale.saleValue).toBeCloseTo(10_000_000, 2);
+    expect(sale.marginRepaid).toBeCloseTo(2_000_000, 2);
+    expect(sale.netProceeds).toBeCloseTo(8_000_000, 2);
+  });
+});
