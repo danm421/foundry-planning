@@ -7,6 +7,7 @@ const mockClerkEventInsert = vi.fn(); // returning() result drives svix dedup
 const mockUpdate = vi.fn(); // (table, patch, where) — its result is also what .returning() yields
 const mockDelete = vi.fn(); // (table, where)
 const mockSelectShares = vi.fn(); // (where)
+const mockSelectAudit = vi.fn(); // (where)
 
 vi.mock("@/db", async (orig) => {
   const schema = (await import("@/db/schema")) as Record<string, unknown>;
@@ -19,6 +20,7 @@ vi.mock("@/db", async (orig) => {
             if (tbl === schema.firms) return mockSelectFirms();
             if (tbl === schema.subscriptions) return mockSelectSubs();
             if (tbl === schema.clientShares) return mockSelectShares(w);
+            if (tbl === schema.auditLog) return mockSelectAudit(w);
             return [];
           },
         }),
@@ -111,6 +113,8 @@ beforeEach(() => {
   mockDelete.mockReset();
   mockSelectShares.mockReset();
   mockSelectShares.mockResolvedValue([]);
+  mockSelectAudit.mockReset();
+  mockSelectAudit.mockResolvedValue([]);
   mockSubsRetrieve.mockReset();
   mockSubsUpdate.mockReset();
   mockListMembers.mockReset();
@@ -582,6 +586,115 @@ describe("organizationMembership.created — billing contact pin", () => {
     expect(res?.status).toBe(200);
     expect(mockGetOrganization).not.toHaveBeenCalled();
     expect(mockUpdateOrganizationMetadata).not.toHaveBeenCalled();
+  });
+});
+
+describe("member.* audit rows — possible impersonator hint", () => {
+  const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000);
+  const started = (id: string, at: Date, advisor = "user_adv") => ({
+    id,
+    action: "ops.impersonation.started",
+    actorId: "user_op",
+    resourceId: advisor,
+    createdAt: at,
+  });
+  const ended = (id: string, at: Date, advisor = "user_adv") => ({
+    id,
+    action: "ops.impersonation.ended",
+    actorId: "user_op",
+    resourceId: advisor,
+    createdAt: at,
+  });
+
+  const events = {
+    "member.invited": { type: "organizationMembership.created", data: {} },
+    "member.removed": { type: "organizationMembership.deleted", data: {} },
+    "member.role_changed": {
+      type: "organizationMembership.updated",
+      data: { role: "org:admin", previous_attributes: { role: "org:member" } },
+    },
+  } as const;
+
+  const fire = (action: keyof typeof events) =>
+    dispatchClerkMembership(
+      {
+        type: events[action].type,
+        data: {
+          organization: { id: "org_paid" },
+          public_user_data: { user_id: "user_new" },
+          ...events[action].data,
+        },
+      } as never,
+      `svix_hint_${action}`,
+    );
+
+  const auditRow = (action: string) =>
+    mockRecordAudit.mock.calls.map(([a]) => a).find((a) => a.action === action);
+
+  beforeEach(() => {
+    mockSelectFirms.mockResolvedValue([]);
+  });
+
+  it.each(Object.keys(events) as Array<keyof typeof events>)(
+    "names the operator of an open impersonation of the firm on %s, as a hint only",
+    async (action) => {
+      mockSelectAudit.mockResolvedValue([started("audit_start", minutesAgo(5))]);
+      await fire(action);
+      expect(auditRow(action)).toMatchObject({
+        actorId: "clerk:webhook",
+        metadata: {
+          possibleImpersonator: { opsUserId: "user_op", startedAuditId: "audit_start" },
+        },
+      });
+    },
+  );
+
+  it("reads only this firm's impersonation rows within the 40-minute session window", async () => {
+    await fire("member.invited");
+    expect(mockSelectAudit).toHaveBeenCalledTimes(1);
+    const { sql, params } = whereQuery(mockSelectAudit.mock.calls[0][0]);
+    expect(sql).toContain('"audit_log"."firm_id" = $1');
+    expect(params.slice(0, 3)).toEqual([
+      "org_paid",
+      "ops.impersonation.started",
+      "ops.impersonation.ended",
+    ]);
+    const cutoff = new Date(params[3] as string).getTime();
+    expect(Date.now() - cutoff).toBeGreaterThanOrEqual(40 * 60_000);
+    expect(Date.now() - cutoff).toBeLessThan(41 * 60_000);
+  });
+
+  it("gives no hint once that impersonation has ended", async () => {
+    mockSelectAudit.mockResolvedValue([
+      started("audit_start", minutesAgo(10)),
+      ended("audit_end", minutesAgo(5)),
+    ]);
+    await fire("member.invited");
+    expect(auditRow("member.invited")?.metadata).not.toHaveProperty("possibleImpersonator");
+  });
+
+  it("gives no hint for an impersonation started before the session window", async () => {
+    mockSelectAudit.mockResolvedValue([started("audit_old", minutesAgo(41))]);
+    await fire("member.invited");
+    expect(auditRow("member.invited")?.metadata).not.toHaveProperty("possibleImpersonator");
+  });
+
+  it("is not closed by the end of a different advisor's impersonation", async () => {
+    mockSelectAudit.mockResolvedValue([
+      started("audit_start", minutesAgo(10)),
+      ended("audit_other_end", minutesAgo(5), "user_other"),
+    ]);
+    await fire("member.invited");
+    expect(auditRow("member.invited")?.metadata).toMatchObject({
+      possibleImpersonator: { startedAuditId: "audit_start" },
+    });
+  });
+
+  it("still audits the change when the lookup fails", async () => {
+    mockSelectAudit.mockRejectedValue(new Error("db down"));
+    const res = await fire("member.invited");
+    expect(res?.status).toBe(200);
+    expect(auditRow("member.invited")?.metadata).not.toHaveProperty("possibleImpersonator");
   });
 });
 

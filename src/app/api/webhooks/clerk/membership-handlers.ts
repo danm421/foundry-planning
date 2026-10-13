@@ -15,6 +15,7 @@ import {
 import { getStripe } from "@/lib/billing/stripe-client";
 import { getOrgMemberCount, expectedSeatQuantity } from "@/lib/billing/seat-count";
 import { recordAudit } from "@/lib/audit";
+import { findOpenImpersonation } from "@/lib/ops/impersonation";
 import { sendWelcomeEmail } from "@/lib/onboarding/welcome-email";
 import type { ClerkEvent } from "./handler";
 
@@ -184,6 +185,17 @@ function listSharesIssuedBy(firmId: string, userId: string) {
 }
 
 /**
+ * Team changes made in Clerk's own UI reach us only as these webhooks, which
+ * never say who made them. If an ops operator was signed in as a member of
+ * the firm at the time, name them on the member.* row as a hint; the actor
+ * stays clerk:webhook.
+ */
+async function impersonationHint(firmId: string): Promise<Record<string, unknown>> {
+  const open = await findOpenImpersonation(firmId, new Date());
+  return open ? { possibleImpersonator: open } : {};
+}
+
+/**
  * Resolve the user's primary email from a Clerk user.created payload. Prefers
  * the address flagged primary_email_address_id; falls back to the first entry.
  * Returns null when no usable address is present.
@@ -244,7 +256,7 @@ export async function dispatchClerkMembership(
         resourceId: `${firmId}:${userId}`,
         firmId,
         actorId: "clerk:webhook",
-        metadata,
+        metadata: { ...metadata, ...(await impersonationHint(firmId)) },
       });
     } catch (err) {
       await releaseSvixDelivery(svixId);
@@ -269,7 +281,12 @@ export async function dispatchClerkMembership(
         resourceId: `${firmId}:${userId}`,
         firmId,
         actorId: "clerk:webhook",
-        metadata: { from: prevRole, to: newRole, user_id: userId },
+        metadata: {
+          from: prevRole,
+          to: newRole,
+          user_id: userId,
+          ...(await impersonationHint(firmId)),
+        },
       });
     }
     return NextResponse.json({ ok: true, handled: t }, { status: 200 });
