@@ -321,3 +321,26 @@ describe("accountUpdateSchema — truly partial (regression guard)", () => {
     expect(Object.keys(accountUpdateSchema.parse({})).length).toBe(0);
   });
 });
+
+describe("margin fields", () => {
+  const base = { name: "Brokerage", category: "taxable", value: "10000000" };
+  it("defaults to no loan, 0% rate, 30% call level", () => {
+    const r = accountCreateSchema.parse(base);
+    expect(r.marginBalance).toBe("0");
+    expect(r.marginInterestRate).toBe("0");
+    expect(r.marginCallPct).toBe("0.3");
+  });
+  it("accepts a valid loan", () => {
+    expect(accountCreateSchema.safeParse({ ...base, marginBalance: 2_000_000, marginInterestRate: 0.02 }).success).toBe(true);
+  });
+  it("rejects a loan ≥ value", () => {
+    expect(accountCreateSchema.safeParse({ ...base, marginBalance: "10000000" }).success).toBe(false);
+  });
+  it("rejects a loan on a cash account", () => {
+    expect(accountCreateSchema.safeParse({ ...base, category: "cash", marginBalance: 5 }).success).toBe(false);
+  });
+  it("update stays truly partial", () => {
+    expect(Object.keys(accountUpdateSchema.parse({})).length).toBe(0);
+    expect(accountUpdateSchema.parse({ marginBalance: 5 }).marginBalance).toBe("5");
+  });
+});

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { uuidSchema } from "./common";
 import { AddBusinessInputSchema } from "./accounts-business";
 import { YEAR_REFS } from "@/lib/milestones";
+import { validateMarginFields, marginNum } from "@/lib/accounts/margin-validation";
 import { accountCategoryEnum, accountSubTypeEnum } from "@/db/schema";
 
 // Local per-file enum (mirrors note-receivable.ts / gifts.ts / gift-series.ts —
@@ -139,6 +140,9 @@ export const accountCreateSchema = z
     countsTowardAum: z.boolean().optional().default(false),
     growthSource: z.string().optional().default("default"),
     turnoverPct: z.union([z.number(), z.string()]).optional().default("0"),
+    marginBalance: decOrZeroOptional.default("0"),
+    marginInterestRate: z.union([z.number(), z.string()]).optional().default("0"),
+    marginCallPct: z.union([z.number(), z.string()]).optional().default("0.3"),
     annualPropertyTax: z.union([z.number(), z.string()]).optional().default("0"),
     propertyTaxGrowthRate: z.union([z.number(), z.string()]).optional().default("0.03"),
     propertyTaxGrowthSource: z.string().optional().default("custom"),
@@ -161,6 +165,16 @@ export const accountCreateSchema = z
         });
       }
     }
+    const marginError = validateMarginFields({
+      category: data.category,
+      value: marginNum(data.value, 0),
+      marginBalance: marginNum(data.marginBalance, 0),
+      marginInterestRate: marginNum(data.marginInterestRate, 0),
+      marginCallPct: marginNum(data.marginCallPct, 0.3),
+    });
+    if (marginError) {
+      ctx.addIssue({ code: "custom", message: marginError, path: ["marginBalance"] });
+    }
   });
 
 // UPDATE: truly partial — every field optional, NO defaults injected, and NO
@@ -178,6 +192,9 @@ export const accountUpdateSchema = z.object({
   countsTowardAum: z.boolean().optional(),
   growthSource: z.string().optional(),
   turnoverPct: z.union([z.number(), z.string()]).optional(),
+  marginBalance: decOrZeroOptional,
+  marginInterestRate: z.union([z.number(), z.string()]).optional(),
+  marginCallPct: z.union([z.number(), z.string()]).optional(),
   annualPropertyTax: z.union([z.number(), z.string()]).optional(),
   propertyTaxGrowthRate: z.union([z.number(), z.string()]).optional(),
   propertyTaxGrowthSource: z.string().optional(),

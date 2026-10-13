@@ -2368,6 +2368,13 @@ export const accounts = pgTable("accounts", {
     onDelete: "set null",
   }),
   turnoverPct: decimal("turnover_pct", { precision: 5, scale: 4 }).notNull().default("0"),
+  // ── Margin loan (taxable only; spec 2026-10-13) ───────────────────────────
+  // `value` stays the full securities value; net = value − marginBalance.
+  // Interest is capitalized onto the loan each projection year.
+  marginBalance: decimal("margin_balance", { precision: 15, scale: 2 }).notNull().default("0"),
+  marginInterestRate: decimal("margin_interest_rate", { precision: 5, scale: 4 }).notNull().default("0"),
+  // Warn when net ÷ securities falls below this (brokerage maintenance level).
+  marginCallPct: decimal("margin_call_pct", { precision: 5, scale: 4 }).notNull().default("0.3"),
   overridePctOi: decimal("override_pct_oi", { precision: 5, scale: 4 }),
   overridePctLtCg: decimal("override_pct_lt_cg", { precision: 5, scale: 4 }),
   overridePctQdiv: decimal("override_pct_qdiv", { precision: 5, scale: 4 }),
@@ -2461,6 +2468,10 @@ export const accounts = pgTable("accounts", {
   // Engine load path filters every projection by (client_id, scenario_id);
   // accounts is the hottest table and was previously full-scanned (audit F7).
   clientScenarioIdx: index("accounts_client_scenario_idx").on(t.clientId, t.scenarioId),
+  marginTaxableOnly: check(
+    "accounts_margin_taxable_only",
+    sql`${t.marginBalance} = 0 OR ${t.category} = 'taxable'`,
+  ),
   inheritedFieldsPaired: check(
     "accounts_inherited_fields_paired",
     sql`(${t.inheritedDeathYear} IS NULL) = (${t.inheritedOwnerBirthYear} IS NULL)`,

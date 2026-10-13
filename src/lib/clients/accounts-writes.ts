@@ -81,6 +81,7 @@ import {
   defaultRetirementBeneficiaries,
   isDefaultDesignationSet,
 } from "@/lib/beneficiaries/default-retirement-beneficiaries";
+import { validateMarginFields, marginNum } from "@/lib/accounts/margin-validation";
 import { baseCaseScenarioId } from "./base-case";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
 
@@ -311,6 +312,9 @@ export async function createAccountForClient(args: {
         modelPortfolioId: p.modelPortfolioId ?? null,
         tickerPortfolioId: p.tickerPortfolioId ?? null,
         turnoverPct: String(p.turnoverPct),
+        marginBalance: String(p.marginBalance),
+        marginInterestRate: String(p.marginInterestRate),
+        marginCallPct: String(p.marginCallPct),
         overridePctOi: p.overridePctOi == null ? null : String(p.overridePctOi),
         overridePctLtCg: p.overridePctLtCg == null ? null : String(p.overridePctLtCg),
         overridePctQdiv: p.overridePctQdiv == null ? null : String(p.overridePctQdiv),
@@ -523,6 +527,15 @@ export async function updateAccountForClient(args: {
     currentYear: new Date().getFullYear(),
   });
   if (inheritedError) return writeError(400, inheritedError);
+
+  const marginError = validateMarginFields({
+    category: resultCategory,
+    value: marginNum(resolvedField("value", before.value), 0),
+    marginBalance: marginNum(resolvedField("marginBalance", before.marginBalance), 0),
+    marginInterestRate: marginNum(resolvedField("marginInterestRate", before.marginInterestRate), 0),
+    marginCallPct: marginNum(resolvedField("marginCallPct", before.marginCallPct), 0.3),
+  });
+  if (marginError) return writeError(400, marginError);
 
   // ── isDefaultChecking system-managed guards (port ~81-114) ────────────────
   if (before.isDefaultChecking) {
