@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildTaxBelowLineDrillData } from "../view-model";
-import { makeTaxYears, makeClientData } from "@/lib/presentations/shared/__tests__/tax-fixtures";
+import { makeTaxYears, makeClientData, makeDeductionBreakdown } from "@/lib/presentations/shared/__tests__/tax-fixtures";
 
 const base = {
   years: makeTaxYears(),
@@ -27,7 +27,7 @@ describe("buildTaxBelowLineDrillData", () => {
     const d = buildTaxBelowLineDrillData(base);
     expect(d.chartSpec).toBeDefined();
     expect(d.chartSpec!.stacks.map((s) => s.seriesId)).toEqual([
-      "charitable", "taxesPaid", "propertyTaxes", "interestPaid", "otherItemized",
+      "charitable", "taxesPaid", "propertyTaxes", "interestPaid", "investmentInterest", "otherItemized",
     ]);
     expect(d.chartSpec!.lines.map((l) => l.seriesId)).toEqual(["standard"]);
     const r = d.table.rows.find((row) => row.year === 2026)!;
@@ -38,8 +38,19 @@ describe("buildTaxBelowLineDrillData", () => {
     // the raw component sum rather than itemizedTotal.
     const rawSum =
       r.cells.charitable + r.cells.taxesPaid + r.cells.propertyTaxes +
-      r.cells.interestPaid + r.cells.otherItemized;
+      r.cells.interestPaid + r.cells.investmentInterest + r.cells.otherItemized;
     expect(stackSum).toBeCloseTo(rawSum);
     expect(d.chartSpec!.lines[0].values[i]).toBeCloseTo(r.cells.standard);
+  });
+
+  it("carries investment interest as its own column and stack", () => {
+    const years = makeTaxYears();
+    years[0] = {
+      ...years[0],
+      deductionBreakdown: makeDeductionBreakdown({ belowLine: { investmentInterest: 35_000 } }),
+    };
+    const d = buildTaxBelowLineDrillData({ ...base, years });
+    expect(d.table.columns.map((c) => c.key)).toContain("investmentInterest");
+    expect(d.table.rows.find((row) => row.year === years[0].year)!.cells.investmentInterest).toBe(35_000);
   });
 });

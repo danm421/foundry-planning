@@ -118,6 +118,7 @@ export function buildAssetTxResolveData(years: ProjectionYear[]): Record<string,
         capitalGain: s.capitalGain,
         transactionCosts: s.transactionCosts,
         mortgagePaidOff: s.mortgagePaidOff,
+        ...(s.marginRepaid ? { marginRepaid: s.marginRepaid } : {}),
       };
     }
     for (const p of tb.purchases) {

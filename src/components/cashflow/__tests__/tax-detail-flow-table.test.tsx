@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   aboveLineColumns,
+  belowLineColumns,
   computeOtherTaxes,
   FLOW_COLUMNS,
   getSourcesForColumn,
@@ -128,6 +129,64 @@ describe("tax-detail-flow-table — H3 below-line drill popovers filter by categ
     const rows = getSourcesForColumn(dy, "bl_interest_paid")!;
     const sum = rows.reduce((s, r) => s + r.amount, 0);
     expect(sum).toBe(8_000);
+  });
+});
+
+describe("tax-detail-flow-table — investment interest (margin loan)", () => {
+  const base = {
+    deductionBreakdown: {
+      belowLine: {
+        charitable: 0,
+        interestPaid: 18_000,
+        investmentInterest: 35_000,
+        itemizedTotal: 53_000,
+        standardDeduction: 0,
+        taxDeductions: 53_000,
+        stateIncomeTax: 0,
+        propertyTaxes: 0,
+        taxesPaid: 0,
+        otherItemized: 0,
+        bySource: {
+          "investment-interest:acct-1": { label: "Investment interest — Schwab", amount: 35_000 },
+          mort: { label: "Mortgage interest — Home", amount: 18_000 },
+        },
+      },
+    },
+  };
+  const dy = base as never;
+
+  it("has an Investment Interest column carrying belowLine.investmentInterest", () => {
+    const col = belowLineColumns().find((c) => c.key === "bl_investment_interest")!;
+    expect(col.label).toBe("Investment Interest");
+    expect(col.value(dy)).toBe(35_000);
+  });
+
+  it("its drill lists only the investment-interest entries", () => {
+    const rows = getSourcesForColumn(dy, "bl_investment_interest")!;
+    expect(rows).toEqual([{ label: "Investment interest — Schwab", amount: 35_000 }]);
+  });
+
+  it("Interest Paid lists only the mortgage entry", () => {
+    const rows = getSourcesForColumn(dy, "bl_interest_paid")!;
+    expect(rows).toEqual([{ label: "Mortgage interest — Home", amount: 18_000 }]);
+  });
+
+  it("Other Itemized lists neither", () => {
+    const withOther = {
+      deductionBreakdown: {
+        belowLine: {
+          ...base.deductionBreakdown.belowLine,
+          otherItemized: 2_000,
+          bySource: {
+            ...base.deductionBreakdown.belowLine.bySource,
+            misc: { label: "Advisory fee", amount: 2_000 },
+          },
+        },
+      },
+    } as never;
+    const rows = getSourcesForColumn(withOther, "bl_other")!;
+    expect(rows.map((r) => r.label)).not.toContain("Investment interest — Schwab");
+    expect(rows.map((r) => r.label)).toContain("Advisory fee");
   });
 });
 

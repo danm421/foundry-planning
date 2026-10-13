@@ -60,8 +60,28 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext, 
           internal: false,
         }]
       : []),
+    ...((ledger.marginBoY ?? 0) > 0
+      ? [{
+          category: "bookend" as const,
+          label: "Margin loan (start)",
+          amount: ledger.marginBoY!,
+          basis: 0,
+          bookend: true,
+          internal: false,
+        }]
+      : []),
     ...entryRows,
     eoyRow,
+    ...((ledger.marginBoY ?? 0) > 0
+      ? [{
+          category: "bookend" as const,
+          label: "Margin loan (end)",
+          amount: ledger.marginEoY ?? 0,
+          basis: 0,
+          bookend: true,
+          internal: false,
+        }]
+      : []),
     ...((ledger.rothValueEoY ?? 0) > 0
       ? [{
           category: "bookend" as const,
@@ -103,6 +123,8 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext, 
     basisEoY,
     rothValueBoY: ledger.rothValueBoY,
     rothValueEoY: ledger.rothValueEoY,
+    ...(ledger.marginBoY != null ? { marginBoY: ledger.marginBoY } : {}),
+    ...(ledger.marginEoY != null ? { marginEoY: ledger.marginEoY } : {}),
     basisResidual,
     rows,
     residual,

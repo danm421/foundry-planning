@@ -1099,6 +1099,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     const items: LineItem[] = [{ label: "Sale Value", amount: sale.saleValue }];
     if (sale.transactionCosts > 0) items.push({ label: "Transaction Costs", amount: -sale.transactionCosts });
     if (sale.mortgagePaidOff > 0) items.push({ label: "Mortgage Payoff", amount: -sale.mortgagePaidOff });
+    if ((sale.marginRepaid ?? 0) > 0) items.push({ label: "Margin loan repaid", amount: -sale.marginRepaid! });
     return items;
   }
 
@@ -1261,10 +1262,23 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       col("year", "Year", (r) => r.year, (info) => {
         const y = info.getValue() as number;
         const events = eventsByYear[y];
-        if (!events || events.length === 0) return String(y);
+        const marginCall = (info.row.original.marginCallWarnings?.length ?? 0) > 0;
+        const marginFlag = marginCall && (
+          <span
+            className="ml-1 text-warn"
+            title="Margin call risk this year — open the account's ledger for details"
+            aria-label="Margin call risk"
+          >
+            ⚠
+          </span>
+        );
+        if (!events || events.length === 0) {
+          return marginCall ? <span>{y}{marginFlag}</span> : String(y);
+        }
         return (
           <span className="inline-flex items-center gap-1.5">
             <span>{y}</span>
+            {marginFlag}
             {events.map((ev, i) => (
               <span
                 key={i}
@@ -2459,6 +2473,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                           Roth {fmtNum(ledgerModal.ledger.rothValueBoY!)}
                         </p>
                       )}
+                      {(ledgerModal.ledger.marginBoY ?? 0) > 0 && (
+                        <p className="mt-0.5 text-xs tabular-nums text-ink-3">
+                          Margin loan −{fmtNum(ledgerModal.ledger.marginBoY!)}
+                        </p>
+                      )}
                     </div>
                     <div className="text-ink-4">→</div>
                     <div className="text-right">
@@ -2476,7 +2495,24 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                           Roth {fmtNum(ledgerModal.ledger.rothValueEoY!)}
                         </p>
                       )}
+                      {(ledgerModal.ledger.marginEoY ?? 0) > 0 && (
+                        <p className="mt-0.5 text-xs tabular-nums text-ink-3">
+                          Margin loan −{fmtNum(ledgerModal.ledger.marginEoY!)}
+                        </p>
+                      )}
                     </div>
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const marginWarning = years
+                  .find((y) => y.year === ledgerModal.year)
+                  ?.marginCallWarnings?.find((w) => w.accountId === ledgerModal.accountId);
+                if (!marginWarning) return null;
+                return (
+                  <div className="rounded border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-ink-2">
+                    Margin call risk: net value is {Math.round(marginWarning.ratio * 100)}% of the securities, below the {Math.round(marginWarning.threshold * 100)}% margin call level.
                   </div>
                 );
               })()}

@@ -26,6 +26,27 @@ describe("detectTransactionEvents", () => {
     expect(sale!.supportingFigure).toMatch(/\$/);
   });
 
+  it("lists the margin loan repaid in a margined sale's details", () => {
+    const data = { assetTransactions: [{ id: "tx-m", name: "Sell brokerage", type: "sell", year: 2040, accountId: "a" }] } as never;
+    const sale = (marginRepaid?: number) =>
+      [{
+        year: 2040,
+        techniqueBreakdown: {
+          sales: [{
+            transactionId: "tx-m", saleValue: 5_000_000, transactionCosts: 0, mortgagePaidOff: 0,
+            netProceeds: 3_000_000, capitalGain: 1_000_000, ...(marginRepaid ? { marginRepaid } : {}),
+          }],
+          purchases: [],
+        },
+      }] as never;
+    const withLoan = detectTransactionEvents(data, sale(2_000_000)).find((e) => e.id === "transaction:sell:tx-m")!;
+    const labels = withLoan.details!.map((d) => d.label);
+    expect(labels).toContain("Margin loan repaid");
+    expect(labels.indexOf("Margin loan repaid")).toBe(labels.indexOf("Mortgage paid off") + 1);
+    const without = detectTransactionEvents(data, sale()).find((e) => e.id === "transaction:sell:tx-m")!;
+    expect(without.details!.map((d) => d.label)).not.toContain("Margin loan repaid");
+  });
+
   it("emits a purchase event for type=buy", () => {
     const data = buildClientData();
     data.assetTransactions = [

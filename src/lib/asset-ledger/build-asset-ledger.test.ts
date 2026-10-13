@@ -253,6 +253,39 @@ describe("buildAssetLedger", () => {
     expect(acct.rows.find((r) => r.label === "End of Year - Roth")?.bookend).toBe(true);
   });
 
+  it("adds Margin loan bookend rows and still reconciles for a margined account", () => {
+    const ledger = buildAssetLedger(mkYear({
+      brokerage: mkLedger({
+        beginningValue: 8_000_000, endingValue: 8_660_000, growth: 700_000,
+        marginBoY: 2_000_000, marginEoY: 2_040_000,
+        entries: [
+          { category: "growth", label: "Growth (7.00% on securities incl. margin loan)", amount: 700_000, basis: 0 },
+          { category: "margin_interest", label: "Margin interest (2.00%)", amount: -40_000, basis: 0 },
+        ],
+      }),
+    }), ctx);
+    const acct = ledger.sections[0].accounts[0];
+    expect(acct.marginBoY).toBe(2_000_000);
+    expect(acct.marginEoY).toBe(2_040_000);
+    const start = acct.rows.find((r) => r.label === "Margin loan (start)");
+    const end = acct.rows.find((r) => r.label === "Margin loan (end)");
+    expect(start?.amount).toBe(2_000_000);
+    expect(end?.amount).toBe(2_040_000);
+    expect(start?.bookend).toBe(true);
+    expect(end?.bookend).toBe(true);
+    expect(Math.abs(acct.residual)).toBeLessThanOrEqual(1);
+    expect(acct.reconciles).toBe(true);
+  });
+
+  it("adds no Margin loan rows or fields when the account has no loan", () => {
+    const ledger = buildAssetLedger(mkYear({
+      brokerage: mkLedger({ beginningValue: 100, endingValue: 100 }),
+    }), ctx);
+    const acct = ledger.sections[0].accounts[0];
+    expect(acct.rows.some((r) => r.label.startsWith("Margin loan"))).toBe(false);
+    expect(acct).not.toHaveProperty("marginBoY");
+  });
+
   it("does not add Roth bookend rows when rothValueBoY is absent", () => {
     const ledger = buildAssetLedger(mkYear({
       brokerage: mkLedger({

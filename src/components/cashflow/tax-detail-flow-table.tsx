@@ -325,7 +325,10 @@ export function otherColumns(years: ProjectionYear[]): Column[] {
   );
 }
 
-function belowLineColumns(): Column[] {
+/** bySource keys for margin-loan interest — surfaced only under Investment Interest. */
+const INVESTMENT_INTEREST_PREFIX = "investment-interest:";
+
+export function belowLineColumns(): Column[] {
   return [
     {
       key: "bl_charitable",
@@ -344,6 +347,12 @@ function belowLineColumns(): Column[] {
       label: "Interest Paid",
       tooltip: "Mortgage interest from liabilities marked tax-deductible.",
       value: (y) => y.deductionBreakdown?.belowLine.interestPaid ?? 0,
+    },
+    {
+      key: "bl_investment_interest",
+      label: "Investment Interest",
+      tooltip: "Margin loan interest, deductible up to investment income (Form 4952). Unused interest carries forward.",
+      value: (y) => y.deductionBreakdown?.belowLine.investmentInterest ?? 0,
     },
     {
       key: "bl_other",
@@ -419,13 +428,19 @@ export function getSourcesForColumn(
     }
     return sources.length > 0 ? sources : null;
   }
+  if (colKey === "bl_investment_interest") {
+    const entries = Object.entries(bd.belowLine.bySource)
+      .filter(([k]) => k.startsWith(INVESTMENT_INTEREST_PREFIX))
+      .map(([, v]) => v);
+    return entries.length > 0 ? entries : null;
+  }
   if (colKey === "bl_other") {
     const amount = bd.belowLine.otherItemized;
     if (amount <= 0) return null;
     // Filter bySource to entries that are below_line (not charitable)
-    const entries = Object.values(bd.belowLine.bySource).filter(
-      (s) => !s.label.toLowerCase().includes("charit")
-    );
+    const entries = Object.entries(bd.belowLine.bySource)
+      .filter(([k, s]) => !k.startsWith(INVESTMENT_INTEREST_PREFIX) && !s.label.toLowerCase().includes("charit"))
+      .map(([, s]) => s);
     return entries.length > 0 ? entries : [{ label: "Other itemized", amount }];
   }
 
@@ -444,7 +459,9 @@ function filterBySource(
       ? l.includes("charit")
       : l.includes("interest") || l.includes("mortgage");
   };
-  const entries = Object.values(bySource).filter((e) => matches(e.label));
+  const entries = Object.entries(bySource)
+    .filter(([k, e]) => !k.startsWith(INVESTMENT_INTEREST_PREFIX) && matches(e.label))
+    .map(([, e]) => e);
   return entries.length > 0 ? entries : null;
 }
 
