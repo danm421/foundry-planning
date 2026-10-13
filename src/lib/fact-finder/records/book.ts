@@ -11,7 +11,10 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  accountHoldings,
+  accountOwners,
   accounts,
+  annuityContracts,
   beneficiaryDesignations,
   crmHouseholdContacts,
   disabilityPolicies,
@@ -21,30 +24,72 @@ import {
   familyMembers,
   gifts,
   incomes,
+  liabilities,
+  liabilityOwners,
+  lifeInsurancePolicies,
   ltcPolicies,
+  noteReceivableOwners,
+  notesReceivable,
   planObservations,
   planSettings,
   revocableTrusts,
   savingsRules,
+  stockOptionAccounts,
+  stockOptionGrants,
+  stockOptionVestTranches,
   willBequestRecipients,
   willBequests,
   willResiduaryRecipients,
   wills,
 } from "@/db/schema";
+import type { AccountOwner } from "@/engine/ownership";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { livingSlotRole } from "@/lib/imports/match-keys/living-slot";
+import { ownerRefFromOwners } from "@/lib/insurance-policies/owner-ref";
 import type { PlacedValue, RecordRef, TargetKind } from "../change-set";
 import { emptyRecordBook, type BookRecord, type RecordBook } from "../placement/types";
 
 type Role = "client" | "spouse";
+type Account = typeof accounts.$inferSelect;
+type Designation = typeof beneficiaryDesignations.$inferSelect;
+/** A row of account_owners, note_receivable_owners or liability_owners. */
+type OwnerRow = { familyMemberId: string | null; entityId: string | null; externalBeneficiaryId?: string | null; percent: string };
 
 const record = (target: TargetKind, id: string): RecordRef => ({ ref: "record", target, id });
 const person = (role: Role): RecordRef => ({ ref: "person", role });
 const num = (value: string | null): number | null => (value === null ? null : Number(value));
 const timing = (year: number, yearRef: string | null): PlacedValue => (yearRef ? { yearRef } : year);
 /** A growth rate is in effect only when the row's growth source is "custom" (the maps write it with that companion). */
-const customRate = (rate: string, source: string): number | null => (source === "custom" ? Number(rate) : null);
+const customRate = (rate: string | null, source: string): number | null => (source === "custom" ? num(rate) : null);
 const fullName = (first: string | null, last: string | null) => [first, last].filter(Boolean).join(" ");
+const monthYear = (year: number | null, month: number | null): string | null =>
+  year === null || month === null ? null : `${year}-${String(month).padStart(2, "0")}`;
+/** A name with its last 4, as the fact finder's link picker shows it. */
+const withLast4 = (name: string, last4: string | null) => (last4 ? `${name} ··${last4}` : name);
+/** The client and co-client first, then everyone else as stored. */
+const householdRank = (who: RecordRef) => (who.ref !== "person" ? 2 : who.role === "client" ? 0 : 1);
+
+/** A position as the maps write it. 0 is the column default for a fund held by value (no share count, no price). */
+function holding(h: typeof accountHoldings.$inferSelect): PlacedValue {
+  const shares = Number(h.shares) || null;
+  const price = Number(h.price) || null;
+  return {
+    ticker: h.displayTicker,
+    name: h.displayName,
+    shares,
+    price,
+    // A ticker stores no market value: it is worth shares × price.
+    marketValue: h.marketValue !== null ? Number(h.marketValue) : shares !== null && price !== null ? Math.round(shares * price * 100) / 100 : null,
+    costBasis: Number(h.costBasis),
+  };
+}
+
+function engineOwner(o: OwnerRow): AccountOwner {
+  const percent = Number(o.percent);
+  if (o.familyMemberId) return { kind: "family_member", familyMemberId: o.familyMemberId, percent };
+  if (o.entityId) return { kind: "entity", entityId: o.entityId, percent };
+  return { kind: "external_beneficiary", externalBeneficiaryId: String(o.externalBeneficiaryId), percent };
+}
 
 /** Accounts that are their own target rather than `account`. */
 const ACCOUNT_TARGET: Readonly<Record<string, TargetKind>> = {
@@ -64,7 +109,7 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
 
   const [
     contacts, family, externals, trusts, revocables, willRows, giftRows, notes, disability, ltc,
-    settings, accountRows, incomeRows, expenseRows, savingsRows,
+    settings, accountRows, incomeRows, expenseRows, savingsRows, liabilityRows, noteRows,
   ] = await Promise.all([
     db
       .select()
@@ -82,21 +127,28 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
     scenarioId
       ? db.select().from(planSettings).where(and(eq(planSettings.clientId, clientId), eq(planSettings.scenarioId, scenarioId))).limit(1)
       : [],
-    scenarioId
-      ? db
-          .select({ id: accounts.id, name: accounts.name, category: accounts.category })
-          .from(accounts)
-          .where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, scenarioId)))
-      : [],
+    scenarioId ? db.select().from(accounts).where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, scenarioId))) : [],
     scenarioId ? db.select().from(incomes).where(and(eq(incomes.clientId, clientId), eq(incomes.scenarioId, scenarioId))) : [],
     scenarioId ? db.select().from(expenses).where(and(eq(expenses.clientId, clientId), eq(expenses.scenarioId, scenarioId))) : [],
     scenarioId ? db.select().from(savingsRules).where(and(eq(savingsRules.clientId, clientId), eq(savingsRules.scenarioId, scenarioId))) : [],
+    scenarioId ? db.select().from(liabilities).where(and(eq(liabilities.clientId, clientId), eq(liabilities.scenarioId, scenarioId))) : [],
+    scenarioId
+      ? db.select().from(notesReceivable).where(and(eq(notesReceivable.clientId, clientId), eq(notesReceivable.scenarioId, scenarioId)))
+      : [],
   ]);
 
   // Child tables, only through the parents just read.
   const trustIds = trusts.map((t) => t.id);
   const willIds = willRows.map((w) => w.id);
-  const [designations, bequests, residuary] = await Promise.all([
+  const accountIds = accountRows.map((a) => a.id);
+  const idsOf = (category: Account["category"]) => accountRows.filter((a) => a.category === category).map((a) => a.id);
+  const [annuityIds, stockIds, policyIds] = [idsOf("annuity"), idsOf("stock_options"), idsOf("life_insurance")];
+  const noteIds = noteRows.map((n) => n.id);
+  const liabilityIds = liabilityRows.map((l) => l.id);
+  const [
+    designations, bequests, residuary, accountOwnerRows, holdingRows, accountDesignations, contracts, stockAccounts, grants,
+    policies, noteOwnerRows, liabilityOwnerRows,
+  ] = await Promise.all([
     trustIds.length > 0
       ? db
           .select()
@@ -113,12 +165,40 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
           .where(and(inArray(willResiduaryRecipients.willId, willIds), eq(willResiduaryRecipients.tier, "primary")))
           .orderBy(asc(willResiduaryRecipients.sortOrder))
       : [],
+    accountIds.length > 0 ? db.select().from(accountOwners).where(inArray(accountOwners.accountId, accountIds)) : [],
+    accountIds.length > 0
+      ? db.select().from(accountHoldings).where(inArray(accountHoldings.accountId, accountIds)).orderBy(asc(accountHoldings.sortOrder))
+      : [],
+    accountIds.length > 0
+      ? db
+          .select()
+          .from(beneficiaryDesignations)
+          .where(and(eq(beneficiaryDesignations.clientId, clientId), eq(beneficiaryDesignations.targetKind, "account"), inArray(beneficiaryDesignations.accountId, accountIds)))
+          .orderBy(asc(beneficiaryDesignations.sortOrder))
+      : [],
+    annuityIds.length > 0 ? db.select().from(annuityContracts).where(inArray(annuityContracts.accountId, annuityIds)) : [],
+    stockIds.length > 0 ? db.select().from(stockOptionAccounts).where(inArray(stockOptionAccounts.accountId, stockIds)) : [],
+    stockIds.length > 0
+      ? db.select().from(stockOptionGrants).where(inArray(stockOptionGrants.accountId, stockIds)).orderBy(asc(stockOptionGrants.sortOrder))
+      : [],
+    policyIds.length > 0 ? db.select().from(lifeInsurancePolicies).where(inArray(lifeInsurancePolicies.accountId, policyIds)) : [],
+    noteIds.length > 0 ? db.select().from(noteReceivableOwners).where(inArray(noteReceivableOwners.noteReceivableId, noteIds)) : [],
+    liabilityIds.length > 0 ? db.select().from(liabilityOwners).where(inArray(liabilityOwners.liabilityId, liabilityIds)) : [],
   ]);
   const bequestIds = bequests.map((b) => b.id);
-  const bequestRecipients =
+  const grantIds = grants.map((g) => g.id);
+  const [bequestRecipients, tranches] = await Promise.all([
     bequestIds.length > 0
-      ? await db.select().from(willBequestRecipients).where(inArray(willBequestRecipients.bequestId, bequestIds)).orderBy(asc(willBequestRecipients.sortOrder))
-      : [];
+      ? db.select().from(willBequestRecipients).where(inArray(willBequestRecipients.bequestId, bequestIds)).orderBy(asc(willBequestRecipients.sortOrder))
+      : [],
+    grantIds.length > 0
+      ? db
+          .select()
+          .from(stockOptionVestTranches)
+          .where(inArray(stockOptionVestTranches.grantId, grantIds))
+          .orderBy(asc(stockOptionVestTranches.sortOrder), asc(stockOptionVestTranches.vestDate))
+      : [],
+  ]);
 
   const people = {
     client: family.find((f) => f.role === "client")?.id ?? null,
@@ -140,6 +220,47 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
       : kind === "family_member"
         ? member(String(id))
         : record(kind === "entity" ? "entity" : "external_beneficiary", String(id));
+  /** The person, charity or trust a beneficiary designation names. */
+  const designee = (d: Designation): RecordRef | null =>
+    d.householdRole
+      ? person(d.householdRole)
+      : d.familyMemberId
+        ? member(d.familyMemberId)
+        : d.externalBeneficiaryId
+          ? record("external_beneficiary", d.externalBeneficiaryId)
+          : d.entityIdRef
+            ? record("entity", d.entityIdRef)
+            : null;
+  const beneficiariesOf = (rows: Designation[]) =>
+    rows.flatMap((d) => {
+      const who = designee(d);
+      return who ? [{ tier: d.tier, who, percentage: Number(d.percentage) }] : [];
+    });
+  /** Owners as the maps write them: { who, percent } with percent a fraction. */
+  const ownersOf = (rows: OwnerRow[]) =>
+    rows
+      .map((o) => ({
+        who: o.familyMemberId
+          ? member(o.familyMemberId)
+          : o.entityId
+            ? record("entity", o.entityId)
+            : record("external_beneficiary", String(o.externalBeneficiaryId)),
+        percent: Number(o.percent),
+      }))
+      .sort((a, b) => householdRank(a.who) - householdRank(b.who));
+  /** A policy's owner as the policy dialog reads it: "joint", or its one owner; null for any other split. */
+  const policyOwner = (rows: OwnerRow[]): PlacedValue => {
+    const ref = ownerRefFromOwners(rows.map(engineOwner), { clientFmId: people.client, spouseFmId: people.spouse });
+    if (!ref) return null;
+    if (ref.kind === "joint") return "joint";
+    return ref.kind === "family" ? member(ref.id) : record(ref.kind === "entity" ? "entity" : "external_beneficiary", ref.id);
+  };
+  const accountsOf = (target: TargetKind) => accountRows.filter((a) => (ACCOUNT_TARGET[a.category] ?? "account") === target);
+  const plainAccounts = accountsOf("account");
+  const policyAccounts = accountsOf("life_insurance_policy");
+  const accountFacts = (a: Account) => ({ category: a.category, subType: a.subType, parentAccountId: a.parentAccountId, isDefaultChecking: a.isDefaultChecking });
+  const policyOf = (accountId: string) => policies.find((p) => p.accountId === accountId);
+  const policyLabel = (a: Account) => withLast4(a.name, policyOf(a.id)?.policyNumberLast4 ?? null);
 
   const records: Partial<Record<TargetKind, BookRecord[]>> = {
     client_household: [{
@@ -347,22 +468,7 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
     trust_beneficiary_designation: trusts.map((t) => ({
       id: t.id,
       label: t.name,
-      values: {
-        beneficiaries: designations
-          .filter((d) => d.entityId === t.id)
-          .flatMap((d) => {
-            const who = d.householdRole
-              ? person(d.householdRole)
-              : d.familyMemberId
-                ? member(d.familyMemberId)
-                : d.externalBeneficiaryId
-                  ? record("external_beneficiary", d.externalBeneficiaryId)
-                  : d.entityIdRef
-                    ? record("entity", d.entityIdRef)
-                    : null;
-            return who ? [{ tier: d.tier, who, percentage: Number(d.percentage) }] : [];
-          }),
-      },
+      values: { beneficiaries: beneficiariesOf(designations.filter((d) => d.entityId === t.id)) },
     })),
     revocable_trust: revocables.map((t) => ({ id: t.id, label: t.name, values: { name: t.name } })),
     will: willRows.map((w) => ({ id: w.id, label: willLabel(w.grantor), values: { grantor: w.grantor }, facts: { grantor: w.grantor } })),
@@ -422,6 +528,168 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
       },
     })),
     plan_observation: notes.map((n) => ({ id: n.id, label: n.title ?? n.body, values: { topic: n.topic, body: n.body } })),
+
+    // Every base-case account is in exactly one of account, business_account,
+    // life_insurance_policy and stock_option_account — so every account a row can
+    // link to is here. A business's "— Cash" account is an account (category cash).
+    account: plainAccounts.map((a) => ({
+      id: a.id,
+      label: withLast4(a.name, a.accountNumberLast4),
+      values: {
+        name: a.name,
+        value: Number(a.value),
+        accountNumberLast4: a.accountNumberLast4,
+        custodian: a.custodian,
+        subType: a.subType,
+        owners: ownersOf(accountOwnerRows.filter((o) => o.accountId === a.id)),
+        titlingType: a.titlingType,
+        holdings: holdingRows.filter((h) => h.accountId === a.id).map(holding),
+        growthRate: customRate(a.growthRate, a.growthSource),
+        basis: Number(a.basis),
+        rothValue: Number(a.rothValue),
+        inheritedOwnerBirthYear: a.inheritedOwnerBirthYear,
+        inheritedDeathYear: a.inheritedDeathYear,
+        priorYearEndValue: num(a.priorYearEndValue),
+        // A 529's people: a family member, else the name on record.
+        beneficiary: a.beneficiaryFamilyMemberId ? member(a.beneficiaryFamilyMemberId) : a.beneficiaryName,
+        grantor: a.grantorFamilyMemberId ? member(a.grantorFamilyMemberId) : a.grantorName,
+        propertyAddress: a.propertyAddress,
+        annualPropertyTax: Number(a.annualPropertyTax),
+      },
+      facts: accountFacts(a),
+    })),
+    business_account: accountsOf("business_account").map((a) => ({
+      id: a.id,
+      label: withLast4(a.name, a.accountNumberLast4),
+      values: {
+        name: a.name,
+        businessType: a.businessType,
+        value: Number(a.value),
+        basis: Number(a.basis),
+        owners: ownersOf(accountOwnerRows.filter((o) => o.accountId === a.id)),
+        businessTaxTreatment: a.businessTaxTreatment,
+        distributionPolicyPercent: num(a.distributionPolicyPercent),
+      },
+      facts: accountFacts(a),
+    })),
+    // One set per account, empty when it names nobody — as for trusts.
+    account_beneficiary_designation: plainAccounts.map((a) => ({
+      id: a.id,
+      label: withLast4(a.name, a.accountNumberLast4),
+      values: { beneficiaries: beneficiariesOf(accountDesignations.filter((d) => d.accountId === a.id)) },
+    })),
+    // One per annuity account (the contract is keyed by it), blank when none is on record.
+    annuity_contract: plainAccounts
+      .filter((a) => a.category === "annuity")
+      .map((a) => {
+        const c = contracts.find((x) => x.accountId === a.id);
+        return {
+          id: a.id,
+          label: withLast4(a.name, a.accountNumberLast4),
+          values: {
+            costBasis: num(c?.costBasis ?? null),
+            productType: c?.productType ?? null,
+            incomeMode: c?.incomeMode ?? null,
+            payoutStructure: c?.payoutStructure ?? null,
+          },
+        };
+      }),
+    stock_option_account: accountsOf("stock_option_account").map((a) => {
+      // One owner at 100%: the client or the co-client.
+      const owners = ownersOf(accountOwnerRows.filter((o) => o.accountId === a.id));
+      const who = owners.length === 1 ? owners[0].who : null;
+      return {
+        id: a.id,
+        label: a.name,
+        values: {
+          name: a.name,
+          ticker: stockAccounts.find((s) => s.accountId === a.id)?.ticker ?? null,
+          owner: who?.ref === "person" ? who.role : null,
+        },
+      };
+    }),
+    stock_option_grant: grants.map((g) => ({
+      id: g.id,
+      label: `${accountById.get(g.accountId)?.name ?? "Stock options"} ${g.grantType.toUpperCase()} ${g.grantDate}`,
+      values: {
+        grantType: g.grantType,
+        grantNumber: g.grantNumber,
+        grantDate: g.grantDate,
+        sharesGranted: Number(g.sharesGranted),
+        strikePrice: num(g.strikePrice),
+        expirationDate: g.expirationDate,
+        tranches: tranches.filter((t) => t.grantId === g.id).map((t) => ({ vestDate: t.vestDate, shares: Number(t.shares) })),
+        notes: g.notes,
+      },
+      facts: { accountId: g.accountId },
+    })),
+    note_receivable: noteRows.map((n) => ({
+      id: n.id,
+      label: n.name,
+      values: {
+        name: n.name,
+        faceValue: Number(n.faceValue),
+        basis: Number(n.basis),
+        asOfBalance: num(n.asOfBalance),
+        balanceAsOf: monthYear(n.balanceAsOfYear, n.balanceAsOfMonth),
+        interestRate: Number(n.interestRate),
+        paymentType: n.paymentType,
+        monthlyPayment: num(n.monthlyPayment),
+        start: monthYear(n.startYear, n.startMonth),
+        termMonths: n.termMonths,
+        owners: ownersOf(noteOwnerRows.filter((o) => o.noteReceivableId === n.id)),
+      },
+    })),
+    liability: liabilityRows.map((l) => ({
+      id: l.id,
+      label: l.name,
+      values: {
+        name: l.name,
+        liabilityType: l.liabilityType,
+        owners: ownersOf(liabilityOwnerRows.filter((o) => o.liabilityId === l.id)),
+        balance: Number(l.balance),
+        balanceAsOf: monthYear(l.balanceAsOfYear, l.balanceAsOfMonth),
+        interestRate: Number(l.interestRate),
+        monthlyPayment: num(l.monthlyPayment),
+        start: monthYear(l.startYear, l.startMonth),
+        termMonths: l.termMonths,
+        isInterestDeductible: l.isInterestDeductible,
+        linkedPropertyId: l.linkedPropertyId ? accountRef(l.linkedPropertyId) : null,
+      },
+      // Set = a business's debt, owned through the business (no owners of its own).
+      facts: { parentAccountId: l.parentAccountId },
+    })),
+    life_insurance_policy: policyAccounts.map((a) => {
+      const p = policyOf(a.id);
+      return {
+        id: a.id,
+        label: policyLabel(a),
+        values: {
+          name: a.name,
+          carrier: p?.carrier ?? null,
+          policyNumberLast4: p?.policyNumberLast4 ?? null,
+          policyType: p?.policyType ?? null,
+          insuredPerson: a.insuredPerson,
+          ownerRef: policyOwner(accountOwnerRows.filter((o) => o.accountId === a.id)),
+          faceValue: num(p?.faceValue ?? null),
+          cashValue: Number(a.value),
+          costBasis: num(p?.costBasis ?? null),
+          premiumAmount: num(p?.premiumAmount ?? null),
+          premiumPayer: p?.premiumPayer ?? null,
+          premiumYears: p?.premiumYears ?? null,
+          termIssueYear: p?.termIssueYear ?? null,
+          termLengthYears: p?.termLengthYears ?? null,
+          endsAtInsuredRetirement: p?.endsAtInsuredRetirement ?? null,
+        },
+        facts: { insuredPerson: a.insuredPerson },
+      };
+    }),
+    // One set per policy, empty when it names nobody.
+    life_insurance_policy_beneficiary: policyAccounts.map((a) => ({
+      id: a.id,
+      label: policyLabel(a),
+      values: { beneficiaries: beneficiariesOf(accountDesignations.filter((d) => d.accountId === a.id)) },
+    })),
   };
 
   const book = emptyRecordBook(clientId);

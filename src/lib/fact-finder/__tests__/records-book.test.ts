@@ -8,7 +8,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  accountHoldings,
+  accountOwners,
   accounts,
+  annuityContracts,
   beneficiaryDesignations,
   clients,
   crmHouseholdContacts,
@@ -21,12 +24,19 @@ import {
   gifts,
   incomes,
   liabilities,
+  liabilityOwners,
+  lifeInsurancePolicies,
   ltcPolicies,
+  noteReceivableOwners,
+  notesReceivable,
   planObservations,
   planSettings,
   revocableTrusts,
   savingsRules,
   scenarios,
+  stockOptionAccounts,
+  stockOptionGrants,
+  stockOptionVestTranches,
   willBequestRecipients,
   willBequests,
   willResiduaryRecipients,
@@ -34,6 +44,7 @@ import {
 } from "@/db/schema";
 import { createTestClientWithScenario } from "@/test/factories";
 import { TARGET_KINDS } from "../change-set";
+import { TARGETS } from "../placement/targets";
 import type { BookRecord, RecordBook } from "../placement/types";
 import { loadRecordBook } from "../records/book";
 
@@ -230,6 +241,123 @@ async function seedClient() {
     .returning({ id: planObservations.id });
 }
 
+/** Part 2: accounts with their owners, positions and beneficiaries; annuities, stock options, policies, notes and debts. */
+async function seedAccountsAndDebts() {
+  const account = async (values: Omit<typeof accounts.$inferInsert, "clientId" | "scenarioId">) =>
+    (await db.insert(accounts).values({ clientId, scenarioId, ...values }).returning({ id: accounts.id }))[0].id;
+  ids.checking = await account({
+    name: "Joint Checking", category: "cash", subType: "checking", accountNumberLast4: "1234", custodian: "Chase",
+    value: "12500", growthSource: "custom", growthRate: "0.0435",
+  });
+  // A stored rate it doesn't use: the account follows its category's default.
+  ids.k401 = await account({
+    name: "Fidelity 401(k)", category: "retirement", subType: "401k", accountNumberLast4: "5678", custodian: "Fidelity",
+    value: "412330", rothValue: "25000", priorYearEndValue: "400000", growthRate: "0.0700",
+  });
+  ids.college = await account({
+    name: "Emma's 529", category: "education_savings", subType: "529", value: "30000", basis: "20000",
+    beneficiaryFamilyMemberId: ids.emma, grantorName: "Rose Hendricks",
+  });
+  ids.lake = await account({
+    name: "Lake House", category: "real_estate", subType: "rental_property", value: "650000", basis: "400000",
+    propertyAddress: "9 Shore Rd", annualPropertyTax: "7200",
+  });
+  // The business's own cash account, made with it: no owners of its own.
+  ids.businessCash = await account({
+    name: "Hendricks Design LLC — Cash", category: "cash", subType: "checking", value: "15000",
+    parentAccountId: ids.business, isDefaultChecking: true,
+  });
+  ids.annuity = await account({ name: "Jackson Variable Annuity", category: "annuity", subType: "non_qualified", value: "120000", custodian: "Jackson" });
+  ids.legacyAnnuity = await account({ name: "Legacy Annuity", category: "annuity", subType: "qualified", value: "40000" });
+  ids.acme = await account({ name: "Acme Corp", category: "stock_options" });
+  ids.wholeLife = await account({ name: "Northwestern Whole Life", category: "life_insurance", subType: "whole_life", value: "85000", insuredPerson: "client" });
+  ids.term = await account({ name: "Banner Term", category: "life_insurance", subType: "term", insuredPerson: "spouse" });
+  await db
+    .update(accounts)
+    .set({ subType: "llc", businessType: "llc", basis: "150000", distributionPolicyPercent: "0.2500", businessTaxTreatment: "qbi" })
+    .where(eq(accounts.id, ids.business));
+
+  await db.insert(accountOwners).values([
+    { accountId: ids.brokerage, familyMemberId: ids.emma, percent: "0.4000" },
+    { accountId: ids.brokerage, familyMemberId: ids.mark, percent: "0.6000" },
+    { accountId: ids.checking, familyMemberId: ids.laura, percent: "0.5000" },
+    { accountId: ids.checking, familyMemberId: ids.mark, percent: "0.5000" },
+    { accountId: ids.k401, familyMemberId: ids.mark, percent: "1.0000" },
+    { accountId: ids.lake, entityId: ids.holdings, percent: "1.0000" },
+    { accountId: ids.business, familyMemberId: ids.mark, percent: "0.6000" },
+    { accountId: ids.business, familyMemberId: ids.laura, percent: "0.4000" },
+    { accountId: ids.annuity, familyMemberId: ids.laura, percent: "1.0000" },
+    { accountId: ids.acme, familyMemberId: ids.mark, percent: "1.0000" },
+    { accountId: ids.wholeLife, entityId: ids.ilit, percent: "1.0000" },
+    { accountId: ids.term, familyMemberId: ids.mark, percent: "0.5000" },
+    { accountId: ids.term, familyMemberId: ids.laura, percent: "0.5000" },
+  ]);
+  await db.insert(accountHoldings).values([
+    { accountId: ids.k401, displayName: "Growth Fund", marketValue: "5000.00", costBasis: "4000", sortOrder: 1 },
+    { accountId: ids.k401, displayTicker: "AAPL", displayName: "Apple Inc.", shares: "100", price: "195.0000", costBasis: "12000", sortOrder: 0 },
+  ]);
+  await db.insert(beneficiaryDesignations).values([
+    { clientId, targetKind: "account", accountId: ids.k401, tier: "primary", householdRole: "spouse", percentage: "100.00", sortOrder: 0 },
+    { clientId, targetKind: "account", accountId: ids.k401, tier: "contingent", familyMemberId: ids.emma, percentage: "50.00", sortOrder: 1 },
+    { clientId, targetKind: "account", accountId: ids.k401, tier: "contingent", externalBeneficiaryId: ids.charity, percentage: "50.00", sortOrder: 2 },
+    { clientId, targetKind: "account", accountId: ids.wholeLife, tier: "primary", entityIdRef: ids.ilit, percentage: "100.00", sortOrder: 0 },
+  ]);
+
+  await db.insert(annuityContracts).values({ accountId: ids.annuity, carrier: "Jackson", productType: "variable", costBasis: "80000" });
+  await db.insert(stockOptionAccounts).values({ accountId: ids.acme, ticker: "ACME", isPublic: true });
+  [{ id: ids.grant }] = await db
+    .insert(stockOptionGrants)
+    .values({
+      accountId: ids.acme, grantNumber: "G-1", grantType: "nqso", grantDate: "2024-03-01", sharesGranted: "1000",
+      strikePrice: "12.5000", expirationDate: "2034-03-01", notes: "Refresh grant.",
+    })
+    .returning({ id: stockOptionGrants.id });
+  await db.insert(stockOptionVestTranches).values([
+    { grantId: ids.grant, vestDate: "2026-03-01", shares: "500", sortOrder: 1 },
+    { grantId: ids.grant, vestDate: "2025-03-01", shares: "500", sortOrder: 0 },
+  ]);
+  await db.insert(lifeInsurancePolicies).values([
+    {
+      accountId: ids.wholeLife, carrier: "Northwestern Mutual", policyNumberLast4: "9012", policyType: "whole",
+      faceValue: "1000000", costBasis: "60000", premiumAmount: "12000", premiumYears: 20,
+    },
+    {
+      accountId: ids.term, carrier: "Banner Life", policyNumberLast4: "3456", policyType: "term",
+      faceValue: "500000", premiumAmount: "900", termIssueYear: 2015, termLengthYears: 20,
+    },
+  ]);
+
+  [{ id: ids.noteReceivable }] = await db
+    .insert(notesReceivable)
+    .values({
+      clientId, scenarioId, name: "Lucas Park", faceValue: "20000", basis: "20000", asOfBalance: "15000",
+      balanceAsOfMonth: 6, balanceAsOfYear: 2026, interestRate: "0.0400", paymentType: "amortizing",
+      monthlyPayment: "368.33", startYear: 2024, startMonth: 3, termMonths: 60,
+    })
+    .returning({ id: notesReceivable.id });
+  await db.insert(noteReceivableOwners).values([
+    { noteReceivableId: ids.noteReceivable, familyMemberId: ids.mark, percent: "0.5000" },
+    { noteReceivableId: ids.noteReceivable, familyMemberId: ids.laura, percent: "0.5000" },
+  ]);
+  [{ id: ids.mortgage }] = await db
+    .insert(liabilities)
+    .values({
+      clientId, scenarioId, name: "Lake House mortgage", liabilityType: "mortgage", balance: "300000",
+      balanceAsOfMonth: 9, balanceAsOfYear: 2026, interestRate: "0.0650", monthlyPayment: "2100",
+      startYear: 2020, startMonth: 4, termMonths: 360, linkedPropertyId: ids.lake, isInterestDeductible: true,
+    })
+    .returning({ id: liabilities.id });
+  // A debt of the business: no owners of its own.
+  [{ id: ids.equipmentLoan }] = await db
+    .insert(liabilities)
+    .values({ clientId, scenarioId, name: "Design LLC equipment loan", balance: "25000", startYear: 2025, termMonths: 60, parentAccountId: ids.business })
+    .returning({ id: liabilities.id });
+  await db.insert(liabilityOwners).values([
+    { liabilityId: ids.mortgage, familyMemberId: ids.mark, percent: "0.5000" },
+    { liabilityId: ids.mortgage, familyMemberId: ids.laura, percent: "0.5000" },
+  ]);
+}
+
 /** A second scenario of the same client. Scenario tables accept rows only for a base case, so it is one while seeded. */
 async function seedWhatIf() {
   const [scenario] = await db.insert(scenarios).values({ clientId, name: "What if", isBaseCase: true }).returning({ id: scenarios.id });
@@ -254,7 +382,15 @@ async function seedWhatIf() {
     .insert(planSettings)
     .values({ clientId, scenarioId: whatIfId, planStartYear: 2026, planEndYear: 2070, residenceState: "TX" })
     .returning({ id: planSettings.id });
-  whatIfIds.push(account.id, income.id, expense.id, rule.id, settings.id);
+  const [loan] = await db
+    .insert(liabilities)
+    .values({ clientId, scenarioId: whatIfId, name: "What-if loan", startYear: 2026 })
+    .returning({ id: liabilities.id });
+  const [noteReceivable] = await db
+    .insert(notesReceivable)
+    .values({ clientId, scenarioId: whatIfId, name: "What-if note", faceValue: "1000", basis: "1000", paymentType: "amortizing", startYear: 2026, termMonths: 12 })
+    .returning({ id: notesReceivable.id });
+  whatIfIds.push(account.id, income.id, expense.id, rule.id, settings.id, loan.id, noteReceivable.id);
   await db.update(scenarios).set({ isBaseCase: false }).where(eq(scenarios.id, whatIfId));
 }
 
@@ -300,19 +436,64 @@ async function seedOtherClient() {
     c, s, lawyer.id, kid.id, charity.id, settings.id, account.id, income.id, expense.id, rule.id, disability.id, ltc.id,
     trust.id, designation.id, rlt.id, will.id, bequest.id, recipient.id, residuary.id, gift.id, note.id,
   );
+
+  // Part 2: one row in every account, debt and policy table.
+  const otherAccount = async (name: string, category: typeof accounts.$inferInsert.category) =>
+    (await db.insert(accounts).values({ clientId: c, scenarioId: s, name, category }).returning({ id: accounts.id }))[0].id;
+  const business = await otherAccount("Other Biz", "business");
+  const annuity = await otherAccount("Other Annuity", "annuity");
+  const stock = await otherAccount("Other Stock", "stock_options");
+  const life = await otherAccount("Other Life", "life_insurance");
+  const [owner] = await db.insert(accountOwners).values({ accountId: account.id, familyMemberId: kid.id, percent: "1.0000" }).returning({ id: accountOwners.id });
+  const [holding] = await db.insert(accountHoldings).values({ accountId: account.id, displayName: "Other Fund" }).returning({ id: accountHoldings.id });
+  const [accountDesignation] = await db
+    .insert(beneficiaryDesignations)
+    .values({ clientId: c, targetKind: "account", accountId: account.id, tier: "primary", familyMemberId: kid.id, percentage: "100.00" })
+    .returning({ id: beneficiaryDesignations.id });
+  await db.insert(annuityContracts).values({ accountId: annuity, carrier: "Other Carrier" });
+  await db.insert(stockOptionAccounts).values({ accountId: stock, ticker: "OTHR" });
+  const [grant] = await db
+    .insert(stockOptionGrants)
+    .values({ accountId: stock, grantType: "rsu", grantDate: "2024-01-01", grantNumber: "Other grant" })
+    .returning({ id: stockOptionGrants.id });
+  const [tranche] = await db.insert(stockOptionVestTranches).values({ grantId: grant.id, vestDate: "2025-01-01" }).returning({ id: stockOptionVestTranches.id });
+  await db.insert(lifeInsurancePolicies).values({ accountId: life, carrier: "Other Insurer", policyType: "term" });
+  const [noteReceivable] = await db
+    .insert(notesReceivable)
+    .values({ clientId: c, scenarioId: s, name: "Other Note", faceValue: "1", basis: "1", paymentType: "amortizing", startYear: 2024, termMonths: 12 })
+    .returning({ id: notesReceivable.id });
+  const [noteOwner] = await db
+    .insert(noteReceivableOwners)
+    .values({ noteReceivableId: noteReceivable.id, familyMemberId: kid.id, percent: "1.0000" })
+    .returning({ id: noteReceivableOwners.id });
+  const [loan] = await db.insert(liabilities).values({ clientId: c, scenarioId: s, name: "Other Loan", startYear: 2024 }).returning({ id: liabilities.id });
+  const [loanOwner] = await db.insert(liabilityOwners).values({ liabilityId: loan.id, familyMemberId: kid.id, percent: "1.0000" }).returning({ id: liabilityOwners.id });
+  otherIds.push(
+    business, annuity, stock, life, owner.id, holding.id, accountDesignation.id, grant.id, tranche.id,
+    noteReceivable.id, noteOwner.id, loan.id, loanOwner.id,
+  );
 }
 
 const byLabel = (records: BookRecord[]) => [...records].sort((a, b) => a.label.localeCompare(b.label));
 const labels = (records: BookRecord[]) => byLabel(records).map((r) => r.label);
 const record = (target: string, id: string) => ({ ref: "record", target, id });
+const person = (role: "client" | "spouse") => ({ ref: "person", role });
+const byId = (records: BookRecord[], id: string) => records.find((r) => r.id === id);
+/** The values every account record carries, for the keys a test doesn't set. */
+const blankAccount = {
+  accountNumberLast4: null, custodian: null, owners: [], titlingType: "jtwros", holdings: [], growthRate: null, basis: 0,
+  rothValue: 0, inheritedOwnerBirthYear: null, inheritedDeathYear: null, priorYearEndValue: null, beneficiary: null,
+  grantor: null, propertyAddress: null, annualPropertyTax: 0,
+};
 
-describe.skipIf(!HAS_DB)("loadRecordBook part 1 (live DB)", () => {
+describe.skipIf(!HAS_DB)("loadRecordBook (live DB)", () => {
   let book: RecordBook;
 
   beforeAll(async () => {
     await dropFirm();
     ({ clientId, scenarioId } = await createTestClientWithScenario(FIRM));
     await seedClient();
+    await seedAccountsAndDebts();
     await seedWhatIf();
     await seedOtherClient();
     book = await loadRecordBook(clientId, FIRM, scenarioId);
@@ -602,11 +783,202 @@ describe.skipIf(!HAS_DB)("loadRecordBook part 1 (live DB)", () => {
     }]);
   });
 
+  it("every record carries every catalog key of its target", () => {
+    for (const target of TARGET_KINDS) {
+      for (const r of book.records[target]) {
+        expect(Object.keys(r.values).sort(), `${target}: ${r.label}`).toEqual(Object.keys(TARGETS[target].fields).sort());
+      }
+    }
+  });
+
+  it("every base-case account is in exactly one account target; a business's cash account is an account, not a business", async () => {
+    const all = await db.select({ id: accounts.id }).from(accounts).where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, scenarioId)));
+    const placed = (["account", "business_account", "life_insurance_policy", "stock_option_account"] as const).flatMap((t) => book.records[t].map((r) => r.id));
+    expect([...placed].sort()).toEqual(all.map((a) => a.id).sort());
+    expect(labels(book.records.account)).toEqual([
+      "Emma's 529", "Fidelity 401(k) ··5678", "Hendricks Design LLC — Cash", "Jackson Variable Annuity", "Joint Checking ··1234",
+      "Lake House", "Legacy Annuity", "Schwab Brokerage",
+    ]);
+    expect(byId(book.records.account, ids.businessCash)?.facts).toEqual({ category: "cash", subType: "checking", parentAccountId: ids.business, isDefaultChecking: true });
+    expect(book.records.business_account).toEqual([{
+      id: ids.business,
+      label: "Hendricks Design LLC",
+      values: {
+        name: "Hendricks Design LLC", businessType: "llc", value: 400000, basis: 150000,
+        owners: [{ who: person("client"), percent: 0.6 }, { who: person("spouse"), percent: 0.4 }],
+        businessTaxTreatment: "qbi", distributionPolicyPercent: 0.25,
+      },
+      facts: { category: "business", subType: "llc", parentAccountId: null, isDefaultChecking: false },
+    }]);
+  });
+
+  it("accounts: owners (the client and co-client first), positions, a custom rate, a 529's people, a property", () => {
+    expect(byId(book.records.account, ids.checking)).toEqual({
+      id: ids.checking,
+      label: "Joint Checking ··1234",
+      values: {
+        ...blankAccount, name: "Joint Checking", value: 12500, accountNumberLast4: "1234", custodian: "Chase", subType: "checking",
+        owners: [{ who: person("client"), percent: 0.5 }, { who: person("spouse"), percent: 0.5 }], growthRate: 0.0435,
+      },
+      facts: { category: "cash", subType: "checking", parentAccountId: null, isDefaultChecking: false },
+    });
+    expect(byId(book.records.account, ids.k401)).toEqual({
+      id: ids.k401,
+      label: "Fidelity 401(k) ··5678",
+      values: {
+        ...blankAccount, name: "Fidelity 401(k)", value: 412330, accountNumberLast4: "5678", custodian: "Fidelity", subType: "401k",
+        owners: [{ who: person("client"), percent: 1 }],
+        // A ticker's value is shares × price; a fund held by value has no share count or price.
+        holdings: [
+          { ticker: "AAPL", name: "Apple Inc.", shares: 100, price: 195, marketValue: 19500, costBasis: 12000 },
+          { ticker: null, name: "Growth Fund", shares: null, price: null, marketValue: 5000, costBasis: 4000 },
+        ],
+        // growthRate null: the account follows its category's default, not its stored rate.
+        rothValue: 25000, priorYearEndValue: 400000,
+      },
+      facts: { category: "retirement", subType: "401k", parentAccountId: null, isDefaultChecking: false },
+    });
+    expect(byId(book.records.account, ids.brokerage)?.values.owners).toEqual([
+      { who: person("client"), percent: 0.6 },
+      { who: record("family_member", ids.emma), percent: 0.4 },
+    ]);
+    expect(byId(book.records.account, ids.college)?.values).toEqual({
+      ...blankAccount, name: "Emma's 529", value: 30000, subType: "529", basis: 20000,
+      beneficiary: record("family_member", ids.emma), grantor: "Rose Hendricks",
+    });
+    expect(byId(book.records.account, ids.lake)?.values).toEqual({
+      ...blankAccount, name: "Lake House", value: 650000, subType: "rental_property", basis: 400000,
+      owners: [{ who: record("entity", ids.holdings), percent: 1 }], propertyAddress: "9 Shore Rd", annualPropertyTax: 7200,
+    });
+  });
+
+  it("one beneficiary set per account, empty when it names nobody", () => {
+    const sets = book.records.account_beneficiary_designation;
+    expect(sets.map((r) => r.id).sort()).toEqual(book.records.account.map((r) => r.id).sort());
+    expect(byId(sets, ids.k401)).toEqual({
+      id: ids.k401,
+      label: "Fidelity 401(k) ··5678",
+      values: {
+        beneficiaries: [
+          { tier: "primary", who: person("spouse"), percentage: 100 },
+          { tier: "contingent", who: record("family_member", ids.emma), percentage: 50 },
+          { tier: "contingent", who: record("external_beneficiary", ids.charity), percentage: 50 },
+        ],
+      },
+    });
+    expect(byId(sets, ids.brokerage)?.values.beneficiaries).toEqual([{ tier: "primary", who: record("family_member", ids.emma), percentage: 100 }]);
+    expect(byId(sets, ids.checking)?.values.beneficiaries).toEqual([]);
+  });
+
+  it("one annuity contract per annuity account, blank when it has none on record", () => {
+    expect(byLabel(book.records.annuity_contract)).toEqual([
+      { id: ids.annuity, label: "Jackson Variable Annuity", values: { costBasis: 80000, productType: "variable", incomeMode: "none", payoutStructure: null } },
+      { id: ids.legacyAnnuity, label: "Legacy Annuity", values: { costBasis: null, productType: null, incomeMode: null, payoutStructure: null } },
+    ]);
+  });
+
+  it("stock options: the account's owner and its grants with their vesting", () => {
+    expect(book.records.stock_option_account).toEqual([
+      { id: ids.acme, label: "Acme Corp", values: { name: "Acme Corp", ticker: "ACME", owner: "client" } },
+    ]);
+    expect(book.records.stock_option_grant).toEqual([{
+      id: ids.grant,
+      label: "Acme Corp NQSO 2024-03-01",
+      values: {
+        grantType: "nqso", grantNumber: "G-1", grantDate: "2024-03-01", sharesGranted: 1000, strikePrice: 12.5,
+        expirationDate: "2034-03-01",
+        tranches: [{ vestDate: "2025-03-01", shares: 500 }, { vestDate: "2026-03-01", shares: 500 }],
+        notes: "Refresh grant.",
+      },
+      facts: { accountId: ids.acme },
+    }]);
+  });
+
+  it("notes receivable and debts: month-years, fractions, owners, the property a loan is on", () => {
+    expect(book.records.note_receivable).toEqual([{
+      id: ids.noteReceivable,
+      label: "Lucas Park",
+      values: {
+        name: "Lucas Park", faceValue: 20000, basis: 20000, asOfBalance: 15000, balanceAsOf: "2026-06", interestRate: 0.04,
+        paymentType: "amortizing", monthlyPayment: 368.33, start: "2024-03", termMonths: 60,
+        owners: [{ who: person("client"), percent: 0.5 }, { who: person("spouse"), percent: 0.5 }],
+      },
+    }]);
+    expect(byLabel(book.records.liability)).toEqual([
+      {
+        id: ids.visa,
+        label: "Chase Visa",
+        values: {
+          name: "Chase Visa", liabilityType: null, owners: [], balance: 4000, balanceAsOf: null, interestRate: 0, monthlyPayment: 0,
+          start: "2024-01", termMonths: null, isInterestDeductible: false, linkedPropertyId: null,
+        },
+        facts: { parentAccountId: null },
+      },
+      {
+        id: ids.equipmentLoan,
+        label: "Design LLC equipment loan",
+        values: {
+          name: "Design LLC equipment loan", liabilityType: null, owners: [], balance: 25000, balanceAsOf: null, interestRate: 0,
+          monthlyPayment: 0, start: "2025-01", termMonths: 60, isInterestDeductible: false, linkedPropertyId: null,
+        },
+        facts: { parentAccountId: ids.business },
+      },
+      {
+        id: ids.mortgage,
+        label: "Lake House mortgage",
+        values: {
+          name: "Lake House mortgage", liabilityType: "mortgage",
+          owners: [{ who: person("client"), percent: 0.5 }, { who: person("spouse"), percent: 0.5 }],
+          balance: 300000, balanceAsOf: "2026-09", interestRate: 0.065, monthlyPayment: 2100, start: "2020-04", termMonths: 360,
+          isInterestDeductible: true, linkedPropertyId: record("account", ids.lake),
+        },
+        facts: { parentAccountId: null },
+      },
+    ]);
+  });
+
+  it("life policies: the account and its policy row, the owner as the policy dialog reads it, one beneficiary set each", () => {
+    expect(byLabel(book.records.life_insurance_policy)).toEqual([
+      {
+        id: ids.term,
+        label: "Banner Term ··3456",
+        values: {
+          name: "Banner Term", carrier: "Banner Life", policyNumberLast4: "3456", policyType: "term", insuredPerson: "spouse",
+          ownerRef: "joint", faceValue: 500000, cashValue: 0, costBasis: 0, premiumAmount: 900, premiumPayer: "owner",
+          premiumYears: null, termIssueYear: 2015, termLengthYears: 20, endsAtInsuredRetirement: false,
+        },
+        facts: { insuredPerson: "spouse" },
+      },
+      {
+        id: ids.wholeLife,
+        label: "Northwestern Whole Life ··9012",
+        values: {
+          name: "Northwestern Whole Life", carrier: "Northwestern Mutual", policyNumberLast4: "9012", policyType: "whole",
+          insuredPerson: "client", ownerRef: record("entity", ids.ilit), faceValue: 1000000, cashValue: 85000, costBasis: 60000,
+          premiumAmount: 12000, premiumPayer: "owner", premiumYears: 20, termIssueYear: null, termLengthYears: null,
+          endsAtInsuredRetirement: false,
+        },
+        facts: { insuredPerson: "client" },
+      },
+    ]);
+    expect(byLabel(book.records.life_insurance_policy_beneficiary)).toEqual([
+      { id: ids.term, label: "Banner Term ··3456", values: { beneficiaries: [] } },
+      {
+        id: ids.wholeLife,
+        label: "Northwestern Whole Life ··9012",
+        values: { beneficiaries: [{ tier: "primary", who: record("entity", ids.ilit), percentage: 100 }] },
+      },
+    ]);
+  });
+
   it("another scenario's book has that scenario's rows and the same client-level records", async () => {
     const whatIf = await loadRecordBook(clientId, FIRM, whatIfId);
     expect(labels(whatIf.records.income)).toEqual(["What-if bonus"]);
     expect(labels(whatIf.records.expense)).toEqual(["What-if trip"]);
     expect(labels(whatIf.records.savings_rule)).toEqual(["What-if Brokerage"]);
+    expect(labels(whatIf.records.account)).toEqual(["What-if Brokerage"]);
+    expect(labels(whatIf.records.liability)).toEqual(["What-if loan"]);
+    expect(labels(whatIf.records.note_receivable)).toEqual(["What-if note"]);
     expect(whatIf.records.plan_settings_tax_rates.map((r) => r.values.residenceState)).toEqual(["TX"]);
     expect(whatIf.records.family_member).toEqual(book.records.family_member);
     expect(whatIf.records.will).toEqual(book.records.will);
@@ -619,7 +991,11 @@ describe.skipIf(!HAS_DB)("loadRecordBook part 1 (live DB)", () => {
     expect(none.records.family_member).toEqual(book.records.family_member);
     expect(labels(none.records.entity)).toEqual(["Education Trust", "Grandparents' Trust", "Hendricks ILIT"]);
     expect(labels(none.records.gift)).toEqual(["2022 gift", "2023 gift"]);
-    for (const target of ["plan_settings_tax_rates", "income", "expense", "savings_rule"] as const) {
+    for (const target of [
+      "plan_settings_tax_rates", "income", "expense", "savings_rule", "account", "business_account", "account_beneficiary_designation",
+      "annuity_contract", "stock_option_account", "stock_option_grant", "note_receivable", "liability", "life_insurance_policy",
+      "life_insurance_policy_beneficiary",
+    ] as const) {
       expect(none.records[target]).toEqual([]);
     }
   });
