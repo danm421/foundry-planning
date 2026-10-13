@@ -1,7 +1,8 @@
 "use client";
 // src/components/fact-finder/page-view.tsx
 // One fact finder page: each of its sections as an editable card, then the
-// Removed tray for that page's sections. Edits go through `onApply`
+// Removed tray for that page's sections. The Accounts page opens with any
+// holdings still waiting for an account. Edits go through `onApply`
 // (useFactFinder's apply) as ops.
 import { Card } from "@/components/card";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
@@ -13,6 +14,7 @@ import type { FactFinderState, FFRow } from "@/lib/fact-finder/types";
 import { PlusIcon } from "./icons";
 import { RemovedTray } from "./removed-tray";
 import { SectionBody } from "./section-tables";
+import { UnassignedHoldings } from "./unassigned-holdings";
 
 export interface PageViewProps {
   page: FFPage;
@@ -97,6 +99,9 @@ export function PageView({ page, state, onApply, fileName, entities }: PageViewP
   });
   return (
     <>
+      {page === "accounts" && state.unassignedHoldings.length > 0 && (
+        <UnassignedHoldings state={state} onApply={onApply} />
+      )}
       {sectionsOnPage(page).map((section) => (
         <SectionCard
           key={section.id}

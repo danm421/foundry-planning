@@ -4,14 +4,16 @@
 // row per entry), fixed rows (row labels down), transposed (fields down, a
 // policy per column) or notes (one text box). Every value is a CellEditor;
 // list and transposed rows can be removed or merged into another row. Sections
-// that link to records get a "Links to" column (a field row when transposed).
-import type { ReactNode } from "react";
+// that link to records get a "Links to" column (a field row when transposed);
+// an account with holdings gets a holdings line under its row.
+import { Fragment, type ReactNode } from "react";
 import { selectChevronClassName } from "@/components/forms/input-styles";
 import type { ClientOp } from "@/lib/fact-finder/ops";
 import type { ColumnKind, FFColumn, FFSection, OWNER } from "@/lib/fact-finder/schema";
 import { fixedLabelOfRow, rowLabel } from "@/lib/fact-finder/state";
 import type { FFRow } from "@/lib/fact-finder/types";
 import { CellEditor } from "./cell-editor";
+import { HoldingsRow } from "./holdings-rows";
 import { TrashIcon } from "./icons";
 import { LinkCell } from "./link-cell";
 
@@ -51,6 +53,8 @@ const HEAD = "border-b border-hair px-2 py-2 text-left align-bottom text-xs font
 const CELL = "border-b border-hair px-2 py-2 align-top";
 const ROW_HEAD = `${CELL} text-left text-sm font-medium text-ink-2`;
 const STICKY_END = "sticky right-0 z-10 border-l border-hair bg-card";
+// A row whose holdings line follows it: no rule between the two.
+const JOINED = "[&>*]:border-b-0";
 const MERGE_SELECT =
   "h-7 w-28 rounded-[var(--radius-sm)] border border-hair bg-paper pl-2 text-xs text-ink-2 outline-none " +
   `hover:border-hair-2 focus:border-accent focus:ring-2 focus:ring-accent/25 ${selectChevronClassName}`;
@@ -173,22 +177,35 @@ function ListTable(props: SectionBodyProps) {
         </tr>
       </thead>
       <tbody className="[&>tr:last-child>*]:border-b-0">
-        {rows.map((row, i) => (
-          <tr key={row.id}>
-            <th scope="row" className={ROW_HEAD}>
-              <NumberedLabel text={String(i + 1)} label={rowLabel(section, row)} />
-            </th>
-            {section.columns.map((column) => (
-              <td key={column.id} className={CELL}>
-                {cellFor(props, row, column)}
-              </td>
-            ))}
-            {section.links && <td className={CELL}>{linkFor(props, row)}</td>}
-            <td className={`${CELL} ${STICKY_END}`}>
-              <RowActions section={section} rows={rows} row={row} onApply={onApply} />
-            </td>
-          </tr>
-        ))}
+        {rows.map((row, i) => {
+          const holdings = section.holdings === true && (row.holdings?.length ?? 0) > 0;
+          return (
+            <Fragment key={row.id}>
+              <tr className={holdings ? JOINED : undefined}>
+                <th scope="row" className={ROW_HEAD}>
+                  <NumberedLabel text={String(i + 1)} label={rowLabel(section, row)} />
+                </th>
+                {section.columns.map((column) => (
+                  <td key={column.id} className={CELL}>
+                    {cellFor(props, row, column)}
+                  </td>
+                ))}
+                {section.links && <td className={CELL}>{linkFor(props, row)}</td>}
+                <td className={`${CELL} ${STICKY_END}`}>
+                  <RowActions section={section} rows={rows} row={row} onApply={onApply} />
+                </td>
+              </tr>
+              {holdings && (
+                <HoldingsRow
+                  section={section}
+                  row={row}
+                  colSpan={section.columns.length + (section.links ? 3 : 2)}
+                  onApply={onApply}
+                />
+              )}
+            </Fragment>
+          );
+        })}
       </tbody>
     </TableFrame>
   );
