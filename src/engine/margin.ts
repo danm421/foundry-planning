@@ -62,3 +62,21 @@ export function chargeMarginInterest(
   }
   return interest;
 }
+
+/** The death path reads loans off Account objects: swap in the live loan. */
+export function withLiveMargin(acct: Account, marginMap: MarginMap | undefined): Account {
+  const loan = marginMap?.[acct.id];
+  return loan == null ? acct : { ...acct, marginBalance: loan };
+}
+
+/** A `fraction` share of an account: value, basis AND loan scale together.
+ *  Every "share of an account" copy must use this — a bare
+ *  `{ ...source, value: source.value * f }` copies the WHOLE loan. */
+export function scaleAccountValue(source: Account, fraction: number): Account {
+  return {
+    ...source,
+    value: source.value * fraction,
+    basis: source.basis * fraction,
+    ...(source.marginBalance != null ? { marginBalance: source.marginBalance * fraction } : {}),
+  };
+}

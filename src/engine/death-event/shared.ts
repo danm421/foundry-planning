@@ -1,5 +1,6 @@
 import type { ClientInfo, Account, Liability, DeathTransfer, EstateTaxResult, FamilyMember, Will, WillBequest, EntitySummary, Income, PlanSettings, Gift, GiftEvent, BeneficiaryRef, LifeInsurancePayout } from "../types";
 import { nextSyntheticId } from "../asset-transactions";
+import { scaleAccountValue } from "../margin";
 import type { FilingStatus } from "../../lib/tax/types";
 import type { AccountOwner } from "../ownership";
 import { controllingEntity, controllingFamilyMember, giftAwareLiabilityOwners, giftAwareOwners, isFullyEntityOwned, ownedByHousehold } from "../ownership";
@@ -176,6 +177,10 @@ export function partitionMixedAccount(
   let entityBasisTotal = 0;
   let awayValueTotal = 0;
   let awayBasisTotal = 0;
+  // A margin loan follows ownership percent (never a locked dollar share).
+  const loan = account.marginBalance ?? 0;
+  let entityLoanTotal = 0;
+  let awayLoanTotal = 0;
 
   for (const o of resolvedOwners ?? account.owners) {
     if (o.kind === "gifted_away") {
@@ -185,6 +190,7 @@ export function partitionMixedAccount(
       // routed through the chain and lands back in the estate.
       awayValueTotal += balance * o.percent;
       awayBasisTotal += basis * o.percent;
+      awayLoanTotal += loan * o.percent;
       continue;
     }
     if (o.kind !== "entity") continue;
@@ -196,14 +202,17 @@ export function partitionMixedAccount(
     // material lock-vs-percent difference mis-states both slice and pool bases.
     const sliceBasisFraction = locked != null && balance > 0 ? locked / balance : o.percent;
     const sliceBasis = basis * sliceBasisFraction;
+    const sliceLoan = loan * o.percent;
     entityValueTotal += sliceValue;
     entityBasisTotal += sliceBasis;
+    entityLoanTotal += sliceLoan;
     entitySlices.push({
       ...account,
       id: nextSyntheticId("entity-slice"),
       sliceOf: account.sliceOf ?? account.id,
       value: sliceValue,
       basis: sliceBasis,
+      ...(account.marginBalance != null ? { marginBalance: sliceLoan } : {}),
       owners: [{ kind: "entity", entityId: o.entityId, percent: 1 }],
     });
   }
@@ -215,6 +224,9 @@ export function partitionMixedAccount(
     ...account,
     value: Math.max(0, balance - entityValueTotal - awayValueTotal),
     basis: Math.max(0, basis - entityBasisTotal - awayBasisTotal),
+    ...(account.marginBalance != null
+      ? { marginBalance: Math.max(0, loan - entityLoanTotal - awayLoanTotal) }
+      : {}),
     owners: familyRows.map((o) => ({
       ...o,
       percent: familySum > 0 ? o.percent / familySum : 0,
@@ -516,6 +528,7 @@ export function splitAccount(
         name: `${source.name} — to ${share.ledgerMeta.recipientLabel}`,
         value: amount,
         basis: basisShare,
+        ...(source.marginBalance != null ? { marginBalance: source.marginBalance * share.fraction } : {}),
         beneficiaries: carriedBeneficiaries,
       };
     }
@@ -883,11 +896,7 @@ export function applyBeneficiaryDesignations(
 
   // Scale source to the totalClaimed portion so splitAccount (which requires
   // shares summing to 1) works correctly. Normalize shares to sum to 1.
-  const scaledSource: Account = {
-    ...source,
-    value: source.value * totalClaimed,
-    basis: source.basis * totalClaimed,
-  };
+  const scaledSource: Account = scaleAccountValue(source, totalClaimed);
   const scaledLiability: Liability | undefined = linkedLiability
     ? {
         ...linkedLiability,
@@ -1119,11 +1128,7 @@ export function applyWillSpecificBequests(
   }
 
   // Scale source + liability down to `totalClaimed` and normalize shares to sum=1.
-  const scaledSource: Account = {
-    ...source,
-    value: source.value * totalClaimed,
-    basis: source.basis * totalClaimed,
-  };
+  const scaledSource: Account = scaleAccountValue(source, totalClaimed);
   const scaledLiability: Liability | undefined = linkedLiability
     ? {
         ...linkedLiability,
@@ -1199,11 +1204,7 @@ export function applyWillAllAssetsResidual(
   if (totalClaimed < 1e-9) {
     return empty();
   }
-  const scaledSource: Account = {
-    ...source,
-    value: source.value * totalClaimed,
-    basis: source.basis * totalClaimed,
-  };
+  const scaledSource: Account = scaleAccountValue(source, totalClaimed);
   const scaledLiability: Liability | undefined = linkedLiability
     ? {
         ...linkedLiability,
@@ -1287,11 +1288,7 @@ export function applyWillResiduary(
   }
 
   // Scale source + liability to the totalClaimed portion; normalize shares to sum=1.
-  const scaledSource: Account = {
-    ...source,
-    value: source.value * totalClaimed,
-    basis: source.basis * totalClaimed,
-  };
+  const scaledSource: Account = scaleAccountValue(source, totalClaimed);
   const scaledLiability: Liability | undefined = linkedLiability
     ? {
         ...linkedLiability,
@@ -1775,11 +1772,7 @@ export function applyFallback(
   const warnings = [`residual_fallback_fired:${source.id}`];
 
   // Scale source + liability to the residual portion; normalize shares to sum=1.
-  const scaledSource: Account = {
-    ...source,
-    value: source.value * undisposedFraction,
-    basis: source.basis * undisposedFraction,
-  };
+  const scaledSource: Account = scaleAccountValue(source, undisposedFraction);
   const scaledLiability: Liability | undefined = linkedLiability
     ? {
         ...linkedLiability,
