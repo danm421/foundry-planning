@@ -13,7 +13,7 @@ import { PortalIntakeClient } from "./intake-client";
 export default async function PortalIntakePage(): Promise<ReactElement> {
   const { clientId } = await requireClientPortalAccess();
 
-  // Resolve firmId/advisorId for the seed + branding (same pattern as
+  // Resolve firmId/advisorId/brand for the seed + branding (same pattern as
   // resolveAuth() in the route)
   const [clientRow] = await db
     .select({ firmId: clients.firmId, advisorId: clients.advisorId, brand: clients.brand })

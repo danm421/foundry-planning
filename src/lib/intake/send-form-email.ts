@@ -50,8 +50,7 @@ export async function sendIntakeLinkEmail(args: {
   const { firmId, senderUserId, to, link, clientName } = args;
 
   // Who signs is settled first, because it decides whose saved copy to read.
-  // Clerk's member list is asked only when an advisor brand is actually on, so
-  // a send with no brand in effect costs what it did before.
+  // Clerk's member list is asked only when an advisor brand is actually on.
   const brandAdvisorId = brandAdvisorOf(args.brand);
   const profile = brandAdvisorId ? await getAdvisorProfile(firmId, brandAdvisorId) : null;
   const signer = profile?.brandingEnabled

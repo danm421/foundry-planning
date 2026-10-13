@@ -7,7 +7,7 @@ import type { ExportPdfBody } from "../render-presentation-pdf";
 // Task 11: renderPresentationPdf resolves branding by the CLIENT'S advisor
 // (Task 10's resolveBrandingForClient), not the firm alone. This file mocks
 // every dependency the function touches EXCEPT the new advisor lookup + the
-// two branding resolvers, so the assertions exercise real wiring rather than
+// branding resolver, so the assertions exercise real wiring rather than
 // mock behavior. A single "cover"-only page with scenarioId=null and no
 // spouse keeps every other conditional branch (scenario names, investments,
 // life insurance, observations, scenario-changes) unreached, so the ONLY
@@ -21,11 +21,7 @@ const dbMocks = vi.hoisted(() => ({
 vi.mock("@/db", () => ({ db: { select: dbMocks.select } }));
 
 const brandingMocks = vi.hoisted(() => ({
-  resolveBranding: vi.fn(),
   resolveBrandingForClient: vi.fn(),
-}));
-vi.mock("@/lib/branding/branding", () => ({
-  resolveBranding: brandingMocks.resolveBranding,
 }));
 vi.mock("@/lib/branding/resolve-for-client", () => ({
   resolveBrandingForClient: brandingMocks.resolveBrandingForClient,
@@ -99,18 +95,12 @@ describe("renderPresentationPdf — advisor-aware branding", () => {
       primaryColor: "#111111",
       logoDataUrl: "data:image/png;base64,ADV",
     });
-    brandingMocks.resolveBranding.mockResolvedValue({
-      firmName: "Firm Brand",
-      primaryColor: "#222222",
-      logoDataUrl: "data:image/png;base64,FIRM",
-    });
 
     await renderPresentationPdf(CLIENT_ID, FIRM_ID, body);
 
     // Positional call — NOT an object literal (would break React `cache()`
     // identity in the sibling web-branding resolver this mirrors).
     expect(brandingMocks.resolveBrandingForClient).toHaveBeenCalledWith("firm-1", "adv-77");
-    expect(brandingMocks.resolveBranding).not.toHaveBeenCalled();
 
     const doc = renderToBufferMock.mock.calls[0][0];
     expect(doc.props.firmName).toBe("Advisor Brand");

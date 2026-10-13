@@ -58,15 +58,7 @@ vi.mock("@/lib/crm/vault-plans", () => ({
   savePlanToVault: vi.fn().mockResolvedValue(null),
 }));
 
-// Firm branding + default cover logo (the route resolves these for the cover).
-vi.mock("@/lib/branding/branding", () => ({
-  resolveBranding: vi.fn().mockResolvedValue({
-    primaryColor: "#b87f1f",
-    firmName: "Acme Wealth Management",
-    logoDataUrl: null,
-  }),
-}));
-
+// Default cover logo (the route resolves it for the cover).
 vi.mock("@/lib/presentations/default-logo", () => ({
   foundryDefaultLogoDataUrl: vi.fn().mockResolvedValue("data:image/png;base64,AAAA"),
 }));

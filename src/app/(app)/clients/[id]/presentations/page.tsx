@@ -37,7 +37,8 @@ export default async function PresentationsPage({
   if (!userId) throw new UnauthorizedError();
 
   // Firm-scope gate + the household id we need for the primary contact's last
-  // name (drives the auto filename in the launcher).
+  // name (drives the auto filename in the launcher) + the advisor/brand that
+  // seed the launcher's Brand default.
   const [clientRow] = await db
     .select({
       id: clients.id,

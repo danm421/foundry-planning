@@ -95,7 +95,10 @@ const NO_PICKER: BrandPicker = { options: [], allBrands: [] };
  */
 export async function loadBrandPicker(firmId: string): Promise<BrandPicker> {
   const caller = await sessionCaller();
-  if (!caller) return NO_PICKER;
+  // Plain advisors only ever get the firm brand: skip the Clerk + DB lookups.
+  if (!caller || !(isFirmWideAdminRole(caller.orgRole) || (caller.orgRole && STAFF_ROLES.has(caller.orgRole)))) {
+    return NO_PICKER;
+  }
   const options = await listBrandOptions(firmId, caller);
   if (options.length < 2) return NO_PICKER;
   return { options, allBrands: await listFirmBrands(firmId) };
