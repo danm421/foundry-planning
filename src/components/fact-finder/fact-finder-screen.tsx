@@ -13,8 +13,10 @@ import { pageCounts } from "@/lib/fact-finder/screen-summary";
 import { countLinksNeedingClick } from "@/lib/fact-finder/state";
 import { PanelIcon } from "./icons";
 import { PageRail } from "./page-rail";
+import { SaveStatus } from "./save-status";
 import type { FactFinderScreenProps } from "./screen-types";
 import { SidePanel, useNarrowScreen } from "./side-panel";
+import { useFactFinder } from "./use-fact-finder";
 
 const PANEL_ID = "fact-finder-panel";
 const PANEL_TITLE = "Documents & chat";
@@ -27,8 +29,9 @@ function reviewBlockedReason(reading: boolean, linksToClick: number): string {
   return "Review arrives in the next update.";
 }
 
-export function FactFinderScreen({ clientId, initialState, initialFiles }: FactFinderScreenProps) {
-  const state = initialState;
+export function FactFinderScreen({ clientId, importId, initialState, initialFiles }: FactFinderScreenProps) {
+  const store = useFactFinder({ clientId, importId, initialState });
+  const state = store.state;
   const reading = filesReading(state, new Date()).length > 0;
   const [page, setPage] = useState<FFPage>("household");
   const [panelOpen, setPanelOpen] = useState(reading);
@@ -48,6 +51,13 @@ export function FactFinderScreen({ clientId, initialState, initialFiles }: FactF
           <h1 className="text-xl font-semibold text-ink">Fact finder import</h1>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-3">
+          <SaveStatus
+            status={store.status}
+            error={store.error}
+            notice={store.notice}
+            onRetry={store.retry}
+            onDismiss={store.dismiss}
+          />
           <button
             type="button"
             aria-expanded={panelOpen}

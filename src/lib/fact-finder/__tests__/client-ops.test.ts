@@ -119,7 +119,7 @@ describe("rebaseOps", () => {
     expect(rebaseOps(mine, last, fresh, advisor)).toEqual({ kept: [mine[1]], dropped: [mine[0]] });
   });
 
-  it("keeps a remove when a reading only filled a cell of that row, drops it when the row was already removed", () => {
+  it("keeps a remove when a reading only filled a cell of that row; one whose row is already removed is done, not lost", () => {
     const last = lastServer();
     const remove: ClientOp = { op: "removeRow", sectionId: "cash", rowId: "c1", reason: "Closed" };
     const filled = readingFills(last, "cash", "c1", "last4", doc("0042"));
@@ -127,7 +127,7 @@ describe("rebaseOps", () => {
     expect(applyOps(filled, [remove], advisor).removed.map((e) => e.row.id)).toEqual(["c1"]);
 
     const removedByChat = applyOps(last, [{ op: "removeRow", sectionId: "cash", rowId: "c1" }], chat);
-    expect(rebaseOps([remove], last, removedByChat, advisor)).toEqual({ kept: [], dropped: [remove] });
+    expect(rebaseOps([remove], last, removedByChat, advisor)).toEqual({ kept: [], dropped: [] });
   });
 
   it("drops a link choice when the row's link changed, keeps it when only its cells did", () => {
@@ -187,6 +187,26 @@ describe("rebaseOps", () => {
     const next = applyOps(fresh, kept, advisor);
     expect(next.sections.cash.map((r) => r.id)).toEqual(["c1", "c2", "new-1", "mine-1"]);
     expect(next.sections.cash[3].cells.currentValue.value).toBe(8000);
+  });
+
+  it("treats a batch the server already took (its reply was lost) as done, and keeps later edits to the same cells", () => {
+    const last = lastServer();
+    const lostBatch: ClientOp[] = [
+      { op: "setCell", sectionId: "cash", rowId: "c1", columnId: "currentValue", value: 13000 },
+      { op: "setCell", sectionId: "cash", rowId: "c1", columnId: "currentValue", value: 13500 },
+      { op: "setCell", sectionId: "cash", rowId: "c2", columnId: "last4", value: "0042" },
+      { op: "addRow", sectionId: "cash", rowId: "mine-1", cells: { accountName: "Money market" } },
+    ];
+    const fresh = { ...applyOps(last, lostBatch, advisor), version: last.version + 1 };
+    const typedSince: ClientOp[] = [
+      { op: "setCell", sectionId: "cash", rowId: "c1", columnId: "currentValue", value: 14000 },
+      { op: "setCell", sectionId: "cash", rowId: "mine-1", columnId: "currentValue", value: 900 },
+    ];
+    expect(rebaseOps([...lostBatch, ...typedSince], last, fresh, advisor)).toEqual({ kept: typedSince, dropped: [] });
+
+    const next = applyOps(fresh, typedSince, advisor);
+    expect(next.sections.cash[0].cells.currentValue.value).toBe(14000);
+    expect(next.sections.cash.map((r) => r.id)).toEqual(["c1", "c2", "mine-1"]);
   });
 
   it("drops an edit to a row whose add was dropped — it no longer applies", () => {

@@ -116,6 +116,11 @@ describe("Review changes", () => {
     expect(screen.getByRole("link", { name: "← Back to imports" })).toHaveAttribute("href", "/clients/c1/details/import");
     expect(screen.getByRole("heading", { level: 1, name: "Fact finder import" })).toBeInTheDocument();
   });
+
+  it("says in the header that changes save automatically", () => {
+    renderScreen();
+    expect(within(screen.getByRole("banner")).getByText("Changes save automatically")).toBeInTheDocument();
+  });
 });
 
 describe("side panel", () => {

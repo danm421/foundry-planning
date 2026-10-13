@@ -73,11 +73,34 @@ function targetValue(state: FactFinderState, target: OpTarget): unknown {
   }
 }
 
+function tryApply(state: FactFinderState, op: ClientOp, ctx: OpContext): FactFinderState | null {
+  try {
+    return applyOps(state, [op], ctx);
+  } catch (err) {
+    if (!(err instanceof FactFinderOpError)) throw err;
+    return null;
+  }
+}
+
+function sameTargets(op: ClientOp, a: FactFinderState, b: FactFinderState): boolean {
+  return opTargets(op).every((t) => sameJson(targetValue(a, t), targetValue(b, t)));
+}
+
+/** A destination target only says the row is there; the moved holding itself is in the row. */
+function movedHolding(state: FactFinderState, op: ClientOp): unknown {
+  return op.op === "assignHolding"
+    ? liveRow(state, op.to.rowId)?.holdings?.find((h) => h.id === op.holdingId)
+    : undefined;
+}
+
 /**
  * Re-applies the advisor's edits on `fresh`. An edit is kept when nothing it
- * depends on changed between `lastServer` (what it was made against) and
- * `fresh`, and it still applies after the edits kept before it. Kept edits
- * keep their order.
+ * depends on differs between the state it was made against (`lastServer`
+ * plus the edits before it) and the state it would apply to now (`fresh`
+ * plus the edits kept before it), and it still applies. Kept edits keep
+ * their order. An edit that isn't kept is `dropped` (lost) unless what the
+ * advisor last put there is there anyway — the server already took it and
+ * its reply never arrived — then it's in neither list.
  */
 export function rebaseOps(
   ops: readonly ClientOp[],
@@ -86,21 +109,21 @@ export function rebaseOps(
   ctx: OpContext,
 ): { kept: ClientOp[]; dropped: ClientOp[] } {
   const kept: ClientOp[] = [];
-  const dropped: ClientOp[] = [];
+  const notKept: ClientOp[] = [];
+  let mine = lastServer;
   let state = fresh;
   for (const op of ops) {
-    const unchanged = opTargets(op).every((t) => sameJson(targetValue(lastServer, t), targetValue(fresh, t)));
-    if (!unchanged) {
-      dropped.push(op);
-      continue;
-    }
-    try {
-      state = applyOps(state, [op], ctx);
+    const next = sameTargets(op, mine, state) ? tryApply(state, op, ctx) : null;
+    mine = tryApply(mine, op, ctx) ?? mine;
+    if (next) {
+      state = next;
       kept.push(op);
-    } catch (err) {
-      if (!(err instanceof FactFinderOpError)) throw err;
-      dropped.push(op);
+    } else {
+      notKept.push(op);
     }
   }
+  const dropped = notKept.filter(
+    (op) => !sameTargets(op, mine, state) || !sameJson(movedHolding(mine, op), movedHolding(state, op)),
+  );
   return { kept, dropped };
 }
