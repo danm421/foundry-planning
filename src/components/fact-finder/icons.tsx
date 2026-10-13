@@ -105,3 +105,32 @@ export function ChevronDownIcon({ className }: IconProps) {
     </Outline>
   );
 }
+
+/** Lucide `loader-circle`. */
+export function LoaderIcon({ className }: IconProps) {
+  return (
+    <Outline className={className}>
+      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+    </Outline>
+  );
+}
+
+/** Lucide `circle-check`. */
+export function CircleCheckIcon({ className }: IconProps) {
+  return (
+    <Outline className={className}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="m9 12 2 2 4-4" />
+    </Outline>
+  );
+}
+
+/** Lucide `clock`. */
+export function ClockIcon({ className }: IconProps) {
+  return (
+    <Outline className={className}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 6v6l4 2" />
+    </Outline>
+  );
+}

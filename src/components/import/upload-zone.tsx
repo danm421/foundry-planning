@@ -45,8 +45,8 @@ interface UploadZoneProps {
   initialFiles?: InitialUploadedFile[];
   /** Called after each successful upload — parent typically router.refresh()es. */
   onUploaded?: (info: UploadedFileInfo) => void;
-  /** Called after a persisted file is removed (its server row is deleted). */
-  onRemoved?: () => void;
+  /** Called after a persisted file is removed (its server row is deleted), with its id. */
+  onRemoved?: (serverFileId: string) => void;
   disabled?: boolean;
 }
 
@@ -214,11 +214,12 @@ export default function UploadZone({
       // A persisted file leaves a server row behind; delete it so it doesn't
       // reappear on reload (and stays out of the next extraction run).
       if (target?.serverFileId) {
+        const serverFileId = target.serverFileId;
         fetch(
-          `/api/clients/${clientId}/imports/${importId}/files/${target.serverFileId}`,
+          `/api/clients/${clientId}/imports/${importId}/files/${serverFileId}`,
           { method: "DELETE" },
         )
-          .then(() => onRemovedRef.current?.())
+          .then(() => onRemovedRef.current?.(serverFileId))
           .catch((err) => console.error("Failed to delete file:", err));
       }
     },

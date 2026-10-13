@@ -7,7 +7,7 @@ import { FactFinderScreen } from "../fact-finder-screen";
 import type { FFScreenFile } from "../screen-types";
 import { sectionsOnPage } from "@/lib/fact-finder/schema";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
-import type { FactFinderState, FFCell, FFRow } from "@/lib/fact-finder/types";
+import type { FactFinderState, FFCell, FFFileReading, FFRow } from "@/lib/fact-finder/types";
 
 const lowConfidence = (value: string): FFCell => ({ value, confidence: 0.5, by: "document", source: { fileId: "f1" } });
 const suggested = (recordId: string): FFRow["link"] => ({ kind: "existing", recordId, score: 0.74, confirmed: false, by: "auto" });
@@ -18,12 +18,16 @@ const cashRow = (id: string, recordId: string): FFRow => ({
   sourceFileIds: ["f1"],
 });
 
+/** f1 has been read, so the screen doesn't start a read as it opens. */
+const READ: FFFileReading = { status: "done", startedAt: "2026-10-13T09:00:00.000Z", rows: 1 };
+
 /** Mark typed in by hand on Household; one cash account to check, with a link that needs a click. */
 function filled(): FactFinderState {
   const s = emptyFactFinderState();
   const [client, coClient] = s.sections.people;
   return {
     ...s,
+    readings: { f1: READ },
     sections: {
       ...s.sections,
       people: [{ ...client, cells: { firstName: { value: "Mark", by: "advisor", pinned: true } } }, coClient],
@@ -112,7 +116,7 @@ describe("Review changes", () => {
     ["a document is still reading", reading(), "Wait for the documents to finish reading."],
     ["two links need a click", twoLinks(), "2 links need a click first."],
     ["one link needs a click", filled(), "1 link needs a click first."],
-    ["nothing blocks it", emptyFactFinderState(), "Review arrives in the next update."],
+    ["nothing blocks it", { ...emptyFactFinderState(), readings: { f1: READ } }, "Review arrives in the next update."],
   ])("stays disabled when %s, and says why", (_case, state, reason) => {
     renderScreen(state);
     const review = screen.getByRole("button", { name: "Review changes →" });
@@ -142,7 +146,8 @@ describe("side panel", () => {
     await userEvent.click(toggle);
     const panel = screen.getByRole("complementary", { name: "Documents & chat" });
     expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(within(panel).getByText("hendricks-fact-finder.pdf")).toBeInTheDocument();
+    const lines = within(panel).getByRole("list", { name: "Reading progress" });
+    expect(within(lines).getByText("hendricks-fact-finder.pdf")).toBeInTheDocument();
 
     await userEvent.click(within(panel).getByRole("button", { name: "Hide documents & chat" }));
     expect(screen.queryByRole("complementary", { name: "Documents & chat" })).toBeNull();

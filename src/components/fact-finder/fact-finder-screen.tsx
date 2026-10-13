@@ -9,6 +9,7 @@ import { filesReading } from "@/lib/fact-finder/reading-status";
 import { PAGE_ORDER, type FFPage } from "@/lib/fact-finder/schema";
 import { pageCounts } from "@/lib/fact-finder/screen-summary";
 import { countLinksNeedingClick } from "@/lib/fact-finder/state";
+import { DocumentsPanel, useDocuments } from "./documents-panel";
 import { PanelIcon } from "./icons";
 import { PageRail } from "./page-rail";
 import { PageView } from "./page-view";
@@ -31,13 +32,12 @@ function reviewBlockedReason(reading: boolean, linksToClick: number): string {
 export function FactFinderScreen({ clientId, importId, initialState, initialFiles, entities }: FactFinderScreenProps) {
   const store = useFactFinder({ clientId, importId, initialState });
   const state = store.state;
-  const reading = filesReading(state, new Date()).length > 0;
+  const docs = useDocuments({ clientId, importId, initialFiles, state, adopt: store.adopt });
+  const reading = docs.read.running || filesReading(state, new Date()).length > 0;
   const [page, setPage] = useState<FFPage>("household");
-  const [panelOpen, setPanelOpen] = useState(reading);
+  const [panelOpen, setPanelOpen] = useState(reading || docs.readsOnOpen);
   const narrow = useNarrowScreen();
   const pageLabel = PAGE_ORDER.find((p) => p.id === page)?.label;
-  const fileNames = new Map(initialFiles.map((file) => [file.id, file.name]));
-  const fileName = (fileId: string) => fileNames.get(fileId);
 
   return (
     <div className="flex flex-col gap-6">
@@ -92,21 +92,11 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
 
         <div className="flex min-w-0 flex-col gap-4">
           <h2 className="text-lg font-semibold text-ink">{pageLabel}</h2>
-          <PageView page={page} state={state} onApply={store.apply} fileName={fileName} entities={entities} />
+          <PageView page={page} state={state} onApply={store.apply} fileName={docs.fileName} entities={entities} />
         </div>
 
         <SidePanel id={PANEL_ID} title={PANEL_TITLE} open={panelOpen} overlay={narrow} onOpenChange={setPanelOpen}>
-          {initialFiles.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-ink-3">No documents yet.</p>
-          ) : (
-            <ul className="divide-y divide-hair">
-              {initialFiles.map((file) => (
-                <li key={file.id} title={file.name} className="truncate px-4 py-2 text-sm text-ink-2">
-                  {file.name}
-                </li>
-              ))}
-            </ul>
-          )}
+          <DocumentsPanel clientId={clientId} importId={importId} docs={docs} state={state} />
         </SidePanel>
       </div>
     </div>
