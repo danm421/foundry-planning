@@ -32,6 +32,8 @@ type UserCreatedData = {
   email_addresses?: Array<{ id?: string; email_address?: string }>;
   primary_email_address_id?: string | null;
   legal_consent?: { tos_accepted_at?: string; tos_version?: string };
+  /** Copied by Clerk from the portal invitation (send-portal-invite.ts). */
+  public_metadata?: { clientId?: string };
 };
 
 /**
@@ -318,8 +320,11 @@ export async function dispatchClerkMembership(
     }
 
     // Welcome the new user. Best-effort — sendWelcomeEmail never throws.
+    // Not a client signing up from a portal invite: the founder's note is for
+    // advisors, and a white-labelled firm's clients must not hear from Foundry.
     const email = resolvePrimaryEmail(d);
-    if (email) {
+    const isPortalClient = Boolean(d.public_metadata?.clientId);
+    if (email && !isPortalClient) {
       await sendWelcomeEmail({ to: email, firstName: d.first_name ?? null });
     }
 
