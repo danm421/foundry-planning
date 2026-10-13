@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { loadFormByToken } from "@/lib/intake/queries";
 import { isExpired } from "@/lib/intake/tokens";
-import {
-  resolveIntakeBranding,
-  type IntakeBranding,
-} from "@/lib/branding/branding";
+import type { IntakeBranding } from "@/lib/branding/branding";
+import { resolveIntakeBrandingForClient } from "@/lib/branding/resolve-for-client";
+import { resolveFormBrand } from "@/lib/intake/form-brand";
+import type { IntakeFormRow } from "@/lib/intake/queries";
 import { IntakeBrandingHeader } from "@/components/intake/branding-header";
 import { IntakeThankYou } from "@/components/intake/thank-you";
 import { IntakeVerifyGate } from "@/components/intake/verify-gate";
@@ -19,14 +19,19 @@ import { IntakeClient } from "./intake-client";
 // Every state carries the firm's letterhead (or the Foundry lockup when the
 // firm hasn't uploaded a logo, or the token is unknown).
 //
-// Intentionally stays on firm-level branding (resolveIntakeBranding), not the
-// advisor-aware resolver: this route keys on form.firmId and has no reliable
-// client/advisor identity at this stage (the form may not yet be tied to a
-// client, and there's no authenticated session to read an advisorId from).
+// Branded by the form's own brand (`intake_forms.brand`), which the sender
+// picked at send time. An unknown token has no form and so no brand: the
+// Foundry lockup.
 
 // ─── Tab chrome ───────────────────────────────────────────────────────────────
-// loadFormByToken and resolveIntakeBranding are both React.cache'd, so metadata
-// and the page render share one DB hit + one branding resolution per request.
+// loadFormByToken, resolveFormBrand and resolveIntakeBrandingForClient are all
+// React.cache'd, so metadata and the page render share one DB hit + one
+// branding resolution per request.
+
+async function brandingFor(form: IntakeFormRow): Promise<IntakeBranding | null> {
+  const brand = await resolveFormBrand(form.firmId, form.clientId, form.brand, form.createdByUserId);
+  return resolveIntakeBrandingForClient(form.firmId, brand);
+}
 
 export async function generateMetadata({
   params,
@@ -36,7 +41,7 @@ export async function generateMetadata({
   const { token } = await params;
   const form = await loadFormByToken(token);
   if (!form) return {};
-  const branding = await resolveIntakeBranding(form.firmId);
+  const branding = await brandingFor(form);
   if (!branding) return {};
   return {
     title: `${branding.firmName} — Client information form`,
@@ -80,7 +85,7 @@ export default async function IntakePage({
   const form = await loadFormByToken(token);
   // Unknown token → no firm to brand for; known form keeps its letterhead even
   // when expired/submitted so the client still sees who the form belongs to.
-  const branding = form ? await resolveIntakeBranding(form.firmId) : null;
+  const branding = form ? await brandingFor(form) : null;
 
   // Missing or expired token
   if (!form || isExpired(form, new Date())) {
