@@ -160,8 +160,9 @@ export async function dispatchClerkMembership(
     }
     await syncSeatQuantity(firmId);
     // Pin the first admin as the firm's billing contact if none is set yet.
-    // Handles the checkout flow, where the buyer's userId only exists after
-    // they accept the org:admin invite. Idempotent — only writes when unset.
+    // Handles the sales checkout flow, where the buyer's userId only exists
+    // after they accept the org:admin invite (self-serve buyers are pinned by
+    // checkout-session-completed). Only fills an empty pin — never overwrites.
     if (t === "organizationMembership.created" && d.role === "org:admin") {
       const cc = await clerkClient();
       const org = await cc.organizations.getOrganization({ organizationId: firmId });

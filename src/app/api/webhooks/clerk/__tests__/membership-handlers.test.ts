@@ -407,6 +407,44 @@ describe("organizationMembership.created — billing contact pin", () => {
     expect(mockUpdateOrganizationMetadata).not.toHaveBeenCalled();
   });
 
+  it("does NOT pin a self-serve buyer's creator membership (org:owner) — checkout pins them", async () => {
+    mockGetOrganization.mockResolvedValue({ publicMetadata: {} });
+    const res = await dispatchClerkMembership(
+      {
+        type: "organizationMembership.created",
+        data: {
+          organization: { id: "org_selfserve" },
+          public_user_data: { user_id: "user_buyer" },
+          role: "org:owner",
+        },
+      } as never,
+      "svix_pin_creator",
+    );
+    expect(res?.status).toBe(200);
+    expect(mockUpdateOrganizationMetadata).not.toHaveBeenCalled();
+  });
+
+  it("leaves the buyer pinned when a colleague later joins as org:admin", async () => {
+    // checkout.session.completed pinned the buyer; the invited admin's join
+    // must not take the billing contact from them.
+    mockGetOrganization.mockResolvedValue({
+      publicMetadata: { billing_contact_userId: "user_buyer" },
+    });
+    const res = await dispatchClerkMembership(
+      {
+        type: "organizationMembership.created",
+        data: {
+          organization: { id: "org_selfserve" },
+          public_user_data: { user_id: "user_colleague" },
+          role: "org:admin",
+        },
+      } as never,
+      "svix_pin_colleague",
+    );
+    expect(res?.status).toBe(200);
+    expect(mockUpdateOrganizationMetadata).not.toHaveBeenCalled();
+  });
+
   it("does NOT pin a non-admin member", async () => {
     const res = await dispatchClerkMembership(
       {

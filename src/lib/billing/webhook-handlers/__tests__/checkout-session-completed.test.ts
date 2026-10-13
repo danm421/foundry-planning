@@ -16,6 +16,7 @@ vi.mock("@/lib/billing/stripe-client", () => ({
 }));
 
 const mockCreateOrg = vi.fn();
+const mockGetOrg = vi.fn();
 const mockCreateInvite = vi.fn();
 const mockUpdateOrgMeta = vi.fn();
 const mockCreateMembership = vi.fn();
@@ -28,6 +29,7 @@ vi.mock("@clerk/nextjs/server", () => ({
   clerkClient: async () => ({
     organizations: {
       createOrganization: (...a: unknown[]) => mockCreateOrg(...a),
+      getOrganization: (...a: unknown[]) => mockGetOrg(...a),
       createOrganizationInvitation: (...a: unknown[]) => mockCreateInvite(...a),
       updateOrganizationMetadata: (...a: unknown[]) => mockUpdateOrgMeta(...a),
       createOrganizationMembership: (...a: unknown[]) =>
@@ -93,6 +95,8 @@ beforeEach(() => {
   mockSubsRetrieve.mockReset();
   mockSubsUpdate.mockReset();
   mockCreateOrg.mockReset();
+  mockGetOrg.mockReset();
+  mockGetOrg.mockResolvedValue({ publicMetadata: {} }); // default: nothing pinned yet
   mockCreateInvite.mockReset();
   mockUpdateOrgMeta.mockReset();
   mockCreateMembership.mockReset();
@@ -358,6 +362,13 @@ function evt() {
   } as unknown as import("stripe").Stripe.Event;
 }
 
+/** The publicMetadata of the handler's one Clerk org-metadata write. */
+function metadataWrite(): Record<string, unknown> {
+  expect(mockUpdateOrgMeta).toHaveBeenCalledTimes(1);
+  return (mockUpdateOrgMeta.mock.calls[0][1] as { publicMetadata: Record<string, unknown> })
+    .publicMetadata;
+}
+
 describe("profile-first path (session carries client_reference_id)", () => {
   beforeEach(() => {
     mockSessionsRetrieve.mockResolvedValue({
@@ -498,6 +509,40 @@ describe("profile-first path (session carries client_reference_id)", () => {
     expect(mockCreateInvite).not.toHaveBeenCalled();
   });
 
+  it("pins the buyer as the billing contact of the org this checkout created", async () => {
+    // `createdBy` gives the buyer Clerk's creator role and the promotion below
+    // is an UPDATE, so the membership webhook's "first org:admin joins" rule
+    // never sees them. Pinned here, or the first colleague they invite as an
+    // admin becomes the billing contact.
+    await handleCheckoutSessionCompleted(evt());
+    expect(mockUpdateOrgMeta).toHaveBeenCalledWith(
+      "org_new",
+      expect.objectContaining({
+        publicMetadata: expect.objectContaining({ billing_contact_userId: "user_buyer" }),
+      }),
+    );
+  });
+
+  it("pins the buyer on a redelivery that reuses the firm, when nobody is pinned yet", async () => {
+    // A first delivery that failed after the subscriptions row landed but
+    // before the metadata write: the retry reuses the firm and must still pin.
+    mockSubLookup.mockResolvedValue([{ firmId: "org_existing" }]);
+    await handleCheckoutSessionCompleted(evt());
+    expect(mockUpdateOrgMeta).toHaveBeenCalledWith(
+      "org_existing",
+      expect.objectContaining({
+        publicMetadata: expect.objectContaining({ billing_contact_userId: "user_buyer" }),
+      }),
+    );
+  });
+
+  it("leaves another contact alone on a firm this checkout did not create", async () => {
+    mockSubLookup.mockResolvedValue([{ firmId: "org_existing" }]);
+    mockGetOrg.mockResolvedValue({ publicMetadata: { billing_contact_userId: "user_colleague" } });
+    await handleCheckoutSessionCompleted(evt());
+    expect(metadataWrite()).not.toHaveProperty("billing_contact_userId");
+  });
+
   it("tolerates an already-a-member error when ensuring the membership", async () => {
     // Clerk throws if the user is already in the org — which is the normal case
     // after createdBy. That must not fail the webhook.
@@ -612,6 +657,32 @@ describe("sales path (no client_reference_id) — unchanged", () => {
       expect.objectContaining({ userId: "stripe:cus_2" }),
     );
     expect(mockGetUser).not.toHaveBeenCalled();
+  });
+
+  it("pins no billing contact — the invited admin is pinned when they join", async () => {
+    mockSessionsRetrieve.mockResolvedValue({
+      id: "cs_test_456",
+      customer: "cus_2",
+      subscription: "sub_2",
+      customer_details: { email: "buyer@firm.example" },
+      custom_fields: [{ key: "firm_name", text: { value: "Runbook Firm" } }],
+    });
+    mockSubsRetrieve.mockResolvedValue({
+      id: "sub_2",
+      status: "trialing",
+      trial_start: 1,
+      trial_end: 2,
+      cancel_at_period_end: false,
+      items: { data: [] },
+    });
+    mockCreateOrg.mockResolvedValue({ id: "org_sales" });
+    mockSubsInsert.mockResolvedValue([{ id: "internal_2" }]);
+    mockFirmInsert.mockResolvedValue([{ firmId: "org_sales" }]);
+    mockTosInsert.mockResolvedValue([{ id: "tos_2" }]);
+
+    await handleCheckoutSessionCompleted(evt());
+
+    expect(metadataWrite()).not.toHaveProperty("billing_contact_userId");
   });
 
   it("touches no membership call at all — the invitation is the only way in", async () => {
@@ -744,6 +815,23 @@ describe("re-checkout bound to an existing org (session.metadata.firm_id)", () =
           subscription_status: "active",
         }),
       }),
+    );
+  });
+
+  it("keeps the billing contact the firm already has", async () => {
+    // Founder orgs are pinned to their owner at comp time; a re-checkout by
+    // any admin must not hand the contact to whoever paid.
+    arrange();
+    mockGetOrg.mockResolvedValue({ publicMetadata: { billing_contact_userId: "user_founder" } });
+    await fire();
+    expect(metadataWrite()).not.toHaveProperty("billing_contact_userId");
+  });
+
+  it("pins the buyer when the firm has no billing contact yet", async () => {
+    arrange();
+    await fire();
+    expect(metadataWrite()).toEqual(
+      expect.objectContaining({ billing_contact_userId: "user_owner" }),
     );
   });
 
