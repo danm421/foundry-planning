@@ -22,25 +22,17 @@ import { readingsFromFormFields } from "./readers/form-reader";
 import { pagesForSectionReader, routeFile } from "./readers/route-file";
 import { readSections } from "./readers/section-reader";
 import { readingsFromStatements } from "./readers/statement-adapter";
+import { needsReading } from "./reading-status";
 import { loadExistingRecords, resolveBaseCaseScenarioId } from "./records/load";
 import { emptyExistingRecords } from "./records/types";
+import type { ReadEvent } from "./api-types";
 import type { FFFileReading, FFMergeDecision, FFReader, FFReaderOutput } from "./types";
 
-/** A file still "reading" after this long is treated as abandoned and read again. */
-export const STALE_READING_MS = 10 * 60 * 1000;
-const FILE_CONCURRENCY = 3;
+// Moved to client-safe modules so the screen can share them.
+export { STALE_READING_MS, needsReading } from "./reading-status";
+export type { ReadEvent } from "./api-types";
 
-export type ReadEvent =
-  | {
-      type: "file";
-      fileId: string;
-      fileName: string;
-      status: "reading" | "done" | "failed";
-      reader?: FFReader;
-      rows?: number;
-      error?: string;
-    }
-  | { type: "done"; summary: string; caveats: string[]; version: number };
+const FILE_CONCURRENCY = 3;
 
 export interface RunReadArgs {
   scope: FactFinderScope;
@@ -55,12 +47,6 @@ export interface RunReadResult {
   caveats: string[];
   version: number;
   filesRead: number;
-}
-
-export function needsReading(status: FFFileReading | undefined, now: Date): boolean {
-  if (!status || status.status === "failed") return true;
-  if (status.status === "reading") return now.getTime() - Date.parse(status.startedAt) > STALE_READING_MS;
-  return false;
 }
 
 async function eachLimited<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
