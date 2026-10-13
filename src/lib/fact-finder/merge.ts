@@ -87,6 +87,9 @@ const holdsEvery = (values: Record<string, FFCellValue>, { identity = {} }: FFRo
     ([columnId, value]) => !isBlank(identity[columnId]) && normText(identity[columnId]) === normText(value),
   );
 
+/** How many filled-in values the row's identity has. */
+const identitySize = ({ identity = {} }: FFRow) => Object.values(identity).filter((v) => !isBlank(v)).length;
+
 function setRow(state: FactFinderState, sectionId: string, row: FFRow): FactFinderState {
   const rows = state.sections[sectionId] ?? [];
   const index = rows.findIndex((r) => r.id === row.id);
@@ -113,17 +116,20 @@ function mergeOne(
 
   const values = readingValues(reading);
   const open = (row: FFRow) => !claimed.has(row.id) && matches(section.id, values, row);
-  // The row this reading created (its identity holds every value) beats an earlier look-alike,
-  // so a re-read after the advisor removed, restored or merged one of them fills each row from its own reading.
   const exact = (row: FFRow) => open(row) && holdsEvery(values, row);
-  let live: FFRow | undefined;
-  let trayIndex = -1;
-  for (const fits of [exact, open]) {
-    live = (state.sections[section.id] ?? []).find(fits);
-    if (live) break;
-    trayIndex = state.removed.findIndex((e) => e.sectionId === section.id && fits(e.row));
-    if (trayIndex >= 0) break;
-  }
+  // Live rows, then this section's Removed-tray entries (trayIndex -1 = live).
+  const rows = [
+    ...(state.sections[section.id] ?? []).map((row) => ({ row, trayIndex: -1 })),
+    ...state.removed.flatMap((e, trayIndex) => (e.sectionId === section.id ? [{ row: e.row, trayIndex }] : [])),
+  ];
+  // A row whose identity holds every value of the reading beats a loose match. A look-alike whose values are a
+  // superset of the reading's holds them all too, so the holder with the fewest values wins (ties keep list order):
+  // a re-read after the advisor removed, restored or merged a look-alike then fills each row from its own reading.
+  const pick =
+    rows.filter(({ row }) => exact(row)).sort((a, b) => identitySize(a.row) - identitySize(b.row))[0] ??
+    rows.find(({ row }) => open(row));
+  const live = pick && pick.trayIndex < 0 ? pick.row : undefined;
+  const trayIndex = pick?.trayIndex ?? -1;
   if (live) return { ...updateRow(state, section, live, reading, ctx), claim: live.id };
 
   if (trayIndex >= 0) {

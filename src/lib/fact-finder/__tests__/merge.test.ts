@@ -288,6 +288,21 @@ describe("mergeReadings — look-alike rows from one document, after the advisor
     expect(again.decisions).toEqual([]);
   });
 
+  // The restored look-alike's values are a subset of its sibling's, so the sibling holds every value of its reading too.
+  it.each([
+    ["a bare name, then the same name with a balance", [loan({}), loan({ balance: 12000 })]],
+    ["a balance, then the same balance with an interest rate", [loan({ balance: 9000 }), loan({ balance: 9000, interestRate: 5.9 })]],
+  ])("changes nothing on a re-read after the advisor removes and restores a look-alike whose values its sibling also has: %s", (_, readings) => {
+    const restored = applyOps(mergeReadings(emptyFactFinderState(), readings, ctx).state, [
+      { op: "removeRow", sectionId: "liab", rowId: "id-1" },
+      { op: "restoreRow", rowId: "id-1" },
+    ], advisor);
+    expect(restored.sections.liab.map((r) => r.id)).toEqual(["id-2", "id-1"]);
+    const again = mergeReadings(restored, readings, ctx);
+    expect(again.decisions).toEqual([]);
+    expect(again.state).toBe(restored);
+  });
+
   it("changes nothing on a re-read after the advisor merges two of three look-alikes, whichever two", () => {
     const readings = [
       loan({ balance: 12000, interestRate: 5.9 }),
