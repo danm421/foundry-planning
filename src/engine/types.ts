@@ -949,6 +949,15 @@ export interface Account {
    * subtypes (the engine ignores it there).
    */
   rothValue?: number;
+  /** Margin loan (taxable only; spec 2026-10-13). Plan-start debit balance —
+   *  `value` is the full securities value. The projection carries the account
+   *  at NET in `accountBalances` and the live loan in `marginMap`; inside the
+   *  death path this field holds the LIVE loan (see engine/margin.ts). */
+  marginBalance?: number;
+  /** Annual margin interest rate, capitalized onto the loan each year. */
+  marginInterestRate?: number;
+  /** Margin-call warning level: warn when net ÷ securities < this. */
+  marginCallPct?: number;
   /**
    * HSA coverage tier. Present only when `subType === "hsa"`; drives the
    * contribution cap (self vs family limit). Undefined → treated as "self"

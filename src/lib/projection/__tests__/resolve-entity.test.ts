@@ -239,6 +239,32 @@ describe("resolveAccountFromRaw", () => {
     expect(acct.growthRate).toBeCloseTo(0.09);
   });
 
+  it("resolves margin loan fields from decimal strings, defaulting when absent", () => {
+    const raw = {
+      ...baseRawAccount,
+      id: "a-margin",
+      name: "Brokerage",
+      category: "taxable",
+      subType: "individual",
+      value: "10000000",
+      basis: "5000000",
+      growthSource: "default",
+      growthRate: null,
+    };
+    const withLoan = resolveAccountFromRaw(
+      { ...raw, marginBalance: "2000000.00", marginInterestRate: "0.0200", marginCallPct: "0.3000" },
+      makeCtx(),
+    );
+    expect(withLoan.marginBalance).toBe(2_000_000);
+    expect(withLoan.marginInterestRate).toBe(0.02);
+    expect(withLoan.marginCallPct).toBe(0.3);
+
+    const without = resolveAccountFromRaw(raw, makeCtx());
+    expect(without.marginBalance).toBe(0);
+    expect(without.marginInterestRate).toBe(0);
+    expect(without.marginCallPct).toBe(0.3);
+  });
+
   it("propagates titlingType from raw to Account (community_property)", () => {
     const acct = resolveAccountFromRaw(
       {
