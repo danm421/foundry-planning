@@ -10,6 +10,7 @@ import {
   crmHouseholdDocuments,
 } from "@/db/schema";
 import { ensureIntakeFolder } from "@/lib/crm/folders";
+import { prospectHouseholdOwner } from "./prospect-owner";
 import { MAX_DOCUMENT_SIZE_BYTES } from "@/lib/crm/document-constants";
 import { sanitizeFilename, STORAGE_PROVIDER } from "@/lib/crm/documents";
 import { validateDocumentUpload } from "@/lib/files/content-type";
@@ -118,6 +119,7 @@ export async function resolveIntakeHousehold(formId: string): Promise<string> {
         clientId: intakeForms.clientId,
         crmHouseholdId: intakeForms.crmHouseholdId,
         createdByUserId: intakeForms.createdByUserId,
+        brand: intakeForms.brand,
         recipientName: intakeForms.recipientName,
         recipientEmail: intakeForms.recipientEmail,
       })
@@ -136,7 +138,7 @@ export async function resolveIntakeHousehold(formId: string): Promise<string> {
       .insert(crmHouseholds)
       .values({
         firmId: form.firmId,
-        advisorId: form.createdByUserId,
+        advisorId: await prospectHouseholdOwner(tx, form),
         name: placeholderHouseholdName(form.recipientName, form.recipientEmail),
         // false so applyIntake's syncHouseholdNameFromContacts re-derives the
         // real name from actual contacts — the placeholder must not stick.

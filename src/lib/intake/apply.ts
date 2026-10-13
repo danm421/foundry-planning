@@ -68,6 +68,7 @@ import {
 import { intakeFallbackSubType } from "@/lib/intake/account-types";
 import { intakeNoteBody } from "@/lib/intake/note-body";
 import { readFormForFirm } from "@/lib/intake/queries";
+import { prospectHouseholdOwner } from "@/lib/intake/prospect-owner";
 import { incomeYearWindow } from "@/lib/intake/income-years";
 import { buildClientMilestones } from "@/lib/milestones";
 import {
@@ -1216,6 +1217,9 @@ export async function applyIntake(args: {
       // the form (see src/lib/intake/documents.ts). Inserting a second one here
       // would strand those documents on an orphan record no client points at.
       let householdId: string;
+      // Whoever the household belongs to owns the client too. An adopted
+      // household was already given its owner when the upload minted it.
+      let advisorId: string;
       if (form.crmHouseholdId) {
         householdId = form.crmHouseholdId;
         // The upload path only had recipientName to go on, and never knew the
@@ -1237,18 +1241,20 @@ export async function applyIntake(args: {
             updatedAt: new Date(),
           })
           .where(and(eq(crmHouseholds.id, householdId), eq(crmHouseholds.firmId, firmId)))
-          .returning({ id: crmHouseholds.id });
+          .returning({ id: crmHouseholds.id, advisorId: crmHouseholds.advisorId });
         if (updated.length === 0) {
           throw new Error(
             `Intake form ${formId} parks household ${householdId} outside firm ${firmId}`,
           );
         }
+        advisorId = updated[0].advisorId;
       } else {
+        advisorId = await prospectHouseholdOwner(tx, form);
         const [inserted] = await tx
           .insert(crmHouseholds)
           .values({
             firmId,
-            advisorId: form.createdByUserId,
+            advisorId,
             name: derivedName,
             state: family.stateOfResidence ?? null,
           })
@@ -1284,9 +1290,13 @@ export async function applyIntake(args: {
         household: {
           id: householdId,
           firmId,
-          advisorId: form.createdByUserId,
+          advisorId,
           state: family.stateOfResidence ?? null,
         },
+        // The brand the form went out under stays on the household; its own
+        // advisor's brand is stored as NULL so it follows them, as the Brand
+        // setting does.
+        brand: form.brand === advisorId ? null : form.brand,
         primaryContact: {
           firstName: primary.firstName,
           lastName: primary.lastName,
