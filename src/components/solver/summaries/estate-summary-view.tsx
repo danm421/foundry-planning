@@ -178,6 +178,13 @@ export function EstateSummaryView({ data }: { data: EstateSummaryPageData }) {
           value={fmtPct(kpis.shrinkageEol)}
           delta={`Today: ${fmtPct(kpis.shrinkageToday)}`}
         />
+        {kpis.lifetimeGiftsEol > 0 && (
+          <SummaryKpiCard
+            label="Total to Heirs · EOL"
+            value={fmtUsd(kpis.netToHeirsEol + kpis.lifetimeGiftsEol)}
+            delta={`Includes ${fmtUsd(kpis.lifetimeGiftsEol)} lifetime gifts`}
+          />
+        )}
       </SummaryKpiRow>
 
       {/* Two-column body: chart + death-event tables (left), heir distributions (right) */}

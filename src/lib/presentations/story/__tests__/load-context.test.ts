@@ -19,6 +19,8 @@ const fx = vi.hoisted(() => ({
   inflationRate: {} as Record<string, number>,
   /** scenarioId → the projection years that ref should produce. */
   years: {} as Record<string, Array<Record<string, unknown>>>,
+  /** scenarioId → the one-off cash gifts on that ref's tree. */
+  gifts: {} as Record<string, Array<Record<string, unknown>>>,
   /** scenarioId → success rate. A missing entry makes the cache throw. */
   mc: {} as Record<string, number>,
   changes: [] as Array<Record<string, unknown>>,
@@ -52,6 +54,7 @@ vi.mock("@/lib/scenario/loader", () => ({
         client: fx.client,
         accounts: fx.accounts,
         scenarioId: ref.id,
+        gifts: fx.gifts[ref.id] ?? [],
         planSettings: { inflationRate: fx.inflationRate[ref.id] ?? 0.025 },
       },
     }),
@@ -270,6 +273,7 @@ beforeEach(() => {
   fx.client = { ...CLIENT };
   fx.accounts = [];
   fx.years = { base: BASE_YEARS };
+  fx.gifts = {};
   fx.mc = {};
   fx.changes = [];
   fx.toggleGroups = [];
@@ -781,6 +785,22 @@ describe("loadStoryContext", () => {
       expect(fx.estateCalls).toHaveLength(2);
       expect(fx.estateCalls.every((c) => c.asOf.kind === "split")).toBe(true);
       expect(fx.estateCalls.every((c) => c.ordering === "primaryFirst")).toBe(true);
+    });
+
+    it("adds what the proposed plan gives its heirs during life, through its last year", async () => {
+      fx.estate = {
+        base: estateReport(3_100_000, 500_000, 200_000),
+        "sc-1": estateReport(3_900_000, 300_000, 100_000),
+      };
+      fx.years["sc-1"] = PROPOSED_YEARS;
+      fx.gifts["sc-1"] = [
+        { id: "g1", year: 2030, amount: 200_000, grantor: "client", recipientFamilyMemberId: "kid", useCrummeyPowers: false },
+      ];
+      const ctx = await load();
+
+      expect(display(ctx, "estate.net.proposed")).toBe("$3.9M");
+      expect(display(ctx, "estate.toHeirs.proposed")).toBe("$4.1M");
+      expect(display(ctx, "estate.toHeirs.base")).toBeNull();
     });
 
     it("draws the estate chart as current plan against proposed plan, at end of life", async () => {

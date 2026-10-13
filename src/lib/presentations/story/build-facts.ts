@@ -173,6 +173,10 @@ export interface StoryEstateTotals {
   /** Estate tax, probate and administration, and tax on income in respect of a
    *  decedent. Debts are NOT in it — they are money owed, not a cost of dying. */
   cost: number;
+  /** Gifts made to heirs during life, through the final death
+   *  (`lifetimeGiftsToHeirs`) — beside `net`, never inside it. 0 when the plan
+   *  makes none. */
+  gifts: number;
 }
 
 /** A quoted figure describes one proposed change, so it is meaningful in the
@@ -381,7 +385,9 @@ const ASSUMPTION_CHAPTERS: readonly ChapterId[] = ["thingsToKnow"];
 const PLAN_YEAR_HOME: ChapterId = "whatWerePlanningFor";
 
 /**
- * The estate pair, both plans, in COMPARISON order — both nets, then both costs.
+ * The estate pair, both plans, in COMPARISON order — both nets, then what
+ * reaches the heirs in all for a plan that gives to them during life, then both
+ * costs.
  *
  * The labels are written as captions rather than as notes to the model, because
  * on a `twoUp` chapter they are both: `view-model.ts#figuresFor` prints a
@@ -398,6 +404,26 @@ function estateFacts(estate: StoryFactsInput["estate"]): Fact[] {
   if (estate.proposed) {
     facts.push(
       moneyFact("estate.net.proposed", "What reaches your heirs, proposed plan", estate.proposed.net, ESTATE_CHAPTERS),
+    );
+  }
+  if (estate.base && estate.base.gifts > 0) {
+    facts.push(
+      moneyFact(
+        "estate.toHeirs.base",
+        "What reaches your heirs in all, counting lifetime gifts, current plan",
+        estate.base.net + estate.base.gifts,
+        ESTATE_CHAPTERS,
+      ),
+    );
+  }
+  if (estate.proposed && estate.proposed.gifts > 0) {
+    facts.push(
+      moneyFact(
+        "estate.toHeirs.proposed",
+        "What reaches your heirs in all, counting lifetime gifts, proposed plan",
+        estate.proposed.net + estate.proposed.gifts,
+        ESTATE_CHAPTERS,
+      ),
     );
   }
   if (estate.base) {

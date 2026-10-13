@@ -18,6 +18,7 @@ const POPULATED: EstateSummaryPageData = {
     netToHeirsEol: 5_440_000,
     shrinkageToday: 0.11,
     shrinkageEol: 0.2,
+    lifetimeGiftsEol: 0,
   },
   chart: [
     {
@@ -129,6 +130,22 @@ describe("EstateSummaryView", () => {
     expect(text).toContain("Casey Avery");
     expect(text).toContain("Jordan Avery");
     expect(text).toContain("Estate shrinkage rises from 11% today to 20% at end of life.");
+  });
+
+  it("adds a Total to Heirs tile, naming the lifetime gifts, when the plan made gifts", () => {
+    const data = {
+      ...POPULATED,
+      kpis: { ...POPULATED.kpis, lifetimeGiftsEol: 190_000 },
+    };
+    const { getByText } = render(<EstateSummaryView data={data} />);
+    expect(getByText("Total to Heirs · EOL")).toBeTruthy();
+    expect(getByText("$5.6M")).toBeTruthy();
+    expect(getByText("Includes $190k lifetime gifts")).toBeTruthy();
+  });
+
+  it("shows no Total to Heirs tile for a plan without gifts", () => {
+    const { queryByText } = render(<EstateSummaryView data={POPULATED} />);
+    expect(queryByText("Total to Heirs · EOL")).toBeNull();
   });
 
   it("renders the empty state", () => {

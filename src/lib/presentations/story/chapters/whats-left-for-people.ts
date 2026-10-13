@@ -29,6 +29,19 @@ const WHERE_IT_GOES = "What's left at the end goes to the people and causes you'
 const CLOSES_THE_THOUGHT = "It's what the plan is protecting for them.";
 const POINTS_FORWARD = "The pages that follow show who receives what, and when.";
 
+/** The clause a plan that gives during life adds to its figure. */
+const GIFTS_COUNTED = "counting what you give them along the way";
+
+/**
+ * What reaches the heirs in all on one side: `estate.toHeirs.*` (the at-death
+ * figure plus lifetime gifts) for a plan that makes gifts to heirs, else the
+ * at-death figure itself. Comparing the at-death figures alone would call a
+ * proposal that gives during life a loss to the heirs it is giving to.
+ */
+function inAll(ctx: StoryContext, side: "base" | "proposed") {
+  return findFact(ctx, `estate.toHeirs.${side}`) ?? findFact(ctx, `estate.net.${side}`);
+}
+
 /**
  * What the changes do to the figure, in one sentence — or null when there is no
  * second figure to compare against.
@@ -40,14 +53,15 @@ const POINTS_FORWARD = "The pages that follow show who receives what, and when."
  * precisely because `display` is rounded.
  */
 function movement(ctx: StoryContext): string | null {
-  const base = findFact(ctx, "estate.net.base");
-  const proposed = findFact(ctx, "estate.net.proposed");
+  const base = inAll(ctx, "base");
+  const proposed = inAll(ctx, "proposed");
   if (!base || !proposed) return null;
   if (base.display === proposed.display) {
     return "The changes we're proposing leave that unchanged.";
   }
   const up = (proposed.raw ?? 0) > (base.raw ?? 0);
-  return `The changes we're proposing ${up ? "lift" : "lower"} that to about ${proposed.display}.`;
+  const gifts = proposed.id === "estate.toHeirs.proposed" ? `, ${GIFTS_COUNTED}` : "";
+  return `The changes we're proposing ${up ? "lift" : "lower"} that to about ${proposed.display}${gifts}.`;
 }
 
 /**
@@ -89,11 +103,13 @@ export function narrateWhatsLeftForPeople(ctx: StoryContext): string[] {
   // something to move FROM. With only a proposal there is nothing to move from,
   // and the chapter states the one figure rather than implying a comparison.
   const leadsOnBase = base != null;
+  const total = factDisplay(ctx, leadsOnBase ? "estate.toHeirs.base" : "estate.toHeirs.proposed");
+  const inAllClause = total ? `, and about ${total} ${GIFTS_COUNTED}` : "";
   const paragraphs = [
     WHERE_IT_GOES,
     leadsOnBase
-      ? `On your current plan that's about ${base}.`
-      : `Under the plan we're proposing, that's about ${proposed}.`,
+      ? `On your current plan that's about ${base}${inAllClause}.`
+      : `Under the plan we're proposing, that's about ${proposed}${inAllClause}.`,
   ];
 
   const move = leadsOnBase ? movement(ctx) : null;

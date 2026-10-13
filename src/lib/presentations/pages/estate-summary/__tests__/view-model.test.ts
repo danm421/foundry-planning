@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { estateChartBar } from "../view-model";
+import { buildEstateSummaryData, estateChartBar } from "../view-model";
 import type { EstateSummaryHousehold } from "../aggregate";
+import type { BuildDataContext } from "@/components/presentations/registry";
+import type { ClientData } from "@/engine/types";
+import { runProjectionWithEvents } from "@/engine";
+import { buildMarriedEstateFixture } from "@/engine/__tests__/fixtures/married-estate-fixture";
+import { applyGiftsToClientData } from "@/lib/estate/estate-flow-gifts";
 
 /**
  * Segment values chosen so no two are equal, and so the two derived fields are
@@ -48,5 +53,48 @@ describe("estateChartBar", () => {
     expect(bar.netToHeirs + bar.federal + bar.state + bar.probate + bar.ird + bar.debts).toBe(
       bar.total,
     );
+  });
+});
+
+describe("buildEstateSummaryData — lifetime gifts to heirs", () => {
+  const summaryOf = (clientData: ClientData) => {
+    const projection = runProjectionWithEvents(clientData);
+    return buildEstateSummaryData(
+      {
+        years: projection.years,
+        projection,
+        clientData,
+        scenarioLabel: "Base Case",
+        clientName: "Client Test",
+        spouseName: "Spouse Test",
+      } as BuildDataContext,
+      { ordering: "primaryFirst" },
+    );
+  };
+
+  it("reports the gifts made to heirs by the last death beside the untouched estate breakdown", () => {
+    // $19k a year to Alice for ten years, all before the 2050 final death.
+    const withGifts = summaryOf(
+      applyGiftsToClientData(
+        buildMarriedEstateFixture(),
+        [
+          { kind: "series", id: "s-alice", startYear: 2026, endYear: 2035, annualAmount: 19_000,
+            amountMode: "fixed", inflationAdjust: false, grantor: "client",
+            recipient: { kind: "family_member", id: "kid-a" }, crummey: false },
+        ],
+        0.025,
+      ),
+    );
+    const { kpis } = withGifts;
+
+    expect(kpis.lifetimeGiftsEol).toBe(190_000);
+    // The breakdown still describes the estate alone.
+    expect(withGifts.chart[1].total).toBeCloseTo(kpis.grossEstateEol, 2);
+    expect(kpis.shrinkageEol).toBeCloseTo(kpis.taxAndCostsEol / kpis.grossEstateEol, 6);
+  });
+
+  it("reports no gifts for a plan without any", () => {
+    const { kpis } = summaryOf(buildMarriedEstateFixture());
+    expect(kpis.lifetimeGiftsEol).toBe(0);
   });
 });

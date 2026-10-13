@@ -8,11 +8,14 @@
  * the left totals (and vice versa) at their initial values, masking the wealth
  * shift the comparison is meant to surface.
  *
- * Uniform 4-row schema across all three cells:
+ * Uniform row schema across all three cells:
  *   1. In-estate
  *   2. Out-of-estate
- *   3. Estate tax + admin
- *   4. Net to heirs
+ *   3. Lifetime gifts to heirs — only when either plan made some by the year.
+ *      Neither balance row holds them: cash has left the projection, and a
+ *      share gifted to a person is in neither weight (`in-estate-weights.ts`).
+ *   4. Estate tax + admin
+ *   5. Net to heirs — in + out + gifts − tax
  *
  * The delta cell is right − left, signed. Pre-death (`scrubberYear <
  * finalDeathYear`) renders `$0 (pre-death)` in the tax row of plan cells and
@@ -25,12 +28,14 @@ import {
   computeInEstateAtYear,
   computeOutOfEstateAtYear,
 } from "@/lib/estate/in-estate-at-year";
+import { lifetimeGiftsToHeirs } from "@/lib/estate/lifetime-gifts-to-people";
 
 export type RowSentiment = "neutral" | "pos" | "neg";
 
 export type ComparisonRowLabel =
   | "In-estate"
   | "Out-of-estate"
+  | "Lifetime gifts to heirs"
   | "Estate tax + admin"
   | "Net to heirs";
 
@@ -62,13 +67,6 @@ export interface ComparisonData {
   delta: ComparisonCell;
 }
 
-const ROW_LABELS: readonly ComparisonRowLabel[] = [
-  "In-estate",
-  "Out-of-estate",
-  "Estate tax + admin",
-  "Net to heirs",
-] as const;
-
 export function deriveComparisonData(args: {
   leftTree: ClientData;
   leftResult: ProjectionResult;
@@ -93,6 +91,10 @@ export function deriveComparisonData(args: {
     Number.POSITIVE_INFINITY;
   const isPreDeath = args.scrubberYear < finalDeathYear;
 
+  const leftGifts = lifetimeGiftsToHeirs(args.leftTree, args.scrubberYear, args.leftResult);
+  const rightGifts = lifetimeGiftsToHeirs(args.rightTree, args.scrubberYear, args.rightResult);
+  const showGifts = leftGifts > 0 || rightGifts > 0;
+
   const leftRows = buildPlanRows({
     tree: args.leftTree,
     result: args.leftResult,
@@ -100,6 +102,7 @@ export function deriveComparisonData(args: {
     startYear,
     finalDeathYear,
     isPreDeath,
+    gifts: showGifts ? leftGifts : null,
   });
   const rightRows = buildPlanRows({
     tree: args.rightTree,
@@ -108,10 +111,12 @@ export function deriveComparisonData(args: {
     startYear,
     finalDeathYear,
     isPreDeath,
+    gifts: showGifts ? rightGifts : null,
   });
-  const deltaRows: CellRow[] = ROW_LABELS.map((label) => {
-    const lr = leftRows.find((r) => r.label === label)!;
-    const rr = rightRows.find((r) => r.label === label)!;
+  // Both sides share one schema, row for row.
+  const deltaRows: CellRow[] = leftRows.map((lr, i) => {
+    const rr = rightRows[i];
+    const label = lr.label;
     if (Number.isNaN(lr.signedValue) || Number.isNaN(rr.signedValue)) {
       return {
         label,
@@ -172,6 +177,8 @@ function buildPlanRows(args: {
   startYear: number;
   finalDeathYear: number;
   isPreDeath: boolean;
+  /** Lifetime gifts to heirs by the year, or null to leave the row out. */
+  gifts: number | null;
 }): CellRow[] {
   const inE = sumInOutAtYear(
     args.tree,
@@ -194,9 +201,11 @@ function buildPlanRows(args: {
   const tax = py?.estateTax?.totalEstateTax ?? 0;
   const admin = py?.estateTax?.estateAdminExpenses ?? 0;
   const taxPlusAdmin = tax + admin;
-  const net = inE + outE - taxPlusAdmin;
+  const beforeTax = inE + outE + (args.gifts ?? 0);
+  // Pre-death: no tax yet, so the meaningful net is everything before it.
+  const net = args.isPreDeath ? beforeTax : beforeTax - taxPlusAdmin;
 
-  return [
+  const rows: CellRow[] = [
     {
       label: "In-estate",
       signedValue: inE,
@@ -209,6 +218,16 @@ function buildPlanRows(args: {
       valueText: formatM(outE),
       sentiment: "pos",
     },
+  ];
+  if (args.gifts != null) {
+    rows.push({
+      label: "Lifetime gifts to heirs",
+      signedValue: args.gifts,
+      valueText: formatM(args.gifts),
+      sentiment: "pos",
+    });
+  }
+  rows.push(
     {
       label: "Estate tax + admin",
       signedValue: args.isPreDeath ? NaN : -taxPlusAdmin,
@@ -217,12 +236,12 @@ function buildPlanRows(args: {
     },
     {
       label: "Net to heirs",
-      // Pre-death: report inE + outE (no tax yet) as the meaningful net.
-      signedValue: args.isPreDeath ? inE + outE : net,
-      valueText: formatM(args.isPreDeath ? inE + outE : net),
+      signedValue: net,
+      valueText: formatM(net),
       sentiment: "neutral",
     },
-  ];
+  );
+  return rows;
 }
 
 function sumInOutAtYear(

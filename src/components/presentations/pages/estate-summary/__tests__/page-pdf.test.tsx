@@ -132,6 +132,7 @@ const populatedData: EstateSummaryPageData = {
     netToHeirsEol: 4_200_000,
     shrinkageToday: 0.166,
     shrinkageEol: 0.218,
+    lifetimeGiftsEol: 0,
   },
   chart: chartBars,
   todayRows,
@@ -158,6 +159,7 @@ const emptyData: EstateSummaryPageData = {
     netToHeirsEol: 0,
     shrinkageToday: 0,
     shrinkageEol: 0,
+    lifetimeGiftsEol: 0,
   },
   chart: [],
   todayRows: [],
@@ -170,6 +172,17 @@ describe("EstateSummaryPagePdf render smoke", () => {
   it("renders populated fixture (kpis, chart, tables, heirs, narrative)", async () => {
     const buf = await renderToBuffer(
       <Document>{EstateSummaryPagePdf({ data: populatedData, ...framing })}</Document>,
+    );
+    expect(buf.byteLength).toBeGreaterThan(0);
+  });
+
+  it("renders the Total to Heirs tile when the plan made lifetime gifts", async () => {
+    const data = {
+      ...populatedData,
+      kpis: { ...populatedData.kpis, lifetimeGiftsEol: 190_000 },
+    };
+    const buf = await renderToBuffer(
+      <Document>{EstateSummaryPagePdf({ data, ...framing })}</Document>,
     );
     expect(buf.byteLength).toBeGreaterThan(0);
   });

@@ -289,3 +289,72 @@ describe("deriveComparisonData", () => {
     expect(rightIn - leftIn).toBeGreaterThan(NEW_ACCOUNT_VALUE * 0.95);
   });
 });
+
+describe("deriveComparisonData — lifetime gifts to heirs", () => {
+  const plainTree = cooperSampleScenario();
+  const plainResult = runProjectionWithEvents(plainTree);
+  /** The same plan plus $50k a year to a child, 2026–2035. */
+  const givingTree = cooperSampleScenario();
+  givingTree.giftEvents = Array.from({ length: 10 }, (_, i) => ({
+    kind: "cash" as const,
+    year: 2026 + i,
+    amount: 50_000,
+    grantor: "client" as const,
+    recipientFamilyMemberId: "fm-child",
+    useCrummeyPowers: false,
+    seriesId: "s-child",
+  }));
+  const givingResult = runProjectionWithEvents(givingTree);
+
+  const build = (scrubberYear: number) =>
+    deriveComparisonData({
+      leftTree: plainTree,
+      leftResult: plainResult,
+      leftScenarioName: "Base Plan",
+      leftIsDoNothing: false,
+      rightTree: givingTree,
+      rightResult: givingResult,
+      rightScenarioName: "Gifting",
+      rightIsDoNothing: false,
+      scrubberYear,
+    });
+  const valueOf = (rows: { label: string; signedValue: number }[], label: string) =>
+    rows.find((r) => r.label === label)!.signedValue;
+
+  it("adds a Lifetime gifts to heirs row to every cell when either plan gives", () => {
+    const data = build(2030);
+    const labels = ["In-estate", "Out-of-estate", "Lifetime gifts to heirs", "Estate tax + admin", "Net to heirs"];
+    expect(data.left.rows.map((r) => r.label)).toEqual(labels);
+    expect(data.right.rows.map((r) => r.label)).toEqual(labels);
+    expect(data.delta.rows.map((r) => r.label)).toEqual(labels);
+    expect(valueOf(data.left.rows, "Lifetime gifts to heirs")).toBe(0);
+    expect(valueOf(data.right.rows, "Lifetime gifts to heirs")).toBe(250_000);
+    expect(valueOf(data.delta.rows, "Lifetime gifts to heirs")).toBe(250_000);
+  });
+
+  // A share gifted to a person is in neither In-estate nor Out-of-estate
+  // (`in-estate-weights.ts`), so this row is the only place it can show.
+  it("counts a share of an account given to a child, at its value in the gift year", () => {
+    const assetTree = cooperSampleScenario();
+    assetTree.giftEvents = [
+      { kind: "asset", year: 2028, accountId: "joint-broker", percent: 0.1, grantor: "client",
+        recipientFamilyMemberId: "fm-child" },
+    ];
+    const assetResult = runProjectionWithEvents(assetTree);
+    const data = deriveComparisonData({
+      leftTree: plainTree, leftResult: plainResult, leftScenarioName: "Base Plan", leftIsDoNothing: false,
+      rightTree: assetTree, rightResult: assetResult, rightScenarioName: "Gift a share", rightIsDoNothing: false,
+      scrubberYear: 2030,
+    });
+    const shareIn2028 = assetResult.years[2028 - 2026].accountLedgers["joint-broker"].endingValue * 0.1;
+    expect(valueOf(data.right.rows, "Lifetime gifts to heirs")).toBeCloseTo(shareIn2028, 2);
+  });
+
+  it("counts the gifts in Net to heirs", () => {
+    const { right } = build(2030);
+    expect(right.bigNumber).toBeCloseTo(
+      valueOf(right.rows, "In-estate") + valueOf(right.rows, "Out-of-estate") + 250_000,
+      2,
+    );
+  });
+});

@@ -86,7 +86,7 @@ const twoGrantorData: SpineData = {
     },
   ],
   entities: [],
-  totals: { taxesAndExpenses: 570_000, toHeirs: 4_350_000 },
+  totals: { taxesAndExpenses: 570_000, toHeirs: 4_350_000, lifetimeGifts: 0 },
 };
 
 const singleGrantorData: SpineData = {
@@ -112,7 +112,7 @@ const singleGrantorData: SpineData = {
     },
   ],
   entities: [],
-  totals: { taxesAndExpenses: 300_000, toHeirs: 2_700_000 },
+  totals: { taxesAndExpenses: 300_000, toHeirs: 2_700_000, lifetimeGifts: 0 },
 };
 
 const historicalData: SpineData = {
@@ -152,6 +152,22 @@ describe("DeathSpine", () => {
     // Single-grantor does not show a PairRow (no combined net worth comparison)
     // so "Net Worth" should NOT be in the DOM
     expect(screen.queryByText(/Net Worth/)).toBeNull();
+  });
+
+  it("adds a Lifetime Gifts to Heirs box and counts it in Total to Heirs when gifts were made", () => {
+    render(
+      <DeathSpine
+        data={{ ...twoGrantorData, totals: { ...twoGrantorData.totals, lifetimeGifts: 150_000 } }}
+      />,
+    );
+    expect(screen.getByText("Lifetime Gifts to Heirs")).toBeInTheDocument();
+    expect(screen.getByText("$150,000")).toBeInTheDocument();
+    expect(screen.getByText("$4,500,000")).toBeInTheDocument();
+  });
+
+  it("keeps the two totals boxes for a plan without gifts", () => {
+    render(<DeathSpine data={twoGrantorData} />);
+    expect(screen.queryByText("Lifetime Gifts to Heirs")).toBeNull();
   });
 
   it("renders historical empty state", () => {

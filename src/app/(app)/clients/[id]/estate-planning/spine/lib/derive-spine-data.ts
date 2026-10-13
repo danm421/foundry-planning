@@ -35,6 +35,7 @@ import { treeAsOfYear, type BalanceMode } from "../../lib/tree-as-of-year";
 import { isPartitionedAt } from "@/lib/estate/account-owner-slices";
 import { resolveRecipientLabel } from "@/lib/estate/recipient-label";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
+import { lifetimeGiftsToHeirs } from "@/lib/estate/lifetime-gifts-to-people";
 import type { AsOfValue } from "@/components/report-controls/as-of-dropdown";
 import {
   deriveBeneficiaryDetail,
@@ -105,7 +106,7 @@ export type SpineData =
       /** Entities (trusts) configured on the household — passed through so
        * expansion components can resolve trust names and subtypes. */
       entities: EntitySummary[];
-      totals: { taxesAndExpenses: number; toHeirs: number };
+      totals: SpineTotals;
     }
   | {
       kind: "single-grantor";
@@ -122,7 +123,7 @@ export type SpineData =
       };
       beneficiaries: BeneficiaryCardData[];
       entities: EntitySummary[];
-      totals: { taxesAndExpenses: number; toHeirs: number };
+      totals: SpineTotals;
     }
   | { kind: "historical"; message: string };
 
@@ -466,6 +467,17 @@ function resolveDeathStageSource(
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
+export interface SpineTotals {
+  taxesAndExpenses: number;
+  /** What heirs receive at the deaths shown. Each beneficiary card's share
+   *  (`pctOfHeirs`) is of this figure. */
+  toHeirs: number;
+  /** Gifts made to heirs during life, through the last death shown — beside
+   *  `toHeirs`, never inside it. 0 for "today": no gift is modeled before the
+   *  plan starts. */
+  lifetimeGifts: number;
+}
+
 export function deriveSpineData(args: {
   tree: ClientData;
   withResult: ProjectionResult;
@@ -675,7 +687,12 @@ export function deriveSpineData(args: {
       },
       beneficiaries,
       entities: tree.entities ?? [],
-      totals: { taxesAndExpenses: totalTaxesAndExpenses, toHeirs: totalToHeirs },
+      totals: {
+        taxesAndExpenses: totalTaxesAndExpenses,
+        toHeirs: totalToHeirs,
+        lifetimeGifts:
+          asOf === "today" ? 0 : lifetimeGiftsToHeirs(tree, secondStageYear, withResult),
+      },
     };
   }
 
@@ -801,7 +818,12 @@ export function deriveSpineData(args: {
       },
       beneficiaries,
       entities: tree.entities ?? [],
-      totals: { taxesAndExpenses: stageTax, toHeirs },
+      totals: {
+        taxesAndExpenses: stageTax,
+        toHeirs,
+        lifetimeGifts:
+          asOf === "today" ? 0 : lifetimeGiftsToHeirs(tree, stageDeathYear, withResult),
+      },
     };
   }
 

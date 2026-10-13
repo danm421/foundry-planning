@@ -81,6 +81,9 @@ export function EstateSummaryPagePdf({ data, firmName, clientName, reportDate, p
             <Kpi lbl="Total Tax & Costs · EOL" val={fmtUsd(data.kpis.taxAndCostsEol)} sub={`Today: ${fmtUsd(data.kpis.taxAndCostsToday)}`} />
             <Kpi lbl="Net to Heirs · EOL" val={fmtUsd(data.kpis.netToHeirsEol)} sub={`Today: ${fmtUsd(data.kpis.netToHeirsToday)}`} />
             <Kpi lbl="Estate Shrinkage · EOL" val={fmtPct(data.kpis.shrinkageEol)} sub={`Today: ${fmtPct(data.kpis.shrinkageToday)}`} />
+            {data.kpis.lifetimeGiftsEol > 0 && (
+              <Kpi lbl="Total to Heirs · EOL" val={fmtUsd(data.kpis.netToHeirsEol + data.kpis.lifetimeGiftsEol)} sub={`Includes ${fmtUsd(data.kpis.lifetimeGiftsEol)} lifetime gifts`} />
+            )}
           </View>
 
           <View style={s.body}>

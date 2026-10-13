@@ -22,6 +22,23 @@ export interface EstateDistribution {
   isEmpty: boolean;
 }
 
+/** The year end-of-life heirs figures are read at: the second death, or the
+ *  projection's last year when there is none (a single client's projection
+ *  ends at their death). */
+export function endOfLifeYear(projection: Pick<ProjectionResult, "secondDeathEvent" | "years">): number | undefined {
+  return projection.secondDeathEvent?.year ?? projection.years.at(-1)?.year;
+}
+
+/** `lifetimeGiftsToHeirs` through `endOfLifeYear` — the gifts every
+ *  end-of-life heirs figure stands beside. */
+export function lifetimeGiftsToHeirsAtEndOfLife(
+  clientData: ClientData,
+  projection: Pick<ProjectionResult, "secondDeathEvent" | "years">,
+): number {
+  const year = endOfLifeYear(projection);
+  return year != null ? lifetimeGiftsToHeirs(clientData, year, projection) : 0;
+}
+
 /**
  * The single source of truth for "estate distribution as of year Y". Reads the
  * engine's per-year hypothetical (anchored to the real first death for Y past

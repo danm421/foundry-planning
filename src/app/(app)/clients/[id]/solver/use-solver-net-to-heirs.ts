@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectionResult, ClientData } from "@/engine";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
-import { estateDistributionAtYear } from "@/lib/estate/estate-distribution-at-year";
+import { endOfLifeYear, estateDistributionAtYear } from "@/lib/estate/estate-distribution-at-year";
 import { parseProjectionResponse } from "@/lib/solver/projection-wire";
-import { endOfLifeYear } from "@/lib/solver/solver-summary-metrics";
 
 interface Args {
   clientId: string;

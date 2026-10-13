@@ -9,15 +9,8 @@
 import type { ProjectionYear, ProjectionResult, ClientData } from "@/engine";
 import { liquidPortfolioTotal } from "@/engine/monteCarlo/trial";
 import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
-import { lifetimeGiftsToHeirs } from "@/lib/estate/lifetime-gifts-to-people";
+import { lifetimeGiftsToHeirsAtEndOfLife } from "@/lib/estate/estate-distribution-at-year";
 import { summarizeHousehold } from "@/lib/presentations/pages/estate-summary/aggregate";
-
-/** The year end-of-life heirs figures are read at: the second death, or the
- *  projection's last year when there is none (a single client's projection
- *  ends at their death). */
-export function endOfLifeYear(projection: Pick<ProjectionResult, "secondDeathEvent" | "years">): number | undefined {
-  return projection.secondDeathEvent?.year ?? projection.years.at(-1)?.year;
-}
 
 /** Count of plan years whose liquid portfolio is non-negative (no shortfall). */
 export function yearsFullyFunded(years: ProjectionYear[]): number {
@@ -96,9 +89,7 @@ export function estateHeirTotalsEol(
   const household = summarizeHousehold(report);
   // Plus what was given to heirs during life, cut off at the same year the
   // Solver's Total to Heirs tile reads (that tile also leaves charity out).
-  const eolYear = endOfLifeYear(projection);
-  const lifetimeGifts =
-    eolYear != null ? lifetimeGiftsToHeirs(clientData, eolYear, projection) : 0;
+  const lifetimeGifts = lifetimeGiftsToHeirsAtEndOfLife(clientData, projection);
   return { netToHeirs: household.netToHeirs + lifetimeGifts, heirIncomeTax: household.ird };
 }
 

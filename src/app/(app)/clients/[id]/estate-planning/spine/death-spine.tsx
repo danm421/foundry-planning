@@ -66,6 +66,7 @@ export function DeathSpine({ data }: { data: SpineData }) {
         <TotalsRow
           taxesAndExpenses={data.totals.taxesAndExpenses}
           toHeirs={data.totals.toHeirs}
+          lifetimeGifts={data.totals.lifetimeGifts}
         />
       </div>
     );
@@ -169,6 +170,7 @@ export function DeathSpine({ data }: { data: SpineData }) {
       <TotalsRow
         taxesAndExpenses={data.totals.taxesAndExpenses}
         toHeirs={data.totals.toHeirs}
+        lifetimeGifts={data.totals.lifetimeGifts}
       />
     </div>
   );

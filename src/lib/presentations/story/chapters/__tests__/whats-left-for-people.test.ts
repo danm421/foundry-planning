@@ -23,6 +23,15 @@ type Side = keyof typeof PLAN;
 
 const net = (side: Side, n: number) =>
   moneyFact(`estate.net.${side}`, `What reaches your heirs, ${PLAN[side]} plan`, n, ESTATE);
+/** What reaches the heirs in all — `net` plus lifetime gifts. `build-facts.ts`
+ *  emits it only for a plan that makes gifts to heirs. */
+const inAll = (side: Side, n: number) =>
+  moneyFact(
+    `estate.toHeirs.${side}`,
+    `What reaches your heirs in all, counting lifetime gifts, ${PLAN[side]} plan`,
+    n,
+    ESTATE,
+  );
 const cost = (side: Side, n: number) =>
   moneyFact(`estate.cost.${side}`, `Tax and costs on the estate, ${PLAN[side]} plan`, n, ESTATE);
 const grossToday = (n: number) =>
@@ -86,6 +95,11 @@ const PACKS: Array<[string, StoryContext]> = [
   // on top of the four the other PACKS entries already exercise — the shape
   // the word-budget and gate checks below have to see to mean anything for it.
   ["a base-only deck with the estate chart", baseCtx({ today: 4_100_000, endOfLife: 3_000_000 })],
+  ["the current plan, with lifetime gifts", ctxWith([net("base", 4_200_000), inAll("base", 4_400_000), cost("base", 700_000)])],
+  ["a proposal that adds lifetime gifts", ctxWith([net("base", 3_900_000), net("proposed", 3_600_000), inAll("proposed", 4_100_000), cost("base", 400_000)])],
+  ["both plans give during life", ctxWith([net("base", 4_200_000), inAll("base", 4_400_000), net("proposed", 4_000_000), inAll("proposed", 4_600_000), cost("base", 700_000)])],
+  ["the proposal alone, with lifetime gifts", ctxWith([net("proposed", 3_600_000), inAll("proposed", 4_100_000), cost("proposed", 400_000)])],
+  ["a base-only deck with gifts and the estate chart", ctxWith([net("base", 5_000_000), inAll("base", 5_200_000), cost("base", 700_000), grossToday(4_100_000), grossEndOfLife(3_000_000)])],
 ];
 
 describe("narrateWhatsLeftForPeople", () => {
@@ -243,6 +257,20 @@ describe("narrateWhatsLeftForPeople", () => {
     const text = textOf(both);
     expect(text).toMatch(/changes we're proposing/i);
     expect(text).not.toMatch(/the whole estate/i);
+  });
+
+  it("names what reaches the heirs in all, counting lifetime gifts, beside what passes at death", () => {
+    const text = textOf(ctxWith([net("base", 4_200_000), inAll("base", 4_400_000)]));
+    expect(text).toContain("$4.2M");
+    expect(text).toMatch(/about \$4\.4M counting what you give them along the way/u);
+  });
+
+  // A proposal that gives during life leaves less to pass at death — but more
+  // to the heirs. Comparing the at-death figures alone would call that a loss.
+  it("compares the plans on what reaches the heirs in all, so a gifting proposal reads as a gain", () => {
+    const text = textOf(ctxWith([net("base", 3_900_000), net("proposed", 3_600_000), inAll("proposed", 4_100_000)]));
+    expect(text).toMatch(/lift that to about \$4\.1M, counting what you give them along the way/u);
+    expect(text).not.toMatch(/\blowers?\b/iu);
   });
 
   it("leaves a proposal deck's prose unchanged", () => {

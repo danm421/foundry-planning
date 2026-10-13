@@ -52,7 +52,7 @@ const EVERY_FACT: StoryFactsInput = {
   flow: { income: 480_000, spending: 300_000, saving: 90_000 },
   shortfallYear: 2048,
   maxSpend: { base: 210_000, proposed: 260_000 },
-  estate: { base: { net: 3_100_000, cost: 700_000 }, proposed: { net: 3_900_000, cost: 400_000 } },
+  estate: { base: { net: 3_100_000, cost: 700_000, gifts: 200_000 }, proposed: { net: 3_900_000, cost: 400_000, gifts: 380_000 } },
   lifetimeTax: { base: 1_400_000, proposed: 1_100_000 },
   cover: { on: "Alan", have: 1_000_000, need: 2_500_000, gap: 1_500_000 },
   medicare: { lifetime: 400_000, irmaa: 60_000 },
@@ -122,7 +122,7 @@ describe("buildStoryFacts", () => {
 describe("the estate and lifetime-tax facts", () => {
   const BOTH: StoryFactsInput = {
     ...input,
-    estate: { base: { net: 3_100_000, cost: 700_000 }, proposed: { net: 3_900_000, cost: 400_000 } },
+    estate: { base: { net: 3_100_000, cost: 700_000, gifts: 0 }, proposed: { net: 3_900_000, cost: 400_000, gifts: 0 } },
     lifetimeTax: { base: 1_400_000, proposed: 1_100_000 },
   };
 
@@ -171,6 +171,20 @@ describe("the estate and lifetime-tax facts", () => {
       "estate.cost.proposed",
       "plan.endOfLifeYear",
     ]);
+  });
+
+  it("adds what reaches the heirs in all only for a plan that gives to them during life", () => {
+    const byId = new Map(
+      buildStoryFacts({
+        ...BOTH,
+        estate: { base: BOTH.estate.base, proposed: { net: 3_600_000, cost: 400_000, gifts: 500_000 } },
+      }).map((f) => [f.id, f]),
+    );
+    expect(byId.has("estate.toHeirs.base")).toBe(false);
+    expect(byId.get("estate.toHeirs.proposed")?.display).toBe("$4.1M");
+    expect(factsForChapter([...byId.values()], "whatsLeftForPeople").map((f) => f.id)).toContain(
+      "estate.toHeirs.proposed",
+    );
   });
 
   it("omits a side entirely rather than zeroing it", () => {
@@ -729,6 +743,7 @@ describe("a home chapter for the figures every chapter could see", () => {
     expect(facts.map((f) => f.id)).toEqual(
       expect.arrayContaining([
         "estate.cost.proposed",
+        "estate.toHeirs.proposed",
         "tax.lifetime.proposed",
         "cover.gap",
         "medicare.irmaa",
@@ -975,7 +990,7 @@ describe("chart facts", () => {
     const facts = buildStoryFacts({
       ...input,
       charts,
-      estate: { base: { net: 3_100_000, cost: 700_000 }, proposed: { net: 3_900_000, cost: 400_000 } },
+      estate: { base: { net: 3_100_000, cost: 700_000, gifts: 0 }, proposed: { net: 3_900_000, cost: 400_000, gifts: 0 } },
     });
     const labelOf = (id: string) => facts.find((f) => f.id === id)?.label;
     const labels = ["estate.net.base", "estate.cost.base", "chart.estate.grossBase"].map(labelOf);
