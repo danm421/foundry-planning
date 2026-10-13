@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import type { ClientShareRow } from "@/db/schema";
+import type { FirmMember } from "@/lib/crm-tasks/members";
+import { ShareRecipientInput } from "./share-recipient-input";
 
 // ---------------------------------------------------------------------------
 // Inline SVG icon components (avoid external icon dependency)
@@ -65,13 +67,15 @@ interface Props {
   initialIsPrivate: boolean;
   /** Firm has the advisor book silo on: members see only their own advisor book. */
   bookSiloEnabled?: boolean;
+  /** The caller's firm members, offered as picks in the email field. */
+  members?: FirmMember[];
 }
 
 // ---------------------------------------------------------------------------
 // ShareDialog
 // ---------------------------------------------------------------------------
 
-export default function ShareDialog({ open, onOpenChange, clientId, initialIsPrivate, bookSiloEnabled = false }: Props) {
+export default function ShareDialog({ open, onOpenChange, clientId, initialIsPrivate, bookSiloEnabled = false, members = [] }: Props) {
   // Body scroll lock — ref-counted, safe for stacked dialogs.
   useBodyScrollLock(open);
 
@@ -301,20 +305,20 @@ export default function ShareDialog({ open, onOpenChange, clientId, initialIsPri
                 htmlFor="share-email"
                 className="block text-[13px] font-medium text-ink-2 mb-1.5"
               >
-                Email
+                Share with
               </label>
-              <input
+              <ShareRecipientInput
                 id="share-email"
-                type="email"
                 required
                 value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
+                members={members}
+                excludeEmails={shares.map((s) => s.recipientEmail)}
+                onChange={(next) => {
+                  setEmail(next);
                   setSubmitError(null);
                   setSubmitSuccess(false);
                 }}
-                placeholder="advisor@otherfirm.com"
-                className="w-full rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2 text-[13px] text-ink placeholder:text-ink-4 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                inputClassName="w-full rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2 text-[13px] text-ink placeholder:text-ink-4 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
               />
             </div>
 

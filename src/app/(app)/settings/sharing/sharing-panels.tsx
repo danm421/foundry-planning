@@ -3,6 +3,8 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import ShareDialog from "@/components/sharing/share-dialog";
+import { ShareRecipientInput } from "@/components/sharing/share-recipient-input";
+import type { FirmMember } from "@/lib/crm-tasks/members";
 import type { OutgoingShare, IncomingShare, ShareableClient } from "./sharing-content";
 
 type Props = {
@@ -10,6 +12,8 @@ type Props = {
   incoming: IncomingShare[];
   shareableClients: ShareableClient[];
   bookSiloEnabled?: boolean;
+  /** The caller's firm members, offered as picks wherever an email is asked for. */
+  firmMembers?: FirmMember[];
 };
 
 function permissionLabel(p: "view" | "edit"): string {
@@ -21,8 +25,10 @@ function permissionLabel(p: "view" | "edit"): string {
 // ---------------------------------------------------------------------------
 function ShareAllPanel({
   shares,
+  members,
 }: {
   shares: OutgoingShare[];
+  members: FirmMember[];
 }): React.ReactElement {
   const [email, setEmail] = useState("");
   const [permission, setPermission] = useState<"view" | "edit">("view");
@@ -70,12 +76,13 @@ function ShareAllPanel({
       {/* Add form */}
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap gap-2">
-          <input
-            type="email"
+          <ShareRecipientInput
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="advisor@example.com"
-            className="h-8 flex-1 min-w-48 rounded border border-hair bg-card-2 px-3 text-sm text-ink placeholder:text-ink-4 focus:outline-none focus:ring-1 focus:ring-accent"
+            onChange={setEmail}
+            members={members}
+            excludeEmails={rows.map((r) => r.recipientEmail)}
+            className="flex-1 min-w-48"
+            inputClassName="h-8 w-full rounded border border-hair bg-card-2 px-3 text-sm text-ink placeholder:text-ink-4 focus:outline-none focus:ring-1 focus:ring-accent"
             onKeyDown={(e) => {
               if (e.key === "Enter" && email.trim()) handleAdd();
             }}
@@ -157,10 +164,12 @@ function IndividualSharesPanel({
   shares,
   shareableClients,
   bookSiloEnabled,
+  members,
 }: {
   shares: OutgoingShare[];
   shareableClients: ShareableClient[];
   bookSiloEnabled: boolean;
+  members: FirmMember[];
 }): React.ReactElement {
   const router = useRouter();
   const [rows, setRows] = useState<OutgoingShare[]>(shares);
@@ -278,6 +287,7 @@ function IndividualSharesPanel({
           clientId={selected.id}
           initialIsPrivate={selected.isPrivate}
           bookSiloEnabled={bookSiloEnabled}
+          members={members}
         />
       ) : null}
     </section>
@@ -343,7 +353,13 @@ function SharedWithMePanel({
 // ---------------------------------------------------------------------------
 // Root export
 // ---------------------------------------------------------------------------
-export function SharingPanels({ outgoing, incoming, shareableClients, bookSiloEnabled = false }: Props): React.ReactElement {
+export function SharingPanels({
+  outgoing,
+  incoming,
+  shareableClients,
+  bookSiloEnabled = false,
+  firmMembers = [],
+}: Props): React.ReactElement {
   const shareAll = outgoing.filter((r) => r.scope === "all");
   const perClient = outgoing.filter((r) => r.scope === "client");
 
@@ -352,7 +368,7 @@ export function SharingPanels({ outgoing, incoming, shareableClients, bookSiloEn
       <h1 className="text-base font-medium text-ink">Sharing</h1>
 
       <div className="rounded border border-hair bg-card p-[var(--pad-card)]">
-        <ShareAllPanel shares={shareAll} />
+        <ShareAllPanel shares={shareAll} members={firmMembers} />
       </div>
 
       <div className="rounded border border-hair bg-card p-[var(--pad-card)]">
@@ -360,6 +376,7 @@ export function SharingPanels({ outgoing, incoming, shareableClients, bookSiloEn
           shares={perClient}
           shareableClients={shareableClients}
           bookSiloEnabled={bookSiloEnabled}
+          members={firmMembers}
         />
       </div>
 
