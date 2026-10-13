@@ -81,7 +81,7 @@ import {
   defaultRetirementBeneficiaries,
   isDefaultDesignationSet,
 } from "@/lib/beneficiaries/default-retirement-beneficiaries";
-import { validateMarginFields, marginNum } from "@/lib/accounts/margin-validation";
+import { validateMarginFields } from "@/lib/accounts/margin-validation";
 import { baseCaseScenarioId } from "./base-case";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
 
@@ -530,10 +530,10 @@ export async function updateAccountForClient(args: {
 
   const marginError = validateMarginFields({
     category: resultCategory,
-    value: marginNum(resolvedField("value", before.value), 0),
-    marginBalance: marginNum(resolvedField("marginBalance", before.marginBalance), 0),
-    marginInterestRate: marginNum(resolvedField("marginInterestRate", before.marginInterestRate), 0),
-    marginCallPct: marginNum(resolvedField("marginCallPct", before.marginCallPct), 0.3),
+    value: resolvedField("value", before.value),
+    marginBalance: resolvedField("marginBalance", before.marginBalance),
+    marginInterestRate: resolvedField("marginInterestRate", before.marginInterestRate),
+    marginCallPct: resolvedField("marginCallPct", before.marginCallPct),
   });
   if (marginError) return writeError(400, marginError);
 

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ProjectionYear } from "@/engine";
 import { otherTaxFromFlow, creditsInOtherFromFlow } from "@/lib/tax/other-tax";
+import { INVESTMENT_INTEREST_SOURCE_PREFIX } from "@/lib/tax/derive-deductions";
 import { TaxDetailTooltip } from "./tax-detail-tooltip";
 import {
   detectRegimeTransitions,
@@ -325,9 +326,6 @@ export function otherColumns(years: ProjectionYear[]): Column[] {
   );
 }
 
-/** bySource keys for margin-loan interest — surfaced only under Investment Interest. */
-const INVESTMENT_INTEREST_PREFIX = "investment-interest:";
-
 export function belowLineColumns(): Column[] {
   return [
     {
@@ -430,7 +428,7 @@ export function getSourcesForColumn(
   }
   if (colKey === "bl_investment_interest") {
     const entries = Object.entries(bd.belowLine.bySource)
-      .filter(([k]) => k.startsWith(INVESTMENT_INTEREST_PREFIX))
+      .filter(([k]) => k.startsWith(INVESTMENT_INTEREST_SOURCE_PREFIX))
       .map(([, v]) => v);
     return entries.length > 0 ? entries : null;
   }
@@ -439,7 +437,7 @@ export function getSourcesForColumn(
     if (amount <= 0) return null;
     // Filter bySource to entries that are below_line (not charitable)
     const entries = Object.entries(bd.belowLine.bySource)
-      .filter(([k, s]) => !k.startsWith(INVESTMENT_INTEREST_PREFIX) && !s.label.toLowerCase().includes("charit"))
+      .filter(([k, s]) => !k.startsWith(INVESTMENT_INTEREST_SOURCE_PREFIX) && !s.label.toLowerCase().includes("charit"))
       .map(([, s]) => s);
     return entries.length > 0 ? entries : [{ label: "Other itemized", amount }];
   }
@@ -460,7 +458,7 @@ function filterBySource(
       : l.includes("interest") || l.includes("mortgage");
   };
   const entries = Object.entries(bySource)
-    .filter(([k, e]) => !k.startsWith(INVESTMENT_INTEREST_PREFIX) && matches(e.label))
+    .filter(([k, e]) => !k.startsWith(INVESTMENT_INTEREST_SOURCE_PREFIX) && matches(e.label))
     .map(([, e]) => e);
   return entries.length > 0 ? entries : null;
 }

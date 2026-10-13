@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { money, growthRate, year, uuidLike } from "./common";
+import { MAX_MARGIN_INTEREST_RATE } from "@/lib/accounts/margin-validation";
 
 /**
  * Request-body schemas for the main resource endpoints. Each schema
@@ -88,7 +89,7 @@ export const accountCreateSchema = z
     tickerPortfolioId: uuidLike.optional().nullable(),
     turnoverPct: money.optional(),
     marginBalance: money.optional(),
-    marginInterestRate: z.number().min(0).max(0.25).optional(),
+    marginInterestRate: z.number().min(0).max(MAX_MARGIN_INTEREST_RATE).optional(),
     marginCallPct: z.number().gt(0).lt(1).optional(),
     overridePctOi: z.number().min(0).max(1).optional().nullable(),
     overridePctLtCg: z.number().min(0).max(1).optional().nullable(),

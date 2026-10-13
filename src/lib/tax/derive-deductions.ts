@@ -506,6 +506,10 @@ export function deriveStudentLoanInterest(
 
 // ── Source 7: Investment interest (Form 4952) — margin loans ─────────────────
 
+/** Prefix of every investment-interest `bySource` key; the tax-detail drill
+ *  filters on it to keep these rows under Investment Interest only. */
+export const INVESTMENT_INTEREST_SOURCE_PREFIX = "investment-interest:";
+
 export interface InvestmentInterestInput {
   /** This year's household-like margin interest, by account id. */
   interestByAccount: Record<string, { label: string; amount: number }>;
@@ -534,9 +538,9 @@ export function deriveInvestmentInterest(input: InvestmentInterestInput): Invest
   if (allowed > 0) {
     const scale = allowed / total;
     for (const [id, r] of Object.entries(input.interestByAccount)) {
-      if (r.amount > 0) bySource[`investment-interest:${id}`] = { label: `Investment interest — ${r.label}`, amount: r.amount * scale };
+      if (r.amount > 0) bySource[`${INVESTMENT_INTEREST_SOURCE_PREFIX}${id}`] = { label: `Investment interest — ${r.label}`, amount: r.amount * scale };
     }
-    if (carryIn > 0) bySource["investment-interest:carryforward"] = { label: "Investment interest — carried forward", amount: carryIn * scale };
+    if (carryIn > 0) bySource[`${INVESTMENT_INTEREST_SOURCE_PREFIX}carryforward`] = { label: "Investment interest — carried forward", amount: carryIn * scale };
   }
   return { aboveLine: 0, itemized: allowed, saltPool: 0, carryforwardOut: total - allowed, bySource };
 }

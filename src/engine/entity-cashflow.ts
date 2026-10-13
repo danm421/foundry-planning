@@ -310,12 +310,7 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           const acc = accrueLockedEntityShare({
             carriedBoY: carried?.eoy,
             carriedPercent: carried?.percent,
-            ledger: {
-              beginningValue: ledger.beginningValue,
-              growth: ledger.growth,
-              marginInterest: ledger.marginInterest,
-              endingValue: ledger.endingValue,
-            },
+            ledger,
             percent: share,
           });
           beginningBalance += acc.lockedBoY;

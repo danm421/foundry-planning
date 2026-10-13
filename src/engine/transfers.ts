@@ -3,6 +3,7 @@ import { classifyTransferTax, isInheritedPayout } from "./tax-classification";
 import { computeTradIraPool, iraPoolKey, isTraditionalIra } from "./ira-basis";
 import { controllingFamilyMember } from "./ownership";
 import { isInheritedIra } from "./inherited-ira";
+import { grossValue } from "./margin";
 
 // ============================================================================
 // Basis Clamping
@@ -126,7 +127,7 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
       targetCategory: targetAccount.category,
       targetSubType: targetAccount.subType,
       amount: actualAmount,
-      sourceAccountValue: sourceBalance + (marginMap?.[transfer.sourceAccountId] ?? 0),
+      sourceAccountValue: grossValue(sourceBalance, marginMap, transfer.sourceAccountId),
       sourceAccountBasis: basisMap[transfer.sourceAccountId] ?? 0,
       sourceRothValue: rothValueMap?.[transfer.sourceAccountId] ?? 0,
       sourceFreshBasis: sourceFresh,

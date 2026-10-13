@@ -7,6 +7,7 @@ import type {
   SavingsRule,
 } from "@/engine/types";
 import { EDUCATION_529_SENTINEL_OWNER_ID, type AccountOwner } from "@/engine/ownership";
+import { DEFAULT_MARGIN_CALL_PCT } from "@/engine/margin";
 import { asAmountUnit } from "@/lib/social-security/benefit-entry";
 import type { createGrowthSourceResolver } from "./resolve-growth-source";
 
@@ -289,7 +290,7 @@ export function resolveAccountFromRaw(
     rothValue: raw.rothValue != null ? n(raw.rothValue) : 0,
     marginBalance: raw.marginBalance != null ? n(raw.marginBalance) : 0,
     marginInterestRate: raw.marginInterestRate != null ? n(raw.marginInterestRate) : 0,
-    marginCallPct: raw.marginCallPct != null ? n(raw.marginCallPct) : 0.3,
+    marginCallPct: raw.marginCallPct != null ? n(raw.marginCallPct) : DEFAULT_MARGIN_CALL_PCT,
     hsaCoverage: raw.hsaCoverage ?? undefined,
     growthRate,
     rmdEnabled: raw.rmdEnabled,

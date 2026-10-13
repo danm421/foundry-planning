@@ -1,4 +1,5 @@
 import type { Account, AccountLedger, Reinvestment } from "./types";
+import { grossValue } from "./margin";
 
 export interface ReinvestmentsInput {
   reinvestments: Reinvestment[];
@@ -42,7 +43,7 @@ export function applyReinvestments(input: ReinvestmentsInput): ReinvestmentsResu
       if (!acct) continue; // account removed earlier this projection (sold, etc.)
 
       if (ri.realizeTaxesOnSwitch && acct.category === "taxable") {
-        const bal = (input.accountBalances[acct.id] ?? 0) + (input.marginMap?.[acct.id] ?? 0);
+        const bal = grossValue(input.accountBalances[acct.id] ?? 0, input.marginMap, acct.id);
         const basis = input.basisMap[acct.id] ?? 0;
         const fraction = ri.soldFractionByAccount[acct.id] ?? 0;
         // Signed: a sell-and-rebuy of an underwater sleeve realizes a LOSS and

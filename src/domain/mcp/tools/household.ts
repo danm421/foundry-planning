@@ -130,9 +130,9 @@ const getBalanceSheet = defineTool({
     const byCategory = new Map<string, number>();
     for (const a of accounts) {
       const key = a.category ?? "other";
-      byCategory.set(key, (byCategory.get(key) ?? 0) + netAccountValue({ value: a.value ?? 0, marginBalance: a.marginBalance }));
+      byCategory.set(key, (byCategory.get(key) ?? 0) + netAccountValue(a));
     }
-    const totalAccountValue = accounts.reduce((s, a) => s + netAccountValue({ value: a.value ?? 0, marginBalance: a.marginBalance }), 0);
+    const totalAccountValue = accounts.reduce((s, a) => s + netAccountValue(a), 0);
     const totalLiabilities = liabilities.reduce((s, l) => s + (l.balance ?? 0), 0);
 
     return {

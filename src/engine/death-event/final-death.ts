@@ -21,7 +21,7 @@ import {
   type DeathEventResult,
 } from "./shared";
 import { controllingEntity, isFullyEntityOwned, ownedByHousehold, controllingFamilyMember } from "../ownership";
-import { withLiveMargin } from "../margin";
+import { seedMarginLoan, withLiveMargin } from "../margin";
 import {
   buildEstateTaxResult,
   computeDeductions,
@@ -180,7 +180,7 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
       nextAccounts.push(slice);
       nextAccountBalances[slice.id] = slice.value;
       nextBasisMap[slice.id] = slice.basis;
-      if ((slice.marginBalance ?? 0) > 0) nextMarginMap[slice.id] = slice.marginBalance!;
+      seedMarginLoan(nextMarginMap, slice);
     }
     const routedAcct = route.account;
     const routedBalance = route.balance;
@@ -293,7 +293,7 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
       nextAccounts.push(a);
       nextAccountBalances[a.id] = a.value;
       nextBasisMap[a.id] = a.basis;
-      if ((a.marginBalance ?? 0) > 0) nextMarginMap[a.id] = a.marginBalance!;
+      seedMarginLoan(nextMarginMap, a);
     }
 
     if (linkedLiability) {

@@ -59,6 +59,7 @@ import { OwnershipEditor } from "./ownership-editor";
 import type { AccountOwner } from "@/engine/ownership";
 import type { BeneficiaryRef } from "@/engine/types";
 import { isRmdEligibleSubType } from "@/engine/rmd";
+import { DEFAULT_MARGIN_CALL_PCT } from "@/engine/margin";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 import { isAumEligible } from "@/lib/accounts/aum";
 import { InheritedIraFields } from "./inherited-ira-fields";
@@ -1498,7 +1499,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       turnoverPct: toPctOrNull(turnoverPct) ?? "0",
       marginBalance: category === "taxable" ? (marginBalance || "0") : "0",
       marginInterestRate: category === "taxable" ? (toPctOrNull(marginInterestRate) ?? "0") : "0",
-      marginCallPct: toPctOrNull(marginCallPct) ?? "0.3",
+      marginCallPct: toPctOrNull(marginCallPct) ?? String(DEFAULT_MARGIN_CALL_PCT),
       overridePctOi: toPctOrNull(overridePctOi),
       overridePctLtCg: toPctOrNull(overridePctLtCg),
       overridePctQdiv: toPctOrNull(overridePctQdiv),
@@ -1745,7 +1746,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
         (data.get("category") as string) === "taxable" ? ((data.get("marginBalance") as string) || "0") : "0",
       marginInterestRate:
         (data.get("category") as string) === "taxable" ? (toPctOrNull("marginInterestRate") ?? "0") : "0",
-      marginCallPct: toPctOrNull("marginCallPct") ?? "0.3",
+      marginCallPct: toPctOrNull("marginCallPct") ?? String(DEFAULT_MARGIN_CALL_PCT),
       overridePctOi: toPctOrNull("overridePctOi"),
       overridePctLtCg: toPctOrNull("overridePctLtCg"),
       overridePctQdiv: toPctOrNull("overridePctQdiv"),

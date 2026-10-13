@@ -6,17 +6,28 @@
  * DB constraint: imports and holdings sync may lower value below the loan, and
  * the engine treats that as an underwater account (spec R7).
  */
+import { DEFAULT_MARGIN_CALL_PCT } from "@/engine/margin";
+
 export const MAX_MARGIN_INTEREST_RATE = 0.25;
 
+/** Raw values as the create schema and the write core hold them (decimal
+ *  strings or numbers); null/undefined/"" take the column default. */
 export interface MarginFieldsInput {
   category: string;
-  value: number;
-  marginBalance: number;
-  marginInterestRate: number;
-  marginCallPct: number;
+  value: unknown;
+  marginBalance: unknown;
+  marginInterestRate: unknown;
+  marginCallPct: unknown;
 }
 
-export function validateMarginFields(f: MarginFieldsInput): string | null {
+export function validateMarginFields(raw: MarginFieldsInput): string | null {
+  const f = {
+    category: raw.category,
+    value: marginNum(raw.value, 0),
+    marginBalance: marginNum(raw.marginBalance, 0),
+    marginInterestRate: marginNum(raw.marginInterestRate, 0),
+    marginCallPct: marginNum(raw.marginCallPct, DEFAULT_MARGIN_CALL_PCT),
+  };
   if (!Number.isFinite(f.marginBalance) || f.marginBalance < 0) {
     return "Margin loan balance can't be negative.";
   }
@@ -39,8 +50,8 @@ export function validateMarginFields(f: MarginFieldsInput): string | null {
   return null;
 }
 
-/** Decimal-string-or-number → number, with null/"" → fallback. */
-export function marginNum(v: unknown, fallback: number): number {
+/** Decimal-string-or-number → number, with null/undefined/"" → fallback. */
+function marginNum(v: unknown, fallback: number): number {
   if (v === null || v === undefined || v === "") return fallback;
   return Number(v);
 }

@@ -6,7 +6,7 @@ import {
 } from "@/lib/balance-sheet/attribute";
 import { flatBusinessValueAt } from "@/engine/entity-cashflow";
 import type { FamilyMember, GiftEvent } from "@/engine/types";
-import { businessOfOwnerlessChild, entityOwnersAsOf, ownersAsOf } from "./view-model";
+import { accountLoanForYear, businessOfOwnerlessChild, entityOwnersAsOf, ownersAsOf } from "./view-model";
 import {
   foldPartitionedAccount,
   isPartitionedAt,
@@ -223,8 +223,7 @@ export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): Househ
     const owners = folded ? folded.owners : ownersOf();
     const cols = splitToColumns(attributeToColumns({ id: acct.id, value, owners }, ctx));
     if (cols.total <= 0) continue; // entirely OOE / held back
-    const ledger = yearData.accountLedgers[acct.id];
-    const wholeLoan = (asOfMode === "today" ? ledger?.marginBoY : ledger?.marginEoY) ?? 0;
+    const wholeLoan = accountLoanForYear(yearData, acct.id, asOfMode);
     pushRow(cat, {
       key: acct.id,
       name: acct.name,

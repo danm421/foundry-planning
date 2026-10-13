@@ -40,7 +40,7 @@ import {
 import { computeBusinessYearFlow } from "./business/year-flow";
 import { buildGiftValueAtYear } from "./business/business-tree";
 import { accrueLockedEntityShare } from "./locked-shares";
-import { type MarginMap, netSeedValue, grossValue, grossBalancesFor, chargeMarginInterest, marginCallWarnings } from "./margin";
+import { type MarginMap, netSeedValue, seedMarginLoan, grossValue, grossBalancesFor, chargeMarginInterest, marginCallWarnings } from "./margin";
 import { buildOwnershipSnapshot } from "./ownership-snapshot";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
@@ -940,7 +940,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   const marginMap: MarginMap = {};
   for (const acct of data.accounts) {
     if (isPreActivation(acct, planSettings.planStartYear)) continue;
-    if ((acct.marginBalance ?? 0) > 0) marginMap[acct.id] = acct.marginBalance!;
+    seedMarginLoan(marginMap, acct);
   }
 
   // Per-year, per-account unspent basisIncrease pool. Reset at top of each
@@ -1292,7 +1292,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         accountBalances[acct.id] = netSeedValue(acct);
         basisMap[acct.id] = acct.basis;
         rothValueMap[acct.id] = acct.rothValue ?? 0;
-        if ((acct.marginBalance ?? 0) > 0) marginMap[acct.id] = acct.marginBalance!;
+        seedMarginLoan(marginMap, acct);
         // A joining annuity needs its contract state seeded HERE, not lazily in
         // the contract step below: transfers and draws run first and consume
         // §72 basis, and without an entry to write into, that consumption is
@@ -2241,9 +2241,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       accountLedgers[acct.id].endingValue += growth;
       accountLedgers[acct.id].entries.push({
         category: "growth",
-        label: (marginMap[acct.id] ?? 0) > 0
-          ? `Growth (${(effectiveGrowthRate * 100).toFixed(2)}% on securities incl. margin loan)`
-          : `Growth (${(effectiveGrowthRate * 100).toFixed(2)}%)`,
+        label: `Growth (${(effectiveGrowthRate * 100).toFixed(2)}%${(marginMap[acct.id] ?? 0) > 0 ? " on securities incl. margin loan" : ""})`,
         amount: growth,
         basis: growthBasisDelta,
       });
@@ -4764,7 +4762,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         ),
         manualEntryContribution,
         // APPEND-ONLY: `contributions` is read positionally below ([0], [1],
-        // [3], [4], [5], [7]). New sources go on the end so no existing index moves.
+        // [3], [4], [5]). New sources go on the end so no existing index moves.
         studentLoanInterestContribution,
         investmentInterestContribution,
       ];
@@ -4822,7 +4820,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
 
       const interestPaid = contributions[3].itemized;
-      const investmentInterest = contributions[7].itemized;
+      const investmentInterest = investmentInterestContribution.itemized;
       const rawPropertyTax = contributions[2].saltPool + contributions[4].saltPool + contributions[5].saltPool;
       // estStateTax already computed above for aggregateDeductions
       const rawSalt = rawPropertyTax + estStateTax;
@@ -7269,6 +7267,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // figure. Monotone and 1-Lipschitz in its argument, so the convergence loop
     // below keeps its contraction property.
     const taxToFund = (tax: number) => tax - taxAlreadyPaidAgainst(tax);
+    // Margined accounts' securities values for the draw gain ratios. Built once:
+    // neither convergence loop below moves a balance or a loan.
+    const grossBalances = grossBalancesFor(accountBalances, marginMap);
 
     if (hasChecking) {
       let checkingAfterTax = preSupplementalChecking - taxToFund(taxOutForIter.taxes);
@@ -7355,7 +7356,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           shortfall: cumulativeShortfall,
           strategy: effectiveWithdrawalStrategy,
           householdBalances: reservedBalances,
-          grossBalances: grossBalancesFor(accountBalances, marginMap),
+          grossBalances,
           basisMap,
           freshBasisMap,
           rothValueMap,
@@ -7549,7 +7550,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             shortfall: target,
             strategy: effectiveWithdrawalStrategy,
             householdBalances: householdWithdrawBalances,
-            grossBalances: grossBalancesFor(accountBalances, marginMap),
+            grossBalances,
             basisMap,
             freshBasisMap,
             rothValueMap,
@@ -8258,7 +8259,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const acct = liquidatableAcctById.get(acctId);
         const liqTaxable = acct?.category === "taxable" && preBalance > 0;
         const liqBasisBefore = basisMap[acctId] ?? preBalance;
-        const liqGross = preBalance + (marginMap[acctId] ?? 0);
+        const liqGross = grossValue(preBalance, marginMap, acctId);
         const liqFraction = preBalance > 0 ? Math.min(1, amount / liqGross) : 0;
         const sourceBasisDelta = liqTaxable ? -liqBasisBefore * liqFraction : 0;
 
@@ -8291,7 +8292,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
 
         // Cap-gains realization wiring for taxable liquidations. Compute the
-        // pro-rata gain against the pre-liquidation balance, reduce basis by
+        // pro-rata gain against the pre-liquidation securities value (net
+        // balance + any margin loan — `liqFraction` above), reduce basis by
         // the same fraction, and stash the gain for NEXT year's trust-tax pass
         // (deferred — trust marginal rate isn't available at gap-fill time).
         // Routing (1041-pass members → trust 1041; everyone else → household
@@ -8830,12 +8832,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const acc = accrueLockedEntityShare({
           carriedBoY: carried,
           carriedPercent: lockedEntityPercentCarry.get(o.entityId)?.get(acct.id),
-          ledger: {
-            beginningValue: ledger.beginningValue,
-            growth: ledger.growth,
-            marginInterest: ledger.marginInterest,
-            endingValue: ledger.endingValue,
-          },
+          ledger,
           percent: o.percent,
         });
         if (!lockedEntityShareCarry.has(o.entityId)) {
@@ -9771,7 +9768,7 @@ function computeTodayHypotheticalEstateTax(
   for (const acct of todayAccounts) {
     accountBalances[acct.id] = netSeedValue(acct);
     basisMap[acct.id] = acct.basis;
-    if ((acct.marginBalance ?? 0) > 0) marginMap[acct.id] = acct.marginBalance!;
+    seedMarginLoan(marginMap, acct);
   }
 
   // Match the runProjection liability-init: each balance is the schedule's

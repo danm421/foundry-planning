@@ -12,11 +12,25 @@ import type { Account, AccountLedger, MarginCallWarning } from "./types";
  */
 export type MarginMap = Record<string, number>;
 
+/** Default margin-call warning level (net ÷ securities). The DB column default
+ *  `'0.3'` and the account form's "30" display stay literal — keep them in step. */
+export const DEFAULT_MARGIN_CALL_PCT = 0.3;
+
 /** Plan-start `accountBalances` seed: the securities value net of the loan. */
 export function netSeedValue(acct: Account): number {
   return acct.value - (acct.marginBalance ?? 0);
 }
 
+/** Record an account's own loan in `marginMap` — only when it carries one, so
+ *  a no-margin account never gains a map entry. */
+export function seedMarginLoan(
+  marginMap: MarginMap,
+  acct: Pick<Account, "id" | "marginBalance">,
+): void {
+  if ((acct.marginBalance ?? 0) > 0) marginMap[acct.id] = acct.marginBalance!;
+}
+
+/** Securities value: net balance plus the live loan (net itself when there is none). */
 export function grossValue(net: number, marginMap: MarginMap | undefined, accountId: string): number {
   return net + (marginMap?.[accountId] ?? 0);
 }
@@ -70,7 +84,8 @@ export function withLiveMargin(acct: Account, marginMap: MarginMap | undefined):
 }
 
 /** A `fraction` share of an account: value, basis AND loan scale together.
- *  Every "share of an account" copy must use this — a bare
+ *  Any share-of-an-account copy must scale the loan too (this helper, or the
+ *  inline loan scaling in `splitAccount` / `partitionMixedAccount`) — a bare
  *  `{ ...source, value: source.value * f }` copies the WHOLE loan. */
 export function scaleAccountValue(source: Account, fraction: number): Account {
   return {
@@ -94,7 +109,7 @@ export function marginCallWarnings(
     const net = accountBalances[acct.id] ?? 0;
     const gross = net + loan;
     const ratio = net > 0 && gross > 0 ? net / gross : 0;
-    const threshold = acct.marginCallPct ?? 0.3;
+    const threshold = acct.marginCallPct ?? DEFAULT_MARGIN_CALL_PCT;
     if (ratio < threshold) out.push({ accountId: acct.id, ratio, threshold });
   }
   return out;

@@ -28,6 +28,7 @@ import type {
   EntitySummary,
 } from "@/engine/types";
 import { controllingEntity, type AccountOwner } from "@/engine/ownership";
+import { DEFAULT_MARGIN_CALL_PCT } from "@/engine/margin";
 import type { AssumptionsSettings } from "@/lib/plan-settings/assumptions-settings";
 
 // ── Income ────────────────────────────────────────────────────────────────────
@@ -276,7 +277,7 @@ export function accountEngineToView(account: EngineAccount): AccountViewEngineFi
     growthRate: account.growthRate != null ? String(account.growthRate) : null,
     marginBalance: String(account.marginBalance ?? 0),
     marginInterestRate: String(account.marginInterestRate ?? 0),
-    marginCallPct: String(account.marginCallPct ?? 0.3),
+    marginCallPct: String(account.marginCallPct ?? DEFAULT_MARGIN_CALL_PCT),
     rmdEnabled: account.rmdEnabled ?? null,
     ownerEntityId: controllingEntity(account) ?? null,
     owners: account.owners,

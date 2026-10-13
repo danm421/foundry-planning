@@ -50,6 +50,8 @@ export function computeSideTotals(
     }
     const alloc = resolved.get(allocationKey(obj.kind, obj.id));
     if (!alloc) continue;
+    // Balance-sheet value net of any margin loan (liabilities carry none).
+    const netValue = obj.value - (obj.marginBalance ?? 0);
     if (alloc.disposition === "split" && alloc.splitPercentToSpouse != null) {
       const r = splitAmounts(
         obj.value,
@@ -62,10 +64,10 @@ export function computeSideTotals(
       add("primary", r.primary.value - r.primary.marginBalance);
       add("spouse", r.spouse.value - r.spouse.marginBalance);
     } else if (alloc.disposition === "duplicate") {
-      add("primary", obj.value - (obj.marginBalance ?? 0));
-      add("spouse", obj.value - (obj.marginBalance ?? 0));
+      add("primary", netValue);
+      add("spouse", netValue);
     } else {
-      add(alloc.disposition === "spouse" ? "spouse" : "primary", obj.value - (obj.marginBalance ?? 0));
+      add(alloc.disposition === "spouse" ? "spouse" : "primary", netValue);
     }
   }
   return sides;

@@ -36,6 +36,7 @@ import { db } from "@/db";
 import { accounts, accountOwners, savingsRules, scenarios, clients, incomes, expenses, planSettings, expenseDedicatedAccounts } from "@/db/schema";
 import type { Account, SavingsRule } from "@/engine/types";
 import { EDUCATION_529_SENTINEL_OWNER_ID } from "@/engine/ownership";
+import { DEFAULT_MARGIN_CALL_PCT } from "@/engine/margin";
 import type { SolverMutation } from "@/lib/solver/types";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import { mutationsToBaseUpdates } from "@/lib/solver/mutations-to-base-updates";
@@ -161,7 +162,7 @@ function marginLoanFields(a: Account) {
   return {
     marginBalance: decOrZero(a.marginBalance),
     marginInterestRate: decOrZero(a.marginInterestRate),
-    marginCallPct: a.marginCallPct != null ? String(a.marginCallPct) : "0.3",
+    marginCallPct: String(a.marginCallPct ?? DEFAULT_MARGIN_CALL_PCT),
   };
 }
 

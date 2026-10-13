@@ -286,6 +286,16 @@ function accountValueForYear(
   return mode === "today" ? ledger.beginningValue : ledger.endingValue;
 }
 
+/** The whole account's margin loan at the same as-of point (0 when none). */
+export function accountLoanForYear(
+  yearData: Pick<ProjectionYearLike, "accountLedgers">,
+  accountId: string,
+  mode: AsOfMode,
+): number {
+  const ledger = yearData.accountLedgers[accountId];
+  return (mode === "today" ? ledger?.marginBoY : ledger?.marginEoY) ?? 0;
+}
+
 /** "Whatnot — 85% of $100,000,000": a fractional holding named against the
  *  whole, so a scaled row never reads as the asset itself having shrunk.
  *  A whole share, or a drained asset, is just its own name — there is no
@@ -578,8 +588,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
         if (rec.sliceOf === acct.id) wholeValue += accountValueForYear(yearData, id, asOfMode);
       }
     }
-    const ledger = yearData.accountLedgers[acct.id];
-    const wholeLoan = (asOfMode === "today" ? ledger?.marginBoY : ledger?.marginEoY) ?? 0;
+    const wholeLoan = accountLoanForYear(yearData, acct.id, asOfMode);
     const isEntityOwned = owners.some((o) => o.kind === "entity");
     if (value <= 0 && !isEntityOwned) continue;
     const hasLinkedMortgage =
@@ -1249,8 +1258,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       const retained = 1 - (giftedAwayByBusiness.get(b.id) ?? 0);
       const assetRows: AssetRow[] = tree.map((acct) => {
         const full = accountValueForYear(yearData, acct.id, asOfMode);
-        const ledger = yearData.accountLedgers[acct.id];
-        const wholeLoan = (asOfMode === "today" ? ledger?.marginBoY : ledger?.marginEoY) ?? 0;
+        const wholeLoan = accountLoanForYear(yearData, acct.id, asOfMode);
         return {
           rowKey: acct.id === b.id ? `biz:${acct.id}` : `bizchild:${acct.id}`,
           accountId: acct.id,

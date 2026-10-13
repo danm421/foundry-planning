@@ -8,6 +8,7 @@ import type {
 } from "./types";
 import type { FilingStatus } from "../lib/tax/types";
 import { controllingEntity, giftAwareOwners } from "./ownership";
+import { grossValue } from "./margin";
 
 /** IRC §121 home-sale exclusion caps by filing status.
  *  Married filing jointly gets $500k; all other statuses (single, head of
@@ -579,7 +580,7 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
     // produces the same number there.
     const fundingBalance = accountBalances[fundingAccountId] ?? 0;
     const fundingBasis = basisMap[fundingAccountId] ?? 0;
-    const fundingGross = fundingBalance + (marginMap?.[fundingAccountId] ?? 0);
+    const fundingGross = grossValue(fundingBalance, marginMap, fundingAccountId);
     const basisDebit =
       fundingBalance > 0
         ? Math.min(fundingBasis, fundingBasis * (equity / fundingGross))

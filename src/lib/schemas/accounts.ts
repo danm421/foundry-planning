@@ -2,7 +2,8 @@ import { z } from "zod";
 import { uuidSchema } from "./common";
 import { AddBusinessInputSchema } from "./accounts-business";
 import { YEAR_REFS } from "@/lib/milestones";
-import { validateMarginFields, marginNum } from "@/lib/accounts/margin-validation";
+import { validateMarginFields } from "@/lib/accounts/margin-validation";
+import { DEFAULT_MARGIN_CALL_PCT } from "@/engine/margin";
 import { accountCategoryEnum, accountSubTypeEnum } from "@/db/schema";
 
 // Local per-file enum (mirrors note-receivable.ts / gifts.ts / gift-series.ts —
@@ -142,7 +143,7 @@ export const accountCreateSchema = z
     turnoverPct: z.union([z.number(), z.string()]).optional().default("0"),
     marginBalance: decOrZeroOptional.default("0"),
     marginInterestRate: z.union([z.number(), z.string()]).optional().default("0"),
-    marginCallPct: z.union([z.number(), z.string()]).optional().default("0.3"),
+    marginCallPct: z.union([z.number(), z.string()]).optional().default(String(DEFAULT_MARGIN_CALL_PCT)),
     annualPropertyTax: z.union([z.number(), z.string()]).optional().default("0"),
     propertyTaxGrowthRate: z.union([z.number(), z.string()]).optional().default("0.03"),
     propertyTaxGrowthSource: z.string().optional().default("custom"),
@@ -167,10 +168,10 @@ export const accountCreateSchema = z
     }
     const marginError = validateMarginFields({
       category: data.category,
-      value: marginNum(data.value, 0),
-      marginBalance: marginNum(data.marginBalance, 0),
-      marginInterestRate: marginNum(data.marginInterestRate, 0),
-      marginCallPct: marginNum(data.marginCallPct, 0.3),
+      value: data.value,
+      marginBalance: data.marginBalance,
+      marginInterestRate: data.marginInterestRate,
+      marginCallPct: data.marginCallPct,
     });
     if (marginError) {
       ctx.addIssue({ code: "custom", message: marginError, path: ["marginBalance"] });

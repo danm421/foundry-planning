@@ -1,6 +1,6 @@
 import type { ClientInfo, Account, Liability, DeathTransfer, EstateTaxResult, FamilyMember, Will, WillBequest, EntitySummary, Income, PlanSettings, Gift, GiftEvent, BeneficiaryRef, LifeInsurancePayout } from "../types";
 import { nextSyntheticId } from "../asset-transactions";
-import { scaleAccountValue } from "../margin";
+import { grossValue, scaleAccountValue } from "../margin";
 import type { FilingStatus } from "../../lib/tax/types";
 import type { AccountOwner } from "../ownership";
 import { controllingEntity, controllingFamilyMember, giftAwareLiabilityOwners, giftAwareOwners, isFullyEntityOwned, ownedByHousehold } from "../ownership";
@@ -1730,8 +1730,10 @@ export interface DeathEventInput {
    *  survivor-annuity estate inclusion. Optional for back-compat with fixtures. */
   survivorBirthYear?: number;
   survivorLifeExpectancy?: number;
-  /** Live margin loan per account id (see engine/margin.ts). Absent → each
-   *  account's own `marginBalance`, which is the live loan at plan start. */
+  /** Live margin loan per account id (see engine/margin.ts). Optional for
+   *  fixtures; when absent the precedence chain reads each account's own
+   *  `marginBalance` (the plan-start loan), while pour-out and business
+   *  succession see no loan. */
   marginMap?: Record<string, number>;
 }
 
@@ -1936,7 +1938,7 @@ export function runPourOut(input: RunPourOutInput): RunPourOutResult {
       const originalBasis = input.basisMap[acct.id] ?? acct.basis;
       // §1014 steps up to the securities' FMV: net plus any margin loan.
       const steppedBasis = computeSteppedUpBasis(
-        acct.category, balance + (input.marginMap?.[acct.id] ?? 0), originalBasis,
+        acct.category, grossValue(balance, input.marginMap, acct.id), originalBasis,
         { isJointAtFirstDeath: false, titlingType: acct.titlingType },
       );
 
