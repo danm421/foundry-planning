@@ -23,8 +23,7 @@ import { pagesForSectionReader, routeFile } from "./readers/route-file";
 import { readSections } from "./readers/section-reader";
 import { readingsFromStatements } from "./readers/statement-adapter";
 import { needsReading } from "./reading-status";
-import { loadExistingRecords, resolveBaseCaseScenarioId } from "./records/load";
-import { emptyExistingRecords } from "./records/types";
+import { loadBaseCaseRecords } from "./relink";
 import type { ReadEvent } from "./api-types";
 import type { FFFileReading, FFMergeDecision, FFReader, FFReaderOutput } from "./types";
 
@@ -90,8 +89,7 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
   if (todo.length === 0) return nothingNew(start.version);
 
   // Before the claim: a failure here must not leave files "reading" with no Retry.
-  const scenarioId = await resolveBaseCaseScenarioId(scope.clientId);
-  const records = scenarioId ? await loadExistingRecords(scope.clientId, scenarioId) : emptyExistingRecords();
+  const records = await loadBaseCaseRecords(scope.clientId);
 
   // Claim against the fresh state: an overlapping read may have claimed some
   // of these files since `start` was loaded. `mutate` can run more than once,

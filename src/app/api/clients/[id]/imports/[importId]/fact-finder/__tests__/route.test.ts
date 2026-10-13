@@ -20,6 +20,7 @@ vi.mock("@/lib/clients/authz", () => ({
 vi.mock("@/lib/rate-limit", () => ({ checkImportRateLimit: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 vi.mock("@/lib/fact-finder/persist", () => ({ writeFactFinder: vi.fn(), loadFactFinder: vi.fn() }));
+vi.mock("@/lib/fact-finder/records/load", () => ({ resolveBaseCaseScenarioId: vi.fn(), loadExistingRecords: vi.fn() }));
 vi.mock("@/db", () => ({ db: {} }));
 
 import { GET, PATCH } from "../route";
@@ -31,8 +32,10 @@ import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { loadFactFinder, writeFactFinder } from "@/lib/fact-finder/persist";
+import { loadExistingRecords, resolveBaseCaseScenarioId } from "@/lib/fact-finder/records/load";
+import { emptyExistingRecords } from "@/lib/fact-finder/records/types";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
-import type { FactFinderState } from "@/lib/fact-finder/types";
+import type { FactFinderState, FFRow } from "@/lib/fact-finder/types";
 
 const params = { params: Promise.resolve({ id: "c1", importId: "i1" }) };
 const CHAT_PAYLOAD = { chat: { surface: "chat" } };
@@ -70,6 +73,8 @@ beforeEach(() => {
     payloadJson: { ...CHAT_PAYLOAD, factFinder: stored(3) },
     createdByUserId: "user_1",
   } as never);
+  vi.mocked(resolveBaseCaseScenarioId).mockResolvedValue("s1");
+  vi.mocked(loadExistingRecords).mockResolvedValue(emptyExistingRecords());
 });
 
 describe("gates", () => {
@@ -137,8 +142,8 @@ describe("PATCH", () => {
     vi.mocked(writeFactFinder).mockImplementationOnce(async (_scope, base, next) => ({ ...next, version: base + 1 }));
     const res = await PATCH(patch({ baseVersion: 3, ops: [setName] }), params);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ version: 4 });
     const [scope, base, next] = vi.mocked(writeFactFinder).mock.calls[0];
+    expect(await res.json()).toEqual({ version: 4, factFinder: { ...next, version: 4 } });
     expect(scope).toEqual({ importId: "i1", clientId: "c1", firmId: "org_1" });
     expect(base).toBe(3);
     expect(next.sections.cash[0].cells.accountName).toEqual({ value: "Joint Checking", by: "advisor", pinned: true });
@@ -165,6 +170,72 @@ describe("PATCH", () => {
     expect(res.status).toBe(409);
     expect((await res.json()).factFinder.version).toBe(4);
     expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("re-scores links after an edit in a section that links, and returns the re-scored state", async () => {
+    vi.mocked(writeFactFinder).mockImplementationOnce(async (_scope, base, next) => ({ ...next, version: base + 1 }));
+    const res = await PATCH(patch({ baseVersion: 3, ops: [setName] }), params);
+    expect(resolveBaseCaseScenarioId).toHaveBeenCalledWith("c1");
+    expect(loadExistingRecords).toHaveBeenCalledWith("c1", "s1");
+    const written = vi.mocked(writeFactFinder).mock.calls[0][2];
+    expect(written.sections.cash[0].link).toEqual({ kind: "new", by: "auto" });
+    expect((await res.json()).factFinder.sections.cash[0].link).toEqual({ kind: "new", by: "auto" });
+  });
+
+  it("doesn't load records for a batch of holding edits", async () => {
+    const s = stored(3);
+    const brokerage: FFRow = {
+      id: "t1",
+      cells: { accountName: { value: "Joint Brokerage", by: "advisor", pinned: true } },
+      sourceFileIds: [],
+      link: { kind: "new", by: "auto" },
+      holdings: [{ id: "h1", ticker: "VTI", name: null, shares: 10, price: null, marketValue: null, costBasis: null, by: "document" }],
+    };
+    vi.mocked(requireImportAccess).mockResolvedValueOnce({
+      id: "i1",
+      payloadJson: { ...CHAT_PAYLOAD, factFinder: { ...s, sections: { ...s.sections, taxable: [brokerage] } } },
+      createdByUserId: "user_1",
+    } as never);
+    vi.mocked(writeFactFinder).mockImplementationOnce(async (_scope, base, next) => ({ ...next, version: base + 1 }));
+    const res = await PATCH(
+      patch({ baseVersion: 3, ops: [{ op: "setHolding", sectionId: "taxable", rowId: "t1", holdingId: "h1", field: "shares", value: 12 }] }),
+      params,
+    );
+    expect(res.status).toBe(200);
+    expect(resolveBaseCaseScenarioId).not.toHaveBeenCalled();
+    expect(loadExistingRecords).not.toHaveBeenCalled();
+    expect((await res.json()).factFinder.sections.taxable[0].holdings[0].shares).toBe(12);
+  });
+
+  it("re-links a misread account number once the advisor corrects the last 4", async () => {
+    const records = emptyExistingRecords();
+    records.candidates.accounts = [
+      { id: "acct-a", name: "Schwab Brokerage", category: "taxable", accountNumberLast4: "7781", custodian: "Schwab", value: 90000 },
+      { id: "acct-b", name: "Schwab Brokerage", category: "taxable", accountNumberLast4: "7731", custodian: "Schwab", value: 250000 },
+    ];
+    vi.mocked(loadExistingRecords).mockResolvedValue(records);
+    const doc = (value: string) => ({ value, by: "document" as const, confidence: 0.92, source: { fileId: "f1" } });
+    const misread: FFRow = {
+      id: "t1",
+      cells: { accountName: doc("Schwab Brokerage"), custodian: doc("Schwab"), last4: doc("7781") },
+      sourceFileIds: ["f1"],
+      link: { kind: "existing", recordId: "acct-a", score: 1, confirmed: true, by: "auto" },
+      linkCandidates: [{ recordId: "acct-a", label: "Schwab Brokerage ··7781", score: 1 }],
+    };
+    const s = stored(3);
+    vi.mocked(requireImportAccess).mockResolvedValueOnce({
+      id: "i1",
+      payloadJson: { ...CHAT_PAYLOAD, factFinder: { ...s, sections: { ...s.sections, taxable: [misread] } } },
+      createdByUserId: "user_1",
+    } as never);
+    vi.mocked(writeFactFinder).mockImplementationOnce(async (_scope, base, next) => ({ ...next, version: base + 1 }));
+    const res = await PATCH(
+      patch({ baseVersion: 3, ops: [{ op: "setCell", sectionId: "taxable", rowId: "t1", columnId: "last4", value: "7731" }] }),
+      params,
+    );
+    const row = (await res.json()).factFinder.sections.taxable[0];
+    expect(row.link).toEqual({ kind: "existing", recordId: "acct-b", score: 1, confirmed: true, by: "auto" });
+    expect(row.linkCandidates[0]).toEqual({ recordId: "acct-b", label: "Schwab Brokerage ··7731", score: 1 });
   });
 
   it("400s an invalid body or an op the fact finder refuses", async () => {

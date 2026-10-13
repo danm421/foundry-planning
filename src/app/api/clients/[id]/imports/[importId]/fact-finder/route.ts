@@ -1,9 +1,11 @@
 // src/app/api/clients/[id]/imports/[importId]/fact-finder/route.ts
 import { randomUUID } from "node:crypto";
 import { recordAudit } from "@/lib/audit";
+import type { PatchFactFinderResponse } from "@/lib/fact-finder/api-types";
 import { factFinderGate, jsonResponse } from "@/lib/fact-finder/gate";
 import { FactFinderOpError, applyOps, parseOps, type FFOp } from "@/lib/fact-finder/ops";
 import { loadFactFinder, writeFactFinder } from "@/lib/fact-finder/persist";
+import { opsNeedRelink, relinkBaseCase } from "@/lib/fact-finder/relink";
 import { readFactFinderState } from "@/lib/fact-finder/state";
 import type { FactFinderState } from "@/lib/fact-finder/types";
 
@@ -26,7 +28,9 @@ function countOps(ops: readonly FFOp[]): Record<string, number> {
 /**
  * Typed edits. Strict on `baseVersion`: a stale client gets 409 and the fresh
  * fact finder, and re-applies its own pending edits if they don't collide —
- * so a typed edit and a chat edit never silently overwrite each other.
+ * so a typed edit and a chat edit never silently overwrite each other. Links
+ * are re-scored after an edit that can change one, and the 200 carries the
+ * written state so the screen shows them.
  */
 export async function PATCH(request: Request, { params }: Params) {
   const gate = await factFinderGate(params, "edit");
@@ -49,6 +53,7 @@ export async function PATCH(request: Request, { params }: Params) {
     if (err instanceof FactFinderOpError) return jsonResponse(400, { error: err.message });
     throw err;
   }
+  if (opsNeedRelink(ops)) next = await relinkBaseCase(next, gate.clientId);
 
   const scope = { importId: gate.importId, clientId: gate.clientId, firmId: gate.firmId };
   const written = await writeFactFinder(scope, baseVersion, next);
@@ -65,5 +70,5 @@ export async function PATCH(request: Request, { params }: Params) {
     firmId: gate.firmId,
     metadata: { surface: "fact_finder", ops: countOps(ops), version: written.version },
   });
-  return jsonResponse(200, { version: written.version });
+  return jsonResponse(200, { version: written.version, factFinder: written } satisfies PatchFactFinderResponse);
 }

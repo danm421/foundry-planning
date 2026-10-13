@@ -213,6 +213,55 @@ describe("links", () => {
   });
 });
 
+describe("automatic links after an edit", () => {
+  const vti = { id: "h1", ticker: "VTI", name: "Vanguard", shares: 10, price: 250, marketValue: 2500, costBasis: null, by: "document" as const };
+  const autoLinked = (id: string) =>
+    row(id, { accountName: doc("Schwab Brokerage"), last4: doc("7781") }, {
+      link: { kind: "existing", recordId: `acct-${id}`, score: 1, confirmed: true, by: "auto" },
+      linkCandidates: [{ recordId: `acct-${id}`, label: "Schwab Brokerage ··7781", score: 1 }],
+      holdings: [vti, { ...vti, id: "h2", ticker: "BND" }],
+    });
+
+  it("an edit or a clear drops an automatic link and its suggestions, so the next scoring starts fresh", () => {
+    const edited = applyOps(withRows({ taxable: [autoLinked("t1")] }), [
+      { op: "setCell", sectionId: "taxable", rowId: "t1", columnId: "last4", value: "7731" },
+    ], ctx);
+    expect(edited.sections.taxable[0]).not.toHaveProperty("link");
+    expect(edited.sections.taxable[0]).not.toHaveProperty("linkCandidates");
+    const unlinked = row("c1", { accountName: doc("Checking") }, { link: { kind: "new", by: "auto" }, linkCandidates: [] });
+    const cleared = applyOps(withRows({ cash: [unlinked] }), [
+      { op: "clearCell", sectionId: "cash", rowId: "c1", columnId: "accountName" },
+    ], ctx);
+    expect(cleared.sections.cash[0]).not.toHaveProperty("link");
+    expect(cleared.sections.cash[0]).not.toHaveProperty("linkCandidates");
+  });
+
+  it("keeps a link the advisor or the chat chose", () => {
+    for (const by of ["advisor", "chat"] as const) {
+      const start = withRows({
+        taxable: [{ ...autoLinked("t1"), link: { kind: "existing", recordId: "acct-t1", score: 1, confirmed: true, by } }],
+      });
+      const s = applyOps(start, [
+        { op: "setCell", sectionId: "taxable", rowId: "t1", columnId: "last4", value: "7731" },
+      ], ctx);
+      expect(s.sections.taxable[0].link).toEqual(start.sections.taxable[0].link);
+      expect(s.sections.taxable[0].linkCandidates).toEqual(start.sections.taxable[0].linkCandidates);
+    }
+  });
+
+  it("holding edits leave automatic links alone", () => {
+    const start = withRows({ taxable: [autoLinked("t1"), autoLinked("t2")] });
+    const s = applyOps(start, [
+      { op: "setHolding", sectionId: "taxable", rowId: "t1", holdingId: "h1", field: "shares", value: 12 },
+      { op: "assignHolding", holdingId: "h2", from: { sectionId: "taxable", rowId: "t1" }, to: { sectionId: "taxable", rowId: "t2" } },
+      { op: "removeHolding", sectionId: "taxable", rowId: "t1", holdingId: "h1" },
+    ], ctx);
+    expect(s.sections.taxable.map((r) => [r.link, r.linkCandidates])).toEqual(
+      start.sections.taxable.map((r) => [r.link, r.linkCandidates]),
+    );
+  });
+});
+
 describe("holdings", () => {
   const withHolding = () =>
     withRows({

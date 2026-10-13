@@ -196,6 +196,19 @@ function withoutHint(h: FFUnassignedHolding): FFHolding {
   };
 }
 
+/**
+ * An edited row's automatic link was scored on its old values: drop it and its
+ * suggestions so the next scoring starts fresh. A link the advisor or the chat
+ * chose stays.
+ */
+function withoutAutoLink(row: FFRow): FFRow {
+  if (row.link?.by !== "auto") return row;
+  const next = { ...row };
+  delete next.link;
+  delete next.linkCandidates;
+  return next;
+}
+
 /** Confirming record X on one row releases every other row of that record kind confirmed to X. */
 function releaseOtherClaims(state: FactFinderState, section: FFSection, keepRowId: string, recordId: string): FactFinderState {
   let next = state;
@@ -249,7 +262,7 @@ function applyOne(state: FactFinderState, op: FFOp, ctx: OpContext): FactFinderS
       const row = rowsOf(state, section.id)[index];
       const cell: FFCell =
         op.op === "clearCell" ? { value: null, by: ctx.by, pinned: true } : normalizedCell(column, op.value, ctx.by);
-      return replaceRow(state, section.id, index, { ...row, cells: { ...row.cells, [column.id]: cell } });
+      return replaceRow(state, section.id, index, { ...withoutAutoLink(row), cells: { ...row.cells, [column.id]: cell } });
     }
 
     case "addRow": {
