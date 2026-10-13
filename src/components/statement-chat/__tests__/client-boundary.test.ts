@@ -20,6 +20,7 @@ const SRC = path.resolve(__dirname, "../../..");
 const CLIENT_ENTRIES = [
   "components/statement-chat/chat-surface.tsx",
   "components/statement-chat/entity-tables.tsx",
+  "components/fact-finder/fact-finder-screen.tsx",
 ];
 
 // Modules that must never be reachable from the browser bundle. These are the

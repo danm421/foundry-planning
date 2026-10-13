@@ -1,0 +1,19 @@
+// src/components/fact-finder/screen-types.ts
+// What the server page hands the fact finder screen. Types only, client-safe.
+import type { FactFinderState } from "@/lib/fact-finder/types";
+
+/** An uploaded document as the screen sees it — never its storage address. */
+export interface FFScreenFile {
+  id: string;
+  name: string;
+  documentType: string;
+}
+
+export interface FactFinderScreenProps {
+  clientId: string;
+  importId: string;
+  initialState: FactFinderState;
+  initialFiles: FFScreenFile[];
+  /** The client's existing trusts and entities, for the "Which trust / entity" picker. */
+  entities: { id: string; name: string }[];
+}
