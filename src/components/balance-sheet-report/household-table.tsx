@@ -57,6 +57,9 @@ export default function HouseholdTable({ model, clientLabel, spouseLabel }: Hous
             {r.revocableTrustName}
           </span>
         )}
+        {(r.marginLoan ?? 0) > 0 && (
+          <div className="text-[10px] text-ink-4">after {fmt(r.marginLoan!)} margin loan</div>
+        )}
       </td>
       {negative ? negCols(r) : cols(r)}
     </tr>

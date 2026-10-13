@@ -64,7 +64,7 @@ export interface ProjectionYearLike {
    *  The balance sheet sources row values from here so trust-owned and
    *  business-owned accounts surface in the report regardless of their
    *  treatment in the engine's portfolio-assets totals. */
-  accountLedgers: Record<string, { endingValue: number; beginningValue: number }>;
+  accountLedgers: Record<string, { endingValue: number; beginningValue: number; marginBoY?: number; marginEoY?: number }>;
   /** Engine-emitted locked entity share for split-owned accounts: entityId →
    *  accountId → entity's EoY dollar share. When present, the balance sheet
    *  uses this in place of `ledger.endingValue × ownerPercent` so the entity
@@ -149,6 +149,8 @@ export interface AssetRow {
    *  doesn't have to reconstruct it. Examples: "Client", "Smith LLC". */
   ownerLabel: string;
   value: number;
+  /** This slice's share of the account's margin loan (the value above is net of it). */
+  marginLoan?: number;
   hasLinkedMortgage: boolean;
   /** True when this row represents a business-entity flat valuation rather
    *  than a real account. Renders distinctly. */
@@ -352,6 +354,8 @@ interface SliceCommon {
   ownerLabel: string;
   /** sliceValue = account_value × percent. */
   value: number;
+  /** Slice's share of the account's margin loan. */
+  marginLoan: number;
   hasLinkedMortgage: boolean;
   /** True when the source account has ≥2 owners. Drives the owner-percent
    *  label visibility — multi-owner accounts always show the percent so that
@@ -574,6 +578,8 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
         if (rec.sliceOf === acct.id) wholeValue += accountValueForYear(yearData, id, asOfMode);
       }
     }
+    const ledger = yearData.accountLedgers[acct.id];
+    const wholeLoan = (asOfMode === "today" ? ledger?.marginBoY : ledger?.marginEoY) ?? 0;
     const isEntityOwned = owners.some((o) => o.kind === "entity");
     if (value <= 0 && !isEntityOwned) continue;
     const hasLinkedMortgage =
@@ -646,6 +652,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
         ownerPercent: derivedPercent,
         ownerLabel: "", // filled in below
         value: sliceValue,
+        marginLoan: wholeValue > 0 ? wholeLoan * (sliceValue / wholeValue) : 0,
         hasLinkedMortgage,
         accountHasMultipleOwners: owners.length > 1,
         revocableTrustName: acct.revocableTrustName ?? null,
@@ -803,6 +810,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
             ownerLabel: "Joint",
             ownerPercent: 1,
             value: group.reduce((s, r) => s + r.value, 0),
+            marginLoan: group.reduce((s, r) => s + (r.marginLoan ?? 0), 0),
             accountHasMultipleOwners: true,
           });
         } else {
@@ -1394,6 +1402,7 @@ function sliceToRow(slice: Slice): AssetRow {
       ownerPercent: slice.ownerPercent,
       ownerLabel: slice.ownerLabel,
       value: slice.value,
+      marginLoan: slice.marginLoan,
       hasLinkedMortgage: slice.hasLinkedMortgage,
       isFlatBusinessValue: false,
       accountHasMultipleOwners: slice.accountHasMultipleOwners,
@@ -1409,6 +1418,7 @@ function sliceToRow(slice: Slice): AssetRow {
     ownerPercent: slice.ownerPercent,
     ownerLabel: slice.ownerLabel,
     value: slice.value,
+    marginLoan: slice.marginLoan,
     hasLinkedMortgage: slice.hasLinkedMortgage,
     isFlatBusinessValue: false,
     accountHasMultipleOwners: slice.accountHasMultipleOwners,

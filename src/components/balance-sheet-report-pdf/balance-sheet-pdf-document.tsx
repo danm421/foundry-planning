@@ -145,11 +145,18 @@ export function BalanceSheetPdfDocument({
                 </View>
                 {cat.rows.map((r) => (
                   <View key={r.rowKey} style={styles.itemRow}>
-                    <Text>
-                      {r.accountName}
-                      {r.hasLinkedMortgage ? " (M)" : ""}
-                      {r.revocableTrustName ? `  ·  ${r.revocableTrustName}` : ""}
-                    </Text>
+                    <View>
+                      <Text>
+                        {r.accountName}
+                        {r.hasLinkedMortgage ? " (M)" : ""}
+                        {r.revocableTrustName ? `  ·  ${r.revocableTrustName}` : ""}
+                      </Text>
+                      {(r.marginLoan ?? 0) > 0 ? (
+                        <Text style={{ fontSize: 7, color: PDF_THEME.text.muted }}>
+                          after {formatCurrency(r.marginLoan!)} margin loan
+                        </Text>
+                      ) : null}
+                    </View>
                     <Text>{formatCurrency(r.value)}</Text>
                   </View>
                 ))}

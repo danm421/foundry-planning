@@ -821,3 +821,27 @@ describe("buildViewModel — out-of-estate owner rows", () => {
     expect(point?.assets).toBe(1_550_000); // child's 60k excluded
   });
 });
+
+describe("margin loan sub-line data", () => {
+  it("a margined taxable row shows net value and its share of the loan", () => {
+    const vm = buildViewModel({
+      ...baseInput,
+      accounts: [...baseInput.accounts, { id: "a-margin", name: "Schwab Margin", category: "taxable", owners: half }],
+      projectionYears: [
+        priorYear,
+        {
+          ...projectionYear,
+          accountLedgers: {
+            ...projectionYear.accountLedgers,
+            "a-margin": { beginningValue: 8_000_000, endingValue: 8_660_000, marginBoY: 2_000_000, marginEoY: 2_040_000 },
+          },
+        },
+      ],
+    });
+    const row = vm.assetCategories
+      .find((c) => c.key === "taxable")!
+      .rows.find((r) => r.accountId === "a-margin")!;
+    expect(row.value).toBe(8_660_000);
+    expect(row.marginLoan).toBeCloseTo(2_040_000, 2);
+  });
+});

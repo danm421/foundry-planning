@@ -152,7 +152,12 @@ export default function EntityBalanceSheets({ groups, trustDetails = [] }: Entit
               <tbody>
                 {g.assetRows.map((r) => (
                   <tr key={r.rowKey} className="border-t border-hair">
-                    <td className="px-4 py-1.5 pl-8 text-ink-2">{r.accountName}</td>
+                    <td className="px-4 py-1.5 pl-8 text-ink-2">
+                      {r.accountName}
+                      {(r.marginLoan ?? 0) > 0 && (
+                        <div className="text-[10px] text-ink-4">after {fmt(r.marginLoan!)} margin loan</div>
+                      )}
+                    </td>
                     <td className="px-4 py-1.5 text-right tabular-nums text-ink">{fmt(r.value)}</td>
                   </tr>
                 ))}
