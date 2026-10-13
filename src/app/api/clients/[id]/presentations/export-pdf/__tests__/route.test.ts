@@ -90,6 +90,16 @@ vi.mock("@/lib/branding/household-brand", () => ({
   loadHouseholdBrand: vi.fn(async () => "adv-1"),
 }));
 
+// The renderer now shares the mocked loadHouseholdBrand ("adv-1"); resolve its
+// cover branding without the real advisor-profile lookup.
+vi.mock("@/lib/branding/resolve-for-client", () => ({
+  resolveBrandingForClient: vi.fn().mockResolvedValue({
+    primaryColor: "#b87f1f",
+    firmName: "Acme Wealth Management",
+    logoDataUrl: null,
+  }),
+}));
+
 // Keep a benign @/db mock so importing the route doesn't open a real connection.
 // The route issues batched scenarios/scenarioSnapshots name lookups via
 // db.select(...).from(...).where(...); stub the chain to resolve to no rows

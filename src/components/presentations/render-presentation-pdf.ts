@@ -1,10 +1,8 @@
 import { z } from "zod";
 import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
-import { and, eq } from "drizzle-orm";
-import { db } from "@/db";
-import { clients } from "@/db/schema";
-import { brandChoiceSchema, householdBrand, FIRM_BRAND } from "@/lib/branding/brand-choice";
+import { brandChoiceSchema } from "@/lib/branding/brand-choice";
+import { loadHouseholdBrand } from "@/lib/branding/household-brand";
 import { resolveBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { foundryDefaultLogoDataUrl } from "@/lib/presentations/default-logo";
 import { runProjectionWithEvents } from "@/engine/projection";
@@ -447,19 +445,10 @@ export async function renderPresentationPdf(
     );
   }
 
-  // Branding for the cover: the brand the request names (the launcher's
-  // picker — the route has already checked the caller may use it), else the
-  // household's own brand (its saved choice, else its advisor's). The lookup
-  // is scoped by BOTH clientId and firmId, never clientId alone, and a missing
-  // row is the firm brand: branding must never be the thing that fails an export.
-  let brand = body.brand;
-  if (!brand) {
-    const [clientRow] = await db
-      .select({ advisorId: clients.advisorId, brand: clients.brand })
-      .from(clients)
-      .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-    brand = clientRow ? householdBrand(clientRow) : FIRM_BRAND;
-  }
+  // Branding for the cover: the brand the request names (the route has already
+  // checked the caller may use it), else the household's own — a client+firm
+  // scoped lookup that falls back to the firm brand, so branding never fails an export.
+  const brand = body.brand ?? (await loadHouseholdBrand(clientId, firmId));
   const branding = await resolveBrandingForClient(firmId, brand);
   const firmName = branding.firmName;
   const firmLogoDataUrl = branding.logoDataUrl ?? (await foundryDefaultLogoDataUrl());
