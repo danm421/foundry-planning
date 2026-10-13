@@ -228,6 +228,7 @@ describe("useFactFinder — saving", () => {
 
   it("a save that throws unexpectedly shows Not saved, and Retry, later saves and flushNow still work", async () => {
     const server = fakeServer(start());
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     // A 409 without the fact finder in it: reading the reply throws.
     vi.mocked(fetch).mockResolvedValueOnce(reply(409, { error: "conflict" }));
     const { result } = renderStore();
@@ -237,6 +238,8 @@ describe("useFactFinder — saving", () => {
     await settle();
     expect(result.current.status).toBe("error");
     expect(result.current.error).toBe("Something went wrong while saving.");
+    expect(logged).toHaveBeenCalledWith("Fact finder save failed unexpectedly:", expect.any(TypeError));
+    logged.mockRestore();
 
     await act(async () => result.current.retry());
     await settle(0);

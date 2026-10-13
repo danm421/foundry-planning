@@ -157,7 +157,8 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
     show.setStatus("saving");
     // The oldest edits first, as many as the route takes; the rest follow below.
     sending = attempt(queue.slice(0, MAX_OPS_PER_SAVE), server)
-      .catch((): Outcome => {
+      .catch((err: unknown): Outcome => {
+        console.error("Fact finder save failed unexpectedly:", err);
         show.setFailure(UNEXPECTED_MESSAGE);
         return "failed";
       })
