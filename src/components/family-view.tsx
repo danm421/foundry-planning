@@ -612,9 +612,15 @@ export default function FamilyView({
   const [deletingEntity, setDeletingEntity] = useState<Entity | null>(null);
   const [entitiesEdit, setEntitiesEdit] = useState(false);
 
-  const handleEntitySaved = (e: Entity, mode: "create" | "edit") => {
-    if (mode === "create") setEntities((prev) => [...prev, e]);
-    else setEntities((prev) => prev.map((x) => (x.id === e.id ? e : x)));
+  // Upsert by id, not by mode: a first Save reports the new trust twice (as
+  // onAutoSaved and then onSaved, both "create"), and appending on each listed
+  // it twice.
+  const handleEntitySaved = (e: Entity) => {
+    setEntities((prev) =>
+      prev.some((x) => x.id === e.id)
+        ? prev.map((x) => (x.id === e.id ? e : x))
+        : [...prev, e],
+    );
   };
 
   // All entity types (irrevocable trusts, LLCs, etc.) use the full EntityDialog.
