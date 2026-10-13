@@ -1001,10 +1001,11 @@ export default function BalanceSheetView({
     incomesByOwnerAccountId.set(i.ownerAccountId, arr);
   }
   // Consolidated business value: own value + sum of in-estate child account
-  // values. Liabilities stay on the Liabilities column — not netted here.
+  // values, each net of its margin loan (as `totalInEstate` counts them).
+  // Liabilities stay on the Liabilities column — not netted here.
   const consolidatedBusinessValue = (biz: AccountRow): number => {
     const kids = childAccountsByParentId.get(biz.id) ?? [];
-    return kids.reduce((s, k) => s + Number(k.value), Number(biz.value));
+    return kids.reduce((s, k) => s + netAccountValue(k), Number(biz.value));
   };
 
   const inEstateByCategory: Record<AccountCategory, AccountRow[]> = {

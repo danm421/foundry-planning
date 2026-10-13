@@ -723,6 +723,31 @@ describe("buildEstateFlowSummary — out of estate", () => {
     ]);
   });
 
+  it("values a margined trust account net of its loan with no projection row (Today: $10M / $2M → $8M)", () => {
+    const clientData = emptyClientData();
+    clientData.entities = [
+      { id: "slat", entityType: "trust", isIrrevocable: true, name: "SLAT" },
+    ] as ClientData["entities"];
+    clientData.accounts = [
+      {
+        id: "slat-brokerage",
+        name: "SLAT Brokerage",
+        category: "taxable",
+        subType: "brokerage",
+        value: 10_000_000,
+        marginBalance: 2_000_000,
+        owners: [{ kind: "entity", entityId: "slat", percent: 1 }],
+      },
+    ] as unknown as ClientData["accounts"];
+
+    const summary = buildEstateFlowSummary({ ...baseInput({}), clientData })!;
+
+    expect(summary.outOfEstate.irrevTrusts.total).toBe(8_000_000);
+    expect(summary.outOfEstate.irrevTrusts.entities[0].assets).toEqual([
+      { label: "SLAT Brokerage", amount: 8_000_000 },
+    ]);
+  });
+
   it("returns empty buckets when no OOE entities or 529 accounts exist", () => {
     const summary = buildEstateFlowSummary({
       ...baseInput({}),

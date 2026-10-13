@@ -10,6 +10,7 @@ import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection } from "@/engine";
 import { applyLtcEvent } from "@/engine/ltc-event";
 import { liquidPortfolioBoy } from "@/engine/portfolio-snapshot";
+import { netGrowthOf } from "@/engine/margin";
 import type { ProjectionYear, ClientData } from "@/engine";
 import { serializeCsv } from "../csv";
 
@@ -251,7 +252,10 @@ function portfolioAccountIds(r: ProjectionYear): string[] {
 
 function portfolioGrowthTotal(r: ProjectionYear): number {
   let sum = 0;
-  for (const id of portfolioAccountIds(r)) sum += r.accountLedgers[id]?.growth ?? 0;
+  for (const id of portfolioAccountIds(r)) {
+    const led = r.accountLedgers[id];
+    if (led) sum += netGrowthOf(led);
+  }
   return sum;
 }
 

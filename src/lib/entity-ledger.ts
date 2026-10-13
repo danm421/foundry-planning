@@ -24,6 +24,7 @@ import {
 } from "@/engine/entity-cashflow";
 import { resolveEntityFlows } from "@/engine/entity-flows";
 import { collectBusinessTree } from "@/engine/business/business-tree";
+import { netGrowthOf } from "@/engine/margin";
 
 export type LedgerSection = "growth" | "income" | "expenses" | "ending";
 
@@ -150,7 +151,7 @@ export function getEntityLedger(
     const ledger = ctx.year.accountLedgers[accountId];
     if (!ledger) continue;
 
-    const growthContribution = ledger.growth * share;
+    const growthContribution = netGrowthOf(ledger) * share;
     if (growthContribution !== 0) {
       growth.push({
         label: `${name}${suffix}`,
@@ -292,10 +293,11 @@ function getBusinessAccountLedger(
   for (const a of tree) {
     const ledger = ctx.year.accountLedgers[a.id];
     if (!ledger) continue;
-    if (ledger.growth === 0) continue;
+    const accountGrowth = netGrowthOf(ledger);
+    if (accountGrowth === 0) continue;
     growth.push({
       label: a.name,
-      amount: ledger.growth,
+      amount: accountGrowth,
       sourceKind: "account",
       sourceId: a.id,
     });

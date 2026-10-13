@@ -784,6 +784,34 @@ describe("buildOwnershipColumn — projected snapshot", () => {
     expect(row?.value).toBe(100_000);
   });
 
+  it("nets a margin loan out of the today column ($10M securities, $2M loan → $8M)", () => {
+    const cd = data({
+      accounts: [
+        {
+          id: "acc-m",
+          name: "Margined Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          value: 10_000_000,
+          marginBalance: 2_000_000,
+          basis: 6_000_000,
+          growthRate: 0.07,
+          rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+          beneficiaries: [],
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+    const out = buildOwnershipColumn(cd, {
+      projection: projectionWith("acc-m", 2026, 8_660_000),
+      asOfYear: 2026,
+      todayYear: 2026,
+    });
+    const client = out.groups.find((g) => g.kind === "client");
+    expect(client!.assets.find((a) => a.accountId === "acc-m")?.value).toBe(8_000_000);
+    expect(client!.subtotal).toBe(8_000_000);
+  });
+
   it("drops an account whose projected value is ~0 at asOfYear", () => {
     const cd = data({
       accounts: [

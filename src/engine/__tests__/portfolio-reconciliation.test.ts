@@ -195,6 +195,39 @@ describe("liquid portfolio reconciliation", () => {
     expect(liquidPortfolioGrowth(y1)).toBeCloseTo(whole / 2, 6);
   });
 
+  // Margin interest is capitalized onto the loan, so it leaves net value
+  // without a ledger flow; Portfolio Growth must carry it or the row is off by
+  // exactly the interest. Worked example: $10M, $2M loan, 7%, 2%.
+  const margined = acct({
+    id: "margined",
+    category: "taxable",
+    value: 10_000_000,
+    basis: 10_000_000,
+    growthRate: 0.07,
+    marginBalance: 2_000_000,
+    marginInterestRate: 0.02,
+  });
+
+  it("reconciles a margined account: growth is net of the margin interest", () => {
+    const years = project([brokerage, margined]);
+    expect(years[1].accountLedgers.margined.marginInterest).toBeGreaterThan(0);
+    expect(worstGap(years)).toBeLessThan(0.01);
+    const [y0] = years;
+    const led = y0.accountLedgers.margined;
+    expect(led.growth).toBeCloseTo(700_000, 6);
+    expect(led.marginInterest).toBeCloseTo(40_000, 6);
+    expect(liquidPortfolioGrowth(y0)).toBeCloseTo(
+      660_000 + y0.accountLedgers.brokerage.growth,
+      6,
+    );
+  });
+
+  it("leaves a no-margin year's growth at the plain ledger sum", () => {
+    const [y0] = project([brokerage]);
+    expect(y0.accountLedgers.brokerage.marginInterest).toBeUndefined();
+    expect(liquidPortfolioGrowth(y0)).toBe(y0.accountLedgers.brokerage.growth);
+  });
+
   it("excludes real-estate growth from portfolio growth entirely", () => {
     const [, y1] = project([home]);
     expect(y1.accountLedgers.home.growth).toBeGreaterThan(0);

@@ -27,6 +27,7 @@ import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear, AccountLedger } from "@/engine";
 import { isFullyEntityOwned } from "@/engine/ownership";
 import { applyLtcEvent } from "@/engine/ltc-event";
+import { netGrowthOf } from "@/engine/margin";
 import {
   liquidBucketWeights,
   liquidPortfolioAdditions,
@@ -1957,7 +1958,10 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               accountNames[id] ?? id,
               // Portfolio share of the account's growth, so these columns sum to
               // the subtype total. The ledger modal still shows the whole account.
-              (r) => (r.accountLedgers[id]?.growth ?? 0) * (weightsFor(r).get(id) ?? 0),
+              (r) => {
+                const led = r.accountLedgers[id];
+                return led ? netGrowthOf(led) * (weightsFor(r).get(id) ?? 0) : 0;
+              },
               (info) => {
                 const v = info.getValue() as number;
                 const row = info.row.original;

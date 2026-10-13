@@ -155,4 +155,17 @@ describe("BalanceSheetView — Portfolio assets KPI", () => {
     fireEvent.click(screen.getByRole("button", { name: /Taxable/ }));
     expect(screen.getByText("Margin −$2,000,000 · Net $8,000,000")).toBeTruthy();
   });
+
+  it("sums a business's margined child at net, so the Business subtotal ties to Net Worth", () => {
+    const biz = acct("a-biz", "business", "500000", "llc");
+    const child = {
+      ...acct("a-biz-brk", "taxable", "10000000", "individual"),
+      parentAccountId: "a-biz",
+      marginBalance: "2000000",
+    };
+    renderView([biz, child]);
+    const netWorth = screen.getByText("Net Worth", { selector: "p" }).nextElementSibling?.textContent;
+    expect(netWorth).toBe("$8,500,000");
+    expect(screen.getByRole("button", { name: /Business/ }).textContent).toContain("$8,500,000");
+  });
 });

@@ -1,3 +1,5 @@
+import { netGrowthOf } from "./margin";
+
 export interface AccrueLockedEntityShareInput {
   /** Carried locked EoY share from the prior year, or undefined for year 0. */
   carriedBoY: number | undefined;
@@ -43,7 +45,7 @@ export function accrueLockedEntityShare(
     carriedBoY === undefined ? ledger.beginningValue * percent : carriedBoY + topUp;
   // Margin interest is a passive cost of the position, borne pro rata like
   // growth (spec R6) — otherwise the household would carry the entity's share.
-  const lockedGrowth = (ledger.growth - (ledger.marginInterest ?? 0)) * percent;
+  const lockedGrowth = netGrowthOf(ledger) * percent;
   const lockedEoY = Math.min(
     lockedBoY + lockedGrowth,
     Math.max(0, ledger.endingValue),

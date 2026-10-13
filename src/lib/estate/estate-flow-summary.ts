@@ -29,6 +29,7 @@ import {
   resolveOwnerRetirementYears,
 } from "@/lib/estate/insurance-in-force";
 import { consolidatedBusinessValue } from "@/engine/business/business-tree";
+import { netSeedValue } from "@/engine/margin";
 
 // Account subTypes that the estate-flow Overview treats as already
 // out-of-estate for the household (assets earmarked for heirs that bypass
@@ -606,8 +607,9 @@ function computeSurvivorNetWorth(
   return { ownerLabel: survivor.label, role: survivor.role, amount: total, lines };
 }
 
+/** Authored value net of any margin loan — what the projection seeds. */
 function accountAmount(a: Account): number {
-  return typeof a.value === "number" ? a.value : 0;
+  return typeof a.value === "number" ? netSeedValue(a) : 0;
 }
 
 /**

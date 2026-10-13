@@ -474,6 +474,56 @@ describe("getEntityLedger", () => {
     expect(Math.abs(sum - row.endingBalance)).toBeLessThan(0.5);
     expect(sum).toBeCloseTo(315_000, 2);
   });
+
+  it.each([1, 0.6])(
+    "growth drill on a margined account (%s owned) is net of margin interest and sums to the cell",
+    (percent) => {
+      const year = makeYear(2026);
+      // $10M securities, $2M loan, 7%, 2%: net $8M → $8.66M.
+      year.accountLedgers["acct-m"] = {
+        beginningValue: 8_000_000,
+        endingValue: 8_660_000,
+        growth: 700_000,
+        marginInterest: 40_000,
+        contributions: 0,
+        distributions: 0,
+        internalContributions: 0,
+        internalDistributions: 0,
+        rmdAmount: 0,
+        fees: 0,
+        entries: [],
+      };
+      const entitiesById = new Map<string, EntityMetadata>([
+        ["ent-trust", {
+          id: "ent-trust", name: "Family Trust", entityType: "trust", trustSubType: "irrevocable",
+          isGrantor: false, initialValue: 0, initialBasis: 0, valueGrowthRate: 0,
+        }],
+      ]);
+      computeEntityCashFlow({
+        years: [year],
+        entitiesById,
+        ...ownersFrom(new Map([["acct-m", { entityId: "ent-trust", percent }]])),
+        giftsByEntityYear: new Map(),
+        incomes: [],
+        expenses: [],
+        entityFlowOverrides: [],
+      });
+      const row = year.entityCashFlow.get("ent-trust");
+      if (row?.kind !== "trust") throw new Error("no trust row");
+      const ledger = getEntityLedger("ent-trust", {
+        year,
+        planStartYear: 2026,
+        entitiesById,
+        accountNamesById: new Map([["acct-m", "Margined Brokerage"]]),
+        incomes: [],
+        expenses: [],
+        entityFlowOverrides: [],
+      });
+      const growth = ledger.growth.reduce((a, r) => a + r.amount, 0);
+      expect(growth).toBeCloseTo(660_000 * percent, 6);
+      expect(growth).toBeCloseTo(row.growth, 6);
+    },
+  );
 });
 
 // An account the trust owns ONLY by a mid-horizon gift: no authored entity

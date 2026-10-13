@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { getCrmHousehold } from "@/lib/crm/households";
+import { netAccountValue } from "@/lib/accounts/net-value";
 import { ChevronRightIcon } from "@/components/icons";
 import {
   DetailList,
@@ -103,7 +104,7 @@ function AccountRow({ account }: { account: PlanningAccount }) {
           className={`shrink-0 text-ink-3 transition-transform duration-150 ${open ? "rotate-90" : ""}`}
         />
         <span className="tabular w-[116px] shrink-0 text-[15px] font-bold text-ink">
-          {fmtMoney(account.value)}
+          {fmtMoney(netAccountValue(account))}
         </span>
         <span className="text-ink-4" aria-hidden>·</span>
         <span className="truncate text-[14px] font-medium text-ink">{account.name}</span>
@@ -144,7 +145,7 @@ function AccountSection({
   items: PlanningAccount[];
 }) {
   if (items.length === 0) return null;
-  const subtotal = items.reduce((sum, a) => sum + Number(a.value || 0), 0);
+  const subtotal = items.reduce((sum, a) => sum + netAccountValue(a), 0);
   return (
     <section className="flex flex-col gap-3">
       <SectionLabel as="h3" segments={[`${title} (${items.length})`]}>
@@ -161,7 +162,8 @@ function AccountSection({
 
 export function AccountsTab({ household }: { household: Household }) {
   const items = household.planningAccounts;
-  const totalValue = items.reduce((sum, a) => sum + Number(a.value || 0), 0);
+  // Net of any margin loan (`netAccountValue`), like the Net Worth page.
+  const totalValue = items.reduce((sum, a) => sum + netAccountValue(a), 0);
 
   if (!household.planningClient) {
     return (
@@ -201,7 +203,7 @@ export function AccountsTab({ household }: { household: Household }) {
           />
           <div className="flex min-w-[280px] flex-1 flex-wrap rounded-[var(--radius)] border border-hair-2">
             {SECTION_ORDER.map((key) => {
-              const subtotal = grouped[key].reduce((sum, a) => sum + Number(a.value || 0), 0);
+              const subtotal = grouped[key].reduce((sum, a) => sum + netAccountValue(a), 0);
               return (
                 <div
                   key={key}

@@ -304,6 +304,7 @@ async function loadPlanningAccountsForClient(clientId: string) {
     custodian: row.custodian,
     accountNumberLast4: row.accountNumberLast4,
     value: row.value,
+    marginBalance: row.marginBalance,
     basis: row.basis,
     owners: row.owners.map((o) => ({
       percent: o.percent,

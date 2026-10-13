@@ -49,6 +49,15 @@ export function grossBalancesFor(
   return out;
 }
 
+/** Growth that reached the account's NET value: gross growth less the year's
+ *  margin interest, which is capitalized onto the loan with no ledger flow.
+ *  `ledger.growth` itself stays gross (family-cashflow and realization read
+ *  it); every display that walks BoY + growth + activity = EoY reads this.
+ *  Equals `ledger.growth` for an account without a loan. */
+export function netGrowthOf(ledger: Pick<AccountLedger, "growth" | "marginInterest">): number {
+  return ledger.growth - (ledger.marginInterest ?? 0);
+}
+
 /** Charge one year's margin interest: added to the loan, taken out of net.
  *  An annual charge on the opening loan — a deliberate approximation of the
  *  brokerage's daily accrual / monthly posting. Returns the interest. */
