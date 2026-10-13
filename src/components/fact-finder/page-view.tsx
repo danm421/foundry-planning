@@ -7,7 +7,7 @@
 import { Card } from "@/components/card";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import type { ClientOp } from "@/lib/fact-finder/ops";
-import { findSection, sectionsOnPage, type FFPage, type FFSection } from "@/lib/fact-finder/schema";
+import { findSection, isListLike, sectionsOnPage, type FFPage, type FFSection } from "@/lib/fact-finder/schema";
 import { changedCellsOf } from "@/lib/fact-finder/screen-summary";
 import { cellValue } from "@/lib/fact-finder/state";
 import type { FactFinderState, FFRow } from "@/lib/fact-finder/types";
@@ -51,7 +51,7 @@ function ownerEntityNames(state: FactFinderState, entities: PageViewProps["entit
 
 function SectionCard({ section, rows, changed, onApply, fileName, ownerEntities }: SectionCardProps) {
   const headingId = `fact-finder-section-${section.id}`;
-  const canAdd = section.layout === "list" || section.layout === "transposed";
+  const canAdd = isListLike(section);
   // An empty list folds to its header; fixed rows and notes always show.
   const folded = canAdd && rows.length === 0;
   return (

@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { redactSsns } from "@/lib/extraction/redact-ssn";
 import { applyOps, type ClientOp } from "../ops";
-import { FACT_FINDER_SECTIONS, findColumn, findSection, type FFSection } from "../schema";
+import { FACT_FINDER_SECTIONS, findColumn, findSection, isListLike, type FFSection } from "../schema";
 import { isBlank, locateRow, rowLabel } from "../state";
 import { HOLDING_FIELDS, type FactFinderState, type FFCell, type FFHolding, type FFRow } from "../types";
 import { fenceUntrusted } from "./fence";
@@ -35,9 +35,7 @@ export interface ToolOutcome {
 /** The most document text `reread_document` hands the model at once. */
 export const REREAD_MAX_CHARS = 20_000;
 
-const LIST_SECTION_IDS = FACT_FINDER_SECTIONS.filter((s) => s.layout === "list" || s.layout === "transposed").map(
-  (s) => s.id,
-);
+const LIST_SECTION_IDS = FACT_FINDER_SECTIONS.filter(isListLike).map((s) => s.id);
 const SECTION_IDS = FACT_FINDER_SECTIONS.map((s) => s.id);
 
 type Param = { type?: string; description: string; enum?: readonly string[] };

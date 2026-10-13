@@ -1,6 +1,6 @@
 // src/lib/fact-finder/ops.ts
 import { z } from "zod";
-import { FACT_FINDER_SECTIONS, findColumn, findSection, type FFColumn, type FFSection } from "./schema";
+import { FACT_FINDER_SECTIONS, findColumn, findSection, isListLike, type FFColumn, type FFSection } from "./schema";
 import { normalizeCell, parseMoney, parseNumber } from "./normalize";
 import { holdingKey, isBlank, locateRow, rowLabel, sameJson } from "./state";
 import {
@@ -86,6 +86,13 @@ export function parseOps(input: unknown): FFOp[] {
   return parsed.data;
 }
 
+/** How many ops of each kind a batch holds (audit metadata). */
+export function countOps(ops: readonly FFOp[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const op of ops) counts[op.op] = (counts[op.op] ?? 0) + 1;
+  return counts;
+}
+
 /** Applies every op or none (throws). Untouched rows keep their object identity. */
 export function applyOps(state: FactFinderState, ops: readonly FFOp[], ctx: OpContext): FactFinderState {
   return ops.reduce((s, op) => applyOne(s, op, ctx), state);
@@ -140,8 +147,6 @@ function withRows(state: FactFinderState, sectionId: string, rows: FFRow[]): Fac
 function replaceRow(state: FactFinderState, sectionId: string, index: number, row: FFRow): FactFinderState {
   return withRows(state, sectionId, rowsOf(state, sectionId).map((r, i) => (i === index ? row : r)));
 }
-
-const isListLike = (section: FFSection) => section.layout === "list" || section.layout === "transposed";
 
 function allRowIds(state: FactFinderState): Set<string> {
   const ids = new Set<string>();

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { recordAudit } from "@/lib/audit";
 import type { PatchFactFinderResponse } from "@/lib/fact-finder/api-types";
 import { factFinderGate, jsonResponse } from "@/lib/fact-finder/gate";
-import { FactFinderOpError, applyOps, parseOps, type FFOp } from "@/lib/fact-finder/ops";
+import { FactFinderOpError, applyOps, countOps, parseOps, type FFOp } from "@/lib/fact-finder/ops";
 import { loadFactFinder, writeFactFinder } from "@/lib/fact-finder/persist";
 import { opsNeedRelink, relinkBaseCase } from "@/lib/fact-finder/relink";
 import { readFactFinderState } from "@/lib/fact-finder/state";
@@ -17,12 +17,6 @@ export async function GET(_request: Request, { params }: Params) {
   const gate = await factFinderGate(params, "view");
   if (!gate.ok) return gate.response;
   return jsonResponse(200, { factFinder: readFactFinderState(gate.payloadJson) });
-}
-
-function countOps(ops: readonly FFOp[]): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const op of ops) counts[op.op] = (counts[op.op] ?? 0) + 1;
-  return counts;
 }
 
 /**

@@ -5,7 +5,7 @@ import { chatModel } from "@/domain/forge/llm";
 import { recordAiUsage } from "@/lib/ai/usage";
 import { redactSsns } from "@/lib/extraction/redact-ssn";
 import { applyLinkScores } from "../matching/score";
-import { FactFinderOpError, applyOps, diffSnapshots, locationOf, type ClientOp } from "../ops";
+import { FactFinderOpError, applyOps, countOps, diffSnapshots, locationOf, type ClientOp } from "../ops";
 import { FactFinderNotFoundError, listLiveFiles, loadFactFinder, updateFactFinder, type FactFinderScope } from "../persist";
 import { loadBaseCaseRecords } from "../relink";
 import type { FactFinderState, FFChatTurn, FFSnapshot } from "../types";
@@ -111,12 +111,6 @@ function recordTurnUsage(response: AIMessage): void {
     completionTokens: usage?.output_tokens,
     cachedPromptTokens: usage?.input_token_details?.cache_read,
   });
-}
-
-function countOps(ops: readonly ClientOp[]): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const op of ops) counts[op.op] = (counts[op.op] ?? 0) + 1;
-  return counts;
 }
 
 /** The undo entries of the latest replies, by transcript order (a jsonb object keeps no key order). */

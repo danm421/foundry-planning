@@ -27,10 +27,6 @@ import { loadBaseCaseRecords } from "./relink";
 import type { ReadEvent } from "./api-types";
 import type { FFFileReading, FFMergeDecision, FFReader, FFReaderOutput } from "./types";
 
-// Moved to client-safe modules so the screen can share them.
-export { STALE_READING_MS, needsReading } from "./reading-status";
-export type { ReadEvent } from "./api-types";
-
 const FILE_CONCURRENCY = 3;
 
 /**

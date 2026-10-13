@@ -5,12 +5,12 @@
 // single follow-up, and the server then reads whatever still needs reading.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ErrorResponse, ReadEvent, ReadFrame } from "@/lib/fact-finder/api-types";
+import { OFFLINE_MESSAGE, factFinderUrl, refusalText } from "./http";
 
 /** A file's latest progress. */
 export type ReadLine = Extract<ReadEvent, { type: "file" }>;
 export type ReadDone = Extract<ReadEvent, { type: "done" }>;
 
-const OFFLINE_MESSAGE = "Couldn't reach the server. Check your connection.";
 const ENDED_EARLY_MESSAGE = "Reading stopped before it finished. Retry to read the rest.";
 
 /**
@@ -66,7 +66,7 @@ export function useReadStream({
   onFileFinished?: (line: ReadLine) => void;
   onDone?: (done: ReadDone) => void;
 }): ReadStream {
-  const url = `/api/clients/${clientId}/imports/${importId}/fact-finder/read`;
+  const url = `${factFinderUrl(clientId, importId)}/read`;
   const [lines, setLines] = useState<Record<string, ReadLine>>({});
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,8 +88,7 @@ export function useReadStream({
     }
     if (!res.ok || !res.body) {
       const body = (await res.json().catch(() => ({}))) as Partial<ErrorResponse>;
-      const retryAfter = res.headers.get("retry-after");
-      setError(`${body.error ?? `Couldn't start reading (HTTP ${res.status}).`}${retryAfter ? ` Retry in ${retryAfter}s.` : ""}`);
+      setError(refusalText(res, body.error, "Couldn't start reading"));
       return;
     }
 

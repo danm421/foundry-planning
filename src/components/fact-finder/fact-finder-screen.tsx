@@ -33,7 +33,7 @@ function reviewBlockedReason(reading: boolean, linksToClick: number): string {
 export function FactFinderScreen({ clientId, importId, initialState, initialFiles, entities }: FactFinderScreenProps) {
   const store = useFactFinder({ clientId, importId, initialState });
   const state = store.state;
-  const docs = useDocuments({ clientId, importId, initialFiles, state, adopt: store.adopt });
+  const docs = useDocuments({ clientId, importId, initialFiles, state, refresh: store.refresh });
   const reading = docs.read.running || filesReading(state, new Date()).length > 0;
   const chat = useChat({ clientId, importId, flushNow: store.flushNow, adopt: store.adopt });
   const [page, setPage] = useState<FFPage>("household");

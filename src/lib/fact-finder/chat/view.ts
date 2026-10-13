@@ -1,6 +1,6 @@
 // src/lib/fact-finder/chat/view.ts
 import { redactSsns } from "@/lib/extraction/redact-ssn";
-import { FACT_FINDER_SECTIONS, findSection, type FFColumn, type FFSection } from "../schema";
+import { FACT_FINDER_SECTIONS, findSection, isListLike, type FFColumn, type FFSection } from "../schema";
 import { cellNeedsCheck, isBlank, rowLabel } from "../state";
 import { HOLDING_FIELDS, type FactFinderState, type FFCellValue, type FFHolding, type FFRow } from "../types";
 
@@ -82,12 +82,8 @@ function holdingLine(h: FFHolding): string {
   return `  - holding ${h.id}: ${fields.join(" ")}`;
 }
 
-function rowsOf(state: FactFinderState, sectionId: string): FFRow[] {
-  return state.sections[sectionId] ?? [];
-}
-
 function sectionBlock(state: FactFinderState, section: FFSection): string {
-  const lines = rowsOf(state, section.id).map((row) => rowLine(section, row));
+  const lines = (state.sections[section.id] ?? []).map((row) => rowLine(section, row));
   return [`## ${section.id} — ${section.label}`, ...(lines.length > 0 ? lines : ["(no rows)"])].join("\n");
 }
 
@@ -135,14 +131,13 @@ function columnText(column: FFColumn): string {
 export function sectionView(state: FactFinderState, sectionId: string): string {
   const section = findSection(sectionId);
   if (!section) throw new Error(`There's no fact finder section "${sectionId}".`);
-  const listLike = section.layout === "list" || section.layout === "transposed";
-  const rows = rowsOf(state, section.id).flatMap((row) => [rowLine(section, row), ...(row.holdings ?? []).map(holdingLine)]);
+  const rows = (state.sections[section.id] ?? []).flatMap((row) => [rowLine(section, row), ...(row.holdings ?? []).map(holdingLine)]);
   const removed = state.removed
     .filter((e) => e.sectionId === section.id)
     .map((e) => `- ${e.row.id} ${quote(rowLabel(section, e.row))} — removed: ${quote(e.reason)} | ${cellsText(section, e.row)}`);
   return [
     `## ${section.id} — ${section.label}`,
-    listLike ? "Rows can be added, removed and merged." : "Fixed rows: fill them in — they can't be added or removed.",
+    isListLike(section) ? "Rows can be added, removed and merged." : "Fixed rows: fill them in — they can't be added or removed.",
     ...(section.hint ? [`Hint: ${section.hint}`] : []),
     `Columns: ${section.columns.map(columnText).join("; ")}`,
     "Rows:",

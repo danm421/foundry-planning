@@ -6,7 +6,6 @@
 // closed. Imports only client-safe leaf modules from src/lib/fact-finder.
 import { useCallback, useEffect, useRef, useState } from "react";
 import UploadZone, { type UploadedFileInfo } from "@/components/import/upload-zone";
-import type { GetFactFinderResponse } from "@/lib/fact-finder/api-types";
 import { filesReading, isReadingNow, needsReading } from "@/lib/fact-finder/reading-status";
 import type { FactFinderState, FFFileReading } from "@/lib/fact-finder/types";
 import { AlertIcon, CircleCheckIcon, ClockIcon, LoaderIcon } from "./icons";
@@ -41,14 +40,15 @@ export function useDocuments({
   importId,
   initialFiles,
   state,
-  adopt,
+  refresh,
 }: {
   clientId: string;
   importId: string;
   initialFiles: FFScreenFile[];
   /** The fact finder the screen shows now. */
   state: FactFinderState;
-  adopt: (fresh: FactFinderState) => void;
+  /** `useFactFinder`'s `refresh`: fetches the saved fact finder and adopts it. */
+  refresh: () => Promise<void>;
 }): Documents {
   const [known, setKnown] = useState(initialFiles);
   const [removedIds, setRemovedIds] = useState<string[]>([]);
@@ -60,16 +60,6 @@ export function useDocuments({
   const uploadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const checking = useRef(false);
   const opened = useRef(false);
-
-  const url = `/api/clients/${clientId}/imports/${importId}/fact-finder`;
-  const refresh = useCallback(async () => {
-    try {
-      const res = await fetch(url);
-      if (res.ok) adopt(((await res.json()) as GetFactFinderResponse).factFinder);
-    } catch {
-      // The next file, read or edit brings the screen up to date.
-    }
-  }, [url, adopt]);
 
   const read = useReadStream({
     clientId,

@@ -16,14 +16,13 @@ import type {
 import { rebaseOps } from "@/lib/fact-finder/client-ops";
 import { FactFinderOpError, applyOps, type ClientOp, type OpContext } from "@/lib/fact-finder/ops";
 import type { FactFinderState } from "@/lib/fact-finder/types";
+import { JSON_HEADERS, OFFLINE_MESSAGE, factFinderUrl, refusalText } from "./http";
 
 /** How long the screen sits still before queued edits are sent. */
 export const SAVE_DEBOUNCE_MS = 400;
 
-const OFFLINE_MESSAGE = "Couldn't reach the server. Check your connection.";
 const DROPPED_NOTICE =
   "Some of your edits weren't kept: the same values changed at the same time from a reading or the chat. Check them and edit again if needed.";
-const JSON_HEADERS = { "content-type": "application/json" };
 
 export interface FactFinderStore {
   /** What the screen shows: the server's state plus every edit not yet saved. */
@@ -39,6 +38,8 @@ export interface FactFinderStore {
   adopt(fresh: FactFinderState): void;
   /** Saves now. True = nothing is left unsaved. */
   flushNow(): Promise<boolean>;
+  /** Fetches the saved fact finder and adopts it; a failed fetch changes nothing. */
+  refresh(): Promise<void>;
   retry(): void;
   /** Clears a refusal and the notice. */
   dismiss(): void;
@@ -130,8 +131,7 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
       await resync();
       return "refused";
     }
-    const retryAfter = res.headers.get("retry-after");
-    show.setFailure(`${message ?? `Couldn't save (HTTP ${res.status}).`}${retryAfter ? ` Retry in ${retryAfter}s.` : ""}`);
+    show.setFailure(refusalText(res, message, "Couldn't save"));
     return "failed";
   }
 
@@ -204,6 +204,7 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
     apply,
     adopt,
     flushNow,
+    refresh: resync,
     retry() {
       cancelTimer();
       void send();
@@ -235,7 +236,7 @@ export function useFactFinder({
   const [refusal, setRefusal] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sync] = useState(() =>
-    createSync(`/api/clients/${clientId}/imports/${importId}/fact-finder`, initialState, {
+    createSync(factFinderUrl(clientId, importId), initialState, {
       setState,
       setStatus,
       setFailure,
@@ -261,6 +262,7 @@ export function useFactFinder({
     apply: sync.apply,
     adopt: sync.adopt,
     flushNow: sync.flushNow,
+    refresh: sync.refresh,
     retry: sync.retry,
     dismiss: sync.dismiss,
   };

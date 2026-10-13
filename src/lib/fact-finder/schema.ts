@@ -717,6 +717,11 @@ export function fixedLabelsOf(section: FFSection): readonly string[] {
   return [];
 }
 
+/** A list or transposed section: its rows come and go (added, removed, merged). */
+export function isListLike(section: FFSection): boolean {
+  return section.layout === "list" || section.layout === "transposed";
+}
+
 /** PDF field prefixes for a section. Itemized living expenses span three. */
 export function pdfKeysOf(section: FFSection): readonly string[] {
   return section.pdfKeys ?? [section.id];

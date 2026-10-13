@@ -11,11 +11,10 @@ import { ChatComposer } from "@/components/statement-chat/chat-composer";
 import type { ErrorResponse, TurnBody, TurnResponse, UndoBody, UndoResponse } from "@/lib/fact-finder/api-types";
 import type { FactFinderState } from "@/lib/fact-finder/types";
 import { ChatTranscript } from "./chat-transcript";
+import { JSON_HEADERS, OFFLINE_MESSAGE, factFinderUrl, refusalText } from "./http";
 import { AlertIcon } from "./icons";
 
 const HEADING_ID = "fact-finder-chat";
-const JSON_HEADERS = { "content-type": "application/json" };
-const OFFLINE_MESSAGE = "Couldn't reach the server. Check your connection.";
 const UNSAVED_MESSAGE = "Your latest edits haven't saved yet — try again once they're saved.";
 const READING_REASON = "Still reading your documents — you can ask once that finishes.";
 
@@ -46,7 +45,7 @@ export function useChat({
   const [pending, setPending] = useState<string | null>(null);
   const [undoing, setUndoing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const url = `/api/clients/${clientId}/imports/${importId}/fact-finder`;
+  const url = factFinderUrl(clientId, importId);
 
   /** The route's answer, or null once `error` says why there isn't one. */
   async function post<T>(route: "turn" | "undo", body: TurnBody | UndoBody, failed: string): Promise<T | null> {
@@ -59,10 +58,7 @@ export function useChat({
     }
     const answer: unknown = await res.json().catch(() => ({}));
     if (res.ok) return answer as T;
-    const retryAfter = res.headers.get("retry-after");
-    setError(
-      `${(answer as Partial<ErrorResponse>).error ?? `${failed} (HTTP ${res.status}).`}${retryAfter ? ` Retry in ${retryAfter}s.` : ""}`,
-    );
+    setError(refusalText(res, (answer as Partial<ErrorResponse>).error, failed));
     return null;
   }
 
