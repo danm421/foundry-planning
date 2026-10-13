@@ -1869,6 +1869,15 @@ export interface GoalYear {
   accumulation?: boolean;
 }
 
+/** A margined account whose year-end equity fell below its margin-call level.
+ *  Lives here, not in margin.ts, because margin.ts imports this module. */
+export interface MarginCallWarning {
+  accountId: string;
+  /** Net ÷ securities at year end (0 when the account is underwater). */
+  ratio: number;
+  threshold: number;
+}
+
 export interface ProjectionYear {
   year: number;
   ages: { client: number; spouse?: number };
@@ -2266,6 +2275,9 @@ export interface ProjectionYear {
   estimatedBeneficiaryTax?: number;
   /** Non-fatal warnings emitted by the trust annual pass. */
   trustWarnings?: TrustWarning[];
+  /** Margined accounts below their margin-call level at year end — warn
+   *  only, nothing is sold. Absent when no account breaches. */
+  marginCallWarnings?: MarginCallWarning[];
   /** IRC §170(b) charitable-deduction carryforward state at end of this year. */
   charityCarryforward?: CharityCarryforward;
   /** Sum of split-interest-trust outflows to charity this year (CLT annual

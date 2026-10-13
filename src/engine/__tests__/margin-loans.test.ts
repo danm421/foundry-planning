@@ -92,3 +92,21 @@ describe("margin loans — a sale repays the loan", () => {
     expect(sale.netProceeds).toBeCloseTo(8_000_000, 2);
   });
 });
+
+describe("margin-call warnings", () => {
+  it("no warning in a normal year", () => {
+    const [y1] = runMargin([MARGINED], 1);
+    expect(y1.marginCallWarnings).toBeUndefined();
+  });
+  it("a 75% crash breaches a 30% margin call level", () => {
+    const [y1] = runMargin([{ ...MARGINED, growthRate: 0, marginInterestRate: 0 }], 1,
+      { marketShock: { year: 2026, drawdownPct: 0.75 } });
+    // gross 2.5M, net 0.5M → ratio 0.2
+    expect(y1.marginCallWarnings).toEqual([{ accountId: "acct-margin", ratio: expect.closeTo(0.2, 6), threshold: 0.3 }]);
+  });
+  it("seeded underwater (value below loan) warns and does not throw (Review Focus 1)", () => {
+    const [y1] = runMargin([{ ...MARGINED, value: 1_500_000, growthRate: 0, marginInterestRate: 0 }], 1);
+    expect(y1.accountLedgers["acct-margin"].endingValue).toBeCloseTo(-500_000, 2);
+    expect(y1.marginCallWarnings?.[0].accountId).toBe("acct-margin");
+  });
+});

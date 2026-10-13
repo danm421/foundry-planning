@@ -1,4 +1,4 @@
-import type { Account, AccountLedger } from "./types";
+import type { Account, AccountLedger, MarginCallWarning } from "./types";
 
 /**
  * Margin loans on taxable accounts (spec 2026-10-13).
@@ -79,4 +79,23 @@ export function scaleAccountValue(source: Account, fraction: number): Account {
     basis: source.basis * fraction,
     ...(source.marginBalance != null ? { marginBalance: source.marginBalance * fraction } : {}),
   };
+}
+
+/** Year-end check (spec: warn only — nothing is sold). */
+export function marginCallWarnings(
+  accounts: Account[],
+  accountBalances: Record<string, number>,
+  marginMap: MarginMap,
+): MarginCallWarning[] {
+  const out: MarginCallWarning[] = [];
+  for (const acct of accounts) {
+    const loan = marginMap[acct.id] ?? 0;
+    if (loan <= 0) continue;
+    const net = accountBalances[acct.id] ?? 0;
+    const gross = net + loan;
+    const ratio = net > 0 && gross > 0 ? net / gross : 0;
+    const threshold = acct.marginCallPct ?? 0.3;
+    if (ratio < threshold) out.push({ accountId: acct.id, ratio, threshold });
+  }
+  return out;
 }

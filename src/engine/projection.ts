@@ -40,7 +40,7 @@ import {
 import { computeBusinessYearFlow } from "./business/year-flow";
 import { buildGiftValueAtYear } from "./business/business-tree";
 import { accrueLockedEntityShare } from "./locked-shares";
-import { type MarginMap, netSeedValue, grossValue, grossBalancesFor, chargeMarginInterest } from "./margin";
+import { type MarginMap, netSeedValue, grossValue, grossBalancesFor, chargeMarginInterest, marginCallWarnings } from "./margin";
 import { buildOwnershipSnapshot } from "./ownership-snapshot";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
@@ -9155,6 +9155,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             })(),
           }
         : {}),
+      ...(() => {
+        const w = marginCallWarnings(workingAccounts, accountBalances, marginMap);
+        return w.length > 0 ? { marginCallWarnings: w } : {};
+      })(),
     });
 
     // Death event (spec 4b) — fires exactly once at the first death year.
