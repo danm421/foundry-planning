@@ -6,8 +6,9 @@ import { requireActiveSubscription } from "@/lib/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
-import { detectUploadKind, MAX_UPLOAD_BYTES } from "@/lib/extraction/validate-upload";
+import { detectUploadKind } from "@/lib/extraction/validate-upload";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
+import { stagingPrefix, takeStagedUpload, StagedUploadError } from "@/lib/uploads/staged-upload";
 import { getTaxReturn } from "@/lib/tax-returns/store";
 import { documentRoleSchema } from "@/lib/tax-returns/merge/types";
 import { addDocumentToReturn, TaxYearMismatchError } from "@/lib/tax-returns/add-document";
@@ -63,13 +64,11 @@ export async function POST(
     }
 
     const form = await request.formData();
-    const file = form.get("file");
-    if (!(file instanceof Blob)) {
-      return NextResponse.json({ error: "file is required" }, { status: 400 });
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      return NextResponse.json({ error: "File too large (25MB max)" }, { status: 400 });
-    }
+    // Staged browser → Blob first (`@/lib/uploads/staged-upload`). Taken
+    // before any refusal below, so the staged copy is always deleted.
+    const buffer = await takeStagedUpload(stagingPrefix("tax-returns", clientId), form.get("stagedPathname"));
+    const name = form.get("filename");
+    const filename = typeof name === "string" && name !== "" ? name : "tax-document.pdf";
 
     const roleRaw = form.get("role");
     const parsedRole = roleSchema.safeParse(typeof roleRaw === "string" && roleRaw ? roleRaw : "auto");
@@ -80,7 +79,6 @@ export async function POST(
     const existing = await getTaxReturn(clientId, taxYear);
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const buffer = Buffer.from(await file.arrayBuffer());
     const kind = detectUploadKind(buffer);
     if (kind !== "pdf" && kind !== "png" && kind !== "jpeg") {
       return NextResponse.json(
@@ -88,7 +86,6 @@ export async function POST(
         { status: 400 },
       );
     }
-    const filename = file instanceof File ? file.name : "tax-document.pdf";
     const model = form.get("model") === "mini" ? ("mini" as const) : ("full" as const);
 
     // Best-effort, same as the year POST: keep the source with the client's documents.
@@ -153,6 +150,9 @@ export async function POST(
   } catch (err) {
     if (err instanceof UnauthorizedError || (err instanceof Error && err.message === "Unauthorized")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (err instanceof StagedUploadError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
     }
     console.error("POST /api/clients/[id]/tax-returns/[taxYear]/documents error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

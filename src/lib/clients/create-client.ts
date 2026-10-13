@@ -52,6 +52,8 @@ export interface CreateClientForHouseholdArgs {
   spouseRetirementMonth?: number | null;
   spouseLifeExpectancy?: number | null;
   filingStatus: FilingStatus;
+  /** `clients.brand`; omitted = NULL, the household follows its advisor's brand. */
+  brand?: string | null;
   // Optional caller-supplied transaction handle (the prospect-apply path runs
   // this create inside a larger transaction). When omitted, the service wraps
   // all its inserts in its own db.transaction so the standalone path is atomic.
@@ -131,6 +133,7 @@ async function runCreate(
       spouseRetirementAge: effectiveSpouseRetirementAge,
       spouseRetirementMonth: effectiveSpouseRetirementMonth,
       spouseLifeExpectancy: effectiveSpouseLifeExpectancy,
+      brand: args.brand ?? null,
     })
     .returning();
 

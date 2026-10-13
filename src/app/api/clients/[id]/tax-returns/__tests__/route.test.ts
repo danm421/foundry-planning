@@ -14,6 +14,12 @@ vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: vi.fn() }));
 vi.mock("@/lib/rate-limit", () => ({ checkImportRateLimit: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 vi.mock("@/lib/crm/vault-plans", () => ({ savePlanToVault: vi.fn().mockResolvedValue(null) }));
+const mockBlobGet = vi.fn();
+const mockBlobDel = vi.fn();
+vi.mock("@vercel/blob", () => ({
+  get: (...args: unknown[]) => mockBlobGet(...args),
+  del: (...args: unknown[]) => mockBlobDel(...args),
+}));
 vi.mock("@/lib/tax-returns/adopt-extraction", () => ({
   adoptExtractedReturn: vi.fn(),
   adoptManualReturn: vi.fn(),
@@ -62,9 +68,13 @@ function grantAccess() {
   vi.mocked(checkImportRateLimit).mockResolvedValue({ allowed: true } as never);
 }
 
+// A pathname the upload-token route could have issued for this client.
+const STAGED = `staging/tax-returns/${CLIENT_ID}/1760000000000-0b7e2a52-6f0e-4f43-9d0a-3c1f7f1e9a10-smith-1040.pdf`;
+
 function postRequest(fields: Record<string, string | Blob> = {}): NextRequest {
   const form = new FormData();
-  form.set("file", new Blob([Buffer.from("%PDF-fake")], { type: "application/pdf" }), "smith-1040.pdf");
+  form.set("stagedPathname", STAGED);
+  form.set("filename", "smith-1040.pdf");
   for (const [k, v] of Object.entries(fields)) form.set(k, v);
   return new NextRequest(`http://test/api/clients/${CLIENT_ID}/tax-returns`, {
     method: "POST",
@@ -76,6 +86,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   grantAccess();
   vi.mocked(detectUploadKind).mockReturnValue("pdf");
+  mockBlobGet.mockImplementation(async () => ({ stream: new Blob([Buffer.from("%PDF-fake")]).stream() }));
+  mockBlobDel.mockResolvedValue(undefined);
 });
 
 describe("GET /api/clients/[id]/tax-returns", () => {
@@ -170,6 +182,44 @@ describe("POST /api/clients/[id]/tax-returns", () => {
     vi.mocked(detectUploadKind).mockReturnValue("xlsx");
     const res = await POST(postRequest(), params);
     expect(res.status).toBe(400);
+  });
+
+  // The file never rides in this request (Vercel caps a function body at
+  // 4.5 MB): the browser staged it in Blob, and the route takes it back.
+  it("extracts the staged file under its original name and deletes the staged copy", async () => {
+    vi.mocked(extractTaxReturnFacts).mockResolvedValue({
+      facts: emptyTaxReturnFacts(2025), isAmended: false, warnings: [], promptVersion: "v",
+    });
+    vi.mocked(getTaxReturn).mockResolvedValue(null);
+    vi.mocked(upsertExtracted).mockResolvedValue({ id: "ret-1", taxYear: 2025, status: "needs_review", warnings: [] } as never);
+
+    const res = await POST(postRequest(), params);
+
+    expect(res.status).toBe(200);
+    expect(mockBlobGet).toHaveBeenCalledWith(STAGED, { access: "private" });
+    const call = vi.mocked(extractTaxReturnFacts).mock.calls[0][0];
+    expect(call.fileName).toBe("smith-1040.pdf");
+    expect(call.buffer.toString()).toBe("%PDF-fake");
+    expect(mockBlobDel).toHaveBeenCalledWith(STAGED);
+  });
+
+  it("400s when no file was staged", async () => {
+    const form = new FormData();
+    const res = await POST(
+      new NextRequest(`http://test/api/clients/${CLIENT_ID}/tax-returns`, { method: "POST", body: form }),
+      params,
+    );
+    expect(res.status).toBe(400);
+    expect(extractTaxReturnFacts).not.toHaveBeenCalled();
+  });
+
+  it("404s a file staged for a different client, without reading or deleting it", async () => {
+    const other = STAGED.replace(CLIENT_ID, "22222222-2222-2222-2222-222222222222");
+    const res = await POST(postRequest({ stagedPathname: other }), params);
+    expect(res.status).toBe(404);
+    expect(mockBlobGet).not.toHaveBeenCalled();
+    expect(mockBlobDel).not.toHaveBeenCalled();
+    expect(extractTaxReturnFacts).not.toHaveBeenCalled();
   });
 
   it("creates an empty-facts row in manual mode without touching the extractor", async () => {
