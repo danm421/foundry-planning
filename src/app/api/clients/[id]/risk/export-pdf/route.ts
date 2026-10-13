@@ -11,6 +11,7 @@ import { getOrComputeCapacity, type CapacityResult } from "@/lib/risk/capacity";
 import { getRiskProfileDetail, summarizeEvent, nullActorLabel } from "@/lib/risk/queries";
 import { resolveMismatchState } from "@/lib/risk/detail-mismatch";
 import { resolveActors } from "@/lib/activity/resolve-actors";
+import { householdBrand } from "@/lib/branding/brand-choice";
 import { resolveBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { recordCompletedRun } from "@/lib/crm/generation-runs";
@@ -64,7 +65,7 @@ export async function POST(
           new Set(events.map((e) => e.actorUserId).filter((v): v is string => v !== null)),
         ),
       ),
-      resolveBrandingForClient(firmId, client.advisorId),
+      resolveBrandingForClient(firmId, householdBrand(client)),
     ]);
 
     const eventLines: RiskEventLine[] = events.map((e) => ({

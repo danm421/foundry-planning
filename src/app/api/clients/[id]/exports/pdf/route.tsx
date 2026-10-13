@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { renderToBuffer } from "@react-pdf/renderer";
+import { householdBrand } from "@/lib/branding/brand-choice";
 import { resolveBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
@@ -120,7 +121,7 @@ export async function POST(
       });
     }
 
-    const branding = await resolveBrandingForClient(firmId, client.advisorId);
+    const branding = await resolveBrandingForClient(firmId, householdBrand(client));
     const firmName = branding.firmName;
 
     const householdName = (data as { clientName?: string }).clientName ?? "Client";

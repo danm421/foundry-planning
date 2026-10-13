@@ -117,6 +117,13 @@ describe("GET /api/portal/me", () => {
     expect(firmNameMock).not.toHaveBeenCalled();
   });
 
+  it("brands the portal with the household's saved brand", async () => {
+    selectQueue.push([clientRow({ brand: "firm" })]);
+    selectQueue.push([primaryContact()]);
+    await GET();
+    expect(brandingForClientMock).toHaveBeenCalledWith("firm-1", "firm");
+  });
+
   it("sets intakePending true when the client has an unsubmitted prefilled form", async () => {
     intakePendingMock.mockResolvedValue(true);
     selectQueue.push([clientRow()]);

@@ -3,6 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
 import { requireClientPortalAccess } from "@/lib/authz";
+import { householdBrand } from "@/lib/branding/brand-choice";
 import { resolveIntakeBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { loadPortalConnectionAlert } from "@/lib/portal/load-plaid-items";
 import PortalNav from "@/components/portal/portal-nav";
@@ -31,6 +32,7 @@ export default async function PortalLayout({
     .select({
       firmId: clients.firmId,
       advisorId: clients.advisorId,
+      brand: clients.brand,
       crmHouseholdId: clients.crmHouseholdId,
       portalEditEnabled: clients.portalEditEnabled,
       ...portalFeatureColumns,
@@ -68,13 +70,13 @@ export default async function PortalLayout({
   const displayName = portalGreetingName(contacts);
   const letterheadName = portalGreetingFullName(contacts);
 
-  // Letterhead for the portal chrome, keyed by the client's advisor — an
+  // Letterhead for the portal chrome, keyed by the household's brand (its saved choice, else its advisor) — an
   // advisor with branding enabled overlays their own logo/name/favicon over
   // the firm's; null → Foundry lockup (same fallback semantics as the intake
   // pages). Runs alongside the connection-alert read below — neither depends
   // on the other's result.
   const [branding, connectionAlert, householdOptions] = await Promise.all([
-    row ? resolveIntakeBrandingForClient(row.firmId, row.advisorId) : Promise.resolve(null),
+    row ? resolveIntakeBrandingForClient(row.firmId, householdBrand(row)) : Promise.resolve(null),
     // The dot is a decoration. There is no error.tsx under (portal), so an
     // unguarded rejection here would drop every portal page onto the root
     // global-error screen because a nav badge failed to resolve.
