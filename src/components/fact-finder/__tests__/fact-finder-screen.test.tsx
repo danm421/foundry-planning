@@ -96,6 +96,15 @@ describe("page rail", () => {
     );
     expect(screen.queryByRole("heading", { name: "Client & Co-client" })).toBeNull();
   });
+
+  it("shows the selected page's sections as tables, naming each value's source from the uploaded files", async () => {
+    renderScreen();
+    const rail = screen.getByRole("navigation", { name: "Fact finder pages" });
+    await userEvent.click(within(rail).getByRole("button", { name: /^Accounts/ }));
+    const cash = screen.getByRole("table", { name: "Cash Accounts" });
+    expect(within(cash).getByRole("textbox", { name: "Account name" })).toHaveValue("Joint Checking");
+    expect(within(cash).getByRole("tooltip")).toHaveTextContent("From hendricks-fact-finder.pdf");
+  });
 });
 
 describe("Review changes", () => {

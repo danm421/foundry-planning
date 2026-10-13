@@ -5,14 +5,13 @@
 // Imports only client-safe leaf modules from src/lib/fact-finder.
 import { useState } from "react";
 import Link from "next/link";
-import { Card } from "@/components/card";
-import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { filesReading } from "@/lib/fact-finder/reading-status";
-import { PAGE_ORDER, sectionsOnPage, type FFPage } from "@/lib/fact-finder/schema";
+import { PAGE_ORDER, type FFPage } from "@/lib/fact-finder/schema";
 import { pageCounts } from "@/lib/fact-finder/screen-summary";
 import { countLinksNeedingClick } from "@/lib/fact-finder/state";
 import { PanelIcon } from "./icons";
 import { PageRail } from "./page-rail";
+import { PageView } from "./page-view";
 import { SaveStatus } from "./save-status";
 import type { FactFinderScreenProps } from "./screen-types";
 import { SidePanel, useNarrowScreen } from "./side-panel";
@@ -37,6 +36,8 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
   const [panelOpen, setPanelOpen] = useState(reading);
   const narrow = useNarrowScreen();
   const pageLabel = PAGE_ORDER.find((p) => p.id === page)?.label;
+  const fileNames = new Map(initialFiles.map((file) => [file.id, file.name]));
+  const fileName = (fileId: string) => fileNames.get(fileId);
 
   return (
     <div className="flex flex-col gap-6">
@@ -91,16 +92,7 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
 
         <div className="flex min-w-0 flex-col gap-4">
           <h2 className="text-lg font-semibold text-ink">{pageLabel}</h2>
-          {sectionsOnPage(page).map((section) => (
-            <Card key={section.id} aria-labelledby={`fact-finder-section-${section.id}`}>
-              <div className="flex items-center gap-1.5 px-[var(--pad-card)] py-3">
-                <h3 id={`fact-finder-section-${section.id}`} className="text-sm font-semibold text-ink-2">
-                  {section.label}
-                </h3>
-                {section.hint && <FieldTooltip text={section.hint} side="bottom" />}
-              </div>
-            </Card>
-          ))}
+          <PageView page={page} state={state} onApply={store.apply} fileName={fileName} />
         </div>
 
         <SidePanel id={PANEL_ID} title={PANEL_TITLE} open={panelOpen} overlay={narrow} onOpenChange={setPanelOpen}>

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 // src/components/fact-finder/__tests__/cell-editor.test.tsx
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { applyOps, FactFinderOpError, type ClientOp } from "@/lib/fact-finder/ops";
 import { findColumn } from "@/lib/fact-finder/schema";
@@ -330,6 +330,33 @@ describe("CellEditor — clear, source, Check this, highlight", () => {
   it("a typed value has no source", () => {
     renderCell("cash", "r1", "accountName", { accountName: typed("Joint Checking") });
     expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  describe("source note placement", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("is fixed under the cell while it's hovered or focused, so a table that scrolls sideways can't clip it; any scroll hides it", async () => {
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+        top: 60, bottom: 92, left: 40, right: 200, width: 160, height: 32, x: 40, y: 60, toJSON: () => ({}),
+      } as DOMRect);
+      renderCell("cash", "r1", "accountName", { accountName: doc("Joint Checking") });
+      const tip = screen.getByRole("tooltip");
+      const input = screen.getByRole("textbox", { name: "Account name" });
+      expect(tip).toHaveClass("fixed");
+      expect(tip.style.top).toBe("");
+
+      await userEvent.hover(input);
+      expect(tip.style.top).toBe("96px");
+      expect(tip.style.left).toBe("40px");
+
+      fireEvent.scroll(window);
+      expect(tip.style.top).toBe("");
+
+      act(() => input.focus());
+      expect(tip.style.top).toBe("96px");
+    });
   });
 
   it.each([

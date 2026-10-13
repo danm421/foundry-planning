@@ -4,7 +4,7 @@
 // it empty, where a document value came from, "Check this", and the highlight
 // for cells the last chat reply changed. Every edit is one op through
 // `onApply`; a refused edit (false) shows the stored value again.
-import { useId, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type SyntheticEvent } from "react";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import { inputCompactClassName, selectChevronClassName, textareaClassName } from "@/components/forms/input-styles";
@@ -43,6 +43,20 @@ export function CellEditor({ sectionId, rowId, column, cell, onApply, highlighte
   const id = useId();
   // What the advisor is typing; null = show the stored value.
   const [draft, setDraft] = useState<string | null>(null);
+  // Where the source note shows: `fixed` under the cell, so a table that
+  // scrolls sideways never clips it. Set on hover/focus; any scroll hides it.
+  const [notePlace, setNotePlace] = useState<CSSProperties | null>(null);
+  const placed = notePlace !== null;
+  useEffect(() => {
+    if (!placed) return;
+    const hide = () => setNotePlace(null);
+    window.addEventListener("scroll", hide, { capture: true, passive: true });
+    return () => window.removeEventListener("scroll", hide, { capture: true });
+  }, [placed]);
+  const placeNote = (e: SyntheticEvent<HTMLElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setNotePlace({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - 264)) });
+  };
   const stored = textOf(cell);
   const shown = draft ?? stored;
   const target = { sectionId, rowId, columnId: column.id };
@@ -163,7 +177,11 @@ export function CellEditor({ sectionId, rowId, column, cell, onApply, highlighte
   }
 
   return (
-    <div className={`group relative min-w-0 rounded-[var(--radius-sm)] ${highlighted ? "ring-2 ring-secondary/50" : ""}`}>
+    <div
+      onMouseEnter={source ? placeNote : undefined}
+      onFocus={source ? placeNote : undefined}
+      className={`group relative min-w-0 rounded-[var(--radius-sm)] ${highlighted ? "ring-2 ring-secondary/50" : ""}`}
+    >
       {editor}
       {!blank && column.kind !== "check" && (
         <button
@@ -189,7 +207,12 @@ export function CellEditor({ sectionId, rowId, column, cell, onApply, highlighte
         <div
           id={`${id}-source`}
           role="tooltip"
-          className="pointer-events-none invisible absolute left-0 top-full z-30 mt-1 w-64 max-w-[calc(100vw-2rem)] rounded-md border border-hair bg-card px-3 py-2 text-xs leading-snug text-ink-2 opacity-0 shadow-lg transition-[opacity,visibility] group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100 group-hover:delay-300"
+          style={notePlace ?? undefined}
+          className={`pointer-events-none invisible fixed z-30 w-64 max-w-[calc(100vw-2rem)] rounded-md border border-hair bg-card px-3 py-2 text-xs leading-snug text-ink-2 opacity-0 shadow-lg transition-[opacity,visibility] ${
+            placed
+              ? "group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100 group-hover:delay-300"
+              : ""
+          }`}
         >
           <p className="font-medium text-ink">
             From {fileName(source.fileId) ?? "a removed document"}
