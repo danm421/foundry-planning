@@ -69,12 +69,16 @@ function systemPrompt(state: FactFinderState, files: ToolContext["files"]): stri
   ].join("\n");
 }
 
-/** Earlier turns as history, SSNs redacted again: a read summary can quote a document's row or file name. */
+/**
+ * Earlier turns as history, SSNs redacted again. Every assistant and tool turn
+ * is fenced as data: a read summary is stored as an assistant turn and quotes
+ * a document's row or file name. Only the advisor's own words stay unfenced.
+ */
 function transcriptToMessages(transcript: readonly FFChatTurn[]): BaseMessage[] {
   const clean = (text: string) => redactSsns(text).text;
   return transcript.map((t) => {
     if (t.role === "user") return new HumanMessage(clean(t.text));
-    if (t.role === "assistant") return new AIMessage(clean(t.text));
+    if (t.role === "assistant") return new AIMessage(fenceUntrusted(clean(t.text)));
     return new AIMessage(fenceUntrusted(`[used ${t.tool}] ${clean(t.summary)}`));
   });
 }

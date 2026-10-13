@@ -23,6 +23,7 @@ vi.mock("@/db", () => ({ db: {} }));
 
 import { chatModel } from "@/domain/forge/llm";
 import { readDocumentPages } from "../chat/document-text";
+import { FENCE_CLOSE, FENCE_OPEN } from "../chat/fence";
 import { TOOL_DEFS } from "../chat/tools";
 import { MAX_TOOL_CALLS_PER_TURN, runFactFinderTurn, type TurnModel } from "../chat/turn";
 import { applyOps } from "../ops";
@@ -297,5 +298,18 @@ describe("runFactFinderTurn — SSNs never reach the model", () => {
     expect(everything).toContain("[REDACTED-SSN]");
     const asked = store.state!.transcript.find((t) => t.role === "user" && t.id !== "u0");
     expect(asked).toMatchObject({ text: "Her SSN is [REDACTED-SSN] — note it" });
+  });
+});
+
+describe("runFactFinderTurn — earlier replies are data", () => {
+  it("replays an earlier assistant turn inside the untrusted-data fence: a read summary quotes document labels", async () => {
+    const summary = 'Read 1 document.\n• Left out "Total Accounts": a total of other accounts';
+    store.state = fixture({ transcript: [{ id: "a0", role: "assistant", text: summary, at: AT }] });
+    const fake = scripted(new AIMessage("Okay."));
+    await turn("What did the read leave out?", fake.model);
+
+    const replayed = fake.seen[0].slice(1).find((m) => text(m).includes('Left out "Total Accounts"'));
+    expect(replayed).toBeInstanceOf(AIMessage);
+    expect(text(replayed!)).toBe(`${FENCE_OPEN}\n${summary}\n${FENCE_CLOSE}`);
   });
 });
