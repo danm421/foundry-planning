@@ -13,6 +13,7 @@ const HIT = {
   primaryFirstName: "Bob",
   primaryLastName: "Baxter",
   primaryEmail: "bob@baxter.test",
+  brand: "user_bob",
 };
 
 function okFetch() {
@@ -39,6 +40,57 @@ async function pickClient(title: string) {
 describe("SendIntakeForm", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", okFetch());
+  });
+
+  const PICKER = {
+    options: [
+      { value: "firm", label: "Acme Wealth (firm)" },
+      { value: "user_jane", label: "Smith Wealth" },
+    ],
+    allBrands: [
+      { value: "firm", label: "Acme Wealth (firm)" },
+      { value: "user_bob", label: "Bob Ray" },
+      { value: "user_jane", label: "Smith Wealth" },
+    ],
+  };
+
+  it("starts a prospect send on the sender's brand and sends the pick", async () => {
+    render(<SendIntakeForm defaultSections={null} brand={{ picker: PICKER, prospectDefault: "firm" }} />);
+    const select = screen.getByLabelText("Brand") as HTMLSelectElement;
+    expect(select.value).toBe("firm");
+
+    fireEvent.change(select, { target: { value: "user_jane" } });
+    fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "p@x.test" } });
+    fireEvent.click(screen.getByRole("button", { name: /^send$/i }));
+
+    await waitFor(() => {
+      const body = JSON.parse((vi.mocked(fetch).mock.calls.at(-1)![1] as RequestInit).body as string);
+      expect(body.brand).toBe("user_jane");
+    });
+  });
+
+  it("switches to the household's brand when a client is picked, even one the sender can't pick", async () => {
+    vi.stubGlobal("fetch", searchFetch([HIT]));
+    render(<SendIntakeForm defaultSections={null} brand={{ picker: PICKER, prospectDefault: "firm" }} />);
+    await pickClient(HIT.householdTitle);
+    const select = screen.getByLabelText("Brand") as HTMLSelectElement;
+    expect(select.value).toBe("user_bob");
+    expect(screen.getByRole("option", { name: "Bob Ray" })).toBeInTheDocument();
+  });
+
+  it("keeps the household's own brand in the list after the sender changes the pick", async () => {
+    vi.stubGlobal("fetch", searchFetch([HIT]));
+    render(<SendIntakeForm defaultSections={null} brand={{ picker: PICKER, prospectDefault: "firm" }} />);
+    await pickClient(HIT.householdTitle);
+    const select = screen.getByLabelText("Brand") as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "firm" } });
+    expect(select.value).toBe("firm");
+    expect(screen.getByRole("option", { name: "Bob Ray" })).toHaveValue("user_bob");
+  });
+
+  it("shows no Brand dropdown without a picker", () => {
+    render(<SendIntakeForm defaultSections={null} />);
+    expect(screen.queryByLabelText("Brand")).toBeNull();
   });
 
   it("renders first name, last name, and email inputs", () => {
