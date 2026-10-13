@@ -3,6 +3,11 @@
 // public table with a firm_id column appears in exactly one set below; the
 // mocked purge test asserts each PURGED_FIRM_TABLES entry is actually deleted.
 // Derived from the live schema 2026-07-07 (audit 2026-07-07-verify-first-hotlist F2).
+//
+// Forge's LangGraph tables (checkpoints*, store) hold firm data but have no
+// firm_id column, so they are not listed here: purgeFirmById erases them via
+// purgeForgeHistory, and the drift test checks every table keyed by thread_id
+// or namespace_path against FORGE_LANGGRAPH_TABLES in purge-history.ts.
 
 /** Deleted by an explicit `where(firm_id = X)` in purgeFirmById — directly, or
  *  via purgeCrmHouseholdById for clients/crm_households. */

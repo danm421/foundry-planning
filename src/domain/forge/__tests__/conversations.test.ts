@@ -79,6 +79,15 @@ describe("forge conversations CRUD", () => {
     expect(await findOwnedConversation(id, USER_A, "org_forge_conv_other")).toBeNull();
   });
 
+  // Chat history is stored under the id the caller sends, and erased by the
+  // id's stored spelling — so only that exact spelling may open the thread.
+  it("findOwnedConversation accepts only the id's stored spelling", async () => {
+    const id = await createConversation({ userId: USER_A, firmId: FIRM, title: "Spelling" });
+    expect(await findOwnedConversation(id.toUpperCase(), USER_A, FIRM)).toBeNull();
+    expect(await findOwnedConversation(id.replaceAll("-", ""), USER_A, FIRM)).toBeNull();
+    expect(await findOwnedConversation(`{${id}}`, USER_A, FIRM)).toBeNull();
+  });
+
   it("findOwnedConversation returns the thread's client", async () => {
     const clientId = await seedClient("Scope");
     const id = await createConversation({ userId: USER_A, firmId: FIRM, clientId, title: "Client thread" });

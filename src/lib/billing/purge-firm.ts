@@ -43,6 +43,7 @@ import {
   storyVoiceSamples,
 } from "@/db/schema";
 import { purgeCrmHouseholdById } from "@/lib/crm/households";
+import { purgeForgeHistory } from "@/domain/forge/purge-history";
 import { deleteImportFile } from "@/lib/imports/blob";
 import { deleteBrandingAsset } from "@/lib/branding/blob";
 import { getStripe } from "@/lib/billing/stripe-client";
@@ -272,7 +273,12 @@ export async function purgeFirmById(firmId: string): Promise<void> {
   await db.delete(builtinTemplateDismissals).where(eq(builtinTemplateDismissals.firmId, firmId));
   await db.delete(clientShares).where(eq(clientShares.firmId, firmId));
   await db.delete(planningKbChunks).where(eq(planningKbChunks.firmId, firmId));
-  await db.delete(forgeConversations).where(eq(forgeConversations.firmId, firmId));
+  // Forge chat history and notes (LangGraph tables, no firm_id column): the
+  // remaining threads are read from the conversations, so erase them first.
+  await db.transaction(async (tx) => {
+    await purgeForgeHistory(tx, { firmId });
+    await tx.delete(forgeConversations).where(eq(forgeConversations.firmId, firmId));
+  });
   // Per-advisor branding (Task 14): leaf firm-scoped table, no FK to clients/
   // crm_households, so nothing cascades it — must be deleted explicitly.
   // Its logo/favicon URLs were collected in step 0, ABOVE — see the ordering

@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   deleteClientShares: vi.fn(),
   deletePlanningKbChunks: vi.fn(),
   deleteForgeConversations: vi.fn(),
+  purgeForgeHistory: vi.fn(),
   deleteAdvisorProfiles: vi.fn(),
   deleteAdvisorOnboarding: vi.fn(),
   deleteComplianceExportBatches: vi.fn(),
@@ -56,6 +57,10 @@ vi.mock("@/db", async () => {
   const s = schema as Record<string, unknown>;
   return {
     db: {
+      // The purge's transactions run on this same fake.
+      transaction(cb: (tx: unknown) => unknown) {
+        return cb(this);
+      },
       // Drizzle queries are chainable and thenable. The collection SELECTs use
       // `.from(t).where(...)` (2 hops) for firmId-scoped tables and
       // `.from(t).where(... inArray subquery ...)` for the blob-ref tables.
@@ -119,6 +124,7 @@ vi.mock("@/db", async () => {
   };
 });
 vi.mock("@/lib/crm/households", () => ({ purgeCrmHouseholdById: mocks.purgeHousehold }));
+vi.mock("@/domain/forge/purge-history", () => ({ purgeForgeHistory: mocks.purgeForgeHistory }));
 vi.mock("@/lib/billing/stripe-client", () => ({
   getStripe: () => ({ customers: { del: mocks.stripeCustomersDel } }),
 }));
@@ -421,6 +427,17 @@ describe("purgeFirmById", () => {
     for (const [name, spy] of Object.entries(wiring)) {
       if (spy) expect(spy, `${name} delete did not fire`).toHaveBeenCalled();
     }
+  });
+
+  // Forge's LangGraph tables have no firm_id column, so PURGED_FIRM_TABLES and
+  // the drift guard can't see them. The purge erases them by firm, and must do
+  // it while the conversations that name their threads still exist.
+  it("erases the firm's Forge chat history and notes before its conversations", async () => {
+    await purgeFirmById("org_1");
+    expect(mocks.purgeForgeHistory).toHaveBeenCalledWith(expect.anything(), { firmId: "org_1" });
+    expect(mocks.purgeForgeHistory.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.deleteForgeConversations.mock.invocationCallOrder[0],
+    );
   });
 
   it("nulls the retained firms row's PII/branding columns", async () => {

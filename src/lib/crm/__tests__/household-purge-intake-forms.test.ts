@@ -32,6 +32,7 @@ vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/audit/record-helpers", () => ({ recordDelete: vi.fn() }));
 vi.mock("@/lib/audit/snapshots/household", () => ({ toHouseholdSnapshot: () => ({}) }));
 vi.mock("@/lib/plaid/client", () => ({ getPlaidClient: () => ({ itemRemove: vi.fn() }) }));
+vi.mock("@/domain/forge/purge-history", () => ({ purgeForgeHistory: vi.fn() }));
 
 import { purgeCrmHouseholdById } from "../households";
 
