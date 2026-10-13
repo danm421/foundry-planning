@@ -10,7 +10,7 @@ import { FactFinderNotFoundError, listLiveFiles, loadFactFinder, updateFactFinde
 import { loadBaseCaseRecords } from "../relink";
 import type { FactFinderState, FFChatTurn, FFSnapshot } from "../types";
 import { readDocumentPages } from "./document-text";
-import { fenceUntrusted, scrubFenceMarkers } from "./fence";
+import { fenceUntrusted } from "./fence";
 import { TOOL_DEFS, runTool, type ToolContext } from "./tools";
 import { factFinderView } from "./view";
 
@@ -171,10 +171,10 @@ export async function runFactFinderTurn(args: {
         toolTurns.push({ id: ctx.newId(), role: "tool", tool: call.name, summary: outcome.summary, at: iso() });
         messages.push(new ToolMessage({ tool_call_id: callId, content: outcome.result }));
       } catch (err) {
-        // The tool's own sentence, so it stays outside the fence; anything it quotes is scrubbed.
+        // It can quote document text (a row's label, a file name), so it's fenced like every tool result.
         const msg = redactSsns(err instanceof Error ? err.message : "That tool call failed.").text;
         toolTurns.push({ id: ctx.newId(), role: "tool", tool: call.name, summary: `Couldn't do that: ${msg}`, at: iso() });
-        messages.push(new ToolMessage({ tool_call_id: callId, content: JSON.stringify({ error: scrubFenceMarkers(msg) }) }));
+        messages.push(new ToolMessage({ tool_call_id: callId, content: fenceUntrusted(JSON.stringify({ error: msg })) }));
       }
     }
   }
