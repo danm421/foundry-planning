@@ -175,6 +175,20 @@ describe("generate_presentation", () => {
     expect(h.queuePresentationRun).not.toHaveBeenCalled();
   });
 
+  it("refuses a page naming another household's snapshot, before the export limit is charged or anything is queued", async () => {
+    await expect(run({ pages: [{ pageId: "cashFlow", scenarioId: `snap:${FOREIGN}` }] })).rejects.toThrow(
+      `Snapshot ${FOREIGN} isn't one of this household's snapshots.`,
+    );
+    expect(h.checkExportPdfRateLimit).not.toHaveBeenCalled();
+    expect(h.queuePresentationRun).not.toHaveBeenCalled();
+  });
+
+  it("queues a page set to one of this household's snapshots", async () => {
+    h.rows.scenario_snapshots = [{ id: OWNED }];
+    await run({ pages: [{ pageId: "cashFlow", scenarioId: `snap:${OWNED}` }] });
+    expect(queuedBody().pages[0].scenarioOverride).toBe(`snap:${OWNED}`);
+  });
+
   it("refuses a saved template whose options name another household's scenario", async () => {
     h.getTemplateById.mockResolvedValue({
       id: TEMPLATE,
