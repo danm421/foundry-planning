@@ -17,6 +17,10 @@ export type MarginMap = Record<string, number>;
  *  `'0.3'` and the account form's "30" display stay literal — keep them in step. */
 export const DEFAULT_MARGIN_CALL_PCT = 0.3;
 
+/** "At the call level" tolerance: a forced sale restores net ÷ securities to
+ *  exactly the call level, which floating point can land a hair either side. */
+const RATIO_EPSILON = 1e-9;
+
 /** Plan-start `accountBalances` seed: the securities value net of the loan. */
 export function netSeedValue(acct: Account): number {
   return acct.value - (acct.marginBalance ?? 0);
@@ -101,14 +105,14 @@ export function chargeMarginInterest(
  *  not come back. Only with no map at all (a fixture) does the object's own
  *  loan stand. An account without the field is returned as it is. */
 export function withLiveMargin(acct: Account, marginMap: MarginMap | undefined, shareMap?: MarginShareMap): Account {
-  const loan = marginMap == null ? undefined : (marginMap[acct.id] ?? (acct.marginBalance != null ? 0 : undefined));
-  if (loan == null) return acct;
+  if (marginMap == null) return acct;
+  const loan = marginMap[acct.id];
+  if (loan == null && acct.marginBalance == null) return acct;
+  const live: Account = { ...acct, marginBalance: loan ?? 0 };
   const share = shareMap?.[acct.id];
-  return {
-    ...acct,
-    marginBalance: loan,
-    ...(share != null ? { marginPersonalShare: share } : acct.marginPersonalShare != null ? { marginPersonalShare: 0 } : {}),
-  };
+  if (share != null) live.marginPersonalShare = share;
+  else if (acct.marginPersonalShare != null) live.marginPersonalShare = 0;
+  return live;
 }
 
 /** A `fraction` share of an account: value, basis AND loan scale together.
@@ -149,10 +153,6 @@ export function marginCallWarnings(
 /** Reg T (12 CFR 220.12) initial margin: new borrowing may not take the loan
  *  above half the securities. */
 export const REG_T_INITIAL_MARGIN = 0.5;
-
-/** "At the call level" tolerance: a forced sale restores net ÷ securities to
- *  exactly the call level, which floating point can land a hair either side. */
-const RATIO_EPSILON = 1e-9;
 
 /** Personal-use share of each loan: personal-use dollars ÷ loan, in (0, 1].
  *  Absent ⇒ 0 — the whole loan is investment debt, as in Phase 1. Interest
@@ -199,6 +199,8 @@ export function loansOfSharedAccounts(marginMap: MarginMap, shareMap: MarginShar
   return out;
 }
 
+/** Settle every share snapshotted by `loansOfSharedAccounts` against the loan
+ *  it now has (`settleShareAfterRepayment` for each). */
 export function settleSharesAfterRepayments(
   shareMap: MarginShareMap, loansBefore: Record<string, number>, marginMap: MarginMap,
 ): void {
@@ -243,6 +245,9 @@ export function marginBorrowSourcesFor(input: {
 }): MarginBorrowSource[] {
   const out: MarginBorrowSource[] = [];
   for (const acct of input.accounts) {
+    // The switch first: it skips the ownership walk for every account that
+    // never borrows — every year, every Monte Carlo trial.
+    if (acct.marginBorrowEnabled !== true) continue;
     if (!canBorrowOnMargin(acct, input.year, input.householdShareOf(acct))) continue;
     const loan = input.marginMap[acct.id] ?? 0;
     const gross = (input.accountBalances[acct.id] ?? 0) + loan;
@@ -312,7 +317,7 @@ export function sellSecuritiesToRepayLoan(input: {
   const { acct, reason, accountBalances, basisMap, freshBasisMap, marginMap, shareMap, ledger } = input;
   const loan = marginMap[acct.id] ?? 0;
   const gross = (accountBalances[acct.id] ?? 0) + loan;
-  const sold = Math.min(input.amount, loan, Math.max(0, gross));
+  const sold = Math.min(input.amount, loan, gross);
   if (sold <= 0) return null;
 
   const fresh = freshBasisMap[acct.id] ?? 0;
@@ -324,7 +329,7 @@ export function sellSecuritiesToRepayLoan(input: {
   const basisBefore = basisMap[acct.id] ?? 0;
   const basisMoved = Math.min(draw.basisReturn, basisBefore);
   basisMap[acct.id] = basisBefore - basisMoved;
-  if (fresh > 0) freshBasisMap[acct.id] = Math.max(0, fresh - Math.min(fresh, sold));
+  if (fresh > 0) freshBasisMap[acct.id] = fresh - Math.min(fresh, sold);
 
   const loanAfter = loan - sold;
   if (loanAfter > 0) marginMap[acct.id] = loanAfter;

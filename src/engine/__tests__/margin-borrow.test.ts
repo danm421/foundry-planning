@@ -68,7 +68,8 @@ describe("borrowing on margin — the projection (spec 2026-10-14)", () => {
   });
 
   it("switch off ⇒ identical to an account without the Phase 2 fields", () => {
-    const { marginBorrowEnabled: _e, ...plain } = BORROWER;
+    const plain: Account = { ...BORROWER };
+    delete plain.marginBorrowEnabled;
     expect(runBorrow([{ ...BORROWER, marginBorrowEnabled: false }])).toEqual(runBorrow([plain]));
   });
 });

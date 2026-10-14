@@ -32,10 +32,14 @@ export interface SupplementalDraw {
 }
 
 export interface SupplementalWithdrawalPlan {
-  byAccount: Record<string, number>;   // gross amounts (compatible with current `withdrawals.byAccount`)
+  /** Gross amount SOLD per account — sales only; a margin borrow is never in it. */
+  byAccount: Record<string, number>;
+  /** Σ `draws`, borrows included — so when the plan borrows, `total` ≠ Σ `byAccount`. */
   total: number;
   draws: SupplementalDraw[];
-  borrowedByAccount?: Record<string, number>; // present only when the plan borrowed
+  /** Amount borrowed on margin per account (in `total`, not in `byAccount`).
+   *  Present only when the plan borrowed. */
+  borrowedByAccount?: Record<string, number>;
   recognizedIncome: {
     ordinaryIncome: number;
     capitalGains: number;

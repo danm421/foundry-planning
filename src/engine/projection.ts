@@ -7989,6 +7989,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Apply converged supplemental + taxes to balances and ledgers.
     if (hasChecking) {
       const checkingId = defaultChecking!.id;
+      // The planner sums its margin borrows per account (spec 2026-10-14);
+      // the loop below applies them.
+      if (supplementalPlan.borrowedByAccount) withdrawals.borrowedByAccount = supplementalPlan.borrowedByAccount;
 
       // Supplemental draws are attributed to the source account in Portfolio
       // Activity (not flagged internal) so the user sees which account funded
@@ -8009,8 +8012,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           });
           withdrawals.byAccount[draw.accountId] = (withdrawals.byAccount[draw.accountId] ?? 0) + draw.amount;
           withdrawals.total += draw.amount;
-          const borrowed = (withdrawals.borrowedByAccount ??= {});
-          borrowed[draw.accountId] = (borrowed[draw.accountId] ?? 0) + draw.amount;
           continue;
         }
         const preBalance = accountBalances[draw.accountId] ?? 0;

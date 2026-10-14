@@ -1730,8 +1730,10 @@ export interface DeathEventInput {
    *  survivor-annuity estate inclusion. Optional for back-compat with fixtures. */
   survivorBirthYear?: number;
   survivorLifeExpectancy?: number;
-  /** Live margin loan per account id (see engine/margin.ts). Optional for
-   *  fixtures; when absent the precedence chain reads each account's own
+  /** Live margin loan per account id (see engine/margin.ts `withLiveMargin`).
+   *  Present ⇒ the WHOLE truth: an account it leaves out has a $0 loan (a
+   *  paid-off loan leaves the map), so never pass `{}` or a partial map.
+   *  Absent (fixtures) ⇒ the precedence chain reads each account's own
    *  `marginBalance` (the plan-start loan), while pour-out and business
    *  succession see no loan. */
   marginMap?: Record<string, number>;
