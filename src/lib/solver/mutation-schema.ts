@@ -8,7 +8,7 @@
 // the bar chart stops updating.
 
 import { z } from "zod";
-import { valuationDiscount } from "@/lib/schemas/common";
+import { valuationDiscount } from "@/lib/schemas/valuation-discount";
 import { isUSPSStateCode } from "@/lib/usps-states";
 import { MAX_RATE_STRESS_POINTS } from "@/lib/tax/rate-stress";
 import { YEAR_REFS } from "@/lib/milestones";
