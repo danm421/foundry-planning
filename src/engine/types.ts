@@ -2477,6 +2477,10 @@ export interface DeductionBreakdown {
     standardDeduction: number;
     taxDeductions: number;
     bySource: Record<string, { label: string; amount: number }>;
+    /** Display only (spec 2026-10-14): margin interest on money borrowed for
+     *  spending — personal interest, never deducted, in NO total. Keyed by
+     *  account id; household-like share. Present only when nonzero. */
+    personalMarginInterest?: Record<string, { label: string; amount: number }>;
   };
 }
 

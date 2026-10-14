@@ -72,3 +72,16 @@ describe("borrowing on margin — the projection (spec 2026-10-14)", () => {
     expect(runBorrow([{ ...BORROWER, marginBorrowEnabled: false }])).toEqual(runBorrow([plain]));
   });
 });
+
+describe("interest on borrowing for spending is personal", () => {
+  it("example A year 2: all $8,000 of interest is personal", () => {
+    const l = at(runBorrow([BORROWER]), 2027).accountLedgers["acct-borrow"];
+    expect(l.marginInterestPersonal).toBeCloseTo(8_000, 2);
+  });
+  it("a Phase 1 loan with no borrowing has no personal interest", () => {
+    const l = at(runBorrow([{ ...BORROWER, marginBalance: 200_000, marginBorrowEnabled: false }], { spend: 0 }), 2027)
+      .accountLedgers["acct-borrow"];
+    expect(l.marginInterest).toBeGreaterThan(0);
+    expect(l.marginInterestPersonal).toBeUndefined();
+  });
+});

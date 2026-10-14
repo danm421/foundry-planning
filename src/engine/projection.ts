@@ -2270,9 +2270,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // An entity co-owner bears its own share (plan R6); only the household +
     // grantor-trust share lands on the household return.
     const marginInterestHouseholdByAccount: Record<string, { label: string; amount: number }> = {};
+    // Display only (spec 2026-10-14): personal interest, never deducted.
+    const personalMarginInterestByAccount: Record<string, { label: string; amount: number }> = {};
     for (const acct of workingAccounts) {
       const interest = chargeMarginInterest(acct, accountBalances, marginMap, accountLedgers[acct.id]);
-      const hh = interest > 0 ? interest * householdLikeShareOf(acct) : 0;
+      if (interest <= 0) continue;
+      // §1.163-8T: interest on money borrowed for spending is personal. Only
+      // the investment-use part reaches Form 4952; share 0 ⇒ Phase 1's math.
+      const personal = interest * (marginPersonalShare[acct.id] ?? 0);
+      const hhShare = householdLikeShareOf(acct);
+      if (personal > 0) {
+        const ledger = accountLedgers[acct.id];
+        if (ledger) ledger.marginInterestPersonal = personal;
+        if (hhShare > 0) personalMarginInterestByAccount[acct.id] = { label: acct.name, amount: personal * hhShare };
+      }
+      const hh = (interest - personal) * hhShare;
       if (hh > 0) marginInterestHouseholdByAccount[acct.id] = { label: acct.name, amount: hh };
     }
 
@@ -4867,6 +4879,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           standardDeduction: stdDed,
           taxDeductions: Math.max(itemizedTotal, stdDed),
           bySource: belowLineBySource,
+          ...(Object.keys(personalMarginInterestByAccount).length > 0
+            ? { personalMarginInterest: personalMarginInterestByAccount }
+            : {}),
         },
       };
     }
