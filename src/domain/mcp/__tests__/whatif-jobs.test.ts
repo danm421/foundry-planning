@@ -8,7 +8,7 @@ const h = vi.hoisted(() => ({
   getJobKv: vi.fn(),
   select: vi.fn(),
   where: vi.fn(),
-  rows: [] as { id: string }[],
+  rows: [] as { id: string; isBaseCase?: boolean; seed?: number | null }[],
 }));
 vi.mock("next/server", () => ({ after: h.after }));
 vi.mock("@/lib/whatif/job-store", async (importOriginal) => ({
@@ -30,7 +30,7 @@ vi.mock("@/db", () => ({
   },
 }));
 
-import { assertScenarioOfClient, firstForeignScenario, startWhatIfJob } from "../whatif-jobs";
+import { assertScenarioOfClient, firstForeignScenario, startWhatIfJob, storedMonteCarloSeed } from "../whatif-jobs";
 import { McpUnavailableError } from "../define-tool";
 import { WhatIfValidationError } from "@/lib/whatif/errors";
 import type { JobKv, WhatIfJob } from "@/lib/whatif/job-store";
@@ -180,5 +180,45 @@ describe("firstForeignScenario", () => {
 
     h.rows = [{ id: MINE }, { id: THEIRS }];
     expect(await firstForeignScenario("c1", [MINE, THEIRS])).toBeNull();
+  });
+});
+
+// The seed loadMonteCarloData reads for a source: the scenario's own row, the
+// base case's for "base" (or for a scenario it can't find). Never a fresh one.
+describe("storedMonteCarloSeed", () => {
+  const BASE = "11111111-1111-4111-8111-111111111111";
+  const SAVED = "22222222-2222-4222-8222-222222222222";
+
+  it("reads the base case's seed for the base case, from one query scoped to the client", async () => {
+    h.rows = [{ id: BASE, isBaseCase: true, seed: 42 }];
+    expect(await storedMonteCarloSeed("c1", "base")).toBe(42);
+    expect(h.select).toHaveBeenCalledTimes(1);
+    const { params } = new PgDialect().sqlToQuery(h.where.mock.calls[0][0] as SQL);
+    expect(params).toContain("c1");
+  });
+
+  it("reads a saved scenario's own seed, not the base case's", async () => {
+    h.rows = [
+      { id: BASE, isBaseCase: true, seed: 42 },
+      { id: SAVED, isBaseCase: false, seed: 7 },
+    ];
+    expect(await storedMonteCarloSeed("c1", SAVED)).toBe(7);
+    const { params } = new PgDialect().sqlToQuery(h.where.mock.calls[0][0] as SQL);
+    expect(params).toEqual(expect.arrayContaining(["c1", SAVED]));
+  });
+
+  it("answers nothing when the source has no seed stored yet — never the base case's in its place", async () => {
+    h.rows = [
+      { id: BASE, isBaseCase: true, seed: 42 },
+      { id: SAVED, isBaseCase: false, seed: null },
+    ];
+    expect(await storedMonteCarloSeed("c1", SAVED)).toBeUndefined();
+    h.rows = [{ id: BASE, isBaseCase: true, seed: null }];
+    expect(await storedMonteCarloSeed("c1", "base")).toBeUndefined();
+  });
+
+  it("falls back to the base case for a scenario it can't find, as loadMonteCarloData does", async () => {
+    h.rows = [{ id: BASE, isBaseCase: true, seed: 42 }];
+    expect(await storedMonteCarloSeed("c1", SAVED)).toBe(42);
   });
 });

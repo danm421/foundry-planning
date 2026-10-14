@@ -14,7 +14,7 @@ import { MAX_CHANGES } from "@/lib/whatif/caps";
 import { WHAT_IF_CHANGE_SCHEMA } from "@/lib/whatif/changes";
 import { growthDefaultsFrom, translateChanges } from "@/lib/whatif/translate";
 import { defineWriteTool, McpInputError, type McpTool } from "../define-tool";
-import { assertScenarioOfClient } from "../whatif-jobs";
+import { assertScenarioOfClient, storedMonteCarloSeed } from "../whatif-jobs";
 
 export const SAVE_FAILED_MESSAGE =
   "Foundry couldn't save these changes as a scenario. Save it from the Solver in Foundry instead.";
@@ -55,7 +55,17 @@ const saveWhatIfAsScenario = defineWriteTool({
     const { mutations } = translateChanges(effectiveTree, changes, undefined, {
       growthDefaults: growthDefaultsFrom(resolutionContext),
     });
-    const saved = await saveSolverScenario({ clientId, firmId, source, name, mutations });
+    // try_what_if's Monte Carlo used the starting scenario's seed; the new
+    // scenario keeps it, so its success rate matches what Claude reported.
+    const seed = await storedMonteCarloSeed(clientId, source);
+    const saved = await saveSolverScenario({
+      clientId,
+      firmId,
+      source,
+      name,
+      mutations,
+      ...(seed !== undefined ? { seed } : {}),
+    });
     if (!saved.ok) throw new McpInputError(SAVE_FAILED_MESSAGE);
 
     // The same row the Solver's save files, so the scenario's history reads the

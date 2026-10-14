@@ -4,7 +4,7 @@
 // compute limit, and running heavy work as a background job that outlives the
 // tool call (src/lib/whatif/job-store.ts). The pure half is src/lib/whatif/.
 import { after } from "next/server";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { scenarios } from "@/db/schema";
@@ -49,6 +49,26 @@ export async function assertScenarioOfClient(clientId: string, scenarioId: strin
   if ((await firstForeignScenario(clientId, [scenarioId])) !== null) {
     throw new WhatIfValidationError(scenarioNotFoundMessage(scenarioId));
   }
+}
+
+/**
+ * The Monte Carlo seed already stored for `source`: the one loadMonteCarloData
+ * reads for it (its seed-scenario block) — the scenario's own row, or the base
+ * case's for "base" or for a scenario it can't find. Undefined while none is
+ * stored; this never writes one (loadMonteCarloData does, on its first run).
+ */
+export async function storedMonteCarloSeed(clientId: string, source: string): Promise<number | undefined> {
+  const rows = await db
+    .select({ id: scenarios.id, isBaseCase: scenarios.isBaseCase, seed: scenarios.monteCarloSeed })
+    .from(scenarios)
+    .where(
+      and(
+        eq(scenarios.clientId, clientId),
+        source === "base" ? eq(scenarios.isBaseCase, true) : or(eq(scenarios.isBaseCase, true), eq(scenarios.id, source)),
+      ),
+    );
+  const row = rows.find((r) => r.id === source) ?? rows.find((r) => r.isBaseCase);
+  return row?.seed ?? undefined;
 }
 
 export async function buildRunDeps(clientId: string, firmId: string, scenario: string): Promise<RunDeps> {

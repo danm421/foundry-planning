@@ -5,6 +5,7 @@ const h = vi.hoisted(() => ({
   saveSolverScenario: vi.fn(),
   loadEffectiveTree: vi.fn(),
   assertScenarioOfClient: vi.fn(),
+  storedMonteCarloSeed: vi.fn(),
   firmClaudeWritesEnabled: vi.fn(),
   verifyClientAccessFor: vi.fn(),
   recordAudit: vi.fn(),
@@ -12,7 +13,10 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@/lib/solver/save-scenario", () => ({ saveSolverScenario: h.saveSolverScenario }));
 vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree: h.loadEffectiveTree }));
-vi.mock("../whatif-jobs", () => ({ assertScenarioOfClient: h.assertScenarioOfClient }));
+vi.mock("../whatif-jobs", () => ({
+  assertScenarioOfClient: h.assertScenarioOfClient,
+  storedMonteCarloSeed: h.storedMonteCarloSeed,
+}));
 vi.mock("@/lib/firm-settings", () => ({ firmClaudeWritesEnabled: h.firmClaudeWritesEnabled }));
 vi.mock("@/lib/clients/authz", () => ({ verifyClientAccessFor: h.verifyClientAccessFor }));
 vi.mock("@/lib/audit", () => ({ recordAudit: h.recordAudit }));
@@ -38,6 +42,7 @@ beforeEach(() => {
   h.saveSolverScenario.mockReset().mockResolvedValue({ ok: true, scenarioId: SAVED });
   h.loadEffectiveTree.mockReset().mockImplementation(async () => ({ effectiveTree: whatIfTree(), warnings: [] }));
   h.assertScenarioOfClient.mockReset().mockResolvedValue(undefined);
+  h.storedMonteCarloSeed.mockReset().mockResolvedValue(undefined);
   h.firmClaudeWritesEnabled.mockReset().mockResolvedValue(true);
   h.verifyClientAccessFor.mockReset().mockResolvedValue({ ok: true, permission: "edit", firmId: "org_1", access: "own" });
   h.recordAudit.mockReset().mockResolvedValue(undefined);
@@ -55,6 +60,21 @@ describe("save_what_if_as_scenario", () => {
     });
     expect(out.scenarioId).toBe(SAVED);
     expect(out.scenarioUrl).toMatch(new RegExp(`/clients/c1/solver\\?scenario=${SAVED}$`));
+  });
+
+  // try_what_if ran Monte Carlo on the starting scenario's seed; a fresh seed
+  // would change the success rate Claude reported once the advisor opens it.
+  it("keeps the starting scenario's Monte Carlo seed, so the saved scenario reproduces the reported success rate", async () => {
+    h.storedMonteCarloSeed.mockResolvedValue(1234);
+    await tool.run({ clientId: "c1", scenarioId: START, name: "x", changes: [retire62] }, principal);
+    expect(h.storedMonteCarloSeed).toHaveBeenCalledWith("c1", START);
+    expect(h.saveSolverScenario).toHaveBeenCalledWith(expect.objectContaining({ source: START, seed: 1234 }));
+  });
+
+  it("passes no seed when the starting scenario has none stored yet", async () => {
+    await tool.run({ clientId: "c1", name: "x", changes: [retire62] }, principal);
+    expect(h.storedMonteCarloSeed).toHaveBeenCalledWith("c1", "base");
+    expect(h.saveSolverScenario.mock.calls[0][0]).not.toHaveProperty("seed");
   });
 
   it("starts from a saved scenario only after checking it is this household's", async () => {
