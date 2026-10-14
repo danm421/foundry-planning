@@ -9,7 +9,6 @@ const h = vi.hoisted(() => ({
   loadEffectiveTree: vi.fn(),
   getOrComputeMaxSpending: vi.fn(),
   solveSsClaimAgeByPortfolio: vi.fn(),
-  runProjection: vi.fn(),
   runProjectionWithEvents: vi.fn(),
   explainChange: vi.fn(),
   explainComposition: vi.fn(),
@@ -22,7 +21,7 @@ vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree: h.loadEffectiveTree
 // getOrComputeMonteCarlo + solveMaxSpending (the brief's broken pairing).
 vi.mock("@/lib/compute-cache/max-spending", () => ({ getOrComputeMaxSpending: h.getOrComputeMaxSpending }));
 vi.mock("@/lib/solver/solve-ss-portfolio", () => ({ solveSsClaimAgeByPortfolio: h.solveSsClaimAgeByPortfolio }));
-vi.mock("@/engine", () => ({ runProjection: h.runProjection, runProjectionWithEvents: h.runProjectionWithEvents }));
+vi.mock("@/engine", () => ({ runProjectionWithEvents: h.runProjectionWithEvents }));
 // SUBJECT_KEYS is ["tax"] — one registered adapter (not `as const`; see the
 // registry itself, Object.keys(ADAPTERS) as SubjectKey[]).
 vi.mock("@/lib/projection-explain/registry", () => ({ ADAPTERS: { tax: { key: "tax" } }, SUBJECT_KEYS: ["tax"] }));
@@ -127,7 +126,6 @@ beforeEach(() => {
   });
   h.getOrComputeMaxSpending.mockReset();
   h.solveSsClaimAgeByPortfolio.mockReset();
-  h.runProjection.mockReset();
   h.runProjectionWithEvents
     .mockReset()
     .mockReturnValue({ years: [makeYear()], firstDeathEvent: { year: 2045 }, secondDeathEvent: undefined });
@@ -394,7 +392,6 @@ describe("solve_max_spending", () => {
     // The old (broken) pairing loaded the tree and ran a projection directly
     // in this tool; the cached path owns all of that internally.
     expect(h.loadEffectiveTree).not.toHaveBeenCalled();
-    expect(h.runProjection).not.toHaveBeenCalled();
   });
 
   it("resolves scenario to 'base' when omitted and returns the solved spend and probability achieved", async () => {

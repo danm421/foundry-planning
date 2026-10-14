@@ -236,10 +236,13 @@ const getWhatIfResults = defineTool({
     const first = await read();
     if (!first) throw new McpForbiddenError(JOB_NOT_FOUND_MESSAGE);
     // The advisor may have lost access to this client since the run started.
+    // Only a denial reads as "not found"; any other failure (the access lookup
+    // itself failing) propagates, so a finished run never looks lost.
     try {
       await assertClientReadableForPrincipal(principal, first.clientId);
-    } catch {
-      throw new McpForbiddenError(JOB_NOT_FOUND_MESSAGE);
+    } catch (err) {
+      if (err instanceof McpForbiddenError) throw new McpForbiddenError(JOB_NOT_FOUND_MESSAGE);
+      throw err;
     }
     const job =
       first.status === "running"

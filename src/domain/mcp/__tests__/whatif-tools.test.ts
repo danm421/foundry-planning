@@ -319,6 +319,18 @@ describe("get_what_if_results", () => {
     await expect(tool.run({ jobId: mine.id }, principal)).rejects.toThrow(JOB_NOT_FOUND_MESSAGE);
   });
 
+  it("lets an access-lookup failure through instead of calling a finished run not found", async () => {
+    const kv = memoryKv();
+    h.getJobKv.mockReturnValue(kv);
+    const mine = { ...newJob({ firmId: "org_1", userId: "u1", clientId: "c1", kind: "try", total: 1 }), status: "done" as const };
+    await saveJob(kv, mine);
+    h.verifyClientAccessFor.mockRejectedValue(new Error("db connection reset"));
+    const err = await byName("get_what_if_results").run({ jobId: mine.id }, principal).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).not.toBe(JOB_NOT_FOUND_MESSAGE);
+    expect((err as Error).message).toBe("db connection reset");
+  });
+
   it("reports the connector unavailable when the job store can't be read (Review Focus 4)", async () => {
     h.getJobKv.mockReturnValue({
       get: async () => {
