@@ -200,3 +200,80 @@ describe("planSupplementalWithdrawal — margined account (spec 2026-10-13)", ()
     expect(plan.recognizedIncome.capitalGains).toBeCloseTo(800_000, 2); // 8M × (1 − 9/10)
   });
 });
+
+describe("borrowing on margin (spec 2026-10-14)", () => {
+  const base = {
+    basisMap: { "a-tax": 400_000 }, ages: { client: 60, spouse: null }, isSpouseAccount: () => false, year: 2026,
+  };
+  const tax = acct("a-tax", { category: "taxable", subType: "brokerage", value: 1_000_000, basis: 400_000 });
+  const cash = acct("a-cash", { category: "cash", subType: "savings", value: 30_000 });
+  const row = (accountId: string, priorityOrder: number) => ({ accountId, priorityOrder, startYear: 2020, endYear: 2099 });
+
+  it("borrows after cash and before the first non-cash source (default order)", () => {
+    const plan = planSupplementalWithdrawal({ ...base, shortfall: 100_000,
+      strategy: [row("a-cash", 1), row("a-tax", 2)], accounts: [cash, tax],
+      householdBalances: { "a-cash": 30_000, "a-tax": 1_000_000 },
+      marginBorrowSources: [{ accountId: "a-tax", headroom: 500_000, rate: 0.08 }] });
+    expect(plan.byAccount).toEqual({ "a-cash": 30_000 });
+    expect(plan.borrowedByAccount).toEqual({ "a-tax": 70_000 });
+    expect(plan.total).toBe(100_000);
+    expect(plan.recognizedIncome).toEqual({ ordinaryIncome: 0, capitalGains: 0, earlyWithdrawalPenalty: 0 });
+    expect(plan.draws.find((d) => d.borrowed)).toEqual({ accountId: "a-tax", amount: 70_000,
+      ordinaryIncome: 0, capitalGains: 0, basisReturn: 0, earlyWithdrawalPenalty: 0, borrowed: true });
+  });
+
+  it("a custom order with cash later borrows before cash", () => {
+    const plan = planSupplementalWithdrawal({ ...base, shortfall: 100_000,
+      strategy: [row("a-tax", 1), row("a-cash", 2)], accounts: [cash, tax],
+      householdBalances: { "a-cash": 30_000, "a-tax": 1_000_000 },
+      marginBorrowSources: [{ accountId: "a-tax", headroom: 500_000, rate: 0.08 }] });
+    expect(plan.borrowedByAccount).toEqual({ "a-tax": 100_000 });
+    expect(plan.byAccount).toEqual({});
+  });
+
+  it("an all-cash order borrows after the cash runs out", () => {
+    const plan = planSupplementalWithdrawal({ ...base, shortfall: 100_000,
+      strategy: [row("a-cash", 1)], accounts: [cash, tax],
+      householdBalances: { "a-cash": 30_000, "a-tax": 1_000_000 },
+      marginBorrowSources: [{ accountId: "a-tax", headroom: 500_000, rate: 0.08 }] });
+    expect(plan.byAccount).toEqual({ "a-cash": 30_000 });
+    expect(plan.borrowedByAccount).toEqual({ "a-tax": 70_000 });
+  });
+
+  it("a sell after a borrow on the same account uses the pre-borrow securities value (Review Focus 1)", () => {
+    // No loan yet, so no grossBalances entry: the sell's ratio must use the
+    // 1,000,000 of securities, not the 980,000 of net left after borrowing.
+    const plan = planSupplementalWithdrawal({ ...base, shortfall: 100_000,
+      strategy: [row("a-tax", 1)], accounts: [tax],
+      householdBalances: { "a-tax": 1_000_000 },
+      marginBorrowSources: [{ accountId: "a-tax", headroom: 20_000, rate: 0.08 }] });
+    expect(plan.borrowedByAccount).toEqual({ "a-tax": 20_000 });
+    expect(plan.byAccount).toEqual({ "a-tax": 80_000 });
+    expect(plan.recognizedIncome.capitalGains).toBeCloseTo(80_000 * 0.6, 6);
+  });
+
+  it("the sell row sees net less what was borrowed", () => {
+    const plan = planSupplementalWithdrawal({ ...base, shortfall: 1_000_000,
+      strategy: [row("a-tax", 1)], accounts: [tax],
+      householdBalances: { "a-tax": 550_000 }, grossBalances: { "a-tax": 1_000_000 },
+      marginBorrowSources: [{ accountId: "a-tax", headroom: 50_000, rate: 0.08 }] });
+    expect(plan.borrowedByAccount).toEqual({ "a-tax": 50_000 });
+    expect(plan.byAccount).toEqual({ "a-tax": 500_000 });
+  });
+
+  it("walks the sources in the order given", () => {
+    const tax2 = acct("a-tax2", { category: "taxable", subType: "brokerage", value: 1_000_000 });
+    const plan = planSupplementalWithdrawal({ ...base, shortfall: 100_000,
+      strategy: [row("a-tax", 1), row("a-tax2", 2)], accounts: [tax, tax2],
+      householdBalances: { "a-tax": 1_000_000, "a-tax2": 1_000_000 },
+      marginBorrowSources: [{ accountId: "a-tax2", headroom: 60_000, rate: 0.06 }, { accountId: "a-tax", headroom: 500_000, rate: 0.08 }] });
+    expect(plan.borrowedByAccount).toEqual({ "a-tax2": 60_000, "a-tax": 40_000 });
+  });
+
+  it("with no sources the plan is exactly the pre-Phase-2 plan", () => {
+    const input = { ...base, shortfall: 100_000, strategy: [row("a-cash", 1), row("a-tax", 2)], accounts: [cash, tax],
+      householdBalances: { "a-cash": 30_000, "a-tax": 1_000_000 } };
+    expect(planSupplementalWithdrawal({ ...input, marginBorrowSources: [] })).toEqual(planSupplementalWithdrawal(input));
+    expect("borrowedByAccount" in planSupplementalWithdrawal(input)).toBe(false);
+  });
+});
