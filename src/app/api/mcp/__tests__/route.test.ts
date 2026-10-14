@@ -31,6 +31,7 @@ vi.mock("@/lib/audit", () => ({ recordAudit }));
 vi.mock("jose", () => ({ decodeJwt }));
 
 import {
+  maxDuration,
   audienceIsAcceptable,
   toolFailureResult,
   recordDenial,
@@ -343,5 +344,11 @@ describe("recordDenial — part A reasons", () => {
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ metadata: { tool: "test_tool", outcome: "denied", reason } }),
     );
+  });
+});
+
+describe("route config", () => {
+  it("allows 800 s so a background what-if job's after() work can finish", () => {
+    expect(maxDuration).toBe(800);
   });
 });

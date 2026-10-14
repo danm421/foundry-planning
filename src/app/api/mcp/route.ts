@@ -19,9 +19,10 @@ import { recordAudit } from "@/lib/audit";
 import { WhatIfValidationError } from "@/lib/whatif/errors";
 import { ALL_MCP_TOOLS } from "@/domain/mcp/tools";
 
-// Solver and Monte Carlo tools run the engine. Matches the Forge compute
-// routes; Vercel's function config already gives every route the large machine.
-export const maxDuration = 300;
+// Solver, Monte Carlo and what-if tools run the engine. 800 s (matching
+// presentations/runs) gives a background what-if job's after() work room to
+// finish; ordinary calls are unaffected.
+export const maxDuration = 800;
 
 /**
  * True when a token's `aud` claim (absent, one value, or several) permits

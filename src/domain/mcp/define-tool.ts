@@ -216,16 +216,14 @@ function buildTool<S extends z.ZodObject<z.ZodRawShape>, R extends object>(
       // check would silently skip and the handler would run unauthorized.
       const declaresClientId = "clientId" in spec.inputSchema.shape;
       let clientId: string | null = null;
+      let clientAccess: Awaited<ReturnType<typeof assertClientReadableForPrincipal>> | null = null;
       if (declaresClientId) {
         const rawClientId = (args as Record<string, unknown>).clientId;
         if (typeof rawClientId !== "string") {
           throw new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE);
         }
         clientId = rawClientId;
-        const access = await assertClientReadableForPrincipal(principal, clientId);
-        if (variant.requireWrite && access.permission !== "edit") {
-          throw new McpForbiddenError(VIEW_ONLY_MESSAGE);
-        }
+        clientAccess = await assertClientReadableForPrincipal(principal, clientId);
       }
 
       // Same schema-driven rule as clientId above: a declared `householdId` is
@@ -240,6 +238,11 @@ function buildTool<S extends z.ZodObject<z.ZodRawShape>, R extends object>(
         }
         householdId = rawHouseholdId;
         await assertHouseholdReadableForPrincipal(principal, householdId);
+      }
+
+      // Last gate, after every readability check: a write needs edit permission.
+      if (variant.requireWrite && clientAccess?.permission !== "edit") {
+        throw new McpForbiddenError(VIEW_ONLY_MESSAGE);
       }
 
       const ctx: McpToolContext = { principal, firmId: principal.orgId };
