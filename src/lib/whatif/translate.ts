@@ -23,6 +23,7 @@ import {
   requireSsRow,
   requireYear,
 } from "./translate-context";
+import { translateTechnique } from "./translate-techniques";
 
 export interface TranslateResult {
   mutations: SolverMutation[];
@@ -48,8 +49,11 @@ export function translateChanges(
         const where = issue?.path.join(".") || "value";
         fail(ctx, `Foundry couldn't build this change (${where}: ${issue?.message ?? "invalid"}).`);
       }
+      // The parsed mutation, not the built one: the Solver's routes hand on
+      // what their wire parse returns, so a key the schema strips or defaults
+      // reads the same here as in a what-if built on the Solver screen.
+      mutations.push(check.data as SolverMutation);
     }
-    mutations.push(...out.mutations);
     recordIds.push(out.recordId);
   });
   return { mutations, recordIds };
@@ -261,6 +265,6 @@ function translateOne(change: WhatIfChange, ctx: Ctx): One {
         endYear: change.endYear ?? null,
       });
     default:
-      fail(ctx, `"${change.type}" isn't supported yet.`);
+      return translateTechnique(change, ctx);
   }
 }
