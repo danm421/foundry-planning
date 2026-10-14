@@ -14,6 +14,7 @@ import {
   renderPresentationPdf,
   type ExportPdfBody,
 } from "@/components/presentations/render-presentation-pdf";
+import { withAiCallerOrg } from "@/lib/ai/resolve";
 import { recordAudit } from "@/lib/audit";
 import {
   createQueuedRun,
@@ -23,6 +24,7 @@ import {
   markRunning,
 } from "@/lib/crm/generation-runs";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
+import { uuidRegex } from "@/lib/schemas/common";
 import {
   ensureInvestmentProposalAiSummaries,
   ensureRetirementComparisonAiSummaries,
@@ -99,13 +101,22 @@ export interface QueuePresentationRunArgs {
   /** Merged into every audit row (the route passes its cross-firm stamp). */
   auditMetadata: Record<string, unknown>;
   via: "background-run" | "claude";
+  /** The verified org of a caller with no session (the connector); omit on a
+   *  web request. The background work runs inside withAiCallerOrg, so its AI
+   *  commentary resolves that org's tenant instead of finding no org. */
+  aiCallerOrgId?: string;
+  /** Render only when the run row exists. The connector sets it: it answers
+   *  with the runId, so a deck with no run would be a deck nobody can find —
+   *  and a retry would render it twice. The app's button stays best-effort. */
+  requireRun?: boolean;
 }
 
 /**
  * Queue a deck: count unreviewed story chapters (the caller can warn now),
  * create the run, and render in after(). The background work never throws: a
  * failure marks the run failed and files no export audit. `runId` is null when
- * the run row couldn't be created (createQueuedRun is best-effort).
+ * the run row couldn't be created (createQueuedRun is best-effort); with
+ * `requireRun`, nothing is then rendered at all.
  */
 export async function queuePresentationRun(
   args: QueuePresentationRunArgs,
@@ -122,13 +133,16 @@ export async function queuePresentationRun(
     householdId: args.householdId,
     firmId,
     kind: "presentation",
-    scenarioId: body.scenarioId,
+    // generation_runs.scenario_id is a uuid column: a snapshot deck ("snap:<id>")
+    // would fail the insert and lose its run. Same rule as savePlanToVault.
+    scenarioId: body.scenarioId && uuidRegex.test(body.scenarioId) ? body.scenarioId : null,
     triggeredBy: args.triggeredBy,
     triggeredByEmail: args.triggeredByEmail,
     requestPayload: body,
   });
+  if (!runId && args.requireRun) return { runId, storyReview };
 
-  after(async () => {
+  const render = async () => {
     try {
       // Phase 1 — "Analyzing…": the AI commentary, now that the run is visible
       // in Recent runs.
@@ -173,7 +187,9 @@ export async function queuePresentationRun(
       console.error("[presentations/runs] background render failed", err);
       await markFailed(runId, msg);
     }
-  });
+  };
+  const callerOrg = args.aiCallerOrgId;
+  after(callerOrg ? () => withAiCallerOrg(callerOrg, render) : render);
 
   return { runId, storyReview };
 }

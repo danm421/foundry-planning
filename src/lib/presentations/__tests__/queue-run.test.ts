@@ -13,6 +13,18 @@ const h = vi.hoisted(() => ({
   savePlanToVault: vi.fn(),
   recordAudit: vi.fn(),
   unreviewedStoryChapters: vi.fn(),
+  // The org each background step saw as the session-less AI caller, by step.
+  scopes: {} as Record<string, string | undefined>,
+}));
+
+// A stand-in for withAiCallerOrg with a real async scope, so a test can read
+// which org each background step ran under (resolve.test.ts covers the real one).
+const aiCallerScope = await vi.hoisted(async () => {
+  const { AsyncLocalStorage } = await import("node:async_hooks");
+  return new AsyncLocalStorage<string>();
+});
+vi.mock("@/lib/ai/resolve", () => ({
+  withAiCallerOrg: (orgId: string, fn: () => unknown) => aiCallerScope.run(orgId, fn),
 }));
 
 // Capture after() so the test runs the background work when it chooses.
@@ -27,6 +39,7 @@ vi.mock("@/lib/crm/generation-runs", () => ({
 vi.mock("@/lib/presentations/ensure-ai-summaries", () => {
   const pass = (name: string) => async (_clientId: string, _firmId: string, pages: unknown[]) => {
     h.calls.push(name);
+    h.scopes[name] = aiCallerScope.getStore();
     return pages;
   };
   return {
@@ -73,6 +86,7 @@ async function drainAfter() {
 beforeEach(() => {
   h.afterTasks.length = 0;
   h.calls.length = 0;
+  h.scopes = {};
   h.createQueuedRun.mockReset().mockResolvedValue("run1");
   h.markAnalyzing.mockReset().mockImplementation(async () => void h.calls.push("analyzing"));
   h.markRunning.mockReset().mockImplementation(async () => void h.calls.push("running"));
@@ -80,6 +94,7 @@ beforeEach(() => {
   h.markFailed.mockReset().mockResolvedValue(undefined);
   h.renderPresentationPdf.mockReset().mockImplementation(async () => {
     h.calls.push("render");
+    h.scopes.render = aiCallerScope.getStore();
     return { buffer: Buffer.from("%PDF"), filename: "smith.pdf", clientLastName: "Smith", distinctScenarioCount: 1 };
   });
   h.savePlanToVault.mockReset().mockImplementation(async () => {
@@ -142,6 +157,42 @@ describe("queuePresentationRun", () => {
     const row = h.recordAudit.mock.calls[0][0];
     expect(row).not.toHaveProperty("actorId");
     expect(row.metadata).toEqual({ crossFirmActor: true, pages: ["cashFlow"], via: "background-run", brand: null });
+    // A web request's AI calls read the org from its session, as before.
+    expect(h.scopes["ai:retirement"]).toBeUndefined();
+  });
+
+  it("runs the whole background render as the connector's verified org, so its AI commentary has a tenant", async () => {
+    await queuePresentationRun({ ...args, auditActorId: "u1", aiCallerOrgId: "org_1" });
+    await drainAfter();
+    expect(h.scopes).toEqual({
+      "ai:retirement": "org_1",
+      "ai:scenario": "org_1",
+      "ai:proposal": "org_1",
+      render: "org_1",
+    });
+  });
+
+  it("queues nothing in the background when a required run can't be created, and stays best-effort otherwise", async () => {
+    h.createQueuedRun.mockResolvedValue(null);
+    expect(await queuePresentationRun({ ...args, requireRun: true })).toEqual({ runId: null, storyReview: [] });
+    expect(h.afterTasks).toHaveLength(0);
+    await drainAfter();
+    expect(h.renderPresentationPdf).not.toHaveBeenCalled();
+    expect(h.savePlanToVault).not.toHaveBeenCalled();
+    expect(h.recordAudit).not.toHaveBeenCalled();
+
+    // The app's Generate button requires no run: the deck still renders and saves.
+    expect(await queuePresentationRun(args)).toEqual({ runId: null, storyReview: [] });
+    await drainAfter();
+    expect(h.savePlanToVault).toHaveBeenCalledTimes(1);
+  });
+
+  it("records a run's scenario only when it is a scenario id — a snapshot deck still gets its run", async () => {
+    const SCENARIO = "11111111-1111-4111-8111-111111111111";
+    await queuePresentationRun({ ...args, body: { ...body, scenarioId: "snap:22222222-2222-4222-8222-222222222222" } });
+    expect(h.createQueuedRun).toHaveBeenLastCalledWith(expect.objectContaining({ scenarioId: null }));
+    await queuePresentationRun({ ...args, body: { ...body, scenarioId: SCENARIO } });
+    expect(h.createQueuedRun).toHaveBeenLastCalledWith(expect.objectContaining({ scenarioId: SCENARIO }));
   });
 
   it("audits unreviewed story chapters after the deck lands, and never for a render that failed", async () => {

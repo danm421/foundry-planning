@@ -13,6 +13,7 @@ import {
   foundrySystemCredentials,
   clearAiCredentialCache,
   withAiForFirm,
+  withAiCallerOrg,
   requireAiAvailableForFirm,
 } from "../resolve";
 import { SharedClientAiError } from "../shared-client-error";
@@ -464,6 +465,34 @@ describe("resolveAiCredentials on another firm's client", () => {
       }),
     ).rejects.toBeInstanceOf(SharedClientAiError);
     expect((await resolveAiCredentials()).apiKey).toBe("key-b");
+  });
+});
+
+// ---- A caller with no Clerk session ----
+//
+// The Claude connector's token is verified in src/lib/mcp/principal.ts; there is
+// no session for auth() to read, so its verified org is declared instead.
+
+describe("resolveAiCredentials for a session-less caller (withAiCallerOrg)", () => {
+  it("resolves for the declared org, across awaits — including the deck path's withAiForFirm — and not after the scope", async () => {
+    mockAuth.mockResolvedValue({ orgId: null });
+    mockGetConnection.mockImplementation(async (firmId: string) =>
+      firmId === "org_x" ? connectedRow("key-x") : null,
+    );
+
+    const inScope = await withAiCallerOrg("org_x", async () => {
+      await new Promise((r) => setTimeout(r, 1));
+      return {
+        direct: await resolveAiCredentials(),
+        declaredFirm: await withAiForFirm("org_x", () => resolveAiCredentials()),
+      };
+    });
+    expect(inScope.direct).toMatchObject({ source: "firm", apiKey: "key-x" });
+    expect(inScope.declaredFirm).toMatchObject({ source: "firm", apiKey: "key-x" });
+    expect(mockGetConnection).toHaveBeenCalledWith("org_x", "azure_openai");
+
+    // Outside the scope the same call has no org again: nothing leaked.
+    await expect(resolveAiCredentials()).rejects.toThrow("ai_no_firm_context");
   });
 });
 

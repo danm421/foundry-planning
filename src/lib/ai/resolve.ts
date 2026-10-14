@@ -45,6 +45,20 @@ export function withAiForFirm<T>(firmId: string, fn: () => T): T {
   return dataFirmScope.run(firmId, fn);
 }
 
+/** The verified org of a caller with no Clerk session, for this async context. */
+const callerOrgScope = new AsyncLocalStorage<string>();
+
+/**
+ * Run `fn` as a caller from `orgId` when there is no Clerk session to read it
+ * from: the Claude connector, whose bearer token is verified in
+ * src/lib/mcp/principal.ts. Server code sets it ONLY from such a verified
+ * principal — never from request or model input. Inside it, every AI call
+ * resolves exactly as it would for a signed-in caller from that org.
+ */
+export function withAiCallerOrg<T>(orgId: string, fn: () => T): T {
+  return callerOrgScope.run(orgId, fn);
+}
+
 /** Keeps a repeat AI call from costing a database round trip. Bounded by TTL
  *  rather than invalidation because several serverless instances may hold their
  *  own copy — an explicit clear only reaches the instance that ran the mutation. */
@@ -148,7 +162,8 @@ function firmCredentials(conn: { accessToken: string | null; scope: string | nul
 }
 
 /**
- * The caller's Clerk org, or null when there isn't one.
+ * The caller's org — set by withAiCallerOrg for a caller with no session, else
+ * the Clerk session's — or null when there isn't one.
  *
  * MEASURED, not assumed: outside a request `auth()` THROWS rather than
  * returning a null org. Under `npx tsx` — the world scripts/ingest-planning-kb.ts
@@ -163,6 +178,10 @@ function firmCredentials(conn: { accessToken: string | null; scope: string | nul
  * whose auth() fails transiently never falls back to our key.
  */
 async function currentOrgId(): Promise<string | null> {
+  // A session-less caller's verified org (withAiCallerOrg) comes first: there
+  // is no session for auth() to read on that path.
+  const callerOrg = callerOrgScope.getStore();
+  if (callerOrg !== undefined) return callerOrg;
   try {
     return (await auth()).orgId ?? null;
   } catch {

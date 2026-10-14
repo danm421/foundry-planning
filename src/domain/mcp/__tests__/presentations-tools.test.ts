@@ -155,6 +155,10 @@ describe("generate_presentation", () => {
         auditActorId: "u1",
         auditMetadata: {},
         via: "claude",
+        // No session behind the connector: its AI commentary resolves for the
+        // token's verified firm, and no deck renders without a run to poll.
+        aiCallerOrgId: "org_1",
+        requireRun: true,
       }),
     );
     const body = queuedBody();

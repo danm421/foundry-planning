@@ -148,10 +148,16 @@ const generatePresentation = defineWriteTool({
       body,
       triggeredBy: principal.userId,
       triggeredByEmail: null,
-      // No session behind a connector call: the advisor is named explicitly.
+      // No session behind a connector call: the advisor is named explicitly,
+      // and the AI commentary resolves for the token's verified firm (the
+      // client's own — the guard refuses a cross-firm client).
       auditActorId: principal.userId,
       auditMetadata: {},
       via: "claude",
+      aiCallerOrgId: firmId,
+      // Claude polls by runId: a deck with no run would be unfindable, and the
+      // retry the unavailable answer invites would render it twice.
+      requireRun: true,
     });
     if (!runId) throw new McpUnavailableError();
 
