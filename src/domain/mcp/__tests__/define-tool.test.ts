@@ -229,6 +229,15 @@ describe("defineTool", () => {
       openWorldHint: false,
     });
   });
+
+  // The switch's column defaults to false: a read tool that consulted it would
+  // stop working for every firm that never turned Claude's changes on.
+  it("runs a read tool with the firm's write switch off, never consulting the switch", async () => {
+    firmClaudeWritesEnabled.mockResolvedValue(false);
+    await expect(tool.run({ clientId: "c1" }, principal)).resolves.toMatchObject({ accountNumber: "••••5678" });
+    expect(handlerSpy).toHaveBeenCalledTimes(1);
+    expect(firmClaudeWritesEnabled).not.toHaveBeenCalled();
+  });
 });
 
 describe("householdId is guarded from the schema, like clientId", () => {
