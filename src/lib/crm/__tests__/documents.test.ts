@@ -42,6 +42,7 @@ import { put, del } from "@vercel/blob";
 import {
   uploadCrmDocument,
   listCrmDocuments,
+  countDocumentsByFolder,
   deleteCrmDocument,
   updateCrmDocument,
   resolveDocumentBlobPathname,
@@ -211,6 +212,35 @@ describe("listCrmDocuments", () => {
     await expect(listCrmDocuments(otherHh.id)).rejects.toThrow(
       /not found or access denied/,
     );
+  });
+});
+
+describe("countDocumentsByFolder", () => {
+  it("counts what each folder's listing shows; unfiled documents count under root", async () => {
+    const [folder] = await db.insert(crmDocumentFolders).values({
+      householdId, firmId: ORG, name: "Statements", isSystem: false, sortOrder: 0,
+    }).returning();
+    await uploadCrmDocument(householdId, makeFile("a.pdf", 16), { folderId: folder.id });
+    await uploadCrmDocument(householdId, makeFile("b.pdf", 16), { folderId: folder.id });
+    await uploadCrmDocument(householdId, makeFile("c.pdf", 16));
+    // A superseded plan version is hidden from the listing, so it isn't counted.
+    await db.insert(crmHouseholdDocuments).values({
+      householdId, filename: "old.pdf", storageProvider: "vercel-blob", storageKey: "k-old",
+      folderId: folder.id, sourceKind: "generated_plan", isCurrentVersion: false,
+    });
+    // Another household's documents never count.
+    const other = await makeHousehold(ORG, "Other");
+    await uploadCrmDocument(other.id, makeFile("d.pdf", 16));
+
+    const counts = await countDocumentsByFolder(householdId);
+    expect(counts).toEqual({ [folder.id]: 2, root: 1 });
+    expect(counts[folder.id]).toBe((await listCrmDocuments(householdId, { folderId: folder.id })).length);
+    expect(counts.root).toBe((await listCrmDocuments(householdId, { folderId: null })).length);
+  });
+
+  it("rejects another firm's household", async () => {
+    const otherHh = await makeHousehold(OTHER_ORG, "Other Firm Household");
+    await expect(countDocumentsByFolder(otherHh.id)).rejects.toThrow(/not found or access denied/);
   });
 });
 

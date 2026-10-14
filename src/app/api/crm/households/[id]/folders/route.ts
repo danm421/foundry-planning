@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { listFolders, createFolder } from "@/lib/crm/folders";
+import { countDocumentsByFolder } from "@/lib/crm/documents";
 import { authErrorResponse } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
@@ -30,8 +31,8 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const folders = await listFolders(id);
-    return NextResponse.json({ folders });
+    const [folders, docCounts] = await Promise.all([listFolders(id), countDocumentsByFolder(id)]);
+    return NextResponse.json({ folders, docCounts });
   } catch (err) {
     return mapError(err);
   }

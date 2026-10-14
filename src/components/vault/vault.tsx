@@ -13,10 +13,7 @@ export default function Vault({ householdId }: Props) {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [historyDocId, setHistoryDocId] = useState<string | null>(null);
 
-  const { folders, docs, loading, error, reloadFolders, reloadDocs } = useVaultData(
-    householdId,
-    selectedFolderId,
-  );
+  const { folders, docCounts, docs, error, reload } = useVaultData(householdId, selectedFolderId);
 
   // Breadcrumb path: walk the selected folder up its parent chain to the root.
   const path = useMemo<VaultFolder[]>(() => {
@@ -81,27 +78,28 @@ export default function Vault({ householdId }: Props) {
 
       {/* Two panes */}
       <div className="flex min-h-0 flex-1">
-        <aside className="w-[260px] shrink-0 overflow-hidden border-r border-hair">
+        <aside className="w-[280px] shrink-0 overflow-hidden border-r border-hair">
           <FolderTreePane
             householdId={householdId}
             folders={folders}
+            docCounts={docCounts}
             selectedFolderId={selectedFolderId}
             onSelect={setSelectedFolderId}
-            onMutated={reloadFolders}
+            onMutated={reload}
           />
         </aside>
         <main className="min-w-0 flex-1">
-          {loading && docs.length === 0 ? (
-            <p className="px-5 py-6 text-[13px] text-ink-3">Loading…</p>
-          ) : (
+          {docs ? (
             <FolderContentsPane
               householdId={householdId}
               selectedFolderId={selectedFolderId}
               folders={folders}
               docs={docs}
-              onMutated={reloadDocs}
+              onMutated={reload}
               onOpenHistory={setHistoryDocId}
             />
+          ) : (
+            !error && <p className="px-5 py-6 text-[13px] text-ink-3">Loading…</p>
           )}
         </main>
       </div>
