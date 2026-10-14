@@ -7,7 +7,18 @@ import type { Account, ClientData, Expense, Income, Liability } from "@/engine/t
 import type { SolverMutation } from "@/lib/solver/types";
 import { changeError } from "./errors";
 
-export type Ctx = { tree: ClientData; index: number; newId: () => string };
+/** The plan's category growth defaults as the loader resolves them
+ *  (`resolutionContext.resolver.resolveCategoryDefault("taxable" | "retirement"
+ *  | "cash" | "real_estate").rate`). The raw `planSettings.defaultGrowth*`
+ *  columns equal these only when that category's growth source is "custom". */
+export interface GrowthDefaults {
+  taxable: number;
+  retirement: number;
+  cash: number;
+  realEstate: number;
+}
+
+export type Ctx = { tree: ClientData; index: number; newId: () => string; growthDefaults?: GrowthDefaults };
 export type One = { mutations: SolverMutation[]; recordId: string | null };
 
 export function fail(ctx: Ctx, message: string): never {

@@ -214,6 +214,64 @@ describe("relocation, pay_off_debt, add_*, remove", () => {
   });
 });
 
+describe("resolved growth defaults", () => {
+  // Raw plan-settings columns that differ from the resolved defaults, so a pass
+  // proves the resolved rate wins over the column, not just over a fallback.
+  function treeWithRawDefaults() {
+    const tree = whatIfTree();
+    tree.planSettings = {
+      ...tree.planSettings,
+      defaultGrowthTaxable: 0.09,
+      defaultGrowthRetirement: 0.08,
+      defaultGrowthCash: 0.05,
+      defaultGrowthRealEstate: 0.07,
+    };
+    return tree;
+  }
+  const growthDefaults = { taxable: 0.061, retirement: 0.062, cash: 0.021, realEstate: 0.034 };
+  const purchase: WhatIfChange = {
+    type: "asset_purchase",
+    name: "Cabin",
+    propertyType: "primary_residence",
+    year: 2028,
+    purchasePrice: 300_000,
+  };
+  const rateOf = (m: ReturnType<typeof run>["mutations"][number]) => {
+    if (m.kind === "account-upsert" && m.value) return m.value.growthRate;
+    if (m.kind === "asset-transaction-upsert" && m.value) return m.value.growthRate;
+    throw new Error("wrong mutation");
+  };
+  const translate = (change: WhatIfChange, withDefaults: boolean) =>
+    rateOf(
+      translateChanges(treeWithRawDefaults(), [change], () => NEW, withDefaults ? { growthDefaults } : undefined)
+        .mutations[0],
+    );
+  const account = (accountType: "taxable" | "ira" | "roth_ira" | "cash", growthRate?: number): WhatIfChange => ({
+    type: "add_account",
+    accountType,
+    owner: "client",
+    balance: 1,
+    growthRate,
+  });
+
+  it("uses the passed-in category default over the raw plan-settings column", () => {
+    expect(translate(account("taxable"), true)).toBe(0.061);
+    expect(translate(account("ira"), true)).toBe(0.062);
+    expect(translate(account("roth_ira"), true)).toBe(0.062);
+    expect(translate(account("cash"), true)).toBe(0.021);
+    expect(translate(purchase, true)).toBe(0.034);
+  });
+
+  it("falls back to the raw column without them, and an explicit rate beats both", () => {
+    expect(translate(account("taxable"), false)).toBe(0.09);
+    expect(translate(account("ira"), false)).toBe(0.08);
+    expect(translate(account("cash"), false)).toBe(0.05);
+    expect(translate(purchase, false)).toBe(0.07);
+    expect(translate(account("taxable", 0.04), true)).toBe(0.04);
+    expect(translate({ ...purchase, growthRate: 0.04 }, true)).toBe(0.04);
+  });
+});
+
 // Review Focus 1: every id the model supplies is looked up in THIS household's
 // tree before a mutation is built. One row per id-bearing field.
 describe("an id from another household", () => {

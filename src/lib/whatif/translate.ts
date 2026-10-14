@@ -13,6 +13,7 @@ import type { SolverMutation } from "@/lib/solver/types";
 import type { WhatIfChange } from "./changes";
 import {
   type Ctx,
+  type GrowthDefaults,
   type One,
   fail,
   one,
@@ -32,15 +33,24 @@ export interface TranslateResult {
   recordIds: (string | null)[];
 }
 
+export type { GrowthDefaults };
+
+export interface TranslateOptions {
+  /** Resolved category growth defaults. When absent, a new account or purchase
+   *  without a growthRate falls back to the raw plan-settings columns. */
+  growthDefaults?: GrowthDefaults;
+}
+
 export function translateChanges(
   tree: ClientData,
   changes: WhatIfChange[],
   newId: () => string = () => crypto.randomUUID(),
+  opts: TranslateOptions = {},
 ): TranslateResult {
   const mutations: SolverMutation[] = [];
   const recordIds: (string | null)[] = [];
   changes.forEach((change, index) => {
-    const ctx: Ctx = { tree, index, newId };
+    const ctx: Ctx = { tree, index, newId, growthDefaults: opts.growthDefaults };
     const out = translateOne(change, ctx);
     for (const m of out.mutations) {
       const check = SOLVER_MUTATION_SCHEMA.safeParse(m);

@@ -172,7 +172,8 @@ export function translateTechnique(change: TechniqueChange, ctx: Ctx): One {
         assetSubType: change.propertyType,
         purchasePrice: change.purchasePrice,
         basis: change.purchasePrice,
-        growthRate: change.growthRate ?? ps.defaultGrowthRealEstate ?? ps.inflationRate,
+        growthRate:
+          change.growthRate ?? ctx.growthDefaults?.realEstate ?? ps.defaultGrowthRealEstate ?? ps.inflationRate,
         ...(change.fundingAccountId !== undefined ? { fundingAccountId: change.fundingAccountId } : {}),
         ...(change.mortgageAmount
           ? {
@@ -307,12 +308,14 @@ export function translateTechnique(change: TechniqueChange, ctx: Ctx): One {
       const startYear = change.savingsStartYear ?? ps.planStartYear;
       const endYear = change.savingsEndYear ?? retirementYear(ctx.tree, change.owner);
       if (savings > 0) requireYearRange(ctx, startYear, endYear);
-      const defaultGrowth =
-        change.accountType === "cash"
-          ? ps.defaultGrowthCash
-          : change.accountType === "taxable"
-            ? ps.defaultGrowthTaxable
-            : ps.defaultGrowthRetirement;
+      const category =
+        change.accountType === "cash" ? "cash" : change.accountType === "taxable" ? "taxable" : "retirement";
+      const rawDefault = {
+        cash: ps.defaultGrowthCash,
+        taxable: ps.defaultGrowthTaxable,
+        retirement: ps.defaultGrowthRetirement,
+      }[category];
+      const defaultGrowth = ctx.growthDefaults?.[category] ?? rawDefault;
       const accountId = ctx.newId();
       const ruleId = ctx.newId();
       const { account, rule } = buildQuickAddAccount({
