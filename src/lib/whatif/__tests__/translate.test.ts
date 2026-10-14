@@ -1,8 +1,9 @@
 // src/lib/whatif/__tests__/translate.test.ts
 import { describe, it, expect, vi } from "vitest";
 import type { ClientData } from "@/engine/types";
+import type { ResolutionContext } from "@/lib/projection/resolve-entity";
 import { applyMutations } from "@/lib/solver/apply-mutations";
-import { translateChanges } from "../translate";
+import { growthDefaultsFrom, translateChanges } from "../translate";
 import { WhatIfValidationError } from "../errors";
 import type { WhatIfChange } from "../changes";
 import { IDS, whatIfTree } from "./fixtures";
@@ -176,5 +177,17 @@ describe("whatIfTree", () => {
     const tree = whatIfTree();
     const { mutations } = translateChanges(tree, [{ type: "retirement_age", person: "client", age: 60 }]);
     expect(salaryEnd(applyMutations(tree, mutations))).toBe(salaryEnd(tree) - 5);
+  });
+});
+
+describe("growthDefaultsFrom", () => {
+  it("reads each category's resolved default, and gives none without a context", () => {
+    const rates: Record<string, number> = { taxable: 0.061, retirement: 0.062, cash: 0.021, real_estate: 0.034 };
+    const ctx = {
+      resolvedInflationRate: 0.03,
+      resolver: { resolveCategoryDefault: (category: string) => ({ rate: rates[category] }) },
+    } as unknown as ResolutionContext;
+    expect(growthDefaultsFrom(ctx)).toEqual({ taxable: 0.061, retirement: 0.062, cash: 0.021, realEstate: 0.034 });
+    expect(growthDefaultsFrom(undefined)).toBeUndefined();
   });
 });

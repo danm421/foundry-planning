@@ -8,6 +8,7 @@
 // engine. Techniques (records built server-side) live in translate-techniques.ts.
 import type { ClientData, Income } from "@/engine/types";
 import { coerceYearRef, type YearRef } from "@/lib/milestones";
+import type { ResolutionContext } from "@/lib/projection/resolve-entity";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import type { SolverMutation } from "@/lib/solver/types";
 import type { WhatIfChange } from "./changes";
@@ -39,6 +40,20 @@ export interface TranslateOptions {
   /** Resolved category growth defaults. When absent, a new account or purchase
    *  without a growthRate falls back to the raw plan-settings columns. */
   growthDefaults?: GrowthDefaults;
+}
+
+/** The loader's resolved category growth defaults, as the Solver screen reads
+ *  them (solver-content.tsx). No context, no defaults: translate then falls
+ *  back to the raw plan-settings columns. */
+export function growthDefaultsFrom(ctx?: ResolutionContext): GrowthDefaults | undefined {
+  if (!ctx) return undefined;
+  const rate = (category: string) => ctx.resolver.resolveCategoryDefault(category).rate;
+  return {
+    taxable: rate("taxable"),
+    retirement: rate("retirement"),
+    cash: rate("cash"),
+    realEstate: rate("real_estate"),
+  };
 }
 
 export function translateChanges(
