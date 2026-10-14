@@ -16,7 +16,8 @@ import { partitionBuiltInRows } from "@/lib/presentations/builtin-templates";
 import { listDismissedSlugs } from "@/lib/presentations/builtin-templates-repo";
 import { DISCLOSURES_HEADING, longDisclaimerParagraphs, SHORT_DISCLAIMER } from "@/lib/presentations/disclaimers";
 import { dateLong } from "@/lib/presentations/format";
-import { queuePresentationRun } from "@/lib/presentations/queue-run";
+import { queuePresentationRun, recordUnreviewedStoryAudits } from "@/lib/presentations/queue-run";
+import { unreviewedStoryChapters, type UnreviewedStoryPage } from "@/lib/presentations/story/export-gate";
 import { loadPlanFacts } from "@/lib/presentations/suggestions/load-plan-facts";
 import { scoreReports } from "@/lib/presentations/suggestions/score-reports";
 import { listTemplatesForUser } from "@/lib/presentations/templates-repo";
@@ -49,6 +50,17 @@ export const RENDER_FAILED_MESSAGE =
   "The deck couldn't be generated. Try again, or build it on the Presentations page in Foundry.";
 export const DECK_NOT_SAVED_MESSAGE =
   "The deck rendered but couldn't be saved to the household's documents. Generate it again.";
+
+/** The soft export gate's warning, one per Plan Story page with chapters no
+ *  advisor has reviewed — for a deck Foundry renders or one Claude builds. */
+function unreviewedStoryNotes(storyReview: UnreviewedStoryPage[]): string[] {
+  return storyReview
+    .filter((s) => s.unreviewed > 0)
+    .map(
+      (s) =>
+        `The Plan Story has ${s.unreviewed} of ${s.total} chapters no advisor has reviewed yet. Tell the advisor before they share the deck.`,
+    );
+}
 
 const clientIdArg = z
   .string()
@@ -166,12 +178,7 @@ const generatePresentation = defineWriteTool({
     });
     if (!runId) throw new McpUnavailableError();
 
-    const notes = storyReview
-      .filter((s) => s.unreviewed > 0)
-      .map(
-        (s) =>
-          `The Plan Story has ${s.unreviewed} of ${s.total} chapters no advisor has reviewed yet. Tell the advisor before they share the deck.`,
-      );
+    const notes = unreviewedStoryNotes(storyReview);
     return {
       runId,
       status: "queued" as const,
@@ -225,7 +232,7 @@ const getPresentationStatus = defineTool({
 });
 
 export const PAGE_TOO_LARGE_ADVICE =
-  "This page's data is too large for one call. Use get_projection_data with fewer sections or a shorter year range instead.";
+  "Use get_projection_data with fewer sections or a shorter year range instead.";
 
 const getReportPageData = defineTool({
   name: "get_report_page_data",
@@ -234,16 +241,18 @@ const getReportPageData = defineTool({
     "The exact data one standard Foundry deck page prints — the same numbers as the PDF sheet — for a deck you build " +
     "yourself. pageId comes from list_presentation_pages. scenarioId works as in generate_presentation: the page's " +
     "scenario, and the one a comparison page (needsScenario) compares with the base case. Logos and other images are " +
-    "left out: get the logo URL, brand colour and disclaimer text from get_branding. AI-written commentary is not " +
-    "included. A Monte Carlo or comparison page can take up to a minute the first time. For the engine's " +
-    "year-by-year output instead of a page, use get_projection_data.",
+    "left out: get the logo URL, brand colour and disclaimer text from get_branding. The commentary Foundry writes " +
+    "while rendering a deck (the AI summaries on the Retirement Comparison, Scenario Comparison and Investment " +
+    "Proposal pages) is not included. A Plan Story page's chapters are included as stored, and notes says when an " +
+    "advisor hasn't reviewed some of them. A Monte Carlo or comparison page can take up to a minute the first time. " +
+    "For the engine's year-by-year output instead of a page, use get_projection_data.",
   inputSchema: z.object({
     clientId: clientIdArg,
     pageId: z.string().min(1).max(60),
     scenarioId: z.string().optional().describe("A scenario from list_scenarios. Omit for the base case."),
   }),
   page: "presentations",
-  handler: async ({ clientId, pageId, scenarioId }, { firmId }) => {
+  handler: async ({ clientId, pageId, scenarioId }, { principal, firmId }) => {
     const entry = placePage({ pageId, scenarioId, deckScenarioId: scenarioId });
     const { body, plan } = buildDeckBody({ entries: [entry], deckScenarioId: scenarioId });
     await assertDeckRefsOwned(clientId, deckRefIds(body, plan));
@@ -254,7 +263,20 @@ const getReportPageData = defineTool({
       data: await buildReportPageData(clientId, firmId, body),
     };
     assertWithinSize(result, PAGE_TOO_LARGE_ADVICE);
-    return result;
+
+    // A Plan Story page hands over its stored chapters, reviewed or not: the
+    // soft export gate (story/export-gate.ts) warns and audits here as it does
+    // for a rendered deck. Filed now, as the data is about to go out.
+    const storyReview = await unreviewedStoryChapters(clientId, body.pages);
+    await recordUnreviewedStoryAudits({
+      storyReview,
+      clientId,
+      firmId,
+      actorId: principal.userId,
+      metadata: { via: "claude", tool: "get_report_page_data" },
+    });
+    const notes = unreviewedStoryNotes(storyReview);
+    return { ...result, ...(notes.length > 0 ? { notes } : {}) };
   },
 });
 
@@ -263,7 +285,8 @@ const getBranding = defineTool({
   title: "Get branding",
   description:
     "The household's brand, for a deck you build yourself: brandName (the firm, or the advisor's own brand when the " +
-    "household uses it), accentColor (hex), logoUrl (a public image URL, or null — then set the brand name as a " +
+    "household uses it), accentColor (hex), logoUrl (a public image URL, or null when the brand has no logo — " +
+    "Foundry's own decks print the Foundry logo then; choose what suits your deck, such as the brand name as a " +
     "wordmark), and Foundry's standard disclaimer text exactly as Foundry decks print it (a short footer line, a " +
     "heading and the long paragraphs). Foundry stores no firm-specific compliance disclosures: ask the advisor " +
     "whether their firm requires any.",

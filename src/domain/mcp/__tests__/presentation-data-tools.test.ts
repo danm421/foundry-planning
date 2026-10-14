@@ -2,8 +2,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const h = vi.hoisted(() => ({
-  // Rows the fake db answers with, by table — the ownership checks' two reads.
-  rows: { scenarios: [] as { id: string }[], scenario_snapshots: [] as { id: string }[] } as Record<string, unknown[]>,
+  // Rows the fake db answers with, by table — the ownership checks' two reads,
+  // and the Plan Story chapters the export gate counts.
+  rows: {
+    scenarios: [] as { id: string }[],
+    scenario_snapshots: [] as { id: string }[],
+    plan_story_chapters: [] as { chapterId: string; reviewedAt: Date | null }[],
+  } as Record<string, unknown[]>,
+  recordAudit: vi.fn(),
   buildReportPageData: vi.fn(),
   loadHouseholdBrand: vi.fn(),
   resolveBrandingForClient: vi.fn(),
@@ -31,14 +37,17 @@ vi.mock("@/lib/branding/resolve-for-client", () => ({
 }));
 vi.mock("@/lib/clients/get-client-with-contacts", () => ({ getClientWithContacts: h.getClientWithContacts }));
 vi.mock("@/lib/clients/authz", () => ({ verifyClientAccessFor: h.verifyClientAccessFor }));
-vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@/lib/audit", () => ({ recordAudit: h.recordAudit }));
 vi.mock("@/lib/rate-limit", () => ({
   checkMcpRateLimit: vi.fn().mockResolvedValue({ allowed: true, remaining: 1, reset: 0 }),
 }));
 
+import { PRESENTATION_PAGES } from "@/components/presentations/registry";
+import { planStoryOptionsSchema, printedChapters } from "@/lib/presentations/pages/plan-story/options-schema";
 import { presentationTools } from "../tools/presentations";
 import { MAX_RESPONSE_CHARS } from "../tools/projection-data";
 import { scenarioNotFoundMessage } from "../whatif-jobs";
+import { WhatIfValidationError } from "@/lib/whatif/errors";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 
 const principal: McpPrincipal = { userId: "u1", orgId: "org_1", orgRole: "org:member", scopes: [], tokenSubject: "u1" };
@@ -49,6 +58,8 @@ const FOREIGN = "99999999-9999-4999-8999-999999999999";
 beforeEach(() => {
   h.rows.scenarios = [{ id: OWNED }];
   h.rows.scenario_snapshots = [];
+  h.rows.plan_story_chapters = [];
+  h.recordAudit.mockReset().mockResolvedValue(undefined);
   h.buildReportPageData.mockReset().mockResolvedValue({ rows: [{ year: 2030, total: 1 }] });
   h.loadHouseholdBrand.mockReset().mockResolvedValue("firm");
   h.resolveBrandingForClient.mockReset().mockResolvedValue({
@@ -113,9 +124,70 @@ describe("get_report_page_data", () => {
     expect(h.buildReportPageData).not.toHaveBeenCalled();
   });
 
-  it("refuses data too large for one response, naming the narrower call", async () => {
+  it("refuses data too large for one response, naming the narrower call in one sentence", async () => {
     h.buildReportPageData.mockResolvedValue({ blob: "x".repeat(MAX_RESPONSE_CHARS) });
-    await expect(pageData({ pageId: "cashFlow" })).rejects.toThrow(/get_projection_data with fewer sections/);
+    await expect(pageData({ pageId: "cashFlow" })).rejects.toThrow(
+      new WhatIfValidationError(
+        "That's more data than one call can return. Use get_projection_data with fewer sections or a shorter year range instead.",
+      ),
+    );
+  });
+
+  // The Plan Story's stored chapter text reaches Claude's own deck whether or
+  // not an advisor reviewed it, so the soft export gate's warning and audit
+  // apply here exactly as they do to a generated deck.
+  describe("a Plan Story page", () => {
+    const printed = printedChapters(planStoryOptionsSchema.parse(PRESENTATION_PAGES.planStory.defaultOptions));
+    const storyAudits = () =>
+      h.recordAudit.mock.calls.map((c) => c[0]).filter((a) => a.action === "plan_story.exported_unreviewed");
+
+    it("warns about chapters no advisor has reviewed, and files the export gate's audit as the advisor", async () => {
+      h.rows.plan_story_chapters = [{ chapterId: printed[0], reviewedAt: new Date("2026-10-01") }];
+      const out = await pageData({ pageId: "planStory" });
+      const unreviewed = printed.length - 1;
+      expect(out.notes).toEqual([
+        `The Plan Story has ${unreviewed} of ${printed.length} chapters no advisor has reviewed yet. Tell the advisor before they share the deck.`,
+      ]);
+      expect(storyAudits()).toEqual([
+        {
+          action: "plan_story.exported_unreviewed",
+          resourceType: "client",
+          resourceId: "c1",
+          clientId: "c1",
+          firmId: "org_1",
+          actorId: "u1",
+          metadata: {
+            via: "claude",
+            tool: "get_report_page_data",
+            pageId: "planStory",
+            scenarioId: "base",
+            documentRole: "standalone",
+            unreviewed,
+            total: printed.length,
+          },
+        },
+      ]);
+    });
+
+    it("says nothing and files no story audit when every chapter is reviewed", async () => {
+      h.rows.plan_story_chapters = printed.map((chapterId) => ({ chapterId, reviewedAt: new Date("2026-10-01") }));
+      const out = await pageData({ pageId: "planStory" });
+      expect(out).not.toHaveProperty("notes");
+      expect(storyAudits()).toEqual([]);
+    });
+  });
+
+  it("adds no story note or audit to any other page", async () => {
+    const out = await pageData({ pageId: "cashFlow" });
+    expect(out).not.toHaveProperty("notes");
+    expect(h.recordAudit.mock.calls.map((c) => c[0].action)).toEqual(["mcp.tool_call"]);
+  });
+
+  it("says the Plan Story's chapters come as stored, and only render-time commentary is left out", () => {
+    const d = byName("get_report_page_data").description;
+    expect(d).not.toContain("AI-written commentary is not included");
+    expect(d).toMatch(/Plan Story/);
+    expect(d).toMatch(/Investment Proposal/);
   });
 });
 
@@ -140,5 +212,13 @@ describe("get_branding", () => {
     h.resolveIntakeBrandingForClient.mockResolvedValue(null);
     const out = (await byName("get_branding").run({ clientId: "c1" }, principal)) as { logoUrl: string | null };
     expect(out.logoUrl).toBeNull();
+  });
+
+  // render-presentation-pdf.ts prints the Foundry logo when the brand has none;
+  // the description says so and leaves the choice to Claude.
+  it("says what Foundry's own decks do without a logo, without dictating a wordmark", () => {
+    const d = byName("get_branding").description;
+    expect(d).toMatch(/Foundry's own decks print the Foundry logo/);
+    expect(d).not.toMatch(/then set the brand name as a wordmark/);
   });
 });
