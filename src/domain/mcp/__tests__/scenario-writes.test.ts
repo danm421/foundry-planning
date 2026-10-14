@@ -64,6 +64,21 @@ describe("save_what_if_as_scenario", () => {
     expect(h.saveSolverScenario).toHaveBeenCalledWith(expect.objectContaining({ source: START }));
   });
 
+  it("refuses another household's starting scenario before loading, saving or auditing anything", async () => {
+    const refusal = new WhatIfValidationError(
+      `Scenario ${START} isn't one of this household's scenarios. Use list_scenarios for ids.`,
+    );
+    h.assertScenarioOfClient.mockRejectedValue(refusal);
+    const err = await tool
+      .run({ clientId: "c1", scenarioId: START, name: "x", changes: [retire62] }, principal)
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(WhatIfValidationError);
+    expect((err as Error).message).toBe(refusal.message);
+    expect(h.loadEffectiveTree).not.toHaveBeenCalled();
+    expect(h.saveSolverScenario).not.toHaveBeenCalled();
+    expect(h.recordAudit).not.toHaveBeenCalled();
+  });
+
   it("gives a new account the household's resolved growth default, as the Solver's quick-add does", async () => {
     const resolutionContext = {
       resolver: {

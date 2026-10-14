@@ -27,8 +27,8 @@ const saveWhatIfAsScenario = defineWriteTool({
     "compare_scenarios, or put it in a deck with generate_presentation. Pass the same changes (and the same starting " +
     "scenarioId) you ran with try_what_if — and only after the advisor has seen the result and asked to keep it. " +
     "This creates a new scenario only: the base plan and every existing scenario stay exactly as they are. Needs the " +
-    "firm's 'Let Claude make changes' setting (a firm admin turns it on in Settings → Firm) and edit access to the " +
-    "household. Returns the new scenarioId and scenarioUrl, a Foundry link that opens the Solver on it.",
+    "firm's 'Claude connector changes' setting turned on (a firm admin does this in Settings → Firm) and edit access " +
+    "to the household. Returns the new scenarioId and scenarioUrl, a Foundry link that opens the Solver on it.",
   inputSchema: z.object({
     clientId: z
       .string()
