@@ -329,6 +329,17 @@ const accountFields = {
     .union([z.number(), z.string()])
     .optional()
     .describe("Margin call warning level as a decimal, default 0.3"),
+  marginBorrowEnabled: z
+    .boolean()
+    .optional()
+    .describe("Taxable only: cover spending shortfalls by borrowing on margin (after cash, before any sale, up to half the securities)"),
+  marginBorrowStartYear: z.number().int().nullable().optional().describe("First year the plan may borrow on margin; null = plan start"),
+  marginRepayYear: z
+    .number()
+    .int()
+    .nullable()
+    .optional()
+    .describe("Year the plan sells securities to pay the margin loan off; null = never. Must be after marginBorrowStartYear when borrowing"),
   growthRate: z
     .union([z.number(), z.string()])
     .nullable()

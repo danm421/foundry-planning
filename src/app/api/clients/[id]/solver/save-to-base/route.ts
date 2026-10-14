@@ -163,6 +163,13 @@ function marginLoanFields(a: Account) {
     marginBalance: decOrZero(a.marginBalance),
     marginInterestRate: decOrZero(a.marginInterestRate),
     marginCallPct: String(a.marginCallPct ?? DEFAULT_MARGIN_CALL_PCT),
+    // The switch needs a taxable account (`accounts_margin_borrow_taxable_only`):
+    // a scenario that re-categorised the account must not 500 the save.
+    marginBorrowEnabled: a.marginBorrowEnabled === true && a.category === "taxable",
+    marginBorrowStartYear: a.marginBorrowStartYear ?? null,
+    marginBorrowStartYearRef: (a.marginBorrowStartYearRef ?? null) as typeof accounts.$inferInsert.marginBorrowStartYearRef,
+    marginRepayYear: a.marginRepayYear ?? null,
+    marginRepayYearRef: (a.marginRepayYearRef ?? null) as typeof accounts.$inferInsert.marginRepayYearRef,
   };
 }
 

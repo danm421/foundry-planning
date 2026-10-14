@@ -54,6 +54,17 @@ describe("newRowLines — account", () => {
     ]);
   });
 
+  it("shows the margin borrowing switch only when it is on", () => {
+    expect(newRowLines("account", { ...brokerageRow, marginBorrowEnabled: true })).toContain(
+      "Borrow to cover spending: Yes",
+    );
+    expect(newRowLines("account", { ...brokerageRow, marginBorrowEnabled: false })).not.toContain(
+      "Borrow to cover spending: Yes",
+    );
+    expect(fieldLabel("marginBorrowStartYear")).toBe("Borrow from");
+    expect(fieldLabel("marginRepayYear")).toBe("Repay margin loan in");
+  });
+
   it("never leaks a raw column name", () => {
     for (const line of newRowLines("account", brokerageRow)) {
       expect(line).not.toMatch(/[a-z][A-Z]/); // camelCase

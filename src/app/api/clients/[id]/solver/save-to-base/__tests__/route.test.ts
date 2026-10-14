@@ -361,6 +361,49 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     });
   });
 
+  it("writes the margin borrowing fields on insert, and forces the switch off for a non-taxable account", async () => {
+    const borrow = {
+      marginBorrowEnabled: true,
+      marginBorrowStartYear: 2028,
+      marginBorrowStartYearRef: null,
+      marginRepayYear: 2036,
+      marginRepayYearRef: null,
+    };
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [{ kind: "account-upsert", id: "synthetic-new", value: { ...ACCT, ...borrow } }],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    expect(inserts[0].values).toMatchObject(borrow);
+
+    inserts.length = 0;
+    const res2 = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [
+          { kind: "account-upsert", id: "synthetic-new", value: { ...ACCT, ...borrow, category: "cash", subType: "checking" } },
+        ],
+      }),
+      ctx as never,
+    );
+    expect(res2.status).toBe(200);
+    expect(inserts[0].values).toMatchObject({ marginBorrowEnabled: false, marginRepayYear: 2036 });
+
+    inserts.length = 0;
+    await POST(
+      makeRequest({ source: "base", mutations: [{ kind: "account-upsert", id: "synthetic-new", value: ACCT }] }),
+      ctx as never,
+    );
+    expect(inserts[0].values).toMatchObject({
+      marginBorrowEnabled: false,
+      marginBorrowStartYear: null,
+      marginRepayYear: null,
+    });
+  });
+
   it("writes margin loan fields on update, and loan-free defaults otherwise", async () => {
     vi.mocked(loadEffectiveTree).mockResolvedValue({
       effectiveTree: { accounts: [{ ...ACCT }], savingsRules: [] },

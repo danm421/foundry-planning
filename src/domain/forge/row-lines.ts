@@ -32,6 +32,9 @@ const LABELS: Record<string, string> = {
   marginBalance: "Margin loan balance",
   marginInterestRate: "Margin interest rate",
   marginCallPct: "Margin call level",
+  marginBorrowEnabled: "Borrow to cover spending",
+  marginBorrowStartYear: "Borrow from",
+  marginRepayYear: "Repay margin loan in",
   priorYearEndValue: "Prior year-end value",
   growthRate: "Growth rate",
   growthSource: "Growth",
@@ -289,6 +292,7 @@ function accountLines(row: Row): string[] {
   const growth = growthLine(row);
   if (growth) out.push(growth);
   if (row.rmdEnabled === true) out.push("RMDs: Yes");
+  if (row.marginBorrowEnabled === true) out.push("Borrow to cover spending: Yes");
   return out;
 }
 

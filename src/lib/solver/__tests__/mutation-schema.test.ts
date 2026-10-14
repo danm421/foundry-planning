@@ -413,6 +413,36 @@ describe("SOLVER_MUTATION_SCHEMA — account-upsert categories", () => {
     expect(r.success).toBe(true);
   });
 
+  it("accepts the margin borrowing fields on an account-upsert", () => {
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "account-upsert",
+      id: "acc-1",
+      value: {
+        id: "acc-1",
+        name: "Brokerage",
+        category: "taxable",
+        subType: "brokerage",
+        value: 100000,
+        basis: 50000,
+        growthRate: 0.05,
+        rmdEnabled: false,
+        titlingType: "jtwros",
+        owners: [{ kind: "client", percent: 1 }],
+        marginBorrowEnabled: true,
+        marginBorrowStartYear: 2030,
+        marginBorrowStartYearRef: null,
+        marginRepayYear: null,
+        marginRepayYearRef: "client_retirement",
+      },
+    });
+    expect(r.success).toBe(true);
+    if (r.success && r.data.kind === "account-upsert") {
+      expect(r.data.value?.marginBorrowEnabled).toBe(true);
+      expect(r.data.value?.marginBorrowStartYear).toBe(2030);
+      expect(r.data.value?.marginRepayYearRef).toBe("client_retirement");
+    }
+  });
+
   // Ownerless accounts are a real state (e.g. "Household Cash", unowned Plaid
   // accounts). The revocable-trust lever upserts every probate-eligible account,
   // so the schema must accept an empty owners array or the recompute 400s.
