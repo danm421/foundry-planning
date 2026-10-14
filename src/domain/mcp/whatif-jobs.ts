@@ -4,7 +4,7 @@
 // compute limit, and running heavy work as a background job that outlives the
 // tool call (src/lib/whatif/job-store.ts). The pure half is src/lib/whatif/.
 import { after } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { scenarios } from "@/db/schema";
@@ -19,18 +19,36 @@ import { getJobKv, newJob, saveJob, type WhatIfJob } from "@/lib/whatif/job-stor
 import type { RunDeps } from "@/lib/whatif/run";
 import { McpRateLimitedError, McpUnavailableError } from "./define-tool";
 
+/** The one refusal for a scenario id that isn't this household's. */
+export function scenarioNotFoundMessage(id: string): string {
+  return `Scenario ${id} isn't one of this household's scenarios. Use list_scenarios for ids.`;
+}
+
+/**
+ * A model-supplied scenario id that isn't one of THIS client's scenarios, or
+ * null when every one is: any id that isn't a uuid, named without a query;
+ * otherwise the first id the client doesn't own, from one query for the lot
+ * (none for an empty list). Each caller throws its own error class with
+ * scenarioNotFoundMessage.
+ */
+export async function firstForeignScenario(clientId: string, ids: string[]): Promise<string | null> {
+  const notUuid = ids.find((id) => !z.string().uuid().safeParse(id).success);
+  if (notUuid !== undefined) return notUuid;
+  if (ids.length === 0) return null;
+  const rows = await db
+    .select({ id: scenarios.id })
+    .from(scenarios)
+    .where(and(eq(scenarios.clientId, clientId), inArray(scenarios.id, ids)));
+  const owned = new Set(rows.map((r) => r.id));
+  return ids.find((id) => !owned.has(id)) ?? null;
+}
+
 /** A model-supplied scenario id must be one of THIS client's scenarios. */
 export async function assertScenarioOfClient(clientId: string, scenarioId: string): Promise<void> {
   if (scenarioId === "base") return;
-  const refuse = () =>
-    new WhatIfValidationError(`Scenario ${scenarioId} isn't one of this household's scenarios. Use list_scenarios for ids.`);
-  if (!z.string().uuid().safeParse(scenarioId).success) throw refuse();
-  const [row] = await db
-    .select({ id: scenarios.id })
-    .from(scenarios)
-    .where(and(eq(scenarios.id, scenarioId), eq(scenarios.clientId, clientId)))
-    .limit(1);
-  if (!row) throw refuse();
+  if ((await firstForeignScenario(clientId, [scenarioId])) !== null) {
+    throw new WhatIfValidationError(scenarioNotFoundMessage(scenarioId));
+  }
 }
 
 export async function buildRunDeps(clientId: string, firmId: string, scenario: string): Promise<RunDeps> {

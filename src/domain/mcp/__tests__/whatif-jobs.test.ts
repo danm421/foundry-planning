@@ -15,22 +15,22 @@ vi.mock("@/lib/whatif/job-store", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/whatif/job-store")>()),
   getJobKv: h.getJobKv,
 }));
-// A fake database: select().from().where(cond).limit() resolves to h.rows,
-// and the where-condition is kept so a test can read what it scoped on.
+// A fake database: select().from().where(cond) resolves to h.rows, and the
+// where-condition is kept so a test can read what it scoped on.
 vi.mock("@/db", () => ({
   db: {
     select: h.select.mockImplementation(() => ({
       from: () => ({
-        where: (cond: SQL) => {
+        where: async (cond: SQL) => {
           h.where(cond);
-          return { limit: async () => h.rows };
+          return h.rows;
         },
       }),
     })),
   },
 }));
 
-import { assertScenarioOfClient, startWhatIfJob } from "../whatif-jobs";
+import { assertScenarioOfClient, firstForeignScenario, startWhatIfJob } from "../whatif-jobs";
 import { McpUnavailableError } from "../define-tool";
 import { WhatIfValidationError } from "@/lib/whatif/errors";
 import type { JobKv, WhatIfJob } from "@/lib/whatif/job-store";
@@ -154,5 +154,31 @@ describe("assertScenarioOfClient", () => {
     await expect(assertScenarioOfClient("c1", OWNED)).resolves.toBeUndefined();
     const { params } = new PgDialect().sqlToQuery(h.where.mock.calls[0][0] as SQL);
     expect(params).toEqual(expect.arrayContaining([OWNED, "c1"]));
+  });
+});
+
+describe("firstForeignScenario", () => {
+  const MINE = "22222222-2222-4222-8222-222222222222";
+  const THEIRS = "33333333-3333-4333-8333-333333333333";
+
+  it("asks nothing for an empty list", async () => {
+    expect(await firstForeignScenario("c1", [])).toBeNull();
+    expect(h.select).not.toHaveBeenCalled();
+  });
+
+  it("names an id that isn't a uuid, without a query", async () => {
+    expect(await firstForeignScenario("c1", [MINE, "scenario-1"])).toBe("scenario-1");
+    expect(h.select).not.toHaveBeenCalled();
+  });
+
+  it("checks every id in one query scoped to the client, naming the first that isn't this client's", async () => {
+    h.rows = [{ id: MINE }];
+    expect(await firstForeignScenario("c1", [MINE, THEIRS])).toBe(THEIRS);
+    expect(h.select).toHaveBeenCalledTimes(1);
+    const { params } = new PgDialect().sqlToQuery(h.where.mock.calls[0][0] as SQL);
+    expect(params).toEqual(expect.arrayContaining(["c1", MINE, THEIRS]));
+
+    h.rows = [{ id: MINE }, { id: THEIRS }];
+    expect(await firstForeignScenario("c1", [MINE, THEIRS])).toBeNull();
   });
 });
