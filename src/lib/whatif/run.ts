@@ -222,9 +222,20 @@ async function runSolve(deps: RunDeps, v: PreparedVariant, working: ClientData):
   return { kind: s.kind, value: r.solvedValue, status: r.status, achievedSuccess: r.achievedPoS };
 }
 
+/** The one way a what-if's mutations become a working tree: apply them, then
+ *  resolve technique mutations when a context exists. Shared so charts and
+ *  try_what_if can never disagree. */
+export function applyWhatIf(
+  tree: ClientData,
+  mutations: SolverMutation[],
+  resolutionContext?: ResolutionContext,
+): ClientData {
+  const applied = applyMutations(tree, mutations);
+  return resolutionContext ? resolveTechniqueMutations(applied, mutations, resolutionContext) : applied;
+}
+
 async function evaluate(deps: RunDeps, v: PreparedVariant, includeMonteCarlo: boolean): Promise<VariantResult> {
-  let working = applyMutations(deps.tree, v.mutations);
-  if (deps.resolutionContext) working = resolveTechniqueMutations(working, v.mutations, deps.resolutionContext);
+  const working = applyWhatIf(deps.tree, v.mutations, deps.resolutionContext);
   const projection = runProjectionWithEvents(working);
   const successRate = includeMonteCarlo ? await deps.monteCarloSuccess(v.mutations) : null;
   const solve = v.solveFor ? await runSolve(deps, v, working) : null;

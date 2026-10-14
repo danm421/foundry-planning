@@ -11,6 +11,14 @@ import {
   yearsFullyFunded,
 } from "@/lib/solver/solver-summary-metrics";
 
+/** The owner names estateHeirTotalsEol needs to tell the client's accounts from the spouse's. */
+export function heirOwnerNames(tree: ClientData): { clientName: string; spouseName: string | null } {
+  return {
+    clientName: `${tree.client.firstName} ${tree.client.lastName}`.trim(),
+    spouseName: tree.client.spouseName ?? null,
+  };
+}
+
 export interface WhatIfMetrics {
   /** Monte Carlo probability of success, 0–1. Null when Monte Carlo did not run — never 0. */
   successRate: number | null;
@@ -40,10 +48,7 @@ export function computeMetrics(
   successRate: number | null,
 ): WhatIfMetrics {
   const years = projection.years;
-  const heirs = estateHeirTotalsEol(projection, tree, {
-    clientName: `${tree.client.firstName} ${tree.client.lastName}`.trim(),
-    spouseName: tree.client.spouseName ?? null,
-  });
+  const heirs = estateHeirTotalsEol(projection, tree, heirOwnerNames(tree));
   return {
     successRate,
     endingPortfolio: years.at(-1)?.portfolioAssets.liquidTotal ?? 0,

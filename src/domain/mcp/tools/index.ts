@@ -5,6 +5,7 @@ import { planTools } from "./plan";
 import { analysisTools } from "./analysis";
 import { notesTools } from "./notes";
 import { whatifTools } from "./whatif";
+import { projectionDataTools } from "./projection-data";
 
 /**
  * Every tool the Foundry connector exposes. All read-only by construction —
@@ -12,7 +13,7 @@ import { whatifTools } from "./whatif";
  * annotations. This is the one place all four Task 8-11 tool arrays are
  * imported; `src/app/api/mcp/route.ts` mounts this array on the wire.
  *
- * 2 discovery + 4 household + 6 plan + 4 analysis + 2 notes + 3 what-if = 21.
+ * 2 discovery + 4 household + 6 plan + 4 analysis + 2 notes + 3 what-if + 1 projection data = 22.
  */
 export const ALL_MCP_TOOLS: McpTool[] = [
   ...discoveryTools,
@@ -21,4 +22,5 @@ export const ALL_MCP_TOOLS: McpTool[] = [
   ...analysisTools,
   ...notesTools,
   ...whatifTools,
+  ...projectionDataTools,
 ];
