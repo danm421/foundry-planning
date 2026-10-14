@@ -36,6 +36,20 @@ describe("personal-use share math (spec 2026-10-14)", () => {
     settleShareAfterRepayment(m, "c", 100_000, 0);
     expect(m).toEqual({ b: expect.closeTo(0.2, 12) });
   });
+  it("borrow, borrow, repay the personal part exactly ⇒ no share and no personal interest", () => {
+    // Without a threshold the share comes back as 1.46e-16 of float residue.
+    const balances = { b: 1_000_000 };
+    const loans: Record<string, number> = { b: 100_000 };
+    const shares: MarginShareMap = {};
+    for (const amount of [12_345.67, 100_000]) {
+      borrowOnMargin({ accountId: "b", amount, accountBalances: balances, marginMap: loans, shareMap: shares, ledger: undefined, checkingId: "chk" });
+    }
+    settleShareAfterRepayment(shares, "b", loans.b, loans.b - 112_345.67);
+    expect(shares).toEqual({});
+    const l = ledger(balances.b);
+    chargeMarginInterest(brokerage(), balances, { b: 100_000 }, l, shares.b ?? 0);
+    expect(l.marginInterestPersonal).toBeUndefined();
+  });
 });
 
 describe("borrowing headroom and eligibility", () => {

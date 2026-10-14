@@ -171,8 +171,10 @@ export const REG_T_INITIAL_MARGIN = 0.5;
  *  death path carries it on `Account.marginPersonalShare` (`withLiveMargin`). */
 export type MarginShareMap = Record<string, number>;
 
+/** A share at or below RATIO_EPSILON is float residue (a repayment of exactly
+ *  the personal-use dollars leaves ~1e-16), not personal-use debt. */
 function setShare(shareMap: MarginShareMap, id: string, share: number): void {
-  if (share > 0) shareMap[id] = share;
+  if (share > RATIO_EPSILON) shareMap[id] = share;
   else delete shareMap[id];
 }
 
