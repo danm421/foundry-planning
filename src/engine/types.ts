@@ -1891,6 +1891,18 @@ export interface MarginCallWarning {
   threshold: number;
 }
 
+/** A sale of a margined account's securities that paid its loan down (spec
+ *  2026-10-14): forced by a margin call, or the scheduled repay year. Lives
+ *  here, not in margin.ts, because margin.ts imports this module. */
+export interface MarginSale {
+  accountId: string;
+  reason: "call" | "repay";
+  /** Securities sold — equal to the loan repaid; net value is unchanged. */
+  sold: number;
+  /** Long-term gain (signed) realized by the sale, taxed this year. */
+  gain: number;
+}
+
 export interface ProjectionYear {
   year: number;
   ages: { client: number; spouse?: number };
@@ -2365,6 +2377,9 @@ export interface AccountLedger {
   /** Margin loan at the start / end of the year. Present only on margined accounts. */
   marginBoY?: number;
   marginEoY?: number;
+  /** The part of `marginInterest` charged on money borrowed for spending —
+   *  personal interest (§1.163-8T), never deducted. Present only when > 0. */
+  marginInterestPersonal?: number;
   /**
    * Itemized entries for everything that happened in this account this year,
    * in the order it was applied. Amounts are signed: positive = inflow, negative = outflow.
@@ -2408,7 +2423,10 @@ export interface AccountLedgerEntry {
     | "discretionary"
     | "surplus_transfer"
     | "surplus_retained"
-    | "margin_interest";
+    | "margin_interest"
+    | "margin_borrow"
+    | "margin_sale"
+    | "margin_paydown";
   label: string;
   amount: number;
   sourceId?: string;
