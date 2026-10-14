@@ -59,6 +59,13 @@ describe("translateChanges — simple levers", () => {
     );
   });
 
+  it("refuses income_years on a Social Security row, pointing to the claim age and life expectancy", () => {
+    const ssMessage =
+      "Change 1: Social Security starts at its claim age and ends at death, so it has no years to set. Use ss_claim_age or life_expectancy instead.";
+    expect(() => run([{ type: "income_years", incomeId: IDS.ssJohn, startYear: 2030 }])).toThrow(ssMessage);
+    expect(() => run([{ type: "income_years", incomeId: IDS.ssJohn, endYear: 2050 }])).toThrow(ssMessage);
+  });
+
   it("moves an income's years and keeps start before end", () => {
     expect(run([{ type: "income_years", incomeId: IDS.salaryJane, endYear: 2030 }]).mutations).toEqual([
       { kind: "income-end-year", incomeId: IDS.salaryJane, year: 2030 },

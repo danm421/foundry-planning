@@ -127,6 +127,15 @@ function translateOne(change: WhatIfChange, ctx: Ctx): One {
     }
     case "income_years": {
       const inc = findIncome(ctx, change.incomeId);
+      // The engine resets a claim-age row's end to the owner's death on every
+      // run, and a start year would only cut benefits that are still sized
+      // from the claim age.
+      if (inc.type === "social_security") {
+        fail(
+          ctx,
+          "Social Security starts at its claim age and ends at death, so it has no years to set. Use ss_claim_age or life_expectancy instead.",
+        );
+      }
       if (change.startYear !== undefined) refuseTiedYear(ctx, inc, "start", inc.startYearRef);
       if (change.endYear !== undefined) refuseTiedYear(ctx, inc, "end", inc.endYearRef);
       const { start, end } = yearsChange(ctx, inc, change);
