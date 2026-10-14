@@ -110,7 +110,8 @@ function runOrdering(
     priorTaxableGifts: input.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
     entityAccountSharesEoY: input.entityAccountSharesEoY,
     familyAccountSharesEoY: input.familyAccountSharesEoY,
-    marginMap: structuredClone(input.marginMap ?? {}),
+    // As-is when absent: an empty map would read as "every loan paid off".
+    marginMap: input.marginMap && structuredClone(input.marginMap),
   });
 
   if (!input.isMarried) {
@@ -151,7 +152,9 @@ function runOrdering(
     priorTaxableGifts: input.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
     entityAccountSharesEoY: input.entityAccountSharesEoY,
     familyAccountSharesEoY: input.familyAccountSharesEoY,
-    marginMap: firstResult.marginMap,
+    // No map in ⇒ none here either: a first death run without one seeds only
+    // the accounts it routed, and a partial map would zero every other loan.
+    marginMap: input.marginMap && firstResult.marginMap,
   });
 
   return {
@@ -259,7 +262,8 @@ export function computeAnchoredHypotheticalEstateTax(
     priorTaxableGifts: input.priorTaxableGifts,
     entityAccountSharesEoY: input.entityAccountSharesEoY,
     familyAccountSharesEoY: input.familyAccountSharesEoY,
-    marginMap: structuredClone(input.marginMap ?? {}),
+    // As-is when absent: an empty map would read as "every loan paid off".
+    marginMap: input.marginMap && structuredClone(input.marginMap),
   });
 
   const primaryFirst: HypotheticalEstateTaxOrdering = {

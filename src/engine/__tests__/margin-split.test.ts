@@ -31,7 +31,21 @@ describe("margin follows every split", () => {
 
   it("withLiveMargin swaps in the live loan from the map", () => {
     expect(withLiveMargin(MARGINED, { "acct-margin": 2_300_000 }).marginBalance).toBe(2_300_000);
-    expect(withLiveMargin(MARGINED, {})).toBe(MARGINED);
+  });
+
+  it("withLiveMargin: a live map without the account means the loan was paid off — $0, never the plan-start loan", () => {
+    expect(withLiveMargin(MARGINED, {}).marginBalance).toBe(0);
+    // A share a death left on the object is cleared with it, never resurrected.
+    const stale = { ...MARGINED, marginPersonalShare: 0.4 };
+    expect(withLiveMargin(stale, {}, {})).toMatchObject({ marginBalance: 0, marginPersonalShare: 0 });
+  });
+
+  it("withLiveMargin: no map at all (a fixture) keeps the account's own loan", () => {
+    expect(withLiveMargin(MARGINED, undefined)).toBe(MARGINED);
+  });
+
+  it("withLiveMargin: an account with no loan comes back unchanged", () => {
+    expect(withLiveMargin(plain, {}, {})).toBe(plain);
   });
 
   it("splitAccount 60/40 splits the loan 60/40", () => {

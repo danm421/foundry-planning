@@ -94,9 +94,14 @@ export function chargeMarginInterest(
 /** The death path reads loans off Account objects: swap in the live loan and,
  *  with `shareMap`, the live personal-use share, so every slice minted from
  *  the copy carries both. A share left on the object by an earlier death is
- *  cleared when the live map has none. */
+ *  cleared when the live map has none.
+ *
+ *  With a live map, an account it leaves out has NO loan — a paid-off loan
+ *  leaves the map (R8) — so the plan-start `marginBalance` on the object must
+ *  not come back. Only with no map at all (a fixture) does the object's own
+ *  loan stand. An account without the field is returned as it is. */
 export function withLiveMargin(acct: Account, marginMap: MarginMap | undefined, shareMap?: MarginShareMap): Account {
-  const loan = marginMap?.[acct.id];
+  const loan = marginMap == null ? undefined : (marginMap[acct.id] ?? (acct.marginBalance != null ? 0 : undefined));
   if (loan == null) return acct;
   const share = shareMap?.[acct.id];
   return {

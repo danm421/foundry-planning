@@ -335,6 +335,21 @@ describe("margin loans at death — projection", () => {
   });
 });
 
+describe("a loan paid off before a death stays paid off", () => {
+  it("a $200K loan repaid in 2027 does not come back after the 2029 death", () => {
+    const data = plan({ margin: PROJ_LOAN, marginRate: 0.08 });
+    data.accounts = data.accounts.map((a) => (a.id === ACC ? { ...a, marginRepayYear: 2027 } : a));
+    const years = runProjection(data);
+    expect(at(years, 2027).accountLedgers[ACC].marginEoY).toBe(0);
+    const y2030 = at(years, 2030);
+    for (const l of Object.values(y2030.accountLedgers)) {
+      expect(l.marginBoY).toBeUndefined();
+      expect(l.marginEoY).toBeUndefined();
+      expect(l.marginInterest).toBeUndefined();
+    }
+  });
+});
+
 // The REAL deaths must read the live loan in `marginMap` (final review I4).
 // Every test above runs at rate 0 or compares against the same post-death map,
 // so a death call that dropped `marginMap` would pass them all: a bystander
