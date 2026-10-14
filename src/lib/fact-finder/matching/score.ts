@@ -155,7 +155,9 @@ function scoreByKind(kind: RecordKind, section: FFSection, v: Record<string, FFC
     case "entity": {
       const name = str(v.trustName);
       if (!name) return [];
-      return fromAnnotation(matchEntity({ name, entityType: "trust" }, c.entities), (id) => c.entities.find((e) => e.id === id)?.name ?? id);
+      // Trusts only: the review's link check accepts a trust (matchEntity's exact match ignores the type).
+      const trusts = c.entities.filter((e) => e.entityType === "trust");
+      return fromAnnotation(matchEntity({ name, entityType: "trust" }, trusts), (id) => trusts.find((e) => e.id === id)?.name ?? id);
     }
     case "income": {
       const name = str(v.incomeName);

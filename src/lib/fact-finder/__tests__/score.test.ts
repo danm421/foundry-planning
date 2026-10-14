@@ -219,6 +219,23 @@ describe("applyLinkScores — other record kinds", () => {
     expect(linkOf(s, "disability")).toMatchObject({ recordId: "d-1", confirmed: true });
   });
 
+  it("links a Trusts row to a trust only — never to an LLC with the same name", () => {
+    const r = records();
+    r.candidates.entities = [
+      { id: "ent-llc", name: "Hendricks Holdings", entityType: "llc" },
+      { id: "ent-trust", name: "Hendricks Holdings", entityType: "trust" },
+      { id: "ent-acme", name: "Acme Ventures", entityType: "llc" },
+    ];
+    const s = applyLinkScores(
+      stateWith({ trusts: [row("t1", { trustName: "Hendricks Holdings" }), row("t2", { trustName: "Acme Ventures" })] }),
+      r,
+    );
+    expect(linkOf(s, "trusts", 0)).toMatchObject({ recordId: "ent-trust", confirmed: true });
+    expect(s.sections.trusts[0].linkCandidates).toEqual([{ recordId: "ent-trust", label: "Hendricks Holdings", score: 1 }]);
+    expect(linkOf(s, "trusts", 1)).toEqual({ kind: "new", by: "auto" });
+    expect(s.sections.trusts[1].linkCandidates).toEqual([]);
+  });
+
   it("links same-day equity grants of different types to their own records", () => {
     const r = records();
     r.stockOptionGrants = [

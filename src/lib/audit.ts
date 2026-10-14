@@ -266,6 +266,9 @@ export type AuditAction =
   | "import.chat.turn"
   // A fact finder chat reply undone: its rows put back as they were before it.
   | "import.chat.undo"
+  // A fact finder's change list built and stored on it (pass 2) — nothing is
+  // written to the plan yet; metadata carries the line counts and AI tokens.
+  | "import.fact_finder_reviewed"
   // One map-driven entity pass over ONE uploaded file (Task 14a) — several
   // billable Azure reads whose extracted rows land in the import's
   // `payloadJson`. Distinct from "import.extraction.*", which is the wizard's
