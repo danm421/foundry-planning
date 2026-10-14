@@ -214,4 +214,12 @@ describe("parseHouseholdSource", () => {
     );
     expect(r).toMatchObject({ type: "Goal Funding", description: "Capital gain", account: null, amount: 36000 });
   });
+
+  it("parses margin-loan sales (spec 2026-10-14)", () => {
+    expect(parseHouseholdSource("margin_sale:call:brk", { type: "capital_gains", amount: 88_888.89 }, ctx)).toMatchObject({
+      type: "Margin Loan Sale", description: "Sold to meet margin call", account: "Joint Brokerage", amount: 88_888.89, taxable: true,
+    });
+    expect(parseHouseholdSource("margin_sale:repay:brk", { type: "capital_gains", amount: 175_000 }, ctx).description)
+      .toBe("Sold to repay margin loan");
+  });
 });

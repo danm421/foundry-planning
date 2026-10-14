@@ -56,6 +56,12 @@ export function parseHouseholdSource(
   if (key.startsWith("business_sale:")) {
     return { type: "Business Sale", description: "Capital gain on business sale", character, account: null, amount, taxable };
   }
+  if (key.startsWith("margin_sale:")) {
+    // `margin_sale:<call|repay>:<accountId>` — spec 2026-10-14.
+    const [reason, acctId] = key.slice("margin_sale:".length).split(":");
+    const description = reason === "repay" ? "Sold to repay margin loan" : "Sold to meet margin call";
+    return { type: "Margin Loan Sale", description, character, account: ctx.accountNames[acctId] ?? acctId, amount, taxable };
+  }
   if (key.startsWith("sale:")) {
     return { type: "Asset Sale", description: "Capital gain on sale", character, account: null, amount, taxable };
   }

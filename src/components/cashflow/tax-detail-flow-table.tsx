@@ -377,11 +377,12 @@ export function belowLineColumns(years: ProjectionYear[]): Column[] {
       value: (y) => y.deductionBreakdown?.belowLine.taxDeductions ?? 0,
     },
   ];
-  // Investment Interest (margin loans) hides when every year is $0, like
-  // otherColumns' zero-suppress, so a household without a margin loan keeps
-  // the table it always had. The other below-line columns always show.
+  // Investment Interest (margin loans) hides when every year is $0 AND no year
+  // has non-deductible margin interest to explain (R7, spec 2026-10-14), so a
+  // household without a margin loan keeps the table it always had.
   return cols.filter(
-    (col) => col.key !== "bl_investment_interest" || years.some((y) => col.value(y) !== 0),
+    (col) => col.key !== "bl_investment_interest" || years.some((y) =>
+      col.value(y) !== 0 || Object.keys(y.deductionBreakdown?.belowLine.personalMarginInterest ?? {}).length > 0),
   );
 }
 
@@ -436,6 +437,12 @@ export function getSourcesForColumn(
     const entries = Object.entries(bd.belowLine.bySource)
       .filter(([k]) => k.startsWith(INVESTMENT_INTEREST_SOURCE_PREFIX))
       .map(([, v]) => v);
+    // Interest on money borrowed for spending is personal and never deducted
+    // (spec 2026-10-14) — listed so the advisor sees why the column is lower
+    // than the interest charged. It is NOT part of the column's figure.
+    for (const p of Object.values(bd.belowLine.personalMarginInterest ?? {})) {
+      entries.push({ label: `Margin interest on borrowing for spending — not deductible (${p.label})`, amount: p.amount });
+    }
     return entries.length > 0 ? entries : null;
   }
   if (colKey === "bl_other") {

@@ -97,6 +97,11 @@ export function resolveSourceLabel(
     const base = name ? `${name} — Roth Conversion` : "Roth Conversion";
     return base + irmaaCapSuffix(entry);
   }
+  if (sourceId.startsWith("margin_sale:")) {
+    const [reason, acctId] = sourceId.slice("margin_sale:".length).split(":");
+    const name = ctx.accountNames[acctId] ?? acctId;
+    return `${name} — ${reason === "repay" ? "Sold to repay margin loan" : "Sold to meet margin call"}`;
+  }
   if (sourceId.startsWith("sale:")) {
     const tx = sourceId.slice("sale:".length);
     return `Asset sale (${tx})`;

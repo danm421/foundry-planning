@@ -168,6 +168,26 @@ describe("tax-detail-flow-table — investment interest (margin loan)", () => {
     },
   } as never;
 
+  const personalOnly = {
+    deductionBreakdown: {
+      belowLine: {
+        ...base.deductionBreakdown.belowLine, investmentInterest: 0, bySource: {},
+        personalMarginInterest: { a1: { label: "Schwab Brokerage", amount: 8_000 } },
+      },
+    },
+  } as never;
+
+  it("shows the column when the only margin interest is non-deductible (R7)", () => {
+    expect(belowLineColumns([zero, personalOnly]).map((c) => c.key)).toContain("bl_investment_interest");
+  });
+  it("its drill explains the non-deductible interest without adding it to the figure", () => {
+    expect(getSourcesForColumn(personalOnly, "bl_investment_interest")).toEqual([
+      { label: "Margin interest on borrowing for spending — not deductible (Schwab Brokerage)", amount: 8_000 },
+    ]);
+    const col = belowLineColumns([personalOnly]).find((c) => c.key === "bl_investment_interest")!;
+    expect(col.value(personalOnly)).toBe(0);
+  });
+
   it("drops the Investment Interest column when no year has any — and only that column", () => {
     const keys = belowLineColumns([zero, zero]).map((c) => c.key);
     expect(keys).not.toContain("bl_investment_interest");

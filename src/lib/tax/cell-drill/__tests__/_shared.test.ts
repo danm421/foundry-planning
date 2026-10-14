@@ -190,4 +190,9 @@ describe("resolveSourceLabel", () => {
     expect(resolveSourceLabel(`goal_capital:${goalId}`, ctx)).toBe("Goal funding — capital gain");
     expect(resolveSourceLabel(`goal:${goalId}`, ctx)).toBe("Goal funding — taxable distribution");
   });
+
+  it("labels margin-loan sales by account and reason (spec 2026-10-14)", () => {
+    expect(resolveSourceLabel("margin_sale:call:acc_1", ctx)).toBe("Joint Brokerage — Sold to meet margin call");
+    expect(resolveSourceLabel("margin_sale:repay:acc_1", ctx)).toBe("Joint Brokerage — Sold to repay margin loan");
+  });
 });
