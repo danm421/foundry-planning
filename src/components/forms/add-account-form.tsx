@@ -8,6 +8,7 @@ import { BasePlanOnly } from "@/components/base-plan-only";
 import { scenarioAccountEditFields } from "@/lib/accounts/scenario-account-fields";
 import { HoldingsTab } from "./holdings-tab";
 import { BENEFICIARY_REQUIRED_MESSAGE } from "@/lib/accounts/is-529";
+import { MARGIN_REPAY_AFTER_BORROW_MESSAGE } from "@/lib/accounts/margin-validation";
 import { setAccountDeriveFromHoldings } from "@/lib/investments/holdings-client";
 import type { GrowthSource } from "@/lib/investments/allocation";
 import BeneficiariesTab, { type BeneficiaryPickLists } from "./beneficiaries-tab";
@@ -705,16 +706,29 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const canBorrowOnMargin =
     parentBusinessId == null && owners.length > 0 && owners.every((o) => o.kind === "family_member");
   const borrowOnMargin = category === "taxable" && canBorrowOnMargin && marginBorrowEnabled;
+  // Never at or before plan start: an already-retired client's retirement year
+  // is in the past, and a repay year there does nothing (final review M2).
+  const defaultMarginRepayYear = milestones
+    ? Math.max(milestones.clientRetirement, milestones.planStart + 1)
+    : new Date().getFullYear() + 5;
   const marginBorrowFields = useMemo(() => ({
     marginBorrowEnabled: borrowOnMargin,
     marginBorrowStartYear: borrowOnMargin ? marginBorrowStartYear : null,
     marginBorrowStartYearRef: borrowOnMargin ? marginBorrowStartYearRef : null,
     marginRepayYear: category === "taxable" && marginRepayEnabled
-      ? (marginRepayYear ?? milestones?.clientRetirement ?? new Date().getFullYear() + 5)
+      ? (marginRepayYear ?? defaultMarginRepayYear)
       : null,
     marginRepayYearRef: category === "taxable" && marginRepayEnabled ? marginRepayYearRef : null,
   }), [borrowOnMargin, marginBorrowStartYear, marginBorrowStartYearRef, category, marginRepayEnabled,
-    marginRepayYear, marginRepayYearRef, milestones?.clientRetirement]);
+    marginRepayYear, marginRepayYearRef, defaultMarginRepayYear]);
+  // The server checks this only when "Borrow from" is set; an unset one means
+  // plan start, which the form knows.
+  const borrowingStarts = marginBorrowFields.marginBorrowStartYear ?? milestones?.planStart;
+  const marginRepayError =
+    marginBorrowFields.marginBorrowEnabled && marginBorrowFields.marginRepayYear != null &&
+    borrowingStarts != null && marginBorrowFields.marginRepayYear <= borrowingStarts
+      ? MARGIN_REPAY_AFTER_BORROW_MESSAGE
+      : null;
   const [custodian, setCustodian] = useState<string>(initial?.custodian ?? "");
   const [accountNumberLast4, setAccountNumberLast4] = useState<string>(
     initial?.accountNumberLast4 ?? "",
@@ -994,7 +1008,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
   const canSave =
     name.trim().length > 0 && !educationBeneficiaryMissing && !equityStrategyIncomplete &&
-    !annuityIncomplete && inheritedError == null && inheritedPayoutError == null;
+    !annuityIncomplete && inheritedError == null && inheritedPayoutError == null && marginRepayError == null;
 
   // ── An in-progress grant must not be thrown away (audit F42) ───────────────
   // The grant editor saves through its own "Save Grant" button. The dialog's
@@ -2739,13 +2753,14 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   {marginRepayEnabled && milestones && (
                     <div className="max-w-xs">
                       <MilestoneYearPicker id="marginRepayYear" name="marginRepayYear" label="Repay in"
-                        value={marginRepayYear ?? milestones.clientRetirement} yearRef={marginRepayYearRef}
+                        value={marginRepayYear ?? defaultMarginRepayYear} yearRef={marginRepayYearRef}
                         milestones={milestones} clientFirstName={clientFirstName} spouseFirstName={spouseFirstName}
                         position="start"
                         onChange={(y, ref) => { setMarginRepayYear(y); setMarginRepayYearRef(ref); }} />
                       <p className="mt-1 text-[11px] text-ink-4">That year the plan sells enough securities to clear the loan.</p>
                     </div>
                   )}
+                  {marginRepayError && <p role="alert" className="text-xs text-crit">{marginRepayError}</p>}
                 </div>
                 <p className="col-span-3 text-xs text-ink-3">Interest is added to the loan each year, as brokerages do.</p>
               </fieldset>

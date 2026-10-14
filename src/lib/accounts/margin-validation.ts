@@ -18,6 +18,10 @@ export const MARGIN_TAXABLE_ONLY_MESSAGE =
 export const MARGIN_BORROW_TAXABLE_ONLY_MESSAGE =
   "Only taxable brokerage accounts can borrow on margin. Turn off borrowing before changing the account type.";
 
+/** Also shown by the account form, which checks it against plan start when
+ *  "Borrow from" is unset. */
+export const MARGIN_REPAY_AFTER_BORROW_MESSAGE = "The repay year must be after the year borrowing starts.";
+
 /** Raw values as the create schema and the write core hold them (decimal
  *  strings or numbers); null/undefined/"" take the column default. */
 export interface MarginFieldsInput {
@@ -65,7 +69,7 @@ export function validateMarginFields(raw: MarginFieldsInput): string | null {
   const borrowFrom = yearOrNull(raw.marginBorrowStartYear);
   const repayIn = yearOrNull(raw.marginRepayYear);
   if (borrowing && borrowFrom != null && repayIn != null && repayIn <= borrowFrom) {
-    return "The repay year must be after the year borrowing starts.";
+    return MARGIN_REPAY_AFTER_BORROW_MESSAGE;
   }
   return null;
 }

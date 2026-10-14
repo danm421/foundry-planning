@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { BENEFICIARY_REQUIRED_MESSAGE } from "@/lib/accounts/is-529";
+import { MARGIN_REPAY_AFTER_BORROW_MESSAGE } from "@/lib/accounts/margin-validation";
 import { createRef } from "react";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 
@@ -1541,6 +1542,43 @@ describe("AddAccountForm — margin loan group", () => {
         familyMembers={FAMILY_MEMBERS} entities={[]} categoryDefaults={CATEGORY_DEFAULTS} milestones={MILESTONES} />);
       expect((screen.getByLabelText("Borrow to cover spending") as HTMLInputElement).checked).toBe(true);
       expect((screen.getByLabelText("Repay the loan in a chosen year") as HTMLInputElement).checked).toBe(true);
+    });
+
+    // Final review M2: "Repay in" must not silently do nothing.
+    it("defaults Repay in to the year after plan start for an already-retired client", async () => {
+      render(<AddAccountForm clientId="client-123" category="taxable" mode="create" familyMembers={FAMILY_MEMBERS} entities={[]}
+        categoryDefaults={CATEGORY_DEFAULTS} milestones={{ ...MILESTONES, clientRetirement: 2020 }} />);
+      fireEvent.change(screen.getByLabelText(/Current Value/), { target: { value: "1000000" } });
+      fireEvent.click(screen.getByLabelText("Borrow to cover spending"));
+      fireEvent.click(screen.getByLabelText("Repay the loan in a chosen year"));
+      expect(screen.queryByText(MARGIN_REPAY_AFTER_BORROW_MESSAGE)).toBeNull();
+      fireEvent.submit(document.getElementById("add-account-form")!);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/clients/client-123/accounts", expect.objectContaining({ method: "POST" })));
+      const body = JSON.parse(fetchMock.mock.calls.find((a) => String(a[0]) === "/api/clients/client-123/accounts")![1].body as string);
+      expect(body.marginRepayYear).toBe(2027);
+    });
+
+    it.each([
+      ["borrowing starts at plan start", { marginRepayYear: 2026 }],
+      ["Borrow from is set", { marginBorrowStartYear: 2030, marginRepayYear: 2030 }],
+    ])("blocks save when the repay year is not after borrowing starts (%s)", async (_, years) => {
+      const submitStates: { canSubmit: boolean; loading: boolean }[] = [];
+      render(<AddAccountForm clientId="client-123" category="taxable" mode="edit"
+        initial={{ ...BASE_INITIAL, marginBorrowEnabled: true, ...years }}
+        familyMembers={FAMILY_MEMBERS} entities={[]} categoryDefaults={CATEGORY_DEFAULTS} milestones={MILESTONES}
+        onSubmitStateChange={(st) => submitStates.push(st)} />);
+      expect(screen.getByText(MARGIN_REPAY_AFTER_BORROW_MESSAGE)).toBeTruthy();
+      expect(submitStates.at(-1)?.canSubmit).toBe(false);
+      fireEvent.submit(document.getElementById("add-account-form")!);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(fetchMock.mock.calls.some((a) => a[1]?.method === "PUT")).toBe(false);
+    });
+
+    it("a repay year with borrowing off is not checked", () => {
+      render(<AddAccountForm clientId="client-123" category="taxable" mode="edit"
+        initial={{ ...BASE_INITIAL, marginBorrowEnabled: false, marginRepayYear: 2026 }}
+        familyMembers={FAMILY_MEMBERS} entities={[]} categoryDefaults={CATEGORY_DEFAULTS} milestones={MILESTONES} />);
+      expect(screen.queryByText(MARGIN_REPAY_AFTER_BORROW_MESSAGE)).toBeNull();
     });
   });
 });
