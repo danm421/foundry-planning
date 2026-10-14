@@ -958,6 +958,19 @@ export interface Account {
   marginInterestRate?: number;
   /** Margin-call warning level: warn when net ÷ securities < this. */
   marginCallPct?: number;
+  /** Phase 2 (spec 2026-10-14): cover household spending shortfalls by
+   *  borrowing against this account (after cash, before any sale). */
+  marginBorrowEnabled?: boolean;
+  /** First year the plan may borrow (resolved from the ref at load); null = plan start. */
+  marginBorrowStartYear?: number | null;
+  marginBorrowStartYearRef?: string | null;
+  /** Year the plan sells securities to clear the loan; null = never. Borrowing stops the year before. */
+  marginRepayYear?: number | null;
+  marginRepayYearRef?: string | null;
+  /** Projection-only, set inside the death path: the live personal-use share
+   *  of the loan, so every account minted from this one carries it
+   *  (see engine/margin.ts `withLiveMargin`). Never loaded from the DB. */
+  marginPersonalShare?: number;
   /**
    * HSA coverage tier. Present only when `subType === "hsa"`; drives the
    * contribution cap (self vs family limit). Undefined → treated as "self"

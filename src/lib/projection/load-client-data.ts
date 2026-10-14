@@ -981,6 +981,11 @@ const loadClientDataCached = cache(
           marginBalance: a.marginBalance,
           marginInterestRate: a.marginInterestRate,
           marginCallPct: a.marginCallPct,
+          marginBorrowEnabled: a.marginBorrowEnabled,
+          marginBorrowStartYear: a.marginBorrowStartYear,
+          marginBorrowStartYearRef: a.marginBorrowStartYearRef,
+          marginRepayYear: a.marginRepayYear,
+          marginRepayYearRef: a.marginRepayYearRef,
           hsaCoverage: a.hsaCoverage,
           growthSource: a.growthSource,
           growthRate: a.growthRate,
@@ -1027,6 +1032,14 @@ const loadClientDataCached = cache(
           ? null
           : resolvedStart(a.activationYearRef ?? null, a.activationYear ?? settings.planStartYear);
       acct.activationYearRef = a.activationYearRef ?? null;
+      // Margin borrowing years (spec 2026-10-14) resolve their milestones at
+      // load, like activationYear; a bare year passes through.
+      if (a.marginBorrowStartYearRef != null) {
+        acct.marginBorrowStartYear = resolvedStart(a.marginBorrowStartYearRef, a.marginBorrowStartYear ?? settings.planStartYear);
+      }
+      if (a.marginRepayYearRef != null) {
+        acct.marginRepayYear = resolvedStart(a.marginRepayYearRef, a.marginRepayYear ?? settings.planStartYear);
+      }
       return acct;
     });
 

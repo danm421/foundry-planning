@@ -78,6 +78,21 @@ export function resolveRefYears(tree: ClientData): ClientData {
     return { ...row, activationYear };
   };
 
+  const remapMarginYears = <T extends {
+    marginBorrowStartYear?: number | null; marginBorrowStartYearRef?: string | null;
+    marginRepayYear?: number | null; marginRepayYearRef?: string | null;
+  }>(row: T): T => {
+    if (!row.marginBorrowStartYearRef && !row.marginRepayYearRef) return row;
+    const marginBorrowStartYear = row.marginBorrowStartYearRef
+      ? resolve(row.marginBorrowStartYearRef, row.marginBorrowStartYear ?? tree.planSettings.planStartYear, "start")
+      : row.marginBorrowStartYear;
+    const marginRepayYear = row.marginRepayYearRef
+      ? resolve(row.marginRepayYearRef, row.marginRepayYear ?? tree.planSettings.planStartYear, "start")
+      : row.marginRepayYear;
+    if (marginBorrowStartYear === row.marginBorrowStartYear && marginRepayYear === row.marginRepayYear) return row;
+    return { ...row, marginBorrowStartYear, marginRepayYear };
+  };
+
   return {
     ...tree,
     incomes: tree.incomes.map(remapInOut),
@@ -86,6 +101,6 @@ export function resolveRefYears(tree: ClientData): ClientData {
     withdrawalStrategy: tree.withdrawalStrategy.map(remapInOut),
     transfers: tree.transfers?.map(remapNullableEnd),
     rothConversions: tree.rothConversions?.map(remapNullableEnd),
-    accounts: tree.accounts.map(remapActivation),
+    accounts: tree.accounts.map((a) => remapMarginYears(remapActivation(a))),
   };
 }

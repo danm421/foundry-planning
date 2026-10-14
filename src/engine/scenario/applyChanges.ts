@@ -92,6 +92,8 @@ const NUMERIC_FIELDS_BY_KIND: Partial<Record<TargetKind, readonly string[]>> = {
     "marginBalance",
     "marginInterestRate",
     "marginCallPct",
+    "marginBorrowStartYear",
+    "marginRepayYear",
     "growthRate",
     "priorYearEndValue",
     "activationYear",

@@ -28,6 +28,15 @@ function baseTree(): ClientData {
   } as unknown as ClientData;
 }
 
+describe("resolveRefYears — account margin years", () => {
+  it("re-anchors marginRepayYear from marginRepayYearRef", () => {
+    const tree = baseTree();
+    Object.assign(tree.accounts[0], { marginRepayYear: 2030, marginRepayYearRef: "client_retirement" });
+    const out = resolveRefYears(tree);
+    expect(out.accounts[0].marginRepayYear).toBe(2040);
+  });
+});
+
 describe("resolveRefYears — account activation", () => {
   it("re-anchors activationYear from activationYearRef", () => {
     const out = resolveRefYears(baseTree());

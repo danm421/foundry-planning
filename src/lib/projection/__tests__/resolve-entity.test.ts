@@ -265,6 +265,32 @@ describe("resolveAccountFromRaw", () => {
     expect(without.marginCallPct).toBe(0.3);
   });
 
+  it("loads margin borrowing fields, defaulting to off", () => {
+    const raw = {
+      ...baseRawAccount,
+      id: "a-margin",
+      name: "Brokerage",
+      category: "taxable" as const,
+      subType: "individual",
+      value: "10000000",
+      basis: "5000000",
+      growthSource: "default",
+      growthRate: null,
+    };
+    const on = resolveAccountFromRaw(
+      { ...raw, marginBorrowEnabled: true, marginBorrowStartYear: 2030, marginRepayYear: "2036" },
+      makeCtx(),
+    );
+    expect(on.marginBorrowEnabled).toBe(true);
+    expect(on.marginBorrowStartYear).toBe(2030);
+    expect(on.marginRepayYear).toBe(2036);
+
+    const off = resolveAccountFromRaw(raw, makeCtx());
+    expect(off.marginBorrowEnabled).toBe(false);
+    expect(off.marginBorrowStartYear).toBeNull();
+    expect(off.marginRepayYear).toBeNull();
+  });
+
   it("propagates titlingType from raw to Account (community_property)", () => {
     const acct = resolveAccountFromRaw(
       {

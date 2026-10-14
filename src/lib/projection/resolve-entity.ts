@@ -88,6 +88,11 @@ type RawAccount = {
   marginBalance?: string | number | null;
   marginInterestRate?: string | number | null;
   marginCallPct?: string | number | null;
+  marginBorrowEnabled?: boolean | null;
+  marginBorrowStartYear?: string | number | null;
+  marginBorrowStartYearRef?: string | null;
+  marginRepayYear?: string | number | null;
+  marginRepayYearRef?: string | null;
   hsaCoverage?: "self" | "family" | null;
   growthSource: string | null;
   growthRate: string | number | null;
@@ -291,6 +296,11 @@ export function resolveAccountFromRaw(
     marginBalance: raw.marginBalance != null ? n(raw.marginBalance) : 0,
     marginInterestRate: raw.marginInterestRate != null ? n(raw.marginInterestRate) : 0,
     marginCallPct: raw.marginCallPct != null ? n(raw.marginCallPct) : DEFAULT_MARGIN_CALL_PCT,
+    marginBorrowEnabled: raw.marginBorrowEnabled === true,
+    marginBorrowStartYear: nNullable(raw.marginBorrowStartYear) ?? null,
+    marginBorrowStartYearRef: raw.marginBorrowStartYearRef ?? null,
+    marginRepayYear: nNullable(raw.marginRepayYear) ?? null,
+    marginRepayYearRef: raw.marginRepayYearRef ?? null,
     hsaCoverage: raw.hsaCoverage ?? undefined,
     growthRate,
     rmdEnabled: raw.rmdEnabled,

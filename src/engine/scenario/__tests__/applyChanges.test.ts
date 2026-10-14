@@ -334,6 +334,42 @@ describe("applyScenarioChanges — edit", () => {
     expect(acct.marginCallPct).toBe(0.35);
   });
 
+  it("coerces margin borrowing years stored as strings and keeps the switch boolean", () => {
+    const base = minimalClientData();
+    base.accounts = [{
+      id: "a-base",
+      clientId: "c1",
+      scenarioId: "s-base",
+      name: "Brokerage",
+      category: "taxable",
+      subType: "individual",
+      owner: "client",
+      value: 10000000,
+      basis: 0,
+    } as unknown as Account];
+
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "edit",
+      targetKind: "account",
+      targetId: "a-base",
+      payload: {
+        marginBorrowEnabled: { from: false, to: true },
+        marginBorrowStartYear: { from: null, to: "2030" },
+        marginRepayYear: { from: null, to: "2036" },
+      },
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+
+    const result = applyScenarioChanges(base, [change], {}, []);
+    const acct = result.effectiveTree.accounts.find((a) => a.id === "a-base")!;
+    expect(acct.marginBorrowEnabled).toBe(true);
+    expect(acct.marginBorrowStartYear).toBe(2030);
+    expect(acct.marginRepayYear).toBe(2036);
+  });
+
   it("scenario overlay can flip an account's titlingType to community_property", () => {
     // Community-property titling is a string field on Account that the engine
     // consults at first death to decide between a half (jtwros) and full
