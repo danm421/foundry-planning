@@ -98,11 +98,12 @@ describe("margin-call warnings", () => {
     const [y1] = runMargin([MARGINED], 1);
     expect(y1.marginCallWarnings).toBeUndefined();
   });
-  it("a 75% crash breaches a 30% margin call level", () => {
+  it("a 75% crash forces a sale back to the 30% call level (spec 2026-10-14 reverses warn-only)", () => {
     const [y1] = runMargin([{ ...MARGINED, growthRate: 0, marginInterestRate: 0 }], 1,
       { marketShock: { year: 2026, drawdownPct: 0.75 } });
-    // gross 2.5M, net 0.5M → ratio 0.2
-    expect(y1.marginCallWarnings).toEqual([{ accountId: "acct-margin", ratio: expect.closeTo(0.2, 6), threshold: 0.3 }]);
+    // gross 2.5M, net 0.5M → sell 2.5M − 0.5M ÷ 0.3 = 833,333.33
+    expect(y1.marginSales?.[0]).toEqual(expect.objectContaining({ reason: "call", sold: expect.closeTo(833_333.33, 2) }));
+    expect(y1.marginCallWarnings).toBeUndefined();
   });
   it("seeded underwater (value below loan) warns and does not throw (Review Focus 1)", () => {
     const [y1] = runMargin([{ ...MARGINED, value: 1_500_000, growthRate: 0, marginInterestRate: 0 }], 1);

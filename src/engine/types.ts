@@ -2304,9 +2304,11 @@ export interface ProjectionYear {
   estimatedBeneficiaryTax?: number;
   /** Non-fatal warnings emitted by the trust annual pass. */
   trustWarnings?: TrustWarning[];
-  /** Margined accounts below their margin-call level at year end — warn
-   *  only, nothing is sold. Absent when no account breaches. */
+  /** Margined accounts below their margin-call level at year end. The forced
+   *  sale runs at next year's call check (spec 2026-10-14). Absent when no
+   *  account breaches. */
   marginCallWarnings?: MarginCallWarning[];
+  marginSales?: MarginSale[]; // spec 2026-10-14 — present only in a year with a forced or repay sale
   /** IRC §170(b) charitable-deduction carryforward state at end of this year. */
   charityCarryforward?: CharityCarryforward;
   /** Sum of split-interest-trust outflows to charity this year (CLT annual

@@ -22,6 +22,7 @@ import type {
   IrmaaTier,
   RothConversion,
   GoalYear,
+  MarginSale,
 } from "./types";
 import {
   computeMedicareYear,
@@ -40,7 +41,7 @@ import {
 import { computeBusinessYearFlow } from "./business/year-flow";
 import { buildGiftValueAtYear } from "./business/business-tree";
 import { accrueLockedEntityShare } from "./locked-shares";
-import { type MarginMap, type MarginShareMap, netSeedValue, seedMarginLoan, grossValue, grossBalancesFor, chargeMarginInterest, marginCallWarnings, marginBorrowSourcesFor, borrowOnMargin } from "./margin";
+import { type MarginMap, type MarginShareMap, netSeedValue, seedMarginLoan, grossValue, grossBalancesFor, chargeMarginInterest, marginCallWarnings, marginBorrowSourcesFor, borrowOnMargin, marginCallSaleAmount, sellSecuritiesToRepayLoan, DEFAULT_MARGIN_CALL_PCT } from "./margin";
 import { buildOwnershipSnapshot } from "./ownership-snapshot";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
@@ -2314,6 +2315,27 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // lower base (in deterministic and every MC trial alike).
     applyMarketShock(accountBalances, workingAccounts, year, planSettings.marketShock, accountLedgers, rothValueMap, marginMap);
 
+    // ── Margin calls and repay years (spec 2026-10-14) ─────────────────────
+    // After the market move, before transfers: the sale's gain joins this
+    // year's tax (entityRoutableSales below). Every margined account, whether
+    // or not it borrows. In its repay year an account skips the call check —
+    // clearing the whole loan does more.
+    const marginSales: MarginSale[] = [];
+    for (const acct of workingAccounts) {
+      const loan = marginMap[acct.id] ?? 0;
+      if (loan <= 0) continue;
+      const repay = acct.marginRepayYear === year;
+      const amount = repay
+        ? loan
+        : marginCallSaleAmount(accountBalances[acct.id] ?? 0, loan, acct.marginCallPct ?? DEFAULT_MARGIN_CALL_PCT);
+      if (amount <= 0) continue;
+      const sale = sellSecuritiesToRepayLoan({
+        acct, reason: repay ? "repay" : "call", amount, accountBalances, basisMap, freshBasisMap,
+        marginMap, shareMap: marginPersonalShare, ledger: accountLedgers[acct.id],
+      });
+      if (sale) marginSales.push(sale);
+    }
+
     // ── Apply Transfers ─────────────────────────────────────────────────────
     let transferResult: TransfersResult = {
       taxableOrdinaryIncome: 0,
@@ -3268,7 +3290,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     type EntityRoutableSale = {
       transactionId: string;
       /** `bySource` drill-down prefix — the two spellings stay distinguishable. */
-      kind: "sale" | "business_sale";
+      kind: "sale" | "business_sale" | "margin_sale";
       /** Post-§121 / post-§165(c) — the figure the household ADD booked. */
       taxableGain: number;
       /** Raw signed gain, before those adjustments. */
@@ -3295,6 +3317,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         taxableGain: i.totalCapitalGain,
         rawGain: i.totalCapitalGain,
         owners: ownersOfSource(i.businessAccountId),
+      })),
+      ...marginSales.map((s) => ({
+        transactionId: `${s.reason}:${s.accountId}`,
+        kind: "margin_sale" as const,
+        taxableGain: s.gain,
+        rawGain: s.gain,
+        owners: ownersOfSource(s.accountId),
       })),
     ];
 
@@ -3361,11 +3390,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Add transfer and sale income to tax detail
     taxDetail.ordinaryIncome += transferResult.taxableOrdinaryIncome;
     taxDetail.ordinaryIncome += rothConversionResult.taxableOrdinaryIncome;
+    const marginSaleGainTotal = marginSales.reduce((t, s) => t + s.gain, 0);
     taxDetail.capitalGains +=
       transferResult.capitalGains +
       reinvestmentResult.capitalGains +
       saleResult.capitalGains +
       businessSaleResult.capitalGains +
+      marginSaleGainTotal +
       householdCarryInCapGains;
     // §664(c) is symmetric: the CRT's share of this year's sale results — gain OR
     // loss — belongs to the tax-exempt trust, never the household 1040. Gating on
@@ -9244,6 +9275,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const w = marginCallWarnings(workingAccounts, accountBalances, marginMap);
         return w.length > 0 ? { marginCallWarnings: w } : {};
       })(),
+      ...(marginSales.length > 0 ? { marginSales } : {}),
     });
 
     // Death event (spec 4b) — fires exactly once at the first death year.

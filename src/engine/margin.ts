@@ -106,7 +106,8 @@ export function scaleAccountValue(source: Account, fraction: number): Account {
   };
 }
 
-/** Year-end check (spec: warn only — nothing is sold). */
+/** Year-end check: flags a breach; the forced sale runs at next year's call
+ *  check (spec 2026-10-14 step 8). */
 export function marginCallWarnings(
   accounts: Account[],
   accountBalances: Record<string, number>,
@@ -320,6 +321,12 @@ export function sellSecuritiesToRepayLoan(input: {
       basis: basisMoved === 0 ? 0 : -basisMoved,
     });
     ledger.entries.push({ category: "margin_paydown", label: "Margin loan paid down", amount: sold, basis: 0 });
+    // Display-only realization detail, as transfers and withdrawals record it.
+    const detail = ledger.withdrawalDetail ?? { realizedLtcg: 0, basisReturn: 0 };
+    ledger.withdrawalDetail = {
+      realizedLtcg: detail.realizedLtcg + draw.capitalGains,
+      basisReturn: detail.basisReturn + draw.basisReturn,
+    };
   }
   return { accountId: acct.id, reason, sold, gain: draw.capitalGains };
 }
