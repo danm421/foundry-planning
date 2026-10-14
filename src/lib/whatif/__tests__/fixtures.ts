@@ -6,6 +6,7 @@
 // gift changes have recipients.
 import { buildClientData } from "@/engine/__tests__/fixtures";
 import type { ClientData } from "@/engine/types";
+import { resolveRefYears } from "@/lib/year-refs";
 
 export const IDS = {
   k401: "11111111-1111-4111-8111-111111111101",
@@ -73,5 +74,7 @@ export function whatIfTree(): ClientData {
     },
   ];
   t.externalBeneficiaries = [{ id: IDS.charity, name: "Food Bank", kind: "charity", charityType: "public" }];
-  return t;
+  // Resolve tied years the way the loader does, so a projection of this raw
+  // tree and one through applyMutations([]) see the same salary years.
+  return resolveRefYears(t);
 }

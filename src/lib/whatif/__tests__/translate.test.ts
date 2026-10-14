@@ -1,5 +1,7 @@
 // src/lib/whatif/__tests__/translate.test.ts
 import { describe, it, expect, vi } from "vitest";
+import type { ClientData } from "@/engine/types";
+import { applyMutations } from "@/lib/solver/apply-mutations";
 import { translateChanges } from "../translate";
 import { WhatIfValidationError } from "../errors";
 import type { WhatIfChange } from "../changes";
@@ -58,17 +60,34 @@ describe("translateChanges — simple levers", () => {
   });
 
   it("moves an income's years and keeps start before end", () => {
-    expect(run([{ type: "income_years", incomeId: IDS.salaryJohn, endYear: 2030 }]).mutations).toEqual([
-      { kind: "income-end-year", incomeId: IDS.salaryJohn, year: 2030 },
+    expect(run([{ type: "income_years", incomeId: IDS.salaryJane, endYear: 2030 }]).mutations).toEqual([
+      { kind: "income-end-year", incomeId: IDS.salaryJane, year: 2030 },
     ]);
-    expect(() => run([{ type: "income_years", incomeId: IDS.salaryJohn }])).toThrow(/give startYear, endYear or both/);
+    expect(() => run([{ type: "income_years", incomeId: IDS.salaryJane }])).toThrow(/give startYear, endYear or both/);
     expect(() =>
-      run([{ type: "income_years", incomeId: IDS.salaryJohn, startYear: 2040, endYear: 2030 }]),
+      run([{ type: "income_years", incomeId: IDS.salaryJane, startYear: 2040, endYear: 2030 }]),
     ).toThrow(/is after endYear/);
   });
 
+  it("refuses a calendar year on a bound tied to a milestone, and still moves the untied one", () => {
+    expect(() => run([{ type: "income_years", incomeId: IDS.salaryJohn, endYear: 2030 }])).toThrow(
+      "Change 1: John Salary's end year is tied to the client's retirement, so it can't be set to a calendar year here. Change retirement_age instead.",
+    );
+    expect(run([{ type: "income_years", incomeId: IDS.salaryJohn, startYear: 2027 }]).mutations).toEqual([
+      { kind: "income-start-year", incomeId: IDS.salaryJohn, year: 2027 },
+    ]);
+  });
+
+  it("refuses a start year tied to the plan's start, naming no lever when none moves it", () => {
+    const tree = whatIfTree();
+    tree.incomes = tree.incomes.map((i) => (i.id === IDS.salaryJane ? { ...i, startYearRef: "plan_start" } : i));
+    expect(() => translateChanges(tree, [{ type: "income_years", incomeId: IDS.salaryJane, startYear: 2028 }])).toThrow(
+      /^Change 1: Jane Salary's start year is tied to the start of the plan, so it can't be set to a calendar year here\.$/,
+    );
+  });
+
   it("refuses a year outside the plan", () => {
-    expect(() => run([{ type: "income_years", incomeId: IDS.salaryJohn, endYear: 2099 }])).toThrow(
+    expect(() => run([{ type: "income_years", incomeId: IDS.salaryJane, endYear: 2099 }])).toThrow(
       /outside the plan \(2026–2055\)/,
     );
   });
@@ -133,5 +152,22 @@ describe("translateChanges — simple levers", () => {
       { type: "income_amount", incomeId: IDS.salaryJane, annualAmount: 90_000 },
     ]);
     expect(out.recordIds).toEqual([null, IDS.salaryJane]);
+  });
+});
+
+// Relational only: milestone years depend on the machine's time zone (a
+// date-only birth date parses as UTC), so no resolved year is pinned here.
+describe("whatIfTree", () => {
+  const salaryEnd = (t: ClientData) => t.incomes.find((i) => i.id === IDS.salaryJohn)!.endYear;
+
+  it("is already resolved, so a raw run and an applyMutations([]) run see the same years", () => {
+    const tree = whatIfTree();
+    expect(applyMutations(tree, [])).toEqual(tree);
+  });
+
+  it("ends John's salary at his retirement, so retiring five years earlier ends it five years earlier", () => {
+    const tree = whatIfTree();
+    const { mutations } = translateChanges(tree, [{ type: "retirement_age", person: "client", age: 60 }]);
+    expect(salaryEnd(applyMutations(tree, mutations))).toBe(salaryEnd(tree) - 5);
   });
 });

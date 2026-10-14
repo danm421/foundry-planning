@@ -6,7 +6,8 @@
 // Every mutation produced must pass SOLVER_MUTATION_SCHEMA, the Solver's own
 // wire schema, so a translator bug fails here, loudly, instead of reaching the
 // engine. Techniques (records built server-side) live in translate-techniques.ts.
-import type { ClientData } from "@/engine/types";
+import type { ClientData, Income } from "@/engine/types";
+import { coerceYearRef, type YearRef } from "@/lib/milestones";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import type { SolverMutation } from "@/lib/solver/types";
 import type { WhatIfChange } from "./changes";
@@ -70,6 +71,35 @@ function yearsChange(
   return { start: change.startYear, end: change.endYear };
 }
 
+/** How a refusal names a milestone, and the change that moves it, if any. */
+const MILESTONE: Record<YearRef, { words: string; lever?: string }> = {
+  plan_start: { words: "the start of the plan" },
+  plan_end: { words: "the end of the plan" },
+  client_retirement: { words: "the client's retirement", lever: "Change retirement_age instead." },
+  spouse_retirement: { words: "the spouse's retirement", lever: "Change retirement_age for the spouse instead." },
+  client_end: { words: "the client's death", lever: "Change life_expectancy instead." },
+  spouse_end: { words: "the spouse's death", lever: "Change life_expectancy for the spouse instead." },
+  client_ss_62: { words: "the client turning 62" },
+  client_ss_fra: { words: "the client's full retirement age" },
+  client_ss_70: { words: "the client turning 70" },
+  spouse_ss_62: { words: "the spouse turning 62" },
+  spouse_ss_fra: { words: "the spouse's full retirement age" },
+  spouse_ss_70: { words: "the spouse turning 70" },
+};
+
+/** A milestone-tied year is re-derived from its milestone on every run
+ *  (applyMutations → resolveRefYears), and the Solver's income-year mutations
+ *  carry no ref to clear, so a calendar year there would silently do nothing. */
+function refuseTiedYear(ctx: Ctx, inc: Income, side: "start" | "end", ref: string | null | undefined): void {
+  const milestone = coerceYearRef(ref);
+  if (!milestone) return;
+  const { words, lever } = MILESTONE[milestone];
+  fail(
+    ctx,
+    `${inc.name}'s ${side} year is tied to ${words}, so it can't be set to a calendar year here.${lever ? ` ${lever}` : ""}`,
+  );
+}
+
 function translateOne(change: WhatIfChange, ctx: Ctx): One {
   switch (change.type) {
     case "retirement_age":
@@ -97,6 +127,8 @@ function translateOne(change: WhatIfChange, ctx: Ctx): One {
     }
     case "income_years": {
       const inc = findIncome(ctx, change.incomeId);
+      if (change.startYear !== undefined) refuseTiedYear(ctx, inc, "start", inc.startYearRef);
+      if (change.endYear !== undefined) refuseTiedYear(ctx, inc, "end", inc.endYearRef);
       const { start, end } = yearsChange(ctx, inc, change);
       const mutations: SolverMutation[] = [];
       if (start !== undefined) mutations.push({ kind: "income-start-year", incomeId: inc.id, year: start });
