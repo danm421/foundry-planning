@@ -35,6 +35,14 @@ export function irmaaCapSuffix(
     : ` (limited by IRMAA Tier ${tier})`;
 }
 
+/** A `margin_sale:<call|repay>:<accountId>` key (spec 2026-10-14): the sold
+ *  account and what the sale was for. Exported for the tax LEDGER, which
+ *  parses the same rows (`lib/tax-ledger/parse-source.ts`), like `irmaaCapSuffix`. */
+export function parseMarginSaleSource(sourceId: string): { accountId: string; description: string } {
+  const [reason, accountId] = sourceId.slice("margin_sale:".length).split(":");
+  return { accountId, description: reason === "repay" ? "Sold to repay margin loan" : "Sold to meet margin call" };
+}
+
 /** Resolve a `taxDetail.bySource` key to a display label.
  *
  *  `entry` is the ROW the key points at, and is optional only because a couple
@@ -98,9 +106,8 @@ export function resolveSourceLabel(
     return base + irmaaCapSuffix(entry);
   }
   if (sourceId.startsWith("margin_sale:")) {
-    const [reason, acctId] = sourceId.slice("margin_sale:".length).split(":");
-    const name = ctx.accountNames[acctId] ?? acctId;
-    return `${name} — ${reason === "repay" ? "Sold to repay margin loan" : "Sold to meet margin call"}`;
+    const { accountId, description } = parseMarginSaleSource(sourceId);
+    return `${ctx.accountNames[accountId] ?? accountId} — ${description}`;
   }
   if (sourceId.startsWith("sale:")) {
     const tx = sourceId.slice("sale:".length);

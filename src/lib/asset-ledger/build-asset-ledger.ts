@@ -45,6 +45,8 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext, 
     internal: false,
   };
 
+  // Margin bookends show as a pair whenever either end carries a loan.
+  const hasMargin = (ledger.marginBoY ?? 0) > 0 || (ledger.marginEoY ?? 0) > 0;
   // Roth bookend rows only when the account actually carries a Roth sub-balance.
   // The engine stamps rothValueBoY/EoY on *every* ledger (0 for non-Roth accounts),
   // so guard on `> 0`, not `!== undefined`, to avoid spurious $0 Roth rows everywhere.
@@ -60,7 +62,7 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext, 
           internal: false,
         }]
       : []),
-    ...(((ledger.marginBoY ?? 0) > 0 || (ledger.marginEoY ?? 0) > 0)
+    ...(hasMargin
       ? [{
           category: "bookend" as const,
           label: "Margin loan (start)",
@@ -72,7 +74,7 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext, 
       : []),
     ...entryRows,
     eoyRow,
-    ...(((ledger.marginBoY ?? 0) > 0 || (ledger.marginEoY ?? 0) > 0)
+    ...(hasMargin
       ? [{
           category: "bookend" as const,
           label: "Margin loan (end)",

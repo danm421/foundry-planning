@@ -2472,6 +2472,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                   !isMixedDeferral && (ledgerModal.ledger.basisBoY ?? 0) > 0;
                 const showBasisEoY =
                   !isMixedDeferral && (ledgerModal.ledger.basisEoY ?? 0) > 0;
+                const showMargin =
+                  (ledgerModal.ledger.marginBoY ?? 0) > 0 || (ledgerModal.ledger.marginEoY ?? 0) > 0;
                 return (
                   <div className="flex items-center justify-between rounded-md bg-card-2 px-4 py-3">
                     <div>
@@ -2489,7 +2491,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                           Roth {fmtNum(ledgerModal.ledger.rothValueBoY!)}
                         </p>
                       )}
-                      {((ledgerModal.ledger.marginBoY ?? 0) > 0 || (ledgerModal.ledger.marginEoY ?? 0) > 0) && (
+                      {showMargin && (
                         <p className="mt-0.5 text-xs tabular-nums text-ink-3">
                           Margin loan −{fmtNum(ledgerModal.ledger.marginBoY ?? 0)}
                         </p>
@@ -2511,7 +2513,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                           Roth {fmtNum(ledgerModal.ledger.rothValueEoY!)}
                         </p>
                       )}
-                      {((ledgerModal.ledger.marginBoY ?? 0) > 0 || (ledgerModal.ledger.marginEoY ?? 0) > 0) && (
+                      {showMargin && (
                         <p className="mt-0.5 text-xs tabular-nums text-ink-3">
                           Margin loan −{fmtNum(ledgerModal.ledger.marginEoY ?? 0)}
                         </p>
