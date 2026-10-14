@@ -1497,4 +1497,50 @@ describe("AddAccountForm — margin loan group", () => {
     );
     expect((screen.getByRole("textbox", { name: /Margin call level/ }) as HTMLInputElement).value).toBe("35.00");
   });
+
+  describe("borrowing on margin", () => {
+    const MILESTONES = { planStart: 2026, planEnd: 2060, clientRetirement: 2032, clientEnd: 2060 };
+
+    it("offers the borrow switch on a household-owned taxable account", () => {
+      render(<AddAccountForm clientId="client-123" category="taxable" mode="create" familyMembers={FAMILY_MEMBERS} entities={[]} categoryDefaults={CATEGORY_DEFAULTS} milestones={MILESTONES} />);
+      expect(screen.getByLabelText("Borrow to cover spending")).toBeTruthy();
+    });
+
+    it("explains instead of offering the switch when a trust co-owns the account", () => {
+      render(<AddAccountForm clientId="client-123" category="taxable" mode="edit"
+        initial={{ ...BASE_INITIAL, owners: [{ kind: "family_member", familyMemberId: FAMILY_MEMBERS[0].id, percent: 0.5 }, { kind: "entity", entityId: "trust-1", percent: 0.5 }] }}
+        familyMembers={FAMILY_MEMBERS} entities={[{ id: "trust-1", name: "Trust" }]} categoryDefaults={CATEGORY_DEFAULTS} milestones={MILESTONES} />);
+      expect(screen.queryByLabelText("Borrow to cover spending")).toBeNull();
+      expect(screen.getByText("Borrowing to cover spending is available when the household owns the whole account.")).toBeTruthy();
+    });
+
+    it("submits the switch, Borrow from and Repay in", async () => {
+      render(<AddAccountForm clientId="client-123" category="taxable" mode="create" familyMembers={FAMILY_MEMBERS} entities={[]} categoryDefaults={CATEGORY_DEFAULTS} milestones={MILESTONES} />);
+      fireEvent.change(screen.getByLabelText(/Current Value/), { target: { value: "1000000" } });
+      fireEvent.click(screen.getByLabelText("Borrow to cover spending"));
+      fireEvent.click(screen.getByLabelText("Repay the loan in a chosen year"));
+      fireEvent.submit(document.getElementById("add-account-form")!);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/clients/client-123/accounts", expect.objectContaining({ method: "POST" })));
+      const body = JSON.parse(fetchMock.mock.calls.find((a) => String(a[0]) === "/api/clients/client-123/accounts")![1].body as string);
+      expect(body.marginBorrowEnabled).toBe(true);
+      expect(body.marginRepayYear).toBe(2032);
+    });
+
+    it("sends the switch off for a non-taxable account", async () => {
+      render(<AddAccountForm clientId="client-123" category="cash" mode="create" familyMembers={FAMILY_MEMBERS} entities={[]} categoryDefaults={CATEGORY_DEFAULTS} milestones={MILESTONES} />);
+      fireEvent.submit(document.getElementById("add-account-form")!);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      const body = JSON.parse(fetchMock.mock.calls.find((a) => String(a[0]) === "/api/clients/client-123/accounts")![1].body as string);
+      expect(body.marginBorrowEnabled).toBe(false);
+      expect(body.marginRepayYear).toBeNull();
+    });
+
+    it("hydrates an edit", () => {
+      render(<AddAccountForm clientId="client-123" category="taxable" mode="edit"
+        initial={{ ...BASE_INITIAL, marginBorrowEnabled: true, marginRepayYear: 2036 }}
+        familyMembers={FAMILY_MEMBERS} entities={[]} categoryDefaults={CATEGORY_DEFAULTS} milestones={MILESTONES} />);
+      expect((screen.getByLabelText("Borrow to cover spending") as HTMLInputElement).checked).toBe(true);
+      expect((screen.getByLabelText("Repay the loan in a chosen year") as HTMLInputElement).checked).toBe(true);
+    });
+  });
 });

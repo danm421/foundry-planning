@@ -24,7 +24,7 @@ import { inheritedIraRowFields } from "@/lib/accounts/inherited-ira";
 import { netAccountValue } from "@/lib/accounts/net-value";
 import { toSalaryOptions } from "@/lib/savings/salary-options";
 import { LIQUID_PORTFOLIO_CATEGORIES } from "@/engine/portfolio-snapshot";
-import type { ClientMilestones } from "@/lib/milestones";
+import type { ClientMilestones, YearRef } from "@/lib/milestones";
 import type { AccountOwner } from "@/engine/ownership";
 import type { BeneficiaryRef } from "@/engine/types";
 import type { BeneficiaryPickLists } from "./forms/beneficiaries-tab";
@@ -90,6 +90,11 @@ export interface AccountRow {
   marginBalance?: string | null;
   marginInterestRate?: string | null;
   marginCallPct?: string | null;
+  marginBorrowEnabled?: boolean;
+  marginBorrowStartYear?: number | null;
+  marginBorrowStartYearRef?: string | null;
+  marginRepayYear?: number | null;
+  marginRepayYearRef?: string | null;
   /** The STORED `growth_rate` column (the meta row), where `growthRate` above is
    *  the RESOLVED rate. Only Edit Business reads it — see
    *  `accountRowToBusinessAccount`. Never written back: it is not a field. */
@@ -371,6 +376,11 @@ export function accountToInitial(a: AccountRow): AccountFormInitial {
     marginBalance: a.marginBalance ?? undefined,
     marginInterestRate: a.marginInterestRate ?? undefined,
     marginCallPct: a.marginCallPct ?? undefined,
+    marginBorrowEnabled: a.marginBorrowEnabled ?? false,
+    marginBorrowStartYear: a.marginBorrowStartYear ?? null,
+    marginBorrowStartYearRef: (a.marginBorrowStartYearRef ?? null) as YearRef | null,
+    marginRepayYear: a.marginRepayYear ?? null,
+    marginRepayYearRef: (a.marginRepayYearRef ?? null) as YearRef | null,
     rmdEnabled: a.rmdEnabled ?? null,
     countsTowardAum: a.countsTowardAum ?? false,
     priorYearEndValue: a.priorYearEndValue ?? null,

@@ -255,6 +255,11 @@ export interface AccountViewEngineFields {
   marginBalance: string;
   marginInterestRate: string;
   marginCallPct: string;
+  marginBorrowEnabled: boolean;
+  marginBorrowStartYear: number | null;
+  marginBorrowStartYearRef: string | null;
+  marginRepayYear: number | null;
+  marginRepayYearRef: string | null;
   rmdEnabled: boolean | null;
   ownerEntityId: string | null;
   /** Ownership rows verbatim. `ownerEntityId` above is a lossy reduction of
@@ -278,6 +283,11 @@ export function accountEngineToView(account: EngineAccount): AccountViewEngineFi
     marginBalance: String(account.marginBalance ?? 0),
     marginInterestRate: String(account.marginInterestRate ?? 0),
     marginCallPct: String(account.marginCallPct ?? DEFAULT_MARGIN_CALL_PCT),
+    marginBorrowEnabled: account.marginBorrowEnabled === true,
+    marginBorrowStartYear: account.marginBorrowStartYear ?? null,
+    marginBorrowStartYearRef: account.marginBorrowStartYearRef ?? null,
+    marginRepayYear: account.marginRepayYear ?? null,
+    marginRepayYearRef: account.marginRepayYearRef ?? null,
     rmdEnabled: account.rmdEnabled ?? null,
     ownerEntityId: controllingEntity(account) ?? null,
     owners: account.owners,
