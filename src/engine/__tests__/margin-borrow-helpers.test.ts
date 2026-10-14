@@ -96,6 +96,15 @@ describe("margin calls and repayment sales", () => {
     expect(marginCallSaleAmount(100_000, 500_000 - sold, 0.3)).toBe(0);
     expect(marginCallWarnings([brokerage()], { b: 100_000 }, { b: 500_000 - sold })).toEqual([]);
   });
+  it("a restored ratio that lands a hair BELOW the call level is still compliant (R4)", () => {
+    // Node: sold = 460,711.3333333333, loan after = 39,288.666666666686,
+    // net ÷ securities = 16,838 / 56,126.666666666686 = 0.2999999999999999 (< 0.3).
+    // Without the tolerance the call check would order a ~1.46e-11 sale and warn.
+    const sold = marginCallSaleAmount(16_838, 500_000, 0.3);
+    expect(16_838 / (16_838 + 500_000 - sold)).toBeLessThan(0.3);
+    expect(marginCallSaleAmount(16_838, 500_000 - sold, 0.3)).toBe(0);
+    expect(marginCallWarnings([brokerage()], { b: 16_838 }, { b: 500_000 - sold })).toEqual([]);
+  });
   it("example D: gain on the securities ratio, basis falls, net unchanged, personal-use repaid first", () => {
     const balances = { b: 100_000 };
     const basis = { b: 400_000 };
