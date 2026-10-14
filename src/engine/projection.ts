@@ -40,7 +40,7 @@ import {
 import { computeBusinessYearFlow } from "./business/year-flow";
 import { buildGiftValueAtYear } from "./business/business-tree";
 import { accrueLockedEntityShare } from "./locked-shares";
-import { type MarginMap, netSeedValue, seedMarginLoan, grossValue, grossBalancesFor, chargeMarginInterest, marginCallWarnings } from "./margin";
+import { type MarginMap, type MarginShareMap, netSeedValue, seedMarginLoan, grossValue, grossBalancesFor, chargeMarginInterest, marginCallWarnings, marginBorrowSourcesFor, borrowOnMargin } from "./margin";
 import { buildOwnershipSnapshot } from "./ownership-snapshot";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
@@ -942,6 +942,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     if (isPreActivation(acct, planSettings.planStartYear)) continue;
     seedMarginLoan(marginMap, acct);
   }
+  // Personal-use share of each loan (spec 2026-10-14). Starts empty — a
+  // plan-start loan is investment debt, as in Phase 1 — and gains an entry
+  // only when the plan borrows for spending.
+  const marginPersonalShare: MarginShareMap = {};
 
   // Per-year, per-account unspent basisIncrease pool. Reset at top of each
   // projection year; drained as taxable-account withdrawals/transfers consume
@@ -7033,7 +7037,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // for tax).
     // Seeded with this year's household-owned goal draws (goal-funding pass), so
     // the Cash Flow report shows them as withdrawals from the accounts that paid.
-    const withdrawals = {
+    const withdrawals: ProjectionYear["withdrawals"] = {
       byAccount: { ...goalHouseholdDrawByAccount } as Record<string, number>,
       total: goalHouseholdDrawTotal,
     };
@@ -7270,6 +7274,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Margined accounts' securities values for the draw gain ratios. Built once:
     // neither convergence loop below moves a balance or a loan.
     const grossBalances = grossBalancesFor(accountBalances, marginMap);
+    // Margin borrowing sources (spec 2026-10-14) — household-checking path
+    // only. Built once, like grossBalances: the loops below plan on copies.
+    const marginBorrowSources = hasChecking
+      ? marginBorrowSourcesFor({
+          accounts: workingAccounts, year, accountBalances, marginMap,
+          householdShareOf: (a) => ownedByHouseholdAtYear(a, data.giftEvents, year, planSettings.planStartYear),
+        })
+      : [];
 
     if (hasChecking) {
       let checkingAfterTax = preSupplementalChecking - taxToFund(taxOutForIter.taxes);
@@ -7367,6 +7379,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           ages: { client: ages.client, spouse: ages.spouse ?? null },
           isSpouseAccount,
           year,
+          marginBorrowSources,
         });
 
         // Step (a): NOW size each deferred conversion against the
@@ -7930,6 +7943,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // through cash, not a real cash outflow.
       for (const draw of supplementalPlan.draws) {
         if (draw.amount <= 0) continue;
+        // A margin borrow (spec 2026-10-14): the loan grows; the securities and
+        // basis stay put. Still a withdrawal from the account's NET value, so
+        // every cash-flow total ties out; the checking credit below is shared
+        // with the year's sales.
+        if (draw.borrowed) {
+          borrowOnMargin({
+            accountId: draw.accountId, amount: draw.amount, accountBalances, marginMap,
+            shareMap: marginPersonalShare, ledger: accountLedgers[draw.accountId], checkingId,
+          });
+          withdrawals.byAccount[draw.accountId] = (withdrawals.byAccount[draw.accountId] ?? 0) + draw.amount;
+          withdrawals.total += draw.amount;
+          const borrowed = (withdrawals.borrowedByAccount ??= {});
+          borrowed[draw.accountId] = (borrowed[draw.accountId] ?? 0) + draw.amount;
+          continue;
+        }
         const preBalance = accountBalances[draw.accountId] ?? 0;
         accountBalances[draw.accountId] -= draw.amount;
         withdrawals.byAccount[draw.accountId] =
@@ -8949,6 +8977,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           : (basisMap[acctId] ?? 0);
       accountLedgers[acctId].rothValueEoY = rothValueMap[acctId] ?? 0;
       if (marginMap[acctId] != null) accountLedgers[acctId].marginEoY = marginMap[acctId];
+      // A sale that paid the loan off removed it from the map (R8): end at $0.
+      else if (accountLedgers[acctId].marginBoY != null) accountLedgers[acctId].marginEoY = 0;
     }
 
     // Surface per-grantor-entity realized asset-sale cap gains so

@@ -2036,6 +2036,10 @@ export interface ProjectionYear {
   withdrawals: {
     byAccount: Record<string, number>;
     total: number;
+    /** Spec 2026-10-14: the part of `byAccount` borrowed on margin rather
+     *  than sold. Already inside `byAccount` and `total`. Present only when
+     *  the plan borrowed this year. */
+    borrowedByAccount?: Record<string, number>;
   };
 
   /** Liquidations triggered by entity gap-fill — when an entity's own
