@@ -45,6 +45,11 @@ const METRICS_NOTE =
   "matches the Solver's \"Total to Heirs\"), heirIncomeTax, yearsFullyFunded, firstShortfallYear. Pass every caveat " +
   "on to the advisor. Narrate the engine's numbers; never recompute them.";
 
+const SOLVE_STATUS_NOTE =
+  " A solve's status is 'converged' (it found the value that meets the target), 'max-iterations' (it stopped " +
+  "before fully settling, so the value is approximate) or 'unreachable' (moving that one lever can't reach the " +
+  "target: the value is the closest the search got and misses the target, so never present it as the answer).";
+
 const INCOME_YEARS_NOTE =
   " income_years can't move an income year tied to retirement (change retirement_age instead) or a Social Security " +
   "row (change ss_claim_age instead).";
@@ -142,6 +147,7 @@ const tryWhatIf = defineTool({
     "savings that reaches it, a Roth conversion amount, or the best Social Security claim age. `includeMonteCarlo` " +
     "adds the probability of success; every solve except the claim age includes it anyway. " +
     METRICS_NOTE +
+    SOLVE_STATUS_NOTE +
     " A run with Monte Carlo or a solve can take a minute or more: if it isn't done within about 45 seconds you get " +
     "{ status: 'running', jobId } — call get_what_if_results with it. To test several variations at once use " +
     "compare_what_ifs. To keep a what-if, call save_what_if_as_scenario with the same changes.",
@@ -188,6 +194,7 @@ const compareWhatIfs = defineTool({
     INCOME_YEARS_NOTE +
     " " +
     METRICS_NOTE +
+    SOLVE_STATUS_NOTE +
     " Any solve except the claim age runs Monte Carlo on every row. At most 10 variations when Monte Carlo or a " +
     "success-based solve is involved, 25 otherwise. A comparison with Monte Carlo or solves usually takes minutes: " +
     "you get { status: 'running', jobId } — call get_what_if_results until it's done. `unfinished` lists variations " +
@@ -205,7 +212,8 @@ const compareWhatIfs = defineTool({
           .optional()
           .describe(
             "Default: the better direction for that metric. Ranking by solvedValue needs every variation to solve " +
-              "for the same thing, and a direction for Roth-amount or claim-age solves.",
+              "for the same thing, and a direction for Roth-amount or claim-age solves. A failed row, or one whose " +
+              "solve is 'unreachable', gets no rank.",
           ),
       })
       .optional(),

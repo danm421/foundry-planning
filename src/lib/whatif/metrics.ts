@@ -76,6 +76,8 @@ export const CAVEAT_FLAT_TAX =
   "Taxes here use the plan's flat rates, not tax brackets. Don't present them as bracket-accurate.";
 export const CAVEAT_MAX_ITERATIONS =
   "The solve stopped before it fully settled, so its answer is approximate.";
+export const CAVEAT_UNREACHABLE =
+  "The target can't be reached by moving this lever alone. The value shown is the closest the search got, and it misses the target.";
 export const CAVEAT_IRMAA_SIBLING =
   "An IRMAA-capped Roth conversion runs alongside another conversion; the cap may not hold in that case. Check the Medicare figures.";
 export const CAVEAT_NO_HEIR_TAX_RATE =
@@ -96,6 +98,7 @@ export function caveatsFor(input: {
   if (metrics.successRate !== null && retirementLivingExpenseTotal(tree) <= 0) out.push(CAVEAT_NO_SPENDING);
   if (!isTaxGrounded(tree)) out.push(CAVEAT_FLAT_TAX);
   if (input.solveStatus === "max-iterations") out.push(CAVEAT_MAX_ITERATIONS);
+  if (input.solveStatus === "unreachable") out.push(CAVEAT_UNREACHABLE);
   const conversions = (tree.rothConversions ?? []).filter((c) => c.enabled !== false);
   if (conversions.length > 1 && conversions.some((c) => c.irmaaCapTier != null)) out.push(CAVEAT_IRMAA_SIBLING);
   const hasPreTax = tree.accounts.some((a) => a.category === "retirement" && PRE_TAX_SUBTYPES.has(a.subType));

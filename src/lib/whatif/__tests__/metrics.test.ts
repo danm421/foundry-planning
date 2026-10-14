@@ -11,6 +11,7 @@ import {
   CAVEAT_NEW_ACCOUNT_MC,
   CAVEAT_NO_HEIR_TAX_RATE,
   CAVEAT_NO_SPENDING,
+  CAVEAT_UNREACHABLE,
   type WhatIfMetrics,
 } from "../metrics";
 import { IDS, whatIfTree } from "./fixtures";
@@ -74,6 +75,18 @@ describe("caveatsFor", () => {
     tree.planSettings = { ...tree.planSettings, taxEngineMode: "flat" };
     const out = caveatsFor({ tree, metrics: metrics(0.9), solveStatus: "max-iterations", addedAccounts: true });
     expect(out).toEqual(expect.arrayContaining([CAVEAT_FLAT_TAX, CAVEAT_MAX_ITERATIONS, CAVEAT_NEW_ACCOUNT_MC]));
+  });
+
+  // An unreachable solve hands back the search's closest endpoint, which misses
+  // the target: without this caveat Claude would report it as the answer.
+  it("flags a solve that can't reach its target, and only that status", () => {
+    const tree = whatIfTree();
+    expect(caveatsFor({ tree, metrics: metrics(0.6), solveStatus: "unreachable", addedAccounts: false })).toContain(
+      CAVEAT_UNREACHABLE,
+    );
+    for (const solveStatus of ["converged", "max-iterations", null]) {
+      expect(caveatsFor({ tree, metrics: metrics(0.9), solveStatus, addedAccounts: false })).not.toContain(CAVEAT_UNREACHABLE);
+    }
   });
 
   it("flags an IRMAA-capped conversion that has a sibling conversion", () => {

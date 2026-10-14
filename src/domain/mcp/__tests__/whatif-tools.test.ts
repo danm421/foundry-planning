@@ -246,6 +246,14 @@ describe("the run tools' descriptions", () => {
     expect(d).toMatch(/Social Security row \(change ss_claim_age instead\)/);
     expect(d).toContain('including lifetime gifts — it matches the Solver\'s "Total to Heirs"');
   });
+
+  it.each(["try_what_if", "compare_what_ifs"])("%s explains each solve status in words", (name) => {
+    const d = byName(name).description;
+    expect(d).toMatch(/'converged'/);
+    expect(d).toMatch(/'max-iterations'/);
+    expect(d).toMatch(/'unreachable'/);
+    expect(d).toMatch(/misses the target/);
+  });
 });
 
 describe("tryResult and compareResult", () => {

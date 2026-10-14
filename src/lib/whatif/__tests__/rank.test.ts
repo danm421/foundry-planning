@@ -20,9 +20,15 @@ const row = (label: string, endingPortfolio: number, lifetimeTax: number, status
     : {}),
 });
 
-const solved = (label: string, kind: SolveFor["kind"], value: number): VariantResult => ({
-  ...row(label, 0, 0),
-  solve: { kind, value, status: "converged", achievedSuccess: 0.85 },
+const solved = (
+  label: string,
+  kind: SolveFor["kind"],
+  value: number,
+  status: "converged" | "unreachable" | "max-iterations" = "converged",
+  endingPortfolio = 0,
+): VariantResult => ({
+  ...row(label, endingPortfolio, 0),
+  solve: { kind, value, status, achievedSuccess: 0.85 },
 });
 
 describe("rankVariants", () => {
@@ -62,6 +68,35 @@ describe("rankVariants", () => {
       { metric: "solvedValue" },
     );
     expect(best).toBe("b");
+  });
+
+  // An unreachable solve's value is the search's closest miss, not an answer:
+  // it must never rank, or be named best, however good its number looks.
+  it("leaves a row whose solve can't reach its target unranked, ranking by solved value", () => {
+    const { rows, best } = rankVariants(
+      [solved("a", "retirement_age", 75, "unreachable"), solved("b", "retirement_age", 66), solved("c", "retirement_age", 64)],
+      { metric: "solvedValue" },
+    );
+    expect(rows.map((r) => r.rank)).toEqual([null, 2, 1]);
+    expect(best).toBe("c");
+  });
+
+  it("leaves a row whose solve can't reach its target unranked, ranking by a metric", () => {
+    const { rows, best } = rankVariants(
+      [solved("a", "savings", 90_000, "unreachable", 9_000_000), solved("b", "savings", 20_000, "converged", 1_000)],
+      { metric: "endingPortfolio" },
+    );
+    expect(rows.map((r) => r.rank)).toEqual([null, 1]);
+    expect(best).toBe("b");
+  });
+
+  it("names no best when every solve misses its target", () => {
+    const { rows, best } = rankVariants(
+      [solved("a", "max_spending", 0, "unreachable"), solved("b", "max_spending", 0, "unreachable")],
+      { metric: "solvedValue" },
+    );
+    expect(rows.map((r) => r.rank)).toEqual([null, null]);
+    expect(best).toBeNull();
   });
 });
 

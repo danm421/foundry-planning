@@ -1,8 +1,9 @@
 // src/lib/whatif/rank.ts
 //
 // Ranks a comparison by one measure. Rows keep the order the advisor asked
-// for; `rank` is added beside them. Failed rows and rows without the measure
-// stay where they are, with a null rank.
+// for; `rank` is added beside them. Failed rows, rows whose solve can't reach
+// its target, and rows without the measure stay where they are, with a null
+// rank.
 import type { SolveFor } from "./changes";
 import { WhatIfValidationError } from "./errors";
 import { METRIC_KEYS, type MetricKey } from "./metrics";
@@ -70,7 +71,9 @@ export function checkRankBy(rankBy: RankBy | undefined, solveKinds: (SolveKind |
 }
 
 function valueOf(r: VariantResult, metric: RankMetric): number | null {
-  if (r.status !== "done") return null;
+  // An unreachable solve's value is the search's closest miss, not an answer:
+  // ranking it could name a plan that misses the target as the best.
+  if (r.status !== "done" || r.solve?.status === "unreachable") return null;
   if (metric === "solvedValue") return r.solve?.value ?? null;
   const v = r.metrics?.[metric];
   return typeof v === "number" ? v : null;
