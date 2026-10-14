@@ -37,7 +37,7 @@ const principal: McpPrincipal = {
  * `throw` then fails on the instance assertion below rather than on a missing
  * rejection — an assertion, not a harness error.
  */
-const rejection = (p: Promise<void>): Promise<unknown> =>
+const rejection = (p: Promise<unknown>): Promise<unknown> =>
   p.then(
     () => undefined,
     (e: unknown) => e,
@@ -66,11 +66,10 @@ describe("assertHouseholdReadableForPrincipal", () => {
 });
 
 describe("assertClientReadableForPrincipal", () => {
-  it("resolves when the client check says ok and the firm matches the token", async () => {
-    verifyClientAccessFor.mockResolvedValue({
-      ok: true, permission: "view", firmId: "org_1", access: "own",
-    });
-    await expect(assertClientReadableForPrincipal(principal, "c1")).resolves.toBeUndefined();
+  it("resolves with the verified access when the client check says ok and the firm matches the token", async () => {
+    const granted = { ok: true, permission: "view", firmId: "org_1", access: "own" };
+    verifyClientAccessFor.mockResolvedValue(granted);
+    await expect(assertClientReadableForPrincipal(principal, "c1")).resolves.toEqual(granted);
     expect(verifyClientAccessFor).toHaveBeenCalledWith(principal, "c1");
   });
 

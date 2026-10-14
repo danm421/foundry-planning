@@ -15,3 +15,16 @@ export const firmBookSiloEnabled = cache(async (firmId: string): Promise<boolean
   });
   return row?.bookSiloEnabled ?? false;
 });
+
+/**
+ * Whether this firm lets the Claude connector make changes (save a what-if as
+ * a scenario, queue a deck). Missing firm row → false: off by default. Only
+ * write tools read it; read tools never do.
+ */
+export const firmClaudeWritesEnabled = cache(async (firmId: string): Promise<boolean> => {
+  const row = await db.query.firms.findFirst({
+    where: eq(firms.firmId, firmId),
+    columns: { claudeWritesEnabled: true },
+  });
+  return row?.claudeWritesEnabled ?? false;
+});

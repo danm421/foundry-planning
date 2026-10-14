@@ -323,6 +323,7 @@ export type AuditAction =
   // Firm-level lifecycle
   | "firm.name_changed"
   | "firm.book_silo_changed"
+  | "firm.claude_writes_toggled"
   | "firm.archived"
   | "firm.purged"
   | "firm.founder_initialized"
@@ -422,6 +423,7 @@ export type AuditAction =
   | "forge.undo" // the advisor reverted the conversation to a prior checkpoint
   // MCP — a remote Claude connector invoked a read tool
   | "mcp.tool_call"
+  | "mcp.tool_write"
   | "copilot.query" // legacy (pre-2026-06-17 cutover)
   | "copilot.tool_call" // legacy
   | "copilot.write_proposed" // legacy

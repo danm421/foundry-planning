@@ -5637,6 +5637,9 @@ export const firms = pgTable("firms", {
   // When false (default), advisors keep firm-wide visibility (legacy behavior).
   // Admins are always firm-wide regardless. See spec: per-advisor-books-and-branding.
   bookSiloEnabled: boolean("book_silo_enabled").notNull().default(false),
+  // Off by default: a firm admin must turn on changes from the Claude
+  // connector (Settings → Firm). Read tools never look at this.
+  claudeWritesEnabled: boolean("claude_writes_enabled").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

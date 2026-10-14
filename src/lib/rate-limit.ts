@@ -70,9 +70,11 @@ export type RateLimitResult = RateLimitOk | RateLimitDenied;
 async function safeLimit(
   limiter: Ratelimit,
   key: string,
+  rate?: number,
 ): Promise<RateLimitResult> {
   try {
-    const { success, remaining, reset, reason } = await limiter.limit(key);
+    const { success, remaining, reset, reason } =
+      rate === undefined ? await limiter.limit(key) : await limiter.limit(key, { rate });
     // On its own timeout (default 5 s) the library resolves success: true.
     // A Redis that never answered is a Redis failure, so refuse it.
     if (reason === "timeout") {
@@ -191,6 +193,19 @@ export async function checkMcpRateLimit(key: string): Promise<RateLimitResult> {
   const limiter = getMcpLimiter();
   if (!limiter) return { allowed: false, reason: "unconfigured" };
   return safeLimit(limiter, key);
+}
+
+// MCP compute: what-if runs. Weighted — a deterministic variation costs 1
+// unit, one with Monte Carlo or a success-based solve costs HEAVY_WEIGHT (4),
+// plus 1 for the baseline (src/lib/whatif/caps.ts). 120 units per 10 minutes
+// per firm+user is about three 8-variation max-spending sweeps, and it is kept
+// apart from the 60/min read budget so a sweep can't starve ordinary reads.
+const getMcpComputeLimiter = buildLimiter(120, "10 m", "rl:mcp-compute");
+
+export async function checkMcpComputeRateLimit(key: string, weight: number): Promise<RateLimitResult> {
+  const limiter = getMcpComputeLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key, weight);
 }
 
 // PDF export (presentation decks + comparison / balance-sheet / liquidity

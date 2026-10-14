@@ -28,18 +28,16 @@ export const CLIENT_UNREADABLE_MESSAGE = "Household not found or access denied";
  * A denied client and a missing client raise the SAME error, so existence
  * never leaks across firms or advisor books.
  */
-export async function assertClientReadableForPrincipal(
-  p: McpPrincipal,
-  clientId: string,
-): Promise<void> {
+export async function assertClientReadableForPrincipal(p: McpPrincipal, clientId: string) {
   const access = await verifyClientAccessFor(p, clientId);
   // `ok` plus the firm match is deliberately the WHOLE gate — no
-  // `access.permission` check. Every MCP tool is read-only, so "view" is
-  // always sufficient; a later task must not assume permission was checked
-  // here and add its own (weaker) gate on top.
+  // `access.permission` check. Read tools need only "view". Write tools check
+  // `permission === "edit"` themselves, in defineWriteTool, on the access
+  // returned here; nothing here may be assumed to have checked permission.
   if (!access.ok || access.firmId !== p.orgId) {
     throw new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE);
   }
+  return access;
 }
 
 /**

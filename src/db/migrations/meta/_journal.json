@@ -1947,6 +1947,13 @@
       "when": 1791983477969,
       "tag": "0277_margin_borrowing",
       "breakpoints": true
+    },
+    {
+      "idx": 278,
+      "version": "7",
+      "when": 1792007431292,
+      "tag": "0278_claude_writes_enabled",
+      "breakpoints": true
     }
   ]
 }
