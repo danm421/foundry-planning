@@ -67,14 +67,21 @@ export function netGrowthOf(ledger: Pick<AccountLedger, "growth" | "marginIntere
   return ledger.growth - (ledger.marginInterest ?? 0);
 }
 
+const wholeDollars = new Intl.NumberFormat("en-US", {
+  style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0,
+});
+
 /** Charge one year's margin interest: added to the loan, taken out of net.
  *  An annual charge on the opening loan — a deliberate approximation of the
- *  brokerage's daily accrual / monthly posting. Returns the interest. */
+ *  brokerage's daily accrual / monthly posting. `personalShare` (the loan's
+ *  personal-use share) is the part that is not deductible: the ledger records
+ *  it and the interest line notes it (spec 2026-10-14). Returns the interest. */
 export function chargeMarginInterest(
   acct: Pick<Account, "id" | "marginInterestRate">,
   accountBalances: Record<string, number>,
   marginMap: MarginMap,
   ledger: AccountLedger | undefined,
+  personalShare = 0,
 ): number {
   const loan = marginMap[acct.id] ?? 0;
   const rate = acct.marginInterestRate ?? 0;
@@ -83,11 +90,14 @@ export function chargeMarginInterest(
   marginMap[acct.id] = loan + interest;
   accountBalances[acct.id] = (accountBalances[acct.id] ?? 0) - interest;
   if (ledger) {
+    const personal = interest * personalShare;
     ledger.marginInterest = (ledger.marginInterest ?? 0) + interest;
+    if (personal > 0) ledger.marginInterestPersonal = personal;
     ledger.endingValue -= interest;
     ledger.entries.push({
       category: "margin_interest",
-      label: `Margin interest (${(rate * 100).toFixed(2)}%)`,
+      label: `Margin interest (${(rate * 100).toFixed(2)}%)` +
+        (personal > 0 ? ` — ${wholeDollars.format(personal)} not deductible (borrowed for spending)` : ""),
       amount: -interest,
       basis: 0,
     });

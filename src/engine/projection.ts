@@ -2280,16 +2280,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Display only (spec 2026-10-14): personal interest, never deducted.
     const personalMarginInterestByAccount: Record<string, { label: string; amount: number }> = {};
     for (const acct of workingAccounts) {
-      const interest = chargeMarginInterest(acct, accountBalances, marginMap, accountLedgers[acct.id]);
+      const share = marginPersonalShare[acct.id] ?? 0;
+      const interest = chargeMarginInterest(acct, accountBalances, marginMap, accountLedgers[acct.id], share);
       if (interest <= 0) continue;
       // §1.163-8T: interest on money borrowed for spending is personal. Only
       // the investment-use part reaches Form 4952; share 0 ⇒ Phase 1's math.
-      const personal = interest * (marginPersonalShare[acct.id] ?? 0);
+      const personal = interest * share;
       const hhShare = householdLikeShareOf(acct);
-      if (personal > 0) {
-        const ledger = accountLedgers[acct.id];
-        if (ledger) ledger.marginInterestPersonal = personal;
-        if (hhShare > 0) personalMarginInterestByAccount[acct.id] = { label: acct.name, amount: personal * hhShare };
+      if (personal > 0 && hhShare > 0) {
+        personalMarginInterestByAccount[acct.id] = { label: acct.name, amount: personal * hhShare };
       }
       const hh = (interest - personal) * hhShare;
       if (hh > 0) marginInterestHouseholdByAccount[acct.id] = { label: acct.name, amount: hh };

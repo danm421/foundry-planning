@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   shareAfterBorrow, shareAfterRepayment, settleShareAfterRepayment, marginBorrowHeadroom,
   canBorrowOnMargin, marginBorrowSourcesFor, borrowOnMargin, marginCallSaleAmount,
-  sellSecuritiesToRepayLoan, marginCallWarnings, type MarginShareMap,
+  sellSecuritiesToRepayLoan, marginCallWarnings, chargeMarginInterest, type MarginShareMap,
 } from "../margin";
 import type { Account, AccountLedger } from "../types";
 
@@ -79,6 +79,23 @@ describe("borrowOnMargin", () => {
     expect(l.distributions).toBe(100_000);
     expect(l.endingValue).toBe(900_000);
     expect(l.entries).toEqual([{ category: "margin_borrow", label: "Borrowed on margin", amount: -100_000, counterpartyId: "chk", basis: 0 }]);
+  });
+});
+
+describe("chargeMarginInterest — the personal-use part (M1)", () => {
+  it("a share notes the non-deductible part on the interest line, in whole dollars", () => {
+    const l = ledger(800_000);
+    const interest = chargeMarginInterest(brokerage(), { b: 800_000 }, { b: 200_000 }, l, 0.0771605);
+    expect(interest).toBeCloseTo(16_000, 6);
+    expect(l.marginInterestPersonal).toBeCloseTo(1_234.568, 3);
+    expect(l.entries).toEqual([{ category: "margin_interest", amount: -16_000, basis: 0,
+      label: "Margin interest (8.00%) — $1,235 not deductible (borrowed for spending)" }]);
+  });
+  it("no share ⇒ the plain label and no personal interest", () => {
+    const l = ledger(800_000);
+    chargeMarginInterest(brokerage(), { b: 800_000 }, { b: 200_000 }, l);
+    expect(l.marginInterestPersonal).toBeUndefined();
+    expect(l.entries[0].label).toBe("Margin interest (8.00%)");
   });
 });
 

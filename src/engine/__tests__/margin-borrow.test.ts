@@ -84,6 +84,12 @@ describe("interest on borrowing for spending is personal", () => {
       .accountLedgers["acct-borrow"];
     expect(l.marginInterest).toBeGreaterThan(0);
     expect(l.marginInterestPersonal).toBeUndefined();
+    expect(l.entries.find((e) => e.category === "margin_interest")?.label).toBe("Margin interest (8.00%)");
+  });
+  it("the account ledger's interest line notes the part that isn't deductible (M1)", () => {
+    const l = at(runBorrow([BORROWER]), 2027).accountLedgers["acct-borrow"];
+    expect(l.entries.find((e) => e.category === "margin_interest")?.label)
+      .toBe("Margin interest (8.00%) — $8,000 not deductible (borrowed for spending)");
   });
 });
 
