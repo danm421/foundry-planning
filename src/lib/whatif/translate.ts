@@ -34,8 +34,6 @@ export interface TranslateResult {
   recordIds: (string | null)[];
 }
 
-export type { GrowthDefaults };
-
 export interface TranslateOptions {
   /** Resolved category growth defaults. When absent, a new account or purchase
    *  without a growthRate falls back to the raw plan-settings columns. */

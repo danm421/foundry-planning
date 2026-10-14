@@ -340,15 +340,15 @@ export function translateTechnique(change: TechniqueChange, ctx: Ctx): One {
     }
 
     case "remove": {
-      const ids: Record<typeof change.kind, string[]> = {
-        income: ctx.tree.incomes.map((r) => r.id),
-        expense: ctx.tree.expenses.map((r) => r.id),
-        account: ctx.tree.accounts.map((r) => r.id),
-        liability: ctx.tree.liabilities.map((r) => r.id),
-        roth_conversion: (ctx.tree.rothConversions ?? []).map((r) => r.id),
-        asset_transaction: (ctx.tree.assetTransactions ?? []).map((r) => r.id),
+      const rows: Record<typeof change.kind, ReadonlyArray<{ id: string }> | undefined> = {
+        income: ctx.tree.incomes,
+        expense: ctx.tree.expenses,
+        account: ctx.tree.accounts,
+        liability: ctx.tree.liabilities,
+        roth_conversion: ctx.tree.rothConversions,
+        asset_transaction: ctx.tree.assetTransactions,
       };
-      if (!ids[change.kind].includes(change.id)) {
+      if (!(rows[change.kind] ?? []).some((r) => r.id === change.id)) {
         fail(ctx, `${change.kind.replace("_", " ")} ${change.id} isn't in this plan.`);
       }
       if (change.kind === "account") return removeAccount(ctx, findAccount(ctx, change.id));

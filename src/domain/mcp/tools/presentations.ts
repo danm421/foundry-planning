@@ -67,9 +67,16 @@ const listPresentationPages = defineTool({
   inputSchema: z.object({ clientId: clientIdArg }),
   page: "presentations",
   handler: async ({ clientId }, { principal, firmId }) => {
-    const [dismissed, firm] = await Promise.all([
+    const [dismissed, firm, suggested] = await Promise.all([
       listDismissedSlugs(firmId, principal.userId),
       listTemplatesForUser(firmId, principal.userId),
+      loadPlanFacts(clientId, firmId, "base")
+        .then((facts) => scoreReports(facts).map((s) => ({ pageId: s.pageId, reason: s.reason })))
+        .catch((err): { pageId: string; reason: string }[] => {
+          // Suggestions are a convenience; the catalog must still answer.
+          console.error("[mcp] list_presentation_pages: suggestions failed", err);
+          return [];
+        }),
     ]);
     const summary =
       (kind: "built_in" | "shared" | "mine") =>
@@ -79,17 +86,6 @@ const listPresentationPages = defineTool({
         kind,
         pageIds: t.pages.map((p) => p.pageId),
       });
-
-    let suggested: { pageId: string; reason: string }[] = [];
-    try {
-      suggested = scoreReports(await loadPlanFacts(clientId, firmId, "base")).map((s) => ({
-        pageId: s.pageId,
-        reason: s.reason,
-      }));
-    } catch (err) {
-      // Suggestions are a convenience; the catalog must still answer.
-      console.error("[mcp] list_presentation_pages: suggestions failed", err);
-    }
 
     return {
       pages: pageCatalog(),
@@ -273,11 +269,13 @@ const getBranding = defineTool({
     "whether their firm requires any.",
   inputSchema: z.object({ clientId: clientIdArg }),
   handler: async ({ clientId }, { firmId }) => {
-    const brand = await loadHouseholdBrand(clientId, firmId);
-    const [branding, web, contact] = await Promise.all([
+    const [brand, contact] = await Promise.all([
+      loadHouseholdBrand(clientId, firmId),
+      getClientWithContacts(clientId, firmId),
+    ]);
+    const [branding, web] = await Promise.all([
       resolveBrandingForClient(firmId, brand),
       resolveIntakeBrandingForClient(firmId, brand),
-      getClientWithContacts(clientId, firmId),
     ]);
     const clientName = [contact?.firstName, contact?.lastName].filter(Boolean).join(" ") || "the client";
     return {

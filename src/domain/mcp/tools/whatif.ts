@@ -10,16 +10,18 @@ import {
   isHeavy,
   JOB_BUDGET_MS,
   MAX_CHANGES,
+  MAX_VARIANTS_DETERMINISTIC,
   POLL_INTERVAL_MS,
   POLL_WAIT_MS,
   variantCap,
 } from "@/lib/whatif/caps";
-import { SOLVE_FOR_SCHEMA, WHAT_IF_CHANGE_SCHEMA } from "@/lib/whatif/changes";
+import { SOLVE_FOR_SCHEMA, WHAT_IF_CHANGE_SCHEMA, type WhatIfChange } from "@/lib/whatif/changes";
 import { WhatIfValidationError } from "@/lib/whatif/errors";
-import { getJobKv, readJobFor, waitForJob } from "@/lib/whatif/job-store";
+import { getJobKv, readJobFor, waitForJob, type WhatIfJob } from "@/lib/whatif/job-store";
 import { checkRankBy, rankVariants, RANK_METRICS, type RankMetric } from "@/lib/whatif/rank";
-import { prepareVariants, runPrepared, type RunOutput } from "@/lib/whatif/run";
+import { prepareVariants, runPrepared, type RunOutput, type VariantInput } from "@/lib/whatif/run";
 import { growthDefaultsFrom } from "@/lib/whatif/translate";
+import type { McpToolContext } from "../context";
 import { defineTool, McpUnavailableError, type McpTool } from "../define-tool";
 import { assertClientReadableForPrincipal, McpForbiddenError } from "../guards";
 import { buildRunDeps, chargeCompute, startWhatIfJob, type JobOutcome } from "../whatif-jobs";
@@ -93,6 +95,41 @@ function present(outcome: JobOutcome) {
   return outcome.status === "running" ? { ...outcome, message: STILL_RUNNING } : outcome;
 }
 
+/** The run behind try_what_if and compare_what_ifs: load the starting
+ *  scenario, translate the changes, charge the compute limit, then run inline
+ *  when deterministic or as a job when it runs Monte Carlo. */
+async function runWhatIfs(
+  { principal, firmId }: McpToolContext,
+  args: {
+    clientId: string;
+    scenarioId: string | undefined;
+    shared: WhatIfChange[];
+    variants: VariantInput[];
+    mc: boolean;
+    kind: WhatIfJob["kind"];
+    toResult: (out: RunOutput) => unknown;
+  },
+) {
+  const { clientId, mc } = args;
+  const scenario = args.scenarioId ?? "base";
+  const deps = await buildRunDeps(clientId, firmId, scenario);
+  const variants = prepareVariants(deps.tree, args.shared, args.variants, undefined, {
+    growthDefaults: growthDefaultsFrom(deps.resolutionContext),
+  });
+  await chargeCompute(principal, computeWeight(variants, mc));
+  const run = (onProgress?: (done: number) => Promise<void>) =>
+    runPrepared({ deps, variants, includeMonteCarlo: mc, budgetMs: JOB_BUDGET_MS, onProgress }).then(args.toResult);
+  const outcome: JobOutcome = mc
+    ? await startWhatIfJob({ principal, clientId, kind: args.kind, total: variants.length, work: run })
+    : { status: "done", result: await run() };
+  return {
+    scenarioId: scenario,
+    // foundryUrl (added by defineTool) opens the Solver on the base case.
+    ...(scenario !== "base" ? { scenarioUrl: foundryScenarioUrl(clientId, scenario) } : {}),
+    ...present(outcome),
+  };
+}
+
 const tryWhatIf = defineTool({
   name: "try_what_if",
   title: "Try a what-if",
@@ -116,32 +153,18 @@ const tryWhatIf = defineTool({
     includeMonteCarlo: z.boolean().optional().describe("Add the Monte Carlo probability of success. Slower."),
   }),
   page: "scenarios",
-  handler: async ({ clientId, scenarioId, changes, solveFor, includeMonteCarlo }, { principal, firmId }) => {
-    const scenario = scenarioId ?? "base";
-    // A success-based solve implies Monte Carlo (spec), so "heavy" and "runs
-    // Monte Carlo" are one and the same here.
-    const mc = isHeavy(solveFor, includeMonteCarlo ?? false);
-    const deps = await buildRunDeps(clientId, firmId, scenario);
-    const variants = prepareVariants(
-      deps.tree,
-      [],
-      [{ label: "What-if", changes: changes ?? [], ...(solveFor ? { solveFor } : {}) }],
-      undefined,
-      { growthDefaults: growthDefaultsFrom(deps.resolutionContext) },
-    );
-    await chargeCompute(principal, computeWeight(variants, mc));
-    const run = (onProgress?: (done: number) => Promise<void>) =>
-      runPrepared({ deps, variants, includeMonteCarlo: mc, budgetMs: JOB_BUDGET_MS, onProgress }).then(tryResult);
-    const outcome: JobOutcome = mc
-      ? await startWhatIfJob({ principal, clientId, kind: "try", total: 1, work: run })
-      : { status: "done", result: await run() };
-    return {
-      scenarioId: scenario,
-      // foundryUrl (added by defineTool) opens the Solver on the base case.
-      ...(scenario !== "base" ? { scenarioUrl: foundryScenarioUrl(clientId, scenario) } : {}),
-      ...present(outcome),
-    };
-  },
+  handler: ({ clientId, scenarioId, changes, solveFor, includeMonteCarlo }, ctx) =>
+    runWhatIfs(ctx, {
+      clientId,
+      scenarioId,
+      shared: [],
+      variants: [{ label: "What-if", changes: changes ?? [], ...(solveFor ? { solveFor } : {}) }],
+      // A success-based solve implies Monte Carlo (spec), so "heavy" and "runs
+      // Monte Carlo" are one and the same here.
+      mc: isHeavy(solveFor, includeMonteCarlo ?? false),
+      kind: "try",
+      toResult: tryResult,
+    }),
 });
 
 const variantSchema = z.object({
@@ -173,7 +196,7 @@ const compareWhatIfs = defineTool({
     clientId: clientIdArg,
     scenarioId: scenarioArg,
     sharedChanges: changesArg.optional(),
-    variants: z.array(variantSchema).min(1).max(25),
+    variants: z.array(variantSchema).min(1).max(MAX_VARIANTS_DETERMINISTIC),
     rankBy: z
       .object({
         metric: z.enum(RANK_METRICS),
@@ -189,8 +212,7 @@ const compareWhatIfs = defineTool({
     includeMonteCarlo: z.boolean().optional().describe("Add the Monte Carlo probability of success to every row."),
   }),
   page: "scenarios",
-  handler: async ({ clientId, scenarioId, sharedChanges, variants, rankBy, includeMonteCarlo }, { principal, firmId }) => {
-    const scenario = scenarioId ?? "base";
+  handler: async ({ clientId, scenarioId, sharedChanges, variants, rankBy, includeMonteCarlo }, ctx) => {
     // A success-based solve in any variation implies Monte Carlo for every
     // row (spec), so "heavy" and "runs Monte Carlo" are one and the same here.
     const mc = variants.some((v) => isHeavy(v.solveFor, includeMonteCarlo ?? false));
@@ -202,24 +224,15 @@ const compareWhatIfs = defineTool({
       );
     }
     checkRankBy(rankBy, variants.map((v) => v.solveFor?.kind ?? null));
-    const deps = await buildRunDeps(clientId, firmId, scenario);
-    const prepared = prepareVariants(deps.tree, sharedChanges ?? [], variants, undefined, {
-      growthDefaults: growthDefaultsFrom(deps.resolutionContext),
+    return runWhatIfs(ctx, {
+      clientId,
+      scenarioId,
+      shared: sharedChanges ?? [],
+      variants,
+      mc,
+      kind: "compare",
+      toResult: (out) => compareResult(out, rankBy),
     });
-    await chargeCompute(principal, computeWeight(prepared, mc));
-    const run = (onProgress?: (done: number) => Promise<void>) =>
-      runPrepared({ deps, variants: prepared, includeMonteCarlo: mc, budgetMs: JOB_BUDGET_MS, onProgress }).then((out) =>
-        compareResult(out, rankBy),
-      );
-    const outcome: JobOutcome = mc
-      ? await startWhatIfJob({ principal, clientId, kind: "compare", total: prepared.length, work: run })
-      : { status: "done", result: await run() };
-    return {
-      scenarioId: scenario,
-      // foundryUrl (added by defineTool) opens the Solver on the base case.
-      ...(scenario !== "base" ? { scenarioUrl: foundryScenarioUrl(clientId, scenario) } : {}),
-      ...present(outcome),
-    };
   },
 });
 
