@@ -1,9 +1,18 @@
 // src/lib/whatif/__tests__/run.test.ts
 import { describe, it, expect, vi } from "vitest";
+import type { SavingsRule } from "@/engine/types";
 import type { MonteCarloPayload } from "@/lib/projection/load-monte-carlo-data";
 import { prepareVariants, runPrepared, type RunDeps, type Solvers } from "../run";
 import { WhatIfValidationError } from "../errors";
 import { IDS, whatIfTree } from "./fixtures";
+
+/** whatIfTree with the 401(k) savings rule patched. */
+function ruleTree(patch: Partial<SavingsRule>) {
+  const t = whatIfTree();
+  t.savingsRules = t.savingsRules.map((r) => (r.accountId === IDS.k401 ? { ...r, ...patch } : r));
+  return t;
+}
+const solve401k = { kind: "savings" as const, accountId: IDS.k401, targetSuccess: 0.85 };
 
 function deps(over: Partial<RunDeps> = {}): RunDeps {
   return {
@@ -94,6 +103,23 @@ describe("prepareVariants", () => {
         { label: "A", changes: [], solveFor: { kind: "savings", accountId: IDS.brokerage, targetSuccess: 0.85 } },
       ]),
     ).toThrow(/savings rule/);
+  });
+
+  // The solve searches a dollar amount; the engine ignores it while a percent
+  // of salary or the IRS maximum is in force, so the answer would be inert.
+  it("refuses a savings solve on a percent-of-salary rule", () => {
+    expect(() =>
+      prepareVariants(ruleTree({ annualPercent: 0.1 }), [], [{ label: "A", changes: [], solveFor: solve401k }]),
+    ).toThrow(/percent of salary.*savings_amount/);
+  });
+
+  it("refuses a savings solve on a contribute-the-maximum rule, and allows it once savings_max turns that off", () => {
+    const tree = ruleTree({ contributeMax: true });
+    expect(() => prepareVariants(tree, [], [{ label: "A", changes: [], solveFor: solve401k }])).toThrow(
+      /IRS maximum.*savings_max.*contributeMax false/,
+    );
+    const off = { type: "savings_max" as const, accountId: IDS.k401, contributeMax: false };
+    expect(() => prepareVariants(tree, [], [{ label: "A", changes: [off], solveFor: solve401k }])).not.toThrow();
   });
 
   it("marks variations that add an account", () => {
@@ -188,6 +214,30 @@ describe("runPrepared", () => {
     const args = target.mock.calls[0][0];
     expect(args.baselineMutations.map((m) => m.kind)).toEqual(["living-expense-scale"]);
     expect(args.target).toEqual({ kind: "retirement-age", person: "client" });
+  });
+
+  it("keeps a savings_amount's percent-clear in a savings solve's baseline, dropping only the amount", async () => {
+    const target = vi.fn<Solvers["target"]>(async () => ({
+      objective: "pos" as const, status: "converged" as const, solvedValue: 12_000, achievedPoS: 0.85,
+      canonicalPoS: 0.85, iterations: 5, finalProjection: [], seed: 1,
+    }));
+    const percentTree = ruleTree({ annualPercent: 0.1 });
+    const solved = prepareVariants(percentTree, [], [
+      {
+        label: "A",
+        changes: [{ type: "savings_amount", accountId: IDS.k401, annualAmount: 10_000 }],
+        solveFor: solve401k,
+      },
+    ]);
+    await runPrepared({
+      deps: deps({ tree: percentTree, solvers: { target } }),
+      variants: solved,
+      includeMonteCarlo: false,
+      budgetMs: 1_000,
+    });
+    const args = target.mock.calls[0][0];
+    expect(args.baselineMutations).toEqual([{ kind: "savings-annual-percent", accountId: IDS.k401, percent: null }]);
+    expect(args.target).toEqual({ kind: "savings-contribution", accountId: IDS.k401 });
   });
 
   it("sets the claim-age mode to years for a claim-age solve", async () => {

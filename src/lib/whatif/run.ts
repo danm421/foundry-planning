@@ -136,9 +136,21 @@ export function prepareVariants(
     }
 
     if (solveFor?.kind === "savings") {
-      const working = applyMutations(tree, mutations);
-      if (!working.savingsRules.some((r) => r.accountId === solveFor.accountId)) {
+      const rules = applyMutations(tree, mutations).savingsRules.filter((r) => r.accountId === solveFor.accountId);
+      if (rules.length === 0) {
         refuse("solveFor savings needs an account that has a savings rule.");
+      }
+      // The solve searches a dollar amount, which the engine ignores while a
+      // percent of salary (savings.ts) or the IRS maximum (projection.ts) is set.
+      if (rules.some((r) => (r.annualPercent ?? 0) > 0)) {
+        refuse(
+          "solveFor savings searches a dollar amount, but this account saves a percent of salary. Add a savings_amount change for this account first.",
+        );
+      }
+      if (rules.some((r) => r.contributeMax)) {
+        refuse(
+          "solveFor savings searches a dollar amount, but this account contributes the IRS maximum. Add a savings_max change for this account with contributeMax false first.",
+        );
       }
     }
 
@@ -153,12 +165,12 @@ export function prepareVariants(
 }
 
 /** True for a mutation that sets the lever a solve is about to search — the
- *  solve must not see a fixed value for it (solve-types.ts). */
+ *  solve must not see a fixed value for it (solve-types.ts). A savings
+ *  solve's lever is the dollar amount alone: a savings_amount's percent-clear
+ *  stays, or the old percent of salary would win over every amount tried. */
 function isSolvedLever(m: SolverMutation, s: SolveFor): boolean {
   if (s.kind === "retirement_age") return m.kind === "retirement-age" && m.person === s.person;
-  if (s.kind === "savings") {
-    return (m.kind === "savings-contribution" || m.kind === "savings-annual-percent") && m.accountId === s.accountId;
-  }
+  if (s.kind === "savings") return m.kind === "savings-contribution" && m.accountId === s.accountId;
   return false;
 }
 

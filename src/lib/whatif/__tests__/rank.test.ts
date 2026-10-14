@@ -1,6 +1,8 @@
 // src/lib/whatif/__tests__/rank.test.ts
 import { describe, it, expect } from "vitest";
-import { rankVariants } from "../rank";
+import type { SolveFor } from "../changes";
+import { WhatIfValidationError } from "../errors";
+import { checkRankBy, rankVariants } from "../rank";
 import type { VariantResult } from "../run";
 
 const row = (label: string, endingPortfolio: number, lifetimeTax: number, status: "done" | "failed" = "done"): VariantResult => ({
@@ -16,6 +18,11 @@ const row = (label: string, endingPortfolio: number, lifetimeTax: number, status
         },
       }
     : {}),
+});
+
+const solved = (label: string, kind: SolveFor["kind"], value: number): VariantResult => ({
+  ...row(label, 0, 0),
+  solve: { kind, value, status: "converged", achievedSuccess: 0.85 },
 });
 
 describe("rankVariants", () => {
@@ -36,5 +43,48 @@ describe("rankVariants", () => {
   it("leaves failed rows unranked, in their input position", () => {
     const { rows } = rankVariants([row("x", 0, 0, "failed"), row("a", 5, 0)], { metric: "endingPortfolio" });
     expect(rows.map((r) => r.rank)).toEqual([null, 1]);
+  });
+
+  // A retirement-age solve returns the earliest age that reaches the target,
+  // so the lower answer is the better one.
+  it("ranks a retirement-age solve's lowest age first", () => {
+    const { rows, best } = rankVariants(
+      [solved("a", "retirement_age", 65), solved("b", "retirement_age", 62)],
+      { metric: "solvedValue" },
+    );
+    expect(rows.map((r) => r.rank)).toEqual([2, 1]);
+    expect(best).toBe("b");
+  });
+
+  it("ranks a max-spending solve's highest spend first", () => {
+    const { best } = rankVariants(
+      [solved("a", "max_spending", 150_000), solved("b", "max_spending", 180_000)],
+      { metric: "solvedValue" },
+    );
+    expect(best).toBe("b");
+  });
+});
+
+describe("checkRankBy", () => {
+  it("refuses ranking by solved value across different kinds of solve", () => {
+    expect(() => checkRankBy({ metric: "solvedValue" }, ["retirement_age", "max_spending"])).toThrow(WhatIfValidationError);
+    expect(() => checkRankBy({ metric: "solvedValue", direction: "asc" }, ["retirement_age", "max_spending"])).toThrow(
+      /different/,
+    );
+  });
+
+  it("refuses ranking a Roth-amount solve by solved value without a direction", () => {
+    expect(() => checkRankBy({ metric: "solvedValue" }, ["roth_amount", "roth_amount"])).toThrow(/direction/);
+  });
+
+  it("refuses ranking by solved value when no variation solves", () => {
+    expect(() => checkRankBy({ metric: "solvedValue", direction: "desc" }, [null, null])).toThrow(/solveFor/);
+  });
+
+  it("allows one kind of solve, a direction where one is needed, any other measure, and no ranking", () => {
+    expect(() => checkRankBy({ metric: "solvedValue" }, ["savings", null])).not.toThrow();
+    expect(() => checkRankBy({ metric: "solvedValue", direction: "asc" }, ["roth_amount"])).not.toThrow();
+    expect(() => checkRankBy({ metric: "endingPortfolio" }, [null, "ss_claim_age"])).not.toThrow();
+    expect(() => checkRankBy(undefined, ["roth_amount", "savings"])).not.toThrow();
   });
 });
