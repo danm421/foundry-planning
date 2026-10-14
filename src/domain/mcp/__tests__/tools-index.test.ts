@@ -4,8 +4,8 @@ import { ALL_MCP_TOOLS } from "../tools";
 import type { McpTool } from "../define-tool";
 
 describe("the MCP tool registry", () => {
-  it("exposes exactly 23 tools", () => {
-    expect(ALL_MCP_TOOLS).toHaveLength(23);
+  it("exposes exactly 26 tools", () => {
+    expect(ALL_MCP_TOOLS).toHaveLength(26);
   });
 
   it("has unique names, each at most 64 characters", () => {
@@ -18,6 +18,11 @@ describe("the MCP tool registry", () => {
   // directory listing depends on it, and a tool that slips out of read-only
   // without being named here fails this test.
   const WRITE_TOOLS = new Set(["save_what_if_as_scenario", "generate_presentation"]);
+
+  it("registers every write tool named above, so a misspelled name can't pass unseen", () => {
+    const names = new Set(ALL_MCP_TOOLS.map((t) => t.name));
+    for (const name of WRITE_TOOLS) expect(names.has(name), name).toBe(true);
+  });
 
   it("annotates the write tools as making changes and every other tool read-only", () => {
     for (const t of ALL_MCP_TOOLS) {

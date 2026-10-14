@@ -219,6 +219,12 @@ describe("generation-runs lib", () => {
     expect(await getRunForHousehold(id!, "00000000-0000-0000-0000-000000000000", ORG2)).toBeNull();
   });
 
+  it("getRunForHousehold returns null on firm mismatch, even with the right household", async () => {
+    const id = await createQueuedRun({ ...base(), kind: "meeting-prep" });
+    expect(await getRunForHousehold(id!, householdId2, ORG2)).not.toBeNull();
+    expect(await getRunForHousehold(id!, householdId2, "org_genruns_other")).toBeNull();
+  });
+
   it("getRunForHousehold sweeps an in-flight run past STALE_RUN_MS to failed", async () => {
     const id = await createQueuedRun({ ...base(), kind: "meeting-prep" });
     await db

@@ -46,6 +46,7 @@ import {
   MAX_DISTINCT_SCENARIOS,
   MAX_MC_SCENARIOS,
   type PlannerPage,
+  type ScenarioPlan,
 } from "@/lib/scenario/presentation-refs";
 import { loadPageScenarioBundles } from "@/lib/scenario/load-page-bundles";
 import { plannerFlagsFor } from "@/lib/presentations/export-page-sets";
@@ -150,19 +151,12 @@ export function resolveDerivedBundles(
 }
 
 /**
- * Render a presentation deck to a PDF buffer. Throws ClientNotFoundError /
- * ProjectionInputError (callers map to 404/422) or an Error with a
- * "Too many … scenarios" message (callers map to 400). No rate-limit, no
- * audit, no vault write — callers own those.
+ * The deck's scenario plan, built exactly as the render builds it. Pages that
+ * don't support an override, or whose override is undefined ("Default"),
+ * follow the top-level scenario. Exported so the Claude connector checks the
+ * caps and scenario ownership against the same plan before it queues a run.
  */
-export async function renderPresentationPdf(
-  clientId: string,
-  firmId: string,
-  body: ExportPdfBody,
-): Promise<{ buffer: Buffer; filename: string; clientLastName: string; distinctScenarioCount: number }> {
-  // Plan the distinct set of scenarios this deck needs. Pages that don't
-  // support an override, or whose override is undefined ("Default"), follow
-  // the top-level scenario.
+export function planDeckScenarios(body: ExportPdfBody): ScenarioPlan {
   const plannerPages: PlannerPage[] = body.pages.map((p) => {
     const page = PRESENTATION_PAGES[p.pageId];
     const requiredRefs = page.requiredScenarioRefs
@@ -176,19 +170,36 @@ export async function renderPresentationPdf(
       requiredRefs,
     };
   });
-  const plan = planScenarioBundles(plannerPages, body.scenarioId);
+  return planScenarioBundles(plannerPages, body.scenarioId);
+}
 
+/** The render's refusal for a deck past the fan-out caps, or null. */
+export function deckCapError(plan: ScenarioPlan): string | null {
   if (plan.distinct.size > MAX_DISTINCT_SCENARIOS) {
-    throw new Error(
-      `Too many distinct scenarios in one deck (${plan.distinct.size}). Limit is ${MAX_DISTINCT_SCENARIOS}.`,
-    );
+    return `Too many distinct scenarios in one deck (${plan.distinct.size}). Limit is ${MAX_DISTINCT_SCENARIOS}.`;
   }
   const mcCount = [...plan.distinct.values()].filter((d) => d.needsMonteCarlo).length;
   if (mcCount > MAX_MC_SCENARIOS) {
-    throw new Error(
-      `Too many scenarios with a Monte Carlo page (${mcCount}). Limit is ${MAX_MC_SCENARIOS}.`,
-    );
+    return `Too many scenarios with a Monte Carlo page (${mcCount}). Limit is ${MAX_MC_SCENARIOS}.`;
   }
+  return null;
+}
+
+/**
+ * Render a presentation deck to a PDF buffer. Throws ClientNotFoundError /
+ * ProjectionInputError (callers map to 404/422) or an Error with a
+ * "Too many … scenarios" message (callers map to 400). No rate-limit, no
+ * audit, no vault write — callers own those.
+ */
+export async function renderPresentationPdf(
+  clientId: string,
+  firmId: string,
+  body: ExportPdfBody,
+): Promise<{ buffer: Buffer; filename: string; clientLastName: string; distinctScenarioCount: number }> {
+  const plan = planDeckScenarios(body);
+  // The route maps this message to a 400 (`/Too many .* scenarios/`).
+  const capError = deckCapError(plan);
+  if (capError) throw new Error(capError);
 
   // Conditionally load the investments bundle — only when the deck includes
   // at least one investment page, to avoid unnecessary DB queries.
