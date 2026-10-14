@@ -15,6 +15,10 @@ export const POLL_WAIT_MS = 50_000;
 export const POLL_INTERVAL_MS = 2_000;
 /** A job stops starting new variations after this; the MCP route's maxDuration is 800 s. */
 export const JOB_BUDGET_MS = 700_000;
+/** How long a what-if job's state stays in Redis. */
+export const JOB_TTL_SECONDS = 24 * 60 * 60;
+/** A job still "running" after this is reported as failed. Longer than the MCP route's 800 s maxDuration, so a live job is never reaped. */
+export const STALE_JOB_MS = 15 * 60 * 1000;
 
 export const MAX_VARIANTS_DETERMINISTIC = 25;
 export const MAX_VARIANTS_HEAVY = 10;
