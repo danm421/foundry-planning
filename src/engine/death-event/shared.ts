@@ -1735,6 +1735,9 @@ export interface DeathEventInput {
    *  `marginBalance` (the plan-start loan), while pour-out and business
    *  succession see no loan. */
   marginMap?: Record<string, number>;
+  /** Personal-use share of each live loan, keyed like `marginMap` (see
+   *  `MarginShareMap`). Absent ⇒ every loan is investment debt. */
+  marginPersonalShare?: Record<string, number>;
 }
 
 export interface DeathEventResult {
@@ -1758,6 +1761,9 @@ export interface DeathEventResult {
    *  loan re-keyed to the accounts it became (a share that left the household
    *  took its part with it); every other entry carried as it was. */
   marginMap: Record<string, number>;
+  /** Personal-use share per account after the death, keyed like `marginMap`:
+   *  every account a routed account became keeps its share (spec 2026-10-14). */
+  marginPersonalShare: Record<string, number>;
 }
 
 /** Step 4: Fallback chain. Routes the undisposed residual to:

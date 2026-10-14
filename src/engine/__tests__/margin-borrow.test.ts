@@ -85,3 +85,16 @@ describe("interest on borrowing for spending is personal", () => {
     expect(l.marginInterestPersonal).toBeUndefined();
   });
 });
+
+describe("every repayment retires personal-use dollars first (R2)", () => {
+  it("a 50% asset sale after borrowing repays the personal part first", () => {
+    // 2026: interest on 200K = 16K → loan 216K; borrow 100K → loan 316K, share 100/316.
+    // 2027 (sales run before interest): selling half repays 158K ≥ the 100K personal → share 0.
+    const years = runBorrow([{ ...BORROWER, marginBalance: 200_000 }], { years: 2, data: {
+      assetTransactions: [{ id: "tx-half", name: "Sell half", type: "sell", year: 2027, accountId: "acct-borrow",
+        fractionSold: 0.5, proceedsAccountId: "acct-checking" }],
+    } });
+    expect(at(years, 2026).withdrawals.borrowedByAccount?.["acct-borrow"]).toBeCloseTo(100_000, 2);
+    expect(at(years, 2027).accountLedgers["acct-borrow"].marginInterestPersonal).toBeUndefined();
+  });
+});

@@ -41,7 +41,7 @@ import {
 import { computeBusinessYearFlow } from "./business/year-flow";
 import { buildGiftValueAtYear } from "./business/business-tree";
 import { accrueLockedEntityShare } from "./locked-shares";
-import { type MarginMap, type MarginShareMap, netSeedValue, seedMarginLoan, grossValue, grossBalancesFor, chargeMarginInterest, marginCallWarnings, marginBorrowSourcesFor, borrowOnMargin, marginCallSaleAmount, sellSecuritiesToRepayLoan, DEFAULT_MARGIN_CALL_PCT } from "./margin";
+import { type MarginMap, type MarginShareMap, netSeedValue, seedMarginLoan, grossValue, grossBalancesFor, chargeMarginInterest, marginCallWarnings, marginBorrowSourcesFor, borrowOnMargin, marginCallSaleAmount, sellSecuritiesToRepayLoan, loansOfSharedAccounts, settleSharesAfterRepayments, settleShareAfterRepayment, DEFAULT_MARGIN_CALL_PCT } from "./margin";
 import { buildOwnershipSnapshot } from "./ownership-snapshot";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
@@ -1501,6 +1501,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // `data.accounts` original no longer describes.
     const boyAccountById = new Map(workingAccounts.map((a) => [a.id, a]));
 
+    // R2 (spec 2026-10-14): a sale that repays part of a loan repays its
+    // personal-use part first. Snapshot the loans of accounts with a share now,
+    // settle them after the business and asset sales below.
+    const loansBeforeSales = loansOfSharedAccounts(marginMap, marginPersonalShare);
+
     // ── BoY: Business Sales ─────────────────────────────────────────────────
     // Selling a business cascades to liquidate every child account and
     // liability (accounts whose parentAccountId points at the business).
@@ -1610,6 +1615,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
       }
     }
+    settleSharesAfterRepayments(marginPersonalShare, loansBeforeSales, marginMap);
 
     // ── BoY: Asset Purchases ─────────────────────────────────────────────────
     // Purchases happen on the first day of the year: equity leaves the funding
@@ -4074,7 +4080,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const terminationLoanSnapshot: MarginMap = { ...marginMap };
     const repayTerminatedLoanShare = (id: string, trustShare: number) => {
       const repaid = (terminationLoanSnapshot[id] ?? 0) * trustShare;
-      if (repaid > 0) marginMap[id] = Math.max(0, (marginMap[id] ?? 0) - repaid);
+      if (repaid <= 0) return;
+      const before = marginMap[id] ?? 0;
+      marginMap[id] = Math.max(0, before - repaid);
+      settleShareAfterRepayment(marginPersonalShare, id, before, marginMap[id]);
     };
     const yearTrustTerminations: TrustTerminationResult[] = [];
     for (const trust of currentEntities) {
@@ -9314,6 +9323,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         entityAccountSharesEoY: lockedEntityShareCarry,
         familyAccountSharesEoY: lockedFamilyShareCarry,
         marginMap,
+        marginPersonalShare,
         // Survivor birth year + LE so first-death can extend a continued
         // deferred income to the survivor's death year. Mirrors
         // computeFirstDeathYear's arithmetic (spouseLifeExpectancy ?? 95).
@@ -9356,6 +9366,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       Object.assign(basisMap, deathResult.basisMap);
       for (const key of Object.keys(marginMap)) delete marginMap[key];
       Object.assign(marginMap, deathResult.marginMap);
+      for (const key of Object.keys(marginPersonalShare)) delete marginPersonalShare[key];
+      Object.assign(marginPersonalShare, deathResult.marginPersonalShare);
       currentIncomes = deathResult.incomes;
       currentLiabilities = deathResult.liabilities.map(normalizeOwners);
       // The death's liability partition cut these rows out of a gifted debt: a
@@ -9472,6 +9484,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         entityAccountSharesEoY: lockedEntityShareCarry,
         familyAccountSharesEoY: lockedFamilyShareCarry,
         marginMap,
+        marginPersonalShare,
       });
 
       // Rev. Rul. 74-175 with no survivor: the whole carryover expires. The
@@ -9490,6 +9503,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       Object.assign(basisMap, finalResult.basisMap);
       for (const key of Object.keys(marginMap)) delete marginMap[key];
       Object.assign(marginMap, finalResult.marginMap);
+      for (const key of Object.keys(marginPersonalShare)) delete marginPersonalShare[key];
+      Object.assign(marginPersonalShare, finalResult.marginPersonalShare);
       currentIncomes = finalResult.incomes;
       currentLiabilities = finalResult.liabilities.map(normalizeOwners);
       // Adopt grantor-succession entity flips at final death. The loop breaks

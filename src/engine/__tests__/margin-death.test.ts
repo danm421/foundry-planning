@@ -416,3 +416,43 @@ describe("margin loans at the real deaths — the live loan carries through", ()
 function compounded(n: number): number {
   return 1.05 ** n;
 }
+
+const personalDollars = (res: { accounts: Account[]; marginMap: Record<string, number>; marginPersonalShare: Record<string, number> }) =>
+  res.accounts.reduce((t, a) => t + (res.marginMap[a.id] ?? 0) * (res.marginPersonalShare[a.id] ?? 0), 0);
+
+describe("the personal-use share at death (spec 2026-10-14)", () => {
+  it("a mixed 70% client / 30% entity account conserves personal-use dollars through BOTH deaths (Review Focus 3)", () => {
+    const llc: EntitySummary = { id: "llc", name: "Family LLC", entityType: "llc", includeInPortfolio: false, isGrantor: false, isIrrevocable: true };
+    const mixed = margined("m", [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.7 },
+      { kind: "entity", entityId: "llc", percent: 0.3 },
+    ]);
+    const first = applyFirstDeath(mkInput({ accounts: [mixed], entities: [llc], balances: { m: NET },
+      marginMap: { m: LOAN }, marginPersonalShare: { m: 0.4 } }));
+    expect(personalDollars(first)).toBeCloseTo(0.4 * LOAN, 2);
+    const slice = first.accounts.find((a) => a.sliceOf === "m")!;
+    expect(first.marginPersonalShare[slice.id]).toBeCloseTo(0.4, 12);
+
+    const final = applyFinalDeath(mkFinalDeathInput({
+      deceased: "spouse", survivor: "spouse", familyMembers: [clientFm, spouseFm, ...kids(2)],
+      accounts: first.accounts, accountBalances: first.accountBalances, basisMap: first.basisMap,
+      marginMap: first.marginMap, marginPersonalShare: first.marginPersonalShare,
+      liabilities: first.liabilities, entities: first.entities, incomes: first.incomes,
+    }));
+    expect(personalDollars(final)).toBeCloseTo(0.4 * LOAN, 2);
+  });
+
+  it("final death to two children: each heir keeps the parent's share", () => {
+    const res = applyFinalDeath(mkFinalDeathInput({ accounts: [soleMargined], balances: { s: NET }, basis: { s: NET },
+      marginMap: { s: LOAN }, marginPersonalShare: { s: 0.25 }, children: 2 }));
+    const heirs = res.accounts.filter((x) => (res.marginMap[x.id] ?? 0) > 0);
+    expect(heirs).toHaveLength(2);
+    for (const a of heirs) expect(res.marginPersonalShare[a.id]).toBeCloseTo(0.25, 12);
+  });
+
+  it("no share in ⇒ no share out (Phase 1 byte-identity)", () => {
+    const res = applyFirstDeath(mkInput({ accounts: [jointMargined], balances: { j: NET }, marginMap: { j: LOAN } }));
+    expect(res.marginPersonalShare).toEqual({});
+    expect(res.accounts.some((a) => "marginPersonalShare" in a)).toBe(false);
+  });
+});

@@ -53,6 +53,7 @@ interface FinalDeathChainResult {
   accountBalances: Record<string, number>;
   basisMap: Record<string, number>;
   marginMap: Record<string, number>;
+  marginPersonalShare: Record<string, number>;
   incomes: Income[];
   liabilities: Liability[];
   transfers: DeathTransfer[];
@@ -117,6 +118,7 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
   const nextAccountBalances: Record<string, number> = { ...accountBalances };
   const nextBasisMap: Record<string, number> = { ...basisMap };
   const nextMarginMap: Record<string, number> = { ...(input.marginMap ?? {}) };
+  const nextShareMap: Record<string, number> = { ...(input.marginPersonalShare ?? {}) };
   const assetTransfers: DeathTransfer[] = [];
   const warnings: string[] = [];
 
@@ -171,7 +173,7 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
     // Gift-resolved (see `routeAtDeath`): a wholly gifted account stays as it
     // is; a partly gifted one is partitioned like any other mixed account.
     // On the LIVE loan: every split below carries its share of it.
-    const route = routeAtDeath(withLiveMargin(acct, input.marginMap), balance, originalBasis, input);
+    const route = routeAtDeath(withLiveMargin(acct, input.marginMap, input.marginPersonalShare), balance, originalBasis, input);
     if (route == null) {
       nextAccounts.push(acct);
       continue;
@@ -180,7 +182,7 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
       nextAccounts.push(slice);
       nextAccountBalances[slice.id] = slice.value;
       nextBasisMap[slice.id] = slice.basis;
-      seedMarginLoan(nextMarginMap, slice);
+      seedMarginLoan(nextMarginMap, slice, nextShareMap);
     }
     const routedAcct = route.account;
     const routedBalance = route.balance;
@@ -289,11 +291,12 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
     delete nextAccountBalances[acct.id];
     delete nextBasisMap[acct.id];
     delete nextMarginMap[acct.id];
+    delete nextShareMap[acct.id];
     for (const a of stepAccts) {
       nextAccounts.push(a);
       nextAccountBalances[a.id] = a.value;
       nextBasisMap[a.id] = a.basis;
-      seedMarginLoan(nextMarginMap, a);
+      seedMarginLoan(nextMarginMap, a, nextShareMap);
     }
 
     if (linkedLiability) {
@@ -313,6 +316,7 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
     accountBalances: nextAccountBalances,
     basisMap: nextBasisMap,
     marginMap: nextMarginMap,
+    marginPersonalShare: nextShareMap,
     incomes: nextIncomes,
     liabilities: nextLiabilities,
     transfers: assetTransfers,
@@ -877,6 +881,7 @@ export function applyFinalDeath(rawInput: DeathEventInput): DeathEventResult {
     // From the chain, not the pre-drain state: the estate drains spend net
     // value and never touch a loan.
     marginMap: chainResult.marginMap,
+    marginPersonalShare: chainResult.marginPersonalShare,
   };
 }
 

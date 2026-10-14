@@ -22,13 +22,17 @@ export function netSeedValue(acct: Account): number {
   return acct.value - (acct.marginBalance ?? 0);
 }
 
-/** Record an account's own loan in `marginMap` — only when it carries one, so
- *  a no-margin account never gains a map entry. */
+/** Record an account's loan in `marginMap` — only when it carries one, so a
+ *  no-margin account never gains a map entry — and, with `shareMap`, its
+ *  personal-use share (spec 2026-10-14). */
 export function seedMarginLoan(
   marginMap: MarginMap,
-  acct: Pick<Account, "id" | "marginBalance">,
+  acct: Pick<Account, "id" | "marginBalance" | "marginPersonalShare">,
+  shareMap?: MarginShareMap,
 ): void {
-  if ((acct.marginBalance ?? 0) > 0) marginMap[acct.id] = acct.marginBalance!;
+  if ((acct.marginBalance ?? 0) <= 0) return;
+  marginMap[acct.id] = acct.marginBalance!;
+  if (shareMap && (acct.marginPersonalShare ?? 0) > 0) shareMap[acct.id] = acct.marginPersonalShare!;
 }
 
 /** Securities value: net balance plus the live loan (net itself when there is none). */
@@ -87,10 +91,19 @@ export function chargeMarginInterest(
   return interest;
 }
 
-/** The death path reads loans off Account objects: swap in the live loan. */
-export function withLiveMargin(acct: Account, marginMap: MarginMap | undefined): Account {
+/** The death path reads loans off Account objects: swap in the live loan and,
+ *  with `shareMap`, the live personal-use share, so every slice minted from
+ *  the copy carries both. A share left on the object by an earlier death is
+ *  cleared when the live map has none. */
+export function withLiveMargin(acct: Account, marginMap: MarginMap | undefined, shareMap?: MarginShareMap): Account {
   const loan = marginMap?.[acct.id];
-  return loan == null ? acct : { ...acct, marginBalance: loan };
+  if (loan == null) return acct;
+  const share = shareMap?.[acct.id];
+  return {
+    ...acct,
+    marginBalance: loan,
+    ...(share != null ? { marginPersonalShare: share } : acct.marginPersonalShare != null ? { marginPersonalShare: 0 } : {}),
+  };
 }
 
 /** A `fraction` share of an account: value, basis AND loan scale together.
