@@ -2341,6 +2341,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       });
       if (sale) marginSales.push(sale);
     }
+    // Folded into `capGainsInTaxableIncome`, `taxableIncome` and `taxDetail`
+    // like every other sale gain (final review C1).
+    const marginSaleGainTotal = marginSales.reduce((t, s) => t + s.gain, 0);
 
     // ── Apply Transfers ─────────────────────────────────────────────────────
     let transferResult: TransfersResult = {
@@ -2789,6 +2792,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         transferResult.capitalGains +
         reinvestmentResult.capitalGains +
         saleResult.capitalGains +
+        marginSaleGainTotal +
         businessSaleResult.capitalGains +
         equityCapitalGains +
         taxAdj.capitalGainsLt,
@@ -2816,6 +2820,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       reinvestmentResult.capitalGains +
       rothConversionResult.taxableOrdinaryIncome +
       saleResult.capitalGains +
+      marginSaleGainTotal +
       businessSaleResult.capitalGains +
       equityOrdinaryIncome +
       equityCapitalGains +
@@ -3396,7 +3401,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Add transfer and sale income to tax detail
     taxDetail.ordinaryIncome += transferResult.taxableOrdinaryIncome;
     taxDetail.ordinaryIncome += rothConversionResult.taxableOrdinaryIncome;
-    const marginSaleGainTotal = marginSales.reduce((t, s) => t + s.gain, 0);
     taxDetail.capitalGains +=
       transferResult.capitalGains +
       reinvestmentResult.capitalGains +

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { runMargin, runBorrow, CHECKING } from "./_fixtures/margin";
 import { runProjection } from "../projection";
-import { buildClientData, basePlanSettings } from "./fixtures";
+import { buildClientData, basePlanSettings, FIXTURE_TAX_PARAMS } from "./fixtures";
 import { LEGACY_FM_CLIENT } from "../ownership";
 import type { Account } from "../types";
 
@@ -64,12 +64,45 @@ describe("the repay year (spec 2026-10-14)", () => {
   });
 });
 
+// Final review C1: the gain must reach the `taxableIncome` scalar and
+// `capitalGainsInTaxableIncome`, which flat mode taxes — not only taxDetail.
+describe("forced and repay sale gains are taxed in every tax mode (final review C1)", () => {
+  const FUNDED = { ...CHECKING, value: 500_000, basis: 500_000 };
+  const SHOCK = { marketShock: { year: 2026, drawdownPct: 0.4 } };
+  const REPAY = { value: 1_200_000, basis: 500_000, marginBalance: 300_000 };
+  const cases = [
+    { name: "a forced sale (example D)", withSale: acct({}), noSale: acct({}), settings: SHOCK, noSaleSettings: {}, gain: 88_888.89 },
+    { name: "a repay-year sale (example E)", withSale: acct({ ...REPAY, marginRepayYear: 2026 }), noSale: acct(REPAY),
+      settings: {}, noSaleSettings: {}, gain: 175_000 },
+  ];
+  const run = (a: Account, settings: object, mode: "flat" | "bracket") =>
+    runMargin([FUNDED, a], 1, { flatFederalRate: 0.2, flatStateRate: 0.05, taxEngineMode: mode, ...settings },
+      { taxYearRows: FIXTURE_TAX_PARAMS })[0];
+
+  for (const c of cases) {
+    it(`flat mode: ${c.name} adds 25% of its gain to the year's tax`, () => {
+      const y = run(c.withSale, c.settings, "flat");
+      const base = run(c.noSale, c.noSaleSettings, "flat");
+      expect(y.marginSales?.[0].gain).toBeCloseTo(c.gain, 2);
+      expect(base.marginSales).toBeUndefined();
+      expect(y.taxResult!.income.capitalGains).toBeCloseTo(c.gain, 2);
+      expect(y.taxResult!.flow.totalTax - base.taxResult!.flow.totalTax).toBeCloseTo(0.25 * c.gain, 2);
+    });
+    it(`bracket mode: ${c.name} raises the year's tax`, () => {
+      const y = run(c.withSale, c.settings, "bracket");
+      const base = run(c.noSale, c.noSaleSettings, "bracket");
+      expect(y.taxResult!.income.capitalGains).toBeCloseTo(c.gain, 2);
+      expect(y.taxResult!.flow.totalTax).toBeGreaterThan(base.taxResult!.flow.totalTax + 1);
+    });
+  }
+});
+
 describe("owners: a margin-call gain is taxed to the account's owners", () => {
   const TRUST_ID = "00000000-0000-0000-0000-0000000000f1";
   // Scaffold copied from capital-loss-realization.test.ts `runTrustResidenceSale`.
-  function runTrustOwned(isGrantor: boolean) {
+  function runTrustOwned(isGrantor: boolean, settings: object = {}) {
     const base = buildClientData({ planSettings: { ...basePlanSettings, ...ZERO_TAX, planStartYear: 2026, planEndYear: 2026,
-      marketShock: { year: 2026, drawdownPct: 0.4 } } });
+      marketShock: { year: 2026, drawdownPct: 0.4 }, ...settings }, taxYearRows: FIXTURE_TAX_PARAMS });
     return runProjection({
       ...base,
       accounts: [
@@ -89,5 +122,10 @@ describe("owners: a margin-call gain is taxed to the account's owners", () => {
   });
   it("a grantor trust's gain lands on the household return", () => {
     expect(runTrustOwned(true).taxDetail!.capitalGains).toBeCloseTo(88_888.89, 2);
+  });
+  it("bracket mode: a non-grantor trust's gain stays off the household's tax (C1)", () => {
+    const y = runTrustOwned(false, { taxEngineMode: "bracket", flatStateRate: 0.05 });
+    expect(y.marginSales?.[0].gain).toBeCloseTo(88_888.89, 2);
+    expect(y.taxResult!.income.capitalGains).toBeCloseTo(0, 2);
   });
 });
