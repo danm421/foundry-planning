@@ -103,9 +103,12 @@ export async function purgeFirmById(firmId: string): Promise<void> {
   // 0. Collect every Blob reference BEFORE any DB row is deleted.
 
   // GUARD: re-validate eligibility at delete time (TOCTOU). One firms query
-  // also carries branding URLs (read later) + a correlated live-subscription
+  // also carries branding URLs (read later) + this firm's live-subscription
   // count, so a resubscribed firm can never be purged even if its archive
-  // stamp wasn't cleared.
+  // stamp wasn't cleared. The count binds the firmId PARAMETER, not
+  // firms.firm_id: drizzle strips table names from select-field columns in a
+  // single-table select, so a correlated `= ${firms.firmId}` renders as
+  // `"firm_id" = "firm_id"` and counts every firm's subscriptions.
   const firmRows = await db
     .select({
       logoUrl: firms.logoUrl,
@@ -116,7 +119,7 @@ export async function purgeFirmById(firmId: string): Promise<void> {
       isFounder: firms.isFounder,
       liveSubCount: sql<number>`(
         select count(*)::int from ${subscriptions}
-        where ${subscriptions.firmId} = ${firms.firmId}
+        where ${subscriptions.firmId} = ${firmId}
         and ${subscriptions.status} in ('trialing','active','past_due','unpaid')
       )`,
     })

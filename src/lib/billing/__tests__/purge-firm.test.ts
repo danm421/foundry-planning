@@ -52,6 +52,10 @@ const mocks = vi.hoisted(() => ({
   deleteBrandingAsset: vi.fn(),
 }));
 
+// The eligibility guard's SELECT list, captured so a test can render it with
+// the real query builder (the mocked db never builds SQL).
+const captured = vi.hoisted(() => ({ firmSelection: undefined as Record<string, unknown> | undefined }));
+
 vi.mock("@/db", async () => {
   const schema = (await import("@/db/schema")) as Record<string, unknown>;
   const s = schema as Record<string, unknown>;
@@ -65,11 +69,14 @@ vi.mock("@/db", async () => {
       // `.from(t).where(...)` (2 hops) for firmId-scoped tables and
       // `.from(t).where(... inArray subquery ...)` for the blob-ref tables.
       // We dispatch purely on the `from(tbl)` argument.
-      select: () => ({
+      select: (fields?: Record<string, unknown>) => ({
         from: (tbl: unknown) => ({
           where: () => {
             if (tbl === s.crmHouseholds) return mocks.selectHouseholds();
-            if (tbl === s.firms) return mocks.selectFirm();
+            if (tbl === s.firms) {
+              captured.firmSelection = fields;
+              return mocks.selectFirm();
+            }
             if (tbl === s.crmHouseholdDocuments) return mocks.selectHouseholdDocs();
             if (tbl === s.clientImportFiles) return mocks.selectImportFiles();
             if (tbl === s.crmTaskFiles) return mocks.selectTaskFiles();
@@ -136,6 +143,9 @@ vi.mock("@vercel/blob", () => ({ del: mocks.vercelDel }));
 vi.mock("@/lib/imports/blob", () => ({ deleteImportFile: mocks.deleteImportFile }));
 vi.mock("@/lib/branding/blob", () => ({ deleteBrandingAsset: mocks.deleteBrandingAsset }));
 
+import { eq } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import { firms } from "@/db/schema";
 import { purgeFirmById, FirmNotPurgeableError } from "../purge-firm";
 import { PURGED_FIRM_TABLES } from "../purge-coverage";
 
@@ -491,6 +501,23 @@ describe("purgeFirmById — eligibility guard", () => {
     ]);
     await expect(purgeFirmById("org_active")).rejects.toBeInstanceOf(FirmNotPurgeableError);
     expect(mocks.purgeHousehold).not.toHaveBeenCalled();
+  });
+
+  it("counts only this firm's live subscriptions, not every firm's", async () => {
+    await purgeFirmById("org_1");
+
+    // Render the guard's SELECT exactly as drizzle builds it: a single-table
+    // select strips table names from select-field columns, so a subquery
+    // correlated on firms.firm_id compares subscriptions.firm_id to itself and
+    // counts every paying firm — no firm could ever be purged.
+    const { sql: text, params } = new QueryBuilder()
+      .select(captured.firmSelection as never)
+      .from(firms)
+      .where(eq(firms.firmId, "org_1"))
+      .toSQL();
+    expect(text).not.toMatch(/"firm_id" = "firm_id"/);
+    // Bound twice: once in the live-subscription count, once in the outer WHERE.
+    expect(params.filter((p) => p === "org_1")).toHaveLength(2);
   });
 
   it("throws when the firm row is missing", async () => {
