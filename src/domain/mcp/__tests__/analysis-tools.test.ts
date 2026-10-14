@@ -9,7 +9,6 @@ const h = vi.hoisted(() => ({
   loadEffectiveTree: vi.fn(),
   getOrComputeMaxSpending: vi.fn(),
   solveSsClaimAgeByPortfolio: vi.fn(),
-  applyMutations: vi.fn((tree: unknown) => tree),
   runProjection: vi.fn(),
   runProjectionWithEvents: vi.fn(),
   explainChange: vi.fn(),
@@ -23,7 +22,6 @@ vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree: h.loadEffectiveTree
 // getOrComputeMonteCarlo + solveMaxSpending (the brief's broken pairing).
 vi.mock("@/lib/compute-cache/max-spending", () => ({ getOrComputeMaxSpending: h.getOrComputeMaxSpending }));
 vi.mock("@/lib/solver/solve-ss-portfolio", () => ({ solveSsClaimAgeByPortfolio: h.solveSsClaimAgeByPortfolio }));
-vi.mock("@/lib/solver/apply-mutations", () => ({ applyMutations: h.applyMutations }));
 vi.mock("@/engine", () => ({ runProjection: h.runProjection, runProjectionWithEvents: h.runProjectionWithEvents }));
 // SUBJECT_KEYS is ["tax"] — one registered adapter (not `as const`; see the
 // registry itself, Object.keys(ADAPTERS) as SubjectKey[]).
@@ -129,7 +127,6 @@ beforeEach(() => {
   });
   h.getOrComputeMaxSpending.mockReset();
   h.solveSsClaimAgeByPortfolio.mockReset();
-  h.applyMutations.mockReset().mockImplementation((tree: unknown) => tree);
   h.runProjection.mockReset();
   h.runProjectionWithEvents
     .mockReset()
@@ -143,9 +140,8 @@ beforeEach(() => {
 });
 
 describe("the tool set", () => {
-  it("exposes exactly the five analysis tools, all read-only", () => {
+  it("exposes exactly the four analysis tools, all read-only", () => {
     expect(analysisTools.map((t) => t.name).sort()).toEqual([
-      "analyze_roth_conversion",
       "analyze_social_security",
       "break_down_projection_figure",
       "explain_projection_change",
@@ -467,177 +463,6 @@ describe("solve_max_spending", () => {
       byName("solve_max_spending").run({ clientId: "c1", targetPoS: 0.85 }, principal),
     ).rejects.toThrow(DENIED_MESSAGE);
     expect(h.getOrComputeMaxSpending).not.toHaveBeenCalled();
-  });
-});
-
-describe("analyze_roth_conversion", () => {
-  it("rejects an empty conversions array and a non-positive amount", () => {
-    const schema = byName("analyze_roth_conversion").inputSchema;
-    expect(
-      schema.safeParse({ clientId: "c", conversions: [] }).success,
-    ).toBe(false);
-    expect(
-      schema.safeParse({
-        clientId: "c",
-        conversions: [{ id: "r1", year: 2030, amount: 0, sourceAccountId: "a", destinationAccountId: "b" }],
-      }).success,
-    ).toBe(false);
-    expect(
-      schema.safeParse({
-        clientId: "c",
-        conversions: [{ id: "r1", year: 2030, amount: 50_000, sourceAccountId: "a", destinationAccountId: "b" }],
-      }).success,
-    ).toBe(true);
-  });
-
-  it("requires each conversion's year to be an integer (F1/B4)", () => {
-    const schema = byName("analyze_roth_conversion").inputSchema;
-    expect(
-      schema.safeParse({
-        clientId: "c",
-        conversions: [{ id: "r1", year: 2030.5, amount: 50_000, sourceAccountId: "a", destinationAccountId: "b" }],
-      }).success,
-    ).toBe(false);
-  });
-
-  it("discloses the single-year fixed-dollar shape and the aggregate-only attribution guard in the description (F4)", () => {
-    const description = byName("analyze_roth_conversion").description;
-    expect(description).toContain("single-year, fixed-dollar conversion");
-    expect(description).toContain("do not attribute a dollar amount to any single conversion");
-  });
-
-  it("pins the liquid-portfolio disclosure in the description (F6)", () => {
-    expect(byName("analyze_roth_conversion").description).toContain(
-      "it excludes home/real estate, business, stock options, and locked trust assets.",
-    );
-  });
-
-  it("builds ONE roth-conversion-upsert mutation PER conversion, each carrying a full RothConversion value with an array sourceAccountIds (C4)", async () => {
-    h.runProjection.mockReturnValueOnce([makeYear()]).mockReturnValueOnce([makeYear()]);
-    await byName("analyze_roth_conversion").run(
-      {
-        clientId: "c1",
-        scenarioId: "s1",
-        conversions: [
-          { id: "rc1", name: "Drain the IRA", year: 2031, amount: 50_000, sourceAccountId: "acct-ira", destinationAccountId: "acct-roth" },
-          { id: "rc2", year: 2032, amount: 20_000, sourceAccountId: "acct-ira-2", destinationAccountId: "acct-roth" },
-        ],
-      },
-      principal,
-    );
-    expect(h.applyMutations).toHaveBeenCalledWith(BASE_TREE, [
-      {
-        kind: "roth-conversion-upsert",
-        id: "rc1",
-        value: {
-          id: "rc1",
-          name: "Drain the IRA",
-          destinationAccountId: "acct-roth",
-          sourceAccountIds: ["acct-ira"],
-          conversionType: "fixed_amount",
-          fixedAmount: 50_000,
-          startYear: 2031,
-          endYear: 2031,
-          indexingRate: 0,
-        },
-      },
-      {
-        kind: "roth-conversion-upsert",
-        id: "rc2",
-        value: {
-          id: "rc2",
-          name: "Roth conversion 2032",
-          destinationAccountId: "acct-roth",
-          sourceAccountIds: ["acct-ira-2"],
-          conversionType: "fixed_amount",
-          fixedAmount: 20_000,
-          startYear: 2032,
-          endYear: 2032,
-          indexingRate: 0,
-        },
-      },
-    ]);
-  });
-
-  it("reads endingPortfolio from portfolioAssets.liquidTotal, never the legacy .total (C5)", async () => {
-    h.runProjection
-      .mockReturnValueOnce([makeYear({ portfolioAssets: { total: 9_000_000, liquidTotal: 500_000 } })])
-      .mockReturnValueOnce([makeYear({ portfolioAssets: { total: 1_000, liquidTotal: 800_000 } })]);
-    const out = (await byName("analyze_roth_conversion").run(
-      {
-        clientId: "c1",
-        conversions: [{ id: "rc1", year: 2031, amount: 50_000, sourceAccountId: "a", destinationAccountId: "b" }],
-      },
-      principal,
-    )) as { baseline: { endingPortfolio: number }; withConversions: { endingPortfolio: number } };
-    expect(out.baseline.endingPortfolio).toBe(500_000);
-    expect(out.withConversions.endingPortfolio).toBe(800_000);
-  });
-
-  it("sums lifetimeTax across years, defaulting a year with no taxResult to 0, and computes a SIGNED endingPortfolioDelta that a sign flip would catch (F2)", async () => {
-    // baseline and withConversions end at DIFFERENT liquidTotal values (round
-    // 1's fixture had both end at 2,460,000, making `a-b`, `b-a` and a
-    // literal 0 all pass — M11). Distinct, non-zero-delta endings here mean
-    // swapping the subtraction's operand order reddens this assertion.
-    h.runProjection
-      .mockReturnValueOnce([
-        makeYear({ year: 2030, taxResult: { flow: { totalTax: 10_000 } }, portfolioAssets: { total: 1, liquidTotal: 1_000_000 } }),
-        makeYear({ year: 2031, taxResult: undefined, portfolioAssets: { total: 1, liquidTotal: 1_010_000 } }),
-        makeYear({ year: 2032, taxResult: { flow: { totalTax: 20_000 } }, portfolioAssets: { total: 1, liquidTotal: 1_020_000 } }),
-      ])
-      .mockReturnValueOnce([
-        makeYear({ year: 2030, taxResult: { flow: { totalTax: 15_000 } }, portfolioAssets: { total: 1, liquidTotal: 900_000 } }),
-      ]);
-    const out = (await byName("analyze_roth_conversion").run(
-      {
-        clientId: "c1",
-        conversions: [{ id: "rc1", year: 2031, amount: 50_000, sourceAccountId: "a", destinationAccountId: "b" }],
-      },
-      principal,
-    )) as Record<string, unknown>;
-    expect(out.baseline).toEqual({ lifetimeTax: 30_000, endingPortfolio: 1_020_000 });
-    expect(out.withConversions).toEqual({ lifetimeTax: 15_000, endingPortfolio: 900_000 });
-    expect(out.lifetimeTaxDelta).toBe(-15_000);
-    expect(out.endingPortfolioDelta).toBe(-120_000);
-  });
-
-  it("defaults endingPortfolio (and lifetimeTax) to 0 when a projection returns no years at all, guarding against NaN/undefined in production (F7/M12)", async () => {
-    h.runProjection.mockReturnValueOnce([]).mockReturnValueOnce([makeYear()]);
-    const out = (await byName("analyze_roth_conversion").run(
-      {
-        clientId: "c1",
-        conversions: [{ id: "rc1", year: 2031, amount: 50_000, sourceAccountId: "a", destinationAccountId: "b" }],
-      },
-      principal,
-    )) as { baseline: { endingPortfolio: number; lifetimeTax: number } };
-    expect(out.baseline).toEqual({ lifetimeTax: 0, endingPortfolio: 0 });
-  });
-
-  it("pins the exact top-level key set (R60)", async () => {
-    h.runProjection.mockReturnValueOnce([makeYear()]).mockReturnValueOnce([makeYear()]);
-    const out = (await byName("analyze_roth_conversion").run(
-      {
-        clientId: "c1",
-        conversions: [{ id: "rc1", year: 2031, amount: 50_000, sourceAccountId: "a", destinationAccountId: "b" }],
-      },
-      principal,
-    )) as Record<string, unknown>;
-    expect(Object.keys(out).sort()).toEqual(
-      ["baseline", "endingPortfolioDelta", "foundryUrl", "lifetimeTaxDelta", "note", "scenarioId", "withConversions"].sort(),
-    );
-    expect(out.note).toBe("Modeled only — nothing was saved to the household's plan.");
-    expect(out.foundryUrl).toBe(foundryUrl("c1", "tax"));
-  });
-
-  it("rejects when the caller cannot access the household", async () => {
-    h.verifyClientAccessFor.mockResolvedValue({ ok: false, permission: "view", firmId: "org_1", access: "none" });
-    await expect(
-      byName("analyze_roth_conversion").run(
-        { clientId: "c1", conversions: [{ id: "rc1", year: 2031, amount: 50_000, sourceAccountId: "a", destinationAccountId: "b" }] },
-        principal,
-      ),
-    ).rejects.toThrow(DENIED_MESSAGE);
-    expect(h.applyMutations).not.toHaveBeenCalled();
   });
 });
 

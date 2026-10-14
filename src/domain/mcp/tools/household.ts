@@ -21,11 +21,11 @@ function joinName(first?: string | null, last?: string | null): string | null {
  * But the shared `sanitizeRow` (src/lib/redaction/sanitize-row.ts) only
  * redacts SSN-shaped strings and masks `accountNumber`/`accountNumberRaw`
  * keys — it does nothing to a date of birth, and `FamilyMember.dateOfBirth`
- * (engine/types.ts:367) is an exact calendar date. Of the eight
+ * (engine/types.ts:367) is an exact calendar date. Of the ten
  * `DETAIL_KINDS` below, `family_member` is the only one whose underlying
  * engine type carries a birth-date-shaped field (Account, Income, Expense,
- * Liability, EntitySummary, Gift and the inline external-beneficiary type
- * were all checked and carry none).
+ * Liability, EntitySummary, Gift, RothConversion, AssetTransaction and the
+ * inline external-beneficiary type were all checked and carry none).
  *
  * Fixed on the MCP path only, by reducing to a birth YEAR before the row
  * leaves the server — RMD and retirement-age questions need the year, not
@@ -55,6 +55,8 @@ const DETAIL_KINDS = {
   gift: (t: ClientData) => t.gifts ?? [],
   family_member: (t: ClientData) => t.familyMembers ?? [],
   external_beneficiary: (t: ClientData) => t.externalBeneficiaries ?? [],
+  roth_conversion: (t: ClientData) => t.rothConversions ?? [],
+  asset_transaction: (t: ClientData) => t.assetTransactions ?? [],
 } satisfies Record<string, (t: ClientData) => unknown[]>;
 
 const getClientSummary = defineTool({
@@ -157,7 +159,8 @@ const listPlanDetails = defineTool({
     "kind 'expense' and filter on that flag. Every field is scanned for SSN-shaped text, which is " +
     "redacted, and an accountNumber field, where present, is masked to the last four digits. " +
     "family_member rows carry a birthYear instead of an exact date of birth. This can be large; " +
-    "use limit and offset.",
+    "use limit and offset. Kind 'roth_conversion' lists existing Roth conversions, for removing or replacing one in " +
+    "a what-if. Kind 'asset_transaction' lists planned asset sales and purchases, for removing one in a what-if.",
   inputSchema: z.object({
     clientId: z
       .string()
@@ -169,6 +172,7 @@ const listPlanDetails = defineTool({
       .enum([
         "account", "income", "expense", "liability",
         "entity", "gift", "family_member", "external_beneficiary",
+        "roth_conversion", "asset_transaction",
       ])
       .describe("Which kind of detail row to return."),
     scenarioId: z.string().optional().describe("Scenario id, or omit for the base case."),

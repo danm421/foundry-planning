@@ -408,6 +408,8 @@ describe("list_plan_details", () => {
       row: { id: "x1" },
       expectedRow: { id: "x1" },
     },
+    { kind: "roth_conversion", property: "rothConversions", row: { id: "rc1" }, expectedRow: { id: "rc1" } },
+    { kind: "asset_transaction", property: "assetTransactions", row: { id: "at1" }, expectedRow: { id: "at1" } },
   ];
 
   // F4: `kindCases` is hand-maintained, so a 9th `kind` added to the tool's
@@ -465,6 +467,15 @@ describe("list_plan_details", () => {
       const out = await byName("list_plan_details").run({ clientId: "c1", kind }, principal);
       expect(containsKeyDeep(out, "dateOfBirth")).toBe(false);
     }
+  });
+
+  it("lists existing Roth conversions, so a what-if can remove one", async () => {
+    loadEffectiveTree.mockResolvedValue({ effectiveTree: { rothConversions: [{ id: "rc1", name: "Fill 24%" }] } });
+    const out = (await byName("list_plan_details").run(
+      { clientId: "c1", kind: "roth_conversion" },
+      principal,
+    )) as { rows: Record<string, unknown>[] };
+    expect(out.rows).toEqual([expect.objectContaining({ id: "rc1" })]);
   });
 
   it("strips an exact date of birth from every family_member row across a page, not just the first", async () => {

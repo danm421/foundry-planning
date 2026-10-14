@@ -4,8 +4,8 @@ import { ALL_MCP_TOOLS } from "../tools";
 import type { McpTool } from "../define-tool";
 
 describe("the MCP tool registry", () => {
-  it("exposes exactly 19 tools", () => {
-    expect(ALL_MCP_TOOLS).toHaveLength(19);
+  it("exposes exactly 21 tools", () => {
+    expect(ALL_MCP_TOOLS).toHaveLength(21);
   });
 
   it("has unique names, each at most 64 characters", () => {
@@ -59,6 +59,7 @@ function minimalValueFor(schema: z.ZodTypeAny): unknown {
   }
   if (schema instanceof z.ZodEnum) return schema.options[0];
   if (schema instanceof z.ZodUnion) return minimalValueFor(schema.options[0] as z.ZodTypeAny);
+  if (schema instanceof z.ZodLiteral) return [...(schema as z.ZodLiteral<string>).values][0];
   if (schema instanceof z.ZodString) return "x";
   if (schema instanceof z.ZodNumber) {
     // A bare `1` fails a fractional bound like `targetPoS`'s (0.01, 0.99).
