@@ -381,4 +381,32 @@ describe("buildAssetLedger — files by the engine's per-year entity ownership",
       ["Smith Family Trust", 1],
     ]);
   });
+
+  it("shows the margin loan from a $0 start and still reconciles (Review Focus 5)", () => {
+    const ledger = buildAssetLedger(mkYear({
+      brokerage: mkLedger({
+        beginningValue: 1_000_000, endingValue: 900_000, distributions: 100_000, marginEoY: 100_000,
+        entries: [{ category: "margin_borrow", label: "Borrowed on margin", amount: -100_000, basis: 0 }],
+      }),
+    }), ctx);
+    const acct = ledger.sections[0].accounts[0];
+    expect(acct.rows.find((r) => r.label === "Margin loan (start)")?.amount).toBe(0);
+    expect(acct.rows.find((r) => r.label === "Margin loan (end)")?.amount).toBe(100_000);
+    expect(Math.abs(acct.residual)).toBeLessThanOrEqual(1);
+  });
+  it("a margin-call sale and its paydown net to zero and reconcile basis", () => {
+    const ledger = buildAssetLedger(mkYear({
+      brokerage: mkLedger({
+        beginningValue: 100_000, endingValue: 100_000, basisBoY: 400_000, basisEoY: 222_222.22,
+        marginBoY: 500_000, marginEoY: 233_333.33,
+        entries: [
+          { category: "margin_sale", label: "Sold to meet margin call", amount: -266_666.67, basis: -177_777.78 },
+          { category: "margin_paydown", label: "Margin loan paid down", amount: 266_666.67, basis: 0 },
+        ],
+      }),
+    }), ctx);
+    const acct = ledger.sections[0].accounts[0];
+    expect(Math.abs(acct.residual)).toBeLessThanOrEqual(1);
+    expect(Math.abs(acct.basisResidual)).toBeLessThanOrEqual(1);
+  });
 });

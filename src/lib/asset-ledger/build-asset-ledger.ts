@@ -60,11 +60,11 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext, 
           internal: false,
         }]
       : []),
-    ...((ledger.marginBoY ?? 0) > 0
+    ...(((ledger.marginBoY ?? 0) > 0 || (ledger.marginEoY ?? 0) > 0)
       ? [{
           category: "bookend" as const,
           label: "Margin loan (start)",
-          amount: ledger.marginBoY!,
+          amount: ledger.marginBoY ?? 0,
           basis: 0,
           bookend: true,
           internal: false,
@@ -72,7 +72,7 @@ function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext, 
       : []),
     ...entryRows,
     eoyRow,
-    ...((ledger.marginBoY ?? 0) > 0
+    ...(((ledger.marginBoY ?? 0) > 0 || (ledger.marginEoY ?? 0) > 0)
       ? [{
           category: "bookend" as const,
           label: "Margin loan (end)",
