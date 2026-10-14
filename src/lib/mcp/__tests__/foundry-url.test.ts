@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { foundryUrl, type FoundryPage } from "../foundry-url";
+import { foundryScenarioUrl, foundryUrl, type FoundryPage } from "../foundry-url";
 
 // `.env.local` sets NEXT_PUBLIC_APP_URL for the whole test run (see
 // vitest.setup.ts), so every case here must pin or delete the variable
@@ -72,5 +72,14 @@ describe("foundryUrl", () => {
         `https://app.foundryplanning.com/clients/c/${path}`,
       );
     });
+  });
+});
+
+describe("foundryScenarioUrl", () => {
+  it("opens the Solver on one scenario", () => {
+    process.env[ENV_KEY] = "https://app.foundryplanning.com";
+    expect(foundryScenarioUrl("c", "s-1")).toBe(
+      "https://app.foundryplanning.com/clients/c/solver?scenario=s-1",
+    );
   });
 });

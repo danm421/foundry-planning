@@ -348,3 +348,15 @@ describe("get_what_if_results", () => {
     }
   });
 });
+
+describe("the starting-scenario link", () => {
+  it("opens the Solver on a saved starting scenario, and adds nothing for the base case", async () => {
+    const start = "44444444-4444-4444-8444-444444444444";
+    const fromSaved = (await byName("try_what_if").run({ clientId: "c1", scenarioId: start, changes: [] }, principal)) as {
+      scenarioUrl?: string;
+    };
+    expect(fromSaved.scenarioUrl).toMatch(new RegExp(`/clients/c1/solver\\?scenario=${start}$`));
+    const fromBase = await byName("try_what_if").run({ clientId: "c1", changes: [] }, principal);
+    expect(fromBase).not.toHaveProperty("scenarioUrl");
+  });
+});

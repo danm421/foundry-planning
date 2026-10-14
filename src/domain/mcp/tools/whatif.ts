@@ -4,6 +4,7 @@
 // once (compare_what_ifs), and the check-back for a run that outlives a
 // call (get_what_if_results). Nothing here saves anything.
 import { z } from "zod";
+import { foundryScenarioUrl } from "@/lib/mcp/foundry-url";
 import {
   computeWeight,
   isHeavy,
@@ -134,7 +135,12 @@ const tryWhatIf = defineTool({
     const outcome: JobOutcome = mc
       ? await startWhatIfJob({ principal, clientId, kind: "try", total: 1, work: run })
       : { status: "done", result: await run() };
-    return { scenarioId: scenario, ...present(outcome) };
+    return {
+      scenarioId: scenario,
+      // foundryUrl (added by defineTool) opens the Solver on the base case.
+      ...(scenario !== "base" ? { scenarioUrl: foundryScenarioUrl(clientId, scenario) } : {}),
+      ...present(outcome),
+    };
   },
 });
 
@@ -208,7 +214,12 @@ const compareWhatIfs = defineTool({
     const outcome: JobOutcome = mc
       ? await startWhatIfJob({ principal, clientId, kind: "compare", total: prepared.length, work: run })
       : { status: "done", result: await run() };
-    return { scenarioId: scenario, ...present(outcome) };
+    return {
+      scenarioId: scenario,
+      // foundryUrl (added by defineTool) opens the Solver on the base case.
+      ...(scenario !== "base" ? { scenarioUrl: foundryScenarioUrl(clientId, scenario) } : {}),
+      ...present(outcome),
+    };
   },
 });
 

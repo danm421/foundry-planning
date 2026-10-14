@@ -47,3 +47,8 @@ export function foundryUrl(clientId: string, page: FoundryPage): string {
 export function foundryCrmNotesUrl(householdId: string): string {
   return `${appOrigin()}/crm/households/${householdId}?tab=notes`;
 }
+
+/** Absolute link that opens the Solver on one scenario (the page reads `?scenario=`). */
+export function foundryScenarioUrl(clientId: string, scenarioId: string): string {
+  return `${foundryUrl(clientId, "scenarios")}?scenario=${encodeURIComponent(scenarioId)}`;
+}
