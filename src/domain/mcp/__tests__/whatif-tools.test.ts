@@ -214,6 +214,51 @@ describe("compare_what_ifs", () => {
     expect(h.startWhatIfJob).not.toHaveBeenCalled();
   });
 
+  it("refuses ranking by success rate when nothing runs Monte Carlo, before loading, charging or starting anything", async () => {
+    await expect(
+      byName("compare_what_ifs").run(
+        {
+          clientId: "c1",
+          variants: [
+            { label: "A", changes: [] },
+            { label: "Claim at 70", changes: [], solveFor: { kind: "ss_claim_age", person: "client" } },
+          ],
+          rankBy: { metric: "successRate" },
+        },
+        principal,
+      ),
+    ).rejects.toThrow(
+      new WhatIfValidationError(
+        "rankBy successRate needs Monte Carlo. Set includeMonteCarlo to true, or rank by another measure instead.",
+      ),
+    );
+    expect(h.buildRunDeps).not.toHaveBeenCalled();
+    expect(h.chargeCompute).not.toHaveBeenCalled();
+    expect(h.startWhatIfJob).not.toHaveBeenCalled();
+  });
+
+  it("ranks by success rate when a success-based solve brings Monte Carlo in", async () => {
+    h.buildRunDeps.mockImplementation(async () => ({
+      tree: whatIfTree(),
+      loadMcPayload: async () => ({}) as MonteCarloPayload,
+      monteCarloSuccess: async () => 0.8,
+      now: () => 0,
+      solvers: stubMaxSpending,
+    }));
+    const out = (await byName("compare_what_ifs").run(
+      {
+        clientId: "c1",
+        variants: [
+          { label: "As planned", changes: [] },
+          { label: "Most spending", changes: [], solveFor: { kind: "max_spending", targetSuccess: 0.85 } },
+        ],
+        rankBy: { metric: "successRate" },
+      },
+      principal,
+    )) as { result: { variants: { rank: number | null }[] } };
+    expect(out.result.variants.map((v) => v.rank)).toEqual([1, 2]);
+  });
+
   it("runs Monte Carlo on every row when any variation has a success-based solve", async () => {
     h.buildRunDeps.mockImplementation(async () => ({
       tree: whatIfTree(),

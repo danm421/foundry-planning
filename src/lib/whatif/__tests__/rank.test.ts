@@ -102,24 +102,36 @@ describe("rankVariants", () => {
 
 describe("checkRankBy", () => {
   it("refuses ranking by solved value across different kinds of solve", () => {
-    expect(() => checkRankBy({ metric: "solvedValue" }, ["retirement_age", "max_spending"])).toThrow(WhatIfValidationError);
-    expect(() => checkRankBy({ metric: "solvedValue", direction: "asc" }, ["retirement_age", "max_spending"])).toThrow(
+    expect(() => checkRankBy({ metric: "solvedValue" }, ["retirement_age", "max_spending"], true)).toThrow(WhatIfValidationError);
+    expect(() => checkRankBy({ metric: "solvedValue", direction: "asc" }, ["retirement_age", "max_spending"], true)).toThrow(
       /different/,
     );
   });
 
   it("refuses ranking a Roth-amount solve by solved value without a direction", () => {
-    expect(() => checkRankBy({ metric: "solvedValue" }, ["roth_amount", "roth_amount"])).toThrow(/direction/);
+    expect(() => checkRankBy({ metric: "solvedValue" }, ["roth_amount", "roth_amount"], true)).toThrow(/direction/);
   });
 
   it("refuses ranking by solved value when no variation solves", () => {
-    expect(() => checkRankBy({ metric: "solvedValue", direction: "desc" }, [null, null])).toThrow(/solveFor/);
+    expect(() => checkRankBy({ metric: "solvedValue", direction: "desc" }, [null, null], false)).toThrow(/solveFor/);
+  });
+
+  // With no Monte Carlo every row's successRate is null: the ranking would
+  // rank nothing and name no best, silently.
+  it("refuses ranking by success rate when nothing runs Monte Carlo", () => {
+    const refusal = new WhatIfValidationError(
+      "rankBy successRate needs Monte Carlo. Set includeMonteCarlo to true, or rank by another measure instead.",
+    );
+    expect(() => checkRankBy({ metric: "successRate" }, [null, null], false)).toThrow(refusal);
+    // A claim-age solve runs no Monte Carlo either.
+    expect(() => checkRankBy({ metric: "successRate", direction: "desc" }, [null, "ss_claim_age"], false)).toThrow(refusal);
   });
 
   it("allows one kind of solve, a direction where one is needed, any other measure, and no ranking", () => {
-    expect(() => checkRankBy({ metric: "solvedValue" }, ["savings", null])).not.toThrow();
-    expect(() => checkRankBy({ metric: "solvedValue", direction: "asc" }, ["roth_amount"])).not.toThrow();
-    expect(() => checkRankBy({ metric: "endingPortfolio" }, [null, "ss_claim_age"])).not.toThrow();
-    expect(() => checkRankBy(undefined, ["roth_amount", "savings"])).not.toThrow();
+    expect(() => checkRankBy({ metric: "solvedValue" }, ["savings", null], true)).not.toThrow();
+    expect(() => checkRankBy({ metric: "solvedValue", direction: "asc" }, ["roth_amount"], true)).not.toThrow();
+    expect(() => checkRankBy({ metric: "endingPortfolio" }, [null, "ss_claim_age"], false)).not.toThrow();
+    expect(() => checkRankBy({ metric: "successRate" }, [null, null], true)).not.toThrow();
+    expect(() => checkRankBy(undefined, ["roth_amount", "savings"], false)).not.toThrow();
   });
 });

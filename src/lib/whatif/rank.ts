@@ -63,9 +63,20 @@ function directionFor(rankBy: RankBy, solveKinds: (SolveKind | null)[]): { direc
 }
 
 /** Refuses a rankBy that can't rank these variations. Call it before any
- *  compute, with each variation's solveFor kind (null when it has none). */
-export function checkRankBy(rankBy: RankBy | undefined, solveKinds: (SolveKind | null)[]): void {
+ *  compute, with each variation's solveFor kind (null when it has none) and
+ *  whether the run includes Monte Carlo (caps.ts isHeavy, over every variation). */
+export function checkRankBy(
+  rankBy: RankBy | undefined,
+  solveKinds: (SolveKind | null)[],
+  runsMonteCarlo: boolean,
+): void {
   if (!rankBy) return;
+  // Without Monte Carlo every row's successRate is null, so nothing would rank.
+  if (rankBy.metric === "successRate" && !runsMonteCarlo) {
+    throw new WhatIfValidationError(
+      "rankBy successRate needs Monte Carlo. Set includeMonteCarlo to true, or rank by another measure instead.",
+    );
+  }
   const out = directionFor(rankBy, solveKinds);
   if ("refusal" in out) throw new WhatIfValidationError(out.refusal);
 }

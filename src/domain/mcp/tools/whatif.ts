@@ -231,7 +231,7 @@ const compareWhatIfs = defineTool({
           `Split them into calls of ${cap}.`,
       );
     }
-    checkRankBy(rankBy, variants.map((v) => v.solveFor?.kind ?? null));
+    checkRankBy(rankBy, variants.map((v) => v.solveFor?.kind ?? null), mc);
     return runWhatIfs(ctx, {
       clientId,
       scenarioId,
