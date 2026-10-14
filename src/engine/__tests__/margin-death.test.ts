@@ -12,9 +12,10 @@ import { applyBusinessSuccession } from "../death-event/business-succession";
 import type { DeathEventInput } from "../death-event/shared";
 import { runProjection, runProjectionWithEvents } from "../projection";
 import { buildClientData, basePlanSettings, baseClient } from "./fixtures";
+import { spending } from "./_fixtures/margin";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 import type {
-  Account, EntitySummary, FamilyMember, GiftEvent, PlanSettings, ProjectionYear,
+  Account, EntitySummary, FamilyMember, GiftEvent, PlanSettings, ProjectionYear, Will,
 } from "../types";
 
 // ── Death-event inputs (from partition-mixed-account-integration.test.ts) ────
@@ -469,5 +470,87 @@ describe("the personal-use share at death (spec 2026-10-14)", () => {
     const res = applyFirstDeath(mkInput({ accounts: [jointMargined], balances: { j: NET }, marginMap: { j: LOAN } }));
     expect(res.marginPersonalShare).toEqual({});
     expect(res.accounts.some((a) => "marginPersonalShare" in a)).toBe(false);
+  });
+});
+
+// The share tests above call the death passes directly. These pin the
+// projection's wiring of the live share into and out of a REAL death
+// (final review I1): drop it there and the whole loan's interest would
+// silently turn into deductible investment interest after the death.
+describe("the personal-use share through a real death — projection (final review I1)", () => {
+  /** $2M of securities, a $200K plan-start loan at 8%, borrowing for $100K/yr
+   *  of spending. The client dies in 2029 (1960 + 69); the spouse outlives
+   *  the plan. */
+  function borrowingPlan(owners: Account["owners"], wills: Will[] = []) {
+    const brokerage: Account = {
+      id: ACC, name: "Brokerage", category: "taxable", subType: "brokerage", titlingType: "jtwros",
+      value: 2_000_000, basis: 800_000, growthRate: 0, rmdEnabled: false, owners,
+      marginBalance: PROJ_LOAN, marginInterestRate: 0.08, marginCallPct: 0.3, marginBorrowEnabled: true,
+    };
+    const checking: Account = {
+      id: "acct-checking", name: "Checking", category: "cash", subType: "checking", titlingType: "jtwros",
+      value: 0, basis: 0, growthRate: 0, rmdEnabled: false, isDefaultChecking: true, owners: JOINT,
+    };
+    return buildClientData({
+      client: { ...baseClient, dateOfBirth: "1960-01-01", spouseDob: "1972-06-15",
+        lifeExpectancy: 69, spouseLifeExpectancy: 95 },
+      familyMembers: FAMILY, accounts: [checking, brokerage], entities: [trust],
+      incomes: [], liabilities: [], savingsRules: [], withdrawalStrategy: [], giftEvents: [], wills,
+      expenses: [spending(100_000)],
+      planSettings: { ...basePlanSettings, flatFederalRate: 0, flatStateRate: 0,
+        planStartYear: 2026, planEndYear: 2031, estateAdminExpenses: 0 },
+    });
+  }
+
+  /** The end-of-year share, from that year's ledger: interest leaves the share
+   *  unchanged and the year's borrowing is all personal-use. */
+  function shareAtYearEnd(y: ProjectionYear): number {
+    const l = y.accountLedgers[ACC];
+    const shareBoY = (l.marginInterestPersonal ?? 0) / l.marginInterest!;
+    const borrowed = y.withdrawals.borrowedByAccount![ACC];
+    return (shareBoY * l.marginBoY! * 1.08 + borrowed) / l.marginEoY!;
+  }
+
+  /** Σ personal ÷ Σ margin interest over every ledger — the death may mint new ids. */
+  function personalSplit(y: ProjectionYear): number {
+    let personal = 0;
+    let total = 0;
+    for (const l of Object.values(y.accountLedgers)) {
+      personal += l.marginInterestPersonal ?? 0;
+      total += l.marginInterest ?? 0;
+    }
+    return personal / total;
+  }
+
+  it.each([["joint", JOINT], ["client-sole", CLIENT_SOLE]] as const)(
+    "a %s account: the year after the death splits interest at the pre-death share",
+    (_, owners) => {
+      const years = runProjection(borrowingPlan(owners));
+      const expected = shareAtYearEnd(at(years, 2029));
+      expect(expected).toBeGreaterThan(0.5);
+      expect(Math.abs(personalSplit(at(years, 2030)) - expected)).toBeLessThan(1e-9);
+    },
+  );
+
+  it("an account left to an irrevocable trust by will stops borrowing and keeps its share", () => {
+    const will: Will = {
+      id: "will-client", grantor: "client",
+      bequests: [{
+        id: "bq-brokerage", name: "Brokerage to the trust", kind: "asset", assetMode: "specific",
+        accountId: ACC, entityId: null, liabilityId: null, percentage: 100, condition: "always", sortOrder: 0,
+        recipients: [{ recipientKind: "entity", recipientId: TRUST, percentage: 100, sortOrder: 0 }],
+      }],
+    };
+    const years = runProjection(borrowingPlan(CLIENT_SOLE, [will]));
+    const y2029 = at(years, 2029);
+    expect(y2029.deathTransfers?.find((t) => t.sourceAccountId === ACC)?.recipientId).toBe(TRUST);
+    const expected = shareAtYearEnd(y2029);
+
+    const y2030 = at(years, 2030);
+    expect(y2030.withdrawals.borrowedByAccount).toBeUndefined();
+    const margined = Object.values(y2030.accountLedgers).filter((l) => (l.marginInterest ?? 0) > 0);
+    expect(margined).toHaveLength(1);
+    expect(margined[0].marginInterestPersonal).toBeGreaterThan(0);
+    expect(Math.abs(personalSplit(y2030) - expected)).toBeLessThan(1e-9);
   });
 });
