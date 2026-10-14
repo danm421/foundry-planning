@@ -44,7 +44,7 @@ const saveWhatIfAsScenario = defineWriteTool({
       .max(MAX_CHANGES)
       .describe("The same changes you ran with try_what_if."),
   }),
-  page: "scenarios",
+  // No `page`: its foundryUrl would open the base case beside scenarioUrl.
   handler: async ({ clientId, scenarioId, name, changes }, { principal, firmId }) => {
     const source = scenarioId ?? "base";
     await assertScenarioOfClient(clientId, source);

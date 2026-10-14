@@ -77,6 +77,14 @@ describe("save_what_if_as_scenario", () => {
     expect(h.saveSolverScenario.mock.calls[0][0]).not.toHaveProperty("seed");
   });
 
+  // foundryUrl would open the Solver on the base case, beside a scenarioUrl
+  // that opens the new scenario — two links that disagree.
+  it("links only to the new scenario", async () => {
+    const out = await tool.run({ clientId: "c1", name: "x", changes: [retire62] }, principal);
+    expect(out).toHaveProperty("scenarioUrl");
+    expect(out).not.toHaveProperty("foundryUrl");
+  });
+
   it("starts from a saved scenario only after checking it is this household's", async () => {
     await tool.run({ clientId: "c1", scenarioId: START, name: "x", changes: [retire62] }, principal);
     expect(h.assertScenarioOfClient).toHaveBeenCalledWith("c1", START);
