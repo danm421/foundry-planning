@@ -1,0 +1,302 @@
+// src/lib/fact-finder/placement/map/real-estate-debts.ts
+/**
+ * Section maps for the Real Estate, Business & Debts page (D4): a property is
+ * a real estate account; a business is a business account plus the income and
+ * expense it owns; a loan is a liability linked to the property it's on, plus
+ * a plan note for its escrow (spec § 8: the split between tax and insurance is
+ * unknown). Pure.
+ */
+import { formatMoney } from "@/domain/forge/row-lines";
+import type { PlacedValue, RecordRef, TargetKind } from "../../change-set";
+import {
+  BUSINESS_TAX_MAP, BUSINESS_TYPE_MAP, LIABILITY_TYPE_MAP, PROPERTY_TYPE_MAP, SECTION_ACCOUNT_CATEGORY, TITLING_MAP, valueFor,
+} from "../../enums";
+import type { FFRow } from "../../types";
+import { findLiability, findProperty, rowRecordRef } from "../refs";
+import { monthsBetween, termMonthsFromYears, toFraction } from "../translate";
+import type { TargetDraft } from "../types";
+import { bool, cellOf, DraftBuilder, linkedRecordId, num, ownersOf, rate, sharesOf, text } from "./helpers";
+import type { PlaceContext, SectionMap } from "./types";
+
+const str = (v: PlacedValue | undefined) => (typeof v === "string" ? v : null);
+const numberOf = (v: PlacedValue | undefined) => (typeof v === "number" ? v : null);
+const labelOnRecord = (target: TargetKind, recordId: string | null, ctx: PlaceContext) =>
+  ctx.book.records[target].find((r) => r.id === recordId)?.label ?? null;
+
+/** Two refs to one record, or to one line. */
+function sameRef(a: RecordRef, b: RecordRef): boolean {
+  if (a.ref === "record" && b.ref === "record") return a.id === b.id;
+  return a.ref === "line" && b.ref === "line" && a.lineId === b.lineId;
+}
+
+/** The business a record on the plan is held through (its `facts.parentAccountId`), by label; null when it isn't. */
+function heldThrough(target: TargetKind, recordId: string | null, ctx: PlaceContext): string | null {
+  const parentId = ctx.book.records[target].find((r) => r.id === recordId)?.facts?.parentAccountId;
+  if (typeof parentId !== "string") return null;
+  return labelOnRecord("business_account", parentId, ctx) ?? "its business";
+}
+
+/** Owner + "Which trust / entity" — except on a record held through a business, which is owned through it (Task 15 ruling). */
+function putOwners(b: DraftBuilder, sectionId: string, row: FFRow, ctx: PlaceContext, held: string | null, noun: string): void {
+  if (held !== null) {
+    if (text(row, "owner") !== null) b.warn(`This ${noun} is owned through ${held}.`);
+    return;
+  }
+  const owners = ownersOf(sectionId, row, ctx);
+  if (!owners.ok) b.block(owners.reason, owners.columnId);
+  else b.put("owners", owners.owners, text(row, "owner") === "Trust / entity" ? ["owner", "ownerEntity"] : ["owner"]);
+}
+
+/** Why a property's "Mortgage on it" links nothing (the link is saved from the loan's Liabilities row), or null. */
+function mortgageProblem(name: string, ctx: PlaceContext): string | null {
+  const loan = findLiability(ctx.refs, name);
+  if (!loan.ok) return loan.reason;
+  const listed = (ctx.state.sections.liab ?? []).some((row) => {
+    const ref = rowRecordRef(ctx.refs, "liab", row.id, "liability");
+    return ref !== null && sameRef(ref, loan.ref);
+  });
+  return listed ? null : `"${loan.label}" isn't in Liabilities, so this property isn't linked to it — add it there or link it in Details.`;
+}
+
+export const REALESTATE_MAP: SectionMap = {
+  sectionId: "realestate",
+  placements: {
+    propertyName: { to: "account.name" },
+    propertyType: { to: "account.subType" },
+    currentValue: { to: "account.value" },
+    costBasis: { to: "account.basis" },
+    owner: { to: "account.owners" },
+    jointTitling: { to: "account.titlingType" },
+    address: { to: "account.propertyAddress" },
+    annualPropertyTax: { to: "account.annualPropertyTax" },
+    // The link is stored on the loan: LIAB_MAP reads this column for a loan whose "Property it's on" is blank.
+    mortgageName: { to: "liability.linkedPropertyId" },
+    ownerEntity: { to: "account.owners" },
+  },
+  place(rows, ctx) {
+    return rows.map((row): TargetDraft => {
+      const name = text(row, "propertyName");
+      const address = text(row, "address");
+      const recordId = linkedRecordId(row, ctx, ["account"]);
+      const b = new DraftBuilder({
+        sectionId: "realestate", row, target: "account", recordId,
+        label: name ?? labelOnRecord("account", recordId, ctx) ?? address ?? "Property",
+        fixed: { category: SECTION_ACCOUNT_CATEGORY.realestate },
+      })
+        .put("name", name, ["propertyName"])
+        .put("subType", valueFor(PROPERTY_TYPE_MAP, text(row, "propertyType")), ["propertyType"])
+        .put("value", num(row, "currentValue"), ["currentValue"])
+        .put("basis", num(row, "costBasis"), ["costBasis"])   // cost basis — a property never has an after-tax basis
+        .put("propertyAddress", address, ["address"])
+        .put("annualPropertyTax", num(row, "annualPropertyTax"), ["annualPropertyTax"]);
+      putOwners(b, "realestate", row, ctx, heldThrough("account", recordId, ctx), "property");
+      const titling = valueFor(TITLING_MAP, text(row, "jointTitling"));
+      if (titling && text(row, "owner") !== "Joint") b.warn("Joint titling is saved only when the owner is Joint.");
+      else b.put("titlingType", titling, ["jointTitling"]);
+      const mortgage = text(row, "mortgageName");
+      const problem = mortgage === null ? null : mortgageProblem(mortgage, ctx);
+      if (problem !== null) b.warn(`Mortgage on it: ${problem}`);
+      return b.build();
+    });
+  },
+};
+
+const FLOWS = {
+  income: { column: "annualIncome", type: "business", noun: "income", many: "incomes" },
+  expense: { column: "annualExpense", type: "other", noun: "expenses", many: "expenses" },
+} as const;
+
+/** A business's Annual income / expense: the one income (expense) on the plan it owns (D8), else a new one owned by it. */
+function flowDraft(target: "income" | "expense", row: FFRow, business: RecordRef, label: string, ctx: PlaceContext): TargetDraft | null {
+  const { column, type, noun, many } = FLOWS[target];
+  const amount = num(row, column);
+  if (amount === null) return null;
+  const owned = business.ref === "record" ? ctx.book.records[target].filter((r) => r.facts?.ownerAccountId === business.id) : [];
+  const name = `${label} ${noun}`;
+  const b = new DraftBuilder({
+    sectionId: "business", row, target,
+    recordId: owned.length === 1 ? owned[0].id : null,
+    label: owned.length === 1 ? owned[0].label : name,
+    // A new one follows inflation, as in Details (the create schema would default a flat 3%).
+    ...(owned.length === 0 ? { fixed: { type, name, ownerAccountId: business, growthSource: "inflation" } } : {}),
+  }).put("annualAmount", amount, [column]);
+  if (owned.length === 0) b.put("start", { yearRef: "plan_start" }, []).put("end", { yearRef: "plan_end" }, []);
+  if (owned.length > 1) b.block(`${label} has ${owned.length} ${many} on the plan — change them in Details.`, column);
+  return b.build();
+}
+
+export const BUSINESS_MAP: SectionMap = {
+  sectionId: "business",
+  placements: {
+    businessName: { to: "business_account.name" },
+    businessType: { to: "business_account.businessType" },
+    currentValue: { to: "business_account.value" },
+    costBasis: { to: "business_account.basis" },
+    ownersAndPercent: { to: "business_account.owners" },
+    taxTreatment: { to: "business_account.businessTaxTreatment" },
+    distributionPercent: { to: "business_account.distributionPolicyPercent" },   // a share of EARNINGS (spec § 8)
+    annualIncome: { to: "income.annualAmount" },
+    annualExpense: { to: "expense.annualAmount" },
+  },
+  place(rows, ctx) {
+    return rows.flatMap((row): TargetDraft[] => {
+      const name = text(row, "businessName");
+      const recordId = linkedRecordId(row, ctx, ["business_account"]);
+      const label = name ?? labelOnRecord("business_account", recordId, ctx) ?? "Business";
+      const b = new DraftBuilder({
+        sectionId: "business", row, target: "business_account", recordId, label,
+        fixed: { category: SECTION_ACCOUNT_CATEGORY.business },
+      })
+        .put("name", name, ["businessName"])
+        .put("businessType", valueFor(BUSINESS_TYPE_MAP, text(row, "businessType")), ["businessType"])
+        .put("value", num(row, "currentValue"), ["currentValue"])
+        .put("basis", num(row, "costBasis"), ["costBasis"]);
+
+      const owners = text(row, "ownersAndPercent");
+      const held = heldThrough("business_account", recordId, ctx);
+      if (held !== null) {
+        if (owners !== null) b.warn(`This business is owned through ${held}.`);
+      } else if (owners !== null) {
+        const shares = sharesOf(owners, ctx, ["household", "family", "trust"]);
+        if (!shares.ok) b.block(shares.reason, "ownersAndPercent");
+        else b.put("owners", shares.shares.map((s) => ({ who: s.who, percent: toFraction(s.percent) })), ["ownersAndPercent"]);
+      } else if (recordId === null) {
+        b.block('Name the owners and their shares, like "Mark 60%, Laura 40%".', "ownersAndPercent");
+      }
+      b.put("businessTaxTreatment", valueFor(BUSINESS_TAX_MAP, text(row, "taxTreatment")), ["taxTreatment"])
+        .put("distributionPolicyPercent", rate(row, "distributionPercent"), ["distributionPercent"]);
+
+      const flows = (["income", "expense"] as const).flatMap((target) => flowDraft(target, row, b.ref, label, ctx) ?? []);
+      return [b.build(), ...flows];
+    });
+  },
+};
+
+/** Real estate rows whose "Mortgage on it" names this loan, and the property each stands for. */
+function propertiesNaming(loan: RecordRef, ctx: PlaceContext): { row: FFRow; ref: RecordRef; label: string }[] {
+  return (ctx.state.sections.realestate ?? []).flatMap((row) => {
+    const mortgage = text(row, "mortgageName");
+    const found = mortgage === null ? null : findLiability(ctx.refs, mortgage);
+    const ref = rowRecordRef(ctx.refs, "realestate", row.id, "account");
+    if (!found?.ok || ref === null || !sameRef(found.ref, loan)) return [];
+    return [{ row, ref, label: text(row, "propertyName") ?? text(row, "address") ?? "A property" }];
+  });
+}
+
+/** "Property it's on", else the one property whose "Mortgage on it" names this loan. */
+function linkProperty(b: DraftBuilder, row: FFRow, ctx: PlaceContext): void {
+  const naming = propertiesNaming(b.ref, ctx);
+  const named = text(row, "propertyName");
+  if (named === null) {
+    if (naming.length === 1) b.put("linkedPropertyId", naming[0].ref, [cellOf("realestate", naming[0].row, "mortgageName")]);
+    else if (naming.length > 1) {
+      b.block(`${naming.length === 2 ? "Two" : naming.length} properties name this loan in "Mortgage on it" — say which in "Property it's on".`, "propertyName");
+    }
+    return;
+  }
+  const property = findProperty(ctx.refs, named);
+  if (!property.ok) {
+    b.block(property.reason, "propertyName");
+    return;
+  }
+  b.put("linkedPropertyId", property.ref, ["propertyName"]);
+  for (const other of naming) {
+    if (!sameRef(other.ref, property.ref)) {
+      b.warn(`"${other.label}" also names this loan in "Mortgage on it" — it's saved on "${property.label}", from "Property it's on".`);
+    }
+  }
+}
+
+/**
+ * Loan start and term. A blank Term comes from Matures: the months from the
+ * loan's start — typed, else on record, else the balance's date, which then
+ * becomes the start (the old import's deriveLiabilityTerm rule: the schedule
+ * runs from today's balance to the payoff, inventing no loan history).
+ */
+function placeTerm(b: DraftBuilder, row: FFRow, startOnRecord: string | null, balanceDate: string | null): void {
+  const start = text(row, "loanStart");
+  const years = num(row, "termYears");
+  const matures = text(row, "matures");
+  b.put("start", start, ["loanStart"]);
+  if (years !== null) {
+    b.put("termMonths", termMonthsFromYears(years), ["termYears"]);
+    return;
+  }
+  const typedAsOf = text(row, "balanceAsOf");
+  const from = start ?? startOnRecord ?? typedAsOf ?? balanceDate;
+  if (matures === null || from === null) return;   // no start to count from: a new loan's validation asks for one
+  const months = monthsBetween(from, matures);
+  if (months === null || months <= 0) {
+    b.block("Matures is on or before the loan start — check both dates.", "matures");
+    return;
+  }
+  if (start === null && startOnRecord === null) b.put("start", from, typedAsOf !== null ? ["balanceAsOf"] : []);
+  b.put("termMonths", months, ["matures"]);
+}
+
+/** Monthly escrow → a plan note naming the loan, matched to the plan's notes by its exact words (D8). */
+function escrowNote(row: FFRow, loan: string, ctx: PlaceContext): TargetDraft | null {
+  const escrow = num(row, "monthlyEscrow");
+  if (escrow === null || escrow <= 0) return null;
+  const body = `${loan}: escrow of ${formatMoney(escrow)} a month for property tax and insurance (not split between them).`;
+  const onRecord = ctx.book.records.plan_observation.find((r) => r.values.body === body);
+  return new DraftBuilder({
+    sectionId: "liab", row, target: "plan_observation", recordId: onRecord?.id ?? null,
+    label: `Plan note: escrow on ${loan}`,
+    fixed: { section: "observation", audience: "advisor", source: "manual" },
+  })
+    .put("topic", "cash-flow", ["monthlyEscrow"])
+    .put("body", body, ["monthlyEscrow"])
+    .build();
+}
+
+export const LIAB_MAP: SectionMap = {
+  sectionId: "liab",
+  placements: {
+    loanName: { to: "liability.name" },
+    type: { to: "liability.liabilityType" },
+    owner: { to: "liability.owners" },
+    balance: { to: "liability.balance" },
+    balanceAsOf: { to: "liability.balanceAsOf" },
+    interestRate: { to: "liability.interestRate" },
+    monthlyPI: { to: "liability.monthlyPayment" },
+    monthlyEscrow: { to: "plan_observation.body" },
+    loanStart: { to: "liability.start" },
+    termYears: { to: "liability.termMonths" },
+    matures: { to: "liability.termMonths" },
+    interestDeductible: { to: "liability.isInterestDeductible" },
+    propertyName: { to: "liability.linkedPropertyId" },
+    ownerEntity: { to: "liability.owners" },
+  },
+  place(rows, ctx) {
+    return rows.flatMap((row): TargetDraft[] => {
+      const recordId = linkedRecordId(row, ctx, ["liability"]);
+      const onRecord = ctx.book.records.liability.find((r) => r.id === recordId);
+      const name = text(row, "loanName");
+      const label = name ?? onRecord?.label ?? "Loan";
+      const b = new DraftBuilder({ sectionId: "liab", row, target: "liability", recordId, label })
+        .put("name", name, ["loanName"])
+        .put("liabilityType", valueFor(LIABILITY_TYPE_MAP, text(row, "type")), ["type"]);
+      putOwners(b, "liab", row, ctx, heldThrough("liability", recordId, ctx), "loan");
+
+      const balance = num(row, "balance");
+      const asOf = text(row, "balanceAsOf");
+      const fallbackAsOf = (row.statementDate ?? ctx.asOf)?.slice(0, 7) ?? null;
+      const held = numberOf(onRecord?.values.balance);
+      b.put("balance", balance, ["balance"]);
+      if (asOf !== null) b.put("balanceAsOf", asOf, ["balanceAsOf"]);
+      // An undated balance is as of its statement, else the date the fact finder was completed — but an
+      // unchanged balance isn't re-dated (that would move its amortization).
+      else if (balance !== null && (held === null || Math.abs(held - balance) >= 0.005)) b.put("balanceAsOf", fallbackAsOf, []);
+
+      b.put("interestRate", rate(row, "interestRate"), ["interestRate"])
+        .put("monthlyPayment", num(row, "monthlyPI"), ["monthlyPI"]);
+      placeTerm(b, row, str(onRecord?.values.start), fallbackAsOf);
+      b.put("isInterestDeductible", bool(row, "interestDeductible"), ["interestDeductible"]);
+      linkProperty(b, row, ctx);
+
+      const note = escrowNote(row, label, ctx);
+      return note ? [b.build(), note] : [b.build()];
+    });
+  },
+};
