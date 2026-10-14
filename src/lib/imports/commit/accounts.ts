@@ -436,11 +436,11 @@ export async function commitAccounts(
   return result;
 }
 
-/** Does the matched account carry a margin loan? Scoped like the UPDATE, so an
+/** Does the matched account carry a margin loan or borrow on margin? Scoped like the UPDATE, so an
  *  id that isn't this client's reads as no loan (the UPDATE then skips it). */
 async function carriesMarginLoan(tx: Tx, accountId: string, ctx: CommitContext): Promise<boolean> {
   const [held] = await tx
-    .select({ marginBalance: accounts.marginBalance })
+    .select({ marginBalance: accounts.marginBalance, marginBorrowEnabled: accounts.marginBorrowEnabled })
     .from(accounts)
     .where(
       and(
@@ -449,7 +449,7 @@ async function carriesMarginLoan(tx: Tx, accountId: string, ctx: CommitContext):
         eq(accounts.scenarioId, ctx.scenarioId),
       ),
     );
-  return Number(held?.marginBalance ?? 0) > 0;
+  return Number(held?.marginBalance ?? 0) > 0 || held?.marginBorrowEnabled === true;
 }
 
 /**

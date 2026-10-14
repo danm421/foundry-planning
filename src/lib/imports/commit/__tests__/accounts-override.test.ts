@@ -264,6 +264,15 @@ describe("a matched row whose account carries a margin loan", () => {
     ]);
   });
 
+  it("keeps Taxable for an account that borrows on margin, even with no loan yet", async () => {
+    const fake = makeFakeTx();
+    existingAccount(fake, "brokerage");
+    fake.setSelectResult("accounts", [{ marginBalance: "0.00", marginBorrowEnabled: true }]);
+    const result = await commitAccounts(fake.tx, payloadOf(matchedRow({ category: "cash", subType: "savings" })), CTX, FAMILY);
+    expect(updateSet(fake)).not.toHaveProperty("category");
+    expect(result.warnings).toEqual(["Schwab Brokerage ...4321: Kept as Taxable because it carries a margin loan."]);
+  });
+
   it("never turns a margined account into a 529", async () => {
     const fake = makeFakeTx();
     marginedAccount(fake, "2000000.00");

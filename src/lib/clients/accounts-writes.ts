@@ -315,6 +315,11 @@ export async function createAccountForClient(args: {
         marginBalance: String(p.marginBalance),
         marginInterestRate: String(p.marginInterestRate),
         marginCallPct: String(p.marginCallPct),
+        marginBorrowEnabled: p.marginBorrowEnabled === true,
+        marginBorrowStartYear: p.marginBorrowStartYear ?? null,
+        marginBorrowStartYearRef: (p.marginBorrowStartYearRef ?? null) as (typeof accounts.$inferInsert)["marginBorrowStartYearRef"],
+        marginRepayYear: p.marginRepayYear ?? null,
+        marginRepayYearRef: (p.marginRepayYearRef ?? null) as (typeof accounts.$inferInsert)["marginRepayYearRef"],
         overridePctOi: p.overridePctOi == null ? null : String(p.overridePctOi),
         overridePctLtCg: p.overridePctLtCg == null ? null : String(p.overridePctLtCg),
         overridePctQdiv: p.overridePctQdiv == null ? null : String(p.overridePctQdiv),
@@ -534,6 +539,9 @@ export async function updateAccountForClient(args: {
     marginBalance: resolvedField("marginBalance", before.marginBalance),
     marginInterestRate: resolvedField("marginInterestRate", before.marginInterestRate),
     marginCallPct: resolvedField("marginCallPct", before.marginCallPct),
+    marginBorrowEnabled: resolvedField("marginBorrowEnabled", before.marginBorrowEnabled),
+    marginBorrowStartYear: resolvedField("marginBorrowStartYear", before.marginBorrowStartYear),
+    marginRepayYear: resolvedField("marginRepayYear", before.marginRepayYear),
   });
   if (marginError) return writeError(400, marginError);
 

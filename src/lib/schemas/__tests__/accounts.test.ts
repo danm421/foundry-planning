@@ -344,3 +344,27 @@ describe("margin fields", () => {
     expect(accountUpdateSchema.parse({ marginBalance: 5 }).marginBalance).toBe("5");
   });
 });
+
+describe("margin borrowing fields (Phase 2)", () => {
+  const base = { name: "Brokerage", category: "taxable", value: "1000000" };
+  it("defaults the switch off with no years", () => {
+    const r = accountCreateSchema.parse(base);
+    expect(r.marginBorrowEnabled).toBe(false);
+    expect(r.marginBorrowStartYear).toBeNull();
+    expect(r.marginRepayYear).toBeNull();
+    expect(r.marginBorrowStartYearRef).toBeNull();
+    expect(r.marginRepayYearRef).toBeNull();
+  });
+  it("accepts the switch with milestone years", () => {
+    const r = accountCreateSchema.safeParse({ ...base, marginBorrowEnabled: true,
+      marginBorrowStartYear: 2030, marginBorrowStartYearRef: "client_retirement", marginRepayYear: 2036 });
+    expect(r.success).toBe(true);
+  });
+  it("rejects the switch on a cash account", () => {
+    expect(accountCreateSchema.safeParse({ ...base, category: "cash", marginBorrowEnabled: true }).success).toBe(false);
+  });
+  it("update stays truly partial", () => {
+    expect(Object.keys(accountUpdateSchema.parse({})).length).toBe(0);
+    expect(accountUpdateSchema.parse({ marginBorrowEnabled: true }).marginBorrowEnabled).toBe(true);
+  });
+});

@@ -88,4 +88,29 @@ d("accounts-writes core — margin loan", () => {
     if (up.ok) return;
     expect(up.error).toMatch(/Remove the margin loan/);
   });
+
+  it("create persists the borrowing fields", async () => {
+    const res = await createMargined({ marginBorrowEnabled: true, marginBorrowStartYear: 2030,
+      marginBorrowStartYearRef: "client_retirement", marginRepayYear: 2036 });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const [row] = await db.select().from(accounts).where(eq(accounts.id, res.data.id));
+    expect(row.marginBorrowEnabled).toBe(true);
+    expect(row.marginBorrowStartYear).toBe(2030);
+    expect(row.marginBorrowStartYearRef).toBe("client_retirement");
+    expect(row.marginRepayYear).toBe(2036);
+    expect(row.marginRepayYearRef).toBeNull();
+  });
+
+  it("update rejects moving a borrowing account off taxable with a 400", async () => {
+    const res = await createMargined({ marginBalance: "0", marginBorrowEnabled: true });
+    if (!res.ok) throw new Error("setup");
+    const up = await updateAccountForClient({
+      clientId: COOPER_CLIENT_ID, firmId: COOPER_FIRM_ID, actorId: ACTOR_ID, accountId: res.data.id,
+      input: { category: "cash", subType: "checking" },
+    });
+    expect(up.ok).toBe(false);
+    if (up.ok) return;
+    expect(up.error).toMatch(/Turn off borrowing/);
+  });
 });

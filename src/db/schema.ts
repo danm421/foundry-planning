@@ -2380,6 +2380,15 @@ export const accounts = pgTable("accounts", {
   marginInterestRate: decimal("margin_interest_rate", { precision: 5, scale: 4 }).notNull().default("0"),
   // Warn when net ÷ securities falls below this (brokerage maintenance level).
   marginCallPct: decimal("margin_call_pct", { precision: 5, scale: 4 }).notNull().default("0.3"),
+  // ── Borrowing on margin (taxable only; spec 2026-10-14) ───────────────────
+  // When on, the plan covers spending shortfalls by borrowing against this
+  // account (after cash, before any sale) instead of selling it.
+  marginBorrowEnabled: boolean("margin_borrow_enabled").notNull().default(false),
+  marginBorrowStartYear: integer("margin_borrow_start_year"),
+  marginBorrowStartYearRef: yearRefEnum("margin_borrow_start_year_ref"),
+  // The year the plan sells securities to clear the loan (null = never).
+  marginRepayYear: integer("margin_repay_year"),
+  marginRepayYearRef: yearRefEnum("margin_repay_year_ref"),
   overridePctOi: decimal("override_pct_oi", { precision: 5, scale: 4 }),
   overridePctLtCg: decimal("override_pct_lt_cg", { precision: 5, scale: 4 }),
   overridePctQdiv: decimal("override_pct_qdiv", { precision: 5, scale: 4 }),
@@ -2476,6 +2485,10 @@ export const accounts = pgTable("accounts", {
   marginTaxableOnly: check(
     "accounts_margin_taxable_only",
     sql`${t.marginBalance} = 0 OR ${t.category} = 'taxable'`,
+  ),
+  marginBorrowTaxableOnly: check(
+    "accounts_margin_borrow_taxable_only",
+    sql`${t.marginBorrowEnabled} = false OR ${t.category} = 'taxable'`,
   ),
   inheritedFieldsPaired: check(
     "accounts_inherited_fields_paired",

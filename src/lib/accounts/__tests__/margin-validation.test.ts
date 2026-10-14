@@ -27,3 +27,29 @@ describe("validateMarginFields", () => {
     expect(validateMarginFields({ ...ok, marginCallPct: 1 })).toMatch(/between 0% and 100%/);
   });
 });
+
+describe("borrowing on margin (Phase 2)", () => {
+  const okBorrow = { category: "taxable", value: 1_000_000, marginBalance: 0, marginInterestRate: 0.08, marginCallPct: 0.3 };
+  it("accepts the switch on a taxable account with no years", () => {
+    expect(validateMarginFields({ ...okBorrow, marginBorrowEnabled: true })).toBeNull();
+  });
+  it("rejects the switch on a non-taxable account", () => {
+    expect(validateMarginFields({ ...okBorrow, category: "cash", marginBorrowEnabled: true })).toBe(
+      "Only taxable brokerage accounts can borrow on margin. Turn off borrowing before changing the account type.",
+    );
+  });
+  it("rejects a repay year at or before borrow-from when the switch is on", () => {
+    expect(validateMarginFields({ ...okBorrow, marginBorrowEnabled: true, marginBorrowStartYear: 2030, marginRepayYear: 2030 }))
+      .toBe("The repay year must be after the year borrowing starts.");
+  });
+  it("accepts a repay year after borrow-from", () => {
+    expect(validateMarginFields({ ...okBorrow, marginBorrowEnabled: true, marginBorrowStartYear: 2030, marginRepayYear: 2031 })).toBeNull();
+  });
+  it("ignores the year order with the switch off (a repay year pays off a pre-existing loan)", () => {
+    expect(validateMarginFields({ ...okBorrow, marginBalance: 200_000, marginBorrowStartYear: 2035, marginRepayYear: 2030 })).toBeNull();
+  });
+  it("reads string years the way the write core holds them", () => {
+    expect(validateMarginFields({ ...okBorrow, marginBorrowEnabled: true, marginBorrowStartYear: "2030", marginRepayYear: "2029" }))
+      .toBe("The repay year must be after the year borrowing starts.");
+  });
+});

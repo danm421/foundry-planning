@@ -1940,6 +1940,13 @@
       "when": 1791920068855,
       "tag": "0276_margin_loans",
       "breakpoints": true
+    },
+    {
+      "idx": 277,
+      "version": "7",
+      "when": 1791983477969,
+      "tag": "0277_margin_borrowing",
+      "breakpoints": true
     }
   ]
 }

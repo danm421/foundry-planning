@@ -22,7 +22,7 @@ import { PLAID_LOCKED_FIELDS } from "@/lib/portal/plaid-locked-fields";
 import { recordUpdate, recordDelete } from "@/lib/audit/record-helpers";
 import type { EntitySnapshot } from "@/lib/audit/types";
 import { isPortalVisibleAccount } from "@/lib/portal/account-visibility";
-import { MARGIN_TAXABLE_ONLY_MESSAGE } from "@/lib/accounts/margin-validation";
+import { MARGIN_BORROW_TAXABLE_ONLY_MESSAGE, MARGIN_TAXABLE_ONLY_MESSAGE } from "@/lib/accounts/margin-validation";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +34,7 @@ type AccountRow = {
   subType: string;
   value: string;
   marginBalance: string;
+  marginBorrowEnabled: boolean;
   accountNumberLast4: string | null;
   custodian: string | null;
   plaidItemId: string | null;
@@ -75,6 +76,7 @@ async function loadOwnedRow(
     subType: row.subType,
     value: row.value,
     marginBalance: row.marginBalance,
+    marginBorrowEnabled: row.marginBorrowEnabled === true,
     accountNumberLast4: row.accountNumberLast4,
     custodian: (row as { custodian?: string | null }).custodian ?? null,
     plaidItemId: (row as { plaidItemId?: string | null }).plaidItemId ?? null,
@@ -178,12 +180,13 @@ export async function PUT(
         { status: 400 },
       );
     }
-    // A margin loan needs a taxable account; the DB CHECK would 500 instead.
-    if (
-      Number(row.marginBalance ?? 0) > 0 &&
-      (patch.category ?? row.category) !== "taxable"
-    ) {
+    // A margin loan — or borrowing on margin — needs a taxable account; the DB CHECK would 500 instead.
+    const leavesTaxable = (patch.category ?? row.category) !== "taxable";
+    if (leavesTaxable && Number(row.marginBalance ?? 0) > 0) {
       return NextResponse.json({ error: MARGIN_TAXABLE_ONLY_MESSAGE }, { status: 400 });
+    }
+    if (leavesTaxable && row.marginBorrowEnabled) {
+      return NextResponse.json({ error: MARGIN_BORROW_TAXABLE_ONLY_MESSAGE }, { status: 400 });
     }
 
     let newOwners: ReturnType<typeof validateOwnersShape> | null = null;
@@ -326,6 +329,7 @@ export async function DELETE(
       subType: raw.subType,
       value: raw.value,
       marginBalance: raw.marginBalance,
+      marginBorrowEnabled: raw.marginBorrowEnabled === true,
       accountNumberLast4: raw.accountNumberLast4,
       custodian: (raw as { custodian?: string | null }).custodian ?? null,
       plaidItemId,
