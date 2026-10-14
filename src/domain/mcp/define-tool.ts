@@ -171,10 +171,11 @@ export function defineWriteTool<S extends z.ZodObject<z.ZodRawShape>, R extends 
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     requireWrite: true,
     auditAction: "mcp.tool_write",
+    // The tool's own ids and counts first, so they can never overwrite tool or via.
     auditMetadata: (args, result) => ({
+      ...(spec.auditMetadata?.(args, result) ?? {}),
       tool: spec.name,
       via: "claude",
-      ...(spec.auditMetadata?.(args, result) ?? {}),
     }),
   });
 }

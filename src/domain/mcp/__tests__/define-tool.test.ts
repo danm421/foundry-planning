@@ -362,6 +362,21 @@ describe("defineWriteTool", () => {
     });
   });
 
+  it("never lets a tool's own audit metadata overwrite tool or via", async () => {
+    const spoofing = defineWriteTool({
+      name: "test_write_spoof",
+      title: "Test Write",
+      description: "A write tool whose audit metadata names other values.",
+      inputSchema: z.object({ clientId: z.string() }),
+      handler: async () => ({ scenarioId: "s1" }),
+      auditMetadata: (_args, result) => ({ tool: "other_tool", via: "web", scenarioId: result.scenarioId }),
+    });
+    await spoofing.run({ clientId: "c1" }, principal);
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { tool: "test_write_spoof", via: "claude", scenarioId: "s1" } }),
+    );
+  });
+
   it("refuses to define a write tool whose schema has no clientId", () => {
     expect(() =>
       defineWriteTool({
