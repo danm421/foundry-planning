@@ -26,7 +26,7 @@ export interface PageScenarioBundle {
   maxSpend?: MaxSpendResult | null;
 }
 
-interface PresentationDocumentProps {
+export interface PresentationDocumentProps {
   pages: Array<{
     pageId: PresentationPageId;
     options?: Record<string, unknown> | undefined;
@@ -74,9 +74,14 @@ interface PresentationDocumentProps {
   observations?: ObservationsRowInput[];
 }
 
-export function PresentationDocument(props: PresentationDocumentProps) {
-  ensureFontsRegistered();
-
+/**
+ * Every page the deck prints, each with the exact data its sheet renders from
+ * and its sheet count — after `omitFromDeck` suppression, before numbering.
+ * PresentationDocument numbers and renders these; the Claude connector's
+ * get_report_page_data reads one page's `data` from here, so Claude quotes the
+ * PDF's own numbers. Needs no fonts: only rendering does.
+ */
+export function buildPresentationEntries(props: PresentationDocumentProps) {
   // `idx` is the entry's position in the SUBMITTED deck and is load-bearing:
   // `entryDerivedKey` folded it into every derived bundle the export stored, and
   // the React key needs it to keep two entries of one page apart. Suppression
@@ -187,6 +192,13 @@ export function PresentationDocument(props: PresentationDocumentProps) {
       pageCount: page.estimatePageCount(data as never, options as never),
     };
   });
+  return entries;
+}
+
+export function PresentationDocument(props: PresentationDocumentProps) {
+  ensureFontsRegistered();
+
+  const entries = buildPresentationEntries(props);
 
   // Compute each page's starting page number based on document order.
   const startPages = entries.reduce<number[]>((acc, _entry, i) => {

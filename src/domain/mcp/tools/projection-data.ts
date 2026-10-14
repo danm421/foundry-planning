@@ -23,11 +23,12 @@ type Section = (typeof PROJECTION_SECTIONS)[number];
 /** Well under Vercel's 4.5 MB response limit, leaving room for the JSON-RPC envelope. */
 export const MAX_RESPONSE_CHARS = 1_500_000;
 
-export function assertWithinSize(result: unknown): void {
+export function assertWithinSize(
+  result: unknown,
+  advice = "Ask for fewer sections or a shorter year range.",
+): void {
   if (JSON.stringify(result).length > MAX_RESPONSE_CHARS) {
-    throw new WhatIfValidationError(
-      "That's more data than one call can return. Ask for fewer sections or a shorter year range.",
-    );
+    throw new WhatIfValidationError(`That's more data than one call can return. ${advice}`);
   }
 }
 

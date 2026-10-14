@@ -13,10 +13,7 @@ import {
   type DerivedDeps,
   type DerivedRefRequest,
 } from "@/lib/presentations/derived-refs";
-import {
-  PresentationDocument,
-  type PageScenarioBundle,
-} from "@/components/presentations/document";
+import { PresentationDocument, type PageScenarioBundle, type PresentationDocumentProps } from "@/components/presentations/document";
 import {
   PRESENTATION_PAGES,
   type PresentationPageId,
@@ -185,17 +182,24 @@ export function deckCapError(plan: ScenarioPlan): string | null {
   return null;
 }
 
+export interface PreparedPresentation {
+  props: PresentationDocumentProps;
+  filename: string;
+  clientLastName: string;
+  distinctScenarioCount: number;
+}
+
 /**
- * Render a presentation deck to a PDF buffer. Throws ClientNotFoundError /
- * ProjectionInputError (callers map to 404/422) or an Error with a
- * "Too many … scenarios" message (callers map to 400). No rate-limit, no
- * audit, no vault write — callers own those.
+ * Everything a deck needs before react-pdf runs: the scenario plan and caps,
+ * every bundle, solve and side load, branding, and the document's props.
+ * Throws what renderPresentationPdf documents. The connector's
+ * get_report_page_data reads page data from these props without rendering.
  */
-export async function renderPresentationPdf(
+export async function preparePresentation(
   clientId: string,
   firmId: string,
   body: ExportPdfBody,
-): Promise<{ buffer: Buffer; filename: string; clientLastName: string; distinctScenarioCount: number }> {
+): Promise<PreparedPresentation> {
   const plan = planDeckScenarios(body);
   // The route maps this message to a 400 (`/Too many .* scenarios/`).
   const capError = deckCapError(plan);
@@ -479,10 +483,7 @@ export async function renderPresentationPdf(
     bundles,
   );
 
-  // Cast required: renderToBuffer expects ReactElement<DocumentProps> but
-  // createElement infers ReactElement<PresentationDocumentProps>. The element
-  // is valid at runtime — PresentationDocument wraps react-pdf's <Document>.
-  const doc = React.createElement(PresentationDocument, {
+  const props: PresentationDocumentProps = {
     pages: body.pages.map((p, idx) => ({
       pageId: p.pageId,
       options: p.options as unknown as Record<string, unknown>,
@@ -504,7 +505,36 @@ export async function renderPresentationPdf(
     investments,
     lifeInsurance,
     observations,
-  }) as unknown as React.ReactElement<DocumentProps>;
+  };
+
+  const filename = body.filename
+    ? body.filename
+    : `${slugify(clientLastName) || "client"}-presentation.pdf`;
+
+  return { props, filename, clientLastName, distinctScenarioCount: plan.distinct.size };
+}
+
+/**
+ * Render a presentation deck to a PDF buffer. Throws ClientNotFoundError /
+ * ProjectionInputError (callers map to 404/422) or an Error with a
+ * "Too many … scenarios" message (callers map to 400). No rate-limit, no
+ * audit, no vault write — callers own those.
+ */
+export async function renderPresentationPdf(
+  clientId: string,
+  firmId: string,
+  body: ExportPdfBody,
+): Promise<{ buffer: Buffer; filename: string; clientLastName: string; distinctScenarioCount: number }> {
+  const { props, filename, clientLastName, distinctScenarioCount } = await preparePresentation(
+    clientId,
+    firmId,
+    body,
+  );
+
+  // Cast required: renderToBuffer expects ReactElement<DocumentProps> but
+  // createElement infers ReactElement<PresentationDocumentProps>. The element
+  // is valid at runtime — PresentationDocument wraps react-pdf's <Document>.
+  const doc = React.createElement(PresentationDocument, props) as unknown as React.ReactElement<DocumentProps>;
 
   const buffer = await Promise.race<Buffer>([
     renderToBuffer(doc),
@@ -513,9 +543,5 @@ export async function renderPresentationPdf(
     ),
   ]);
 
-  const filename = body.filename
-    ? body.filename
-    : `${slugify(clientLastName) || "client"}-presentation.pdf`;
-
-  return { buffer, filename, clientLastName, distinctScenarioCount: plan.distinct.size };
+  return { buffer, filename, clientLastName, distinctScenarioCount };
 }

@@ -1,14 +1,21 @@
 // src/domain/mcp/tools/presentations.ts
 //
 // Standard Foundry decks from Claude: the page and template catalog, queueing a
-// deck into the household's documents, and checking on it. The deck is queued
+// deck into the household's documents, and checking on it — plus one page's data
+// and the household's branding, for a deck Claude builds itself. The deck is queued
 // exactly as the app's Generate button queues it (src/lib/presentations/
 // queue-run.ts); presentation-decks.ts turns Claude's request into that body.
 import { z } from "zod";
+import { buildReportPageData } from "@/components/presentations/page-data";
+import { loadHouseholdBrand } from "@/lib/branding/household-brand";
+import { resolveBrandingForClient, resolveIntakeBrandingForClient } from "@/lib/branding/resolve-for-client";
+import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { getRunForHousehold } from "@/lib/crm/generation-runs";
 import { foundryDocumentUrl } from "@/lib/mcp/foundry-url";
 import { partitionBuiltInRows } from "@/lib/presentations/builtin-templates";
 import { listDismissedSlugs } from "@/lib/presentations/builtin-templates-repo";
+import { DISCLOSURES_HEADING, longDisclaimerParagraphs, SHORT_DISCLAIMER } from "@/lib/presentations/disclaimers";
+import { dateLong } from "@/lib/presentations/format";
 import { queuePresentationRun } from "@/lib/presentations/queue-run";
 import { loadPlanFacts } from "@/lib/presentations/suggestions/load-plan-facts";
 import { scoreReports } from "@/lib/presentations/suggestions/score-reports";
@@ -30,9 +37,11 @@ import {
   householdIdFor,
   NO_HOUSEHOLD_MESSAGE,
   pageCatalog,
+  pageFor,
   placePage,
   templatePages,
 } from "../presentation-decks";
+import { assertWithinSize } from "./projection-data";
 
 export const RUN_NOT_FOUND_MESSAGE =
   "Deck run not found for this household. Use the runId generate_presentation returned.";
@@ -219,4 +228,77 @@ const getPresentationStatus = defineTool({
   },
 });
 
-export const presentationTools: McpTool[] = [listPresentationPages, generatePresentation, getPresentationStatus];
+export const PAGE_TOO_LARGE_ADVICE =
+  "This page's data is too large for one call. Use get_projection_data with fewer sections or a shorter year range instead.";
+
+const getReportPageData = defineTool({
+  name: "get_report_page_data",
+  title: "Get report page data",
+  description:
+    "The exact data one standard Foundry deck page prints — the same numbers as the PDF sheet — for a deck you build " +
+    "yourself. pageId comes from list_presentation_pages. scenarioId works as in generate_presentation: the page's " +
+    "scenario, and the one a comparison page (needsScenario) compares with the base case. Logos and other images are " +
+    "left out: get the logo URL, brand colour and disclaimer text from get_branding. AI-written commentary is not " +
+    "included. A Monte Carlo or comparison page can take up to a minute the first time. For the engine's " +
+    "year-by-year output instead of a page, use get_projection_data.",
+  inputSchema: z.object({
+    clientId: clientIdArg,
+    pageId: z.string().min(1).max(60),
+    scenarioId: z.string().optional().describe("A scenario from list_scenarios. Omit for the base case."),
+  }),
+  page: "presentations",
+  handler: async ({ clientId, pageId, scenarioId }, { firmId }) => {
+    const entry = placePage({ pageId, scenarioId, deckScenarioId: scenarioId });
+    const { body, plan } = buildDeckBody({ entries: [entry], deckScenarioId: scenarioId });
+    await assertDeckRefsOwned(clientId, deckRefIds(body, plan));
+    const result = {
+      pageId,
+      title: pageFor(pageId).title,
+      scenarioId: scenarioId ?? "base",
+      data: await buildReportPageData(clientId, firmId, body),
+    };
+    assertWithinSize(result, PAGE_TOO_LARGE_ADVICE);
+    return result;
+  },
+});
+
+const getBranding = defineTool({
+  name: "get_branding",
+  title: "Get branding",
+  description:
+    "The household's brand, for a deck you build yourself: brandName (the firm, or the advisor's own brand when the " +
+    "household uses it), accentColor (hex), logoUrl (a public image URL, or null — then set the brand name as a " +
+    "wordmark), and Foundry's standard disclaimer text exactly as Foundry decks print it (a short footer line, a " +
+    "heading and the long paragraphs). Foundry stores no firm-specific compliance disclosures: ask the advisor " +
+    "whether their firm requires any.",
+  inputSchema: z.object({ clientId: clientIdArg }),
+  handler: async ({ clientId }, { firmId }) => {
+    const brand = await loadHouseholdBrand(clientId, firmId);
+    const [branding, web, contact] = await Promise.all([
+      resolveBrandingForClient(firmId, brand),
+      resolveIntakeBrandingForClient(firmId, brand),
+      getClientWithContacts(clientId, firmId),
+    ]);
+    const clientName = [contact?.firstName, contact?.lastName].filter(Boolean).join(" ") || "the client";
+    return {
+      brandName: branding.firmName,
+      accentColor: branding.primaryColor,
+      // Already public — the household's intake pages show it to anyone with the
+      // link. The PDF path's logoDataUrl (base64 bytes) is never returned.
+      logoUrl: web?.logoUrl ?? null,
+      disclaimers: {
+        short: SHORT_DISCLAIMER,
+        heading: DISCLOSURES_HEADING,
+        long: longDisclaimerParagraphs({ firmName: branding.firmName, clientName, reportDate: dateLong(new Date()) }),
+      },
+    };
+  },
+});
+
+export const presentationTools: McpTool[] = [
+  listPresentationPages,
+  generatePresentation,
+  getPresentationStatus,
+  getReportPageData,
+  getBranding,
+];
