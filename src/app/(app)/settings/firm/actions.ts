@@ -138,3 +138,39 @@ export async function setBookSiloEnabled(enabled: boolean): Promise<SetBookSiloE
   revalidatePath("/", "layout");
   return { ok: true };
 }
+
+export type SetClaudeWritesEnabledResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Let the Claude connector make changes for this firm: save a what-if as a
+ * scenario and queue decks into a client's vault. Off by default. Read tools
+ * are unaffected either way. Upserts for the same reason setBookSiloEnabled
+ * does: the firm row may not exist yet.
+ */
+export async function setClaudeWritesEnabled(enabled: boolean): Promise<SetClaudeWritesEnabledResult> {
+  await requireOrgAdminOrOwner();
+
+  const { userId, orgId } = await auth();
+  if (!userId || !orgId) {
+    return { ok: false, error: "No active org" };
+  }
+
+  await db
+    .insert(firms)
+    .values({ firmId: orgId, claudeWritesEnabled: enabled })
+    .onConflictDoUpdate({
+      target: firms.firmId,
+      set: { claudeWritesEnabled: enabled, updatedAt: new Date() },
+    });
+
+  await recordAudit({
+    action: "firm.claude_writes_toggled",
+    resourceType: "firm",
+    resourceId: orgId,
+    firmId: orgId,
+    metadata: { enabled },
+  });
+
+  revalidatePath("/settings/firm");
+  return { ok: true };
+}
