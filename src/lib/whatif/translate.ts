@@ -49,8 +49,9 @@ export function translateChanges(
 ): TranslateResult {
   const mutations: SolverMutation[] = [];
   const recordIds: (string | null)[] = [];
+  const removed = new Set<string>();
   changes.forEach((change, index) => {
-    const ctx: Ctx = { tree, index, newId, growthDefaults: opts.growthDefaults };
+    const ctx: Ctx = { tree, index, newId, growthDefaults: opts.growthDefaults, removed };
     const out = translateOne(change, ctx);
     for (const m of out.mutations) {
       const check = SOLVER_MUTATION_SCHEMA.safeParse(m);

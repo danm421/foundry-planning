@@ -351,18 +351,70 @@ export function translateTechnique(change: TechniqueChange, ctx: Ctx): One {
       if (!ids[change.kind].includes(change.id)) {
         fail(ctx, `${change.kind.replace("_", " ")} ${change.id} isn't in this plan.`);
       }
+      if (change.kind === "account") return removeAccount(ctx, findAccount(ctx, change.id));
       const kind = {
         income: "income-upsert",
         expense: "expense-upsert",
-        account: "account-upsert",
         liability: "liability-upsert",
         roth_conversion: "roth-conversion-upsert",
         asset_transaction: "asset-transaction-upsert",
       } as const;
+      const upsert = kind[change.kind];
+      // A bundle's legs are one technique on the Solver screen, which removes
+      // them together.
+      const txs = ctx.tree.assetTransactions ?? [];
+      const bundleId = change.kind === "asset_transaction" ? txs.find((t) => t.id === change.id)?.bundleId : null;
+      const targets = bundleId ? txs.filter((t) => t.bundleId === bundleId).map((t) => t.id) : [change.id];
+      for (const id of targets) ctx.removed.add(id);
       return {
-        mutations: [{ kind: kind[change.kind], id: change.id, value: null } as SolverMutation],
+        mutations: targets.map((id) => ({ kind: upsert, id, value: null }) as SolverMutation),
         recordId: change.id,
       };
     }
   }
+}
+
+/** An account leaves with its savings rules, as the Solver removes a
+ *  quick-added account and its rule together. Anything else still aimed at it
+ *  is refused until an earlier change in the list removes that first. */
+function removeAccount(ctx: Ctx, acct: Account): One {
+  const { tree, removed } = ctx;
+  const live = <T extends { id: string }>(rows: T[] | undefined): T[] =>
+    (rows ?? []).filter((r) => !removed.has(r.id));
+  const first = (noun: string, kind: string) =>
+    `Remove that ${noun} first: put a remove change with kind '${kind}' and that id before this one.`;
+
+  const conversion = live(tree.rothConversions).find(
+    (r) => r.destinationAccountId === acct.id || r.sourceAccountIds.includes(acct.id),
+  );
+  if (conversion) {
+    fail(
+      ctx,
+      `${acct.name} is still used by the Roth conversion "${conversion.name}" (id ${conversion.id}). ${first("conversion", "roth_conversion")}`,
+    );
+  }
+  const transaction = live(tree.assetTransactions).find((t) =>
+    [t.accountId, t.businessAccountId, t.proceedsAccountId, t.fundingAccountId].includes(acct.id),
+  );
+  if (transaction) {
+    fail(
+      ctx,
+      `${acct.name} is still used by the asset transaction "${transaction.name}" (id ${transaction.id}). ${first("transaction", "asset_transaction")}`,
+    );
+  }
+  const loan = live(tree.liabilities).find((l) => l.linkedPropertyId === acct.id || l.parentAccountId === acct.id);
+  if (loan) {
+    fail(ctx, `${acct.name} still has the loan "${loan.name}" (id ${loan.id}) tied to it. ${first("liability", "liability")}`);
+  }
+
+  removed.add(acct.id);
+  return {
+    mutations: [
+      { kind: "account-upsert", id: acct.id, value: null },
+      ...tree.savingsRules
+        .filter((r) => r.accountId === acct.id)
+        .map((r): SolverMutation => ({ kind: "savings-rule-upsert", id: r.id, value: null })),
+    ],
+    recordId: acct.id,
+  };
 }

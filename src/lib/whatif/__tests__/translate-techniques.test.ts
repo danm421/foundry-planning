@@ -214,6 +214,97 @@ describe("relocation, pay_off_debt, add_*, remove", () => {
   });
 });
 
+describe("remove takes its dependents with it, or refuses", () => {
+  const CONVERSION = "22222222-2222-4222-8222-222222222201";
+  const BUNDLE = "22222222-2222-4222-8222-2222222222b0";
+  const LEG_SELL = "22222222-2222-4222-8222-2222222222b1";
+  const LEG_BUY = "22222222-2222-4222-8222-2222222222b2";
+  const SOLO = "22222222-2222-4222-8222-2222222222c1";
+
+  function treeWithConversion() {
+    const tree = treeWithClientRoth();
+    tree.rothConversions = [
+      {
+        id: CONVERSION,
+        name: "Fill the 24% bracket",
+        destinationAccountId: IDS.roth,
+        sourceAccountIds: [IDS.k401],
+        conversionType: "fill_up_bracket",
+        fixedAmount: 0,
+        fillUpBracket: 0.24,
+        startYear: 2027,
+        indexingRate: 0,
+      },
+    ];
+    return tree;
+  }
+
+  it("removes an account together with its savings rule, one recordId per change", () => {
+    const out = run([
+      { type: "remove", kind: "account", id: IDS.k401 },
+      { type: "relocation", year: 2030, state: "FL" },
+    ]);
+    expect(out.mutations.slice(0, 2)).toEqual([
+      { kind: "account-upsert", id: IDS.k401, value: null },
+      { kind: "savings-rule-upsert", id: IDS.rule401k, value: null },
+    ]);
+    expect(out.recordIds).toEqual([IDS.k401, NEW]);
+  });
+
+  it("refuses to remove an account a Roth conversion still uses, as source or destination", () => {
+    const sourceMsg = new RegExp(
+      `^Change 1: John 401\\(k\\) is still used by the Roth conversion "Fill the 24% bracket" \\(id ${CONVERSION}\\)\\. Remove that conversion first`,
+    );
+    expect(() => run([{ type: "remove", kind: "account", id: IDS.k401 }], treeWithConversion())).toThrow(sourceMsg);
+    expect(() => run([{ type: "remove", kind: "account", id: IDS.roth }], treeWithConversion())).toThrow(
+      /^Change 1: Jane Roth IRA is still used by the Roth conversion/,
+    );
+  });
+
+  it("allows it once an earlier change in the list removes the conversion", () => {
+    const out = run(
+      [
+        { type: "remove", kind: "roth_conversion", id: CONVERSION },
+        { type: "remove", kind: "account", id: IDS.k401 },
+      ],
+      treeWithConversion(),
+    );
+    expect(out.mutations.map((m) => m.kind)).toEqual([
+      "roth-conversion-upsert",
+      "account-upsert",
+      "savings-rule-upsert",
+    ]);
+    expect(out.recordIds).toEqual([CONVERSION, IDS.k401]);
+  });
+
+  it("refuses to remove an account an asset transaction or a linked loan still uses", () => {
+    const tree = whatIfTree();
+    tree.assetTransactions = [{ id: SOLO, name: "Sell half the brokerage", type: "sell", year: 2030, accountId: IDS.brokerage }];
+    tree.liabilities = tree.liabilities.map((l) => (l.id === IDS.mortgage ? { ...l, linkedPropertyId: IDS.home } : l));
+    expect(() => run([{ type: "remove", kind: "account", id: IDS.brokerage }], tree)).toThrow(
+      new RegExp(`^Change 1: Joint Brokerage is still used by the asset transaction "Sell half the brokerage" \\(id ${SOLO}\\)\\. Remove that transaction first`),
+    );
+    expect(() => run([{ type: "remove", kind: "account", id: IDS.home }], tree)).toThrow(
+      new RegExp(`^Change 1: Primary Home still has the loan "Mortgage" \\(id ${IDS.mortgage}\\) tied to it\\. Remove that liability first`),
+    );
+  });
+
+  it("removes every leg of an asset-transaction bundle, and only that bundle", () => {
+    const tree = whatIfTree();
+    tree.assetTransactions = [
+      { id: LEG_SELL, bundleId: BUNDLE, name: "Move — Sell Primary Home", type: "sell", year: 2030, accountId: IDS.home },
+      { id: LEG_BUY, bundleId: BUNDLE, name: "Move — Buy Condo", type: "buy", year: 2030, assetName: "Condo", purchasePrice: 400_000 },
+      { id: SOLO, name: "Sell half the brokerage", type: "sell", year: 2031, accountId: IDS.brokerage, fractionSold: 0.5 },
+    ];
+    const out = run([{ type: "remove", kind: "asset_transaction", id: LEG_BUY }], tree);
+    expect(out.mutations).toEqual([
+      { kind: "asset-transaction-upsert", id: LEG_SELL, value: null },
+      { kind: "asset-transaction-upsert", id: LEG_BUY, value: null },
+    ]);
+    expect(out.recordIds).toEqual([LEG_BUY]);
+  });
+});
+
 describe("resolved growth defaults", () => {
   // Raw plan-settings columns that differ from the resolved defaults, so a pass
   // proves the resolved rate wins over the column, not just over a fallback.

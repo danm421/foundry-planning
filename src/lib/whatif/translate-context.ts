@@ -18,7 +18,16 @@ export interface GrowthDefaults {
   realEstate: number;
 }
 
-export type Ctx = { tree: ClientData; index: number; newId: () => string; growthDefaults?: GrowthDefaults };
+export type Ctx = {
+  tree: ClientData;
+  index: number;
+  newId: () => string;
+  growthDefaults?: GrowthDefaults;
+  /** Ids an earlier `remove` in the same list takes out, shared across the
+   *  list: every change validates against the original tree, so this is how
+   *  "remove the conversion first" can be honored by a later account removal. */
+  removed: Set<string>;
+};
 export type One = { mutations: SolverMutation[]; recordId: string | null };
 
 export function fail(ctx: Ctx, message: string): never {
