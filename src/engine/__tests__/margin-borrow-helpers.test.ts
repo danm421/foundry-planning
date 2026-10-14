@@ -91,6 +91,19 @@ describe("margin calls and repayment sales", () => {
     expect(marginCallSaleAmount(-400_000, 900_000, 0.3)).toBeCloseTo(500_000, 6);
     expect(marginCallSaleAmount(100_000, 0, 0.3)).toBe(0);
   });
+  it("sub-cent securities count as exhausted: no sale (I2)", () => {
+    // The 2035 state of the margin-calls.test.ts I2 fixture: +9.1e-13 of
+    // float residue after a sell-everything call.
+    expect(marginCallSaleAmount(-3_089.5410463375365, 3_089.5410463375374, 0.3)).toBe(0);
+    const loans: Record<string, number> = { b: 3_089.5410463375374 };
+    const basis = { b: 0 };
+    const l = ledger(-3_089.5410463375365);
+    const sale = sellSecuritiesToRepayLoan({ acct: brokerage(), reason: "call", amount: 1e-12,
+      accountBalances: { b: -3_089.5410463375365 }, basisMap: basis, freshBasisMap: {}, marginMap: loans, shareMap: {}, ledger: l });
+    expect(sale).toBeNull();
+    expect(loans.b).toBe(3_089.5410463375374);
+    expect(l.entries).toEqual([]);
+  });
   it("a just-restored ratio is compliant despite floating-point noise (R4)", () => {
     const sold = marginCallSaleAmount(100_000, 500_000, 0.3);
     expect(marginCallSaleAmount(100_000, 500_000 - sold, 0.3)).toBe(0);

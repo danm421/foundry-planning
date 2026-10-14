@@ -287,12 +287,18 @@ export function borrowOnMargin(input: {
   }
 }
 
+/** Securities, or a sale, worth less than a cent count as none: selling every
+ *  security leaves float residue (~1e-12) that must not book a "sold $0"
+ *  margin call the next year (final review I2). */
+export const SUB_CENT = 0.01;
+
 /** Securities to sell on a margin call: enough to bring net ÷ securities back
- *  to `callPct`; every security when net ≤ 0; 0 when the account complies. */
+ *  to `callPct`; every security when net ≤ 0; 0 when the account complies or
+ *  has no securities left. */
 export function marginCallSaleAmount(net: number, loan: number, callPct: number): number {
   if (loan <= 0 || callPct <= 0) return 0;
   const gross = net + loan;
-  if (gross <= 0) return 0;
+  if (gross < SUB_CENT) return 0;
   if (net <= 0) return gross;
   if (net / gross >= callPct - RATIO_EPSILON) return 0;
   return gross - net / callPct;
@@ -318,7 +324,7 @@ export function sellSecuritiesToRepayLoan(input: {
   const loan = marginMap[acct.id] ?? 0;
   const gross = (accountBalances[acct.id] ?? 0) + loan;
   const sold = Math.min(input.amount, loan, gross);
-  if (sold <= 0) return null;
+  if (sold < SUB_CENT) return null;
 
   const fresh = freshBasisMap[acct.id] ?? 0;
   // `balance: gross` — the sale is of securities; net may be ≤ 0 here.

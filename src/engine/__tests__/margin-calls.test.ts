@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runMargin, runBorrow, CHECKING } from "./_fixtures/margin";
+import { runMargin, runBorrow, BORROWER, CHECKING } from "./_fixtures/margin";
 import { runProjection } from "../projection";
 import { buildClientData, basePlanSettings, FIXTURE_TAX_PARAMS } from "./fixtures";
 import { LEGACY_FM_CLIENT } from "../ownership";
@@ -39,6 +39,17 @@ describe("forced sale on a margin call (spec 2026-10-14)", () => {
     expect(u.accountLedgers.m.marginEoY).toBeCloseTo(400_000, 2);
     expect(u.accountLedgers.m.endingValue).toBeCloseTo(-400_000, 2);
     expect(u.marginCallWarnings?.[0].accountId).toBe("m");
+  });
+  it("an exhausted account books no phantom sale: a sell-everything call, then an interest year (I2/W1)", () => {
+    // $110K/yr spending borrows to the cap, then calls sell it down: 2034's
+    // call sells every security and leaves +9.1e-13 of float "securities".
+    const years = runBorrow([BORROWER], { years: 10, spend: 110_000 });
+    const y2034 = years.find((y) => y.year === 2034)!;
+    const y2035 = years.find((y) => y.year === 2035)!;
+    expect(y2034.marginSales).toEqual([expect.objectContaining({ reason: "call", sold: expect.closeTo(38_619.26, 2) })]);
+    expect(y2035.accountLedgers["acct-borrow"].marginInterest).toBeGreaterThan(0);
+    expect(y2035.marginSales).toBeUndefined();
+    expect(y2035.marginCallWarnings?.[0].accountId).toBe("acct-borrow");
   });
   it("a breach caused by the year's own draws warns at year end and sells at next year's check", () => {
     const big = acct({ value: 10_000_000, basis: 10_000_000, marginBalance: 2_000_000 });

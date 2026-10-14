@@ -27,7 +27,7 @@ import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear, AccountLedger } from "@/engine";
 import { isFullyEntityOwned } from "@/engine/ownership";
 import { applyLtcEvent } from "@/engine/ltc-event";
-import { netGrowthOf } from "@/engine/margin";
+import { netGrowthOf, SUB_CENT } from "@/engine/margin";
 import {
   liquidBucketWeights,
   liquidPortfolioAdditions,
@@ -2529,6 +2529,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                 const callSale = modalYear?.marginSales?.find((s) => s.accountId === ledgerModal.accountId && s.reason === "call");
                 if (!marginWarning && !callSale) return null;
                 const callPct = clientData?.accounts.find((a) => a.id === ledgerModal.accountId)?.marginCallPct;
+                const loanEoY = ledgerModal.ledger.marginEoY ?? 0;
+                const noSecuritiesLeft = ledgerModal.ledger.endingValue + loanEoY < SUB_CENT;
                 return (
                   <div className="space-y-1 rounded border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-ink-2">
                     {callSale && (
@@ -2537,11 +2539,13 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                         {callPct != null ? ` its ${Math.round(callPct * 100)}% margin call level.` : " its margin call level."}
                       </p>
                     )}
-                    {marginWarning && (
+                    {marginWarning && (noSecuritiesLeft ? (
+                      <p>No securities left to sell — {fmtNum(loanEoY)} of margin loan remains.</p>
+                    ) : (
                       <p>
                         Margin call risk: net value is {Math.round(marginWarning.ratio * 100)}% of the securities, below the {Math.round(marginWarning.threshold * 100)}% margin call level. The plan sells securities to meet the call at next year&apos;s check.
                       </p>
-                    )}
+                    ))}
                   </div>
                 );
               })()}

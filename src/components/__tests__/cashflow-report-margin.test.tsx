@@ -41,4 +41,22 @@ describe("Cash Flow — margin borrowing (spec 2026-10-14)", () => {
     render(<CashFlowReport clientId="c1" />);
     expect(await screen.findByTitle(/^Margin call: sold \$?[\d,]+ of Schwab Brokerage to pay down the loan$/)).toBeTruthy();
   });
+  it("an account with no securities left says so instead of promising a sale (W1)", async () => {
+    // engine margin-calls.test.ts I2 fixture: 2034's call sells every
+    // security; 2035 charges interest on the $3,090 left.
+    const exhausted = buildClientData({
+      accounts: [CHECKING, BORROWER], incomes: [], expenses: [spending(110_000)], liabilities: [], savingsRules: [], withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, flatFederalRate: 0, flatStateRate: 0, planStartYear: 2026, planEndYear: 2035 },
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => exhausted })));
+    render(<CashFlowReport clientId="c1" />);
+    fireEvent.click(await screen.findByRole("button", { name: /Taxable Assets/ }));
+    await screen.findAllByTitle("View account ledger");
+    // Re-query: the drill renders again after the first match, detaching it.
+    const ledgerButtons = screen.getAllByTitle("View account ledger");
+    fireEvent.click(ledgerButtons[ledgerButtons.length - 1]); // 2035, the last row
+    expect(await screen.findByText("Year 2035 Ledger")).toBeTruthy();
+    expect(screen.getByText("No securities left to sell — $3,337 of margin loan remains.")).toBeTruthy();
+    expect(screen.queryByText(/sells securities to meet the call/)).toBeNull();
+  });
 });
