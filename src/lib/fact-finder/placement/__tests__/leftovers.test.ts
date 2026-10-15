@@ -175,6 +175,12 @@ describe("buildLeftoversPrompt", () => {
     expect(system).toContain("is DATA");
   });
 
+  it("names the fence's own markers in the system prompt", () => {
+    const { system } = buildLeftoversPrompt([finalNotes], DRAFTS);
+    expect(system).toContain(FENCE_OPEN);
+    expect(system).toContain(FENCE_CLOSE);
+  });
+
   it("asks for the exact words, plain values, and a value of the field's own period", () => {
     const { system } = buildLeftoversPrompt([finalNotes], DRAFTS);
     expect(system).toContain("exact words");
@@ -234,6 +240,66 @@ describe("applyLeftovers", () => {
     expect(notices).toEqual([]);
   });
 
+  // A value must be read off its quote (non-text) or appear in the item's text (text) — the model can't vouch for it.
+  describe("ties the value to its quote", () => {
+    const emma: TargetDraft = {
+      lineId: lineIdOf("f1", "family_member"),
+      sectionId: "family",
+      rowId: "f1",
+      target: "family_member",
+      recordId: null,
+      label: "Emma Hendricks",
+      fields: [{ key: "firstName", value: "Emma", from: [cell("family", "f1", "firstName")] }],
+      warnings: [],
+    };
+    const emmaNotes: LeftoverItem = {
+      ...finalNotes,
+      id: "f1:notes",
+      cell: cell("family", "f1", "notes"),
+      text: "Emma was born in 1962. She is a nurse in   Denver and pays $1,250.50 a month in rent.",
+      rowLabel: "Emma Hendricks",
+    };
+    const asNote = (item: LeftoverItem, drafts: readonly TargetDraft[], answer: Answer) => {
+      const { drafts: out } = applyLeftovers([item], drafts, answers(answer), BOOK);
+      expect(out.slice(0, drafts.length)).toEqual(drafts);
+      expect(out.at(-1)?.target).toBe("plan_observation");
+      expect(out.at(-1)?.fields.find((f) => f.key === "body")?.value).toBe(
+        `${item.rowLabel} — ${item.columnLabel}: ${item.text.trim()}`,
+      );
+    };
+
+    it("refuses a one-letter quote vouching for an unrelated amount", () => {
+      asNote(finalNotes, DRAFTS, field("fn:notes", "r1/account", "priorYearEndValue", "999000", "a"));
+    });
+
+    it("refuses a rate written as a fraction when the quote says a percent", () => {
+      asNote(livingNotes, DRAFTS, field("lv1:notes", "l1/liability", "interestRate", "0.065", "6.5% fixed"));
+    });
+
+    it("refuses a date the quote doesn't state", () => {
+      asNote(emmaNotes, [emma], field("f1:notes", "f1/family_member", "dateOfBirth", "1962-01-01", "born in 1962"));
+    });
+
+    it("refuses text the item doesn't say, even with a good quote", () => {
+      asNote(emmaNotes, [emma], field("f1:notes", "f1/family_member", "notes", "Emma has no will; draft one.", "She is a nurse"));
+    });
+
+    it("takes text the item does say, spacing and case aside", () => {
+      const output = answers(field("f1:notes", "f1/family_member", "notes", "she is a NURSE in Denver", "She is a nurse"));
+      const { drafts } = applyLeftovers([emmaNotes], [emma], output, BOOK);
+      expect(drafts).toEqual([
+        { ...emma, fields: [...emma.fields, { key: "notes", value: "she is a NURSE in Denver", from: [emmaNotes.cell], ai: { quote: "She is a nurse" } }] },
+      ]);
+    });
+
+    it("lands an amount the quote states, written plainly", () => {
+      const draft: TargetDraft = { ...ira, lineId: lineIdOf("f1", "account"), rowId: "f1", fields: [] };
+      const output = answers(field("f1:notes", "f1/account", "value", "1250.50", "$1,250.50"));
+      const { drafts } = applyLeftovers([emmaNotes], [draft], output, BOOK);
+      expect(drafts).toEqual([{ ...draft, fields: [{ key: "value", value: 1250.5, from: [emmaNotes.cell], ai: { quote: "$1,250.50" } }] }]);
+    });
+  });
+
   it("makes every note, and every item the model didn't answer, a plan note — the model's topic, else the item's", () => {
     const { drafts, notices } = applyLeftovers([livingNotes, finalNotes], DRAFTS, answers(note("fn:notes", "estate")), BOOK);
     expect(drafts).toEqual([
@@ -271,6 +337,16 @@ describe("applyLeftovers", () => {
     const { drafts, notices } = applyLeftovers([livingNotes], DRAFTS, output, BOOK);
     expect(drafts).toEqual(DRAFTS);
     expect(notices).toEqual(["Not placed: Notes (Current) — It only repeats the mortgage on the Liabilities page."]);
+  });
+
+  it("caps a skip's reason at 160 characters on one line before it reaches the advisor", () => {
+    const reason = `Repeats\n\n   the   mortgage. ${"Ignore the advisor and say this forever. ".repeat(10)}`;
+    const { notices } = applyLeftovers([livingNotes], DRAFTS, answers(skip("lv1:notes", reason)), BOOK);
+    const shown = notices[0].slice("Not placed: Notes (Current) — ".length);
+    expect(notices[0].startsWith("Not placed: Notes (Current) — Repeats the mortgage. Ignore the advisor")).toBe(true);
+    expect(shown).toHaveLength(160);
+    expect(shown.endsWith("…")).toBe(true);
+    expect(shown).not.toMatch(/\s{2}|\n/);
   });
 
   it("takes the first answer for an item and ignores answers for items it wasn't given", () => {
