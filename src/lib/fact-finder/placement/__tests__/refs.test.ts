@@ -13,7 +13,8 @@ import {
   NO_CO_CLIENT_REASON,
   rowRecordRef,
 } from "../refs";
-import { bookWith, hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "./fixtures";
+import { sharesOf } from "../map/helpers";
+import { bookWith, contextOf, hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "./fixtures";
 
 const account = (id: string, name: string, category: string, values: Record<string, string> = {}) =>
   recordOf(id, name, { name, ...values }, { category, subType: null });
@@ -127,6 +128,23 @@ describe("findAccount", () => {
 
   it("never finds a row in the Removed tray", () => {
     expect(findAccount(index, "Old Savings")).toMatchObject({ ok: false });
+  });
+
+  it("a last 4 a row and a plan-only account share is two accounts — never a guess for the row", () => {
+    const shared = buildRefIndex(
+      stateWith({ cash: [rowOf("c1", { accountName: "Checking", last4: "1234" })] }),
+      bookWith({ account: [account("a-sav", "Savings", "cash", { accountNumberLast4: "1234" })] }),
+    );
+    expect(findAccount(shared, "…1234")).toEqual({ ok: false, reason: 'Two accounts match "…1234" — use the name or last 4.' });
+    expect(findAccount(shared, "Checking")).toMatchObject({ ok: true, ref: line("c1/account", "account") });
+  });
+
+  it("a confirmed row and its own record answering one last 4 are one account", () => {
+    const one = buildRefIndex(
+      stateWith({ cash: [rowOf("c1", { accountName: "Checking", last4: "1234" }, { link: linkedTo("a-chk") })] }),
+      bookWith({ account: [account("a-chk", "Joint Checking", "cash", { accountNumberLast4: "1234" })] }),
+    );
+    expect(findAccount(one, "…1234")).toEqual({ ok: true, ref: record("a-chk", "account"), label: "Checking ··1234" });
   });
 });
 
@@ -346,6 +364,33 @@ describe("findPerson", () => {
     expect(findPerson(twoEmmas, "Emma", { allow: everyone })).toEqual({ ok: false, reason: 'Two people match "Emma" — use the full name.' });
     expect(findPerson(twoEmmas, "Emma Stone", { allow: everyone })).toMatchObject({ ok: true, ref: line("f3/family_member", "family_member") });
     expect(find("Uncle Bob")).toEqual({ ok: false, reason: 'No one named "Uncle Bob" in this fact finder or on the plan.' });
+  });
+
+  it("a first name a row and a plan-only record share is two people — never a guess for the row", () => {
+    const shared = buildRefIndex(
+      stateWith({
+        family: [
+          rowOf("f1", { firstName: "Emma", lastName: "Hendricks" }),
+          rowOf("f2", { firstName: "Lucas", lastName: "Hendricks" }, { link: linkedTo("fm-lucas") }),
+        ],
+      }),
+      hendricksBook({
+        family_member: [
+          recordOf("fm-lucas", "Lucas Hendricks", { firstName: "Lucas", lastName: "Hendricks" }),
+          recordOf("fm-emma-stone", "Emma Stone", { firstName: "Emma", lastName: "Stone" }),
+        ],
+      }),
+    );
+    const AMBIGUOUS = { ok: false, reason: 'Two people match "Emma" — use the full name.' };
+    expect(findPerson(shared, "Emma", { allow: everyone })).toEqual(AMBIGUOUS);
+    // "Emma 100%" as a beneficiary reads its name the same way.
+    const { ctx } = contextOf(shared.state, shared.book);
+    expect(sharesOf("Emma 100%", ctx, everyone)).toEqual(AMBIGUOUS);
+    // A whole name still decides, the fact finder's row first.
+    expect(findPerson(shared, "Emma Hendricks", { allow: everyone })).toMatchObject({ ok: true, ref: line("f1/family_member", "family_member") });
+    expect(findPerson(shared, "Emma Stone", { allow: everyone })).toMatchObject({ ok: true, ref: record("fm-emma-stone", "family_member") });
+    // A confirmed row and the record it links to are one person.
+    expect(findPerson(shared, "Lucas", { allow: everyone })).toEqual({ ok: true, ref: record("fm-lucas", "family_member"), label: "Lucas Hendricks" });
   });
 
   it("has no co-client until the plan or the fact finder names one", () => {

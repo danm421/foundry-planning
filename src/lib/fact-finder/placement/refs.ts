@@ -2,12 +2,13 @@
 /**
  * Free text that names something — a savings "Account", "Mortgage on it", a
  * rider's life policy, a beneficiary, the trust that owns an account — turned
- * into what it names (D6). The fact finder's own live rows come first (a row
- * whose link is confirmed stands for that record, any other row for the line it
- * creates), then the client's base-case records. A name matches whole
- * (normText); an account or a life policy also by its last 4; a family member
- * by a first name no one else has. Nothing matching, or two things, is a reason
- * the line can't save — never a guess, and never a new person or trust. Pure.
+ * into what it names (D6). A whole name (normText) looks at the fact finder's
+ * own live rows first (a row whose link is confirmed stands for that record,
+ * any other row for the line it creates), then the client's base-case records.
+ * An account or a life policy also matches by a last 4, and a family member by
+ * a first name, that no other row or record has. Nothing matching, or two
+ * things, is a reason the line can't save — never a guess, and never a new
+ * person or trust. Pure.
  */
 import { lineIdOf, type RecordRef, type TargetKind } from "../change-set";
 import { SECTION_ACCOUNT_CATEGORY } from "../enums";
@@ -195,28 +196,38 @@ export function buildRefIndex(state: FactFinderState, book: RecordBook): RefInde
   };
 }
 
-/** One tier's hits: whole names, else last 4 (two of one last 4 told apart by the words around it), else a first name. */
-function matches(tier: readonly Entry[], q: string, l4: string, firstName: boolean): Entry[] {
-  if (q === "") return [];
-  const byName = tier.filter((e) => e.names.includes(q));
-  if (byName.length > 0) return byName;
-  if (l4) {
-    const byLast4 = tier.filter((e) => e.last4 === l4);
-    const told = byLast4.filter((e) => [e.issuer, ...e.names].some((w) => w && ` ${q} `.includes(` ${w} `)));
-    if (byLast4.length > 0) return told.length > 0 ? told : byLast4;
-  }
-  return firstName ? tier.filter((e) => e.first === q) : [];
+/** One hit per thing named: a confirmed row and the record it links to are one. */
+function distinct(hits: readonly Entry[]): Entry[] {
+  const seen = new Set<string>();
+  return hits.filter((e) => {
+    const key = JSON.stringify(e.ref);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
-/** The hits of the first tier that has any — so a fact finder row beats a record of the same name. */
+/**
+ * A whole name, tier by tier — so a fact finder row beats a record of the same
+ * name. Else the weak steps across every tier at once — last 4 (two of one
+ * last 4 told apart by the words around it), then a first name — so a row and
+ * a plan-only record that both answer are two hits, never a guess (D6).
+ */
 function hitsFor(tiers: readonly (readonly Entry[])[], text: string, by: { last4?: true; firstName?: true } = {}): Entry[] {
   const q = normText(text);
-  const l4 = by.last4 && /\d{4}/.test(text) ? last4Of(text) : "";
+  if (q === "") return [];
   for (const tier of tiers) {
-    const hits = matches(tier, q, l4, by.firstName === true);
-    if (hits.length > 0) return hits;
+    const byName = tier.filter((e) => e.names.includes(q));
+    if (byName.length > 0) return distinct(byName);
   }
-  return [];
+  const all = tiers.flat();
+  const l4 = by.last4 && /\d{4}/.test(text) ? last4Of(text) : "";
+  if (l4) {
+    const byLast4 = all.filter((e) => e.last4 === l4);
+    const told = byLast4.filter((e) => [e.issuer, ...e.names].some((w) => w && ` ${q} `.includes(` ${w} `)));
+    if (byLast4.length > 0) return distinct(told.length > 0 ? told : byLast4);
+  }
+  return by.firstName ? distinct(all.filter((e) => e.first === q)) : [];
 }
 
 interface Noun { one: string; many: string; hint: string }
