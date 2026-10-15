@@ -87,6 +87,6 @@ describe("PUT trust beneficiaries — entityIdRef tenancy", () => {
 
   it("checks the referenced entity against THIS client", async () => {
     await PUT(req(designation(FOREIGN_ENTITY)), ctx);
-    expect(assertEntitiesInClient).toHaveBeenCalledWith(CLIENT, [FOREIGN_ENTITY]);
+    expect(assertEntitiesInClient).toHaveBeenCalledWith(CLIENT, [FOREIGN_ENTITY], undefined);
   });
 });
