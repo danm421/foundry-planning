@@ -8,9 +8,9 @@
 import { formatMoney } from "@/domain/forge/row-lines";
 import type { LivingExpenseItem } from "@/engine/types";
 import { livingItemsAnnualTotal } from "@/lib/living-expense-items";
-import { isRecordRef, type CellRef, type PlacedValue, type RecordRef } from "../../change-set";
+import { isRecordRef, sameRef, type CellRef, type PlacedValue, type RecordRef } from "../../change-set";
 import { CONTRIB_MAP, EXPENSE_TYPE_MAP, FREQ_MAP, valueFor } from "../../enums";
-import { fixedLabelOfRow, fixedRowId } from "../../state";
+import { fixedLabelOfRow, fixedRow } from "../../state";
 import type { FFRow } from "../../types";
 import { findAccount, rowRecordRef } from "../refs";
 import type { BookRecord } from "../types";
@@ -30,7 +30,7 @@ const INFLATION = { growthSource: "inflation" } as const;
 /** The plan's seeded living row for a slot: the Living row's link when it names one of them, else the only one (D11). */
 function livingRecord(ctx: PlaceContext, slot: Slot): BookRecord | undefined {
   const mine = ctx.book.records.expense.filter((r) => r.facts?.livingSlot === slot);
-  const row = ctx.state.sections.living?.find((r) => r.id === fixedRowId("living", SLOT_ROW[slot]));
+  const row = fixedRow(ctx.state, "living", SLOT_ROW[slot]);
   const id = row ? linkedRecordId(row, ctx, ["expense"]) : null;
   return mine.find((r) => r.id === id) ?? (mine.length === 1 ? mine[0] : undefined);
 }
@@ -83,7 +83,7 @@ function itemsReplaceWarning(ctx: PlaceContext, items: readonly Item[]): string 
   const record = livingRecord(ctx, "current");
   if (items.length === 0 || sameItems(items, record?.values.livingItems)) return null;
   const total = livingItemsAnnualTotal(items.map((item, n) => ({ id: `item-${n + 1}`, ...item })));
-  const row = ctx.state.sections.living?.find((r) => r.id === fixedRowId("living", "Current"));
+  const row = fixedRow(ctx.state, "living", "Current");
   const onRecord = record?.values.annualAmount;
   const current = (row ? num(row, "annualAmount") : null) ?? (typeof onRecord === "number" ? onRecord : null);
   if (current === null || Math.abs(current - total) < 0.005) return null;
@@ -224,14 +224,12 @@ function placeMatch(b: DraftBuilder, row: FFRow): void {
 /** Account sections whose Owner column saves the account's owners (a 529's doesn't). */
 const OWNED_SECTIONS = ["cash", "taxable", "retirement", "annuity", "realestate"];
 
-const refKey = (ref: RecordRef) => (ref.ref === "record" ? `record:${ref.id}` : ref.ref === "line" ? `line:${ref.lineId}` : `person:${ref.role}`);
-
 /** The account's sole owner (as the Details dialog's savingsRuleOwnerForAccount reads it): its fact finder row's Owner, else its owners on record. */
 function soleOwner(account: RecordRef, ctx: PlaceContext): "client" | "spouse" | null {
   for (const sectionId of OWNED_SECTIONS) {
-    const row =(ctx.state.sections[sectionId] ?? []).find((r) => {
+    const row = (ctx.state.sections[sectionId] ?? []).find((r) => {
       const ref = rowRecordRef(ctx.refs, sectionId, r.id, "account");
-      return ref !== null && refKey(ref) === refKey(account);
+      return ref !== null && sameRef(ref, account);
     });
     const owner = row ? text(row, "owner") : null;
     if (owner) return owner === "Client" ? "client" : owner === "Co-client" ? "spouse" : null;

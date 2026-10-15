@@ -7,27 +7,20 @@
  * unknown). Pure.
  */
 import { formatMoney } from "@/domain/forge/row-lines";
-import type { PlacedValue, RecordRef, TargetKind } from "../../change-set";
+import { sameRef, type RecordRef, type TargetKind } from "../../change-set";
 import {
   BUSINESS_TAX_MAP, BUSINESS_TYPE_MAP, LIABILITY_TYPE_MAP, PROPERTY_TYPE_MAP, SECTION_ACCOUNT_CATEGORY, TITLING_MAP, valueFor,
 } from "../../enums";
 import type { FFRow } from "../../types";
 import { findLiability, findProperty, rowRecordRef } from "../refs";
 import { monthsBetween, termMonthsFromYears, toFraction } from "../translate";
+import { numberOf, stringOf } from "../text";
 import type { TargetDraft } from "../types";
 import { bool, cellOf, DraftBuilder, linkedRecordId, num, ownersOf, rate, sharesOf, text } from "./helpers";
 import type { PlaceContext, SectionMap } from "./types";
 
-const str = (v: PlacedValue | undefined) => (typeof v === "string" ? v : null);
-const numberOf = (v: PlacedValue | undefined) => (typeof v === "number" ? v : null);
 const labelOnRecord = (target: TargetKind, recordId: string | null, ctx: PlaceContext) =>
   ctx.book.records[target].find((r) => r.id === recordId)?.label ?? null;
-
-/** Two refs to one record, or to one line. */
-function sameRef(a: RecordRef, b: RecordRef): boolean {
-  if (a.ref === "record" && b.ref === "record") return a.id === b.id;
-  return a.ref === "line" && b.ref === "line" && a.lineId === b.lineId;
-}
 
 /** The business a record on the plan is held through (its `facts.parentAccountId`), by label; null when it isn't. */
 function heldThrough(target: TargetKind, recordId: string | null, ctx: PlaceContext): string | null {
@@ -304,7 +297,7 @@ export const LIAB_MAP: SectionMap = {
 
       b.put("interestRate", rate(row, "interestRate"), ["interestRate"])
         .put("monthlyPayment", num(row, "monthlyPI"), ["monthlyPI"]);
-      placeTerm(b, row, str(onRecord?.values.start), fallbackAsOf);
+      placeTerm(b, row, stringOf(onRecord?.values.start), fallbackAsOf);
       b.put("isInterestDeductible", bool(row, "interestDeductible"), ["interestDeductible"]);
       linkProperty(b, row, ctx);
 

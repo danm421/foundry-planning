@@ -98,6 +98,24 @@ export function lineIdOf(rowId: string, target: TargetKind, n?: number): string 
   return n === undefined ? `${rowId}/${target}` : `${rowId}/${target}/${n}`;
 }
 
+/** lineIdOf's inverse: the row and target a line id names (and its n); null for an id lineIdOf doesn't make. */
+export function parseLineId(lineId: string): { rowId: string; target: TargetKind; n?: number } | null {
+  const m = /^(.*)\/([a-z_]+)(?:\/(\d+))?$/.exec(lineId);
+  if (!m || !(TARGET_KINDS as readonly string[]).includes(m[2])) return null;
+  return { rowId: m[1], target: m[2] as TargetKind, ...(m[3] !== undefined ? { n: Number(m[3]) } : {}) };
+}
+
+/** A fact finder cell's key: `${rowId}:${columnId}` (row ids are unique across sections). */
+export const cellKey = (rowId: string, columnId: string): string => `${rowId}:${columnId}`;
+
+/** What a ref names: a record by its id, a line by its id, a person by role. */
+export function refKey(ref: RecordRef): string {
+  return ref.ref === "record" ? `record:${ref.id}` : ref.ref === "line" ? `line:${ref.lineId}` : `person:${ref.role}`;
+}
+
+/** Two refs to the same record, line or person. */
+export const sameRef = (a: RecordRef, b: RecordRef): boolean => refKey(a) === refKey(b);
+
 export function isRecordRef(value: PlacedValue | undefined): value is RecordRef {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const v = value as Record<string, unknown>;
@@ -116,4 +134,15 @@ export function defaultTicks(changeSet: ChangeSet): ChangeTicks {
     ticks[line.id] = Object.fromEntries(line.fields.map((f) => [f.key, f.ticked]));
   }
   return ticks;
+}
+
+/** The lines to create, to update, unchanged, and that can't save — a blocked line counts only as blocked. */
+export function countLines(lines: readonly ChangeLine[]): { creates: number; updates: number; unchanged: number; blocked: number } {
+  const count = (keep: (line: ChangeLine) => boolean) => lines.filter(keep).length;
+  return {
+    creates: count((l) => !l.blocked && l.action === "create"),
+    updates: count((l) => !l.blocked && l.action === "update"),
+    unchanged: count((l) => !l.blocked && l.action === "none"),
+    blocked: count((l) => l.blocked !== undefined),
+  };
 }

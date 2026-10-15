@@ -7,11 +7,12 @@
  */
 import { formatMoney, livingItemLine } from "@/domain/forge/row-lines";
 import { YEAR_REF_LABELS, type YearRef } from "@/lib/milestones";
-import { isRecordRef, type PlacedValue, type RecordRef } from "../change-set";
+import { isRecordRef, refKey, type PlacedValue, type RecordRef } from "../change-set";
 import { labelFor, type OptionMap } from "../enums";
 import { MONTHS } from "../schema";
 import { holdingKey, stableStringify } from "../state";
 import type { ValueKind } from "./targets";
+import { stringOf } from "./text";
 import type { RecordBook } from "./types";
 
 type Entry = { [key: string]: PlacedValue };
@@ -42,14 +43,14 @@ export function sameValue(
   const aEmpty = isEmptyValue(a);
   const bEmpty = isEmptyValue(b);
   if (aEmpty || bEmpty) return aEmpty && bEmpty;
-  const who = (e: Entry) => refKey(e.who, people);
+  const who = (e: Entry) => whoKey(e.who, people);
   switch (kind) {
     case "money": case "rate": case "percent": case "number": case "integer": case "year": case "month":
       return close(a, b, TOLERANCE[kind] ?? 0);
     case "text":
       return words(a) === words(b);
     case "ref": case "personOrName": case "policyOwner":
-      return refKey(a, people) === refKey(b, people);
+      return whoKey(a, people) === whoKey(b, people);
     case "timing":
       return typeof a === "number" || typeof b === "number" ? close(a, b, 0) : stableStringify(a) === stableStringify(b);
     case "owners":
@@ -64,7 +65,7 @@ export function sameValue(
       // A ticker's value on record moves with the nightly price, so only a position with no ticker compares its value.
       return sameSet(
         a, b,
-        (e) => holdingKey({ ticker: str(e.ticker), name: str(e.name) }) ?? "",
+        (e) => holdingKey({ ticker: stringOf(e.ticker), name: stringOf(e.name) }) ?? "",
         (x, y) => closeUnlessBlank(x.shares, y.shares, NUMBER)
           && (!isEmptyValue(x.ticker) || closeUnlessBlank(x.marketValue, y.marketValue, MONEY)),
       );
@@ -96,21 +97,15 @@ function closeUnlessBlank(a: PlacedValue | undefined, b: PlacedValue | undefined
   return isEmptyValue(a) || isEmptyValue(b) || close(a, b, tolerance);
 }
 
-function str(value: PlacedValue | undefined): string | null {
-  return typeof value === "string" ? value : null;
-}
-
 function words(value: PlacedValue | undefined): string {
   return String(value ?? "").trim().replace(/\s+/g, " ");
 }
 
-/** A record's id names it; a person is the household's family member record when the book has one. */
-function refKey(value: PlacedValue | undefined, people: RecordBook["people"]): string {
+/** What a value names: a ref by refKey, a person as the household's family member record when the book has one; text by its words. */
+function whoKey(value: PlacedValue | undefined, people: RecordBook["people"]): string {
   if (!isRecordRef(value)) return typeof value === "string" ? `text:${words(value)}` : stableStringify(value ?? null);
-  if (value.ref === "record") return `id:${value.id}`;
-  if (value.ref === "line") return `line:${value.lineId}`;
-  const id = people[value.role];
-  return id ? `id:${id}` : `person:${value.role}`;
+  const id = value.ref === "person" ? people[value.role] : null;
+  return id ? `record:${id}` : refKey(value);
 }
 
 function entries(value: PlacedValue | undefined): Entry[] {
@@ -140,7 +135,8 @@ export interface FormatContext {
   labelOf(ref: RecordRef): string;
 }
 
-const EMPTY = "—";
+/** How the change list prints an empty value. */
+export const EMPTY = "—";
 const TIERS = [["primary", "Primary"], ["contingent", "Contingent"], ["income", "Income"], ["remainder", "Remainder"]] as const;
 
 /** "$412,330", "6.5%", "Mar 2026", "Joint (50% / 50%)", "Emma 50%, Lucas 50%", "Mark Retirement", "—" for empty. */

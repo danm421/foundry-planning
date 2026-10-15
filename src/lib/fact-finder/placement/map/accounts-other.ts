@@ -12,6 +12,7 @@ import {
 import { last4Of, normText } from "../../identity";
 import type { FFRow } from "../../types";
 import { hasCoClient, NO_CO_CLIENT_REASON } from "../refs";
+import { numberOf, stringOf, withLast4 } from "../text";
 import type { BookRecord, TargetDraft } from "../types";
 import { cellOf, DraftBuilder, linkedRecordId, num, ownersOf, rate, text } from "./helpers";
 import type { PlaceContext, SectionMap } from "./types";
@@ -21,8 +22,6 @@ export const ANNUITY_INCOME_WARNING =
   "Income from a rider or annuitization isn't saved — the fact finder doesn't ask the benefit base or the payment. Set it in Details.";
 
 const ownerColumns = (row: FFRow) => (text(row, "owner") === "Trust / entity" ? ["owner", "ownerEntity"] : ["owner"]);
-const str = (v: PlacedValue | undefined) => (typeof v === "string" ? v : null);
-const numberOf = (v: PlacedValue | undefined) => (typeof v === "number" ? v : null);
 
 export const ANNUITY_MAP: SectionMap = {
   sectionId: "annuity",
@@ -43,7 +42,7 @@ export const ANNUITY_MAP: SectionMap = {
     return rows.flatMap((row): TargetDraft[] => {
       const name = text(row, "contractName");
       const l4 = last4Of(text(row, "last4"));
-      const label = [name ?? "Annuity", l4 && `··${l4}`].filter(Boolean).join(" ");
+      const label = withLast4(name ?? "Annuity", l4);
       const recordId = linkedRecordId(row, ctx, ["account"]);
       const account = new DraftBuilder({
         sectionId: "annuity", row, target: "account", recordId, label,
@@ -95,7 +94,7 @@ function accountOfLinkedGrant(rows: readonly FFRow[], ctx: PlaceContext): string
 /** The plan's one stock option account with this company name (and holder, when known) — D8. */
 function accountByName(company: string, holder: string | null, ctx: PlaceContext): string | null {
   const hits = ctx.book.records.stock_option_account.filter(
-    (r) => normText(str(r.values.name)) === normText(company) && (holder === null || r.values.owner == null || r.values.owner === holder),
+    (r) => normText(stringOf(r.values.name)) === normText(company) && (holder === null || r.values.owner == null || r.values.owner === holder),
   );
   return hits.length === 1 ? hits[0].id : null;
 }
@@ -113,7 +112,7 @@ function grantDraft(row: FFRow, account: RecordRef | undefined, ctx: PlaceContex
   const recordId = linkedRecordId(row, ctx, ["stock_option_grant"]);
   const onRecord = ctx.book.records.stock_option_grant.find((r) => r.id === recordId);
   // A grant on record stays under its own account (the update route is keyed by it).
-  const ownAccount = str(onRecord?.facts?.accountId);
+  const ownAccount = stringOf(onRecord?.facts?.accountId);
   const parent: RecordRef | undefined = ownAccount ? { ref: "record", target: "stock_option_account", id: ownAccount } : account;
   const type = text(row, "grantType");
   const grantNumber = text(row, "grantNumber");
@@ -134,7 +133,7 @@ function grantDraft(row: FFRow, account: RecordRef | undefined, ctx: PlaceContex
     // A Grant date that didn't read: the date on record never stands in for it (the AI step may fill a new one).
     const grantDateUnread = ctx.removed(row.id, "grantDate");
     const vesting = parseVestingSchedule(schedule, {
-      grantDate: grantDate ?? (grantDateUnread ? null : str(onRecord?.values.grantDate)),
+      grantDate: grantDate ?? (grantDateUnread ? null : stringOf(onRecord?.values.grantDate)),
       sharesGranted: sharesGranted ?? numberOf(onRecord?.values.sharesGranted),
     });
     if (vesting.ok) b.put("tranches", vesting.tranches, ["vestingSchedule"]);

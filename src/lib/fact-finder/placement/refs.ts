@@ -10,13 +10,14 @@
  * things, is a reason the line can't save — never a guess, and never a new
  * person or trust. Pure.
  */
-import { lineIdOf, type RecordRef, type TargetKind } from "../change-set";
+import { lineIdOf, refKey, type RecordRef, type TargetKind } from "../change-set";
 import { SECTION_ACCOUNT_CATEGORY } from "../enums";
 import { last4Of, normText } from "../identity";
 import { matchOption } from "../normalize";
 import { OWNER_PERSON } from "../schema";
-import { fixedRowId, rowHasValues } from "../state";
+import { fixedRow, rowHasValues } from "../state";
 import type { FactFinderState, FFRow } from "../types";
+import { fullName, str, withLast4 } from "./text";
 import type { BookRecord, RecordBook } from "./types";
 
 /** Something a name can resolve to. */
@@ -69,12 +70,10 @@ const SECTION_OF_CATEGORY: Record<string, string> = Object.fromEntries(
 );
 const REVOCABLE = "Revocable living trust";
 
-const str = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v.trim() : null);
 const cell = (row: FFRow | undefined, columnId: string) => str(row?.cells[columnId]?.value);
 const namesOf = (...values: (string | null)[]) => values.map((v) => normText(v)).filter(Boolean);
 const last4 = (v: string | null) => last4Of(v) || undefined;
 const norm = (v: string | null) => normText(v) || undefined;
-const fullName = (first: string | null, last: string | null) => [first, last].filter(Boolean).join(" ");
 
 /**
  * A live row's record: its confirmed link when this book has it, else (New, no
@@ -104,7 +103,7 @@ export function buildRefIndex(state: FactFinderState, book: RecordBook): RefInde
       const address = section === "realestate" ? cell(row, "address") : null;
       const l4 = last4(cell(row, "last4"));
       return {
-        label: [name ?? address ?? "Account", l4 && `··${l4}`].filter(Boolean).join(" "),
+        label: withLast4(name ?? address ?? "Account", l4),
         names: namesOf(name, address),
         last4: l4,
         issuer: norm(cell(row, section === "annuity" ? "carrier" : "custodian")),
@@ -131,7 +130,7 @@ export function buildRefIndex(state: FactFinderState, book: RecordBook): RefInde
 
   // The household's names: the fact finder's Client & Co-client rows first, else the plan's.
   const onRecord = book.records.client_household[0]?.values ?? {};
-  const peopleRow = (label: string) => (state.sections.people ?? []).find((r) => r.id === fixedRowId("people", label));
+  const peopleRow = (label: string) => fixedRow(state, "people", label);
   const person = (role: "client" | "spouse"): Entry => {
     const row = peopleRow(role === "client" ? "Client" : "Co-client");
     const first = cell(row, "firstName") ?? book.names[role];
@@ -153,7 +152,7 @@ export function buildRefIndex(state: FactFinderState, book: RecordBook): RefInde
       fromRows(live("life"), "life_insurance_policy", (row) => {
         const l4 = last4(cell(row, "policyNumber"));
         return {
-          label: cell(row, "policyName") ?? [cell(row, "carrier") ?? "Policy", l4 && `··${l4}`].filter(Boolean).join(" "),
+          label: cell(row, "policyName") ?? withLast4(cell(row, "carrier") ?? "Policy", l4),
           names: namesOf(cell(row, "policyName")),
           last4: l4,
           issuer: norm(cell(row, "carrier")),
@@ -200,7 +199,7 @@ export function buildRefIndex(state: FactFinderState, book: RecordBook): RefInde
 function distinct(hits: readonly Entry[]): Entry[] {
   const seen = new Set<string>();
   return hits.filter((e) => {
-    const key = JSON.stringify(e.ref);
+    const key = refKey(e.ref);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

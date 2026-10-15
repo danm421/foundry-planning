@@ -9,7 +9,7 @@ import { isStatedAge } from "@/lib/social-security/benefit-entry";
 import { estimatePiaFromSalary, ownerAnnualSalary } from "@/lib/social-security/estimate-from-salary";
 import type { CellRef, PlacedValue } from "../../change-set";
 import { INCOME_OWNER_MAP, INCOME_TYPE_MAP, SS_CLAIM_MAP, SS_SOURCE_MAP, TAX_TYPE_MAP, valueFor } from "../../enums";
-import { fixedLabelOfRow, fixedRowId } from "../../state";
+import { fixedLabelOfRow, fixedRow, fixedRowId } from "../../state";
 import type { FFRow } from "../../types";
 import { findPerson, hasCoClient, NO_CO_CLIENT_REASON } from "../refs";
 import { monthNumber } from "../translate";
@@ -103,7 +103,7 @@ export const SALARY_MAP: SectionMap = {
 
 /** This person's salary for "Estimate from salary": the Salary row's, else what's on record (summed as the dialog does). */
 function salaryFor(role: Role, ctx: PlaceContext): { amount: number; from: CellRef[] } {
-  const row = ctx.state.sections.salary?.find((r) => r.id === fixedRowId("salary", LABEL_OF[role]));
+  const row = fixedRow(ctx.state, "salary", LABEL_OF[role]);
   const typed = row ? num(row, "annualSalary") : null;
   if (row && typed !== null) return { amount: typed, from: [cellOf("salary", row, "annualSalary")] };
   const onRecord = ctx.book.records.income.map((r) => ({

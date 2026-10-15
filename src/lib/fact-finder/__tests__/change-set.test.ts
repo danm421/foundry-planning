@@ -7,6 +7,7 @@ import {
   defaultTicks,
   isRecordRef,
   lineIdOf,
+  parseLineId,
   type ChangeField,
   type ChangeLine,
   type ChangeSet,
@@ -42,6 +43,18 @@ describe("lineIdOf", () => {
     expect(lineIdOf("r1", "account")).toBe("r1/account");
     expect(lineIdOf("r1", "plan_observation", 2)).toBe("r1/plan_observation/2");
     expect(lineIdOf("r1", "plan_observation", 0)).toBe("r1/plan_observation/0");
+  });
+});
+
+describe("parseLineId", () => {
+  it("reads back the row, target and number lineIdOf joined — a row id may hold slashes", () => {
+    expect(parseLineId(lineIdOf("r1", "account"))).toEqual({ rowId: "r1", target: "account" });
+    expect(parseLineId(lineIdOf("final_notes:Notes", "plan_observation", 0))).toEqual({ rowId: "final_notes:Notes", target: "plan_observation", n: 0 });
+    expect(parseLineId(lineIdOf("a/b", "will_bequest", 12))).toEqual({ rowId: "a/b", target: "will_bequest", n: 12 });
+  });
+
+  it("is null for an id lineIdOf doesn't make", () => {
+    for (const id of ["", "r1", "r1/not_a_target", "r1/Account", "/account/x"]) expect(parseLineId(id), id).toBeNull();
   });
 });
 

@@ -8,10 +8,10 @@
  * without it. A row linked to another kind of account — a business, or an
  * account of another category — is blocked whole. Pure.
  */
-import type { CellRef, TargetKind } from "../change-set";
+import { cellKey, type CellRef, type TargetKind } from "../change-set";
 import { SECTION_ACCOUNT_CATEGORY } from "../enums";
 import { FACT_FINDER_SECTIONS, type FFColumn, type FFPage, type FFSection, type RecordKind } from "../schema";
-import { fixedRowId, isBlank, rowHasValues, rowLabel } from "../state";
+import { fixedRow, isBlank, rowHasValues, rowLabel } from "../state";
 import type { FactFinderState, FFCellValue, FFRow } from "../types";
 import { text } from "./map/helpers";
 import { sectionMapFor } from "./map/index";
@@ -93,9 +93,6 @@ interface Taken {
   /** A note, or a value that didn't fit a column placed into this target. */
   as: { note: NoteTopic } | { unfit: TargetKind };
 }
-
-/** A cell's key in the runner's set of removed cells (row ids are unique across sections). */
-const cellKey = (rowId: string, columnId: string) => `${rowId}:${columnId}`;
 
 /** The row without its notes and the cells that didn't fit; `taken` gets them, and `removed` every cell taken out. */
 function cleanRow(section: FFSection, map: SectionMap, row: FFRow, taken: Taken[], removed: Set<string>): FFRow {
@@ -181,7 +178,7 @@ export function placeFactFinder(state: FactFinderState, book: RecordBook, now: D
   const clean: FactFinderState = { ...state, sections };
 
   const notices: string[] = [];
-  const meta = sections.meta.find((r) => r.id === fixedRowId("meta", "Household"));
+  const meta = fixedRow(clean, "meta", "Household");
   const ctx: PlaceContext = {
     state: clean,
     book,
@@ -219,7 +216,7 @@ export function placeFactFinder(state: FactFinderState, book: RecordBook, now: D
     const name = labelOfRow(section, row, drafts);
     if ("note" in as || column.kind !== "choice") {
       leftovers.push({
-        id: `${row.id}:${column.id}`,
+        id: cellKey(row.id, column.id),
         cell,
         text: value,
         kind: "note" in as ? "note" : "unfit",

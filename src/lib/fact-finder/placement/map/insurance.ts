@@ -16,6 +16,7 @@ import { last4Of } from "../../identity";
 import { findColumn } from "../../schema";
 import type { FFRow } from "../../types";
 import { findLifePolicy, hasCoClient, NO_CO_CLIENT_REASON } from "../refs";
+import { withLast4 } from "../text";
 import type { TargetDraft } from "../types";
 import { bool, DraftBuilder, linkedRecordId, num, ownersOf, rate, sharesOf, text } from "./helpers";
 import type { PlaceContext, SectionMap } from "./types";
@@ -131,7 +132,7 @@ export const LIFE_MAP: SectionMap = {
       const recordId = linkedRecordId(row, ctx, ["life_insurance_policy"]);
       const name = text(row, "policyName");
       const l4 = last4Of(text(row, "policyNumber"));
-      const label = name ?? [text(row, "carrier") ?? "Life policy", l4 && `··${l4}`].filter(Boolean).join(" ");
+      const label = name ?? withLast4(text(row, "carrier") ?? "Life policy", l4);
       const insured = choice(INSURED_MAP, row, "insured");
       const endsAtRetirement = bool(row, "termEndsAtRetirement");
       const length = num(row, "termLengthYears");

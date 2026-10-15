@@ -34,7 +34,7 @@ import {
   grantCreateSchema, grantUpdateSchema, stockOptionAccountCreateSchema, stockOptionAccountUpdateSchema,
 } from "@/lib/schemas/stock-options";
 import { willBequestSchema, willCreateSchema, willUpdateSchema } from "@/lib/schemas/wills";
-import type { CellRef, ChangeLine, PlacedValue, RecordRef, TargetKind } from "../change-set";
+import { refKey, type CellRef, type ChangeLine, type PlacedValue, type RecordRef, type TargetKind } from "../change-set";
 import { lineValues, payloadFor, type Resolve } from "./payload";
 import { FACT_FINDER_ONLY, TARGETS, targetField, type ValueKind } from "./targets";
 import { formatValue } from "./values";
@@ -156,10 +156,6 @@ function whoLabel(who: RecordRef, labels: ReadonlyMap<string, string>): string {
   if (who.ref === "person") return who.role === "client" ? "the client" : "the co-client";
   if (who.ref === "line" && labels.has(who.lineId)) return labels.get(who.lineId)!;
   return SAME_ONE[who.target] ?? "the same person";
-}
-
-function refKey(ref: RecordRef): string {
-  return ref.ref === "person" ? `person:${ref.role}` : ref.ref === "line" ? `line:${ref.lineId}` : `record:${ref.id}`;
 }
 
 /** A distinct well-formed UUID per ref, and this year for every milestone. */

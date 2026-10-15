@@ -7,13 +7,13 @@
  * step places it). Wills, provisions, the attorney and plan notes have no
  * "Links to": they find their record on the plan by who and what (D8). Pure.
  */
-import { lineIdOf, type CellRef, type PlacedValue, type RecordRef } from "../../change-set";
+import { lineIdOf, refKey, type CellRef, type PlacedValue, type RecordRef } from "../../change-set";
 import {
   BEQUEST_COND_MAP, BEQUEST_KIND_MAP, GIFT_FROM_MAP, PERSON_MAP, TRUST_ENDS_MAP, TRUST_GRANTOR_MAP, TRUST_TYPE_MAP, valueFor,
 } from "../../enums";
 import { normText } from "../../identity";
 import { findColumn } from "../../schema";
-import { fixedRowId } from "../../state";
+import { fixedRow, fixedRowId } from "../../state";
 import type { FFRow } from "../../types";
 import { findAccount, findLiability, findPerson, hasCoClient, NO_CO_CLIENT_REASON } from "../refs";
 import { parseShares, splitPersonName } from "../translate";
@@ -33,8 +33,7 @@ const sameText = (value: PlacedValue | undefined, s: string) => typeof value ===
 
 /** The person's Documents in Place row (an empty one when the fact finder has none). */
 function docsRow(ctx: PlaceContext, person: Person): FFRow {
-  const id = fixedRowId("estate_docs", ROLE[person]);
-  return (ctx.state.sections.estate_docs ?? []).find((r) => r.id === id) ?? { id, cells: {}, sourceFileIds: [] };
+  return fixedRow(ctx.state, "estate_docs", ROLE[person]) ?? { id: fixedRowId("estate_docs", ROLE[person]), cells: {}, sourceFileIds: [] };
 }
 const personOfDocsRow = (row: FFRow) => PEOPLE.find((p) => fixedRowId("estate_docs", ROLE[p]) === row.id);
 
@@ -51,7 +50,7 @@ interface Will { ref: RecordRef; recordId: string | null; label: string }
 function willOf(ctx: PlaceContext, person: Person): Will {
   const onRecord = ctx.book.records.will.find((r) => r.facts?.grantor === person);
   if (onRecord) return { ref: { ref: "record", target: "will", id: onRecord.id }, recordId: onRecord.id, label: onRecord.label };
-  const people = (ctx.state.sections.people ?? []).find((r) => r.id === fixedRowId("people", ROLE[person]));
+  const people = fixedRow(ctx.state, "people", ROLE[person]);
   const first = (people ? text(people, "firstName") : null) ?? ctx.book.names[person];
   return {
     ref: { ref: "line", target: "will", lineId: lineIdOf(docsRow(ctx, person).id, "will") },
@@ -346,7 +345,7 @@ function bequestDraft(
   else {
     b.put(debt ? "liabilityId" : "accountId", asset.ref, ["asset"]);
     // A will holds one provision per debt.
-    const key = JSON.stringify(asset.ref);
+    const key = refKey(asset.ref);
     if (debt && seen.debts.has(key)) b.block(`This will already has a provision for "${asset.label}" — one per debt.`, "asset");
     if (debt) seen.debts.add(key);
   }

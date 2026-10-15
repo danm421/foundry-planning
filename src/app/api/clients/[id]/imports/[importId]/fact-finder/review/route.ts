@@ -1,7 +1,7 @@
 // src/app/api/clients/[id]/imports/[importId]/fact-finder/review/route.ts
 import { formatUsage, inUsageScope, newUsageReport, totalTokensOf } from "@/lib/ai/usage";
 import { recordAudit } from "@/lib/audit";
-import type { ChangeLine } from "@/lib/fact-finder/change-set";
+import { countLines } from "@/lib/fact-finder/change-set";
 import { REVIEW_READING_MESSAGE, REVIEW_STALE_MESSAGE, type ReviewRefusal, type ReviewResponse } from "@/lib/fact-finder/api-types";
 import { factFinderGate, jsonResponse } from "@/lib/fact-finder/gate";
 import { loadFactFinder, writeFactFinder, type FactFinderScope } from "@/lib/fact-finder/persist";
@@ -118,7 +118,6 @@ export async function POST(_request: Request, { params }: Params) {
   const written = await writeFactFinder(scope, state.version, { ...state, changeSet }, { keepChangeSet: true });
   if (!written) return stale(scope, state);
 
-  const count = (keep: (line: ChangeLine) => boolean) => changeSet.lines.filter(keep).length;
   await recordAudit({
     action: "import.fact_finder_reviewed",
     resourceType: "client_import",
@@ -127,11 +126,8 @@ export async function POST(_request: Request, { params }: Params) {
     firmId,
     metadata: {
       lines: changeSet.lines.length,
-      creates: count((l) => !l.blocked && l.action === "create"),
-      updates: count((l) => !l.blocked && l.action === "update"),
-      unchanged: count((l) => !l.blocked && l.action === "none"),
-      blocked: count((l) => l.blocked !== undefined),
-      aiPlaced: count((l) => l.aiPlaced === true),
+      ...countLines(changeSet.lines),
+      aiPlaced: changeSet.lines.filter((l) => l.aiPlaced === true).length,
       leftovers: leftovers.items,
       leftoversFailed: leftovers.failed,
       totalTokens: totalTokensOf(usage),

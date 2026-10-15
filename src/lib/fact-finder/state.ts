@@ -9,6 +9,11 @@ export function fixedRowId(sectionId: string, label: string): string {
   return `${sectionId}:${label}`;
 }
 
+/** The section's fixed row with this label ("people", "Co-client"); undefined when the fact finder has none. */
+export function fixedRow(state: FactFinderState, sectionId: string, label: string): FFRow | undefined {
+  return (state.sections[sectionId] ?? []).find((r) => r.id === fixedRowId(sectionId, label));
+}
+
 /** "Co-client" for `ss:Co-client`; null when the id isn't one of the section's fixed rows. */
 export function fixedLabelOfRow(sectionId: string, rowId: string): string | null {
   const prefix = `${sectionId}:`;

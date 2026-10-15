@@ -13,6 +13,7 @@ import { CASH_TYPE_MAP, RETIRE_TYPE_MAP, SECTION_ACCOUNT_CATEGORY, TAXABLE_TYPE_
 import { last4Of } from "../../identity";
 import type { FFHolding, FFRow } from "../../types";
 import { findPerson, hasCoClient, householdPerson } from "../refs";
+import { str, withLast4 } from "../text";
 import type { BookRecord, TargetDraft } from "../types";
 import { bool, DraftBuilder, linkedRecordId, num, ownersOf, rate, sharesOf, text } from "./helpers";
 import type { PlaceContext, SectionMap } from "./types";
@@ -24,8 +25,6 @@ const UNNAMED: Record<AccountSection, string> = {
 };
 const MANAGED = "The plan manages this account's owner and type.";
 
-const str = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v.trim() : null);
-const withLast4 = (name: string, last4: string) => (last4 ? `${name} ··${last4}` : name);
 
 /**
  * The account line every row makes — even one whose cells all went elsewhere,

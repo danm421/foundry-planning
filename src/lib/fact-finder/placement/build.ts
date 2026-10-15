@@ -8,7 +8,7 @@
  * one record, and every line that needs a line which can't save. Server-side
  * only (it imports validate.ts); the AI call is passed in.
  */
-import type { CellRef, ChangeLine, ChangeSet, TargetKind } from "../change-set";
+import { parseLineId, type CellRef, type ChangeLine, type ChangeSet } from "../change-set";
 import { findSection } from "../schema";
 import { locateRow, rowLabel } from "../state";
 import type { FactFinderState } from "../types";
@@ -91,11 +91,11 @@ const needs = (line: ChangeLine): string[] => [...(line.dependsOn ?? []), ...(li
 
 /** A line id's fact finder row as the advisor knows it, else its record's kind ("Account"). */
 function nameOfLine(lineId: string, state: FactFinderState): string {
-  const [, rowId = "", target = ""] = /^(.*)\/([a-z_]+)(?:\/\d+)?$/.exec(lineId) ?? [];
-  const at = locateRow(state, rowId);
+  const line = parseLineId(lineId);
+  const at = line && locateRow(state, line.rowId);
   const section = at && findSection(at.sectionId);
   if (at && section) return rowLabel(section, state.sections[at.sectionId][at.index]);
-  return Object.hasOwn(TARGETS, target) ? TARGETS[target as TargetKind].label : "another row";
+  return line ? TARGETS[line.target].label : "another row";
 }
 
 /**
