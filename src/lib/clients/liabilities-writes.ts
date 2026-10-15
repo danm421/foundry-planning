@@ -43,6 +43,7 @@ import { db } from "@/db";
 import { liabilities, liabilityOwners, accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyClientAccess } from "@/lib/clients/authz";
+import { handleOf, inTransaction, type WriteOptions } from "@/lib/db-tx";
 import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";
 import { recordCreate, recordUpdate, recordDelete } from "@/lib/audit";
 import { toLiabilitySnapshot, LIABILITY_FIELD_LABELS } from "@/lib/audit/snapshots/liability";
@@ -66,8 +67,10 @@ export async function createLiabilityForClient(args: {
   actorId: string;
   input: unknown;
   crossFirmMeta?: Record<string, unknown>;
-}): Promise<EntityWriteResult<LiabilityRow>> {
+} & WriteOptions): Promise<EntityWriteResult<LiabilityRow>> {
   const { clientId, firmId, actorId, input, crossFirmMeta } = args;
+  // With a save's `tx` every statement below runs on it (the base case and access lookups read rows that exist before a save).
+  const handle = handleOf(args);
 
   const scenarioId = await baseCaseScenarioId(clientId, firmId);
   if (!scenarioId) return writeError(404, "Client not found");
@@ -78,21 +81,21 @@ export async function createLiabilityForClient(args: {
   }
   const p = parsed.data;
 
-  const entCheck = await assertEntitiesInClient(clientId, [p.ownerEntityId]);
+  const entCheck = await assertEntitiesInClient(clientId, [p.ownerEntityId], args.tx);
   if (!entCheck.ok) return writeError(400, entCheck.reason);
 
   // linkedPropertyId is an account id (real-estate account) — ensure it belongs
   // to this client before linking.
-  const acctCheck = await assertAccountsInClient(clientId, [p.linkedPropertyId]);
+  const acctCheck = await assertAccountsInClient(clientId, [p.linkedPropertyId], args.tx);
   if (!acctCheck.ok) return writeError(400, acctCheck.reason);
 
   // parentAccountId (when set) must scope to this client AND point at a business
   // account — without this a crafted POST could attach to a non-business or
   // cross-firm parent.
   if (p.parentAccountId != null) {
-    const parentCheck = await assertAccountsInClient(clientId, [p.parentAccountId]);
+    const parentCheck = await assertAccountsInClient(clientId, [p.parentAccountId], args.tx);
     if (!parentCheck.ok) return writeError(400, parentCheck.reason);
-    const [parentRow] = await db
+    const [parentRow] = await handle
       .select({ category: accounts.category })
       .from(accounts)
       .where(eq(accounts.id, p.parentAccountId));
@@ -116,12 +119,12 @@ export async function createLiabilityForClient(args: {
     // reproducing the route's `"owners" in body && body.owners !== undefined`.)
     const shapeResult = validateOwnersShape(p.owners);
     if ("error" in shapeResult) return writeError(400, shapeResult.error);
-    const tenantError = await validateOwnersTenant(shapeResult.owners, clientId);
+    const tenantError = await validateOwnersTenant(shapeResult.owners, clientId, args.tx);
     if (tenantError) return writeError(400, tenantError.error);
     resolvedOwners = shapeResult.owners;
   } else {
     // Legacy path: synthesize from ownerEntityId or client family member.
-    const synthesized = await synthesizeLegacyLiabilityOwners(clientId, p.ownerEntityId);
+    const synthesized = await synthesizeLegacyLiabilityOwners(clientId, p.ownerEntityId, args.tx);
     if (synthesized.length > 0) resolvedOwners = synthesized;
   }
   // ── end owners[] validation ────────────────────────────────────────────────
@@ -131,7 +134,7 @@ export async function createLiabilityForClient(args: {
   // "annual", balanceAsOf* / linkedPropertyId / parentAccountId / startYearRef →
   // null, isInterestDeductible → false). See src/lib/schemas/liabilities.ts.
   let liability: LiabilityRow;
-  await db.transaction(async (tx) => {
+  await inTransaction(args, async (tx) => {
     const [inserted] = await tx
       .insert(liabilities)
       .values({
@@ -175,8 +178,9 @@ export async function createLiabilityForClient(args: {
     clientId,
     firmId,
     actorId,
-    snapshot: await toLiabilitySnapshot(liability!),
+    snapshot: await toLiabilitySnapshot(liability!, args.tx),
     extraMetadata: crossFirmMeta,
+    tx: args.tx,
   });
 
   return { ok: true, data: liability!, resourceId: liability!.id };
@@ -189,8 +193,9 @@ export async function updateLiabilityForClient(args: {
   liabilityId: string;
   input: unknown;
   crossFirmMeta?: Record<string, unknown>;
-}): Promise<EntityWriteResult<LiabilityRow>> {
+} & WriteOptions): Promise<EntityWriteResult<LiabilityRow>> {
   const { clientId, firmId, actorId, liabilityId, input, crossFirmMeta } = args;
+  const handle = handleOf(args);
 
   const a = await verifyClientAccess(clientId);
   if (!a.ok || a.firmId !== firmId) {
@@ -203,7 +208,7 @@ export async function updateLiabilityForClient(args: {
   }
   const p = parsed.data;
 
-  const [before] = await db
+  const [before] = await handle
     .select()
     .from(liabilities)
     .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, clientId)));
@@ -217,19 +222,19 @@ export async function updateLiabilityForClient(args: {
   // target's client). The assert* helpers skip null/undefined ids, so an omitted or
   // explicitly-cleared field is a no-op.
   if (p.ownerEntityId !== undefined) {
-    const c = await assertEntitiesInClient(clientId, [p.ownerEntityId]);
+    const c = await assertEntitiesInClient(clientId, [p.ownerEntityId], args.tx);
     if (!c.ok) return writeError(400, c.reason);
   }
   if (p.linkedPropertyId !== undefined) {
-    const c = await assertAccountsInClient(clientId, [p.linkedPropertyId]);
+    const c = await assertAccountsInClient(clientId, [p.linkedPropertyId], args.tx);
     if (!c.ok) return writeError(400, c.reason);
   }
   // A non-null parentAccountId must scope to this client AND point at a business
   // account — identical to the CREATE core's parent-business check.
   if (p.parentAccountId != null) {
-    const parentCheck = await assertAccountsInClient(clientId, [p.parentAccountId]);
+    const parentCheck = await assertAccountsInClient(clientId, [p.parentAccountId], args.tx);
     if (!parentCheck.ok) return writeError(400, parentCheck.reason);
-    const [parentRow] = await db
+    const [parentRow] = await handle
       .select({ category: accounts.category })
       .from(accounts)
       .where(eq(accounts.id, p.parentAccountId));
@@ -249,7 +254,7 @@ export async function updateLiabilityForClient(args: {
   if (!isReparentingToParent && Array.isArray(p.owners)) {
     const shapeResult = validateOwnersShape(p.owners);
     if ("error" in shapeResult) return writeError(400, shapeResult.error);
-    const tenantError = await validateOwnersTenant(shapeResult.owners, clientId);
+    const tenantError = await validateOwnersTenant(shapeResult.owners, clientId, args.tx);
     if (tenantError) return writeError(400, tenantError.error);
     validatedOwners = shapeResult.owners;
   }
@@ -258,7 +263,7 @@ export async function updateLiabilityForClient(args: {
   // Conditional .set() — spread ONLY the present schema fields. owners are NOT a
   // column on `liabilities` (they live in liabilityOwners) so they're never set here.
   let updated: LiabilityRow;
-  await db.transaction(async (tx) => {
+  await inTransaction(args, async (tx) => {
     const [result] = await tx
       .update(liabilities)
       .set({
@@ -314,10 +319,11 @@ export async function updateLiabilityForClient(args: {
     clientId,
     firmId,
     actorId,
-    before: await toLiabilitySnapshot(before),
-    after: await toLiabilitySnapshot(updated!),
+    before: await toLiabilitySnapshot(before, args.tx),
+    after: await toLiabilitySnapshot(updated!, args.tx),
     fieldLabels: LIABILITY_FIELD_LABELS,
     extraMetadata: crossFirmMeta,
+    tx: args.tx,
   });
 
   return { ok: true, data: updated!, resourceId: liabilityId };
