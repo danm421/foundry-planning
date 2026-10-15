@@ -53,7 +53,7 @@ export const ANNUITY_MAP: SectionMap = {
         .put("accountNumberLast4", l4 || null, ["last4"])
         .put("custodian", text(row, "carrier"), ["carrier"])
         .put("subType", valueFor(ANNUITY_TAX_MAP, text(row, "taxTreatment")), ["taxTreatment"]);
-      const owners = ownersOf("annuity", row, ctx);
+      const owners = ownersOf("annuity", row, ctx, { create: recordId === null });
       if (!owners.ok) account.block(owners.reason, owners.columnId);
       else account.put("owners", owners.owners, owners.columns);
 

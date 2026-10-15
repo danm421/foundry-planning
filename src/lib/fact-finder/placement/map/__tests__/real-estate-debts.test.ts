@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { findSection } from "../../../schema";
 import type { FFRow } from "../../../types";
-import { contextOf, hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "../../__tests__/fixtures";
+import { bookWith, contextOf, hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "../../__tests__/fixtures";
 import { diffDrafts } from "../../diff";
 import type { RecordBook, TargetDraft } from "../../types";
 import { BUSINESS_MAP, LIAB_MAP, REALESTATE_MAP } from "../real-estate-debts";
@@ -53,6 +53,28 @@ describe("placements", () => {
     expect(LIAB_MAP.placements.monthlyEscrow).toEqual({ to: "plan_observation.body" });
     expect(BUSINESS_MAP.placements.annualIncome).toEqual({ to: "income.annualAmount" });
     expect(BUSINESS_MAP.placements.annualExpense).toEqual({ to: "expense.annualAmount" });
+  });
+});
+
+describe("a new property or loan with a blank Owner", () => {
+  const property = rowOf("re-1", { propertyName: "Main house" });
+  const loan = rowOf("liab-1", { loanName: "Chase Visa" });
+
+  it("is blocked on its Owner cell when there's a co-client", () => {
+    expect(place(REALESTATE_MAP, [property])[0].blocked).toEqual({
+      reason: "Owner: pick who owns it.", cell: { sectionId: "realestate", rowId: "re-1", columnId: "owner" },
+    });
+    expect(place(LIAB_MAP, [loan])[0].blocked).toEqual({
+      reason: "Owner: pick who owns it.", cell: { sectionId: "liab", rowId: "liab-1", columnId: "owner" },
+    });
+  });
+
+  it("is the client's alone on a household with no co-client", () => {
+    const book = bookWith({}, { people: { client: "fm-client", spouse: null } });
+    for (const [map, row] of [[REALESTATE_MAP, property], [LIAB_MAP, loan]] as const) {
+      const [draft] = place(map, [row], { book });
+      expect([draft.blocked, draft.fields.find((f) => f.key === "owners")?.value]).toEqual([undefined, [{ who: { ref: "person", role: "client" }, percent: 1 }]]);
+    }
   });
 });
 
@@ -173,7 +195,7 @@ describe("REALESTATE_MAP", () => {
     });
 
     it("two properties naming one loan on record: both links are blocked", () => {
-      const cabinRow = rowOf("re2", { propertyName: "Lake Cabin", mortgageName: "Chase Mortgage" });
+      const cabinRow = rowOf("re2", { propertyName: "Lake Cabin", owner: "Client", mortgageName: "Chase Mortgage" });
       const drafts = place(REALESTATE_MAP, [houseRow, cabinRow], { book: hendricksBook({ liability: [mortgage] }) });
       expect(drafts.map((d) => [d.lineId, d.blocked])).toEqual([
         ["re1/account", undefined],
@@ -415,7 +437,7 @@ describe("LIAB_MAP", () => {
   });
 
   it("Property it's on that names no property blocks on the cell; another property naming the loan is a warning", () => {
-    const named = (propertyName: string) => rowOf("l1", { loanName: "Chase Mortgage", propertyName });
+    const named = (propertyName: string) => rowOf("l1", { loanName: "Chase Mortgage", owner: "Client", propertyName });
     const [missing] = place(LIAB_MAP, [named("Lake Cabin")], { extra: { realestate: [houseRow] } });
     expect(missing.blocked).toEqual({
       reason: 'No property named "Lake Cabin" in this fact finder or on the plan.',
@@ -458,14 +480,15 @@ describe("LIAB_MAP", () => {
   });
 
   it("a Matures in the same month as the loan start is a zero-month term: blocked, not saved", () => {
-    const draft = place(LIAB_MAP, [rowOf("l1", { loanName: "Chase Mortgage", loanStart: "2015-07", matures: "2015-07" })], { book: hendricksBook({ liability: [mortgage] }) })[0];
+    const draft = place(LIAB_MAP, [rowOf("l1", { loanName: "Chase Mortgage", owner: "Client", loanStart: "2015-07", matures: "2015-07" })], { book: hendricksBook({ liability: [mortgage] }) })[0];
     expect(draft.blocked).toEqual({ reason: "Matures is on or before the loan start — check both dates.", cell: at("liab", "l1", "matures") });
     expect(fieldOf(draft, "termMonths")).toBeUndefined();
   });
 
   it("Matures sets the term only when Term is blank — counted from the loan start, the one on record, or the balance's date", () => {
+    // A new loan names its owner; the one on record keeps its own.
     const loan = (values: Record<string, string | number>, extra: Partial<FFRow> = {}) =>
-      place(LIAB_MAP, [rowOf("l1", { loanName: "Chase Mortgage", ...values }, extra)], { book: hendricksBook({ liability: [mortgage] }) })[0];
+      place(LIAB_MAP, [rowOf("l1", { loanName: "Chase Mortgage", ...(extra.link ? {} : { owner: "Client" }), ...values }, extra)], { book: hendricksBook({ liability: [mortgage] }) })[0];
     const term = (draft: TargetDraft) => fieldOf(draft, "termMonths");
 
     expect(term(loan({ loanStart: "2015-07", matures: "2045-07" }))).toEqual({ key: "termMonths", value: 360, from: [at("liab", "l1", "matures")] });

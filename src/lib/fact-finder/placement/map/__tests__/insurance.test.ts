@@ -47,6 +47,15 @@ describe("placements", () => {
 
 describe("LIFE_MAP", () => {
   const c = at("life", "life-1");
+
+  it("a new policy with a blank Owner: blocked when there's a co-client; else the client's", () => {
+    const row = rowOf("life-1", { policyName: "NWM Term 20", insured: "Client" });
+    expect(place(LIFE_MAP, [row]).drafts[0].blocked).toEqual({ reason: "Owner: pick who owns it.", cell: c("owner") });
+    const [single] = place(LIFE_MAP, [row], bookWith({}, { people: { client: "fm-client", spouse: null } })).drafts;
+    expect([single.blocked, single.fields.find((f) => f.key === "ownerRef")]).toEqual([
+      undefined, { key: "ownerRef", value: { ref: "person", role: "client" }, from: [c("owner")] },
+    ]);
+  });
   const filled = rowOf("life-1", {
     policyName: "NWM Term 20", carrier: "Northwestern Mutual", policyType: "Term", insured: "Client", owner: "Client",
     deathBenefit: 1000000, cashValue: 0, costBasis: 18000, annualPremium: 1200, premiumPaidBy: "Owner",
@@ -157,7 +166,7 @@ describe("LIFE_MAP", () => {
   });
 
   it("insuring the co-client, or both, needs a co-client", () => {
-    const insured = (who: string, book?: RecordBook) => place(LIFE_MAP, [rowOf("life-1", { policyName: "Term", insured: who })], book).drafts[0];
+    const insured = (who: string, book?: RecordBook) => place(LIFE_MAP, [rowOf("life-1", { policyName: "Term", insured: who, owner: "Client" })], book).drafts[0];
     expect(values(insured("Joint (survivorship)")).insuredPerson).toBe("joint");
     expect(insured("Co-client").blocked).toBeUndefined();
     expect(insured("Joint (survivorship)", bookWith({})).blocked).toEqual({ reason: NO_CO_CLIENT_REASON, cell: c("insured") });
@@ -224,7 +233,7 @@ describe("LIFE_MAP", () => {
     });
 
     it("a name that doesn't resolve blocks the beneficiaries line, not the policy", () => {
-      const [policyLine, names] = place(LIFE_MAP, [rowOf("life-1", { policyName: "NWM Term 20", primaryBeneficiary: "Laura 50%, Olivia 50%" })]).drafts;
+      const [policyLine, names] = place(LIFE_MAP, [rowOf("life-1", { policyName: "NWM Term 20", owner: "Client", primaryBeneficiary: "Laura 50%, Olivia 50%" })]).drafts;
       expect(policyLine.blocked).toBeUndefined();
       expect(names.fields).toEqual([]);
       expect(names.blocked).toEqual({ reason: 'No one named "Olivia" in this fact finder or on the plan.', cell: c("primaryBeneficiary") });

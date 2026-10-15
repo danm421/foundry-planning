@@ -34,6 +34,13 @@ describe("placements", () => {
 });
 
 describe("ANNUITY_MAP", () => {
+  it("a new annuity with a blank Owner: blocked when there's a co-client; else the client's alone", () => {
+    const row = rowOf("an1", { contractName: "Lincoln Fixed Annuity" });
+    expect(place(ANNUITY_MAP, [row]).drafts[0].blocked).toEqual({ reason: "Owner: pick who owns it.", cell: at("annuity", "an1", "owner") });
+    const [single] = place(ANNUITY_MAP, [row], bookWith({}, { people: { client: "fm-client", spouse: null } })).drafts;
+    expect([single.blocked, valueOf(single, "owners")]).toEqual([undefined, [{ who: client, percent: 1 }]]);
+  });
+
   const full = rowOf("an1", {
     contractName: "Lincoln Fixed Annuity",
     cashValue: 182000,

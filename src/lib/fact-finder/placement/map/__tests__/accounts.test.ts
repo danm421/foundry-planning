@@ -131,6 +131,19 @@ describe("CASH_MAP", () => {
     }
   });
 
+  it("a new account with a blank Owner: blocked when there's a co-client; else the client's alone, shown from the Owner cell", () => {
+    const row = rowOf("cash-1", { accountName: "Checking" });
+    expect(place(CASH_MAP, [row]).drafts[0].blocked).toEqual({ reason: "Owner: pick who owns it.", cell: c("owner") });
+    const [single] = place(CASH_MAP, [row], bookWith({}, { people: { client: "fm-client", spouse: null } })).drafts;
+    expect(single.blocked).toBeUndefined();
+    expect(single.fields.find((f) => f.key === "owners")).toEqual({ key: "owners", value: [{ who: client, percent: 1 }], from: [c("owner")] });
+    // An account on record keeps its owners: a blank never erases.
+    const onRecord = accountRecord("a-1", "Checking", { name: "Checking", owners: [{ who: client, percent: 0.5 }, { who: spouse, percent: 0.5 }] });
+    const [update] = place(CASH_MAP, [{ ...row, link: linkedTo("a-1") }], hendricksBook({ account: [onRecord] })).drafts;
+    expect(update.blocked).toBeUndefined();
+    expect(keysOf(update)).not.toContain("owners");
+  });
+
   it("every row makes its account line, even one whose cells all went elsewhere", () => {
     expect(place(CASH_MAP, [rowOf("cash-1", { ownerEntity: "Hendricks Family Trust" })]).drafts).toMatchObject([
       { lineId: "cash-1/account", label: "Cash account", fields: [] },
@@ -482,7 +495,7 @@ describe("RETIREMENT_MAP", () => {
     });
 
     it("a name that doesn't resolve blocks the beneficiaries line, not the account", () => {
-      const [account, names] = place(RETIREMENT_MAP, [rowOf("ret-1", { accountName: "Fidelity 401(k)", primaryBeneficiary: "Laura 50%, Olivia 50%" })]).drafts;
+      const [account, names] = place(RETIREMENT_MAP, [rowOf("ret-1", { accountName: "Fidelity 401(k)", owner: "Client", primaryBeneficiary: "Laura 50%, Olivia 50%" })]).drafts;
       expect(account.blocked).toBeUndefined();
       expect(names.fields).toEqual([]);
       expect(names.blocked).toEqual({ reason: 'No one named "Olivia" in this fact finder or on the plan.', cell: c("primaryBeneficiary") });

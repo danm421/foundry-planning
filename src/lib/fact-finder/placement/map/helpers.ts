@@ -182,13 +182,16 @@ export function linkedRecordId(row: FFRow, ctx: PlaceContext, targets: readonly 
 
 /**
  * Owner + "Which trust / entity" → owner shares (fractions), and the columns
- * they came from. A blank Owner is no owners (no field).
+ * they came from. A blank Owner is no owners (no field) — except on a new
+ * record (`create`), which the write path would quietly give to the client:
+ * with a co-client (on record or added here) it's blocked, else the client
+ * owns it, shown from the Owner cell.
  */
 export function ownersOf(
   sectionId: string,
   row: FFRow,
   ctx: PlaceContext,
-  opts: { ownerColumn?: string } = {},
+  opts: { ownerColumn?: string; create?: boolean } = {},
 ): { ok: true; owners: { who: RecordRef; percent: number }[]; columns: string[] } | { ok: false; reason: string; columnId: string } {
   const columnId = opts.ownerColumn ?? "owner";
   const owner = text(row, columnId);
@@ -197,7 +200,9 @@ export function ownersOf(
   const ok = (owners: { who: RecordRef; percent: number }[], columns = [columnId]) => ({ ok: true as const, owners, columns });
   switch (owner) {
     case null:
-      return ok([]);
+      if (!opts.create) return ok([]);
+      if (hasCoClient(ctx.refs)) return { ok: false, reason: `${columnLabel(sectionId, columnId)}: pick who owns it.`, columnId };
+      return ok([{ who: client, percent: 1 }]);
     case "Client":
       return ok([{ who: client, percent: 1 }]);
     case "Co-client":
@@ -229,7 +234,7 @@ export function putOwners(b: DraftBuilder, row: FFRow, ctx: PlaceContext, record
     if (text(row, "owner") !== null) b.warn(`This ${noun} is owned through ${held}.`);
     return;
   }
-  const owners = ownersOf(b.sectionId, row, ctx);
+  const owners = ownersOf(b.sectionId, row, ctx, { create: record === undefined });
   if (!owners.ok) b.block(owners.reason, owners.columnId);
   else b.put("owners", owners.owners, owners.columns);
 }

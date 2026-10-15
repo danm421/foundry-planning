@@ -211,6 +211,17 @@ describe("ownersOf", () => {
     expect(ownersOf("cash", rowOf("c1", { owner: "Client" }), single)).toEqual({ ok: true, owners: [{ who: client, percent: 1 }], columns: ["owner"] });
   });
 
+  it("a blank Owner on a new record: blocked when there's a co-client, on record or added here; else the client alone, from the Owner cell", () => {
+    expect(ownersOf("cash", rowOf("c1", {}), ctx, { create: true })).toEqual({ ok: false, reason: "Owner: pick who owns it.", columnId: "owner" });
+    const solo = bookWith({}, { people: { client: "fm-client", spouse: null } });
+    const { ctx: single } = contextOf(stateWith({}), solo);
+    expect(ownersOf("cash", rowOf("c1", {}), single, { create: true })).toEqual({ ok: true, owners: [{ who: client, percent: 1 }], columns: ["owner"] });
+    const { ctx: adding } = contextOf(stateWith({ people: [rowOf("people:Co-client", { firstName: "Laura" })] }), solo);
+    expect(ownersOf("cash", rowOf("c1", {}), adding, { create: true })).toEqual({ ok: false, reason: "Owner: pick who owns it.", columnId: "owner" });
+    // An update keeps the owners on record: a blank never erases.
+    expect(ownersOf("cash", rowOf("c1", {}), ctx)).toEqual({ ok: true, owners: [], columns: ["owner"] });
+  });
+
   it("reads another owner column when asked, and refuses a value that isn't an option", () => {
     expect(owners({ heldBy: "Co-client" }, { ownerColumn: "heldBy" })).toEqual({ ok: true, owners: [{ who: spouse, percent: 1 }], columns: ["heldBy"] });
     expect(owners({ owner: "Mark & Laura" })).toEqual({

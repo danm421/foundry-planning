@@ -54,7 +54,7 @@ function putPolicyOwner(b: DraftBuilder, row: FFRow, ctx: PlaceContext, existing
     else b.block('Owner "Other" needs a name — pick another owner, or add this policy in Details.', "owner");
     return;
   }
-  const owners = ownersOf("life", row, ctx);
+  const owners = ownersOf("life", row, ctx, { create: !existing });
   if (!owners.ok) b.block(owners.reason, owners.columnId);
   else b.put("ownerRef", owner === "Joint" ? "joint" : owners.owners[0]?.who, owners.columns);
 }
