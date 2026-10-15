@@ -281,6 +281,14 @@ describe("validateLines — the rules around the schemas", () => {
     });
   });
 
+  it("an Update still meets the route's cross-field rules, which the edit route runs on the request alone", () => {
+    // A row linked to a whole-life policy says Type "Term" and leaves Issue year blank.
+    expect(blockedOf(line("life_insurance_policy", { policyType: "term" }, { action: "update" }))).toEqual({
+      reason: "Term issue year: term policies need a term issue year.", cell: fromCell("col:termIssueYear"),
+    });
+    expect(blockedOf(line("life_insurance_policy", { policyType: "term", termIssueYear: 2015, termLengthYears: 20 }, { action: "update" }))).toBeUndefined();
+  });
+
   it("leaves unchanged and already-blocked lines alone", () => {
     const none = { ...line("account", { name: "" }), action: "none" as const };
     const blocked = { ...line("account", {}), blocked: { reason: "Pick which trust or entity owns it." } };

@@ -184,8 +184,9 @@ function schemaProblem(
   for (const issue of CHECKS[line.target][action](body)) {
     const payloadKey = keyOf(issue, line.target, body);
     const present = payloadKey !== undefined && body[payloadKey] !== undefined;
-    // An Update sends only what changed; the record supplies every key it doesn't send.
-    if (action === "update" && payloadKey !== undefined && !present) continue;
+    // An Update sends only what changed, so a key it doesn't send isn't missing — the record has it. A cross-field
+    // rule (custom) still counts: the edit route runs the same schema on the request alone.
+    if (action === "update" && payloadKey !== undefined && !present && issue.code !== "custom") continue;
     const key = payloadKey === undefined ? undefined : targetKeyOf(line.target, payloadKey);
     const spec = key === undefined ? undefined : targetField(line.target, key);
     const label = spec?.label ?? detailsLabel(line.target, payloadKey);
