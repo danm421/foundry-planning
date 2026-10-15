@@ -6,8 +6,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
-import { parseBody } from "@/lib/schemas/common";
-import { observationUpdateSchema } from "@/lib/schemas/observations";
+import { updateObservationForClient } from "@/lib/clients/observations-writes";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
@@ -22,67 +21,22 @@ export async function PATCH(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
-    const parsed = await parseBody(observationUpdateSchema, request);
-    if (!parsed.ok) return parsed.response;
-
-    const [existing] = await db
-      .select({ status: planObservations.status })
-      .from(planObservations)
-      .where(
-        and(
-          eq(planObservations.id, observationId),
-          eq(planObservations.clientId, id),
-        ),
-      );
-
-    if (!existing) {
-      return NextResponse.json({ error: "Observation not found" }, { status: 404 });
+    let input: unknown;
+    try {
+      input = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
-
-    // status -> "done" sets completedAt; leaving "done" for any other status
-    // clears it. Untouched status (undefined) leaves completedAt as-is.
-    const willBeDone = parsed.data.status === "done";
-    const leavingDone =
-      existing.status === "done" &&
-      parsed.data.status !== undefined &&
-      parsed.data.status !== "done";
-
-    const [row] = await db
-      .update(planObservations)
-      .set({
-        ...(parsed.data.topic !== undefined && { topic: parsed.data.topic }),
-        ...(parsed.data.title !== undefined && { title: parsed.data.title }),
-        ...(parsed.data.body !== undefined && { body: parsed.data.body }),
-        ...(parsed.data.owner !== undefined && { owner: parsed.data.owner }),
-        ...(parsed.data.priority !== undefined && { priority: parsed.data.priority }),
-        ...(parsed.data.targetDate !== undefined && { targetDate: parsed.data.targetDate }),
-        ...(parsed.data.status !== undefined && { status: parsed.data.status }),
-        ...(willBeDone && { completedAt: new Date() }),
-        ...(leavingDone && { completedAt: null }),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(planObservations.id, observationId),
-          eq(planObservations.clientId, id),
-        ),
-      )
-      .returning();
-
-    if (!row) {
-      return NextResponse.json({ error: "Observation not found" }, { status: 404 });
-    }
-
-    await recordAudit({
-      action: willBeDone ? "plan_observation.complete" : "plan_observation.update",
-      resourceType: "plan_observation",
-      resourceId: row.id,
+    const result = await updateObservationForClient({
       clientId: id,
       firmId,
-      metadata: crossFirmAuditMeta({ access }, callerOrg),
+      observationId,
+      input,
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
+    if (!result.ok) return NextResponse.json(result.body ?? { error: result.error }, { status: result.status });
 
-    return NextResponse.json(row);
+    return NextResponse.json(result.data);
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

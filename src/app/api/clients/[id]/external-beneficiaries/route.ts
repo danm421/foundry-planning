@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import { externalBeneficiaries } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
-import { externalBeneficiaryCreateSchema } from "@/lib/schemas/beneficiaries";
+import { createExternalBeneficiaryForClient } from "@/lib/clients/external-beneficiaries-writes";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 
@@ -42,25 +41,10 @@ export async function POST(
     const { id } = await params;
     const { firmId } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
-    const body = await request.json();
-    const parsed = externalBeneficiaryCreateSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid body", issues: formatZodIssues(parsed.error) },
-        { status: 400 },
-      );
-    }
-    const [row] = await db
-      .insert(externalBeneficiaries)
-      .values({
-        clientId: id,
-        name: parsed.data.name,
-        kind: parsed.data.kind,
-        charityType: parsed.data.charityType,
-        notes: parsed.data.notes ?? null,
-      })
-      .returning();
-    return NextResponse.json(row, { status: 201 });
+    const result = await createExternalBeneficiaryForClient({ clientId: id, input: await request.json() });
+    return result.ok
+      ? NextResponse.json(result.data, { status: 201 })
+      : NextResponse.json(result.body ?? { error: result.error }, { status: result.status });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

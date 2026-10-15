@@ -2,17 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
 import { planObservations } from "@/db/schema";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
-import { parseBody } from "@/lib/schemas/common";
 import {
   OBSERVATION_AUDIENCES,
   observationBulkDeleteQuerySchema,
-  observationCreateSchema,
 } from "@/lib/schemas/observations";
+import { createObservationForClient } from "@/lib/clients/observations-writes";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
@@ -70,55 +69,21 @@ export async function POST(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
-    const parsed = await parseBody(observationCreateSchema, request);
-    if (!parsed.ok) return parsed.response;
-
-    // sortOrder = current max within (clientId, section) + 1, or 0 when empty.
-    const [top] = await db
-      .select({ sortOrder: planObservations.sortOrder })
-      .from(planObservations)
-      .where(
-        and(
-          eq(planObservations.clientId, id),
-          eq(planObservations.section, parsed.data.section),
-        ),
-      )
-      .orderBy(desc(planObservations.sortOrder))
-      .limit(1);
-    const nextSortOrder = top ? top.sortOrder + 1 : 0;
-
-    const [row] = await db
-      .insert(planObservations)
-      .values({
-        clientId: id,
-        section: parsed.data.section,
-        source: parsed.data.source,
-        topic: parsed.data.topic,
-        title: parsed.data.title ?? null,
-        body: parsed.data.body,
-        owner: parsed.data.owner ?? null,
-        priority: parsed.data.priority ?? null,
-        targetDate: parsed.data.targetDate ?? null,
-        audience: parsed.data.audience,
-        sourceScenarioId: parsed.data.sourceScenarioId ?? null,
-        sortOrder: nextSortOrder,
-      })
-      .returning();
-
-    await recordAudit({
-      action: "plan_observation.create",
-      resourceType: "plan_observation",
-      resourceId: row.id,
+    let input: unknown;
+    try {
+      input = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+    const result = await createObservationForClient({
       clientId: id,
       firmId,
-      metadata: crossFirmAuditMeta({ access }, callerOrg, {
-        section: row.section,
-        topic: row.topic,
-        audience: row.audience,
-      }),
+      input,
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
+    if (!result.ok) return NextResponse.json(result.body ?? { error: result.error }, { status: result.status });
 
-    return NextResponse.json(row, { status: 201 });
+    return NextResponse.json(result.data, { status: 201 });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

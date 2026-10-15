@@ -15,15 +15,11 @@
 // `requireClientEditAccess` decides) but its household belongs to the owning
 // firm, so the CRM gate would refuse a write this route must allow.
 import { NextResponse } from "next/server";
-import { db } from "@/db";
-import { crmHouseholdContacts } from "@/db/schema";
 import { requireOrgAndUser } from "@/lib/db-helpers";
-import { recordAudit } from "@/lib/audit";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
-import { summarizeZodIssues } from "@/lib/schemas/common";
-import { relatedPartyCreateSchema } from "@/lib/schemas/related-parties";
+import { createRelatedPartyForClient } from "@/lib/clients/related-parties-writes";
 
 export const dynamic = "force-dynamic";
 
@@ -37,55 +33,19 @@ export async function POST(
     const { client, firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
-    const parsed = relatedPartyCreateSchema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json({ error: summarizeZodIssues(parsed.error) }, { status: 400 });
-    }
-    const {
-      role, firstName, lastName, relationshipLabel,
-      email, phone, mobile, employer, occupation, notes,
-    } = parsed.data;
-
-    const [contact] = await db
-      .insert(crmHouseholdContacts)
-      .values({
-        // The PATH client's own household, never a `householdId` in the body —
-        // that is the only thing standing between this route and a write into
-        // another firm's household. `clients.crmHouseholdId` is notNull and
-        // unique, so every client has exactly one and it is never ambiguous.
-        householdId: client.crmHouseholdId,
-        // Fixed to "other" by the schema. `familyMemberId` is deliberately
-        // never set: it is the key of a partial unique index, and a planning
-        // link belongs to the `dependent` role, not to an external contact.
-        role,
-        firstName,
-        lastName,
-        relationshipLabel,
-        email,
-        phone,
-        mobile,
-        employer,
-        occupation,
-        notes,
-      })
-      .returning();
-
-    await recordAudit({
-      action: "related_party.create",
-      resourceType: "crm_household_contact",
-      resourceId: contact.id,
+    const result = await createRelatedPartyForClient({
       clientId: id,
       firmId,
-      metadata: crossFirmAuditMeta({ access }, callerOrg, {
-        firstName: contact.firstName,
-        lastName: contact.lastName,
-        relationshipLabel: contact.relationshipLabel,
-      }),
+      // The PATH client's own household, never a `householdId` in the body.
+      householdId: client.crmHouseholdId,
+      input: await request.json(),
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
 
     // `{ id }`, because `readCreatedId` in `commit-map-row.ts` stamps it onto
     // the extracted row so a second Commit cannot duplicate the contact.
-    return NextResponse.json({ id: contact.id }, { status: 201 });
+    return NextResponse.json({ id: result.data.id }, { status: 201 });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

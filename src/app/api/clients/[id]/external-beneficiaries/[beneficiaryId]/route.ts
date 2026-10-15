@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import { externalBeneficiaries } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { externalBeneficiaryUpdateSchema } from "@/lib/schemas/beneficiaries";
+import { updateExternalBeneficiaryForClient } from "@/lib/clients/external-beneficiaries-writes";
 import { cleanupWillRecipientReferences } from "@/lib/estate/cleanup-will-recipients";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { requireClientEditAccess } from "@/lib/clients/authz";
@@ -19,28 +18,14 @@ export async function PATCH(
     const { id, beneficiaryId } = await params;
     const { firmId } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
-    const body = await request.json();
-    const parsed = externalBeneficiaryUpdateSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid body", issues: formatZodIssues(parsed.error) },
-        { status: 400 },
-      );
-    }
-    const [row] = await db
-      .update(externalBeneficiaries)
-      .set({ ...parsed.data, updatedAt: new Date() })
-      .where(
-        and(
-          eq(externalBeneficiaries.id, beneficiaryId),
-          eq(externalBeneficiaries.clientId, id),
-        ),
-      )
-      .returning();
-    if (!row) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    return NextResponse.json(row);
+    const result = await updateExternalBeneficiaryForClient({
+      clientId: id,
+      beneficiaryId,
+      input: await request.json(),
+    });
+    return result.ok
+      ? NextResponse.json(result.data)
+      : NextResponse.json(result.body ?? { error: result.error }, { status: result.status });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
