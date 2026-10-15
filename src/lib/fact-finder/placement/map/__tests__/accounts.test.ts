@@ -251,6 +251,41 @@ describe("TAXABLE_MAP", () => {
       const [draft] = place(TAXABLE_MAP, [rowOf("tax-1", { accountName: "Schwab" }, { holdings: [positions[0]] })]).drafts;
       expect(draft.warnings).toEqual(["Saving this position makes this account take its value from it."]);
     });
+
+    describe("merge with the positions on record — one the fact finder doesn't list is never deleted", () => {
+      const TICKERS = ["VTI", "VXUS", "BND", "AAPL", "MSFT", "GOOG", "AMZN", "NVDA", "META", "TSLA"];
+      // Ten positions of $1,000 each.
+      const ten = TICKERS.map((ticker) => ({ ticker, name: `${ticker} fund`, shares: 10, price: 100, marketValue: 1000, costBasis: 800 }));
+      const book = hendricksBook({ account: [accountRecord("a-1", "Schwab Brokerage", { name: "Schwab Brokerage", holdings: ten }, { category: "taxable" })] });
+      const listing = (holdings: FFHolding[]) => place(TAXABLE_MAP, [rowOf("tax-1", {}, { holdings, link: linkedTo("a-1") })], book).drafts[0];
+
+      it("10 on record, 5 listed (3 on record, one with more shares, and 2 new): all 12, the 7 unlisted kept as they are", () => {
+        const draft = listing([
+          holding("h1", { ticker: "VTI", shares: 10, price: 100 }),
+          holding("h2", { ticker: "vxus", name: "VXUS fund", shares: 10 }),
+          holding("h3", { ticker: "BND", shares: 25, price: 100 }),
+          holding("h4", { ticker: "SCHD", name: "Schwab Dividend", shares: 5, price: 80 }),
+          holding("h5", { name: "Hendricks LP", marketValue: 15000 }),
+        ]);
+        const next = values(draft).holdings as { ticker: string | null }[];
+        expect(next.map((h) => h.ticker)).toEqual([...TICKERS, "SCHD", null]);
+        // A listed position takes the cells it fills; a blank one keeps the value on record.
+        expect(next[1]).toEqual(ten[1]);
+        expect(next[2]).toEqual({ ...ten[2], shares: 25, marketValue: 2500 });
+        expect(next.slice(3, 10)).toEqual(ten.slice(3));
+        expect(draft.warnings).toEqual([]);
+        const [line] = diffDrafts([draft], book);
+        expect(line.fields).toMatchObject([
+          { key: "holdings", shown: { next: "12 holdings · $26,900 (+2 new · 1 changed)", onRecord: "10 holdings · $10,000" } },
+        ]);
+      });
+
+      it("listing only positions on record, unchanged, makes no field", () => {
+        const draft = listing([holding("h1", { ticker: "VTI", shares: 10, price: 104 }), holding("h2", { ticker: "BND", name: "BND fund" })]);
+        expect(values(draft).holdings).toHaveLength(10);
+        expect(diffDrafts([draft], book)[0]).toMatchObject({ action: "none", fields: [] });
+      });
+    });
   });
 });
 

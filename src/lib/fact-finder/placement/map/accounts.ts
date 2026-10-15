@@ -18,6 +18,7 @@ import type { FFHolding, FFRow } from "../../types";
 import { findPerson, hasCoClient, householdPerson } from "../refs";
 import { str, withLast4 } from "../text";
 import type { BookRecord, TargetDraft } from "../types";
+import { mergeHoldings } from "../values";
 import { beneficiariesOf, bool, DraftBuilder, linkedRecord, num, putOwners, rate, text } from "./helpers";
 import type { PlaceContext, SectionMap } from "./types";
 
@@ -88,11 +89,14 @@ function positionOf(h: FFHolding): PlacedValue {
   return { ticker: h.ticker, name: h.name, shares: h.shares, price: h.price, marketValue: holdingValue(h), costBasis: h.costBasis };
 }
 
-/** The row's holdings as the account's positions (no cell: holdings aren't a column). A position's cost basis stays on the position. */
+/**
+ * The row's holdings merged into the account's positions on record (no cell: holdings aren't a column) — one it
+ * doesn't list stays. A position's cost basis stays on the position.
+ */
 function putHoldings(b: DraftBuilder, row: FFRow, record: BookRecord | undefined): void {
   const positions = (row.holdings ?? []).map(positionOf);
-  b.put("holdings", positions, []);
   const held = record?.values.holdings;
+  b.put("holdings", positions.length > 0 ? mergeHoldings(positions, held) : [], []);
   if (positions.length === 0 || (Array.isArray(held) && held.length > 0)) return;
   b.warn(
     positions.length === 1

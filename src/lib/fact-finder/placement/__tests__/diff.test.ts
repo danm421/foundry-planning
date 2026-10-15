@@ -185,7 +185,7 @@ describe("diffDrafts", () => {
     ], book({ account: [brokerage] }));
 
     expect(repriced).toMatchObject({ action: "none", fields: [] });
-    expect(bought.fields).toMatchObject([{ key: "holdings", shown: { next: "2 holdings · $54,375", onRecord: "2 holdings · $45,000" } }]);
+    expect(bought.fields).toMatchObject([{ key: "holdings", shown: { next: "2 holdings · $54,375 (1 changed)", onRecord: "2 holdings · $45,000" } }]);
   });
 
   it("changing a date of birth or plan-to age warns that every scenario's plan end moves", () => {

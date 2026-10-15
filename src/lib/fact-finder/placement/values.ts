@@ -10,7 +10,7 @@ import { YEAR_REF_LABELS, type YearRef } from "@/lib/milestones";
 import { isRecordRef, refKey, type PlacedValue, type RecordRef } from "../change-set";
 import { labelFor, type OptionMap } from "../enums";
 import { MONTHS } from "../schema";
-import { holdingKey, stableStringify } from "../state";
+import { holdingKey, holdingValue, stableStringify } from "../state";
 import type { ValueKind } from "./targets";
 import { stringOf } from "./text";
 import type { RecordBook } from "./types";
@@ -62,13 +62,7 @@ export function sameValue(
     case "items":
       return sameSet(a, b, (e) => `${words(e.name)}|${String(e.frequency)}`, (x, y) => close(x.amount, y.amount, MONEY));
     case "holdings":
-      // A ticker's value on record moves with the nightly price, so only a position with no ticker compares its value.
-      return sameSet(
-        a, b,
-        (e) => holdingKey({ ticker: stringOf(e.ticker), name: stringOf(e.name) }) ?? "",
-        (x, y) => closeUnlessBlank(x.shares, y.shares, NUMBER)
-          && (!isEmptyValue(x.ticker) || closeUnlessBlank(x.marketValue, y.marketValue, MONEY)),
-      );
+      return sameSet(a, b, positionKey, samePosition);
     case "tranches":
       return sameSet(a, b, (e) => String(e.vestDate), (x, y) => close(x.shares, y.shares, NUMBER));
     default:
@@ -110,6 +104,65 @@ function whoKey(value: PlacedValue | undefined, people: RecordBook["people"]): s
 
 function entries(value: PlacedValue | undefined): Entry[] {
   return Array.isArray(value) ? (value.filter((v) => typeof v === "object" && v !== null && !Array.isArray(v)) as Entry[]) : [];
+}
+
+/** A position pairs with another by ticker, else by name ("" with neither). */
+const positionKey = (e: Entry): string => holdingKey({ ticker: stringOf(e.ticker), name: stringOf(e.name) }) ?? "";
+
+/** A ticker's value on record moves with the nightly price, so only a position with no ticker compares its value. */
+function samePosition(x: Entry, y: Entry): boolean {
+  return closeUnlessBlank(x.shares, y.shares, NUMBER) && (!isEmptyValue(x.ticker) || closeUnlessBlank(x.marketValue, y.marketValue, MONEY));
+}
+
+/**
+ * The fact finder's positions merged into the account's positions on record —
+ * never a replacement. A listed position updates the one on record it pairs
+ * with (ticker, else name): its shares, price, value and cost basis, a blank
+ * keeping the value on record. The rest are added; a position on record the
+ * fact finder doesn't list stays as it is.
+ */
+export function mergeHoldings(listed: PlacedValue, onRecord: PlacedValue | undefined): PlacedValue[] {
+  const merged = entries(onRecord);
+  const paired = new Set<number>();
+  const added: Entry[] = [];
+  for (const position of entries(listed)) {
+    const key = positionKey(position);
+    const at = key === "" ? -1 : merged.findIndex((held, i) => !paired.has(i) && positionKey(held) === key);
+    if (at < 0) {
+      added.push(position);
+      continue;
+    }
+    paired.add(at);
+    merged[at] = updatePosition(merged[at], position);
+  }
+  return [...merged, ...added];
+}
+
+function updatePosition(held: Entry, listed: Entry): Entry {
+  const pick = (key: string) => (isEmptyValue(listed[key]) ? held[key] : listed[key]);
+  const shares = pick("shares");
+  const price = pick("price");
+  // New shares or a new price with no value of their own: worth shares × price.
+  const priced = isEmptyValue(listed.shares) && isEmptyValue(listed.price) ? null : holdingValue({ marketValue: null, shares: num(shares), price: num(price) });
+  return { ...held, shares, price, marketValue: isEmptyValue(listed.marketValue) ? (priced ?? held.marketValue) : listed.marketValue, costBasis: pick("costBasis") };
+}
+
+/** "+2 new · 1 changed": how a merged set of positions differs from the one on record ("" when it doesn't). */
+export function holdingsChange(next: PlacedValue, onRecord: PlacedValue | undefined): string {
+  const left = entries(onRecord);
+  let added = 0;
+  let changed = 0;
+  for (const x of entries(next)) {
+    const key = positionKey(x);
+    const same = left.findIndex((y) => positionKey(y) === key && samePosition(x, y));
+    const at = same >= 0 ? same : left.findIndex((y) => positionKey(y) === key);
+    if (at < 0) added += 1;
+    else {
+      if (same < 0) changed += 1;
+      left.splice(at, 1);
+    }
+  }
+  return [added > 0 ? `+${added} new` : "", changed > 0 ? `${changed} changed` : ""].filter(Boolean).join(" · ");
 }
 
 /** Same entries in any order: each one pairs with an unused entry of the same key that `same` accepts. */

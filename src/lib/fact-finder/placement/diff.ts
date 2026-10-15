@@ -12,7 +12,7 @@ import { isRecordRef, type ChangeField, type ChangeLine, type PlacedValue, type 
 import { findSection } from "../schema";
 import { TARGETS, targetField, type TargetField } from "./targets";
 import { findRecord, type DraftField, type RecordBook, type TargetDraft } from "./types";
-import { formatValue, isEmptyValue, sameValue } from "./values";
+import { formatValue, holdingsChange, isEmptyValue, sameValue } from "./values";
 
 const GONE = "That record is no longer on the plan — review again.";
 /** Household fields that set the year each scenario's plan ends. */
@@ -43,7 +43,11 @@ function diffDraft(draft: TargetDraft, book: RecordBook, labelOf: (ref: RecordRe
     }
     const onRecord = record.values[placed.key];
     if (sameValue(spec.kind, placed.value, onRecord, book.people)) continue;
-    fields.push(changeField(placed, spec, isEmptyValue(onRecord) ? null : onRecord, show));
+    const field = changeField(placed, spec, isEmptyValue(onRecord) ? null : onRecord, show);
+    // Positions merge with the ones on record: say what the merge adds and changes.
+    const change = spec.kind === "holdings" && !isEmptyValue(onRecord) ? holdingsChange(placed.value, onRecord) : "";
+    if (change) field.shown.next += ` (${change})`;
+    fields.push(field);
     // Every record on the plan has its set, often empty: say so only when the one replaced names someone.
     if (spec.replacesSet && Array.isArray(onRecord) && onRecord.length > 0) warnings.push(`These ${spec.label.toLowerCase()} replace the ones on record.`);
   }
