@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { alias } from "drizzle-orm/pg-core";
 import { and, eq, type InferSelectModel } from "drizzle-orm";
 import { clients, crmHouseholdContacts } from "@/db/schema";
+import type { DbOrTx } from "@/lib/db-tx";
 
 const primary = alias(crmHouseholdContacts, "primary_contact");
 const spouse = alias(crmHouseholdContacts, "spouse_contact");
@@ -40,11 +41,13 @@ type SpouseContactFields = {
 
 export type ClientWithContacts = ClientRow & ContactFields & SpouseContactFields;
 
+/** `handle`: a caller's transaction, so the client reads as that transaction has it. */
 export async function getClientWithContacts(
   clientId: string,
   firmId: string,
+  handle?: DbOrTx,
 ): Promise<ClientWithContacts | null> {
-  const [row] = await db
+  const [row] = await (handle ?? db)
     .select({
       client: clients,
       p: {

@@ -15,6 +15,7 @@ import {
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { RETIREMENT_SUBTYPES } from "@/lib/accounts/retirement-subtypes";
+import type { DbOrTx } from "@/lib/db-tx";
 
 // ── Transaction type ──────────────────────────────────────────────────────────
 
@@ -91,21 +92,23 @@ export function validateOwnersShape(
 
 /**
  * Validates that all owner IDs (family members + entities) belong to the given client.
- * Returns { error } on failure, null on success.
+ * Returns { error } on failure, null on success. `handle`: a caller's transaction,
+ * so an owner written earlier in it counts.
  */
 export async function validateOwnersTenant(
   owners: ValidatedOwner[],
   clientId: string,
+  handle?: DbOrTx,
 ): Promise<{ error: string } | null> {
   for (const o of owners) {
     if (o.kind === "family_member") {
-      const [row] = await db
+      const [row] = await (handle ?? db)
         .select({ id: familyMembers.id })
         .from(familyMembers)
         .where(and(eq(familyMembers.id, o.familyMemberId), eq(familyMembers.clientId, clientId)));
       if (!row) return { error: "Owner not found for this client" };
     } else {
-      const [row] = await db
+      const [row] = await (handle ?? db)
         .select({ id: entities.id })
         .from(entities)
         .where(and(eq(entities.id, o.entityId), eq(entities.clientId, clientId)));
@@ -152,13 +155,15 @@ export function validateAccountOwnershipRules(
 
 /**
  * Synthesizes default owners[] from legacy account fields when the request body omits owners.
- * Mirrors the SQL backfill logic from migration 0055 for accounts.
+ * Mirrors the SQL backfill logic from migration 0055 for accounts. `handle`: a caller's
+ * transaction, so a co-client written earlier in it counts.
  */
 export async function synthesizeLegacyAccountOwners(
   clientId: string,
   owner: string | undefined | null,
   ownerEntityId: string | undefined | null,
   ownerFamilyMemberId?: string | undefined | null,
+  handle?: DbOrTx,
 ): Promise<ValidatedOwner[]> {
   const { id: fmId, role } = familyMembers;
 
@@ -170,7 +175,7 @@ export async function synthesizeLegacyAccountOwners(
     return [{ kind: "family_member", familyMemberId: ownerFamilyMemberId, percent: 1.0 }];
   }
 
-  const fmRows = await db
+  const fmRows = await (handle ?? db)
     .select({ id: fmId, role })
     .from(familyMembers)
     .where(and(eq(familyMembers.clientId, clientId)));
@@ -202,18 +207,20 @@ export async function synthesizeLegacyAccountOwners(
 /**
  * Synthesizes default owners[] from legacy liability fields when the request body omits owners.
  * Mirrors the 2-branch backfill from migration 0055: entity 100% OR client family-member 100%.
- * Liabilities have no `owner` enum and no `ownerFamilyMemberId` column.
+ * Liabilities have no `owner` enum and no `ownerFamilyMemberId` column. `handle`: a caller's
+ * transaction.
  */
 export async function synthesizeLegacyLiabilityOwners(
   clientId: string,
   ownerEntityId: string | undefined | null,
+  handle?: DbOrTx,
 ): Promise<ValidatedOwner[]> {
   if (ownerEntityId) {
     return [{ kind: "entity", entityId: ownerEntityId, percent: 1.0 }];
   }
 
   // Fall back to client family member at 100%
-  const [clientFm] = await db
+  const [clientFm] = await (handle ?? db)
     .select({ id: familyMembers.id })
     .from(familyMembers)
     .where(

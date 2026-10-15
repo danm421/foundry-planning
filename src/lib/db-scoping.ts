@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import type { DbOrTx } from "@/lib/db-tx";
 import {
   accounts,
   clients,
@@ -23,6 +24,10 @@ import { eq, and, inArray } from "drizzle-orm";
  *
  * Each helper returns a pair `[ok, reason]`. Callers should return a
  * 400 when `ok` is false.
+ *
+ * Each `assert*` takes an optional trailing `handle`: a caller's transaction,
+ * so the check sees rows written earlier in it (the fact finder save). Without
+ * it the check reads on module `db`, as it always has.
  */
 
 export type FkCheck = { ok: true } | { ok: false; reason: string };
@@ -30,11 +35,12 @@ export type FkCheck = { ok: true } | { ok: false; reason: string };
 /** Verify every account id belongs to `clientId` (and thus the firm). */
 export async function assertAccountsInClient(
   clientId: string,
-  accountIds: (string | null | undefined)[]
+  accountIds: (string | null | undefined)[],
+  handle?: DbOrTx
 ): Promise<FkCheck> {
   const ids = accountIds.filter((v): v is string => typeof v === "string" && v.length > 0);
   if (ids.length === 0) return { ok: true };
-  const rows = await db
+  const rows = await (handle ?? db)
     .select({ id: accounts.id })
     .from(accounts)
     .where(and(eq(accounts.clientId, clientId), inArray(accounts.id, ids)));
@@ -53,11 +59,12 @@ export async function assertAccountsInClient(
  */
 export async function assertBusinessAccountsInClient(
   clientId: string,
-  accountIds: (string | null | undefined)[]
+  accountIds: (string | null | undefined)[],
+  handle?: DbOrTx
 ): Promise<FkCheck> {
   const ids = accountIds.filter((v): v is string => typeof v === "string" && v.length > 0);
   if (ids.length === 0) return { ok: true };
-  const rows = await db
+  const rows = await (handle ?? db)
     .select({ id: accounts.id, category: accounts.category })
     .from(accounts)
     .where(and(eq(accounts.clientId, clientId), inArray(accounts.id, ids)));
@@ -71,11 +78,12 @@ export async function assertBusinessAccountsInClient(
 /** Verify every income id belongs to `clientId` (and thus the firm). */
 export async function assertIncomesInClient(
   clientId: string,
-  incomeIds: (string | null | undefined)[]
+  incomeIds: (string | null | undefined)[],
+  handle?: DbOrTx
 ): Promise<FkCheck> {
   const ids = incomeIds.filter((v): v is string => typeof v === "string" && v.length > 0);
   if (ids.length === 0) return { ok: true };
-  const rows = await db
+  const rows = await (handle ?? db)
     .select({ id: incomes.id })
     .from(incomes)
     .where(and(eq(incomes.clientId, clientId), inArray(incomes.id, ids)));
@@ -89,11 +97,12 @@ export async function assertIncomesInClient(
 /** Verify every liability id belongs to `clientId` (and thus the firm). */
 export async function assertLiabilitiesInClient(
   clientId: string,
-  liabilityIds: (string | null | undefined)[]
+  liabilityIds: (string | null | undefined)[],
+  handle?: DbOrTx
 ): Promise<FkCheck> {
   const ids = liabilityIds.filter((v): v is string => typeof v === "string" && v.length > 0);
   if (ids.length === 0) return { ok: true };
-  const rows = await db
+  const rows = await (handle ?? db)
     .select({ id: liabilities.id })
     .from(liabilities)
     .where(and(eq(liabilities.clientId, clientId), inArray(liabilities.id, ids)));
@@ -107,11 +116,12 @@ export async function assertLiabilitiesInClient(
 /** Verify every entity id belongs to `clientId`. */
 export async function assertEntitiesInClient(
   clientId: string,
-  entityIds: (string | null | undefined)[]
+  entityIds: (string | null | undefined)[],
+  handle?: DbOrTx
 ): Promise<FkCheck> {
   const ids = entityIds.filter((v): v is string => typeof v === "string" && v.length > 0);
   if (ids.length === 0) return { ok: true };
-  const rows = await db
+  const rows = await (handle ?? db)
     .select({ id: entities.id })
     .from(entities)
     .where(and(eq(entities.clientId, clientId), inArray(entities.id, ids)));
@@ -125,11 +135,12 @@ export async function assertEntitiesInClient(
 /** Verify every family-member id belongs to `clientId`. */
 export async function assertFamilyMembersInClient(
   clientId: string,
-  familyMemberIds: (string | null | undefined)[]
+  familyMemberIds: (string | null | undefined)[],
+  handle?: DbOrTx
 ): Promise<FkCheck> {
   const ids = familyMemberIds.filter((v): v is string => typeof v === "string" && v.length > 0);
   if (ids.length === 0) return { ok: true };
-  const rows = await db
+  const rows = await (handle ?? db)
     .select({ id: familyMembers.id })
     .from(familyMembers)
     .where(and(eq(familyMembers.clientId, clientId), inArray(familyMembers.id, ids)));
@@ -143,11 +154,12 @@ export async function assertFamilyMembersInClient(
 /** Verify every external-beneficiary id belongs to `clientId`. */
 export async function assertExternalBeneficiariesInClient(
   clientId: string,
-  externalBeneficiaryIds: (string | null | undefined)[]
+  externalBeneficiaryIds: (string | null | undefined)[],
+  handle?: DbOrTx
 ): Promise<FkCheck> {
   const ids = externalBeneficiaryIds.filter((v): v is string => typeof v === "string" && v.length > 0);
   if (ids.length === 0) return { ok: true };
-  const rows = await db
+  const rows = await (handle ?? db)
     .select({ id: externalBeneficiaries.id })
     .from(externalBeneficiaries)
     .where(and(eq(externalBeneficiaries.clientId, clientId), inArray(externalBeneficiaries.id, ids)));
@@ -161,13 +173,14 @@ export async function assertExternalBeneficiariesInClient(
 /** Verify every model-portfolio id belongs to `firmId`. */
 export async function assertModelPortfoliosInFirm(
   firmId: string,
-  ids: (string | null | undefined)[]
+  ids: (string | null | undefined)[],
+  handle?: DbOrTx
 ): Promise<FkCheck> {
   const filtered = ids.filter(
     (v): v is string => typeof v === "string" && v.length > 0
   );
   if (filtered.length === 0) return { ok: true };
-  const rows = await db
+  const rows = await (handle ?? db)
     .select({ id: modelPortfolios.id })
     .from(modelPortfolios)
     .where(
@@ -183,11 +196,12 @@ export async function assertModelPortfoliosInFirm(
 /** Verify every fund (ticker) portfolio id belongs to `firmId`. */
 export async function assertTickerPortfoliosInFirm(
   firmId: string,
-  ids: (string | null | undefined)[]
+  ids: (string | null | undefined)[],
+  handle?: DbOrTx
 ): Promise<FkCheck> {
   const filtered = ids.filter((v): v is string => typeof v === "string" && v.length > 0);
   if (filtered.length === 0) return { ok: true };
-  const rows = await db
+  const rows = await (handle ?? db)
     .select({ id: tickerPortfolios.id })
     .from(tickerPortfolios)
     .where(and(eq(tickerPortfolios.firmId, firmId), inArray(tickerPortfolios.id, filtered)));
@@ -201,13 +215,14 @@ export async function assertTickerPortfoliosInFirm(
 /** Verify every asset-class id belongs to `firmId`. */
 export async function assertAssetClassesInFirm(
   firmId: string,
-  ids: (string | null | undefined)[]
+  ids: (string | null | undefined)[],
+  handle?: DbOrTx
 ): Promise<FkCheck> {
   const filtered = ids.filter(
     (v): v is string => typeof v === "string" && v.length > 0
   );
   if (filtered.length === 0) return { ok: true };
-  const rows = await db
+  const rows = await (handle ?? db)
     .select({ id: assetClasses.id })
     .from(assetClasses)
     .where(and(eq(assetClasses.firmId, firmId), inArray(assetClasses.id, filtered)));
@@ -225,11 +240,12 @@ export async function assertAssetClassesInFirm(
  */
 export async function assertRealEstateAccountsInClient(
   clientId: string,
-  accountIds: (string | null | undefined)[]
+  accountIds: (string | null | undefined)[],
+  handle?: DbOrTx
 ): Promise<FkCheck> {
   const ids = accountIds.filter((v): v is string => typeof v === "string" && v.length > 0);
   if (ids.length === 0) return { ok: true };
-  const rows = await db
+  const rows = await (handle ?? db)
     .select({ id: accounts.id, category: accounts.category })
     .from(accounts)
     .where(and(eq(accounts.clientId, clientId), inArray(accounts.id, ids)));

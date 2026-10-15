@@ -60,20 +60,20 @@ describe("assertOwnerRefInClient", () => {
 
   it("checks each ref kind against its OWN table, scoped to this client", async () => {
     await assertOwnerRefInClient(CLIENT, { kind: "family", id: FOREIGN });
-    expect(assertFamilyMembersInClient).toHaveBeenCalledWith(CLIENT, [FOREIGN]);
+    expect(assertFamilyMembersInClient).toHaveBeenCalledWith(CLIENT, [FOREIGN], undefined);
     expect(assertEntitiesInClient).not.toHaveBeenCalled();
     expect(assertExternalBeneficiariesInClient).not.toHaveBeenCalled();
 
     vi.clearAllMocks();
     vi.mocked(assertEntitiesInClient).mockResolvedValue({ ok: true });
     await assertOwnerRefInClient(CLIENT, { kind: "entity", id: FOREIGN });
-    expect(assertEntitiesInClient).toHaveBeenCalledWith(CLIENT, [FOREIGN]);
+    expect(assertEntitiesInClient).toHaveBeenCalledWith(CLIENT, [FOREIGN], undefined);
     expect(assertFamilyMembersInClient).not.toHaveBeenCalled();
 
     vi.clearAllMocks();
     vi.mocked(assertExternalBeneficiariesInClient).mockResolvedValue({ ok: true });
     await assertOwnerRefInClient(CLIENT, { kind: "external", id: FOREIGN });
-    expect(assertExternalBeneficiariesInClient).toHaveBeenCalledWith(CLIENT, [FOREIGN]);
+    expect(assertExternalBeneficiariesInClient).toHaveBeenCalledWith(CLIENT, [FOREIGN], undefined);
     expect(assertEntitiesInClient).not.toHaveBeenCalled();
   });
 

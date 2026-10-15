@@ -1,4 +1,5 @@
 import { recordAudit, type AuditAction } from "@/lib/audit";
+import type { DbOrTx } from "@/lib/db-tx";
 import { buildFieldChanges } from "./build-changes";
 import type { EntitySnapshot, FieldLabels } from "./types";
 
@@ -13,6 +14,9 @@ type Common = {
   // 'system' for unattended jobs (webhooks, crons).
   actorKind?: "advisor" | "client" | "system";
   extraMetadata?: Record<string, unknown>;
+  // A caller's transaction: the row lives and dies with the write it describes
+  // (recordAudit writes it on a savepoint of `tx`).
+  tx?: DbOrTx;
 };
 
 export async function recordCreate(

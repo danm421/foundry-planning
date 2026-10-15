@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { accounts, ltcPolicies, type LtcPolicyRow } from "@/db/schema";
 import { and, asc, eq } from "drizzle-orm";
+import type { DbOrTx } from "@/lib/db-tx";
 import type { LtcPolicy } from "@/engine/types";
 import type { RiderLifePolicy } from "./ltc-rider-link";
 
@@ -55,12 +56,14 @@ export async function loadLtcPolicies(clientId: string): Promise<LtcPolicy[]> {
 }
 
 /** The account a rider names, scoped to the client: another household's id
- *  reads as missing, never as a match. */
+ *  reads as missing, never as a match. `handle`: a caller's transaction, so a
+ *  life policy written earlier in it is found. */
 export async function loadRiderLifePolicy(
   clientId: string,
   accountId: string,
+  handle?: DbOrTx,
 ): Promise<RiderLifePolicy | null> {
-  const [row] = await db
+  const [row] = await (handle ?? db)
     .select({ id: accounts.id, category: accounts.category, insuredPerson: accounts.insuredPerson })
     .from(accounts)
     .where(and(eq(accounts.id, accountId), eq(accounts.clientId, clientId)));

@@ -3,6 +3,7 @@ import "server-only";
 import { db } from "@/db";
 import { accounts, liabilities } from "@/db/schema";
 import { inArray } from "drizzle-orm";
+import type { DbOrTx } from "@/lib/db-tx";
 import type { EntitySnapshot, ReferenceValue } from "../types";
 
 // Labels live in the server-free `../field-labels` (audit F3); re-exported
@@ -11,11 +12,13 @@ export { LIABILITY_FIELD_LABELS } from "../field-labels";
 
 type LiabilityRow = typeof liabilities.$inferSelect;
 
+/** `handle`: a caller's transaction, so a property written earlier in it resolves. */
 export async function toLiabilitySnapshot(
   row: LiabilityRow,
+  handle?: DbOrTx,
 ): Promise<EntitySnapshot> {
   const linkedProperty: ReferenceValue | null = row.linkedPropertyId
-    ? await db
+    ? await (handle ?? db)
         .select({ id: accounts.id, name: accounts.name })
         .from(accounts)
         .where(inArray(accounts.id, [row.linkedPropertyId]))

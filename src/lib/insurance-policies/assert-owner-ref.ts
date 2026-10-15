@@ -4,6 +4,7 @@ import {
   assertFamilyMembersInClient,
   type FkCheck,
 } from "@/lib/db-scoping";
+import type { DbOrTx } from "@/lib/db-tx";
 import type { OwnerRef } from "./owner-ref";
 
 /**
@@ -14,20 +15,22 @@ import type { OwnerRef } from "./owner-ref";
  * deletion would cascade this firm's row away.
  *
  * `joint` carries no id and is derived server-side from the client's own
- * family members, so it needs no check.
+ * family members, so it needs no check. `handle`: a caller's transaction, so
+ * an owner written earlier in it counts.
  */
 export async function assertOwnerRefInClient(
   clientId: string,
   ref: OwnerRef,
+  handle?: DbOrTx,
 ): Promise<FkCheck> {
   switch (ref.kind) {
     case "joint":
       return { ok: true };
     case "family":
-      return assertFamilyMembersInClient(clientId, [ref.id]);
+      return assertFamilyMembersInClient(clientId, [ref.id], handle);
     case "entity":
-      return assertEntitiesInClient(clientId, [ref.id]);
+      return assertEntitiesInClient(clientId, [ref.id], handle);
     case "external":
-      return assertExternalBeneficiariesInClient(clientId, [ref.id]);
+      return assertExternalBeneficiariesInClient(clientId, [ref.id], handle);
   }
 }

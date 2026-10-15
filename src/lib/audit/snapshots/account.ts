@@ -6,6 +6,7 @@ import {
   tickerPortfolios,
 } from "@/db/schema";
 import { inArray } from "drizzle-orm";
+import type { DbOrTx } from "@/lib/db-tx";
 import type {
   EntitySnapshot,
   ReferenceValue,
@@ -18,9 +19,10 @@ export { ACCOUNT_FIELD_LABELS } from "../field-labels";
 
 type AccountRow = typeof accounts.$inferSelect;
 
-export async function toAccountSnapshot(row: AccountRow): Promise<EntitySnapshot> {
-  const modelPortfolio = await resolveModelPortfolio(row.modelPortfolioId);
-  const tickerPortfolio = await resolveTickerPortfolio(row.tickerPortfolioId);
+/** `handle`: a caller's transaction, so a name written earlier in it resolves. */
+export async function toAccountSnapshot(row: AccountRow, handle?: DbOrTx): Promise<EntitySnapshot> {
+  const modelPortfolio = await resolveModelPortfolio(row.modelPortfolioId, handle);
+  const tickerPortfolio = await resolveTickerPortfolio(row.tickerPortfolioId, handle);
 
   return {
     name: row.name,
@@ -53,9 +55,10 @@ export async function toAccountSnapshot(row: AccountRow): Promise<EntitySnapshot
 
 async function resolveModelPortfolio(
   id: string | null,
+  handle?: DbOrTx,
 ): Promise<ReferenceValue | null> {
   if (!id) return null;
-  const rows = await db
+  const rows = await (handle ?? db)
     .select({ id: modelPortfolios.id, name: modelPortfolios.name })
     .from(modelPortfolios)
     .where(inArray(modelPortfolios.id, [id]));
@@ -64,9 +67,10 @@ async function resolveModelPortfolio(
 
 async function resolveTickerPortfolio(
   id: string | null,
+  handle?: DbOrTx,
 ): Promise<ReferenceValue | null> {
   if (!id) return null;
-  const rows = await db
+  const rows = await (handle ?? db)
     .select({ id: tickerPortfolios.id, name: tickerPortfolios.name })
     .from(tickerPortfolios)
     .where(inArray(tickerPortfolios.id, [id]));

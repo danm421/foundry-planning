@@ -3,6 +3,7 @@ import "server-only";
 import { db } from "@/db";
 import { entities, notesReceivable } from "@/db/schema";
 import { inArray } from "drizzle-orm";
+import type { DbOrTx } from "@/lib/db-tx";
 import type { EntitySnapshot, FieldLabels, ReferenceValue } from "../types";
 
 export const NOTE_RECEIVABLE_FIELD_LABELS: FieldLabels = {
@@ -24,11 +25,13 @@ export const NOTE_RECEIVABLE_FIELD_LABELS: FieldLabels = {
 
 type NoteReceivableRow = typeof notesReceivable.$inferSelect;
 
+/** `handle`: a caller's transaction, so a trust written earlier in it resolves. */
 export async function toNoteReceivableSnapshot(
   row: NoteReceivableRow,
+  handle?: DbOrTx,
 ): Promise<EntitySnapshot> {
   const linkedTrust: ReferenceValue | null = row.linkedTrustEntityId
-    ? await db
+    ? await (handle ?? db)
         .select({ id: entities.id, name: entities.name })
         .from(entities)
         .where(inArray(entities.id, [row.linkedTrustEntityId]))
