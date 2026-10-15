@@ -451,6 +451,18 @@ describe("LIAB_MAP", () => {
     expect(asOf(linked(305000), book)?.value).toBe("2026-02");
   });
 
+  it("a balance within half a cent of the record's is unchanged — no Balance as of", () => {
+    const book = hendricksBook({ liability: [mortgage] });
+    const draft = place(LIAB_MAP, [rowOf("l1", { balance: 310000.004 }, { link: linkedTo("l-mtg"), statementDate: "2026-02-14" })], { book })[0];
+    expect(fieldOf(draft, "balanceAsOf")).toBeUndefined();
+  });
+
+  it("a Matures in the same month as the loan start is a zero-month term: blocked, not saved", () => {
+    const draft = place(LIAB_MAP, [rowOf("l1", { loanName: "Chase Mortgage", loanStart: "2015-07", matures: "2015-07" })], { book: hendricksBook({ liability: [mortgage] }) })[0];
+    expect(draft.blocked).toEqual({ reason: "Matures is on or before the loan start — check both dates.", cell: at("liab", "l1", "matures") });
+    expect(fieldOf(draft, "termMonths")).toBeUndefined();
+  });
+
   it("Matures sets the term only when Term is blank — counted from the loan start, the one on record, or the balance's date", () => {
     const loan = (values: Record<string, string | number>, extra: Partial<FFRow> = {}) =>
       place(LIAB_MAP, [rowOf("l1", { loanName: "Chase Mortgage", ...values }, extra)], { book: hendricksBook({ liability: [mortgage] }) })[0];

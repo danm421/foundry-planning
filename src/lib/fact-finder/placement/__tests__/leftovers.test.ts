@@ -292,6 +292,21 @@ describe("applyLeftovers", () => {
       ]);
     });
 
+    it("stores an amount rounded to cents", () => {
+      const item: LeftoverItem = { ...emmaNotes, text: "Emma pays $1,250.554 a month in rent." };
+      const draft: TargetDraft = { ...ira, lineId: lineIdOf("f1", "account"), rowId: "f1", fields: [] };
+      const output = answers(field("f1:notes", "f1/account", "value", "1250.554", "$1,250.554"));
+      const { drafts } = applyLeftovers([item], [draft], output, BOOK);
+      expect(drafts[0].fields[0].value).toBe(1250.55);
+    });
+
+    it("refuses a quote that only matches the item through its SSN — the quote is checked against the redacted text the model saw", () => {
+      const item: LeftoverItem = { ...finalNotes, text: "Custodian is Fidelity, SSN 123-45-6789." };
+      const { drafts } = applyLeftovers([item], DRAFTS, answers(field("fn:notes", "r1/account", "custodian", "Fidelity", "Fidelity, SSN 123-45-6789")), BOOK);
+      expect(drafts.slice(0, DRAFTS.length)).toEqual(DRAFTS);
+      expect(drafts.at(-1)?.target).toBe("plan_observation");
+    });
+
     it("lands an amount the quote states, written plainly", () => {
       const draft: TargetDraft = { ...ira, lineId: lineIdOf("f1", "account"), rowId: "f1", fields: [] };
       const output = answers(field("f1:notes", "f1/account", "value", "1250.50", "$1,250.50"));
@@ -337,6 +352,12 @@ describe("applyLeftovers", () => {
     const { drafts, notices } = applyLeftovers([livingNotes], DRAFTS, output, BOOK);
     expect(drafts).toEqual(DRAFTS);
     expect(notices).toEqual(["Not placed: Notes (Current) — It only repeats the mortgage on the Liabilities page."]);
+  });
+
+  it("gives a skip with no reason the fallback notice text", () => {
+    const output = answers({ ...skip("lv1:notes", ""), reason: null });
+    const { notices } = applyLeftovers([livingNotes], DRAFTS, output, BOOK);
+    expect(notices).toEqual(["Not placed: Notes (Current) — nothing to keep"]);
   });
 
   it("caps a skip's reason at 160 characters on one line before it reaches the advisor", () => {

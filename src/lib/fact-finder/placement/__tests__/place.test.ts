@@ -267,6 +267,14 @@ describe("placeFactFinder — a row linked to the other kind of account", () => 
     ]);
   });
 
+  it("a row that is linked to the wrong kind AND has an unfit choice shows the wrong-link reason (the wrong link wins)", () => {
+    const placed = place(
+      { cash: [withCells(rowOf("c1", { accountName: "Consulting Checking", currentValue: 9000 }, { link: linkedTo("b-1") }), { owner: unfit("Mark & Laura", "notAnOption") })] },
+      hendricksBook({ business_account: [business] }),
+    );
+    expect(draft(placed, "c1/account")?.blocked).toEqual({ reason: IS_A_BUSINESS });
+  });
+
   it("a Business row confirmed to an account is blocked whole, with its income and expense", () => {
     const placed = place(
       { business: [rowOf("bz1", { businessName: "Hendricks Consulting", ownersAndPercent: "Mark 100%", annualIncome: 120000, annualExpense: 30000 }, { link: linkedTo("a-1") })] },

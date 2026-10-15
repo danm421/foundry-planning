@@ -141,6 +141,30 @@ describe("TARGETS", () => {
     }
   });
 
+  it("pins the full set of fields the AI step may fill, per target — making any field proposable (or not) changes this list on purpose", () => {
+    const proposable: Partial<Record<TargetKind, string[]>> = {};
+    for (const { target, key, field } of fields) if (field.proposable) (proposable[target] ??= []).push(key);
+    expect(proposable).toEqual({
+      client_household: ["email", "phone", "mobile", "employer", "spouseEmail", "spousePhone", "spouseMobile", "spouseEmployer", "addressLine1", "addressLine2", "city", "state", "postalCode"],
+      family_member: ["dateOfBirth", "notes"],
+      external_beneficiary: ["notes"],
+      related_party: ["employer", "notes"],
+      account: ["value", "custodian", "priorYearEndValue", "propertyAddress", "annualPropertyTax"],
+      business_account: ["value", "basis", "distributionPolicyPercent"],
+      annuity_contract: ["costBasis"],
+      stock_option_grant: ["grantNumber", "grantDate", "sharesGranted", "strikePrice", "expirationDate", "notes"],
+      note_receivable: ["faceValue", "asOfBalance", "interestRate", "monthlyPayment", "termMonths"],
+      liability: ["balance", "interestRate", "monthlyPayment", "termMonths"],
+      expense: ["annualAmount"],
+      savings_rule: ["rothPercent", "employerMatchPct", "employerMatchCap", "employerMatchAmount"],
+      life_insurance_policy: ["carrier", "faceValue", "cashValue", "costBasis", "premiumAmount", "premiumYears", "termIssueYear"],
+      disability_policy: ["carrier", "stdEliminationDays", "stdBenefitPct", "stdDurationWeeks", "stdMonthlyMax", "ltdEliminationDays", "ltdBenefitPct", "ltdMonthlyMax", "colaRate", "annualPremium", "notes"],
+      ltc_policy: ["carrier", "issueYear", "benefitAmount", "eliminationDays", "homeCarePct", "notes"],
+      entity: ["trustee", "notes"],
+      gift: ["year", "amount", "notes"],
+    });
+  });
+
   it("marks the fields that name or own a record", () => {
     const identities = Object.fromEntries(fields.filter((f) => f.field.identity).map((f) => [f.id, f.field.identity]));
     expect(identities).toEqual({

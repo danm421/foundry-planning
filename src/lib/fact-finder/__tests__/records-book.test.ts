@@ -999,4 +999,27 @@ describe.skipIf(!HAS_DB)("loadRecordBook (live DB)", () => {
       expect(none.records[target]).toEqual([]);
     }
   });
+
+  it("two owners that aren't the client and co-client: a stock option account has no sole owner, and a life policy isn't read as joint", async () => {
+    const [options, policy] = await db
+      .insert(accounts)
+      .values([
+        { clientId, scenarioId, name: "Split Options", category: "stock_options" },
+        { clientId, scenarioId, name: "Split Policy", category: "life_insurance", subType: "term", insuredPerson: "client" },
+      ])
+      .returning({ id: accounts.id });
+    try {
+      await db.insert(accountOwners).values(
+        [options.id, policy.id].flatMap((accountId) => [
+          { accountId, familyMemberId: ids.mark, percent: "0.5000" },
+          { accountId, familyMemberId: ids.emma, percent: "0.5000" },
+        ]),
+      );
+      const split = await loadRecordBook(clientId, FIRM, scenarioId);
+      expect(byId(split.records.stock_option_account, options.id)?.values.owner).toBeNull();
+      expect(byId(split.records.life_insurance_policy, policy.id)?.values.ownerRef).toBeNull();
+    } finally {
+      await db.delete(accounts).where(inArray(accounts.id, [options.id, policy.id]));
+    }
+  });
 });
