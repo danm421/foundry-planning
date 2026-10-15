@@ -1,36 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
-import {
-  gifts,
-  liabilities,
-  accounts,
-  entities,
-  familyMembers,
-  externalBeneficiaries,
-  scenarios,
-} from "@/db/schema";
+import { gifts, scenarios } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { requireOrgAndUser } from "@/lib/db-helpers";
-import {
-  assertAccountsInClient,
-  assertLiabilitiesInClient,
-} from "@/lib/db-scoping";
-import { recordAudit } from "@/lib/audit";
-import { giftCreateSchema } from "@/lib/schemas/gifts";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
-import {
-  applyOwnershipTransfer,
-  getProjectionStartYearForScenario,
-  OwnershipTransferError,
-} from "@/lib/ownership";
 import { loadActiveGiftChanges } from "@/lib/scenario/changes";
 import { partitionGiftChanges } from "@/lib/scenario/apply-gift-overlays";
 import { giftDraftToRow } from "@/lib/gifts/scenario-rows";
 import type { Gift } from "@/components/family-view";
-import { buildBundledChildValues } from "./child-values";
+import { createGiftForClient } from "@/lib/clients/gifts-writes";
 
 /**
  * Adapt a scenario-added `Gift` (numbers, from `giftDraftToRow`) to the same
@@ -143,258 +123,19 @@ export async function POST(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
     const body = await request.json();
-    const parsed = giftCreateSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid body", issues: formatZodIssues(parsed.error) },
-        { status: 400 },
-      );
-    }
-    const data = parsed.data;
-
-    if (data.eventKind && data.eventKind !== "outright") {
-      return NextResponse.json(
-        {
-          error:
-            "eventKind must be 'outright' on user-created gifts; engine-emitted kinds are reserved.",
-        },
-        { status: 400 },
-      );
-    }
-
-    if (data.recipientEntityId) {
-      const [entity] = await db
-        .select({
-          id: entities.id,
-          entityType: entities.entityType,
-          isIrrevocable: entities.isIrrevocable,
-        })
-        .from(entities)
-        .where(
-          and(
-            eq(entities.id, data.recipientEntityId),
-            eq(entities.clientId, id),
-          ),
-        );
-      if (!entity) {
-        return NextResponse.json(
-          { error: "Recipient entity not found for this client" },
-          { status: 400 },
-        );
-      }
-      if (entity.entityType !== "trust") {
-        return NextResponse.json(
-          {
-            error:
-              "Recipient must be a trust (gifts to LLCs / foundations / etc. are not supported)",
-          },
-          { status: 400 },
-        );
-      }
-      if (!entity.isIrrevocable) {
-        return NextResponse.json(
-          {
-            error:
-              "Gifts to revocable trusts are not completed gifts; no exemption is used",
-          },
-          { status: 400 },
-        );
-      }
-    }
-    if (data.recipientFamilyMemberId) {
-      const [fm] = await db
-        .select({ id: familyMembers.id })
-        .from(familyMembers)
-        .where(
-          and(
-            eq(familyMembers.id, data.recipientFamilyMemberId),
-            eq(familyMembers.clientId, id),
-          ),
-        );
-      if (!fm) {
-        return NextResponse.json(
-          { error: "Recipient family member not found for this client" },
-          { status: 400 },
-        );
-      }
-    }
-    if (data.recipientExternalBeneficiaryId) {
-      const [ext] = await db
-        .select({ id: externalBeneficiaries.id })
-        .from(externalBeneficiaries)
-        .where(
-          and(
-            eq(externalBeneficiaries.id, data.recipientExternalBeneficiaryId),
-            eq(externalBeneficiaries.clientId, id),
-          ),
-        );
-      if (!ext) {
-        return NextResponse.json(
-          { error: "Recipient external beneficiary not found for this client" },
-          { status: 400 },
-        );
-      }
-    }
-
-    // Cross-tenant FK guard: accountId/liabilityId come straight from the body
-    // and feed bare-id lookups + the destructive applyOwnershipTransfer dual-write.
-    // Without these, a caller could transfer another firm's account/liability
-    // ownership (audit F1). Validate they belong to this client before any use.
-    const acctCheck = await assertAccountsInClient(id, [data.accountId]);
-    if (!acctCheck.ok) {
-      return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
-    }
-    const liabCheck = await assertLiabilitiesInClient(id, [data.liabilityId]);
-    if (!liabCheck.ok) {
-      return NextResponse.json({ error: liabCheck.reason }, { status: 400 });
-    }
-
-    const row = await db.transaction(async (tx) => {
-      const [parent] = await tx
-        .insert(gifts)
-        .values({
-          clientId: id,
-          year: data.year,
-          yearRef: data.yearRef ?? null,
-          // amount is only valid for cash gifts; null for asset/liability transfers
-          amount: data.accountId == null && data.liabilityId == null
-            ? (data.amount != null ? String(data.amount) : null)
-            : null,
-          grantor: data.grantor,
-          recipientEntityId: data.recipientEntityId ?? null,
-          recipientFamilyMemberId: data.recipientFamilyMemberId ?? null,
-          recipientExternalBeneficiaryId: data.recipientExternalBeneficiaryId ?? null,
-          accountId: data.accountId ?? null,
-          liabilityId: data.liabilityId ?? null,
-          percent: data.percent != null ? String(data.percent) : null,
-          valuationDiscount:
-            data.valuationDiscount != null ? String(data.valuationDiscount) : null,
-          parentGiftId: null,
-          useCrummeyPowers: data.useCrummeyPowers ?? false,
-          notes: data.notes ?? null,
-        })
-        .returning();
-
-      // If this is an asset transfer (accountId set, no explicit liabilityId),
-      // check for a linked liability and auto-create a bundled child gift row.
-      let linkedLiabilityId: string | null = null;
-      if (data.accountId != null && data.liabilityId == null) {
-        const linked = await tx.query.liabilities.findFirst({
-          where: and(
-            eq(liabilities.linkedPropertyId, data.accountId),
-            eq(liabilities.clientId, id),
-          ),
-        });
-        if (linked) {
-          linkedLiabilityId = linked.id;
-          await tx.insert(gifts).values(
-            buildBundledChildValues({
-              clientId: id,
-              year: data.year,
-              yearRef: data.yearRef ?? null,
-              grantor: data.grantor,
-              accountId: data.accountId,
-              linkedLiabilityId: linked.id,
-              percent: data.percent ?? null,
-              parentGiftId: parent.id,
-              recipientEntityId: data.recipientEntityId ?? null,
-              recipientFamilyMemberId: data.recipientFamilyMemberId ?? null,
-              recipientExternalBeneficiaryId:
-                data.recipientExternalBeneficiaryId ?? null,
-            }),
-          );
-        }
-      }
-
-      // ── Past-dated dual-write to junction tables ──────────────────────────
-      // For transfers where year < projectionStartYear, the engine won't replay
-      // the event at projection time, so we must persist the post-transfer
-      // ownership state in account_owners / liability_owners right now.
-      // For future-dated transfers (year >= projectionStartYear) the engine fans
-      // the event dynamically — junction tables stay untouched.
-      //
-      // Only fires for asset/liability transfers to a recipient entity (not cash gifts).
-      if (
-        data.recipientEntityId != null &&
-        data.percent != null &&
-        (data.accountId != null || data.liabilityId != null || linkedLiabilityId != null)
-      ) {
-        // Resolve the scenario from the account or liability being transferred.
-        let scenarioId: string | null = null;
-        if (data.accountId != null) {
-          const [acctRow] = await tx
-            .select({ scenarioId: accounts.scenarioId })
-            .from(accounts)
-            .where(eq(accounts.id, data.accountId));
-          scenarioId = acctRow?.scenarioId ?? null;
-        } else if (data.liabilityId != null) {
-          const [liabRow] = await tx
-            .select({ scenarioId: liabilities.scenarioId })
-            .from(liabilities)
-            .where(eq(liabilities.id, data.liabilityId));
-          scenarioId = liabRow?.scenarioId ?? null;
-        }
-
-        if (scenarioId != null) {
-          const projectionStartYear = await getProjectionStartYearForScenario(tx, scenarioId);
-          // If no plan_settings row exists yet, skip the dual-write entirely.
-          if (projectionStartYear != null && data.year < projectionStartYear) {
-            if (data.accountId != null) {
-              await applyOwnershipTransfer(
-                tx,
-                "account",
-                data.accountId,
-                data.percent,
-                data.recipientEntityId,
-              );
-            }
-
-            if (data.liabilityId != null) {
-              await applyOwnershipTransfer(
-                tx,
-                "liability",
-                data.liabilityId,
-                data.percent,
-                data.recipientEntityId,
-              );
-            }
-
-            if (linkedLiabilityId != null) {
-              await applyOwnershipTransfer(
-                tx,
-                "liability",
-                linkedLiabilityId,
-                data.percent,
-                data.recipientEntityId,
-              );
-            }
-          }
-        }
-      }
-      // ── end past-dated dual-write ─────────────────────────────────────────
-
-      return parent;
-    });
-    await recordAudit({
-      action: "gift.create",
-      resourceType: "gift",
-      resourceId: row.id,
+    const result = await createGiftForClient({
       clientId: id,
       firmId,
-      metadata: crossFirmAuditMeta({ access }, callerOrg, {
-        year: row.year,
-        grantor: row.grantor,
-        accountId: row.accountId,
-        liabilityId: row.liabilityId,
-      }),
+      input: body,
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
-    return NextResponse.json(row, { status: 201 });
+    if (!result.ok) {
+      return NextResponse.json(result.body ?? { error: result.error }, { status: result.status });
+    }
+    return NextResponse.json(result.data, { status: 201 });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
-    if (err instanceof OwnershipTransferError) {
-      return NextResponse.json({ error: err.message }, { status: 400 });
-    }
     console.error("POST /api/clients/[id]/gifts error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

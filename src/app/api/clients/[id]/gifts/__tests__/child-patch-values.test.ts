@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildChildPatchValues } from "../child-values";
+import { buildChildPatchValues } from "@/lib/clients/gift-child-values";
 
 describe("buildChildPatchValues", () => {
   it("propagates percent alone when only percent changed", () => {

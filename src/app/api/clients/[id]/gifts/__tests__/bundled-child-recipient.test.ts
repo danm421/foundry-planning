@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildBundledChildValues } from "../child-values";
+import { buildBundledChildValues } from "@/lib/clients/gift-child-values";
 
 describe("buildBundledChildValues", () => {
   const base = {

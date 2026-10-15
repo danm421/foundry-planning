@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
-import {
-  gifts,
-  entities,
-  familyMembers,
-  externalBeneficiaries,
-} from "@/db/schema";
+import { gifts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
@@ -14,8 +8,7 @@ import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
-import { giftUpdateSchema } from "@/lib/schemas/gifts";
-import { buildChildPatchValues } from "../child-values";
+import { updateGiftForClient } from "@/lib/clients/gifts-writes";
 
 export const dynamic = "force-dynamic";
 
@@ -29,158 +22,17 @@ export async function PATCH(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
     const body = await request.json();
-    const parsed = giftUpdateSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid body", issues: formatZodIssues(parsed.error) },
-        { status: 400 },
-      );
-    }
-    const patch = parsed.data as {
-      year?: number;
-      amount?: number;
-      percent?: number | null;
-      valuationDiscount?: number | null;
-      grantor?: "client" | "spouse" | "joint";
-      recipientEntityId?: string | null;
-      recipientFamilyMemberId?: string | null;
-      recipientExternalBeneficiaryId?: string | null;
-      useCrummeyPowers?: boolean;
-      notes?: string | null;
-    };
-
-    if (patch.recipientEntityId) {
-      const [entity] = await db
-        .select({
-          id: entities.id,
-          entityType: entities.entityType,
-          isIrrevocable: entities.isIrrevocable,
-        })
-        .from(entities)
-        .where(
-          and(
-            eq(entities.id, patch.recipientEntityId),
-            eq(entities.clientId, id),
-          ),
-        );
-      if (!entity) {
-        return NextResponse.json(
-          { error: "Recipient entity not found for this client" },
-          { status: 400 },
-        );
-      }
-      if (entity.entityType !== "trust") {
-        return NextResponse.json(
-          { error: "Recipient must be a trust" },
-          { status: 400 },
-        );
-      }
-      if (!entity.isIrrevocable) {
-        return NextResponse.json(
-          { error: "Gifts to revocable trusts are not completed gifts" },
-          { status: 400 },
-        );
-      }
-    }
-    if (patch.recipientFamilyMemberId) {
-      const [fm] = await db
-        .select({ id: familyMembers.id })
-        .from(familyMembers)
-        .where(
-          and(
-            eq(familyMembers.id, patch.recipientFamilyMemberId),
-            eq(familyMembers.clientId, id),
-          ),
-        );
-      if (!fm) {
-        return NextResponse.json(
-          { error: "Recipient family member not found for this client" },
-          { status: 400 },
-        );
-      }
-    }
-    if (patch.recipientExternalBeneficiaryId) {
-      const [ext] = await db
-        .select({ id: externalBeneficiaries.id })
-        .from(externalBeneficiaries)
-        .where(
-          and(
-            eq(externalBeneficiaries.id, patch.recipientExternalBeneficiaryId),
-            eq(externalBeneficiaries.clientId, id),
-          ),
-        );
-      if (!ext) {
-        return NextResponse.json(
-          { error: "Recipient external beneficiary not found for this client" },
-          { status: 400 },
-        );
-      }
-    }
-
-    const row = await db.transaction(async (tx) => {
-      const [updated] = await tx
-        .update(gifts)
-        .set({
-          ...(patch.year !== undefined && { year: patch.year }),
-          ...(patch.amount !== undefined && { amount: String(patch.amount) }),
-          ...(patch.percent !== undefined && {
-            percent: patch.percent != null ? String(patch.percent) : null,
-          }),
-          ...(patch.valuationDiscount !== undefined && {
-            valuationDiscount:
-              patch.valuationDiscount != null ? String(patch.valuationDiscount) : null,
-          }),
-          ...(patch.grantor !== undefined && { grantor: patch.grantor }),
-          ...(patch.recipientEntityId !== undefined && {
-            recipientEntityId: patch.recipientEntityId ?? null,
-          }),
-          ...(patch.recipientFamilyMemberId !== undefined && {
-            recipientFamilyMemberId: patch.recipientFamilyMemberId ?? null,
-          }),
-          ...(patch.recipientExternalBeneficiaryId !== undefined && {
-            recipientExternalBeneficiaryId:
-              patch.recipientExternalBeneficiaryId ?? null,
-          }),
-          ...(patch.useCrummeyPowers !== undefined && {
-            useCrummeyPowers: patch.useCrummeyPowers,
-          }),
-          ...(patch.notes !== undefined && { notes: patch.notes ?? null }),
-          updatedAt: new Date(),
-        })
-        .where(and(eq(gifts.id, giftId), eq(gifts.clientId, id)))
-        .returning();
-
-      if (!updated) return undefined;
-
-      // Propagate to bundled children. `percent` AND the recipient columns —
-      // a parent that moves from a trust to a person leaves the child pointing
-      // at a stale `recipientEntityId` otherwise, and the child then fans a
-      // liability transfer to a party the parent no longer names.
-      if (updated.parentGiftId === null) {
-        const childPatch = buildChildPatchValues(patch);
-        if (childPatch) {
-          await tx
-            .update(gifts)
-            .set({ ...childPatch, updatedAt: new Date() })
-            .where(eq(gifts.parentGiftId, giftId));
-        }
-      }
-
-      return updated;
-    });
-
-    if (!row) {
-      return NextResponse.json({ error: "Gift not found" }, { status: 404 });
-    }
-    await recordAudit({
-      action: "gift.update",
-      resourceType: "gift",
-      resourceId: giftId,
+    const result = await updateGiftForClient({
       clientId: id,
       firmId,
-      metadata: crossFirmAuditMeta({ access }, callerOrg),
+      giftId,
+      input: body,
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
-    return NextResponse.json(row);
+    if (!result.ok) {
+      return NextResponse.json(result.body ?? { error: result.error }, { status: result.status });
+    }
+    return NextResponse.json(result.data);
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
