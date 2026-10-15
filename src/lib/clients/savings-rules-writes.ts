@@ -26,6 +26,7 @@ import { savingsRules } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { assertAccountsInClient, assertIncomesInClient } from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
+import { handleOf, inTransaction, type WriteOptions } from "@/lib/db-tx";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { baseCaseScenarioId } from "./base-case";
 import { replaceSalaryIncomes } from "./salary-basis-incomes";
@@ -89,7 +90,7 @@ export async function createSavingsRuleForClient(args: {
   // 'client' for portal edits; omitted (→ recordAudit's own 'advisor' default)
   // for every advisor call site. Never change that default from here.
   actorKind?: "advisor" | "client" | "system";
-}): Promise<EntityWriteResult<SavingsRuleRow>> {
+} & WriteOptions): Promise<EntityWriteResult<SavingsRuleRow>> {
   const { clientId, firmId, actorId, crossFirmMeta, actorKind } = args;
   const p = (args.input ?? {}) as SavingsRuleInput;
 
@@ -100,7 +101,7 @@ export async function createSavingsRuleForClient(args: {
     return writeError(400, "Missing required fields");
   }
 
-  const acctCheck = await assertAccountsInClient(clientId, [p.accountId]);
+  const acctCheck = await assertAccountsInClient(clientId, [p.accountId], args.tx);
   if (!acctCheck.ok) return writeError(400, acctCheck.reason);
 
   const salaryBasis = basisToStore(p) ?? "owner";
@@ -109,11 +110,11 @@ export async function createSavingsRuleForClient(args: {
   // expenses-writes.ts runs assertAccountsInClient over its dedicated-account
   // list before writing it.
   if (salaryBasis === "selected") {
-    const incCheck = await assertIncomesInClient(clientId, p.salaryIncomeIds ?? []);
+    const incCheck = await assertIncomesInClient(clientId, p.salaryIncomeIds ?? [], args.tx);
     if (!incCheck.ok) return writeError(400, incCheck.reason);
   }
 
-  const [rule] = await db
+  const [rule] = await handleOf(args)
     .insert(savingsRules)
     .values({
       clientId,
@@ -142,7 +143,7 @@ export async function createSavingsRuleForClient(args: {
   // later, so storing today's ids would quietly freeze it. A fresh rule has no
   // rows to clear, so there is nothing to do on the other two.
   if (salaryBasis === "selected") {
-    await db.transaction((tx) => replaceSalaryIncomes(tx, rule.id, p.salaryIncomeIds ?? []));
+    await inTransaction(args, (tx) => replaceSalaryIncomes(tx, rule.id, p.salaryIncomeIds ?? []));
   }
 
   await recordAudit({
@@ -154,6 +155,7 @@ export async function createSavingsRuleForClient(args: {
     actorId,
     actorKind,
     metadata: { accountId: rule.accountId, ...(crossFirmMeta ?? {}) },
+    tx: args.tx,
   });
 
   return { ok: true, data: rule, resourceId: rule.id };
@@ -167,12 +169,12 @@ export async function updateSavingsRuleForClient(args: {
   input: unknown;
   crossFirmMeta?: Record<string, unknown>;
   actorKind?: "advisor" | "client" | "system";
-}): Promise<EntityWriteResult<SavingsRuleRow>> {
+} & WriteOptions): Promise<EntityWriteResult<SavingsRuleRow>> {
   const { clientId, firmId, actorId, ruleId, crossFirmMeta, actorKind } = args;
   const p = (args.input ?? {}) as SavingsRuleInput;
 
   if (p.accountId !== undefined) {
-    const acctCheck = await assertAccountsInClient(clientId, [p.accountId]);
+    const acctCheck = await assertAccountsInClient(clientId, [p.accountId], args.tx);
     if (!acctCheck.ok) return writeError(400, acctCheck.reason);
   }
 
@@ -181,12 +183,12 @@ export async function updateSavingsRuleForClient(args: {
   const salaryBasis = basisToStore(p);
 
   if (salaryBasis === "selected") {
-    const incCheck = await assertIncomesInClient(clientId, p.salaryIncomeIds ?? []);
+    const incCheck = await assertIncomesInClient(clientId, p.salaryIncomeIds ?? [], args.tx);
     if (!incCheck.ok) return writeError(400, incCheck.reason);
   }
 
   // TRUE PARTIAL PATCH — see the header note. Do not collapse these guards.
-  const [updated] = await db
+  const [updated] = await handleOf(args)
     .update(savingsRules)
     .set({
       ...(p.accountId !== undefined && { accountId: p.accountId }),
@@ -233,7 +235,7 @@ export async function updateSavingsRuleForClient(args: {
   // replaces them. An omitted basis touches nothing — the portal's simplified
   // form must not wipe an advisor's selection.
   if (salaryBasis !== undefined) {
-    await db.transaction((tx) =>
+    await inTransaction(args, (tx) =>
       replaceSalaryIncomes(
         tx,
         ruleId,
@@ -251,6 +253,7 @@ export async function updateSavingsRuleForClient(args: {
     actorId,
     actorKind,
     metadata: { accountId: updated.accountId, ...(crossFirmMeta ?? {}) },
+    tx: args.tx,
   });
 
   return { ok: true, data: updated, resourceId: ruleId };

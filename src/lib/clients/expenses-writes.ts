@@ -21,6 +21,7 @@ import {
   assertEntitiesInClient,
 } from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
+import { handleOf, inTransaction, type DbOrTx, type WriteOptions } from "@/lib/db-tx";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { summarizeZodIssues } from "@/lib/schemas/common";
 import { expenseCreateSchema, expenseUpdateSchema } from "@/lib/schemas/expenses";
@@ -73,8 +74,9 @@ const LIVING_ITEMS_NON_LIVING_ERROR = "Only living expenses can be itemized.";
 async function planStartYearFor(
   clientId: string,
   scenarioId: string,
+  handle?: DbOrTx,
 ): Promise<number | null> {
-  const [row] = await db
+  const [row] = await (handle ?? db)
     .select({ y: planSettings.planStartYear })
     .from(planSettings)
     .where(
@@ -92,8 +94,9 @@ async function absorbingRowConflict(
   clientId: string,
   scenarioId: string,
   excludeExpenseId?: string,
+  handle?: DbOrTx,
 ): Promise<{ ok: false; status: number; error: string } | null> {
-  const [other] = await db
+  const [other] = await (handle ?? db)
     .select({ name: expenses.name })
     .from(expenses)
     .where(
@@ -117,9 +120,10 @@ async function absorbingRowConflict(
 async function linkedAccountKinds(
   clientId: string,
   ids: string[],
+  handle?: DbOrTx,
 ): Promise<{ category: string; subType: string | null }[]> {
   if (ids.length === 0) return [];
-  return db
+  return (handle ?? db)
     .select({ category: accounts.category, subType: accounts.subType })
     .from(accounts)
     .where(and(eq(accounts.clientId, clientId), inArray(accounts.id, ids)));
@@ -134,7 +138,7 @@ export async function createExpenseForClient(args: {
   // 'client' for portal edits; omitted (→ recordAudit's own 'advisor' default)
   // for every advisor call site. Never change that default from here.
   actorKind?: "advisor" | "client" | "system";
-}): Promise<EntityWriteResult<ExpenseRow>> {
+} & WriteOptions): Promise<EntityWriteResult<ExpenseRow>> {
   const { clientId, firmId, actorId, input, crossFirmMeta, actorKind } = args;
 
   const scenarioId = await baseCaseScenarioId(clientId, firmId);
@@ -150,21 +154,21 @@ export async function createExpenseForClient(args: {
     return writeError(400, LIVING_ITEMS_NON_LIVING_ERROR);
   }
 
-  const entCheck = await assertEntitiesInClient(clientId, [p.ownerEntityId]);
+  const entCheck = await assertEntitiesInClient(clientId, [p.ownerEntityId], args.tx);
   if (!entCheck.ok) return writeError(400, entCheck.reason);
-  const acctCheck = await assertAccountsInClient(clientId, [p.cashAccountId, p.ownerAccountId]);
+  const acctCheck = await assertAccountsInClient(clientId, [p.cashAccountId, p.ownerAccountId], args.tx);
   if (!acctCheck.ok) return writeError(400, acctCheck.reason);
   if (p.ownerAccountId != null) {
-    const bizCheck = await assertBusinessAccountsInClient(clientId, [p.ownerAccountId]);
+    const bizCheck = await assertBusinessAccountsInClient(clientId, [p.ownerAccountId], args.tx);
     if (!bizCheck.ok) return writeError(400, bizCheck.reason);
   }
   const dedicatedAccountIds = dedupeDedicatedIds(p.dedicatedAccountIds);
   if (dedicatedAccountIds && dedicatedAccountIds.length > 0) {
-    const dedCheck = await assertAccountsInClient(clientId, dedicatedAccountIds);
+    const dedCheck = await assertAccountsInClient(clientId, dedicatedAccountIds, args.tx);
     if (!dedCheck.ok) return writeError(400, dedCheck.reason);
     const fundingError = goalFundingError(
       { type: p.type, isGoal: p.isGoal },
-      await linkedAccountKinds(clientId, dedicatedAccountIds),
+      await linkedAccountKinds(clientId, dedicatedAccountIds, args.tx),
     );
     if (fundingError) return writeError(400, fundingError);
   }
@@ -173,7 +177,7 @@ export async function createExpenseForClient(args: {
   // ignores it elsewhere, but a stored-but-inert flag is a lie the UI renders.
   if (p.absorbsRemainingCashFlow) {
     if (p.type !== "living") return writeError(400, ABSORB_NON_LIVING_ERROR);
-    const planStart = await planStartYearFor(clientId, scenarioId);
+    const planStart = await planStartYearFor(clientId, scenarioId, args.tx);
     if (
       planStart != null &&
       isRetirementLivingExpense(
@@ -188,11 +192,11 @@ export async function createExpenseForClient(args: {
     ) {
       return writeError(400, ABSORB_RETIREMENT_ERROR);
     }
-    const conflict = await absorbingRowConflict(clientId, scenarioId);
+    const conflict = await absorbingRowConflict(clientId, scenarioId, undefined, args.tx);
     if (conflict) return conflict;
   }
 
-  const expense = await db.transaction(async (tx) => {
+  const expense = await inTransaction(args, async (tx) => {
     const [row] = await tx
       .insert(expenses)
       .values({
@@ -243,6 +247,7 @@ export async function createExpenseForClient(args: {
     actorId,
     actorKind,
     metadata: { type: expense.type, name: expense.name, ...(crossFirmMeta ?? {}) },
+    tx: args.tx,
   });
 
   return { ok: true, data: expense, resourceId: expense.id };
@@ -256,7 +261,7 @@ export async function updateExpenseForClient(args: {
   input: unknown;
   crossFirmMeta?: Record<string, unknown>;
   actorKind?: "advisor" | "client" | "system";
-}): Promise<EntityWriteResult<ExpenseRow>> {
+} & WriteOptions): Promise<EntityWriteResult<ExpenseRow>> {
   const { clientId, firmId, actorId, expenseId, input, crossFirmMeta, actorKind } = args;
 
   const a = await verifyClientAccess(clientId);
@@ -293,7 +298,7 @@ export async function updateExpenseForClient(args: {
     fields.absorbsRemainingCashFlow !== undefined ||
     fields.livingItems !== undefined
   ) {
-    [target] = await db
+    [target] = await handleOf(args)
       .select({
         isDefault: expenses.isDefault,
         type: expenses.type,
@@ -324,7 +329,7 @@ export async function updateExpenseForClient(args: {
       return writeError(400, ABSORB_NON_LIVING_ERROR);
     }
     if (target) {
-      const planStart = await planStartYearFor(clientId, target.scenarioId);
+      const planStart = await planStartYearFor(clientId, target.scenarioId, args.tx);
       if (
         planStart != null &&
         isRetirementLivingExpense(
@@ -343,36 +348,36 @@ export async function updateExpenseForClient(args: {
       ) {
         return writeError(400, ABSORB_RETIREMENT_ERROR);
       }
-      const conflict = await absorbingRowConflict(clientId, target.scenarioId, expenseId);
+      const conflict = await absorbingRowConflict(clientId, target.scenarioId, expenseId, args.tx);
       if (conflict) return conflict;
     }
   }
 
   if (p.ownerEntityId !== undefined) {
-    const c = await assertEntitiesInClient(clientId, [p.ownerEntityId]);
+    const c = await assertEntitiesInClient(clientId, [p.ownerEntityId], args.tx);
     if (!c.ok) return writeError(400, c.reason);
   }
   if (p.cashAccountId !== undefined || p.ownerAccountId !== undefined) {
     const c = await assertAccountsInClient(clientId, [
       p.cashAccountId !== undefined ? p.cashAccountId : null,
       p.ownerAccountId !== undefined ? p.ownerAccountId : null,
-    ]);
+    ], args.tx);
     if (!c.ok) return writeError(400, c.reason);
   }
   if (p.ownerAccountId !== undefined && p.ownerAccountId != null) {
-    const b = await assertBusinessAccountsInClient(clientId, [p.ownerAccountId]);
+    const b = await assertBusinessAccountsInClient(clientId, [p.ownerAccountId], args.tx);
     if (!b.ok) return writeError(400, b.reason);
   }
   const dedicatedAccountIds = dedupeDedicatedIds(p.dedicatedAccountIds);
   if (dedicatedAccountIds !== undefined && dedicatedAccountIds.length > 0) {
-    const dedCheck = await assertAccountsInClient(clientId, dedicatedAccountIds);
+    const dedCheck = await assertAccountsInClient(clientId, dedicatedAccountIds, args.tx);
     if (!dedCheck.ok) return writeError(400, dedCheck.reason);
   }
 
   // Goal-funding rule on the row AFTER this patch (spec 2026-10-05). Only a
   // patch touching the type, the goal flag or the links can change the answer.
   if (p.type !== undefined || p.isGoal !== undefined || dedicatedAccountIds !== undefined) {
-    const [stored] = await db
+    const [stored] = await handleOf(args)
       .select({ type: expenses.type, isGoal: expenses.isGoal })
       .from(expenses)
       .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, clientId)));
@@ -380,20 +385,20 @@ export async function updateExpenseForClient(args: {
       const ids =
         dedicatedAccountIds ??
         (
-          await db
+          await handleOf(args)
             .select({ accountId: expenseDedicatedAccounts.accountId })
             .from(expenseDedicatedAccounts)
             .where(eq(expenseDedicatedAccounts.expenseId, expenseId))
         ).map((r) => r.accountId);
       const fundingError = goalFundingError(
         { type: p.type ?? stored.type, isGoal: p.isGoal ?? stored.isGoal },
-        await linkedAccountKinds(clientId, ids),
+        await linkedAccountKinds(clientId, ids, args.tx),
       );
       if (fundingError) return writeError(400, fundingError);
     }
   }
 
-  const updated = await db.transaction(async (tx) => {
+  const updated = await inTransaction(args, async (tx) => {
     const [row] = await tx
       .update(expenses)
       .set({
@@ -464,6 +469,7 @@ export async function updateExpenseForClient(args: {
     actorId,
     actorKind,
     metadata: { type: updated.type, name: updated.name, ...(crossFirmMeta ?? {}) },
+    tx: args.tx,
   });
 
   return { ok: true, data: updated, resourceId: expenseId };

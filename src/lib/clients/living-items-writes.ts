@@ -8,6 +8,7 @@
 import { db } from "@/db";
 import { expenses, scenarios } from "@/db/schema";
 import { and, eq, getTableColumns } from "drizzle-orm";
+import type { DbOrTx, WriteOptions } from "@/lib/db-tx";
 import { isItemizableLivingRow } from "@/lib/living-slot-order";
 import { mergeLivingItems, type LivingItemInput } from "@/lib/living-expense-items";
 import { updateExpenseForClient } from "./expenses-writes";
@@ -20,8 +21,8 @@ export const NO_CURRENT_LIVING_ROW =
 
 /** The base case's Current Living Expenses row, or null. Not an access check:
  *  callers gate first, and the write re-checks. */
-export async function findCurrentLivingExpense(clientId: string): Promise<ExpenseRow | null> {
-  const rows = await db
+export async function findCurrentLivingExpense(clientId: string, handle?: DbOrTx): Promise<ExpenseRow | null> {
+  const rows = await (handle ?? db)
     .select(getTableColumns(expenses))
     .from(expenses)
     .innerJoin(scenarios, eq(scenarios.id, expenses.scenarioId))
@@ -41,10 +42,10 @@ export async function setLivingItemsForClient(args: {
   actorId: string;
   items: LivingItemInput[];
   mode: "add" | "replace";
-}): Promise<EntityWriteResult<ExpenseRow>> {
+} & WriteOptions): Promise<EntityWriteResult<ExpenseRow>> {
   const { clientId, firmId, actorId, items, mode } = args;
 
-  const row = await findCurrentLivingExpense(clientId);
+  const row = await findCurrentLivingExpense(clientId, args.tx);
   if (!row) return writeError(404, NO_CURRENT_LIVING_ROW);
 
   const livingItems = mergeLivingItems(row.livingItems ?? [], items, mode, () =>
@@ -56,5 +57,7 @@ export async function setLivingItemsForClient(args: {
     actorId,
     expenseId: row.id,
     input: { livingItems },
+    tx: args.tx,
+    afterCommit: args.afterCommit,
   });
 }

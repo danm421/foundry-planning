@@ -157,7 +157,7 @@ describe("salary basis", () => {
     );
     expect(res.ok).toBe(false);
     expect(res.ok === false && res.status).toBe(400);
-    expect(assertIncomesSpy).toHaveBeenCalledWith("c1", ["inc-x"]);
+    expect(assertIncomesSpy).toHaveBeenCalledWith("c1", ["inc-x"], undefined);
     expect(insertSpy).not.toHaveBeenCalled();
     expect(txInsertSpy).not.toHaveBeenCalled();
   });

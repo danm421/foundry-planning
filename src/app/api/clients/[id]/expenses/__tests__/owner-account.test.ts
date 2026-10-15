@@ -148,7 +148,7 @@ describe("POST /api/clients/[id]/expenses — ownerAccountId", () => {
     );
 
     expect(res.status).toBe(400);
-    expect(vi.mocked(assertAccountsInClient)).toHaveBeenCalledWith("cli_test", [undefined, ACC_OTHER]);
+    expect(vi.mocked(assertAccountsInClient)).toHaveBeenCalledWith("cli_test", [undefined, ACC_OTHER], undefined);
     expect(insertedValues.length).toBe(0);
   });
 
@@ -174,7 +174,7 @@ describe("POST /api/clients/[id]/expenses — ownerAccountId", () => {
     expect(res.status).toBe(400);
     const json = (await res.json()) as { error: string };
     expect(json.error).toMatch(/not a business account/i);
-    expect(vi.mocked(assertBusinessAccountsInClient)).toHaveBeenCalledWith("cli_test", [ACC_OTHER]);
+    expect(vi.mocked(assertBusinessAccountsInClient)).toHaveBeenCalledWith("cli_test", [ACC_OTHER], undefined);
     expect(insertedValues.length).toBe(0);
   });
 

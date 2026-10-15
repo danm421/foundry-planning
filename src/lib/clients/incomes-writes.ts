@@ -31,6 +31,7 @@ import {
   assertRealEstateAccountsInClient,
 } from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
+import { handleOf, type WriteOptions } from "@/lib/db-tx";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { summarizeZodIssues } from "@/lib/schemas/common";
 import { incomeCreateSchema, incomeUpdateSchema } from "@/lib/schemas/incomes";
@@ -38,12 +39,6 @@ import { baseCaseScenarioId } from "./base-case";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
 
 type IncomeRow = typeof incomes.$inferSelect;
-
-// Drizzle transaction handle — same convention as src/lib/clients/create-client.ts
-// and src/lib/ownership.ts.
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-/** Either the module-level db or a caller's open transaction. */
-type DbOrTx = typeof db | Tx;
 
 export async function createIncomeForClient(args: {
   clientId: string;
@@ -54,7 +49,7 @@ export async function createIncomeForClient(args: {
   // 'client' for portal edits; omitted (→ recordAudit's own 'advisor' default)
   // for every advisor call site. Never change that default from here.
   actorKind?: "advisor" | "client" | "system";
-}): Promise<EntityWriteResult<IncomeRow>> {
+} & WriteOptions): Promise<EntityWriteResult<IncomeRow>> {
   const { clientId, firmId, actorId, input, crossFirmMeta, actorKind } = args;
 
   const scenarioId = await baseCaseScenarioId(clientId, firmId);
@@ -66,21 +61,21 @@ export async function createIncomeForClient(args: {
   }
   const p = parsed.data;
 
-  const entCheck = await assertEntitiesInClient(clientId, [p.ownerEntityId]);
+  const entCheck = await assertEntitiesInClient(clientId, [p.ownerEntityId], args.tx);
   if (!entCheck.ok) return writeError(400, entCheck.reason);
-  const acctCheck = await assertAccountsInClient(clientId, [p.cashAccountId, p.ownerAccountId]);
+  const acctCheck = await assertAccountsInClient(clientId, [p.cashAccountId, p.ownerAccountId], args.tx);
   if (!acctCheck.ok) return writeError(400, acctCheck.reason);
   if (p.ownerAccountId != null) {
-    const bizCheck = await assertBusinessAccountsInClient(clientId, [p.ownerAccountId]);
+    const bizCheck = await assertBusinessAccountsInClient(clientId, [p.ownerAccountId], args.tx);
     if (!bizCheck.ok) return writeError(400, bizCheck.reason);
   }
   if (p.linkedPropertyId != null) {
-    const reCheck = await assertRealEstateAccountsInClient(clientId, [p.linkedPropertyId]);
+    const reCheck = await assertRealEstateAccountsInClient(clientId, [p.linkedPropertyId], args.tx);
     if (!reCheck.ok) return writeError(400, reCheck.reason);
   }
 
   // INSERT column list lifted verbatim from POST route (route.ts L122–148).
-  const [income] = await db
+  const [income] = await handleOf(args)
     .insert(incomes)
     .values({
       clientId,
@@ -124,6 +119,7 @@ export async function createIncomeForClient(args: {
     actorId,
     actorKind,
     metadata: { type: income.type, name: income.name, ...(crossFirmMeta ?? {}) },
+    tx: args.tx,
   });
 
   return { ok: true, data: income, resourceId: income.id };
@@ -137,18 +133,16 @@ export async function updateIncomeForClient(args: {
   input: unknown;
   crossFirmMeta?: Record<string, unknown>;
   actorKind?: "advisor" | "client" | "system";
-  // An open transaction to run the UPDATE on, instead of the module-level `db`.
-  // Additive and optional: every existing caller keeps the standalone behaviour.
+  // `tx`: an open transaction to run the UPDATE on, instead of the module-level `db`.
   // Plan vs. Return's Social Security split needs TWO row updates to commit or
   // roll back together, and a core holding its own `db` handle cannot join the
   // caller's transaction — `db.transaction` checks out a separate connection, so
-  // writes issued on `db` inside it commit independently. The FK-assert READS stay
-  // on `db`; the audit row rides the same handle, so a rolled-back update cannot
-  // leave a committed log entry claiming it happened.
-  tx?: DbOrTx;
-}): Promise<EntityWriteResult<IncomeRow>> {
+  // writes issued on `db` inside it commit independently. The FK-assert reads and
+  // the audit row ride the same handle (a record made earlier in the transaction
+  // is visible to them, and a rolled-back update leaves no committed log entry).
+} & WriteOptions): Promise<EntityWriteResult<IncomeRow>> {
   const { clientId, firmId, actorId, incomeId, input, crossFirmMeta, actorKind } = args;
-  const handle = args.tx ?? db;
+  const handle = handleOf(args);
 
   const a = await verifyClientAccess(clientId);
   if (!a.ok || a.firmId !== firmId) {
@@ -162,22 +156,22 @@ export async function updateIncomeForClient(args: {
   const p = parsed.data;
 
   if (p.ownerEntityId !== undefined) {
-    const c = await assertEntitiesInClient(clientId, [p.ownerEntityId]);
+    const c = await assertEntitiesInClient(clientId, [p.ownerEntityId], args.tx);
     if (!c.ok) return writeError(400, c.reason);
   }
   if (p.cashAccountId !== undefined || p.ownerAccountId !== undefined) {
     const c = await assertAccountsInClient(clientId, [
       p.cashAccountId !== undefined ? p.cashAccountId : null,
       p.ownerAccountId !== undefined ? p.ownerAccountId : null,
-    ]);
+    ], args.tx);
     if (!c.ok) return writeError(400, c.reason);
   }
   if (p.ownerAccountId !== undefined && p.ownerAccountId != null) {
-    const b = await assertBusinessAccountsInClient(clientId, [p.ownerAccountId]);
+    const b = await assertBusinessAccountsInClient(clientId, [p.ownerAccountId], args.tx);
     if (!b.ok) return writeError(400, b.reason);
   }
   if (p.linkedPropertyId !== undefined && p.linkedPropertyId != null) {
-    const r = await assertRealEstateAccountsInClient(clientId, [p.linkedPropertyId]);
+    const r = await assertRealEstateAccountsInClient(clientId, [p.linkedPropertyId], args.tx);
     if (!r.ok) return writeError(400, r.reason);
   }
 
