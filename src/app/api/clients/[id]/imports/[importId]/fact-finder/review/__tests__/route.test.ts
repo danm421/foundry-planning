@@ -198,9 +198,10 @@ describe("POST /fact-finder/review — the change list", () => {
     expect(await res.json()).toEqual({ error: REVIEW_STALE_MESSAGE, factFinder: { ...FULL, version: 4 } });
     expect(recordAudit).not.toHaveBeenCalled();
 
-    // Dropping a vanished link loses the same way.
+    // Dropping a vanished link loses the same way, and a write that didn't land isn't audited.
     vi.mocked(factFinderGate).mockResolvedValueOnce(gateWith(stored({ cash: [{ ...JOINT, link: linkedTo("a-deleted") }] })));
     expect(await (await POST(review(), params)).json()).toEqual({ error: REVIEW_STALE_MESSAGE, factFinder: { ...FULL, version: 4 } });
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 
   it("a later edit drops the stored change set: PATCH writes without keeping it", async () => {
@@ -242,7 +243,21 @@ describe("POST /fact-finder/review — links (D11)", () => {
     expect(vi.mocked(writeFactFinder).mock.calls[0]).toHaveLength(3);
     expect(vi.mocked(writeFactFinder).mock.calls[0][1]).toBe(3);
     expect(chatModel).not.toHaveBeenCalled();
-    expect(recordAudit).not.toHaveBeenCalled();
+    // Like every fact finder write, the drop is audited: which rows lost a link, and to what.
+    expect(recordAudit).toHaveBeenCalledTimes(1);
+    expect(recordAudit).toHaveBeenCalledWith({
+      action: "import.payload.edited",
+      resourceType: "client_import",
+      resourceId: "i1",
+      clientId: "c1",
+      firmId: "org_1",
+      metadata: {
+        surface: "fact_finder_review",
+        importId: "i1",
+        droppedLinks: [{ sectionId: "cash", rowId: "c1", recordId: "a-deleted" }],
+        version: 4,
+      },
+    });
   });
 
   it.each([
