@@ -176,7 +176,9 @@ function schemaProblem(
   columnFeeding: (line: ChangeLine, key: string) => string | undefined,
 ): ChangeLine["blocked"] {
   const action = line.action as "create" | "update";
-  const body = payloadFor(line.target, lineValues(line), placeholders());
+  // Every field, ticked by default or not: the advisor can tick any of them.
+  const everyField = Object.fromEntries(line.fields.map((f) => [f.key, true]));
+  const body = payloadFor(line.target, lineValues(line, everyField), placeholders());
   for (const issue of CHECKS[line.target][action](body)) {
     const payloadKey = keyOf(issue, line.target, body);
     const present = payloadKey !== undefined && body[payloadKey] !== undefined;

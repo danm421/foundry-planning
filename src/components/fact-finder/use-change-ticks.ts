@@ -29,23 +29,34 @@ function readStored(key: string): string | null {
   }
 }
 
-function parseTicks(raw: string | null): ChangeTicks | null {
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** Stored ticks over the defaults: only lines and fields the change set has, only true/false — the rest keep their default. */
+function mergeTicks(raw: string | null, defaults: ChangeTicks): ChangeTicks {
+  let stored: unknown;
   try {
-    const parsed: unknown = JSON.parse(raw ?? "null");
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? (parsed as ChangeTicks) : null;
+    stored = JSON.parse(raw ?? "null");
   } catch {
-    return null;
+    return defaults;
   }
+  if (!isObject(stored)) return defaults;
+  return Object.fromEntries(
+    Object.entries(defaults).map(([lineId, line]) => {
+      const kept = stored[lineId];
+      if (!isObject(kept)) return [lineId, line];
+      return [lineId, Object.fromEntries(Object.entries(line).map(([k, on]) => [k, typeof kept[k] === "boolean" ? kept[k] : on]))];
+    }),
+  );
 }
 
 export function useChangeTicks(importId: string, changeSet: ChangeSet | undefined): ChangeTicksStore {
   const key = changeSet ? `fact-finder-ticks:${importId}:${changeSet.builtAtVersion}` : null;
   // The raw string is the snapshot: equal strings are the same snapshot, so React re-renders only on a change.
   const raw = useSyncExternalStore(noSubscription, () => (key ? readStored(key) : null), () => null);
-  const stored = useMemo(() => parseTicks(raw), [raw]);
-  const defaults = useMemo(() => (changeSet ? defaultTicks(changeSet) : {}), [changeSet]);
+  const stored = useMemo(() => mergeTicks(raw, changeSet ? defaultTicks(changeSet) : {}), [raw, changeSet]);
   const [edited, setEdited] = useState<{ key: string; ticks: ChangeTicks } | null>(null);
-  const ticks = (edited && edited.key === key ? edited.ticks : null) ?? stored ?? defaults;
+  const ticks = (edited && edited.key === key ? edited.ticks : null) ?? stored;
 
   // The toggles read the latest ticks through a ref, so their identity never changes and a tick re-renders only its own line.
   const latest = useRef({ key, ticks });

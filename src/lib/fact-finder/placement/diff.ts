@@ -65,7 +65,7 @@ function diffDraft(draft: TargetDraft, book: RecordBook, labelOf: (ref: RecordRe
     action: draft.recordId === null ? "create" : vanished || fields.length > 0 ? "update" : "none",
     recordId: draft.recordId,
     label: draft.label,
-    ...(draft.fixed ? { fixed: draft.fixed } : {}),
+    ...(draft.fixed && draft.recordId === null ? { fixed: draft.fixed } : {}),
     fields,
     warnings,
     ...(blocked ? { blocked } : {}),

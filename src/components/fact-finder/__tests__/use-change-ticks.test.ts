@@ -113,6 +113,28 @@ describe("useChangeTicks", () => {
     expect(result.current.ticks).toEqual(stored);
   });
 
+  it("reads stored ticks over the defaults, dropping lines, keys and values the change set doesn't have", () => {
+    sessionStorage.setItem("fact-finder-ticks:i-empty:7", "{}");
+    expect(renderHook(() => useChangeTicks("i-empty", changeSet())).result.current.ticks).toEqual(DEFAULTS);
+
+    const stored = {
+      "c1/account": { name: false, value: "yes", bogus: true },
+      "c3/account": { name: true },
+      "c4/account": { name: true },
+      "gone/account": { name: true },
+    };
+    sessionStorage.setItem("fact-finder-ticks:i-odd:7", JSON.stringify(stored));
+    expect(renderHook(() => useChangeTicks("i-odd", changeSet())).result.current.ticks).toEqual({
+      ...DEFAULTS,
+      "c1/account": { name: false, value: true },
+    });
+
+    for (const [i, raw] of ["[]", '"x"', "7", '{"c1/account":[true]}', '{"c1/account":null}', "not json"].entries()) {
+      sessionStorage.setItem(`fact-finder-ticks:i-bad-${i}:7`, raw);
+      expect(renderHook(() => useChangeTicks(`i-bad-${i}`, changeSet())).result.current.ticks, raw).toEqual(DEFAULTS);
+    }
+  });
+
   it("still works when the browser refuses storage: the defaults, and ticks held in memory", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("SecurityError");

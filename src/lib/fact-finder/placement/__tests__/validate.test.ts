@@ -289,6 +289,12 @@ describe("validateLines — the rules around the schemas", () => {
     expect(blockedOf(line("life_insurance_policy", { policyType: "term", termIssueYear: 2015, termLengthYears: 20 }, { action: "update" }))).toBeUndefined();
   });
 
+  it("checks every field, default-ticked or not — the advisor can tick an unticked one", () => {
+    const update = line("account", { subType: "bogus" }, { action: "update" });
+    const unticked = { ...update, fields: update.fields.map((f) => ({ ...f, ticked: false })) };
+    expect(blockedOf(unticked)).toEqual({ reason: "Account type: pick one of the options.", cell: fromCell("subType") });
+  });
+
   it("leaves unchanged and already-blocked lines alone", () => {
     const none = { ...line("account", { name: "" }), action: "none" as const };
     const blocked = { ...line("account", {}), blocked: { reason: "Pick which trust or entity owns it." } };

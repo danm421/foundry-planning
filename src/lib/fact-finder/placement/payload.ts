@@ -30,11 +30,14 @@ export function payloadFor(target: TargetKind, values: Record<string, PlacedValu
   return body;
 }
 
-/** fixed (Create lines only — D1) + every field (and its `with`) of a line, as payloadFor's input. */
+/**
+ * fixed (Create lines only — D1) + each ticked field (and its `with`) of a line, as payloadFor's input. A field
+ * the ticks don't list — or every field, with no ticks — keeps its default tick, so an unticked name never writes.
+ */
 export function lineValues(line: ChangeLine, ticks?: Record<string, boolean>): Record<string, PlacedValue> {
   const values: Record<string, PlacedValue> = line.action === "create" ? { ...line.fixed } : {};
   for (const field of line.fields) {
-    if (ticks && !(ticks[field.key] ?? field.ticked)) continue;
+    if (!(ticks?.[field.key] ?? field.ticked)) continue;
     Object.assign(values, field.with, { [field.key]: field.next });
   }
   return values;

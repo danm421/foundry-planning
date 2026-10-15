@@ -99,6 +99,16 @@ describe("diffDrafts", () => {
     ]);
   });
 
+  it("fixed values ride only on a Create — an Update or unchanged line carries none", () => {
+    const [update, none] = diffDrafts([
+      draft({ target: "account", recordId: "acct-1", fixed: { category: "cash" }, fields: [put("value", 45000)] }),
+      draft({ lineId: "r2/account", rowId: "r2", target: "account", recordId: "acct-1", fixed: { category: "cash" }, fields: [put("value", 41233)] }),
+    ], book({ account: [checking] }));
+    expect([update.action, none.action]).toEqual(["update", "none"]);
+    expect(update).not.toHaveProperty("fixed");
+    expect(none).not.toHaveProperty("fixed");
+  });
+
   it("nothing differs → No changes", () => {
     const [line] = diffDrafts([
       draft({ target: "account", recordId: "acct-1", fields: [put("name", "Joint Checking"), put("value", 41233)] }),

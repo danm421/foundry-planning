@@ -189,15 +189,21 @@ describe("lineValues", () => {
     ...over,
   });
 
-  it("a Create writes its fixed values, every field and each field's companions", () => {
+  it("a Create writes its fixed values, each default-ticked field and its companions", () => {
     expect(lineValues(line({}))).toEqual({
-      type: "salary", owner: "client", name: "Acme salary", annualAmount: 150000, growthRate: 0.03, growthSource: "custom",
+      type: "salary", owner: "client", name: "Salary — Acme", annualAmount: 150000, growthRate: 0.03, growthSource: "custom",
     });
   });
 
   it("an Update writes only its fields — fixed values are create-only", () => {
-    expect(lineValues(line({ action: "update", recordId: "inc-1" }))).toEqual({
+    expect(lineValues(line({ action: "update", recordId: "inc-1" }), { name: true })).toEqual({
       name: "Acme salary", annualAmount: 150000, growthRate: 0.03, growthSource: "custom",
+    });
+  });
+
+  it("without ticks, each field keeps its default tick — the name the screen shows unticked is never written", () => {
+    expect(lineValues(line({ action: "update", recordId: "inc-1" }))).toEqual({
+      annualAmount: 150000, growthRate: 0.03, growthSource: "custom",
     });
   });
 
