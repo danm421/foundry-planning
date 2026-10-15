@@ -6,8 +6,9 @@
 // contacts and is mirrored there; planning fields (retirement ages and months,
 // life expectancies, filing status, risk tolerance) land on the clients row; a
 // change to any plan-horizon input re-derives planEndAge and every scenario's
-// planEndYear.
-import { db } from "@/db";
+// planEndYear. With a caller's transaction (the fact finder save) every
+// statement below runs on it; without one, the clients/CRM write is its own
+// transaction and the rest runs on module `db`, as it always has.
 import {
   clients,
   planSettings,
@@ -27,6 +28,7 @@ import { toClientSnapshot, CLIENT_FIELD_LABELS } from "@/lib/audit/snapshots/cli
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { mirrorContactToCrm } from "@/lib/clients/mirror-contact-to-crm";
 import { syncHouseholdNameFromContacts } from "@/lib/crm/sync-household-name";
+import { handleOf, inTransaction, type DbOrTx, type WriteOptions } from "@/lib/db-tx";
 import { isRiskLevel } from "@/lib/risk-levels";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
@@ -41,12 +43,13 @@ export async function updateClientProfileForClient(args: {
   actorId?: string;
   body: Record<string, unknown>;
   crossFirmMeta?: Record<string, unknown>;
-}): Promise<EntityWriteResult<ClientRow>> {
+} & WriteOptions): Promise<EntityWriteResult<ClientRow>> {
   const { clientId, firmId, actorId, body, crossFirmMeta } = args;
+  const handle = handleOf(args);
 
   const a = await verifyClientAccess(clientId);
   if (!a.ok || a.firmId !== firmId) return writeError(404, "Client not found");
-  const [existing] = await db
+  const [existing] = await handle
     .select()
     .from(clients)
     .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
@@ -54,7 +57,7 @@ export async function updateClientProfileForClient(args: {
 
   // Load the CRM contacts so we know the current identity state for
   // horizon recompute, spouse-removal pre-checks, and family_member sync.
-  const crmContactRows = await db
+  const crmContactRows = await handle
     .select()
     .from(crmHouseholdContacts)
     .where(eq(crmHouseholdContacts.householdId, existing.crmHouseholdId));
@@ -76,12 +79,12 @@ export async function updateClientProfileForClient(args: {
     spouseContact?.firstName != null &&
     spouseContact.firstName !== "";
   if (spouseBeingRemoved) {
-    const [spouseFm] = await db
+    const [spouseFm] = await handle
       .select({ id: familyMembers.id })
       .from(familyMembers)
       .where(and(eq(familyMembers.clientId, clientId), eq(familyMembers.role, "spouse")));
     if (spouseFm) {
-      const blockers = await collectSpouseDependents(spouseFm.id);
+      const blockers = await collectSpouseDependents(spouseFm.id, handle);
       if (blockers.length > 0) {
         return writeError(
           409,
@@ -155,12 +158,13 @@ export async function updateClientProfileForClient(args: {
   // Atomically mirror identity to CRM and update the clients row so a partial
   // failure can't leave CRM contacts ahead of the planning row (or vice
   // versa). Audit/plan-settings/family-member sync below stay outside — they
-  // are idempotent and not load-bearing for contact-info correctness.
+  // are idempotent and not load-bearing for contact-info correctness — unless
+  // the caller has a transaction, which then holds them all.
   // Did this edit touch any name field? If so, the denormalized CRM
   // household name may need to follow (handled inside the txn below).
   const nameChanged = HOUSEHOLD_NAME_FIELDS.some((k) => k in identityPatch);
 
-  const updated = await db.transaction(async (tx) => {
+  const updated = await inTransaction(args, async (tx) => {
     await mirrorContactToCrm(tx, existing.crmHouseholdId, identityPatch);
     const [u] = await tx
       .update(clients)
@@ -186,7 +190,7 @@ export async function updateClientProfileForClient(args: {
       (identityPatch.dateOfBirth as string | undefined) ??
       primaryContact.dateOfBirth;
     const newEndYear = computePlanEndYear(dobForHorizon, updateBody.planEndAge as number);
-    await db
+    await handle
       .update(planSettings)
       .set({ planEndYear: newEndYear, updatedAt: new Date() })
       .where(eq(planSettings.clientId, clientId));
@@ -201,7 +205,7 @@ export async function updateClientProfileForClient(args: {
     identityPatch,
   );
 
-  await syncHouseholdFamilyMembers(clientId, effectiveIdentity);
+  await syncHouseholdFamilyMembers(clientId, effectiveIdentity, handle);
 
   await recordUpdate({
     action: "client.update",
@@ -214,6 +218,7 @@ export async function updateClientProfileForClient(args: {
     after: toClientSnapshot(updated),
     fieldLabels: CLIENT_FIELD_LABELS,
     extraMetadata: crossFirmMeta,
+    tx: args.tx,
   });
 
 
@@ -270,18 +275,18 @@ const IDENTITY_FIELDS = [
 // trigger sum-violation aborts on cascade; trust_split_interest_details
 // measuring lives are RESTRICT FKs; beneficiary_designations and gifts cascade
 // cleanly but we surface them so removal isn't silent data loss.
-async function collectSpouseDependents(spouseFmId: string): Promise<string[]> {
+async function collectSpouseDependents(spouseFmId: string, handle: DbOrTx): Promise<string[]> {
   const [accs, liabs, ents, mlife, beneRefs, giftRefs] = await Promise.all([
-    db.select({ id: accountOwners.accountId }).from(accountOwners).where(eq(accountOwners.familyMemberId, spouseFmId)).limit(1),
-    db.select({ id: liabilityOwners.liabilityId }).from(liabilityOwners).where(eq(liabilityOwners.familyMemberId, spouseFmId)).limit(1),
-    db.select({ id: entityOwners.entityId }).from(entityOwners).where(eq(entityOwners.familyMemberId, spouseFmId)).limit(1),
-    db
+    handle.select({ id: accountOwners.accountId }).from(accountOwners).where(eq(accountOwners.familyMemberId, spouseFmId)).limit(1),
+    handle.select({ id: liabilityOwners.liabilityId }).from(liabilityOwners).where(eq(liabilityOwners.familyMemberId, spouseFmId)).limit(1),
+    handle.select({ id: entityOwners.entityId }).from(entityOwners).where(eq(entityOwners.familyMemberId, spouseFmId)).limit(1),
+    handle
       .select({ id: trustSplitInterestDetails.entityId })
       .from(trustSplitInterestDetails)
       .where(or(eq(trustSplitInterestDetails.measuringLife1Id, spouseFmId), eq(trustSplitInterestDetails.measuringLife2Id, spouseFmId)))
       .limit(1),
-    db.select({ id: beneficiaryDesignations.id }).from(beneficiaryDesignations).where(eq(beneficiaryDesignations.familyMemberId, spouseFmId)).limit(1),
-    db.select({ id: gifts.id }).from(gifts).where(eq(gifts.recipientFamilyMemberId, spouseFmId)).limit(1),
+    handle.select({ id: beneficiaryDesignations.id }).from(beneficiaryDesignations).where(eq(beneficiaryDesignations.familyMemberId, spouseFmId)).limit(1),
+    handle.select({ id: gifts.id }).from(gifts).where(eq(gifts.recipientFamilyMemberId, spouseFmId)).limit(1),
   ]);
   const out: string[] = [];
   if (accs.length) out.push("accounts");
@@ -337,8 +342,9 @@ function buildEffectiveIdentity(
 async function syncHouseholdFamilyMembers(
   clientId: string,
   c: EffectiveIdentity,
+  handle: DbOrTx,
 ): Promise<void> {
-  const rows = await db
+  const rows = await handle
     .select()
     .from(familyMembers)
     .where(and(eq(familyMembers.clientId, clientId), inArray(familyMembers.role, ["client", "spouse"])));
@@ -346,7 +352,7 @@ async function syncHouseholdFamilyMembers(
   const spouseRow = rows.find((r) => r.role === "spouse");
 
   if (clientRow) {
-    await db
+    await handle
       .update(familyMembers)
       .set({
         firstName: c.firstName,
@@ -356,7 +362,7 @@ async function syncHouseholdFamilyMembers(
       })
       .where(eq(familyMembers.id, clientRow.id));
   } else {
-    await db.insert(familyMembers).values({
+    await handle.insert(familyMembers).values({
       clientId,
       role: "client",
       relationship: "other",
@@ -373,12 +379,12 @@ async function syncHouseholdFamilyMembers(
       dateOfBirth: c.spouseDob ?? null,
     };
     if (spouseRow) {
-      await db
+      await handle
         .update(familyMembers)
         .set({ ...spouseFields, updatedAt: new Date() })
         .where(eq(familyMembers.id, spouseRow.id));
     } else {
-      await db.insert(familyMembers).values({
+      await handle.insert(familyMembers).values({
         clientId,
         role: "spouse",
         relationship: "other",
@@ -386,6 +392,6 @@ async function syncHouseholdFamilyMembers(
       });
     }
   } else if (spouseRow) {
-    await db.delete(familyMembers).where(eq(familyMembers.id, spouseRow.id));
+    await handle.delete(familyMembers).where(eq(familyMembers.id, spouseRow.id));
   }
 }
