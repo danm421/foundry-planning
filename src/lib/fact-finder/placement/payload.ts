@@ -64,7 +64,8 @@ function expand(target: TargetKind, key: string, value: PlacedValue, resolve: Re
         ? { [`${key}FamilyMemberId`]: resolve.id(value), [`${key}Name`]: null }
         : { [`${key}FamilyMemberId`]: null, [`${key}Name`]: value };
     case "ref":
-      return { [key]: resolve.id(value as RecordRef) };
+      // A null link clears it: a standalone LTC policy's `with` drops the rider's life policy.
+      return { [key]: value === null ? null : resolve.id(value as RecordRef) };
     case "owners":
       return { [key]: entries(value).map((e) => owner(target, e, resolve)) };
     case "policyOwner":

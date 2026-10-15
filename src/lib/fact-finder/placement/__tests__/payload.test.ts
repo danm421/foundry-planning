@@ -24,6 +24,12 @@ describe("payloadFor", () => {
     ).toEqual({ name: "Acme LLC income", annualAmount: 120000, growthRate: 0.03, growthSource: "custom", ownerAccountId: "new:re1/account" });
   });
 
+  it("a null link clears it (a standalone LTC policy has no life policy) — never resolved as a ref", () => {
+    expect(payloadFor("ltc_policy", { kind: "standalone", lifePolicyAccountId: null, riderBenefitMode: null }, resolve)).toEqual({
+      kind: "standalone", lifePolicyAccountId: null, riderBenefitMode: null,
+    });
+  });
+
   it("splits a month-year into its month and year keys", () => {
     expect(payloadFor("liability", { start: "2015-07", balanceAsOf: "2026-03", linkedPropertyId: newHouse }, resolve)).toEqual({
       startMonth: 7, startYear: 2015, balanceAsOfMonth: 3, balanceAsOfYear: 2026, linkedPropertyId: "new:re1/account",

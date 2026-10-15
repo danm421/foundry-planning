@@ -4,10 +4,13 @@ import { ltcPolicyProblems, type LtcCrossFieldInput } from "@/lib/schemas/ltc-po
 import { findSection } from "../../../schema";
 import type { FFRow } from "../../../types";
 import { bookWith, contextOf, hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "../../__tests__/fixtures";
+import type { ChangeLine } from "../../../change-set";
 import { diffDrafts } from "../../diff";
-import { lineValues } from "../../payload";
+import { lineValues, payloadFor, type Resolve } from "../../payload";
 import { NO_CO_CLIENT_REASON } from "../../refs";
 import type { BookRecord, RecordBook, TargetDraft } from "../../types";
+import { validateLines } from "../../validate";
+import { columnFeeding } from "../index";
 import { DISABILITY_MAP, INSURANCE_NOTES_MAP, LIFE_MAP, LTC_MAP } from "../insurance";
 import type { SectionMap } from "../types";
 
@@ -512,6 +515,24 @@ describe("LTC_MAP", () => {
       expect(fieldOf(d, "kind")?.with).toEqual(STANDALONE_WITH);
       expect(d.blocked).toBeUndefined();
       expect(problems).toEqual([]);
+    });
+
+    it("a standalone line — new, or a rider made standalone — passes the save's payload and checks, its life policy link cleared", () => {
+      const validate = (lines: ChangeLine[]) => validateLines(lines, (l, key) => columnFeeding(l.sectionId, l.target, key));
+      const ids: Resolve = { id: (ref) => (ref.ref === "record" ? ref.id : "00000000-0000-4000-8000-000000000001"), year: () => 2026 };
+
+      const book = hendricksBook();
+      const fresh = rowOf("ltc-1", {
+        policyName: "Genworth LTC", whoIsCovered: "Client", policyType: "Traditional standalone", issueYear: 2015, benefitAmount: 6000, benefitsLast: "Lifetime",
+      });
+      const [created] = validate(diffDrafts(place(LTC_MAP, [fresh], book).drafts, book));
+      expect([created.action, created.blocked]).toEqual(["create", undefined]);
+      expect(payloadFor("ltc_policy", lineValues(created), ids)).toMatchObject({ kind: "standalone", lifePolicyAccountId: null, riderBenefitMode: null });
+
+      const { line } = flip(rider, { policyType: "Traditional standalone", benefitAmount: 6000, benefitsLast: "Lifetime" });
+      const [updated] = validate([line]);
+      expect([updated.action, updated.blocked]).toEqual(["update", undefined]);
+      expect(payloadFor("ltc_policy", lineValues(updated), ids)).toMatchObject({ kind: "standalone", lifePolicyAccountId: null });
     });
 
     it("rider → standalone without its benefit amount or how long benefits last is blocked on the cell to fill", () => {
