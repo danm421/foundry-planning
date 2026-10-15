@@ -260,11 +260,18 @@ const LTC_PREMIUM_YEARS: ByMode = {
   keyOf: { to_age: "premiumPayToAge", years: "premiumPayYears" },
 };
 
-/** The rider terms the fact finder doesn't ask (D7): the Add dialog's rider defaults. */
-const { riderBenefitMode, riderMonthlyPct, riderMaxPct, extensionYears, residualDeathBenefit } = LTC_RIDER_DEFAULTS;
-const RIDER_TERMS = { riderBenefitMode, riderMonthlyPct, riderMaxPct, extensionYears, residualDeathBenefit };
+/**
+ * What the type writes with it, so a policy on record that changes type passes
+ * the edit route's rules on the merged row. A rider: the terms the fact finder
+ * doesn't ask (D7: the Add dialog's rider defaults), and no premium or shared
+ * care of its own. A standalone policy: no life policy and no rider terms.
+ */
+const { riderBenefitMode, riderMonthlyPct, riderMaxPct, extensionYears, residualDeathBenefit, annualPremium, sharedCare } = LTC_RIDER_DEFAULTS;
+const RIDER_TERMS = { riderBenefitMode, riderMonthlyPct, riderMaxPct, extensionYears, residualDeathBenefit, annualPremium, sharedCare };
+const STANDALONE_TERMS = { lifePolicyAccountId: null, riderBenefitMode: null, riderMonthlyPct: null, riderMaxPct: null };
 /** A stated benefit amount makes a rider pay that amount (a share-of-the-death-benefit rider saves its amount as 0). */
 const FIXED_BENEFIT = { riderBenefitMode: "fixed", riderMonthlyPct: null };
+const NEEDS_STANDALONE_TERMS = "A standalone policy needs its benefit amount and how long benefits last.";
 const pct = (fraction: number) => `${fraction * 100}%`;
 
 export const LTC_MAP: SectionMap = {
@@ -300,6 +307,9 @@ export const LTC_MAP: SectionMap = {
       const kind = choice(LTC_KIND_MAP, row, "policyType");
       const rider = (kind ?? recorded("kind")) === "life_rider";
       const amount = num(row, "benefitAmount");
+      // The terms ride with the type: written for a new policy, or one on record changing type. A stated
+      // amount's fixed benefit rides with it too, so it holds when the amount equals the record's (no field).
+      const kindTerms = kind === "life_rider" ? { ...RIDER_TERMS, ...(amount ? FIXED_BENEFIT : {}) } : kind === "standalone" ? STANDALONE_TERMS : undefined;
       const b = new DraftBuilder({
         sectionId: "ltc", row, target: "ltc_policy", recordId,
         label: text(row, "policyName") ?? text(row, "carrier") ?? "Long-term care policy",
@@ -307,8 +317,7 @@ export const LTC_MAP: SectionMap = {
         .put("name", text(row, "policyName"), ["policyName"])
         .put("carrier", text(row, "carrier"), ["carrier"])
         .put("insured", insured, ["whoIsCovered"])
-        // The rider terms ride with the type: written for a new rider, or a policy on record becoming one.
-        .put("kind", kind, ["policyType"], kind === "life_rider" ? RIDER_TERMS : undefined)
+        .put("kind", kind, ["policyType"], kindTerms)
         .put("issueYear", num(row, "issueYear"), ["issueYear"])
         // After `kind`, so on a rider the stated amount's fixed benefit wins over the default terms.
         .put("benefitAmount", rider && !amount ? null : amount, ["benefitAmount"], rider && amount ? FIXED_BENEFIT : undefined)
@@ -357,6 +366,14 @@ export const LTC_MAP: SectionMap = {
           .put("premiumPayMode", pays, ["premiumsPaid"]);
         // A new policy's premiums are paid for life (the create schema's default).
         putByMode(b, "ltc", row, LTC_PREMIUM_YEARS, pays ?? recorded("premiumPayMode") ?? "lifetime");
+        // A rider on record has no benefit period, and often a 0 amount (share of the death benefit): the row must give them.
+        if (recorded("kind") === "life_rider") {
+          const amountNow = amount ?? recorded("benefitAmount");
+          const lastsNow = lasts ?? recorded("benefitPeriodMode");
+          if (lastsNow == null) b.block(NEEDS_STANDALONE_TERMS, "benefitsLast");
+          else if (!(typeof amountNow === "number" && amountNow > 0)) b.block(NEEDS_STANDALONE_TERMS, "benefitAmount");
+          else if (lastsNow === "years" && (num(row, "benefitYears") ?? recorded("benefitPeriodYears")) == null) b.block(NEEDS_STANDALONE_TERMS, "benefitYears");
+        }
       }
       needsCoClient(b, ctx, insured, "whoIsCovered");
       return b.build();

@@ -1,8 +1,11 @@
 // src/lib/fact-finder/placement/map/__tests__/insurance.test.ts
 import { describe, expect, it } from "vitest";
+import { ltcPolicyProblems, type LtcCrossFieldInput } from "@/lib/schemas/ltc-policies";
 import { findSection } from "../../../schema";
 import type { FFRow } from "../../../types";
 import { bookWith, contextOf, hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "../../__tests__/fixtures";
+import { diffDrafts } from "../../diff";
+import { lineValues } from "../../payload";
 import { NO_CO_CLIENT_REASON } from "../../refs";
 import type { BookRecord, RecordBook, TargetDraft } from "../../types";
 import { DISABILITY_MAP, INSURANCE_NOTES_MAP, LIFE_MAP, LTC_MAP } from "../insurance";
@@ -329,6 +332,10 @@ describe("LTC_MAP", () => {
     place(LTC_MAP, [rowOf("ltc-1", cells)], book, { life: [lifeRow] }).drafts[0];
   const RIDER = "Rider on a life policy";
   const RIDER_TERMS = { riderBenefitMode: "pct_of_face", riderMonthlyPct: 0.02, riderMaxPct: 1, extensionYears: 0, residualDeathBenefit: 0 };
+  /** What a rider stores that a standalone policy may not — the type clears them (LTC_RIDER_DEFAULTS). */
+  const RIDER_WITH = { ...RIDER_TERMS, annualPremium: 0, sharedCare: false };
+  /** What a standalone policy may not keep from a rider. */
+  const STANDALONE_WITH = { lifePolicyAccountId: null, riderBenefitMode: null, riderMonthlyPct: null, riderMaxPct: null };
 
   it("a filled standalone policy: every field from its cell, percents as fractions, years and premiums by their modes", () => {
     const row = rowOf("ltc-1", {
@@ -349,7 +356,7 @@ describe("LTC_MAP", () => {
           { key: "name", value: "Genworth LTC", from: [c("policyName")] },
           { key: "carrier", value: "Genworth", from: [c("carrier")] },
           { key: "insured", value: "spouse", from: [c("whoIsCovered")] },
-          { key: "kind", value: "standalone", from: [c("policyType")] },
+          { key: "kind", value: "standalone", from: [c("policyType")], with: STANDALONE_WITH },
           { key: "issueYear", value: 2015, from: [c("issueYear")] },
           { key: "benefitAmount", value: 6000, from: [c("benefitAmount")] },
           { key: "benefitUnit", value: "month", from: [c("benefitPer")] },
@@ -407,7 +414,7 @@ describe("LTC_MAP", () => {
     expect(d.fields).toEqual([
       { key: "name", value: "NWM LTC rider", from: [c("policyName")] },
       { key: "insured", value: "client", from: [c("whoIsCovered")] },
-      { key: "kind", value: "life_rider", from: [c("policyType")], with: RIDER_TERMS },
+      { key: "kind", value: "life_rider", from: [c("policyType")], with: RIDER_WITH },
       { key: "issueYear", value: 2018, from: [c("issueYear")] },
       { key: "eliminationDays", value: 90, from: [c("waitingDays")] },
       { key: "lifePolicyAccountId", value: { ref: "line", target: "life_insurance_policy", lineId: "life-1/life_insurance_policy" }, from: [c("riderLifePolicy")] },
@@ -459,8 +466,67 @@ describe("LTC_MAP", () => {
       ltc_policy: [recordOf("ltc-rec", "Genworth LTC", { name: "Genworth LTC", kind: "standalone", lifePolicyAccountId: null })],
     });
     const d = place(LTC_MAP, [rowOf("ltc-1", { policyType: RIDER, riderLifePolicy: "NWM Whole Life" }, { link: linkedTo("ltc-rec") })], book, { life: [lifeRow] }).drafts[0];
-    expect(fieldOf(d, "kind")?.with).toEqual(RIDER_TERMS);
+    expect(fieldOf(d, "kind")?.with).toEqual(RIDER_WITH);
     expect(d.warnings).toEqual(["Rider terms use the standard defaults (2% of the death benefit a month, up to 100%) — check them in Details."]);
+  });
+
+  describe("changing a policy on record between standalone and rider saves", () => {
+    /** The policy as the edit route checks it: the stored row with the line's values (fields and their `with`) over it. */
+    const savedAs = (record: BookRecord, d: TargetDraft, book: RecordBook) => {
+      const [line] = diffDrafts([d], book);
+      return { line, problems: ltcPolicyProblems({ ...record.values, ...lineValues(line) } as LtcCrossFieldInput) };
+    };
+    const standalone = recordOf("ltc-rec", "Genworth LTC", {
+      name: "Genworth LTC", kind: "standalone", lifePolicyAccountId: null, benefitAmount: 6000, benefitUnit: "month",
+      benefitPeriodMode: "years", benefitPeriodYears: 3, riderBenefitMode: null, riderMonthlyPct: null, riderMaxPct: null,
+      annualPremium: 2400, sharedCare: true, premiumPayMode: "lifetime",
+    });
+    const rider = recordOf("ltc-rec", "NWM LTC rider", {
+      name: "NWM LTC rider", kind: "life_rider", lifePolicyAccountId: { ref: "record", target: "life_insurance_policy", id: "pol-1" },
+      benefitAmount: 0, benefitUnit: "month", benefitPeriodMode: null, benefitPeriodYears: null, riderBenefitMode: "pct_of_face",
+      riderMonthlyPct: 0.02, riderMaxPct: 1, annualPremium: 0, sharedCare: false, premiumPayMode: "paid_up",
+    });
+    const flip = (record: BookRecord, cells: Parameters<typeof rowOf>[1]) => {
+      const book = hendricksBook({ ltc_policy: [record] });
+      const d = place(LTC_MAP, [rowOf("ltc-1", cells, { link: linkedTo("ltc-rec") })], book, { life: [lifeRow] }).drafts[0];
+      return { d, ...savedAs(record, d, book) };
+    };
+
+    it("standalone → rider: the type clears the premium and shared care the standalone policy had", () => {
+      const { d, problems } = flip(standalone, { policyType: RIDER, riderLifePolicy: "NWM Whole Life" });
+      expect(fieldOf(d, "kind")?.with).toEqual(RIDER_WITH);
+      expect(d.blocked).toBeUndefined();
+      expect(problems).toEqual([]);
+    });
+
+    it("standalone → rider with the same benefit amount: the type still makes the benefit fixed", () => {
+      const { d, line, problems } = flip(standalone, { policyType: RIDER, riderLifePolicy: "NWM Whole Life", benefitAmount: 6000 });
+      expect(fieldOf(d, "kind")?.with).toEqual({ ...RIDER_WITH, riderBenefitMode: "fixed", riderMonthlyPct: null });
+      expect(line.fields.map((f) => f.key)).not.toContain("benefitAmount");   // equal to the record's: the diff drops it
+      expect(lineValues(line).riderBenefitMode).toBe("fixed");
+      expect(problems).toEqual([]);
+    });
+
+    it("rider → standalone with its benefit amount and how long benefits last: the type clears the rider's life policy and terms", () => {
+      const { d, problems } = flip(rider, { policyType: "Traditional standalone", benefitAmount: 6000, benefitsLast: "Lifetime" });
+      expect(fieldOf(d, "kind")?.with).toEqual(STANDALONE_WITH);
+      expect(d.blocked).toBeUndefined();
+      expect(problems).toEqual([]);
+    });
+
+    it("rider → standalone without its benefit amount or how long benefits last is blocked on the cell to fill", () => {
+      const why = "A standalone policy needs its benefit amount and how long benefits last.";
+      expect(flip(rider, { policyType: "Traditional standalone" }).d.blocked).toEqual({ reason: why, cell: c("benefitsLast") });
+      expect(flip(rider, { policyType: "Traditional standalone", benefitAmount: 6000 }).d.blocked).toEqual({ reason: why, cell: c("benefitsLast") });
+      expect(flip(rider, { policyType: "Traditional standalone", benefitsLast: "Lifetime" }).d.blocked).toEqual({ reason: why, cell: c("benefitAmount") });
+      expect(flip(rider, { policyType: "Traditional standalone", benefitsLast: "For a number of years" }).d.blocked).toEqual({ reason: why, cell: c("benefitAmount") });
+      expect(flip(rider, { policyType: "Traditional standalone", benefitAmount: 6000, benefitsLast: "For a number of years" }).d.blocked).toEqual({
+        reason: why, cell: c("benefitYears"),
+      });
+      // A fixed-benefit rider's amount on record is enough.
+      const fixed = { ...rider, values: { ...rider.values, riderBenefitMode: "fixed", riderMonthlyPct: null, benefitAmount: 5000 } };
+      expect(flip(fixed, { policyType: "Traditional standalone", benefitsLast: "Lifetime" }).d.blocked).toBeUndefined();
+    });
   });
 
   it("covering the co-client needs a co-client; a row linked to a record not in the book never updates it", () => {
