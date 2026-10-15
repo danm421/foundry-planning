@@ -211,11 +211,17 @@ function distinct(hits: readonly Entry[]): Entry[] {
   });
 }
 
+/** Words that say "a last 4" and nothing else: digits, x masks ("xxxx-2201"), "acct ending in", "account no". */
+const LAST4_ONLY = /^(?:x*\d*|acct|account|ending|in|no|number)$/;
+
 /**
  * A whole name, tier by tier — so a fact finder row beats a record of the same
- * name. Else the weak steps across every tier at once — last 4 (two of one
- * last 4 told apart by the words around it), then a first name — so a row and
- * a plan-only record that both answer are two hits, never a guess (D6).
+ * name. Else the weak steps across every tier at once — last 4, then a first
+ * name — so a row and a plan-only record that both answer are two hits, never
+ * a guess (D6). A last 4 hit counts when the text names its custodian, carrier
+ * or name, or every other word of the text is one of theirs ("Northwestern
+ * ··4321", "IRA 2201", "acct ending 2201"); "Chase checking 2201" never finds
+ * a Fidelity IRA ··2201.
  */
 function hitsFor(tiers: readonly (readonly Entry[])[], text: string, by: { last4?: true; firstName?: true } = {}): Entry[] {
   const q = normText(text);
@@ -228,8 +234,12 @@ function hitsFor(tiers: readonly (readonly Entry[])[], text: string, by: { last4
   const l4 = by.last4 && /\d{4}/.test(text) ? last4Of(text) : "";
   if (l4) {
     const byLast4 = all.filter((e) => e.last4 === l4);
-    const told = byLast4.filter((e) => [e.issuer, ...e.names].some((w) => w && ` ${q} `.includes(` ${w} `)));
-    if (byLast4.length > 0) return distinct(told.length > 0 ? told : byLast4);
+    const words = q.split(" ").filter((w) => !LAST4_ONLY.test(w));
+    const told = byLast4.filter((e) => {
+      const own = [e.issuer, ...e.names].filter((w): w is string => Boolean(w));
+      return own.some((w) => ` ${q} `.includes(` ${w} `)) || words.every((w) => own.some((o) => ` ${o} `.includes(` ${w} `)));
+    });
+    if (told.length > 0) return distinct(told);
   }
   return by.firstName ? distinct(all.filter((e) => e.first === q)) : [];
 }

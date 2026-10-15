@@ -119,6 +119,16 @@ describe("findAccount", () => {
     expect(findAccount(index, "…1234")).toEqual({ ok: false, reason: 'Two accounts match "…1234" — use the name or last 4.' });
   });
 
+  it("a last 4 alone, or with words like \"acct ending\" or the account's own, is enough; words that name another account match nothing", () => {
+    expect(findAccount(index, "acct ending 2201")).toMatchObject({ ok: true, ref: record("a-ira", "account") });
+    expect(findAccount(index, "Account # xxxx-2201")).toMatchObject({ ok: true, ref: record("a-ira", "account") });
+    expect(findAccount(index, "IRA 2201")).toMatchObject({ ok: true, ref: record("a-ira", "account") });
+    expect(findAccount(index, "Chase checking 2201")).toEqual({
+      ok: false,
+      reason: 'No account named "Chase checking 2201" in this fact finder or on the plan.',
+    });
+  });
+
   it("finds a business as a business account, and looks only in the sections asked for", () => {
     expect(findAccount(index, "Hendricks Design")).toMatchObject({ ok: true, ref: record("b-1", "business_account") });
     expect(findAccount(index, "Lake House")).toMatchObject({ ok: true, ref: record("a-lake", "account") });
