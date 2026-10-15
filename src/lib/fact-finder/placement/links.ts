@@ -19,8 +19,8 @@ export interface LinkedRow {
 }
 
 export interface LinkProblems {
-  /** A confirmed or suggested link to a record that isn't one of the client's base-case records of its kind. */
-  vanished: LinkedRow[];
+  /** A confirmed or suggested link to a record that isn't one of the client's base-case records of its kind: where it sat, and the record it named. */
+  vanished: (LinkedRow & { sectionId: string; recordId: string })[];
   /** Suggested links that still need a click. */
   needsClick: number;
   /** Two or more live rows confirmed to one record. */
@@ -28,7 +28,7 @@ export interface LinkProblems {
 }
 
 export function checkLinks(state: FactFinderState, book: RecordBook): LinkProblems {
-  const vanished: LinkedRow[] = [];
+  const vanished: LinkProblems["vanished"] = [];
   let needsClick = 0;
   const confirmed = new Map<string, LinkedRow[]>();
   for (const section of FACT_FINDER_SECTIONS) {
@@ -38,7 +38,7 @@ export function checkLinks(state: FactFinderState, book: RecordBook): LinkProble
       const link = row.link;
       if (link?.kind !== "existing") continue;
       const named = { rowId: row.id, label: rowLabel(section, row) };
-      if (!pool.some((target) => findRecord(book, target, link.recordId))) vanished.push(named);
+      if (!pool.some((target) => findRecord(book, target, link.recordId))) vanished.push({ ...named, sectionId: section.id, recordId: link.recordId });
       else if (!link.confirmed) needsClick += 1;
       else confirmed.set(link.recordId, [...(confirmed.get(link.recordId) ?? []), named]);
     }

@@ -37,9 +37,9 @@ describe("checkLinks", () => {
     });
     expect(checkLinks(state, book)).toEqual({
       vanished: [
-        { rowId: "c1", label: "Joint Checking" },
-        { rowId: "c2", label: "Old Savings" },
-        { rowId: "ss:Client", label: "Social Security — Client" },
+        { rowId: "c1", label: "Joint Checking", sectionId: "cash", recordId: "a-of-another-client" },
+        { rowId: "c2", label: "Old Savings", sectionId: "cash", recordId: "a-deleted" },
+        { rowId: "ss:Client", label: "Social Security — Client", sectionId: "ss", recordId: "income-gone" },
       ],
       needsClick: 0,
       doubles: [],
@@ -55,8 +55,8 @@ describe("checkLinks", () => {
       liab: [rowOf("l1", { loanName: "Card" }, { link: linkedTo("a-1") })],
     });
     expect(checkLinks(state, book).vanished).toEqual([
-      { rowId: "c2", label: "Car Fund" },
-      { rowId: "l1", label: "Card" },
+      { rowId: "c2", label: "Car Fund", sectionId: "cash", recordId: "l-1" },
+      { rowId: "l1", label: "Card", sectionId: "liab", recordId: "a-1" },
     ]);
   });
 

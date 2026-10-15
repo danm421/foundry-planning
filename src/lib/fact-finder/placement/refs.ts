@@ -289,7 +289,7 @@ export function findTrust(index: RefIndex, text: string): RefResult {
   return result(hits, text, TRUST);
 }
 
-export function householdPerson(index: RefIndex, role: "client" | "spouse"): RecordRef {
+export function householdPerson(role: "client" | "spouse"): RecordRef {
   return { ref: "person", role };
 }
 
@@ -313,7 +313,7 @@ export function findPerson(index: RefIndex, text: string, opts: { allow: readonl
   const role = valueFor(PERSON_MAP, matchOption(text, OWNER_PERSON)) as "client" | "spouse" | null;
   const principal = index.household.find((e) => e.ref.ref === "person" && e.ref.role === role);
   if (role && allow.has("household")) {
-    return principal ? { ok: true, ref: householdPerson(index, role), label: principal.label } : { ok: false, reason: NO_CO_CLIENT_REASON };
+    return principal ? { ok: true, ref: householdPerson(role), label: principal.label } : { ok: false, reason: NO_CO_CLIENT_REASON };
   }
 
   const tier = (i: 0 | 1) => [

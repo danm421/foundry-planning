@@ -49,12 +49,21 @@ const feeding = (line: ChangeLine, key: string) => columnFeeding(line.sectionId,
  * household's lines) save side by side.
  */
 function blockSameField(lines: readonly ChangeLine[]): ChangeLine[] {
+  // The update lines changing each field of each record, in line order.
+  const changing = new Map<string, ChangeLine[]>();
+  const keyOf = (line: ChangeLine, field: string) => `${line.target}|${line.recordId}|${field}`;
+  for (const line of lines) {
+    if (line.action !== "update") continue;
+    for (const field of line.fields) {
+      const same = changing.get(keyOf(line, field.key));
+      if (same) same.push(line);
+      else changing.set(keyOf(line, field.key), [line]);
+    }
+  }
   return lines.map((line) => {
     if (line.blocked || line.action !== "update") return line;
     for (const field of line.fields) {
-      const other = lines.find(
-        (o) => o !== line && o.action === "update" && o.target === line.target && o.recordId === line.recordId && o.fields.some((f) => f.key === field.key),
-      );
+      const other = changing.get(keyOf(line, field.key))?.find((o) => o !== line);
       if (!other) continue;
       const reason = `"${line.label}" and "${other.label}" both change ${field.label} on the same record — clear it in one of them.`;
       return { ...line, blocked: { reason, ...(field.from[0] ? { cell: field.from[0] } : {}) } };

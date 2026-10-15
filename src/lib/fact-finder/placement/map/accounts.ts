@@ -248,7 +248,7 @@ function putGrantor(b: DraftBuilder, row: FFRow, ctx: PlaceContext, record: Book
   const onRecord = record?.values.grantor;
   if (owner === null || (onRecord !== undefined && onRecord !== null && onRecord !== "")) return;
   const role = valueFor(PERSON_MAP, owner);
-  if (role === "client" || (role === "spouse" && hasCoClient(ctx.refs))) b.put("grantor", householdPerson(ctx.refs, role), ["owner"]);
+  if (role === "client" || (role === "spouse" && hasCoClient(ctx.refs))) b.put("grantor", householdPerson(role), ["owner"]);
   else b.warn("A 529 has no owner on the plan — pick who funded it under Grantor.");
 }
 

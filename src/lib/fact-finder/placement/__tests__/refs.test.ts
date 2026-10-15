@@ -397,7 +397,7 @@ describe("findPerson", () => {
     const single = buildRefIndex(stateWith({}), bookWith({}, { people: { client: "fm-client", spouse: null }, names: { client: "Mark", spouse: null } }));
     expect(hasCoClient(single)).toBe(false);
     expect(findPerson(single, "Co-client", { allow: everyone })).toEqual({ ok: false, reason: NO_CO_CLIENT_REASON });
-    expect(householdPerson(single, "spouse")).toEqual({ ref: "person", role: "spouse" });
+    expect(householdPerson("spouse")).toEqual({ ref: "person", role: "spouse" });
 
     const namedHere = buildRefIndex(stateWith({ people: [rowOf("people:Client", {}), rowOf("people:Co-client", { firstName: "Laura" })] }), bookWith({}));
     expect(hasCoClient(namedHere)).toBe(true);

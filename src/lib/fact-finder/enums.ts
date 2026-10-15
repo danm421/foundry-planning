@@ -3,6 +3,8 @@
  * Option label ↔ app enum value. One table per option list; Plan 3's placement
  * map reads the same tables, so a label is translated in exactly one place.
  */
+import { FAMILY_RELATIONSHIP_LABELS } from "@/lib/family-relationships";
+
 export type OptionMap = readonly (readonly [label: string, value: string])[];
 
 export function labelFor(map: OptionMap, value: string | null | undefined): string | null {
@@ -65,13 +67,8 @@ export const FILING_MAP: OptionMap = [
   ["Single", "single"], ["Married filing jointly", "married_joint"],
   ["Married filing separately", "married_separate"], ["Head of household", "head_of_household"],
 ];
-export const RELATIONSHIP_MAP: OptionMap = [
-  ["Child", "child"], ["Stepchild", "stepchild"], ["Grandchild", "grandchild"],
-  ["Great-grandchild", "great_grandchild"], ["Parent", "parent"], ["Grandparent", "grandparent"],
-  ["Sibling", "sibling"], ["Sibling-in-law", "sibling_in_law"], ["Son/Daughter-in-law", "child_in_law"],
-  ["Niece/Nephew", "niece_nephew"], ["Aunt/Uncle", "aunt_uncle"], ["Cousin", "cousin"],
-  ["Grand-aunt/uncle", "grand_aunt_uncle"], ["Other", "other"],
-];
+/** The Details family-relationship labels, as they are. */
+export const RELATIONSHIP_MAP: OptionMap = Object.entries(FAMILY_RELATIONSHIP_LABELS).map(([value, label]) => [label, value] as const);
 export const DEPENDENT_MAP: OptionMap = [["Auto", "auto"], ["Yes", "yes"], ["No", "no"]];
 export const BENE_KIND_MAP: OptionMap = [["Charity", "charity"], ["Individual", "individual"]];
 export const CHARITY_TYPE_MAP: OptionMap = [["Public charity", "public"], ["Private foundation", "private"]];

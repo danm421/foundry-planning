@@ -192,8 +192,8 @@ export function ownersOf(
 ): { ok: true; owners: { who: RecordRef; percent: number }[]; columns: string[] } | { ok: false; reason: string; columnId: string } {
   const columnId = opts.ownerColumn ?? "owner";
   const owner = text(row, columnId);
-  const client = householdPerson(ctx.refs, "client");
-  const spouse = householdPerson(ctx.refs, "spouse");
+  const client = householdPerson("client");
+  const spouse = householdPerson("spouse");
   const ok = (owners: { who: RecordRef; percent: number }[], columns = [columnId]) => ({ ok: true as const, owners, columns });
   switch (owner) {
     case null:

@@ -12,7 +12,7 @@ import { filesReading } from "@/lib/fact-finder/reading-status";
 import { loadRecordBook } from "@/lib/fact-finder/records/book";
 import { resolveBaseCaseScenarioId } from "@/lib/fact-finder/records/load";
 import { relinkBaseCase } from "@/lib/fact-finder/relink";
-import { locateRow, readFactFinderState } from "@/lib/fact-finder/state";
+import { readFactFinderState } from "@/lib/fact-finder/state";
 import type { FactFinderState } from "@/lib/fact-finder/types";
 
 export const dynamic = "force-dynamic";
@@ -34,13 +34,6 @@ function vanishedMessage(rows: readonly LinkedRow[]): string {
   return rows.length === 1
     ? `1 link pointed at a record that's no longer on the plan — ${namesOf(rows)}. Check it and review again.`
     : `${rows.length} links pointed at records that are no longer on the plan — ${namesOf(rows)}. Check them and review again.`;
-}
-
-/** Where a dropped link sat and the record it named — the trace a link to another client's record leaves. */
-function droppedLink(state: FactFinderState, rowId: string) {
-  const at = locateRow(state, rowId);
-  const link = at ? state.sections[at.sectionId][at.index].link : undefined;
-  return { sectionId: at?.sectionId ?? null, rowId, recordId: link?.kind === "existing" ? link.recordId : null };
 }
 
 /** Another write landed first: the advisor gets the fact finder as it is now. */
@@ -81,7 +74,8 @@ export async function POST(_request: Request, { params }: Params) {
       metadata: {
         surface: "fact_finder_review",
         importId,
-        droppedLinks: links.vanished.map((r) => droppedLink(state, r.rowId)),
+        // Where each dropped link sat and the record it named — the trace a link to another client's record leaves.
+        droppedLinks: links.vanished.map(({ sectionId, rowId, recordId }) => ({ sectionId, rowId, recordId })),
         version: written.version,
       },
     });
