@@ -47,15 +47,29 @@ function putOwners(b: DraftBuilder, sectionId: string, row: FFRow, ctx: PlaceCon
   else b.put("owners", owners.owners, text(row, "owner") === "Trust / entity" ? ["owner", "ownerEntity"] : ["owner"]);
 }
 
-/** Why a property's "Mortgage on it" links nothing (the link is saved from the loan's Liabilities row), or null. */
-function mortgageProblem(name: string, ctx: PlaceContext): string | null {
+/**
+ * A property's "Mortgage on it". A loan with a Liabilities row is linked from
+ * that row (LIAB_MAP). A loan only on the plan gets its own line here, setting
+ * its property to this one — blocked when another property names it too.
+ */
+function mortgageLink(row: FFRow, property: DraftBuilder, ctx: PlaceContext): TargetDraft | null {
+  const name = text(row, "mortgageName");
+  if (name === null) return null;
   const loan = findLiability(ctx.refs, name);
-  if (!loan.ok) return loan.reason;
-  const listed = (ctx.state.sections.liab ?? []).some((row) => {
-    const ref = rowRecordRef(ctx.refs, "liab", row.id, "liability");
+  if (!loan.ok) {
+    property.warn(`Mortgage on it: ${loan.reason}`);
+    return null;
+  }
+  const listed = (ctx.state.sections.liab ?? []).some((liab) => {
+    const ref = rowRecordRef(ctx.refs, "liab", liab.id, "liability");
     return ref !== null && sameRef(ref, loan.ref);
   });
-  return listed ? null : `"${loan.label}" isn't in Liabilities, so this property isn't linked to it — add it there or link it in Details.`;
+  if (listed || loan.ref.ref !== "record") return null;
+  const b = new DraftBuilder({ sectionId: "realestate", row, target: "liability", recordId: loan.ref.id, label: loan.label })
+    .put("linkedPropertyId", property.ref, ["mortgageName"]);
+  const naming = propertiesNaming(loan.ref, ctx).length;
+  if (naming > 1) b.block(`${naming === 2 ? "Two" : naming} properties name "${loan.label}" as their mortgage — keep it on one.`, "mortgageName");
+  return b.build();
 }
 
 export const REALESTATE_MAP: SectionMap = {
@@ -69,12 +83,13 @@ export const REALESTATE_MAP: SectionMap = {
     jointTitling: { to: "account.titlingType" },
     address: { to: "account.propertyAddress" },
     annualPropertyTax: { to: "account.annualPropertyTax" },
-    // The link is stored on the loan: LIAB_MAP reads this column for a loan whose "Property it's on" is blank.
+    // The link is stored on the loan: LIAB_MAP reads this column for a loan whose "Property it's on" is blank,
+    // and a loan with no Liabilities row gets its own line here.
     mortgageName: { to: "liability.linkedPropertyId" },
     ownerEntity: { to: "account.owners" },
   },
   place(rows, ctx) {
-    return rows.map((row): TargetDraft => {
+    return rows.flatMap((row): TargetDraft[] => {
       const name = text(row, "propertyName");
       const address = text(row, "address");
       const recordId = linkedRecordId(row, ctx, ["account"]);
@@ -93,10 +108,8 @@ export const REALESTATE_MAP: SectionMap = {
       const titling = valueFor(TITLING_MAP, text(row, "jointTitling"));
       if (titling && text(row, "owner") !== "Joint") b.warn("Joint titling is saved only when the owner is Joint.");
       else b.put("titlingType", titling, ["jointTitling"]);
-      const mortgage = text(row, "mortgageName");
-      const problem = mortgage === null ? null : mortgageProblem(mortgage, ctx);
-      if (problem !== null) b.warn(`Mortgage on it: ${problem}`);
-      return b.build();
+      const loan = mortgageLink(row, b, ctx);
+      return loan ? [b.build(), loan] : [b.build()];
     });
   },
 };

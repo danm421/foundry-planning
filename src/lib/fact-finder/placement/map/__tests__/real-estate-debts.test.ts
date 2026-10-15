@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { findSection } from "../../../schema";
 import type { FFRow } from "../../../types";
 import { contextOf, hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "../../__tests__/fixtures";
+import { diffDrafts } from "../../diff";
 import type { RecordBook, TargetDraft } from "../../types";
 import { BUSINESS_MAP, LIAB_MAP, REALESTATE_MAP } from "../real-estate-debts";
 import type { SectionMap } from "../types";
@@ -119,18 +120,68 @@ describe("REALESTATE_MAP", () => {
     expect(blank.warnings).toEqual([]);
   });
 
-  it("Mortgage on it places nothing here; a name that links no Liabilities row says so", () => {
-    const [linked] = place(REALESTATE_MAP, [houseRow], { extra: { liab: [loanRow] } });
-    expect(linked.warnings).toEqual([]);
-    expect(linked.dependsOn).toBeUndefined();
+  it("Mortgage on it places nothing here when a Liabilities row stands for the loan; a name that matches no loan says so", () => {
+    const drafts = place(REALESTATE_MAP, [houseRow], { extra: { liab: [loanRow] } });
+    expect(drafts.map((d) => d.lineId)).toEqual(["re1/account"]);
+    expect(drafts[0].warnings).toEqual([]);
+    expect(drafts[0].dependsOn).toBeUndefined();
 
-    const [nowhere] = place(REALESTATE_MAP, [houseRow]);
-    expect(nowhere.warnings).toEqual(['Mortgage on it: No loan named "Chase Mortgage" in this fact finder or on the plan.']);
+    const nowhere = place(REALESTATE_MAP, [houseRow]);
+    expect(nowhere.map((d) => d.lineId)).toEqual(["re1/account"]);
+    expect(nowhere[0].warnings).toEqual(['Mortgage on it: No loan named "Chase Mortgage" in this fact finder or on the plan.']);
+  });
 
-    const [onlyOnRecord] = place(REALESTATE_MAP, [houseRow], { book: hendricksBook({ liability: [mortgage] }) });
-    expect(onlyOnRecord.warnings).toEqual([
-      'Mortgage on it: "Chase Mortgage" isn\'t in Liabilities, so this property isn\'t linked to it — add it there or link it in Details.',
-    ]);
+  describe("Mortgage on it naming a loan only on the plan", () => {
+    const loanLink = (row: FFRow, value: unknown): TargetDraft => ({
+      lineId: `${row.id}/liability`,
+      sectionId: "realestate",
+      rowId: row.id,
+      target: "liability",
+      recordId: "l-mtg",
+      label: "Chase Mortgage",
+      fields: [{ key: "linkedPropertyId", value: value as TargetDraft["fields"][number]["value"], from: [at("realestate", row.id, "mortgageName")] }],
+      warnings: [],
+      ...(typeof value === "object" && value !== null && (value as { ref?: string }).ref === "line" ? { dependsOn: [`${row.id}/account`] } : {}),
+    });
+
+    it("a new house: a second line links the loan on record to it, depending on the house's line", () => {
+      const drafts = place(REALESTATE_MAP, [houseRow], { book: hendricksBook({ liability: [mortgage] }) });
+      expect(drafts.map((d) => d.lineId)).toEqual(["re1/account", "re1/liability"]);
+      expect(drafts[0].warnings).toEqual([]);
+      expect(drafts[1]).toEqual(loanLink(houseRow, houseLine));
+    });
+
+    it("a house on record already linked to that loan: the loan's line is \"No changes\"", () => {
+      const linkedLoan = { ...mortgage, values: { ...mortgage.values, linkedPropertyId: { ref: "record", target: "account", id: "a-house" } } } as typeof mortgage;
+      const book = hendricksBook({ liability: [linkedLoan], account: [house] });
+      const row = { ...houseRow, link: linkedTo("a-house") };
+      const drafts = place(REALESTATE_MAP, [row], { book });
+      expect(drafts[1]).toEqual(loanLink(row, { ref: "record", target: "account", id: "a-house" }));
+      expect(diffDrafts(drafts, book).map((l) => [l.id, l.action])).toEqual([
+        ["re1/account", "update"],
+        ["re1/liability", "none"],
+      ]);
+
+      // Linked to another property on record: the loan's line moves it.
+      const cabin = recordOf("a-cabin", "Lake Cabin", { name: "Lake Cabin" }, PROPERTY);
+      const elsewhere = hendricksBook({ liability: [{ ...linkedLoan, values: { ...linkedLoan.values, linkedPropertyId: { ref: "record", target: "account", id: "a-cabin" } } }], account: [house, cabin] });
+      const moved = diffDrafts(place(REALESTATE_MAP, [row], { book: elsewhere }), elsewhere)[1];
+      expect([moved.action, moved.fields.map((f) => [f.key, f.shown])]).toEqual([
+        "update",
+        [["linkedPropertyId", { onRecord: "Lake Cabin", next: "Main St House" }]],
+      ]);
+    });
+
+    it("two properties naming one loan on record: both links are blocked", () => {
+      const cabinRow = rowOf("re2", { propertyName: "Lake Cabin", mortgageName: "Chase Mortgage" });
+      const drafts = place(REALESTATE_MAP, [houseRow, cabinRow], { book: hendricksBook({ liability: [mortgage] }) });
+      expect(drafts.map((d) => [d.lineId, d.blocked])).toEqual([
+        ["re1/account", undefined],
+        ["re1/liability", { reason: 'Two properties name "Chase Mortgage" as their mortgage — keep it on one.', cell: at("realestate", "re1", "mortgageName") }],
+        ["re2/account", undefined],
+        ["re2/liability", { reason: 'Two properties name "Chase Mortgage" as their mortgage — keep it on one.', cell: at("realestate", "re2", "mortgageName") }],
+      ]);
+    });
   });
 });
 
