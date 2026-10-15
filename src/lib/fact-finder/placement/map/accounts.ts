@@ -7,6 +7,7 @@
  * main checking, a business's own accounts — keeps the owner (and the main
  * checking its type) it has on record. Pure.
  */
+import { TRAD_IRA_SUBTYPES } from "@/engine/ira-basis";
 import type { PlacedValue } from "../../change-set";
 import { CASH_TYPE_MAP, RETIRE_TYPE_MAP, SECTION_ACCOUNT_CATEGORY, TAXABLE_TYPE_MAP, TITLING_MAP, valueFor, type OptionMap } from "../../enums";
 import { last4Of } from "../../identity";
@@ -206,11 +207,12 @@ function putRetirement(b: DraftBuilder, row: FFRow, record: BookRecord | undefin
     else b.warn("Roth portion applies only to a 401(k) or 403(b).");
   }
 
-  // After-tax (Form 8606) basis — the same `basis` column as a taxable account's cost basis.
+  // After-tax (Form 8606) basis — the same `basis` column as a taxable account's cost basis. Only the
+  // IRAs in the engine's 8606 pool use it (field map: "leave 0 for 401k/403b/Roth").
   const afterTax = num(row, "afterTaxBasis");
   if (afterTax !== null) {
-    if (type === "roth_ira") b.warn("After-tax basis doesn't apply to a Roth IRA.");
-    else b.put("basis", afterTax, ["afterTaxBasis"]);
+    if (type !== null && TRAD_IRA_SUBTYPES.has(type)) b.put("basis", afterTax, ["afterTaxBasis"]);
+    else b.warn("After-tax basis applies only to a traditional, SEP or SIMPLE IRA.");
   }
 
   // Spec § 8: the app knows an inherited IRA by the original owner's two years, on a Traditional or Roth IRA only.

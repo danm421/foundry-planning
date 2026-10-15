@@ -36,6 +36,8 @@ const holding = (id: string, h: Partial<FFHolding>): FFHolding => ({
   id, ticker: null, name: null, shares: null, price: null, marketValue: null, costBasis: null, by: "document", ...h,
 });
 
+const AFTER_TAX_IRA_ONLY = "After-tax basis applies only to a traditional, SEP or SIMPLE IRA.";
+
 /** Mark on record, no co-client. */
 const singleBook = bookWith(
   { client_household: [recordOf("c1", "Mark Hendricks", { firstName: "Mark", lastName: "Hendricks" })] },
@@ -272,10 +274,10 @@ describe("RETIREMENT_MAP", () => {
           { key: "subType", value: "401k", from: [c("accountType")] },
           { key: "owners", value: [{ who: client, percent: 1 }], from: [c("owner")] },
           { key: "rothValue", value: 25000, from: [c("rothPortion")] },
-          { key: "basis", value: 5000, from: [c("afterTaxBasis")] },
           { key: "priorYearEndValue", value: 400000, from: [c("priorYearEndValue")] },
         ],
-        warnings: [],
+        // A 401(k) has no Form 8606 basis — the after-tax dollars belong in its Roth portion.
+        warnings: [AFTER_TAX_IRA_ONLY],
       },
       {
         lineId: "ret-1/account_beneficiary_designation",
@@ -316,13 +318,24 @@ describe("RETIREMENT_MAP", () => {
     expect(untyped.warnings).toEqual(["Roth portion applies only to a 401(k) or 403(b)."]);
   });
 
-  it("After-tax basis is an IRA's basis, but not a Roth IRA's — and a holding's cost basis never feeds it", () => {
-    const roth = place(RETIREMENT_MAP, [rowOf("ret-1", { accountType: "Roth IRA", afterTaxBasis: 6000 })]).drafts[0];
-    expect(keysOf(roth)).toEqual(["subType"]);
-    expect(roth.warnings).toEqual(["After-tax basis doesn't apply to a Roth IRA."]);
+  it("After-tax basis is the basis of a traditional, SEP or SIMPLE IRA only — and a holding's cost basis never feeds it", () => {
+    for (const [accountType, subType] of [["Traditional IRA", "traditional_ira"], ["SEP IRA", "sep_ira"], ["SIMPLE IRA", "simple_ira"]]) {
+      const ira = place(RETIREMENT_MAP, [rowOf("ret-1", { accountType, afterTaxBasis: 6000 })]).drafts[0];
+      expect(values(ira)).toEqual({ subType, basis: 6000 });
+      expect(ira.warnings).toEqual([]);
+    }
 
-    const ira = place(RETIREMENT_MAP, [rowOf("ret-1", { accountType: "Traditional IRA", afterTaxBasis: 6000 })]).drafts[0];
-    expect(values(ira)).toEqual({ subType: "traditional_ira", basis: 6000 });
+    // Field map: "leave 0 for 401k/403b/Roth" — the engine's Form 8606 pool is the three IRAs above.
+    for (const accountType of ["Roth IRA", "401(k)", "403(b)", "401(a)", "HSA", "Other", null]) {
+      const other = place(RETIREMENT_MAP, [rowOf("ret-1", { accountType, afterTaxBasis: 6000 })]).drafts[0];
+      expect(keysOf(other)).not.toContain("basis");
+      expect(other.warnings).toEqual([AFTER_TAX_IRA_ONLY]);
+    }
+
+    // The record's type when the row has none.
+    const sep = accountRecord("ira-1", "SEP IRA", { name: "SEP IRA" }, { category: "retirement", subType: "sep_ira" });
+    const linked = place(RETIREMENT_MAP, [rowOf("ret-1", { afterTaxBasis: 6000 }, { link: linkedTo("ira-1") })], hendricksBook({ account: [sep] })).drafts[0];
+    expect(linked.fields).toEqual([{ key: "basis", value: 6000, from: [c("afterTaxBasis")] }]);
 
     const held = rowOf("ret-1", { accountType: "Traditional IRA" }, { holdings: [holding("h1", { ticker: "VTI", shares: 10, price: 250, costBasis: 2000 })] });
     expect(keysOf(place(RETIREMENT_MAP, [held]).drafts[0])).toEqual(["subType", "holdings"]);
