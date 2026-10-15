@@ -142,6 +142,23 @@ function monthlyCap(b: DraftBuilder, row: FFRow, columnId: string): number | nul
   return null;
 }
 
+/** The cells that describe each coverage. */
+const STD_DETAILS = ["stdWaitingDays", "stdBenefitPercent", "stdDurationWeeks", "stdMonthlyCap"];
+const LTD_DETAILS = ["ltdWaitingDays", "ltdBenefitPercent", "ltdMonthlyCap", "benefitsRun", "benefitsRunValue"];
+
+/**
+ * "Short-term coverage?" / "Long-term coverage?". On a new policy a blank is
+ * answered by that coverage's own cells — Yes when any is filled, else No,
+ * shown on the line — because the create schema's default (Yes, with its own
+ * terms) would add coverage the fact finder never mentions. A cell that didn't
+ * read gets no answer; on a policy on record a blank stays blank.
+ */
+function putCoverage(b: DraftBuilder, row: FFRow, ctx: PlaceContext, key: string, columnId: string, details: readonly string[], isNew: boolean): void {
+  const stated = bool(row, columnId);
+  if (stated !== null || !isNew) b.put(key, stated, [columnId]);
+  else if (!ctx.removed(row.id, columnId)) b.put(key, details.some((c) => num(row, c) !== null || text(row, c) !== null), []);
+}
+
 export const DISABILITY_MAP: SectionMap = {
   sectionId: "disability",
   placements: {
@@ -185,13 +202,13 @@ export const DISABILITY_MAP: SectionMap = {
         .put("coveredEarningsMode", earnings, ["coveredEarnings"]);
       // A new policy's modes are the create schema's defaults: Salary, To age.
       putByMode(b, "disability", row, DI_EARNINGS_AMOUNT, earnings ?? recorded("coveredEarningsMode") ?? "salary");
-      b.put("hasShortTerm", bool(row, "shortTerm"), ["shortTerm"])
-        .put("stdEliminationDays", num(row, "stdWaitingDays"), ["stdWaitingDays"])
+      putCoverage(b, row, ctx, "hasShortTerm", "shortTerm", STD_DETAILS, recordId === null);
+      b.put("stdEliminationDays", num(row, "stdWaitingDays"), ["stdWaitingDays"])
         .put("stdBenefitPct", rate(row, "stdBenefitPercent"), ["stdBenefitPercent"])
         .put("stdDurationWeeks", num(row, "stdDurationWeeks"), ["stdDurationWeeks"])
-        .put("stdMonthlyMax", monthlyCap(b, row, "stdMonthlyCap"), ["stdMonthlyCap"])
-        .put("hasLongTerm", bool(row, "longTerm"), ["longTerm"])
-        .put("ltdEliminationDays", num(row, "ltdWaitingDays"), ["ltdWaitingDays"])
+        .put("stdMonthlyMax", monthlyCap(b, row, "stdMonthlyCap"), ["stdMonthlyCap"]);
+      putCoverage(b, row, ctx, "hasLongTerm", "longTerm", LTD_DETAILS, recordId === null);
+      b.put("ltdEliminationDays", num(row, "ltdWaitingDays"), ["ltdWaitingDays"])
         .put("ltdBenefitPct", rate(row, "ltdBenefitPercent"), ["ltdBenefitPercent"])
         .put("ltdMonthlyMax", monthlyCap(b, row, "ltdMonthlyCap"), ["ltdMonthlyCap"])
         .put("ltdBenefitPeriodMode", runs, ["benefitsRun"]);

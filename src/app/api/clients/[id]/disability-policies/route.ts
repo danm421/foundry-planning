@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { formatZodIssues } from "@/lib/schemas/common";
-import { db } from "@/db";
-import { disabilityPolicies } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
-import { recordAudit } from "@/lib/audit";
-import { disabilityPolicyCreateSchema } from "@/lib/schemas/disability-policies";
+import { createDisabilityPolicyForClient } from "@/lib/clients/disability-policies-writes";
 import {
   loadDisabilityPolicies,
   rowToDisabilityPolicy,
@@ -14,11 +10,6 @@ import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
-
-/** decimal columns are strings on the wire; `null` STAYS null. An uncapped
- *  monthly max must never become "0" — that pays nothing, silently. */
-const dec = (v: number | null | undefined): string | null =>
-  v == null ? null : String(v);
 
 // GET /api/clients/[id]/disability-policies
 // Disability policies are client-level (like life insurance), so there is no
@@ -55,55 +46,18 @@ export async function POST(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
-    const parsed = disabilityPolicyCreateSchema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid body", issues: formatZodIssues(parsed.error) },
-        { status: 400 },
-      );
-    }
-    const d = parsed.data;
-
-    const [row] = await db
-      .insert(disabilityPolicies)
-      .values({
-        clientId: id,
-        name: d.name,
-        insured: d.insured,
-        carrier: d.carrier ?? null,
-        coveredEarningsMode: d.coveredEarningsMode,
-        coveredEarningsAmount: dec(d.coveredEarningsAmount),
-        hasShortTerm: d.hasShortTerm,
-        stdEliminationDays: d.stdEliminationDays,
-        stdBenefitPct: String(d.stdBenefitPct),
-        stdDurationWeeks: d.stdDurationWeeks,
-        stdMonthlyMax: dec(d.stdMonthlyMax),
-        hasLongTerm: d.hasLongTerm,
-        ltdEliminationDays: d.ltdEliminationDays,
-        ltdBenefitPct: String(d.ltdBenefitPct),
-        ltdMonthlyMax: dec(d.ltdMonthlyMax),
-        ltdBenefitPeriodMode: d.ltdBenefitPeriodMode,
-        ltdBenefitPeriodAge: d.ltdBenefitPeriodAge ?? null,
-        ltdBenefitPeriodYears: d.ltdBenefitPeriodYears ?? null,
-        benefitTaxable: d.benefitTaxable,
-        colaRate: String(d.colaRate),
-        annualPremium: String(d.annualPremium),
-        premiumPayer: d.premiumPayer,
-        notes: d.notes ?? null,
-      })
-      .returning();
-
-    await recordAudit({
-      action: "disability_policy.create",
-      resourceType: "disability_policy",
-      resourceId: row.id,
+    const result = await createDisabilityPolicyForClient({
       clientId: id,
       firmId,
-      metadata: crossFirmAuditMeta({ access }, callerOrg, { name: d.name }),
+      input: await request.json(),
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
+    if (!result.ok) {
+      return NextResponse.json(result.body ?? { error: result.error }, { status: result.status });
+    }
 
     return NextResponse.json(
-      { policy: rowToDisabilityPolicy(row) },
+      { policy: rowToDisabilityPolicy(result.data) },
       { status: 201 },
     );
   } catch (err) {

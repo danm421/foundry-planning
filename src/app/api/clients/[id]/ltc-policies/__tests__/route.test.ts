@@ -174,7 +174,7 @@ describe("POST /ltc-policies", () => {
   it("checks a rider's life policy against THIS client and stores the link", async () => {
     const res = await create(RIDER);
     expect(res.status).toBe(201);
-    expect(loadRiderLifePolicy).toHaveBeenCalledWith(CLIENT_A, LIFE);
+    expect(loadRiderLifePolicy).toHaveBeenCalledWith(CLIENT_A, LIFE, undefined);
     expect(state.policies[0]).toMatchObject({ kind: "life_rider", lifePolicyAccountId: LIFE, riderMonthlyPct: "0.02" });
   });
 
