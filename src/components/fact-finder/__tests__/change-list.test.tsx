@@ -249,6 +249,25 @@ describe("ChangeList", () => {
     expect(within(screen.getByRole("region", { name: "Accounts" })).queryByText("unchanged")).toBeNull();
   });
 
+  it("keeps an unchanged line that has a warning in view, outside the fold", () => {
+    const [, , , , , family] = CHANGES.lines;
+    const warned: ChangeSet = {
+      ...CHANGES,
+      lines: [
+        { ...family, warnings: ["Emma's birth year looks off."] },
+        { ...family, id: "f2/family_member", rowId: "f2", label: "Luke Hendricks" },
+      ],
+    };
+    renderList(defaultTicks(warned), warned);
+    const household = screen.getByRole("region", { name: "Household" });
+    const item = within(household).getByRole("article", { name: "Emma Hendricks" });
+    expect(within(item).getByText("Emma's birth year looks off.")).toBeVisible();
+    expect(within(item).getByText("No changes")).toBeInTheDocument();
+    expect(within(household).getByText("unchanged").closest("summary")).toHaveTextContent("1 unchanged");
+    expect(within(household).getByText("Luke Hendricks")).not.toBeVisible();
+    expect(screen.getByText(/unchanged/, { selector: "p span, p" }).closest("p")).toHaveTextContent("2 unchanged");
+  });
+
   it("goes back to the fact finder, and Save to plan waits for the next update", async () => {
     const props = renderList();
     await userEvent.click(screen.getByRole("button", { name: "Back to fact finder" }));

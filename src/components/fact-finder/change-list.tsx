@@ -190,6 +190,7 @@ function LineItem({ line, ticks, onToggleField, onToggleLine, onFix }: LineProps
             <span>{warning}</span>
           </p>
         ))}
+        {line.action === "none" && !line.blocked && <p className="text-sm text-ink-3">No changes</p>}
         {line.fields.length > 0 && (
           <table aria-labelledby={headingId} className="w-full table-fixed border-separate border-spacing-0 text-sm @max-md:block">
             <colgroup className="@max-md:hidden">
@@ -264,7 +265,8 @@ function Unchanged({ lines }: { lines: readonly ChangeLine[] }) {
 
 function PageGroup({ label, lines, ...lineProps }: Omit<LineProps, "line"> & { label: string; lines: readonly ChangeLine[] }) {
   const headingId = useId();
-  const unchanged = lines.filter((l) => !l.blocked && l.action === "none");
+  // An unchanged line with a warning stays in view; the rest fold away.
+  const unchanged = lines.filter((l) => !l.blocked && l.action === "none" && l.warnings.length === 0);
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-2">
       <h3 id={headingId} className="text-sm font-semibold text-ink-2">
