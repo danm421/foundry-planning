@@ -143,6 +143,19 @@ describe("DraftBuilder", () => {
     expect(draft().block("No cell.").build().blocked).toEqual({ reason: "No cell." });
   });
 
+  it("a warning can name the field it's about — kept once per field; a field the target lacks is a map bug", () => {
+    const built = draft()
+      .warn("These beneficiaries replace the ones on record.", { field: "owners" })
+      .warn("These beneficiaries replace the ones on record.", { field: "owners" })
+      .warn("These beneficiaries replace the ones on record.")
+      .build();
+    expect(built.warnings).toEqual([
+      { text: "These beneficiaries replace the ones on record.", field: "owners" },
+      "These beneficiaries replace the ones on record.",
+    ]);
+    expect(() => draft().warn("Typo.", { field: "ownrs" })).toThrow('account has no field "ownrs"');
+  });
+
   it("refuses a key its target doesn't have, and a key placed twice — map bugs, not advisor input", () => {
     expect(() => draft().put("nmae", "Joint Checking", ["accountName"])).toThrow('account has no field "nmae"');
     expect(() => draft().put("name", "A", ["accountName"]).put("name", "B", ["accountName"])).toThrow('cash-1/account: "name" placed twice');

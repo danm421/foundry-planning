@@ -73,8 +73,8 @@ export const ANNUITY_MAP: SectionMap = {
 
       const built = contract.build();
       if (built.fields.length > 0) return [account.build(), built];
-      // No contract values: no empty contract write — its warnings go on the account.
-      for (const warning of built.warnings) account.warn(warning);
+      // No contract values: no empty contract write — its warnings go on the account (one about a contract field has no field to speak for).
+      for (const warning of built.warnings) if (typeof warning === "string") account.warn(warning);
       return [account.build()];
     });
   },

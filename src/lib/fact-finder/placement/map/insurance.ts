@@ -87,7 +87,7 @@ function beneficiariesOf(row: FFRow, ctx: PlaceContext, policy: DraftBuilder, re
   }
   b.put("beneficiaries", set, filled.map(([, columnId]) => columnId));
   // Every policy on record has a set, often empty — warn only when it names someone.
-  if (Array.isArray(recorded) && recorded.length > 0) b.warn("These beneficiaries replace the ones on record.");
+  if (Array.isArray(recorded) && recorded.length > 0) b.warn("These beneficiaries replace the ones on record.", { field: "beneficiaries" });
   return b.build();
 }
 

@@ -37,11 +37,14 @@ function livingRecord(ctx: PlaceContext, slot: Slot): BookRecord | undefined {
 
 const noLivingRow = (slot: Slot) => `This plan has no ${slot} living expense row.`;
 
-/** A typed year; else, on a new record only, its default — shown on the line, from no cell. */
-function putYear(b: DraftBuilder, key: "start" | "end", row: FFRow, columnId: string, fallback: PlacedValue): void {
+/**
+ * A typed year; else, on a new record only, its default — shown on the line, from no cell. A year that
+ * didn't read gets no default: validation asks for it at its cell.
+ */
+function putYear(b: DraftBuilder, key: "start" | "end", row: FFRow, columnId: string, fallback: PlacedValue, ctx: PlaceContext): void {
   const year = num(row, columnId);
   if (year !== null) b.put(key, year, [columnId]);
-  else b.put(key, fallback, []);
+  else if (!ctx.removed(row.id, columnId)) b.put(key, fallback, []);
 }
 
 /** The itemized rows with an Amount (the form pre-prints item names): blank Item → "Item", blank Frequency → monthly. */
@@ -132,6 +135,10 @@ export const LIVING_ITEMS_MAP: SectionMap = {
     const b = new DraftBuilder({ sectionId: "living_items", row: first, target: "expense", recordId: record?.id ?? null, label: "Itemized living expenses" })
       .put("livingItems", items, from);
     if (!record) b.block(noLivingRow("current"));
+    // The list replaces the plan's: an item whose Amount didn't read would be dropped from it (all rows: one
+    // with only that Amount reads empty and never reaches the map).
+    const unread = (ctx.state.sections.living_items ?? []).find((row) => ctx.removed(row.id, "amount"));
+    if (unread) b.block(`"Amount" didn't read as a number — enter it, or clear it to leave this item out of the list.`, cellOf("living_items", unread, "amount"));
     const replaces = itemsReplaceWarning(ctx, items);
     if (replaces) b.warn(replaces);
     return [b.build()];
@@ -166,8 +173,8 @@ export const EXPENSES_MAP: SectionMap = {
         .put("type", valueFor(EXPENSE_TYPE_MAP, text(row, "type")), ["type"])
         .put("annualAmount", num(row, "annualAmount"), ["annualAmount"])
         .put("growthRate", growth, ["annualIncrease"], { growthSource: "custom" });
-      putYear(b, "start", row, "startYear", record ? null : ctx.year);
-      putYear(b, "end", row, "endYear", record ? null : { yearRef: "plan_end" });
+      putYear(b, "start", row, "startYear", record ? null : ctx.year, ctx);
+      putYear(b, "end", row, "endYear", record ? null : { yearRef: "plan_end" }, ctx);
       return b.put("isGoal", bool(row, "isGoal"), ["isGoal"]).build();
     });
   },
@@ -264,8 +271,8 @@ export const SAVINGS_MAP: SectionMap = {
       placeMatch(b, row);
       // A new rule runs from this year to its owner's retirement (the Details dialog's defaultSavingsRuleRefs).
       const owner = account?.ok ? soleOwner(account.ref, ctx) : null;
-      putYear(b, "start", row, "startYear", recordId ? null : ctx.year);
-      putYear(b, "end", row, "endYear", recordId ? null : { yearRef: owner === "spouse" ? "spouse_retirement" : "client_retirement" });
+      putYear(b, "start", row, "startYear", recordId ? null : ctx.year, ctx);
+      putYear(b, "end", row, "endYear", recordId ? null : { yearRef: owner === "spouse" ? "spouse_retirement" : "client_retirement" }, ctx);
       return b.put("growthRate", rate(row, "annualIncrease"), ["annualIncrease"], { growthSource: "custom" }).build();
     });
   },

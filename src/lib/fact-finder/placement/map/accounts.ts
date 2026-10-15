@@ -193,7 +193,7 @@ function beneficiariesOf(row: FFRow, ctx: PlaceContext, account: DraftBuilder, r
   b.put("beneficiaries", set, filled.map(([, columnId]) => columnId));
   // Every account on record has a set, often empty — warn only when it names someone.
   if (recordId === null) b.warn("These beneficiaries replace the default beneficiaries a new retirement account gets.");
-  else if (Array.isArray(recorded) && recorded.length > 0) b.warn("These beneficiaries replace the ones on record.");
+  else if (Array.isArray(recorded) && recorded.length > 0) b.warn("These beneficiaries replace the ones on record.", { field: "beneficiaries" });
   return b.build();
 }
 
@@ -282,6 +282,8 @@ function putGrantor(b: DraftBuilder, row: FFRow, ctx: PlaceContext, record: Book
     else b.put("grantor", funder.value, ["grantor"]);
     return;
   }
+  // A Grantor that didn't read named someone: the Owner never stands in for it.
+  if (ctx.removed(row.id, "grantor")) return;
   const owner = text(row, "owner");
   const onRecord = record?.values.grantor;
   if (owner === null || (onRecord !== undefined && onRecord !== null && onRecord !== "")) return;

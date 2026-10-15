@@ -195,6 +195,16 @@ describe("diffDrafts", () => {
     expect(same.warnings).toEqual([]);
   });
 
+  it("a warning tied to a field is kept only when that field is on the line; an untied one always stays", () => {
+    const warnings = [{ text: "About the growth rate.", field: "growthRate" }, "About the row."];
+    const linked = (growthRate: number) =>
+      diffDrafts([draft({ target: "account", recordId: "acct-1", fields: [put("growthRate", growthRate)], warnings })], book({ account: [checking] }))[0];
+    expect([linked(0.03).action, linked(0.03).warnings]).toEqual(["update", ["About the growth rate.", "About the row."]]);
+    expect([linked(0.02).action, linked(0.02).warnings]).toEqual(["none", ["About the row."]]);
+    const created = diffDrafts([draft({ target: "account", fields: [put("growthRate", 0.02)], warnings })], book())[0];
+    expect(created.warnings).toEqual(["About the growth rate.", "About the row."]);
+  });
+
   it("a record that's gone from the plan blocks the line", () => {
     const [line] = diffDrafts([draft({ target: "account", recordId: "acct-gone", fields: [put("value", 5000)] })], book({ account: [checking] }));
     expect(line).toMatchObject({

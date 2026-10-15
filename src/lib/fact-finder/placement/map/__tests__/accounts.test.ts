@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { findSection } from "../../../schema";
 import type { FFHolding, FFRow } from "../../../types";
 import { bookWith, contextOf, hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "../../__tests__/fixtures";
+import { diffDrafts } from "../../diff";
 import { NO_CO_CLIENT_REASON } from "../../refs";
 import type { BookRecord, RecordBook, TargetDraft } from "../../types";
 import { CASH_MAP, EDU_MAP, RETIREMENT_MAP, TAXABLE_MAP } from "../accounts";
@@ -19,10 +20,13 @@ const kids = {
   ],
 };
 
-/** `map.place` over these rows (other sections alongside) against `book` — Mark & Laura and their kids by default. */
-function place(map: SectionMap, rows: FFRow[], book: RecordBook = hendricksBook(kids), other: Record<string, FFRow[]> = {}) {
+/**
+ * `map.place` over these rows (other sections alongside) against `book` — Mark & Laura and their kids by default.
+ * `removed`: "rowId:columnId" cells the runner took out (they didn't read).
+ */
+function place(map: SectionMap, rows: FFRow[], book: RecordBook = hendricksBook(kids), other: Record<string, FFRow[]> = {}, removed: string[] = []) {
   const { ctx, notices } = contextOf(stateWith({ [map.sectionId]: rows, ...other }), book);
-  return { drafts: map.place(rows, ctx), notices };
+  return { drafts: map.place(rows, { ...ctx, removed: (rowId, columnId) => removed.includes(`${rowId}:${columnId}`) }), notices };
 }
 const at = (sectionId: string, rowId: string) => (columnId: string) => ({ sectionId, rowId, columnId });
 const values = (d: TargetDraft) => Object.fromEntries(d.fields.map((f) => [f.key, f.value]));
@@ -36,6 +40,8 @@ const holding = (id: string, h: Partial<FFHolding>): FFHolding => ({
   id, ticker: null, name: null, shares: null, price: null, marketValue: null, costBasis: null, by: "document", ...h,
 });
 
+/** Tied to the set it's about: the diff keeps it only when the set changes. */
+const REPLACES = { text: "These beneficiaries replace the ones on record.", field: "beneficiaries" };
 const AFTER_TAX_IRA_ONLY = "After-tax basis applies only to a traditional, SEP or SIMPLE IRA.";
 
 /** Mark on record, no co-client. */
@@ -408,9 +414,20 @@ describe("RETIREMENT_MAP", () => {
             from: [c("contingentBeneficiary")],
           },
         ],
-        warnings: ["These beneficiaries replace the ones on record."],
+        warnings: [REPLACES],
         parent: { ref: "record", target: "account", id: "k-1" },
       });
+    });
+
+    it("a set equal to the one on record is \"No changes\" — with no warning that it replaces it", () => {
+      const row = rowOf("ret-1", { primaryBeneficiary: "Laura 100%", contingentBeneficiary: "Emma 100%" }, { link: linkedTo("k-1") });
+      const drafts = place(RETIREMENT_MAP, [row], book).drafts;
+      expect(drafts[1].warnings).toEqual([REPLACES]);
+      const line = diffDrafts(drafts, book)[1];
+      expect([line.action, line.fields, line.warnings]).toEqual(["none", [], []]);
+      // A set that differs keeps it.
+      const changed = rowOf("ret-1", { primaryBeneficiary: "Laura 100%", contingentBeneficiary: "Lucas 100%" }, { link: linkedTo("k-1") });
+      expect(diffDrafts(place(RETIREMENT_MAP, [changed], book).drafts, book)[1].warnings).toEqual(["These beneficiaries replace the ones on record."]);
     });
 
     it("the warning only when the record names someone (any tier) — with no one on record there's nothing to replace", () => {
@@ -419,7 +436,7 @@ describe("RETIREMENT_MAP", () => {
         place(RETIREMENT_MAP, [row], hendricksBook({ ...kids, account: [k401], account_beneficiary_designation: [recordOf("k-1", "Fidelity 401(k) ··5678", { beneficiaries })] }))
           .drafts[1].warnings;
       expect(warningsWith([])).toEqual([]);
-      expect(warningsWith([{ tier: "contingent", who: emma, percentage: 100 }])).toEqual(["These beneficiaries replace the ones on record."]);
+      expect(warningsWith([{ tier: "contingent", who: emma, percentage: 100 }])).toEqual([REPLACES]);
     });
 
     it("both tiers blank: no beneficiaries line", () => {
@@ -505,6 +522,14 @@ describe("EDU_MAP", () => {
         const [draft] = place(EDU_MAP, [rowOf("edu-1", { beneficiary: "Emma", owner })]).drafts;
         expect(keysOf(draft)).toEqual(["beneficiary"]);
         expect(draft.warnings).toEqual(["A 529 has no owner on the plan — pick who funded it under Grantor."]);
+      }
+    });
+
+    it("never over a Grantor that didn't read — the document named someone", () => {
+      for (const owner of ["Client", "Joint"]) {
+        const [draft] = place(EDU_MAP, [rowOf("edu-1", { beneficiary: "Emma", owner })], hendricksBook(kids), {}, ["edu-1:grantor"]).drafts;
+        expect(keysOf(draft)).toEqual(["beneficiary"]);
+        expect(draft.warnings).toEqual([]);
       }
     });
 

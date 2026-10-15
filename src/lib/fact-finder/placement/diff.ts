@@ -44,7 +44,9 @@ function diffDraft(draft: TargetDraft, book: RecordBook, labelOf: (ref: RecordRe
     fields.push(changeField(placed, spec, isEmptyValue(onRecord) ? null : onRecord, show));
   }
 
-  const warnings = [...draft.warnings];
+  // A warning about one field speaks only when that field changes.
+  const keys = new Set(fields.map((f) => f.key));
+  const warnings = draft.warnings.flatMap((w) => (typeof w === "string" ? [w] : keys.has(w.field) ? [w.text] : []));
   const planEnd = draft.target === "client_household" ? fields.filter((f) => PLAN_END_FIELDS.has(f.key)) : [];
   if (planEnd.length > 0) {
     const names = planEnd.map((f) => f.label.toLowerCase());

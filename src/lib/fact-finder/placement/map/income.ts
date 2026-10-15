@@ -40,11 +40,14 @@ function linkedAmong(row: FFRow, ctx: PlaceContext, records: readonly BookRecord
   return records.find((r) => r.id === id);
 }
 
-/** A typed year; else, on a new income only, its default — shown on the line, from no cell. */
-function putYear(b: DraftBuilder, key: "start" | "end", row: FFRow, columnId: string, fallback: PlacedValue): void {
+/**
+ * A typed year; else, on a new income only, its default — shown on the line, from no cell. A year that
+ * didn't read gets no default: validation asks for it at its cell.
+ */
+function putYear(b: DraftBuilder, key: "start" | "end", row: FFRow, columnId: string, fallback: PlacedValue, ctx: PlaceContext): void {
   const year = num(row, columnId);
   if (year !== null) b.put(key, year, [columnId]);
-  else b.put(key, fallback, []);
+  else if (!ctx.removed(row.id, columnId)) b.put(key, fallback, []);
 }
 
 /** A new income with no typed rate grows with inflation, as the Details dialog defaults (the create schema's own default is a flat 3%). */
@@ -84,9 +87,9 @@ export const SALARY_MAP: SectionMap = {
         })
           .put("annualAmount", num(row, "annualSalary"), ["annualSalary"])
           .put("growthRate", raise, ["annualRaise"], { growthSource: "custom" });
-        putYear(b, "start", row, "startYear", record ? null : ctx.year);
+        putYear(b, "start", row, "startYear", record ? null : ctx.year, ctx);
         // "End year blank = stops at retirement": the person's retirement, as a milestone.
-        putYear(b, "end", row, "endYear", record ? null : { yearRef: `${role}_retirement` });
+        putYear(b, "end", row, "endYear", record ? null : { yearRef: `${role}_retirement` }, ctx);
         if (name === null) b.block(NO_CO_CLIENT_REASON, CO_CLIENT_CELL);
         drafts.push(b.build());
       }
@@ -215,8 +218,8 @@ export const INCOME_MAP: SectionMap = {
         .put("owner", owner, ["owner"])
         .put("annualAmount", num(row, "annualAmount"), ["annualAmount"])
         .put("growthRate", growth, ["annualIncrease"], { growthSource: "custom" });
-      putYear(b, "start", row, "startYear", record ? null : ctx.year);
-      putYear(b, "end", row, "endYear", record ? null : { yearRef: "plan_end" });
+      putYear(b, "start", row, "startYear", record ? null : ctx.year, ctx);
+      putYear(b, "end", row, "endYear", record ? null : { yearRef: "plan_end" }, ctx);
       b.put("taxType", valueFor(TAX_TYPE_MAP, text(row, "taxType")), ["taxType"])
         .put("paymentMonth", month === null ? null : monthNumber(month), ["paidInMonth"]);
       if ((owner === "spouse" || owner === "joint") && !hasCoClient(ctx.refs)) b.block(NO_CO_CLIENT_REASON, "owner");

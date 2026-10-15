@@ -232,7 +232,7 @@ function beneficiariesOf(row: FFRow, ctx: PlaceContext, trust: DraftBuilder, rec
   }
   b.put("beneficiaries", set, filled.map(([, columnId]) => columnId));
   // Every trust on record has a set, often empty — warn only when it names someone.
-  if (Array.isArray(recorded) && recorded.length > 0) b.warn("These beneficiaries replace the ones on record.");
+  if (Array.isArray(recorded) && recorded.length > 0) b.warn("These beneficiaries replace the ones on record.", { field: "beneficiaries" });
   return b.build();
 }
 
@@ -401,7 +401,7 @@ function residuaryDraft(rows: readonly FFRow[], ctx: PlaceContext, person: Perso
   b.put("recipients", set, from);
   // Every will on record has a set, often empty — warn only when it names someone.
   const recorded = ctx.book.records.will_residuary_recipient.find((r) => r.id === will.recordId)?.values.recipients;
-  if (Array.isArray(recorded) && recorded.length > 0) b.warn("These recipients replace the ones on record.");
+  if (Array.isArray(recorded) && recorded.length > 0) b.warn("These recipients replace the ones on record.", { field: "recipients" });
   return b.build();
 }
 

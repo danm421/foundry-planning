@@ -6,6 +6,8 @@ import { bookWith, contextOf, hendricksBook, linkedTo, recordOf, rowOf, stateWit
 import { NO_CO_CLIENT_REASON } from "../../refs";
 import { diffDrafts } from "../../diff";
 import type { RecordBook } from "../../types";
+import { validateLines } from "../../validate";
+import { columnFeeding } from "../index";
 import { INCOME_MAP, SALARY_MAP, SS_MAP } from "../income";
 import type { SectionMap } from "../types";
 
@@ -21,10 +23,10 @@ const markSs = recordOf("ss-1", "Social Security — Mark", { ssBenefitMode: "pi
 const lauraSs = recordOf("ss-2", "Social Security — Laura", { ssBenefitMode: null, piaMonthly: null }, facts("social_security", "spouse"));
 const pension = recordOf("inc-1", "Acme pension", { name: "Acme pension", type: "deferred", owner: "client" }, facts("deferred", "client"));
 
-/** `map` places `rows` against `book`; the fact finder also holds `sections`. */
-function place(map: SectionMap, rows: FFRow[], book: RecordBook, sections: Record<string, FFRow[]> = {}) {
+/** `map` places `rows` against `book`; the fact finder also holds `sections`. `removed`: "rowId:columnId" cells the runner took out (they didn't read). */
+function place(map: SectionMap, rows: FFRow[], book: RecordBook, sections: Record<string, FFRow[]> = {}, removed: string[] = []) {
   const { ctx } = contextOf(stateWith({ ...sections, [map.sectionId]: rows }), book);
-  return map.place(rows, ctx);
+  return map.place(rows, { ...ctx, removed: (rowId, columnId) => removed.includes(`${rowId}:${columnId}`) });
 }
 
 describe("placements", () => {
@@ -92,6 +94,17 @@ describe("SALARY_MAP", () => {
     expect(drafts).toHaveLength(1);
     expect(drafts[0].fields).toEqual([{ key: "annualAmount", value: 170000, from: from("salary:Client", "annualSalary") }]);
     expect(drafts[0].fixed).toBeUndefined();
+  });
+
+  it("a Start or End year that didn't read gets no default — validation asks for it at that cell", () => {
+    const row = rowOf("salary:Client", { annualSalary: 120000 });
+    const [income] = place(SALARY_MAP, [row], hendricksBook(), {}, ["salary:Client:startYear", "salary:Client:endYear"]);
+    expect(income.fields.map((f) => f.key)).toEqual(["annualAmount"]);
+    const [line] = validateLines(diffDrafts([income], hendricksBook()), (l, key) => columnFeeding(l.sectionId, l.target, key));
+    expect(line.blocked?.cell).toEqual(cell("salary", "salary:Client", "startYear"));
+    // Only the end didn't read: the start still defaults.
+    const [endOnly] = place(SALARY_MAP, [row], hendricksBook(), {}, ["salary:Client:endYear"]);
+    expect(endOnly.fields.map((f) => f.key)).toEqual(["annualAmount", "start"]);
   });
 
   it("an employer alone is only the household line", () => {
@@ -299,6 +312,12 @@ describe("INCOME_MAP", () => {
       { key: "start", value: 2026, from: [] },
       { key: "end", value: { yearRef: "plan_end" }, from: [] },
     ]);
+  });
+
+  it("a Start or End year that didn't read gets no default", () => {
+    const row = rowOf("i1", { incomeName: "Rental income", type: "Other", annualAmount: 18000 });
+    const [draft] = place(INCOME_MAP, [row], hendricksBook(), {}, ["i1:startYear", "i1:endYear"]);
+    expect(draft.fields.map((f) => f.key)).toEqual(["name", "type", "annualAmount"]);
   });
 
   it("an income on record: only the filled cells, no default years", () => {

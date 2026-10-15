@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { findSection } from "../../../schema";
 import type { FFRow } from "../../../types";
 import { contextOf, hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "../../__tests__/fixtures";
+import { diffDrafts } from "../../diff";
 import type { RecordBook } from "../../types";
 import { EXPENSES_MAP, LIVING_ITEMS_MAP, LIVING_MAP, SAVINGS_MAP } from "../expenses-savings";
 import type { SectionMap } from "../types";
@@ -23,10 +24,10 @@ const retirement = recordOf(
 const travel = recordOf("exp-1", "Travel", { name: "Travel", type: "other", annualAmount: 10000, start: 2026, end: 2040 }, facts("other"));
 const livingBook = () => hendricksBook({ expense: [current, retirement, travel] });
 
-/** `map` places `rows` against `book`; the fact finder also holds `sections`. */
-function place(map: SectionMap, rows: FFRow[], book: RecordBook, sections: Record<string, FFRow[]> = {}) {
+/** `map` places `rows` against `book`; the fact finder also holds `sections`. `removed`: "rowId:columnId" cells the runner took out (they didn't read). */
+function place(map: SectionMap, rows: FFRow[], book: RecordBook, sections: Record<string, FFRow[]> = {}, removed: string[] = []) {
   const { ctx } = contextOf(stateWith({ ...sections, [map.sectionId]: rows }), book);
-  return map.place(rows, ctx);
+  return map.place(rows, { ...ctx, removed: (rowId, columnId) => removed.includes(`${rowId}:${columnId}`) });
 }
 
 describe("placements", () => {
@@ -65,6 +66,15 @@ describe("LIVING_MAP", () => {
       ["exp-ret", [], ["Start year isn't saved — the plan's retirement living expenses start at retirement; change it in Details."]],
     ]);
     expect(LIVING_MAP.placements.startYear).toHaveProperty("context");
+  });
+
+  it("a row with only a Start year is \"No changes\" that still says the start year isn't saved", () => {
+    const book = livingBook();
+    const [line] = diffDrafts(place(LIVING_MAP, [rowOf("living:Current", { startYear: 2027 })], book), book);
+    expect([line.action, line.warnings]).toEqual([
+      "none",
+      ["Start year isn't saved — the plan's current living expenses start with the plan; change it in Details."],
+    ]);
   });
 
   it("the In retirement row updates the retirement row; a blank cell makes no field; a row with only notes makes no line", () => {
@@ -170,6 +180,16 @@ describe("LIVING_ITEMS_MAP", () => {
     expect(place(LIVING_ITEMS_MAP, [rowOf("li1", { item: "Groceries" }), rowOf("li2", { item: "Utilities", frequency: "Monthly" })], livingBook())).toEqual([]);
   });
 
+  it("an Amount that didn't read blocks the list on that cell — the list would replace the plan's without the item", () => {
+    const why = '"Amount" didn\'t read as a number — enter it, or clear it to leave this item out of the list.';
+    const [draft] = place(LIVING_ITEMS_MAP, items, livingBook(), {}, ["li3:amount"]);
+    expect(draft.blocked).toEqual({ reason: why, cell: cell("living_items", "li3", "amount") });
+    // A row whose only value was that Amount reads empty, so the runner never hands it to the map — still blocked.
+    const { ctx } = contextOf(stateWith({ living_items: [...items, rowOf("li5", {})] }), livingBook());
+    const [emptied] = LIVING_ITEMS_MAP.place(items, { ...ctx, removed: (rowId, columnId) => rowId === "li5" && columnId === "amount" });
+    expect(emptied.blocked).toEqual({ reason: why, cell: cell("living_items", "li5", "amount") });
+  });
+
   it("a plan with no current living expense row blocks the list", () => {
     const [draft] = place(LIVING_ITEMS_MAP, items, hendricksBook({ expense: [retirement] }));
     expect(draft.recordId).toBeNull();
@@ -208,6 +228,12 @@ describe("EXPENSES_MAP", () => {
       { key: "start", value: 2026, from: [] },
       { key: "end", value: { yearRef: "plan_end" }, from: [] },
     ]);
+  });
+
+  it("a Start or End year that didn't read gets no default", () => {
+    const row = rowOf("e1", { expenseName: "Parent care", type: "Other", annualAmount: 18000 });
+    const [draft] = place(EXPENSES_MAP, [row], livingBook(), {}, ["e1:startYear", "e1:endYear"]);
+    expect(draft.fields.map((f) => f.key)).toEqual(["name", "type", "annualAmount"]);
   });
 
   it("an expense on record: only the filled cells, no default years", () => {
@@ -334,6 +360,12 @@ describe("SAVINGS_MAP", () => {
       { yearRef: "client_retirement" }, // the fact finder says Client, whatever the plan says
       { yearRef: "client_retirement" }, // a 529's owner isn't saved — it has none
     ]);
+  });
+
+  it("a Start or End year that didn't read gets no default — validation asks for it", () => {
+    const row = rowOf("s1", { account: "Brightside 401(k)", contribution: "IRS maximum" });
+    const [draft] = place(SAVINGS_MAP, [row], book(), {}, ["s1:startYear", "s1:endYear"]);
+    expect(draft.fields.map((f) => f.key)).toEqual(["accountId", "contributeMax"]);
   });
 
   it("a rule on record: its link names it; only the filled cells, no default years", () => {

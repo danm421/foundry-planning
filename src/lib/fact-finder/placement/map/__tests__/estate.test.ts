@@ -324,7 +324,7 @@ describe("TRUSTS_MAP", () => {
           from: [c("remainderBeneficiaries")],
         },
       ],
-      warnings: ["These beneficiaries replace the ones on record."],
+      warnings: [{ text: "These beneficiaries replace the ones on record.", field: "beneficiaries" }],
       parent: { ref: "record", target: "entity", id: "ent-1" },
     });
   });
@@ -338,7 +338,7 @@ describe("TRUSTS_MAP", () => {
         trust_beneficiary_designation: [recordOf("ent-1", "Hendricks ILIT", { beneficiaries })],
       })).drafts[1].warnings;
     expect(warningsWith([])).toEqual([]);
-    expect(warningsWith([{ tier: "remainder", who: emma, percentage: 100 }])).toEqual(["These beneficiaries replace the ones on record."]);
+    expect(warningsWith([{ tier: "remainder", who: emma, percentage: 100 }])).toEqual([{ text: "These beneficiaries replace the ones on record.", field: "beneficiaries" }]);
   });
 
   it("a name that doesn't resolve blocks the beneficiaries line, not the trust", () => {
@@ -470,7 +470,7 @@ describe("BEQUESTS_MAP", () => {
     expect(drafts.map((d) => [d.lineId, d.recordId, d.parent, d.dependsOn, d.warnings])).toEqual([
       ["b1/will_bequest", "bq-2", onRecord, undefined, [OTHERS_STAY]],
       ["b2/will_bequest", "bq-1", onRecord, undefined, [OTHERS_STAY]],
-      ["b3/will_residuary_recipient", "w-1", onRecord, undefined, ["These recipients replace the ones on record."]],
+      ["b3/will_residuary_recipient", "w-1", onRecord, undefined, [{ text: "These recipients replace the ones on record.", field: "recipients" }]],
     ]);
   });
 
@@ -483,7 +483,7 @@ describe("BEQUESTS_MAP", () => {
         will_residuary_recipient: [recordOf("w-1", "Mark's will — remaining estate", { recipients })],
       })).drafts[0].warnings;
     expect(warningsWith([])).toEqual([]);
-    expect(warningsWith([{ who: spouse, percentage: 100 }])).toEqual(["These recipients replace the ones on record."]);
+    expect(warningsWith([{ who: spouse, percentage: 100 }])).toEqual([{ text: "These recipients replace the ones on record.", field: "recipients" }]);
   });
 
   it("the remaining estate: every row of one will makes one set, each row's % of it scaling its shares; asset and condition aren't saved", () => {

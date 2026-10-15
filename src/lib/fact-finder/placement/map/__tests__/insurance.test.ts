@@ -202,7 +202,7 @@ describe("LIFE_MAP", () => {
             from: [c("contingentBeneficiary")],
           },
         ],
-        warnings: ["These beneficiaries replace the ones on record."],
+        warnings: [{ text: "These beneficiaries replace the ones on record.", field: "beneficiaries" }],
         parent: { ref: "record", target: "life_insurance_policy", id: "pol-1" },
       });
     });
@@ -213,7 +213,7 @@ describe("LIFE_MAP", () => {
         place(LIFE_MAP, [row], hendricksBook({ ...kids, life_insurance_policy: [policy], life_insurance_policy_beneficiary: [recordOf("pol-1", "NWM Term 20", { beneficiaries })] }))
           .drafts[1].warnings;
       expect(warningsWith([])).toEqual([]);
-      expect(warningsWith([{ tier: "contingent", who: emma, percentage: 100 }])).toEqual(["These beneficiaries replace the ones on record."]);
+      expect(warningsWith([{ tier: "contingent", who: emma, percentage: 100 }])).toEqual([{ text: "These beneficiaries replace the ones on record.", field: "beneficiaries" }]);
     });
 
     it("a name that doesn't resolve blocks the beneficiaries line, not the policy", () => {
