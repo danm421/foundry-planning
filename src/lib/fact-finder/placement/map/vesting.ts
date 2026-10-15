@@ -15,7 +15,8 @@ export const NEEDS_START = 'Add the Grant date, or say when vesting starts ("ove
 const MAX_TRANCHES = 240;
 
 const DATE = String.raw`\d{1,2}/\d{1,2}/\d{4}|\d{4}-\d{1,2}-\d{1,2}|[A-Za-z]{3,9}\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}`;
-const SHARES = String.raw`\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?`;
+/** At most 15 digits a part: a longer run is never a share count, and an unbounded one backtracks quadratically. */
+const SHARES = String.raw`\d{1,3}(?:,\d{3})+(?:\.\d{1,15})?|\d{1,15}(?:\.\d{1,15})?`;
 /** "3/1/2027: 250" or "250 shares on 3/1/2027". */
 const PAIR = new RegExp(
   String.raw`(${DATE})\s*[:=–-]\s*(${SHARES})(?:\s*shares?)?|(${SHARES})(?:\s*shares?)?\s+(?:on|at)\s+(${DATE})`,

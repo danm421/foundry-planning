@@ -71,6 +71,14 @@ const SYSTEM_PROMPT = [
 
 const clean = (text: string) => redactSsns(text).text;
 
+/** More item text than this in all and the AI step is skipped: every item is kept as a plan note. */
+const AI_TEXT_MAX = 50_000;
+
+/** Whether the items hold too much text for the AI step (leftovers-run.ts makes no call; applyLeftovers keeps each as a plan note). */
+export function tooMuchForAi(items: readonly LeftoverItem[]): boolean {
+  return items.reduce((sum, item) => sum + item.text.length, 0) > AI_TEXT_MAX;
+}
+
 export function buildLeftoversPrompt(items: readonly LeftoverItem[], drafts: readonly TargetDraft[]): { system: string; user: string } {
   const places = drafts.flatMap((draft) => {
     if (draft.blocked) return [];
@@ -236,10 +244,13 @@ export function applyLeftovers(
   saves: (draft: TargetDraft) => boolean = () => true,
 ): { drafts: TargetDraft[]; notices: string[] } {
   if (items.length === 0) return { drafts: [...drafts], notices: [] };
-  if (output === null) return { drafts: [...drafts], notices: [notPlacedNotice(items)] };
+  // Too much text: no call was made, and no answer counts — every item is a plan note.
+  const skipped = tooMuchForAi(items);
+  const given = skipped ? { items: [] } : output;
+  if (given === null) return { drafts: [...drafts], notices: [notPlacedNotice(items)] };
 
   const answers = new Map<string, Answer>();
-  for (const answer of output.items) if (!answers.has(answer.itemId)) answers.set(answer.itemId, answer);
+  for (const answer of given.items) if (!answers.has(answer.itemId)) answers.set(answer.itemId, answer);
   let { placed, on } = placeFields(items, drafts, answers);
   const refused = new Set([...new Set(on.values())].filter((i) => !saves(placed[i]) && saves(drafts[i])));
   if (refused.size > 0) {
@@ -249,7 +260,9 @@ export function applyLeftovers(
 
   const taken = new Set(drafts.map((draft) => draft.lineId));
   const notes: TargetDraft[] = [];
-  const notices: string[] = [];
+  const notices: string[] = skipped
+    ? ["The notes are too long to place automatically (over 50,000 characters in all), so each is kept as a plan note."]
+    : [];
 
   const planNote = (item: LeftoverItem, topic: NoteTopic): TargetDraft => {
     let n = 0;

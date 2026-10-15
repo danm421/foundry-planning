@@ -243,6 +243,48 @@ describe("placeFactFinder — notes for the AI step", () => {
   });
 });
 
+describe("placeFactFinder — a cell over 2,000 characters", () => {
+  const timed = (sections: Record<string, FFRow[]>) => {
+    const started = performance.now();
+    const placed = place(sections, hendricksBook(kids));
+    return { placed, ms: performance.now() - started };
+  };
+
+  it("a 100,000-digit vesting schedule and a 40,000-character beneficiary list are placed in well under a second", () => {
+    const grant = rowOf("g1", { company: "Acme", grantType: "RSU", grantDate: "2025-03-01", sharesGranted: 1000, owner: "Client" });
+    const { placed, ms } = timed({
+      equity: [withCells(grant, { vestingSchedule: raw("1".repeat(100_000)) })],
+      retirement: [withCells(rowOf("r1", { accountName: "Fidelity IRA", owner: "Client" }), { primaryBeneficiary: raw(`Emma ${"1".repeat(40_000)}`) })],
+    });
+    expect(ms).toBeLessThan(200);
+    // Taken out before any map reads them: each goes to the AI step cut to 2,000 characters, and a notice names it.
+    expect(placed.leftovers.map((l) => [l.id, l.kind, l.text.length])).toEqual([
+      ["r1:primaryBeneficiary", "unfit", 2000],
+      ["g1:vestingSchedule", "unfit", 2000],
+    ]);
+    expect(placed.notices).toEqual(expect.arrayContaining([
+      "Primary beneficiary (Fidelity IRA): over 2,000 characters, so only the first 2,000 were read.",
+      "Vesting schedule (Acme): over 2,000 characters, so only the first 2,000 were read.",
+    ]));
+  });
+
+  it("a notes cell over 2,000 characters is cut to 2,000 for the AI step, with a notice", () => {
+    const { placed } = timed({ final_notes: [rowOf("final_notes:Notes", { notes: "x".repeat(2_500) })] });
+    expect(placed.leftovers.map((l) => [l.kind, l.text.length])).toEqual([["note", 2000]]);
+    expect(placed.notices).toContain("Notes (Anything else we should know?): over 2,000 characters, so only the first 2,000 were read.");
+  });
+
+  it("a choice cell over 2,000 characters blocks the line its column feeds", () => {
+    const checking = rowOf("c1", { accountName: "Joint Checking", currentValue: 9000 });
+    const { placed } = timed({ cash: [withCells(checking, { owner: raw("Joint".repeat(500)) })] });
+    expect(draft(placed, "c1/account")?.blocked).toEqual({
+      reason: "Owner: over 2,000 characters, so it isn't one of the options — pick one.",
+      cell: { sectionId: "cash", rowId: "c1", columnId: "owner" },
+    });
+    expect(placed.leftovers).toEqual([]);
+  });
+});
+
 describe("placeFactFinder — a row linked to the other kind of account", () => {
   const business = recordOf("b-1", "Hendricks Consulting", { name: "Hendricks Consulting" }, { category: "business" });
   const checking = recordOf("a-1", "Joint Checking ··1234", { name: "Joint Checking" }, { category: "cash" });

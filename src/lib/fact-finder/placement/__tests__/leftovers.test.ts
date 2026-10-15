@@ -332,6 +332,20 @@ describe("applyLeftovers", () => {
     });
   });
 
+  it("with over 50,000 characters of notes in all, skips the AI step: every item is a plan note in its own words, with a notice", () => {
+    const items = Array.from({ length: 26 }, (_, i): LeftoverItem => ({
+      ...finalNotes, id: `n${i}:notes`, cell: cell("final_notes", `n${i}`, "notes"), text: `Note ${i}: ${"x".repeat(1990)}`,
+    }));
+    const TOO_LONG = "The notes are too long to place automatically (over 50,000 characters in all), so each is kept as a plan note.";
+    for (const output of [null, answers(field("n0:notes", "r1/account", "custodian", "Note 0", "Note 0"))]) {
+      const { drafts, notices } = applyLeftovers(items, DRAFTS, output, BOOK);
+      expect(drafts.slice(0, DRAFTS.length)).toEqual(DRAFTS);
+      expect(drafts.slice(DRAFTS.length)).toEqual(items.map((item) =>
+        planNote(item, `${item.cell.rowId}/plan_observation/0`, "general", `${item.rowLabel} — ${item.columnLabel}: ${item.text}`)));
+      expect(notices).toEqual([TOO_LONG]);
+    }
+  });
+
   it("makes every note, and every item the model didn't answer, a plan note — the model's topic, else the item's", () => {
     const { drafts, notices } = applyLeftovers([livingNotes, finalNotes], DRAFTS, answers(note("fn:notes", "estate")), BOOK);
     expect(drafts).toEqual([

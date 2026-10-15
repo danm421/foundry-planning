@@ -58,6 +58,9 @@ const UNFIT_TOPIC: Record<FFPage, NoteTopic> = {
   estate: "estate",
 };
 
+/** Longer than this, a text cell is unfit: no reader or prompt takes it whole (a megabyte cell would pin the review). */
+const CELL_MAX = 2_000;
+
 /** A value of the column's kind, as the readers and every edit store it (normalize.ts). */
 function fits(column: FFColumn, value: FFCellValue): boolean {
   switch (column.kind) {
@@ -92,6 +95,8 @@ interface Taken {
   value: string;
   /** A note, or a value that didn't fit a column placed into this target. */
   as: { note: NoteTopic } | { unfit: TargetKind };
+  /** Over CELL_MAX: `value` is its first CELL_MAX characters. */
+  cut?: true;
 }
 
 /** The row without its notes and the cells that didn't fit; `taken` gets them, and `removed` every cell taken out. */
@@ -101,13 +106,15 @@ function cleanRow(section: FFSection, map: SectionMap, row: FFRow, taken: Taken[
     const cell = row.cells[column.id];
     if (!cell || isBlank(cell.value)) continue;
     const placement = map.placements[column.id];
-    if (!("note" in placement) && cell.issue === undefined && fits(column, cell.value)) continue;
+    const long = typeof cell.value === "string" && cell.value.length > CELL_MAX;
+    if (!("note" in placement) && cell.issue === undefined && fits(column, cell.value) && !long) continue;
     delete clean.cells[column.id];
     removed.add(cellKey(row.id, column.id));
-    const value = String(cell.value);
-    if ("note" in placement) taken.push({ section, row: clean, column, value, as: { note: placement.note } });
+    const value = long ? String(cell.value).slice(0, CELL_MAX) : String(cell.value);
+    const cut = long ? { cut: true as const } : {};
+    if ("note" in placement) taken.push({ section, row: clean, column, value, as: { note: placement.note }, ...cut });
     // A context column's unfit value is only dropped: it is never saved anyway.
-    else if ("to" in placement) taken.push({ section, row: clean, column, value, as: { unfit: placement.to.split(".")[0] as TargetKind } });
+    else if ("to" in placement) taken.push({ section, row: clean, column, value, as: { unfit: placement.to.split(".")[0] as TargetKind }, ...cut });
   }
   return clean;
 }
@@ -213,10 +220,11 @@ export function placeFactFinder(state: FactFinderState, book: RecordBook, now: D
   }
 
   const leftovers: LeftoverItem[] = [];
-  for (const { section, row, column, value, as } of taken) {
+  for (const { section, row, column, value, as, cut } of taken) {
     const cell: CellRef = { sectionId: section.id, rowId: row.id, columnId: column.id };
     const name = labelOfRow(section, row, drafts);
     if ("note" in as || column.kind !== "choice") {
+      if (cut) notices.push(`${column.label} (${name}): over 2,000 characters, so only the first 2,000 were read.`);
       leftovers.push({
         id: cellKey(row.id, column.id),
         cell,
@@ -232,7 +240,9 @@ export function placeFactFinder(state: FactFinderState, book: RecordBook, now: D
     const mine = drafts.filter((d) => ofRow(d, row.id));
     const hit = mine.some((d) => d.target === as.unfit) ? mine.filter((d) => d.target === as.unfit) : mine;
     if (hit.length === 0) notices.push(`${column.label} (${name}): "${value}" isn't one of the options — pick one, then review again.`);
-    const reason = `${column.label}: "${value}" isn't one of the options — pick one.`;
+    const reason = cut
+      ? `${column.label}: over 2,000 characters, so it isn't one of the options — pick one.`
+      : `${column.label}: "${value}" isn't one of the options — pick one.`;
     for (const d of hit) if (!blocks.has(d.lineId)) blocks.set(d.lineId, { reason, cell });
   }
 

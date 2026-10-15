@@ -139,6 +139,12 @@ describe("parseVestingSchedule — long runs of spaces", () => {
     expect(ms).toBeLessThan(200);
   });
 
+  it("a 100,000-digit run is refused in well under a second — a share count reads at most 15 digits", () => {
+    const { result, ms } = timed("1".repeat(100_000));
+    expect(result).toEqual({ ok: false, reason: UNREAD });
+    expect(ms).toBeLessThan(200);
+  });
+
   it("5,000 spaces before words it can't read are refused, in well under a second (no runaway regex)", () => {
     const { result, ms } = timed(`vests${gap}x`);
     expect(result).toEqual({ ok: false, reason: UNREAD });

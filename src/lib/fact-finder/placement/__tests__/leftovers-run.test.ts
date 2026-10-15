@@ -65,6 +65,12 @@ describe("runLeftovers", () => {
     expect(chatModel).not.toHaveBeenCalled();
   });
 
+  it("makes no call for more than 50,000 characters of notes in all — each is kept as a plan note", async () => {
+    const many = Array.from({ length: 26 }, (_, i): LeftoverItem => ({ ...item, id: `n${i}:notes`, text: "x".repeat(2000) }));
+    expect(await runLeftovers(many, [draft])).toBeNull();
+    expect(chatModel).not.toHaveBeenCalled();
+  });
+
   it("asks the full model once, for the leftovers schema with its raw reply, with the prompt and a time limit", async () => {
     invoke.mockResolvedValueOnce(reply(OUTPUT));
     expect(await runLeftovers([item], [draft])).toEqual(OUTPUT);

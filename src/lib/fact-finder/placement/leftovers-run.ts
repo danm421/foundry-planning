@@ -9,14 +9,15 @@ import "server-only";
 import { HumanMessage, SystemMessage, type BaseMessage } from "@langchain/core/messages";
 import { chatModel } from "@/domain/forge/llm";
 import { recordMessageUsage, usageStage } from "@/lib/ai/usage";
-import { buildLeftoversPrompt, LeftoversOutputSchema, type LeftoversOutput } from "./leftovers";
+import { buildLeftoversPrompt, LeftoversOutputSchema, tooMuchForAi, type LeftoversOutput } from "./leftovers";
 import type { LeftoverItem, TargetDraft } from "./types";
 
 /** The review waits this long for the AI; past it, the change list builds without it. */
 const LEFTOVERS_TIMEOUT_MS = 90_000;
 
 export async function runLeftovers(items: readonly LeftoverItem[], drafts: readonly TargetDraft[]): Promise<LeftoversOutput | null> {
-  if (items.length === 0) return null;
+  // Nothing to place, or too much text for one call: applyLeftovers keeps each item as a plan note.
+  if (items.length === 0 || tooMuchForAi(items)) return null;
   const { system, user } = buildLeftoversPrompt(items, drafts);
   try {
     const model = (await chatModel("full")).withStructuredOutput<LeftoversOutput>(LeftoversOutputSchema, {
