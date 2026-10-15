@@ -7,8 +7,10 @@
 // the next plan. Imports only client-safe leaf modules from src/lib/fact-finder.
 import { Fragment, memo, useId } from "react";
 import { Card } from "@/components/card";
-import type { CellRef, ChangeField, ChangeLine, ChangeSet, ChangeTicks } from "@/lib/fact-finder/change-set";
+import { countLines, type CellRef, type ChangeField, type ChangeLine, type ChangeSet, type ChangeTicks } from "@/lib/fact-finder/change-set";
+import { EMPTY } from "@/lib/fact-finder/placement/values";
 import { PAGE_ORDER, findSection } from "@/lib/fact-finder/schema";
+import { GHOST_BUTTON } from "./button-styles";
 import { AlertIcon, ChevronDownIcon, SparklesIcon } from "./icons";
 
 export interface ChangeListProps {
@@ -26,8 +28,6 @@ type GroupProps = Omit<ChangeListProps, "changeSet" | "onBack">;
 type LineProps = Omit<GroupProps, "ticks"> & { line: ChangeLine; lineTicks: Record<string, boolean> | undefined };
 
 const SAVE_REASON = "Saving arrives in the next update.";
-/** The review's text for an empty value (on record, a blank). */
-const EMPTY = "—";
 const CHECKBOX = "h-4 w-4 cursor-pointer rounded accent-accent";
 const CHIP = "inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium";
 const HEAD = "pb-1 text-left text-xs font-medium text-ink-3";
@@ -37,14 +37,28 @@ const CELL = "border-t border-hair py-1.5 align-top @max-md:border-t-0 @max-md:p
 const sectionLabel = (line: ChangeLine) => findSection(line.sectionId)?.label;
 
 /** "12 to create · 8 to update · 3 can't save · 5 unchanged", leaving out what there's none of. */
+/** The heading over the review, wherever it shows (the list, or the notice that it's out of date). */
+export function ChangesHeading() {
+  return <h2 className="text-lg font-semibold text-ink">Changes to the plan</h2>;
+}
+
+export function BackToFactFinder({ onClick }: { onClick(): void }) {
+  return (
+    <button type="button" onClick={onClick} className={GHOST_BUTTON}>
+      <span aria-hidden="true">←</span>
+      Back to fact finder
+    </button>
+  );
+}
+
 function Summary({ lines }: { lines: readonly ChangeLine[] }) {
-  const count = (test: (line: ChangeLine) => boolean) => lines.filter(test).length;
+  const { creates, updates, blocked, unchanged } = countLines(lines);
   const parts = (
     [
-      [count((l) => !l.blocked && l.action === "create"), "to create"],
-      [count((l) => !l.blocked && l.action === "update"), "to update"],
-      [count((l) => l.blocked !== undefined), "can't save"],
-      [count((l) => !l.blocked && l.action === "none"), "unchanged"],
+      [creates, "to create"],
+      [updates, "to update"],
+      [blocked, "can't save"],
+      [unchanged, "unchanged"],
     ] as const
   ).filter(([n]) => n > 0);
   if (parts.length === 0) return <p className="text-sm text-ink-2">Nothing here changes the plan.</p>;
@@ -290,7 +304,7 @@ export function ChangeList({ changeSet, onBack, ...lineProps }: ChangeListProps)
   const saveReasonId = useId();
   return (
     <div className="@container flex flex-col gap-4">
-      <h2 className="text-lg font-semibold text-ink">Changes to the plan</h2>
+      <ChangesHeading />
       <Summary lines={changeSet.lines} />
       {changeSet.notices.length > 0 && (
         <ul className="flex flex-col gap-1.5 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2">
@@ -307,14 +321,7 @@ export function ChangeList({ changeSet, onBack, ...lineProps }: ChangeListProps)
         return lines.length > 0 && <PageGroup key={id} label={label} lines={lines} {...lineProps} />;
       })}
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hair pt-4">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex cursor-pointer items-center gap-1.5 rounded-[var(--radius-sm)] border border-hair px-3 py-2 text-sm text-ink-2 transition-colors hover:border-hair-2 hover:text-ink"
-        >
-          <span aria-hidden="true">←</span>
-          Back to fact finder
-        </button>
+        <BackToFactFinder onClick={onBack} />
         <div className="flex flex-wrap items-center justify-end gap-3">
           <p id={saveReasonId} className="text-xs text-ink-3">
             {SAVE_REASON}

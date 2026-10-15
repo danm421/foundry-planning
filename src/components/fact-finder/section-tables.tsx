@@ -8,6 +8,7 @@
 // an account with holdings gets a holdings line under its row.
 import { Fragment, useState, type ReactNode } from "react";
 import { selectChevronClassName } from "@/components/forms/input-styles";
+import { cellKey } from "@/lib/fact-finder/change-set";
 import type { ClientOp } from "@/lib/fact-finder/ops";
 import type { ColumnKind, FFColumn, FFSection, OWNER } from "@/lib/fact-finder/schema";
 import { fixedLabelOfRow, rowLabel } from "@/lib/fact-finder/state";
@@ -88,7 +89,7 @@ function cellFor({ section, changed, onApply, fileName, ownerEntities }: Section
       column={shown}
       cell={row.cells[column.id]}
       onApply={onApply}
-      highlighted={changed.has(`${row.id}:${column.id}`)}
+      highlighted={changed.has(cellKey(row.id, column.id))}
       fileName={fileName}
     />
   );
@@ -96,7 +97,7 @@ function cellFor({ section, changed, onApply, fileName, ownerEntities }: Section
 
 function linkFor({ section, changed, onApply }: SectionBodyProps, row: FFRow) {
   return (
-    <LinkCell sectionId={section.id} row={row} onApply={onApply} highlighted={changed.has(`${row.id}:link`)} />
+    <LinkCell sectionId={section.id} row={row} onApply={onApply} highlighted={changed.has(cellKey(row.id, "link"))} />
   );
 }
 
@@ -216,11 +217,11 @@ function ListTable(props: SectionBodyProps) {
                   <NumberedLabel text={String(i + 1)} label={rowLabel(section, row)} />
                 </th>
                 {section.columns.map((column) => (
-                  <td key={column.id} data-cell={`${row.id}:${column.id}`} className={CELL}>
+                  <td key={column.id} data-cell={cellKey(row.id, column.id)} className={CELL}>
                     {cellFor(props, row, column)}
                   </td>
                 ))}
-                {section.links && <td data-cell={`${row.id}:link`} className={CELL}>{linkFor(props, row)}</td>}
+                {section.links && <td data-cell={cellKey(row.id, "link")} className={CELL}>{linkFor(props, row)}</td>}
                 <td data-row-actions className={STICKY_END}>
                   <RowActions section={section} rows={rows} row={row} onApply={onApply} />
                 </td>
@@ -264,11 +265,11 @@ function FixedRowsTable(props: SectionBodyProps) {
               {fixedLabelOfRow(section.id, row.id)}
             </th>
             {section.columns.map((column) => (
-              <td key={column.id} data-cell={`${row.id}:${column.id}`} className={CELL}>
+              <td key={column.id} data-cell={cellKey(row.id, column.id)} className={CELL}>
                 {cellFor(props, row, column)}
               </td>
             ))}
-            {section.links && <td data-cell={`${row.id}:link`} className={CELL}>{linkFor(props, row)}</td>}
+            {section.links && <td data-cell={cellKey(row.id, "link")} className={CELL}>{linkFor(props, row)}</td>}
           </tr>
         ))}
       </tbody>
@@ -307,7 +308,7 @@ function TransposedTable(props: SectionBodyProps) {
               Links to
             </th>
             {rows.map((row) => (
-              <td key={row.id} data-cell={`${row.id}:link`} className={CELL}>
+              <td key={row.id} data-cell={cellKey(row.id, "link")} className={CELL}>
                 {linkFor(props, row)}
               </td>
             ))}
@@ -319,7 +320,7 @@ function TransposedTable(props: SectionBodyProps) {
               <div className="min-w-40">{column.label}</div>
             </th>
             {rows.map((row) => (
-              <td key={row.id} data-cell={`${row.id}:${column.id}`} className={CELL}>
+              <td key={row.id} data-cell={cellKey(row.id, column.id)} className={CELL}>
                 {cellFor(props, row, column)}
               </td>
             ))}
@@ -335,7 +336,7 @@ function NotesBox(props: SectionBodyProps) {
   const [row] = props.rows;
   if (!row) return null;
   const [column] = props.section.columns;
-  return <div data-cell={`${row.id}:${column.id}`} className="px-[var(--pad-card)] py-3">{cellFor(props, row, column)}</div>;
+  return <div data-cell={cellKey(row.id, column.id)} className="px-[var(--pad-card)] py-3">{cellFor(props, row, column)}</div>;
 }
 
 export function SectionBody(props: SectionBodyProps) {

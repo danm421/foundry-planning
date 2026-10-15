@@ -8,12 +8,12 @@ import { useCallback, useState } from "react";
 import { flushSync } from "react-dom";
 import Link from "next/link";
 import { Card } from "@/components/card";
-import type { CellRef } from "@/lib/fact-finder/change-set";
+import { cellKey, type CellRef } from "@/lib/fact-finder/change-set";
 import { filesReading } from "@/lib/fact-finder/reading-status";
 import { PAGE_ORDER, findSection, type FFPage } from "@/lib/fact-finder/schema";
 import { pageCounts } from "@/lib/fact-finder/screen-summary";
 import { countLinksNeedingClick } from "@/lib/fact-finder/state";
-import { ChangeList } from "./change-list";
+import { BackToFactFinder, ChangeList, ChangesHeading } from "./change-list";
 import { ChatComposerBar, ChatPanel, useChat } from "./chat-panel";
 import { DocumentsPanel, useDocuments } from "./documents-panel";
 import { AlertIcon, LoaderIcon, PanelIcon } from "./icons";
@@ -32,8 +32,6 @@ const REVIEW_REASON_ID = "fact-finder-review-reason";
 const PRIMARY_BUTTON =
   "inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on transition-colors " +
   "enabled:cursor-pointer enabled:hover:bg-accent-ink disabled:cursor-not-allowed disabled:opacity-50";
-const GHOST_BUTTON =
-  "inline-flex cursor-pointer items-center gap-1.5 rounded-[var(--radius-sm)] border border-hair px-3 py-2 text-sm text-ink-2 transition-colors hover:border-hair-2 hover:text-ink";
 
 /** Why "Review changes →" can't be pressed yet; null when it can. */
 function reviewBlockedReason(reading: boolean, linksToClick: number, pending: boolean): string | null {
@@ -68,7 +66,7 @@ function clearRowActions(target: HTMLElement) {
  */
 function focusCell(cell: CellRef | undefined, sectionId: string) {
   const target =
-    (cell && document.querySelector<HTMLElement>(`[data-cell="${cell.rowId}:${cell.columnId}"]`)) ??
+    (cell && document.querySelector<HTMLElement>(`[data-cell="${cellKey(cell.rowId, cell.columnId)}"]`)) ??
     document.getElementById(`fact-finder-section-${sectionId}`);
   if (!target) return;
   const control = target.querySelector<HTMLElement>("input, select, textarea, button") ?? target;
@@ -222,16 +220,13 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
             />
           ) : showChanges ? (
             <>
-              <h2 className="text-lg font-semibold text-ink">Changes to the plan</h2>
+              <ChangesHeading />
               <Card className="flex flex-wrap items-center justify-between gap-3 px-[var(--pad-card)] py-4">
                 <p role="status" className="text-sm text-ink-2">
                   The fact finder changed — review again.
                 </p>
                 <div className="flex items-center gap-3">
-                  <button type="button" onClick={() => setShowChanges(false)} className={GHOST_BUTTON}>
-                    <span aria-hidden="true">←</span>
-                    Back to fact finder
-                  </button>
+                  <BackToFactFinder onClick={() => setShowChanges(false)} />
                   <button
                     type="button"
                     disabled={!canReview}
