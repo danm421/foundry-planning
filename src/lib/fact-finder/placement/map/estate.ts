@@ -14,7 +14,7 @@ import {
 import { normText } from "../../identity";
 import { fixedRow, fixedRowId } from "../../state";
 import type { FFRow } from "../../types";
-import { findAccount, findLiability, findPerson } from "../refs";
+import { findAccount, findLiability, findPerson, type RefResult } from "../refs";
 import { roleLabel, willLabel } from "../text";
 import { parseShares, splitPersonName } from "../translate";
 import { findRecord, type TargetDraft } from "../types";
@@ -269,15 +269,61 @@ function recipientsOf(names: string, ctx: PlaceContext, person: Person, debt: bo
   return { ok: true, recipients: shares.shares.map((s) => ({ who: s.who, percentage: s.percent })) };
 }
 
-/** D8: the provision on record in this person's will that gives the same asset — one with the same condition first; each matched once. */
-function provisionOnRecord(ctx: PlaceContext, person: Person, asset: RecordRef, condition: string | null, taken: Set<string>): string | null {
-  if (asset.ref !== "record") return null;
-  const key = `${asset.target === "liability" ? "liability" : "account"}:${asset.id}`;
-  const candidates = ctx.book.records.will_bequest.filter((r) => r.facts?.grantor === person && r.facts.assetKey === key && !taken.has(r.id));
-  const match = candidates.find((r) => r.values.condition === condition) ?? candidates[0];
-  if (!match) return null;
-  taken.add(match.id);
-  return match.id;
+/** A specific asset or debt row, read: what it gives, the asset found, and its condition (a debt's is always "always"). */
+interface Provision {
+  row: FFRow;
+  kind: string | null;
+  debt: boolean;
+  assetText: string | null;
+  asset: RefResult | null;
+  condition: string | null;
+}
+
+function provisionOf(row: FFRow, ctx: PlaceContext): Provision {
+  const kind = valueFor(BEQUEST_KIND_MAP, text(row, "gift"));
+  const debt = kind === "liability";
+  const assetText = text(row, "asset");
+  const asset = kind === null || assetText === null ? null : debt ? findLiability(ctx.refs, assetText) : findAccount(ctx.refs, assetText);
+  return { row, kind, debt, assetText, asset, condition: valueFor(BEQUEST_COND_MAP, text(row, "condition")) };
+}
+
+/** Row id → its provision on record; row id → how many it could be (a blank Condition with two or more left). */
+interface OnRecord {
+  ids: Map<string, string>;
+  ambiguous: Map<string, number>;
+}
+
+/**
+ * D8: each row's provision on record in this person's will — one giving the
+ * same asset, each matched once. Every row's same-condition match first, across
+ * all the rows, so an earlier row can't take the provision a later row names;
+ * then the rest take what's left. A blank Condition with two or more left is
+ * never a guess.
+ */
+function provisionsOnRecord(provisions: readonly Provision[], ctx: PlaceContext, person: Person): OnRecord {
+  const found: OnRecord = { ids: new Map(), ambiguous: new Map() };
+  const taken = new Set<string>();
+  const left = ({ asset }: Provision) => {
+    if (!asset?.ok || asset.ref.ref !== "record") return [];
+    const key = `${asset.ref.target === "liability" ? "liability" : "account"}:${asset.ref.id}`;
+    return ctx.book.records.will_bequest.filter((r) => r.facts?.grantor === person && r.facts.assetKey === key && !taken.has(r.id));
+  };
+  const take = (p: Provision, id: string) => {
+    taken.add(id);
+    found.ids.set(p.row.id, id);
+  };
+  const wanted = (p: Provision) => (p.debt ? "always" : p.condition);
+  for (const p of provisions) {
+    const same = left(p).find((r) => r.values.condition === wanted(p));
+    if (same) take(p, same.id);
+  }
+  for (const p of provisions) {
+    if (found.ids.has(p.row.id)) continue;
+    const rest = left(p);
+    if (wanted(p) === null && rest.length > 1) found.ambiguous.set(p.row.id, rest.length);
+    else if (rest.length > 0) take(p, rest[0].id);
+  }
+  return found;
 }
 
 /**
@@ -286,19 +332,19 @@ function provisionOnRecord(ctx: PlaceContext, person: Person, asset: RecordRef, 
  * A blank % of it or condition defaults only on a new provision.
  */
 function bequestDraft(
-  row: FFRow, ctx: PlaceContext, person: Person, will: Will, sortOrder: number, seen: { taken: Set<string>; debts: Set<string> },
+  provision: Provision, ctx: PlaceContext, person: Person, will: Will, sortOrder: number, seen: { onRecord: OnRecord; debts: Set<string> },
 ): TargetDraft {
-  const kind = valueFor(BEQUEST_KIND_MAP, text(row, "gift"));
-  const debt = kind === "liability";
-  const assetText = text(row, "asset");
-  const asset = kind === null || assetText === null ? null : debt ? findLiability(ctx.refs, assetText) : findAccount(ctx.refs, assetText);
-  const condition = valueFor(BEQUEST_COND_MAP, text(row, "condition"));
-  const recordId = asset?.ok ? provisionOnRecord(ctx, person, asset.ref, debt ? "always" : condition, seen.taken) : null;
+  const { row, kind, debt, assetText, asset, condition } = provision;
+  const recordId = seen.onRecord.ids.get(row.id) ?? null;
   const name = asset?.ok ? asset.label : (assetText ?? "Will provision");
   const b = new DraftBuilder({
     sectionId: "bequests", row, target: "will_bequest", recordId, label: `${will.label} — ${name}`, fixed: { name, sortOrder }, parent: will.ref,
   });
   if (kind === null) return b.block("Pick what this provision gives.", "gift").build();
+  const ambiguous = seen.onRecord.ambiguous.get(row.id);
+  if (ambiguous !== undefined) {
+    return b.block(`${ambiguous === 2 ? "Two" : ambiguous} provisions on record give ${name} — pick a Condition.`, "condition").build();
+  }
   b.put("kind", kind, ["gift"], debt ? undefined : { assetMode: "specific" });
   if (asset === null) b.block(debt ? "Name the debt." : "Name the asset or account it gives.", "asset");
   else if (!asset.ok) b.block(asset.reason, "asset");
@@ -382,8 +428,9 @@ export const BEQUESTS_MAP: SectionMap = {
         const checked = bool(docs, "will") === true ? [cellOf("estate_docs", docs, "will")] : [];
         drafts.push(newWill(ctx, person, will, [...checked, ...mine.map((r) => cellOf("bequests", r, "willOf"))]));
       }
-      const seen = { taken: new Set<string>(), debts: new Set<string>() };
-      mine.filter((r) => !isResiduary(r)).forEach((row, i) => drafts.push(bequestDraft(row, ctx, person, will, i, seen)));
+      const provisions = mine.filter((r) => !isResiduary(r)).map((row) => provisionOf(row, ctx));
+      const seen = { onRecord: provisionsOnRecord(provisions, ctx, person), debts: new Set<string>() };
+      provisions.forEach((p, i) => drafts.push(bequestDraft(p, ctx, person, will, i, seen)));
       const rest = mine.filter(isResiduary);
       const residuary = rest.length > 0 ? residuaryDraft(rest, ctx, person, will) : null;
       if (residuary) drafts.push(residuary);

@@ -481,6 +481,34 @@ describe("BEQUESTS_MAP", () => {
     expect(diffDrafts(drafts, book)[2].warnings).toEqual(["These recipients replace the ones on record."]);
   });
 
+  describe("two provisions on record give one asset", () => {
+    const bequest = (id: string, condition: string) =>
+      recordOf(id, "Fidelity IRA", { kind: "asset", condition }, { willId: "w-1", grantor: "client", assetKey: "account:a-ira" });
+    const book = hendricksBook({
+      ...kids,
+      account: [recordOf("a-ira", "Fidelity IRA", { name: "Fidelity IRA" }, { category: "retirement" })],
+      will: [recordOf("w-1", "Mark's will", { grantor: "client" }, { grantor: "client" })],
+      // The kids' provision first: a greedy match hands it to the blank row, and the row naming it gets Laura's.
+      will_bequest: [bequest("bq-kids", "if_spouse_predeceased"), bequest("bq-laura", "if_spouse_survives")],
+    });
+    const ira = (id: string, recipients: string, condition?: string) =>
+      rowOf(id, { willOf: "Client", gift: "Specific asset", asset: "Fidelity IRA", recipients, ...(condition ? { condition } : {}) });
+
+    it("a row naming its condition takes that provision first, even when a blank row comes before it", () => {
+      const { drafts } = place(BEQUESTS_MAP, [ira("b1", "Laura"), ira("b2", "Emma 50%, Lucas 50%", "If co-client predeceases")], book);
+      expect(drafts.map((d) => [d.lineId, d.recordId, d.blocked])).toEqual([
+        ["b1/will_bequest", "bq-laura", undefined],
+        ["b2/will_bequest", "bq-kids", undefined],
+      ]);
+      expect(values(drafts[0]).condition).toBeUndefined();
+    });
+
+    it("a blank Condition with both still to choose from is blocked on its Condition cell", () => {
+      const [draft] = place(BEQUESTS_MAP, [ira("b1", "Laura")], book).drafts;
+      expect(draft.blocked).toEqual({ reason: "Two provisions on record give Fidelity IRA — pick a Condition.", cell: c("b1")("condition") });
+    });
+  });
+
   it("the remaining estate warns it replaces the set only when the will on record names someone", () => {
     const row = rowOf("b1", { willOf: "Client", gift: "Remaining estate", recipients: "Emma" });
     const warningsWith = (recipients: BookRecord["values"][string]) => {
