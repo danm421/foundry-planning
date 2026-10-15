@@ -1,41 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
-import {
-  scenarios,
-  accounts,
-  accountOwners,
-  familyMembers,
-  lifeInsurancePolicies,
-  lifeInsuranceCashValueSchedule,
-} from "@/db/schema";
+import { accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { recordAudit } from "@/lib/audit";
-import { insurancePolicyCreateSchema } from "@/lib/schemas/insurance-policies";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
-import {
-  ownerRefToAccountOwnerRows,
-  type OwnerRef,
-} from "@/lib/insurance-policies/owner-ref";
-import { mapPolicyTypeToSubType } from "@/lib/insurance-policies/sub-type";
-import { assertOwnerRefInClient } from "@/lib/insurance-policies/assert-owner-ref";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import {
+  createInsurancePolicyForClient,
+  getBaseCaseScenarioId,
+} from "@/lib/clients/insurance-policies-writes";
 
 export const dynamic = "force-dynamic";
-
-async function getBaseCaseScenarioId(
-  clientId: string,
-): Promise<string | null> {
-  const [scenario] = await db
-    .select()
-    .from(scenarios)
-    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
-
-  return scenario?.id ?? null;
-}
 
 // GET /api/clients/[id]/insurance-policies
 // Lists all life-insurance policies for the client's base-case scenario
@@ -89,7 +66,7 @@ export async function GET(
 // POST /api/clients/[id]/insurance-policies
 // Creates a life-insurance account + policy + (optional) free-form
 // cash-value schedule in a single transaction so a partial write can't
-// leave a policy orphaned from its account.
+// leave a policy orphaned from its account — createInsurancePolicyForClient.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -100,117 +77,20 @@ export async function POST(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
-    const scenarioId = await getBaseCaseScenarioId(id);
-    if (!scenarioId) {
+    // The core repeats this lookup; here it answers before the body is read.
+    if (!(await getBaseCaseScenarioId(id))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    const body = await request.json();
-    const parsed = insurancePolicyCreateSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid body", issues: formatZodIssues(parsed.error) },
-        { status: 400 },
-      );
-    }
-    const input = parsed.data;
-
-    const ownerCheck = await assertOwnerRefInClient(id, input.ownerRef as OwnerRef);
-    if (!ownerCheck.ok) {
-      return NextResponse.json({ error: ownerCheck.reason }, { status: 400 });
-    }
-
-    // Look up FM ids so we can synthesize account_owners rows.
-    const fmRows = await db
-      .select({ id: familyMembers.id, role: familyMembers.role })
-      .from(familyMembers)
-      .where(eq(familyMembers.clientId, id));
-    const clientFmId = fmRows.find((f) => f.role === "client")?.id ?? null;
-    const spouseFmId = fmRows.find((f) => f.role === "spouse")?.id ?? null;
-
-    const policyAccountId = await db.transaction(async (tx) => {
-      const [acct] = await tx
-        .insert(accounts)
-        .values({
-          clientId: id,
-          scenarioId,
-          name: input.name,
-          category: "life_insurance",
-          subType: mapPolicyTypeToSubType(input.policyType),
-          insuredPerson: input.insuredPerson,
-          value: String(input.cashValue),
-          // `accounts.basis` is unused for life-insurance — the policy's
-          // cost basis is tracked on the life_insurance_policies row.
-          basis: "0",
-          activationYear: input.activationYear ?? null,
-          activationYearRef: (input.activationYearRef ?? null) as (typeof accounts.$inferInsert)["activationYearRef"],
-        })
-        .returning({ id: accounts.id, name: accounts.name });
-
-      // Insert account_owners rows via the OwnerRef translation helper —
-      // the single source of truth shared with PATCH. `joint` produces two
-      // family rows at 0.5 each; everything else is one row at 1.0.
-      const ownerRows = ownerRefToAccountOwnerRows(
-        input.ownerRef as OwnerRef,
-        { clientFmId, spouseFmId },
-      );
-      if (ownerRows.length > 0) {
-        await tx.insert(accountOwners).values(
-          ownerRows.map((r) => ({
-            accountId: acct.id,
-            familyMemberId: r.familyMemberId,
-            entityId: r.entityId,
-            externalBeneficiaryId: r.externalBeneficiaryId,
-            percent: r.percent,
-          })),
-        );
-      }
-
-      await tx.insert(lifeInsurancePolicies).values({
-        accountId: acct.id,
-        faceValue: String(input.faceValue),
-        costBasis: String(input.costBasis),
-        premiumAmount: String(input.premiumAmount),
-        premiumYears: input.premiumYears ?? null,
-        premiumPayer: input.premiumPayer,
-        policyType: input.policyType,
-        termIssueYear: input.termIssueYear ?? null,
-        termLengthYears: input.termLengthYears ?? null,
-        endsAtInsuredRetirement: input.endsAtInsuredRetirement,
-        cashValueGrowthMode: input.cashValueGrowthMode,
-        premiumScheduleMode: input.premiumScheduleMode,
-        deathBenefitScheduleMode: input.deathBenefitScheduleMode,
-        incomeScheduleMode: input.incomeScheduleMode,
-        postPayoutGrowthRate: String(input.postPayoutGrowthRate),
-        postPayoutModelPortfolioId: input.postPayoutModelPortfolioId ?? null,
-      });
-
-      if (input.cashValueSchedule.length > 0) {
-        await tx.insert(lifeInsuranceCashValueSchedule).values(
-          input.cashValueSchedule.map((r) => ({
-            policyId: acct.id,
-            year: r.year,
-            cashValue: r.cashValue != null ? String(r.cashValue) : null,
-            premiumAmount: r.premiumAmount != null ? String(r.premiumAmount) : null,
-            income: r.income != null ? String(r.income) : null,
-            deathBenefit: r.deathBenefit != null ? String(r.deathBenefit) : null,
-          })),
-        );
-      }
-
-      return acct.id;
-    });
-
-    await recordAudit({
-      action: "insurance_policy.create",
-      resourceType: "insurance_policy",
-      resourceId: policyAccountId,
+    const result = await createInsurancePolicyForClient({
       clientId: id,
       firmId,
-      metadata: crossFirmAuditMeta({ access }, callerOrg, { name: input.name, policyType: input.policyType }),
+      input: await request.json(),
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
-
-    return NextResponse.json({ id: policyAccountId }, { status: 201 });
+    return result.ok
+      ? NextResponse.json(result.data, { status: 201 })
+      : NextResponse.json(result.body ?? { error: result.error }, { status: result.status });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

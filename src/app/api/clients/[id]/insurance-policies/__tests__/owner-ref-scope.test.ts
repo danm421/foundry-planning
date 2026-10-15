@@ -87,6 +87,6 @@ describe("POST insurance-policies — ownerRef tenancy", () => {
     expect(assertOwnerRefInClient).toHaveBeenCalledWith(CLIENT, {
       kind: "entity",
       id: FOREIGN_ENTITY,
-    });
+    }, undefined);
   });
 });
