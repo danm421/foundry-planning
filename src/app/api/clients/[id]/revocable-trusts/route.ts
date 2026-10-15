@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import { revocableTrusts, accounts } from "@/db/schema";
 import { eq, and, inArray, asc } from "drizzle-orm";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
-import { recordAudit } from "@/lib/audit";
-import { revocableTrustUpsertSchema } from "@/lib/schemas/revocable-trusts";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import { createRevocableTrustForClient } from "@/lib/clients/revocable-trusts-writes";
 
 export const dynamic = "force-dynamic";
 
@@ -76,44 +74,15 @@ export async function POST(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
-    const body = await request.json();
-    const parsed = revocableTrustUpsertSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid body", issues: formatZodIssues(parsed.error) },
-        { status: 400 }
-      );
-    }
-    const { name, accountIds } = parsed.data;
-
-    const [trust] = await db
-      .insert(revocableTrusts)
-      .values({ clientId: id, name })
-      .returning();
-
-    // Tag the specified accounts into this trust (scope to clientId for safety)
-    if (accountIds.length > 0) {
-      await db
-        .update(accounts)
-        .set({ revocableTrustId: trust.id })
-        .where(
-          and(
-            eq(accounts.clientId, id),
-            inArray(accounts.id, accountIds)
-          )
-        );
-    }
-
-    await recordAudit({
-      action: "revocable_trust.create",
-      resourceType: "revocable_trust",
-      resourceId: trust.id,
+    const result = await createRevocableTrustForClient({
       clientId: id,
       firmId,
-      metadata: crossFirmAuditMeta({ access }, callerOrg, { name: trust.name, accountIds }),
+      input: await request.json(),
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
-
-    return NextResponse.json({ ...trust, accountIds }, { status: 201 });
+    return result.ok
+      ? NextResponse.json(result.data, { status: 201 })
+      : NextResponse.json(result.body ?? { error: result.error }, { status: result.status });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

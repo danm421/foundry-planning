@@ -71,7 +71,7 @@ describe("PUT entities split-interest references", () => {
   it("rejects a charity that belongs to another client", async () => {
     mocks.assertExt.mockResolvedValue({ ok: false, reason: "External beneficiary x not owned by this client" });
     const res = await PUT(req(patch), params);
-    expect(mocks.assertExt).toHaveBeenCalledWith(CLIENT, [FOREIGN]);
+    expect(mocks.assertExt).toHaveBeenCalledWith(CLIENT, [FOREIGN], undefined);
     expect(res.status).toBe(400);
   });
 
@@ -79,7 +79,7 @@ describe("PUT entities split-interest references", () => {
     mocks.assertFm.mockResolvedValue({ ok: false, reason: "Family member x not owned by this client" });
     const body = { splitInterest: { ...patch.splitInterest, measuringLife1Id: FOREIGN } };
     const res = await PUT(req(body), params);
-    expect(mocks.assertFm).toHaveBeenCalledWith(CLIENT, [FOREIGN, undefined]);
+    expect(mocks.assertFm).toHaveBeenCalledWith(CLIENT, [FOREIGN, undefined], undefined);
     expect(res.status).toBe(400);
   });
 });

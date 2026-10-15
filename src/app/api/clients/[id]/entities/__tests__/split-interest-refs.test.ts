@@ -77,7 +77,7 @@ describe("POST entities split-interest references", () => {
   it("rejects a charity that belongs to another client", async () => {
     mocks.assertExt.mockResolvedValue({ ok: false, reason: "External beneficiary x not owned by this client" });
     const res = await POST(req(trust), params);
-    expect(mocks.assertExt).toHaveBeenCalledWith(CLIENT, [FOREIGN]);
+    expect(mocks.assertExt).toHaveBeenCalledWith(CLIENT, [FOREIGN], undefined);
     expect(res.status).toBe(400);
   });
 });
