@@ -14,8 +14,8 @@ import { monthYearParts } from "./translate";
 export interface Resolve {
   /** An existing record's id, the id a Create line's record gets, or — for a person ref — the household family member's id. */
   id(ref: RecordRef): string;
-  /** The year a milestone ("plan_start", "client_retirement"…) falls in. */
-  year(yearRef: string): number;
+  /** The year a milestone ("plan_start", "client_retirement"…) falls in — at the start of a stream, or at its end (the year before a retirement). */
+  year(yearRef: string, position: "start" | "end"): number;
 }
 
 type Body = Record<string, unknown>;
@@ -61,7 +61,10 @@ function expand(target: TargetKind, key: string, value: PlacedValue, resolve: Re
     case "timing":
       return typeof value === "number"
         ? { [`${key}Year`]: value, [`${key}YearRef`]: null }
-        : { [`${key}Year`]: resolve.year(String((value as Entry).yearRef)), [`${key}YearRef`]: (value as Entry).yearRef };
+        : {
+            [`${key}Year`]: resolve.year(String((value as Entry).yearRef), key === "end" ? "end" : "start"),
+            [`${key}YearRef`]: (value as Entry).yearRef,
+          };
     case "personOrName":
       return isRecordRef(value)
         ? { [`${key}FamilyMemberId`]: resolve.id(value), [`${key}Name`]: null }

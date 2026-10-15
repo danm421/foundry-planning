@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { planSettings, scenarios } from "@/db/schema";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
+import type { DbOrTx } from "@/lib/db-tx";
 import { buildClientMilestones, type ClientMilestones } from "@/lib/milestones";
 import { planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
 
@@ -63,19 +64,21 @@ export function assembleImportMilestones(input: AssembleInput): ImportMilestones
  * Load the client + CRM contacts + plan settings and assemble milestones
  * for the import flow. scenarioId may be null (onboarding) — we resolve the
  * base-case scenario for plan settings. Returns null when milestones can't
- * be built (no DOB yet) so callers degrade gracefully.
+ * be built (no DOB yet) so callers degrade gracefully. `handle`: a caller's
+ * transaction (the fact finder save reads the household as its lines left it).
  */
 export async function loadImportMilestones(
   clientId: string,
   firmId: string,
   scenarioId: string | null,
+  handle?: DbOrTx,
 ): Promise<ImportMilestones | null> {
-  const client = await getClientWithContacts(clientId, firmId);
+  const client = await getClientWithContacts(clientId, firmId, handle);
   if (!client) return null;
 
   let sid = scenarioId;
   if (!sid) {
-    const [baseScenario] = await db
+    const [baseScenario] = await (handle ?? db)
       .select({ id: scenarios.id })
       .from(scenarios)
       .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
@@ -84,7 +87,7 @@ export async function loadImportMilestones(
 
   let settings: { planStartYear: number; planEndYear: number } | undefined;
   if (sid) {
-    [settings] = await db
+    [settings] = await (handle ?? db)
       .select({ planStartYear: planSettings.planStartYear, planEndYear: planSettings.planEndYear })
       .from(planSettings)
       .where(and(eq(planSettings.clientId, clientId), eq(planSettings.scenarioId, sid)));

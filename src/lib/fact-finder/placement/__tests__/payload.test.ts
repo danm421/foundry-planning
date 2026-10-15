@@ -48,6 +48,13 @@ describe("payloadFor", () => {
     });
   });
 
+  it("tells resolve.year which end of the stream a milestone is on — an end at retirement is the year before it", () => {
+    const asked: [string, string][] = [];
+    const positioned: Resolve = { ...resolve, year: (yearRef, position) => (asked.push([yearRef, position]), YEARS[yearRef]) };
+    payloadFor("expense", { start: { yearRef: "client_retirement" }, end: { yearRef: "plan_end" } }, positioned);
+    expect(asked).toEqual([["client_retirement", "start"], ["plan_end", "end"]]);
+  });
+
   it("writes a 529's beneficiary and grantor as a family member id or a name — never both", () => {
     expect(payloadFor("account", { beneficiary: emma, grantor: "Grandma Jo" }, resolve)).toEqual({
       beneficiaryFamilyMemberId: "fm-emma", beneficiaryName: null, grantorFamilyMemberId: null, grantorName: "Grandma Jo",

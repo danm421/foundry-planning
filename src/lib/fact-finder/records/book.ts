@@ -44,6 +44,7 @@ import {
 } from "@/db/schema";
 import type { AccountOwner } from "@/engine/ownership";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
+import type { DbOrTx } from "@/lib/db-tx";
 import { livingSlotRole } from "@/lib/imports/match-keys/living-slot";
 import { ownerRefFromOwners } from "@/lib/insurance-policies/owner-ref";
 import type { PlacedValue, RecordRef, TargetKind } from "../change-set";
@@ -101,38 +102,40 @@ const ACCOUNT_TARGET: Readonly<Record<string, TargetKind>> = {
  * The client's records in one scenario — the base case (Task 19 passes
  * `resolveBaseCaseScenarioId`); null = the client has none, so only the
  * client-level records load. Throws when the client isn't in the firm.
+ * `handle`: the save's transaction, so the book is what that transaction sees.
  */
-export async function loadRecordBook(clientId: string, firmId: string, scenarioId: string | null): Promise<RecordBook> {
-  const client = await getClientWithContacts(clientId, firmId);
+export async function loadRecordBook(clientId: string, firmId: string, scenarioId: string | null, handle?: DbOrTx): Promise<RecordBook> {
+  const q = handle ?? db;
+  const client = await getClientWithContacts(clientId, firmId, handle);
   if (!client) throw new Error("Client not found");
 
   const [
     contacts, family, externals, trusts, revocables, willRows, giftRows, notes, disability, ltc,
     settings, accountRows, incomeRows, expenseRows, savingsRows, liabilityRows, noteRows,
   ] = await Promise.all([
-    db
+    q
       .select()
       .from(crmHouseholdContacts)
       .where(and(eq(crmHouseholdContacts.householdId, client.crmHouseholdId), inArray(crmHouseholdContacts.role, ["primary", "spouse", "other"]))),
-    db.select().from(familyMembers).where(eq(familyMembers.clientId, clientId)),
-    db.select().from(externalBeneficiaries).where(eq(externalBeneficiaries.clientId, clientId)),
-    db.select().from(entities).where(and(eq(entities.clientId, clientId), eq(entities.entityType, "trust"))),
-    db.select().from(revocableTrusts).where(eq(revocableTrusts.clientId, clientId)),
-    db.select().from(wills).where(eq(wills.clientId, clientId)),
-    db.select().from(gifts).where(and(eq(gifts.clientId, clientId), isNull(gifts.parentGiftId))),
-    db.select().from(planObservations).where(and(eq(planObservations.clientId, clientId), eq(planObservations.section, "observation"))),
-    db.select().from(disabilityPolicies).where(eq(disabilityPolicies.clientId, clientId)),
-    db.select().from(ltcPolicies).where(eq(ltcPolicies.clientId, clientId)),
+    q.select().from(familyMembers).where(eq(familyMembers.clientId, clientId)),
+    q.select().from(externalBeneficiaries).where(eq(externalBeneficiaries.clientId, clientId)),
+    q.select().from(entities).where(and(eq(entities.clientId, clientId), eq(entities.entityType, "trust"))),
+    q.select().from(revocableTrusts).where(eq(revocableTrusts.clientId, clientId)),
+    q.select().from(wills).where(eq(wills.clientId, clientId)),
+    q.select().from(gifts).where(and(eq(gifts.clientId, clientId), isNull(gifts.parentGiftId))),
+    q.select().from(planObservations).where(and(eq(planObservations.clientId, clientId), eq(planObservations.section, "observation"))),
+    q.select().from(disabilityPolicies).where(eq(disabilityPolicies.clientId, clientId)),
+    q.select().from(ltcPolicies).where(eq(ltcPolicies.clientId, clientId)),
     scenarioId
-      ? db.select().from(planSettings).where(and(eq(planSettings.clientId, clientId), eq(planSettings.scenarioId, scenarioId))).limit(1)
+      ? q.select().from(planSettings).where(and(eq(planSettings.clientId, clientId), eq(planSettings.scenarioId, scenarioId))).limit(1)
       : [],
-    scenarioId ? db.select().from(accounts).where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, scenarioId))) : [],
-    scenarioId ? db.select().from(incomes).where(and(eq(incomes.clientId, clientId), eq(incomes.scenarioId, scenarioId))) : [],
-    scenarioId ? db.select().from(expenses).where(and(eq(expenses.clientId, clientId), eq(expenses.scenarioId, scenarioId))) : [],
-    scenarioId ? db.select().from(savingsRules).where(and(eq(savingsRules.clientId, clientId), eq(savingsRules.scenarioId, scenarioId))) : [],
-    scenarioId ? db.select().from(liabilities).where(and(eq(liabilities.clientId, clientId), eq(liabilities.scenarioId, scenarioId))) : [],
+    scenarioId ? q.select().from(accounts).where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, scenarioId))) : [],
+    scenarioId ? q.select().from(incomes).where(and(eq(incomes.clientId, clientId), eq(incomes.scenarioId, scenarioId))) : [],
+    scenarioId ? q.select().from(expenses).where(and(eq(expenses.clientId, clientId), eq(expenses.scenarioId, scenarioId))) : [],
+    scenarioId ? q.select().from(savingsRules).where(and(eq(savingsRules.clientId, clientId), eq(savingsRules.scenarioId, scenarioId))) : [],
+    scenarioId ? q.select().from(liabilities).where(and(eq(liabilities.clientId, clientId), eq(liabilities.scenarioId, scenarioId))) : [],
     scenarioId
-      ? db.select().from(notesReceivable).where(and(eq(notesReceivable.clientId, clientId), eq(notesReceivable.scenarioId, scenarioId)))
+      ? q.select().from(notesReceivable).where(and(eq(notesReceivable.clientId, clientId), eq(notesReceivable.scenarioId, scenarioId)))
       : [],
   ]);
 
@@ -149,49 +152,49 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
     policies, noteOwnerRows, liabilityOwnerRows,
   ] = await Promise.all([
     trustIds.length > 0
-      ? db
+      ? q
           .select()
           .from(beneficiaryDesignations)
           .where(and(eq(beneficiaryDesignations.clientId, clientId), eq(beneficiaryDesignations.targetKind, "trust"), inArray(beneficiaryDesignations.entityId, trustIds)))
           .orderBy(asc(beneficiaryDesignations.sortOrder))
       : [],
-    willIds.length > 0 ? db.select().from(willBequests).where(inArray(willBequests.willId, willIds)).orderBy(asc(willBequests.sortOrder)) : [],
+    willIds.length > 0 ? q.select().from(willBequests).where(inArray(willBequests.willId, willIds)).orderBy(asc(willBequests.sortOrder)) : [],
     // Primary recipients only: the fact finder's "Remaining estate" has no contingent tier.
     willIds.length > 0
-      ? db
+      ? q
           .select()
           .from(willResiduaryRecipients)
           .where(and(inArray(willResiduaryRecipients.willId, willIds), eq(willResiduaryRecipients.tier, "primary")))
           .orderBy(asc(willResiduaryRecipients.sortOrder))
       : [],
-    accountIds.length > 0 ? db.select().from(accountOwners).where(inArray(accountOwners.accountId, accountIds)) : [],
+    accountIds.length > 0 ? q.select().from(accountOwners).where(inArray(accountOwners.accountId, accountIds)) : [],
     accountIds.length > 0
-      ? db.select().from(accountHoldings).where(inArray(accountHoldings.accountId, accountIds)).orderBy(asc(accountHoldings.sortOrder))
+      ? q.select().from(accountHoldings).where(inArray(accountHoldings.accountId, accountIds)).orderBy(asc(accountHoldings.sortOrder))
       : [],
     accountIds.length > 0
-      ? db
+      ? q
           .select()
           .from(beneficiaryDesignations)
           .where(and(eq(beneficiaryDesignations.clientId, clientId), eq(beneficiaryDesignations.targetKind, "account"), inArray(beneficiaryDesignations.accountId, accountIds)))
           .orderBy(asc(beneficiaryDesignations.sortOrder))
       : [],
-    annuityIds.length > 0 ? db.select().from(annuityContracts).where(inArray(annuityContracts.accountId, annuityIds)) : [],
-    stockIds.length > 0 ? db.select().from(stockOptionAccounts).where(inArray(stockOptionAccounts.accountId, stockIds)) : [],
+    annuityIds.length > 0 ? q.select().from(annuityContracts).where(inArray(annuityContracts.accountId, annuityIds)) : [],
+    stockIds.length > 0 ? q.select().from(stockOptionAccounts).where(inArray(stockOptionAccounts.accountId, stockIds)) : [],
     stockIds.length > 0
-      ? db.select().from(stockOptionGrants).where(inArray(stockOptionGrants.accountId, stockIds)).orderBy(asc(stockOptionGrants.sortOrder))
+      ? q.select().from(stockOptionGrants).where(inArray(stockOptionGrants.accountId, stockIds)).orderBy(asc(stockOptionGrants.sortOrder))
       : [],
-    policyIds.length > 0 ? db.select().from(lifeInsurancePolicies).where(inArray(lifeInsurancePolicies.accountId, policyIds)) : [],
-    noteIds.length > 0 ? db.select().from(noteReceivableOwners).where(inArray(noteReceivableOwners.noteReceivableId, noteIds)) : [],
-    liabilityIds.length > 0 ? db.select().from(liabilityOwners).where(inArray(liabilityOwners.liabilityId, liabilityIds)) : [],
+    policyIds.length > 0 ? q.select().from(lifeInsurancePolicies).where(inArray(lifeInsurancePolicies.accountId, policyIds)) : [],
+    noteIds.length > 0 ? q.select().from(noteReceivableOwners).where(inArray(noteReceivableOwners.noteReceivableId, noteIds)) : [],
+    liabilityIds.length > 0 ? q.select().from(liabilityOwners).where(inArray(liabilityOwners.liabilityId, liabilityIds)) : [],
   ]);
   const bequestIds = bequests.map((b) => b.id);
   const grantIds = grants.map((g) => g.id);
   const [bequestRecipients, tranches] = await Promise.all([
     bequestIds.length > 0
-      ? db.select().from(willBequestRecipients).where(inArray(willBequestRecipients.bequestId, bequestIds)).orderBy(asc(willBequestRecipients.sortOrder))
+      ? q.select().from(willBequestRecipients).where(inArray(willBequestRecipients.bequestId, bequestIds)).orderBy(asc(willBequestRecipients.sortOrder))
       : [],
     grantIds.length > 0
-      ? db
+      ? q
           .select()
           .from(stockOptionVestTranches)
           .where(inArray(stockOptionVestTranches.grantId, grantIds))
