@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import {
   wills,
@@ -11,25 +10,13 @@ import { eq, and, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
-import { willUpdateSchema } from "@/lib/schemas/wills";
-import {
-  gatherCrossRefs,
-  verifyCrossRefs,
-  computeSoftWarnings,
-} from "../_helpers";
+import { updateWillForClient, willBelongsToClient } from "@/lib/clients/wills-writes";
+import { computeSoftWarnings } from "../_helpers";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
-
-async function verifyWillBelongsToClient(willId: string, clientId: string) {
-  const [row] = await db
-    .select({ id: wills.id })
-    .from(wills)
-    .where(and(eq(wills.id, willId), eq(wills.clientId, clientId)));
-  return !!row;
-}
 
 export async function GET(
   _request: NextRequest,
@@ -122,115 +109,27 @@ export async function PATCH(
     const callerOrg = await requireOrgId();
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
-    if (!(await verifyWillBelongsToClient(willId, id))) {
+    // Before the body is read, as the route always has; the core repeats it for the save.
+    if (!(await willBelongsToClient(willId, id))) {
       return NextResponse.json({ error: "Will not found" }, { status: 404 });
     }
-    const body = await request.json();
-    const parsed = willUpdateSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid body", issues: formatZodIssues(parsed.error) },
-        { status: 400 },
-      );
-    }
-    const { bequests, residuaryRecipients } = parsed.data;
-
-    const crossRefError = await verifyCrossRefs(
-      id,
-      gatherCrossRefs(bequests, residuaryRecipients),
-      bequests,
-    );
-    if (crossRefError) {
-      return NextResponse.json(
-        { error: crossRefError.code, detail: crossRefError.detail },
-        { status: 400 },
-      );
-    }
-
-    // Transactional full-replace: delete existing bequests (cascades to
-    // recipients) and residuary, then re-insert.
-    await db.transaction(async (tx) => {
-      await tx.delete(willBequests).where(eq(willBequests.willId, willId));
-      await tx
-        .delete(willResiduaryRecipients)
-        .where(eq(willResiduaryRecipients.willId, willId));
-      for (const b of bequests) {
-        const [bequestRow] = await tx
-          .insert(willBequests)
-          .values({
-            willId,
-            name: b.name,
-            kind: b.kind,
-            assetMode: b.kind === "asset" ? b.assetMode : null,
-            accountId: b.kind === "asset" ? (b.accountId ?? null) : null,
-            entityId: b.kind === "asset" ? (b.entityId ?? null) : null,
-            liabilityId: b.kind === "liability" ? b.liabilityId : null,
-            percentage: b.kind === "asset" ? String(b.percentage) : "100",
-            condition: b.condition,
-            sortOrder: b.sortOrder,
-          })
-          .returning();
-        if (b.recipients.length > 0) {
-          await tx.insert(willBequestRecipients).values(
-            b.recipients.map((r) => ({
-              bequestId: bequestRow.id,
-              recipientKind: r.recipientKind,
-              recipientId: r.recipientId,
-              percentage: String(r.percentage),
-              sortOrder: r.sortOrder,
-            })),
-          );
-        }
-      }
-      if (residuaryRecipients && residuaryRecipients.length > 0) {
-        await tx.insert(willResiduaryRecipients).values(
-          residuaryRecipients.map((r) => ({
-            willId,
-            recipientKind: r.recipientKind,
-            recipientId: r.recipientId,
-            tier: r.tier,
-            percentage: String(r.percentage),
-            sortOrder: r.sortOrder,
-          })),
-        );
-      }
-      await tx
-        .update(wills)
-        .set({ updatedAt: new Date() })
-        .where(eq(wills.id, willId));
-    });
-
-    await recordAudit({
-      action: "will.update",
-      resourceType: "will",
-      resourceId: willId,
+    const result = await updateWillForClient({
       clientId: id,
       firmId,
-      metadata: crossFirmAuditMeta({ access }, callerOrg, { bequestCount: bequests.length }),
+      willId,
+      input: await request.json(),
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
-
+    if (!result.ok) {
+      return NextResponse.json(result.body ?? { error: result.error }, { status: result.status });
+    }
     return NextResponse.json({
       id: willId,
-      warnings: computeSoftWarnings(bequests),
+      warnings: computeSoftWarnings(result.data.bequests),
     });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
-    // Unique-index violation: map 23505 on will_bequests_liability_idx → 400
-    if (
-      typeof err === "object" &&
-      err !== null &&
-      "code" in err &&
-      (err as { code: string }).code === "23505"
-    ) {
-      const constraint = (err as { constraint?: string }).constraint ?? "";
-      if (constraint.includes("will_bequests_liability_idx")) {
-        return NextResponse.json(
-          { error: "duplicate_liability_bequest" },
-          { status: 400 },
-        );
-      }
-    }
     console.error("PATCH /api/clients/[id]/wills/[willId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -245,7 +144,7 @@ export async function DELETE(
     const callerOrg = await requireOrgId();
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
-    if (!(await verifyWillBelongsToClient(willId, id))) {
+    if (!(await willBelongsToClient(willId, id))) {
       return NextResponse.json({ error: "Will not found" }, { status: 404 });
     }
     await db.transaction(async (tx) => {

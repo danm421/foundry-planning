@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import {
   wills,
@@ -7,15 +6,10 @@ import {
   willBequestRecipients,
   willResiduaryRecipients,
 } from "@/db/schema";
-import { eq, and, asc, inArray } from "drizzle-orm";
+import { eq, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { recordAudit } from "@/lib/audit";
-import { willCreateSchema } from "@/lib/schemas/wills";
-import {
-  gatherCrossRefs,
-  verifyCrossRefs,
-  computeSoftWarnings,
-} from "./_helpers";
+import { createWillForClient } from "@/lib/clients/wills-writes";
+import { computeSoftWarnings } from "./_helpers";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
@@ -134,119 +128,22 @@ export async function POST(
     const callerOrg = await requireOrgId();
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
-    const body = await request.json();
-    const parsed = willCreateSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid body", issues: formatZodIssues(parsed.error) },
-        { status: 400 },
-      );
-    }
-    const data = parsed.data;
-
-    // Duplicate (client_id, grantor) check
-    const [existing] = await db
-      .select({ id: wills.id })
-      .from(wills)
-      .where(and(eq(wills.clientId, id), eq(wills.grantor, data.grantor)));
-    if (existing) {
-      return NextResponse.json(
-        { error: `A will already exists for grantor='${data.grantor}'` },
-        { status: 409 },
-      );
-    }
-
-    const crossRefError = await verifyCrossRefs(
-      id,
-      gatherCrossRefs(data.bequests, data.residuaryRecipients),
-      data.bequests,
-    );
-    if (crossRefError) {
-      return NextResponse.json(
-        { error: crossRefError.code, detail: crossRefError.detail },
-        { status: 400 },
-      );
-    }
-
-    const willId = await db.transaction(async (tx) => {
-      const [willRow] = await tx
-        .insert(wills)
-        .values({ clientId: id, grantor: data.grantor })
-        .returning();
-      for (const b of data.bequests) {
-        const [bequestRow] = await tx
-          .insert(willBequests)
-          .values({
-            willId: willRow.id,
-            name: b.name,
-            kind: b.kind,
-            assetMode: b.kind === "asset" ? b.assetMode : null,
-            accountId: b.kind === "asset" ? (b.accountId ?? null) : null,
-            entityId: b.kind === "asset" ? (b.entityId ?? null) : null,
-            liabilityId: b.kind === "liability" ? b.liabilityId : null,
-            percentage: b.kind === "asset" ? String(b.percentage) : "100",
-            condition: b.condition,
-            sortOrder: b.sortOrder,
-          })
-          .returning();
-        if (b.recipients.length > 0) {
-          await tx.insert(willBequestRecipients).values(
-            b.recipients.map((r) => ({
-              bequestId: bequestRow.id,
-              recipientKind: r.recipientKind,
-              recipientId: r.recipientId,
-              percentage: String(r.percentage),
-              sortOrder: r.sortOrder,
-            })),
-          );
-        }
-      }
-      if (data.residuaryRecipients && data.residuaryRecipients.length > 0) {
-        await tx.insert(willResiduaryRecipients).values(
-          data.residuaryRecipients.map((r) => ({
-            willId: willRow.id,
-            recipientKind: r.recipientKind,
-            recipientId: r.recipientId,
-            tier: r.tier,
-            percentage: String(r.percentage),
-            sortOrder: r.sortOrder,
-          })),
-        );
-      }
-      return willRow.id;
-    });
-
-    await recordAudit({
-      action: "will.create",
-      resourceType: "will",
-      resourceId: willId,
+    const result = await createWillForClient({
       clientId: id,
       firmId,
-      metadata: crossFirmAuditMeta({ access }, callerOrg, { grantor: data.grantor, bequestCount: data.bequests.length }),
+      input: await request.json(),
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
-
+    if (!result.ok) {
+      return NextResponse.json(result.body ?? { error: result.error }, { status: result.status });
+    }
     return NextResponse.json(
-      { id: willId, warnings: computeSoftWarnings(data.bequests) },
+      { id: result.resourceId, warnings: computeSoftWarnings(result.data.bequests) },
       { status: 201 },
     );
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
-    // Unique-index violation: map 23505 on will_bequests_liability_idx → 400
-    if (
-      typeof err === "object" &&
-      err !== null &&
-      "code" in err &&
-      (err as { code: string }).code === "23505"
-    ) {
-      const constraint = (err as { constraint?: string }).constraint ?? "";
-      if (constraint.includes("will_bequests_liability_idx")) {
-        return NextResponse.json(
-          { error: "duplicate_liability_bequest" },
-          { status: 400 },
-        );
-      }
-    }
     console.error("POST /api/clients/[id]/wills error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
