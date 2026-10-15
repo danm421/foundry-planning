@@ -246,6 +246,32 @@ describe("placeFactFinder — a row linked to the other kind of account", () => 
     ]);
   });
 
+  it("an account row confirmed to an account of another category is blocked whole, naming that category", () => {
+    const brokerage = recordOf("a-2", "Joint Brokerage", { name: "Joint Brokerage" }, { category: "taxable" });
+    const placed = place(
+      {
+        realestate: [rowOf("p1", { propertyName: "Lake House", currentValue: 650000 }, { link: linkedTo("a-1") })],
+        cash: [rowOf("c1", { accountName: "Joint Checking", currentValue: 9000 }, { link: linkedTo("a-2") })],
+      },
+      hendricksBook({ account: [checking, brokerage] }),
+    );
+    const otherCategory = (label: string, category: string) =>
+      `Links to: "${label}" is ${category} account on the plan, so this row can't update it — link it to another record, or pick New.`;
+    expect(placed.drafts.map((d) => [d.lineId, d.blocked])).toEqual([
+      ["c1/account", { reason: otherCategory("Joint Brokerage", "a taxable") }],
+      ["p1/account", { reason: otherCategory("Joint Checking ··1234", "a cash") }],
+    ]);
+  });
+
+  it("a Real estate row confirmed to a real estate account is placed as usual", () => {
+    const house = recordOf("a-3", "Lake House", { name: "Lake House" }, { category: "real_estate" });
+    const placed = place(
+      { realestate: [rowOf("p1", { propertyName: "Lake House", currentValue: 650000 }, { link: linkedTo("a-3") })] },
+      hendricksBook({ account: [house] }),
+    );
+    expect(placed.drafts.map((d) => [d.lineId, d.recordId, d.blocked ?? null])).toEqual([["p1/account", "a-3", null]]);
+  });
+
   it("a row confirmed to its own kind of record is placed as usual", () => {
     const placed = place(
       {

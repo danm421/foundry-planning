@@ -5,9 +5,11 @@
  * that didn't fit its column comes out — a choice that isn't one of the
  * options blocks the lines its column feeds (a missing choice can change what
  * a line means), any other value goes to the AI step and the line is placed
- * without it. A row linked to the other kind of account is blocked whole. Pure.
+ * without it. A row linked to another kind of account — a business, or an
+ * account of another category — is blocked whole. Pure.
  */
 import type { CellRef, TargetKind } from "../change-set";
+import { SECTION_ACCOUNT_CATEGORY } from "../enums";
 import { FACT_FINDER_SECTIONS, type FFColumn, type FFPage, type FFSection, type RecordKind } from "../schema";
 import { fixedRowId, isBlank, rowHasValues, rowLabel } from "../state";
 import type { FactFinderState, FFCellValue, FFRow } from "../types";
@@ -126,16 +128,37 @@ function labelOfRow(section: FFSection, row: FFRow, drafts: readonly TargetDraft
 /** The targets a section's columns are placed into. */
 const writesOf = (map: SectionMap) => new Set(Object.values(map.placements).flatMap((p) => ("to" in p ? [p.to.split(".")[0]] : [])));
 
-/** Why a row confirmed to the other kind of account can't update it (D11 accepts both kinds); null when it can. */
+/** An account record's category in plain words, with its article. */
+const CATEGORY_WORDS: Readonly<Record<string, string>> = {
+  cash: "a cash",
+  taxable: "a taxable",
+  retirement: "a retirement",
+  annuity: "an annuity",
+  education_savings: "a 529 / education savings",
+  real_estate: "a real estate",
+  notes_receivable: "a notes receivable",
+};
+
+/**
+ * Why a row confirmed to another kind of account can't update it (D11 accepts
+ * both kinds of account record): a business for an account row or the other way
+ * round, or an account of another category than the row's section. Null when it can.
+ */
 function wrongKindLink(section: FFSection, writes: ReadonlySet<string>, row: FFRow, book: RecordBook): string | null {
   const link = row.link;
   if (!section.links || link?.kind !== "existing" || !link.confirmed) return null;
   const holder = LINK_TARGETS[section.links].find((t) => book.records[t].some((r) => r.id === link.recordId));
-  if (holder === undefined || writes.has(holder)) return null;
-  const label = book.records[holder].find((r) => r.id === link.recordId)?.label;
-  return holder === "business_account"
-    ? `Links to: "${label}" is a business on the plan, so this row can't update it — link it to another record, or pick New.`
-    : `Links to: "${label}" isn't a business on the plan, so this row can't update it — link it to a business, or pick New.`;
+  if (holder === undefined) return null;
+  const record = book.records[holder].find((r) => r.id === link.recordId)!;
+  if (!writes.has(holder)) {
+    return holder === "business_account"
+      ? `Links to: "${record.label}" is a business on the plan, so this row can't update it — link it to another record, or pick New.`
+      : `Links to: "${record.label}" isn't a business on the plan, so this row can't update it — link it to a business, or pick New.`;
+  }
+  const category: string | undefined = SECTION_ACCOUNT_CATEGORY[section.id as keyof typeof SECTION_ACCOUNT_CATEGORY];
+  if (holder !== "account" || category === undefined || record.facts?.category === category) return null;
+  const words = CATEGORY_WORDS[String(record.facts?.category)] ?? "another kind of";
+  return `Links to: "${record.label}" is ${words} account on the plan, so this row can't update it — link it to another record, or pick New.`;
 }
 
 export function placeFactFinder(state: FactFinderState, book: RecordBook, now: Date): Placed {
