@@ -183,21 +183,51 @@ function notPlacedNotice(items: readonly LeftoverItem[]): string {
   return `Couldn't place ${items.length} ${notes} automatically: ${named}${more}. Review again to retry.`;
 }
 
-/** Turn the model's answer (or null when the call failed) into fields on drafts, plan-note drafts and notices. */
+/** Each answered field the model can back up, on its draft — in item order, so a later answer sees the fields before it. */
+function placeFields(items: readonly LeftoverItem[], drafts: readonly TargetDraft[], answers: ReadonlyMap<string, Answer>) {
+  const placed = [...drafts];
+  const indexOf = new Map(drafts.map((draft, i) => [draft.lineId, i]));
+  /** Item id → the index of the draft its field went on. */
+  const on = new Map<string, number>();
+  for (const item of items) {
+    const answer = answers.get(item.id);
+    if (answer?.action !== "field" || answer.lineId === null) continue;
+    const i = indexOf.get(answer.lineId);
+    const field = acceptedField(item, answer, i === undefined ? undefined : placed[i]);
+    if (field && i !== undefined) {
+      placed[i] = { ...placed[i], fields: [...placed[i].fields, field] };
+      on.set(item.id, i);
+    }
+  }
+  return { placed, on };
+}
+
+/**
+ * Turn the model's answer (or null when the call failed) into fields on drafts, plan-note drafts and notices.
+ * `saves` is the Details write path's checks: an AI value they refuse never blocks its line. A line that saves
+ * without its AI values but not with them loses them all — those items become plan notes in their own words,
+ * as any refused proposal does, and the other answers are placed again without them.
+ */
 export function applyLeftovers(
   items: readonly LeftoverItem[],
   drafts: readonly TargetDraft[],
   output: LeftoversOutput | null,
   book: RecordBook,
+  saves: (draft: TargetDraft) => boolean = () => true,
 ): { drafts: TargetDraft[]; notices: string[] } {
   if (items.length === 0) return { drafts: [...drafts], notices: [] };
   if (output === null) return { drafts: [...drafts], notices: [notPlacedNotice(items)] };
 
   const answers = new Map<string, Answer>();
   for (const answer of output.items) if (!answers.has(answer.itemId)) answers.set(answer.itemId, answer);
-  const placed = [...drafts];
-  const indexOf = new Map(placed.map((draft, i) => [draft.lineId, i]));
-  const taken = new Set(indexOf.keys());
+  let { placed, on } = placeFields(items, drafts, answers);
+  const refused = new Set([...new Set(on.values())].filter((i) => !saves(placed[i]) && saves(drafts[i])));
+  if (refused.size > 0) {
+    for (const [itemId, i] of on) if (refused.has(i)) answers.delete(itemId);
+    ({ placed, on } = placeFields(items, drafts, answers));
+  }
+
+  const taken = new Set(drafts.map((draft) => draft.lineId));
   const notes: TargetDraft[] = [];
   const notices: string[] = [];
 
@@ -230,14 +260,7 @@ export function applyLeftovers(
       notices.push(`Not placed: ${itemLabel(item)} — ${shortReason(answer.reason)}`);
       continue;
     }
-    if (answer?.action === "field" && answer.lineId !== null) {
-      const i = indexOf.get(answer.lineId);
-      const field = acceptedField(item, answer, i === undefined ? undefined : placed[i]);
-      if (field && i !== undefined) {
-        placed[i] = { ...placed[i], fields: [...placed[i].fields, field] };
-        continue;
-      }
-    }
+    if (on.has(item.id)) continue;
     notes.push(planNote(item, (answer?.action === "note" && answer.topic) || item.topic));
   }
   return { drafts: [...placed, ...notes], notices };

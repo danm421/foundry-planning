@@ -421,6 +421,42 @@ describe("applyLeftovers", () => {
     expect(applyLeftovers([], DRAFTS, null, BOOK)).toEqual({ drafts: DRAFTS, notices: [] });
   });
 
+  describe("with the Details checks (saves)", () => {
+    const LIVING_BODY = "Current — Notes: Mortgage is at 6.5% fixed.\nRefinanced in 2021.";
+    const output = answers(
+      field("lv1:notes", "l1/liability", "interestRate", "6.5%", "6.5%"),
+      field("fn:notes", "l1/liability", "monthlyPayment", "412330", "$412,330"),
+    );
+    const keysOn = (draft: TargetDraft) => draft.fields.map((f) => f.key);
+
+    it("a line they refuse only with its AI values loses them all — each item a plan note, in item order", () => {
+      const saves = (draft: TargetDraft) => !keysOn(draft).includes("monthlyPayment");
+      expect(applyLeftovers([livingNotes, finalNotes], DRAFTS, output, BOOK, saves).drafts).toEqual([
+        ...DRAFTS,
+        planNote(livingNotes, "lv1/plan_observation/0", "cash-flow", LIVING_BODY),
+        planNote(finalNotes, "fn/plan_observation/0", "general", FINAL_NOTES_BODY),
+      ]);
+    });
+
+    it("a line they refuse even without its AI values keeps them", () => {
+      const { drafts } = applyLeftovers([livingNotes, finalNotes], DRAFTS, output, BOOK, () => false);
+      expect(keysOn(drafts[1])).toEqual(["balance", "interestRate", "monthlyPayment"]);
+      expect(drafts).toHaveLength(DRAFTS.length);
+    });
+
+    it("the other answers are placed again without the refused ones: a field a refused value took is free for the next", () => {
+      const second: LeftoverItem = { ...finalNotes, text: "Rate on the house loan: 6.25%." };
+      const rates = answers(
+        field("lv1:notes", "l1/liability", "interestRate", "6.5%", "6.5%"),
+        field("fn:notes", "l1/liability", "interestRate", "6.25%", "6.25%"),
+      );
+      const saves = (draft: TargetDraft) => !draft.fields.some((f) => f.key === "interestRate" && f.value === 0.065);
+      const { drafts } = applyLeftovers([livingNotes, second], DRAFTS, rates, BOOK, saves);
+      expect(drafts[1].fields.map((f) => [f.key, f.value])).toEqual([["balance", 300000], ["interestRate", 0.0625]]);
+      expect(drafts.slice(DRAFTS.length)).toEqual([planNote(livingNotes, "lv1/plan_observation/0", "cash-flow", LIVING_BODY)]);
+    });
+  });
+
   // Every field the catalog marks proposable must take a quoted value of its kind, and refuse a wrong one.
   const SAMPLES: Record<string, { good: string; value: PlacedValue; bad: string }> = {
     text: { good: "Acme Corp", value: "Acme Corp", bad: "   " },

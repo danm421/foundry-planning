@@ -8,7 +8,7 @@
  * one record, and every line that needs a line which can't save. Server-side
  * only (it imports validate.ts); the AI call is passed in.
  */
-import { parseLineId, type CellRef, type ChangeLine, type ChangeSet } from "../change-set";
+import { parseLineId, type ChangeLine, type ChangeSet } from "../change-set";
 import { findSection } from "../schema";
 import { locateRow, rowLabel } from "../state";
 import type { FactFinderState } from "../types";
@@ -29,41 +29,18 @@ export async function buildChangeSet(input: {
   const { state, book, now, runLeftovers } = input;
   const placed = placeFactFinder(state, book, now);
   const output = placed.leftovers.length > 0 ? await runLeftovers(placed.leftovers, placed.drafts) : null;
-  const check = (answers: LeftoversOutput | null) => {
-    const ai = applyLeftovers(placed.leftovers, placed.drafts, answers, book);
-    return { notices: ai.notices, lines: validateLines(diffDrafts(ai.drafts, book), feeding) };
-  };
-  let checked = check(output);
-  // An AI value the Details checks refuse never blocks its line: built again without that answer, the item becomes a
-  // plan note in its own words, as any refused proposal does.
-  const refused = blockedOnlyByAi(checked.lines, placed.leftovers);
-  if (output && refused.size > 0) checked = check({ items: output.items.filter((a) => !refused.has(a.itemId)) });
+  // The Details checks, one draft at a time: the AI step turns a value they refuse into a plan note.
+  const saves = (draft: TargetDraft) => !validateLines(diffDrafts([draft], book), feeding)[0].blocked;
+  const ai = applyLeftovers(placed.leftovers, placed.drafts, output, book, saves);
+  const lines = validateLines(diffDrafts(ai.drafts, book), feeding);
   return {
     builtAt: now.toISOString(),
-    lines: blockDependents(blockSameField(checked.lines), state),
-    notices: [...placed.notices, ...checked.notices],
+    lines: blockDependents(blockSameField(lines), state),
+    notices: [...placed.notices, ...ai.notices],
   };
 }
 
 const feeding = (line: ChangeLine, key: string) => columnFeeding(line.sectionId, line.target, key);
-const sameCell = (a: CellRef, b: CellRef | undefined) =>
-  b !== undefined && a.sectionId === b.sectionId && a.rowId === b.rowId && a.columnId === b.columnId;
-
-/** The items whose AI values are all that blocks their line: without the line's AI fields, it passes the Details checks. */
-function blockedOnlyByAi(lines: readonly ChangeLine[], items: readonly LeftoverItem[]): Set<string> {
-  const refused = new Set<string>();
-  for (const line of lines) {
-    const aiFields = line.fields.filter((f) => f.ai);
-    if (!line.blocked || aiFields.length === 0) continue;
-    const without: ChangeLine = { ...line, blocked: undefined, fields: line.fields.filter((f) => !f.ai) };
-    if (validateLines([without], feeding)[0].blocked) continue;
-    for (const field of aiFields) {
-      const item = items.find((i) => sameCell(i.cell, field.from[0]));
-      if (item) refused.add(item.id);
-    }
-  }
-  return refused;
-}
 
 /**
  * Two update lines on one record that both change a field (an Other Expenses
