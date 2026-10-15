@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ChangeLine, ChangeSet } from "../../change-set";
 import type { FactFinderState, FFCell, FFRow } from "../../types";
-import { buildChangeSet } from "../build";
+import { blockDependents, buildChangeSet } from "../build";
 import type { LeftoversOutput } from "../leftovers";
 import type { LeftoverItem, RecordBook, TargetDraft } from "../types";
 import { hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "./fixtures";
@@ -213,5 +213,69 @@ describe("buildChangeSet — a line that needs a line which can't save (RULING)"
       ],
       ["t1/trust_beneficiary_designation", { reason: 'Saves only with "Hendricks Charitable Lead Trust", which can\'t be saved yet.' }],
     ]);
+  });
+});
+
+describe("buildChangeSet — an AI value the Details checks refuse (RULING)", () => {
+  const book = hendricksBook({ liability: [recordOf("liab-1", "Car loan", { name: "Car loan", balance: 16000 })] });
+  const carLoan = { loanName: "Car loan", owner: "Client", balance: 15000, interestRate: 5, monthlyPI: 400, loanStart: "2022-06" };
+  const finalNotes = notes("final_notes", "The car loan runs 99999 months, believe it or not.");
+  const termAnswer = answer("final_notes:Notes:notes", {
+    action: "field", lineId: "l1/liability", key: "termMonths", value: "99999", quote: "99999 months",
+  });
+
+  it("never blocks a line the map built cleanly: the value is dropped and the note kept as a plan note in its own words", async () => {
+    const state = stateWith({ liab: [rowOf("l1", carLoan, { link: linkedTo("liab-1") })], final_notes: finalNotes });
+    expect(line(await build(state, book).built, "l1/liability")?.blocked).toBeUndefined();
+
+    const changeSet = await build(state, book, { items: [termAnswer] }).built;
+    const car = line(changeSet, "l1/liability");
+    expect(car?.action).toBe("update");
+    expect(car?.blocked).toBeUndefined();
+    expect(car?.fields.map((f) => f.key)).not.toContain("termMonths");
+    const note = line(changeSet, "final_notes:Notes/plan_observation/0");
+    expect(note?.aiPlaced).toBe(true);
+    expect(note?.blocked).toBeUndefined();
+    expect(note?.fields.map((f) => [f.key, f.next])).toEqual([
+      ["topic", "general"],
+      ["body", "Anything else we should know? — Notes: The car loan runs 99999 months, believe it or not."],
+    ]);
+  });
+
+  it("leaves a line blocked, AI value and all, when it can't save without that value either", async () => {
+    const state = stateWith({ liab: [rowOf("l1", carLoan)], final_notes: finalNotes });
+    expect(line(await build(state, book).built, "l1/liability")?.blocked?.reason).toBe("Needs Term (months).");
+
+    const changeSet = await build(state, book, { items: [termAnswer] }).built;
+    expect(line(changeSet, "l1/liability")?.blocked?.reason).toBe("Term (months): must be 12000 or less.");
+    expect(line(changeSet, "l1/liability")?.fields.find((f) => f.key === "termMonths")?.ai).toEqual({ quote: "99999 months" });
+    expect(changeSet.lines.some((l) => l.target === "plan_observation")).toBe(false);
+  });
+});
+
+describe("blockDependents — a line that needs a line the change set doesn't have (RULING)", () => {
+  const lineOf = (id: string, label: string, extra: Partial<ChangeLine> = {}): ChangeLine => ({
+    id, page: "accounts", sectionId: "cash", rowId: id.split("/")[0], target: "account", action: "create",
+    recordId: null, label, fields: [], warnings: [], ...extra,
+  });
+  const state = stateWith({ cash: [rowOf("c9", { accountName: "Trust Checking" })] });
+
+  it("fails closed, naming the row the missing line would come from — and what hangs off it follows", () => {
+    const savings = lineOf("s1/savings_rule", "Savings into Trust Checking", { target: "savings_rule", dependsOn: ["c9/account"] });
+    const designation = lineOf("s2/account_beneficiary_designation", "Beneficiaries", {
+      parent: { ref: "line", target: "account", lineId: "gone/account" },
+    });
+    const after = lineOf("s3/savings_rule", "After", { target: "savings_rule", dependsOn: ["s1/savings_rule"] });
+    expect(blockDependents([savings, designation, after], state).map((l) => [l.id, l.blocked])).toEqual([
+      ["s1/savings_rule", { reason: 'This depends on "Trust Checking", which won\'t be saved.' }],
+      ["s2/account_beneficiary_designation", { reason: 'This depends on "Account", which won\'t be saved.' }],
+      ["s3/savings_rule", { reason: 'Saves only with "Savings into Trust Checking", which can\'t be saved yet.' }],
+    ]);
+  });
+
+  it("leaves a line whose needs are all in the change set and saveable", () => {
+    const account = lineOf("c9/account", "Trust Checking");
+    const savings = lineOf("s1/savings_rule", "Savings", { target: "savings_rule", dependsOn: ["c9/account"] });
+    expect(blockDependents([account, savings], state)).toEqual([account, savings]);
   });
 });
