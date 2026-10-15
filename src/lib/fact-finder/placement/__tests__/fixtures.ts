@@ -69,6 +69,8 @@ export function contextOf(
     refs: buildRefIndex(state, book),
     asOf: opts.asOf ?? null,
     year: opts.year ?? 2026,
+    // Nothing removed: a map test hands the map its rows as the runner would after cleaning.
+    removed: () => false,
     notice: (text) => {
       notices.push(text);
     },

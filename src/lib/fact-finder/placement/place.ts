@@ -94,8 +94,11 @@ interface Taken {
   as: { note: NoteTopic } | { unfit: TargetKind };
 }
 
-/** The row without its notes and the cells that didn't fit; `taken` gets them. */
-function cleanRow(section: FFSection, map: SectionMap, row: FFRow, taken: Taken[]): FFRow {
+/** A cell's key in the runner's set of removed cells (row ids are unique across sections). */
+const cellKey = (rowId: string, columnId: string) => `${rowId}:${columnId}`;
+
+/** The row without its notes and the cells that didn't fit; `taken` gets them, and `removed` every cell taken out. */
+function cleanRow(section: FFSection, map: SectionMap, row: FFRow, taken: Taken[], removed: Set<string>): FFRow {
   const clean: FFRow = { ...row, cells: { ...row.cells } };
   for (const column of section.columns) {
     const cell = row.cells[column.id];
@@ -103,6 +106,7 @@ function cleanRow(section: FFSection, map: SectionMap, row: FFRow, taken: Taken[
     const placement = map.placements[column.id];
     if (!("note" in placement) && cell.issue === undefined && fits(column, cell.value)) continue;
     delete clean.cells[column.id];
+    removed.add(cellKey(row.id, column.id));
     const value = String(cell.value);
     if ("note" in placement) taken.push({ section, row: clean, column, value, as: { note: placement.note } });
     // A context column's unfit value is only dropped: it is never saved anyway.
@@ -169,9 +173,10 @@ export function placeFactFinder(state: FactFinderState, book: RecordBook, now: D
   });
 
   const taken: Taken[] = [];
+  const removed = new Set<string>();
   const sections: Record<string, FFRow[]> = { ...state.sections };
   for (const { section, map } of maps) {
-    sections[section.id] = (state.sections[section.id] ?? []).map((row) => cleanRow(section, map, row, taken));
+    sections[section.id] = (state.sections[section.id] ?? []).map((row) => cleanRow(section, map, row, taken, removed));
   }
   const clean: FactFinderState = { ...state, sections };
 
@@ -183,6 +188,7 @@ export function placeFactFinder(state: FactFinderState, book: RecordBook, now: D
     refs: buildRefIndex(clean, book),
     asOf: meta ? text(meta, "dateCompleted") : null,
     year: now.getUTCFullYear(),
+    removed: (rowId, columnId) => removed.has(cellKey(rowId, columnId)),
     notice: (message) => {
       notices.push(message);
     },

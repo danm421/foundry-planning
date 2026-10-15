@@ -19,6 +19,12 @@ export interface PlaceContext {
   asOf: string | null;
   /** The current year, for default start years. */
   year: number;
+  /**
+   * The runner took this cell's value out before the map saw it (it didn't fit
+   * its column, or it is a note): the cell reads blank but wasn't. A map's
+   * default for a blank cell never stands in for it.
+   */
+  removed(rowId: string, columnId: string): boolean;
   /** A change-set-wide message (the runner collects them). */
   notice(text: string): void;
 }

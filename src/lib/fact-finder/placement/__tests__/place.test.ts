@@ -1,10 +1,12 @@
 // src/lib/fact-finder/placement/__tests__/place.test.ts
 import { describe, expect, it } from "vitest";
 import type { FactFinderState, FFCell, FFRow, FFUnassignedHolding } from "../../types";
+import { diffDrafts } from "../diff";
 import { CASH_MAP } from "../map/accounts";
 import { columnFeeding, sectionMapFor } from "../map/index";
 import { placeFactFinder, type Placed } from "../place";
 import type { RecordBook } from "../types";
+import { validateLines } from "../validate";
 import { hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "./fixtures";
 
 const NOW = new Date("2026-03-15T12:00:00Z");
@@ -176,6 +178,38 @@ describe("placeFactFinder — values that don't fit their column (D5)", () => {
     const placed = place({ people: [withCells(rowOf("people:Co-client", {}), { retirementMonth: unfit("Juneish", "notAnOption") })] });
     expect(placed.drafts).toEqual([]);
     expect(placed.notices).toEqual(['Retirement month (Client & Co-client — Co-client): "Juneish" isn\'t one of the options — pick one, then review again.']);
+  });
+});
+
+describe("placeFactFinder — an unreadable % of it never becomes a default", () => {
+  const unreadable = [
+    ["flagged by the reader", { value: 50, by: "document", confidence: 0.9, issue: "unparsed" } as FFCell],
+    ["not a number", raw("half")],
+  ] as const;
+  const percentCell = (rowId: string) => ({ sectionId: "bequests", rowId, columnId: "percent" });
+
+  it.each(unreadable)("a specific asset's %s % of it: no percentage, and validation blocks the line at that cell", (_, percent) => {
+    const book = hendricksBook(kids);
+    const placed = place(
+      {
+        taxable: [rowOf("tx-1", { accountName: "Joint Brokerage" })],
+        bequests: [withCells(rowOf("b1", { willOf: "Client", gift: "Specific asset", asset: "Joint Brokerage", recipients: "Emma" }), { percent })],
+      },
+      book,
+    );
+    expect(keysOf(placed, "b1/will_bequest")).not.toContain("percentage");
+    const lines = validateLines(diffDrafts(placed.drafts, book), (line, key) => columnFeeding(line.sectionId, line.target, key));
+    expect(lines.find((l) => l.id === "b1/will_bequest")?.blocked).toEqual({ reason: "Needs % of it.", cell: percentCell("b1") });
+  });
+
+  it.each(unreadable)("a remaining-estate row's %s % of it is never 'all of it': the line is blocked at that cell", (_, percent) => {
+    const placed = place({
+      bequests: [withCells(rowOf("b2", { willOf: "Client", gift: "Remaining estate", recipients: "Lucas" }), { percent })],
+    }, hendricksBook(kids));
+    expect(draft(placed, "b2/will_residuary_recipient")).toMatchObject({
+      fields: [],
+      blocked: { reason: '"% of it" didn\'t read as a number — enter the percent, or clear it to leave all of it.', cell: percentCell("b2") },
+    });
   });
 });
 

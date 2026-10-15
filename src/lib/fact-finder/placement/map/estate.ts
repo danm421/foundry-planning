@@ -340,7 +340,9 @@ function bequestDraft(
     if (debt) seen.debts.add(key);
   }
   const percent = num(row, "percent");
-  if (!debt) b.put("percentage", percent ?? (recordId === null ? 100 : null), percent === null ? [] : ["percent"]);
+  // All of it only for a truly blank cell: an unreadable one places nothing, so validation asks for it there.
+  const allOfIt = recordId === null && !ctx.removed(row.id, "percent") ? 100 : null;
+  if (!debt) b.put("percentage", percent ?? allOfIt, percent === null ? [] : ["percent"]);
   else if (percent !== null && percent !== 100) b.warn(`"% of it" isn't saved for a debt — the recipients' shares say who pays what.`);
   const names = text(row, "recipients");
   const recipients = names === null ? null : recipientsOf(names, ctx, person, debt);
@@ -355,6 +357,8 @@ function bequestDraft(
   if (will.recordId !== null) b.warn("Saving changes only the provisions listed here; the will's other provisions stay.");
   return b.build();
 }
+
+const UNREAD_SHARE = `"% of it" didn't read as a number — enter the percent, or clear it to leave all of it.`;
 
 /**
  * Everyone who receives the rest of the person's estate (D7): all their
@@ -376,6 +380,8 @@ function residuaryDraft(rows: readonly FFRow[], ctx: PlaceContext, person: Perso
     const found = recipientsOf(names, ctx, person, false);
     if (!found.ok) return b.block(found.reason, cellOf("bequests", row, "recipients")).build();
     const share = num(row, "percent");
+    // Blank is all of it; an unreadable % of it is never read as all of it.
+    if (share === null && ctx.removed(row.id, "percent")) return b.block(UNREAD_SHARE, cellOf("bequests", row, "percent")).build();
     set.push(...found.recipients.map((r) => ({ who: r.who, percentage: share === null ? r.percentage : Math.round(r.percentage * share) / 100 })));
     if (share !== null) from.push(cellOf("bequests", row, "percent"));
     from.push(cellOf("bequests", row, "recipients"));
