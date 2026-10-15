@@ -47,7 +47,9 @@ import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { livingSlotRole } from "@/lib/imports/match-keys/living-slot";
 import { ownerRefFromOwners } from "@/lib/insurance-policies/owner-ref";
 import type { PlacedValue, RecordRef, TargetKind } from "../change-set";
+import { fullName, willLabel, withLast4 } from "../placement/text";
 import { emptyRecordBook, type BookRecord, type RecordBook } from "../placement/types";
+import { holdingValue } from "../state";
 
 type Role = "client" | "spouse";
 type Account = typeof accounts.$inferSelect;
@@ -61,11 +63,8 @@ const num = (value: string | null): number | null => (value === null ? null : Nu
 const timing = (year: number, yearRef: string | null): PlacedValue => (yearRef ? { yearRef } : year);
 /** A growth rate is in effect only when the row's growth source is "custom" (the maps write it with that companion). */
 const customRate = (rate: string | null, source: string): number | null => (source === "custom" ? num(rate) : null);
-const fullName = (first: string | null, last: string | null) => [first, last].filter(Boolean).join(" ");
 const monthYear = (year: number | null, month: number | null): string | null =>
   year === null || month === null ? null : `${year}-${String(month).padStart(2, "0")}`;
-/** A name with its last 4, as the fact finder's link picker shows it. */
-const withLast4 = (name: string, last4: string | null) => (last4 ? `${name} ··${last4}` : name);
 /** The client and co-client first, then everyone else as stored. */
 const householdRank = (who: RecordRef) => (who.ref !== "person" ? 2 : who.role === "client" ? 0 : 1);
 
@@ -79,7 +78,7 @@ function holding(h: typeof accountHoldings.$inferSelect): PlacedValue {
     shares,
     price,
     // A ticker stores no market value: it is worth shares × price.
-    marketValue: h.marketValue !== null ? Number(h.marketValue) : shares !== null && price !== null ? Math.round(shares * price * 100) / 100 : null,
+    marketValue: holdingValue({ marketValue: h.marketValue !== null ? Number(h.marketValue) : null, shares, price }),
     costBasis: Number(h.costBasis),
   };
 }
@@ -212,7 +211,6 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
   const accountRef = (id: string) => record(ACCOUNT_TARGET[accountById.get(id)?.category ?? ""] ?? "account", id);
   const contactOf = (role: "primary" | "spouse") => contacts.find((c) => c.role === role);
   const willOf = new Map(willRows.map((w) => [w.id, w]));
-  const willLabel = (grantor: Role) => `${names[grantor] ?? (grantor === "client" ? "Client" : "Co-client")}'s will`;
   /** A will recipient. "spouse" is the grantor's spouse — the other household principal. */
   const recipient = (kind: string, id: string | null, grantor: Role): RecordRef =>
     kind === "spouse"
@@ -220,34 +218,30 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
       : kind === "family_member"
         ? member(String(id))
         : record(kind === "entity" ? "entity" : "external_beneficiary", String(id));
-  /** The person, charity or trust a beneficiary designation names. */
-  const designee = (d: Designation): RecordRef | null =>
-    d.householdRole
-      ? person(d.householdRole)
-      : d.familyMemberId
-        ? member(d.familyMemberId)
-        : d.externalBeneficiaryId
-          ? record("external_beneficiary", d.externalBeneficiaryId)
-          : d.entityIdRef
-            ? record("entity", d.entityIdRef)
-            : null;
+  /** The family member, trust or charity a row names — an owner, a designee, a gift's recipient; null for none. */
+  const whoOf = (familyMemberId: string | null, entityId: string | null, externalId: string | null | undefined): RecordRef | null =>
+    familyMemberId ? member(familyMemberId) : entityId ? record("entity", entityId) : externalId ? record("external_beneficiary", externalId) : null;
   const beneficiariesOf = (rows: Designation[]) =>
     rows.flatMap((d) => {
-      const who = designee(d);
+      const who = d.householdRole ? person(d.householdRole) : whoOf(d.familyMemberId, d.entityIdRef, d.externalBeneficiaryId);
       return who ? [{ tier: d.tier, who, percentage: Number(d.percentage) }] : [];
     });
-  /** Owners as the maps write them: { who, percent } with percent a fraction. */
+  /** Owners as the maps write them: { who, percent } with percent a fraction. Each owner row names exactly one (a check constraint). */
   const ownersOf = (rows: OwnerRow[]) =>
     rows
-      .map((o) => ({
-        who: o.familyMemberId
-          ? member(o.familyMemberId)
-          : o.entityId
-            ? record("entity", o.entityId)
-            : record("external_beneficiary", String(o.externalBeneficiaryId)),
-        percent: Number(o.percent),
-      }))
+      .flatMap((o) => {
+        const who = whoOf(o.familyMemberId, o.entityId, o.externalBeneficiaryId);
+        return who ? [{ who, percent: Number(o.percent) }] : [];
+      })
       .sort((a, b) => householdRank(a.who) - householdRank(b.who));
+  /** Each account's owner rows. */
+  const ownerRowsByAccount = new Map<string, OwnerRow[]>();
+  for (const o of accountOwnerRows) {
+    const rows = ownerRowsByAccount.get(o.accountId);
+    if (rows) rows.push(o);
+    else ownerRowsByAccount.set(o.accountId, [o]);
+  }
+  const ownersOfAccount = (a: Account) => ownerRowsByAccount.get(a.id) ?? [];
   /** A policy's owner as the policy dialog reads it: "joint", or its one owner; null for any other split. */
   const policyOwner = (rows: OwnerRow[]): PlacedValue => {
     const ref = ownerRefFromOwners(rows.map(engineOwner), { clientFmId: people.client, spouseFmId: people.spouse });
@@ -260,6 +254,8 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
   const policyAccounts = accountsOf("life_insurance_policy");
   const accountFacts = (a: Account) => ({ category: a.category, subType: a.subType, parentAccountId: a.parentAccountId, isDefaultChecking: a.isDefaultChecking });
   const policyOf = (accountId: string) => policies.find((p) => p.accountId === accountId);
+  /** An account as the fact finder's link picker shows it: its name and last 4. */
+  const accountLabel = (a: Account) => withLast4(a.name, a.accountNumberLast4);
   const policyLabel = (a: Account) => withLast4(a.name, policyOf(a.id)?.policyNumberLast4 ?? null);
 
   const records: Partial<Record<TargetKind, BookRecord[]>> = {
@@ -471,7 +467,7 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
       values: { beneficiaries: beneficiariesOf(designations.filter((d) => d.entityId === t.id)) },
     })),
     revocable_trust: revocables.map((t) => ({ id: t.id, label: t.name, values: { name: t.name } })),
-    will: willRows.map((w) => ({ id: w.id, label: willLabel(w.grantor), values: { grantor: w.grantor }, facts: { grantor: w.grantor } })),
+    will: willRows.map((w) => ({ id: w.id, label: willLabel(names[w.grantor], w.grantor), values: { grantor: w.grantor }, facts: { grantor: w.grantor } })),
     will_bequest: bequests.map((b) => {
       const grantor = willOf.get(b.willId)?.grantor ?? "client";
       return {
@@ -503,7 +499,7 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
     // One set per will, empty when it names nobody.
     will_residuary_recipient: willRows.map((w) => ({
       id: w.id,
-      label: `${willLabel(w.grantor)} — remaining estate`,
+      label: `${willLabel(names[w.grantor], w.grantor)} — remaining estate`,
       values: {
         recipients: residuary
           .filter((r) => r.willId === w.id)
@@ -516,13 +512,7 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
       values: {
         year: g.year,
         grantor: g.grantor,
-        recipient: g.recipientFamilyMemberId
-          ? member(g.recipientFamilyMemberId)
-          : g.recipientEntityId
-            ? record("entity", g.recipientEntityId)
-            : g.recipientExternalBeneficiaryId
-              ? record("external_beneficiary", g.recipientExternalBeneficiaryId)
-              : null,
+        recipient: whoOf(g.recipientFamilyMemberId, g.recipientEntityId, g.recipientExternalBeneficiaryId),
         amount: num(g.amount),
         notes: g.notes,
       },
@@ -534,14 +524,14 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
     // link to is here. A business's "— Cash" account is an account (category cash).
     account: plainAccounts.map((a) => ({
       id: a.id,
-      label: withLast4(a.name, a.accountNumberLast4),
+      label: accountLabel(a),
       values: {
         name: a.name,
         value: Number(a.value),
         accountNumberLast4: a.accountNumberLast4,
         custodian: a.custodian,
         subType: a.subType,
-        owners: ownersOf(accountOwnerRows.filter((o) => o.accountId === a.id)),
+        owners: ownersOf(ownersOfAccount(a)),
         titlingType: a.titlingType,
         holdings: holdingRows.filter((h) => h.accountId === a.id).map(holding),
         growthRate: customRate(a.growthRate, a.growthSource),
@@ -560,13 +550,13 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
     })),
     business_account: accountsOf("business_account").map((a) => ({
       id: a.id,
-      label: withLast4(a.name, a.accountNumberLast4),
+      label: accountLabel(a),
       values: {
         name: a.name,
         businessType: a.businessType,
         value: Number(a.value),
         basis: Number(a.basis),
-        owners: ownersOf(accountOwnerRows.filter((o) => o.accountId === a.id)),
+        owners: ownersOf(ownersOfAccount(a)),
         businessTaxTreatment: a.businessTaxTreatment,
         distributionPolicyPercent: num(a.distributionPolicyPercent),
       },
@@ -575,7 +565,7 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
     // One set per account, empty when it names nobody — as for trusts.
     account_beneficiary_designation: plainAccounts.map((a) => ({
       id: a.id,
-      label: withLast4(a.name, a.accountNumberLast4),
+      label: accountLabel(a),
       values: { beneficiaries: beneficiariesOf(accountDesignations.filter((d) => d.accountId === a.id)) },
     })),
     // One per annuity account (the contract is keyed by it), blank when none is on record.
@@ -585,7 +575,7 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
         const c = contracts.find((x) => x.accountId === a.id);
         return {
           id: a.id,
-          label: withLast4(a.name, a.accountNumberLast4),
+          label: accountLabel(a),
           values: {
             costBasis: num(c?.costBasis ?? null),
             productType: c?.productType ?? null,
@@ -596,7 +586,7 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
       }),
     stock_option_account: accountsOf("stock_option_account").map((a) => {
       // One owner at 100%: the client or the co-client.
-      const owners = ownersOf(accountOwnerRows.filter((o) => o.accountId === a.id));
+      const owners = ownersOf(ownersOfAccount(a));
       const who = owners.length === 1 ? owners[0].who : null;
       return {
         id: a.id,
@@ -670,7 +660,7 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
           policyNumberLast4: p?.policyNumberLast4 ?? null,
           policyType: p?.policyType ?? null,
           insuredPerson: a.insuredPerson,
-          ownerRef: policyOwner(accountOwnerRows.filter((o) => o.accountId === a.id)),
+          ownerRef: policyOwner(ownersOfAccount(a)),
           faceValue: num(p?.faceValue ?? null),
           cashValue: Number(a.value),
           costBasis: num(p?.costBasis ?? null),
