@@ -12,20 +12,20 @@ import {
   BEQUEST_COND_MAP, BEQUEST_KIND_MAP, GIFT_FROM_MAP, PERSON_MAP, TRUST_ENDS_MAP, TRUST_GRANTOR_MAP, TRUST_TYPE_MAP, valueFor,
 } from "../../enums";
 import { normText } from "../../identity";
-import { findColumn } from "../../schema";
 import { fixedRow, fixedRowId } from "../../state";
 import type { FFRow } from "../../types";
-import { findAccount, findLiability, findPerson, hasCoClient, NO_CO_CLIENT_REASON } from "../refs";
+import { findAccount, findLiability, findPerson } from "../refs";
+import { roleLabel, willLabel } from "../text";
 import { parseShares, splitPersonName } from "../translate";
-import type { TargetDraft } from "../types";
-import { bool, cellOf, DraftBuilder, linkedRecordId, num, sharesOf, text } from "./helpers";
+import { findRecord, type TargetDraft } from "../types";
+import {
+  beneficiariesOf, bool, cellOf, DraftBuilder, linkedRecordId, needsCoClient, num, planNoteDraft, putOrDefault, quotedLabels, sharesOf, text,
+} from "./helpers";
 import type { PlaceContext, SectionMap } from "./types";
 
 type Person = "client" | "spouse";
 const PEOPLE: readonly Person[] = ["client", "spouse"];
-const ROLE: Record<Person, string> = { client: "Client", spouse: "Co-client" };
 
-const labelOf = (sectionId: string, columnId: string) => findColumn(sectionId, columnId)?.label ?? columnId;
 /** A value on record that reads as this text. */
 const sameText = (value: PlacedValue | undefined, s: string) => typeof value === "string" && normText(value) === normText(s);
 
@@ -33,9 +33,9 @@ const sameText = (value: PlacedValue | undefined, s: string) => typeof value ===
 
 /** The person's Documents in Place row (an empty one when the fact finder has none). */
 function docsRow(ctx: PlaceContext, person: Person): FFRow {
-  return fixedRow(ctx.state, "estate_docs", ROLE[person]) ?? { id: fixedRowId("estate_docs", ROLE[person]), cells: {}, sourceFileIds: [] };
+  return fixedRow(ctx.state, "estate_docs", roleLabel(person)) ?? { id: fixedRowId("estate_docs", roleLabel(person)), cells: {}, sourceFileIds: [] };
 }
-const personOfDocsRow = (row: FFRow) => PEOPLE.find((p) => fixedRowId("estate_docs", ROLE[p]) === row.id);
+const personOfDocsRow = (row: FFRow) => PEOPLE.find((p) => fixedRowId("estate_docs", roleLabel(p)) === row.id);
 
 /** Will Provisions rows that name this person's will. */
 const provisionsOf = (rows: readonly FFRow[], person: Person) => rows.filter((r) => valueFor(PERSON_MAP, text(r, "willOf")) === person);
@@ -50,12 +50,12 @@ interface Will { ref: RecordRef; recordId: string | null; label: string }
 function willOf(ctx: PlaceContext, person: Person): Will {
   const onRecord = ctx.book.records.will.find((r) => r.facts?.grantor === person);
   if (onRecord) return { ref: { ref: "record", target: "will", id: onRecord.id }, recordId: onRecord.id, label: onRecord.label };
-  const people = fixedRow(ctx.state, "people", ROLE[person]);
+  const people = fixedRow(ctx.state, "people", roleLabel(person));
   const first = (people ? text(people, "firstName") : null) ?? ctx.book.names[person];
   return {
     ref: { ref: "line", target: "will", lineId: lineIdOf(docsRow(ctx, person).id, "will") },
     recordId: null,
-    label: `${first ?? ROLE[person]}'s will`,
+    label: willLabel(first, person),
   };
 }
 
@@ -63,7 +63,7 @@ function willOf(ctx: PlaceContext, person: Person): Will {
 function newWill(ctx: PlaceContext, person: Person, will: Will, from: CellRef[]): TargetDraft {
   const b = new DraftBuilder({ sectionId: "estate_docs", row: docsRow(ctx, person), target: "will", recordId: null, label: will.label })
     .put("grantor", person, from);
-  if (person === "spouse" && !hasCoClient(ctx.refs)) b.block(NO_CO_CLIENT_REASON, from[0]);
+  needsCoClient(b, ctx, person, from[0]);
   return b.build();
 }
 
@@ -96,19 +96,12 @@ function noticeMissingTrusts(rows: readonly FFRow[], ctx: PlaceContext): void {
   }
 }
 
-/** Plan notes the import writes itself. */
-const NOTE = { section: "observation", audience: "advisor", source: "manual" };
-
 /** "Last updated (year)" → a plan note (D7), never an invented execution date. The same note on record is that record. */
 function lastUpdatedNote(row: FFRow, ctx: PlaceContext, person: Person, year: number): TargetDraft {
   const body = bool(row, "will") === true
-    ? `${ROLE[person]}'s will was last updated in ${year}.`
-    : `${ROLE[person]}'s estate documents were last updated in ${year}.`;
-  const recordId = ctx.book.records.plan_observation.find((r) => r.values.body === body)?.id ?? null;
-  return new DraftBuilder({ sectionId: "estate_docs", row, target: "plan_observation", recordId, label: `Plan note: ${body}`, fixed: NOTE })
-    .put("topic", "estate", ["lastUpdatedYear"])
-    .put("body", body, ["lastUpdatedYear"])
-    .build();
+    ? `${roleLabel(person)}'s will was last updated in ${year}.`
+    : `${roleLabel(person)}'s estate documents were last updated in ${year}.`;
+  return planNoteDraft("estate_docs", row, ctx, { label: `Plan note: ${body}`, topic: "estate", body, columns: ["lastUpdatedYear"] });
 }
 
 /** Credentials and suffixes are neither a name nor a firm ("Jane Smith, Esq."). */
@@ -197,43 +190,10 @@ export const ESTATE_DOCS_MAP: SectionMap = {
 
 // ---- trusts -------------------------------------------------------------------------
 
+/** A trust's beneficiary tiers, and the columns that fill them. */
 const TRUST_TIERS = [["income", "incomeBeneficiaries"], ["remainder", "remainderBeneficiaries"]] as const;
 /** What a revocable living trust doesn't keep: it stores a name only. */
 const NOT_REVOCABLE = ["grantor", "trustee", "grantorTrust", "crummey", "trustEnds", "incomeBeneficiaries", "remainderBeneficiaries"];
-
-/** One tier's rows of a beneficiary set on record. */
-function tierOnRecord(set: PlacedValue | undefined, tier: string): PlacedValue[] {
-  return Array.isArray(set) ? set.filter((e) => (e as { tier?: PlacedValue } | null)?.tier === tier) : [];
-}
-
-/**
- * The trust's beneficiaries (D6): a second line hanging off the trust. A filled
- * tier replaces that tier; a blank tier keeps its rows on record (a blank never
- * erases). A name that doesn't resolve blocks this line only.
- */
-function beneficiariesOf(row: FFRow, ctx: PlaceContext, trust: DraftBuilder, recordId: string | null, label: string): TargetDraft | null {
-  const filled = TRUST_TIERS.filter(([, columnId]) => text(row, columnId) !== null);
-  if (filled.length === 0) return null;
-  const b = new DraftBuilder({
-    sectionId: "trusts", row, target: "trust_beneficiary_designation", recordId, label: `${label} — beneficiaries`, parent: trust.ref,
-  });
-  const recorded = recordId === null ? undefined : ctx.book.records.trust_beneficiary_designation.find((r) => r.id === recordId)?.values.beneficiaries;
-  const set: PlacedValue[] = [];
-  for (const [tier, columnId] of TRUST_TIERS) {
-    const names = text(row, columnId);
-    if (names === null) {
-      set.push(...tierOnRecord(recorded, tier));
-      continue;
-    }
-    const shares = sharesOf(names, ctx, ["household", "family", "external", "trust"]);
-    if (!shares.ok) return b.block(shares.reason, columnId).build();
-    set.push(...shares.shares.map((s) => ({ tier, who: s.who, percentage: s.percent })));
-  }
-  b.put("beneficiaries", set, filled.map(([, columnId]) => columnId));
-  // Every trust on record has a set, often empty — warn only when it names someone.
-  if (Array.isArray(recorded) && recorded.length > 0) b.warn("These beneficiaries replace the ones on record.", { field: "beneficiaries" });
-  return b.build();
-}
 
 /** A revocable living trust (D7): its name only, matched on record by name. */
 function revocableDraft(row: FFRow, ctx: PlaceContext, name: string | null): TargetDraft {
@@ -242,7 +202,7 @@ function revocableDraft(row: FFRow, ctx: PlaceContext, name: string | null): Tar
     .put("name", name, ["trustName"]);
   const dropped = NOT_REVOCABLE.filter((columnId) => text(row, columnId) !== null);
   if (dropped.length > 0) {
-    b.warn(`These aren't saved for a revocable living trust: ${dropped.map((id) => `"${labelOf("trusts", id)}"`).join(", ")}.`);
+    b.warn(`These aren't saved for a revocable living trust: ${quotedLabels("trusts", dropped)}.`);
   }
   return b.build();
 }
@@ -279,12 +239,12 @@ export const TRUSTS_MAP: SectionMap = {
         .put("crummeyPowers", bool(row, "crummey"), ["crummey"])
         .put("trustEnds", valueFor(TRUST_ENDS_MAP, text(row, "trustEnds")), ["trustEnds"]);
       // A charitable lead or remainder trust needs terms the fact finder doesn't ask — unless it's already one on record.
-      const onRecord = recordId === null ? undefined : ctx.book.records.entity.find((r) => r.id === recordId)?.facts?.trustSubType;
+      const onRecord = findRecord(ctx.book, "entity", recordId)?.facts?.trustSubType;
       if ((type === "clt" || type === "crt") && onRecord !== type) {
         b.block("A charitable lead or remainder trust needs its split-interest terms — add it in Details.", "trustType");
       }
-      if (grantor === "spouse" && !hasCoClient(ctx.refs)) b.block(NO_CO_CLIENT_REASON, "grantor");
-      const beneficiaries = beneficiariesOf(row, ctx, b, recordId, label);
+      needsCoClient(b, ctx, grantor, "grantor");
+      const beneficiaries = beneficiariesOf(b, row, ctx, { target: "trust_beneficiary_designation", tiers: TRUST_TIERS, recordId, label });
       return beneficiaries ? [b.build(), beneficiaries] : [b.build()];
     });
   },
@@ -350,9 +310,8 @@ function bequestDraft(
     if (debt) seen.debts.add(key);
   }
   const percent = num(row, "percent");
-  // All of it only for a truly blank cell: an unreadable one places nothing, so validation asks for it there.
-  const allOfIt = recordId === null && !ctx.removed(row.id, "percent") ? 100 : null;
-  if (!debt) b.put("percentage", percent ?? allOfIt, percent === null ? [] : ["percent"]);
+  // All of it only for a truly blank cell on a new provision: an unreadable one places nothing, so validation asks for it there.
+  if (!debt) putOrDefault(b, "percentage", row, "percent", recordId === null ? 100 : null, ctx);
   else if (percent !== null && percent !== 100) b.warn(`"% of it" isn't saved for a debt — the recipients' shares say who pays what.`);
   const names = text(row, "recipients");
   const recipients = names === null ? null : recipientsOf(names, ctx, person, debt);
@@ -399,7 +358,7 @@ function residuaryDraft(rows: readonly FFRow[], ctx: PlaceContext, person: Perso
   if (set.length === 0) return null;
   b.put("recipients", set, from);
   // Every will on record has a set, often empty — warn only when it names someone.
-  const recorded = ctx.book.records.will_residuary_recipient.find((r) => r.id === will.recordId)?.values.recipients;
+  const recorded = findRecord(ctx.book, "will_residuary_recipient", will.recordId)?.values.recipients;
   if (Array.isArray(recorded) && recorded.length > 0) b.warn("These recipients replace the ones on record.", { field: "recipients" });
   return b.build();
 }
@@ -487,7 +446,7 @@ export const GIFTS_MAP: SectionMap = {
       })
         .put("year", year, ["year"])
         .put("grantor", grantor, ["from"]);
-      if ((grantor === "spouse" || grantor === "joint") && !hasCoClient(ctx.refs)) b.block(NO_CO_CLIENT_REASON, "from");
+      needsCoClient(b, ctx, grantor, "from");
       if (recipient !== null) {
         // findPerson refuses the client, the co-client and a revocable trust, saying why.
         const found = findPerson(ctx.refs, recipient, { allow: ["family", "external", "trust"] });

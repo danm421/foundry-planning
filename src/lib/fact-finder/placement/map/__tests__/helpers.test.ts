@@ -187,20 +187,22 @@ describe("ownersOf", () => {
   const { ctx } = contextOf(state, hendricksBook({ entity: [recordOf("e-1", "Smith Family Trust", { name: "Smith Family Trust" })] }));
   const owners = (values: Record<string, string>, opts?: { ownerColumn?: string }) => ownersOf("cash", rowOf("c1", values), ctx, opts);
 
-  it("Client, Co-client and Joint are the household's people", () => {
-    expect(owners({ owner: "Client" })).toEqual({ ok: true, owners: [{ who: client, percent: 1 }] });
-    expect(owners({ owner: "Co-client" })).toEqual({ ok: true, owners: [{ who: spouse, percent: 1 }] });
-    expect(owners({ owner: "Joint" })).toEqual({ ok: true, owners: [{ who: client, percent: 0.5 }, { who: spouse, percent: 0.5 }] });
+  it("Client, Co-client and Joint are the household's people, from the Owner column", () => {
+    expect(owners({ owner: "Client" })).toEqual({ ok: true, owners: [{ who: client, percent: 1 }], columns: ["owner"] });
+    expect(owners({ owner: "Co-client" })).toEqual({ ok: true, owners: [{ who: spouse, percent: 1 }], columns: ["owner"] });
+    expect(owners({ owner: "Joint" })).toEqual({ ok: true, owners: [{ who: client, percent: 0.5 }, { who: spouse, percent: 0.5 }], columns: ["owner"] });
   });
 
-  it("Trust / entity is the trust Which trust / entity names, in the fact finder or on the plan", () => {
+  it("Trust / entity is the trust Which trust / entity names, in the fact finder or on the plan — from both columns", () => {
     expect(owners({ owner: "Trust / entity", ownerEntity: "Hendricks ILIT" })).toEqual({
       ok: true,
       owners: [{ who: { ref: "line", target: "entity", lineId: "tr1/entity" }, percent: 1 }],
+      columns: ["owner", "ownerEntity"],
     });
     expect(owners({ owner: "Trust / entity", ownerEntity: "Smith Family Trust" })).toEqual({
       ok: true,
       owners: [{ who: { ref: "record", target: "entity", id: "e-1" }, percent: 1 }],
+      columns: ["owner", "ownerEntity"],
     });
     expect(owners({ owner: "Trust / entity" })).toEqual({ ok: false, reason: "Pick which trust or entity owns it.", columnId: "ownerEntity" });
     expect(owners({ owner: "Trust / entity", ownerEntity: "Lake Trust" })).toEqual({
@@ -211,19 +213,19 @@ describe("ownersOf", () => {
   });
 
   it("reads Which trust / entity only when Owner is exactly Trust / entity; a blank Owner is no owners", () => {
-    expect(owners({ owner: "Client", ownerEntity: "Lake Trust" })).toEqual({ ok: true, owners: [{ who: client, percent: 1 }] });
-    expect(owners({ ownerEntity: "Hendricks ILIT" })).toEqual({ ok: true, owners: [] });
+    expect(owners({ owner: "Client", ownerEntity: "Lake Trust" })).toEqual({ ok: true, owners: [{ who: client, percent: 1 }], columns: ["owner"] });
+    expect(owners({ ownerEntity: "Hendricks ILIT" })).toEqual({ ok: true, owners: [], columns: ["owner"] });
   });
 
   it("Co-client and Joint need a co-client", () => {
     const { ctx: single } = contextOf(stateWith({}), bookWith({}, { people: { client: "fm-client", spouse: null } }));
     expect(ownersOf("cash", rowOf("c1", { owner: "Joint" }), single)).toEqual({ ok: false, reason: NO_CO_CLIENT_REASON, columnId: "owner" });
     expect(ownersOf("cash", rowOf("c1", { owner: "Co-client" }), single)).toMatchObject({ ok: false, columnId: "owner" });
-    expect(ownersOf("cash", rowOf("c1", { owner: "Client" }), single)).toEqual({ ok: true, owners: [{ who: client, percent: 1 }] });
+    expect(ownersOf("cash", rowOf("c1", { owner: "Client" }), single)).toEqual({ ok: true, owners: [{ who: client, percent: 1 }], columns: ["owner"] });
   });
 
   it("reads another owner column when asked, and refuses a value that isn't an option", () => {
-    expect(owners({ heldBy: "Co-client" }, { ownerColumn: "heldBy" })).toEqual({ ok: true, owners: [{ who: spouse, percent: 1 }] });
+    expect(owners({ heldBy: "Co-client" }, { ownerColumn: "heldBy" })).toEqual({ ok: true, owners: [{ who: spouse, percent: 1 }], columns: ["heldBy"] });
     expect(owners({ owner: "Mark & Laura" })).toEqual({
       ok: false,
       reason: 'Owner: "Mark & Laura" isn\'t one of the options — pick one.',

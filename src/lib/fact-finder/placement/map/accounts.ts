@@ -9,13 +9,16 @@
  */
 import { TRAD_IRA_SUBTYPES } from "@/engine/ira-basis";
 import type { PlacedValue } from "../../change-set";
-import { CASH_TYPE_MAP, RETIRE_TYPE_MAP, SECTION_ACCOUNT_CATEGORY, TAXABLE_TYPE_MAP, TITLING_MAP, valueFor, type OptionMap } from "../../enums";
+import {
+  CASH_TYPE_MAP, PERSON_MAP, RETIRE_TYPE_MAP, SECTION_ACCOUNT_CATEGORY, TAXABLE_TYPE_MAP, TITLING_MAP, valueFor, type OptionMap,
+} from "../../enums";
 import { last4Of } from "../../identity";
+import { holdingValue } from "../../state";
 import type { FFHolding, FFRow } from "../../types";
 import { findPerson, hasCoClient, householdPerson } from "../refs";
 import { str, withLast4 } from "../text";
 import type { BookRecord, TargetDraft } from "../types";
-import { bool, DraftBuilder, linkedRecordId, num, ownersOf, rate, sharesOf, text } from "./helpers";
+import { beneficiariesOf, bool, DraftBuilder, linkedRecord, num, putOwners, rate, text } from "./helpers";
 import type { PlaceContext, SectionMap } from "./types";
 
 type AccountSection = "cash" | "taxable" | "retirement" | "edu";
@@ -32,8 +35,8 @@ const MANAGED = "The plan manages this account's owner and type.";
  * value, last 4 and custodian are common to the four sections.
  */
 function startAccount(sectionId: AccountSection, row: FFRow, ctx: PlaceContext, fixed: Record<string, PlacedValue>) {
-  const recordId = linkedRecordId(row, ctx, ["account"]);
-  const record = recordId === null ? undefined : ctx.book.records.account.find((r) => r.id === recordId);
+  const record = linkedRecord(row, ctx, ["account"]);
+  const recordId = record?.id ?? null;
   const name = text(row, "accountName");
   const l4 = last4Of(text(row, "last4"));
   const label = name !== null ? withLast4(name, l4) : (record?.label ?? withLast4(UNNAMED[sectionId], l4));
@@ -51,24 +54,14 @@ function startAccount(sectionId: AccountSection, row: FFRow, ctx: PlaceContext, 
  * owner and type — the account write path refuses both; a business's own
  * account (`parentAccountId`) is owned through the business.
  */
-function putTypeAndOwners(b: DraftBuilder, sectionId: AccountSection, row: FFRow, ctx: PlaceContext, record: BookRecord | undefined, types: OptionMap): void {
+function putTypeAndOwners(b: DraftBuilder, row: FFRow, ctx: PlaceContext, record: BookRecord | undefined, types: OptionMap): void {
   const managed = record?.facts?.isDefaultChecking === true;
   const type = valueFor(types, text(row, "accountType"));
   if (type !== null && managed) b.warn(MANAGED);
   else b.put("subType", type, ["accountType"]);
 
-  const owner = text(row, "owner");
-  if (owner === null) return;
-  const parentId = str(record?.facts?.parentAccountId);
-  if (managed) b.warn(MANAGED);
-  else if (parentId !== null) {
-    const business = ctx.book.records.business_account.find((r) => r.id === parentId);
-    b.warn(`This account is owned through ${business?.label ?? "its business"}.`);
-  } else {
-    const owners = ownersOf(sectionId, row, ctx);
-    if (!owners.ok) b.block(owners.reason, owners.columnId);
-    else b.put("owners", owners.owners, owner === "Trust / entity" ? ["owner", "ownerEntity"] : ["owner"]);
-  }
+  if (!managed) putOwners(b, row, ctx, record, "account");
+  else if (text(row, "owner") !== null) b.warn(MANAGED);
 }
 
 /** The client and the co-client own the account on record. */
@@ -92,8 +85,7 @@ function putTitling(b: DraftBuilder, row: FFRow, record: BookRecord | undefined)
 
 /** A position as the book holds it: with no market value, it is worth shares × price (to the cent). */
 function positionOf(h: FFHolding): PlacedValue {
-  const marketValue = h.marketValue ?? (h.shares !== null && h.price !== null ? Math.round(h.shares * h.price * 100) / 100 : null);
-  return { ticker: h.ticker, name: h.name, shares: h.shares, price: h.price, marketValue, costBasis: h.costBasis };
+  return { ticker: h.ticker, name: h.name, shares: h.shares, price: h.price, marketValue: holdingValue(h), costBasis: h.costBasis };
 }
 
 /** The row's holdings as the account's positions (no cell: holdings aren't a column). A position's cost basis stays on the position. */
@@ -125,7 +117,7 @@ export const CASH_MAP: SectionMap = {
   place(rows, ctx) {
     return rows.map((row): TargetDraft => {
       const { b, record } = startAccount("cash", row, ctx, { category: SECTION_ACCOUNT_CATEGORY.cash });
-      putTypeAndOwners(b, "cash", row, ctx, record, CASH_TYPE_MAP);
+      putTypeAndOwners(b, row, ctx, record, CASH_TYPE_MAP);
       putTitling(b, row, record);
       b.put("growthRate", rate(row, "interestRate"), ["interestRate"], { growthSource: "custom" });
       return b.build();
@@ -150,7 +142,7 @@ export const TAXABLE_MAP: SectionMap = {
     return rows.map((row): TargetDraft => {
       const { b, record } = startAccount("taxable", row, ctx, { category: SECTION_ACCOUNT_CATEGORY.taxable });
       // "Trust" under Account type is a sub-type (a trust account), never an owner.
-      putTypeAndOwners(b, "taxable", row, ctx, record, TAXABLE_TYPE_MAP);
+      putTypeAndOwners(b, row, ctx, record, TAXABLE_TYPE_MAP);
       putTitling(b, row, record);
       b.put("basis", num(row, "costBasis"), ["costBasis"]);
       putHoldings(b, row, record);
@@ -159,42 +151,8 @@ export const TAXABLE_MAP: SectionMap = {
   },
 };
 
+/** A retirement account's beneficiary tiers, and the columns that fill them. */
 const TIERS = [["primary", "primaryBeneficiary"], ["contingent", "contingentBeneficiary"]] as const;
-
-/** One tier's rows of a beneficiary set on record. */
-function tierOnRecord(set: PlacedValue | undefined, tier: string): PlacedValue[] {
-  return Array.isArray(set) ? set.filter((e) => (e as { tier?: PlacedValue } | null)?.tier === tier) : [];
-}
-
-/**
- * The account's beneficiaries (D6): a second line hanging off the account. A
- * filled tier replaces that tier; a blank tier keeps its rows on record (a
- * blank never erases). A name that doesn't resolve blocks this line only.
- */
-function beneficiariesOf(row: FFRow, ctx: PlaceContext, account: DraftBuilder, recordId: string | null, label: string): TargetDraft | null {
-  const filled = TIERS.filter(([, columnId]) => text(row, columnId) !== null);
-  if (filled.length === 0) return null;
-  const b = new DraftBuilder({
-    sectionId: "retirement", row, target: "account_beneficiary_designation", recordId, label: `${label} — beneficiaries`, parent: account.ref,
-  });
-  const recorded = recordId === null ? undefined : ctx.book.records.account_beneficiary_designation.find((r) => r.id === recordId)?.values.beneficiaries;
-  const set: PlacedValue[] = [];
-  for (const [tier, columnId] of TIERS) {
-    const names = text(row, columnId);
-    if (names === null) {
-      set.push(...tierOnRecord(recorded, tier));
-      continue;
-    }
-    const shares = sharesOf(names, ctx, ["household", "family", "external", "trust"]);
-    if (!shares.ok) return b.block(shares.reason, columnId).build();
-    set.push(...shares.shares.map((s) => ({ tier, who: s.who, percentage: s.percent })));
-  }
-  b.put("beneficiaries", set, filled.map(([, columnId]) => columnId));
-  // Every account on record has a set, often empty — warn only when it names someone.
-  if (recordId === null) b.warn("These beneficiaries replace the default beneficiaries a new retirement account gets.");
-  else if (Array.isArray(recorded) && recorded.length > 0) b.warn("These beneficiaries replace the ones on record.", { field: "beneficiaries" });
-  return b.build();
-}
 
 /** Roth portion, after-tax basis and an inheritance, each by the account's type (the row's, else the record's). */
 function putRetirement(b: DraftBuilder, row: FFRow, record: BookRecord | undefined): void {
@@ -252,10 +210,13 @@ export const RETIREMENT_MAP: SectionMap = {
   place(rows, ctx) {
     return rows.flatMap((row): TargetDraft[] => {
       const { b, record, label } = startAccount("retirement", row, ctx, { category: SECTION_ACCOUNT_CATEGORY.retirement });
-      putTypeAndOwners(b, "retirement", row, ctx, record, RETIRE_TYPE_MAP);
+      putTypeAndOwners(b, row, ctx, record, RETIRE_TYPE_MAP);
       putRetirement(b, row, record);
       putHoldings(b, row, record);
-      const names = beneficiariesOf(row, ctx, b, record?.id ?? null, label);
+      const names = beneficiariesOf(b, row, ctx, {
+        target: "account_beneficiary_designation", tiers: TIERS, recordId: record?.id ?? null, label,
+        newWarning: "These beneficiaries replace the default beneficiaries a new retirement account gets.",
+      });
       return names ? [b.build(), names] : [b.build()];
     });
   },
@@ -286,8 +247,8 @@ function putGrantor(b: DraftBuilder, row: FFRow, ctx: PlaceContext, record: Book
   const owner = text(row, "owner");
   const onRecord = record?.values.grantor;
   if (owner === null || (onRecord !== undefined && onRecord !== null && onRecord !== "")) return;
-  const role = owner === "Client" ? "client" : owner === "Co-client" && hasCoClient(ctx.refs) ? "spouse" : null;
-  if (role !== null) b.put("grantor", householdPerson(ctx.refs, role), ["owner"]);
+  const role = valueFor(PERSON_MAP, owner);
+  if (role === "client" || (role === "spouse" && hasCoClient(ctx.refs))) b.put("grantor", householdPerson(ctx.refs, role), ["owner"]);
   else b.warn("A 529 has no owner on the plan — pick who funded it under Grantor.");
 }
 

@@ -75,6 +75,11 @@ export function emptyRecordBook(clientId: string): RecordBook {
   };
 }
 
+/** The book's record of `target` with this id; undefined for no id, or one the book doesn't have. */
+export function findRecord(book: RecordBook, target: TargetKind, id: string | null | undefined): BookRecord | undefined {
+  return id === null || id === undefined ? undefined : book.records[target].find((r) => r.id === id);
+}
+
 /** Free text the AI step places: a notes column, a notes box, or a value that didn't fit its column. */
 export interface LeftoverItem {
   /** `${rowId}:${columnId}` */

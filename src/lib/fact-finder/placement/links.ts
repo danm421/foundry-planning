@@ -10,7 +10,7 @@ import { FACT_FINDER_SECTIONS } from "../schema";
 import { rowLabel } from "../state";
 import type { FactFinderState, FFRow } from "../types";
 import { LINK_TARGETS } from "./place";
-import type { RecordBook } from "./types";
+import { findRecord, type RecordBook } from "./types";
 
 /** A row the review names, as the fact finder calls it ("Joint Checking", "Social Security — Client"). */
 export interface LinkedRow {
@@ -38,7 +38,7 @@ export function checkLinks(state: FactFinderState, book: RecordBook): LinkProble
       const link = row.link;
       if (link?.kind !== "existing") continue;
       const named = { rowId: row.id, label: rowLabel(section, row) };
-      if (!pool.some((target) => book.records[target].some((r) => r.id === link.recordId))) vanished.push(named);
+      if (!pool.some((target) => findRecord(book, target, link.recordId))) vanished.push(named);
       else if (!link.confirmed) needsClick += 1;
       else confirmed.set(link.recordId, [...(confirmed.get(link.recordId) ?? []), named]);
     }

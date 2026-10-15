@@ -9,12 +9,12 @@ import { formatMoney } from "@/domain/forge/row-lines";
 import type { LivingExpenseItem } from "@/engine/types";
 import { livingItemsAnnualTotal } from "@/lib/living-expense-items";
 import { isRecordRef, sameRef, type CellRef, type PlacedValue, type RecordRef } from "../../change-set";
-import { CONTRIB_MAP, EXPENSE_TYPE_MAP, FREQ_MAP, valueFor } from "../../enums";
+import { CONTRIB_MAP, EXPENSE_TYPE_MAP, FREQ_MAP, PERSON_MAP, valueFor } from "../../enums";
 import { fixedLabelOfRow, fixedRow } from "../../state";
 import type { FFRow } from "../../types";
 import { findAccount, rowRecordRef } from "../refs";
-import type { BookRecord } from "../types";
-import { bool, cellOf, DraftBuilder, linkedRecordId, num, rate, text } from "./helpers";
+import { findRecord, type BookRecord } from "../types";
+import { bool, cellOf, DraftBuilder, INFLATION, linkedRecord, linkedRecordId, num, putGrowth, putOrDefault, rate, text } from "./helpers";
 import type { PlaceContext, SectionMap } from "./types";
 
 type Slot = "current" | "retirement";
@@ -23,9 +23,6 @@ type Item = Omit<LivingExpenseItem, "id">;
 const SLOT_ROW: Record<Slot, string> = { current: "Current", retirement: "In retirement" };
 const SLOT_LABEL: Record<Slot, string> = { current: "Current living expenses", retirement: "Retirement living expenses" };
 const SLOT_START: Record<Slot, string> = { current: "start with the plan", retirement: "start at retirement" };
-
-/** A new expense with no typed rate grows with inflation, as the Details dialog defaults (the create schema's own default is a flat 3%). */
-const INFLATION = { growthSource: "inflation" } as const;
 
 /** The plan's seeded living row for a slot: the Living row's link when it names one of them, else the only one (D11). */
 function livingRecord(ctx: PlaceContext, slot: Slot): BookRecord | undefined {
@@ -36,16 +33,6 @@ function livingRecord(ctx: PlaceContext, slot: Slot): BookRecord | undefined {
 }
 
 const noLivingRow = (slot: Slot) => `This plan has no ${slot} living expense row.`;
-
-/**
- * A typed year; else, on a new record only, its default — shown on the line, from no cell. A year that
- * didn't read gets no default: validation asks for it at its cell.
- */
-function putYear(b: DraftBuilder, key: "start" | "end", row: FFRow, columnId: string, fallback: PlacedValue, ctx: PlaceContext): void {
-  const year = num(row, columnId);
-  if (year !== null) b.put(key, year, [columnId]);
-  else if (!ctx.removed(row.id, columnId)) b.put(key, fallback, []);
-}
 
 /** The itemized rows with an Amount (the form pre-prints item names): blank Item → "Item", blank Frequency → monthly. */
 function itemsOf(rows: readonly FFRow[]): { items: Item[]; from: CellRef[] } {
@@ -171,14 +158,10 @@ export const EXPENSES_MAP: SectionMap = {
       })
         .put("name", name, ["expenseName"])
         .put("type", valueFor(EXPENSE_TYPE_MAP, text(row, "type")), ["type"])
-        .put("annualAmount", num(row, "annualAmount"), ["annualAmount"])
-        .put("growthRate", growth, ["annualIncrease"], { growthSource: "custom" });
-      // The inflation default stands in for a rate cell that didn't read: the line says so.
-      if (!record && growth === null && ctx.removed(row.id, "annualIncrease")) {
-        b.warn(`"Annual increase %" didn't read — this expense grows with inflation until you set it.`);
-      }
-      putYear(b, "start", row, "startYear", record ? null : ctx.year, ctx);
-      putYear(b, "end", row, "endYear", record ? null : { yearRef: "plan_end" }, ctx);
+        .put("annualAmount", num(row, "annualAmount"), ["annualAmount"]);
+      putGrowth(b, row, "annualIncrease", ctx, record ? null : { noun: "expense" });
+      putOrDefault(b, "start", row, "startYear", record ? null : ctx.year, ctx);
+      putOrDefault(b, "end", row, "endYear", record ? null : { yearRef: "plan_end" }, ctx);
       return b.put("isGoal", bool(row, "isGoal"), ["isGoal"]).build();
     });
   },
@@ -232,10 +215,10 @@ function soleOwner(account: RecordRef, ctx: PlaceContext): "client" | "spouse" |
       return ref !== null && sameRef(ref, account);
     });
     const owner = row ? text(row, "owner") : null;
-    if (owner) return owner === "Client" ? "client" : owner === "Co-client" ? "spouse" : null;
+    if (owner) return valueFor(PERSON_MAP, owner) as "client" | "spouse" | null;
   }
   if (account.ref !== "record") return null;
-  const owners = ctx.book.records.account.find((r) => r.id === account.id)?.values.owners;
+  const owners = findRecord(ctx.book, "account", account.id)?.values.owners;
   const only = Array.isArray(owners) && owners.length === 1 ? owners[0] : null;
   if (only === null || typeof only !== "object" || Array.isArray(only) || isRecordRef(only)) return null;
   return isRecordRef(only.who) && only.who.ref === "person" && Math.abs(Number(only.percent) - 1) < 1e-6 ? only.who.role : null;
@@ -258,8 +241,8 @@ export const SAVINGS_MAP: SectionMap = {
   },
   place(rows, ctx) {
     return rows.map((row) => {
-      const recordId = linkedRecordId(row, ctx, ["savings_rule"]);
-      const record = ctx.book.records.savings_rule.find((r) => r.id === recordId);
+      const record = linkedRecord(row, ctx, ["savings_rule"]);
+      const recordId = record?.id ?? null;
       const named = text(row, "account");
       const account = named === null ? null : findAccount(ctx.refs, named);
       const accountLabel = account?.ok ? account.label : (named ?? record?.label ?? null);
@@ -273,8 +256,8 @@ export const SAVINGS_MAP: SectionMap = {
       placeMatch(b, row);
       // A new rule runs from this year to its owner's retirement (the Details dialog's defaultSavingsRuleRefs).
       const owner = account?.ok ? soleOwner(account.ref, ctx) : null;
-      putYear(b, "start", row, "startYear", recordId ? null : ctx.year, ctx);
-      putYear(b, "end", row, "endYear", recordId ? null : { yearRef: owner === "spouse" ? "spouse_retirement" : "client_retirement" }, ctx);
+      putOrDefault(b, "start", row, "startYear", recordId ? null : ctx.year, ctx);
+      putOrDefault(b, "end", row, "endYear", recordId ? null : { yearRef: owner === "spouse" ? "spouse_retirement" : "client_retirement" }, ctx);
       return b.put("growthRate", rate(row, "annualIncrease"), ["annualIncrease"], { growthSource: "custom" }).build();
     });
   },

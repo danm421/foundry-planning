@@ -17,7 +17,7 @@ import { text } from "./map/helpers";
 import { sectionMapFor } from "./map/index";
 import type { PlaceContext, SectionMap } from "./map/types";
 import { buildRefIndex } from "./refs";
-import type { LeftoverItem, NoteTopic, RecordBook, TargetDraft } from "./types";
+import { findRecord, type LeftoverItem, type NoteTopic, type RecordBook, type TargetDraft } from "./types";
 
 export interface Placed {
   drafts: TargetDraft[];
@@ -148,9 +148,11 @@ const CATEGORY_WORDS: Readonly<Record<string, string>> = {
 function wrongKindLink(section: FFSection, writes: ReadonlySet<string>, row: FFRow, book: RecordBook): string | null {
   const link = row.link;
   if (!section.links || link?.kind !== "existing" || !link.confirmed) return null;
-  const holder = LINK_TARGETS[section.links].find((t) => book.records[t].some((r) => r.id === link.recordId));
-  if (holder === undefined) return null;
-  const record = book.records[holder].find((r) => r.id === link.recordId)!;
+  const held = LINK_TARGETS[section.links]
+    .map((target) => ({ target, record: findRecord(book, target, link.recordId) }))
+    .find((h) => h.record !== undefined);
+  if (!held?.record) return null;
+  const { target: holder, record } = held;
   if (!writes.has(holder)) {
     return holder === "business_account"
       ? `Links to: "${record.label}" is a business on the plan, so this row can't update it — link it to another record, or pick New.`

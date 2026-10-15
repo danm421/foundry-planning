@@ -11,17 +11,17 @@ import {
 } from "../../enums";
 import { last4Of, normText } from "../../identity";
 import type { FFRow } from "../../types";
-import { hasCoClient, NO_CO_CLIENT_REASON } from "../refs";
 import { numberOf, stringOf, withLast4 } from "../text";
-import type { BookRecord, TargetDraft } from "../types";
-import { cellOf, DraftBuilder, linkedRecordId, num, ownersOf, rate, text } from "./helpers";
+import { findRecord, type BookRecord, type TargetDraft } from "../types";
+import {
+  cellOf, DraftBuilder, linkedRecord, linkedRecordId, needsCoClient, num, ownersOf, putBalanceAsOf, rate, text,
+} from "./helpers";
 import type { PlaceContext, SectionMap } from "./types";
 import { NEEDS_START, parseVestingSchedule } from "./vesting";
 
 export const ANNUITY_INCOME_WARNING =
   "Income from a rider or annuitization isn't saved — the fact finder doesn't ask the benefit base or the payment. Set it in Details.";
 
-const ownerColumns = (row: FFRow) => (text(row, "owner") === "Trust / entity" ? ["owner", "ownerEntity"] : ["owner"]);
 
 export const ANNUITY_MAP: SectionMap = {
   sectionId: "annuity",
@@ -55,10 +55,10 @@ export const ANNUITY_MAP: SectionMap = {
         .put("subType", valueFor(ANNUITY_TAX_MAP, text(row, "taxTreatment")), ["taxTreatment"]);
       const owners = ownersOf("annuity", row, ctx);
       if (!owners.ok) account.block(owners.reason, owners.columnId);
-      else account.put("owners", owners.owners, ownerColumns(row));
+      else account.put("owners", owners.owners, owners.columns);
 
       // The contract is keyed by its account: an update only when this account already has one.
-      const hasContract = recordId !== null && ctx.book.records.annuity_contract.some((r) => r.id === recordId);
+      const hasContract = findRecord(ctx.book, "annuity_contract", recordId) !== undefined;
       const contract = new DraftBuilder({
         sectionId: "annuity", row, target: "annuity_contract", recordId: hasContract ? recordId : null,
         label: `${label} — contract`, parent: account.ref,
@@ -84,9 +84,8 @@ const holderOf = (row: FFRow) => valueFor(PERSON_MAP, text(row, "owner"));
 /** The stock option account a row's linked grant sits in (the book's grant `facts.accountId`). */
 function accountOfLinkedGrant(rows: readonly FFRow[], ctx: PlaceContext): string | null {
   for (const row of rows) {
-    const grantId = linkedRecordId(row, ctx, ["stock_option_grant"]);
-    const accountId = ctx.book.records.stock_option_grant.find((r) => r.id === grantId)?.facts?.accountId;
-    if (typeof accountId === "string" && ctx.book.records.stock_option_account.some((r) => r.id === accountId)) return accountId;
+    const accountId = linkedRecord(row, ctx, ["stock_option_grant"])?.facts?.accountId;
+    if (typeof accountId === "string" && findRecord(ctx.book, "stock_option_account", accountId)) return accountId;
   }
   return null;
 }
@@ -109,8 +108,8 @@ function vestedOnRecord(grant: BookRecord): number | null {
 }
 
 function grantDraft(row: FFRow, account: RecordRef | undefined, ctx: PlaceContext): TargetDraft {
-  const recordId = linkedRecordId(row, ctx, ["stock_option_grant"]);
-  const onRecord = ctx.book.records.stock_option_grant.find((r) => r.id === recordId);
+  const onRecord = linkedRecord(row, ctx, ["stock_option_grant"]);
+  const recordId = onRecord?.id ?? null;
   // A grant on record stays under its own account (the update route is keyed by it).
   const ownAccount = stringOf(onRecord?.facts?.accountId);
   const parent: RecordRef | undefined = ownAccount ? { ref: "record", target: "stock_option_account", id: ownAccount } : account;
@@ -189,8 +188,7 @@ export const EQUITY_MAP: SectionMap = {
       const withOwner = group.find((r) => holderOf(r) !== null);
       if (withOwner) {
         const cell = cellOf("equity", withOwner, "owner");
-        if (holder === "spouse" && !hasCoClient(ctx.refs)) account.block(NO_CO_CLIENT_REASON, cell);
-        else account.put("owner", holder, [cell]);
+        if (!needsCoClient(account, ctx, holder, cell)) account.put("owner", holder, [cell]);
       } else if (recordId === null) {
         account.block("Pick who holds these grants.", "owner");
       }
@@ -219,7 +217,8 @@ export const NOTES_REC_MAP: SectionMap = {
   },
   place(rows, ctx) {
     return rows.map((row): TargetDraft => {
-      const recordId = linkedRecordId(row, ctx, ["note_receivable"]);
+      const record = linkedRecord(row, ctx, ["note_receivable"]);
+      const recordId = record?.id ?? null;
       const name = text(row, "borrower");
       const faceValue = num(row, "originalAmount");
       const balance = num(row, "currentBalance");
@@ -229,15 +228,7 @@ export const NOTES_REC_MAP: SectionMap = {
         // A new note needs a basis, which the fact finder doesn't ask: the face value (lower only for an installment sale).
         .put("basis", recordId === null ? faceValue : null, ["originalAmount"])
         .put("asOfBalance", balance, ["currentBalance"]);
-
-      const asOf = text(row, "balanceAsOf");
-      const held = numberOf(ctx.book.records.note_receivable.find((r) => r.id === recordId)?.values.asOfBalance);
-      if (asOf !== null) b.put("balanceAsOf", asOf, ["balanceAsOf"]);
-      // An undated new balance is as of its statement, else the date the fact finder was completed.
-      else if (balance !== null && (held === null || Math.abs(held - balance) >= 0.005)) {
-        b.put("balanceAsOf", (row.statementDate ?? ctx.asOf)?.slice(0, 7), []);
-      }
-
+      putBalanceAsOf(b, row, ctx, balance, record?.values.asOfBalance);
       b.put("interestRate", rate(row, "interestRate"), ["interestRate"])
         .put("paymentType", valueFor(NOTE_PAY_MAP, text(row, "paymentType")), ["paymentType"])
         .put("monthlyPayment", num(row, "monthlyPayment"), ["monthlyPayment"])
@@ -245,7 +236,7 @@ export const NOTES_REC_MAP: SectionMap = {
         .put("termMonths", num(row, "termMonths"), ["termMonths"]);
       const owners = ownersOf("notes_rec", row, ctx);
       if (!owners.ok) b.block(owners.reason, owners.columnId);
-      else if (owners.owners.length > 0) b.put("owners", owners.owners, ownerColumns(row));
+      else if (owners.owners.length > 0) b.put("owners", owners.owners, owners.columns);
       else if (recordId === null) b.block("Pick who the note belongs to.", "owner");
       return b.build();
     });

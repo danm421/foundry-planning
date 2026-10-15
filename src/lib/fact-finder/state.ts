@@ -132,6 +132,11 @@ export function holdingKey(h: { ticker?: string | null; name?: string | null }):
   return name ? `n:${name}` : null;
 }
 
+/** A holding's value: its market value, else shares × price (to the cent); null with neither. */
+export function holdingValue(h: { marketValue: number | null; shares: number | null; price: number | null }): number | null {
+  return h.marketValue ?? (h.shares !== null && h.price !== null ? Math.round(h.shares * h.price * 100) / 100 : null);
+}
+
 /**
  * JSON with sorted keys and undefined keys dropped. Postgres jsonb reorders
  * object keys, so plain JSON.stringify can't compare a stored row to one built

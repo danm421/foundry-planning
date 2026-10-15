@@ -6,12 +6,13 @@
  * one household record (the client) and the base case's tax settings. Pure.
  */
 import type { PlacedValue } from "../../change-set";
-import { BENE_KIND_MAP, CHARITY_TYPE_MAP, DEPENDENT_MAP, FILING_MAP, RELATIONSHIP_MAP, valueFor } from "../../enums";
+import { BENE_KIND_MAP, CHARITY_TYPE_MAP, DEPENDENT_MAP, FILING_MAP, PERSON_MAP, RELATIONSHIP_MAP, valueFor } from "../../enums";
 import { fixedLabelOfRow } from "../../state";
 import type { FFRow } from "../../types";
-import { hasCoClient } from "../refs";
+import { hasCoClient, personName } from "../refs";
+import { fullName } from "../text";
 import { monthNumber } from "../translate";
-import type { TargetDraft } from "../types";
+import { findRecord, type TargetDraft } from "../types";
 import { bool, DraftBuilder, linkedRecordId, num, text } from "./helpers";
 import type { PlaceContext, SectionMap } from "./types";
 
@@ -52,14 +53,6 @@ const PERSON_FIELDS: readonly [columnId: string, client: string, spouse: string,
   ["mobile", "mobile", "spouseMobile", text],
 ];
 
-/** "Mark Hendricks": the row's names, else the ones on record. */
-function personName(ctx: PlaceContext, row: FFRow, role: "client" | "spouse"): string | null {
-  const onRecord = ctx.book.records.client_household[0]?.values[role === "client" ? "lastName" : "spouseLastName"];
-  const first = text(row, "firstName") ?? ctx.book.names[role];
-  const last = text(row, "lastName") ?? (typeof onRecord === "string" ? onRecord : null);
-  return first ? [first, last].filter(Boolean).join(" ") : null;
-}
-
 export const PEOPLE_MAP: SectionMap = {
   sectionId: "people",
   // The Co-client row's values go to the same targets' co-client keys (spouseName, spouseDob…).
@@ -78,9 +71,9 @@ export const PEOPLE_MAP: SectionMap = {
   place(rows, ctx) {
     return rows.flatMap((row) => {
       const rowLabel = fixedLabelOfRow("people", row.id);
-      const role = rowLabel === "Client" ? "client" : rowLabel === "Co-client" ? "spouse" : null;
+      const role = valueFor(PERSON_MAP, rowLabel) as "client" | "spouse" | null;
       if (!rowLabel || !role) return [];
-      const name = personName(ctx, row, role);
+      const name = personName(ctx.refs, role);
 
       // Always an update: the household record is the client (a blank never erases, so a
       // blank Co-client first name never sends the empty spouseName that would remove the co-client).
@@ -160,7 +153,7 @@ export const FAMILY_MAP: SectionMap = {
       // A missing first name is left to validation (Task 17), which names the column.
       return new DraftBuilder({
         sectionId: "family", row, target: "family_member", recordId: linkedRecordId(row, ctx, ["family_member"]),
-        label: [first, last].filter(Boolean).join(" ") || "Family member",
+        label: fullName(first, last) || "Family member",
       })
         .put("firstName", first, ["firstName"])
         .put("lastName", last, ["lastName"])
@@ -192,7 +185,7 @@ export const EXTERNAL_MAP: SectionMap = {
         .put("name", text(row, "name"), ["name"])
         .put("kind", kind, ["kind"]);
       // The row's kind, else the record's; a new beneficiary with no kind saves as a charity.
-      const kindOnRecord = ctx.book.records.external_beneficiary.find((r) => r.id === recordId)?.values.kind;
+      const kindOnRecord = findRecord(ctx.book, "external_beneficiary", recordId)?.values.kind;
       const charityType = valueFor(CHARITY_TYPE_MAP, text(row, "charityType"));
       if (charityType && (kind ?? kindOnRecord) === "individual") b.warn("Charity type applies only to a charity.");
       else b.put("charityType", charityType, ["charityType"]);

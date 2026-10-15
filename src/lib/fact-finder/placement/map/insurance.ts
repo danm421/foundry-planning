@@ -7,32 +7,19 @@
  * that mode needs, or nowhere with a warning. Pure.
  */
 import { LTC_RIDER_DEFAULTS } from "@/lib/schemas/ltc-policies";
-import type { PlacedValue, TargetKind } from "../../change-set";
+import type { PlacedValue } from "../../change-set";
 import {
   DI_EARNINGS_MAP, DI_PAYER_MAP, DI_RUNS_MAP, INSURED_MAP, LIFE_POLICY_TYPE_MAP, LTC_INFL_MAP, LTC_KIND_MAP,
-  LTC_LAST_MAP, LTC_PAYS_MAP, LTC_PER_MAP, LTC_PREM_MAP, PAID_BY_MAP, PERSON_MAP, labelFor, valueFor, type OptionMap,
+  LTC_LAST_MAP, LTC_PAYS_MAP, LTC_PER_MAP, LTC_PREM_MAP, PAID_BY_MAP, PERSON_MAP, labelFor, type OptionMap,
 } from "../../enums";
 import { last4Of } from "../../identity";
-import { findColumn } from "../../schema";
 import type { FFRow } from "../../types";
-import { findLifePolicy, hasCoClient, NO_CO_CLIENT_REASON } from "../refs";
+import { findLifePolicy } from "../refs";
 import { withLast4 } from "../text";
-import type { TargetDraft } from "../types";
-import { bool, DraftBuilder, linkedRecordId, num, ownersOf, rate, sharesOf, text } from "./helpers";
+import {
+  beneficiariesOf, bool, choice, columnLabel, DraftBuilder, linkedRecord, linkedRecordId, needsCoClient, num, ownersOf, quotedLabels, rate, text,
+} from "./helpers";
 import type { PlaceContext, SectionMap } from "./types";
-
-const choice = (map: OptionMap, row: FFRow, columnId: string) => valueFor(map, text(row, columnId));
-const labelOf = (sectionId: string, columnId: string) => findColumn(sectionId, columnId)?.label ?? columnId;
-
-/** A key of the row's linked record as the book has it (undefined for a new record). */
-function onRecord(ctx: PlaceContext, target: TargetKind, recordId: string | null, key: string): PlacedValue | undefined {
-  return recordId === null ? undefined : ctx.book.records[target].find((r) => r.id === recordId)?.values[key];
-}
-
-/** A policy on the co-client (or on both of them) needs a co-client. */
-function needsCoClient(b: DraftBuilder, ctx: PlaceContext, person: string | null, columnId: string): void {
-  if ((person === "spouse" || person === "joint") && !hasCoClient(ctx.refs)) b.block(NO_CO_CLIENT_REASON, columnId);
-}
 
 /** A column whose value belongs to whichever field its mode names. */
 interface ByMode { column: string; modeColumn: string; modes: OptionMap; keyOf: Readonly<Record<string, string>> }
@@ -51,46 +38,13 @@ function putByMode(b: DraftBuilder, sectionId: string, row: FFRow, route: ByMode
     return;
   }
   const modes = Object.keys(route.keyOf).map((v) => `"${labelFor(route.modes, v)}"`).join(" or ");
-  b.warn(`"${labelOf(sectionId, route.column)}" is saved only when ${labelOf(sectionId, route.modeColumn)} is ${modes}.`);
+  b.warn(`"${columnLabel(sectionId, route.column)}" is saved only when ${columnLabel(sectionId, route.modeColumn)} is ${modes}.`);
 }
 
 // ---- life ---------------------------------------------------------------------
 
+/** A life policy's beneficiary tiers, and the columns that fill them. */
 const TIERS = [["primary", "primaryBeneficiary"], ["contingent", "contingentBeneficiary"]] as const;
-
-/** One tier's rows of a beneficiary set on record. */
-function tierOnRecord(set: PlacedValue | undefined, tier: string): PlacedValue[] {
-  return Array.isArray(set) ? set.filter((e) => (e as { tier?: PlacedValue } | null)?.tier === tier) : [];
-}
-
-/**
- * The policy's beneficiaries (D6): a second line hanging off the policy. A
- * filled tier replaces that tier; a blank tier keeps its rows on record (a
- * blank never erases). A name that doesn't resolve blocks this line only.
- */
-function beneficiariesOf(row: FFRow, ctx: PlaceContext, policy: DraftBuilder, recordId: string | null, label: string): TargetDraft | null {
-  const filled = TIERS.filter(([, columnId]) => text(row, columnId) !== null);
-  if (filled.length === 0) return null;
-  const b = new DraftBuilder({
-    sectionId: "life", row, target: "life_insurance_policy_beneficiary", recordId, label: `${label} — beneficiaries`, parent: policy.ref,
-  });
-  const recorded = onRecord(ctx, "life_insurance_policy_beneficiary", recordId, "beneficiaries");
-  const set: PlacedValue[] = [];
-  for (const [tier, columnId] of TIERS) {
-    const names = text(row, columnId);
-    if (names === null) {
-      set.push(...tierOnRecord(recorded, tier));
-      continue;
-    }
-    const shares = sharesOf(names, ctx, ["household", "family", "external", "trust"]);
-    if (!shares.ok) return b.block(shares.reason, columnId).build();
-    set.push(...shares.shares.map((s) => ({ tier, who: s.who, percentage: s.percent })));
-  }
-  b.put("beneficiaries", set, filled.map(([, columnId]) => columnId));
-  // Every policy on record has a set, often empty — warn only when it names someone.
-  if (Array.isArray(recorded) && recorded.length > 0) b.warn("These beneficiaries replace the ones on record.", { field: "beneficiaries" });
-  return b.build();
-}
 
 /** Owner + "Which trust / entity" → the policy's owner (D7): a person, "joint" or a trust. "Other" names no one. */
 function putPolicyOwner(b: DraftBuilder, row: FFRow, ctx: PlaceContext, existing: boolean): void {
@@ -102,7 +56,7 @@ function putPolicyOwner(b: DraftBuilder, row: FFRow, ctx: PlaceContext, existing
   }
   const owners = ownersOf("life", row, ctx);
   if (!owners.ok) b.block(owners.reason, owners.columnId);
-  else b.put("ownerRef", owner === "Joint" ? "joint" : owners.owners[0]?.who, owner === "Trust / entity" ? ["owner", "ownerEntity"] : ["owner"]);
+  else b.put("ownerRef", owner === "Joint" ? "joint" : owners.owners[0]?.who, owners.columns);
 }
 
 export const LIFE_MAP: SectionMap = {
@@ -157,7 +111,7 @@ export const LIFE_MAP: SectionMap = {
         b.warn("A term policy ends after its length or at the insured's retirement, not both — the term length isn't saved.");
       }
       needsCoClient(b, ctx, insured, "insured");
-      const beneficiaries = beneficiariesOf(row, ctx, b, recordId, label);
+      const beneficiaries = beneficiariesOf(b, row, ctx, { target: "life_insurance_policy_beneficiary", tiers: TIERS, recordId, label });
       return beneficiaries ? [b.build(), beneficiaries] : [b.build()];
     });
   },
@@ -184,7 +138,7 @@ const DI_BENEFITS_RUN: ByMode = {
 function monthlyCap(b: DraftBuilder, row: FFRow, columnId: string): number | null {
   const cap = num(row, columnId);
   if (cap !== 0) return cap;
-  b.warn(`"${labelOf("disability", columnId)}" of $0 would pay nothing, so it isn't saved — leave it blank for no cap.`);
+  b.warn(`"${columnLabel("disability", columnId)}" of $0 would pay nothing, so it isn't saved — leave it blank for no cap.`);
   return null;
 }
 
@@ -215,8 +169,9 @@ export const DISABILITY_MAP: SectionMap = {
   },
   place(rows, ctx) {
     return rows.map((row) => {
-      const recordId = linkedRecordId(row, ctx, ["disability_policy"]);
-      const recorded = (key: string) => onRecord(ctx, "disability_policy", recordId, key);
+      const record = linkedRecord(row, ctx, ["disability_policy"]);
+      const recordId = record?.id ?? null;
+      const recorded = (key: string) => record?.values[key];
       const insured = choice(PERSON_MAP, row, "whoIsCovered");
       const earnings = choice(DI_EARNINGS_MAP, row, "coveredEarnings");
       const runs = choice(DI_RUNS_MAP, row, "benefitsRun");
@@ -302,8 +257,9 @@ export const LTC_MAP: SectionMap = {
   },
   place(rows, ctx) {
     return rows.map((row) => {
-      const recordId = linkedRecordId(row, ctx, ["ltc_policy"]);
-      const recorded = (key: string) => onRecord(ctx, "ltc_policy", recordId, key);
+      const record = linkedRecord(row, ctx, ["ltc_policy"]);
+      const recordId = record?.id ?? null;
+      const recorded = (key: string) => record?.values[key];
       const insured = choice(PERSON_MAP, row, "whoIsCovered");
       const kind = choice(LTC_KIND_MAP, row, "policyType");
       const rider = (kind ?? recorded("kind")) === "life_rider";
@@ -351,7 +307,7 @@ export const LTC_MAP: SectionMap = {
           num(row, "premiumsPaidValue") !== null && "premiumsPaidValue",
         ].filter((columnId) => columnId !== false);
         if (dropped.length > 0) {
-          b.warn(`Not saved for a rider (only a standalone policy keeps them): ${dropped.map((id) => `"${labelOf("ltc", id)}"`).join(", ")}.`);
+          b.warn(`Not saved for a rider (only a standalone policy keeps them): ${quotedLabels("ltc", dropped)}.`);
         }
         if ((num(row, "annualPremium") ?? 0) > 0) {
           b.warn(`A rider has no premium of its own — its cost is in the life policy's premium, so "Annual premium" isn't saved.`);

@@ -7,38 +7,19 @@
  * unknown). Pure.
  */
 import { formatMoney } from "@/domain/forge/row-lines";
-import { sameRef, type RecordRef, type TargetKind } from "../../change-set";
+import { sameRef, type RecordRef } from "../../change-set";
 import {
   BUSINESS_TAX_MAP, BUSINESS_TYPE_MAP, LIABILITY_TYPE_MAP, PROPERTY_TYPE_MAP, SECTION_ACCOUNT_CATEGORY, TITLING_MAP, valueFor,
 } from "../../enums";
 import type { FFRow } from "../../types";
 import { findLiability, findProperty, rowRecordRef } from "../refs";
 import { monthsBetween, termMonthsFromYears, toFraction } from "../translate";
-import { numberOf, stringOf } from "../text";
+import { stringOf } from "../text";
 import type { TargetDraft } from "../types";
-import { bool, cellOf, DraftBuilder, linkedRecordId, num, ownersOf, rate, sharesOf, text } from "./helpers";
+import {
+  bool, cellOf, DraftBuilder, fallbackAsOf, heldThrough, linkedRecord, num, planNoteDraft, putBalanceAsOf, putOwners, rate, sharesOf, text,
+} from "./helpers";
 import type { PlaceContext, SectionMap } from "./types";
-
-const labelOnRecord = (target: TargetKind, recordId: string | null, ctx: PlaceContext) =>
-  ctx.book.records[target].find((r) => r.id === recordId)?.label ?? null;
-
-/** The business a record on the plan is held through (its `facts.parentAccountId`), by label; null when it isn't. */
-function heldThrough(target: TargetKind, recordId: string | null, ctx: PlaceContext): string | null {
-  const parentId = ctx.book.records[target].find((r) => r.id === recordId)?.facts?.parentAccountId;
-  if (typeof parentId !== "string") return null;
-  return labelOnRecord("business_account", parentId, ctx) ?? "its business";
-}
-
-/** Owner + "Which trust / entity" — except on a record held through a business, which is owned through it (Task 15 ruling). */
-function putOwners(b: DraftBuilder, sectionId: string, row: FFRow, ctx: PlaceContext, held: string | null, noun: string): void {
-  if (held !== null) {
-    if (text(row, "owner") !== null) b.warn(`This ${noun} is owned through ${held}.`);
-    return;
-  }
-  const owners = ownersOf(sectionId, row, ctx);
-  if (!owners.ok) b.block(owners.reason, owners.columnId);
-  else b.put("owners", owners.owners, text(row, "owner") === "Trust / entity" ? ["owner", "ownerEntity"] : ["owner"]);
-}
 
 /**
  * A property's "Mortgage on it". A loan with a Liabilities row is linked from
@@ -85,10 +66,10 @@ export const REALESTATE_MAP: SectionMap = {
     return rows.flatMap((row): TargetDraft[] => {
       const name = text(row, "propertyName");
       const address = text(row, "address");
-      const recordId = linkedRecordId(row, ctx, ["account"]);
+      const record = linkedRecord(row, ctx, ["account"]);
       const b = new DraftBuilder({
-        sectionId: "realestate", row, target: "account", recordId,
-        label: name ?? labelOnRecord("account", recordId, ctx) ?? address ?? "Property",
+        sectionId: "realestate", row, target: "account", recordId: record?.id ?? null,
+        label: name ?? record?.label ?? address ?? "Property",
         fixed: { category: SECTION_ACCOUNT_CATEGORY.realestate },
       })
         .put("name", name, ["propertyName"])
@@ -97,7 +78,7 @@ export const REALESTATE_MAP: SectionMap = {
         .put("basis", num(row, "costBasis"), ["costBasis"])   // cost basis — a property never has an after-tax basis
         .put("propertyAddress", address, ["address"])
         .put("annualPropertyTax", num(row, "annualPropertyTax"), ["annualPropertyTax"]);
-      putOwners(b, "realestate", row, ctx, heldThrough("account", recordId, ctx), "property");
+      putOwners(b, row, ctx, record, "property");
       const titling = valueFor(TITLING_MAP, text(row, "jointTitling"));
       if (titling && text(row, "owner") !== "Joint") b.warn("Joint titling is saved only when the owner is Joint.");
       else b.put("titlingType", titling, ["jointTitling"]);
@@ -147,8 +128,9 @@ export const BUSINESS_MAP: SectionMap = {
   place(rows, ctx) {
     return rows.flatMap((row): TargetDraft[] => {
       const name = text(row, "businessName");
-      const recordId = linkedRecordId(row, ctx, ["business_account"]);
-      const label = name ?? labelOnRecord("business_account", recordId, ctx) ?? "Business";
+      const record = linkedRecord(row, ctx, ["business_account"]);
+      const recordId = record?.id ?? null;
+      const label = name ?? record?.label ?? "Business";
       const b = new DraftBuilder({
         sectionId: "business", row, target: "business_account", recordId, label,
         fixed: { category: SECTION_ACCOUNT_CATEGORY.business },
@@ -159,7 +141,7 @@ export const BUSINESS_MAP: SectionMap = {
         .put("basis", num(row, "costBasis"), ["costBasis"]);
 
       const owners = text(row, "ownersAndPercent");
-      const held = heldThrough("business_account", recordId, ctx);
+      const held = heldThrough(ctx, record);
       if (held !== null) {
         if (owners !== null) b.warn(`This business is owned through ${held}.`);
       } else if (owners !== null) {
@@ -245,15 +227,7 @@ function escrowNote(row: FFRow, loan: string, ctx: PlaceContext): TargetDraft | 
   const escrow = num(row, "monthlyEscrow");
   if (escrow === null || escrow <= 0) return null;
   const body = `${loan}: escrow of ${formatMoney(escrow)} a month for property tax and insurance (not split between them).`;
-  const onRecord = ctx.book.records.plan_observation.find((r) => r.values.body === body);
-  return new DraftBuilder({
-    sectionId: "liab", row, target: "plan_observation", recordId: onRecord?.id ?? null,
-    label: `Plan note: escrow on ${loan}`,
-    fixed: { section: "observation", audience: "advisor", source: "manual" },
-  })
-    .put("topic", "cash-flow", ["monthlyEscrow"])
-    .put("body", body, ["monthlyEscrow"])
-    .build();
+  return planNoteDraft("liab", row, ctx, { label: `Plan note: escrow on ${loan}`, topic: "cash-flow", body, columns: ["monthlyEscrow"] });
 }
 
 export const LIAB_MAP: SectionMap = {
@@ -276,28 +250,22 @@ export const LIAB_MAP: SectionMap = {
   },
   place(rows, ctx) {
     return rows.flatMap((row): TargetDraft[] => {
-      const recordId = linkedRecordId(row, ctx, ["liability"]);
-      const onRecord = ctx.book.records.liability.find((r) => r.id === recordId);
+      const onRecord = linkedRecord(row, ctx, ["liability"]);
+      const recordId = onRecord?.id ?? null;
       const name = text(row, "loanName");
       const label = name ?? onRecord?.label ?? "Loan";
       const b = new DraftBuilder({ sectionId: "liab", row, target: "liability", recordId, label })
         .put("name", name, ["loanName"])
         .put("liabilityType", valueFor(LIABILITY_TYPE_MAP, text(row, "type")), ["type"]);
-      putOwners(b, "liab", row, ctx, heldThrough("liability", recordId, ctx), "loan");
+      putOwners(b, row, ctx, onRecord, "loan");
 
       const balance = num(row, "balance");
-      const asOf = text(row, "balanceAsOf");
-      const fallbackAsOf = (row.statementDate ?? ctx.asOf)?.slice(0, 7) ?? null;
-      const held = numberOf(onRecord?.values.balance);
       b.put("balance", balance, ["balance"]);
-      if (asOf !== null) b.put("balanceAsOf", asOf, ["balanceAsOf"]);
-      // An undated balance is as of its statement, else the date the fact finder was completed — but an
-      // unchanged balance isn't re-dated (that would move its amortization).
-      else if (balance !== null && (held === null || Math.abs(held - balance) >= 0.005)) b.put("balanceAsOf", fallbackAsOf, []);
+      putBalanceAsOf(b, row, ctx, balance, onRecord?.values.balance);
 
       b.put("interestRate", rate(row, "interestRate"), ["interestRate"])
         .put("monthlyPayment", num(row, "monthlyPI"), ["monthlyPI"]);
-      placeTerm(b, row, stringOf(onRecord?.values.start), fallbackAsOf);
+      placeTerm(b, row, stringOf(onRecord?.values.start), fallbackAsOf(row, ctx));
       b.put("isInterestDeductible", bool(row, "interestDeductible"), ["interestDeductible"]);
       linkProperty(b, row, ctx);
 

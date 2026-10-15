@@ -7,14 +7,15 @@
  */
 import { isStatedAge } from "@/lib/social-security/benefit-entry";
 import { estimatePiaFromSalary, ownerAnnualSalary } from "@/lib/social-security/estimate-from-salary";
-import type { CellRef, PlacedValue } from "../../change-set";
+import type { CellRef } from "../../change-set";
 import { INCOME_OWNER_MAP, INCOME_TYPE_MAP, SS_CLAIM_MAP, SS_SOURCE_MAP, TAX_TYPE_MAP, valueFor } from "../../enums";
 import { fixedLabelOfRow, fixedRow, fixedRowId } from "../../state";
 import type { FFRow } from "../../types";
-import { findPerson, hasCoClient, NO_CO_CLIENT_REASON } from "../refs";
+import { hasCoClient, NO_CO_CLIENT_REASON, personName } from "../refs";
+import { roleLabel } from "../text";
 import { monthNumber } from "../translate";
 import type { BookRecord, TargetDraft } from "../types";
-import { cellOf, DraftBuilder, linkedRecordId, num, rate, text } from "./helpers";
+import { cellOf, DraftBuilder, INFLATION, linkedRecord, needsCoClient, num, putGrowth, putOrDefault, rate, text } from "./helpers";
 import type { PlaceContext, SectionMap } from "./types";
 
 type Role = "client" | "spouse";
@@ -22,13 +23,10 @@ type Role = "client" | "spouse";
 /** A missing co-client is fixed on the Household page: the Co-client row's first name. */
 const CO_CLIENT_CELL: CellRef = { sectionId: "people", rowId: fixedRowId("people", "Co-client"), columnId: "firstName" };
 
-const LABEL_OF: Record<Role, string> = { client: "Client", spouse: "Co-client" };
-
-/** The person a Client / Co-client row is about: role, and a name for labels (null name: no co-client). */
-function personOf(sectionId: string, row: FFRow, ctx: PlaceContext): { role: Role; name: string | null } {
-  const role: Role = fixedLabelOfRow(sectionId, row.id) === "Co-client" ? "spouse" : "client";
-  const found = findPerson(ctx.refs, LABEL_OF[role], { allow: ["household"] });
-  return { role, name: found.ok ? found.label : null };
+/** The person a Client / Co-client row is about: role, a name for labels, and whether it's a co-client the plan doesn't have. */
+function personOf(sectionId: string, row: FFRow, ctx: PlaceContext): { role: Role; who: string; missing: boolean } {
+  const role: Role = fixedLabelOfRow(sectionId, row.id) === roleLabel("spouse") ? "spouse" : "client";
+  return { role, who: personName(ctx.refs, role) ?? roleLabel(role), missing: role === "spouse" && !hasCoClient(ctx.refs) };
 }
 
 const incomesOf = (ctx: PlaceContext, type: string, role: Role) =>
@@ -36,24 +34,9 @@ const incomesOf = (ctx: PlaceContext, type: string, role: Role) =>
 
 /** The record the row's confirmed link names, when it's one of `records` — never another kind of income (D11). */
 function linkedAmong(row: FFRow, ctx: PlaceContext, records: readonly BookRecord[]): BookRecord | undefined {
-  const id = linkedRecordId(row, ctx, ["income"]);
-  return records.find((r) => r.id === id);
+  const linked = linkedRecord(row, ctx, ["income"]);
+  return records.find((r) => r === linked);
 }
-
-/**
- * A typed year; else, on a new income only, its default — shown on the line, from no cell. A year that
- * didn't read gets no default: validation asks for it at its cell.
- */
-function putYear(b: DraftBuilder, key: "start" | "end", row: FFRow, columnId: string, fallback: PlacedValue, ctx: PlaceContext): void {
-  const year = num(row, columnId);
-  if (year !== null) b.put(key, year, [columnId]);
-  else if (!ctx.removed(row.id, columnId)) b.put(key, fallback, []);
-}
-
-/** A new income with no typed rate grows with inflation, as the Details dialog defaults (the create schema's own default is a flat 3%). */
-const INFLATION = { growthSource: "inflation" } as const;
-/** That default stands in for a rate cell that didn't read: the line says so (the text itself goes to the AI step). */
-const unreadRate = (column: string, noun: string) => `"${column}" didn't read — this ${noun} grows with inflation until you set it.`;
 
 export const SALARY_MAP: SectionMap = {
   sectionId: "salary",
@@ -66,15 +49,14 @@ export const SALARY_MAP: SectionMap = {
   },
   place(rows, ctx) {
     return rows.flatMap((row) => {
-      const { role, name } = personOf("salary", row, ctx);
-      const who = name ?? LABEL_OF[role];
+      const { role, who, missing } = personOf("salary", row, ctx);
       const drafts: TargetDraft[] = [];
 
       const employer = text(row, "employer");
       if (employer) {
         const b = new DraftBuilder({ sectionId: "salary", row, target: "client_household", recordId: ctx.book.clientId, label: `Employer — ${who}` })
           .put(role === "client" ? "employer" : "spouseEmployer", employer, ["employer"]);
-        if (name === null) b.block(NO_CO_CLIENT_REASON, CO_CLIENT_CELL);
+        if (missing) b.block(NO_CO_CLIENT_REASON, CO_CLIENT_CELL);
         drafts.push(b.build());
       }
 
@@ -87,13 +69,12 @@ export const SALARY_MAP: SectionMap = {
             fixed: { type: "salary", owner: role, name: employer ? `Salary — ${employer}` : "Salary", ...(raise === null ? INFLATION : {}) },
           }),
         })
-          .put("annualAmount", num(row, "annualSalary"), ["annualSalary"])
-          .put("growthRate", raise, ["annualRaise"], { growthSource: "custom" });
-        if (!record && raise === null && ctx.removed(row.id, "annualRaise")) b.warn(unreadRate("Annual raise %", "salary"));
-        putYear(b, "start", row, "startYear", record ? null : ctx.year, ctx);
+          .put("annualAmount", num(row, "annualSalary"), ["annualSalary"]);
+        putGrowth(b, row, "annualRaise", ctx, record ? null : { noun: "salary" });
+        putOrDefault(b, "start", row, "startYear", record ? null : ctx.year, ctx);
         // "End year blank = stops at retirement": the person's retirement, as a milestone.
-        putYear(b, "end", row, "endYear", record ? null : { yearRef: `${role}_retirement` }, ctx);
-        if (name === null) b.block(NO_CO_CLIENT_REASON, CO_CLIENT_CELL);
+        putOrDefault(b, "end", row, "endYear", record ? null : { yearRef: `${role}_retirement` }, ctx);
+        if (missing) b.block(NO_CO_CLIENT_REASON, CO_CLIENT_CELL);
         drafts.push(b.build());
       }
       return drafts;
@@ -103,7 +84,7 @@ export const SALARY_MAP: SectionMap = {
 
 /** This person's salary for "Estimate from salary": the Salary row's, else what's on record (summed as the dialog does). */
 function salaryFor(role: Role, ctx: PlaceContext): { amount: number; from: CellRef[] } {
-  const row = fixedRow(ctx.state, "salary", LABEL_OF[role]);
+  const row = fixedRow(ctx.state, "salary", roleLabel(role));
   const typed = row ? num(row, "annualSalary") : null;
   if (row && typed !== null) return { amount: typed, from: [cellOf("salary", row, "annualSalary")] };
   const onRecord = ctx.book.records.income.map((r) => ({
@@ -128,15 +109,14 @@ export const SS_MAP: SectionMap = {
   },
   place(rows, ctx) {
     return rows.map((row) => {
-      const { role, name } = personOf("ss", row, ctx);
-      const who = name ?? LABEL_OF[role];
+      const { role, who, missing } = personOf("ss", row, ctx);
       // Every person's row is seeded; the link picks among several, else the only one.
       const mine = incomesOf(ctx, "social_security", role);
       const record = linkedAmong(row, ctx, mine) ?? (mine.length === 1 ? mine[0] : undefined);
       const b = new DraftBuilder({
         sectionId: "ss", row, target: "income", recordId: record?.id ?? null, label: `Social Security — ${who}`,
       });
-      if (name === null) b.block(NO_CO_CLIENT_REASON, CO_CLIENT_CELL);
+      if (missing) b.block(NO_CO_CLIENT_REASON, CO_CLIENT_CELL);
       if (!record) b.block(`This plan has no Social Security row for ${who} — add it in Details.`);
 
       // The benefit's mode decides where the monthly figure goes; a blank source keeps the record's (NULL reads as a stated benefit).
@@ -149,7 +129,7 @@ export const SS_MAP: SectionMap = {
         const salary = salaryFor(role, ctx);
         const pia = salary.amount > 0 ? estimatePiaFromSalary(salary.amount) : 0;
         if (pia > 0) b.put("piaMonthly", pia, ["benefitSource", ...salary.from]);
-        else b.block("Estimate from salary needs this person's salary.", { sectionId: "salary", rowId: fixedRowId("salary", LABEL_OF[role]), columnId: "annualSalary" });
+        else b.block("Estimate from salary needs this person's salary.", { sectionId: "salary", rowId: fixedRowId("salary", roleLabel(role)), columnId: "annualSalary" });
         if (monthly !== null) b.warn("The monthly benefit isn't used when it's estimated from salary — it wasn't saved.");
       } else if (mode === "pia_at_fra") {
         b.put("piaMonthly", monthly, ["monthlyBenefit"]);
@@ -219,14 +199,13 @@ export const INCOME_MAP: SectionMap = {
         .put("name", name, ["incomeName"])
         .put("type", type, ["type"])
         .put("owner", owner, ["owner"])
-        .put("annualAmount", num(row, "annualAmount"), ["annualAmount"])
-        .put("growthRate", growth, ["annualIncrease"], { growthSource: "custom" });
-      if (!record && growth === null && ctx.removed(row.id, "annualIncrease")) b.warn(unreadRate("Annual increase %", "income"));
-      putYear(b, "start", row, "startYear", record ? null : ctx.year, ctx);
-      putYear(b, "end", row, "endYear", record ? null : { yearRef: "plan_end" }, ctx);
+        .put("annualAmount", num(row, "annualAmount"), ["annualAmount"]);
+      putGrowth(b, row, "annualIncrease", ctx, record ? null : { noun: "income" });
+      putOrDefault(b, "start", row, "startYear", record ? null : ctx.year, ctx);
+      putOrDefault(b, "end", row, "endYear", record ? null : { yearRef: "plan_end" }, ctx);
       b.put("taxType", valueFor(TAX_TYPE_MAP, text(row, "taxType")), ["taxType"])
         .put("paymentMonth", month === null ? null : monthNumber(month), ["paidInMonth"]);
-      if ((owner === "spouse" || owner === "joint") && !hasCoClient(ctx.refs)) b.block(NO_CO_CLIENT_REASON, "owner");
+      needsCoClient(b, ctx, owner, "owner");
 
       // Details offers a survivor % only on deferred comp owned by one person; a new income's owner defaults to the client.
       const survivor = rate(row, "survivorContinues");

@@ -13,6 +13,7 @@ import { lineIdOf, type PlacedValue } from "../change-set";
 import { FENCE_CLOSE, FENCE_OPEN, fenceUntrusted } from "../chat/fence";
 import { parseDate, parseMoney, parseNumber, parsePercent, parseYear } from "../normalize";
 import { TARGETS, targetField, type ValueKind } from "./targets";
+import { noteFixed, noteOnRecord } from "./map/helpers";
 import { toFraction } from "./translate";
 import { sameValue } from "./values";
 import { NOTE_TOPICS, type LeftoverItem, type NoteTopic, type RecordBook, type TargetDraft } from "./types";
@@ -211,9 +212,9 @@ export function applyLeftovers(
       sectionId: item.cell.sectionId,
       rowId: item.cell.rowId,
       target: "plan_observation",
-      recordId: book.records.plan_observation.find((r) => r.values.body === body)?.id ?? null,
+      recordId: noteOnRecord(book, body),
       label: `${TARGETS.plan_observation.label}: ${itemLabel(item)}`,
-      fixed: { section: "observation", audience: "advisor", source: "ai" },
+      fixed: noteFixed("ai"),
       fields: [
         { key: "topic", value: topic, from: [item.cell] },
         { key: "body", value: body, from: [item.cell] },

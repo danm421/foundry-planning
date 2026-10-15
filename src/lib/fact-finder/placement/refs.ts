@@ -11,14 +11,14 @@
  * person or trust. Pure.
  */
 import { lineIdOf, refKey, type RecordRef, type TargetKind } from "../change-set";
-import { SECTION_ACCOUNT_CATEGORY } from "../enums";
+import { PERSON_MAP, SECTION_ACCOUNT_CATEGORY, valueFor } from "../enums";
 import { last4Of, normText } from "../identity";
 import { matchOption } from "../normalize";
 import { OWNER_PERSON } from "../schema";
 import { fixedRow, rowHasValues } from "../state";
 import type { FactFinderState, FFRow } from "../types";
-import { fullName, str, withLast4 } from "./text";
-import type { BookRecord, RecordBook } from "./types";
+import { fullName, roleLabel, str, withLast4 } from "./text";
+import { findRecord, type BookRecord, type RecordBook } from "./types";
 
 /** Something a name can resolve to. */
 interface Entry {
@@ -50,6 +50,8 @@ export interface RefIndex {
   readonly external: Tiers;
   /** The client, and the co-client when there is one. */
   readonly household: readonly Entry[];
+  /** "Mark Hendricks" per role (personName). */
+  readonly fullNames: Readonly<Record<"client" | "spouse", string | null>>;
   readonly coClient: boolean;
   /** Revocable living trusts' names: not something an account, a beneficiary or a gift can name. */
   readonly revocable: ReadonlySet<string>;
@@ -82,7 +84,7 @@ const norm = (v: string | null) => normText(v) || undefined;
 function refOfRow(book: RecordBook, row: FFRow, target: TargetKind): RecordRef | null {
   const link = row.link;
   if (link?.kind !== "existing") return { ref: "line", target, lineId: lineIdOf(row.id, target) };
-  if (!link.confirmed || !book.records[target].some((r) => r.id === link.recordId)) return null;
+  if (!link.confirmed || !findRecord(book, target, link.recordId)) return null;
   return { ref: "record", target, id: link.recordId };
 }
 
@@ -130,15 +132,17 @@ export function buildRefIndex(state: FactFinderState, book: RecordBook): RefInde
 
   // The household's names: the fact finder's Client & Co-client rows first, else the plan's.
   const onRecord = book.records.client_household[0]?.values ?? {};
-  const peopleRow = (label: string) => fixedRow(state, "people", label);
-  const person = (role: "client" | "spouse"): Entry => {
-    const row = peopleRow(role === "client" ? "Client" : "Co-client");
-    const first = cell(row, "firstName") ?? book.names[role];
-    const last = cell(row, "lastName") ?? str(onRecord[role === "client" ? "lastName" : "spouseLastName"]);
-    const full = first ? fullName(first, last) : null;
-    return { ref: { ref: "person", role }, label: full ?? (role === "client" ? "Client" : "Co-client"), names: namesOf(first, full) };
+  const peopleRow = (role: "client" | "spouse") => fixedRow(state, "people", roleLabel(role));
+  const firstName = (role: "client" | "spouse") => cell(peopleRow(role), "firstName") ?? book.names[role];
+  const nameOf = (role: "client" | "spouse") => {
+    const first = firstName(role);
+    const last = cell(peopleRow(role), "lastName") ?? str(onRecord[role === "client" ? "lastName" : "spouseLastName"]);
+    return first ? fullName(first, last) : null;
   };
-  const coClient = book.people.spouse !== null || book.names.spouse !== null || cell(peopleRow("Co-client"), "firstName") !== null;
+  const fullNames = { client: nameOf("client"), spouse: nameOf("spouse") };
+  const person = (role: "client" | "spouse"): Entry =>
+    ({ ref: { ref: "person", role }, label: fullNames[role] ?? roleLabel(role), names: namesOf(firstName(role), fullNames[role]) });
+  const coClient = book.people.spouse !== null || book.names.spouse !== null || cell(peopleRow("spouse"), "firstName") !== null;
 
   return {
     state,
@@ -187,6 +191,7 @@ export function buildRefIndex(state: FactFinderState, book: RecordBook): RefInde
       fromBook("external_beneficiary", named),
     ],
     household: coClient ? [person("client"), person("spouse")] : [person("client")],
+    fullNames,
     coClient,
     revocable: new Set([
       ...trustRows.filter(isRevocable).flatMap((row) => namesOf(cell(row, "trustName"))),
@@ -288,12 +293,15 @@ export function householdPerson(index: RefIndex, role: "client" | "spouse"): Rec
   return { ref: "person", role };
 }
 
+/** "Mark Hendricks": the Client or Co-client row's names, else the plan's; null with no first name. */
+export function personName(index: RefIndex, role: "client" | "spouse"): string | null {
+  return index.fullNames[role];
+}
+
 /** The plan has a co-client, or the fact finder names one (the Co-client row's first name). */
 export function hasCoClient(index: RefIndex): boolean {
   return index.coClient;
 }
-
-const ROLE_OF: Record<string, "client" | "spouse"> = { Client: "client", "Co-client": "spouse" };
 
 /**
  * A person, charity or trust: the role words ("Client", "Co-client", and what
@@ -302,7 +310,7 @@ const ROLE_OF: Record<string, "client" | "spouse"> = { Client: "client", "Co-cli
  */
 export function findPerson(index: RefIndex, text: string, opts: { allow: readonly PersonKind[] }): RefResult {
   const allow = new Set(opts.allow);
-  const role = ROLE_OF[matchOption(text, OWNER_PERSON) ?? ""];
+  const role = valueFor(PERSON_MAP, matchOption(text, OWNER_PERSON)) as "client" | "spouse" | null;
   const principal = index.household.find((e) => e.ref.ref === "person" && e.ref.role === role);
   if (role && allow.has("household")) {
     return principal ? { ok: true, ref: householdPerson(index, role), label: principal.label } : { ok: false, reason: NO_CO_CLIENT_REASON };

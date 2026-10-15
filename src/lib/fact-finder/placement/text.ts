@@ -2,8 +2,9 @@
 /**
  * Small readers and labels the placement modules and the record book share: a
  * value read as a string or a number, a person's full name, a name with its
- * last 4. Pure and client-safe.
+ * last 4, a household role's label and a will's. Pure and client-safe.
  */
+import { labelFor, PERSON_MAP } from "../enums";
 
 /** A string, trimmed; null when it isn't one or is blank. */
 export const str = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v.trim() : null);
@@ -19,3 +20,9 @@ export const fullName = (first: string | null, last: string | null): string => [
 
 /** "Joint Checking ··1234", as the fact finder's link picker shows it; the name alone with no last 4. */
 export const withLast4 = (name: string, last4: string | null | undefined): string => (last4 ? `${name} ··${last4}` : name);
+
+/** "Client" / "Co-client": a household role as the fact finder names it. */
+export const roleLabel = (role: "client" | "spouse"): string => labelFor(PERSON_MAP, role) ?? role;
+
+/** "Mark's will" — "Client's will" with no first name. */
+export const willLabel = (firstName: string | null, role: "client" | "spouse"): string => `${firstName ?? roleLabel(role)}'s will`;

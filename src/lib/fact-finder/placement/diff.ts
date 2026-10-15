@@ -10,7 +10,7 @@ import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import { isRecordRef, type ChangeField, type ChangeLine, type PlacedValue, type RecordRef } from "../change-set";
 import { findSection } from "../schema";
 import { TARGETS, targetField, type TargetField } from "./targets";
-import type { DraftField, RecordBook, TargetDraft } from "./types";
+import { findRecord, type DraftField, type RecordBook, type TargetDraft } from "./types";
 import { formatValue, isEmptyValue, sameValue } from "./values";
 
 const GONE = "That record is no longer on the plan — review again.";
@@ -25,7 +25,7 @@ export function diffDrafts(drafts: readonly TargetDraft[], book: RecordBook): Ch
 function diffDraft(draft: TargetDraft, book: RecordBook, labelOf: (ref: RecordRef) => string): ChangeLine {
   const section = findSection(draft.sectionId);
   if (!section) throw new Error(`Draft ${draft.lineId}: no fact finder section "${draft.sectionId}"`);
-  const record = draft.recordId === null ? undefined : book.records[draft.target].find((r) => r.id === draft.recordId);
+  const record = findRecord(book, draft.target, draft.recordId);
   const vanished = draft.recordId !== null && record === undefined;
 
   const fields: ChangeField[] = [];
@@ -115,6 +115,6 @@ function refLabels(drafts: readonly TargetDraft[], book: RecordBook): (ref: Reco
   return (ref) => {
     if (ref.ref === "person") return book.names[ref.role] ?? (ref.role === "client" ? "Client" : CO_CLIENT_LABEL);
     if (ref.ref === "line") return lines.get(ref.lineId) ?? TARGETS[ref.target].label;
-    return book.records[ref.target].find((r) => r.id === ref.id)?.label ?? TARGETS[ref.target].label;
+    return findRecord(book, ref.target, ref.id)?.label ?? TARGETS[ref.target].label;
   };
 }
