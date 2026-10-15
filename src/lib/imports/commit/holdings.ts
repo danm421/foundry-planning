@@ -50,11 +50,6 @@ export async function resolveHoldingsForCommit(
   deps: ResolveDeps = {},
   rowIds?: readonly string[],
 ): Promise<ResolvedHoldingsMap> {
-  const getByTicker = deps.getSecurityByTicker ?? defaultGetByTicker;
-  const classify = deps.classifySecurity ?? defaultClassify;
-  const upsert = deps.upsertClassifiedSecurity ?? defaultUpsert;
-  const fetchCloses = deps.fetchEodCloses ?? defaultFetchCloses;
-
   const tickers = new Set<string>();
   for (const acct of committableAccounts(payload, rowIds)) {
     for (const h of livingHoldings(acct)) {
@@ -62,8 +57,26 @@ export async function resolveHoldingsForCommit(
       if (t) tickers.add(t);
     }
   }
+  return resolveTickers([...tickers], deps);
+}
+
+/**
+ * Each ticker — trimmed and upper-cased by the caller, as they become the
+ * map's keys — to its security (the classified one, else classified now and
+ * stored) and its live price (one bulk quote). Network-bound; never throws —
+ * an unresolved ticker is simply omitted. The fact finder save prices here too.
+ */
+export async function resolveTickers(
+  tickers: readonly string[],
+  deps: ResolveDeps = {},
+): Promise<ResolvedHoldingsMap> {
+  const getByTicker = deps.getSecurityByTicker ?? defaultGetByTicker;
+  const classify = deps.classifySecurity ?? defaultClassify;
+  const upsert = deps.upsertClassifiedSecurity ?? defaultUpsert;
+  const fetchCloses = deps.fetchEodCloses ?? defaultFetchCloses;
+
   const map: ResolvedHoldingsMap = new Map();
-  if (tickers.size === 0) return map;
+  if (tickers.length === 0) return map;
 
   // Resolve security ids (cache, else classify+upsert).
   const securityIdByTicker = new Map<string, string>();
@@ -104,6 +117,50 @@ export async function resolveHoldingsForCommit(
 }
 
 /**
+ * One account_holdings row for an extracted holding: a classified ticker takes
+ * its live price and security, anything else keeps the statement's value. The
+ * fact finder save builds the positions it adds here too.
+ */
+export function holdingRow(
+  accountId: string,
+  raw: ExtractedHolding,
+  resolved: ResolvedHoldingsMap,
+  sortOrder: number,
+) {
+  const statementMv = raw.marketValue ?? null; // statement value, pre-normalization
+  const h = normalizeExtractedHolding(raw);
+  const ticker = h.ticker?.trim().toUpperCase();
+  const r = ticker ? resolved.get(ticker) : undefined;
+  const base = {
+    accountId,
+    displayTicker: h.ticker ?? null,
+    displayName: h.name ?? null,
+    shares: String(h.shares ?? 0),
+    costBasis: String(h.costBasis ?? 0),
+    sortOrder,
+    notes: null,
+  };
+  return r
+    ? {
+        // Classified ticker: live price (fallback to statement price), linked security.
+        ...base,
+        securityId: r.securityId,
+        price: String(r.price ?? h.price ?? 0),
+        priceAsOf: r.price != null ? r.asOf : null,
+        marketValue: null, // tickered: live price drives shares×price
+      }
+    : {
+        // Manual (bond / untickered fund / cash / unresolved ticker).
+        ...base,
+        securityId: null,
+        price: String(h.price ?? 0),
+        priceAsOf: null,
+        // Untickered: statement value is authoritative (bonds: price is per $100 par).
+        marketValue: statementMv != null ? String(statementMv) : null,
+      };
+}
+
+/**
  * PHASE B (runs INSIDE the commit transaction, from commitAccounts). Write an
  * account's holdings. `replace` deletes existing holdings first (statement is
  * authoritative for a matched account). Records the account id on the sink for
@@ -137,39 +194,7 @@ export async function writeAccountHoldings(
     return;
   }
   let sortOrder = 0;
-  const rows = holdings.map((raw) => {
-    const statementMv = raw.marketValue ?? null; // statement value, pre-normalization
-    const h = normalizeExtractedHolding(raw);
-    const ticker = h.ticker?.trim().toUpperCase();
-    const r = ticker ? resolved.get(ticker) : undefined;
-    const base = {
-      accountId,
-      displayTicker: h.ticker ?? null,
-      displayName: h.name ?? null,
-      shares: String(h.shares ?? 0),
-      costBasis: String(h.costBasis ?? 0),
-      sortOrder: sortOrder++,
-      notes: null,
-    };
-    return r
-      ? {
-          // Classified ticker: live price (fallback to statement price), linked security.
-          ...base,
-          securityId: r.securityId,
-          price: String(r.price ?? h.price ?? 0),
-          priceAsOf: r.price != null ? r.asOf : null,
-          marketValue: null, // tickered: live price drives shares×price
-        }
-      : {
-          // Manual (bond / untickered fund / cash / unresolved ticker).
-          ...base,
-          securityId: null,
-          price: String(h.price ?? 0),
-          priceAsOf: null,
-          // Untickered: statement value is authoritative (bonds: price is per $100 par).
-          marketValue: statementMv != null ? String(statementMv) : null,
-        };
-  });
+  const rows = holdings.map((raw) => holdingRow(accountId, raw, resolved, sortOrder++));
   await tx.insert(accountHoldings).values(rows);
   sink?.push(accountId);
 }

@@ -232,7 +232,7 @@ describe("POST /api/clients/[id]/accounts — business category", () => {
     );
 
     expect(res.status).toBe(400);
-    expect(mocked).toHaveBeenCalledWith("cli_test", [ACC_OTHER]);
+    expect(mocked).toHaveBeenCalledWith("cli_test", [ACC_OTHER], undefined);
     // No insert should have happened.
     expect(insertedValues.length).toBe(0);
   });

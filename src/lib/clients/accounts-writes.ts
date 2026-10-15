@@ -43,6 +43,14 @@
 //     deriveFromHoldings === true, syncAccountFromHoldings(accountId) runs AFTER
 //     the tx + audit (matching the PUT route). CREATE never syncs (the POST route
 //     doesn't call it).
+//   • WRITE OPTIONS (create / update): with a caller's `tx` every statement — the
+//     checks that read other records, the household read behind the default
+//     beneficiaries, the write, the audit snapshot and row — runs on it, so a
+//     record the caller wrote earlier in it counts (the fact finder save writes
+//     every line in one), and the holdings sync goes to `afterCommit`. The access
+//     check and the base-case lookup stay on module db: they read the client and
+//     its scenarios, which exist before any caller's transaction. Without `tx`,
+//     exactly as before.
 //   • isDefaultChecking SYSTEM-MANAGED GUARDS: on UPDATE, a default-checking row
 //     rejects changes to category / subType / parentAccountId / ownership; on
 //     DELETE it rejects deletion outright (the default-checking check runs BEFORE
@@ -75,6 +83,7 @@ import { accountCreateSchema } from "@/lib/schemas/accounts";
 import { validateInheritedIraFields } from "@/lib/accounts/inherited-ira";
 import { AddBusinessInputSchema, mapBusinessTypeToSubType } from "@/lib/schemas/accounts-business";
 import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
+import { handleOf, inTransaction, runAfterCommit, type DbOrTx, type WriteOptions } from "@/lib/db-tx";
 import {
   type DefaultDesignation,
   type HouseholdPerson,
@@ -87,8 +96,8 @@ import { writeError, type EntityWriteResult } from "./entity-write-result";
 type AccountRow = typeof accounts.$inferSelect;
 
 /** The household as the default-beneficiary rule reads it, oldest child first. */
-function loadHouseholdPeople(clientId: string): Promise<HouseholdPerson[]> {
-  return db
+function loadHouseholdPeople(clientId: string, handle?: DbOrTx): Promise<HouseholdPerson[]> {
+  return (handle ?? db)
     .select({ id: familyMembers.id, role: familyMembers.role, relationship: familyMembers.relationship })
     .from(familyMembers)
     .where(eq(familyMembers.clientId, clientId))
@@ -115,13 +124,14 @@ type Refs529 = {
   rothRolloverAccountId?: string | null;
 };
 
-async function check529RefsInClient(clientId: string, refs: Refs529): Promise<string | null> {
-  const people = await assertFamilyMembersInClient(clientId, [
-    refs.grantorFamilyMemberId,
-    refs.beneficiaryFamilyMemberId,
-  ]);
+async function check529RefsInClient(clientId: string, refs: Refs529, handle?: DbOrTx): Promise<string | null> {
+  const people = await assertFamilyMembersInClient(
+    clientId,
+    [refs.grantorFamilyMemberId, refs.beneficiaryFamilyMemberId],
+    handle,
+  );
   if (!people.ok) return people.reason;
-  const rollover = await assertAccountsInClient(clientId, [refs.rothRolloverAccountId]);
+  const rollover = await assertAccountsInClient(clientId, [refs.rothRolloverAccountId], handle);
   return rollover.ok ? null : rollover.reason;
 }
 
@@ -144,7 +154,7 @@ export async function createAccountForClient(args: {
   actorId: string;
   input: unknown;
   crossFirmMeta?: Record<string, unknown>;
-}): Promise<EntityWriteResult<AccountRow>> {
+} & WriteOptions): Promise<EntityWriteResult<AccountRow>> {
   const { clientId, firmId, actorId, input, crossFirmMeta } = args;
 
   const scenarioId = await baseCaseScenarioId(clientId, firmId);
@@ -200,24 +210,24 @@ export async function createAccountForClient(args: {
   if (inheritedError) return writeError(400, inheritedError);
 
   // ── Cross-tenant / cross-firm FK asserts (port ~161-192) ──────────────────
-  const entCheck = await assertEntitiesInClient(clientId, [p.ownerEntityId]);
+  const entCheck = await assertEntitiesInClient(clientId, [p.ownerEntityId], args.tx);
   if (!entCheck.ok) return writeError(400, entCheck.reason);
 
-  const mpCheck = await assertModelPortfoliosInFirm(firmId, [p.modelPortfolioId]);
+  const mpCheck = await assertModelPortfoliosInFirm(firmId, [p.modelPortfolioId], args.tx);
   if (!mpCheck.ok) return writeError(400, mpCheck.reason);
 
-  const tpCheck = await assertTickerPortfoliosInFirm(firmId, [p.tickerPortfolioId]);
+  const tpCheck = await assertTickerPortfoliosInFirm(firmId, [p.tickerPortfolioId], args.tx);
   if (!tpCheck.ok) return writeError(400, tpCheck.reason);
 
-  const refsError = await check529RefsInClient(clientId, p);
+  const refsError = await check529RefsInClient(clientId, p, args.tx);
   if (refsError) return writeError(400, refsError);
 
   // parentAccountId may be set on any category. Verify the referenced row is in
   // this client AND is a business account — the DB FK only checks existence.
   if (p.parentAccountId != null) {
-    const parentCheck = await assertAccountsInClient(clientId, [p.parentAccountId]);
+    const parentCheck = await assertAccountsInClient(clientId, [p.parentAccountId], args.tx);
     if (!parentCheck.ok) return writeError(400, parentCheck.reason);
-    const [parentRow] = await db
+    const [parentRow] = await handleOf(args)
       .select({ category: accounts.category })
       .from(accounts)
       .where(eq(accounts.id, p.parentAccountId));
@@ -252,7 +262,7 @@ export async function createAccountForClient(args: {
       p.isDefaultChecking ?? false,
     );
     if (rulesError) return writeError(400, rulesError.error);
-    const tenantError = await validateOwnersTenant(shapeResult.owners, clientId);
+    const tenantError = await validateOwnersTenant(shapeResult.owners, clientId, args.tx);
     if (tenantError) return writeError(400, tenantError.error);
     resolvedOwners = shapeResult.owners;
   } else {
@@ -262,10 +272,11 @@ export async function createAccountForClient(args: {
       p.owner,
       p.ownerEntityId,
       p.ownerFamilyMemberId,
+      args.tx,
     );
     // `ownerFamilyMemberId` is passed through verbatim, so the synthesized
     // owners get the same tenant check as an explicit owners[] list.
-    const tenantError = await validateOwnersTenant(synthesized, clientId);
+    const tenantError = await validateOwnersTenant(synthesized, clientId, args.tx);
     if (tenantError) return writeError(400, tenantError.error);
     if (synthesized.length > 0) resolvedOwners = synthesized;
   }
@@ -275,7 +286,7 @@ export async function createAccountForClient(args: {
   const soleOwner = resolvedOwners?.length === 1 ? resolvedOwners[0] : undefined;
   const defaultBeneficiaries =
     category === "retirement" && soleOwner?.kind === "family_member"
-      ? defaultRetirementBeneficiaries(soleOwner.familyMemberId, await loadHouseholdPeople(clientId))
+      ? defaultRetirementBeneficiaries(soleOwner.familyMemberId, await loadHouseholdPeople(clientId, args.tx))
       : [];
 
   // Insert values come straight off the parsed object — the schema already coerced
@@ -284,7 +295,7 @@ export async function createAccountForClient(args: {
   // columns + hsaCoverage + the custodian/last4 `|| null` collapse stay in the
   // core, mirroring the route's insert block (POST ~259-303).
   let account: AccountRow;
-  await db.transaction(async (tx) => {
+  await inTransaction(args, async (tx) => {
     const [inserted] = await tx
       .insert(accounts)
       .values({
@@ -413,8 +424,9 @@ export async function createAccountForClient(args: {
     clientId,
     firmId,
     actorId,
-    snapshot: await toAccountSnapshot(account!),
+    snapshot: await toAccountSnapshot(account!, args.tx),
     extraMetadata: crossFirmMeta,
+    tx: args.tx,
   });
 
   return { ok: true, data: account!, resourceId: account!.id };
@@ -427,7 +439,7 @@ export async function updateAccountForClient(args: {
   accountId: string;
   input: unknown;
   crossFirmMeta?: Record<string, unknown>;
-}): Promise<EntityWriteResult<AccountRow>> {
+} & WriteOptions): Promise<EntityWriteResult<AccountRow>> {
   const { clientId, firmId, actorId, accountId, input, crossFirmMeta } = args;
 
   const a = await verifyClientAccess(clientId);
@@ -464,21 +476,21 @@ export async function updateAccountForClient(args: {
 
   // Cross-tenant FK asserts on the present keys (port ~55-66).
   if ("ownerEntityId" in safeUpdate) {
-    const c = await assertEntitiesInClient(clientId, [safeUpdate.ownerEntityId as string | null]);
+    const c = await assertEntitiesInClient(clientId, [safeUpdate.ownerEntityId as string | null], args.tx);
     if (!c.ok) return writeError(400, c.reason);
   }
   if ("modelPortfolioId" in safeUpdate) {
-    const c = await assertModelPortfoliosInFirm(firmId, [safeUpdate.modelPortfolioId as string | null]);
+    const c = await assertModelPortfoliosInFirm(firmId, [safeUpdate.modelPortfolioId as string | null], args.tx);
     if (!c.ok) return writeError(400, c.reason);
   }
   if ("tickerPortfolioId" in safeUpdate) {
-    const c = await assertTickerPortfoliosInFirm(firmId, [safeUpdate.tickerPortfolioId as string | null]);
+    const c = await assertTickerPortfoliosInFirm(firmId, [safeUpdate.tickerPortfolioId as string | null], args.tx);
     if (!c.ok) return writeError(400, c.reason);
   }
-  const refsError = await check529RefsInClient(clientId, safeUpdate as Refs529);
+  const refsError = await check529RefsInClient(clientId, safeUpdate as Refs529, args.tx);
   if (refsError) return writeError(400, refsError);
 
-  const [before] = await db
+  const [before] = await handleOf(args)
     .select()
     .from(accounts)
     .where(and(eq(accounts.id, accountId), eq(accounts.clientId, clientId)));
@@ -561,7 +573,7 @@ export async function updateAccountForClient(args: {
       before.isDefaultChecking,
     );
     if (rulesError) return writeError(400, rulesError.error);
-    const tenantError = await validateOwnersTenant(shapeResult.owners, clientId);
+    const tenantError = await validateOwnersTenant(shapeResult.owners, clientId, args.tx);
     if (tenantError) return writeError(400, tenantError.error);
     validatedOwners = shapeResult.owners;
   }
@@ -573,14 +585,14 @@ export async function updateAccountForClient(args: {
   let redefaultedBeneficiaries: DefaultDesignation[] | undefined;
   const newSoleOwner = validatedOwners?.length === 1 ? validatedOwners[0] : undefined;
   if (resultCategory === "retirement" && newSoleOwner?.kind === "family_member") {
-    const priorOwners = await db
+    const priorOwners = await handleOf(args)
       .select({ familyMemberId: accountOwners.familyMemberId })
       .from(accountOwners)
       .where(eq(accountOwners.accountId, accountId));
     const priorOwnerId = priorOwners.length === 1 ? priorOwners[0].familyMemberId : null;
     if (priorOwnerId && priorOwnerId !== newSoleOwner.familyMemberId) {
-      const people = await loadHouseholdPeople(clientId);
-      const current = await db
+      const people = await loadHouseholdPeople(clientId, args.tx);
+      const current = await handleOf(args)
         .select()
         .from(beneficiaryDesignations)
         .where(accountDesignationsWhere(clientId, accountId));
@@ -609,7 +621,7 @@ export async function updateAccountForClient(args: {
   }
 
   let updated: AccountRow;
-  await db.transaction(async (tx) => {
+  await inTransaction(args, async (tx) => {
     const [result] = await tx
       .update(accounts)
       .set({
@@ -656,17 +668,19 @@ export async function updateAccountForClient(args: {
     clientId,
     firmId,
     actorId,
-    before: await toAccountSnapshot(before),
-    after: await toAccountSnapshot(updated!),
+    before: await toAccountSnapshot(before, args.tx),
+    after: await toAccountSnapshot(updated!, args.tx),
     fieldLabels: ACCOUNT_FIELD_LABELS,
     extraMetadata: crossFirmMeta,
+    tx: args.tx,
   });
 
   // Holdings-tab opt-in toggle: when an account is (re)enabled to derive from its
   // holdings, immediately roll them up into its asset mix. AFTER the tx + audit,
-  // matching the route (PUT ~198). CREATE never syncs.
+  // matching the route (PUT ~198) — after a caller's commit, when there is one
+  // (the sync reads the holdings on module db). CREATE never syncs.
   if (accountUpdate.deriveFromHoldings === true) {
-    await syncAccountFromHoldings(accountId);
+    await runAfterCommit(args, () => syncAccountFromHoldings(accountId));
   }
 
   // The route returns the pre-sync `updated` row — match it exactly.
