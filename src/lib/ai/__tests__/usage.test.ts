@@ -3,6 +3,7 @@ import {
   inUsageScope,
   newUsageReport,
   recordAiUsage,
+  recordMessageUsage,
   usageStage,
   type UsageReport,
 } from "../usage";
@@ -115,6 +116,24 @@ describe("recordAiUsage", () => {
       promptTokens: 0,
       cachedPromptTokens: 0,
       completionTokens: 0,
+    });
+  });
+});
+
+describe("recordMessageUsage", () => {
+  it("bills a chat reply's usage block to its deployment, and a reply with none as one free call", async () => {
+    const usage = newUsageReport();
+    await inUsageScope(usage, async () => {
+      recordMessageUsage({
+        usage_metadata: { input_tokens: 1200, output_tokens: 300, input_token_details: { cache_read: 512 } },
+        response_metadata: { model_name: "gpt-5.4" },
+      });
+      recordMessageUsage({});
+    });
+
+    expect(usage.byModel).toEqual({
+      "gpt-5.4": { calls: 1, promptTokens: 1200, cachedPromptTokens: 512, completionTokens: 300 },
+      chat: { calls: 1, promptTokens: 0, cachedPromptTokens: 0, completionTokens: 0 },
     });
   });
 });

@@ -100,6 +100,23 @@ export function recordAiUsage(usage: AiUsage): void {
   addTo(bucket(scope.report.byModel, usage.model), usage);
 }
 
+/** The usage a LangChain chat reply carries, typed by shape so this file needs no LangChain import. */
+export interface ChatReplyUsage {
+  usage_metadata?: { input_tokens?: number; output_tokens?: number; input_token_details?: { cache_read?: number } };
+  response_metadata?: { model_name?: unknown };
+}
+
+/** Record one chat-model reply against the active scope — LangChain's client records nothing itself. */
+export function recordMessageUsage(reply: ChatReplyUsage): void {
+  const usage = reply.usage_metadata;
+  recordAiUsage({
+    model: String(reply.response_metadata?.model_name ?? "chat"),
+    promptTokens: usage?.input_tokens,
+    completionTokens: usage?.output_tokens,
+    cachedPromptTokens: usage?.input_token_details?.cache_read,
+  });
+}
+
 /**
  * Run `fn` with every AI call inside it accounted to `report`.
  *

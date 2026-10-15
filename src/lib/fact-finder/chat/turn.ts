@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage, type BaseMessage } from "@langchain/core/messages";
 import { chatModel } from "@/domain/forge/llm";
-import { recordAiUsage } from "@/lib/ai/usage";
+import { recordMessageUsage } from "@/lib/ai/usage";
 import { redactSsns } from "@/lib/extraction/redact-ssn";
 import { applyLinkScores } from "../matching/score";
 import { FactFinderOpError, applyOps, countOps, diffSnapshots, locationOf, type ClientOp } from "../ops";
@@ -102,17 +102,6 @@ async function liveFilesContext(importId: string): Promise<ToolContext> {
   };
 }
 
-/** Bill one model round trip to the route's usage scope (LangChain's client records nothing itself). */
-function recordTurnUsage(response: AIMessage): void {
-  const usage = response.usage_metadata;
-  recordAiUsage({
-    model: String(response.response_metadata?.model_name ?? "chat"),
-    promptTokens: usage?.input_tokens,
-    completionTokens: usage?.output_tokens,
-    cachedPromptTokens: usage?.input_token_details?.cache_read,
-  });
-}
-
 /** The undo entries of the latest replies, by transcript order (a jsonb object keeps no key order). */
 function keepLastUndos(undo: Record<string, FFSnapshot[]>, transcript: readonly FFChatTurn[]): Record<string, FFSnapshot[]> {
   const ids = transcript.filter((t) => t.role === "assistant" && Object.hasOwn(undo, t.id)).map((t) => t.id);
@@ -150,7 +139,7 @@ export async function runFactFinderTurn(args: {
   for (let round = 0; round <= MAX_TOOL_CALLS_PER_TURN; round++) {
     messages[0] = new SystemMessage(systemPrompt(working, ctx.files)); // tools change the working copy
     const response = await model.invoke(messages);
-    recordTurnUsage(response);
+    recordMessageUsage(response);
     messages.push(response);
     finalText = typeof response.content === "string" ? response.content : "";
     const calls = response.tool_calls ?? [];
