@@ -9,6 +9,8 @@ import { parseDate } from "../../normalize";
 
 const UNREAD =
   'Vesting schedule: list each vest date and shares ("3/1/2027: 250; 3/1/2028: 250") or say "25% a year over 4 years from 3/1/2026".';
+/** An even schedule with no start of its own counts from the grant date, and there is none. */
+export const NEEDS_START = 'Add the Grant date, or say when vesting starts ("over 4 years from 3/1/2026").';
 /** More vest dates than this is a typo ("monthly over 2000 years"), not a schedule. */
 const MAX_TRANCHES = 240;
 
@@ -83,7 +85,7 @@ function even(text: string, grant: { grantDate: string | null; sharesGranted: nu
   if (fromText && !start) return { ok: false, reason: UNREAD };
   const shares = grant.sharesGranted;
   if (shares === null) return { ok: false, reason: "Add Shares granted to spread the vesting." };
-  if (!start) return { ok: false, reason: 'Add the Grant date, or say when vesting starts ("over 4 years from 3/1/2026").' };
+  if (!start) return { ok: false, reason: NEEDS_START };
   const each = round6(shares / count);
   const tranches = Array.from({ length: count }, (_, i) => ({
     vestDate: addMonths(start, (i + 1) * period),

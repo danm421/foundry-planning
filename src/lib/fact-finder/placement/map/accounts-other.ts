@@ -15,7 +15,7 @@ import { hasCoClient, NO_CO_CLIENT_REASON } from "../refs";
 import type { BookRecord, TargetDraft } from "../types";
 import { cellOf, DraftBuilder, linkedRecordId, num, ownersOf, rate, text } from "./helpers";
 import type { PlaceContext, SectionMap } from "./types";
-import { parseVestingSchedule } from "./vesting";
+import { NEEDS_START, parseVestingSchedule } from "./vesting";
 
 export const ANNUITY_INCOME_WARNING =
   "Income from a rider or annuitization isn't saved — the fact finder doesn't ask the benefit base or the payment. Set it in Details.";
@@ -100,6 +100,8 @@ function accountByName(company: string, holder: string | null, ctx: PlaceContext
   return hits.length === 1 ? hits[0].id : null;
 }
 
+const GRANT_DATE_UNREAD = "Grant date didn't read — the vesting schedule counts from it; fix the date.";
+
 /** The shares of a grant's vest rows on record; null when it has none. */
 function vestedOnRecord(grant: BookRecord): number | null {
   const rows = grant.values.tranches;
@@ -129,11 +131,14 @@ function grantDraft(row: FFRow, account: RecordRef | undefined, ctx: PlaceContex
 
   const schedule = text(row, "vestingSchedule");
   if (schedule !== null) {
+    // A Grant date that didn't read: the date on record never stands in for it (the AI step may fill a new one).
+    const grantDateUnread = ctx.removed(row.id, "grantDate");
     const vesting = parseVestingSchedule(schedule, {
-      grantDate: grantDate ?? str(onRecord?.values.grantDate),
+      grantDate: grantDate ?? (grantDateUnread ? null : str(onRecord?.values.grantDate)),
       sharesGranted: sharesGranted ?? numberOf(onRecord?.values.sharesGranted),
     });
     if (vesting.ok) b.put("tranches", vesting.tranches, ["vestingSchedule"]);
+    else if (grantDateUnread && vesting.reason === NEEDS_START) b.block(GRANT_DATE_UNREAD, "grantDate");
     else b.block(vesting.reason, "vestingSchedule");
   } else if (onRecord && sharesGranted !== null) {
     // The vest rows on record must still add up to the shares granted, or the grant can't save.

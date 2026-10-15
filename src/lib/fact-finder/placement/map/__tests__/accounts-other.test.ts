@@ -12,9 +12,12 @@ const client = { ref: "person", role: "client" } as const;
 const spouse = { ref: "person", role: "spouse" } as const;
 const at = (sectionId: string, rowId: string, columnId: string) => ({ sectionId, rowId, columnId });
 
-function place(map: SectionMap, rows: FFRow[], book: RecordBook = hendricksBook(), extra: Record<string, FFRow[]> = {}, asOf: string | null = null) {
+/** `removed`: "rowId:columnId" cells the runner took out (they didn't read). */
+function place(
+  map: SectionMap, rows: FFRow[], book: RecordBook = hendricksBook(), extra: Record<string, FFRow[]> = {}, asOf: string | null = null, removed: string[] = [],
+) {
   const { ctx, notices } = contextOf(stateWith({ [map.sectionId]: rows, ...extra }), book, { asOf });
-  return { drafts: map.place(rows, ctx), notices };
+  return { drafts: map.place(rows, { ...ctx, removed: (rowId, columnId) => removed.includes(`${rowId}:${columnId}`) }), notices };
 }
 const keys = (draft: { fields: { key: string }[] }) => draft.fields.map((f) => f.key);
 const valueOf = (draft: { fields: { key: string; value: unknown }[] }, key: string) => draft.fields.find((f) => f.key === key)?.value;
@@ -330,6 +333,24 @@ describe("EQUITY_MAP", () => {
         from: [at("equity", "eq1", "vestingSchedule")],
       },
     ]);
+  });
+
+  it("a Grant date that didn't read blocks a schedule that counts from it — the date on record never stands in", () => {
+    const acme = recordOf("so-1", "Acme Corp", { name: "Acme Corp", ticker: null, owner: "client" });
+    const onRecord = recordOf("g-1", "Acme RSU", { grantType: "rsu", grantDate: "2025-03-01", sharesGranted: 400 }, { accountId: "so-1" });
+    const book = hendricksBook({ stock_option_account: [acme], stock_option_grant: [onRecord] });
+    const unread = (vestingSchedule: string, link = true) =>
+      place(EQUITY_MAP, [rowOf("eq1", { company: "Acme Corp", sharesGranted: 400, vestingSchedule }, link ? { link: linkedTo("g-1") } : {})], book, {}, null, ["eq1:grantDate"]).drafts[1];
+    const blocked = { reason: "Grant date didn't read — the vesting schedule counts from it; fix the date.", cell: at("equity", "eq1", "grantDate") };
+
+    const relative = unread("evenly over 2 years");
+    expect(relative.blocked).toEqual(blocked);
+    expect(keys(relative)).not.toContain("tranches");
+    expect(unread("evenly over 2 years", false).blocked).toEqual(blocked);   // a new grant too
+
+    // A schedule that names its own dates doesn't count from the grant date.
+    expect(unread("3/1/2026: 200; 3/1/2027: 200").blocked).toBeUndefined();
+    expect(unread("evenly over 2 years from 3/1/2025").blocked).toBeUndefined();
   });
 
   it("a grant with no company is blocked — unless it's on record, where it stays under its own account", () => {
