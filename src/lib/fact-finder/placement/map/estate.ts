@@ -115,40 +115,51 @@ function lastUpdatedNote(row: FFRow, ctx: PlaceContext, person: Person, year: nu
 /** Credentials and suffixes are neither a name nor a firm ("Jane Smith, Esq."). */
 const SUFFIX = /^(esq|jr|sr|ii|iii|iv)\.?$/i;
 
-/** "Jane Smith, Smith & Co" → the name before the first comma, and the firm after it. */
-function readAttorney(value: string): { name: string; firm: string | null } {
+/** What makes a name a firm's ("Smith & Co", "Baker McKenzie LLP", "Law Offices of…", "Jane Smith (Smith & Co)"). */
+const FIRM_MARKER = /[&()[\]]|\b(?:llp|llc|pllc|pc|p\.c|p\.a|law|associates|group|firm|of)\b/i;
+const NEEDS_ATTORNEY_NAME = "Estate attorney: give the attorney's first and last name.";
+
+/**
+ * "Jane Smith, Smith & Co" → the name before the first comma, and the firm
+ * after it. A name that reads as a firm is no person's: the whole text is the
+ * firm, and the name is left for the advisor to give.
+ */
+function readAttorney(value: string): { name: string | null; firm: string | null } {
   const parts = value.split(",").map((p) => p.trim()).filter((p) => p !== "" && !SUFFIX.test(p));
   const name = (parts[0] ?? "").split(/\s+/).filter((w) => !SUFFIX.test(w)).join(" ");
+  if (FIRM_MARKER.test(name)) return { name: null, firm: value };
   return { name, firm: parts.slice(1).join(", ") || null };
 }
 
 /** The estate attorney, once for the household: both people naming one attorney make one line, from both cells. */
 function attorneyDrafts(rows: readonly FFRow[], ctx: PlaceContext): TargetDraft[] {
-  const named = new Map<string, { row: FFRow; name: string; firm: string | null; cells: CellRef[]; firmCells: CellRef[] }>();
+  const named = new Map<string, { row: FFRow; name: string | null; firm: string | null; cells: CellRef[]; firmCells: CellRef[] }>();
   for (const row of rows) {
     const value = text(row, "estateAttorney");
     if (value === null) continue;
     const { name, firm } = readAttorney(value);
     const cell = cellOf("estate_docs", row, "estateAttorney");
-    const entry = named.get(normText(name)) ?? { row, name, firm: null, cells: [], firmCells: [] };
+    const key = normText(name ?? firm);
+    const entry = named.get(key) ?? { row, name, firm: null, cells: [], firmCells: [] };
     entry.cells.push(cell);
     if (firm !== null) {
       entry.firm ??= firm;
       entry.firmCells.push(cell);
     }
-    named.set(normText(name), entry);
+    named.set(key, entry);
   }
   return [...named.values()].map(({ row, name, firm, cells, firmCells }) => {
-    const split = splitPersonName(name);
+    const split = name === null ? null : splitPersonName(name);
     const recordId = split === null
       ? null
       : ctx.book.records.related_party.find((r) => sameText(r.values.firstName, split.firstName) && sameText(r.values.lastName, split.lastName))?.id ?? null;
     const b = new DraftBuilder({
       sectionId: "estate_docs", row, target: "related_party", recordId,
-      label: name ? `Estate attorney — ${name}` : "Estate attorney",
+      label: name || firm ? `Estate attorney — ${name || firm}` : "Estate attorney",
       fixed: { relationshipLabel: "Estate attorney" },
     });
-    if (split === null) return b.block("Give the attorney's first and last name.", cells[0]).build();
+    // Never a made-up person: with no first and last name (one word, or only a firm) the firm is kept and the name is the advisor's to give.
+    if (split === null) return b.put("employer", firm, firmCells).block(NEEDS_ATTORNEY_NAME, cells[0]).build();
     return b.put("firstName", split.firstName, cells).put("lastName", split.lastName, cells).put("employer", firm, firmCells).build();
   });
 }

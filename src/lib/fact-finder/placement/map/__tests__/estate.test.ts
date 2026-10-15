@@ -157,10 +157,27 @@ describe("ESTATE_DOCS_MAP", () => {
       ]);
     });
 
-    it("one word is blocked — it needs a first and a last name", () => {
+    const NEEDS_NAME = "Estate attorney: give the attorney's first and last name.";
+
+    it("one word is blocked — it needs a first and a last name; the firm after the comma is kept", () => {
       const [d] = place(ESTATE_DOCS_MAP, [docs("Client", { estateAttorney: "Smith, Smith & Co" })]).drafts;
-      expect(d.blocked).toEqual({ reason: "Give the attorney's first and last name.", cell: c("estateAttorney") });
-      expect(d.fields).toEqual([]);
+      expect(d.blocked).toEqual({ reason: NEEDS_NAME, cell: c("estateAttorney") });
+      expect(d.fields).toEqual([{ key: "employer", value: "Smith & Co", from: [c("estateAttorney")] }]);
+    });
+
+    it.each([
+      "Smith & Co", "Baker McKenzie LLP", "Law Offices of Jane Smith", "Jane Smith (Smith & Co)", "Jane Smith [Smith Law]",
+      "Hart LLC", "Hart PLLC", "Jones PC", "Jones P.C.", "Ann Gray P.A.", "Lee Associates", "Doe Legal Group", "The Hart Firm",
+    ])('"%s" names a firm, not a person: kept as the employer, and the line asks for the attorney\'s name', (value) => {
+      const [d] = place(ESTATE_DOCS_MAP, [docs("Client", { estateAttorney: value })]).drafts;
+      expect(d.fields).toEqual([{ key: "employer", value, from: [c("estateAttorney")] }]);
+      expect(d.blocked).toEqual({ reason: NEEDS_NAME, cell: c("estateAttorney") });
+    });
+
+    it("a name before the comma has no firm marker, so it still splits — the firm after it is the employer", () => {
+      const [d] = place(ESTATE_DOCS_MAP, [docs("Client", { estateAttorney: "Jane Smith, Smith & Co" })]).drafts;
+      expect(values(d)).toEqual({ firstName: "Jane", lastName: "Smith", employer: "Smith & Co" });
+      expect(d.blocked).toBeUndefined();
     });
   });
 
