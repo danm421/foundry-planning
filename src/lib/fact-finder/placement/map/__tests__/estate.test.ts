@@ -507,6 +507,25 @@ describe("BEQUESTS_MAP", () => {
       const [draft] = place(BEQUESTS_MAP, [ira("b1", "Laura")], book).drafts;
       expect(draft.blocked).toEqual({ reason: "Two provisions on record give Fidelity IRA — pick a Condition.", cell: c("b1")("condition") });
     });
+
+    it("a Condition that matches neither is blocked, and neither record is rewritten", () => {
+      const { drafts } = place(BEQUESTS_MAP, [ira("b1", "Emma, Lucas", "Always")], book);
+      expect(drafts.map((d) => [d.recordId, d.blocked])).toEqual([
+        [null, { reason: "Two provisions on record give Fidelity IRA, neither with this Condition — pick one of theirs.", cell: c("b1")("condition") }],
+      ]);
+    });
+
+    it("with exactly one provision left, a different Condition still updates that record", () => {
+      const one = hendricksBook({
+        ...kids,
+        account: [recordOf("a-ira", "Fidelity IRA", { name: "Fidelity IRA" }, { category: "retirement" })],
+        will: [recordOf("w-1", "Mark's will", { grantor: "client" }, { grantor: "client" })],
+        will_bequest: [bequest("bq-laura", "if_spouse_survives")],
+      });
+      const [draft] = place(BEQUESTS_MAP, [ira("b1", "Emma, Lucas", "Always")], one).drafts;
+      expect(draft.recordId).toBe("bq-laura");
+      expect(draft.blocked).toBeUndefined();
+    });
   });
 
   it("the remaining estate warns it replaces the set only when the will on record names someone", () => {

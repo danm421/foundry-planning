@@ -287,18 +287,18 @@ function provisionOf(row: FFRow, ctx: PlaceContext): Provision {
   return { row, kind, debt, assetText, asset, condition: valueFor(BEQUEST_COND_MAP, text(row, "condition")) };
 }
 
-/** Row id → its provision on record; row id → how many it could be (a blank Condition with two or more left). */
+/** Row id → its provision on record; row id → how many it could be (two or more left), and whether the row named a Condition. */
 interface OnRecord {
   ids: Map<string, string>;
-  ambiguous: Map<string, number>;
+  ambiguous: Map<string, { count: number; conditioned: boolean }>;
 }
 
 /**
  * D8: each row's provision on record in this person's will — one giving the
  * same asset, each matched once. Every row's same-condition match first, across
  * all the rows, so an earlier row can't take the provision a later row names;
- * then the rest take what's left. A blank Condition with two or more left is
- * never a guess.
+ * then the rest take what's left. A row with two or more left — blank
+ * Condition or one that matched none — never guesses: it blocks.
  */
 function provisionsOnRecord(provisions: readonly Provision[], ctx: PlaceContext, person: Person): OnRecord {
   const found: OnRecord = { ids: new Map(), ambiguous: new Map() };
@@ -320,7 +320,7 @@ function provisionsOnRecord(provisions: readonly Provision[], ctx: PlaceContext,
   for (const p of provisions) {
     if (found.ids.has(p.row.id)) continue;
     const rest = left(p);
-    if (wanted(p) === null && rest.length > 1) found.ambiguous.set(p.row.id, rest.length);
+    if (rest.length > 1) found.ambiguous.set(p.row.id, { count: rest.length, conditioned: wanted(p) !== null });
     else if (rest.length > 0) take(p, rest[0].id);
   }
   return found;
@@ -343,7 +343,11 @@ function bequestDraft(
   if (kind === null) return b.block("Pick what this provision gives.", "gift").build();
   const ambiguous = seen.onRecord.ambiguous.get(row.id);
   if (ambiguous !== undefined) {
-    return b.block(`${ambiguous === 2 ? "Two" : ambiguous} provisions on record give ${name} — pick a Condition.`, "condition").build();
+    const n = ambiguous.count === 2 ? "Two" : ambiguous.count;
+    const reason = ambiguous.conditioned
+      ? `${n} provisions on record give ${name}, ${ambiguous.count === 2 ? "neither" : "none"} with this Condition — pick one of theirs.`
+      : `${n} provisions on record give ${name} — pick a Condition.`;
+    return b.block(reason, "condition").build();
   }
   b.put("kind", kind, ["gift"], debt ? undefined : { assetMode: "specific" });
   if (asset === null) b.block(debt ? "Name the debt." : "Name the asset or account it gives.", "asset");
