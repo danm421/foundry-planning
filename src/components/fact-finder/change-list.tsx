@@ -8,6 +8,7 @@
 import { Fragment, memo, useId } from "react";
 import { Card } from "@/components/card";
 import { countLines, type CellRef, type ChangeField, type ChangeLine, type ChangeSet, type ChangeTicks } from "@/lib/fact-finder/change-set";
+import { TARGETS, type ValueKind } from "@/lib/fact-finder/placement/targets";
 import { EMPTY } from "@/lib/fact-finder/placement/values";
 import { PAGE_ORDER, findSection } from "@/lib/fact-finder/schema";
 import { GHOST_BUTTON } from "./button-styles";
@@ -74,10 +75,20 @@ function Summary({ lines }: { lines: readonly ChangeLine[] }) {
   );
 }
 
-/** A shown value; one with a digit in it (an amount, a rate, a date) is a figure, set in mono. */
-function Value({ text, tone }: { text: string | undefined; tone: string }) {
+const FIGURE_KINDS: ReadonlySet<ValueKind> = new Set<ValueKind>([
+  "money", "number", "integer", "year", "month", "rate", "percent", "date", "monthYear",
+]);
+
+/** Whether a field's value is a figure (an amount, a rate, a date), set in mono; its text may hold digits without being one. */
+function isFigure(target: ChangeLine["target"], key: string): boolean {
+  const kind = TARGETS[target]?.fields[key]?.kind;
+  return kind !== undefined && FIGURE_KINDS.has(kind);
+}
+
+/** A shown value; only a figure-kind field's value is set in mono. */
+function Value({ text, tone, figure }: { text: string | undefined; tone: string; figure: boolean }) {
   if (!text || text === EMPTY) return <span className="text-ink-4">{EMPTY}</span>;
-  return <span className={`break-words ${tone}${/\d/.test(text) ? " tabular" : ""}`}>{text}</span>;
+  return <span className={`break-words ${tone}${figure ? " tabular" : ""}`}>{text}</span>;
 }
 
 /** The words a field the AI step placed came from, on hover or focus. */
@@ -112,6 +123,7 @@ function FieldRow({ line, field, tickable, ticked, onToggle }: {
   onToggle(): void;
 }) {
   const update = line.action === "update";
+  const figure = isFigure(line.target, field.key);
   // Stacked: the checkbox (when there is one) in the first track, the label across the rest, the values under it.
   const stacked = update ? "@max-md:grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)]" : "@max-md:grid-cols-[auto_minmax(0,1fr)]";
   return (
@@ -134,7 +146,7 @@ function FieldRow({ line, field, tickable, ticked, onToggle }: {
       {update && (
         <>
           <td className={`${CELL} pr-2 @max-md:col-start-2`}>
-            <Value text={field.shown.onRecord} tone="text-ink-3" />
+            <Value text={field.shown.onRecord} tone="text-ink-3" figure={figure} />
           </td>
           <td aria-hidden="true" className={`${CELL} text-ink-4 @max-md:pr-2`}>
             →
@@ -142,7 +154,7 @@ function FieldRow({ line, field, tickable, ticked, onToggle }: {
         </>
       )}
       <td className={update ? CELL : `${CELL} @max-md:col-start-2`}>
-        <Value text={field.shown.next} tone="text-ink" />
+        <Value text={field.shown.next} tone="text-ink" figure={figure} />
       </td>
     </tr>
   );

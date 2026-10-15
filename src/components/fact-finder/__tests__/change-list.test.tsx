@@ -5,7 +5,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ChangeList } from "../change-list";
 import { findSection } from "@/lib/fact-finder/schema";
-import { defaultTicks, type CellRef, type ChangeField, type ChangeSet, type ChangeTicks } from "@/lib/fact-finder/change-set";
+import { defaultTicks, type CellRef, type ChangeField, type ChangeLine, type ChangeSet, type ChangeTicks } from "@/lib/fact-finder/change-set";
 
 // Each LineItem render looks its section up once, so the calls count line renders.
 vi.mock("@/lib/fact-finder/schema", async (importOriginal) => {
@@ -300,5 +300,32 @@ describe("ChangeList", () => {
     // The one line shows its section's label; the unchanged fold lists its own line's label too.
     const lineRenders = vi.mocked(findSection).mock.calls.length;
     expect(lineRenders).toBeLessThanOrEqual(2);
+  });
+
+  describe("figure font", () => {
+    const one = (target: ChangeLine["target"], action: "create" | "update", fields: ChangeField[]): ChangeSet => ({
+      ...CHANGES,
+      notices: [],
+      lines: [
+        { id: "x/1", page: "accounts", sectionId: "cash", rowId: "x", target, action, recordId: action === "update" ? "r-1" : null, label: "Test line", fields, warnings: [] },
+      ],
+    });
+    const show = (cs: ChangeSet) => renderList(defaultTicks(cs), cs);
+
+    it("keeps prose that happens to hold a digit out of the figure font", () => {
+      show(one("plan_observation", "create", [field("body", "Note", "Plans a first home purchase in 2030")]));
+      expect(screen.getByText("Plans a first home purchase in 2030")).not.toHaveClass("tabular");
+    });
+
+    it("keeps an owners value out of the figure font", () => {
+      show(one("account", "create", [field("owners", "Owner", "Joint (50% / 50%)")]));
+      expect(screen.getByText("Joint (50% / 50%)")).not.toHaveClass("tabular");
+    });
+
+    it("sets a money value in the figure font, on record and next", () => {
+      show(one("account", "update", [field("value", "Value", "$412,330", "$400,000")]));
+      expect(screen.getByText("$412,330")).toHaveClass("tabular");
+      expect(screen.getByText("$400,000")).toHaveClass("tabular");
+    });
   });
 });
