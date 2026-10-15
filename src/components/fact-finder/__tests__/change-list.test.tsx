@@ -215,6 +215,21 @@ describe("ChangeList", () => {
     expect(props.onFix).toHaveBeenLastCalledWith(undefined, "cash");
   });
 
+  it("gives a blocked line that matched a record but changes nothing no Create chip", async () => {
+    const [, , , , , family] = CHANGES.lines;
+    const blocked: ChangeSet = {
+      ...CHANGES,
+      lines: [{ ...family, blocked: { reason: "Date of birth: pick a real date.", cell: cell("family", "f1", "dob") } }],
+    };
+    const props = renderList(defaultTicks(blocked), blocked);
+    const item = line("Emma Hendricks");
+    expect(within(item).queryByText("Create")).toBeNull();
+    expect(within(item).queryByText("Update")).toBeNull();
+    expect(within(item).getByText("Date of birth: pick a real date.")).toBeInTheDocument();
+    await userEvent.click(within(item).getByRole("button", { name: "Fix in fact finder" }));
+    expect(props.onFix).toHaveBeenCalledWith(cell("family", "f1", "dob"), "family");
+  });
+
   it("tags a line the AI step placed", () => {
     renderList();
     expect(within(line("Plan note — estate")).getByText("AI placed")).toBeInTheDocument();

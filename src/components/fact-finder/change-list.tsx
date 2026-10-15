@@ -154,9 +154,11 @@ function LineItem({ line, ticks, onToggleField, onToggleLine, onFix }: LineProps
             className={CHECKBOX}
           />
         )}
-        <span className={`${CHIP} ${update ? "border-hair-2 bg-card-2 text-ink-2" : "border-good/40 text-good"}`}>
-          {update ? "Update" : "Create"}
-        </span>
+        {line.action !== "none" && (
+          <span className={`${CHIP} ${update ? "border-hair-2 bg-card-2 text-ink-2" : "border-good/40 text-good"}`}>
+            {update ? "Update" : "Create"}
+          </span>
+        )}
         <h4 id={headingId} className="text-sm font-medium text-ink">
           {line.label}
         </h4>
