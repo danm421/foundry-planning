@@ -8,7 +8,7 @@
  * lib/fact-finder imports lib/imports at runtime, so a runtime import added
  * here could close a cycle.
  */
-import type { ChangeSet } from "./change-set";
+import type { ChangeSet, TargetKind } from "./change-set";
 
 export type FFCellValue = string | number | boolean | null;
 
@@ -144,6 +144,16 @@ export interface FactFinderState {
   readings: Record<string, FFFileReading>;
   /** Pass 2's change list (Plan 3). Only the review writes it; a write that changes the rows or unassigned holdings drops it. */
   changeSet?: ChangeSet;
+  /** Set by the save, which writes the whole change list to the plan in one go: the import is read-only from then on. */
+  closed?: FFClosed;
+}
+
+/** What the save recorded when it closed the import. */
+export interface FFClosed {
+  at: string;
+  by: string;
+  saved: { lineId: string; rowId: string; target: TargetKind; recordId: string; label: string }[];
+  leftOut: { lineId: string; rowId: string; label: string; reason: string }[];
 }
 
 // ---- reader → merge contract -------------------------------------------------

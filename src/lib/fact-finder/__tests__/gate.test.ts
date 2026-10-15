@@ -28,6 +28,7 @@ import { verifyClientAccess } from "@/lib/clients/authz";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { ForbiddenError, NotFoundError, requireImportAccess } from "@/lib/imports/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
+import { SAVE_CLOSED_MESSAGE } from "../api-types";
 import { factFinderGate } from "../gate";
 
 const params = () => Promise.resolve({ id: "c1", importId: "i1" });
@@ -141,5 +142,22 @@ describe("factFinderGate", () => {
     expect(await refusal()).toMatchObject({ status: 400, body: { error: "This import isn't a fact finder import." } });
     vi.mocked(requireImportAccess).mockResolvedValueOnce({ ...IMPORT, payloadJson: { factFinder: { version: 1 } } } as never);
     expect((await factFinderGate(params(), "view")).ok).toBe(true);
+  });
+
+  it("refuses every op but view once the import is saved to the plan, with the saved fact finder, and still lets the view through", async () => {
+    const closed = { at: "2026-10-15T12:00:00.000Z", by: "user_1", saved: [], leftOut: [] };
+    const closedImport = { ...IMPORT, payloadJson: { factFinder: { version: 5, closed } } };
+    for (const op of ["edit", "extract", "turn", "match", "commit"] as const) {
+      vi.mocked(requireImportAccess).mockResolvedValueOnce(closedImport as never);
+      // The saved fact finder rides on the refusal: a screen still open on it switches to the closed view.
+      expect(await refusal(op)).toMatchObject({ status: 409, body: { error: SAVE_CLOSED_MESSAGE, factFinder: { version: 5, closed } } });
+    }
+    vi.mocked(requireImportAccess).mockResolvedValueOnce(closedImport as never);
+    expect((await factFinderGate(params(), "view")).ok).toBe(true);
+  });
+
+  it("does not treat an open fact finder as closed", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValueOnce({ ...IMPORT, payloadJson: { factFinder: { version: 5 } } } as never);
+    expect((await factFinderGate(params(), "commit")).ok).toBe(true);
   });
 });

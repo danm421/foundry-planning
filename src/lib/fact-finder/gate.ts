@@ -7,6 +7,8 @@ import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit, type ImportRateLimitOp } from "@/lib/rate-limit";
 import { refuseUnlessAiImportEntitled } from "@/lib/imports/ai-import-gate";
 import type { ImportPayloadJson } from "@/lib/imports/types";
+import { SAVE_CLOSED_MESSAGE } from "./api-types";
+import { readFactFinderState } from "./state";
 
 export type ImportRow = Awaited<ReturnType<typeof requireImportAccess>>;
 
@@ -48,7 +50,8 @@ export function isFactFinderImport(payloadJson: ImportPayloadJson): boolean {
 /**
  * The gate chain every fact finder route runs, in order: org → subscription →
  * auth → client access → rate limit (fails closed) → import ownership →
- * `ai_import` entitlement → "is a fact finder import". All of it resolves
+ * `ai_import` entitlement → "is a fact finder import" → "not saved yet" (a
+ * saved import answers only `view`). All of it resolves
  * before a route does any work, so an SSE route can open its stream after.
  */
 export async function factFinderGate(
@@ -99,6 +102,16 @@ export async function factFinderGate(
 
   const payloadJson = (imp.payloadJson ?? {}) as ImportPayloadJson;
   if (!isFactFinderImport(payloadJson)) return deny(400, "This import isn't a fact finder import.");
+
+  // A saved import is read-only: only the view (GET) still answers. The refusal
+  // carries the saved fact finder, so a screen still open on it (another tab)
+  // can switch to the closed view.
+  if (payloadJson.factFinder?.closed && op !== "view") {
+    return {
+      ok: false,
+      response: jsonResponse(409, { error: SAVE_CLOSED_MESSAGE, factFinder: readFactFinderState(payloadJson) }),
+    };
+  }
 
   return { ok: true, firmId, userId, clientId, importId, imp, payloadJson };
 }

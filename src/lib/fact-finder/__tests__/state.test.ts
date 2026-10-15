@@ -77,6 +77,21 @@ const row = (cells: FFRow["cells"], extra: Partial<FFRow> = {}): FFRow => ({
   ...extra,
 });
 
+describe("a saved (closed) fact finder", () => {
+  const closed = {
+    at: "2026-10-15T12:00:00.000Z",
+    by: "user_1",
+    saved: [{ lineId: "r1/account", rowId: "r1", target: "account" as const, recordId: "acc-1", label: "Joint Checking" }],
+    leftOut: [{ lineId: "r2/account", rowId: "r2", label: "Old IRA", reason: "Nothing ticked." }],
+  };
+
+  it("round-trips `closed`, and adds no key when the fact finder is open", () => {
+    expect(readFactFinderState({ factFinder: { version: 7, closed } }).closed).toEqual(closed);
+    expect("closed" in readFactFinderState({ factFinder: { version: 7 } })).toBe(false);
+    expect("closed" in emptyFactFinderState()).toBe(false);
+  });
+});
+
 describe("row helpers", () => {
   it("builds and parses fixed row ids", () => {
     expect(fixedRowId("ss", "Co-client")).toBe("ss:Co-client");

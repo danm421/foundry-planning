@@ -3,22 +3,27 @@
 // Live dev database (it is the compare-and-set itself that is under test; a
 // mocked update can't show a version race). Every row lives under a firm id no
 // other suite uses, and afterAll removes it.
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { clientImports, clients, crmHouseholds } from "@/db/schema";
 import { createTestClientWithScenario } from "@/test/factories";
 import { mergePayloadJson } from "@/lib/imports/payload-json-sql";
 import {
+  closeFactFinder,
+  FactFinderBusyError,
+  FactFinderClosedError,
   FactFinderNotFoundError,
   loadFactFinder,
+  lockFactFinder,
   updateFactFinder,
   writeFactFinder,
   type FactFinderScope,
 } from "../persist";
+import { SAVE_CLOSED_MESSAGE } from "../api-types";
 import type { ChangeSet } from "../change-set";
 import { emptyFactFinderState } from "../state";
-import type { FactFinderState, FFChatTurn, FFRow, FFUnassignedHolding } from "../types";
+import type { FactFinderState, FFChatTurn, FFClosed, FFRow, FFUnassignedHolding } from "../types";
 
 const FIRM = "firm_test_fact_finder_persist";
 const HAS_DB = !!process.env.DATABASE_URL;
@@ -88,6 +93,26 @@ async function reviewed(): Promise<{ scope: FactFinderScope; state: FactFinderSt
   await writeFactFinder(scope, 0, { ...empty, sections: { ...empty.sections, cash: [cashRow("r1")] }, changeSet }, { keepChangeSet: true });
   return { scope, state: (await loadFactFinder(scope))! };
 }
+
+const closedMark: FFClosed = {
+  at: "2026-10-15T12:00:00.000Z",
+  by: "user_test",
+  saved: [{ lineId: "r1/account", rowId: "r1", target: "account", recordId: "acc-1", label: "Joint Checking" }],
+  leftOut: [{ lineId: "r2/account", rowId: "r2", label: "Old IRA", reason: "Nothing ticked." }],
+};
+
+/** The import row's status and committedAt, as stored. */
+async function importRow(scope: FactFinderScope) {
+  const [row] = await db
+    .select({ status: clientImports.status, committedAt: clientImports.committedAt })
+    .from(clientImports)
+    .where(eq(clientImports.id, scope.importId));
+  return row;
+}
+
+/** The save's closing step on its own transaction. */
+const close = (scope: FactFinderScope, baseVersion: number) =>
+  db.transaction(async (tx) => closeFactFinder(tx, scope, baseVersion, closedMark));
 
 const question: FFChatTurn = { id: "t1", role: "user", text: "What's left to check?", at: "2026-10-13T12:05:00.000Z" };
 
@@ -238,5 +263,120 @@ describe.skipIf(!HAS_DB)("fact finder persistence (live DB)", () => {
       .where(eq(clientImports.id, scope.importId));
     const [row] = await db.select({ p: clientImports.payloadJson }).from(clientImports).where(eq(clientImports.id, scope.importId));
     expect(row.p).toEqual({ chat: { c: 3 }, fileResults: { fA: { a: 1 }, fB: { b: 2 } } });
+  });
+
+  describe("a saved (closed) fact finder", () => {
+    it("lockFactFinder reads the fact finder on the transaction; null for another firm's import or a discarded one", async () => {
+      const { scope } = await reviewed();
+      await db.transaction(async (tx) => {
+        const locked = await lockFactFinder(tx, scope);
+        expect(locked?.version).toBe(1);
+        expect(locked?.changeSet).toEqual(changeSet);
+        expect(await lockFactFinder(tx, { ...scope, firmId: "firm_someone_else" })).toBeNull();
+      });
+      await db.update(clientImports).set({ discardedAt: new Date() }).where(eq(clientImports.id, scope.importId));
+      await db.transaction(async (tx) => expect(await lockFactFinder(tx, scope)).toBeNull());
+    });
+
+    it("closeFactFinder writes `closed`, bumps the version, keeps the change set and marks the import committed", async () => {
+      const { scope } = await reviewed();
+      expect(await importRow(scope)).toMatchObject({ status: "draft", committedAt: null });
+
+      const closed = await close(scope, 1);
+      expect(closed?.version).toBe(2);
+      expect(closed?.closed).toEqual(closedMark);
+      expect(closed?.changeSet).toEqual(changeSet);
+
+      const loaded = await loadFactFinder(scope);
+      expect(loaded?.version).toBe(2);
+      expect(loaded?.closed).toEqual(closedMark);
+      expect(loaded?.changeSet).toEqual(changeSet);
+      expect(loaded?.sections.cash.map((r) => r.id)).toEqual(["r1"]);
+      const row = await importRow(scope);
+      expect(row.status).toBe("committed");
+      expect(row.committedAt).toBeInstanceOf(Date);
+    });
+
+    it("closeFactFinder on a stale version writes nothing", async () => {
+      const { scope } = await reviewed();
+      expect(await close(scope, 0)).toBeNull();
+      expect(await close(scope, 5)).toBeNull();
+      const loaded = await loadFactFinder(scope);
+      expect(loaded?.version).toBe(1);
+      expect("closed" in loaded!).toBe(false);
+      expect(await importRow(scope)).toMatchObject({ status: "draft", committedAt: null });
+    });
+
+    it("closeFactFinder inside a transaction that then throws leaves the import open", async () => {
+      const { scope } = await reviewed();
+      await expect(
+        db.transaction(async (tx) => {
+          expect(await closeFactFinder(tx, scope, 1, closedMark)).not.toBeNull();
+          throw new Error("a later line failed");
+        }),
+      ).rejects.toThrow("a later line failed");
+      const loaded = await loadFactFinder(scope);
+      expect(loaded?.version).toBe(1);
+      expect("closed" in loaded!).toBe(false);
+      expect((await importRow(scope)).status).toBe("draft");
+    });
+
+    it("a second close — a double click, another tab — finds it closed and writes nothing", async () => {
+      const { scope } = await reviewed();
+      expect(await close(scope, 1)).not.toBeNull();
+      expect(await close(scope, 2)).toBeNull();
+      expect((await loadFactFinder(scope))?.version).toBe(2);
+    });
+
+    it("writeFactFinder never writes over a closed fact finder, even at the matching version", async () => {
+      const { scope, state } = await reviewed();
+      const closed = (await close(scope, 1))!;
+      expect(await writeFactFinder(scope, closed.version, { ...closed, transcript: [question] })).toBeNull();
+      expect(await writeFactFinder(scope, closed.version, { ...state, version: closed.version, sections: emptyFactFinderState().sections })).toBeNull();
+      const loaded = await loadFactFinder(scope);
+      expect(loaded?.version).toBe(2);
+      expect(loaded?.transcript).toEqual([]);
+      expect(loaded?.closed).toEqual(closedMark);
+      expect(loaded?.sections.cash.map((r) => r.id)).toEqual(["r1"]);
+    });
+
+    it("updateFactFinder stops at once on a closed fact finder — it never runs the mutation or retries", async () => {
+      const { scope } = await reviewed();
+      await close(scope, 1);
+      const mutate = vi.fn((s: FactFinderState) => ({ ...s, transcript: [question] }));
+      const failure = await updateFactFinder(scope, mutate).catch((e: unknown) => e);
+      expect(failure).toBeInstanceOf(FactFinderClosedError);
+      expect(failure).toBeInstanceOf(FactFinderBusyError);
+      expect((failure as Error).message).toBe(SAVE_CLOSED_MESSAGE);
+      expect(mutate).not.toHaveBeenCalled();
+      expect((await loadFactFinder(scope))?.transcript).toEqual([]);
+    });
+
+    it("updateFactFinder whose import is closed between its read and its write stops on the next read, after one mutation", async () => {
+      const { scope } = await reviewed();
+      let release!: () => void;
+      let locked!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      const isLocked = new Promise<void>((r) => (locked = r));
+      // The save: closes the import, commits only when released.
+      const saving = db.transaction(async (tx) => {
+        expect(await closeFactFinder(tx, scope, 1, closedMark)).not.toBeNull();
+        locked();
+        await held;
+      });
+      await isLocked;
+      // An edit that read the open fact finder: its write waits on the save's row lock.
+      const mutate = vi.fn((s: FactFinderState) => ({ ...s, transcript: [question] }));
+      const edit = updateFactFinder(scope, mutate).catch((e: unknown) => e);
+      await vi.waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+      await new Promise((r) => setTimeout(r, 300));
+      release();
+      await saving;
+      expect(await edit).toBeInstanceOf(FactFinderClosedError);
+      expect(mutate).toHaveBeenCalledTimes(1);
+      const loaded = await loadFactFinder(scope);
+      expect(loaded?.transcript).toEqual([]);
+      expect(loaded?.closed).toEqual(closedMark);
+    });
   });
 });
