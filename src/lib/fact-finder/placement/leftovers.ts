@@ -122,22 +122,42 @@ const READERS: Partial<Record<ValueKind, (raw: string) => PlacedValue>> = {
 
 const squash = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
 
-/** `text` holds `part` — as the model saw it (SSNs redacted), whitespace and case aside. */
+/** A digit, or a $ , . run into one: what carries a number on past `at`, looking `step` away from a quote. */
+function carriesNumber(text: string, at: number, step: 1 | -1): boolean {
+  const c = text[at] ?? "";
+  return /\d/.test(c) || (/[$,.]/.test(c) && /\d/.test(text[at + step] ?? ""));
+}
+
+/**
+ * `text` holds `part` — as the model saw it (SSNs redacted), whitespace and case aside — on its own: never as a
+ * piece of a longer number ("2,330" or "$412" in "$412,330").
+ */
 function holds(text: string, part: string): boolean {
   const p = squash(part);
-  return p !== "" && squash(clean(text)).includes(p);
+  if (p === "") return false;
+  const t = squash(clean(text));
+  for (let at = t.indexOf(p); at >= 0; at = t.indexOf(p, at + 1)) {
+    if (!carriesNumber(t, at - 1, -1) && !carriesNumber(t, at + p.length, 1)) return true;
+  }
+  return false;
 }
 
 const NO_PEOPLE = { client: null, spouse: null };
 const EDGE_PUNCTUATION = /^[("'“‘]+|[)"'”’.,;:!?]+$/g;
+/** Two numbers a reader would run together: "1, 2041" or "1 2041" (12041). */
+const NUMBERS_APART = /\d[^\s\w]*\s+[^\s\w]*\d/;
 
-/** Every run of up to three of the quote's words, as written and with edge punctuation trimmed ("Aug 1, 2041." → "Aug 1, 2041"). */
-function quoteSpans(quote: string): string[] {
+/**
+ * Every run of up to three of the quote's words, as written and with edge punctuation trimmed ("Aug 1, 2041." →
+ * "Aug 1, 2041"). Only a date reads a number across words; for any other kind a run never joins two numbers.
+ */
+function quoteSpans(quote: string, kind: ValueKind): string[] {
   const words = quote.split(/\s+/).filter(Boolean);
   const spans: string[] = [];
   for (let i = 0; i < words.length; i++) {
     for (let n = 1; n <= 3 && i + n <= words.length; n++) {
       const span = words.slice(i, i + n).join(" ");
+      if (kind !== "date" && NUMBERS_APART.test(span)) break;
       spans.push(span, span.replace(EDGE_PUNCTUATION, ""));
     }
   }
@@ -151,7 +171,7 @@ function quoteSpans(quote: string): string[] {
 function backedByQuote(item: LeftoverItem, kind: ValueKind, read: PlacedValue, quote: string): boolean {
   if (kind === "text") return holds(item.text, String(read));
   const reader = READERS[kind];
-  return reader !== undefined && quoteSpans(quote).some((span) => sameValue(kind, reader(span), read, NO_PEOPLE));
+  return reader !== undefined && quoteSpans(quote, kind).some((span) => sameValue(kind, reader(span), read, NO_PEOPLE));
 }
 
 /** A field answer the model can back up, as the field it adds to its draft; else null. */

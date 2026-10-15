@@ -307,6 +307,23 @@ describe("applyLeftovers", () => {
       expect(drafts.at(-1)?.target).toBe("plan_observation");
     });
 
+    it("refuses a quote that is a piece of a longer number in the item", () => {
+      // "$412,330" holds "2,330" — but not as an amount.
+      asNote(finalNotes, DRAFTS, field("fn:notes", "r1/account", "priorYearEndValue", "2330", "2,330"));
+      asNote(finalNotes, DRAFTS, field("fn:notes", "r1/account", "priorYearEndValue", "412", "$412"));
+    });
+
+    it("never reads two numbers in a quote as one: \"1, 2041\" isn't 12041 — though a date still reads across its words", () => {
+      const item: LeftoverItem = { ...emmaNotes, text: "Emma was born Aug 1, 1990. Note 1, 2041 is due." };
+      const draft: TargetDraft = { ...ira, lineId: lineIdOf("f1", "account"), rowId: "f1", fields: [] };
+      asNote(item, [draft], field("f1:notes", "f1/account", "value", "12041", "1, 2041"));
+      asNote(item, [draft], field("f1:notes", "f1/account", "value", "12041", "Note 1, 2041 is due"));
+      const { drafts } = applyLeftovers([item], [emma], answers(field("f1:notes", "f1/family_member", "dateOfBirth", "1990-08-01", "born Aug 1, 1990.")), BOOK);
+      expect(drafts).toEqual([
+        { ...emma, fields: [...emma.fields, { key: "dateOfBirth", value: "1990-08-01", from: [item.cell], ai: { quote: "born Aug 1, 1990." } }] },
+      ]);
+    });
+
     it("lands an amount the quote states, written plainly", () => {
       const draft: TargetDraft = { ...ira, lineId: lineIdOf("f1", "account"), rowId: "f1", fields: [] };
       const output = answers(field("f1:notes", "f1/account", "value", "1250.50", "$1,250.50"));
