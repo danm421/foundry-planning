@@ -195,14 +195,33 @@ describe("diffDrafts", () => {
     expect(same.warnings).toEqual([]);
   });
 
-  it("a warning tied to a field is kept only when that field is on the line; an untied one always stays", () => {
-    const warnings = [{ text: "About the growth rate.", field: "growthRate" }, "About the row."];
-    const linked = (growthRate: number) =>
-      diffDrafts([draft({ target: "account", recordId: "acct-1", fields: [put("growthRate", growthRate)], warnings })], book({ account: [checking] }))[0];
-    expect([linked(0.03).action, linked(0.03).warnings]).toEqual(["update", ["About the growth rate.", "About the row."]]);
-    expect([linked(0.02).action, linked(0.02).warnings]).toEqual(["none", ["About the row."]]);
-    const created = diffDrafts([draft({ target: "account", fields: [put("growthRate", 0.02)], warnings })], book())[0];
-    expect(created.warnings).toEqual(["About the growth rate.", "About the row."]);
+  it("a beneficiary set replacing one on record that names someone says so — not an unchanged set, an empty one, or a new record's", () => {
+    const primary = (who: RecordRef) => [{ tier: "primary", who, percentage: 100 }];
+    const onRecord = (beneficiaries: PlacedValue) =>
+      book({ account_beneficiary_designation: [{ id: "acct-1", label: "Joint Checking", values: { beneficiaries } }] });
+    const line = (b: RecordBook, recordId: string | null = "acct-1") =>
+      diffDrafts([draft({ target: "account_beneficiary_designation", recordId, fields: [put("beneficiaries", primary(spouse))], warnings: ["About the row."] })], b)[0];
+    expect(line(onRecord(primary(fm("fm-emma")))).warnings).toEqual(["About the row.", "These beneficiaries replace the ones on record."]);
+    expect([line(onRecord(primary(spouse))).action, line(onRecord(primary(spouse))).warnings]).toEqual(["none", ["About the row."]]);
+    expect(line(onRecord([])).warnings).toEqual(["About the row."]);
+    expect(line(book(), null).warnings).toEqual(["About the row."]);
+  });
+
+  it("the remaining estate's recipients say so too; a will provision's recipients don't (the will's other provisions stay)", () => {
+    const emma = [{ who: fm("fm-emma"), percentage: 100 }];
+    const laura = [{ who: spouse, percentage: 100 }];
+    const [rest, provision] = diffDrafts(
+      [
+        draft({ target: "will_residuary_recipient", recordId: "w-1", fields: [put("recipients", laura)] }),
+        draft({ lineId: "r2/will_bequest", rowId: "r2", target: "will_bequest", recordId: "bq-1", fields: [put("recipients", laura)] }),
+      ],
+      book({
+        will_residuary_recipient: [{ id: "w-1", label: "Mark's will — remaining estate", values: { recipients: emma } }],
+        will_bequest: [{ id: "bq-1", label: "Brokerage", values: { recipients: emma } }],
+      }),
+    );
+    expect([rest.action, rest.warnings]).toEqual(["update", ["These recipients replace the ones on record."]]);
+    expect([provision.action, provision.warnings]).toEqual(["update", []]);
   });
 
   it("a record that's gone from the plan blocks the line", () => {

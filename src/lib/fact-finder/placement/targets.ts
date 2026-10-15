@@ -47,6 +47,7 @@ export interface TargetField {
   kind: ValueKind;
   options?: OptionMap;                 // choice fields: how the change list prints the value
   identity?: "name" | "owner";         // starts unticked on an existing record unless on record is blank (D8)
+  replacesSet?: true;                  // the record's whole set: changing one that names someone says it replaces them
   proposable?: true;                   // the AI step may fill it (scalar kinds only)
 }
 export interface TargetSpec { label: string; fields: Readonly<Record<string, TargetField>> }
@@ -74,7 +75,9 @@ const ACCOUNT_TYPE_OPTIONS: OptionMap = [
 const STATE_OPTIONS: OptionMap = STATES.map((code) => [code, code] as const);
 const TOPIC_OPTIONS: OptionMap = OBSERVATION_TOPICS.map((topic) => [TOPIC_LABELS[topic], topic] as const);
 
-const beneficiaries = { beneficiaries: field("Beneficiaries", "beneficiaries") };
+/** A set the route writes whole (BENEFICIARY_SET): one replacing a set that names someone says so. */
+const SET = { replacesSet: true } as const;
+const beneficiaries = { beneficiaries: field("Beneficiaries", "beneficiaries", SET) };
 
 export const TARGETS: Readonly<Record<TargetKind, TargetSpec>> = {
   client_household: {
@@ -404,7 +407,7 @@ export const TARGETS: Readonly<Record<TargetKind, TargetSpec>> = {
   },
   will_residuary_recipient: {
     label: "Remaining estate",
-    fields: { recipients: field("Recipients", "recipients") },
+    fields: { recipients: field("Recipients", "recipients", SET) },
   },
   gift: {
     label: "Prior gift",

@@ -187,7 +187,8 @@ describe("LIFE_MAP", () => {
 
     it("on a policy on record: its id and the record as parent — and a blank tier keeps that tier's rows on record", () => {
       const row = rowOf("life-1", { policyName: "NWM Term 20", contingentBeneficiary: "Emma 50%, Lucas 50%" }, { link: linkedTo("pol-1") });
-      expect(place(LIFE_MAP, [row], book).drafts[1]).toEqual({
+      const { drafts } = place(LIFE_MAP, [row], book);
+      expect(drafts[1]).toEqual({
         lineId: "life-1/life_insurance_policy_beneficiary",
         sectionId: "life",
         rowId: "life-1",
@@ -205,18 +206,21 @@ describe("LIFE_MAP", () => {
             from: [c("contingentBeneficiary")],
           },
         ],
-        warnings: [{ text: "These beneficiaries replace the ones on record.", field: "beneficiaries" }],
+        warnings: [],
         parent: { ref: "record", target: "life_insurance_policy", id: "pol-1" },
       });
+      // The line says it replaces the set on record.
+      expect(diffDrafts(drafts, book)[1].warnings).toEqual(["These beneficiaries replace the ones on record."]);
     });
 
     it("the warning only when the record names someone (any tier) — with no one on record there's nothing to replace", () => {
       const row = rowOf("life-1", { policyName: "NWM Term 20", primaryBeneficiary: "Laura" }, { link: linkedTo("pol-1") });
-      const warningsWith = (beneficiaries: BookRecord["values"][string]) =>
-        place(LIFE_MAP, [row], hendricksBook({ ...kids, life_insurance_policy: [policy], life_insurance_policy_beneficiary: [recordOf("pol-1", "NWM Term 20", { beneficiaries })] }))
-          .drafts[1].warnings;
+      const warningsWith = (beneficiaries: BookRecord["values"][string]) => {
+        const withSet = hendricksBook({ ...kids, life_insurance_policy: [policy], life_insurance_policy_beneficiary: [recordOf("pol-1", "NWM Term 20", { beneficiaries })] });
+        return diffDrafts(place(LIFE_MAP, [row], withSet).drafts, withSet)[1].warnings;
+      };
       expect(warningsWith([])).toEqual([]);
-      expect(warningsWith([{ tier: "contingent", who: emma, percentage: 100 }])).toEqual([{ text: "These beneficiaries replace the ones on record.", field: "beneficiaries" }]);
+      expect(warningsWith([{ tier: "contingent", who: emma, percentage: 100 }])).toEqual(["These beneficiaries replace the ones on record."]);
     });
 
     it("a name that doesn't resolve blocks the beneficiaries line, not the policy", () => {

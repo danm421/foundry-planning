@@ -356,11 +356,7 @@ function residuaryDraft(rows: readonly FFRow[], ctx: PlaceContext, person: Perso
     from.push(cellOf("bequests", row, "recipients"));
   }
   if (set.length === 0) return null;
-  b.put("recipients", set, from);
-  // Every will on record has a set, often empty — warn only when it names someone.
-  const recorded = findRecord(ctx.book, "will_residuary_recipient", will.recordId)?.values.recipients;
-  if (Array.isArray(recorded) && recorded.length > 0) b.warn("These recipients replace the ones on record.", { field: "recipients" });
-  return b.build();
+  return b.put("recipients", set, from).build();
 }
 
 export const BEQUESTS_MAP: SectionMap = {

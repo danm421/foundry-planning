@@ -4,7 +4,8 @@
  * every value it placed; one with a record is an Update with only the values
  * that differ, or "No changes" when none do. An empty value never becomes a
  * field, so a blank fact finder cell never erases a value on record. A name or
- * owner that would overwrite one on record starts unticked. Pure.
+ * owner that would overwrite one on record starts unticked, and a set that
+ * replaces one naming someone says so. Pure.
  */
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import { isRecordRef, type ChangeField, type ChangeLine, type PlacedValue, type RecordRef } from "../change-set";
@@ -29,6 +30,7 @@ function diffDraft(draft: TargetDraft, book: RecordBook, labelOf: (ref: RecordRe
   const vanished = draft.recordId !== null && record === undefined;
 
   const fields: ChangeField[] = [];
+  const warnings = [...draft.warnings];
   for (const placed of draft.fields) {
     if (isEmptyValue(placed.value)) continue;
     const spec = targetField(draft.target, placed.key);
@@ -42,11 +44,10 @@ function diffDraft(draft: TargetDraft, book: RecordBook, labelOf: (ref: RecordRe
     const onRecord = record.values[placed.key];
     if (sameValue(spec.kind, placed.value, onRecord, book.people)) continue;
     fields.push(changeField(placed, spec, isEmptyValue(onRecord) ? null : onRecord, show));
+    // Every record on the plan has its set, often empty: say so only when the one replaced names someone.
+    if (spec.replacesSet && Array.isArray(onRecord) && onRecord.length > 0) warnings.push(`These ${spec.label.toLowerCase()} replace the ones on record.`);
   }
 
-  // A warning about one field speaks only when that field changes.
-  const keys = new Set(fields.map((f) => f.key));
-  const warnings = draft.warnings.flatMap((w) => (typeof w === "string" ? [w] : keys.has(w.field) ? [w.text] : []));
   const planEnd = draft.target === "client_household" ? fields.filter((f) => PLAN_END_FIELDS.has(f.key)) : [];
   if (planEnd.length > 0) {
     const names = planEnd.map((f) => f.label.toLowerCase());

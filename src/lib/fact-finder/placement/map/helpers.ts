@@ -12,7 +12,7 @@ import type { FFRow } from "../../types";
 import { findPerson, findTrust, hasCoClient, householdPerson, NO_CO_CLIENT_REASON, type PersonKind } from "../refs";
 import { targetField } from "../targets";
 import { parseShares, toFraction, yesNo } from "../translate";
-import { findRecord, type BookRecord, type DraftField, type DraftWarning, type NoteTopic, type RecordBook, type TargetDraft } from "../types";
+import { findRecord, type BookRecord, type DraftField, type NoteTopic, type RecordBook, type TargetDraft } from "../types";
 import type { PlaceContext } from "./types";
 
 /** A text or choice cell (a choice holds its option label), trimmed; null when blank. */
@@ -81,7 +81,7 @@ function addLineRefs(value: PlacedValue, into: Set<string>): void {
 export class DraftBuilder {
   readonly lineId: string;
   private readonly fields: DraftField[] = [];
-  private readonly warnings: DraftWarning[] = [];
+  private readonly warnings: string[] = [];
   private readonly depends = new Set<string>();
   private blocked?: { reason: string; cell?: CellRef };
 
@@ -125,11 +125,9 @@ export class DraftBuilder {
     return this;
   }
 
-  /** A warning; with `field`, it's about that field only, and the diff drops it when the field doesn't change. */
-  warn(message: string, { field }: { field?: string } = {}): this {
-    if (field !== undefined && !targetField(this.init.target, field)) throw new Error(`${this.init.target} has no field "${field}" (placement/targets.ts)`);
-    const known = this.warnings.some((w) => (typeof w === "string" ? field === undefined && w === message : w.field === field && w.text === message));
-    if (!known) this.warnings.push(field === undefined ? message : { text: message, field });
+  /** A warning on the line, once. */
+  warn(message: string): this {
+    if (!this.warnings.includes(message)) this.warnings.push(message);
     return this;
   }
 
@@ -363,11 +361,7 @@ export function beneficiariesOf(
     entries.push(...shares.shares.map((s) => ({ tier, who: s.who, percentage: s.percent })));
   }
   b.put("beneficiaries", entries, filled.map(([, columnId]) => columnId));
-  // Every record on the plan has a set, often empty — warn only when it names someone.
-  if (recordId === null) {
-    if (newWarning) b.warn(newWarning);
-  } else if (Array.isArray(recorded) && recorded.length > 0) {
-    b.warn("These beneficiaries replace the ones on record.", { field: "beneficiaries" });
-  }
+  // One that replaces a set on record says so in the diff (TargetField.replacesSet).
+  if (recordId === null && newWarning) b.warn(newWarning);
   return b.build();
 }

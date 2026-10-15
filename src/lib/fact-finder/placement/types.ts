@@ -19,13 +19,6 @@ export interface DraftField {
   ai?: { quote: string };
 }
 
-/**
- * A draft's warning. One about a single field (`{ text, field }`) is kept by the
- * diff only when that field is on the line — "these replace the ones on record"
- * is noise on a set that didn't change. The change line's warnings are plain text.
- */
-export type DraftWarning = string | { text: string; field: string };
-
 /** One record write as a section map sees it, before the diff. */
 export interface TargetDraft {
   lineId: string;
@@ -37,7 +30,7 @@ export interface TargetDraft {
   fixed?: Record<string, PlacedValue>;
   /** Never an empty value. */
   fields: DraftField[];
-  warnings: DraftWarning[];
+  warnings: string[];
   blocked?: { reason: string; cell?: CellRef };
   parent?: RecordRef;
   dependsOn?: string[];

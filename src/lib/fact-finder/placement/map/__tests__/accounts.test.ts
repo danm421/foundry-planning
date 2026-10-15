@@ -41,7 +41,7 @@ const holding = (id: string, h: Partial<FFHolding>): FFHolding => ({
 });
 
 /** Tied to the set it's about: the diff keeps it only when the set changes. */
-const REPLACES = { text: "These beneficiaries replace the ones on record.", field: "beneficiaries" };
+const REPLACES = "These beneficiaries replace the ones on record.";
 const AFTER_TAX_IRA_ONLY = "After-tax basis applies only to a traditional, SEP or SIMPLE IRA.";
 
 /** Mark on record, no co-client. */
@@ -396,7 +396,8 @@ describe("RETIREMENT_MAP", () => {
 
     it("on an account on record: its id and the account as parent — and a blank tier keeps that tier's rows on record", () => {
       const row = rowOf("ret-1", { contingentBeneficiary: "Emma 50%, Lucas 50%" }, { link: linkedTo("k-1") });
-      expect(place(RETIREMENT_MAP, [row], book).drafts[1]).toEqual({
+      const { drafts } = place(RETIREMENT_MAP, [row], book);
+      expect(drafts[1]).toEqual({
         lineId: "ret-1/account_beneficiary_designation",
         sectionId: "retirement",
         rowId: "ret-1",
@@ -414,27 +415,29 @@ describe("RETIREMENT_MAP", () => {
             from: [c("contingentBeneficiary")],
           },
         ],
-        warnings: [REPLACES],
+        warnings: [],
         parent: { ref: "record", target: "account", id: "k-1" },
       });
+      // The line says it replaces the set on record.
+      expect(diffDrafts(drafts, book)[1].warnings).toEqual([REPLACES]);
     });
 
     it("a set equal to the one on record is \"No changes\" — with no warning that it replaces it", () => {
       const row = rowOf("ret-1", { primaryBeneficiary: "Laura 100%", contingentBeneficiary: "Emma 100%" }, { link: linkedTo("k-1") });
       const drafts = place(RETIREMENT_MAP, [row], book).drafts;
-      expect(drafts[1].warnings).toEqual([REPLACES]);
       const line = diffDrafts(drafts, book)[1];
       expect([line.action, line.fields, line.warnings]).toEqual(["none", [], []]);
       // A set that differs keeps it.
       const changed = rowOf("ret-1", { primaryBeneficiary: "Laura 100%", contingentBeneficiary: "Lucas 100%" }, { link: linkedTo("k-1") });
-      expect(diffDrafts(place(RETIREMENT_MAP, [changed], book).drafts, book)[1].warnings).toEqual(["These beneficiaries replace the ones on record."]);
+      expect(diffDrafts(place(RETIREMENT_MAP, [changed], book).drafts, book)[1].warnings).toEqual([REPLACES]);
     });
 
     it("the warning only when the record names someone (any tier) — with no one on record there's nothing to replace", () => {
       const row = rowOf("ret-1", { primaryBeneficiary: "Laura" }, { link: linkedTo("k-1") });
-      const warningsWith = (beneficiaries: BookRecord["values"][string]) =>
-        place(RETIREMENT_MAP, [row], hendricksBook({ ...kids, account: [k401], account_beneficiary_designation: [recordOf("k-1", "Fidelity 401(k) ··5678", { beneficiaries })] }))
-          .drafts[1].warnings;
+      const warningsWith = (beneficiaries: BookRecord["values"][string]) => {
+        const withSet = hendricksBook({ ...kids, account: [k401], account_beneficiary_designation: [recordOf("k-1", "Fidelity 401(k) ··5678", { beneficiaries })] });
+        return diffDrafts(place(RETIREMENT_MAP, [row], withSet).drafts, withSet)[1].warnings;
+      };
       expect(warningsWith([])).toEqual([]);
       expect(warningsWith([{ tier: "contingent", who: emma, percentage: 100 }])).toEqual([REPLACES]);
     });

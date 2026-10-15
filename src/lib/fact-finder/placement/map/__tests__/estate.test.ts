@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { findSection } from "../../../schema";
 import type { FFRow } from "../../../types";
 import { bookWith, contextOf, hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "../../__tests__/fixtures";
+import { diffDrafts } from "../../diff";
 import { NO_CO_CLIENT_REASON } from "../../refs";
 import type { BookRecord, RecordBook, TargetDraft } from "../../types";
 import { BEQUESTS_MAP, ESTATE_DOCS_MAP, FINAL_NOTES_MAP, GIFTS_MAP, TRUSTS_MAP } from "../estate";
@@ -324,21 +325,25 @@ describe("TRUSTS_MAP", () => {
           from: [c("remainderBeneficiaries")],
         },
       ],
-      warnings: [{ text: "These beneficiaries replace the ones on record.", field: "beneficiaries" }],
+      warnings: [],
       parent: { ref: "record", target: "entity", id: "ent-1" },
     });
+    // The line says it replaces the set on record.
+    expect(diffDrafts([trust, names], book)[1].warnings).toEqual(["These beneficiaries replace the ones on record."]);
   });
 
   it("the warning only when the record names someone (any tier) — with no one on record there's nothing to replace", () => {
     const row = rowOf("t1", { trustName: "Hendricks ILIT", incomeBeneficiaries: "Laura" }, { link: linkedTo("ent-1") });
-    const warningsWith = (beneficiaries: BookRecord["values"][string]) =>
-      place(TRUSTS_MAP, [row], hendricksBook({
+    const warningsWith = (beneficiaries: BookRecord["values"][string]) => {
+      const withSet = hendricksBook({
         ...kids,
         entity: [recordOf("ent-1", "Hendricks ILIT", { name: "Hendricks ILIT" }, { trustSubType: "ilit" })],
         trust_beneficiary_designation: [recordOf("ent-1", "Hendricks ILIT", { beneficiaries })],
-      })).drafts[1].warnings;
+      });
+      return diffDrafts(place(TRUSTS_MAP, [row], withSet).drafts, withSet)[1].warnings;
+    };
     expect(warningsWith([])).toEqual([]);
-    expect(warningsWith([{ tier: "remainder", who: emma, percentage: 100 }])).toEqual([{ text: "These beneficiaries replace the ones on record.", field: "beneficiaries" }]);
+    expect(warningsWith([{ tier: "remainder", who: emma, percentage: 100 }])).toEqual(["These beneficiaries replace the ones on record."]);
   });
 
   it("a name that doesn't resolve blocks the beneficiaries line, not the trust", () => {
@@ -470,20 +475,24 @@ describe("BEQUESTS_MAP", () => {
     expect(drafts.map((d) => [d.lineId, d.recordId, d.parent, d.dependsOn, d.warnings])).toEqual([
       ["b1/will_bequest", "bq-2", onRecord, undefined, [OTHERS_STAY]],
       ["b2/will_bequest", "bq-1", onRecord, undefined, [OTHERS_STAY]],
-      ["b3/will_residuary_recipient", "w-1", onRecord, undefined, [{ text: "These recipients replace the ones on record.", field: "recipients" }]],
+      ["b3/will_residuary_recipient", "w-1", onRecord, undefined, []],
     ]);
+    // The remaining estate's line says it replaces the set on record.
+    expect(diffDrafts(drafts, book)[2].warnings).toEqual(["These recipients replace the ones on record."]);
   });
 
   it("the remaining estate warns it replaces the set only when the will on record names someone", () => {
     const row = rowOf("b1", { willOf: "Client", gift: "Remaining estate", recipients: "Emma" });
-    const warningsWith = (recipients: BookRecord["values"][string]) =>
-      place(BEQUESTS_MAP, [row], hendricksBook({
+    const warningsWith = (recipients: BookRecord["values"][string]) => {
+      const withSet = hendricksBook({
         ...kids,
         will: [recordOf("w-1", "Mark's will", { grantor: "client" }, { grantor: "client" })],
         will_residuary_recipient: [recordOf("w-1", "Mark's will — remaining estate", { recipients })],
-      })).drafts[0].warnings;
+      });
+      return diffDrafts(place(BEQUESTS_MAP, [row], withSet).drafts, withSet)[0].warnings;
+    };
     expect(warningsWith([])).toEqual([]);
-    expect(warningsWith([{ who: spouse, percentage: 100 }])).toEqual([{ text: "These recipients replace the ones on record.", field: "recipients" }]);
+    expect(warningsWith([{ who: spouse, percentage: 100 }])).toEqual(["These recipients replace the ones on record."]);
   });
 
   it("the remaining estate: every row of one will makes one set, each row's % of it scaling its shares; asset and condition aren't saved", () => {
