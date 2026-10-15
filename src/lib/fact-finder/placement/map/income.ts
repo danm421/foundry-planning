@@ -158,17 +158,23 @@ export const SS_MAP: SectionMap = {
       else if (statedAge !== null && !isStatedAge(statedAge)) b.warn("Benefit stated at age must be 62 to 70 — it wasn't saved.");
       else b.put("ssStatedAge", statedAge, ["benefitStatedAtAge"], { ssStatedAgeMonths: 0 });
 
-      // A claim age is read only with claimingAgeMode "years", so it carries that mode.
+      // A claim age is read only with claimingAgeMode "years", so it carries that mode. With When to claim
+      // blank, the typed age places "years" as its own field too: a record claiming at full retirement age
+      // (or at retirement) with the seeded 67 must still change when the fact finder says 67.
       const when = text(row, "whenToClaim");
       const claimMode = valueFor(SS_CLAIM_MAP, when);
-      b.put("claimingAgeMode", claimMode, ["whenToClaim"]);
       const years = text(row, "claimAgeYears");
       const months = num(row, "claimAgeMonths");
+      const monthsFit = months !== null && months >= 0 && months <= 11;
       if (claimMode !== null && claimMode !== "years" && (years !== null || months !== null)) {
+        b.put("claimingAgeMode", claimMode, ["whenToClaim"]);
         b.warn(`The claim age isn't saved: When to claim is "${when}".`);
       } else {
+        const ageCells = [...(years !== null ? ["claimAgeYears"] : []), ...(monthsFit ? ["claimAgeMonths"] : [])];
+        if (claimMode !== null) b.put("claimingAgeMode", claimMode, ["whenToClaim"]);
+        else if (ageCells.length > 0) b.put("claimingAgeMode", "years", ageCells);
         b.put("claimingAge", years === null ? null : Number(years), ["claimAgeYears"], { claimingAgeMode: "years" });
-        if (months !== null && (months < 0 || months > 11)) b.warn("Claim age (+ months) must be 0 to 11 — it wasn't saved.");
+        if (months !== null && !monthsFit) b.warn("Claim age (+ months) must be 0 to 11 — it wasn't saved.");
         else b.put("claimingAgeMonths", months, ["claimAgeMonths"], { claimingAgeMode: "years" });
       }
       b.put("growthRate", rate(row, "cola"), ["cola"], { growthSource: "custom" });

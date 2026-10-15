@@ -4,6 +4,7 @@ import { findSection } from "../../../schema";
 import type { FFRow } from "../../../types";
 import { bookWith, contextOf, hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "../../__tests__/fixtures";
 import { NO_CO_CLIENT_REASON } from "../../refs";
+import { diffDrafts } from "../../diff";
 import type { RecordBook } from "../../types";
 import { INCOME_MAP, SALARY_MAP, SS_MAP } from "../income";
 import type { SectionMap } from "../types";
@@ -207,14 +208,36 @@ describe("SS_MAP", () => {
     expect(mark.fields).toEqual([{ key: "claimingAgeMode", value: "fra", from: from("ss:Client", "whenToClaim") }]);
     expect(mark.warnings).toEqual(['The claim age isn\'t saved: When to claim is "At full retirement age".']);
     expect(laura.fields).toEqual([
+      { key: "claimingAgeMode", value: "years", from: from("ss:Co-client", "claimAgeYears") },
       { key: "claimingAge", value: 70, from: from("ss:Co-client", "claimAgeYears"), with: { claimingAgeMode: "years" } },
     ]);
+  });
+
+  it("a typed claim age equal to the seeded 67 on a record claiming at full retirement age still makes it a specific age", () => {
+    const fraAt67 = recordOf(
+      "ss-1", "Social Security — Mark", { ssBenefitMode: "pia_at_fra", claimingAgeMode: "fra", claimingAge: 67, claimingAgeMonths: 0 },
+      facts("social_security", "client"),
+    );
+    const book = hendricksBook({ income: [fraAt67] });
+    const drafts = place(SS_MAP, [rowOf("ss:Client", { claimAgeYears: "67" })], book);
+    expect(drafts[0].fields).toEqual([
+      { key: "claimingAgeMode", value: "years", from: from("ss:Client", "claimAgeYears") },
+      { key: "claimingAge", value: 67, from: from("ss:Client", "claimAgeYears"), with: { claimingAgeMode: "years" } },
+    ]);
+    // The diff sees the mode change even though the age is the same: the line isn't "No changes".
+    const [line] = diffDrafts(drafts, book);
+    expect([line.action, line.fields.map((f) => [f.key, f.onRecord, f.next])]).toEqual(["update", [["claimingAgeMode", "fra", "years"]]]);
+
+    // Months alone count as a claim age too.
+    const months = place(SS_MAP, [rowOf("ss:Client", { claimAgeMonths: 6 })], book)[0];
+    expect(months.fields[0]).toEqual({ key: "claimingAgeMode", value: "years", from: from("ss:Client", "claimAgeMonths") });
   });
 
   it("a stated age outside 62–70 and claim months outside 0–11 aren't saved", () => {
     const row = rowOf("ss:Client", { benefitSource: "Stated benefit at age", benefitStatedAtAge: 72, claimAgeYears: "67", claimAgeMonths: 14 });
     const [draft] = place(SS_MAP, [row], hendricksBook({ income: [markSs] }));
-    expect(draft.fields.map((f) => f.key)).toEqual(["ssBenefitMode", "claimingAge"]);
+    expect(draft.fields.map((f) => f.key)).toEqual(["ssBenefitMode", "claimingAgeMode", "claimingAge"]);
+    expect(draft.fields[1].from).toEqual(from("ss:Client", "claimAgeYears"));   // not from the months it didn't save
     expect(draft.warnings).toEqual([
       "Benefit stated at age must be 62 to 70 — it wasn't saved.",
       "Claim age (+ months) must be 0 to 11 — it wasn't saved.",
