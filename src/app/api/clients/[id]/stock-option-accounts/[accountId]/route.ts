@@ -1,17 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
-import {
-  accounts,
-  accountOwners,
-  familyMembers,
-  stockOptionAccounts,
-} from "@/db/schema";
+import { accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { assertAccountsInClient } from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
-import { stockOptionAccountUpdateSchema } from "@/lib/schemas/stock-options";
+import { findStockOptionAccount, updateStockOptionAccountForClient } from "@/lib/clients/stock-options-writes";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
@@ -30,137 +23,20 @@ export async function PUT(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
-    // Tenant-isolation: confirm target account exists, belongs to this client,
-    // and is a stock-options account.
-    const [target] = await db
-      .select()
-      .from(accounts)
-      .where(
-        and(
-          eq(accounts.id, accountId),
-          eq(accounts.clientId, id),
-          eq(accounts.category, "stock_options"),
-        ),
-      );
-    if (!target) {
+    if (!(await findStockOptionAccount(id, accountId))) {
       return NextResponse.json({ error: "Account not found" }, { status: 404 });
     }
 
-    const body = await request.json();
-    const parsed = stockOptionAccountUpdateSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid body", issues: formatZodIssues(parsed.error) },
-        { status: 400 },
-      );
-    }
-    const input = parsed.data;
-
-    // `destinationAccountId` is the account that receives sold or vested
-    // shares. The schema checks that it is a UUID and stops there — nothing
-    // checked that it belongs to THIS client, so a foreign id sent the whole
-    // position into a balance no report of this client's totals. Audit F50.
-    const destCheck = await assertAccountsInClient(id, [input.destinationAccountId]);
-    if (!destCheck.ok) {
-      return NextResponse.json({ error: destCheck.reason }, { status: 400 });
-    }
-
-    // Look up FM ids for potential owner replacement.
-    const fmRows = await db
-      .select({ id: familyMembers.id, role: familyMembers.role })
-      .from(familyMembers)
-      .where(eq(familyMembers.clientId, id));
-    const clientFmId = fmRows.find((f) => f.role === "client")?.id ?? null;
-    const spouseFmId = fmRows.find((f) => f.role === "spouse")?.id ?? null;
-
-    await db.transaction(async (tx) => {
-      // --- accounts row ---
-      const acctUpdates: Record<string, unknown> = {};
-      if (input.name !== undefined) acctUpdates.name = input.name;
-      if (input.growthRate !== undefined) {
-        acctUpdates.growthRate = input.growthRate != null ? String(input.growthRate) : null;
-      }
-      if (Object.keys(acctUpdates).length > 0) {
-        acctUpdates.updatedAt = new Date();
-        await tx
-          .update(accounts)
-          .set(acctUpdates)
-          .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)));
-      }
-
-      // --- account_owners: full replacement when owner is provided ---
-      // Mirrors the insurance route: if the requested owner's family member
-      // doesn't exist (e.g. owner "spouse" but no spouse on file), the row is
-      // left ownerless rather than synthesizing a bogus owner.
-      if (input.owner !== undefined) {
-        await tx.delete(accountOwners).where(eq(accountOwners.accountId, accountId));
-        const ownerFmId = input.owner === "spouse" ? spouseFmId : clientFmId;
-        if (ownerFmId != null) {
-          await tx.insert(accountOwners).values({
-            accountId,
-            familyMemberId: ownerFmId,
-            percent: "1",
-          });
-        }
-      }
-
-      // --- stockOptionAccounts extension row ---
-      const extUpdates: Record<string, unknown> = {};
-      if (input.ticker !== undefined) extUpdates.ticker = input.ticker ?? null;
-      if (input.isPublic !== undefined) extUpdates.isPublic = input.isPublic;
-      if (input.pricePerShare !== undefined) {
-        extUpdates.pricePerShare = String(input.pricePerShare);
-      }
-      if (input.destinationAccountId !== undefined) {
-        extUpdates.destinationAccountId = input.destinationAccountId ?? null;
-      }
-      if (input.autoCreateDestination !== undefined) {
-        extUpdates.autoCreateDestination = input.autoCreateDestination;
-      }
-      if (input.sellToCover !== undefined) extUpdates.sellToCover = input.sellToCover;
-      if (input.withholdingRate !== undefined) {
-        extUpdates.withholdingRate = String(input.withholdingRate);
-      }
-      if (input.defaultExerciseTiming !== undefined) {
-        extUpdates.defaultExerciseTiming = input.defaultExerciseTiming;
-      }
-      if (input.defaultExerciseYear !== undefined) {
-        extUpdates.defaultExerciseYear = input.defaultExerciseYear ?? null;
-      }
-      if (input.defaultSellTiming !== undefined) {
-        extUpdates.defaultSellTiming = input.defaultSellTiming;
-      }
-      if (input.defaultSellYear !== undefined) {
-        extUpdates.defaultSellYear = input.defaultSellYear ?? null;
-      }
-      if (input.defaultSellPercentPerYear !== undefined) {
-        extUpdates.defaultSellPercentPerYear =
-          input.defaultSellPercentPerYear != null
-            ? String(input.defaultSellPercentPerYear)
-            : null;
-      }
-      if (input.defaultSellStartYear !== undefined) {
-        extUpdates.defaultSellStartYear = input.defaultSellStartYear ?? null;
-      }
-      if (Object.keys(extUpdates).length > 0) {
-        extUpdates.updatedAt = new Date();
-        await tx
-          .update(stockOptionAccounts)
-          .set(extUpdates)
-          .where(eq(stockOptionAccounts.accountId, accountId));
-      }
-    });
-
-    await recordAudit({
-      action: "account.stock_options.update",
-      resourceType: "stock_option_account",
-      resourceId: accountId,
+    const result = await updateStockOptionAccountForClient({
       clientId: id,
       firmId,
-      metadata: crossFirmAuditMeta({ access }, callerOrg, { name: target.name, fieldsChanged: Object.keys(input) }),
+      accountId,
+      input: await request.json(),
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
-
-    return NextResponse.json({ ok: true });
+    return result.ok
+      ? NextResponse.json({ ok: true })
+      : NextResponse.json(result.body ?? { error: result.error }, { status: result.status });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

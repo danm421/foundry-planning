@@ -102,7 +102,7 @@ beforeEach(() => {
 describe("POST /stock-option-accounts — destinationAccountId ownership (F50)", () => {
   it("checks the destination against this client", async () => {
     await POST(req({ ...CREATE_BODY, destinationAccountId: MINE }), postParams);
-    expect(assertAccountsInClient).toHaveBeenCalledWith("cli_test", [MINE]);
+    expect(assertAccountsInClient).toHaveBeenCalledWith("cli_test", [MINE], undefined);
   });
 
   it("rejects an account this client does not own", async () => {
@@ -131,7 +131,7 @@ describe("POST /stock-option-accounts — destinationAccountId ownership (F50)",
     expect(res.status).toBe(201);
     // `assertAccountsInClient` short-circuits on an empty list, so it is still
     // called — with nothing to check.
-    expect(assertAccountsInClient).toHaveBeenCalledWith("cli_test", [undefined]);
+    expect(assertAccountsInClient).toHaveBeenCalledWith("cli_test", [undefined], undefined);
   });
 });
 
@@ -151,7 +151,7 @@ describe("PUT /stock-option-accounts/[accountId] — destinationAccountId owners
   it("still updates when the destination is owned", async () => {
     const res = await PUT(req({ destinationAccountId: MINE }), putParams);
     expect(res.status).toBe(200);
-    expect(assertAccountsInClient).toHaveBeenCalledWith("cli_test", [MINE]);
+    expect(assertAccountsInClient).toHaveBeenCalledWith("cli_test", [MINE], undefined);
     expect(updated.some((u) => (u as Record<string, unknown>).destinationAccountId === MINE)).toBe(true);
   });
 });

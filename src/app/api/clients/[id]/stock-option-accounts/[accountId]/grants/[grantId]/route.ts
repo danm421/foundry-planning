@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
-import {
-  accounts,
-  stockOptionGrants,
-  stockOptionVestTranches,
-  stockOptionPlannedEvents,
-} from "@/db/schema";
+import { accounts, stockOptionGrants } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
-import { grantUpdateSchema } from "@/lib/schemas/stock-options";
+import { updateStockOptionGrantForClient } from "@/lib/clients/stock-options-writes";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
@@ -94,130 +88,17 @@ export async function PUT(
     const guard = await resolveGrantOrError(id, accountId, grantId);
     if (!guard.ok) return guard.response;
 
-    const body = await request.json();
-    const parsed = grantUpdateSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid body", issues: formatZodIssues(parsed.error) },
-        { status: 400 },
-      );
-    }
-    const input = parsed.data;
-
-    const result = await db.transaction(async (tx) => {
-      // 1. Update grant row fields.
-      const [updatedGrant] = await tx
-        .update(stockOptionGrants)
-        .set({
-          grantNumber: input.grantNumber ?? null,
-          grantType: input.grantType,
-          grantDate: input.grantDate,
-          sharesGranted: String(input.sharesGranted),
-          has83bElection: input.has83bElection,
-          fmvAtGrant: input.fmvAtGrant != null ? String(input.fmvAtGrant) : null,
-          strikePrice: input.strikePrice != null ? String(input.strikePrice) : null,
-          strikeDiscountPct:
-            input.strikeDiscountPct != null ? String(input.strikeDiscountPct) : null,
-          expirationDate: input.expirationDate ?? null,
-          exerciseTiming: input.exerciseTiming ?? null,
-          exerciseYear: input.exerciseYear ?? null,
-          sellTiming: input.sellTiming ?? null,
-          sellYear: input.sellYear ?? null,
-          sellPercentPerYear:
-            input.sellPercentPerYear != null ? String(input.sellPercentPerYear) : null,
-          sellStartYear: input.sellStartYear ?? null,
-          notes: input.notes ?? null,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(stockOptionGrants.id, grantId), eq(stockOptionGrants.accountId, accountId)))
-        .returning();
-      // The guard already confirmed the row exists; this narrows the type and
-      // guards against a silent no-op if the guard logic ever drifts.
-      if (!updatedGrant) throw new Error("Grant update failed — row not found");
-
-      // 2. Replace tranches: delete existing, reinsert from input.
-      await tx.delete(stockOptionVestTranches).where(eq(stockOptionVestTranches.grantId, grantId));
-      const insertedTranches = input.tranches.length > 0
-        ? await tx
-            .insert(stockOptionVestTranches)
-            .values(
-              input.tranches.map((t, i) => ({
-                grantId,
-                vestDate: t.vestDate,
-                shares: String(t.shares),
-                sharesExercised: String(t.sharesExercised),
-                sharesSold: String(t.sharesSold),
-                // The real pre-plan acquisition. Decimal columns take STRINGS in
-                // Drizzle — a raw number silently loses scale.
-                acquiredOn: t.acquiredOn ?? null,
-                priceAtAcquisition:
-                  t.priceAtAcquisition != null ? String(t.priceAtAcquisition) : null,
-                exerciseTiming: t.exerciseTiming ?? null,
-                exerciseYear: t.exerciseYear ?? null,
-                sellTiming: t.sellTiming ?? null,
-                sellYear: t.sellYear ?? null,
-                sellPercentPerYear:
-                  t.sellPercentPerYear != null ? String(t.sellPercentPerYear) : null,
-                sellStartYear: t.sellStartYear ?? null,
-                sortOrder: i,
-              })),
-            )
-            .returning()
-        : [];
-
-      // 3. Replace planned events: delete existing, reinsert from input.
-      // v1: planned events are grant-level; tranche targeting deferred.
-      //
-      // An ABSENT `plannedEvents` key means "leave them alone". The grant
-      // editor has no screen for planned events but used to send an empty list
-      // on every save, so the route deleted any that existed — and a grant on
-      // "manual" exercise timing depends entirely on them. Audit F18/F33.
-      const events = input.plannedEvents;
-      let insertedEvents;
-      if (events === undefined) {
-        // Untouched — echo back what is stored so the response still describes
-        // the whole grant.
-        insertedEvents = await tx
-          .select()
-          .from(stockOptionPlannedEvents)
-          .where(eq(stockOptionPlannedEvents.grantId, grantId));
-      } else {
-        await tx.delete(stockOptionPlannedEvents).where(eq(stockOptionPlannedEvents.grantId, grantId));
-        insertedEvents =
-          events.length > 0
-            ? await tx
-                .insert(stockOptionPlannedEvents)
-                .values(
-                  events.map((e) => ({
-                    grantId,
-                    trancheId: null,
-                    year: e.year,
-                    action: e.action,
-                    shares: e.shares != null ? String(e.shares) : null,
-                    pct: e.pct != null ? String(e.pct) : null,
-                  })),
-                )
-                .returning()
-            : [];
-      }
-
-      return { grant: updatedGrant, tranches: insertedTranches, plannedEvents: insertedEvents };
-    });
-
-    await recordAudit({
-      action: "account.stock_options.grant.update",
-      resourceType: "stock_option_grant",
-      resourceId: grantId,
+    const result = await updateStockOptionGrantForClient({
       clientId: id,
       firmId,
-      metadata: crossFirmAuditMeta({ access }, callerOrg, { accountId, grantType: input.grantType }),
+      accountId,
+      grantId,
+      input: await request.json(),
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
-
-    return NextResponse.json({
-      ...result.grant,
-      tranches: result.tranches,
-      plannedEvents: result.plannedEvents,
-    });
+    return result.ok
+      ? NextResponse.json(result.data)
+      : NextResponse.json(result.body ?? { error: result.error }, { status: result.status });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
