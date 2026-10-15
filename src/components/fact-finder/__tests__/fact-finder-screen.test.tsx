@@ -112,7 +112,12 @@ const REPLY: FFChatTurn = { id: "t1", role: "assistant", text: "Two values still
 function stubServer(
   start: FactFinderState,
   review: (server: FactFinderState) => Response | Promise<Response> = (s) => json(200, { factFinder: reviewedAt(s) }),
-  { holdSaves = false, turnEdits = false, save = undefined as ((server: FactFinderState, body: SaveBody) => Response | Promise<Response>) | undefined } = {},
+  {
+    holdSaves = false,
+    turnEdits = false,
+    save = undefined as ((server: FactFinderState, body: SaveBody) => Response | Promise<Response>) | undefined,
+    patch = undefined as ((server: FactFinderState) => Response | Promise<Response>) | undefined,
+  } = {},
 ) {
   let server = start;
   const log: string[] = [];
@@ -128,6 +133,7 @@ function stubServer(
       log.push(`${method} ${url}`);
       if (url === FF_URL && method === "PATCH") {
         if (holdSaves) return new Promise<Response>(() => {});
+        if (patch) return patch(server);
         const { ops } = JSON.parse(String(init?.body)) as PatchFactFinderBody;
         const saved = keep({ ...applyOps(server, ops, { by: "advisor", now: READ.startedAt, newId: () => "n1" }), version: server.version + 1 }, true);
         return json(200, { version: saved.version, factFinder: saved });
@@ -586,5 +592,96 @@ describe("the change list", () => {
     expect(changeList()).toBeNull();
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("a saved (closed) import", () => {
+  const changeList = () => screen.queryByRole("heading", { level: 2, name: "Changes to the plan" });
+  const closedAt = (s: FactFinderState): FactFinderState => ({
+    ...s,
+    version: s.version + 1,
+    closed: {
+      at: "2026-10-14T12:00:00.000Z",
+      by: "user_1",
+      saved: [{ lineId: "c1/account", rowId: "c1", target: "account", recordId: "acct-9", label: "Joint Checking" }],
+      leftOut: [{ lineId: "x1/account", rowId: "x1", label: "Old IRA", reason: "Needs Name." }],
+    },
+  });
+  const OTHER_NAMES = [
+    "Review changes →",
+    "Save to plan",
+    "Documents & chat",
+  ];
+
+  it("opens on the closed view: no review, no chat or documents, and not one request", () => {
+    stubServer(ready());
+    renderScreen(closedAt(reviewedAt(ready())));
+    expect(screen.getByRole("status")).toHaveTextContent("Saved to the plan on October 14, 2026 — 1 saved, 1 left out");
+    OTHER_NAMES.forEach((name) => expect(screen.queryByRole("button", { name })).toBeNull());
+    expect(screen.queryByRole("article", { name: "Joint Checking" })).toBeNull();
+    expect(screen.getByRole("status")).not.toHaveFocus();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("shows the fact finder under the summary, read-only, and the rail still switches pages", async () => {
+    const user = userEvent.setup();
+    stubServer(ready());
+    renderScreen(closedAt(ready()));
+    const rail = screen.getByRole("navigation", { name: "Fact finder pages" });
+    const first = screen.getAllByRole("textbox", { name: "First name" })[0];
+    expect(first).toBeDisabled();
+    expect(first).toHaveValue("Mark");
+    await user.click(within(rail).getByRole("button", { name: /^Accounts/ }));
+    expect(screen.getByRole("heading", { level: 2, name: "Accounts" })).toBeInTheDocument();
+    expect(screen.getAllByRole("textbox").every((box) => box.matches(":disabled"))).toBe(true);
+    expect(screen.getAllByRole("button").filter((b) => b.closest("fieldset")).every((b) => b.matches(":disabled"))).toBe(true);
+    // …and look it: a disabled Add row or Merge doesn't pass for one that works.
+    expect(screen.getAllByRole("textbox")[0].closest("fieldset")).toHaveClass("[&_button:disabled]:opacity-50");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("closes the screen when the save lands, with no further request", async () => {
+    const user = userEvent.setup();
+    stubServer(reviewedAt(ready()), undefined, { save: (s) => json(200, { factFinder: closedAt(s) }) as Response });
+    renderScreen(reviewedAt(ready()));
+    await user.click(screen.getByRole("button", { name: "Save to plan" }));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved to the plan on October 14, 2026"));
+    // The Save button is gone: focus moves to the summary.
+    expect(screen.getByRole("status")).toHaveFocus();
+    expect(changeList()).toBeNull();
+    expect(screen.queryByRole("button", { name: "Review changes →" })).toBeNull();
+    expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toEqual([SAVE_URL]);
+  });
+
+  it("shows the closed view when the save is refused because another tab already saved", async () => {
+    const user = userEvent.setup();
+    stubServer(reviewedAt(ready()), undefined, {
+      save: (s) => json(409, { error: "This import is saved to the plan — start a new import to change it.", factFinder: closedAt(s) }) as Response,
+    });
+    renderScreen(reviewedAt(ready()));
+    await user.click(screen.getByRole("button", { name: "Save to plan" }));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved to the plan on October 14, 2026"));
+    expect(changeList()).toBeNull();
+  });
+
+  it("shows the closed view when an edit is refused because another tab saved — and the edit isn't sent again", async () => {
+    const user = userEvent.setup();
+    let patches = 0;
+    // The first edit is refused with the saved fact finder; a second send would wait here for ever.
+    const { log } = stubServer(ready(), undefined, {
+      patch: (s) =>
+        patches++ === 0
+          ? (json(409, { error: "This import is saved to the plan — start a new import to change it.", factFinder: closedAt(s) }) as Response)
+          : new Promise<Response>(() => {}),
+    });
+    renderScreen(ready());
+    const first = screen.getAllByRole("textbox", { name: "First name" })[0];
+    await user.clear(first);
+    await user.type(first, "Marcus");
+    await user.tab();
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved to the plan on October 14, 2026"));
+    expect(screen.getAllByRole("textbox", { name: "First name" })[0]).toBeDisabled();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(log.filter((l) => l.startsWith("PATCH"))).toHaveLength(1);
   });
 });

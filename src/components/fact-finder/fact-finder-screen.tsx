@@ -2,18 +2,21 @@
 // src/components/fact-finder/fact-finder-screen.tsx
 // The fact finder import screen — the client entry the server page renders:
 // header, page rail, the selected page (or the review's change list), and the
-// documents & chat panel.
+// documents & chat panel. A saved import shows ClosedScreen instead: the same
+// pages, read-only, under the summary of what was saved.
 // Imports only client-safe leaf modules from src/lib/fact-finder.
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import Link from "next/link";
 import { Card } from "@/components/card";
 import { cellKey, type CellRef } from "@/lib/fact-finder/change-set";
+import type { FactFinderState } from "@/lib/fact-finder/types";
 import { filesReading } from "@/lib/fact-finder/reading-status";
 import { PAGE_ORDER, findSection, type FFPage } from "@/lib/fact-finder/schema";
 import { pageCounts } from "@/lib/fact-finder/screen-summary";
 import { countLinksNeedingClick } from "@/lib/fact-finder/state";
 import { BackToFactFinder, ChangeList, ChangesHeading } from "./change-list";
+import { ClosedView } from "./closed-view";
 import { ChatComposerBar, ChatPanel, useChat } from "./chat-panel";
 import { DocumentsPanel, useDocuments } from "./documents-panel";
 import { AlertIcon, LoaderIcon, PanelIcon } from "./icons";
@@ -80,7 +83,65 @@ function focusCell(cell: CellRef | undefined, sectionId: string) {
   control.focus({ preventScroll: true });
 }
 
-export function FactFinderScreen({ clientId, importId, initialState, initialFiles, entities, hasCoClient }: FactFinderScreenProps) {
+/** The screen: the working fact finder until the save closes it, then the closed view (which loads and reads nothing). */
+export function FactFinderScreen(props: FactFinderScreenProps) {
+  // `justSaved`: closed while open here (this tab's save, or another tab's seen on a reply) — the summary takes focus.
+  const [closed, setClosed] = useState(() => (props.initialState.closed ? { state: props.initialState, justSaved: false } : null));
+  const onClosed = useCallback((state: FactFinderState) => setClosed({ state, justSaved: true }), []);
+  return closed ? (
+    <ClosedScreen {...props} state={closed.state} justSaved={closed.justSaved} />
+  ) : (
+    <OpenScreen {...props} onClosed={onClosed} />
+  );
+}
+
+/** A saved import: no editing, chat, uploads or reads; each page shown as the advisor left it. */
+function ClosedScreen({
+  clientId,
+  initialFiles,
+  entities,
+  state,
+  justSaved,
+}: FactFinderScreenProps & { state: FactFinderState; justSaved: boolean }) {
+  const [page, setPage] = useState<FFPage>("household");
+  const closed = state.closed;
+  if (!closed) return null;
+  const fileName = (fileId: string) => initialFiles.find((file) => file.id === fileId)?.name;
+  return (
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-col gap-1">
+        <Link href={`/clients/${clientId}/details/import`} className="text-sm text-ink-3 underline-offset-2 hover:underline">
+          ← Back to imports
+        </Link>
+        <h1 className="text-xl font-semibold text-ink">Fact finder import</h1>
+      </header>
+      <ClosedView clientId={clientId} closed={closed} justSaved={justSaved} />
+      <div className="grid grid-cols-[200px_minmax(0,1fr)] items-start gap-6">
+        <PageRail counts={pageCounts(state)} selected={page} onSelect={setPage} />
+        <div className="flex min-w-0 flex-col gap-4">
+          <h2 className="text-lg font-semibold text-ink">{PAGE_ORDER.find((p) => p.id === page)?.label}</h2>
+          {/* A disabled fieldset turns off every input and button inside it, so no cell can be edited; the buttons look it. */}
+          <fieldset
+            disabled
+            className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0 [&_button:disabled]:cursor-default [&_button:disabled]:opacity-50 [&_select:disabled]:opacity-50"
+          >
+            <PageView page={page} state={state} onApply={() => false} fileName={fileName} entities={entities} />
+          </fieldset>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OpenScreen({
+  clientId,
+  importId,
+  initialState,
+  initialFiles,
+  entities,
+  hasCoClient,
+  onClosed,
+}: FactFinderScreenProps & { onClosed(closed: FactFinderState): void }) {
   const store = useFactFinder({ clientId, importId, initialState });
   const state = store.state;
   const docs = useDocuments({ clientId, importId, initialFiles, state, refresh: store.refresh });
@@ -113,14 +174,20 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
     clientId,
     importId,
     onSaved(saved) {
+      if (saved.closed) return onClosed(saved);
       store.adopt(saved);
       setShowChanges(false);
     },
-    // A 409 may carry a fresher fact finder (the list is gone, or newer); the list stays up with the reason when it isn't.
+    // A 409 may carry a fresher fact finder (the list is gone, or newer, or another tab saved); the list stays up with the reason when it isn't.
     onStale(fresh) {
+      if (fresh?.closed) return onClosed(fresh);
       if (fresh) store.adopt(fresh);
     },
   });
+  // Saved elsewhere: any reply can bring the saved fact finder (the routes refuse a saved import with it).
+  useEffect(() => {
+    if (state.closed) onClosed(state);
+  }, [state, onClosed]);
   const blockedReason = reviewBlockedReason(reading, countLinksNeedingClick(state), store.pending);
   const canReview = blockedReason === null && !review.reviewing;
 

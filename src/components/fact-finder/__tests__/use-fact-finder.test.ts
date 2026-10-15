@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { SAVE_DEBOUNCE_MS, useFactFinder } from "../use-fact-finder";
-import type { PatchFactFinderBody } from "@/lib/fact-finder/api-types";
+import { SAVE_CLOSED_MESSAGE, type PatchFactFinderBody } from "@/lib/fact-finder/api-types";
 import { FactFinderOpError, MAX_OPS_PER_SAVE, applyOps, parseOps, type ClientOp, type OpContext } from "@/lib/fact-finder/ops";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
 import type { FactFinderState, FFCell } from "@/lib/fact-finder/types";
@@ -305,6 +305,24 @@ describe("useFactFinder — refusals and conflicts", () => {
 
     act(() => result.current.dismiss());
     expect(result.current.error).toBeNull();
+  });
+
+  it("a 409 because another tab saved the import takes the saved fact finder and drops the waiting edits — never sends them again", async () => {
+    const closed: FactFinderState = { ...start(), version: 5, closed: { at: "2026-10-15T12:00:00.000Z", by: "user_2", saved: [], leftOut: [] } };
+    // The gate refuses every edit to a saved import, with the saved fact finder; a second send would wait here for ever.
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(reply(409, { error: SAVE_CLOSED_MESSAGE, factFinder: closed }))
+      .mockImplementation(() => new Promise<Response>(() => {}));
+    const { result } = renderStore();
+    act(() => {
+      result.current.apply([setCell("c1", "custodian", "Chase")]);
+    });
+    await settle();
+    await settle(5_000);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(result.current.state.closed).toEqual(closed.closed);
+    expect(result.current.pending).toBe(false);
+    expect(cell(result.current.state, "c1", "custodian")).toBeUndefined();
   });
 
   it("on a 409 keeps the edit to a cell nobody else changed and drops the one whose cell changed, with a notice (RF1)", async () => {

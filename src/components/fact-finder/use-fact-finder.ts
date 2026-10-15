@@ -103,6 +103,8 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
   }
 
   function adopt(fresh: FactFinderState) {
+    // A saved import takes no more edits: what's unsent can't land, and resending it would be refused for ever.
+    if (fresh.closed) setQueue([]);
     if (fresh.version > server.version) moveTo(fresh, server);
   }
 
