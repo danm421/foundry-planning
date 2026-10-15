@@ -236,6 +236,13 @@ describe("EXPENSES_MAP", () => {
     expect(draft.fields.map((f) => f.key)).toEqual(["name", "type", "annualAmount"]);
   });
 
+  it("an Annual increase % that didn't read: the new expense grows with inflation, and the line says so", () => {
+    const row = rowOf("e1", { expenseName: "Parent care", type: "Other", annualAmount: 18000 });
+    const [draft] = place(EXPENSES_MAP, [row], livingBook(), {}, ["e1:annualIncrease"]);
+    expect(draft.fixed).toEqual({ growthSource: "inflation" });
+    expect(draft.warnings).toEqual(['"Annual increase %" didn\'t read — this expense grows with inflation until you set it.']);
+  });
+
   it("an expense on record: only the filled cells, no default years", () => {
     const row = rowOf("e1", { expenseName: null, annualAmount: 11000, startYear: null, isGoal: false }, { link: linkedTo("exp-1") });
     const [draft] = place(EXPENSES_MAP, [row], livingBook());

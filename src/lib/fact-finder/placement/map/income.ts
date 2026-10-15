@@ -52,6 +52,8 @@ function putYear(b: DraftBuilder, key: "start" | "end", row: FFRow, columnId: st
 
 /** A new income with no typed rate grows with inflation, as the Details dialog defaults (the create schema's own default is a flat 3%). */
 const INFLATION = { growthSource: "inflation" } as const;
+/** That default stands in for a rate cell that didn't read: the line says so (the text itself goes to the AI step). */
+const unreadRate = (column: string, noun: string) => `"${column}" didn't read — this ${noun} grows with inflation until you set it.`;
 
 export const SALARY_MAP: SectionMap = {
   sectionId: "salary",
@@ -87,6 +89,7 @@ export const SALARY_MAP: SectionMap = {
         })
           .put("annualAmount", num(row, "annualSalary"), ["annualSalary"])
           .put("growthRate", raise, ["annualRaise"], { growthSource: "custom" });
+        if (!record && raise === null && ctx.removed(row.id, "annualRaise")) b.warn(unreadRate("Annual raise %", "salary"));
         putYear(b, "start", row, "startYear", record ? null : ctx.year, ctx);
         // "End year blank = stops at retirement": the person's retirement, as a milestone.
         putYear(b, "end", row, "endYear", record ? null : { yearRef: `${role}_retirement` }, ctx);
@@ -218,6 +221,7 @@ export const INCOME_MAP: SectionMap = {
         .put("owner", owner, ["owner"])
         .put("annualAmount", num(row, "annualAmount"), ["annualAmount"])
         .put("growthRate", growth, ["annualIncrease"], { growthSource: "custom" });
+      if (!record && growth === null && ctx.removed(row.id, "annualIncrease")) b.warn(unreadRate("Annual increase %", "income"));
       putYear(b, "start", row, "startYear", record ? null : ctx.year, ctx);
       putYear(b, "end", row, "endYear", record ? null : { yearRef: "plan_end" }, ctx);
       b.put("taxType", valueFor(TAX_TYPE_MAP, text(row, "taxType")), ["taxType"])

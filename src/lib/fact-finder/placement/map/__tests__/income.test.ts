@@ -107,6 +107,14 @@ describe("SALARY_MAP", () => {
     expect(endOnly.fields.map((f) => f.key)).toEqual(["annualAmount", "start"]);
   });
 
+  it("an Annual raise % that didn't read: the new salary grows with inflation, and the line says so", () => {
+    const [income] = place(SALARY_MAP, [rowOf("salary:Client", { annualSalary: 120000 })], hendricksBook(), {}, ["salary:Client:annualRaise"]);
+    expect(income.fixed).toMatchObject({ growthSource: "inflation" });
+    expect(income.warnings).toEqual(['"Annual raise %" didn\'t read — this salary grows with inflation until you set it.']);
+    // A truly blank raise says nothing.
+    expect(place(SALARY_MAP, [rowOf("salary:Client", { annualSalary: 120000 })], hendricksBook())[0].warnings).toEqual([]);
+  });
+
   it("an employer alone is only the household line", () => {
     const drafts = place(SALARY_MAP, [rowOf("salary:Client", { employer: "Acme Corp" }, { link: linkedTo("sal-1") })], hendricksBook({ income: [markSalary] }));
     expect(drafts.map((d) => d.lineId)).toEqual(["salary:Client/client_household"]);
@@ -318,6 +326,13 @@ describe("INCOME_MAP", () => {
     const row = rowOf("i1", { incomeName: "Rental income", type: "Other", annualAmount: 18000 });
     const [draft] = place(INCOME_MAP, [row], hendricksBook(), {}, ["i1:startYear", "i1:endYear"]);
     expect(draft.fields.map((f) => f.key)).toEqual(["name", "type", "annualAmount"]);
+  });
+
+  it("an Annual increase % that didn't read: the new income grows with inflation, and the line says so", () => {
+    const row = rowOf("i1", { incomeName: "Rental income", type: "Other", annualAmount: 18000 });
+    const [draft] = place(INCOME_MAP, [row], hendricksBook(), {}, ["i1:annualIncrease"]);
+    expect(draft.fixed).toEqual({ growthSource: "inflation" });
+    expect(draft.warnings).toEqual(['"Annual increase %" didn\'t read — this income grows with inflation until you set it.']);
   });
 
   it("an income on record: only the filled cells, no default years", () => {

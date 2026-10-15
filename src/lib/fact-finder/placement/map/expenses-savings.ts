@@ -173,6 +173,10 @@ export const EXPENSES_MAP: SectionMap = {
         .put("type", valueFor(EXPENSE_TYPE_MAP, text(row, "type")), ["type"])
         .put("annualAmount", num(row, "annualAmount"), ["annualAmount"])
         .put("growthRate", growth, ["annualIncrease"], { growthSource: "custom" });
+      // The inflation default stands in for a rate cell that didn't read: the line says so.
+      if (!record && growth === null && ctx.removed(row.id, "annualIncrease")) {
+        b.warn(`"Annual increase %" didn't read — this expense grows with inflation until you set it.`);
+      }
       putYear(b, "start", row, "startYear", record ? null : ctx.year, ctx);
       putYear(b, "end", row, "endYear", record ? null : { yearRef: "plan_end" }, ctx);
       return b.put("isGoal", bool(row, "isGoal"), ["isGoal"]).build();
