@@ -4,7 +4,7 @@
 // header, page rail, the selected page (or the review's change list), and the
 // documents & chat panel.
 // Imports only client-safe leaf modules from src/lib/fact-finder.
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { flushSync } from "react-dom";
 import Link from "next/link";
 import { Card } from "@/components/card";
@@ -123,7 +123,7 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
     setShowChanges(false);
   }
 
-  function fix(cell: CellRef | undefined, sectionId: string) {
+  const fix = useCallback((cell: CellRef | undefined, sectionId: string) => {
     const target = findSection(cell?.sectionId ?? sectionId)?.page;
     // The page renders now, so the cell is there to focus.
     flushSync(() => {
@@ -131,7 +131,7 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
       if (target) setPage(target);
     });
     focusCell(cell, sectionId);
-  }
+  }, []);
 
   return (
     <div className="flex flex-col gap-6">

@@ -7,7 +7,7 @@
 // through useSyncExternalStore, whose server snapshot is "nothing stored", so
 // the server and the first client render agree; when the browser refuses
 // storage the ticks are held in memory only.
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { defaultTicks, type ChangeSet, type ChangeTicks } from "@/lib/fact-finder/change-set";
 
 export interface ChangeTicksStore {
@@ -47,25 +47,38 @@ export function useChangeTicks(importId: string, changeSet: ChangeSet | undefine
   const [edited, setEdited] = useState<{ key: string; ticks: ChangeTicks } | null>(null);
   const ticks = (edited && edited.key === key ? edited.ticks : null) ?? stored ?? defaults;
 
-  function setLine(lineId: string, change: (line: Record<string, boolean>) => Record<string, boolean>) {
+  // The toggles read the latest ticks through a ref, so their identity never changes and a tick re-renders only its own line.
+  const latest = useRef({ key, ticks });
+  useEffect(() => {
+    latest.current = { key, ticks };
+  });
+
+  const setLine = useCallback((lineId: string, change: (line: Record<string, boolean>) => Record<string, boolean>) => {
+    const { key, ticks } = latest.current;
     const line = ticks[lineId];
     if (!key || !line) return;
     const next = { ...ticks, [lineId]: change(line) };
+    latest.current = { key, ticks: next };
     setEdited({ key, ticks: next });
     try {
       window.sessionStorage.setItem(key, JSON.stringify(next));
     } catch {
       // Unavailable: held in memory for as long as the screen is open.
     }
-  }
+  }, []);
 
-  return {
-    ticks,
-    toggleField: (lineId, fieldKey) => setLine(lineId, (line) => ({ ...line, [fieldKey]: !line[fieldKey] })),
-    toggleLine: (lineId) =>
+  const toggleField = useCallback(
+    (lineId: string, fieldKey: string) => setLine(lineId, (line) => ({ ...line, [fieldKey]: !line[fieldKey] })),
+    [setLine],
+  );
+  const toggleLine = useCallback(
+    (lineId: string) =>
       setLine(lineId, (line) => {
         const on = !Object.values(line).every(Boolean);
         return Object.fromEntries(Object.keys(line).map((k) => [k, on]));
       }),
-  };
+    [setLine],
+  );
+
+  return { ticks, toggleField, toggleLine };
 }

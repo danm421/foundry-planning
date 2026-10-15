@@ -5,7 +5,7 @@
 // record → new"), each field with a tick. A line that can't save says why and
 // goes back to the cell to fix; unchanged lines fold away. Saving arrives in
 // the next plan. Imports only client-safe leaf modules from src/lib/fact-finder.
-import { Fragment, useId } from "react";
+import { Fragment, memo, useId } from "react";
 import { Card } from "@/components/card";
 import type { CellRef, ChangeField, ChangeLine, ChangeSet, ChangeTicks } from "@/lib/fact-finder/change-set";
 import { PAGE_ORDER, findSection } from "@/lib/fact-finder/schema";
@@ -21,7 +21,9 @@ export interface ChangeListProps {
   onBack(): void;
 }
 
-type LineProps = Omit<ChangeListProps, "changeSet" | "onBack"> & { line: ChangeLine };
+type GroupProps = Omit<ChangeListProps, "changeSet" | "onBack">;
+/** A line gets only its own ticks, so ticking a box re-renders that line alone. */
+type LineProps = Omit<GroupProps, "ticks"> & { line: ChangeLine; lineTicks: Record<string, boolean> | undefined };
 
 const SAVE_REASON = "Saving arrives in the next update.";
 /** The review's text for an empty value (on record, a blank). */
@@ -132,10 +134,10 @@ function FieldRow({ line, field, tickable, ticked, onToggle }: {
   );
 }
 
-function LineItem({ line, ticks, onToggleField, onToggleLine, onFix }: LineProps) {
+const LineItem = memo(function LineItem({ line, lineTicks: ownTicks, onToggleField, onToggleLine, onFix }: LineProps) {
   const headingId = useId();
   const tickable = !line.blocked && line.action !== "none";
-  const lineTicks = ticks[line.id] ?? {};
+  const lineTicks = ownTicks ?? {};
   const tickedCount = line.fields.filter((f) => lineTicks[f.key]).length;
   const all = line.fields.length > 0 && tickedCount === line.fields.length;
   const update = line.action === "update";
@@ -240,7 +242,7 @@ function LineItem({ line, ticks, onToggleField, onToggleLine, onFix }: LineProps
       </div>
     </article>
   );
-}
+});
 
 /** A page's lines that change nothing, folded into one closed disclosure. */
 function Unchanged({ lines }: { lines: readonly ChangeLine[] }) {
@@ -263,7 +265,7 @@ function Unchanged({ lines }: { lines: readonly ChangeLine[] }) {
   );
 }
 
-function PageGroup({ label, lines, ...lineProps }: Omit<LineProps, "line"> & { label: string; lines: readonly ChangeLine[] }) {
+function PageGroup({ label, lines, ticks, ...lineProps }: GroupProps & { label: string; lines: readonly ChangeLine[] }) {
   const headingId = useId();
   // An unchanged line with a warning stays in view; the rest fold away.
   const unchanged = lines.filter((l) => !l.blocked && l.action === "none" && l.warnings.length === 0);
@@ -276,7 +278,7 @@ function PageGroup({ label, lines, ...lineProps }: Omit<LineProps, "line"> & { l
         {lines
           .filter((l) => !unchanged.includes(l))
           .map((line) => (
-            <LineItem key={line.id} line={line} {...lineProps} />
+            <LineItem key={line.id} line={line} lineTicks={ticks[line.id]} {...lineProps} />
           ))}
         {unchanged.length > 0 && <Unchanged lines={unchanged} />}
       </Card>

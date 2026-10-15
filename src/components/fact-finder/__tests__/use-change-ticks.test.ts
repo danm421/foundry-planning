@@ -75,6 +75,16 @@ describe("useChangeTicks", () => {
     expect(result.current.ticks).toEqual({ ...DEFAULTS, "c1/account": { name: false, value: false } });
   });
 
+  it("hands out the same toggle callbacks after a tick, so a tick re-renders only its own line", () => {
+    const { result } = renderHook(() => useChangeTicks("i-stable", changeSet()));
+    const { toggleField, toggleLine } = result.current;
+    const untouched = result.current.ticks["c2/account"];
+    act(() => result.current.toggleField("c1/account", "value"));
+    expect(result.current.toggleField).toBe(toggleField);
+    expect(result.current.toggleLine).toBe(toggleLine);
+    expect(result.current.ticks["c2/account"]).toBe(untouched);
+  });
+
   it("keeps the ticks for the same review across a remount, in sessionStorage under the import and version", () => {
     const first = renderHook(() => useChangeTicks("i-keep", changeSet()));
     act(() => first.result.current.toggleField("c2/account", "name"));

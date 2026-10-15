@@ -4,7 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ChangeList } from "../change-list";
+import { findSection } from "@/lib/fact-finder/schema";
 import { defaultTicks, type CellRef, type ChangeField, type ChangeSet, type ChangeTicks } from "@/lib/fact-finder/change-set";
+
+// Each LineItem render looks its section up once, so the calls count line renders.
+vi.mock("@/lib/fact-finder/schema", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/fact-finder/schema")>();
+  return { ...actual, findSection: vi.fn(actual.findSection) };
+});
 
 const cell = (sectionId: string, rowId: string, columnId: string): CellRef => ({ sectionId, rowId, columnId });
 const field = (key: string, label: string, next: string, onRecord?: string, extra: Partial<ChangeField> = {}): ChangeField => ({
@@ -281,5 +288,17 @@ describe("ChangeList", () => {
     renderList({}, { ...CHANGES, lines: [], notices: [] });
     expect(screen.getByText("Nothing here changes the plan.")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { level: 3 })).toBeNull();
+  });
+
+  it("re-renders only the line whose ticks changed", () => {
+    const base = defaultTicks(CHANGES);
+    const props = { onToggleField: vi.fn(), onToggleLine: vi.fn(), onFix: vi.fn(), onBack: vi.fn() };
+    const { rerender } = render(<ChangeList changeSet={CHANGES} ticks={base} {...props} />);
+    vi.mocked(findSection).mockClear();
+    const next = { ...base, "c1/account": { ...base["c1/account"], value: false } };
+    rerender(<ChangeList changeSet={CHANGES} ticks={next} {...props} />);
+    // The one line shows its section's label; the unchanged fold lists its own line's label too.
+    const lineRenders = vi.mocked(findSection).mock.calls.length;
+    expect(lineRenders).toBeLessThanOrEqual(2);
   });
 });
