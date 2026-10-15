@@ -28,14 +28,17 @@ const PAYLOAD = { chat: { surface: "chat" }, factFinder: { ...emptyFactFinderSta
 
 /** A drizzle select chain that resolves to `result` however it's continued. */
 function selectReturning(result: unknown[]) {
-  const query = Promise.resolve(result) as Promise<unknown[]> & Record<"from" | "where" | "orderBy", () => unknown>;
-  query.from = query.where = query.orderBy = () => query;
+  const query = Promise.resolve(result) as Promise<unknown[]> & Record<"from" | "where" | "orderBy" | "limit", () => unknown>;
+  query.from = query.where = query.orderBy = query.limit = () => query;
   return query;
 }
-/** The page's selects in order: the import row, then (only when it gets that far) the entities. */
-function selects(imp: unknown[], entities?: unknown[]) {
+/** The page's selects in order: the import row, then (only when it gets that far) the entities and the co-client's family member. */
+function selects(imp: unknown[], entities?: unknown[], coClient: unknown[] = []) {
   vi.mocked(db.select).mockReturnValueOnce(selectReturning(imp) as never);
-  if (entities) vi.mocked(db.select).mockReturnValueOnce(selectReturning(entities) as never);
+  if (entities) {
+    vi.mocked(db.select).mockReturnValueOnce(selectReturning(entities) as never);
+    vi.mocked(db.select).mockReturnValueOnce(selectReturning(coClient) as never);
+  }
 }
 const run = () => FactFinderPage({ params: Promise.resolve({ id: "c1", importId: "i1" }) });
 
@@ -57,7 +60,7 @@ beforeEach(() => {
 
 describe("fact finder page", () => {
   it("hands the screen the fact finder, the files without their storage address, and the client's entities", async () => {
-    selects([{ status: "draft", payloadJson: PAYLOAD }], [{ id: "e1", name: "Hendricks Family Trust" }]);
+    selects([{ status: "draft", payloadJson: PAYLOAD }], [{ id: "e1", name: "Hendricks Family Trust" }], [{ id: "fm2" }]);
     const el = (await run()) as ReactElement<FactFinderScreenProps>;
 
     expect(requireClientPageAccess).toHaveBeenCalledWith("c1");
@@ -69,9 +72,16 @@ describe("fact finder page", () => {
       initialState: readFactFinderState(PAYLOAD),
       initialFiles: [{ id: "f1", name: "hendricks-fact-finder.pdf", documentType: "auto" }],
       entities: [{ id: "e1", name: "Hendricks Family Trust" }],
+      hasCoClient: true,
     });
     expect(el.props.initialState.version).toBe(4);
     expect(JSON.stringify(el.props)).not.toContain("blob.example");
+  });
+
+  it("tells the screen the plan has no co-client when there is no co-client family member", async () => {
+    selects([{ status: "draft", payloadJson: PAYLOAD }], [], []);
+    const el = (await run()) as ReactElement<FactFinderScreenProps>;
+    expect(el.props.hasCoClient).toBe(false);
   });
 
   it("is not found for a client shared from another firm, a missing import, or an import that isn't a fact finder", async () => {

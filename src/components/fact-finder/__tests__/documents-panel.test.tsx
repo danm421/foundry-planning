@@ -101,7 +101,7 @@ function stubFetch(
 
 function renderScreen(state: FactFinderState, files: FFScreenFile[] = FILES) {
   return render(
-    <FactFinderScreen clientId="c1" importId="i1" initialState={state} initialFiles={files} entities={[]} />,
+    <FactFinderScreen clientId="c1" importId="i1" initialState={state} initialFiles={files} entities={[]} hasCoClient />,
   );
 }
 

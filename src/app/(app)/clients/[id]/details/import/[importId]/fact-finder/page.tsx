@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { db } from "@/db";
-import { clientImports, entities } from "@/db/schema";
+import { clientImports, entities, familyMembers } from "@/db/schema";
 import { FactFinderScreen } from "@/components/fact-finder/fact-finder-screen";
 import { requireClientPageAccess } from "@/lib/clients/page-access";
 import { isFactFinderImport } from "@/lib/fact-finder/gate";
@@ -42,13 +42,19 @@ export default async function FactFinderPage({ params }: PageProps) {
   const payloadJson = (imp.payloadJson ?? {}) as ImportPayloadJson;
   if (!isFactFinderImport(payloadJson)) notFound();
 
-  const [files, entityRows] = await Promise.all([
+  const [files, entityRows, coClient] = await Promise.all([
     listLiveFiles(importId),
     db
       .select({ id: entities.id, name: entities.name })
       .from(entities)
       .where(eq(entities.clientId, clientId))
       .orderBy(asc(entities.name)),
+    // The save's own test for "the plan has a co-client": their family member exists (a person ref resolves to it).
+    db
+      .select({ id: familyMembers.id })
+      .from(familyMembers)
+      .where(and(eq(familyMembers.clientId, clientId), eq(familyMembers.role, "spouse")))
+      .limit(1),
   ]);
 
   return (
@@ -58,6 +64,7 @@ export default async function FactFinderPage({ params }: PageProps) {
       initialState={readFactFinderState(payloadJson)}
       initialFiles={files.map((f) => ({ id: f.id, name: f.originalFilename, documentType: f.documentType }))}
       entities={entityRows}
+      hasCoClient={coClient.length > 0}
     />
   );
 }

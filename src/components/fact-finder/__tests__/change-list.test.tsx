@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ChangeList } from "../change-list";
+import { ChangeList, type ChangeListProps } from "../change-list";
 import { findSection } from "@/lib/fact-finder/schema";
 import { defaultTicks, type CellRef, type ChangeField, type ChangeLine, type ChangeSet, type ChangeTicks } from "@/lib/fact-finder/change-set";
 
@@ -119,14 +119,21 @@ const CHANGES: ChangeSet = {
   ],
 };
 
-function renderList(ticks: ChangeTicks = defaultTicks(CHANGES), changeSet: ChangeSet = CHANGES) {
+function renderList(
+  ticks: ChangeTicks = defaultTicks(CHANGES),
+  changeSet: ChangeSet = CHANGES,
+  extra: Partial<Pick<ChangeListProps, "hasCoClient" | "saving" | "saveError">> = {},
+) {
   const props = {
     onToggleField: vi.fn(),
     onToggleLine: vi.fn(),
     onFix: vi.fn(),
     onBack: vi.fn(),
+    onSave: vi.fn(),
+    onReviewAgain: vi.fn(),
+    onDismissSaveError: vi.fn(),
   };
-  render(<ChangeList changeSet={changeSet} ticks={ticks} {...props} />);
+  render(<ChangeList changeSet={changeSet} ticks={ticks} hasCoClient saving={false} saveError={null} {...props} {...extra} />);
   return props;
 }
 
@@ -275,13 +282,127 @@ describe("ChangeList", () => {
     expect(screen.getByText(/unchanged/, { selector: "p span, p" }).closest("p")).toHaveTextContent("2 unchanged");
   });
 
-  it("goes back to the fact finder, and Save to plan waits for the next update", async () => {
+  it("goes back to the fact finder", async () => {
     const props = renderList();
     await userEvent.click(screen.getByRole("button", { name: "Back to fact finder" }));
     expect(props.onBack).toHaveBeenCalledOnce();
-    const save = screen.getByRole("button", { name: "Save to plan" });
-    expect(save).toBeDisabled();
-    expect(save).toHaveAccessibleDescription("Saving arrives in the next update.");
+  });
+
+  describe("Save to plan", () => {
+    it("saves when pressed", async () => {
+      const props = renderList();
+      const save = screen.getByRole("button", { name: "Save to plan" });
+      expect(save).toBeEnabled();
+      await userEvent.click(save);
+      expect(props.onSave).toHaveBeenCalledOnce();
+    });
+
+    it("shows Saving… and can't be pressed again while the save runs", () => {
+      renderList(undefined, undefined, { saving: true });
+      const save = screen.getByRole("button", { name: "Saving…" });
+      expect(save).toBeDisabled();
+    });
+
+    it("waits, with its reason, when no line is ticked", () => {
+      const none = Object.fromEntries(
+        Object.entries(defaultTicks(CHANGES)).map(([id, l]) => [id, Object.fromEntries(Object.keys(l).map((k) => [k, false]))]),
+      );
+      renderList(none);
+      const save = screen.getByRole("button", { name: "Save to plan" });
+      expect(save).toBeDisabled();
+      expect(save).toHaveAccessibleDescription("Nothing is ticked, so there is nothing to save.");
+    });
+
+    it("waits, with the plan's reason, when the ticks don't match the list", () => {
+      renderList({});
+      const save = screen.getByRole("button", { name: "Save to plan" });
+      expect(save).toBeDisabled();
+      expect(save).toHaveAccessibleDescription("The ticks don't match this change list — review again.");
+    });
+
+    it("shows a line's reason in place when its ticks leave it out, and what that takes with it", () => {
+      const ticks = defaultTicks(CHANGES);
+      renderList({ ...ticks, "c1/account": { name: false, value: false, growthRate: false } });
+      expect(within(line("Joint Checking")).getByText("Left out — Nothing ticked.")).toBeInTheDocument();
+      expect(within(line("Mark Hendricks")).queryByText(/Left out/)).toBeNull();
+      expect(screen.getByText(/^left out$/)).toHaveTextContent("1 left out");
+    });
+
+    it("makes a left-out line look left out: a ticked one warns, one with nothing ticked says so quietly, both dimmed — a line that saves keeps its look", () => {
+      const child = { ...CHANGES.lines[1], id: "m1/liability", rowId: "m1", target: "liability" as const, label: "Mortgage", parent: { ref: "line" as const, target: "account" as const, lineId: "c1/account" }, fields: [field("balance", "Balance", "$212,000")] };
+      const withChild: ChangeSet = { ...CHANGES, lines: [...CHANGES.lines, child] };
+      renderList({ ...defaultTicks(withChild), "c1/account": { name: false, value: false, growthRate: false } }, withChild);
+      // Ticked, but it needs Joint Checking, which isn't being saved: the reason warns.
+      const mortgage = line("Mortgage");
+      const needs = within(mortgage).getByText("Left out — Needs “Joint Checking”, which isn't being saved.").closest("p");
+      expect(needs).toHaveClass("text-warn");
+      expect(within(mortgage).getByText("$212,000")).toHaveClass("text-ink-3");
+      expect(within(mortgage).getByRole("rowheader", { name: "Balance" })).toHaveClass("text-ink-3");
+      // Nothing ticked: its own boxes say so, the note stays quiet.
+      const joint = line("Joint Checking");
+      const quiet = within(joint).getByText("Left out — Nothing ticked.");
+      expect(quiet).not.toHaveClass("text-warn");
+      expect(quiet).toHaveClass("text-ink-3");
+      expect(within(joint).getByText("$41,233")).toHaveClass("text-ink-3");
+      const mark = line("Mark Hendricks");
+      expect(within(mark).getByRole("rowheader", { name: "Date of birth" })).toHaveClass("text-ink-2");
+      expect(within(mark).getByText("Apr 12, 1961")).toHaveClass("text-ink");
+    });
+
+    it("sets only the count of left-out lines in the figure font", () => {
+      const ticks = defaultTicks(CHANGES);
+      renderList({ ...ticks, "c1/account": { name: false, value: false, growthRate: false } });
+      const count = screen.getByText(/^left out$/);
+      expect(count).toHaveTextContent("1 left out");
+      expect(count).not.toHaveClass("tabular");
+      expect(within(count).getByText("1")).toHaveClass("tabular");
+    });
+
+    it("leaves out the lines that need an unticked Create, with their reasons", () => {
+      const child = { ...CHANGES.lines[1], id: "m1/liability", rowId: "m1", target: "liability" as const, label: "Mortgage", parent: { ref: "line" as const, target: "account" as const, lineId: "c1/account" }, fields: [field("name", "Name", "Mortgage")] };
+      const withChild: ChangeSet = { ...CHANGES, lines: [...CHANGES.lines, child] };
+      const ticks = defaultTicks(withChild);
+      renderList({ ...ticks, "c1/account": { name: false, value: false, growthRate: false } }, withChild);
+      expect(within(line("Mortgage")).getByText("Left out — Needs “Joint Checking”, which isn't being saved.")).toBeInTheDocument();
+    });
+
+    it("rings the line the save couldn't write, with the reason, and scrolls it into view", () => {
+      const scroll = vi.fn();
+      Element.prototype.scrollIntoView = scroll;
+      renderList(undefined, undefined, { saveError: { message: "Joint Checking: Value must be a number.", lineId: "c1/account" } });
+      const joint = line("Joint Checking");
+      expect(within(joint).getByRole("alert")).toHaveTextContent("Joint Checking: Value must be a number.");
+      expect(joint).toHaveClass("ring-crit");
+      expect(line("Mark Hendricks")).not.toHaveClass("ring-crit");
+      expect(scroll).toHaveBeenCalled();
+    });
+
+    it("shows a refusal that names no line next to the button, and Dismiss clears it", async () => {
+      const props = renderList(undefined, undefined, { saveError: { message: "The save failed — nothing was changed." } });
+      expect(screen.getByRole("alert")).toHaveTextContent("The save failed — nothing was changed.");
+      expect(screen.queryByRole("button", { name: "Review again" })).toBeNull();
+      await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      expect(props.onDismissSaveError).toHaveBeenCalledOnce();
+    });
+
+    it("offers Review again when the list or a record moved on", async () => {
+      const props = renderList(undefined, undefined, { saveError: { message: "“Fidelity IRA” changed since you reviewed — review again.", stale: true } });
+      expect(screen.getByRole("alert")).toHaveTextContent("changed since you reviewed");
+      await userEvent.click(screen.getByRole("button", { name: "Review again" }));
+      expect(props.onReviewAgain).toHaveBeenCalledOnce();
+    });
+
+    it("leaves out a line that names the co-client on a plan without one, unless the household line adds them", () => {
+      const withCo: ChangeSet = {
+        ...CHANGES,
+        lines: [
+          ...CHANGES.lines,
+          { ...CHANGES.lines[1], id: "s1/income", rowId: "s1", target: "income", label: "Laura's salary", fixed: { owner: "spouse" }, fields: [field("name", "Name", "Salary")] },
+        ],
+      };
+      renderList(defaultTicks(withCo), withCo, { hasCoClient: false });
+      expect(within(line("Laura's salary")).getByText("Left out — Needs the co-client, who isn't being saved.")).toBeInTheDocument();
+    });
   });
 
   it("says so when nothing would change", () => {
@@ -292,7 +413,11 @@ describe("ChangeList", () => {
 
   it("re-renders only the line whose ticks changed", () => {
     const base = defaultTicks(CHANGES);
-    const props = { onToggleField: vi.fn(), onToggleLine: vi.fn(), onFix: vi.fn(), onBack: vi.fn() };
+    const props = {
+      onToggleField: vi.fn(), onToggleLine: vi.fn(), onFix: vi.fn(), onBack: vi.fn(),
+      onSave: vi.fn(), onReviewAgain: vi.fn(), onDismissSaveError: vi.fn(),
+      hasCoClient: true, saving: false, saveError: null,
+    };
     const { rerender } = render(<ChangeList changeSet={CHANGES} ticks={base} {...props} />);
     vi.mocked(findSection).mockClear();
     const next = { ...base, "c1/account": { ...base["c1/account"], value: false } };

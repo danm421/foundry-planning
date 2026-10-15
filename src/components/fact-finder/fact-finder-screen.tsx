@@ -25,6 +25,7 @@ import { BESIDE_GRID_STYLE, SidePanel, useNarrowScreen } from "./side-panel";
 import { useChangeTicks } from "./use-change-ticks";
 import { useFactFinder } from "./use-fact-finder";
 import { useReview } from "./use-review";
+import { useSave } from "./use-save";
 
 const PANEL_ID = "fact-finder-panel";
 const PANEL_TITLE = "Documents & chat";
@@ -79,7 +80,7 @@ function focusCell(cell: CellRef | undefined, sectionId: string) {
   control.focus({ preventScroll: true });
 }
 
-export function FactFinderScreen({ clientId, importId, initialState, initialFiles, entities }: FactFinderScreenProps) {
+export function FactFinderScreen({ clientId, importId, initialState, initialFiles, entities, hasCoClient }: FactFinderScreenProps) {
   const store = useFactFinder({ clientId, importId, initialState });
   const state = store.state;
   const docs = useDocuments({ clientId, importId, initialFiles, state, refresh: store.refresh });
@@ -104,7 +105,20 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
     flushNow: store.flushNow,
     adopt(fresh) {
       store.adopt(fresh);
+      save.dismiss();
       if (fresh.changeSet) setShowChanges(true);
+    },
+  });
+  const save = useSave({
+    clientId,
+    importId,
+    onSaved(saved) {
+      store.adopt(saved);
+      setShowChanges(false);
+    },
+    // A 409 may carry a fresher fact finder (the list is gone, or newer); the list stays up with the reason when it isn't.
+    onStale(fresh) {
+      if (fresh) store.adopt(fresh);
     },
   });
   const blockedReason = reviewBlockedReason(reading, countLinksNeedingClick(state), store.pending);
@@ -217,13 +231,19 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
               onToggleLine={ticks.toggleLine}
               onFix={fix}
               onBack={() => setShowChanges(false)}
+              hasCoClient={hasCoClient}
+              onSave={() => void save.save(changes, ticks.ticks)}
+              saving={save.saving}
+              saveError={save.error}
+              onReviewAgain={() => void review.review()}
+              onDismissSaveError={save.dismiss}
             />
           ) : showChanges ? (
             <>
               <ChangesHeading />
               <Card className="flex flex-wrap items-center justify-between gap-3 px-[var(--pad-card)] py-4">
                 <p role="status" className="text-sm text-ink-2">
-                  The fact finder changed — review again.
+                  {save.error?.stale ? save.error.message : "The fact finder changed — review again."}
                 </p>
                 <div className="flex items-center gap-3">
                   <BackToFactFinder onClick={() => setShowChanges(false)} />

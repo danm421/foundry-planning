@@ -5,7 +5,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FactFinderScreen } from "../fact-finder-screen";
 import type { FFScreenFile } from "../screen-types";
-import { REVIEW_READING_MESSAGE, type PatchFactFinderBody } from "@/lib/fact-finder/api-types";
+import { REVIEW_READING_MESSAGE, SAVE_STALE_MESSAGE, type PatchFactFinderBody, type SaveBody } from "@/lib/fact-finder/api-types";
 import type { ChangeSet } from "@/lib/fact-finder/change-set";
 import { applyOps } from "@/lib/fact-finder/ops";
 import { sectionsOnPage } from "@/lib/fact-finder/schema";
@@ -54,6 +54,7 @@ function ready(): FactFinderState {
 
 const FF_URL = "/api/clients/c1/imports/i1/fact-finder";
 const REVIEW_URL = `${FF_URL}/review`;
+const SAVE_URL = `${FF_URL}/save`;
 
 /** What the review makes of `ready()`: Joint Checking to create, and a line that can't save until its name is fixed. */
 const changesAt = (builtAtVersion: number): ChangeSet => ({
@@ -111,7 +112,7 @@ const REPLY: FFChatTurn = { id: "t1", role: "assistant", text: "Two values still
 function stubServer(
   start: FactFinderState,
   review: (server: FactFinderState) => Response | Promise<Response> = (s) => json(200, { factFinder: reviewedAt(s) }),
-  { holdSaves = false, turnEdits = false } = {},
+  { holdSaves = false, turnEdits = false, save = undefined as ((server: FactFinderState, body: SaveBody) => Response | Promise<Response>) | undefined } = {},
 ) {
   let server = start;
   const log: string[] = [];
@@ -136,6 +137,7 @@ function stubServer(
         const answered = { ...server, version: server.version + 1, transcript: [...server.transcript, REPLY] };
         return json(200, { factFinder: keep(answered, turnEdits), turnId: null });
       }
+      if (url === SAVE_URL && method === "POST" && save) return save(server, JSON.parse(String(init?.body)) as SaveBody);
       if (url === REVIEW_URL && method === "POST") {
         const res = await review(server);
         const body = (await res.clone().json()) as { factFinder?: FactFinderState };
@@ -161,7 +163,7 @@ const FILES: FFScreenFile[] = [{ id: "f1", name: "hendricks-fact-finder.pdf", do
 
 function renderScreen(state: FactFinderState = filled()) {
   return render(
-    <FactFinderScreen clientId="c1" importId="i1" initialState={state} initialFiles={FILES} entities={[]} />,
+    <FactFinderScreen clientId="c1" importId="i1" initialState={state} initialFiles={FILES} entities={[]} hasCoClient />,
   );
 }
 
@@ -409,6 +411,86 @@ describe("the change list", () => {
     expect(screen.queryByRole("article", { name: "Joint Checking" })).toBeNull();
     expect(screen.getByRole("button", { name: "Review again" })).toBeDisabled();
     expect(reviewButton()).toHaveAccessibleDescription("Wait for your edits to save.");
+  });
+
+  describe("Save to plan", () => {
+    const saveButton = () => screen.getByRole("button", { name: /^(Save to plan|Saving…)$/ });
+
+    it("posts the list's version and the ticks, Saving… meanwhile, and leaves the list when the save lands", async () => {
+      const user = userEvent.setup();
+      const answer = held((s) => json(200, { factFinder: { ...s, version: s.version + 1 } }));
+      const bodies: SaveBody[] = [];
+      const net = stubServer(reviewedAt(ready()), undefined, {
+        save: (s, body) => {
+          bodies.push(body);
+          return answer.reply(s);
+        },
+      });
+      renderScreen(reviewedAt(ready()));
+
+      await user.click(screen.getByRole("checkbox", { name: "Include Value" }));
+      await user.click(saveButton());
+      expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).toEqual({ changeSetVersion: 1, ticks: { "c1/account": { name: true, value: false } } });
+
+      act(() => answer.release());
+      await waitFor(() => expect(changeList()).toBeNull());
+      expect(net.reviews()).toBe(0);
+    });
+
+    it("a refused line stays on the list, ringed with its reason", async () => {
+      const user = userEvent.setup();
+      stubServer(reviewedAt(ready()), undefined, {
+        save: () => json(422, { error: "Joint Checking: Value must be a number.", lineId: "c1/account" }) as Response,
+      });
+      renderScreen(reviewedAt(ready()));
+      await user.click(saveButton());
+      const joint = await screen.findByRole("article", { name: "Joint Checking" });
+      expect(within(joint).getByRole("alert")).toHaveTextContent("Joint Checking: Value must be a number.");
+      expect(changeList()).toBeInTheDocument();
+      expect(saveButton()).toBeEnabled();
+    });
+
+    it("a stale list shows its reason with Review again, which builds the list again", async () => {
+      const user = userEvent.setup();
+      const stale = (s: FactFinderState): FactFinderState => {
+        const { changeSet, ...rest } = s;
+        void changeSet;
+        return { ...rest, version: s.version + 1 };
+      };
+      const net = stubServer(reviewedAt(ready()), undefined, {
+        save: (s) => json(409, { error: SAVE_STALE_MESSAGE, factFinder: stale(s) }) as Response,
+      });
+      renderScreen(reviewedAt(ready()));
+      await user.click(saveButton());
+      await waitFor(() => expect(screen.getByText(SAVE_STALE_MESSAGE)).toBeInTheDocument());
+      expect(screen.queryByRole("article", { name: "Joint Checking" })).toBeNull();
+
+      await user.click(screen.getByRole("button", { name: "Review again" }));
+      await waitFor(() => expect(changeList()).toBeInTheDocument());
+      expect(net.reviews()).toBe(1);
+      expect(screen.queryByText(SAVE_STALE_MESSAGE)).toBeNull();
+    });
+
+    it("unticking a line shows in place that it is left out, and Save waits when nothing is left to write", async () => {
+      const user = userEvent.setup();
+      renderScreen(reviewedAt(ready()));
+      await user.click(screen.getByRole("checkbox", { name: "Include all of Joint Checking" }));
+      expect(within(screen.getByRole("article", { name: "Joint Checking" })).getByText("Left out — Nothing ticked.")).toBeInTheDocument();
+      expect(saveButton()).toBeDisabled();
+      expect(saveButton()).toHaveAccessibleDescription("Nothing is ticked, so there is nothing to save.");
+    });
+
+    it("there is no Save to plan while an edit is waiting to save", async () => {
+      const user = userEvent.setup();
+      stubServer(reviewedAt(ready()), undefined, { holdSaves: true });
+      renderScreen(reviewedAt(ready()));
+      await user.click(screen.getByRole("button", { name: "Back to fact finder" }));
+      await user.type(screen.getAllByRole("textbox", { name: "First name" })[1], "Laura{Enter}");
+      await user.click(reviewButton());
+      expect(screen.queryByRole("button", { name: "Save to plan" })).toBeNull();
+    });
   });
 
   it("a chat answer that edits nothing leaves the list in place, ticks and all", async () => {

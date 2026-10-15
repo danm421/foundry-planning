@@ -16,4 +16,6 @@ export interface FactFinderScreenProps {
   initialFiles: FFScreenFile[];
   /** The client's existing trusts and entities, for the "Which trust / entity" picker. */
   entities: { id: string; name: string }[];
+  /** Whether the plan already has a co-client (their family member exists) — the save leaves out lines that name one the import isn't adding. */
+  hasCoClient: boolean;
 }

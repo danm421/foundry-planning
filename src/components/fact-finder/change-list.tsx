@@ -3,16 +3,20 @@
 // The review's change list, shown in place of a fact finder page: what saving
 // would create or update on the plan, page by page and field by field ("on
 // record → new"), each field with a tick. A line that can't save says why and
-// goes back to the cell to fix; unchanged lines fold away. Saving arrives in
-// the next plan. Imports only client-safe leaf modules from src/lib/fact-finder.
-import { Fragment, memo, useId } from "react";
+// goes back to the cell to fix; unchanged lines fold away. "Save to plan" writes
+// the ticked fields; a line the ticks leave out says why in place, and a line the
+// save couldn't write is ringed with its reason. Imports only client-safe leaf
+// modules from src/lib/fact-finder.
+import { Fragment, memo, useEffect, useId, useMemo, useRef } from "react";
 import { Card } from "@/components/card";
 import { countLines, type CellRef, type ChangeField, type ChangeLine, type ChangeSet, type ChangeTicks } from "@/lib/fact-finder/change-set";
 import { TARGETS, type ValueKind } from "@/lib/fact-finder/placement/targets";
 import { EMPTY } from "@/lib/fact-finder/placement/values";
 import { PAGE_ORDER, findSection } from "@/lib/fact-finder/schema";
+import { planSave } from "@/lib/fact-finder/save/plan";
 import { GHOST_BUTTON } from "./button-styles";
-import { AlertIcon, ChevronDownIcon, SparklesIcon } from "./icons";
+import { AlertIcon, ChevronDownIcon, LoaderIcon, SparklesIcon } from "./icons";
+import type { SaveError } from "./use-save";
 
 export interface ChangeListProps {
   changeSet: ChangeSet;
@@ -22,13 +26,32 @@ export interface ChangeListProps {
   /** Back to the fact finder at the cell to fix, else at the line's section. */
   onFix(cell: CellRef | undefined, sectionId: string): void;
   onBack(): void;
+  /** Whether the plan has a co-client already; the same answer the save uses to leave out lines that name one. */
+  hasCoClient: boolean;
+  onSave(): void;
+  saving: boolean;
+  /** Why the last save didn't go through. */
+  saveError: SaveError | null;
+  /** A stale list or record: build the change list again. */
+  onReviewAgain(): void;
+  onDismissSaveError(): void;
 }
 
-type GroupProps = Omit<ChangeListProps, "changeSet" | "onBack">;
-/** A line gets only its own ticks, so ticking a box re-renders that line alone. */
-type LineProps = Omit<GroupProps, "ticks"> & { line: ChangeLine; lineTicks: Record<string, boolean> | undefined };
+type GroupProps = Pick<ChangeListProps, "ticks" | "onToggleField" | "onToggleLine" | "onFix"> & {
+  /** lineId → why the ticks leave the line out of the save. */
+  leftOut: Readonly<Record<string, string>>;
+  /** The line the last save couldn't write, with its reason. */
+  failure: { lineId: string; message: string } | null;
+};
+/** A line gets only its own ticks, reason and failure, so ticking a box re-renders that line alone. */
+type LineProps = Pick<GroupProps, "onToggleField" | "onToggleLine" | "onFix"> & {
+  line: ChangeLine;
+  lineTicks: Record<string, boolean> | undefined;
+  leftOutReason: string | undefined;
+  failure: string | undefined;
+};
 
-const SAVE_REASON = "Saving arrives in the next update.";
+const NOTHING_TO_SAVE = "Nothing is ticked, so there is nothing to save.";
 const CHECKBOX = "h-4 w-4 cursor-pointer rounded accent-accent";
 const CHIP = "inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium";
 const HEAD = "pb-1 text-left text-xs font-medium text-ink-3";
@@ -115,11 +138,13 @@ function AiQuote({ quote }: { quote: string }) {
   );
 }
 
-function FieldRow({ line, field, tickable, ticked, onToggle }: {
+function FieldRow({ line, field, tickable, ticked, muted, onToggle }: {
   line: ChangeLine;
   field: ChangeField;
   tickable: boolean;
   ticked: boolean;
+  /** The ticks leave the line out: its values are dimmed, as nothing of it is saved. */
+  muted: boolean;
   onToggle(): void;
 }) {
   const update = line.action === "update";
@@ -139,7 +164,7 @@ function FieldRow({ line, field, tickable, ticked, onToggle }: {
           />
         </td>
       )}
-      <th scope="row" className={`${CELL} break-words pr-3 text-left font-normal text-ink-2 @max-md:col-[2/-1]`}>
+      <th scope="row" className={`${CELL} break-words pr-3 text-left font-normal ${muted ? "text-ink-3" : "text-ink-2"} @max-md:col-[2/-1]`}>
         {field.label}
         {field.ai && <AiQuote quote={field.ai.quote} />}
       </th>
@@ -154,21 +179,29 @@ function FieldRow({ line, field, tickable, ticked, onToggle }: {
         </>
       )}
       <td className={update ? CELL : `${CELL} @max-md:col-start-2`}>
-        <Value text={field.shown.next} tone="text-ink" figure={figure} />
+        <Value text={field.shown.next} tone={muted ? "text-ink-3" : "text-ink"} figure={figure} />
       </td>
     </tr>
   );
 }
 
-const LineItem = memo(function LineItem({ line, lineTicks: ownTicks, onToggleField, onToggleLine, onFix }: LineProps) {
+const LineItem = memo(function LineItem({ line, lineTicks: ownTicks, leftOutReason, failure, onToggleField, onToggleLine, onFix }: LineProps) {
   const headingId = useId();
+  const articleRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (failure) articleRef.current?.scrollIntoView?.({ block: "center" });
+  }, [failure]);
   const tickable = !line.blocked && line.action !== "none";
   const lineTicks = ownTicks ?? {};
   const tickedCount = line.fields.filter((f) => lineTicks[f.key]).length;
   const all = line.fields.length > 0 && tickedCount === line.fields.length;
   const update = line.action === "update";
   return (
-    <article aria-labelledby={headingId} className="flex flex-col gap-2 px-[var(--pad-card)] py-3">
+    <article
+      ref={articleRef}
+      aria-labelledby={headingId}
+      className={`flex flex-col gap-2 px-[var(--pad-card)] py-3${failure ? " ring-2 ring-inset ring-crit" : ""}`}
+    >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         {tickable && line.fields.length > 0 && (
           <input
@@ -212,6 +245,22 @@ const LineItem = memo(function LineItem({ line, lineTicks: ownTicks, onToggleFie
             </button>
           </div>
         )}
+        {failure && (
+          <p role="alert" className="flex items-start gap-2 text-sm text-crit">
+            <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{failure}</span>
+          </p>
+        )}
+        {/* Ticked but left out (it needs a line that isn't saved) warns; with nothing ticked the boxes already say so. */}
+        {leftOutReason &&
+          (tickedCount > 0 ? (
+            <p className="flex items-start gap-2 rounded-[var(--radius-sm)] border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn">
+              <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>Left out — {leftOutReason}</span>
+            </p>
+          ) : (
+            <p className="text-xs text-ink-3">Left out — {leftOutReason}</p>
+          ))}
         {line.warnings.map((warning) => (
           <p key={warning} className="flex items-start gap-2 text-xs text-warn">
             <AlertIcon className="mt-px h-3.5 w-3.5 shrink-0" />
@@ -259,6 +308,7 @@ const LineItem = memo(function LineItem({ line, lineTicks: ownTicks, onToggleFie
                   field={field}
                   tickable={tickable}
                   ticked={lineTicks[field.key] === true}
+                  muted={leftOutReason !== undefined}
                   onToggle={() => onToggleField(line.id, field.key)}
                 />
               ))}
@@ -291,7 +341,7 @@ function Unchanged({ lines }: { lines: readonly ChangeLine[] }) {
   );
 }
 
-function PageGroup({ label, lines, ticks, ...lineProps }: GroupProps & { label: string; lines: readonly ChangeLine[] }) {
+function PageGroup({ label, lines, ticks, leftOut, failure, ...lineProps }: GroupProps & { label: string; lines: readonly ChangeLine[] }) {
   const headingId = useId();
   // An unchanged line with a warning stays in view; the rest fold away.
   const unchanged = lines.filter((l) => !l.blocked && l.action === "none" && l.warnings.length === 0);
@@ -304,7 +354,14 @@ function PageGroup({ label, lines, ticks, ...lineProps }: GroupProps & { label: 
         {lines
           .filter((l) => !unchanged.includes(l))
           .map((line) => (
-            <LineItem key={line.id} line={line} lineTicks={ticks[line.id]} {...lineProps} />
+            <LineItem
+              key={line.id}
+              line={line}
+              lineTicks={ticks[line.id]}
+              leftOutReason={leftOut[line.id]}
+              failure={failure?.lineId === line.id ? failure.message : undefined}
+              {...lineProps}
+            />
           ))}
         {unchanged.length > 0 && <Unchanged lines={unchanged} />}
       </Card>
@@ -312,8 +369,16 @@ function PageGroup({ label, lines, ticks, ...lineProps }: GroupProps & { label: 
   );
 }
 
-export function ChangeList({ changeSet, onBack, ...lineProps }: ChangeListProps) {
+export function ChangeList({ changeSet, onBack, hasCoClient, onSave, saving, saveError, onReviewAgain, onDismissSaveError, ...groupProps }: ChangeListProps) {
   const saveReasonId = useId();
+  // The save's own plan, run on the ticks: what it writes, and what the ticks leave out with their reasons.
+  const plan = useMemo(() => planSave(changeSet, groupProps.ticks, { hasCoClient }), [changeSet, groupProps.ticks, hasCoClient]);
+  const leftOut = useMemo(
+    () => (plan.ok ? Object.fromEntries(plan.leftOut.map((l) => [l.lineId, l.reason])) : {}),
+    [plan],
+  );
+  const failure = saveError?.lineId ? { lineId: saveError.lineId, message: saveError.message } : null;
+  const waiting = !plan.ok ? plan.error : plan.lines.length === 0 ? NOTHING_TO_SAVE : null;
   return (
     <div className="@container flex flex-col gap-4">
       <ChangesHeading />
@@ -330,22 +395,63 @@ export function ChangeList({ changeSet, onBack, ...lineProps }: ChangeListProps)
       )}
       {PAGE_ORDER.map(({ id, label }) => {
         const lines = changeSet.lines.filter((l) => l.page === id);
-        return lines.length > 0 && <PageGroup key={id} label={label} lines={lines} {...lineProps} />;
+        return lines.length > 0 && <PageGroup key={id} label={label} lines={lines} leftOut={leftOut} failure={failure} {...groupProps} />;
       })}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hair pt-4">
-        <BackToFactFinder onClick={onBack} />
-        <div className="flex flex-wrap items-center justify-end gap-3">
-          <p id={saveReasonId} className="text-xs text-ink-3">
-            {SAVE_REASON}
-          </p>
-          <button
-            type="button"
-            disabled
-            aria-describedby={saveReasonId}
-            className="rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Save to plan
-          </button>
+      <div className="flex flex-col gap-3 border-t border-hair pt-4">
+        {saveError && (
+          <div className="flex flex-wrap items-start justify-end gap-x-3 gap-y-1 text-sm">
+            <p role={failure ? undefined : "alert"} className="flex min-w-0 items-start gap-2 text-crit">
+              <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{saveError.message}</span>
+            </p>
+            {saveError.stale && (
+              <button
+                type="button"
+                onClick={onReviewAgain}
+                className="shrink-0 cursor-pointer font-medium text-ink-2 underline underline-offset-2 hover:text-ink hover:no-underline"
+              >
+                Review again
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onDismissSaveError}
+              className="shrink-0 cursor-pointer text-ink-3 underline underline-offset-2 hover:text-ink hover:no-underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <BackToFactFinder onClick={onBack} />
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            {plan.ok && plan.leftOut.length > 0 && (
+              <p className="text-xs text-ink-3">
+                <span className="tabular">{plan.leftOut.length}</span> left out
+              </p>
+            )}
+            {waiting && (
+              <p id={saveReasonId} className="text-xs text-ink-3">
+                {waiting}
+              </p>
+            )}
+            <button
+              type="button"
+              disabled={waiting !== null || saving}
+              onClick={onSave}
+              aria-describedby={waiting ? saveReasonId : undefined}
+              className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on transition-colors enabled:cursor-pointer enabled:hover:bg-accent-ink disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving ? (
+                <>
+                  <LoaderIcon className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+                  Saving…
+                </>
+              ) : (
+                "Save to plan"
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>
