@@ -96,6 +96,7 @@ export function parseVestingSchedule(
   text: string,
   grant: { grantDate: string | null; sharesGranted: number | null },
 ): { ok: true; tranches: { vestDate: string; shares: number }[] } | { ok: false; reason: string } {
-  const value = text.trim();
+  // One space between words: EVEN's run of `\s*`s backtracks without end over a long whitespace run.
+  const value = text.trim().replace(/\s+/g, " ");
   return datedPairs(value, grant.sharesGranted) ?? even(value, grant);
 }

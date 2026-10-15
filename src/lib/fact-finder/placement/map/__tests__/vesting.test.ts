@@ -123,3 +123,25 @@ describe("parseVestingSchedule — anything else", () => {
     }
   });
 });
+
+describe("parseVestingSchedule — long runs of spaces", () => {
+  /** The result, and how long it took. */
+  const timed = (text: string) => {
+    const started = performance.now();
+    const result = parseVestingSchedule(text, grant);
+    return { result, ms: performance.now() - started };
+  };
+  const gap = " ".repeat(5000);
+
+  it("5,000 spaces between words still parse, in well under a second", () => {
+    const { result, ms } = timed(`25%${gap}a year${gap}over 4 years${gap}from${gap}3/1/2026`);
+    expect(result).toEqual({ ok: true, tranches: yearly });
+    expect(ms).toBeLessThan(200);
+  });
+
+  it("5,000 spaces before words it can't read are refused, in well under a second (no runaway regex)", () => {
+    const { result, ms } = timed(`vests${gap}x`);
+    expect(result).toEqual({ ok: false, reason: UNREAD });
+    expect(ms).toBeLessThan(200);
+  });
+});
