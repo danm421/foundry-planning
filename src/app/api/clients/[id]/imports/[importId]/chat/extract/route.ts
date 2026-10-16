@@ -15,8 +15,8 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { runImportExtraction, type ExtractionFileProgress } from "@/lib/imports/run-extraction";
 import { mergeAcrossFiles } from "@/lib/imports/assemble/merge-across-files";
-import { detectRollups } from "@/lib/statement-chat/rollups";
-import { narrate } from "@/lib/statement-chat/narrate";
+import { detectRollups } from "@/lib/fact-finder/rollups";
+import { narrate } from "@/lib/fact-finder/narrate";
 import { advisorRetiredRows, readChatState, writeChatState } from "@/lib/statement-chat/state";
 // Shared with chat/turn/route.ts (final review, I1) — one rebase
 // mechanism, not two similar ones.

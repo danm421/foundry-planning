@@ -7,7 +7,7 @@
 // flight; the screen holds it, so a reply still lands while the panel is closed.
 // Imports only client-safe leaf modules from src/lib/fact-finder.
 import { useState } from "react";
-import { ChatComposer } from "@/components/statement-chat/chat-composer";
+import { ChatComposer } from "@/components/fact-finder/chat-composer";
 import type { ErrorResponse, TurnBody, TurnResponse, UndoBody, UndoResponse } from "@/lib/fact-finder/api-types";
 import type { FactFinderState } from "@/lib/fact-finder/types";
 import { ChatTranscript } from "./chat-transcript";

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { narrate } from "@/lib/statement-chat/narrate";
+import { narrate } from "@/lib/fact-finder/narrate";
 
 describe("narrate", () => {
   it("opens with what was read", () => {

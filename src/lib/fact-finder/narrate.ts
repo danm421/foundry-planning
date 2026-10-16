@@ -1,7 +1,7 @@
 import type { ExtractedAccount } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
 import type { MergeDecision } from "@/lib/imports/assemble/decisions";
-import type { RebaseDrop, RebaseHoldingsOverride, RebaseOverride, RebaseRefusal } from "./rebase";
+import type { RebaseDrop, RebaseHoldingsOverride, RebaseOverride, RebaseRefusal } from "@/lib/statement-chat/rebase";
 
 /**
  * Deterministic narration of what a statement import found. Every sentence

@@ -81,7 +81,7 @@ import { requireImportAccess } from "@/lib/imports/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { mergeAcrossFiles } from "@/lib/imports/assemble/merge-across-files";
-import { detectRollups } from "@/lib/statement-chat/rollups";
+import { detectRollups } from "@/lib/fact-finder/rollups";
 import { markTabsCommitted } from "@/lib/imports/commit/orchestrator";
 import { dropRow, mergeRows } from "@/lib/statement-chat/tools";
 import type { ExtractionResult } from "@/lib/extraction/types";

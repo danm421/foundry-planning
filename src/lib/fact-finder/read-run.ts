@@ -4,8 +4,8 @@ import { recordAudit } from "@/lib/audit";
 import { mergeAcrossFiles } from "@/lib/imports/assemble/merge-across-files";
 import { downloadImportFile } from "@/lib/imports/blob";
 import { runImportExtraction } from "@/lib/imports/run-extraction";
-import { narrate } from "@/lib/statement-chat/narrate";
-import { detectRollups } from "@/lib/statement-chat/rollups";
+import { narrate } from "@/lib/fact-finder/narrate";
+import { detectRollups } from "@/lib/fact-finder/rollups";
 import { applyLinkScores } from "./matching/score";
 import { mergeReadings } from "./merge";
 import {

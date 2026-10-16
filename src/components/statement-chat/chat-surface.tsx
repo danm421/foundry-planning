@@ -20,7 +20,7 @@ import { isLiabilityRowId } from "@/lib/imports/types";
 import { PEOPLE_ENTITY_IDS } from "@/lib/entity-extraction/people-pass";
 import type { CandidateRow } from "@/lib/entity-extraction/types";
 import { ChatTranscript } from "@/components/statement-chat/chat-transcript";
-import { ChatComposer } from "@/components/statement-chat/chat-composer";
+import { ChatComposer } from "@/components/fact-finder/chat-composer";
 import { useChatCommit, type ChatCommitResult } from "@/components/statement-chat/use-chat-commit";
 import { summarizeMapWarnings } from "@/lib/statement-chat/map-warnings";
 import {

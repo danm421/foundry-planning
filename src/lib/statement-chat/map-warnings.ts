@@ -13,7 +13,7 @@
  * two files that hit the same problem produce one line naming both.
  */
 
-import { joinWithAnd } from "./narrate";
+import { joinWithAnd } from "@/lib/fact-finder/narrate";
 
 export interface MapWarning {
   /**

@@ -15,7 +15,7 @@ import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { mergeAcrossFiles } from "@/lib/imports/assemble/merge-across-files";
-import { detectRollups } from "@/lib/statement-chat/rollups";
+import { detectRollups } from "@/lib/fact-finder/rollups";
 import { advisorRetiredRows, readChatState } from "@/lib/statement-chat/state";
 import { rebaseOntoFreshMerge } from "@/lib/statement-chat/rebase";
 import { markTabsCommitted } from "@/lib/imports/commit/orchestrator";

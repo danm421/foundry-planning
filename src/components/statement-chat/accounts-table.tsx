@@ -9,7 +9,7 @@ import { isAmbiguousMatch } from "@/lib/imports/commit/ambiguous-rows";
 import { isUnpricedProperty } from "@/lib/imports/commit/account-category";
 import type { AccountCandidate } from "@/lib/imports/match-keys/account";
 import { formatAccountCategory } from "@/lib/accounts/category-labels";
-import { rollupExclusionReason } from "@/lib/statement-chat/rollups";
+import { rollupExclusionReason } from "@/lib/fact-finder/rollups";
 import type { MatchCandidate } from "@/components/import/match-link-picker";
 import EntityTable, { formatValue } from "./entity-table";
 import type { ExcludedRow } from "./excluded-rows";

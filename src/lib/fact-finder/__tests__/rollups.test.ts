@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectRollups } from "@/lib/statement-chat/rollups";
+import { detectRollups } from "@/lib/fact-finder/rollups";
 
 const acct = (name: string, value: number, custodian = "Capital One") => ({
   name,
