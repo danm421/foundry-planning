@@ -485,7 +485,7 @@ describe("the change list", () => {
       await user.click(screen.getByRole("checkbox", { name: "Include all of Joint Checking" }));
       expect(within(screen.getByRole("article", { name: "Joint Checking" })).getByText("Left out — Nothing ticked.")).toBeInTheDocument();
       expect(saveButton()).toBeDisabled();
-      expect(saveButton()).toHaveAccessibleDescription("Nothing is ticked, so there is nothing to save.");
+      expect(saveButton()).toHaveAccessibleDescription("There's nothing to save — every row is unticked or left out.");
     });
 
     it("there is no Save to plan while an edit is waiting to save", async () => {

@@ -9,6 +9,7 @@
 // modules from src/lib/fact-finder.
 import { Fragment, memo, useEffect, useId, useMemo, useRef } from "react";
 import { Card } from "@/components/card";
+import { SAVE_NOTHING_MESSAGE } from "@/lib/fact-finder/api-types";
 import { countLines, type CellRef, type ChangeField, type ChangeLine, type ChangeSet, type ChangeTicks } from "@/lib/fact-finder/change-set";
 import { TARGETS, type ValueKind } from "@/lib/fact-finder/placement/targets";
 import { EMPTY } from "@/lib/fact-finder/placement/values";
@@ -26,7 +27,7 @@ export interface ChangeListProps {
   /** Back to the fact finder at the cell to fix, else at the line's section. */
   onFix(cell: CellRef | undefined, sectionId: string): void;
   onBack(): void;
-  /** Whether the plan has a co-client already; the same answer the save uses to leave out lines that name one. */
+  /** Whether the plan has a co-client already — for a change list that doesn't record what the review saw (the save plans with the same). */
   hasCoClient: boolean;
   onSave(): void;
   saving: boolean;
@@ -51,7 +52,6 @@ type LineProps = Pick<GroupProps, "onToggleField" | "onToggleLine" | "onFix"> & 
   failure: string | undefined;
 };
 
-const NOTHING_TO_SAVE = "Nothing is ticked, so there is nothing to save.";
 const CHECKBOX = "h-4 w-4 cursor-pointer rounded accent-accent";
 const CHIP = "inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium";
 const HEAD = "pb-1 text-left text-xs font-medium text-ink-3";
@@ -371,14 +371,18 @@ function PageGroup({ label, lines, ticks, leftOut, failure, ...lineProps }: Grou
 
 export function ChangeList({ changeSet, onBack, hasCoClient, onSave, saving, saveError, onReviewAgain, onDismissSaveError, ...groupProps }: ChangeListProps) {
   const saveReasonId = useId();
-  // The save's own plan, run on the ticks: what it writes, and what the ticks leave out with their reasons.
-  const plan = useMemo(() => planSave(changeSet, groupProps.ticks, { hasCoClient }), [changeSet, groupProps.ticks, hasCoClient]);
+  // The save's own plan, run on the ticks: what it writes, and what the ticks leave out with their reasons. With the
+  // co-client the review saw, as the server plans it.
+  const plan = useMemo(
+    () => planSave(changeSet, groupProps.ticks, { hasCoClient: changeSet.hasCoClient ?? hasCoClient }),
+    [changeSet, groupProps.ticks, hasCoClient],
+  );
   const leftOut = useMemo(
     () => (plan.ok ? Object.fromEntries(plan.leftOut.map((l) => [l.lineId, l.reason])) : {}),
     [plan],
   );
   const failure = saveError?.lineId ? { lineId: saveError.lineId, message: saveError.message } : null;
-  const waiting = !plan.ok ? plan.error : plan.lines.length === 0 ? NOTHING_TO_SAVE : null;
+  const waiting = !plan.ok ? plan.error : plan.lines.length === 0 ? SAVE_NOTHING_MESSAGE : null;
   return (
     <div className="@container flex flex-col gap-4">
       <ChangesHeading />

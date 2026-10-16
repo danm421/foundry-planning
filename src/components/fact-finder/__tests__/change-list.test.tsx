@@ -310,7 +310,7 @@ describe("ChangeList", () => {
       renderList(none);
       const save = screen.getByRole("button", { name: "Save to plan" });
       expect(save).toBeDisabled();
-      expect(save).toHaveAccessibleDescription("Nothing is ticked, so there is nothing to save.");
+      expect(save).toHaveAccessibleDescription("There's nothing to save — every row is unticked or left out.");
     });
 
     it("waits, with the plan's reason, when the ticks don't match the list", () => {
@@ -402,6 +402,30 @@ describe("ChangeList", () => {
       };
       renderList(defaultTicks(withCo), withCo, { hasCoClient: false });
       expect(within(line("Laura's salary")).getByText("Left out — Needs the co-client, who isn't being saved.")).toBeInTheDocument();
+    });
+
+    // A new account whose Owner is unticked: left out only where there's a co-client (it would be the client's alone).
+    const lake: ChangeLine = {
+      ...CHANGES.lines[1],
+      id: "c4/account", rowId: "c4", label: "Lake Checking",
+      fields: [field("name", "Name", "Lake Checking"), field("owners", "Owner", "Joint", undefined, { ticked: false })],
+    };
+    it.each([
+      { review: true, page: false, leftOut: true },
+      { review: false, page: true, leftOut: false },
+    ])("plans with the co-client the review saw ($review), not the page's ($page)", ({ review, page, leftOut }) => {
+      const changeSet: ChangeSet = { ...CHANGES, notices: [], lines: [lake], hasCoClient: review };
+      renderList(defaultTicks(changeSet), changeSet, { hasCoClient: page });
+      const save = screen.getByRole("button", { name: "Save to plan" });
+      if (leftOut) {
+        expect(within(line("Lake Checking")).getByText("Left out — Who owns it isn't ticked.")).toBeInTheDocument();
+        // Its name is ticked, yet nothing saves.
+        expect(save).toBeDisabled();
+        expect(save).toHaveAccessibleDescription("There's nothing to save — every row is unticked or left out.");
+      } else {
+        expect(within(line("Lake Checking")).queryByText(/Left out/)).toBeNull();
+        expect(save).toBeEnabled();
+      }
     });
   });
 

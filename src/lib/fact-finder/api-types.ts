@@ -105,4 +105,4 @@ export const SAVE_CLOSED_MESSAGE = "This import is saved to the plan — start a
 export const SAVE_RACE_MESSAGE = "Something on the plan changed while saving — review again.";
 export const SAVE_FAILED_MESSAGE = "The save failed — nothing was changed.";
 export const SAVE_HOUSEHOLD_MESSAGE = "The household changed since you reviewed — review again.";
-export const SAVE_NOTHING_MESSAGE = "Nothing is ticked, so there is nothing to save.";
+export const SAVE_NOTHING_MESSAGE = "There's nothing to save — every row is unticked or left out.";
