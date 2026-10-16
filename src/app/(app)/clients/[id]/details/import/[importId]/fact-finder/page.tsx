@@ -6,6 +6,7 @@ import { FactFinderScreen } from "@/components/fact-finder/fact-finder-screen";
 import { FinishedImportNotice } from "@/components/fact-finder/finished-import-notice";
 import { requireClientPageAccess } from "@/lib/clients/page-access";
 import { importScreenPath, isFactFinderImport } from "@/lib/imports/import-kind";
+import { isSavedFactFinder } from "@/lib/imports/saved-fact-finder";
 import { listClientDocuments } from "@/lib/imports/client-documents";
 import { listLiveFiles } from "@/lib/fact-finder/persist";
 import { readFactFinderState } from "@/lib/fact-finder/state";
@@ -50,7 +51,7 @@ export default async function FactFinderPage({ params }: PageProps) {
   const payloadJson = (imp.payloadJson ?? {}) as ImportPayloadJson;
   if (!isFactFinderImport(payloadJson)) redirect(importScreenPath(clientId, importId, false));
   // Committed without a saved fact finder: finished in statement chat, before the switch.
-  const saved = Boolean(payloadJson.factFinder?.closed);
+  const saved = isSavedFactFinder(payloadJson);
   if (imp.status === "committed" && !saved) {
     return <FinishedImportNotice clientId={clientId} finishedAt={(imp.committedAt ?? imp.updatedAt).toISOString()} />;
   }

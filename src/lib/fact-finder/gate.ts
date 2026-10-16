@@ -7,6 +7,7 @@ import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit, type ImportRateLimitOp } from "@/lib/rate-limit";
 import { refuseUnlessAiImportEntitled } from "@/lib/imports/ai-import-gate";
 import { isFactFinderImport } from "@/lib/imports/import-kind";
+import { isSavedFactFinder } from "@/lib/imports/saved-fact-finder";
 import type { ImportPayloadJson } from "@/lib/imports/types";
 import { SAVE_CLOSED_MESSAGE } from "./api-types";
 import { readFactFinderState } from "./state";
@@ -102,7 +103,7 @@ export async function factFinderGate(
   // A saved import is read-only: only the view (GET) still answers. The refusal
   // carries the saved fact finder, so a screen still open on it (another tab)
   // can switch to the closed view.
-  if (payloadJson.factFinder?.closed && op !== "view") {
+  if (isSavedFactFinder(payloadJson) && op !== "view") {
     return {
       ok: false,
       response: jsonResponse(409, { error: SAVE_CLOSED_MESSAGE, factFinder: readFactFinderState(payloadJson) }),

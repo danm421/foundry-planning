@@ -8,9 +8,7 @@ import {
 } from "@/lib/imports/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
-import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
-import { readFactFinderState } from "@/lib/fact-finder/state";
-import type { ImportPayloadJson } from "@/lib/imports/types";
+import { refuseSavedFactFinderWithState } from "@/lib/imports/saved-fact-finder";
 import {
   storeImportFile,
   MAX_IMPORT_FILE_SIZE_BYTES as MAX_FILE_SIZE,
@@ -92,12 +90,9 @@ export async function POST(
     // NotFoundError / ForbiddenError that the catch block maps to status.
     const imp = await requireImportAccess({ importId, clientId, firmId, userId });
 
-    // A fact finder import saved to the plan is read-only — the gate's refusal,
-    // with the saved fact finder so a tab still open on it shows the closed view.
-    const payloadJson = (imp.payloadJson ?? {}) as ImportPayloadJson;
-    if (payloadJson.factFinder?.closed) {
-      return NextResponse.json({ error: SAVE_CLOSED_MESSAGE, factFinder: readFactFinderState(payloadJson) }, { status: 409 });
-    }
+    // A fact finder import saved to the plan is read-only.
+    const savedRefusal = refuseSavedFactFinderWithState(imp);
+    if (savedRefusal) return savedRefusal;
 
     // Cheap pre-buffer rejection for obviously oversized bodies. Real
     // enforcement is the file.size check below — Content-Length is

@@ -10,9 +10,7 @@ import { requireImportAccess, ForbiddenError, NotFoundError } from "@/lib/import
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { attachClientDocument } from "@/lib/imports/client-documents";
-import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
-import { readFactFinderState } from "@/lib/fact-finder/state";
-import type { ImportPayloadJson } from "@/lib/imports/types";
+import { refuseSavedFactFinderWithState } from "@/lib/imports/saved-fact-finder";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -69,12 +67,9 @@ export async function POST(
 
     const imp = await requireImportAccess({ importId, clientId, firmId, userId });
 
-    // A fact finder import saved to the plan is read-only — the gate's refusal,
-    // with the saved fact finder so a tab still open on it shows the closed view.
-    const payloadJson = (imp.payloadJson ?? {}) as ImportPayloadJson;
-    if (payloadJson.factFinder?.closed) {
-      return NextResponse.json({ error: SAVE_CLOSED_MESSAGE, factFinder: readFactFinderState(payloadJson) }, { status: 409 });
-    }
+    // A fact finder import saved to the plan is read-only.
+    const savedRefusal = refuseSavedFactFinderWithState(imp);
+    if (savedRefusal) return savedRefusal;
 
     const parsed = attachBody.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {

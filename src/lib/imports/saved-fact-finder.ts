@@ -12,6 +12,7 @@ import { sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { clientImports } from "@/db/schema";
 import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
+import { readFactFinderState } from "@/lib/fact-finder/state";
 import { isFactFinderImport } from "./import-kind";
 import type { ImportPayloadJson } from "./types";
 
@@ -28,6 +29,16 @@ export function savedFactFinderRefusal(): NextResponse {
 /** The 409 a saved fact finder gets, or null to go on. */
 export function refuseSavedFactFinder(imp: { payloadJson: unknown }): NextResponse | null {
   return isSavedFactFinder(imp.payloadJson) ? savedFactFinderRefusal() : null;
+}
+
+/** The 409 a saved fact finder gets on the shared file routes, or null to go on — the body carries the saved fact finder, which only the fact finder screen's own requests adopt. */
+export function refuseSavedFactFinderWithState(imp: { payloadJson: unknown }): NextResponse | null {
+  return isSavedFactFinder(imp.payloadJson)
+    ? NextResponse.json(
+        { error: SAVE_CLOSED_MESSAGE, factFinder: readFactFinderState(imp.payloadJson) },
+        { status: 409 },
+      )
+    : null;
 }
 
 /** What the wizard-era routes answer for a fact finder import, open or saved. */
