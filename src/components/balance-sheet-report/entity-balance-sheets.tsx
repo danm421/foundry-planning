@@ -1,24 +1,17 @@
 // src/components/balance-sheet-report/entity-balance-sheets.tsx
-import { useState } from "react";
-import type { BalanceSheetViewModel, EntityGroup } from "./view-model";
-import { prepareEntityGroups } from "@/lib/balance-sheet/entity-groups";
-import type { TrustDetails, TrustBeneficiaryLine } from "@/lib/balance-sheet/trust-details";
+import type { BalanceSheetViewModel } from "./view-model";
+import {
+  ENTITY_TYPE_LABEL,
+  entityFilterApplies,
+  filterEntityGroups,
+  isTrust,
+  prepareEntityGroups,
+  type EntityFilter,
+} from "@/lib/balance-sheet/entity-groups";
+import { groupBeneficiaries, hasTrustDetails, type TrustDetails } from "@/lib/balance-sheet/trust-details";
 
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-
-const ENTITY_TYPE_LABEL: Record<string, string> = {
-  trust: "Trust",
-  llc: "LLC",
-  s_corp: "S-Corp",
-  c_corp: "C-Corp",
-  partnership: "Partnership",
-  sole_prop: "Sole Prop",
-  foundation: "Foundation",
-  other: "Entity",
-};
-
-type EntityFilter = "all" | "trusts" | "businesses";
 
 const FILTER_OPTIONS: Array<{ value: EntityFilter; label: string }> = [
   { value: "all", label: "All" },
@@ -26,23 +19,8 @@ const FILTER_OPTIONS: Array<{ value: EntityFilter; label: string }> = [
   { value: "businesses", label: "Businesses" },
 ];
 
-const isTrust = (g: EntityGroup) => g.entityType === "trust";
-
-const BENEFICIARY_GROUPS: TrustBeneficiaryLine["group"][] = ["Primary", "Contingent", "Income", "Remainder"];
-
 function TrustDetailsCard({ details }: { details: TrustDetails }) {
-  const hasContent =
-    details.trustee !== null ||
-    details.grantor !== null ||
-    details.subTypeLabel !== null ||
-    details.powers.length > 0 ||
-    details.beneficiaries.length > 0;
-  if (!hasContent) return null;
-
-  const beneficiaryGroups = BENEFICIARY_GROUPS.map((group) => ({
-    group,
-    rows: details.beneficiaries.filter((b) => b.group === group),
-  })).filter((g) => g.rows.length > 0);
+  if (!hasTrustDetails(details)) return null;
 
   return (
     <div className="w-full max-w-sm overflow-hidden rounded-lg border border-hair bg-card">
@@ -79,7 +57,7 @@ function TrustDetailsCard({ details }: { details: TrustDetails }) {
             </dd>
           </div>
         )}
-        {beneficiaryGroups.map(({ group, rows }) => (
+        {groupBeneficiaries(details).map(({ group, rows }) => (
           <div key={group}>
             <dt className="mb-1 text-[10px] uppercase tracking-wide text-ink-3">{group} beneficiaries</dt>
             {rows.map((b, i) => (
@@ -98,19 +76,20 @@ function TrustDetailsCard({ details }: { details: TrustDetails }) {
 interface EntityBalanceSheetsProps {
   groups: NonNullable<BalanceSheetViewModel["entityGroups"]>;
   trustDetails?: TrustDetails[];
+  /** The All / Trusts / Businesses toggle — owned by the report so its PDF
+   *  export prints the same filtered set. */
+  filter: EntityFilter;
+  onFilterChange: (next: EntityFilter) => void;
 }
 
-export default function EntityBalanceSheets({ groups, trustDetails = [] }: EntityBalanceSheetsProps) {
-  const [filter, setFilter] = useState<EntityFilter>("all");
+export default function EntityBalanceSheets({ groups, trustDetails = [], filter, onFilterChange }: EntityBalanceSheetsProps) {
   const cleaned = prepareEntityGroups(groups);
   if (cleaned.length === 0) {
     return <div className="w-full max-w-sm rounded-lg border border-hair bg-card p-6 text-center text-ink-2">No business or trust entities.</div>;
   }
 
-  const trustCount = cleaned.filter(isTrust).length;
-  const showFilter = trustCount > 0 && trustCount < cleaned.length;
-  const visible =
-    filter === "all" || !showFilter ? cleaned : cleaned.filter((g) => (filter === "trusts" ? isTrust(g) : !isTrust(g)));
+  const showFilter = entityFilterApplies(cleaned);
+  const visible = filterEntityGroups(cleaned, filter);
   const detailsById = new Map(trustDetails.map((d) => [d.entityId, d]));
 
   const filterClass = (active: boolean) =>
@@ -129,7 +108,7 @@ export default function EntityBalanceSheets({ groups, trustDetails = [] }: Entit
               role="tab"
               aria-selected={filter === opt.value}
               className={filterClass(filter === opt.value)}
-              onClick={() => setFilter(opt.value)}
+              onClick={() => onFilterChange(opt.value)}
             >
               {opt.label}
             </button>

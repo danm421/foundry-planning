@@ -4,20 +4,18 @@
 import { useMemo, useState } from "react";
 import { useViewParam } from "@/hooks/use-view-param";
 import type { FamilyMember, GiftEvent } from "@/engine/types";
-import type { LiabilityLike, EntityInfo, ProjectionYearLike, AsOfMode } from "./view-model";
-import { buildViewModel } from "./view-model";
-import {
-  buildHouseholdColumns,
-  type HouseholdProjYear,
-  type HouseholdAccountLike,
-} from "./household-columns";
+import type { LiabilityLike, EntityInfo, ProjectionYearLike } from "./view-model";
+import type { HouseholdProjYear, HouseholdAccountLike } from "./household-columns";
 import type { NoteLike } from "@/lib/balance-sheet/build-view-model-inputs";
 import type { TrustDetails } from "@/lib/balance-sheet/trust-details";
+import type { EntityFilter } from "@/lib/balance-sheet/entity-groups";
+import { BALANCE_SHEET_TABS, buildEntityGroups, buildHouseholdModels, resolveAsOf, type BalanceSheetTab } from "./report-model";
 import YearPicker, { type AgesByYear, type AsOfSelection } from "./year-picker";
 import HouseholdTable from "./household-table";
 import HouseholdSummaryPanel from "./household-summary-panel";
 import OutOfEstateTable from "./out-of-estate-table";
 import EntityBalanceSheets from "./entity-balance-sheets";
+import BalanceSheetPdfButton from "@/components/balance-sheet-pdf-button";
 
 /** Per-year payload the report needs: satisfies both view-model and household helpers. */
 export type BalanceSheetProjYear = ProjectionYearLike & HouseholdProjYear;
@@ -48,69 +46,32 @@ export interface BalanceSheetReportProps {
    *  rather than as authored. Without them a gifted share of an asset stays on
    *  the household's balance sheet at full value forever. */
   giftEvents?: GiftEvent[];
+  /** Shows the Download PDF button, which exports exactly the view on screen
+   *  (tab, year and entity filter). Omitted by hosts with nothing saved to
+   *  export, like the solver's live preview. */
+  pdfClientId?: string;
 }
 
-type Tab = "household" | "entities";
-
 export default function BalanceSheetReport(props: BalanceSheetReportProps) {
-  const { selectableYears } = props;
+  const { accounts, liabilities, entities, notesReceivable, familyMembers, projectionYears, giftEvents, selectableYears } = props;
   // Default to "Today" — a beginning-of-year snapshot of the advisor-entered
   // current balances, distinct from the current year's end-of-year projection.
   const [asOf, setAsOf] = useState<AsOfSelection>({ mode: "today" });
-  const asOfMode: AsOfMode = asOf.mode === "today" ? "today" : "eoy";
-  // "Today" anchors to the first projection year (plan start); "eoy" uses the
-  // picked year.
-  const selectedYear = asOf.mode === "today" ? selectableYears[0] : asOf.year;
-  const [tab, setTab] = useViewParam<Tab>(["household", "entities"], "household");
+  const { selectedYear, asOfMode } = resolveAsOf(selectableYears, asOf);
+  const [tab, setTab] = useViewParam<BalanceSheetTab>(BALANCE_SHEET_TABS, "household");
+  const [entityFilter, setEntityFilter] = useState<EntityFilter>("all");
 
-  const household = useMemo(
-    () =>
-      buildHouseholdColumns({
-        accounts: props.accounts,
-        liabilities: props.liabilities,
-        entities: props.entities,
-        notesReceivable: props.notesReceivable,
-        familyMembers: props.familyMembers,
-        projectionYears: props.projectionYears,
-        selectedYear,
-        asOfMode,
-        giftEvents: props.giftEvents,
-      }),
-    [props.accounts, props.liabilities, props.entities, props.notesReceivable, props.familyMembers, props.projectionYears, selectedYear, asOfMode, props.giftEvents],
+  const data = useMemo(
+    () => ({ accounts, liabilities, entities, notesReceivable, familyMembers, projectionYears, giftEvents }),
+    [accounts, liabilities, entities, notesReceivable, familyMembers, projectionYears, giftEvents],
   );
-
-  const consolidated = useMemo(
-    () =>
-      buildViewModel({
-        accounts: props.accounts,
-        liabilities: props.liabilities,
-        entities: props.entities,
-        familyMembers: props.familyMembers,
-        projectionYears: props.projectionYears,
-        selectedYear,
-        view: "consolidated",
-        asOfMode,
-        giftEvents: props.giftEvents,
-      }),
-    [props.accounts, props.liabilities, props.entities, props.familyMembers, props.projectionYears, selectedYear, asOfMode, props.giftEvents],
+  const { household, consolidated } = useMemo(
+    () => buildHouseholdModels(data, selectedYear, asOfMode),
+    [data, selectedYear, asOfMode],
   );
-
-  const entityModel = useMemo(
-    () =>
-      tab === "entities"
-        ? buildViewModel({
-            accounts: props.accounts,
-            liabilities: props.liabilities,
-            entities: props.entities,
-            familyMembers: props.familyMembers,
-            projectionYears: props.projectionYears,
-            selectedYear,
-            view: "entities",
-            asOfMode,
-            giftEvents: props.giftEvents,
-          })
-        : null,
-    [tab, props.accounts, props.liabilities, props.entities, props.familyMembers, props.projectionYears, selectedYear, asOfMode, props.giftEvents],
+  const entityGroups = useMemo(
+    () => (tab === "entities" ? buildEntityGroups(data, selectedYear, asOfMode) : []),
+    [tab, data, selectedYear, asOfMode],
   );
 
   const tabClass = (active: boolean) =>
@@ -129,13 +90,18 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
             By Entity
           </button>
         </div>
-        <YearPicker
-          years={selectableYears}
-          value={asOf}
-          onChange={setAsOf}
-          agesByYear={props.agesByYear}
-          todayYear={props.todayYear}
-        />
+        <div className="flex items-center gap-2">
+          <YearPicker
+            years={selectableYears}
+            value={asOf}
+            onChange={setAsOf}
+            agesByYear={props.agesByYear}
+            todayYear={props.todayYear}
+          />
+          {props.pdfClientId && (
+            <BalanceSheetPdfButton clientId={props.pdfClientId} tab={tab} asOf={asOf} entityFilter={entityFilter} />
+          )}
+        </div>
       </div>
 
       {tab === "household" ? (
@@ -175,7 +141,12 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
           <OutOfEstateTable vm={consolidated} />
         </>
       ) : (
-        <EntityBalanceSheets groups={entityModel?.entityGroups ?? []} trustDetails={props.trustDetails ?? []} />
+        <EntityBalanceSheets
+          groups={entityGroups}
+          trustDetails={props.trustDetails ?? []}
+          filter={entityFilter}
+          onFilterChange={setEntityFilter}
+        />
       )}
     </div>
   );

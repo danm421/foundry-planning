@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 // src/components/balance-sheet-report/__tests__/balance-sheet-report.test.tsx
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { ClientAccessProvider } from "@/components/client-access-provider";
 import type { FamilyMember } from "@/engine/types";
 
 // The summary panel renders a Chart.js Pie; stub it so jsdom never touches <canvas>.
@@ -79,5 +80,55 @@ describe("BalanceSheetReport", () => {
     render(<BalanceSheetReport {...props} />);
     fireEvent.click(screen.getByRole("tab", { name: "By Entity" }));
     expect(screen.getByText(/no business or trust entities/i)).toBeInTheDocument();
+  });
+});
+
+describe("BalanceSheetReport — Download PDF", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function exportQuery() {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, headers: new Headers(), blob: async () => new Blob() });
+    vi.stubGlobal("fetch", fetchMock);
+    // jsdom has no object URLs.
+    URL.createObjectURL = vi.fn(() => "blob:pdf");
+    URL.revokeObjectURL = vi.fn();
+    return async () => {
+      fireEvent.click(screen.getByRole("button", { name: /download pdf/i }));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      const url = new URL(fetchMock.mock.calls[0][0] as string, "http://localhost");
+      expect(url.pathname).toBe("/api/clients/c1/balance-sheet-report/export-pdf");
+      return Object.fromEntries(url.searchParams);
+    };
+  }
+
+  function renderWithAccess() {
+    render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <BalanceSheetReport {...props} pdfClientId="c1" />
+      </ClientAccessProvider>,
+    );
+  }
+
+  it("exports the default view: Household as of today", async () => {
+    const download = exportQuery();
+    renderWithAccess();
+    expect(await download()).toEqual({ view: "household", asOf: "today" });
+  });
+
+  it("exports the year and tab on screen", async () => {
+    const download = exportQuery();
+    renderWithAccess();
+    fireEvent.change(screen.getByLabelText("Year"), { target: { value: "2031" } });
+    fireEvent.click(screen.getByRole("tab", { name: "By Entity" }));
+    expect(await download()).toEqual({ view: "entities", asOf: "eoy", year: "2031", filter: "all" });
+  });
+
+  it("has no Download PDF button without a client to export (solver preview)", () => {
+    render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <BalanceSheetReport {...props} />
+      </ClientAccessProvider>,
+    );
+    expect(screen.queryByRole("button", { name: /download pdf/i })).toBeNull();
   });
 });

@@ -1,45 +1,55 @@
 // src/app/api/clients/[id]/balance-sheet-report/export-pdf/route.ts
+//
+// Prints exactly the Balance Sheet view the advisor has on screen: same data
+// (loadBalanceSheetReport), same models (report-model.ts), same selection —
+// ?view=household|entities, ?asOf=today|eoy (+ ?year for eoy), ?filter for the
+// By Entity tab's All / Trusts / Businesses toggle, and ?scenario.
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { crmHouseholdContacts, entities as entitiesTable } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { recordCompletedRun } from "@/lib/crm/generation-runs";
 import { auth, currentUser } from "@clerk/nextjs/server";
-import {
-  checkExportPdfRateLimit,
-  rateLimitErrorResponse,
-} from "@/lib/rate-limit";
-import { runProjection } from "@/engine/projection";
+import { checkExportPdfRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
-import { BalanceSheetPdfDocument } from "@/components/balance-sheet-report-pdf/balance-sheet-pdf-document";
-import { buildViewModel } from "@/components/balance-sheet-report/view-model";
-import type { OwnershipView } from "@/components/balance-sheet-report/ownership-filter";
-import type { ClientData, FamilyMember } from "@/engine/types";
-import type { AccountOwner, EntityOwner } from "@/engine/ownership";
 import React from "react";
-import { isSafePngDataUri } from "@/lib/report-artifacts/png-validation";
-import { fetchProjectionData } from "@/lib/http/projection-data-fetch";
+import {
+  BalanceSheetPdfDocument,
+  type BalanceSheetPdfView,
+} from "@/components/balance-sheet-report-pdf/balance-sheet-pdf-document";
+import {
+  agesLabel,
+  BALANCE_SHEET_TABS,
+  buildEntityGroups,
+  buildHouseholdModels,
+  resolveAsOf,
+  type BalanceSheetTab,
+} from "@/components/balance-sheet-report/report-model";
+import type { AsOfSelection } from "@/components/balance-sheet-report/year-picker";
+import { loadBalanceSheetReport } from "@/lib/balance-sheet/load-report";
+import {
+  ENTITY_FILTERS,
+  entityFilterApplies,
+  filterEntityGroups,
+  prepareEntityGroups,
+  type EntityFilter,
+} from "@/lib/balance-sheet/entity-groups";
+import { householdBrand } from "@/lib/branding/brand-choice";
+import { resolveBrandingForClient } from "@/lib/branding/resolve-for-client";
+import { slugForFilename } from "@/lib/filename-slug";
 
 export const dynamic = "force-dynamic";
 // Defense-in-depth on top of the 25 s render-timeout race below: cap the
 // whole route well below Vercel's default (300 s) so a pathological
-// projection-data fetch can't pin a function instance for minutes.
+// projection can't pin a function instance for minutes.
 export const maxDuration = 60;
 
-const VIEW_LABELS: Record<OwnershipView, string> = {
-  consolidated: "Consolidated",
-  client: "Client only",
-  spouse: "Co-client only",
-  joint: "Joint only",
-  entities: "Trusts only",
-};
+const FILTER_LABELS: Record<EntityFilter, string> = { all: "All", trusts: "Trusts", businesses: "Businesses" };
 
-function isOwnershipView(v: string): v is OwnershipView {
-  return v === "consolidated" || v === "client" || v === "spouse" || v === "joint" || v === "entities";
+function oneOf<T extends string>(valid: readonly T[], raw: string | null, fallback: T): T | null {
+  if (raw == null) return fallback;
+  return (valid as readonly string[]).includes(raw) ? (raw as T) : null;
 }
 
 export async function POST(
@@ -59,105 +69,63 @@ export async function POST(
       );
     }
 
-    // CRM contacts — source of client name for the PDF.
-    const [primaryContact] = client.crmHouseholdId
-      ? await db
-          .select({
-            firstName: crmHouseholdContacts.firstName,
-            lastName: crmHouseholdContacts.lastName,
-          })
-          .from(crmHouseholdContacts)
-          .where(
-            and(
-              eq(crmHouseholdContacts.householdId, client.crmHouseholdId),
-              eq(crmHouseholdContacts.role, "primary"),
-            ),
-          )
-      : [];
-    const clientFirstName = primaryContact?.firstName;
-    const clientLastName = primaryContact?.lastName;
-
     const url = new URL(request.url);
-    const year = Number(url.searchParams.get("year"));
-    const viewParam = url.searchParams.get("view") ?? "consolidated";
-    const asOfParam = url.searchParams.get("asOf") ?? "eoy";
+    const tab = oneOf<BalanceSheetTab>(BALANCE_SHEET_TABS, url.searchParams.get("view"), "household");
+    const asOfParam = oneOf(["today", "eoy"] as const, url.searchParams.get("asOf"), "today");
+    const filter = oneOf<EntityFilter>(ENTITY_FILTERS, url.searchParams.get("filter"), "all");
     const scenarioParam = url.searchParams.get("scenario");
-    const asOfMode: "today" | "eoy" = asOfParam === "today" ? "today" : "eoy";
-    if (!Number.isFinite(year)) return NextResponse.json({ error: "Invalid year" }, { status: 400 });
-    if (!isOwnershipView(viewParam)) return NextResponse.json({ error: "Invalid view" }, { status: 400 });
-
-    const body = await request.json().catch(() => ({}));
-    const donutPng: string | null = isSafePngDataUri(body.donutPng) ? body.donutPng : null;
-    const barPng: string | null = isSafePngDataUri(body.barPng) ? body.barPng : null;
-
-    // Pull projection data the same way the page does by hitting the API.
-    // Using an internal fetch avoids duplicating the projection-data query.
-    const apiData = await fetchProjectionData<ClientData>(request, id, scenarioParam);
-    if (apiData == null) {
-      return NextResponse.json({ error: "Failed to load projection data" }, { status: 500 });
+    if (tab == null) return NextResponse.json({ error: "Invalid view" }, { status: 400 });
+    if (asOfParam == null) return NextResponse.json({ error: "Invalid asOf" }, { status: 400 });
+    if (filter == null) return NextResponse.json({ error: "Invalid filter" }, { status: 400 });
+    const yearParam = url.searchParams.get("year");
+    const year = Number(yearParam);
+    // Cheap shape check first; whether the plan covers the year needs the load.
+    if (asOfParam === "eoy" && (!yearParam || !Number.isInteger(year))) {
+      return NextResponse.json({ error: "Invalid year" }, { status: 400 });
     }
-    const projectionYears = runProjection(apiData);
 
-    // The projection-data API already emits entities with `value`, `owners`,
-    // and `isIrrevocable`; merge them with the canonical name + type.
-    const entityRows = await db.select().from(entitiesTable).where(eq(entitiesTable.clientId, id));
-    const apiEntities = (apiData.entities ?? []) as Array<{
-      id: string;
-      isIrrevocable?: boolean;
-      value?: number;
-      owners?: EntityOwner[];
-    }>;
-    const entityInfos = entityRows.map((e) => {
-      const fromApi = apiEntities.find((x) => x.id === e.id);
-      return {
-        id: e.id,
-        name: e.name,
-        entityType: e.entityType,
-        isIrrevocable: fromApi?.isIrrevocable,
-        value: fromApi?.value,
-        owners: fromApi?.owners,
+    const [{ report, scenarioName, primaryContact }, branding] = await Promise.all([
+      loadBalanceSheetReport(id, firmId, client.crmHouseholdId, scenarioParam),
+      resolveBrandingForClient(firmId, householdBrand(client)),
+    ]);
+
+    if (asOfParam === "eoy" && !report.selectableYears.includes(year)) {
+      return NextResponse.json({ error: "Invalid year" }, { status: 400 });
+    }
+    const asOf: AsOfSelection = asOfParam === "today" ? { mode: "today" } : { mode: "eoy", year };
+    const { selectedYear, asOfMode } = resolveAsOf(report.selectableYears, asOf);
+
+    let view: BalanceSheetPdfView;
+    let viewLabel: string;
+    if (tab === "household") {
+      const { household, consolidated } = buildHouseholdModels(report, selectedYear, asOfMode);
+      view = {
+        kind: "household",
+        household,
+        donut: consolidated.donut,
+        outOfEstate: consolidated,
+        clientLabel: report.clientLabel,
+        spouseLabel: report.spouseLabel,
       };
-    });
+      viewLabel = "Household";
+    } else {
+      const groups = prepareEntityGroups(buildEntityGroups(report, selectedYear, asOfMode));
+      const filtered = filter !== "all" && entityFilterApplies(groups);
+      view = { kind: "entities", groups: filterEntityGroups(groups, filter), trustDetails: report.trustDetails ?? [] };
+      viewLabel = filtered ? `By Entity · ${FILTER_LABELS[filter]}` : "By Entity";
+    }
 
-    const familyMembers = (apiData.familyMembers ?? []) as FamilyMember[];
-    const mappedAccounts = (apiData.accounts as Array<{
-      id: string;
-      name: string;
-      category: string;
-      owners: AccountOwner[];
-    }>).map((a) => ({
-      id: a.id,
-      name: a.name,
-      category: a.category,
-      owners: a.owners ?? [],
-    }));
-    const mappedLiabilities = (apiData.liabilities as Array<{
-      id: string;
-      name: string;
-      owners: AccountOwner[];
-      linkedPropertyId?: string | null;
-    }>).map((l) => ({
-      id: l.id,
-      name: l.name,
-      owners: l.owners ?? [],
-      linkedPropertyId: l.linkedPropertyId ?? null,
-    }));
+    // The year picker's "Today (2026)" and ages, spelled out for print.
+    const ages = report.agesByYear?.[selectedYear];
+    const subtitle = [
+      viewLabel,
+      asOfMode === "today" ? `Today (${new Date().getFullYear()})` : `End of ${selectedYear}`,
+      ages ? `${ages.spouse != null ? "Ages" : "Age"} ${agesLabel(ages)}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
 
-    const viewModel = buildViewModel({
-      accounts: mappedAccounts,
-      liabilities: mappedLiabilities,
-      entities: entityInfos,
-      familyMembers,
-      projectionYears,
-      selectedYear: year,
-      view: viewParam,
-      asOfMode,
-      // Ownership is resolved per year from these, so a gifted share of an
-      // asset leaves the household on the PDF exactly as it does on screen.
-      giftEvents: apiData.giftEvents ?? [],
-    });
-
-    const clientName = [clientFirstName, clientLastName].filter(Boolean).join(" ") || "Client";
+    const clientName = [primaryContact?.firstName, primaryContact?.lastName].filter(Boolean).join(" ") || "Client";
     const generatedAt = new Date().toLocaleString("en-US", {
       year: "numeric",
       month: "short",
@@ -166,16 +134,15 @@ export async function POST(
       minute: "2-digit",
     });
 
-    const asOfLabel = asOfMode === "today" ? "Today" : `End of ${year}`;
-
     const doc = React.createElement(BalanceSheetPdfDocument, {
       clientName,
-      asOfLabel,
-      viewLabel: VIEW_LABELS[viewParam],
+      subtitle,
+      scenarioName,
       generatedAt,
-      viewModel,
-      donutPng,
-      barPng,
+      firmName: branding.firmName,
+      logoDataUrl: branding.logoDataUrl,
+      accentColor: branding.primaryColor,
+      view,
     }) as React.ReactElement<DocumentProps>;
 
     const buffer = await Promise.race<Buffer>([
@@ -185,7 +152,9 @@ export async function POST(
       ),
     ]);
 
-    const downloadName = `balance-sheet-${(clientLastName ?? "client").toLowerCase()}-${year}.pdf`;
+    const downloadName = `balance-sheet-${slugForFilename(primaryContact?.lastName ?? "client")}-${
+      asOfMode === "today" ? "today" : selectedYear
+    }${tab === "entities" ? "-entities" : ""}.pdf`;
 
     const vaultDoc = await savePlanToVault({
       clientId: id,

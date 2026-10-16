@@ -1,6 +1,8 @@
 // src/components/balance-sheet-report/year-picker.tsx
 "use client";
 
+import { agesLabel } from "./report-model";
+
 /** Per-year household ages, keyed by calendar year. Mirrors the engine's
  *  `ProjectionYear.ages` shape ({ client, spouse? }). */
 export type AgesByYear = Record<number, { client: number; spouse?: number }>;
@@ -20,11 +22,6 @@ interface YearPickerProps {
 }
 
 const TODAY_VALUE = "today";
-
-function agesLabel(a: { client: number; spouse?: number } | undefined): string {
-  if (!a) return "";
-  return a.spouse != null ? `${a.client} & ${a.spouse}` : `${a.client}`;
-}
 
 function withAges(base: string, ages: string): string {
   return ages ? `${base} · ${ages}` : base;
