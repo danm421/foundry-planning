@@ -162,6 +162,8 @@ import { visionOcrPdf } from "@/lib/extraction/vision-ocr";
 import { runMapEntityPass } from "@/lib/statement-chat/map-entity-pass";
 import type { CandidateRow } from "@/lib/entity-extraction/types";
 import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
+import { SavedFactFinderError } from "@/lib/imports/saved-fact-finder";
+import { db } from "@/db";
 
 function req(body: unknown, method: "POST" | "PATCH" = "POST") {
   return new Request("http://t/api/clients/c1/imports/i1/chat/map-pass", {
@@ -218,9 +220,25 @@ beforeEach(() => {
 
 describe("map-pass route — gate chain", () => {
   it.each([["POST", { fileId: "f1" }], ["PATCH", { entityId: "entities", rowId: "r1", createdId: "e-1" }]] as const)(
-    "%s refuses a committed import (a fact finder saved to the plan) before reading or writing anything",
+    "%s still runs for a finished statement-chat import (committed, no fact finder)",
     async (method, body) => {
       vi.mocked(requireImportAccess).mockResolvedValue({ ...importRowWithEntityRows(), status: "committed" } as never);
+      const res = await (method === "POST" ? POST : PATCH)(req(body, method), params);
+      expect(res.status).toBe(200);
+      if (method === "POST") expect(runMapEntityPass).toHaveBeenCalledTimes(1);
+      else expect(updateCalls).toHaveLength(1);
+    },
+  );
+
+  it.each([["POST", { fileId: "f1" }], ["PATCH", { entityId: "entities", rowId: "r1", createdId: "e-1" }]] as const)(
+    "%s refuses a fact finder saved to the plan before reading or writing anything",
+    async (method, body) => {
+      const saved = importRowWithEntityRows();
+      vi.mocked(requireImportAccess).mockResolvedValue({
+        ...saved,
+        status: "committed",
+        payloadJson: { ...saved.payloadJson, factFinder: { version: 3, closed: { at: "2026-10-16T09:00:00.000Z" } } },
+      } as never);
       const res = await (method === "POST" ? POST : PATCH)(req(body, method), params);
       expect(res.status).toBe(409);
       expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
@@ -442,6 +460,14 @@ describe("map-pass route — POST", () => {
     expect(await res.json()).toEqual({ error: "Import not found" });
   });
 
+  it("a save that lands while the pass reads: 409 (not 404), and no audit row", async () => {
+    vi.mocked(runMapEntityPass).mockRejectedValueOnce(new SavedFactFinderError());
+    const res = await POST(req({ fileId: "f1" }), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
   it("does not audit a pass that never completed", async () => {
     vi.mocked(runMapEntityPass).mockRejectedValueOnce(new NotFoundError("Import not found"));
     await POST(req({ fileId: "f1" }), params);
@@ -497,6 +523,20 @@ describe("map-pass route — PATCH", () => {
       firmId: "org_1",
       metadata: { entityId: "entities", rowId: "r2", createdId: "ent_99" },
     });
+  });
+
+  it("a save that lands while it runs: the write misses, so 409 and no audit row", async () => {
+    vi.spyOn(db, "update").mockReturnValueOnce({
+      set: () => ({ where: () => ({ returning: () => Promise.resolve([]) }) }),
+    } as never);
+    // Read again in the write's own scope: the import now holds a saved fact finder.
+    vi.spyOn(db, "select").mockReturnValueOnce({
+      from: () => ({ where: () => ({ limit: () => Promise.resolve([{ payloadJson: { factFinder: { closed: { at: "x" } } } }]) }) }),
+    } as never);
+    const res = await PATCH(req({ entityId: "entities", rowId: "r2", createdId: "ent_99" }, "PATCH"), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 
   it("does not audit a stamp whose write matched no row", async () => {

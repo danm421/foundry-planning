@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { clientImports, clientImportFiles } from "@/db/schema";
@@ -9,7 +9,6 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "@/lib/imports/authz";
-import { refuseCommittedImport } from "@/lib/imports/committed";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
 
@@ -49,8 +48,12 @@ export async function POST(_request: NextRequest, { params }: Params) {
       userId,
     });
 
-    const committed = refuseCommittedImport(imp);
-    if (committed) return committed;
+    if (imp.status === "committed") {
+      return NextResponse.json(
+        { error: "cannot_discard_committed_import" },
+        { status: 409 },
+      );
+    }
 
     // Defensive — requireImportAccess already filters discardedAt,
     // but if a future change loosens that, this branch keeps the
@@ -68,7 +71,7 @@ export async function POST(_request: NextRequest, { params }: Params) {
       await tx
         .update(clientImports)
         .set({ discardedAt: new Date(), status: "discarded" })
-        .where(and(eq(clientImports.id, importId), ne(clientImports.status, "committed")));
+        .where(eq(clientImports.id, importId));
 
       const softDeleted = await tx
         .update(clientImportFiles)

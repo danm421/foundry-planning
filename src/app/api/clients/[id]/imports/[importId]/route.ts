@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import {
@@ -13,7 +13,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "@/lib/imports/authz";
-import { refuseCommittedImport } from "@/lib/imports/committed";
+import { noSavedFactFinder, refuseSavedFactFinder, savedFactFinderRefusal } from "@/lib/imports/saved-fact-finder";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -219,8 +219,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       firmId,
       userId,
     });
-    const committed = refuseCommittedImport(imp);
-    if (committed) return committed;
+    const saved = refuseSavedFactFinder(imp);
+    if (saved) return saved;
 
     let body: unknown;
     try {
@@ -323,8 +323,10 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     const [updated] = await db
       .update(clientImports)
       .set(updates)
-      .where(and(eq(clientImports.id, importId), ne(clientImports.status, "committed")))
+      .where(and(eq(clientImports.id, importId), noSavedFactFinder))
       .returning();
+    // Only a fact finder saved to the plan while this PATCH ran misses the write.
+    if (!updated) return savedFactFinderRefusal();
 
     const changedFields = Object.keys(updates).filter(
       (k) => k !== "updatedAt",

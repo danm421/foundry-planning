@@ -1,4 +1,5 @@
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { noSavedFactFinder } from "@/lib/imports/saved-fact-finder";
 
 import { db } from "@/db";
 import { clientImports } from "@/db/schema";
@@ -219,8 +220,8 @@ export async function markTabsCommitted(
         ? { status: "committed" as const, committedAt: now }
         : {}),
     })
-    // A committed import is never written over (lib/imports/committed.ts); its routes refuse one up front.
-    .where(and(eq(clientImports.id, importId), ne(clientImports.status, "committed")));
+    // A saved fact finder is never written over (lib/imports/saved-fact-finder.ts); its routes refuse one up front.
+    .where(and(eq(clientImports.id, importId), noSavedFactFinder));
 
   return { allTabsCommitted: allCommitted, firstTimeAllCommitted };
 }
@@ -276,7 +277,7 @@ export async function persistPartialCommit(
       payloadJson: sql`COALESCE(${clientImports.payloadJson}, '{}'::jsonb) || ${JSON.stringify({ payload })}::jsonb`,
       updatedAt: now,
     })
-    .where(and(eq(clientImports.id, importId), ne(clientImports.status, "committed")));
+    .where(and(eq(clientImports.id, importId), noSavedFactFinder));
 
   return { allTabsCommitted, firstTimeAllCommitted: false };
 }

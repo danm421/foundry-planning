@@ -10,7 +10,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "@/lib/imports/authz";
-import { refuseCommittedImport } from "@/lib/imports/committed";
+import { refuseSavedFactFinder } from "@/lib/imports/saved-fact-finder";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -126,8 +126,8 @@ export async function POST(request: Request, { params }: Params) {
   let payloadJson: ImportPayloadJson;
   try {
     const imp = await requireImportAccess({ importId, clientId, firmId, userId });
-    const committed = refuseCommittedImport(imp);
-    if (committed) return committed;
+    const saved = refuseSavedFactFinder(imp);
+    if (saved) return saved;
     payloadJson = (imp.payloadJson ?? {}) as ImportPayloadJson;
   } catch (err) {
     if (err instanceof ForbiddenError) {

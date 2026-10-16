@@ -1,4 +1,4 @@
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { clientImportFiles, clientImports } from "@/db/schema";
@@ -8,7 +8,13 @@ import {
   ForbiddenError as SubscriptionForbiddenError,
 } from "@/lib/authz";
 import { requireImportAccess, ForbiddenError, NotFoundError } from "@/lib/imports/authz";
-import { refuseCommittedImport } from "@/lib/imports/committed";
+import {
+  isSavedFactFinder,
+  noSavedFactFinder,
+  refuseSavedFactFinder,
+  savedFactFinderRefusal,
+  SavedFactFinderError,
+} from "@/lib/imports/saved-fact-finder";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -148,8 +154,8 @@ async function runGateChain(paramsPromise: Params["params"], op: "map" | "match"
     }
     throw err;
   }
-  const committed = refuseCommittedImport(imp);
-  if (committed) return { ok: false, response: committed };
+  const saved = refuseSavedFactFinder(imp);
+  if (saved) return { ok: false, response: saved };
 
   // Defense-in-depth, mirroring chat/extract/route.ts's own comment: the
   // middleware already blocks this for non-active subscriptions and every
@@ -275,6 +281,7 @@ export async function POST(request: Request, { params }: Params) {
     if (err instanceof NotFoundError) {
       return jsonResponse(404, { error: err.message });
     }
+    if (err instanceof SavedFactFinderError) return savedFactFinderRefusal();
     throw err;
   }
 
@@ -340,24 +347,24 @@ export async function PATCH(request: Request, { params }: Params) {
   // already gated this; the narrower rule is that a handler HOLDING a firm id
   // must not issue a write that ignores it, and a write matching no row is a
   // refusal rather than a silent no-op.
+  const inScope = and(
+    eq(clientImports.id, importId),
+    eq(clientImports.clientId, clientId),
+    eq(clientImports.orgId, firmId),
+    isNull(clientImports.discardedAt),
+  );
   const written = await db
     .update(clientImports)
     .set({
       payloadJson: { ...payload, chat: { ...chat, entityRows } },
       updatedAt: new Date(),
     })
-    .where(
-      and(
-        eq(clientImports.id, importId),
-        eq(clientImports.clientId, clientId),
-        eq(clientImports.orgId, firmId),
-        isNull(clientImports.discardedAt),
-        ne(clientImports.status, "committed"),
-      ),
-    )
+    .where(and(inScope, noSavedFactFinder))
     .returning({ id: clientImports.id });
   if (written.length === 0) {
-    return jsonResponse(404, { error: "Import not found" });
+    // Read again in the same scope: a fact finder saved to the plan meanwhile says so; anything else is the 404.
+    const [now] = await db.select({ payloadJson: clientImports.payloadJson }).from(clientImports).where(inScope).limit(1);
+    return now && isSavedFactFinder(now.payloadJson) ? savedFactFinderRefusal() : jsonResponse(404, { error: "Import not found" });
   }
 
   // After the write, never before — an audit row for a write that did not

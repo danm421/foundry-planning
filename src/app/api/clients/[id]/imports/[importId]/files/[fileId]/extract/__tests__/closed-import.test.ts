@@ -4,9 +4,10 @@
 // writes over a fact finder saved to the plan (Plan 4, Review Focus 5). Its
 // write replaces the import's whole payload, so a save that lands while the
 // file is being read — or one that landed before — would lose its closed
-// record and change list. The reader and the gates around the route are stubs;
-// the import, its file and the save are real. Everything lives under a firm id
-// no other suite uses.
+// record and change list. Every other import — a statement-chat import closed
+// with "Finish import" included — is read as before Plan 4. The reader and the
+// gates around the route are stubs; the import, its file and the save are real.
+// Everything lives under a firm id no other suite uses.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const FIRM = "firm_test_ff_save_file_extract";
@@ -33,6 +34,7 @@ vi.mock("@/lib/imports/blob", () => ({ downloadImportFile: vi.fn(async () => Buf
 
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
+import { recordAudit } from "@/lib/audit";
 import { clientImportExtractions, clientImportFiles, clientImports } from "@/db/schema";
 import { extractDocument } from "@/lib/extraction/extract";
 import type { ExtractionResult } from "@/lib/extraction/types";
@@ -52,12 +54,17 @@ const READ = {
   promptVersion: "test",
 } as unknown as ExtractionResult;
 
-/** A fact finder import with one statement uploaded. */
-async function importWithAStatement() {
+/** A fact finder import with one statement uploaded — or, with `finishedChat`, a statement-chat import closed with "Finish import". */
+async function importWithAStatement(opts: { finishedChat?: boolean } = {}) {
   const seed = await seedSaveClient(FIRM);
   const [imp] = await db
     .insert(clientImports)
-    .values({ clientId: seed.clientId, orgId: FIRM, mode: "onboarding", createdByUserId: SAVE_ACTOR, payloadJson: { factFinder: { ...emptyFactFinderState(), version: 1 } } })
+    .values({
+      clientId: seed.clientId, orgId: FIRM, mode: "onboarding", createdByUserId: SAVE_ACTOR,
+      ...(opts.finishedChat
+        ? { status: "committed" as const, committedAt: new Date(CLOSED.at), payloadJson: { chat: { surface: "chat" } } }
+        : { payloadJson: { factFinder: { ...emptyFactFinderState(), version: 1 } } }),
+    })
     .returning({ id: clientImports.id });
   const [file] = await db
     .insert(clientImportFiles)
@@ -86,14 +93,18 @@ d("re-reading one file of a fact finder import (live DB)", () => {
   beforeAll(async () => dropSaveFirm(FIRM), 120_000);
   afterAll(async () => dropSaveFirm(FIRM), 120_000);
 
-  it("a save that lands while the file is read: the import stays committed, with its closed record — the read's payload isn't written", async () => {
+  it("a save that lands while the file is read: 409 and no 'completed' audit — the import stays committed, with its closed record", async () => {
     const { scope, reRead } = await importWithAStatement();
     vi.mocked(extractDocument).mockImplementationOnce(async () => {
       await db.transaction((tx) => closeFactFinder(tx, scope, 1, CLOSED));
       return READ;
     });
+    vi.mocked(recordAudit).mockClear();
 
-    await reRead();
+    const res = await reRead();
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
+    expect(vi.mocked(recordAudit).mock.calls.map(([a]) => a.action)).toEqual(["import.extraction.started"]);
     const after = await importOf(scope.importId);
     expect(after.status).toBe("committed");
     expect(after.payloadJson).not.toHaveProperty("fileResults");
@@ -112,6 +123,16 @@ d("re-reading one file of a fact finder import (live DB)", () => {
     expect(extractDocument).not.toHaveBeenCalled();
     expect(await db.select().from(clientImportExtractions).where(eq(clientImportExtractions.fileId, fileId))).toEqual([]);
     expect(await importOf(scope.importId)).toEqual(before);
+  });
+
+  it("a finished statement-chat import (committed, no fact finder) takes the file's read as before", async () => {
+    const { scope, fileId, reRead } = await importWithAStatement({ finishedChat: true });
+    vi.mocked(extractDocument).mockResolvedValueOnce(READ);
+
+    expect((await reRead()).status).toBe(200);
+    const after = await importOf(scope.importId);
+    expect(after.status).toBe("committed");
+    expect(Object.keys((after.payloadJson as { fileResults: object }).fileResults)).toEqual([fileId]);
   });
 
   it("an import that isn't saved still takes the file's read", async () => {

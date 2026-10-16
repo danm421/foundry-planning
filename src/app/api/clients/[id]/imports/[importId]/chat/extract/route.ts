@@ -1,4 +1,4 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { clientImports } from "@/db/schema";
@@ -9,7 +9,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "@/lib/imports/authz";
-import { refuseCommittedImport } from "@/lib/imports/committed";
+import { noSavedFactFinder, refuseSavedFactFinder } from "@/lib/imports/saved-fact-finder";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -149,8 +149,8 @@ export async function POST(request: Request, { params }: Params) {
   let priorLiabilities: Annotated<ExtractedLiability>[] = [];
   try {
     const imp = await requireImportAccess({ importId, clientId, firmId, userId });
-    const committed = refuseCommittedImport(imp);
-    if (committed) return committed;
+    const saved = refuseSavedFactFinder(imp);
+    if (saved) return saved;
     extractHoldingsDefault = imp.extractHoldings === true;
     const priorPayload = ((imp.payloadJson ?? {}) as ImportPayloadJson).payload;
     priorAccounts = priorPayload?.accounts ?? [];
@@ -452,7 +452,7 @@ export async function POST(request: Request, { params }: Params) {
               },
               updatedAt: new Date(),
             })
-            .where(and(eq(clientImports.id, importId), ne(clientImports.status, "committed")));
+            .where(and(eq(clientImports.id, importId), noSavedFactFinder));
         }
 
         if (!closed) {

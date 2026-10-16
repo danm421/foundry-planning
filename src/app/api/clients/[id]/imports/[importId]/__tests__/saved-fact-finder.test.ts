@@ -1,10 +1,12 @@
-// src/app/api/clients/[id]/imports/[importId]/__tests__/committed-import.test.ts
+// src/app/api/clients/[id]/imports/[importId]/__tests__/saved-fact-finder.test.ts
 //
-// A committed import is finished — a fact finder saved to the plan keeps its
-// closed record and change list in `payload_json` (Plan 4, Review Focus 5).
-// The legacy routes that write an import's payload or status, and have no
-// route test of their own, refuse one before doing any work: matching
-// (which replaces the whole payload), committing tabs, and discarding.
+// A fact finder saved to the plan keeps its closed record and change list in
+// `payload_json` (Plan 4, Review Focus 5). The legacy routes that write an
+// import's payload or status, and have no route test of their own, refuse one
+// before doing any work: matching (which replaces the whole payload) and
+// committing tabs; discarding refuses every committed import, as it always
+// did. Every other import — a statement-chat import closed with "Finish
+// import" included — goes through as before Plan 4.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
@@ -63,6 +65,9 @@ const req = (path: string, body: unknown = {}) =>
   }) as never;
 const params = { params: Promise.resolve({ id: "c1", importId: "i1" }) };
 
+/** A statement-chat import closed with "Finish import": committed, and no fact finder in its payload. */
+const FINISHED_CHAT_IMPORT = { ...SAVED_IMPORT, payloadJson: { chat: { surface: "chat" }, fileResults: { f1: { warnings: [] } }, payload: { accounts: [] } } };
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireOrgId).mockResolvedValue("org_1");
@@ -73,7 +78,7 @@ beforeEach(() => {
   vi.mocked(commitTabs).mockResolvedValue({ results: {}, allTabsCommitted: true } as never);
 });
 
-describe("a committed import is refused before any work", () => {
+describe("a fact finder saved to the plan is refused before any work", () => {
   it("match — which would replace the whole payload", async () => {
     const res = await match(req("match"), params);
     expect(res.status).toBe(409);
@@ -89,10 +94,28 @@ describe("a committed import is refused before any work", () => {
     expect(db.select).not.toHaveBeenCalled();
   });
 
-  it("discard", async () => {
+  it("discard — with the refusal every committed import gets", async () => {
     const res = await discard(req("discard"), params);
     expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
+    expect(await res.json()).toEqual({ error: "cannot_discard_committed_import" });
     expect(db.transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("a finished statement-chat import (committed, no fact finder) works as before", () => {
+  beforeEach(() => {
+    vi.mocked(requireImportAccess).mockResolvedValue(FINISHED_CHAT_IMPORT as never);
+  });
+
+  it("match", async () => {
+    const res = await match(req("match"), params);
+    expect(res.status).toBe(200);
+    expect(runImportMatching).toHaveBeenCalledTimes(1);
+  });
+
+  it("commit", async () => {
+    const res = await commit(req("commit", { tabs: ["goals"] }), params);
+    expect(res.status).toBe(200);
+    expect(commitTabs).toHaveBeenCalledTimes(1);
   });
 });

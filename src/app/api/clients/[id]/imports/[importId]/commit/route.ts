@@ -11,7 +11,7 @@ import {
     NotFoundError,
     requireImportAccess,
 } from "@/lib/imports/authz";
-import { refuseCommittedImport } from "@/lib/imports/committed";
+import { refuseSavedFactFinder } from "@/lib/imports/saved-fact-finder";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { resolveHoldingsForCommit } from "@/lib/imports/commit/holdings";
 import { commitTabs } from "@/lib/imports/commit/orchestrator";
@@ -144,8 +144,8 @@ export async function POST(request: NextRequest, { params }: Params) {
             firmId,
             userId,
         });
-        const committed = refuseCommittedImport(imp);
-        if (committed) return committed;
+        const saved = refuseSavedFactFinder(imp);
+        if (saved) return saved;
 
         if (imp.mode === "updating" && !imp.scenarioId) {
             return NextResponse.json(

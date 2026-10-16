@@ -106,7 +106,19 @@ beforeEach(() => {
 });
 
 describe("assemble route guard + delegation", () => {
-  it("refuses a committed import before assembling anything", async () => {
+  it("a finished (committed) import with no fact finder is assembled as before", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue({ ...SAVED_IMPORT, payloadJson: { fileResults: { f1: { warnings: [] } } } } as never);
+    vi.mocked(runAssemble).mockResolvedValue({
+      assemble: { version: 1, mergedFileCount: 1, assumptions: [], questions: [] },
+      questionCount: 0,
+      rowCount: 1,
+    } as never);
+    const res = await POST(makeReq(), params);
+    expect(res.status).toBe(200);
+    expect(runAssemble).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a fact finder saved to the plan before assembling anything", async () => {
     vi.mocked(requireImportAccess).mockResolvedValue(SAVED_IMPORT as never);
     const res = await POST(makeReq(), params);
     expect(res.status).toBe(409);

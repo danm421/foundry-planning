@@ -295,7 +295,14 @@ describe("chat extract route gates", () => {
     expect(res.status).toBe(404);
   });
 
-  it("refuses a committed import (a fact finder saved to the plan) before reading or writing anything", async () => {
+  it("a finished statement-chat import (committed, no fact finder) still streams", async () => {
+    currentImportRow = { id: "i1", payloadJson: { chat: { surface: "chat" } }, extractHoldings: false, status: "committed" };
+    const res = await POST(req(), params);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+  });
+
+  it("refuses a fact finder saved to the plan before reading or writing anything", async () => {
     currentImportRow = {
       id: "i1",
       payloadJson: { factFinder: { version: 3, closed: { at: "2026-10-16T09:00:00.000Z" } }, chat: { surface: "chat" } },

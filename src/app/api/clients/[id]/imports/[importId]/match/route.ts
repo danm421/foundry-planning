@@ -7,7 +7,7 @@ import {
     ForbiddenError,
     NotFoundError,
 } from "@/lib/imports/authz";
-import { refuseCommittedImport } from "@/lib/imports/committed";
+import { refuseSavedFactFinder } from "@/lib/imports/saved-fact-finder";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { runImportMatching } from "@/lib/imports/run-matching";
@@ -71,8 +71,8 @@ export async function POST(_request: NextRequest, { params }: Params) {
             firmId,
             userId,
         });
-        const committed = refuseCommittedImport(imp);
-        if (committed) return committed;
+        const saved = refuseSavedFactFinder(imp);
+        if (saved) return saved;
 
         const fileResults =
             (imp.payloadJson as ImportPayloadJson)?.fileResults ?? {};

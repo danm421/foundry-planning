@@ -62,4 +62,11 @@ describe("POST /imports/[importId]/files", () => {
     }
     expect(uploadImportFile).toHaveBeenCalledTimes(2);
   });
+
+  it("still takes a file for a finished statement-chat import (committed, no fact finder)", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValueOnce({ ...importWith({ chat: { surface: "chat" } }), status: "committed" });
+    const res = await POST(upload(), ctx);
+    expect(res.status).toBe(200);
+    expect(uploadImportFile).toHaveBeenCalledTimes(1);
+  });
 });

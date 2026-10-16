@@ -1,4 +1,5 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { noSavedFactFinder } from "@/lib/imports/saved-fact-finder";
 import { db } from "@/db";
 import { clientImports } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
@@ -325,8 +326,8 @@ export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleRes
       payloadJson: { fileResults, payload: assembledPayload, assemble },
       updatedAt: new Date(),
     })
-    // A committed import is never written over (lib/imports/committed.ts) — this write replaces the whole payload.
-    .where(and(eq(clientImports.id, importId), ne(clientImports.status, "committed")));
+    // A saved fact finder is never written over (lib/imports/saved-fact-finder.ts) — this write replaces the whole payload.
+    .where(and(eq(clientImports.id, importId), noSavedFactFinder));
 
   await recordAudit({
     action: "import.assemble.run",

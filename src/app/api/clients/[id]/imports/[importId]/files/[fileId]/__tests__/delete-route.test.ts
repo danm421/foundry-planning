@@ -47,4 +47,11 @@ describe("DELETE /imports/[importId]/files/[fileId]", () => {
     }
     expect(mockUpdate).toHaveBeenCalledTimes(2);
   });
+
+  it("still deletes a file of a finished statement-chat import (committed, no fact finder)", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValueOnce({ ...importWith({ chat: { surface: "chat" } }), status: "committed" });
+    const res = await DELETE(new NextRequest("http://x", { method: "DELETE" }), ctx);
+    expect(res.status).toBe(200);
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+  });
 });

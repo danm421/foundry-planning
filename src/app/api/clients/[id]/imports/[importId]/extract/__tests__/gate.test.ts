@@ -26,6 +26,7 @@ vi.mock("@/lib/rate-limit", () => ({ checkImportRateLimit: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 vi.mock("@/lib/extraction/extract", () => ({ extractDocument: vi.fn() }));
 vi.mock("@/lib/imports/blob", () => ({ downloadImportFile: vi.fn() }));
+vi.mock("@/lib/imports/run-extraction", () => ({ runImportExtraction: vi.fn() }));
 
 // After the gate, the route queries import files; return [] so an entitled
 // firm short-circuits to a 400 ("No files") — proving it passed the guard
@@ -49,6 +50,7 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { extractDocument } from "@/lib/extraction/extract";
 import { db } from "@/db";
 import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
+import { runImportExtraction } from "@/lib/imports/run-extraction";
 
 /** A fact finder saved to the plan: the import is committed, its closed record in the payload. */
 const SAVED_ROW = {
@@ -100,7 +102,22 @@ describe("extract route entitlement guard", () => {
     expect(extractDocument).not.toHaveBeenCalled();
   });
 
-  it("refuses a committed import before reading anything", async () => {
+  it("a finished statement-chat import (committed, no fact finder) is read as before", async () => {
+    vi.mocked(auth).mockResolvedValue({
+      userId: "user_1",
+      sessionClaims: { org_public_metadata: { entitlements: ["ai_import"] } },
+    } as never);
+    vi.mocked(db.select)
+      .mockImplementationOnce((() => ({ from: () => ({ where: () => Promise.resolve([{ id: "f1" }]) }) })) as never)
+      .mockImplementationOnce((() => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([{ ...SAVED_ROW, payloadJson: { chat: { surface: "chat" } } }]) }) }) })) as never);
+    vi.mocked(runImportExtraction).mockResolvedValue({ succeeded: 1, failed: 0, status: "review", warnings: [], filesProcessed: 1 });
+
+    const res = await POST(makeReq(), params);
+    expect(res.status).toBe(200);
+    expect(runImportExtraction).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a fact finder saved to the plan before reading anything", async () => {
     vi.mocked(auth).mockResolvedValue({
       userId: "user_1",
       sessionClaims: { org_public_metadata: { entitlements: ["ai_import"] } },
@@ -114,6 +131,7 @@ describe("extract route entitlement guard", () => {
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
     expect(extractDocument).not.toHaveBeenCalled();
+    expect(runImportExtraction).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();
   });

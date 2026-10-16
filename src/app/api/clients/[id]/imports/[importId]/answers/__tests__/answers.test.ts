@@ -125,7 +125,17 @@ describe("answers route", () => {
     );
   });
 
-  it("refuses a committed import before anything is written", async () => {
+  it("a finished (committed) import with no fact finder is answered as before", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue({
+      ...SAVED_IMPORT,
+      payloadJson: { assemble: { version: 1, mergedFileCount: 1, assumptions: [], questions: makeQuestions() }, payload: { primary: { firstName: "Jane" } } },
+    } as never);
+    const res = await POST(makeReq({ answers: { "q:primary_dob": "1975-04-02" } }), params);
+    expect(res.status).toBe(200);
+    expect(setMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a fact finder saved to the plan before anything is written", async () => {
     vi.mocked(requireImportAccess).mockResolvedValue(SAVED_IMPORT as never);
     const res = await POST(makeReq({ answers: { "q:primary_dob": "1975-04-02" } }), params);
     expect(res.status).toBe(409);

@@ -197,9 +197,27 @@ beforeEach(() => {
 });
 
 describe("chat finalize route gates", () => {
-  it("refuses a committed import (a fact finder saved to the plan) before stamping anything", async () => {
+  it("a finished statement-chat import (committed, no fact finder) is finished again as before", async () => {
     vi.mocked(requireImportAccess).mockResolvedValue({
-      ...importRow({ chat: { surface: "chat", transcript: [], decisions: [], excludedRows: [], committedRowIds: [] } }),
+      ...importRow({
+        fileResults: CLEAN_FILE_RESULTS,
+        chat: { surface: "chat", transcript: [], decisions: [], excludedRows: [], committedRowIds: keptRowIds(CLEAN_FILE_RESULTS) },
+        payload: { accounts: persistedAccounts(CLEAN_FILE_RESULTS) as never },
+      }),
+      status: "committed",
+    } as never);
+    const res = await POST(req(), params);
+    expect(res.status).toBe(200);
+    expect(markTabsCommitted).toHaveBeenCalledTimes(1);
+    expect(updateCalls).toHaveLength(1);
+  });
+
+  it("refuses a fact finder saved to the plan before stamping anything", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue({
+      ...importRow({
+        chat: { surface: "chat", transcript: [], decisions: [], excludedRows: [], committedRowIds: [] },
+        factFinder: { version: 3, closed: { at: "2026-10-16T09:00:00.000Z" } },
+      } as unknown as ImportPayloadJson),
       status: "committed",
     } as never);
     const res = await POST(req(), params);

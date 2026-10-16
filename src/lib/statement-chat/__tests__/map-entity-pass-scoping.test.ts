@@ -32,8 +32,9 @@ const state: {
   lastSet?: Row;
 } = { imports: [], updateCalled: 0 };
 
-/** Walks a real `eq(column, value)` / `ne(column, value)` / `isNull(column)` / `and(...)` condition
- *  against a row. `isNull` carries no Param, so it — and `ne`'s `<>` — is read off the SQL text. */
+/** Walks a real `eq(column, value)` / `isNull(column)` / `and(...)` condition
+ *  against a row. `isNull` carries no Param, so it is read off the SQL text —
+ *  as is the saved-fact-finder leg, `(payload_json -> 'factFinder' -> 'closed') IS NULL`. */
 function matches(condition: SQL, row: Row): boolean {
   const chunks = condition.queryChunks;
   const column = chunks.find((c): c is Column => c instanceof Column);
@@ -46,9 +47,12 @@ function matches(condition: SQL, row: Row): boolean {
       .filter((c): c is StringChunk => c instanceof StringChunk)
       .map((c) => c.value.join(""))
       .join("");
+    if (/-> 'factFinder' -> 'closed'\) is null/i.test(text)) {
+      return (value as { factFinder?: { closed?: unknown } } | null)?.factFinder?.closed == null;
+    }
     if (/is null/i.test(text)) return value === null || value === undefined;
-    if (!param) throw new Error("expected eq(column, value) or ne(column, value)");
-    return /<>/.test(text) ? value !== param.value : value === param.value;
+    if (!param) throw new Error("expected eq(column, value)");
+    return value === param.value;
   }
   return nested.every((n) => matches(n, row));
 }
@@ -89,6 +93,7 @@ import { extractMapEntities } from "@/lib/entity-extraction";
 import { loadExistingRows } from "../existing-rows";
 import { runMapEntityPass } from "../map-entity-pass";
 import { NotFoundError } from "@/lib/imports/authz";
+import { SavedFactFinderError } from "@/lib/imports/saved-fact-finder";
 
 function candidate(name: string): CandidateRow {
   return {
@@ -284,13 +289,21 @@ describe("runMapEntityPass is scoped to the client and the firm", () => {
     expectSnapshotUntouched();
   });
 
-  it("writes nothing over an import saved between the read and the write (a fact finder saved to the plan)", async () => {
+  it("writes nothing over a fact finder saved between the read and the write, and says so", async () => {
     seedExistingEntityRows();
     state.beforeUpdate = () => {
-      state.imports[0].status = "committed";
+      (state.imports[0].payloadJson as Record<string, unknown>).factFinder = { version: 3, closed: { at: "2026-10-16T09:00:00.000Z" } };
     };
 
-    await expect(runMapEntityPass(ARGS)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(runMapEntityPass(ARGS)).rejects.toBeInstanceOf(SavedFactFinderError);
     expectSnapshotUntouched();
+  });
+
+  it("still writes a finished statement-chat import (committed, no fact finder)", async () => {
+    state.imports[0].status = "committed";
+
+    await runMapEntityPass(ARGS);
+    const chat = (state.imports[0].payloadJson as Record<string, Record<string, unknown>>).chat;
+    expect(Object.keys(chat.entityRows as object)).toEqual(["disability_policy"]);
   });
 });

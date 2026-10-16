@@ -1,4 +1,5 @@
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
+import { noSavedFactFinder } from "@/lib/imports/saved-fact-finder";
 import { db } from "@/db";
 import {
     clientImports,
@@ -382,9 +383,9 @@ export async function runImportExtraction(
             payloadJson: mergePayloadJson({ fileResults: produced }, ["payload", "assemble"], ["fileResults"]),
             updatedAt: new Date(),
         })
-        // A committed import never moves back: a fact finder import saved to
-        // the plan while this run was reading stays saved and read-only.
-        .where(and(eq(clientImports.id, importId), ne(clientImports.status, "committed")));
+        // A fact finder saved to the plan while this run was reading stays
+        // saved and read-only; any other import takes the read as it always did.
+        .where(and(eq(clientImports.id, importId), noSavedFactFinder));
 
     return {
         succeeded,

@@ -142,8 +142,19 @@ beforeEach(() => {
 });
 
 describe("chat turn route gates", () => {
-  it("refuses a committed import (a fact finder saved to the plan) before the turn runs", async () => {
+  it("a finished statement-chat import (committed, no fact finder) takes a turn as before", async () => {
     vi.mocked(requireImportAccess).mockResolvedValue({ ...importRow(CHAT_PAYLOAD), status: "committed" } as never);
+    const res = await POST(req(), params);
+    expect(res.status).toBe(200);
+    expect(runTurn).toHaveBeenCalledTimes(1);
+    expect(updateCalls.length).toBeGreaterThan(0);
+  });
+
+  it("refuses a fact finder saved to the plan before the turn runs", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue({
+      ...importRow({ ...CHAT_PAYLOAD, factFinder: { version: 3, closed: { at: "2026-10-16T09:00:00.000Z" } } } as ImportPayloadJson),
+      status: "committed",
+    } as never);
     const res = await POST(req(), params);
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
