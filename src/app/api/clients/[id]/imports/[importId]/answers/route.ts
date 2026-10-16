@@ -10,7 +10,7 @@ import {
     ForbiddenError,
     NotFoundError,
 } from "@/lib/imports/authz";
-import { noSavedFactFinder, refuseSavedFactFinder } from "@/lib/imports/saved-fact-finder";
+import { noSavedFactFinder, refuseSavedFactFinder, refuseFactFinderImport } from "@/lib/imports/saved-fact-finder";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
 import { normalizeImportPayload, type ImportPayloadJson } from "@/lib/imports/types";
@@ -52,6 +52,8 @@ export async function POST(request: NextRequest, { params }: Params) {
         });
         const saved = refuseSavedFactFinder(imp);
         if (saved) return saved;
+        const notFactFinder = refuseFactFinderImport(imp);
+        if (notFactFinder) return notFactFinder;
 
         const body = (await request.json().catch(() => ({}))) as BodyArgs;
         const answers =

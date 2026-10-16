@@ -12,6 +12,7 @@ import { sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { clientImports } from "@/db/schema";
 import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
+import { isFactFinderImport } from "./import-kind";
 import type { ImportPayloadJson } from "./types";
 
 /** The payload holds a fact finder saved to the plan. */
@@ -27,6 +28,16 @@ export function savedFactFinderRefusal(): NextResponse {
 /** The 409 a saved fact finder gets, or null to go on. */
 export function refuseSavedFactFinder(imp: { payloadJson: unknown }): NextResponse | null {
   return isSavedFactFinder(imp.payloadJson) ? savedFactFinderRefusal() : null;
+}
+
+/** What the wizard-era routes answer for a fact finder import, open or saved. */
+export const FACT_FINDER_ONLY_MESSAGE = "This is a fact finder import — open it on the fact finder screen.";
+
+/** The 409 a fact finder import gets from a Review Wizard route, or null to go on. Call it right after `refuseSavedFactFinder`. */
+export function refuseFactFinderImport(imp: { payloadJson: unknown }): NextResponse | null {
+  return isFactFinderImport(imp.payloadJson as ImportPayloadJson | null)
+    ? NextResponse.json({ error: FACT_FINDER_ONLY_MESSAGE }, { status: 409 })
+    : null;
 }
 
 /** The WHERE leg every such write carries — persist.ts's own "not closed". */

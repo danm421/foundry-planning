@@ -30,6 +30,7 @@ import { requireImportAccess } from "@/lib/imports/authz";
 import { recordAudit } from "@/lib/audit";
 import { db } from "@/db";
 import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
+import { FACT_FINDER_ONLY_MESSAGE } from "@/lib/imports/saved-fact-finder";
 
 /** A fact finder saved to the plan: the import is committed, its closed record in the payload. */
 const SAVED_IMPORT = {
@@ -140,6 +141,22 @@ describe("answers route", () => {
     const res = await POST(makeReq({ answers: { "q:primary_dob": "1975-04-02" } }), params);
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
+    expect(setMock).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("refuses a fact finder import (open, not saved) before anything is written", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue({
+      id: "i1",
+      status: "review",
+      payloadJson: {
+        factFinder: { version: 0 },
+        assemble: { version: 1, mergedFileCount: 1, assumptions: [], questions: makeQuestions() },
+      },
+    } as never);
+    const res = await POST(makeReq({ answers: { "q:primary_dob": "1975-04-02" } }), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: FACT_FINDER_ONLY_MESSAGE });
     expect(setMock).not.toHaveBeenCalled();
     expect(recordAudit).not.toHaveBeenCalled();
   });

@@ -15,7 +15,7 @@ import {
     ForbiddenError,
     NotFoundError,
 } from "@/lib/imports/authz";
-import { noSavedFactFinder, refuseSavedFactFinder, savedFactFinderRefusal } from "@/lib/imports/saved-fact-finder";
+import { noSavedFactFinder, refuseSavedFactFinder, refuseFactFinderImport, savedFactFinderRefusal } from "@/lib/imports/saved-fact-finder";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -140,6 +140,8 @@ export async function POST(request: NextRequest, { params }: Params) {
         }
         const saved = refuseSavedFactFinder(importRow);
         if (saved) return saved;
+        const notFactFinder = refuseFactFinderImport(importRow);
+        if (notFactFinder) return notFactFinder;
 
         const extractHoldings =
             typeof body.extractHoldings === "boolean"

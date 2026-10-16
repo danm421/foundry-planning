@@ -60,6 +60,7 @@ import { requireImportAccess } from "@/lib/imports/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
+import { FACT_FINDER_ONLY_MESSAGE } from "@/lib/imports/saved-fact-finder";
 
 /** A fact finder saved to the plan: the import is committed, its closed record in the payload. */
 const SAVED_IMPORT = {
@@ -70,8 +71,8 @@ const SAVED_IMPORT = {
   scenarioId: "sc1",
   payloadJson: { factFinder: { version: 3, closed: { at: "2026-10-16T09:00:00.000Z" } }, chat: { surface: "chat" } },
 };
-/** A statement-chat import closed with "Finish import": committed, and no fact finder in its payload. */
-const FINISHED_CHAT_IMPORT = { ...SAVED_IMPORT, payloadJson: { chat: { surface: "chat" } } };
+/** A Review Wizard import finished with "Commit": committed, and no fact finder in its payload. */
+const FINISHED_WIZARD_IMPORT = { ...SAVED_IMPORT, payloadJson: { fileResults: {}, payload: { accounts: [] } } };
 
 function makeReq(body: unknown) {
   return new Request(
@@ -104,7 +105,7 @@ describe("PATCH /api/clients/[id]/imports/[importId] — a fact finder saved to 
   });
 
   it("a save that lands while the PATCH runs: the write misses, so 409 and no audit row", async () => {
-    vi.mocked(requireImportAccess).mockResolvedValue({ ...SAVED_IMPORT, status: "review", payloadJson: { factFinder: { version: 2 } } } as never);
+    vi.mocked(requireImportAccess).mockResolvedValue({ ...SAVED_IMPORT, status: "review", payloadJson: { fileResults: {} } } as never);
     updateReturningResolve.mockResolvedValueOnce([]);
     const res = await PATCH(makeReq({ payloadJson: { payload: { accounts: [] } } }), params);
     expect(res.status).toBe(409);
@@ -112,12 +113,35 @@ describe("PATCH /api/clients/[id]/imports/[importId] — a fact finder saved to 
     expect(recordAudit).not.toHaveBeenCalled();
   });
 
-  it("a finished statement-chat import (committed, no fact finder) is patched as before", async () => {
-    vi.mocked(requireImportAccess).mockResolvedValue(FINISHED_CHAT_IMPORT as never);
+  it("a finished Review Wizard import (committed, no fact finder) is patched as before", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue(FINISHED_WIZARD_IMPORT as never);
     const res = await PATCH(makeReq({ payloadJson: { payload: { accounts: [] } } }), params);
     expect(res.status).toBe(200);
     expect(updateSetSpy).toHaveBeenCalledTimes(1);
     expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "import.payload.edited" }));
+  });
+});
+
+describe("PATCH /api/clients/[id]/imports/[importId] — a fact finder import", () => {
+  it.each([
+    ["an open fact finder", { factFinder: { version: 0 } }],
+    ["a statement-chat import", { chat: { surface: "chat" } }],
+  ])("is refused for %s before the body is read or anything is written", async (_name, payloadJson) => {
+    vi.mocked(requireImportAccess).mockResolvedValue({ ...SAVED_IMPORT, status: "review", payloadJson } as never);
+    const res = await PATCH(makeReq({ payloadJson: { payload: { accounts: [] } } }), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: FACT_FINDER_ONLY_MESSAGE });
+    expect(updateSetSpy).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it.each([["factFinder"], ["chat"]])("a wizard import's PATCH can't set `%s` — it would turn it into a fact finder import", async (key) => {
+    vi.mocked(requireImportAccess).mockResolvedValue({ ...SAVED_IMPORT, status: "review", payloadJson: { fileResults: {} } } as never);
+    const res = await PATCH(makeReq({ payloadJson: { [key]: { surface: "chat", version: 0 } } }), params);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Those import fields can't be changed here." });
+    expect(updateSetSpy).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 });
 

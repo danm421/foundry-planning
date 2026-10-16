@@ -50,6 +50,7 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { extractDocument } from "@/lib/extraction/extract";
 import { db } from "@/db";
 import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
+import { FACT_FINDER_ONLY_MESSAGE } from "@/lib/imports/saved-fact-finder";
 import { runImportExtraction } from "@/lib/imports/run-extraction";
 
 /** A fact finder saved to the plan: the import is committed, its closed record in the payload. */
@@ -102,19 +103,34 @@ describe("extract route entitlement guard", () => {
     expect(extractDocument).not.toHaveBeenCalled();
   });
 
-  it("a finished statement-chat import (committed, no fact finder) is read as before", async () => {
+  it("a finished Review Wizard import (committed, no fact finder) is read as before", async () => {
     vi.mocked(auth).mockResolvedValue({
       userId: "user_1",
       sessionClaims: { org_public_metadata: { entitlements: ["ai_import"] } },
     } as never);
     vi.mocked(db.select)
       .mockImplementationOnce((() => ({ from: () => ({ where: () => Promise.resolve([{ id: "f1" }]) }) })) as never)
-      .mockImplementationOnce((() => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([{ ...SAVED_ROW, payloadJson: { chat: { surface: "chat" } } }]) }) }) })) as never);
+      .mockImplementationOnce((() => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([{ ...SAVED_ROW, payloadJson: { fileResults: {} } }]) }) }) })) as never);
     vi.mocked(runImportExtraction).mockResolvedValue({ succeeded: 1, failed: 0, status: "review", warnings: [], filesProcessed: 1 });
 
     const res = await POST(makeReq(), params);
     expect(res.status).toBe(200);
     expect(runImportExtraction).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a fact finder import (open, not saved) before reading anything", async () => {
+    vi.mocked(auth).mockResolvedValue({
+      userId: "user_1",
+      sessionClaims: { org_public_metadata: { entitlements: ["ai_import"] } },
+    } as never);
+    vi.mocked(db.select)
+      .mockImplementationOnce((() => ({ from: () => ({ where: () => Promise.resolve([{ id: "f1" }]) }) })) as never)
+      .mockImplementationOnce((() => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([{ ...SAVED_ROW, status: "review", payloadJson: { factFinder: { version: 0 } } }]) }) }) })) as never);
+
+    const res = await POST(makeReq(), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: FACT_FINDER_ONLY_MESSAGE });
+    expect(runImportExtraction).not.toHaveBeenCalled();
   });
 
   it("refuses a fact finder saved to the plan before reading anything", async () => {

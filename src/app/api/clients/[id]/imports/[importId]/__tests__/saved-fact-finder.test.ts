@@ -5,8 +5,9 @@
 // import's payload or status, and have no route test of their own, refuse one
 // before doing any work: matching (which replaces the whole payload) and
 // committing tabs; discarding refuses every committed import, as it always
-// did. Every other import — a statement-chat import closed with "Finish
-// import" included — goes through as before Plan 4.
+// did. A fact finder import that is still open (or a statement-chat one) gets
+// the fact finder message instead; a Review Wizard import goes through as
+// before Plan 4.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
@@ -37,6 +38,7 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { requireOrgId } from "@/lib/db-helpers";
 import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
+import { FACT_FINDER_ONLY_MESSAGE } from "@/lib/imports/saved-fact-finder";
 import { requireImportAccess } from "@/lib/imports/authz";
 import { commitTabs } from "@/lib/imports/commit/orchestrator";
 import { runImportMatching } from "@/lib/imports/run-matching";
@@ -65,8 +67,8 @@ const req = (path: string, body: unknown = {}) =>
   }) as never;
 const params = { params: Promise.resolve({ id: "c1", importId: "i1" }) };
 
-/** A statement-chat import closed with "Finish import": committed, and no fact finder in its payload. */
-const FINISHED_CHAT_IMPORT = { ...SAVED_IMPORT, payloadJson: { chat: { surface: "chat" }, fileResults: { f1: { warnings: [] } }, payload: { accounts: [] } } };
+/** A Review Wizard import finished with "Commit": committed, and no fact finder in its payload. */
+const FINISHED_WIZARD_IMPORT = { ...SAVED_IMPORT, payloadJson: { fileResults: { f1: { warnings: [] } }, payload: { accounts: [] } } };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -102,9 +104,34 @@ describe("a fact finder saved to the plan is refused before any work", () => {
   });
 });
 
-describe("a finished statement-chat import (committed, no fact finder) works as before", () => {
+describe("a fact finder import that is still open is refused by the wizard routes", () => {
   beforeEach(() => {
-    vi.mocked(requireImportAccess).mockResolvedValue(FINISHED_CHAT_IMPORT as never);
+    vi.mocked(requireImportAccess).mockResolvedValue({
+      ...SAVED_IMPORT,
+      status: "review",
+      payloadJson: { factFinder: { version: 0 }, fileResults: { f1: { warnings: [] } }, payload: { accounts: [] } },
+    } as never);
+  });
+
+  it("match — which would replace the whole payload", async () => {
+    const res = await match(req("match"), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: FACT_FINDER_ONLY_MESSAGE });
+    expect(runImportMatching).not.toHaveBeenCalled();
+  });
+
+  it("commit", async () => {
+    const res = await commit(req("commit", { tabs: ["goals"] }), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: FACT_FINDER_ONLY_MESSAGE });
+    expect(commitTabs).not.toHaveBeenCalled();
+    expect(db.select).not.toHaveBeenCalled();
+  });
+});
+
+describe("a finished Review Wizard import (committed, no fact finder) works as before", () => {
+  beforeEach(() => {
+    vi.mocked(requireImportAccess).mockResolvedValue(FINISHED_WIZARD_IMPORT as never);
   });
 
   it("match", async () => {

@@ -4,8 +4,8 @@
 // writes over a fact finder saved to the plan (Plan 4, Review Focus 5). Its
 // write replaces the import's whole payload, so a save that lands while the
 // file is being read — or one that landed before — would lose its closed
-// record and change list. Every other import — a statement-chat import closed
-// with "Finish import" included — is read as before Plan 4. The reader and the
+// record and change list. A fact finder import that is still open is refused
+// too (D7); a Review Wizard import is read as before Plan 4. The reader and the
 // gates around the route are stubs; the import, its file and the save are real.
 // Everything lives under a firm id no other suite uses.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -39,6 +39,7 @@ import { clientImportExtractions, clientImportFiles, clientImports } from "@/db/
 import { extractDocument } from "@/lib/extraction/extract";
 import type { ExtractionResult } from "@/lib/extraction/types";
 import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
+import { FACT_FINDER_ONLY_MESSAGE } from "@/lib/imports/saved-fact-finder";
 import { closeFactFinder, loadFactFinder } from "@/lib/fact-finder/persist";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
 import { dropSaveFirm, SAVE_ACTOR, seedSaveClient } from "@/lib/fact-finder/save/__tests__/harness";
@@ -54,15 +55,17 @@ const READ = {
   promptVersion: "test",
 } as unknown as ExtractionResult;
 
-/** A fact finder import with one statement uploaded — or, with `finishedChat`, a statement-chat import closed with "Finish import". */
-async function importWithAStatement(opts: { finishedChat?: boolean } = {}) {
+/** A fact finder import with one statement uploaded — or, with `wizard`, a Review Wizard import (open, or already committed). */
+async function importWithAStatement(opts: { wizard?: "open" | "committed" } = {}) {
   const seed = await seedSaveClient(FIRM);
   const [imp] = await db
     .insert(clientImports)
     .values({
       clientId: seed.clientId, orgId: FIRM, mode: "onboarding", createdByUserId: SAVE_ACTOR,
-      ...(opts.finishedChat
-        ? { status: "committed" as const, committedAt: new Date(CLOSED.at), payloadJson: { chat: { surface: "chat" } } }
+      ...(opts.wizard === "committed"
+        ? { status: "committed" as const, committedAt: new Date(CLOSED.at), payloadJson: {} }
+        : opts.wizard === "open"
+        ? { payloadJson: {} }
         : { payloadJson: { factFinder: { ...emptyFactFinderState(), version: 1 } } }),
     })
     .returning({ id: clientImports.id });
@@ -94,9 +97,13 @@ d("re-reading one file of a fact finder import (live DB)", () => {
   afterAll(async () => dropSaveFirm(FIRM), 120_000);
 
   it("a save that lands while the file is read: 409 and no 'completed' audit — the import stays committed, with its closed record", async () => {
-    const { scope, reRead } = await importWithAStatement();
+    const { scope, reRead } = await importWithAStatement({ wizard: "open" });
+    // A Review Wizard import can't gain a fact finder through the API; the guarded write is the last line if one appears.
     vi.mocked(extractDocument).mockImplementationOnce(async () => {
-      await db.transaction((tx) => closeFactFinder(tx, scope, 1, CLOSED));
+      await db
+        .update(clientImports)
+        .set({ status: "committed", committedAt: new Date(CLOSED.at), payloadJson: { factFinder: { ...emptyFactFinderState(), version: 2, closed: CLOSED } } })
+        .where(eq(clientImports.id, scope.importId));
       return READ;
     });
     vi.mocked(recordAudit).mockClear();
@@ -125,8 +132,8 @@ d("re-reading one file of a fact finder import (live DB)", () => {
     expect(await importOf(scope.importId)).toEqual(before);
   });
 
-  it("a finished statement-chat import (committed, no fact finder) takes the file's read as before", async () => {
-    const { scope, fileId, reRead } = await importWithAStatement({ finishedChat: true });
+  it("a finished Review Wizard import (committed, no fact finder) takes the file's read as before", async () => {
+    const { scope, fileId, reRead } = await importWithAStatement({ wizard: "committed" });
     vi.mocked(extractDocument).mockResolvedValueOnce(READ);
 
     expect((await reRead()).status).toBe(200);
@@ -135,8 +142,21 @@ d("re-reading one file of a fact finder import (live DB)", () => {
     expect(Object.keys((after.payloadJson as { fileResults: object }).fileResults)).toEqual([fileId]);
   });
 
-  it("an import that isn't saved still takes the file's read", async () => {
+  it("a fact finder import that is still open is refused before the file is read, and stays as it was", async () => {
     const { scope, fileId, reRead } = await importWithAStatement();
+    const before = await importOf(scope.importId);
+    vi.mocked(extractDocument).mockClear();
+
+    const res = await reRead();
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: FACT_FINDER_ONLY_MESSAGE });
+    expect(extractDocument).not.toHaveBeenCalled();
+    expect(await db.select().from(clientImportExtractions).where(eq(clientImportExtractions.fileId, fileId))).toEqual([]);
+    expect(await importOf(scope.importId)).toEqual(before);
+  });
+
+  it("an import that isn't saved still takes the file's read", async () => {
+    const { scope, fileId, reRead } = await importWithAStatement({ wizard: "open" });
     vi.mocked(extractDocument).mockResolvedValueOnce(READ);
 
     expect((await reRead()).status).toBe(200);

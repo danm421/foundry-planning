@@ -13,7 +13,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "@/lib/imports/authz";
-import { noSavedFactFinder, refuseSavedFactFinder, savedFactFinderRefusal } from "@/lib/imports/saved-fact-finder";
+import { noSavedFactFinder, refuseSavedFactFinder, refuseFactFinderImport, savedFactFinderRefusal } from "@/lib/imports/saved-fact-finder";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -221,6 +221,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     });
     const saved = refuseSavedFactFinder(imp);
     if (saved) return saved;
+    const notFactFinder = refuseFactFinderImport(imp);
+    if (notFactFinder) return notFactFinder;
 
     let body: unknown;
     try {
@@ -249,6 +251,14 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     if (payloadJson !== undefined && !isPlainObject(payloadJson)) {
       return NextResponse.json(
         { error: "payloadJson must be an object" },
+        { status: 400 },
+      );
+    }
+
+    // A PATCH may not turn a wizard import into a fact finder import.
+    if (payloadJson !== undefined && ("factFinder" in payloadJson || "chat" in payloadJson)) {
+      return NextResponse.json(
+        { error: "Those import fields can't be changed here." },
         { status: 400 },
       );
     }

@@ -50,6 +50,7 @@ import { requireImportAccess } from "@/lib/imports/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { extractDocument } from "@/lib/extraction/extract";
 import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
+import { FACT_FINDER_ONLY_MESSAGE } from "@/lib/imports/saved-fact-finder";
 
 /** A fact finder saved to the plan: the import is committed, its closed record in the payload. */
 const SAVED_ROW = {
@@ -116,6 +117,24 @@ describe("per-file re-extract route guards", () => {
     const res = await POST(makeReq(), params);
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
+    expect(extractDocument).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses a fact finder import (open, not saved) before reading or writing anything", async () => {
+    vi.mocked(auth).mockResolvedValue({
+      userId: "user_1",
+      sessionClaims: { org_public_metadata: { entitlements: ["ai_import"] } },
+    } as never);
+    // The file, then the import row.
+    vi.mocked(db.select)
+      .mockImplementationOnce((() => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([{ id: "f1", documentType: "auto" }]) }) }) })) as never)
+      .mockImplementationOnce((() => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([{ ...SAVED_ROW, status: "review", payloadJson: { factFinder: { version: 0 } } }]) }) }) })) as never);
+
+    const res = await POST(makeReq(), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: FACT_FINDER_ONLY_MESSAGE });
     expect(extractDocument).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();

@@ -7,7 +7,7 @@ import {
     ForbiddenError,
     NotFoundError,
 } from "@/lib/imports/authz";
-import { refuseSavedFactFinder } from "@/lib/imports/saved-fact-finder";
+import { refuseSavedFactFinder, refuseFactFinderImport } from "@/lib/imports/saved-fact-finder";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -87,6 +87,8 @@ export async function POST(request: NextRequest, { params }: Params) {
         });
         const saved = refuseSavedFactFinder(imp);
         if (saved) return saved;
+        const notFactFinder = refuseFactFinderImport(imp);
+        if (notFactFinder) return notFactFinder;
 
         // Defense-in-depth: the middleware already blocks this POST for
         // non-active subscriptions, and every active seat includes the

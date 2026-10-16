@@ -41,6 +41,7 @@ import { verifyClientAccess } from "@/lib/clients/authz";
 import { getLatestTaxReturn } from "@/lib/tax-returns/store";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
+import { FACT_FINDER_ONLY_MESSAGE } from "@/lib/imports/saved-fact-finder";
 
 /** A fact finder saved to the plan: the import is committed, its closed record in the payload. */
 const SAVED_IMPORT = {
@@ -123,6 +124,18 @@ describe("assemble route guard + delegation", () => {
     const res = await POST(makeReq(), params);
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
+    expect(runAssemble).not.toHaveBeenCalled();
+  });
+
+  it("refuses a fact finder import (open, not saved) before assembling anything", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue({
+      ...SAVED_IMPORT,
+      status: "review",
+      payloadJson: { factFinder: { version: 0 }, fileResults: { f1: { warnings: [] } } },
+    } as never);
+    const res = await POST(makeReq(), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: FACT_FINDER_ONLY_MESSAGE });
     expect(runAssemble).not.toHaveBeenCalled();
   });
 
