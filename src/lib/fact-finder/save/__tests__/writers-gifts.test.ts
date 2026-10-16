@@ -184,6 +184,45 @@ describe("prior gift save writer", () => {
     expect(await auditOf(theirs.id, "gift.update")).toEqual([]);
   });
 
+  it("(d) an Update ticking the year clears the milestone the gift was tied to; one not ticking it keeps the tie", async () => {
+    const [charity] = await db.insert(externalBeneficiaries).values({ clientId: seed.clientId, name: "Tied gift charity" }).returning({ id: externalBeneficiaries.id });
+    const [tied] = await db
+      .insert(gifts)
+      .values({ clientId: seed.clientId, year: 2033, yearRef: "client_retirement", amount: "4000", grantor: "client", recipientExternalBeneficiaryId: charity.id })
+      .returning();
+
+    // Year unticked (amount ticked): the record keeps following its milestone.
+    const both = changeLine("gift", { year: 2021, amount: 4500 }, { recordId: tied.id });
+    const yearUnticked = { ...both, fields: both.fields.map((f) => (f.key === "year" ? { ...f, ticked: false } : f)) };
+    expect(inputOf(yearUnticked).body).toEqual({ amount: 4500 });
+    await inSave(scope, (ctx) => writer.update(ctx, inputOf(yearUnticked)));
+    expect(await giftRow(tied.id)).toMatchObject({ year: 2033, yearRef: "client_retirement", amount: "4500.00" });
+
+    // Year ticked: the typed year is the gift's, untied from the milestone.
+    expect(inputOf(both).body).toEqual({ year: 2021, yearRef: null, amount: 4500 });
+    await inSave(scope, (ctx) => writer.update(ctx, inputOf(both)));
+    expect(await giftRow(tied.id)).toMatchObject({ year: 2021, yearRef: null });
+  });
+
+  it("(d) clearing the milestone rolls back with the save, and never touches another client's gift", async () => {
+    const other = await seedSaveClient(FIRM);
+    const [theirCharity] = await db.insert(externalBeneficiaries).values({ clientId: other.clientId, name: "Their charity" }).returning({ id: externalBeneficiaries.id });
+    const [theirs] = await db
+      .insert(gifts)
+      .values({ clientId: other.clientId, year: 2031, yearRef: "plan_start", amount: "100", grantor: "client", recipientExternalBeneficiaryId: theirCharity.id })
+      .returning();
+    const [ours] = await db
+      .insert(gifts)
+      .values({ clientId: seed.clientId, year: 2031, yearRef: "plan_start", amount: "100", grantor: "client", recipientExternalBeneficiaryId: (await db.insert(externalBeneficiaries).values({ clientId: seed.clientId, name: "Ours" }).returning({ id: externalBeneficiaries.id }))[0].id })
+      .returning();
+
+    await inSave(scope, (ctx) => writer.update(ctx, inputOf(changeLine("gift", { year: 2020 }, { recordId: ours.id }))), { rollback: true });
+    expect(await giftRow(ours.id)).toMatchObject({ year: 2031, yearRef: "plan_start" });
+
+    await expect(inSave(scope, (ctx) => writer.update(ctx, inputOf(changeLine("gift", { year: 2020 }, { recordId: theirs.id }))))).rejects.toThrow("Gift not found");
+    expect(await giftRow(theirs.id)).toMatchObject({ year: 2031, yearRef: "plan_start" });
+  });
+
   it("an update with no record is refused", async () => {
     await expect(inSave(scope, (ctx) => writer.update(ctx, { ...inputOf(changeLine("gift", { amount: 5 })), recordId: null }))).rejects.toThrow(SaveLineError);
   });

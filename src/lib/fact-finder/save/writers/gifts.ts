@@ -4,6 +4,8 @@
  * save's transaction. Every prior gift saves as a cash gift of its amount (the
  * asset itself is never moved), so the asset-transfer path is never reached.
  */
+import { and, eq } from "drizzle-orm";
+import { gifts } from "@/db/schema";
 import { createGiftForClient, updateGiftForClient } from "@/lib/clients/gifts-writes";
 import { SaveLineError, unwrap, type SaveWriter } from "../types";
 
@@ -24,6 +26,14 @@ const gift: SaveWriter = {
         tx: ctx.tx, afterCommit: ctx.afterCommit,
       }),
     );
+    // The update path never writes `yearRef`: a typed year unties the gift from the milestone Details tied it to,
+    // else the record keeps following the milestone and a later change to it rewrites the year.
+    if ("year" in input.body) {
+      await ctx.tx
+        .update(gifts)
+        .set({ yearRef: null })
+        .where(and(eq(gifts.id, input.recordId), eq(gifts.clientId, ctx.clientId)));
+    }
   },
 };
 
