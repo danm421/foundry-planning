@@ -197,7 +197,8 @@ describe("disability policy save writer", () => {
     const [line] = diffDrafts(DISABILITY_MAP.place([row], placing), book);
     const ticks = Object.fromEntries(line.fields.map((f) => [f.key, f.ticked]));
     // Every field ticked, then "Short-term coverage" (and anything else) unticked: the row has no short-term coverage.
-    for (const unticked of [{}, { hasShortTerm: false }, { hasShortTerm: false, hasLongTerm: false }]) {
+    const untickings: Record<string, boolean>[] = [{}, { hasShortTerm: false }, { hasShortTerm: false, hasLongTerm: false }];
+    for (const unticked of untickings) {
       const values = lineValues(line, { ...ticks, ...unticked });
       const body = payloadFor(line.target, values, { id: () => { throw new Error("no refs on this line"); }, year: () => REF_YEAR });
       const id = (await inSave(scope, (ctx) => disability.create(ctx, { ...inputOf(line), values, body }))).result;
