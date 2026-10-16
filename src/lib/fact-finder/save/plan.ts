@@ -2,9 +2,10 @@
 /**
  * The save plan (D5, D8): the advisor's ticks over the change list decide which
  * lines the save writes and which it leaves out — a line with nothing ticked,
- * a line that names the co-client nobody is adding, and every line that needs
- * a line left out, each with its reason — and the order the written lines go
- * in. The server plans the save with it; the change list runs it to show what
+ * a line that names the co-client nobody is adding, a new record whose Owner
+ * isn't ticked on a plan with a co-client, and every line that needs a line
+ * left out, each with its reason — and the order the written lines go in. The
+ * server plans the save with it; the change list runs it to show what
  * unticking leaves out.
  *
  * Client-safe and pure. Type-only imports from save/types.ts (it holds server
@@ -31,6 +32,7 @@ export type SavePlan =
 const TICKS_MISMATCH = "The ticks don't match this change list — review again.";
 const NOTHING_TICKED = "Nothing ticked.";
 const NEEDS_CO_CLIENT = "Needs the co-client, who isn't being saved.";
+const OWNER_UNTICKED = "Who owns it isn't ticked.";
 const needsLine = (label: string) => `Needs “${label}”, which isn't being saved.`;
 
 /**
@@ -50,7 +52,9 @@ export function planSave(changeSet: ChangeSet, ticks: unknown, opts: { hasCoClie
   for (const p of all) if (!p.line.fields.some((f) => f.ticked)) reasons.set(p.line.id, NOTHING_TICKED);
   // A co-client the plan doesn't have exists only once a household line writes their first name.
   const addsCoClient = writing().some((p) => p.line.target === "client_household" && p.line.fields.some((f) => f.key === "spouseName" && f.ticked));
-  if (!opts.hasCoClient && !addsCoClient) {
+  if (opts.hasCoClient || addsCoClient) {
+    for (const p of writing()) if (ownerUnticked(p)) reasons.set(p.line.id, OWNER_UNTICKED);
+  } else {
     for (const p of writing()) if (namesCoClient(p)) reasons.set(p.line.id, NEEDS_CO_CLIENT);
   }
   // Pass after pass: a line left out in one pass leaves out the lines that need it in the next.
@@ -132,6 +136,21 @@ function namesCoClient({ line, values }: PlannedLine): boolean {
     if (kind === "choice" || kind === "policyOwner") return CO_CLIENT_CHOICES.has(value);
     return kind === "timing" && isObject(value) && String((value as { yearRef?: PlacedValue }).yearRef).startsWith("spouse_");
   });
+}
+
+/**
+ * Each target whose review blocks a new record's blank Owner when the plan has a co-client (helpers.ts ownersOf;
+ * the note, business and stock option maps block a blank one on every new record), and that Owner's field.
+ */
+const OWNER_FIELD: Partial<Record<TargetKind, string>> = {
+  account: "owners", liability: "owners", life_insurance_policy: "ownerRef",
+  note_receivable: "owners", business_account: "owners", stock_option_account: "owner",
+};
+
+/** A Create with its Owner unticked: with a co-client, it would be saved as the client's alone (or refused). */
+function ownerUnticked({ line }: PlannedLine): boolean {
+  const key = OWNER_FIELD[line.target];
+  return line.action === "create" && line.fields.some((f) => f.key === key && !f.ticked);
 }
 
 /** By target rank, then change-set order; a line that needs a later line goes after it. */

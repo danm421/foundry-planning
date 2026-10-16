@@ -146,6 +146,58 @@ describe("planSave — lines left out", () => {
   });
 });
 
+/**
+ * With a co-client, a new record's unticked Owner would be saved as the client's alone — the default the review
+ * blocks for a blank Owner (helpers.ts ownersOf; the note, business and stock option maps block a blank one too).
+ */
+describe("planSave — who owns a new record", () => {
+  const WITH_CO_CLIENT = { hasCoClient: true };
+  const OWNER_UNTICKED = "Who owns it isn't ticked.";
+  const coClient: RecordRef = { ref: "person", role: "spouse" };
+  const joint: PlacedValue = [{ who: client, percent: 0.5 }, { who: coClient, percent: 0.5 }];
+  const clientAlone: PlacedValue = [{ who: client, percent: 1 }];
+
+  it.each<[TargetKind, string, PlacedValue]>([
+    ["account", "owners", joint],
+    ["liability", "owners", joint],
+    ["life_insurance_policy", "ownerRef", "joint"],
+    ["note_receivable", "owners", joint],
+    ["business_account", "owners", joint],
+    ["stock_option_account", "owner", "spouse"],
+  ])("with a co-client, a new %s whose %s is unticked is left out — and so is what needs it", (target, key, owner) => {
+    const set = changeSetOf([
+      lineOf(`x1/${target}`, target, { name: "Lake fund", [key]: owner }, { label: "Lake fund", unticked: [key] }),
+      lineOf("n1/plan_observation", "plan_observation", { body: "Note", notes: lineRef(target, `x1/${target}`) }, { dependsOn: [`x1/${target}`] }),
+    ]);
+    const plan = planSave(set, ticksOf(set), WITH_CO_CLIENT);
+    expect(leftOutOf(plan)).toEqual([
+      [`x1/${target}`, OWNER_UNTICKED],
+      ["n1/plan_observation", "Needs “Lake fund”, which isn't being saved."],
+    ]);
+    expect(savedIds(plan)).toEqual([]);
+    // Its owner ticked, it saves.
+    const owned = { ...ticksOf(set), [`x1/${target}`]: { name: true, [key]: true } };
+    expect(savedIds(planSave(set, owned, WITH_CO_CLIENT))).toEqual([`x1/${target}`, "n1/plan_observation"]);
+  });
+
+  it("unchanged: a single household's unticked owner (the client alone), an Update's (the record's stays), an income's (the review lets it be the client's)", () => {
+    const single = changeSetOf([lineOf("x1/account", "account", { name: "Checking", owners: clientAlone }, { unticked: ["owners"] })]);
+    expect(savedIds(planSave(single, ticksOf(single), SINGLE))).toEqual(["x1/account"]);
+    const set = changeSetOf([
+      lineOf("r1/account", "account", { value: 10, owners: joint }, { action: "update", recordId: "a-1", unticked: ["owners"] }),
+      lineOf("i1/income", "income", { name: "Rental income", owner: "joint" }, { unticked: ["owner"] }),
+    ]);
+    const plan = planSave(set, ticksOf(set), WITH_CO_CLIENT);
+    expect(plan.ok && plan.leftOut).toEqual([]);
+    expect(plan.ok && plan.lines.map((p) => p.values)).toEqual([{ value: 10 }, { name: "Rental income" }]);
+  });
+
+  it("a line with nothing ticked says so first", () => {
+    const set = changeSetOf([lineOf("x1/account", "account", { owners: joint }, { unticked: ["owners"] })]);
+    expect(leftOutOf(planSave(set, ticksOf(set), WITH_CO_CLIENT))).toEqual([["x1/account", "Nothing ticked."]]);
+  });
+});
+
 describe("planSave — save order", () => {
   it("by target rank (D8); within a rank, change-set order", () => {
     const household = (row: string, key: string) => lineOf(`${row}/client_household`, "client_household", { [key]: "x" }, { action: "update", recordId: "c1" });
@@ -296,6 +348,13 @@ describe("planSave — a co-client the fact finder adds", () => {
       lineOf("x4/will_bequest", "will_bequest", { kind: "asset", condition: "always", percentage: 100 }),
     ]);
     expect(savedIds(planSave(set, ticksOf(set), SINGLE))).toEqual(["x1/account", "x3/income", "x2/will", "x4/will_bequest"]);
+  });
+
+  it("with her first name ticked, the new joint account whose Owner is unticked is left out — it would be the client's alone", async () => {
+    const changeSet = await review();
+    const plan = planSave(changeSet, ticksOf(changeSet, { "cash1/account": ["owners"] }), SINGLE);
+    expect(leftOutOf(plan)).toEqual([["cash1/account", "Who owns it isn't ticked."]]);
+    expect(savedIds(plan)).not.toContain("cash1/account");
   });
 
   it("on a plan that has the co-client, unticking her first name leaves nothing out", async () => {
