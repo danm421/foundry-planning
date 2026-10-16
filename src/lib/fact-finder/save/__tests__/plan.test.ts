@@ -281,6 +281,8 @@ describe("planSave — a co-client the fact finder adds", () => {
     ["a trust that ends at her death", "entity", { trustEnds: "spouse_death" }],
     ["her as a beneficiary", "account_beneficiary_designation", { beneficiaries: [{ tier: "contingent", who: { ref: "person", role: "spouse" }, percentage: 100 }] }],
     ["savings until her retirement", "savings_rule", { end: { yearRef: "spouse_retirement" } }],
+    ["a provision only if she survives", "will_bequest", { kind: "asset", condition: "if_spouse_survives", percentage: 100 }],
+    ["a provision only if she dies first", "will_bequest", { kind: "asset", condition: "if_spouse_predeceased", percentage: 100 }],
   ])("names her: %s", (_case, target, fields) => {
     const set = changeSetOf([lineOf(`x1/${target}`, target, fields)]);
     expect(leftOutOf(planSave(set, ticksOf(set), SINGLE))).toEqual([[`x1/${target}`, NEEDS_CO_CLIENT]]);
@@ -291,8 +293,9 @@ describe("planSave — a co-client the fact finder adds", () => {
       lineOf("x1/account", "account", { name: "Joint", owners: [{ who: client, percent: 1 }] }),
       lineOf("x2/will", "will", { grantor: "client" }),
       lineOf("x3/income", "income", { end: { yearRef: "client_retirement" } }),
+      lineOf("x4/will_bequest", "will_bequest", { kind: "asset", condition: "always", percentage: 100 }),
     ]);
-    expect(savedIds(planSave(set, ticksOf(set), SINGLE))).toEqual(["x1/account", "x3/income", "x2/will"]);
+    expect(savedIds(planSave(set, ticksOf(set), SINGLE))).toEqual(["x1/account", "x3/income", "x2/will", "x4/will_bequest"]);
   });
 
   it("on a plan that has the co-client, unticking her first name leaves nothing out", async () => {

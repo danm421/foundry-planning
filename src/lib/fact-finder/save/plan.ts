@@ -114,8 +114,11 @@ function needsOf({ line, values }: PlannedLine): string[] {
   ];
 }
 
-/** Choices that mean the co-client or both of them: an owner, the insured, a will's or gift's maker, who pays, a grantor, when a trust ends. */
-const CO_CLIENT_CHOICES: ReadonlySet<PlacedValue> = new Set(["spouse", "joint", "both", "spouse_death"]);
+/**
+ * Choices that mean the co-client or both of them: an owner, the insured, a will's or gift's maker, who pays, a
+ * grantor, when a trust ends, a will provision that turns on whether they survive.
+ */
+const CO_CLIENT_CHOICES: ReadonlySet<PlacedValue> = new Set(["spouse", "joint", "both", "spouse_death", "if_spouse_survives", "if_spouse_predeceased"]);
 
 /**
  * What a line writes names the co-client: a person ref to them (owners, beneficiaries, recipients…), a choice
