@@ -353,7 +353,7 @@ d("saveChangeSet (live DB)", () => {
     });
     const calls: Call[] = [];
     expect(await saveChangeSet(request(r), deps(writers(calls)))).toEqual({
-      ok: false, status: 422, error: "Home mortgage: Needs “Household Cash”, which isn't saved before it.", lineId: "l1/liability",
+      ok: false, status: 422, error: "Home mortgage: Needs “Household Cash”, which isn't saved before it — untick one of the two rows.", lineId: "l1/liability",
     });
     expect(calls.map((c) => c.lineId)).not.toContain("l1/liability");
     await expectNothingWritten(r);

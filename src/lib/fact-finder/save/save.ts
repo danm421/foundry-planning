@@ -113,7 +113,7 @@ function resolverOf(ids: ReadonlyMap<string, string>, labels: ReadonlyMap<string
       if (ref.ref === "record") return ref.id;
       if (ref.ref === "line") {
         const id = ids.get(ref.lineId);
-        if (id === undefined) throw new SaveLineError(`Needs “${labels.get(ref.lineId) ?? "another row"}”, which isn't saved before it.`);
+        if (id === undefined) throw new SaveLineError(`Needs “${labels.get(ref.lineId) ?? "another row"}”, which isn't saved before it — untick one of the two rows.`);
         return id;
       }
       const id = household.people[ref.role];
