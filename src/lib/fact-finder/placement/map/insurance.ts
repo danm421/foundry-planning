@@ -142,23 +142,27 @@ function monthlyCap(b: DraftBuilder, row: FFRow, columnId: string): number | nul
   return null;
 }
 
-/** The cells that describe each coverage. */
-const STD_DETAILS = ["stdWaitingDays", "stdBenefitPercent", "stdDurationWeeks", "stdMonthlyCap"];
-const LTD_DETAILS = ["ltdWaitingDays", "ltdBenefitPercent", "ltdMonthlyCap", "benefitsRun", "benefitsRunValue"];
+/** Each coverage question, and the cells that describe that coverage. */
+const COVERAGE = [
+  ["hasShortTerm", "shortTerm", ["stdWaitingDays", "stdBenefitPercent", "stdDurationWeeks", "stdMonthlyCap"]],
+  ["hasLongTerm", "longTerm", ["ltdWaitingDays", "ltdBenefitPercent", "ltdMonthlyCap", "benefitsRun", "benefitsRunValue"]],
+] as const;
 
 /**
- * "Short-term coverage?" / "Long-term coverage?". On a new policy a blank is
+ * A new policy's blank "Short-term coverage?" / "Long-term coverage?",
  * answered by that coverage's own cells — Yes when any is filled (a detail that
- * didn't read was filled), else No, shown on the line — because the create
- * schema's default (Yes, with its own terms) would add coverage the fact finder
- * never mentions. A question cell that didn't read gets no answer; on a policy
- * on record a blank stays blank.
+ * didn't read was filled), else No. The answer is what the policy is created
+ * with (`fixed`, as INFLATION is), not a field: unticking a field brings back
+ * the create schema's default (Yes, with its own terms), which would add
+ * coverage the fact finder never mentions. A question cell that didn't read
+ * gets no answer; a stated answer is its field.
  */
-function putCoverage(b: DraftBuilder, row: FFRow, ctx: PlaceContext, key: string, columnId: string, details: readonly string[], isNew: boolean): void {
-  const stated = bool(row, columnId);
+function inferredCoverage(row: FFRow, ctx: PlaceContext): Record<string, boolean> {
   const filled = (c: string) => num(row, c) !== null || text(row, c) !== null || ctx.removed(row.id, c);
-  if (stated !== null || !isNew) b.put(key, stated, [columnId]);
-  else if (!ctx.removed(row.id, columnId)) b.put(key, details.some(filled), []);
+  return Object.fromEntries(
+    COVERAGE.filter(([, columnId]) => bool(row, columnId) === null && !ctx.removed(row.id, columnId))
+      .map(([key, , details]) => [key, details.some(filled)]),
+  );
 }
 
 export const DISABILITY_MAP: SectionMap = {
@@ -194,9 +198,11 @@ export const DISABILITY_MAP: SectionMap = {
       const insured = choice(PERSON_MAP, row, "whoIsCovered");
       const earnings = choice(DI_EARNINGS_MAP, row, "coveredEarnings");
       const runs = choice(DI_RUNS_MAP, row, "benefitsRun");
+      const coverage = recordId === null ? inferredCoverage(row, ctx) : {};
       const b = new DraftBuilder({
         sectionId: "disability", row, target: "disability_policy", recordId,
         label: text(row, "policyName") ?? text(row, "carrier") ?? "Disability policy",
+        ...(Object.keys(coverage).length > 0 ? { fixed: coverage } : {}),
       })
         .put("name", text(row, "policyName"), ["policyName"])
         .put("carrier", text(row, "carrier"), ["carrier"])
@@ -204,13 +210,13 @@ export const DISABILITY_MAP: SectionMap = {
         .put("coveredEarningsMode", earnings, ["coveredEarnings"]);
       // A new policy's modes are the create schema's defaults: Salary, To age.
       putByMode(b, "disability", row, DI_EARNINGS_AMOUNT, earnings ?? recorded("coveredEarningsMode") ?? "salary");
-      putCoverage(b, row, ctx, "hasShortTerm", "shortTerm", STD_DETAILS, recordId === null);
-      b.put("stdEliminationDays", num(row, "stdWaitingDays"), ["stdWaitingDays"])
+      b.put("hasShortTerm", bool(row, "shortTerm"), ["shortTerm"])
+        .put("stdEliminationDays", num(row, "stdWaitingDays"), ["stdWaitingDays"])
         .put("stdBenefitPct", rate(row, "stdBenefitPercent"), ["stdBenefitPercent"])
         .put("stdDurationWeeks", num(row, "stdDurationWeeks"), ["stdDurationWeeks"])
         .put("stdMonthlyMax", monthlyCap(b, row, "stdMonthlyCap"), ["stdMonthlyCap"]);
-      putCoverage(b, row, ctx, "hasLongTerm", "longTerm", LTD_DETAILS, recordId === null);
-      b.put("ltdEliminationDays", num(row, "ltdWaitingDays"), ["ltdWaitingDays"])
+      b.put("hasLongTerm", bool(row, "longTerm"), ["longTerm"])
+        .put("ltdEliminationDays", num(row, "ltdWaitingDays"), ["ltdWaitingDays"])
         .put("ltdBenefitPct", rate(row, "ltdBenefitPercent"), ["ltdBenefitPercent"])
         .put("ltdMonthlyMax", monthlyCap(b, row, "ltdMonthlyCap"), ["ltdMonthlyCap"])
         .put("ltdBenefitPeriodMode", runs, ["benefitsRun"]);

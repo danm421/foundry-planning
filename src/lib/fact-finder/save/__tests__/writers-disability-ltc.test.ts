@@ -10,9 +10,13 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { accountOwners, accounts, auditLog, disabilityPolicies, lifeInsurancePolicies, ltcPolicies } from "@/db/schema";
 import { LTC_RIDER_DEFAULTS } from "@/lib/schemas/ltc-policies";
+import { contextOf, hendricksBook, rowOf, stateWith } from "../../placement/__tests__/fixtures";
+import { diffDrafts } from "../../placement/diff";
+import { DISABILITY_MAP } from "../../placement/map/insurance";
+import { lineValues, payloadFor } from "../../placement/payload";
 import { DISABILITY_LTC_WRITERS } from "../writers/disability-ltc";
 import { SaveLineError } from "../types";
-import { changeLine, dropSaveFirm, inputOf, inSave, seedSaveClient, type SaveSeed } from "./harness";
+import { changeLine, dropSaveFirm, inputOf, inSave, REF_YEAR, seedSaveClient, type SaveSeed } from "./harness";
 
 vi.mock("@clerk/nextjs/server", () => ({
   auth: async () => ({ userId: "user_test_ff_save", orgId: "firm_test_ff_save_dltc", orgRole: "org:admin" }),
@@ -183,6 +187,22 @@ describe("disability policy save writer", () => {
 
     const noRecord = changeLine("disability_policy", { name: "No record" });
     await expect(inSave(scope, (ctx) => disability.update(ctx, { ...inputOf(noRecord), recordId: null }))).rejects.toThrow(SaveLineError);
+  });
+
+  it("(d) a new long-term-only policy saves with no short-term coverage, whatever the advisor unticks", async () => {
+    // The review's own line: "Short-term coverage?" blank, no short-term terms (map/insurance.ts).
+    const book = hendricksBook();
+    const row = rowOf("di-ltd", { policyName: "Acme LTD", whoIsCovered: "Client", ltdWaitingDays: 90, ltdBenefitPercent: 60, benefitsRun: "To age", benefitsRunValue: 65 });
+    const { ctx: placing } = contextOf(stateWith({ disability: [row] }), book);
+    const [line] = diffDrafts(DISABILITY_MAP.place([row], placing), book);
+    const ticks = Object.fromEntries(line.fields.map((f) => [f.key, f.ticked]));
+    // Every field ticked, then "Short-term coverage" (and anything else) unticked: the row has no short-term coverage.
+    for (const unticked of [{}, { hasShortTerm: false }, { hasShortTerm: false, hasLongTerm: false }]) {
+      const values = lineValues(line, { ...ticks, ...unticked });
+      const body = payloadFor(line.target, values, { id: () => { throw new Error("no refs on this line"); }, year: () => REF_YEAR });
+      const id = (await inSave(scope, (ctx) => disability.create(ctx, { ...inputOf(line), values, body }))).result;
+      expect(await disabilityRow(id), JSON.stringify(unticked)).toMatchObject({ name: "Acme LTD", hasShortTerm: false, hasLongTerm: true, ltdBenefitPeriodAge: 65 });
+    }
   });
 
   it("(e) a disability save queues no after-commit work", async () => {

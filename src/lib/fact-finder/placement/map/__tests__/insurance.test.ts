@@ -35,6 +35,8 @@ const values = (d: TargetDraft) => Object.fromEntries(d.fields.map((f) => [f.key
 const fieldOf = (d: TargetDraft, key: string) => d.fields.find((f) => f.key === key);
 /** What the line writes for `key`: its field's value, else what it creates with (`fixed`). */
 const coverageOf = (d: TargetDraft, key: string) => fieldOf(d, key)?.value ?? d.fixed?.[key];
+/** What a new record's line writes: what it creates with, then its fields. */
+const writes = (d: TargetDraft) => ({ ...d.fixed, ...values(d) });
 
 describe("placements", () => {
   it.each([LIFE_MAP, INSURANCE_NOTES_MAP, DISABILITY_MAP, LTC_MAP])("$sectionId declares every column exactly once", (map) => {
@@ -305,10 +307,10 @@ describe("DISABILITY_MAP", () => {
     expect(fieldOf(years, "ltdBenefitPeriodYears")).toEqual({ key: "ltdBenefitPeriodYears", value: 5, from: [c("benefitsRunValue")] });
     for (const mode of ["Lifetime", "To SS normal retirement age"]) {
       const none = place(DISABILITY_MAP, [rowOf("di-1", { benefitsRun: mode, benefitsRunValue: 5 })]).drafts[0];
-      expect(values(none)).toEqual({ hasShortTerm: false, hasLongTerm: true, ltdBenefitPeriodMode: mode === "Lifetime" ? "lifetime" : "to_ssnra" });
+      expect(writes(none)).toEqual({ hasShortTerm: false, hasLongTerm: true, ltdBenefitPeriodMode: mode === "Lifetime" ? "lifetime" : "to_ssnra" });
       expect(none.warnings).toEqual([RUNS]);
     }
-    expect(values(place(DISABILITY_MAP, [rowOf("di-1", { benefitsRunValue: 67 })]).drafts[0])).toEqual({ hasShortTerm: false, hasLongTerm: true, ltdBenefitPeriodAge: 67 });
+    expect(writes(place(DISABILITY_MAP, [rowOf("di-1", { benefitsRunValue: 67 })]).drafts[0])).toEqual({ hasShortTerm: false, hasLongTerm: true, ltdBenefitPeriodAge: 67 });
     const linked = place(DISABILITY_MAP, [linkedRow({ benefitsRunValue: 5 })], onRecord({ ltdBenefitPeriodMode: "years" })).drafts[0];
     expect(linked.recordId).toBe("di-rec");
     expect(values(linked)).toEqual({ ltdBenefitPeriodYears: 5 });
@@ -316,44 +318,43 @@ describe("DISABILITY_MAP", () => {
 
   it("a covered earnings amount is saved only under Stated amount — the row's, else the record's (a new policy's is Salary)", () => {
     const salary = place(DISABILITY_MAP, [rowOf("di-1", { coveredEarnings: "Salary", coveredEarningsAmount: 180000 })]).drafts[0];
-    expect(values(salary)).toEqual({ coveredEarningsMode: "salary", hasShortTerm: false, hasLongTerm: false });
+    expect(writes(salary)).toEqual({ coveredEarningsMode: "salary", hasShortTerm: false, hasLongTerm: false });
     expect(salary.warnings).toEqual(['"Covered earnings amount" is saved only when Covered earnings is "Stated amount".']);
-    expect(values(place(DISABILITY_MAP, [rowOf("di-1", { coveredEarningsAmount: 180000 })]).drafts[0])).toEqual({ hasShortTerm: false, hasLongTerm: false });
+    expect(writes(place(DISABILITY_MAP, [rowOf("di-1", { coveredEarningsAmount: 180000 })]).drafts[0])).toEqual({ hasShortTerm: false, hasLongTerm: false });
     const linked = place(DISABILITY_MAP, [linkedRow({ coveredEarningsAmount: 180000 })], onRecord({ coveredEarningsMode: "manual" })).drafts[0];
     expect(values(linked)).toEqual({ coveredEarningsAmount: 180000 });
     expect(linked.warnings).toEqual([]);
   });
 
   it("a blank monthly cap is no field (uncapped) — never a 0, which pays nothing; a typed $0 isn't saved", () => {
-    expect(values(place(DISABILITY_MAP, [rowOf("di-1", { policyName: "Group LTD", stdMonthlyCap: null })]).drafts[0])).toEqual({
+    expect(writes(place(DISABILITY_MAP, [rowOf("di-1", { policyName: "Group LTD", stdMonthlyCap: null })]).drafts[0])).toEqual({
       name: "Group LTD", hasShortTerm: false, hasLongTerm: false,
     });
     const zero = place(DISABILITY_MAP, [rowOf("di-1", { policyName: "Group LTD", stdMonthlyCap: 0, ltdMonthlyCap: 0 })]).drafts[0];
-    expect(values(zero)).toEqual({ name: "Group LTD", hasShortTerm: true, hasLongTerm: true });
+    expect(writes(zero)).toEqual({ name: "Group LTD", hasShortTerm: true, hasLongTerm: true });
     expect(zero.warnings).toEqual([
       `"STD monthly cap" of $0 would pay nothing, so it isn't saved — leave it blank for no cap.`,
       `"LTD monthly cap" of $0 would pay nothing, so it isn't saved — leave it blank for no cap.`,
     ]);
   });
 
-  it("a new policy's blank coverage question is answered by its own cells — Yes when any is filled, else No, from no cell", () => {
+  it("a new policy's blank coverage question is answered by its own cells — Yes when any is filled, else No — in what it's created with, never a field to untick", () => {
     const ltdOnly = place(DISABILITY_MAP, [rowOf("di-1", { policyName: "Acme LTD", ltdWaitingDays: 90 })]).drafts[0];
-    expect([fieldOf(ltdOnly, "hasShortTerm"), fieldOf(ltdOnly, "hasLongTerm")]).toEqual([
-      { key: "hasShortTerm", value: false, from: [] },
-      { key: "hasLongTerm", value: true, from: [] },
-    ]);
-    expect(values(place(DISABILITY_MAP, [rowOf("di-1", { stdBenefitPercent: 60 })]).drafts[0])).toMatchObject({ hasShortTerm: true, hasLongTerm: false });
-    // A stated answer wins over the cells.
+    expect(ltdOnly.fixed).toEqual({ hasShortTerm: false, hasLongTerm: true });
+    expect([fieldOf(ltdOnly, "hasShortTerm"), fieldOf(ltdOnly, "hasLongTerm")]).toEqual([undefined, undefined]);
+    expect(place(DISABILITY_MAP, [rowOf("di-1", { stdBenefitPercent: 60 })]).drafts[0].fixed).toEqual({ hasShortTerm: true, hasLongTerm: false });
+    // A stated answer wins over the cells, and is a field.
     const stated = place(DISABILITY_MAP, [rowOf("di-1", { shortTerm: "No", stdWaitingDays: 7 })]).drafts[0];
     expect(fieldOf(stated, "hasShortTerm")).toEqual({ key: "hasShortTerm", value: false, from: [c("shortTerm")] });
+    expect(stated.fixed).toEqual({ hasLongTerm: false });
     // On a policy on record a blank answers nothing (it would erase).
     const linked = place(DISABILITY_MAP, [linkedRow({ ltdWaitingDays: 90 })], onRecord({})).drafts[0];
-    expect([fieldOf(linked, "hasShortTerm"), fieldOf(linked, "hasLongTerm")]).toEqual([undefined, undefined]);
+    expect([fieldOf(linked, "hasShortTerm"), fieldOf(linked, "hasLongTerm"), linked.fixed]).toEqual([undefined, undefined, undefined]);
     // A coverage cell that didn't read gets no answer.
     const row = rowOf("di-1", { policyName: "Acme LTD" });
     const { ctx } = contextOf(stateWith({ disability: [row] }), hendricksBook(kids));
     const unread = DISABILITY_MAP.place([row], { ...ctx, removed: (_rowId, columnId) => columnId === "shortTerm" })[0];
-    expect(values(unread)).toEqual({ name: "Acme LTD", hasLongTerm: false });
+    expect(writes(unread)).toEqual({ name: "Acme LTD", hasLongTerm: false });
   });
 
   it("a detail cell that didn't read counts as filled: its coverage is Yes, never a No the fact finder doesn't say", () => {
