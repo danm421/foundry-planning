@@ -92,6 +92,23 @@ describe("charity save writer", () => {
     ).rejects.toThrow("The plan already has a charity named “Red cross” — link this row to it, or untick it.");
   });
 
+  it("(d) a person, not a charity: a new individual beneficiary's duplicate is refused as a beneficiary", async () => {
+    const jane = (name: string) => changeLine("external_beneficiary", { name, kind: "individual" });
+    await inSave(scope, (ctx) => charity.create(ctx, inputOf(jane("Jane Doe"))));
+    await expect(inSave(scope, (ctx) => charity.create(ctx, inputOf(jane("jane doe"))))).rejects.toThrow(
+      "The plan already has a beneficiary named “jane doe” — link this row to it, or untick it.",
+    );
+    await expect(
+      inSave(scope, async (ctx) => {
+        await charity.create(ctx, inputOf(jane("John Roe")));
+        await charity.create(ctx, inputOf(jane("John Roe")));
+      }),
+    ).rejects.toThrow("Two beneficiaries named “John Roe” are being added — merge the rows, or untick one.");
+    const rows = await db.select().from(externalBeneficiaries).where(eq(externalBeneficiaries.clientId, seed.clientId));
+    expect(rows.filter((r) => r.name.toLowerCase() === "jane doe").map((r) => r.kind)).toEqual(["individual"]);
+    expect(rows.filter((r) => r.name === "John Roe")).toHaveLength(0);
+  });
+
   it("(d) an Update renaming a charity is not a duplicate check", async () => {
     const { result: id } = await inSave(scope, (ctx) => charity.create(ctx, inputOf(changeLine("external_beneficiary", { name: "Scouts" }))));
     await inSave(scope, (ctx) => charity.update(ctx, inputOf(changeLine("external_beneficiary", { name: "Boy Scouts" }, { recordId: id }))));

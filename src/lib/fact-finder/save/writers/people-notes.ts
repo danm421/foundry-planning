@@ -2,9 +2,9 @@
 /**
  * The charity, related-party and plan-note save writers: the Details write
  * paths (external-beneficiaries-, related-parties- and observations-writes.ts)
- * on the save's transaction. The one rule beyond them: a charity Create is
- * refused when the plan already has a charity of that name, or the save has
- * just added one.
+ * on the save's transaction. The one rule beyond them: a charity (or other
+ * beneficiary) Create is refused when the plan already has one of that name,
+ * or the save has just added one.
  */
 import { eq, sql } from "drizzle-orm";
 import { clients, externalBeneficiaries } from "@/db/schema";
@@ -24,6 +24,9 @@ async function householdOf(ctx: SaveContext): Promise<string> {
 
 const NO_RECORD = "The record to change isn't on the plan.";
 
+/** What the change list calls the kind a new one is created as: a person is a beneficiary; no kind saves as a charity. */
+const nounsOf = (kind: unknown) => (kind === "individual" ? { one: "beneficiary", many: "beneficiaries" } : { one: "charity", many: "charities" });
+
 const external_beneficiary: SaveWriter = {
   async create(ctx, input) {
     const name = typeof input.body.name === "string" ? input.body.name.trim() : "";
@@ -36,10 +39,11 @@ const external_beneficiary: SaveWriter = {
       .from(externalBeneficiaries)
       .where(eq(externalBeneficiaries.clientId, ctx.clientId));
     const same = name ? onPlan.filter((r) => nameKey(r.name) === nameKey(name)) : [];
+    const noun = nounsOf(input.body.kind);
     if (same.some((r) => !r.addedBySave)) {
-      throw new SaveLineError(`The plan already has a charity named “${name}” — link this row to it, or untick it.`);
+      throw new SaveLineError(`The plan already has a ${noun.one} named “${name}” — link this row to it, or untick it.`);
     }
-    if (same.length > 0) throw new SaveLineError(`Two charities named “${name}” are being added — merge the rows, or untick one.`);
+    if (same.length > 0) throw new SaveLineError(`Two ${noun.many} named “${name}” are being added — merge the rows, or untick one.`);
     return unwrap(await createExternalBeneficiaryForClient({ clientId: ctx.clientId, input: input.body, tx: ctx.tx, afterCommit: ctx.afterCommit })).resourceId;
   },
   async update(ctx, input) {
