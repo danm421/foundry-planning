@@ -110,7 +110,8 @@ export async function dropSaveFirm(firmId: string): Promise<void> {
 const ROLLBACK = new Error("inSave: rolled back on purpose");
 
 /**
- * Runs `fn` with a SaveContext on a real transaction, then commits — or, with
+ * Runs `fn` with a SaveContext on a real transaction at the save's own
+ * isolation level (REPEATABLE READ, save.ts), then commits — or, with
  * `rollback`, throws after `fn` so nothing lands. `result` is fn's return
  * value either way (a test can look for the rows it would have made). Queued
  * work runs only on `flush()`; after a rollback the queue is dropped, as the
@@ -124,17 +125,20 @@ export async function inSave<T>(
   const queue = afterCommitQueue();
   let result!: T;
   try {
-    await db.transaction(async (tx) => {
-      result = await fn({
-        tx,
-        clientId: seed.clientId,
-        firmId: seed.firmId,
-        actorId: opts.actorId ?? SAVE_ACTOR,
-        afterCommit: queue.afterCommit,
-        holdings: new Map(),
-      });
-      if (opts.rollback) throw ROLLBACK;
-    });
+    await db.transaction(
+      async (tx) => {
+        result = await fn({
+          tx,
+          clientId: seed.clientId,
+          firmId: seed.firmId,
+          actorId: opts.actorId ?? SAVE_ACTOR,
+          afterCommit: queue.afterCommit,
+          holdings: new Map(),
+        });
+        if (opts.rollback) throw ROLLBACK;
+      },
+      { isolationLevel: "repeatable read" },
+    );
   } catch (err) {
     if (err !== ROLLBACK) throw err;
   }

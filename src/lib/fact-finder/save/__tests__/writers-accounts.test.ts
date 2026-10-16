@@ -20,7 +20,7 @@ vi.mock("@/lib/imports/commit/holdings", async (importOriginal) => ({
   resolveTickers: vi.fn(async () => new Map()),
 }));
 
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   accountHoldings,
@@ -95,6 +95,11 @@ d("account and business writers (live dev database)", () => {
   });
   const at = (s: { clientId: string } = seed) => ({ clientId: s.clientId, firmId: FIRM });
   const people = () => ({ "person:client": seed.clientMemberId, "person:spouse": seed.spouseMemberId! });
+
+  it("the harness runs each save at the save's own isolation level (REPEATABLE READ, save.ts)", async () => {
+    const { result } = await inSave(at(), async (ctx) => (await ctx.tx.execute(sql`SHOW transaction_isolation`)).rows[0]);
+    expect(result).toEqual({ transaction_isolation: "repeatable read" });
+  });
 
   it("(a) creates and updates an account and a business in a save that commits, each with its audit row", async () => {
     const brokerage = changeLine(

@@ -18,6 +18,11 @@ export type DbOrTx = typeof db | Tx;
 /** Work to run once the caller's transaction has committed. */
 export type AfterCommit = (work: () => Promise<void>) => void;
 
+/**
+ * With a caller's `tx` a core's refusal is not atomic: an `{ ok: false }` may
+ * leave the writes before it on `tx`, or `tx` aborted — the caller must roll
+ * back on any `{ ok: false }` (the fact finder save throws).
+ */
 export interface WriteOptions {
   tx?: Tx;
   afterCommit?: AfterCommit;
@@ -28,7 +33,10 @@ export function handleOf(opts: WriteOptions): DbOrTx {
   return opts.tx ?? db;
 }
 
-/** `fn` on the caller's transaction, else in a transaction of its own — createClientForHousehold's shape. */
+/**
+ * `fn` on the caller's transaction, else in a transaction of its own — createClientForHousehold's shape.
+ * On the caller's there is no savepoint: what `fn` wrote before a refusal stays until the caller rolls back.
+ */
 export function inTransaction<T>(opts: WriteOptions, fn: (tx: Tx) => Promise<T>): Promise<T> {
   return opts.tx ? fn(opts.tx) : db.transaction(fn);
 }
