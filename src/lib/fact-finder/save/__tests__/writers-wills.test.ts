@@ -203,6 +203,103 @@ d("wills writers (Plan 4, Task 13)", () => {
     expect(audits.map((a) => (a.metadata as { bequestCount: number }).bequestCount).sort()).toEqual([3, 3, 4, 4]);
   });
 
+  it("provisions added in one save keep the import's order: a new will's from 0, a will on record's after its own three", async () => {
+    const seed = await seedSaveClient(FIRM, { coClient: true });
+    const { clientId, scenarioId } = seed;
+    const made = await db
+      .insert(accounts)
+      .values(["Schwab Brokerage", "Chase Savings", "Fidelity IRA", "Vanguard Roth"].map((name) => ({ clientId, scenarioId, name, category: "taxable" as const, subType: "brokerage" })))
+      .returning();
+    const [laurasWill] = await db.insert(wills).values({ clientId, grantor: "spouse" }).returning();
+    await db.insert(willBequests).values(
+      [0, 1, 2].map((sortOrder) => ({ willId: laurasWill.id, name: `On record ${sortOrder}`, kind: "asset" as const, assetMode: "all_assets" as const, percentage: "100", condition: "always" as const, sortOrder })),
+    );
+    const gift = (will: RecordRef, account: (typeof made)[number], sortOrder: number) =>
+      provisionLine(
+        will,
+        { kind: "asset", accountId: record("account", account.id), percentage: 100, recipients: [{ who: CO_CLIENT, percentage: 100 }], condition: "always" },
+        { name: account.name, sortOrder },
+      );
+
+    const { result: marksWill } = await inSave({ clientId, firmId: FIRM }, async (ctx) => {
+      const will = changeLine("will", { grantor: "client" }, { id: "docs-client/will" });
+      const willId = await WILL_WRITERS.will.create(ctx, inputOf(will));
+      const ids = { "line:docs-client/will": willId };
+      await WILL_WRITERS.will_bequest.create(ctx, inputOf(gift(line("will", will.id), made[0], 0), ids));
+      await WILL_WRITERS.will_bequest.create(ctx, inputOf(gift(line("will", will.id), made[1], 1), ids));
+      await WILL_WRITERS.will_bequest.create(ctx, inputOf(gift(record("will", laurasWill.id), made[2], 0)));
+      await WILL_WRITERS.will_bequest.create(ctx, inputOf(gift(record("will", laurasWill.id), made[3], 1)));
+      return willId;
+    });
+
+    const order = async (willId: string) => (await bequestsOf(willId)).map((b) => [b.name, b.sortOrder]);
+    expect({ new: await order(marksWill), onRecord: await order(laurasWill.id) }).toEqual({
+      new: [["Schwab Brokerage", 0], ["Chase Savings", 1]],
+      onRecord: [["On record 0", 0], ["On record 1", 1], ["On record 2", 2], ["Fidelity IRA", 3], ["Vanguard Roth", 4]],
+    });
+  });
+
+  it("a provision written earlier in the save is changed in place by a later line", async () => {
+    const seed = await seedSaveClient(FIRM, { coClient: true });
+    const { clientId, scenarioId } = seed;
+    const [schwab] = await db.insert(accounts).values({ clientId, scenarioId, name: "Schwab Brokerage", category: "taxable", subType: "brokerage" }).returning();
+    const { result } = await inSave(
+      { clientId, firmId: FIRM },
+      async (ctx) => {
+        const [will] = await ctx.tx.insert(wills).values({ clientId, grantor: "client" }).returning();
+        const onWill = record("will", will.id);
+        const bequestId = await WILL_WRITERS.will_bequest.create(
+          ctx,
+          inputOf(provisionLine(onWill, { kind: "asset", accountId: record("account", schwab.id), percentage: 100, recipients: [{ who: CO_CLIENT, percentage: 100 }], condition: "always" }, { name: "Schwab Brokerage" })),
+        );
+        await WILL_WRITERS.will_bequest.update(ctx, inputOf(provisionLine(onWill, { percentage: 60 }, { recordId: bequestId })));
+        const [bequest] = await ctx.tx.select().from(willBequests).where(eq(willBequests.id, bequestId));
+        const recipients = await ctx.tx.select().from(willBequestRecipients).where(eq(willBequestRecipients.bequestId, bequestId));
+        return { bequest, recipients };
+      },
+      rollback,
+    );
+    expect(result.bequest).toMatchObject({ percentage: "60.00", accountId: schwab.id, condition: "always" });
+    expect(result.recipients).toMatchObject([{ recipientKind: "spouse", percentage: "100.00" }]);
+  });
+
+  it("a provision added to a will on record, rolled back, leaves the will as it was — its updated-at too — and no audit row", async () => {
+    const seed = await seedSaveClient(FIRM, { coClient: true });
+    const { clientId, scenarioId } = seed;
+    const [schwab] = await db.insert(accounts).values({ clientId, scenarioId, name: "Schwab Brokerage", category: "taxable", subType: "brokerage" }).returning();
+    const [will] = await db.insert(wills).values({ clientId, grantor: "client" }).returning();
+    const add = provisionLine(record("will", will.id), { kind: "asset", accountId: record("account", schwab.id), percentage: 100, recipients: [{ who: CO_CLIENT, percentage: 100 }], condition: "always" });
+
+    await inSave({ clientId, firmId: FIRM }, (ctx) => WILL_WRITERS.will_bequest.create(ctx, inputOf(add)), rollback);
+
+    const [after] = await db.select().from(wills).where(eq(wills.id, will.id));
+    expect(after.updatedAt).toEqual(will.updatedAt);
+    expect(await bequestsOf(will.id)).toEqual([]);
+    expect(await auditsOf(clientId)).toEqual([]);
+  });
+
+  it("a provision or a remaining estate with no will to go on refuses in its own words", async () => {
+    const seed = await seedSaveClient(FIRM, { coClient: true });
+    const orphan = (target: "will_bequest" | "will_residuary_recipient") => {
+      const built = target === "will_bequest"
+        ? provisionLine(record("will", seed.clientId), { kind: "asset", accountId: null, percentage: 100, recipients: [{ who: CO_CLIENT, percentage: 100 }], condition: "always" })
+        : changeLine("will_residuary_recipient", { recipients: [{ who: CO_CLIENT, percentage: 100 }] }, { parent: record("will", seed.clientId) });
+      return inputOf(built, {}, { parentId: null });
+    };
+    const refused = await inSave(
+      { clientId: seed.clientId, firmId: FIRM },
+      async (ctx) => [
+        await WILL_WRITERS.will_bequest.create(ctx, orphan("will_bequest")).catch((err: unknown) => err),
+        await WILL_WRITERS.will_residuary_recipient.create(ctx, orphan("will_residuary_recipient")).catch((err: unknown) => err),
+      ],
+      rollback,
+    );
+    expect(refused.result.map((err) => [(err as Error).name, (err as Error).message])).toEqual([
+      ["SaveLineError", "This provision names no will."],
+      ["SaveLineError", "This remaining estate names no will."],
+    ]);
+  });
+
   it("refuses a provision on a will that isn't this client's, or a provision that isn't on its will", async () => {
     const seed = await seedSaveClient(FIRM, { coClient: true });
     const other = await seedSaveClient(FIRM);
@@ -308,5 +405,7 @@ d("wills writers (Plan 4, Task 13)", () => {
       // Outside the transaction neither the will nor the account exists yet.
       expect(await updateWillForClient({ clientId: seed.clientId, firmId: FIRM, actorId: SAVE_ACTOR, willId: created.resourceId, input })).toMatchObject({ ok: false, status: 404, error: "Will not found" });
     }, rollback);
+    // Neither write's audit row (will.create, will.update) outlives the rollback.
+    expect(await auditsOf(seed.clientId)).toEqual([]);
   });
 });

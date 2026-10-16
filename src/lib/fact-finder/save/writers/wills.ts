@@ -35,8 +35,8 @@ const opts = (ctx: SaveContext) => ({ tx: ctx.tx, afterCommit: ctx.afterCommit, 
 
 /** The will a provision or the remaining estate hangs off: the line's parent, resolved. */
 function willOf(input: SaveInput): string {
-  if (input.parentId === null) throw new SaveLineError("This provision names no will.");
-  return input.parentId;
+  if (input.parentId !== null) return input.parentId;
+  throw new SaveLineError(input.line.target === "will_residuary_recipient" ? "This remaining estate names no will." : "This provision names no will.");
 }
 
 /** The remaining estate as the wills routes take it. */
