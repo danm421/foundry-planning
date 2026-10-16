@@ -17,17 +17,26 @@ vi.mock("@/lib/audit", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/audit")>();
   return { ...actual, recordAudit: vi.fn(actual.recordAudit) };
 });
+// The real actor-name lookup (a Clerk call), watched: the save makes it before its transaction opens.
+vi.mock("@/lib/audit/actor-name", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/audit/actor-name")>();
+  return { ...actual, snapshotActorName: vi.fn(actual.snapshotActorName) };
+});
 
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, auditLog, clientImports, clients, familyMembers, planObservations } from "@/db/schema";
+import { accounts, auditLog, clientImports, clients, crmHouseholdContacts, familyMembers, planObservations } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
-import { SAVE_CLOSED_MESSAGE, SAVE_FAILED_MESSAGE, SAVE_RACE_MESSAGE, SAVE_STALE_MESSAGE } from "../../api-types";
-import { defaultTicks, TARGET_KINDS, type ChangeTicks } from "../../change-set";
+import { snapshotActorName } from "@/lib/audit/actor-name";
+import {
+  SAVE_CLOSED_MESSAGE, SAVE_FAILED_MESSAGE, SAVE_HOUSEHOLD_MESSAGE, SAVE_NOTHING_MESSAGE, SAVE_RACE_MESSAGE, SAVE_STALE_MESSAGE,
+} from "../../api-types";
+import { defaultTicks, TARGET_KINDS, type ChangeSet, type ChangeTicks } from "../../change-set";
 import { loadFactFinder, type FactFinderScope } from "../../persist";
 import { buildChangeSet } from "../../placement/build";
 import { linkedTo, rowOf, stateWith } from "../../placement/__tests__/fixtures";
 import { loadRecordBook } from "../../records/book";
+import type { FactFinderState } from "../../types";
 import { saveChangeSet, type SaveDeps, type SaveRequest } from "../save";
 import { SaveLineError, type SaveContext, type SaveInput, type SaveWriter } from "../types";
 import { HOUSEHOLD_WRITERS } from "../writers/household";
@@ -69,13 +78,26 @@ interface Reviewed {
   ticks: ChangeTicks;
 }
 
-/** A new client whose fact finder the review has run over (no AI step) and stored on an import, as the review route leaves it. */
-async function reviewed(opts: { coClient?: boolean } = {}): Promise<Reviewed> {
-  const seed = await seedSaveClient(FIRM, opts);
+/**
+ * A new client whose fact finder the review has run over (no AI step) and stored on an import, as the review
+ * route leaves it. `prepare` edits the plan before the review; `state` replaces Mark's fact finder; `changeSet`
+ * edits the change list before it's stored.
+ */
+async function reviewed(
+  opts: {
+    coClient?: boolean;
+    prepare?: (seed: SaveSeed) => Promise<void>;
+    state?: (cashId: string) => FactFinderState;
+    changeSet?: (changeSet: ChangeSet) => ChangeSet;
+  } = {},
+): Promise<Reviewed> {
+  const seed = await seedSaveClient(FIRM, { coClient: opts.coClient });
+  await opts.prepare?.(seed);
   const book = await loadRecordBook(seed.clientId, FIRM, seed.scenarioId);
   const cashId = book.records.account.find((a) => a.label === "Household Cash")!.id;
-  const state = factFinder(cashId);
-  const changeSet = { ...(await buildChangeSet({ state, book, now: NOW, runLeftovers: async () => null })), builtAtVersion: 1 };
+  const state = (opts.state ?? factFinder)(cashId);
+  const built = { ...(await buildChangeSet({ state, book, now: NOW, runLeftovers: async () => null })), builtAtVersion: 1 };
+  const changeSet = opts.changeSet?.(built) ?? built;
   const [imp] = await db
     .insert(clientImports)
     .values({ clientId: seed.clientId, orgId: FIRM, mode: "onboarding", createdByUserId: SAVE_ACTOR, payloadJson: { factFinder: { ...state, version: 1, changeSet } } })
@@ -140,8 +162,8 @@ async function importOf(scope: FactFinderScope) {
 }
 
 /** Nothing the save would write is on the plan, and the import is open with its change list, as reviewed. */
-async function expectNothingWritten(r: Reviewed, retirementAge = 65) {
-  expect(await planOf(r.seed)).toEqual({ notes: 0, audit: [], retirementAge, spouseId: null });
+async function expectNothingWritten(r: Reviewed, retirementAge = 65, spouseId: string | null = null) {
+  expect(await planOf(r.seed)).toEqual({ notes: 0, audit: [], retirementAge, spouseId });
   const imp = await importOf(r.scope);
   expect(imp.status).toBe("draft");
   expect(imp.committedAt).toBeNull();
@@ -266,17 +288,103 @@ d("saveChangeSet (live DB)", () => {
     await expectNothingWritten(r);
   });
 
-  it("anything else a writer throws → 500, logged with its line; nothing written", async () => {
+  it("anything else a writer throws → 500 naming its line, logged with it; nothing written", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const { r, ran, outcome } = await failingAtTheThirdLine(new Error("connection reset"));
-      expect(outcome).toEqual({ ok: false, status: 500, error: SAVE_FAILED_MESSAGE });
+      expect(outcome).toEqual({ ok: false, status: 500, error: SAVE_FAILED_MESSAGE, lineId: "f1/family_member" });
       expect(logged).toHaveBeenCalledWith(expect.stringContaining("f1/family_member"), expect.anything());
       expect(ran).toEqual([]);
       await expectNothingWritten(r);
     } finally {
       logged.mockRestore();
     }
+  });
+
+  it("a deadlock with another transaction (Postgres aborts the save) → 409 review again, as a serialization failure is; nothing written", async () => {
+    const r = await reviewed();
+    const calls: Call[] = [];
+    // As drizzle surfaces it: the driver's error, with Postgres' code, on `cause`.
+    const deadlock = Object.assign(new Error("Failed query"), { cause: Object.assign(new Error("deadlock detected"), { code: "40P01" }) });
+    const outcome = await saveChangeSet(
+      request(r),
+      deps(
+        writers(calls, {
+          "f1/family_member": async () => {
+            throw deadlock;
+          },
+        }),
+      ),
+    );
+    expect(outcome).toEqual({ ok: false, status: 409, error: SAVE_RACE_MESSAGE });
+    await expectNothingWritten(r);
+  });
+
+  it("ticks that leave nothing to save → 409 before any write, and the import stays open", async () => {
+    const r = await reviewed();
+    const calls: Call[] = [];
+    const nothing = Object.fromEntries(Object.entries(r.ticks).map(([lineId, fields]) => [lineId, Object.fromEntries(Object.keys(fields).map((key) => [key, false]))]));
+    expect(await saveChangeSet(request(r, nothing), deps(writers(calls)))).toEqual({ ok: false, status: 409, error: SAVE_NOTHING_MESSAGE });
+    expect(calls).toEqual([]);
+    await expectNothingWritten(r);
+  });
+
+  it("never a guess — a line naming a line that saves no new record before it → 422 naming it; nothing written", async () => {
+    // The mortgage's property pointed at the line that updates Household Cash: only a Create's line gives an id.
+    const r = await reviewed({
+      changeSet: (changeSet) => ({
+        ...changeSet,
+        lines: changeSet.lines.map((l) => (l.id === "l1/liability" ? JSON.parse(JSON.stringify(l).replaceAll('"lineId":"re1/account"', '"lineId":"c1/account"')) : l)),
+      }),
+    });
+    const calls: Call[] = [];
+    expect(await saveChangeSet(request(r), deps(writers(calls)))).toEqual({
+      ok: false, status: 422, error: "Home mortgage: Needs “Household Cash”, which isn't saved before it.", lineId: "l1/liability",
+    });
+    expect(calls.map((c) => c.lineId)).not.toContain("l1/liability");
+    await expectNothingWritten(r);
+  });
+
+  it("never a guess — a line naming the co-client the household lines didn't add → 422 naming it; nothing written", async () => {
+    const r = await reviewed();
+    const calls: Call[] = [];
+    // A household writer that writes nothing: the co-client the change list adds never reaches the plan.
+    const w = { ...writers(calls), client_household: { create: async () => r.seed.clientId, update: async () => {} } };
+    expect(await saveChangeSet(request(r), deps(w))).toEqual({
+      ok: false, status: 422, error: "Main home: Needs the co-client, who isn't on the plan.", lineId: "re1/account",
+    });
+    await expectNothingWritten(r);
+  });
+
+  it("never a guess — a year the household can't place (a salary to the co-client's retirement, her date of birth unknown) → 422 naming it; nothing written", async () => {
+    const r = await reviewed({
+      coClient: true,
+      prepare: async (seed) => {
+        await db.update(crmHouseholdContacts).set({ dateOfBirth: null }).where(and(eq(crmHouseholdContacts.householdId, seed.householdId), eq(crmHouseholdContacts.role, "spouse")));
+      },
+      state: () => stateWith({ salary: [rowOf("salary:Co-client", { annualSalary: 90000 })] }),
+    });
+    const calls: Call[] = [];
+    expect(await saveChangeSet(request(r), deps(writers(calls)))).toEqual({
+      ok: false,
+      status: 422,
+      error: "Salary — Laura Hendricks: Can't tell which year Co-client Retirement is — check the dates of birth and retirement ages on the Household page.",
+      lineId: "salary:Co-client/income",
+    });
+    expect(calls).toEqual([]);
+    await expectNothingWritten(r, 65, r.seed.spouseMemberId);
+  });
+
+  it("looks the actor's name up once before the transaction, so the audit rows inside it don't each wait on Clerk", async () => {
+    const r = await reviewed();
+    vi.mocked(snapshotActorName).mockClear();
+    let beforeTheFirstLine: unknown[][] = [];
+    const outcome = await saveChangeSet(
+      request(r),
+      deps(writers([], { "people:Client/client_household": async () => void (beforeTheFirstLine = [...vi.mocked(snapshotActorName).mock.calls]) })),
+    );
+    expect(outcome.ok).toBe(true);
+    expect(beforeTheFirstLine).toEqual([[SAVE_ACTOR]]);
   });
 
   it("re-checks each written line with the advisor's ticks: a Create left without its first name → 422 before any write", async () => {
@@ -349,8 +457,30 @@ d("saveChangeSet (live DB)", () => {
     expect(cash.notes).toBe("edited in Details");
   });
 
-  it("the co-client removed in Details between planning the save and its transaction → 409; no writer runs", async () => {
+  it("the co-client removed in Details after the review → 409, the household changed; nothing written", async () => {
     const r = await reviewed({ coClient: true });
+    await db.delete(familyMembers).where(eq(familyMembers.id, r.seed.spouseMemberId!));
+    const calls: Call[] = [];
+    expect(await saveChangeSet(request(r), deps(writers(calls)))).toEqual({ ok: false, status: 409, error: SAVE_HOUSEHOLD_MESSAGE });
+    expect(calls).toEqual([]);
+    await expectNothingWritten(r);
+  });
+
+  it("the co-client added in Details after a review whose household line adds her → 409, the household changed; nothing written", async () => {
+    const r = await reviewed();
+    const [laura] = await db
+      .insert(familyMembers)
+      .values({ clientId: r.seed.clientId, role: "spouse", relationship: "other", firstName: "Laura", lastName: "Hendricks" })
+      .returning({ id: familyMembers.id });
+    const calls: Call[] = [];
+    expect(await saveChangeSet(request(r), deps(writers(calls)))).toEqual({ ok: false, status: 409, error: SAVE_HOUSEHOLD_MESSAGE });
+    expect(calls).toEqual([]);
+    await expectNothingWritten(r, 65, laura.id);
+  });
+
+  it("a change list stored before the review recorded the co-client is planned by the plan as it is: the co-client removed between planning and the transaction → 409; no writer runs", async () => {
+    const r = await reviewed({ coClient: true, changeSet: (changeSet) => ({ ...changeSet, hasCoClient: undefined }) });
+    expect((await loadFactFinder(r.scope))?.changeSet).not.toHaveProperty("hasCoClient");
     const calls: Call[] = [];
     const outcome = await saveChangeSet(
       request(r),
@@ -387,20 +517,29 @@ d("saveChangeSet (live DB)", () => {
         }),
       ),
     );
-    const pid = await inside;
+    // The first save holds its transaction open at its 3rd line — or ended without reaching it, which fails the test now rather than at its timeout.
+    const opened = await Promise.race([inside.then((pid) => ({ pid })), saving.then((ended) => ({ ended }))]);
+    if ("ended" in opened) {
+      release();
+      throw new Error(`The first save ended before its 3rd line: ${JSON.stringify(opened.ended)}`);
+    }
     // The second save's writers say so the moment any of them is reached.
     const reached: string[] = [];
     const reach = Object.fromEntries(Object.keys(r.ticks).map((id) => [id, async () => void reached.push(id)]));
     const again = saveChangeSet(request(r), deps(writers(second, reach)));
-    // The second save's transaction is waiting on the first's row lock.
-    await vi.waitFor(
-      async () => {
-        const { rows } = await db.execute<{ n: number }>(sql`select count(*)::int as n from pg_stat_activity where ${pid} = any(pg_blocking_pids(pid))`);
-        expect(rows[0].n).toBe(1);
-      },
-      { timeout: 30_000, interval: 100 },
-    );
-    release();
+    try {
+      // The second save's transaction is waiting on the first's row lock.
+      await vi.waitFor(
+        async () => {
+          const { rows } = await db.execute<{ n: number }>(sql`select count(*)::int as n from pg_stat_activity where ${opened.pid} = any(pg_blocking_pids(pid))`);
+          expect(rows[0].n).toBe(1);
+        },
+        { timeout: 30_000, interval: 100 },
+      );
+    } finally {
+      // Whatever happened, the first save's transaction ends — a held lock would hang the firm's clean-up.
+      release();
+    }
     const [a, b] = await Promise.all([saving, again]);
     expect(a.ok).toBe(true);
     expect(b).toEqual({ ok: false, status: 409, error: SAVE_CLOSED_MESSAGE, factFinder: a.ok ? a.factFinder : null });

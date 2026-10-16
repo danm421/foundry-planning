@@ -85,7 +85,11 @@ export interface SaveBody {
 export interface SaveResponse {
   factFinder: FactFinderState;
 }
-/** 409 (stale change list or record, already saved) and 422 (`lineId`: the line the save can't write) from save. `factFinder` when the route has a fresher one to show. */
+/**
+ * 409 (stale change list, household or record, already saved, nothing to save), 422 (`lineId`: the line the save
+ * can't write) and 500 (`lineId` when the save failed at a line) from save. `factFinder` when the route has a
+ * fresher one to show.
+ */
 export interface SaveRefusal {
   error: string;
   lineId?: string;
@@ -100,3 +104,5 @@ export const SAVE_STALE_MESSAGE = "The fact finder changed since you reviewed �
 export const SAVE_CLOSED_MESSAGE = "This import is saved to the plan — start a new import to change it.";
 export const SAVE_RACE_MESSAGE = "Something on the plan changed while saving — review again.";
 export const SAVE_FAILED_MESSAGE = "The save failed — nothing was changed.";
+export const SAVE_HOUSEHOLD_MESSAGE = "The household changed since you reviewed — review again.";
+export const SAVE_NOTHING_MESSAGE = "Nothing is ticked, so there is nothing to save.";

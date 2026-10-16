@@ -88,6 +88,11 @@ export interface ChangeSet {
   lines: ChangeLine[];
   /** Change-set-wide: notes not placed, documents-in-place hints… */
   notices: string[];
+  /**
+   * Whether the plan had the co-client's family member when the review built the list — what it kept or left out
+   * of the lines naming them. Absent on a list stored before the review recorded it.
+   */
+  hasCoClient?: boolean;
 }
 
 /** lineId → field key → ticked. */

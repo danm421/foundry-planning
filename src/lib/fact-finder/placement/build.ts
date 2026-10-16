@@ -37,6 +37,7 @@ export async function buildChangeSet(input: {
     builtAt: now.toISOString(),
     lines: blockDependents(blockSameField(lines), state),
     notices: [...placed.notices, ...ai.notices],
+    hasCoClient: book.people.spouse !== null,
   };
 }
 

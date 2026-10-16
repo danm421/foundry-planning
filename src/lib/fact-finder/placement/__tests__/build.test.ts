@@ -5,7 +5,7 @@ import type { FactFinderState, FFCell, FFRow } from "../../types";
 import { blockDependents, buildChangeSet } from "../build";
 import type { LeftoversOutput } from "../leftovers";
 import type { LeftoverItem, RecordBook, TargetDraft } from "../types";
-import { hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "./fixtures";
+import { bookWith, hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "./fixtures";
 
 const NOW = new Date("2026-03-15T12:00:00Z");
 type Answer = LeftoversOutput["items"][number];
@@ -136,6 +136,14 @@ describe("buildChangeSet — a small fact finder, end to end", () => {
     expect(runLeftovers).not.toHaveBeenCalled();
     expect(changeSet.lines.map((l) => l.id)).toEqual(["c1/account"]);
     expect(changeSet.notices).toEqual([]);
+  });
+});
+
+describe("buildChangeSet — the co-client the review saw", () => {
+  it("records whether the plan has the co-client's family member, for the save to compare with the plan it reloads", async () => {
+    const state = stateWith({ cash: [rowOf("c1", { accountName: "Emergency Savings", currentValue: 20000, owner: "Client" })] });
+    expect((await build(state, hendricksBook()).built).hasCoClient).toBe(true);
+    expect((await build(state, bookWith({}, { people: { client: "fm-client", spouse: null } })).built).hasCoClient).toBe(false);
   });
 });
 

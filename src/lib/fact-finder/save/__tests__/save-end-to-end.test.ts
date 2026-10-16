@@ -73,6 +73,15 @@ const cellsOf = (row: FFRow) => Object.fromEntries(Object.entries(row.cells).map
 
 const labelsOf = (plan: Plan, target: TargetKind) => plan.records[target].map((r) => r.label).sort();
 
+/** Every record of `before` is in `after` as it was, except the records the save wrote. */
+function expectUnmoved(before: Plan, after: Plan, written: ReadonlySet<string>) {
+  for (const [target, records] of Object.entries(before.records)) {
+    for (const was of records.filter((r) => !written.has(r.id))) {
+      expect(after.records[target as TargetKind].find((r) => r.id === was.id), `${target} “${was.label}”`).toEqual(was);
+    }
+  }
+}
+
 async function auditOf(seed: SaveSeed): Promise<string[]> {
   const rows = await db.select({ action: auditLog.action }).from(auditLog).where(eq(auditLog.clientId, seed.clientId));
   return rows.map((r) => r.action).sort();
@@ -182,13 +191,13 @@ function withAnILIT(): FactFinderState {
   });
 }
 
-/** `writer` for real, except that its second Create — once its rows are written — throws as a dropped connection would. */
-function failingOnItsSecondCreate(writer: SaveWriter): SaveWriter {
+/** `writer` for real, except that its `nth` Create — once its rows are written — throws as a dropped connection would. */
+function failingOnCreate(writer: SaveWriter, nth: number): SaveWriter {
   let creates = 0;
   return {
     async create(ctx, input) {
       const id = await writer.create(ctx, input);
-      if (++creates === 2) throw new Error("connection reset");
+      if (++creates === nth) throw new Error("connection reset");
       return id;
     },
     update: writer.update,
@@ -226,8 +235,9 @@ const NEW_HOUSEHOLD_AUDIT = [
 ];
 
 d("the save end to end — a new household (live DB)", () => {
-  beforeAll(async () => dropSaveFirm(FIRM));
-  afterAll(async () => dropSaveFirm(FIRM));
+  // Clearing a firm of 50-line households can outlast the default hook timeout on a cold dev branch.
+  beforeAll(async () => dropSaveFirm(FIRM), 120_000);
+  afterAll(async () => dropSaveFirm(FIRM), 120_000);
 
   it("every page's Creates are saved, each reference made inside the save resolved to the record it created, and nothing else on the plan moves", async () => {
     const seed = await seedSaveClient(FIRM);
@@ -242,6 +252,12 @@ d("the save end to end — a new household (live DB)", () => {
     expect(imp.factFinder?.closed?.saved.map((s) => s.lineId)).toEqual(SAVE_ORDER);
     expect(imp.factFinder?.closed?.leftOut).toEqual([]);
     expect(await auditOf(seed)).toEqual(NEW_HOUSEHOLD_AUDIT);
+    // The household lines' client.update rows each diff the client from where the line before left it, so no field shows twice
+    // (the tax settings' coverage row carries its fields, not a diff).
+    const clientUpdates = await db.select({ metadata: auditLog.metadata }).from(auditLog).where(and(eq(auditLog.clientId, seed.clientId), eq(auditLog.action, "client.update")));
+    const changed = clientUpdates.flatMap((row) => ((row.metadata as { changes?: { field: string }[] }).changes ?? []).map((c) => c.field)).sort();
+    expect(changed).toEqual([...new Set(changed)]);
+    expect(changed).toContain("retirementAge");
 
     const plan = await planOf(seed);
     const rec = (target: TargetKind, label: string) => recordOf(plan, target, label);
@@ -351,17 +367,16 @@ d("the save end to end — a new household (live DB)", () => {
     expect(rec("gift", "2022 gift").values).toMatchObject({ year: 2022, grantor: "client", recipient: record("external_beneficiary", redCross), amount: 20000 });
 
     // Nothing on the plan before the save moved, except the four records its Updates name.
-    const updated = new Set([
-      seed.clientId,
-      recordOf(before, "plan_settings_tax_rates", "Tax settings").id,
-      recordOf(before, "expense", "Current Living Expenses").id,
-      recordOf(before, "income", "Social Security — Mark").id,
-    ]);
-    for (const [target, records] of Object.entries(before.records)) {
-      for (const was of records.filter((r) => !updated.has(r.id))) {
-        expect(plan.records[target as TargetKind].find((r) => r.id === was.id), `${target} “${was.label}”`).toEqual(was);
-      }
-    }
+    expectUnmoved(
+      before,
+      plan,
+      new Set([
+        seed.clientId,
+        recordOf(before, "plan_settings_tax_rates", "Tax settings").id,
+        recordOf(before, "expense", "Current Living Expenses").id,
+        recordOf(before, "income", "Social Security — Mark").id,
+      ]),
+    );
   });
 
   it("a Create left unticked leaves out every line that needs it, and an unticked co-client first name every line naming her — each with its reason; the rest saved", async () => {
@@ -399,18 +414,19 @@ d("the save end to end — a new household (live DB)", () => {
     expect(labelsOf(plan, "account")).toEqual(["Emergency Fund", "Household Cash"]);
     expect(recordOf(plan, "account", "Emergency Fund").values).toMatchObject({ value: 20000, owners: [{ who: CLIENT, percent: 1 }] });
     for (const target of ["entity", "life_insurance_policy", "ltc_policy"] as const) expect(plan.records[target], target).toEqual([]);
-    expect(plan.records.income).toEqual(before.records.income);
+    // Every record on the plan before the save as it was, but the client its household line updated.
+    expectUnmoved(before, plan, new Set([seed.clientId]));
     expect(await auditOf(seed)).toEqual(["account.create", "client.update", "family_member.create", "import.fact_finder_saved"]);
   });
 
-  it("a real writer failing partway (its second account, rows already written) → 500; the plan exactly as before, no audit row, the import open — and it still saves", async () => {
+  it("a real writer failing partway (its second account, rows already written) → 500 naming the line; the plan exactly as before, no audit row, the import open — and it still saves", async () => {
     const seed = await seedSaveClient(FIRM);
     const before = await planOf(seed);
     const r = await review(seed, newHousehold());
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      const outcome = await save(r, r.ticks, { writers: { ...SAVE_WRITERS, account: failingOnItsSecondCreate(SAVE_WRITERS.account) } });
-      expect(outcome).toEqual({ ok: false, status: 500, error: SAVE_FAILED_MESSAGE });
+      const outcome = await save(r, r.ticks, { writers: { ...SAVE_WRITERS, account: failingOnCreate(SAVE_WRITERS.account, 2) } });
+      expect(outcome).toEqual({ ok: false, status: 500, error: SAVE_FAILED_MESSAGE, lineId: "tx1/account" });
       expect(logged).toHaveBeenCalledWith(expect.stringContaining("tx1/account"), expect.anything());
     } finally {
       logged.mockRestore();
@@ -427,6 +443,28 @@ d("the save end to end — a new household (live DB)", () => {
     // Nothing of the failed save lingers: the same ticks save the whole list once.
     expect((await save(r)).ok).toBe(true);
     expect(await auditOf(seed)).toEqual(NEW_HOUSEHOLD_AUDIT);
+  });
+
+  it("the last line failing (the plan note, after every other line's real writer) → 500 naming it; the plan exactly as before, no audit row, the import open", async () => {
+    const seed = await seedSaveClient(FIRM);
+    const before = await planOf(seed);
+    const r = await review(seed, newHousehold());
+    expect(SAVE_ORDER.at(-1)).toBe("estate_docs:Client/plan_observation");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const outcome = await save(r, r.ticks, { writers: { ...SAVE_WRITERS, plan_observation: failingOnCreate(SAVE_WRITERS.plan_observation, 1) } });
+      expect(outcome).toEqual({ ok: false, status: 500, error: SAVE_FAILED_MESSAGE, lineId: "estate_docs:Client/plan_observation" });
+    } finally {
+      logged.mockRestore();
+    }
+
+    // All 49 lines before it had written their rows and audit rows — the wills, provisions, remaining estates and gift last.
+    expect(await planOf(seed)).toEqual(before);
+    expect(await auditOf(seed)).toEqual([]);
+    const imp = await importOf(r.scope);
+    expect(imp).toMatchObject({ status: "draft", committedAt: null });
+    expect(imp.factFinder?.closed).toBeUndefined();
+    expect(imp.factFinder?.changeSet).toEqual(r.changeSet);
   });
 
   it("a line the real write path refuses (an LTC rider on a policy insuring someone else) → 422 naming it; nothing written", async () => {

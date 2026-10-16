@@ -18,12 +18,15 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { familyMembers } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
+import { snapshotActorName } from "@/lib/audit/actor-name";
 import { afterCommitQueue, type DbOrTx, type Tx } from "@/lib/db-tx";
 import type { ResolvedHoldingsMap } from "@/lib/imports/commit/types";
 import { loadImportMilestones, type ImportMilestones } from "@/lib/imports/import-milestones";
 import { coerceYearRef, resolveMilestone, YEAR_REF_LABELS } from "@/lib/milestones";
 import { safeErrorFields } from "@/lib/redaction/secrets";
-import { SAVE_CLOSED_MESSAGE, SAVE_FAILED_MESSAGE, SAVE_RACE_MESSAGE, SAVE_STALE_MESSAGE } from "../api-types";
+import {
+  SAVE_CLOSED_MESSAGE, SAVE_FAILED_MESSAGE, SAVE_HOUSEHOLD_MESSAGE, SAVE_NOTHING_MESSAGE, SAVE_RACE_MESSAGE, SAVE_STALE_MESSAGE,
+} from "../api-types";
 import { countLines, type ChangeSet, type TargetKind } from "../change-set";
 import { closeFactFinder, loadFactFinder, lockFactFinder, type FactFinderScope } from "../persist";
 import { payloadFor, type Resolve } from "../placement/payload";
@@ -164,16 +167,20 @@ function notSaved(changeSet: ChangeSet, leftOut: readonly LeftOutLine[]): LeftOu
   });
 }
 
-/** Postgres' serialization failure: a row the save writes changed after its snapshot. Drizzle wraps driver errors — the code is on `cause`. */
-function isSerializationFailure(err: unknown): boolean {
+/**
+ * Postgres aborted the save over another transaction's write: a serialization failure (a row the save writes
+ * changed after its snapshot) or a deadlock. Drizzle wraps driver errors — the code is on `cause`.
+ */
+function isConflict(err: unknown): boolean {
   const e = err as { code?: unknown; cause?: { code?: unknown } } | null;
-  return e?.code === "40001" || e?.cause?.code === "40001";
+  return [e?.code, e?.cause?.code].some((code) => code === "40001" || code === "40P01");
 }
 
 /**
  * Saves the change list the advisor reviewed at `changeSetVersion`, with their ticks, to the client's base case.
- * 409: saved already, reviewed again since, ticks that don't match, a record changed since the review or while
- * saving; 422: a line the write path refuses (`lineId`); 500: anything else. Every refusal writes nothing.
+ * 409: saved already, reviewed again since, ticks that don't match or leave nothing to save, the household or a
+ * record changed since the review or while saving; 422: a line the write path refuses (`lineId`); 500: anything
+ * else (`lineId` when a line was being written). Every refusal writes nothing.
  */
 export async function saveChangeSet(request: SaveRequest, deps: Partial<SaveDeps> = {}): Promise<SaveOutcome> {
   const { writers, resolveHoldings, now } = { writers: SAVE_WRITERS, resolveHoldings: resolveSaveHoldings, now: () => new Date(), ...deps };
@@ -185,12 +192,16 @@ export async function saveChangeSet(request: SaveRequest, deps: Partial<SaveDeps
   if (!open.ok) return open;
   const { changeSet } = open;
   const scenarioId = await resolveBaseCaseScenarioId(scope.clientId);
-  const hasCoClient = (await peopleOf(db, scope.clientId)).spouse !== null;
+  // The co-client as the review saw them; a list stored before the review recorded that, as the plan has them now.
+  const hasCoClient = changeSet.hasCoClient ?? (await peopleOf(db, scope.clientId)).spouse !== null;
   const plan = planSave(changeSet, request.ticks, { hasCoClient });
   if (!plan.ok) return refuse(409, plan.error);
+  if (plan.lines.length === 0) return refuse(409, SAVE_NOTHING_MESSAGE);
   const invalid = firstInvalid(plan.lines);
   if (invalid) return invalid;
   const holdings = await resolveHoldings(plan.lines);
+  // Every audit row in the transaction names the actor: one Clerk lookup now, cached, not one per row while it holds its locks.
+  await snapshotActorName(actorId);
 
   const queue = afterCommitQueue();
   const labels = new Map(changeSet.lines.map((l) => [l.id, l.label]));
@@ -203,8 +214,10 @@ export async function saveChangeSet(request: SaveRequest, deps: Partial<SaveDeps
         const locked = reviewed(await lockFactFinder(tx, scope), changeSetVersion);
         if (!locked.ok) throw new Refusal(locked);
         const book = await loadRecordBook(scope.clientId, scope.firmId, scenarioId, tx);
-        // The plan kept or left out the lines naming the co-client by the household as it was before the transaction.
-        if ((book.people.spouse !== null) !== hasCoClient) throw new Refusal(refuse(409, SAVE_RACE_MESSAGE));
+        // The plan kept or left out the lines naming the co-client by the household the review saw (an older list: as it was before the transaction).
+        if ((book.people.spouse !== null) !== hasCoClient) {
+          throw new Refusal(refuse(409, changeSet.hasCoClient === undefined ? SAVE_RACE_MESSAGE : SAVE_HOUSEHOLD_MESSAGE));
+        }
         const stale = staleProblem(lines, locked.state, book, at);
         if (stale) throw new Refusal(refuse(409, stale.message, { lineId: stale.lineId }));
 
@@ -249,12 +262,12 @@ export async function saveChangeSet(request: SaveRequest, deps: Partial<SaveDeps
     return { ok: true, factFinder };
   } catch (err) {
     if (err instanceof Refusal) return err.outcome;
-    if (isSerializationFailure(err)) {
-      // Something the save read changed under it: another save closed the import, an edit moved it on, or a Details edit hit a record a line writes.
+    if (isConflict(err)) {
+      // Something the save read changed under it: another save closed the import, an edit moved it on, or a Details edit hit (or deadlocked on) a record a line writes.
       const after = reviewed(await loadFactFinder(scope), changeSetVersion);
       return after.ok ? refuse(409, SAVE_RACE_MESSAGE) : after;
     }
     console.error(`[fact-finder-save] import ${scope.importId}: the save failed${writing ? ` at ${writing}` : ""}:`, safeErrorFields(err));
-    return refuse(500, SAVE_FAILED_MESSAGE);
+    return refuse(500, SAVE_FAILED_MESSAGE, writing ? { lineId: writing } : {});
   }
 }

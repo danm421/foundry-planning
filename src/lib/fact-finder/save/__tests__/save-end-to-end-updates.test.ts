@@ -136,8 +136,9 @@ async function existingHousehold() {
 }
 
 d("the save end to end — a household on the plan (live DB)", () => {
-  beforeAll(async () => dropSaveFirm(FIRM));
-  afterAll(async () => dropSaveFirm(FIRM));
+  // Clearing a firm of its households can outlast the default hook timeout on a cold dev branch.
+  beforeAll(async () => dropSaveFirm(FIRM), 120_000);
+  afterAll(async () => dropSaveFirm(FIRM), 120_000);
 
   it("an unticked name and owner stay as on record; a blank co-client first name never reaches the profile; a new IRA's blank contingent tier keeps its default", async () => {
     const h = await existingHousehold();
@@ -232,7 +233,8 @@ d("the save end to end — a household on the plan (live DB)", () => {
 
     const plan = await planOf(h.seed);
     const heloc = recordOf(plan, "liability", "Home equity line");
-    expect(recordOf(plan, "liability", "Car loan").values.owners).toEqual(JOINT);
+    // The owners-only update changes the owners and nothing else.
+    expect(recordOf(plan, "liability", "Car loan").values).toEqual({ ...recordOf(before, "liability", "Car loan").values, owners: JOINT });
     expect(heloc.values).toMatchObject({ liabilityType: "heloc", balance: 40000, owners: JOINT });
     for (const id of [h.carLoan, heloc.id]) {
       const owners = await db.select({ familyMemberId: liabilityOwners.familyMemberId, percent: liabilityOwners.percent }).from(liabilityOwners).where(eq(liabilityOwners.liabilityId, id));
@@ -246,10 +248,13 @@ d("the save end to end — a household on the plan (live DB)", () => {
     const will = recordOf(plan, "will", "Mark's will").id;
     const provisions = await db.select({ id: willBequests.id, name: willBequests.name, sortOrder: willBequests.sortOrder }).from(willBequests).orderBy(asc(willBequests.sortOrder)).where(eq(willBequests.willId, will));
     expect(provisions).toEqual([...willBefore, { id: expect.any(String), name: "Joint Savings", sortOrder: 2 }]);
-    expect(recordOf(plan, "will_bequest", "Schwab Brokerage").values.recipients).toEqual([
-      { who: record("family_member", h.emma), percentage: 50 },
-      { who: record("family_member", h.lucas), percentage: 50 },
-    ]);
+    expect(recordOf(plan, "will_bequest", "Schwab Brokerage").values).toEqual({
+      ...recordOf(before, "will_bequest", "Schwab Brokerage").values,
+      recipients: [
+        { who: record("family_member", h.emma), percentage: 50 },
+        { who: record("family_member", h.lucas), percentage: 50 },
+      ],
+    });
     expect(recordOf(plan, "will_bequest", "Joint Savings").values).toMatchObject({
       accountId: record("account", recordOf(plan, "account", "Joint Savings").id), recipients: [{ who: record("external_beneficiary", h.redCross), percentage: 100 }],
     });
