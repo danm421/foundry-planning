@@ -62,6 +62,12 @@ export class SaveLineError extends Error {
   }
 }
 
+/** An Update line's record (the save resolves it before it calls a writer), or a SaveLineError with the writer's own `message`. */
+export function recordIdOf(input: SaveInput, message: string): string {
+  if (!input.recordId) throw new SaveLineError(message);
+  return input.recordId;
+}
+
 /** A core's result, or a SaveLineError with its message. */
 export function unwrap<T>(result: EntityWriteResult<T>): { data: T; resourceId: string } {
   if (!result.ok) throw new SaveLineError(reasonOf(result));

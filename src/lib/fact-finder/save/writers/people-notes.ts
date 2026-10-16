@@ -11,7 +11,7 @@ import { clients, externalBeneficiaries } from "@/db/schema";
 import { createExternalBeneficiaryForClient, updateExternalBeneficiaryForClient } from "@/lib/clients/external-beneficiaries-writes";
 import { createObservationForClient, updateObservationForClient } from "@/lib/clients/observations-writes";
 import { createRelatedPartyForClient, updateRelatedPartyForClient } from "@/lib/clients/related-parties-writes";
-import { SaveLineError, unwrap, type SaveContext, type SaveWriter } from "../types";
+import { recordIdOf, SaveLineError, unwrap, type SaveContext, type SaveWriter } from "../types";
 
 const nameKey = (name: string) => name.trim().toLowerCase();
 
@@ -22,10 +22,7 @@ async function householdOf(ctx: SaveContext): Promise<string> {
   return row.householdId;
 }
 
-function needRecord(recordId: string | null): string {
-  if (!recordId) throw new SaveLineError("The record to change isn't on the plan.");
-  return recordId;
-}
+const NO_RECORD = "The record to change isn't on the plan.";
 
 const external_beneficiary: SaveWriter = {
   async create(ctx, input) {
@@ -48,7 +45,7 @@ const external_beneficiary: SaveWriter = {
   async update(ctx, input) {
     unwrap(
       await updateExternalBeneficiaryForClient({
-        clientId: ctx.clientId, beneficiaryId: needRecord(input.recordId), input: input.body, tx: ctx.tx, afterCommit: ctx.afterCommit,
+        clientId: ctx.clientId, beneficiaryId: recordIdOf(input, NO_RECORD), input: input.body, tx: ctx.tx, afterCommit: ctx.afterCommit,
       }),
     );
   },
@@ -67,7 +64,7 @@ const related_party: SaveWriter = {
     unwrap(
       await updateRelatedPartyForClient({
         clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, householdId: await householdOf(ctx),
-        partyId: needRecord(input.recordId), input: input.body, tx: ctx.tx, afterCommit: ctx.afterCommit,
+        partyId: recordIdOf(input, NO_RECORD), input: input.body, tx: ctx.tx, afterCommit: ctx.afterCommit,
       }),
     );
   },
@@ -84,7 +81,7 @@ const plan_observation: SaveWriter = {
   async update(ctx, input) {
     unwrap(
       await updateObservationForClient({
-        clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, observationId: needRecord(input.recordId),
+        clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, observationId: recordIdOf(input, NO_RECORD),
         input: input.body, tx: ctx.tx, afterCommit: ctx.afterCommit,
       }),
     );

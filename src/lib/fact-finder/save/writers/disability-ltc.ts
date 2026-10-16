@@ -9,7 +9,7 @@
  */
 import { createDisabilityPolicyForClient, updateDisabilityPolicyForClient } from "@/lib/clients/disability-policies-writes";
 import { createLtcPolicyForClient, updateLtcPolicyForClient } from "@/lib/clients/ltc-policies-writes";
-import { SaveLineError, unwrap, type SaveContext, type SaveWriter } from "../types";
+import { recordIdOf, unwrap, type SaveContext, type SaveWriter } from "../types";
 
 const base = (ctx: SaveContext) => ({
   clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, tx: ctx.tx, afterCommit: ctx.afterCommit,
@@ -20,8 +20,8 @@ const disability_policy: SaveWriter = {
     return unwrap(await createDisabilityPolicyForClient({ ...base(ctx), input: input.body })).resourceId;
   },
   async update(ctx, input) {
-    if (!input.recordId) throw new SaveLineError("The disability policy to change isn't on the plan.");
-    unwrap(await updateDisabilityPolicyForClient({ ...base(ctx), policyId: input.recordId, input: input.body }));
+    const policyId = recordIdOf(input, "The disability policy to change isn't on the plan.");
+    unwrap(await updateDisabilityPolicyForClient({ ...base(ctx), policyId, input: input.body }));
   },
 };
 
@@ -30,8 +30,8 @@ const ltc_policy: SaveWriter = {
     return unwrap(await createLtcPolicyForClient({ ...base(ctx), input: input.body })).resourceId;
   },
   async update(ctx, input) {
-    if (!input.recordId) throw new SaveLineError("The long-term care policy to change isn't on the plan.");
-    unwrap(await updateLtcPolicyForClient({ ...base(ctx), policyId: input.recordId, input: input.body }));
+    const policyId = recordIdOf(input, "The long-term care policy to change isn't on the plan.");
+    unwrap(await updateLtcPolicyForClient({ ...base(ctx), policyId, input: input.body }));
   },
 };
 

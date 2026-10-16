@@ -16,7 +16,7 @@ import { createFamilyMemberForClient, updateFamilyMemberForClient } from "@/lib/
 import { updatePlanSettingsForClient } from "@/lib/clients/plan-settings-writes";
 import { upsertPrimaryAndSpouseContacts } from "@/lib/crm/upsert-household-contact";
 import { NO_CO_CLIENT_REASON } from "../../placement/refs";
-import { SaveLineError, unwrap, type SaveContext, type SaveInput, type SaveWriter } from "../types";
+import { recordIdOf, SaveLineError, unwrap, type SaveContext, type SaveWriter } from "../types";
 
 /** What every core call of the save passes: its client, its actor, its transaction and queue. */
 const writeArgs = (ctx: SaveContext) => ({
@@ -26,11 +26,6 @@ const writeArgs = (ctx: SaveContext) => ({
 const updateOnly = (message: string) => async (): Promise<string> => {
   throw new SaveLineError(message);
 };
-
-function recordOf(input: SaveInput): string {
-  if (!input.recordId) throw new SaveLineError("This line names no record to update.");
-  return input.recordId;
-}
 
 /** The household and whether it has a co-client, read on the save's transaction. */
 async function householdOf(ctx: SaveContext): Promise<{ householdId: string; hasCoClient: boolean }> {
@@ -82,7 +77,7 @@ export const HOUSEHOLD_WRITERS: { client_household: SaveWriter; plan_settings_ta
       return resourceId;
     },
     async update(ctx, input) {
-      unwrap(await updateFamilyMemberForClient({ ...writeArgs(ctx), memberId: recordOf(input), input: input.body }));
+      unwrap(await updateFamilyMemberForClient({ ...writeArgs(ctx), memberId: recordIdOf(input, "This line names no record to update."), input: input.body }));
     },
   },
 };

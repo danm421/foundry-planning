@@ -1,11 +1,12 @@
 // src/lib/fact-finder/save/__tests__/types.test.ts
 //
-// The save writer contract's two runtime pieces: a core's refusal becomes the
-// line's SaveLineError, and a core's error result can carry its route's own
-// response body.
+// The save writer contract's runtime pieces: a core's refusal becomes the
+// line's SaveLineError, a core's error result can carry its route's own
+// response body, and an Update line without its record is refused in the
+// writer's own words.
 import { describe, expect, it } from "vitest";
 import { writeError } from "@/lib/clients/entity-write-result";
-import { SaveLineError, unwrap } from "../types";
+import { recordIdOf, SaveLineError, unwrap, type SaveInput } from "../types";
 
 describe("unwrap", () => {
   it("hands back a core's data and resource id", () => {
@@ -56,5 +57,17 @@ describe("writeError", () => {
 
   it("has no body key without one, exactly as before", () => {
     expect(writeError(404, "Client not found")).toStrictEqual({ ok: false, status: 404, error: "Client not found" });
+  });
+});
+
+describe("recordIdOf", () => {
+  const input = (recordId: string | null) => ({ recordId }) as SaveInput;
+
+  it("hands back an Update line's record", () => {
+    expect(recordIdOf(input("acct-1"), "The loan to change isn't on the plan.")).toBe("acct-1");
+  });
+
+  it("refuses a line with no record, in the writer's own words", () => {
+    expect(() => recordIdOf(input(null), "The loan to change isn't on the plan.")).toThrow(new SaveLineError("The loan to change isn't on the plan."));
   });
 });

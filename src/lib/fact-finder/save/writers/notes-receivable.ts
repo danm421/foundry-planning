@@ -6,7 +6,7 @@
  * with its share) are what the core checks and writes.
  */
 import { createNoteReceivableForClient, updateNoteReceivableForClient } from "@/lib/clients/notes-receivable-writes";
-import { SaveLineError, unwrap, type SaveWriter } from "../types";
+import { recordIdOf, unwrap, type SaveWriter } from "../types";
 
 const note_receivable: SaveWriter = {
   async create(ctx, input) {
@@ -18,10 +18,10 @@ const note_receivable: SaveWriter = {
     return resourceId;
   },
   async update(ctx, input) {
-    if (!input.recordId) throw new SaveLineError("The note to change isn't on the plan.");
+    const noteId = recordIdOf(input, "The note to change isn't on the plan.");
     unwrap(
       await updateNoteReceivableForClient({
-        clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, noteId: input.recordId, input: input.body,
+        clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, noteId, input: input.body,
         tx: ctx.tx, afterCommit: ctx.afterCommit,
       }),
     );

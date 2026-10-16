@@ -8,7 +8,7 @@
 import { and, eq } from "drizzle-orm";
 import { liabilities, liabilityTypeEnum } from "@/db/schema";
 import { createLiabilityForClient, updateLiabilityForClient } from "@/lib/clients/liabilities-writes";
-import { SaveLineError, unwrap, type SaveContext, type SaveInput, type SaveWriter } from "../types";
+import { recordIdOf, SaveLineError, unwrap, type SaveContext, type SaveInput, type SaveWriter } from "../types";
 
 type LiabilityType = (typeof liabilityTypeEnum.enumValues)[number];
 
@@ -40,15 +40,15 @@ const liability: SaveWriter = {
     return resourceId;
   },
   async update(ctx, input) {
-    if (!input.recordId) throw new SaveLineError("The loan to change isn't on the plan.");
+    const liabilityId = recordIdOf(input, "The loan to change isn't on the plan.");
     const type = liabilityTypeOf(input);
     unwrap(
       await updateLiabilityForClient({
-        clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, liabilityId: input.recordId, input: input.body,
+        clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, liabilityId, input: input.body,
         tx: ctx.tx, afterCommit: ctx.afterCommit,
       }),
     );
-    await writeLiabilityType(ctx, input.recordId, type);
+    await writeLiabilityType(ctx, liabilityId, type);
   },
 };
 

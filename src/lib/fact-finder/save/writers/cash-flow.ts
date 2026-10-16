@@ -14,7 +14,7 @@ import { createExpenseForClient, updateExpenseForClient } from "@/lib/clients/ex
 import { createIncomeForClient, updateIncomeForClient } from "@/lib/clients/incomes-writes";
 import { createSavingsRuleForClient, updateSavingsRuleForClient } from "@/lib/clients/savings-rules-writes";
 import { defaultDeductibleForSubtype, supportsDeductibility } from "@/lib/tax/derive-deductions";
-import { SaveLineError, unwrap, type SaveContext, type SaveInput, type SaveWriter } from "../types";
+import { recordIdOf, unwrap, type SaveContext, type SaveWriter } from "../types";
 
 const scope = (ctx: SaveContext) => ({
   clientId: ctx.clientId,
@@ -24,18 +24,14 @@ const scope = (ctx: SaveContext) => ({
   afterCommit: ctx.afterCommit,
 });
 
-/** An Update line's record: the save resolves it before it calls a writer. */
-function recordOf(input: SaveInput): string {
-  if (!input.recordId) throw new SaveLineError("This line updates a record, but names none.");
-  return input.recordId;
-}
+const NO_RECORD = "This line updates a record, but names none.";
 
 const income: SaveWriter = {
   async create(ctx, input) {
     return unwrap(await createIncomeForClient({ ...scope(ctx), input: input.body })).resourceId;
   },
   async update(ctx, input) {
-    unwrap(await updateIncomeForClient({ ...scope(ctx), incomeId: recordOf(input), input: input.body }));
+    unwrap(await updateIncomeForClient({ ...scope(ctx), incomeId: recordIdOf(input, NO_RECORD), input: input.body }));
   },
 };
 
@@ -45,7 +41,7 @@ const expense: SaveWriter = {
     return unwrap(await createExpenseForClient({ ...scope(ctx), input: input.body })).resourceId;
   },
   async update(ctx, input) {
-    unwrap(await updateExpenseForClient({ ...scope(ctx), expenseId: recordOf(input), input: input.body }));
+    unwrap(await updateExpenseForClient({ ...scope(ctx), expenseId: recordIdOf(input, NO_RECORD), input: input.body }));
   },
 };
 
@@ -73,7 +69,7 @@ const savingsRule: SaveWriter = {
     return unwrap(await createSavingsRuleForClient({ ...scope(ctx), input: body })).resourceId;
   },
   async update(ctx, input) {
-    unwrap(await updateSavingsRuleForClient({ ...scope(ctx), ruleId: recordOf(input), input: input.body }));
+    unwrap(await updateSavingsRuleForClient({ ...scope(ctx), ruleId: recordIdOf(input, NO_RECORD), input: input.body }));
   },
 };
 

@@ -7,7 +7,7 @@
 import { and, eq } from "drizzle-orm";
 import { gifts } from "@/db/schema";
 import { createGiftForClient, updateGiftForClient } from "@/lib/clients/gifts-writes";
-import { SaveLineError, unwrap, type SaveWriter } from "../types";
+import { recordIdOf, unwrap, type SaveWriter } from "../types";
 
 const gift: SaveWriter = {
   async create(ctx, input) {
@@ -19,10 +19,10 @@ const gift: SaveWriter = {
     return resourceId;
   },
   async update(ctx, input) {
-    if (!input.recordId) throw new SaveLineError("The gift to change isn't on the plan.");
+    const giftId = recordIdOf(input, "The gift to change isn't on the plan.");
     unwrap(
       await updateGiftForClient({
-        clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, giftId: input.recordId, input: input.body,
+        clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, giftId, input: input.body,
         tx: ctx.tx, afterCommit: ctx.afterCommit,
       }),
     );
@@ -32,7 +32,7 @@ const gift: SaveWriter = {
       await ctx.tx
         .update(gifts)
         .set({ yearRef: null })
-        .where(and(eq(gifts.id, input.recordId), eq(gifts.clientId, ctx.clientId)));
+        .where(and(eq(gifts.id, giftId), eq(gifts.clientId, ctx.clientId)));
     }
   },
 };

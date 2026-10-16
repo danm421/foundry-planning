@@ -13,17 +13,14 @@ import { and, eq } from "drizzle-orm";
 import { accounts, entities } from "@/db/schema";
 import { createEntityForClient, updateEntityForClient } from "@/lib/clients/entities-writes";
 import { createRevocableTrustForClient, updateRevocableTrustForClient } from "@/lib/clients/revocable-trusts-writes";
-import { SaveLineError, unwrap, type SaveContext, type SaveInput, type SaveWriter } from "../types";
+import { recordIdOf, SaveLineError, unwrap, type SaveContext, type SaveWriter } from "../types";
 
 /** Who and where every core call of the save writes. */
 function writeAs(ctx: SaveContext) {
   return { clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, tx: ctx.tx, afterCommit: ctx.afterCommit };
 }
 
-function recordOf(input: SaveInput): string {
-  if (!input.recordId) throw new SaveLineError("The trust to change isn't on the plan.");
-  return input.recordId;
-}
+const NO_TRUST = "The trust to change isn't on the plan.";
 
 /** Refuses a grantor change on a charitable lead or remainder trust, read on the save's transaction. */
 async function keepCharitableGrantor(ctx: SaveContext, trustId: string, body: Record<string, unknown>): Promise<void> {
@@ -52,7 +49,7 @@ export const TRUST_WRITERS: { entity: SaveWriter; revocable_trust: SaveWriter } 
       return unwrap(await createEntityForClient({ ...writeAs(ctx), input: body })).resourceId;
     },
     async update(ctx, input) {
-      const entityId = recordOf(input);
+      const entityId = recordIdOf(input, NO_TRUST);
       await keepCharitableGrantor(ctx, entityId, input.body);
       unwrap(await updateEntityForClient({ ...writeAs(ctx), entityId, input: input.body }));
     },
@@ -63,7 +60,7 @@ export const TRUST_WRITERS: { entity: SaveWriter; revocable_trust: SaveWriter } 
     },
     // A line carries the name only; the PATCH untags every account its body doesn't list.
     async update(ctx, input) {
-      const trustId = recordOf(input);
+      const trustId = recordIdOf(input, NO_TRUST);
       const body = { accountIds: await heldAccountIds(ctx, trustId), ...input.body };
       unwrap(await updateRevocableTrustForClient({ ...writeAs(ctx), trustId, input: body }));
     },
