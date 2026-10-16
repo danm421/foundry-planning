@@ -109,6 +109,24 @@ describe("charity save writer", () => {
     expect(rows.filter((r) => r.name === "John Roe")).toHaveLength(0);
   });
 
+  it("(d) the refusal names the record on file by its own kind, not the new row's", async () => {
+    await inSave(scope, (ctx) => charity.create(ctx, inputOf(changeLine("external_beneficiary", { name: "Pat Lee", kind: "individual" }))));
+    await inSave(scope, (ctx) => charity.create(ctx, inputOf(changeLine("external_beneficiary", { name: "Food Bank", kind: "charity" }))));
+    await expect(
+      inSave(scope, (ctx) => charity.create(ctx, inputOf(changeLine("external_beneficiary", { name: "pat lee", kind: "charity" })))),
+    ).rejects.toThrow("The plan already has a beneficiary named “pat lee” — link this row to it, or untick it.");
+    await expect(
+      inSave(scope, (ctx) => charity.create(ctx, inputOf(changeLine("external_beneficiary", { name: "food bank", kind: "individual" })))),
+    ).rejects.toThrow("The plan already has a charity named “food bank” — link this row to it, or untick it.");
+    // Two new rows in one save keep the second row's own noun.
+    await expect(
+      inSave(scope, async (ctx) => {
+        await charity.create(ctx, inputOf(changeLine("external_beneficiary", { name: "Sam Poe", kind: "charity" })));
+        await charity.create(ctx, inputOf(changeLine("external_beneficiary", { name: "Sam Poe", kind: "individual" })));
+      }),
+    ).rejects.toThrow("Two beneficiaries named “Sam Poe” are being added — merge the rows, or untick one.");
+  });
+
   it("(d) an Update renaming a charity is not a duplicate check", async () => {
     const { result: id } = await inSave(scope, (ctx) => charity.create(ctx, inputOf(changeLine("external_beneficiary", { name: "Scouts" }))));
     await inSave(scope, (ctx) => charity.update(ctx, inputOf(changeLine("external_beneficiary", { name: "Boy Scouts" }, { recordId: id }))));

@@ -237,6 +237,23 @@ describe("carryTicks", () => {
     expect(carryTicks(before, ticks, again)).toEqual(defaultTicks(again));
   });
 
+  it("carries only a tick the advisor changed: an untouched default re-derives from the new list, a changed one is kept", () => {
+    // The record's blank name was filled between the reviews, so Name's default flipped from ticked to unticked.
+    const flipped = reviewOf(
+      9,
+      [placed("name", "Joint Checking"), placed("value", 41233, false), placed("owners", owners(0.5))],
+      [placed("name", "Rollover IRA", false), placed("value", 50000)],
+    );
+    const untouched = { "c1/account": { name: true, value: true, owners: true }, "r1/account": { name: false, value: true } };
+    expect(carryTicks(before, untouched, flipped)["c1/account"]).toEqual({ name: true, value: false, owners: true });
+    // The advisor unticked Name (default ticked) and ticked the IRA's name (default unticked): both kept.
+    const touched = { "c1/account": { name: false, value: true, owners: true }, "r1/account": { name: true, value: true } };
+    expect(carryTicks(before, touched, flipped)).toEqual({
+      "c1/account": { name: false, value: false, owners: true },
+      "r1/account": { name: true, value: true },
+    });
+  });
+
   it("carries a whole line unticked as its fields unticked; a line that can't save now gets no ticks", () => {
     const off = { ...ticks, "c1/account": { name: false, value: false, owners: false } };
     expect(carryTicks(before, off, { ...before, builtAtVersion: 9 })["c1/account"]).toEqual({ name: false, value: false, owners: false });

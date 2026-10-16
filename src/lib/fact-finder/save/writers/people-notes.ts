@@ -33,17 +33,19 @@ const external_beneficiary: SaveWriter = {
     const onPlan = await ctx.tx
       .select({
         name: externalBeneficiaries.name,
+        kind: externalBeneficiaries.kind,
         // now() is the save's transaction start, so this save's own Creates carry it as created_at (the column's default).
         addedBySave: sql<boolean>`${externalBeneficiaries.createdAt} = now()`,
       })
       .from(externalBeneficiaries)
       .where(eq(externalBeneficiaries.clientId, ctx.clientId));
     const same = name ? onPlan.filter((r) => nameKey(r.name) === nameKey(name)) : [];
-    const noun = nounsOf(input.body.kind);
-    if (same.some((r) => !r.addedBySave)) {
-      throw new SaveLineError(`The plan already has a ${noun.one} named “${name}” — link this row to it, or untick it.`);
+    // The record on file is named by its own kind; two new rows in one save, by the new line's.
+    const onRecord = same.find((r) => !r.addedBySave);
+    if (onRecord) {
+      throw new SaveLineError(`The plan already has a ${nounsOf(onRecord.kind).one} named “${name}” — link this row to it, or untick it.`);
     }
-    if (same.length > 0) throw new SaveLineError(`Two ${noun.many} named “${name}” are being added — merge the rows, or untick one.`);
+    if (same.length > 0) throw new SaveLineError(`Two ${nounsOf(input.body.kind).many} named “${name}” are being added — merge the rows, or untick one.`);
     return unwrap(await createExternalBeneficiaryForClient({ clientId: ctx.clientId, input: input.body, tx: ctx.tx, afterCommit: ctx.afterCommit })).resourceId;
   },
   async update(ctx, input) {

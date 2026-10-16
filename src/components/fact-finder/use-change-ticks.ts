@@ -4,8 +4,8 @@
 // the review's defaults and are kept in sessionStorage under the import and the
 // review's version, so leaving the list (or reloading) keeps them while the
 // fact finder is unchanged. A new review of the import carries them forward to
-// the list it builds (carryTicks): a field keeps its tick while its line and
-// its new value are the same. Storage is read through useSyncExternalStore,
+// the list it builds (carryTicks): a field keeps a tick the advisor changed
+// while its line and its new value are the same. Storage is read through useSyncExternalStore,
 // whose server snapshot is "nothing stored", so the server and the first client
 // render agree; when the browser refuses storage the ticks are held in memory only.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -58,12 +58,14 @@ const AS_HELD = { client: null, spouse: null };
 
 /**
  * The ticks for `next`, a new review's list replacing `previous`, whose ticks were `ticks`: a field keeps its tick
- * when its line is still the same write (create, or update of the same record) and the field's new value is the
- * same under the review's tolerances (sameValue); a new or changed field, and a new line, start from its default.
+ * when the advisor changed it (it differs from the previous list's default), its line is still the same write (create,
+ * or update of the same record) and its new value is the same under the review's tolerances (sameValue); an untouched
+ * field, a new or changed field, and a new line, start from the new list's default.
  */
 export function carryTicks(previous: ChangeSet, ticks: ChangeTicks, next: ChangeSet): ChangeTicks {
   const before = new Map(previous.lines.map((line) => [line.id, line]));
   const carried = defaultTicks(next);
+  const wasDefault = defaultTicks(previous);
   for (const line of next.lines) {
     const was = before.get(line.id);
     const kept = ticks[line.id];
@@ -71,7 +73,7 @@ export function carryTicks(previous: ChangeSet, ticks: ChangeTicks, next: Change
     for (const field of line.fields) {
       const old = was.fields.find((f) => f.key === field.key);
       const kind = targetField(line.target, field.key)?.kind;
-      if (old && kind && typeof kept[field.key] === "boolean" && sameValue(kind, old.next, field.next, AS_HELD)) {
+      if (old && kind && typeof kept[field.key] === "boolean" && kept[field.key] !== wasDefault[line.id]?.[field.key] && sameValue(kind, old.next, field.next, AS_HELD)) {
         carried[line.id][field.key] = kept[field.key];
       }
     }
