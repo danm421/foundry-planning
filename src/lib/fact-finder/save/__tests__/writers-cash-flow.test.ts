@@ -110,6 +110,18 @@ describe("income writer", () => {
     expect(await auditCount()).toBe(before);
   });
 
+  it("an update inside a save that then throws leaves the income and its audit rows as they were", async () => {
+    const make = changeLine("income", { name: "Rental — Elm St", annualAmount: 24000, start: 2026, end: 2045 }, { fixed: { type: "other", owner: "client", growthSource: "inflation" } });
+    const { result: id } = await inSave(firm(), (ctx) => CASH_FLOW_WRITERS.income.create(ctx, inputOf(make)));
+    const before = await auditCount();
+
+    const raise = changeLine("income", { annualAmount: 30000, end: 2050 }, { recordId: id });
+    await inSave(firm(), (ctx) => CASH_FLOW_WRITERS.income.update(ctx, inputOf(raise)), { rollback: true });
+    const row = await incomeNamed("Rental — Elm St");
+    expect([Number(row.annualAmount), row.endYear]).toEqual([24000, 2045]);
+    expect(await auditCount()).toBe(before);
+  });
+
   it("(c) an income owned by a business made earlier in the save: checked against it, and gone with it on rollback", async () => {
     const make = async (rollback: boolean) =>
       inSave(
@@ -135,13 +147,14 @@ describe("income writer", () => {
   });
 
   it("(c) an owner account that is not a business is refused with the core's reason", async () => {
-    await expect(
-      inSave(firm(), async (ctx) => {
-        const taxable = await newAccount(ctx.tx, { name: "Brokerage", category: "taxable", subType: "brokerage" });
-        const line = changeLine("income", { name: "Misowned", annualAmount: 1, start: 2026, end: 2030 }, { fixed: { type: "business", owner: "client", ownerAccountId: { ref: "record", target: "account", id: taxable } } });
-        await CASH_FLOW_WRITERS.income.create(ctx, inputOf(line));
-      }),
-    ).rejects.toThrow(SaveLineError);
+    const save = inSave(firm(), async (ctx) => {
+      const taxable = await newAccount(ctx.tx, { name: "Brokerage", category: "taxable", subType: "brokerage" });
+      const line = changeLine("income", { name: "Misowned", annualAmount: 1, start: 2026, end: 2030 }, { fixed: { type: "business", owner: "client", ownerAccountId: { ref: "record", target: "account", id: taxable } } });
+      await CASH_FLOW_WRITERS.income.create(ctx, inputOf(line));
+    });
+    await expect(save).rejects.toThrow(SaveLineError);
+    // The business check refused it — not the ownership check, which sees the brokerage made earlier in the save.
+    await expect(save).rejects.toThrow(/^Account [0-9a-f-]{36} is not a business account$/);
     expect(await incomeNamed("Misowned")).toBeUndefined();
   });
 });
@@ -153,7 +166,8 @@ describe("expense writer", () => {
       { name: "Lake house upkeep", type: "other", annualAmount: 18000, start: 2027, end: { yearRef: "plan_end" }, isGoal: true },
       { fixed: { growthSource: "inflation" } },
     );
-    const { result } = await inSave(firm(), (ctx) => CASH_FLOW_WRITERS.expense.create(ctx, inputOf(line)));
+    const { result, queued } = await inSave(firm(), (ctx) => CASH_FLOW_WRITERS.expense.create(ctx, inputOf(line)));
+    expect(queued).toBe(0);
     const row = await expenseNamed("Lake house upkeep");
     expect(row).toMatchObject({ id: result, type: "other", startYear: 2027, endYear: REF_YEAR, endYearRef: "plan_end", isGoal: true, growthSource: "inflation" });
     expect(await auditCount("expense.create")).toBe(1);
@@ -165,6 +179,30 @@ describe("expense writer", () => {
     await inSave(firm(), (ctx) => CASH_FLOW_WRITERS.expense.create(ctx, inputOf(line)), { rollback: true });
     expect(await expenseNamed("Rolled back expense")).toBeUndefined();
     expect(await auditCount()).toBe(before);
+  });
+
+  it("(c) a business's Annual expense owned by the business made earlier in the save: checked against it, and gone with it on rollback", async () => {
+    const make = (rollback: boolean) =>
+      inSave(
+        firm(),
+        async (ctx) => {
+          const business = await newAccount(ctx.tx, { name: "Hendricks Studio LLC", category: "business", subType: "llc" });
+          // As the Business page places it (real-estate-debts.ts flowDraft): a new expense owned by the new business.
+          const line = changeLine(
+            "expense",
+            { annualAmount: 45000, start: { yearRef: "plan_start" }, end: { yearRef: "plan_end" } },
+            { fixed: { type: "other", name: "Hendricks Studio LLC expenses", ownerAccountId: { ref: "line", target: "business_account", lineId: "b9/business_account" }, growthSource: "inflation" } },
+          );
+          return { business, expense: await CASH_FLOW_WRITERS.expense.create(ctx, inputOf(line, { "line:b9/business_account": business })) };
+        },
+        { rollback },
+      );
+    const rolled = await make(true);
+    expect(await expenseNamed("Hendricks Studio LLC expenses")).toBeUndefined();
+    expect(await db.select({ id: accounts.id }).from(accounts).where(eq(accounts.id, rolled.result.business))).toHaveLength(0);
+
+    const kept = await make(false);
+    expect(await expenseNamed("Hendricks Studio LLC expenses")).toMatchObject({ id: kept.result.expense, ownerAccountId: kept.result.business, type: "other" });
   });
 
   it("the Current living amount then the itemized list: the list's total wins, in the same save", async () => {
@@ -275,6 +313,7 @@ describe("savings-rule writer", () => {
       );
     const before = await auditCount();
     const rolled = await make(true);
+    expect(rolled.queued).toBe(0);
     expect(await rulesOn(rolled.result.k401)).toHaveLength(0);
     expect(await db.select().from(savingsRuleSalaryIncomes).where(eq(savingsRuleSalaryIncomes.savingsRuleId, rolled.result.rule))).toHaveLength(0);
     expect(await auditCount()).toBe(before);
@@ -300,6 +339,63 @@ describe("savings-rule writer", () => {
     expect(after.salaryBasis).toBe("selected");
     expect(await db.select().from(savingsRuleSalaryIncomes).where(eq(savingsRuleSalaryIncomes.savingsRuleId, rule.id))).toHaveLength(1);
     expect(await auditCount("savings_rule.update")).toBe(1);
+  });
+
+  it("an update inside a save that then throws leaves the rule, its salary links and its audit rows as they were", async () => {
+    const { result: seeded } = await inSave(firm(), async (ctx) => {
+      const ira = await newAccount(ctx.tx, { name: "Initech 403(b)", category: "retirement", subType: "403b" });
+      const salary = await CASH_FLOW_WRITERS.income.create(ctx, inputOf(changeLine("income", { name: "Salary — Initech", annualAmount: 70000, start: 2026, end: 2040 }, { fixed: { type: "salary", owner: "client", growthSource: "inflation" } })));
+      const input = inputOf(RULE(ira));
+      const rule = await CASH_FLOW_WRITERS.savings_rule.create(ctx, { ...input, body: { ...input.body, salaryBasis: "selected", salaryIncomeIds: [salary] } });
+      return { rule, salary };
+    });
+    const links = () => db.select({ incomeId: savingsRuleSalaryIncomes.incomeId }).from(savingsRuleSalaryIncomes).where(eq(savingsRuleSalaryIncomes.savingsRuleId, seeded.rule));
+    const [before] = await db.select().from(savingsRules).where(eq(savingsRules.id, seeded.rule));
+    const auditBefore = await auditCount();
+
+    const line = changeLine("savings_rule", { annualPercent: 0.12 }, { recordId: seeded.rule, with: { annualPercent: { contributeMax: false } } });
+    await inSave(
+      firm(),
+      async (ctx) => {
+        // The fact finder carries no salary basis; the key rides beside payloadFor's body, as the Details dialog sends it.
+        const input = inputOf(line);
+        await CASH_FLOW_WRITERS.savings_rule.update(ctx, { ...input, body: { ...input.body, salaryBasis: "all" } });
+      },
+      { rollback: true },
+    );
+    const [after] = await db.select().from(savingsRules).where(eq(savingsRules.id, seeded.rule));
+    expect(after).toEqual(before);
+    expect(await links()).toEqual([{ incomeId: seeded.salary }]);
+    expect(await auditCount()).toBe(auditBefore);
+  });
+
+  it("a new rule's deductibility is the Details default for its account — only a retirement \"Other\" account starts non-deductible, on record or made earlier in the save", async () => {
+    const [onRecord] = await db
+      .insert(accounts)
+      .values({ clientId: seed.clientId, scenarioId: seed.scenarioId, name: "Old employer plan", category: "retirement", subType: "other", value: "1000" })
+      .returning({ id: accounts.id });
+    const { result, queued } = await inSave(
+      firm(),
+      async (ctx) => {
+        const accountIds = {
+          newOther: await newAccount(ctx.tx, { name: "Pension buy-in", category: "retirement", subType: "other" }),
+          onRecordOther: onRecord.id,
+          k401: await newAccount(ctx.tx, { name: "Hooli 401(k)", category: "retirement", subType: "401k" }),
+          ira: await newAccount(ctx.tx, { name: "Mark's IRA", category: "retirement", subType: "traditional_ira" }),
+          brokerage: await newAccount(ctx.tx, { name: "Joint brokerage", category: "taxable", subType: "brokerage" }),
+        };
+        const deductible: Record<string, boolean> = {};
+        for (const [key, accountId] of Object.entries(accountIds)) {
+          const rule = await CASH_FLOW_WRITERS.savings_rule.create(ctx, inputOf(RULE(accountId)));
+          const [row] = await ctx.tx.select({ isDeductible: savingsRules.isDeductible }).from(savingsRules).where(eq(savingsRules.id, rule));
+          deductible[key] = row.isDeductible;
+        }
+        return deductible;
+      },
+      { rollback: true },
+    );
+    expect(queued).toBe(0);
+    expect(result).toEqual({ newOther: false, onRecordOther: false, k401: true, ira: true, brokerage: true });
   });
 
   it("an account that is not the client's is refused with the core's reason", async () => {
