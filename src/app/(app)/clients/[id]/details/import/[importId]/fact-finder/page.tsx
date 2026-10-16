@@ -6,7 +6,7 @@ import { FactFinderScreen } from "@/components/fact-finder/fact-finder-screen";
 import { FinishedImportNotice } from "@/components/fact-finder/finished-import-notice";
 import { requireClientPageAccess } from "@/lib/clients/page-access";
 import { importScreenPath, isFactFinderImport } from "@/lib/imports/import-kind";
-import { listClientIntakeUploads } from "@/lib/imports/intake-documents";
+import { listClientDocuments } from "@/lib/imports/client-documents";
 import { listLiveFiles } from "@/lib/fact-finder/persist";
 import { readFactFinderState } from "@/lib/fact-finder/state";
 import type { ImportPayloadJson } from "@/lib/imports/types";
@@ -17,7 +17,7 @@ interface PageProps {
 
 /**
  * The fact finder import screen. Loads the import's fact finder, its live
- * files, the client's entities and Data Collection uploads, and hands them to
+ * files, the client's entities and vault files, and hands them to
  * the client screen — each file's id, name and type, never its storage address.
  * A wizard import goes to the wizard; a statement-chat import finished before
  * the switch shows a notice and loads nothing more.
@@ -55,7 +55,7 @@ export default async function FactFinderPage({ params }: PageProps) {
     return <FinishedImportNotice clientId={clientId} finishedAt={(imp.committedAt ?? imp.updatedAt).toISOString()} />;
   }
 
-  const [files, entityRows, coClient, clientUploads] = await Promise.all([
+  const [files, entityRows, coClient, clientDocuments] = await Promise.all([
     listLiveFiles(importId),
     db
       .select({ id: entities.id, name: entities.name })
@@ -69,7 +69,7 @@ export default async function FactFinderPage({ params }: PageProps) {
       .where(and(eq(familyMembers.clientId, clientId), eq(familyMembers.role, "spouse")))
       .limit(1),
     // A saved import has no upload box to offer them in.
-    saved ? [] : listClientIntakeUploads(clientId, firmId),
+    saved ? [] : listClientDocuments(clientId, firmId),
   ]);
 
   return (
@@ -80,7 +80,7 @@ export default async function FactFinderPage({ params }: PageProps) {
       initialFiles={files.map((f) => ({ id: f.id, name: f.originalFilename, documentType: f.documentType }))}
       entities={entityRows}
       hasCoClient={coClient.length > 0}
-      clientUploads={clientUploads}
+      clientDocuments={clientDocuments}
     />
   );
 }

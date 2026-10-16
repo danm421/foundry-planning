@@ -14,7 +14,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/investments/growth-context", () => ({ loadImportGrowthContext: vi.fn() }));
 vi.mock("@/lib/imports/import-milestones", () => ({ loadImportMilestones: vi.fn() }));
-vi.mock("@/lib/imports/intake-documents", () => ({ listClientIntakeUploads: vi.fn() }));
+vi.mock("@/lib/imports/client-documents", () => ({ listClientDocuments: vi.fn() }));
 vi.mock("../import-flow", () => ({ default: () => null }));
 
 import { ImportFlowContent } from "../import-flow-content";

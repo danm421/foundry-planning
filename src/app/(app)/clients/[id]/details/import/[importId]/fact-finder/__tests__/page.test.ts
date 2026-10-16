@@ -14,7 +14,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/clients/page-access", () => ({ requireClientPageAccess: vi.fn() }));
 vi.mock("@/lib/fact-finder/persist", () => ({ listLiveFiles: vi.fn() }));
-vi.mock("@/lib/imports/intake-documents", () => ({ listClientIntakeUploads: vi.fn() }));
+vi.mock("@/lib/imports/client-documents", () => ({ listClientDocuments: vi.fn() }));
 vi.mock("@/components/fact-finder/fact-finder-screen", () => ({ FactFinderScreen: () => null }));
 
 import FactFinderPage from "../page";
@@ -22,20 +22,19 @@ import { db } from "@/db";
 import { requireClientPageAccess } from "@/lib/clients/page-access";
 import { listLiveFiles } from "@/lib/fact-finder/persist";
 import { emptyFactFinderState, readFactFinderState } from "@/lib/fact-finder/state";
-import { listClientIntakeUploads } from "@/lib/imports/intake-documents";
-import type { IntakeDocumentView } from "@/lib/intake/document-types";
+import { listClientDocuments, type ClientDocumentView } from "@/lib/imports/client-documents";
 import { FactFinderScreen } from "@/components/fact-finder/fact-finder-screen";
 import { FinishedImportNotice } from "@/components/fact-finder/finished-import-notice";
 import type { FactFinderScreenProps } from "@/components/fact-finder/screen-types";
 
 const PAYLOAD = { chat: { surface: "chat" }, factFinder: { ...emptyFactFinderState(), version: 4 } };
 const CLOSED = { at: "2026-10-15T12:00:00.000Z", by: "user_1", saved: [], leftOut: [] };
-const UPLOAD: IntakeDocumentView = {
+const DOCUMENT: ClientDocumentView = {
   id: "11111111-1111-4111-8111-111111111111",
   filename: "brokerage-statement.pdf",
-  docType: "statement",
   sizeBytes: 245_760,
-  uploadedAt: "2026-08-01T12:00:00.000Z",
+  source: "data_collection",
+  typeLabel: "Account statement",
 };
 
 /** A drizzle select chain that resolves to `result` however it's continued. */
@@ -69,7 +68,7 @@ beforeEach(() => {
       documentType: "auto",
     },
   ]);
-  vi.mocked(listClientIntakeUploads).mockResolvedValue([UPLOAD]);
+  vi.mocked(listClientDocuments).mockResolvedValue([DOCUMENT]);
 });
 
 describe("fact finder page", () => {
@@ -79,7 +78,7 @@ describe("fact finder page", () => {
 
     expect(requireClientPageAccess).toHaveBeenCalledWith("c1");
     expect(listLiveFiles).toHaveBeenCalledWith("i1");
-    expect(listClientIntakeUploads).toHaveBeenCalledWith("c1", "org_1");
+    expect(listClientDocuments).toHaveBeenCalledWith("c1", "org_1");
     expect(el.type).toBe(FactFinderScreen);
     expect(el.props).toEqual({
       clientId: "c1",
@@ -88,7 +87,7 @@ describe("fact finder page", () => {
       initialFiles: [{ id: "f1", name: "hendricks-fact-finder.pdf", documentType: "auto" }],
       entities: [{ id: "e1", name: "Hendricks Family Trust" }],
       hasCoClient: true,
-      clientUploads: [UPLOAD],
+      clientDocuments: [DOCUMENT],
     });
     expect(el.props.initialState.version).toBe(4);
     expect(JSON.stringify(el.props)).not.toContain("blob.example");
@@ -109,13 +108,13 @@ describe("fact finder page", () => {
     expect(el.props.initialFiles).toEqual([{ id: "f1", name: "hendricks-fact-finder.pdf", documentType: "auto" }]);
   });
 
-  it("offers no client uploads on a saved import", async () => {
+  it("offers none of the client's documents on a saved import", async () => {
     const saved = { factFinder: { ...emptyFactFinderState(), version: 6, closed: CLOSED } };
     selects([{ status: "committed", payloadJson: saved }], [], []);
     const el = (await run()) as ReactElement<FactFinderScreenProps>;
     expect(el.type).toBe(FactFinderScreen);
-    expect(el.props.clientUploads).toEqual([]);
-    expect(listClientIntakeUploads).not.toHaveBeenCalled();
+    expect(el.props.clientDocuments).toEqual([]);
+    expect(listClientDocuments).not.toHaveBeenCalled();
   });
 
   it("shows a statement-chat import finished before the switch as a notice, and loads nothing else", async () => {
@@ -132,7 +131,7 @@ describe("fact finder page", () => {
     expect(el.props).toEqual({ clientId: "c1", finishedAt: "2026-10-08T15:30:00.000Z" });
     expect(db.select).toHaveBeenCalledTimes(1);
     expect(listLiveFiles).not.toHaveBeenCalled();
-    expect(listClientIntakeUploads).not.toHaveBeenCalled();
+    expect(listClientDocuments).not.toHaveBeenCalled();
   });
 
   it("is not found for a client shared from another firm or a missing import", async () => {

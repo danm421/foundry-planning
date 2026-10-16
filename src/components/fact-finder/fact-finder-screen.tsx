@@ -143,7 +143,7 @@ function OpenScreen({
   initialFiles,
   entities,
   hasCoClient,
-  clientUploads,
+  clientDocuments,
   onClosed,
 }: FactFinderScreenProps & { onClosed(closed: FactFinderState): void }) {
   const store = useFactFinder({ clientId, importId, initialState });
@@ -349,7 +349,7 @@ function OpenScreen({
           onOpenChange={setPanelOpen}
           footer={<ChatComposerBar chat={chat} reading={reading} />}
         >
-          <DocumentsPanel clientId={clientId} importId={importId} docs={docs} state={state} clientUploads={clientUploads} />
+          <DocumentsPanel clientId={clientId} importId={importId} docs={docs} state={state} clientDocuments={clientDocuments} />
           <ChatPanel chat={chat} state={state} />
         </SidePanel>
       </div>
