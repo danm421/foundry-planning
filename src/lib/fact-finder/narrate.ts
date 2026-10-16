@@ -1,7 +1,6 @@
 import type { ExtractedAccount } from "@/lib/extraction/types";
 import type { Annotated } from "@/lib/imports/types";
 import type { MergeDecision } from "@/lib/imports/assemble/decisions";
-import type { RebaseDrop, RebaseHoldingsOverride, RebaseOverride, RebaseRefusal } from "@/lib/statement-chat/rebase";
 
 /**
  * Deterministic narration of what a statement import found. Every sentence
@@ -33,14 +32,8 @@ function plural(n: number, one: string, many: string): string {
   return n === 1 ? one : many;
 }
 
-/**
- * Oxford-comma join: ["a"] -> "a"; ["a","b"] -> "a and b"; ["a","b","c"] -> "a, b, and c".
- *
- * Exported for `map-warnings.ts`, which renders its own list of file names in
- * the same import screen: a second local joiner there disagreed with this one
- * about the Oxford comma, so one advisor saw both punctuations at once.
- */
-export function joinWithAnd(items: string[]): string {
+/** Oxford-comma join: ["a"] -> "a"; ["a","b"] -> "a and b"; ["a","b","c"] -> "a, b, and c". */
+function joinWithAnd(items: string[]): string {
   if (items.length <= 1) return items.join("");
   if (items.length === 2) return `${items[0]} and ${items[1]}`;
   return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
@@ -122,180 +115,6 @@ function valueConflictCaveat(d: Extract<MergeDecision, { kind: "value-conflict" 
   return `"${d.account}" is recorded at ${money(d.kept)} from the ${usDate(d.asOf)} statement; ${othersClause}.`;
 }
 
-/**
- * `money()` for a figure that may not exist. A row with no readable balance
- * is an ordinary extraction outcome, and the one thing this caveat must never
- * do is invent a number to fill the gap.
- */
-function moneyOrNone(n: number | undefined): string {
-  return n === undefined ? "no value" : money(n);
-}
-
-/**
- * Ruling 117. The advisor's standing figure won a re-extraction; say so, and
- * name the figure it beat. Both numbers appear, and the sentence is explicit
- * about which of them is the one on screen — the failure this replaces was a
- * table reading $100,000 under a caveat naming $130,000.
- *
- * It closes with what to DO, because there is a real decision here: the newer
- * statement may well be the figure the advisor wants, and the only way to
- * take it is to edit the row.
- */
-function rebaseOverrideCaveat(o: RebaseOverride): string {
-  return (
-    `"${o.name}" is shown at ${moneyOrNone(o.standingValue)} — the figure already on this import, ` +
-    `and the one that will commit. The newly uploaded statement reports ${moneyOrNone(o.freshValue)}. ` +
-    `Edit the row if the newer figure is the one you want.`
-  );
-}
-
-/**
- * Final review #2, C-1. The rebase refused to carry a standing row forward
- * because the row now holding its handle is a different account. Nothing was
- * overwritten — which is the whole point — but the advisor's work on that row
- * was not applied either, and a silent non-application is indistinguishable
- * from a dead button.
- *
- * Both names are printed: the label the advisor has been looking at, and the
- * account that now occupies that row. It closes with what to DO, the same
- * shape `rebaseOverrideCaveat` uses, because re-applying the change on the
- * right row is the only way forward.
- */
-function rebaseRefusalCaveat(r: RebaseRefusal): string {
-  return (
-    `Your changes to "${r.name}" were not carried onto the re-read statements: after the new ` +
-    `upload that row's place is held by a different account, "${r.freshName}". Nothing was ` +
-    `overwritten — re-apply the change on the row you want.`
-  );
-}
-
-/**
- * Fix wave 2, requirement 4. The re-extraction produced nothing this standing
- * row could be carried onto, so it has left the table. That was always the
- * behaviour and it is the right one — the account is not in this extraction
- * any more — but it used to happen in silence, and a row disappearing from
- * the table changes both what is on screen and what will commit.
- *
- * The `committed` clause exists because that case reads as alarming and is
- * not: the plan account the row created is a separate record and nothing here
- * touches it. Saying so turns "where did my account go" into a note.
- *
- * Fix wave 3, I-B: that reassurance is only TRUE while nothing on the table
- * is the same account. When the rebase refused an ambiguous re-attachment,
- * the fresh row for that account is still on screen carrying its own
- * `{ kind: "new" }` match — so its Commit button has re-armed, and
- * committing it INSERTs a SECOND plan account for an account the plan
- * already has (measured, wave 4 Task 1). Telling the advisor "that plan
- * account is unchanged" at that moment is true of the old record and
- * actively misleading about the live button beside it, so the sentence
- * carries on instead of stopping there, and names the row to drop.
- *
- * Scoped to `committed`, because that is the whole of the hazard: an
- * UNCOMMITTED row that was dropped has no plan account to be duplicated, and
- * committing the row still on the table is then the ordinary right outcome.
- */
-function rebaseDropCaveat(d: RebaseDrop): string {
-  const head =
-    `"${d.name}" is no longer among the accounts read from these statements, so it has been ` +
-    `removed from the table along with any changes you made to it.`;
-  if (!d.committed) return head;
-  if (d.stillOnTable.length === 0) {
-    return `${head} It had already been committed, and that plan account is unchanged.`;
-  }
-  const many = d.stillOnTable.length > 1;
-  return (
-    `${head} It had already been committed, and that plan account is unchanged — but ` +
-    `${joinWithAnd(d.stillOnTable.map((name) => `"${name}"`))} ${many ? "are" : "is"} still on ` +
-    `the table for the same account, and committing ${many ? "them" : "it"} would add a SECOND ` +
-    `plan account alongside it. Drop ${many ? "those rows" : "that row"} unless you mean to.`
-  );
-}
-
-/**
- * Ruling 117, one level down. A newer statement's POSITIONS under an
- * account already on the table are held back exactly like its balance —
- * `rebaseOverrideCaveat` already says so for the figure; this says so for
- * the positions underneath it, which can change (a fund swap, a new
- * purchase) even when the account's own balance does not move.
- *
- * Both counts and both sums are named. No remedy sentence (fix round 1,
- * C1/R40): the caveat used to close with "Re-run extraction on this account
- * to take the newer set.", which is impossible — there is no per-account
- * extraction, re-running the import-wide extraction reads nothing once a
- * file is already in `fileResults`, and there is no add-position tool.
- * Spec §7 stops at naming both figures; the advisor decides.
- *
- * Branches on either count being 0 (fix round 1, I3/R43), stating only what
- * is known rather than a copy that only reads right when both sides have
- * positions:
- *   - `standingCount === 0` is spec §8's own upgrade path: an existing chat
- *     import kept `extractHoldings: false`, so its standing side has no
- *     positions at all — "the 0 you reviewed were kept" is nonsense for
- *     every such account's first re-read after the toggle is flipped on.
- *   - `freshCount === 0` must not assert, as fact, that the newer statement
- *     "lists 0 positions" — the merge did not establish WHY (the toggle
- *     could be off for that file, or the extractor could have missed the
- *     table), only that none came through.
- */
-function rebaseHoldingsOverrideCaveat(o: RebaseHoldingsOverride): string {
-  const freshPositions = `${o.freshCount} ${plural(o.freshCount, "position", "positions")}`;
-  const standingWas = o.standingCount === 1 ? "was" : "were";
-
-  if (o.standingCount === 0) {
-    return (
-      `"${o.name}" has no positions reviewed on this import yet; the newer statement lists ` +
-      `${freshPositions} for it (${money(o.freshSum)}), and they have not been added automatically.`
-    );
-  }
-  if (o.freshCount === 0) {
-    return (
-      `The newer statement for "${o.name}" reported no positions, so the ${o.standingCount} ` +
-      `you reviewed (${money(o.standingSum)}) ${standingWas} kept.`
-    );
-  }
-  return (
-    `The newer statement lists ${freshPositions} for "${o.name}" (${money(o.freshSum)}); the ` +
-    `${o.standingCount} you reviewed (${money(o.standingSum)}) ${standingWas} kept.`
-  );
-}
-
-/**
- * True when this `value-conflict` decision is describing a merge result the
- * rebase then threw away — its headline figure (`kept`) is not on the table,
- * so `valueConflictCaveat` would print "is recorded at $130,000" directly
- * above a row reading $100,000. The override caveat carries the same two
- * numbers honestly, so this one is dropped rather than reworded.
- *
- * The join is an account NAME **and** the discarded figure, not the name
- * alone. `valueConflictCaveat`'s own docstring records why a bare name is
- * not an identity here — two accounts can share a display name — and
- * `MergeDecision` carries no `__rowId` to join on properly. Requiring
- * `kept === freshValue` makes a name collision harmless: a same-named
- * account is only muted when its surviving figure is exactly the one the
- * rebase held back, which is the case this is for. The residual risk is
- * over-suppression when two same-named accounts also merged to the same
- * figure — that is silence, never a fabricated number, and the override
- * caveat still names both figures for the row that was actually overridden.
- *
- * EITHER name matches (Ruling 128). `d.account` is the FRESH survivor's
- * name; `o.name` is the STANDING row's. `name` is editable and a rename
- * survives the rebase, so after the advisor renames a row those two stop
- * being the same string and a name-only join silently misses — which
- * re-opened the exact Critical this function exists to close, in the rename
- * case. `o.freshName` carries the fresh spelling alongside, and matching
- * either one restores the join. The `freshValue === kept` half is untouched,
- * so widening the name side does not widen the suppression to same-named
- * accounts with different figures.
- */
-function contradictsRebase(
-  d: Extract<MergeDecision, { kind: "value-conflict" }>,
-  overrides: RebaseOverride[],
-): boolean {
-  return overrides.some(
-    (o) => (o.name === d.account || o.freshName === d.account) && o.freshValue === d.kept,
-  );
-}
-
 function retirementBasisCaveat(rows: Annotated<ExtractedAccount>[]): string | null {
   const flagged = rows.filter((r) => r.basis !== undefined && r.category === "retirement");
   if (flagged.length === 0) return null;
@@ -331,41 +150,8 @@ export function narrate(input: {
   fileCount: number;
   decisions: MergeDecision[];
   rows: Annotated<ExtractedAccount>[];
-  /**
-   * Rows whose freshly-merged figure the rebase held back (Ruling 117).
-   * Optional and defaulted rather than required: only a RE-extraction can
-   * produce any, so the first read of an import has none by construction and
-   * the caller would be threading a permanent `[]` through.
-   */
-  overrides?: RebaseOverride[];
-  /**
-   * Standing rows the rebase REFUSED to carry forward (final review #2,
-   * C-1). Optional and defaulted for the same reason as `overrides`: only a
-   * re-extraction can produce any.
-   */
-  refusals?: RebaseRefusal[];
-  /**
-   * Standing rows the re-extraction could not carry forward at all (fix wave
-   * 2, requirement 4). Optional and defaulted for the same reason as
-   * `overrides`: only a re-extraction can produce any.
-   */
-  dropped?: RebaseDrop[];
-  /**
-   * Rows whose fresh POSITIONS differ from the standing ones (Ruling 117,
-   * one level down). Optional and defaulted for the same reason as
-   * `overrides`: only a re-extraction can produce any.
-   */
-  holdingsOverrides?: RebaseHoldingsOverride[];
 }): Narration {
-  const {
-    fileCount,
-    decisions,
-    rows,
-    overrides = [],
-    refusals = [],
-    dropped = [],
-    holdingsOverrides = [],
-  } = input;
+  const { fileCount, decisions, rows } = input;
 
   const sentences: string[] = [
     `Read ${fileCount} ${plural(fileCount, "statement", "statements")} covering ${rows.length} ${plural(rows.length, "account", "accounts")}.`,
@@ -389,18 +175,10 @@ export function narrate(input: {
         caveats.push(undatedCaveat(d));
         break;
       case "value-conflict":
-        // Suppressed HERE rather than in the route: "never name a figure the
-        // table does not show" is this module's own contract, so every caller
-        // gets it — not only the one route that remembered to pre-filter.
-        if (!contradictsRebase(d, overrides)) caveats.push(valueConflictCaveat(d));
+        caveats.push(valueConflictCaveat(d));
         break;
     }
   }
-
-  for (const o of overrides) caveats.push(rebaseOverrideCaveat(o));
-  for (const r of refusals) caveats.push(rebaseRefusalCaveat(r));
-  for (const d of dropped) caveats.push(rebaseDropCaveat(d));
-  for (const h of holdingsOverrides) caveats.push(rebaseHoldingsOverrideCaveat(h));
 
   const retirementCaveat = retirementBasisCaveat(rows);
   if (retirementCaveat) caveats.push(retirementCaveat);

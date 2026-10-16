@@ -52,14 +52,6 @@ export const outputFileTracingIncludes: Record<string, string[]> = {
     "/api/clients/*/forge/*": OCR_CANVAS_FILES,
     "/api/clients/*/imports/*/extract": OCR_CANVAS_FILES,
     "/api/clients/*/imports/*/files/*/extract": OCR_CANVAS_FILES,
-    // Statement Chat: its extract route runs the same pipeline directly, and
-    // its turn route reaches it through `reread_document`'s re-extraction
-    // fallback (src/lib/statement-chat/tools.ts).
-    "/api/clients/*/imports/*/chat/extract": OCR_CANVAS_FILES,
-    "/api/clients/*/imports/*/chat/turn": OCR_CANVAS_FILES,
-    // The map-entity pass reads a SCANNED policy the same way: a genuine
-    // carrier document has no text layer, so the route falls back to OCR.
-    "/api/clients/*/imports/*/chat/map-pass": OCR_CANVAS_FILES,
     // Fact finder import: its read route OCRs scanned PDFs and images for
     // the section reader (src/lib/fact-finder/readers/route-file.ts).
     "/api/clients/*/imports/*/fact-finder/read": OCR_CANVAS_FILES,

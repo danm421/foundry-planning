@@ -2,15 +2,12 @@ import { is529Account } from "@/lib/accounts/is-529";
 import type { AccountCategory, AccountSubType } from "@/lib/extraction/types";
 
 /**
- * The category rule the commit path applies, and the one review-surface test
- * that depends on it.
+ * The category rule the commit path applies.
  *
- * Lifted out of `commit/accounts.ts` (final review I5) for the same reason
- * `mortgage-link.ts` was lifted out of `assemble/`: a `"use client"` review
- * table has to ask what the commit will ACTUALLY write, and `commit/accounts.ts`
- * imports `@/db/schema` — reaching it from the browser bundle would drag the
- * whole schema in. Both files here have no runtime dependency beyond
- * `is-529.ts`, which is itself framework-free on purpose.
+ * Kept out of `commit/accounts.ts`, which imports `@/db/schema`, so code that
+ * only reads extracted rows can apply the same rule without the schema. Its
+ * only runtime dependency is `is-529.ts`, which is itself framework-free on
+ * purpose.
  *
  * `commit/accounts.ts` re-exports `resolveAccountCategory`, so every existing
  * import path keeps resolving and there is still only ONE definition.
@@ -29,28 +26,4 @@ export function resolveAccountCategory(
 ): AccountCategory {
   if (is529Account(row)) return "education_savings";
   return row.category ?? "taxable";
-}
-
-/**
- * A row `commitAccounts` would write to the balance sheet as a $0 house.
- *
- * `splitMortgageEscrow` deliberately synthesizes its property with NO `value`
- * — "a mortgage statement never says what the home is worth, and a 0 would
- * render as a worthless house". That reasoning stops at the commit boundary:
- * `commit/accounts.ts` coerces an absent value to `"0"`, so the row lands as a
- * real-estate account worth nothing with a real mortgage against it, and the
- * projection grows a $0 asset forever (final review I5).
- *
- * Asks `resolveAccountCategory`, not `row.category`: the displayed category is
- * not always the one that commits. Measured, the two differ on exactly one
- * shape — `{ category: "real_estate", subType: "529" }`, which commits as
- * `education_savings` — and that row is correctly NOT treated as a house here.
- */
-export function isUnpricedProperty(row: {
-  name?: string;
-  category?: AccountCategory;
-  subType?: AccountSubType;
-  value?: number;
-}): boolean {
-  return row.value == null && resolveAccountCategory(row) === "real_estate";
 }

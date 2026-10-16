@@ -1,6 +1,4 @@
 // src/lib/fact-finder/chat/fence.ts
-// Moved here from src/lib/statement-chat/turn.ts, which now imports it: one
-// fence for both chats.
 
 /** The fence around document-derived text — the ONE pair of markers every
  *  fenced block uses, and the pair a chat's system prompt names. */

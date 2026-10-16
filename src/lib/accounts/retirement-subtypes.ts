@@ -16,10 +16,3 @@ export const RETIREMENT_SUBTYPES = [
   "401k",
   "403b",
 ] as const;
-
-/** True when this sub-type must have exactly one owner at 100%. */
-export function isRetirementSubType(subType: string | null | undefined): boolean {
-  return (
-    typeof subType === "string" && (RETIREMENT_SUBTYPES as readonly string[]).includes(subType)
-  );
-}

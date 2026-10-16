@@ -19,7 +19,8 @@ export interface ChatComposerProps {
   /** True only while THIS composer's own request is in flight — lets the
    *  button say "Sending…" rather than just "disabled for some reason". */
   sending: boolean;
-  /** Defaults to statement chat's wording. */
+  /** Defaults to "Ask a question about these statements…". The fact finder's
+   *  chat panel passes its own, as it does `ariaLabel`. */
   placeholder?: string;
   ariaLabel?: string;
 }

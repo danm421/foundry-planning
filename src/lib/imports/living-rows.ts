@@ -117,7 +117,7 @@ export function livingTotalSupersedesRows(payload: ImportPayload): boolean {
  * THE tombstone test, and the only place `__dropped` is ever read.
  *
  * Only `=== true` is a tombstone: a persisted `__dropped: false` (which a
- * restore would write) is a living position, not an ambiguous one. The three
+ * restore would write) is a living position, not an ambiguous one. The
  * functions below are the only callers, so that rule is stated once.
  */
 export function isDroppedHolding(h: ExtractedHolding): boolean {
@@ -139,21 +139,6 @@ export function livingHoldings(row: { holdings?: ExtractedHolding[] }): Extracte
 }
 
 /**
- * The complement of `livingHoldings` — the positions the advisor dropped.
- *
- * Lives HERE, next to its complement, for the reason the plan's global
- * constraint gives: `__dropped` is interpreted in exactly one module. A
- * caller that needs the tombstones (the rebase, to subtract the advisor's own
- * drops from the fresh side before comparing position sets) would otherwise
- * write the predicate inline, and the two would be free to drift apart —
- * which is the failure the single definition exists to prevent, not a style
- * nit.
- */
-export function tombstonedHoldings(row: { holdings?: ExtractedHolding[] }): ExtractedHolding[] {
-  return (row.holdings ?? []).filter(isDroppedHolding);
-}
-
-/**
  * Did the reviewed payload say ANYTHING about this account's positions?
  *
  * The third member of the family, and the one a caller is most likely to
@@ -164,7 +149,7 @@ export function tombstonedHoldings(row: { holdings?: ExtractedHolding[] }): Extr
  * the commit clears the account's holdings on the strength of it.
  *
  * Note it deliberately does NOT interpret `__dropped`: that stays the job of
- * the two predicates above. It asks only whether there is a collection here.
+ * the predicates above. It asks only whether there is a collection here.
  */
 export function holdingsWereReviewed(row: { holdings?: ExtractedHolding[] }): boolean {
   return (row.holdings?.length ?? 0) > 0;

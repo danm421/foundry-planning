@@ -5,8 +5,8 @@
  * routes outside the fact finder module that write an import's `payload_json`
  * or `status` refuse one before doing any work, and their writes require the
  * payload to hold no closed fact finder, so a save that lands while a route
- * runs is never written over. Every other import — a legacy or statement-chat
- * one, committed or not — goes through exactly as before Plan 4.
+ * runs is never written over. A wizard import, committed or not, goes through
+ * exactly as before Plan 4.
  */
 import { sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -42,11 +42,3 @@ export function refuseFactFinderImport(imp: { payloadJson: unknown }): NextRespo
 
 /** The WHERE leg every such write carries — persist.ts's own "not closed". */
 export const noSavedFactFinder = sql`(${clientImports.payloadJson} -> 'factFinder' -> 'closed') IS NULL`;
-
-/** A write found the import saved to the plan meanwhile; the route answers with `savedFactFinderRefusal()`. */
-export class SavedFactFinderError extends Error {
-  constructor() {
-    super("This import was saved to the plan while it was being read.");
-    this.name = "SavedFactFinderError";
-  }
-}

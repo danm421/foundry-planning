@@ -36,16 +36,6 @@ export interface MergeAcrossFilesResult {
    * mergedFileCount }` and are unaffected.
    */
   decisions: MergeDecision[];
-  /**
-   * Just the warnings `splitMortgageEscrow` produced — a synthesized property
-   * with no value, or a total payment below its own P&I. Also in
-   * `payload.warnings`, like every other merge warning; this narrow channel
-   * exists because the statement-chat surface renders NONE of those (final
-   * review I4) and the measured volume makes surfacing the whole list a flood
-   * of restatements rather than a fix. See the return statement for the
-   * numbers. Additive: every existing caller destructures around it.
-   */
-  escrowWarnings: string[];
 }
 
 /** Two amounts are "the same" if they're within this fraction of each other. */
@@ -1083,43 +1073,10 @@ function compareSortKeys(a: SortKey, b: SortKey): number {
  * See the long derivation at the mint site in `mergeSection`.
  *
  * One function rather than two literals so the provisional write and the
- * renumber pass cannot drift from each other — or from `keyedRowIdBucket`
- * below, which has to split this string back apart.
+ * renumber pass cannot drift from each other.
  */
 function keyedRowId(label: string, key: string, sortKey: SortKey): string {
   return `${label}:${key}#${sortKey.fileId}:${sortKey.index}`;
-}
-
-/**
- * The `${label}:${key}` half of a keyed `__rowId` — the DEDUPE BUCKET the row
- * belonged to — or `null` when the id was not minted by `keyedRowId`.
- *
- * This is the only stable, NON-EDITABLE statement of "which account is this"
- * that survives a re-extraction: the coordinate half of the id moves when a
- * newly-added file changes an entry's minimum, but the bucket half is the
- * dedupe key and does not. `lib/statement-chat/rebase.ts` uses it to re-attach
- * a standing row whose id moved.
- *
- * Splitting at the LAST `#` is the same argument the mint's injectivity rests
- * on: a `sourceFileId` is a database UUID and `indexWithinFile` is a counter,
- * so neither can contain a `#` and the last one in the string is always the
- * one `keyedRowId` appended.
- *
- * Two shapes are rejected, because the NULL-KEY branch's id
- * (`${label}:null:${fileId}:${index}:${name}`) ends in raw extraction text
- * that can contain anything:
- *  - a suffix that is not `<no-# no-: string>:<digits>` — the coordinate shape;
- *  - a `:null:` marker sitting where the key would be. A real key of `"null"`
- *    mints `${label}:null#...`, which has no trailing colon and so still
- *    parses.
- */
-export function keyedRowIdBucket(rowId: string): string | null {
-  const hash = rowId.lastIndexOf("#");
-  if (hash < 0) return null;
-  if (!/^[^#:]+:\d+$/.test(rowId.slice(hash + 1))) return null;
-  const bucket = rowId.slice(0, hash);
-  if (/^[^:]*:null:/.test(bucket)) return null;
-  return bucket;
 }
 
 /** Advisor-facing note about what a collapse actually changed, when the
@@ -1480,7 +1437,7 @@ function mergeSection<T extends { name: string }>(
     // function of bucket MEMBERSHIP, and adding a file changes membership. A
     // newly-uploaded file whose UUID sorts ahead of an existing entry pushed
     // every entry behind it up by one, so an id that named account P came
-    // back naming account Q. `rebaseOntoFreshMerge` joins standing rows onto
+    // back naming account Q. Statement chat's rebase joined standing rows onto
     // fresh ones by this id, so it then overwrote Q's row with P's content
     // and emitted Q again as a second, uncommitted copy: one real account
     // silently gone, another duplicated, $403,800 on screen against a truth
@@ -1508,13 +1465,6 @@ function mergeSection<T extends { name: string }>(
     // and it cannot be fixed by choosing a better derivation, because any
     // derived id is a function of the input set and re-extraction changes the
     // input set by definition.
-    //
-    // So it is closed where identity actually lives: `rebaseOntoFreshMerge`
-    // (`lib/statement-chat/rebase.ts`) carries the standing row's id FORWARD
-    // onto the fresh row it re-attaches to, matching on the BUCKET half of
-    // this id (`keyedRowIdBucket` above), which does not move. Measured cost
-    // of leaving it open: the replacement row committed as `kind: "new"` and
-    // INSERTED a second plan account for one real account.
     const rowId = keyedRowId(label, key, sortKey);
     const entry: DedupeBucketEntry<T> = {
       index: target.length,
@@ -2068,25 +2018,9 @@ export function mergeAcrossFiles(
   });
 
   stampHoldingIds(payload.accounts);
-  // `escrowWarnings` is returned SEPARATELY as well as pushed into
-  // `payload.warnings` above, for the statement-chat surface (final review I4).
-  // That surface renders `narration.caveats` and has never rendered
-  // `payload.warnings` at all, so every escrow warning — including "set its
-  // value before committing" on a property this split just synthesized — has
-  // been invisible there.
-  //
-  // MEASURED, and the reason this is its own field rather than the whole list:
-  // across the 307 merges this repo's own suite performs, `payload.warnings`
-  // holds 160 warnings and 134 of them are "Merged duplicate account …", which
-  // `narrate`'s `valueConflictCaveat`/`supersededSentence` ALREADY say in
-  // different words. Surfacing the whole list would print each of those merge
-  // events twice, worded differently, and bury the four escrow warnings that
-  // are actually dead. The wizard and the `/match` surfaces keep reading
-  // `payload.warnings`, where the same warnings are already visible.
   return {
     payload,
     mergedFileCount: Object.keys(fileResults).length,
     decisions,
-    escrowWarnings: escrow.warnings,
   };
 }

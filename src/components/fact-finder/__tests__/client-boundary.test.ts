@@ -3,35 +3,29 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * The statement-chat surface is a Client Component. Anything it imports is
+ * The fact finder screen is a Client Component. Anything it imports is
  * bundled for the browser, so nothing in its transitive import graph may reach
  * a server-only module. Next only reports this at BUILD time — `tsc` and vitest
  * both pass while the page 500s in the browser with
  * "'server-only' cannot be imported from a Client Component module".
  *
- * Importing a BARREL is how this happens: `@/lib/entity-extraction` re-exports
- * `extractMapEntities`, which pulls in the Azure client and Clerk's server
- * `auth()`. Import the leaf module instead.
+ * Importing a BARREL is how this happens: one re-export of an AI-calling
+ * function pulls in the Azure client and Clerk's server `auth()`. Import the
+ * leaf module instead.
  */
 
 const SRC = path.resolve(__dirname, "../../..");
 
 // Entry points that ship to the browser.
-const CLIENT_ENTRIES = [
-  "components/statement-chat/chat-surface.tsx",
-  "components/statement-chat/entity-tables.tsx",
-  "components/fact-finder/fact-finder-screen.tsx",
-];
+const CLIENT_ENTRIES = ["components/fact-finder/fact-finder-screen.tsx"];
 
 // Modules that must never be reachable from the browser bundle. These are the
 // ones that actually break the build: each either IS `server-only` or requires
 // it, which is what makes Next refuse to render the page.
 //
 // `@/db` is deliberately NOT listed. It does not require `server-only`, so Next
-// bundles it without complaint, and `chat-surface` has reached it via
-// `review-context` since before this branch (same import on main). That is a
-// real smell but a pre-existing one — widening this list to catch it would make
-// the gate red for something this branch did not do.
+// bundles it without complaint — a smell when a client component reaches it,
+// not a broken build.
 const SERVER_ONLY = [
   "server-only",
   "@clerk/nextjs/server",
@@ -103,7 +97,7 @@ function findServerOnlyPath(entry: string): string[] | null {
   return null;
 }
 
-describe("statement-chat client boundary", () => {
+describe("fact finder client boundary", () => {
   it.each(CLIENT_ENTRIES)(
     "%s does not reach a server-only module",
     (entry) => {
@@ -116,9 +110,10 @@ describe("statement-chat client boundary", () => {
   );
 
   it("the walker actually traverses (positive control)", () => {
-    // entity-tables must genuinely reach the confidence leaf, or the graph walk
-    // is not visiting anything and the assertions above are vacuous.
-    const start = path.join(SRC, "components/statement-chat/entity-tables.tsx");
+    // The screen must genuinely reach the confidence leaf (via
+    // lib/fact-finder/state.ts), or the graph walk is not visiting anything and
+    // the assertions above are vacuous.
+    const start = path.join(SRC, "components/fact-finder/fact-finder-screen.tsx");
     const seen = new Set<string>();
     const stack = [start];
     while (stack.length > 0) {

@@ -15,8 +15,7 @@ const ENDED_EARLY_MESSAGE = "Reading stopped before it finished. Retry to read t
 
 /**
  * Yields each complete `data: <json>\n\n` frame in the buffer and returns the
- * unfinished tail, which the caller carries into the next chunk. Modelled on
- * statement chat's `parseChatExtractSse`.
+ * unfinished tail, which the caller carries into the next chunk.
  */
 export function* parseReadSse(buffer: string): Generator<ReadFrame, string> {
   let cursor = 0;

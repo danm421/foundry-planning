@@ -186,12 +186,6 @@ const PERMANENT_ALLOWLIST = new Set<string>([
   "src/lib/crm/sort-order.ts", // Both hits are raw SQL, `and c.role = 'spouse' limit 1)` (:32, :34) — the literal `crm_household_contacts.role` enum value in a WHERE clause, the same DB token schema.ts is on this list for. New to the list only because the scanner can now read a template that spans a newline; the regex it replaced could not, and had never seen these.
   "src/lib/projection/resolve-entity.ts", // Only hit is a `console.warn` diagnostic, `[resolveExpenseFromRaw] ignoring endsAtMedicareEligibilityOwner="joint" — column is per-person; expected "client" or "spouse"` (:426) — a developer console message naming the two legal enum values, never rendered.
   "src/lib/tax/thresholds.ts", // The real display hit — `iraDeductCovered`'s label "IRA Contribution Deductibility - Covered Spouse" (:77) — was wrong on the facts as well as the vocabulary (it is the ACTIVE-PARTICIPANT phase-out of IRC §219(g)(5), applies to the taxpayer, and fires for single filers) and was renamed to "Covered by Workplace Plan" in this task. The residual hit is :78, `iraDeductSpousal`'s "Non-covered Spouse" — genuine IRC §219(g)(7), the spousal-IRA rule, which requires a MARRIED couple filing jointly. Renaming it would misstate the law. THRESHOLD_ITEMS is a fixed 11-row table mirroring eMoney's report, not a growing copy catalogue, so a file entry is safe here in a way it would not be for tax-analysis/findings/*.
-  // ── Merge with origin/main (2026-09-11): Statement Chat landed after this
-  // branch was cut. Its two real display hits — `ROLE_LABELS.spouse` in
-  // `owner-cell.tsx` and the owner dropdown's `label: "Spouse"` in
-  // `owner-cell-edit.tsx` — were renamed to `CO_CLIENT_LABEL` at merge time,
-  // not allowlisted. These two are the machine-facing remainder.
-  "src/lib/statement-chat/tools.ts", // Only hit is `fieldDomainDescription`'s `` `one of "client", "spouse", "joint"` `` (:152) — a tool-call validation message returned to the MODEL, enumerating the literal enum values it must emit for `ExtractedAccount.owner`. Its sibling cases return raw enum keys the same way (`Object.keys(ACCOUNT_CATEGORY_SET).join(", ")`), which is what marks this as schema vocabulary rather than advisor prose. Same class as `src/domain/forge/tools/`, allowlisted by prefix: renaming the word while the schema keeps `spouse` would add a mapping the model has to bridge, for no user-visible gain.
 ]);
 
 /** Directory prefixes that are also allowlisted (Bucket C: machine-facing enum documentation). */
@@ -207,9 +201,9 @@ const ALLOWLIST_PREFIXES = [
   // and caveat prose (WhatIfValidationError messages, schema .describe()
   // text) is returned to the MODEL through those tools, never rendered in the
   // app, and it names the schema enum `person: "client" | "spouse"` the model
-  // must emit. Same class as `src/domain/mcp/tools/` above and the
-  // statement-chat tools: renaming the word while the schema keeps `spouse`
-  // would add a mapping the model has to bridge, for no user-visible gain.
+  // must emit. Same class as `src/domain/mcp/tools/` above: renaming the word
+  // while the schema keeps `spouse` would add a mapping the model has to
+  // bridge, for no user-visible gain.
   "src/lib/whatif/",
   // The Details field map (2026-09-23). Model-facing prose — `notes`,
   // `documentHints`, `aliases` and `surface` all describe a field TO THE

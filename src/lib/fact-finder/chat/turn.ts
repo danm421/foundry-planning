@@ -19,7 +19,7 @@ import { factFinderView } from "./view";
  * fact finder, so a later call sees an earlier one. The reply then commits by
  * replaying the same ops on the fresh state in ONE compare-and-set — a typed
  * edit that landed meanwhile is kept, and if the replay no longer applies,
- * nothing is. No LangGraph: a plain loop, like statement chat's.
+ * nothing is. No LangGraph: a plain loop.
  */
 
 export const MAX_TOOL_CALLS_PER_TURN = 12;
