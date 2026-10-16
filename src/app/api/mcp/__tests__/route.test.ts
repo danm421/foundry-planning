@@ -31,13 +31,22 @@ vi.mock("@/lib/audit", () => ({ recordAudit }));
 vi.mock("jose", () => ({ decodeJwt }));
 
 import {
+  maxDuration,
   audienceIsAcceptable,
   toolFailureResult,
   recordDenial,
   requestedClientIdFrom,
   verifyToken,
 } from "../route";
-import { McpRateLimitedError, type McpTool } from "@/domain/mcp/define-tool";
+import {
+  McpInputError,
+  McpRateLimitedError,
+  McpUnavailableError,
+  McpWriteDisabledError,
+  WRITE_DISABLED_MESSAGE,
+  type McpTool,
+} from "@/domain/mcp/define-tool";
+import { WhatIfValidationError } from "@/lib/whatif/errors";
 import { McpForbiddenError, CLIENT_UNREADABLE_MESSAGE } from "@/domain/mcp/guards";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 
@@ -303,5 +312,43 @@ describe("verifyToken (D2, D4)", () => {
     decodeJwt.mockReturnValue({});
     const out = await verifyToken(new Request("https://x.test"), "tok");
     expect(out?.extra?.principal).toBe(principal);
+  });
+});
+
+describe("toolFailureResult — part A errors", () => {
+  it("passes a what-if validation message through verbatim", () => {
+    const out = toolFailureResult(new WhatIfValidationError("Change 2: expense x isn't in this plan."));
+    expect(out).toEqual({
+      content: [{ type: "text", text: "Change 2: expense x isn't in this plan." }],
+      isError: true,
+    });
+  });
+
+  it("passes the write-disabled, input and unavailable messages through", () => {
+    expect(toolFailureResult(new McpWriteDisabledError()).content[0].text).toBe(WRITE_DISABLED_MESSAGE);
+    expect(toolFailureResult(new McpInputError("Unknown page(s): x.")).content[0].text).toBe("Unknown page(s): x.");
+    expect(toolFailureResult(new McpUnavailableError()).content[0].text).toBe(
+      "Foundry connector is temporarily unavailable. Try again shortly.",
+    );
+  });
+});
+
+describe("recordDenial — part A reasons", () => {
+  it.each([
+    [new McpWriteDisabledError(), "write_disabled"],
+    [new WhatIfValidationError("Change 1: x"), "invalid_change"],
+    [new McpInputError("Unknown page(s): x."), "invalid_input"],
+    [new McpUnavailableError(), "unavailable"],
+  ])("labels %s as %s", async (err, reason) => {
+    await recordDenial(fakeTool, principal, err);
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { tool: "test_tool", outcome: "denied", reason } }),
+    );
+  });
+});
+
+describe("route config", () => {
+  it("allows 800 s so a background what-if job's after() work can finish", () => {
+    expect(maxDuration).toBe(800);
   });
 });

@@ -3,6 +3,7 @@ import { classifyTransferTax, isInheritedPayout } from "./tax-classification";
 import { computeTradIraPool, iraPoolKey, isTraditionalIra } from "./ira-basis";
 import { controllingFamilyMember } from "./ownership";
 import { isInheritedIra } from "./inherited-ira";
+import { grossValue } from "./margin";
 
 // ============================================================================
 // Basis Clamping
@@ -26,6 +27,9 @@ export interface TransfersInput {
   accounts: Account[];
   accountBalances: Record<string, number>;
   basisMap: Record<string, number>;
+  /** Live margin loan per account (`accountBalances` is net of it). Only the
+   *  gain ratio reads it: a taxable source's securities = net + loan. */
+  marginMap?: Record<string, number>;
   /** Per-account unspent fresh-basis pool. Drained per transfer when the
    *  source is a taxable/cash account. */
   freshBasisMap?: Record<string, number>;
@@ -78,7 +82,7 @@ export interface TransfersResult {
  * Transfers occur after annual growth has been applied but before RMDs.
  */
 export function applyTransfers(input: TransfersInput): TransfersResult {
-  const { transfers, accounts, accountBalances, basisMap, freshBasisMap, rothValueMap, annuityBasisMap, accountLedgers, year, ownerAges, spouseFamilyMemberId } = input;
+  const { transfers, accounts, accountBalances, basisMap, marginMap, freshBasisMap, rothValueMap, annuityBasisMap, accountLedgers, year, ownerAges, spouseFamilyMemberId } = input;
 
   const result: TransfersResult = {
     taxableOrdinaryIncome: 0,
@@ -123,7 +127,7 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
       targetCategory: targetAccount.category,
       targetSubType: targetAccount.subType,
       amount: actualAmount,
-      sourceAccountValue: sourceBalance,
+      sourceAccountValue: grossValue(sourceBalance, marginMap, transfer.sourceAccountId),
       sourceAccountBasis: basisMap[transfer.sourceAccountId] ?? 0,
       sourceRothValue: rothValueMap?.[transfer.sourceAccountId] ?? 0,
       sourceFreshBasis: sourceFresh,

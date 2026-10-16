@@ -43,6 +43,7 @@ import {
   storyVoiceSamples,
 } from "@/db/schema";
 import { purgeCrmHouseholdById } from "@/lib/crm/households";
+import { purgeForgeHistory } from "@/domain/forge/purge-history";
 import { deleteImportFile } from "@/lib/imports/blob";
 import { deleteBrandingAsset } from "@/lib/branding/blob";
 import { getStripe } from "@/lib/billing/stripe-client";
@@ -102,9 +103,12 @@ export async function purgeFirmById(firmId: string): Promise<void> {
   // 0. Collect every Blob reference BEFORE any DB row is deleted.
 
   // GUARD: re-validate eligibility at delete time (TOCTOU). One firms query
-  // also carries branding URLs (read later) + a correlated live-subscription
+  // also carries branding URLs (read later) + this firm's live-subscription
   // count, so a resubscribed firm can never be purged even if its archive
-  // stamp wasn't cleared.
+  // stamp wasn't cleared. The count binds the firmId PARAMETER, not
+  // firms.firm_id: drizzle strips table names from select-field columns in a
+  // single-table select, so a correlated `= ${firms.firmId}` renders as
+  // `"firm_id" = "firm_id"` and counts every firm's subscriptions.
   const firmRows = await db
     .select({
       logoUrl: firms.logoUrl,
@@ -115,7 +119,7 @@ export async function purgeFirmById(firmId: string): Promise<void> {
       isFounder: firms.isFounder,
       liveSubCount: sql<number>`(
         select count(*)::int from ${subscriptions}
-        where ${subscriptions.firmId} = ${firms.firmId}
+        where ${subscriptions.firmId} = ${firmId}
         and ${subscriptions.status} in ('trialing','active','past_due','unpaid')
       )`,
     })
@@ -272,7 +276,12 @@ export async function purgeFirmById(firmId: string): Promise<void> {
   await db.delete(builtinTemplateDismissals).where(eq(builtinTemplateDismissals.firmId, firmId));
   await db.delete(clientShares).where(eq(clientShares.firmId, firmId));
   await db.delete(planningKbChunks).where(eq(planningKbChunks.firmId, firmId));
-  await db.delete(forgeConversations).where(eq(forgeConversations.firmId, firmId));
+  // Forge chat history and notes (LangGraph tables, no firm_id column): the
+  // remaining threads are read from the conversations, so erase them first.
+  await db.transaction(async (tx) => {
+    await purgeForgeHistory(tx, { firmId });
+    await tx.delete(forgeConversations).where(eq(forgeConversations.firmId, firmId));
+  });
   // Per-advisor branding (Task 14): leaf firm-scoped table, no FK to clients/
   // crm_households, so nothing cascades it — must be deleted explicitly.
   // Its logo/favicon URLs were collected in step 0, ABOVE — see the ordering

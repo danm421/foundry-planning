@@ -193,6 +193,47 @@ describe("PUT /api/portal/accounts/[id]", () => {
     expect(recordUpdateMock).not.toHaveBeenCalled();
   });
 
+  it("400s with the margin-loan rule, and writes nothing, when a margined account moves off taxable", async () => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    accountRow = {
+      ...accountRow, category: "taxable", subType: "brokerage", value: "10000000.00",
+      marginBalance: "2000000.00",
+    };
+    const res = await PUT(putReq({ category: "cash", subType: "savings" }), ctx);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe(
+      "Only taxable brokerage accounts can carry a margin loan. Remove the margin loan before changing the account type.",
+    );
+    expect(transactionMock).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(recordUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("400s with the borrowing rule, and writes nothing, when a borrowing account moves off taxable", async () => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    accountRow = {
+      ...accountRow, category: "taxable", subType: "brokerage", value: "1000000.00",
+      marginBalance: "0.00", marginBorrowEnabled: true,
+    };
+    const res = await PUT(putReq({ category: "cash", subType: "savings" }), ctx);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe(
+      "Only taxable brokerage accounts can borrow on margin. Turn off borrowing before changing the account type.",
+    );
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it("still lets a margined taxable account be renamed", async () => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    accountRow = {
+      ...accountRow, category: "taxable", subType: "brokerage", value: "10000000.00",
+      marginBalance: "2000000.00",
+    };
+    const res = await PUT(putReq({ name: "Schwab" }), ctx);
+    expect(res.status).toBe(200);
+    expect(updateMock).toHaveBeenCalledWith("accounts", { name: "Schwab" });
+  });
+
   it("updates editable fields, replaces owners, and records audit", async () => {
     resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     validateOwnersShapeMock.mockReturnValue({

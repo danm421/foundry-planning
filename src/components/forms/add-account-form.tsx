@@ -8,6 +8,7 @@ import { BasePlanOnly } from "@/components/base-plan-only";
 import { scenarioAccountEditFields } from "@/lib/accounts/scenario-account-fields";
 import { HoldingsTab } from "./holdings-tab";
 import { BENEFICIARY_REQUIRED_MESSAGE } from "@/lib/accounts/is-529";
+import { MARGIN_REPAY_AFTER_BORROW_MESSAGE } from "@/lib/accounts/margin-validation";
 import { setAccountDeriveFromHoldings } from "@/lib/investments/holdings-client";
 import type { GrowthSource } from "@/lib/investments/allocation";
 import BeneficiariesTab, { type BeneficiaryPickLists } from "./beneficiaries-tab";
@@ -57,6 +58,7 @@ import { OwnershipEditor } from "./ownership-editor";
 import type { AccountOwner } from "@/engine/ownership";
 import type { BeneficiaryRef } from "@/engine/types";
 import { isRmdEligibleSubType } from "@/engine/rmd";
+import { DEFAULT_MARGIN_CALL_PCT } from "@/engine/margin";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 import { isAumEligible } from "@/lib/accounts/aum";
 import { InheritedIraFields } from "./inherited-ira-fields";
@@ -111,6 +113,14 @@ export interface AccountFormInitial {
   modelPortfolioId?: string | null;
   tickerPortfolioId?: string | null;
   turnoverPct?: string;
+  marginBalance?: string;
+  marginInterestRate?: string;
+  marginCallPct?: string;
+  marginBorrowEnabled?: boolean;
+  marginBorrowStartYear?: number | null;
+  marginBorrowStartYearRef?: YearRef | null;
+  marginRepayYear?: number | null;
+  marginRepayYearRef?: YearRef | null;
   overridePctOi?: string | null;
   overridePctLtCg?: string | null;
   overridePctQdiv?: string | null;
@@ -673,6 +683,50 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const [turnoverPct, setTurnoverPct] = useState<string>(
     initial?.turnoverPct ? (Number(initial.turnoverPct) * 100).toFixed(2) : "0",
   );
+  const [marginBalance, setMarginBalance] = useState<string>(initial?.marginBalance ?? "0");
+  const [marginInterestRate, setMarginInterestRate] = useState<string>(
+    initial?.marginInterestRate ? (Number(initial.marginInterestRate) * 100).toFixed(2) : "0",
+  );
+  const [marginCallPct, setMarginCallPct] = useState<string>(
+    initial?.marginCallPct ? (Number(initial.marginCallPct) * 100).toFixed(2) : "30",
+  );
+  // Borrowing on margin (spec 2026-10-14).
+  const [marginBorrowEnabled, setMarginBorrowEnabled] = useState<boolean>(initial?.marginBorrowEnabled ?? false);
+  const [marginBorrowStartYear, setMarginBorrowStartYear] = useState<number | null>(initial?.marginBorrowStartYear ?? null);
+  const [marginBorrowStartYearRef, setMarginBorrowStartYearRef] = useState<YearRef | null>(initial?.marginBorrowStartYearRef ?? null);
+  const [marginRepayEnabled, setMarginRepayEnabled] = useState<boolean>(
+    initial?.marginRepayYear != null || initial?.marginRepayYearRef != null,
+  );
+  const [marginRepayYear, setMarginRepayYear] = useState<number | null>(initial?.marginRepayYear ?? null);
+  const [marginRepayYearRef, setMarginRepayYearRef] = useState<YearRef | null>(initial?.marginRepayYearRef ?? null);
+  // Only a household-owned, stand-alone account can borrow (R1: the server
+  // does not check ownership).
+  const canBorrowOnMargin =
+    parentBusinessId == null && owners.length > 0 && owners.every((o) => o.kind === "family_member");
+  const borrowOnMargin = category === "taxable" && canBorrowOnMargin && marginBorrowEnabled;
+  // Never at or before plan start: an already-retired client's retirement year
+  // is in the past, and a repay year there does nothing (final review M2).
+  const defaultMarginRepayYear = milestones
+    ? Math.max(milestones.clientRetirement, milestones.planStart + 1)
+    : new Date().getFullYear() + 5;
+  const marginBorrowFields = useMemo(() => ({
+    marginBorrowEnabled: borrowOnMargin,
+    marginBorrowStartYear: borrowOnMargin ? marginBorrowStartYear : null,
+    marginBorrowStartYearRef: borrowOnMargin ? marginBorrowStartYearRef : null,
+    marginRepayYear: category === "taxable" && marginRepayEnabled
+      ? (marginRepayYear ?? defaultMarginRepayYear)
+      : null,
+    marginRepayYearRef: category === "taxable" && marginRepayEnabled ? marginRepayYearRef : null,
+  }), [borrowOnMargin, marginBorrowStartYear, marginBorrowStartYearRef, category, marginRepayEnabled,
+    marginRepayYear, marginRepayYearRef, defaultMarginRepayYear]);
+  // The server checks this only when "Borrow from" is set; an unset one means
+  // plan start, which the form knows.
+  const borrowingStarts = marginBorrowFields.marginBorrowStartYear ?? milestones?.planStart;
+  const marginRepayError =
+    marginBorrowFields.marginBorrowEnabled && marginBorrowFields.marginRepayYear != null &&
+    borrowingStarts != null && marginBorrowFields.marginRepayYear <= borrowingStarts
+      ? MARGIN_REPAY_AFTER_BORROW_MESSAGE
+      : null;
   const [custodian, setCustodian] = useState<string>(initial?.custodian ?? "");
   const [accountNumberLast4, setAccountNumberLast4] = useState<string>(
     initial?.accountNumberLast4 ?? "",
@@ -811,6 +865,15 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     defaultSellStartYear,
     overridePctTaxExempt,
     turnoverPct,
+    marginBalance,
+    marginInterestRate,
+    marginCallPct,
+    marginBorrowEnabled,
+    marginBorrowStartYear,
+    marginBorrowStartYearRef,
+    marginRepayEnabled,
+    marginRepayYear,
+    marginRepayYearRef,
     customAllocations,
     custodian,
     accountNumberLast4,
@@ -835,7 +898,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     inheritedPayoutPlan, inheritedPayoutFromYear, inheritedPayoutThroughYear,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
-    turnoverPct, customAllocations, custodian, accountNumberLast4,
+    turnoverPct, marginBalance, marginInterestRate, marginCallPct, customAllocations, custodian, accountNumberLast4,
+    marginBorrowEnabled, marginBorrowStartYear, marginBorrowStartYearRef, marginRepayEnabled, marginRepayYear, marginRepayYearRef,
     ticker, isPublic, pricePerShare, autoCreateDestination, sellToCover,
     withholdingRate, defaultExerciseTiming, defaultExerciseYear, defaultSellTiming,
     defaultSellYear, defaultSellPercentPerYear, defaultSellStartYear,
@@ -942,7 +1006,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
   const canSave =
     name.trim().length > 0 && !educationBeneficiaryMissing && !equityStrategyIncomplete &&
-    !annuityIncomplete && inheritedError == null && inheritedPayoutError == null;
+    !annuityIncomplete && inheritedError == null && inheritedPayoutError == null && marginRepayError == null;
 
   // ── An in-progress grant must not be thrown away (audit F42) ───────────────
   // The grant editor saves through its own "Save Grant" button. The dialog's
@@ -1481,6 +1545,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       tickerPortfolioId: growthSource === "ticker_portfolio" ? tickerPortfolioId : null,
       deriveFromHoldings,
       turnoverPct: toPctOrNull(turnoverPct) ?? "0",
+      marginBalance: category === "taxable" ? (marginBalance || "0") : "0",
+      marginInterestRate: category === "taxable" ? (toPctOrNull(marginInterestRate) ?? "0") : "0",
+      marginCallPct: toPctOrNull(marginCallPct) ?? String(DEFAULT_MARGIN_CALL_PCT),
+      ...marginBorrowFields,
       overridePctOi: toPctOrNull(overridePctOi),
       overridePctLtCg: toPctOrNull(overridePctLtCg),
       overridePctQdiv: toPctOrNull(overridePctQdiv),
@@ -1609,7 +1677,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     usesGrowthDropdown, name, owners, titlingType, parentBusinessId, accountValue, accountBasis, accountRothValue,
     rmdEnabled, countsTowardAum, priorYearEndValue, realEstateGrowthSource, modelPortfolioId, tickerPortfolioId, deriveFromHoldings,
     inheritedFields, inheritedActive,
-    turnoverPct, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
+    turnoverPct, marginBalance, marginInterestRate, marginCallPct, marginBorrowFields, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     effectiveAccountId, clientId, writer, showAssetMixTab, customAllocations, drivenByHoldings,
     currentSerialized, onAutoSaved, custodian, accountNumberLast4, isHsa, hsaCoverage,
@@ -1723,6 +1791,12 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       modelPortfolioId: growthSource === "model_portfolio" ? modelPortfolioId : null,
       tickerPortfolioId: growthSource === "ticker_portfolio" ? tickerPortfolioId : null,
       turnoverPct: toPctOrNull("turnoverPct") ?? "0",
+      marginBalance:
+        (data.get("category") as string) === "taxable" ? ((data.get("marginBalance") as string) || "0") : "0",
+      marginInterestRate:
+        (data.get("category") as string) === "taxable" ? (toPctOrNull("marginInterestRate") ?? "0") : "0",
+      marginCallPct: toPctOrNull("marginCallPct") ?? String(DEFAULT_MARGIN_CALL_PCT),
+      ...marginBorrowFields,
       overridePctOi: toPctOrNull("overridePctOi"),
       overridePctLtCg: toPctOrNull("overridePctLtCg"),
       overridePctQdiv: toPctOrNull("overridePctQdiv"),
@@ -2625,6 +2699,69 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 </div>
               )}
             </div>
+            )}
+
+            {category === "taxable" && (
+              <fieldset className="col-span-2 grid grid-cols-3 gap-4 rounded-md border border-hair p-3">
+                <legend className="px-1 text-sm font-medium text-ink-2">Margin loan</legend>
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="margin-balance">Margin loan balance ($)</label>
+                  <CurrencyInput id="margin-balance" name="marginBalance" value={marginBalance}
+                    onChange={(raw) => setMarginBalance(raw)} className={inputClassName} />
+                </div>
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="margin-interest-rate">Margin interest rate (%)</label>
+                  <PercentInput id="margin-interest-rate" name="marginInterestRate" value={marginInterestRate}
+                    onChange={(raw) => setMarginInterestRate(raw)} className={inputClassName} />
+                </div>
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="margin-call-pct">
+                    Margin call level (%) <FieldTooltip text="We flag any year the account's net value falls below this share of its securities. Brokerages typically require 25–30%." />
+                  </label>
+                  <PercentInput id="margin-call-pct" name="marginCallPct" value={marginCallPct}
+                    onChange={(raw) => setMarginCallPct(raw)} className={inputClassName} />
+                </div>
+                <div className="col-span-3 space-y-2">
+                  {canBorrowOnMargin ? (
+                    <label className="flex items-center gap-2 text-sm text-ink-2">
+                      <input type="checkbox" aria-label="Borrow to cover spending" checked={marginBorrowEnabled}
+                        onChange={(e) => setMarginBorrowEnabled(e.target.checked)} />
+                      <span>Borrow to cover spending</span>
+                      <FieldTooltip text="When spending runs short, the plan borrows against these securities instead of selling them: after cash, before any sale, up to half the securities' value." />
+                    </label>
+                  ) : (
+                    <p className="text-xs text-ink-3">Borrowing to cover spending is available when the household owns the whole account.</p>
+                  )}
+                  {canBorrowOnMargin && marginBorrowEnabled && milestones && (
+                    <div className="max-w-xs">
+                      <MilestoneYearPicker id="marginBorrowStartYear" name="marginBorrowStartYear" label="Borrow from"
+                        value={marginBorrowStartYear ?? milestones.planStart} yearRef={marginBorrowStartYearRef}
+                        milestones={milestones} clientFirstName={clientFirstName} spouseFirstName={spouseFirstName}
+                        position="start"
+                        onChange={(y, ref) => { setMarginBorrowStartYear(y); setMarginBorrowStartYearRef(ref); }} />
+                    </div>
+                  )}
+                  {milestones && (
+                    <label className="flex items-center gap-2 text-sm text-ink-2">
+                      <input type="checkbox" aria-label="Repay the loan in a chosen year" checked={marginRepayEnabled}
+                        onChange={(e) => setMarginRepayEnabled(e.target.checked)} />
+                      <span>Repay the loan in a chosen year</span>
+                    </label>
+                  )}
+                  {marginRepayEnabled && milestones && (
+                    <div className="max-w-xs">
+                      <MilestoneYearPicker id="marginRepayYear" name="marginRepayYear" label="Repay in"
+                        value={marginRepayYear ?? defaultMarginRepayYear} yearRef={marginRepayYearRef}
+                        milestones={milestones} clientFirstName={clientFirstName} spouseFirstName={spouseFirstName}
+                        position="start"
+                        onChange={(y, ref) => { setMarginRepayYear(y); setMarginRepayYearRef(ref); }} />
+                      <p className="mt-1 text-[11px] text-ink-4">That year the plan sells enough securities to clear the loan.</p>
+                    </div>
+                  )}
+                  {marginRepayError && <p role="alert" className="text-xs text-crit">{marginRepayError}</p>}
+                </div>
+                <p className="col-span-3 text-xs text-ink-3">Interest is added to the loan each year, as brokerages do.</p>
+              </fieldset>
             )}
 
             {category !== "stock_options" && <div className={`col-span-2 grid gap-4 ${category === "real_estate" ? "grid-cols-3" : "grid-cols-2"}`}>

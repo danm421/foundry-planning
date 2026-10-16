@@ -3,6 +3,7 @@ import type { ProjectionResult } from "@/engine";
 import { isPolicyInForce } from "@/lib/estate/insurance-in-force";
 import { foldPartitionedAccount, isPartitionedAt } from "@/lib/estate/account-owner-slices";
 import { ownersForYearOrHousehold } from "@/lib/estate/owners-or-household";
+import { netSeedValue } from "@/engine/margin";
 
 export type BalanceMode = "boy" | "eoy";
 
@@ -25,9 +26,9 @@ export type BalanceMode = "boy" | "eoy";
  *
  * `mode` mirrors the Balance Sheet's two views:
  *   - "boy" (Today) — beginning-of-year balances. At planStartYear these
- *     equal the advisor-entered values, so the original tree is returned
- *     unchanged (authored owners: a gift dated in the plan's first year has
- *     not happened yet).
+ *     equal the advisor-entered values net of any margin loan, so the
+ *     original tree is returned with only those accounts netted (authored
+ *     owners: a gift dated in the plan's first year has not happened yet).
  *   - "eoy" (default) — end-of-year balances for the requested year.
  *
  * "Today · 2026" and "End of 2026" land on the same calendar year but
@@ -45,7 +46,7 @@ export function treeAsOfYear(
 ): ClientData {
   const planStartYear = tree.planSettings.planStartYear;
   if (mode === "boy" && year === planStartYear) {
-    return overlayLifeInsuranceFaceValue(tree, year);
+    return overlayLifeInsuranceFaceValue(netOfMarginLoans(tree), year);
   }
 
   const yearRow = withResult.years.find((y) => y.year === year);
@@ -161,6 +162,18 @@ function partitionedAsOf(a: Account, yearRow: YearRow): Account {
   });
   if (folded.value <= 0) return { ...a, value: 0 };
   return { ...a, value: folded.value, owners: folded.owners, giftsReflectedThrough: yearRow.year };
+}
+
+/** The plan-start BoY a margined account seeds at (`netSeedValue`). A tree
+ *  with no loan comes back as-is. */
+function netOfMarginLoans(tree: ClientData): ClientData {
+  if (!tree.accounts.some((a) => (a.marginBalance ?? 0) > 0)) return tree;
+  return {
+    ...tree,
+    accounts: tree.accounts.map((a) =>
+      (a.marginBalance ?? 0) > 0 ? { ...a, value: netSeedValue(a) } : a,
+    ),
+  };
 }
 
 /** For every in-force life-insurance policy, swap the account's cash-surrender

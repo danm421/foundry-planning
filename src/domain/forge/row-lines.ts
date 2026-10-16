@@ -29,6 +29,12 @@ const LABELS: Record<string, string> = {
   value: "Balance",
   basis: "Cost basis",
   rothValue: "Roth portion",
+  marginBalance: "Margin loan balance",
+  marginInterestRate: "Margin interest rate",
+  marginCallPct: "Margin call level",
+  marginBorrowEnabled: "Borrow to cover spending",
+  marginBorrowStartYear: "Borrow from",
+  marginRepayYear: "Repay margin loan in",
   priorYearEndValue: "Prior year-end value",
   growthRate: "Growth rate",
   growthSource: "Growth",
@@ -75,6 +81,7 @@ const MONEY = new Set([
   "value",
   "basis",
   "rothValue",
+  "marginBalance",
   "priorYearEndValue",
   "annualAmount",
   "balance",
@@ -84,7 +91,13 @@ const MONEY = new Set([
 ]);
 
 /** Fractions (0.03 = 3%) — the tool descriptions document these as "e.g. 0.03". */
-const RATE = new Set(["growthRate", "interestRate", "propertyTaxGrowthRate"]);
+const RATE = new Set([
+  "growthRate",
+  "interestRate",
+  "propertyTaxGrowthRate",
+  "marginInterestRate",
+  "marginCallPct",
+]);
 
 /** The owner enum needs its own map, not the generic capitaliser: that one
  *  simply upper-cases the stored token, which turned the second person into the
@@ -279,6 +292,7 @@ function accountLines(row: Row): string[] {
   const growth = growthLine(row);
   if (growth) out.push(growth);
   if (row.rmdEnabled === true) out.push("RMDs: Yes");
+  if (row.marginBorrowEnabled === true) out.push("Borrow to cover spending: Yes");
   return out;
 }
 

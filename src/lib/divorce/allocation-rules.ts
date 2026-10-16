@@ -20,6 +20,7 @@ export interface DivisibleObject {
   value: number;                 // balance-sheet value (liabilities positive, subtracted in totals)
   basis: number;
   rothValue: number;
+  marginBalance?: number;        // margin loan on an account (or its owned accounts, for an entity); side totals net it out of `value`
   annualAmount: number;          // incomes/expenses; 0 otherwise
   ownerSide: OwnerSide;
   entityOwnedById: string | null; // non-null ⇒ NOT in the pool; follows its entity

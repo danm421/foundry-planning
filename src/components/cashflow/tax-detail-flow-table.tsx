@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ProjectionYear } from "@/engine";
 import { otherTaxFromFlow, creditsInOtherFromFlow } from "@/lib/tax/other-tax";
+import { INVESTMENT_INTEREST_SOURCE_PREFIX } from "@/lib/tax/derive-deductions";
 import { TaxDetailTooltip } from "./tax-detail-tooltip";
 import {
   detectRegimeTransitions,
@@ -325,8 +326,8 @@ export function otherColumns(years: ProjectionYear[]): Column[] {
   );
 }
 
-function belowLineColumns(): Column[] {
-  return [
+export function belowLineColumns(years: ProjectionYear[]): Column[] {
+  const cols: Column[] = [
     {
       key: "bl_charitable",
       label: "Charitable",
@@ -344,6 +345,12 @@ function belowLineColumns(): Column[] {
       label: "Interest Paid",
       tooltip: "Mortgage interest from liabilities marked tax-deductible.",
       value: (y) => y.deductionBreakdown?.belowLine.interestPaid ?? 0,
+    },
+    {
+      key: "bl_investment_interest",
+      label: "Investment Interest",
+      tooltip: "Margin loan interest, deductible up to investment income (Form 4952). Unused interest carries forward.",
+      value: (y) => y.deductionBreakdown?.belowLine.investmentInterest ?? 0,
     },
     {
       key: "bl_other",
@@ -370,6 +377,13 @@ function belowLineColumns(): Column[] {
       value: (y) => y.deductionBreakdown?.belowLine.taxDeductions ?? 0,
     },
   ];
+  // Investment Interest (margin loans) hides when every year is $0 AND no year
+  // has non-deductible margin interest to explain (R7, spec 2026-10-14), so a
+  // household without a margin loan keeps the table it always had.
+  return cols.filter(
+    (col) => col.key !== "bl_investment_interest" || years.some((y) =>
+      col.value(y) !== 0 || Object.keys(y.deductionBreakdown?.belowLine.personalMarginInterest ?? {}).length > 0),
+  );
 }
 
 function DrillHeader({ label, onClick }: { label: string; onClick: () => void }) {
@@ -419,13 +433,25 @@ export function getSourcesForColumn(
     }
     return sources.length > 0 ? sources : null;
   }
+  if (colKey === "bl_investment_interest") {
+    const entries = Object.entries(bd.belowLine.bySource)
+      .filter(([k]) => k.startsWith(INVESTMENT_INTEREST_SOURCE_PREFIX))
+      .map(([, v]) => v);
+    // Interest on money borrowed for spending is personal and never deducted
+    // (spec 2026-10-14) — listed so the advisor sees why the column is lower
+    // than the interest charged. It is NOT part of the column's figure.
+    for (const p of Object.values(bd.belowLine.personalMarginInterest ?? {})) {
+      entries.push({ label: `Margin interest on borrowing for spending — not deductible (${p.label})`, amount: p.amount });
+    }
+    return entries.length > 0 ? entries : null;
+  }
   if (colKey === "bl_other") {
     const amount = bd.belowLine.otherItemized;
     if (amount <= 0) return null;
     // Filter bySource to entries that are below_line (not charitable)
-    const entries = Object.values(bd.belowLine.bySource).filter(
-      (s) => !s.label.toLowerCase().includes("charit")
-    );
+    const entries = Object.entries(bd.belowLine.bySource)
+      .filter(([k, s]) => !k.startsWith(INVESTMENT_INTEREST_SOURCE_PREFIX) && !s.label.toLowerCase().includes("charit"))
+      .map(([, s]) => s);
     return entries.length > 0 ? entries : [{ label: "Other itemized", amount }];
   }
 
@@ -444,7 +470,9 @@ function filterBySource(
       ? l.includes("charit")
       : l.includes("interest") || l.includes("mortgage");
   };
-  const entries = Object.values(bySource).filter((e) => matches(e.label));
+  const entries = Object.entries(bySource)
+    .filter(([k, e]) => !k.startsWith(INVESTMENT_INTEREST_SOURCE_PREFIX) && matches(e.label))
+    .map(([, e]) => e);
   return entries.length > 0 ? entries : null;
 }
 
@@ -521,7 +549,7 @@ export function TaxDetailFlowTable({
   const activeColumns: Column[] = drillLevel === "above_line"
     ? aboveLineColumns(years)
     : drillLevel === "below_line"
-      ? belowLineColumns()
+      ? belowLineColumns(years)
       : drillLevel === "other"
         ? otherColumns(years)
         : topLevelColumns(years);

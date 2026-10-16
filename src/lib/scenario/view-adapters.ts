@@ -28,6 +28,7 @@ import type {
   EntitySummary,
 } from "@/engine/types";
 import { controllingEntity, type AccountOwner } from "@/engine/ownership";
+import { DEFAULT_MARGIN_CALL_PCT } from "@/engine/margin";
 import type { AssumptionsSettings } from "@/lib/plan-settings/assumptions-settings";
 
 // ── Income ────────────────────────────────────────────────────────────────────
@@ -251,6 +252,14 @@ export interface AccountViewEngineFields {
   basis: string;
   rothValue: string;
   growthRate: string | null;
+  marginBalance: string;
+  marginInterestRate: string;
+  marginCallPct: string;
+  marginBorrowEnabled: boolean;
+  marginBorrowStartYear: number | null;
+  marginBorrowStartYearRef: string | null;
+  marginRepayYear: number | null;
+  marginRepayYearRef: string | null;
   rmdEnabled: boolean | null;
   ownerEntityId: string | null;
   /** Ownership rows verbatim. `ownerEntityId` above is a lossy reduction of
@@ -271,6 +280,14 @@ export function accountEngineToView(account: EngineAccount): AccountViewEngineFi
     basis: String(account.basis),
     rothValue: String(account.rothValue ?? 0),
     growthRate: account.growthRate != null ? String(account.growthRate) : null,
+    marginBalance: String(account.marginBalance ?? 0),
+    marginInterestRate: String(account.marginInterestRate ?? 0),
+    marginCallPct: String(account.marginCallPct ?? DEFAULT_MARGIN_CALL_PCT),
+    marginBorrowEnabled: account.marginBorrowEnabled === true,
+    marginBorrowStartYear: account.marginBorrowStartYear ?? null,
+    marginBorrowStartYearRef: account.marginBorrowStartYearRef ?? null,
+    marginRepayYear: account.marginRepayYear ?? null,
+    marginRepayYearRef: account.marginRepayYearRef ?? null,
     rmdEnabled: account.rmdEnabled ?? null,
     ownerEntityId: controllingEntity(account) ?? null,
     owners: account.owners,

@@ -213,7 +213,7 @@ export function detectSocialSecurity(a: DetectorArgs): TaxChangeFinding | null {
 /** Gain-flavored bySource keys — deliberately excludes `withdrawal:` keys,
  *  which belong to detectFundingCharacterShift's recognition ratio. */
 const isGainKey = (k: string) =>
-  k.startsWith("sale:") || k.startsWith("business_sale:") ||
+  k.startsWith("sale:") || k.startsWith("business_sale:") || k.startsWith("margin_sale:") ||
   k.startsWith("equity-ltcg:") || k.startsWith("equity-stcg:") ||
   k.startsWith("transfer:") || (k.startsWith("note:") && k.endsWith(":ltcg"));
 

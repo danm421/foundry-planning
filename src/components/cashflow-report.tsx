@@ -27,6 +27,7 @@ import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear, AccountLedger } from "@/engine";
 import { isFullyEntityOwned } from "@/engine/ownership";
 import { applyLtcEvent } from "@/engine/ltc-event";
+import { netGrowthOf, SUB_CENT } from "@/engine/margin";
 import {
   liquidBucketWeights,
   liquidPortfolioAdditions,
@@ -1099,6 +1100,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     const items: LineItem[] = [{ label: "Sale Value", amount: sale.saleValue }];
     if (sale.transactionCosts > 0) items.push({ label: "Transaction Costs", amount: -sale.transactionCosts });
     if (sale.mortgagePaidOff > 0) items.push({ label: "Mortgage Payoff", amount: -sale.mortgagePaidOff });
+    if ((sale.marginRepaid ?? 0) > 0) items.push({ label: "Margin loan repaid", amount: -sale.marginRepaid! });
     return items;
   }
 
@@ -1261,10 +1263,28 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       col("year", "Year", (r) => r.year, (info) => {
         const y = info.getValue() as number;
         const events = eventsByYear[y];
-        if (!events || events.length === 0) return String(y);
+        const row = info.row.original;
+        const callSales = (row.marginSales ?? []).filter((s) => s.reason === "call");
+        const marginCall = (row.marginCallWarnings?.length ?? 0) > 0 || callSales.length > 0;
+        const marginTitle = callSales.length > 0
+          ? callSales.map((s) => `Margin call: sold ${fmtNum(s.sold)} of ${accountNames[s.accountId] ?? s.accountId} to pay down the loan`).join("\n")
+          : "Margin call risk this year — open the account's ledger for details";
+        const marginFlag = marginCall && (
+          <span
+            className="ml-1 text-warn"
+            title={marginTitle}
+            aria-label="Margin call risk"
+          >
+            ⚠
+          </span>
+        );
+        if (!events || events.length === 0) {
+          return marginCall ? <span>{y}{marginFlag}</span> : String(y);
+        }
         return (
           <span className="inline-flex items-center gap-1.5">
             <span>{y}</span>
+            {marginFlag}
             {events.map((ev, i) => (
               <span
                 key={i}
@@ -1786,10 +1806,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       id: string,
       accessor: (r: ProjectionYear) => number,
       colIdPrefix: string,
+      header?: string,
     ) =>
       col(
         `${colIdPrefix}_${id}`,
-        accountNames[id] ?? id,
+        header ?? accountNames[id] ?? id,
         accessor,
         (info) => {
           const v = info.getValue() as number;
@@ -1874,11 +1895,17 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             )
           )
         );
+        const borrowedIds = new Set(years.flatMap((y) => Object.keys(y.withdrawals.borrowedByAccount ?? {})));
         return [
           ...baseColumns,
-          ...acctIds.map((id) =>
-            accountLedgerCell(id, (r) => r.withdrawals.byAccount[id] ?? 0, "wd")
-          ),
+          ...acctIds.flatMap((id) => {
+            const sold = accountLedgerCell(id,
+              (r) => (r.withdrawals.byAccount[id] ?? 0) - (r.withdrawals.borrowedByAccount?.[id] ?? 0), "wd");
+            return borrowedIds.has(id)
+              ? [sold, accountLedgerCell(id, (r) => r.withdrawals.borrowedByAccount?.[id] ?? 0, "wd_borrowed",
+                  `${accountNames[id] ?? id} (borrowed)`)]
+              : [sold];
+          }),
           numCol(
             "wd_subtype_total",
             `${DRILL_LABELS[subLevel] ?? subLevel} Total`,
@@ -1943,7 +1970,10 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               accountNames[id] ?? id,
               // Portfolio share of the account's growth, so these columns sum to
               // the subtype total. The ledger modal still shows the whole account.
-              (r) => (r.accountLedgers[id]?.growth ?? 0) * (weightsFor(r).get(id) ?? 0),
+              (r) => {
+                const led = r.accountLedgers[id];
+                return led ? netGrowthOf(led) * (weightsFor(r).get(id) ?? 0) : 0;
+              },
               (info) => {
                 const v = info.getValue() as number;
                 const row = info.row.original;
@@ -2442,6 +2472,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                   !isMixedDeferral && (ledgerModal.ledger.basisBoY ?? 0) > 0;
                 const showBasisEoY =
                   !isMixedDeferral && (ledgerModal.ledger.basisEoY ?? 0) > 0;
+                const showMargin =
+                  (ledgerModal.ledger.marginBoY ?? 0) > 0 || (ledgerModal.ledger.marginEoY ?? 0) > 0;
                 return (
                   <div className="flex items-center justify-between rounded-md bg-card-2 px-4 py-3">
                     <div>
@@ -2457,6 +2489,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                       {showRothValueBoY && (
                         <p className="mt-0.5 text-xs tabular-nums text-ink-3">
                           Roth {fmtNum(ledgerModal.ledger.rothValueBoY!)}
+                        </p>
+                      )}
+                      {showMargin && (
+                        <p className="mt-0.5 text-xs tabular-nums text-ink-3">
+                          Margin loan −{fmtNum(ledgerModal.ledger.marginBoY ?? 0)}
                         </p>
                       )}
                     </div>
@@ -2476,7 +2513,39 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                           Roth {fmtNum(ledgerModal.ledger.rothValueEoY!)}
                         </p>
                       )}
+                      {showMargin && (
+                        <p className="mt-0.5 text-xs tabular-nums text-ink-3">
+                          Margin loan −{fmtNum(ledgerModal.ledger.marginEoY ?? 0)}
+                        </p>
+                      )}
                     </div>
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const modalYear = years.find((y) => y.year === ledgerModal.year);
+                const marginWarning = modalYear?.marginCallWarnings?.find((w) => w.accountId === ledgerModal.accountId);
+                const callSale = modalYear?.marginSales?.find((s) => s.accountId === ledgerModal.accountId && s.reason === "call");
+                if (!marginWarning && !callSale) return null;
+                const callPct = clientData?.accounts.find((a) => a.id === ledgerModal.accountId)?.marginCallPct;
+                const loanEoY = ledgerModal.ledger.marginEoY ?? 0;
+                const noSecuritiesLeft = ledgerModal.ledger.endingValue + loanEoY < SUB_CENT;
+                return (
+                  <div className="space-y-1 rounded border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-ink-2">
+                    {callSale && (
+                      <p>
+                        Margin call: sold {fmtNum(callSale.sold)} of securities to bring the account back to
+                        {callPct != null ? ` its ${Math.round(callPct * 100)}% margin call level.` : " its margin call level."}
+                      </p>
+                    )}
+                    {marginWarning && (noSecuritiesLeft ? (
+                      <p>No securities left to sell — {fmtNum(loanEoY)} of margin loan remains.</p>
+                    ) : (
+                      <p>
+                        Margin call risk: net value is {Math.round(marginWarning.ratio * 100)}% of the securities, below the {Math.round(marginWarning.threshold * 100)}% margin call level. The plan sells securities to meet the call at next year&apos;s check.
+                      </p>
+                    ))}
                   </div>
                 );
               })()}

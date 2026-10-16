@@ -21,6 +21,7 @@ const BELOW_STACK: Array<{ key: string; label: string; color: string; pick: (b: 
   { key: "taxesPaid",     label: "Taxes Paid (SALT)", color: dataLight.blue, pick: (b) => b?.taxesPaid ?? 0 },
   { key: "propertyTaxes", label: "Property",        color: dataLight.teal, pick: (b) => b?.propertyTaxes ?? 0 },
   { key: "interestPaid",  label: "Interest",        color: dataLight.orange, pick: (b) => b?.interestPaid ?? 0 },
+  { key: "investmentInterest", label: "Investment Interest", color: dataLight.sky, pick: (b) => b?.investmentInterest ?? 0 },
   { key: "otherItemized", label: "Other Itemized",  color: dataLight.grey, pick: (b) => b?.otherItemized ?? 0 },
 ];
 
@@ -36,12 +37,23 @@ export interface BuildTaxBelowLineDrillInput {
 export function buildTaxBelowLineDrillData(input: BuildTaxBelowLineDrillInput): DrillPageData {
   const { years, clientData, options, scenarioLabel, clientName, spouseName } = input;
   const visibleYears = filterYearsToRange(years, options.range as RangeOption);
+  // Investment Interest (margin loans) shows only when some year has it, so a
+  // household without a margin loan keeps the table and chart it always had.
+  const hasInvestmentInterest = visibleYears.some(
+    (y) => (y.deductionBreakdown?.belowLine?.investmentInterest ?? 0) !== 0,
+  );
+  const stacks = hasInvestmentInterest
+    ? BELOW_STACK
+    : BELOW_STACK.filter((s) => s.key !== "investmentInterest");
 
   const columns: DrillColumn[] = [
     { key: "charitable",     header: "Charitable",       width: 48 },
     { key: "taxesPaid",      header: "Taxes Paid\n(SALT)", width: 52 },
     { key: "propertyTaxes",  header: "Property",         width: 46 },
     { key: "interestPaid",   header: "Interest",         width: 46 },
+    ...(hasInvestmentInterest
+      ? [{ key: "investmentInterest", header: "Invest.\nInterest", width: 48 }]
+      : []),
     { key: "otherItemized",  header: "Other\nItemized",  width: 48 },
     { key: "itemizedTotal",  header: "Itemized\nTotal",  width: 50 },
     { key: "standard",       header: "Standard",         width: 48 },
@@ -57,6 +69,7 @@ export function buildTaxBelowLineDrillData(input: BuildTaxBelowLineDrillInput): 
         taxesPaid: b?.taxesPaid ?? 0,
         propertyTaxes: b?.propertyTaxes ?? 0,
         interestPaid: b?.interestPaid ?? 0,
+        ...(hasInvestmentInterest ? { investmentInterest: b?.investmentInterest ?? 0 } : {}),
         otherItemized: b?.otherItemized ?? 0,
         itemizedTotal: b?.itemizedTotal ?? 0,
         standard: b?.standardDeduction ?? 0,
@@ -69,7 +82,7 @@ export function buildTaxBelowLineDrillData(input: BuildTaxBelowLineDrillInput): 
 
   const chartSpec = buildDrillChartSpec({
     years: visibleYears.map((y) => y.year),
-    stacks: BELOW_STACK.map((s) => ({
+    stacks: stacks.map((s) => ({
       seriesId: s.key, label: s.label, color: s.color,
       values: visibleYears.map((y) => s.pick(y.deductionBreakdown?.belowLine)),
     })),

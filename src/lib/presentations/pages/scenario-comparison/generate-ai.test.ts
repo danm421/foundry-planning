@@ -106,6 +106,7 @@ function args(
 ): GenerateScenarioComparisonAiArgs {
   return {
     clientId: "c1",
+    firmId: "f1",
     householdName: "the Cooper household",
     firstNames: "Alan and Teresa",
     columns: COLUMNS,

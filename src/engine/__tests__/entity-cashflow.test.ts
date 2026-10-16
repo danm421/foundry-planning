@@ -192,6 +192,47 @@ describe("computeEntityCashFlow", () => {
     expect(row && row.kind === "trust" && row.growth).toBe(8_000);
   });
 
+  it("books a wholly-owned margined account's growth net of its margin interest, so the row ties out", () => {
+    // $10M securities, $2M loan, 7%, 2%: net $8M → $8.66M; growth $700K gross.
+    const trust = {
+      id: "trust-1",
+      name: "Smith SLAT",
+      entityType: "trust" as const,
+      trustSubType: "irrevocable" as const,
+      isGrantor: false,
+      initialValue: 0,
+      initialBasis: 0,
+    };
+    const y = makeYear(2026);
+    y.accountLedgers = {
+      "acc-m": {
+        beginningValue: 8_000_000,
+        endingValue: 8_660_000,
+        growth: 700_000,
+        marginInterest: 40_000,
+        contributions: 0,
+        distributions: 0,
+        internalContributions: 0,
+        internalDistributions: 0,
+        rmdAmount: 0,
+        fees: 0,
+        entries: [],
+      },
+    };
+    computeEntityCashFlow({
+      years: [y],
+      entitiesById: new Map([["trust-1", trust]]),
+      ...ownersFrom(new Map([["acc-m", { entityId: "trust-1", percent: 1 }]])),
+      giftsByEntityYear: new Map(),
+      incomes: [],
+      expenses: [],
+      entityFlowOverrides: [],
+    });
+    const row = trustRow(y, "trust-1");
+    expect(row.growth).toBe(660_000);
+    expect(rowIdentityGap(row)).toBe(0);
+  });
+
   it("populates trust income, expenses, and totalDistributions", () => {
     const trust = {
       id: "trust-1",

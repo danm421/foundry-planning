@@ -27,6 +27,7 @@ import { recordActivity } from "./activity";
 import { resolveContactDateOfBirth } from "./default-dob";
 import { deriveNameForHousehold } from "./sync-household-name";
 import { revokePlaidTokens } from "@/lib/plaid/revoke";
+import { purgeForgeHistory } from "@/domain/forge/purge-history";
 import type { CreateCrmHouseholdInput } from "./schemas";
 import type { ClientSortKey, SortDir } from "./sort";
 import { buildOrderBy } from "./sort-order";
@@ -303,6 +304,7 @@ async function loadPlanningAccountsForClient(clientId: string) {
     custodian: row.custodian,
     accountNumberLast4: row.accountNumberLast4,
     value: row.value,
+    marginBalance: row.marginBalance,
     basis: row.basis,
     owners: row.owners.map((o) => ({
       percent: o.percent,
@@ -609,6 +611,9 @@ export async function purgeCrmHouseholdById(
         ),
       );
     if (planningClientId) {
+      // Forge chat history and notes sit outside any cascade; erase them while
+      // the conversations that name their threads still exist.
+      await purgeForgeHistory(tx, { clientId: planningClientId });
       await tx.delete(clients).where(eq(clients.id, planningClientId));
     }
     await tx.delete(crmHouseholds).where(eq(crmHouseholds.id, id));

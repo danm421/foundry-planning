@@ -45,6 +45,9 @@ const S = StyleSheet.create({
     borderBottomColor: T.hair2,
   },
   rowName: { fontSize: 8, color: T.ink2, flex: 2 },
+  rowNameCell: { flex: 2 },
+  rowNameText: { fontSize: 8, color: T.ink2 },
+  rowSub: { fontSize: 7, color: T.ink3 },
   rowVal: { fontSize: 8, fontFamily: "JetBrains Mono", color: T.ink2, flex: 1, textAlign: "right" },
   totalRow: {
     flexDirection: "row",
@@ -125,10 +128,15 @@ export function BalanceSheetPagePdf({
               </View>
               {cat.rows.map((r) => (
                 <View key={r.rowKey} style={S.row}>
-                  <Text style={S.rowName}>
-                    {r.accountName}
-                    {r.hasLinkedMortgage ? " (M)" : ""}
-                  </Text>
+                  <View style={S.rowNameCell}>
+                    <Text style={S.rowNameText}>
+                      {r.accountName}
+                      {r.hasLinkedMortgage ? " (M)" : ""}
+                    </Text>
+                    {(r.marginLoan ?? 0) > 0 ? (
+                      <Text style={S.rowSub}>after {fmt(r.marginLoan!)} margin loan</Text>
+                    ) : null}
+                  </View>
                   <Text style={S.rowVal}>{fmt(r.value)}</Text>
                 </View>
               ))}

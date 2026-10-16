@@ -17,6 +17,7 @@ const row: IntakeFormRow = {
   recipientName: "Alice",
   payload: { firstName: "Alice" } as unknown as IntakeFormRow["payload"],
   sections: null,
+  brand: null,
   createdByUserId: "user-1",
   sentAt: new Date("2026-06-02"),
   openedAt: new Date("2026-06-03"),

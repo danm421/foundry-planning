@@ -26,8 +26,11 @@ export default async function ClientDataLayout({
   const viewMode = row?.viewMode ?? "detailed";
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-end">
+    // data-fills-viewport gives the app shell a definite height on desktop (see
+    // AppLayout), so DetailsShell's two panes scroll on their own instead of
+    // the window scrolling both.
+    <div data-fills-viewport className="flex min-h-0 flex-1 flex-col gap-6">
+      <div className="flex shrink-0 justify-end">
         <DetailsViewModeToggle clientId={id} mode={viewMode} />
       </div>
       <DetailsShell clientId={id}>{children}</DetailsShell>

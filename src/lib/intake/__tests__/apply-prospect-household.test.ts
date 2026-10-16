@@ -15,6 +15,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { db } from "@/db";
 import {
   accounts,
+  advisorProfiles,
   clients,
   crmHouseholds,
   crmHouseholdContacts,
@@ -33,6 +34,8 @@ import { resolveIntakeHousehold, placeholderHouseholdName } from "../documents";
 
 const FIRM = "test-firm-apply-prospect-hh-2026";
 const ADVISOR = "user_test_apply_prospect_hh";
+/** A teammate the sender can send on behalf of, under their brand. */
+const BRAND_ADVISOR = "user_test_apply_prospect_hh_brand";
 const RECIPIENT_NAME = "Jordan Reyes";
 const RECIPIENT_EMAIL = "jordan@example.com";
 
@@ -77,6 +80,7 @@ const PAYLOAD: IntakePayload = {
  * DELETE CASCADE from scenarios/clients and crm_households respectively.
  */
 async function clearFirm(firmId: string): Promise<void> {
+  await db.delete(advisorProfiles).where(eq(advisorProfiles.firmId, firmId));
   // intake_forms references BOTH clients and crm_households — drop it first
   // rather than lean on its ON DELETE SET NULL.
   await db.delete(intakeForms).where(eq(intakeForms.firmId, firmId));
@@ -121,7 +125,7 @@ async function clearBothFirms(): Promise<void> {
 beforeEach(clearBothFirms);
 afterAll(clearBothFirms);
 
-async function seedSubmittedProspectForm(): Promise<string> {
+async function seedSubmittedProspectForm(brand: string | null = null): Promise<string> {
   const [form] = await db
     .insert(intakeForms)
     .values({
@@ -134,11 +138,32 @@ async function seedSubmittedProspectForm(): Promise<string> {
       recipientName: RECIPIENT_NAME,
       payload: PAYLOAD,
       createdByUserId: ADVISOR,
+      brand,
       expiresAt: defaultExpiry(new Date()),
       submittedAt: new Date(),
     })
     .returning({ id: intakeForms.id });
   return form.id;
+}
+
+async function seedBrandAdvisor(brandingEnabled: boolean): Promise<void> {
+  await db
+    .insert(advisorProfiles)
+    .values({ firmId: FIRM, advisorUserId: BRAND_ADVISOR, brandingEnabled, brandName: "Reyes Wealth" });
+}
+
+/** Who owns the household and the client, and the brand the client keeps. */
+async function ownership(clientId: string) {
+  const [row] = await db
+    .select({
+      clientAdvisor: clients.advisorId,
+      brand: clients.brand,
+      householdAdvisor: crmHouseholds.advisorId,
+    })
+    .from(clients)
+    .innerJoin(crmHouseholds, eq(crmHouseholds.id, clients.crmHouseholdId))
+    .where(eq(clients.id, clientId));
+  return row;
 }
 
 async function householdIdsInFirm(): Promise<string[]> {
@@ -302,5 +327,59 @@ describe("applyIntake — prospect with a pre-minted household", () => {
       .where(eq(intakeForms.id, formId));
     expect(form.status).toBe("submitted");
     expect(form.clientId).toBeNull();
+  });
+});
+
+describe("applyIntake — a prospect sent under an advisor's brand", () => {
+  it("gives that advisor the household, which then follows their brand", async () => {
+    await seedBrandAdvisor(true);
+    const formId = await seedSubmittedProspectForm(BRAND_ADVISOR);
+
+    const { clientId } = await applyIntake({ formId, firmId: FIRM, actorId: ADVISOR });
+
+    expect(await ownership(clientId)).toEqual({
+      clientAdvisor: BRAND_ADVISOR,
+      householdAdvisor: BRAND_ADVISOR,
+      brand: null,
+    });
+  });
+
+  it("gives that advisor the household an upload minted before submit", async () => {
+    await seedBrandAdvisor(true);
+    const formId = await seedSubmittedProspectForm(BRAND_ADVISOR);
+    await resolveIntakeHousehold(formId);
+
+    const { clientId } = await applyIntake({ formId, firmId: FIRM, actorId: ADVISOR });
+
+    expect(await ownership(clientId)).toEqual({
+      clientAdvisor: BRAND_ADVISOR,
+      householdAdvisor: BRAND_ADVISOR,
+      brand: null,
+    });
+  });
+
+  it("leaves the household with the sender once that advisor's branding is off, keeping the brand", async () => {
+    await seedBrandAdvisor(false);
+    const formId = await seedSubmittedProspectForm(BRAND_ADVISOR);
+
+    const { clientId } = await applyIntake({ formId, firmId: FIRM, actorId: ADVISOR });
+
+    expect(await ownership(clientId)).toEqual({
+      clientAdvisor: ADVISOR,
+      householdAdvisor: ADVISOR,
+      brand: BRAND_ADVISOR,
+    });
+  });
+
+  it("keeps the firm brand on the sender's household", async () => {
+    const formId = await seedSubmittedProspectForm("firm");
+
+    const { clientId } = await applyIntake({ formId, firmId: FIRM, actorId: ADVISOR });
+
+    expect(await ownership(clientId)).toEqual({
+      clientAdvisor: ADVISOR,
+      householdAdvisor: ADVISOR,
+      brand: "firm",
+    });
   });
 });

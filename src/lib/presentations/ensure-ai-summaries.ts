@@ -9,8 +9,12 @@
 // hash; if it equals the page's stored `sourceHash` and there is existing text,
 // the advisor's (possibly hand-edited) text is kept. Otherwise the page is
 // refreshed. Best-effort per page — a generator failure leaves that page's
-// existing text untouched and never throws, so the deck still renders.
+// existing text untouched and never throws, so the deck still renders. The one
+// exception is `SharedClientAiError` (a client shared in from a firm that runs
+// AI in its own tenant): it is rethrown so the advisor reads why, rather than
+// receiving a deck whose commentary silently never refreshed.
 
+import { SharedClientAiError } from "@/lib/ai/shared-client-error";
 import {
   generateRetirementComparisonAi,
   type GeneratedRetirementComparisonAi,
@@ -94,6 +98,7 @@ export async function ensureRetirementComparisonAiSummaries<T extends PageLike>(
         };
         return { ...page, options: nextOptions } as T;
       } catch (err) {
+        if (err instanceof SharedClientAiError) throw err;
         // Non-fatal: keep whatever text the page already carries so the deck
         // still renders (mirrors the client helper's surfaced-but-never-thrown
         // failure mode).
@@ -122,8 +127,9 @@ interface ProposalDeps {
 /**
  * Same contract as its retirement-comparison sibling: generate before render so
  * a preview and the deck it previews say the same thing, preserve a hand-edited
- * text whose prompt hash still matches, and never throw — a generator failure
- * leaves the page's existing text alone and the deck still renders.
+ * text whose prompt hash still matches, and never throw bar the shared-client
+ * refusal (module comment) — a generator failure leaves the page's existing
+ * text alone and the deck still renders.
  */
 export async function ensureInvestmentProposalAiSummaries<T extends PageLike>(
   clientId: string,
@@ -163,6 +169,7 @@ export async function ensureInvestmentProposalAiSummaries<T extends PageLike>(
         };
         return { ...page, options: nextOptions } as T;
       } catch (err) {
+        if (err instanceof SharedClientAiError) throw err;
         console.error("[ensure-ai-summaries] proposal generation failed (non-fatal)", err);
         return page;
       }
@@ -219,6 +226,7 @@ export async function ensureScenarioComparisonAiSummaries<T extends PageLike>(
         const { byScenario } = await generate({
           ...inputs,
           clientId,
+          firmId,
           tone: o.ai.tone,
           customInstructions: o.ai.customInstructions,
           stored: o.ai.byScenario,
@@ -243,6 +251,7 @@ export async function ensureScenarioComparisonAiSummaries<T extends PageLike>(
         };
         return { ...page, options: nextOptions } as T;
       } catch (err) {
+        if (err instanceof SharedClientAiError) throw err;
         console.error(
           "[ensure-ai-summaries] scenario comparison generation failed (non-fatal)",
           err,

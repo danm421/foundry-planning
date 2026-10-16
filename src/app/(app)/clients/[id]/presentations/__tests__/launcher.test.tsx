@@ -522,4 +522,121 @@ describe("PresentationsLauncher", () => {
     await screen.findByText(/Generating your presentation/i);
     await screen.findByText(/will read nearly flat for this plan/i);
   });
+
+  it("sends the picked brand with Generate and with Preview", async () => {
+    const picker = {
+      options: [
+        { value: "firm", label: "Acme Wealth (firm)" },
+        { value: "user_jane", label: "Smith Wealth" },
+      ],
+      allBrands: [
+        { value: "firm", label: "Acme Wealth (firm)" },
+        { value: "user_jane", label: "Smith Wealth" },
+      ],
+    };
+    render(
+      <PresentationsLauncher
+        clientId="c1"
+        currentUserId="me"
+        clientLastName="Sample"
+        householdId="hh-test"
+        scenarios={[]}
+        snapshots={[]}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
+        brand={{ picker, defaultValue: "user_jane" }}
+      />,
+    );
+    const select = screen.getByLabelText("Brand") as HTMLSelectElement;
+    expect(select.value).toBe("user_jane");
+    fireEvent.change(select, { target: { value: "firm" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /Generate PDF/i }));
+    await waitFor(() => {
+      const runsCall = vi.mocked(global.fetch).mock.calls.find((c) => String(c[0]).includes("/presentations/runs"));
+      expect(JSON.parse((runsCall![1] as RequestInit).body as string).brand).toBe("firm");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Preview full/i }));
+    await waitFor(() => {
+      const previewCall = vi.mocked(global.fetch).mock.calls.find((c) => String(c[0]).includes("/presentations/export-pdf"));
+      expect(JSON.parse((previewCall![1] as RequestInit).body as string).brand).toBe("firm");
+    });
+  });
+
+  it("shows no Brand dropdown and sends no brand without a picker", async () => {
+    render(
+      <PresentationsLauncher
+        clientId="c1"
+        currentUserId="me"
+        clientLastName="Sample"
+        householdId="hh-test"
+        scenarios={[]}
+        snapshots={[]}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
+      />,
+    );
+    expect(screen.queryByLabelText("Brand")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Generate PDF/i }));
+    await waitFor(() => {
+      const runsCall = vi.mocked(global.fetch).mock.calls.find((c) => String(c[0]).includes("/presentations/runs"));
+      expect(JSON.parse((runsCall![1] as RequestInit).body as string)).not.toHaveProperty("brand");
+    });
+  });
+
+  it("shows no Brand dropdown and sends no brand when the picker is empty", async () => {
+    render(
+      <PresentationsLauncher
+        clientId="c1"
+        currentUserId="me"
+        clientLastName="Sample"
+        householdId="hh-test"
+        scenarios={[]}
+        snapshots={[]}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
+        brand={{ picker: { options: [], allBrands: [] }, defaultValue: "user_jane" }}
+      />,
+    );
+    expect(screen.queryByLabelText("Brand")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Generate PDF/i }));
+    await waitFor(() => {
+      const runsCall = vi.mocked(global.fetch).mock.calls.find((c) => String(c[0]).includes("/presentations/runs"));
+      expect(JSON.parse((runsCall![1] as RequestInit).body as string)).not.toHaveProperty("brand");
+    });
+  });
+
+  it("keeps the household's brand in the list after picking another", () => {
+    // Bob's brand is the household's but not on this viewer's own list.
+    const picker = {
+      options: [
+        { value: "firm", label: "Acme Wealth (firm)" },
+        { value: "user_jane", label: "Smith Wealth" },
+      ],
+      allBrands: [
+        { value: "firm", label: "Acme Wealth (firm)" },
+        { value: "user_jane", label: "Smith Wealth" },
+        { value: "user_bob", label: "Jones Capital" },
+      ],
+    };
+    render(
+      <PresentationsLauncher
+        clientId="c1"
+        currentUserId="me"
+        clientLastName="Sample"
+        householdId="hh-test"
+        scenarios={[]}
+        snapshots={[]}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
+        brand={{ picker, defaultValue: "user_bob" }}
+      />,
+    );
+    const select = screen.getByLabelText("Brand") as HTMLSelectElement;
+    expect(select.value).toBe("user_bob");
+    fireEvent.change(select, { target: { value: "firm" } });
+    expect(select.value).toBe("firm");
+    expect(Array.from(select.options).some((o) => o.value === "user_bob")).toBe(true);
+  });
 });

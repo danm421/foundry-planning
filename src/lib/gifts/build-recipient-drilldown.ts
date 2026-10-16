@@ -111,8 +111,8 @@ function describeCanonical(
     const ent = input.entitiesById.get(cg.recipientEntityId);
     return `CLT ${ent?.name ?? "remainder"} – remainder interest`;
   }
-  // Non-premium giftEvents are the asset / business-interest transfers (cash
-  // series carry sourcePolicyAccountId only when synthesized from a policy).
+  if (cg.seriesId != null) return "Annual gift";
+  // The other giftEvents are the asset / business-interest transfers.
   if (cg.source === "event") return "Asset gift";
   return "Gift";
 }

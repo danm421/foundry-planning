@@ -102,4 +102,13 @@ describe("accrueLockedEntityShare", () => {
     });
     expect(r.lockedEoY).toBe(0);
   });
+
+  it("an entity share bears its percent of margin interest", () => {
+    const out = accrueLockedEntityShare({
+      carriedBoY: undefined, percent: 0.3,
+      ledger: { beginningValue: 8_000_000, growth: 700_000, marginInterest: 40_000, endingValue: 8_660_000 },
+    });
+    expect(out.lockedGrowth).toBeCloseTo(198_000, 2);
+    expect(out.lockedEoY).toBeCloseTo(2_400_000 + 198_000, 2);
+  });
 });

@@ -22,6 +22,7 @@ import type {
   IrmaaTier,
   RothConversion,
   GoalYear,
+  MarginSale,
 } from "./types";
 import {
   computeMedicareYear,
@@ -40,6 +41,7 @@ import {
 import { computeBusinessYearFlow } from "./business/year-flow";
 import { buildGiftValueAtYear } from "./business/business-tree";
 import { accrueLockedEntityShare } from "./locked-shares";
+import { type MarginMap, type MarginShareMap, netSeedValue, seedMarginLoan, grossValue, grossBalancesFor, chargeMarginInterest, marginCallWarnings, marginBorrowSourcesFor, borrowOnMargin, marginCallSaleAmount, sellSecuritiesToRepayLoan, loansOfSharedAccounts, settleSharesAfterRepayments, settleShareAfterRepayment, DEFAULT_MARGIN_CALL_PCT } from "./margin";
 import { buildOwnershipSnapshot } from "./ownership-snapshot";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
@@ -79,6 +81,7 @@ import {
   deriveItemizedFromExpenses,
   deriveMortgageInterestFromLiabilities,
   deriveStudentLoanInterest,
+  deriveInvestmentInterest,
   derivePropertyTaxFromAccounts,
   sumItemizedFromEntries,
   aggregateDeductions,
@@ -855,7 +858,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   const accountBalances: Record<string, number> = {};
   for (const acct of data.accounts) {
     if (isPreActivation(acct, planSettings.planStartYear)) continue;
-    accountBalances[acct.id] = acct.value;
+    accountBalances[acct.id] = netSeedValue(acct);
   }
 
   // Per-contract annuity state, threaded across years alongside accountBalances.
@@ -932,6 +935,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     if (isPreActivation(acct, planSettings.planStartYear)) continue;
     basisMap[acct.id] = acct.basis;
   }
+
+  // Live margin loan per account (spec 2026-10-13). Carries across years like
+  // basisMap; NEVER cleared per year (unlike freshBasisMap).
+  const marginMap: MarginMap = {};
+  for (const acct of data.accounts) {
+    if (isPreActivation(acct, planSettings.planStartYear)) continue;
+    seedMarginLoan(marginMap, acct);
+  }
+  // Personal-use share of each loan (spec 2026-10-14). Starts empty — a
+  // plan-start loan is investment debt, as in Phase 1 — and gains an entry
+  // only when the plan borrows for spending.
+  const marginPersonalShare: MarginShareMap = {};
 
   // Per-year, per-account unspent basisIncrease pool. Reset at top of each
   // projection year; drained as taxable-account withdrawals/transfers consume
@@ -1158,6 +1173,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     shortTerm: Math.max(0, planSettings.capitalLossCarryforwardShortTerm ?? 0),
     longTerm: Math.max(0, planSettings.capitalLossCarryforwardLongTerm ?? 0),
   };
+  // Form 4952 investment-interest carryforward (margin loans). Same rule as
+  // the two carryforwards above: read freely, advanced exactly ONCE per year
+  // at the single commit point below — never inside the convergence loop.
+  let investmentInterestCarryforward = 0;
 
   // Cap-gains realized by step 12c (entity gap-fill) liquidations of trust-owned
   // taxable accounts. Tax on the gain is recognized in the FOLLOWING year — at
@@ -1275,9 +1294,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const acct of data.accounts) {
       if (acct.activationYear === year && !workingAccounts.some((w) => w.id === acct.id)) {
         workingAccounts.push(acct);
-        accountBalances[acct.id] = acct.value;
+        accountBalances[acct.id] = netSeedValue(acct);
         basisMap[acct.id] = acct.basis;
         rothValueMap[acct.id] = acct.rothValue ?? 0;
+        seedMarginLoan(marginMap, acct);
         // A joining annuity needs its contract state seeded HERE, not lazily in
         // the contract step below: transfers and draws run first and consume
         // §72 basis, and without an entry to write into, that consumption is
@@ -1451,6 +1471,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // stamp). Non-cash accounts keep their tracked cost basis.
         basisBoY: acct.category === "cash" ? beginningValue : (basisMap[acct.id] ?? acct.basis),
         rothValueBoY: rothValueMap[acct.id] ?? acct.rothValue ?? 0,
+        ...(marginMap[acct.id] != null ? { marginBoY: marginMap[acct.id] } : {}),
       };
     }
 
@@ -1479,6 +1500,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // after a death partition it is the rebuilt family pool, which its
     // `data.accounts` original no longer describes.
     const boyAccountById = new Map(workingAccounts.map((a) => [a.id, a]));
+
+    // R2 (spec 2026-10-14): a sale that repays part of a loan repays its
+    // personal-use part first. Snapshot the loans of accounts with a share now,
+    // settle them after the business and asset sales below.
+    const loansBeforeSales = loansOfSharedAccounts(marginMap, marginPersonalShare);
 
     // ── BoY: Business Sales ─────────────────────────────────────────────────
     // Selling a business cascades to liquidate every child account and
@@ -1514,6 +1540,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           accountLedgers,
           year,
           defaultCheckingId: defaultChecking?.id ?? "",
+          marginMap,
           // An irrevocable trust's slice deposits into that trust's own
           // checking, not the household's.
           entityCheckingByEntityId,
@@ -1571,6 +1598,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             firstDeathYear,
             year,
           ),
+          marginMap,
           // Entity-owned asset sales with no explicit proceeds destination route
           // to the owning entity's own checking, not the household default.
           entityCheckingByEntityId,
@@ -1587,6 +1615,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
       }
     }
+    settleSharesAfterRepayments(marginPersonalShare, loansBeforeSales, marginMap);
 
     // ── BoY: Asset Purchases ─────────────────────────────────────────────────
     // Purchases happen on the first day of the year: equity leaves the funding
@@ -1603,6 +1632,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           liabilities: currentLiabilities,
           accountBalances,
           basisMap,
+          marginMap,
           accountLedgers,
           year,
           planStartYear: planSettings.planStartYear,
@@ -1987,6 +2017,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         accounts: workingAccounts,
         accountBalances,
         basisMap,
+        marginMap,
         accountLedgers,
         year,
       });
@@ -2056,6 +2087,25 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       grantorTrustIncomeByEntity.set(gt.entityId, { ordinary: 0, dividends: 0, taxExempt: 0, recognizedCapGains: 0 });
     }
 
+    // Household + grantor-trust share of an account this year (CRT shares are
+    // §664(c)-exempt). Shared by realization routing and the Form 4952 pass.
+    // `yearOwners` is a parameter only so the realization block, which needs
+    // the owner list anyway, doesn't compose it twice.
+    const householdLikeShareOf = (
+      acct: Account,
+      yearOwners: AccountOwner[] = ownersForYear(acct, data.giftEvents, year, planSettings.planStartYear),
+    ): number => {
+      // Family first, then grantor entities, summed separately — the same
+      // addition order the realization block always used.
+      let householdShare = 0;
+      let grantorShare = 0;
+      for (const o of yearOwners) {
+        if (o.kind === "family_member") householdShare += o.percent;
+        else if (o.kind === "entity" && !isTaxExemptTrust(o.entityId) && effectiveIsGrantor(o.entityId, year)) grantorShare += o.percent;
+      }
+      return householdShare + grantorShare;
+    };
+
     for (const acct of workingAccounts) {
       const currentBalance = accountBalances[acct.id] ?? 0;
       if (scheduleOverriddenAccounts.has(acct.id)) continue;
@@ -2064,7 +2114,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         overriddenRate != null && Number.isFinite(overriddenRate)
           ? overriddenRate
           : acct.growthRate;
-      const growth = currentBalance * effectiveGrowthRate;
+      // Margin: the whole securities position grows, not just the net.
+      const growthBase = grossValue(currentBalance, marginMap, acct.id);
+      const growth = growthBase * effectiveGrowthRate;
 
       // Defensive: ensure a ledger exists (applyAssetPurchases initializes one
       // for new accounts; this covers any edge case where it didn't).
@@ -2081,6 +2133,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           endingValue: currentBalance,
           entries: [],
           basisBoY: basisMap[acct.id] ?? acct.basis,
+          ...(marginMap[acct.id] != null ? { marginBoY: marginMap[acct.id] } : {}),
         };
       }
 
@@ -2128,17 +2181,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           // entries for the trust-tax pass to consume. Grantor-entity portions also
           // populate grantorTrustIncomeByEntity for pct_income distribution.
           const yearOwners = ownersForYear(acct, data.giftEvents, year, planSettings.planStartYear);
-          const householdShare = yearOwners
-            .filter((o) => o.kind === "family_member")
-            .reduce((s, o) => s + o.percent, 0);
-          let grantorShare = 0;
-          for (const owner of yearOwners) {
-            if (owner.kind !== "entity") continue;
-            // §664(c): CRT shares are exempt — excluded from householdLikeShare. (F1)
-            if (isTaxExemptTrust(owner.entityId)) continue;
-            if (effectiveIsGrantor(owner.entityId, year)) grantorShare += owner.percent;
-          }
-          const householdLikeShare = householdShare + grantorShare;
+          // §664(c): CRT shares are exempt — excluded from householdLikeShare. (F1)
+          const householdLikeShare = householdLikeShareOf(acct, yearOwners);
 
           if (householdLikeShare > 0) {
             const oiHH = oi * householdLikeShare;
@@ -2208,7 +2252,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       accountLedgers[acct.id].endingValue += growth;
       accountLedgers[acct.id].entries.push({
         category: "growth",
-        label: `Growth (${(effectiveGrowthRate * 100).toFixed(2)}%)`,
+        label: `Growth (${(effectiveGrowthRate * 100).toFixed(2)}%${(marginMap[acct.id] ?? 0) > 0 ? " on securities incl. margin loan" : ""})`,
         amount: growth,
         basis: growthBasisDelta,
       });
@@ -2224,6 +2268,30 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (rothBefore > 0) {
         rothValueMap[acct.id] = rothBefore + rothBefore * effectiveGrowthRate;
       }
+    }
+
+    // ── Margin interest (spec 2026-10-13) ──────────────────────────────────
+    // Its own loop: the growth loop `continue`s on 0% growth and on scheduled
+    // accounts, and interest is owed regardless.
+    // Household-like share of each account's interest, for Form 4952 below.
+    // An entity co-owner bears its own share (plan R6); only the household +
+    // grantor-trust share lands on the household return.
+    const marginInterestHouseholdByAccount: Record<string, { label: string; amount: number }> = {};
+    // Display only (spec 2026-10-14): personal interest, never deducted.
+    const personalMarginInterestByAccount: Record<string, { label: string; amount: number }> = {};
+    for (const acct of workingAccounts) {
+      const share = marginPersonalShare[acct.id] ?? 0;
+      const interest = chargeMarginInterest(acct, accountBalances, marginMap, accountLedgers[acct.id], share);
+      if (interest <= 0) continue;
+      // §1.163-8T: interest on money borrowed for spending is personal. Only
+      // the investment-use part reaches Form 4952; share 0 ⇒ Phase 1's math.
+      const personal = interest * share;
+      const hhShare = householdLikeShareOf(acct);
+      if (personal > 0 && hhShare > 0) {
+        personalMarginInterestByAccount[acct.id] = { label: acct.name, amount: personal * hhShare };
+      }
+      const hh = (interest - personal) * hhShare;
+      if (hh > 0) marginInterestHouseholdByAccount[acct.id] = { label: acct.name, amount: hh };
     }
 
     // stock_options base accounts hold only not-yet-acquired value (the equity
@@ -2250,7 +2318,31 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Write down market-exposed balances AFTER growth so the reduced balance
     // feeds RMDs/withdrawals/taxes this year and compounds forward off the
     // lower base (in deterministic and every MC trial alike).
-    applyMarketShock(accountBalances, workingAccounts, year, planSettings.marketShock, accountLedgers, rothValueMap);
+    applyMarketShock(accountBalances, workingAccounts, year, planSettings.marketShock, accountLedgers, rothValueMap, marginMap);
+
+    // ── Margin calls and repay years (spec 2026-10-14) ─────────────────────
+    // After the market move, before transfers: the sale's gain joins this
+    // year's tax (entityRoutableSales below). Every margined account, whether
+    // or not it borrows. In its repay year an account skips the call check —
+    // clearing the whole loan does more.
+    const marginSales: MarginSale[] = [];
+    for (const acct of workingAccounts) {
+      const loan = marginMap[acct.id] ?? 0;
+      if (loan <= 0) continue;
+      const repay = acct.marginRepayYear === year;
+      const amount = repay
+        ? loan
+        : marginCallSaleAmount(accountBalances[acct.id] ?? 0, loan, acct.marginCallPct ?? DEFAULT_MARGIN_CALL_PCT);
+      if (amount <= 0) continue;
+      const sale = sellSecuritiesToRepayLoan({
+        acct, reason: repay ? "repay" : "call", amount, accountBalances, basisMap, freshBasisMap,
+        marginMap, shareMap: marginPersonalShare, ledger: accountLedgers[acct.id],
+      });
+      if (sale) marginSales.push(sale);
+    }
+    // Folded into `capGainsInTaxableIncome`, `taxableIncome` and `taxDetail`
+    // like every other sale gain (final review C1).
+    const marginSaleGainTotal = marginSales.reduce((t, s) => t + s.gain, 0);
 
     // ── Apply Transfers ─────────────────────────────────────────────────────
     let transferResult: TransfersResult = {
@@ -2272,6 +2364,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         accounts: workingAccounts,
         accountBalances,
         basisMap,
+        marginMap,
         freshBasisMap,
         rothValueMap,
         annuityBasisMap,
@@ -2698,6 +2791,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         transferResult.capitalGains +
         reinvestmentResult.capitalGains +
         saleResult.capitalGains +
+        marginSaleGainTotal +
         businessSaleResult.capitalGains +
         equityCapitalGains +
         taxAdj.capitalGainsLt,
@@ -2725,6 +2819,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       reinvestmentResult.capitalGains +
       rothConversionResult.taxableOrdinaryIncome +
       saleResult.capitalGains +
+      marginSaleGainTotal +
       businessSaleResult.capitalGains +
       equityOrdinaryIncome +
       equityCapitalGains +
@@ -3205,7 +3300,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     type EntityRoutableSale = {
       transactionId: string;
       /** `bySource` drill-down prefix — the two spellings stay distinguishable. */
-      kind: "sale" | "business_sale";
+      kind: "sale" | "business_sale" | "margin_sale";
       /** Post-§121 / post-§165(c) — the figure the household ADD booked. */
       taxableGain: number;
       /** Raw signed gain, before those adjustments. */
@@ -3232,6 +3327,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         taxableGain: i.totalCapitalGain,
         rawGain: i.totalCapitalGain,
         owners: ownersOfSource(i.businessAccountId),
+      })),
+      ...marginSales.map((s) => ({
+        transactionId: `${s.reason}:${s.accountId}`,
+        kind: "margin_sale" as const,
+        taxableGain: s.gain,
+        rawGain: s.gain,
+        owners: ownersOfSource(s.accountId),
       })),
     ];
 
@@ -3303,6 +3405,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       reinvestmentResult.capitalGains +
       saleResult.capitalGains +
       businessSaleResult.capitalGains +
+      marginSaleGainTotal +
       householdCarryInCapGains;
     // §664(c) is symmetric: the CRT's share of this year's sale results — gain OR
     // loss — belongs to the tax-exempt trust, never the household 1040. Gating on
@@ -3974,6 +4077,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
       return terminationBalanceSnapshot[id] ?? 0;
     };
+    // R9: a terminating trust repays its share of a margined account's loan.
+    // Shares are of the PRE-termination loan, like the drains: multiplying the
+    // live loan would compound across trusts that co-own one account.
+    const terminationLoanSnapshot: MarginMap = { ...marginMap };
+    const repayTerminatedLoanShare = (id: string, trustShare: number) => {
+      const repaid = (terminationLoanSnapshot[id] ?? 0) * trustShare;
+      if (repaid <= 0) return;
+      const before = marginMap[id] ?? 0;
+      marginMap[id] = Math.max(0, before - repaid);
+      settleShareAfterRepayment(marginPersonalShare, id, before, marginMap[id]);
+    };
     const yearTrustTerminations: TrustTerminationResult[] = [];
     for (const trust of currentEntities) {
       if (trust.trustSubType !== "clt" || !trust.splitInterest) continue;
@@ -4024,6 +4138,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           label: `CLT termination distribution`,
           sourceId: trust.id,
         });
+        repayTerminatedLoanShare(acct.id, trustShare);
       }
     }
 
@@ -4082,6 +4197,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           label: `CRT termination distribution to charity`,
           sourceId: trust.id,
         });
+        repayTerminatedLoanShare(acct.id, trustShare);
       }
     }
 
@@ -4377,6 +4493,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let aboveLineDeductions = 0;
     let itemizedDeductions = 0;
     let deductionBreakdownResult: DeductionBreakdown | undefined;
+    // Set by the bracket block below; flat mode models no itemized deductions,
+    // so there the carryforward simply does not move (plan R5).
+    let investmentInterestCarryforwardOut = investmentInterestCarryforward;
     /** The year's MAGIs + IRC 219(g) coverage flags, resolved in the bracket
      *  block below and consumed by the household assembly after it.
      *
@@ -4640,6 +4759,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         ),
       };
 
+      // Form 4952 — margin interest, capped at net investment income; the
+      // excess carries to next year. The carry is only STAGED here and
+      // committed once, after the convergence loop.
+      const investmentInterestContribution = deriveInvestmentInterest({
+        interestByAccount: marginInterestHouseholdByAccount,
+        carryforwardIn: investmentInterestCarryforward,
+        // R4: interest + non-qualified dividends from growth, plus every
+        // short-term gain on the return (pre capital-loss netting).
+        netInvestmentIncome: realizationOI + taxDetail.stCapitalGains,
+      });
+      investmentInterestCarryforwardOut = investmentInterestContribution.carryforwardOut;
+
       const contributions = [
         savingsContribution,
         taggedExpenseContribution,
@@ -4692,6 +4823,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // APPEND-ONLY: `contributions` is read positionally below ([0], [1],
         // [3], [4], [5]). New sources go on the end so no existing index moves.
         studentLoanInterestContribution,
+        investmentInterestContribution,
       ];
       // Estimate state income tax for SALT pool before aggregation.
       // Student-loan interest is deliberately left OUT of preAGI. preAGI feeds
@@ -4747,11 +4879,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
 
       const interestPaid = contributions[3].itemized;
+      const investmentInterest = investmentInterestContribution.itemized;
       const rawPropertyTax = contributions[2].saltPool + contributions[4].saltPool + contributions[5].saltPool;
       // estStateTax already computed above for aggregateDeductions
       const rawSalt = rawPropertyTax + estStateTax;
       const taxesPaid = Math.min(rawSalt, saltCap(year));
-      const itemizedTotal = charitable + taxesPaid + interestPaid + otherItemized;
+      const itemizedTotal = charitable + taxesPaid + interestPaid + otherItemized + investmentInterest;
 
       const aboveLineBySource: Record<string, { label: string; amount: number }> = {};
       for (const rule of data.savingsRules) {
@@ -4764,6 +4897,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (controllingEntity(acct) != null && !effectiveIsGrantor(controllingEntity(acct)!, year)) continue;
         aboveLineBySource[rule.id] = { label: acct.name, amount: rule.annualAmount * ruleGate.factor };
       }
+
+      Object.assign(belowLineBySource, investmentInterestContribution.bySource);
 
       const stdDed = resolved!.params.stdDeduction[filingStatus];
       deductionBreakdownResult = {
@@ -4781,11 +4916,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           stateIncomeTax: estStateTax,
           propertyTaxes: rawPropertyTax,
           interestPaid,
+          investmentInterest,
           otherItemized,
           itemizedTotal,
           standardDeduction: stdDed,
           taxDeductions: Math.max(itemizedTotal, stdDed),
           bySource: belowLineBySource,
+          ...(Object.keys(personalMarginInterestByAccount).length > 0
+            ? { personalMarginInterest: personalMarginInterestByAccount }
+            : {}),
         },
       };
     }
@@ -5139,6 +5278,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           ledger: {
             beginningValue: wLedger?.beginningValue ?? balance,
             growth: wLedger?.growth ?? 0,
+            marginInterest: wLedger?.marginInterest,
             endingValue: balance,
           },
           percent: o.percent,
@@ -6459,6 +6599,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               account: acct,
               amount,
               balance: accountBalances[id] ?? 0,
+              grossBalance: grossValue(accountBalances[id] ?? 0, marginMap, id),
               basisMap,
               rothValueMap,
               // Same live-basis read as the supplemental waterfall: an annuity
@@ -6954,7 +7095,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // for tax).
     // Seeded with this year's household-owned goal draws (goal-funding pass), so
     // the Cash Flow report shows them as withdrawals from the accounts that paid.
-    const withdrawals = {
+    const withdrawals: ProjectionYear["withdrawals"] = {
       byAccount: { ...goalHouseholdDrawByAccount } as Record<string, number>,
       total: goalHouseholdDrawTotal,
     };
@@ -7188,6 +7329,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // figure. Monotone and 1-Lipschitz in its argument, so the convergence loop
     // below keeps its contraction property.
     const taxToFund = (tax: number) => tax - taxAlreadyPaidAgainst(tax);
+    // Margined accounts' securities values for the draw gain ratios. Built once:
+    // neither convergence loop below moves a balance or a loan.
+    const grossBalances = grossBalancesFor(accountBalances, marginMap);
+    // Margin borrowing sources (spec 2026-10-14) — household-checking path
+    // only. Built once, like grossBalances: the loops below plan on copies.
+    const marginBorrowSources = hasChecking
+      ? marginBorrowSourcesFor({
+          accounts: workingAccounts, year, accountBalances, marginMap,
+          householdShareOf: (a) => ownedByHouseholdAtYear(a, data.giftEvents, year, planSettings.planStartYear),
+        })
+      : [];
 
     if (hasChecking) {
       let checkingAfterTax = preSupplementalChecking - taxToFund(taxOutForIter.taxes);
@@ -7274,6 +7426,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           shortfall: cumulativeShortfall,
           strategy: effectiveWithdrawalStrategy,
           householdBalances: reservedBalances,
+          grossBalances,
           basisMap,
           freshBasisMap,
           rothValueMap,
@@ -7284,6 +7437,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           ages: { client: ages.client, spouse: ages.spouse ?? null },
           isSpouseAccount,
           year,
+          marginBorrowSources,
         });
 
         // Step (a): NOW size each deferred conversion against the
@@ -7467,6 +7621,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             shortfall: target,
             strategy: effectiveWithdrawalStrategy,
             householdBalances: householdWithdrawBalances,
+            grossBalances,
             basisMap,
             freshBasisMap,
             rothValueMap,
@@ -7682,6 +7837,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // The ONLY write-back of the capital-loss carryforward. Must stay here,
     // outside the iterative supplemental-withdrawal solve above.
     capitalLossCarryforward = taxOutForIter.capitalLossCarryforwardOut;
+    // Likewise the ONLY write-back of the Form 4952 carryforward.
+    investmentInterestCarryforward = investmentInterestCarryforwardOut;
     deductionBreakdownResult = taxOutForIter.deductionBreakdown ?? undefined;
     const supplementalEarlyPenalty = supplementalPlan.recognizedIncome.earlyWithdrawalPenalty;
 
@@ -7835,6 +7992,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Apply converged supplemental + taxes to balances and ledgers.
     if (hasChecking) {
       const checkingId = defaultChecking!.id;
+      // The planner sums its margin borrows per account (spec 2026-10-14);
+      // the loop below applies them.
+      if (supplementalPlan.borrowedByAccount) withdrawals.borrowedByAccount = supplementalPlan.borrowedByAccount;
 
       // Supplemental draws are attributed to the source account in Portfolio
       // Activity (not flagged internal) so the user sees which account funded
@@ -7844,6 +8004,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // through cash, not a real cash outflow.
       for (const draw of supplementalPlan.draws) {
         if (draw.amount <= 0) continue;
+        // A margin borrow (spec 2026-10-14): the loan grows; the securities and
+        // basis stay put. Still a withdrawal from the account's NET value, so
+        // every cash-flow total ties out; the checking credit below is shared
+        // with the year's sales.
+        if (draw.borrowed) {
+          borrowOnMargin({
+            accountId: draw.accountId, amount: draw.amount, accountBalances, marginMap,
+            shareMap: marginPersonalShare, ledger: accountLedgers[draw.accountId], checkingId,
+          });
+          withdrawals.byAccount[draw.accountId] = (withdrawals.byAccount[draw.accountId] ?? 0) + draw.amount;
+          withdrawals.total += draw.amount;
+          continue;
+        }
         const preBalance = accountBalances[draw.accountId] ?? 0;
         accountBalances[draw.accountId] -= draw.amount;
         withdrawals.byAccount[draw.accountId] =
@@ -8173,7 +8346,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const acct = liquidatableAcctById.get(acctId);
         const liqTaxable = acct?.category === "taxable" && preBalance > 0;
         const liqBasisBefore = basisMap[acctId] ?? preBalance;
-        const liqFraction = preBalance > 0 ? Math.min(1, amount / preBalance) : 0;
+        const liqGross = grossValue(preBalance, marginMap, acctId);
+        const liqFraction = preBalance > 0 ? Math.min(1, amount / liqGross) : 0;
         const sourceBasisDelta = liqTaxable ? -liqBasisBefore * liqFraction : 0;
 
         // Symmetric to the supplemental-draw block above: entity gap-fill draws
@@ -8205,7 +8379,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
 
         // Cap-gains realization wiring for taxable liquidations. Compute the
-        // pro-rata gain against the pre-liquidation balance, reduce basis by
+        // pro-rata gain against the pre-liquidation securities value (net
+        // balance + any margin loan — `liqFraction` above), reduce basis by
         // the same fraction, and stash the gain for NEXT year's trust-tax pass
         // (deferred — trust marginal rate isn't available at gap-fill time).
         // Routing (1041-pass members → trust 1041; everyone else → household
@@ -8744,11 +8919,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const acc = accrueLockedEntityShare({
           carriedBoY: carried,
           carriedPercent: lockedEntityPercentCarry.get(o.entityId)?.get(acct.id),
-          ledger: {
-            beginningValue: ledger.beginningValue,
-            growth: ledger.growth,
-            endingValue: ledger.endingValue,
-          },
+          ledger,
           percent: o.percent,
         });
         if (!lockedEntityShareCarry.has(o.entityId)) {
@@ -8827,6 +8998,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
             entityAccountSharesEoY: lockedEntityShareCarry,
             familyAccountSharesEoY: lockedFamilyShareCarry,
+            marginMap,
           })
         : computeHypotheticalEstateTax({
             year,
@@ -8848,6 +9020,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             annualExclusionsByYear,
             entityAccountSharesEoY: lockedEntityShareCarry,
             familyAccountSharesEoY: lockedFamilyShareCarry,
+            marginMap,
           });
 
     // Stamp end-of-year basis onto each ledger now that all sales, growth
@@ -8862,6 +9035,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           ? accountLedgers[acctId].endingValue
           : (basisMap[acctId] ?? 0);
       accountLedgers[acctId].rothValueEoY = rothValueMap[acctId] ?? 0;
+      if (marginMap[acctId] != null) accountLedgers[acctId].marginEoY = marginMap[acctId];
+      // A sale that paid the loan off removed it from the map (R8): end at $0.
+      else if (accountLedgers[acctId].marginBoY != null) accountLedgers[acctId].marginEoY = 0;
     }
 
     // Surface per-grantor-entity realized asset-sale cap gains so
@@ -9059,6 +9235,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 saleValue: s.saleValue,
                 transactionCosts: s.transactionCosts,
                 mortgagePaidOff: s.mortgagePaidOff,
+                ...(s.marginRepaid ? { marginRepaid: s.marginRepaid } : {}),
                 netProceeds: s.netProceeds,
                 capitalGain: s.capitalGain,
               })),
@@ -9107,6 +9284,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             })(),
           }
         : {}),
+      ...(() => {
+        const w = marginCallWarnings(workingAccounts, accountBalances, marginMap);
+        return w.length > 0 ? { marginCallWarnings: w } : {};
+      })(),
+      ...(marginSales.length > 0 ? { marginSales } : {}),
     });
 
     // Death event (spec 4b) — fires exactly once at the first death year.
@@ -9144,6 +9326,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
         entityAccountSharesEoY: lockedEntityShareCarry,
         familyAccountSharesEoY: lockedFamilyShareCarry,
+        marginMap,
+        marginPersonalShare,
         // Survivor birth year + LE so first-death can extend a continued
         // deferred income to the survivor's death year. Mirrors
         // computeFirstDeathYear's arithmetic (spouseLifeExpectancy ?? 95).
@@ -9163,6 +9347,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         shortTerm: capitalLossCarryforward.shortTerm / 2,
         longTerm: capitalLossCarryforward.longTerm / 2,
       };
+      // Same rule for disallowed investment interest (plan R2).
+      investmentInterestCarryforward *= 0.5;
 
       // Death-event creates synthetic accounts/liabilities mid-projection with
       // legacy ownership fields populated but `owners[]` empty. Normalize so
@@ -9182,6 +9368,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       Object.assign(accountBalances, deathResult.accountBalances);
       for (const key of Object.keys(basisMap)) delete (basisMap as Record<string, number>)[key];
       Object.assign(basisMap, deathResult.basisMap);
+      for (const key of Object.keys(marginMap)) delete marginMap[key];
+      Object.assign(marginMap, deathResult.marginMap);
+      for (const key of Object.keys(marginPersonalShare)) delete marginPersonalShare[key];
+      Object.assign(marginPersonalShare, deathResult.marginPersonalShare);
       currentIncomes = deathResult.incomes;
       currentLiabilities = deathResult.liabilities.map(normalizeOwners);
       // The death's liability partition cut these rows out of a gifted debt: a
@@ -9297,6 +9487,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
         entityAccountSharesEoY: lockedEntityShareCarry,
         familyAccountSharesEoY: lockedFamilyShareCarry,
+        marginMap,
+        marginPersonalShare,
       });
 
       // Rev. Rul. 74-175 with no survivor: the whole carryover expires. The
@@ -9304,6 +9496,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // — kept for the same reason as the entity-map sync a few lines down:
       // post-death state stays honest for any future post-loop read.
       capitalLossCarryforward = { shortTerm: 0, longTerm: 0 };
+      investmentInterestCarryforward = 0; // plan R2
 
       // Same normalization as first-death — keeps fractional reads consistent
       // for the truncated final-year processing below.
@@ -9312,6 +9505,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       Object.assign(accountBalances, finalResult.accountBalances);
       for (const key of Object.keys(basisMap)) delete (basisMap as Record<string, number>)[key];
       Object.assign(basisMap, finalResult.basisMap);
+      for (const key of Object.keys(marginMap)) delete marginMap[key];
+      Object.assign(marginMap, finalResult.marginMap);
+      for (const key of Object.keys(marginPersonalShare)) delete marginPersonalShare[key];
+      Object.assign(marginPersonalShare, finalResult.marginPersonalShare);
       currentIncomes = finalResult.incomes;
       currentLiabilities = finalResult.liabilities.map(normalizeOwners);
       // Adopt grantor-succession entity flips at final death. The loop breaks
@@ -9663,9 +9860,11 @@ function computeTodayHypotheticalEstateTax(
 
   const accountBalances: Record<string, number> = {};
   const basisMap: Record<string, number> = {};
+  const marginMap: MarginMap = {};
   for (const acct of todayAccounts) {
-    accountBalances[acct.id] = acct.value;
+    accountBalances[acct.id] = netSeedValue(acct);
     basisMap[acct.id] = acct.basis;
+    seedMarginLoan(marginMap, acct);
   }
 
   // Match the runProjection liability-init: each balance is the schedule's
@@ -9705,6 +9904,7 @@ function computeTodayHypotheticalEstateTax(
     gifts: data.gifts ?? [],
     giftEvents: data.giftEvents,
     annualExclusionsByYear: buildAnnualExclusionsMap(data.taxYearRows ?? [], data.planSettings),
+    marginMap,
   });
 }
 

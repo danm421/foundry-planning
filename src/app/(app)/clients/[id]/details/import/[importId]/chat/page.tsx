@@ -9,6 +9,7 @@ import { ChatSurface } from "@/components/statement-chat/chat-surface";
 import type { RowsByEntity } from "@/lib/entity-extraction/types";
 import { loadChatReviewContext } from "@/lib/statement-chat/review-context";
 import { requireClientPageAccess } from "@/lib/clients/page-access";
+import { listClientIntakeUploads } from "@/lib/imports/intake-documents";
 
 interface PageProps {
   params: Promise<{ id: string; importId: string }>;
@@ -80,16 +81,19 @@ export default async function StatementChatPage({ params, searchParams }: PagePr
     ((imp.payloadJson ?? {}) as { chat?: { entityRows?: RowsByEntity } }).chat?.entityRows ?? {}
   ) as RowsByEntity;
 
-  const files = await db
-    .select()
-    .from(clientImportFiles)
-    .where(
-      and(
-        eq(clientImportFiles.importId, importId),
-        isNull(clientImportFiles.deletedAt),
-      ),
-    )
-    .orderBy(asc(clientImportFiles.uploadedAt));
+  const [files, clientUploads] = await Promise.all([
+    db
+      .select()
+      .from(clientImportFiles)
+      .where(
+        and(
+          eq(clientImportFiles.importId, importId),
+          isNull(clientImportFiles.deletedAt),
+        ),
+      )
+      .orderBy(asc(clientImportFiles.uploadedAt)),
+    listClientIntakeUploads(clientId, firmId),
+  ]);
 
   return (
     <DetailsPageShell clientId={clientId} scenarioId={sp.scenario}>
@@ -114,6 +118,7 @@ export default async function StatementChatPage({ params, searchParams }: PagePr
           initialExtractHoldings={imp.extractHoldings === true}
           reviewContext={reviewContext}
           initialMapRows={storedMapRows}
+          clientUploads={clientUploads}
         />
       </div>
     </DetailsPageShell>

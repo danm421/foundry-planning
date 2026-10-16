@@ -54,6 +54,17 @@ describe("newRowLines — account", () => {
     ]);
   });
 
+  it("shows the margin borrowing switch only when it is on", () => {
+    expect(newRowLines("account", { ...brokerageRow, marginBorrowEnabled: true })).toContain(
+      "Borrow to cover spending: Yes",
+    );
+    expect(newRowLines("account", { ...brokerageRow, marginBorrowEnabled: false })).not.toContain(
+      "Borrow to cover spending: Yes",
+    );
+    expect(fieldLabel("marginBorrowStartYear")).toBe("Borrow from");
+    expect(fieldLabel("marginRepayYear")).toBe("Repay margin loan in");
+  });
+
   it("never leaks a raw column name", () => {
     for (const line of newRowLines("account", brokerageRow)) {
       expect(line).not.toMatch(/[a-z][A-Z]/); // camelCase
@@ -304,5 +315,16 @@ describe("headlineFigure", () => {
   it("reads $0 when the row carries no figure", () => {
     expect(headlineFigure("account", {})).toBe("$0");
     expect(headlineFigure("liability", { balance: null })).toBe("$0");
+  });
+});
+
+describe("margin loan fields", () => {
+  it("formats margin fields as money / rate with plain labels", () => {
+    expect(formatFieldValue("marginBalance", "2000000")).toMatch(/\$2,000,000/);
+    expect(formatFieldValue("marginInterestRate", "0.02")).toMatch(/2(\.00)?%/);
+    expect(formatFieldValue("marginCallPct", "0.3")).toMatch(/30(\.00)?%/);
+    expect(fieldLabel("marginBalance")).toBe("Margin loan balance");
+    expect(fieldLabel("marginInterestRate")).toBe("Margin interest rate");
+    expect(fieldLabel("marginCallPct")).toBe("Margin call level");
   });
 });

@@ -1,10 +1,8 @@
 import { z } from "zod";
 import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
-import { and, eq } from "drizzle-orm";
-import { db } from "@/db";
-import { clients } from "@/db/schema";
-import { resolveBranding } from "@/lib/branding/branding";
+import { brandChoiceSchema } from "@/lib/branding/brand-choice";
+import { loadHouseholdBrand } from "@/lib/branding/household-brand";
 import { resolveBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { foundryDefaultLogoDataUrl } from "@/lib/presentations/default-logo";
 import { runProjectionWithEvents } from "@/engine/projection";
@@ -15,10 +13,7 @@ import {
   type DerivedDeps,
   type DerivedRefRequest,
 } from "@/lib/presentations/derived-refs";
-import {
-  PresentationDocument,
-  type PageScenarioBundle,
-} from "@/components/presentations/document";
+import { PresentationDocument, type PageScenarioBundle, type PresentationDocumentProps } from "@/components/presentations/document";
 import {
   PRESENTATION_PAGES,
   type PresentationPageId,
@@ -48,6 +43,7 @@ import {
   MAX_DISTINCT_SCENARIOS,
   MAX_MC_SCENARIOS,
   type PlannerPage,
+  type ScenarioPlan,
 } from "@/lib/scenario/presentation-refs";
 import { loadPageScenarioBundles } from "@/lib/scenario/load-page-bundles";
 import { plannerFlagsFor } from "@/lib/presentations/export-page-sets";
@@ -84,6 +80,7 @@ export const BodySchema = z.object({
   scenarioId: z.string().nullable().default(null),
   filename: z.string().trim().min(1).max(120).optional(),
   preview: z.boolean().optional().default(false),
+  brand: brandChoiceSchema.optional(),
   pages: z.array(pageDescriptorSchema).min(1),
 });
 
@@ -151,19 +148,12 @@ export function resolveDerivedBundles(
 }
 
 /**
- * Render a presentation deck to a PDF buffer. Throws ClientNotFoundError /
- * ProjectionInputError (callers map to 404/422) or an Error with a
- * "Too many … scenarios" message (callers map to 400). No rate-limit, no
- * audit, no vault write — callers own those.
+ * The deck's scenario plan, built exactly as the render builds it. Pages that
+ * don't support an override, or whose override is undefined ("Default"),
+ * follow the top-level scenario. Exported so the Claude connector checks the
+ * caps and scenario ownership against the same plan before it queues a run.
  */
-export async function renderPresentationPdf(
-  clientId: string,
-  firmId: string,
-  body: ExportPdfBody,
-): Promise<{ buffer: Buffer; filename: string; clientLastName: string; distinctScenarioCount: number }> {
-  // Plan the distinct set of scenarios this deck needs. Pages that don't
-  // support an override, or whose override is undefined ("Default"), follow
-  // the top-level scenario.
+export function planDeckScenarios(body: ExportPdfBody): ScenarioPlan {
   const plannerPages: PlannerPage[] = body.pages.map((p) => {
     const page = PRESENTATION_PAGES[p.pageId];
     const requiredRefs = page.requiredScenarioRefs
@@ -177,19 +167,43 @@ export async function renderPresentationPdf(
       requiredRefs,
     };
   });
-  const plan = planScenarioBundles(plannerPages, body.scenarioId);
+  return planScenarioBundles(plannerPages, body.scenarioId);
+}
 
+/** The render's refusal for a deck past the fan-out caps, or null. */
+export function deckCapError(plan: ScenarioPlan): string | null {
   if (plan.distinct.size > MAX_DISTINCT_SCENARIOS) {
-    throw new Error(
-      `Too many distinct scenarios in one deck (${plan.distinct.size}). Limit is ${MAX_DISTINCT_SCENARIOS}.`,
-    );
+    return `Too many distinct scenarios in one deck (${plan.distinct.size}). Limit is ${MAX_DISTINCT_SCENARIOS}.`;
   }
   const mcCount = [...plan.distinct.values()].filter((d) => d.needsMonteCarlo).length;
   if (mcCount > MAX_MC_SCENARIOS) {
-    throw new Error(
-      `Too many scenarios with a Monte Carlo page (${mcCount}). Limit is ${MAX_MC_SCENARIOS}.`,
-    );
+    return `Too many scenarios with a Monte Carlo page (${mcCount}). Limit is ${MAX_MC_SCENARIOS}.`;
   }
+  return null;
+}
+
+export interface PreparedPresentation {
+  props: PresentationDocumentProps;
+  filename: string;
+  clientLastName: string;
+  distinctScenarioCount: number;
+}
+
+/**
+ * Everything a deck needs before react-pdf runs: the scenario plan and caps,
+ * every bundle, solve and side load, branding, and the document's props.
+ * Throws what renderPresentationPdf documents. The connector's
+ * get_report_page_data reads page data from these props without rendering.
+ */
+export async function preparePresentation(
+  clientId: string,
+  firmId: string,
+  body: ExportPdfBody,
+): Promise<PreparedPresentation> {
+  const plan = planDeckScenarios(body);
+  // The route maps this message to a 400 (`/Too many .* scenarios/`).
+  const capError = deckCapError(plan);
+  if (capError) throw new Error(capError);
 
   // Conditionally load the investments bundle — only when the deck includes
   // at least one investment page, to avoid unnecessary DB queries.
@@ -446,22 +460,11 @@ export async function renderPresentationPdf(
     );
   }
 
-  // Branding for the cover: resolved by the client's OWN advisor (an advisor
-  // override wins field-by-field over the firm's branding; no override falls
-  // through to the firm, identical to today). Resolved here — via a narrow
-  // select scoped by BOTH clientId and firmId, never clientId alone — rather
-  // than threaded through as a 4th parameter, so all five renderPresentationPdf
-  // callers stay unchanged; this function already touches the DB for
-  // client/projection data. Falls back to firm branding if the row is
-  // somehow missing — branding must never be the thing that fails an export
-  // (the ClientNotFoundError path above already owns "no such client").
-  const [clientRow] = await db
-    .select({ advisorId: clients.advisorId })
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  const branding = clientRow
-    ? await resolveBrandingForClient(firmId, clientRow.advisorId)
-    : await resolveBranding(firmId);
+  // Branding for the cover: the brand the request names (the route has already
+  // checked the caller may use it), else the household's own — a client+firm
+  // scoped lookup that falls back to the firm brand, so branding never fails an export.
+  const brand = body.brand ?? (await loadHouseholdBrand(clientId, firmId));
+  const branding = await resolveBrandingForClient(firmId, brand);
   const firmName = branding.firmName;
   const firmLogoDataUrl = branding.logoDataUrl ?? (await foundryDefaultLogoDataUrl());
 
@@ -480,10 +483,7 @@ export async function renderPresentationPdf(
     bundles,
   );
 
-  // Cast required: renderToBuffer expects ReactElement<DocumentProps> but
-  // createElement infers ReactElement<PresentationDocumentProps>. The element
-  // is valid at runtime — PresentationDocument wraps react-pdf's <Document>.
-  const doc = React.createElement(PresentationDocument, {
+  const props: PresentationDocumentProps = {
     pages: body.pages.map((p, idx) => ({
       pageId: p.pageId,
       options: p.options as unknown as Record<string, unknown>,
@@ -505,7 +505,36 @@ export async function renderPresentationPdf(
     investments,
     lifeInsurance,
     observations,
-  }) as unknown as React.ReactElement<DocumentProps>;
+  };
+
+  const filename = body.filename
+    ? body.filename
+    : `${slugify(clientLastName) || "client"}-presentation.pdf`;
+
+  return { props, filename, clientLastName, distinctScenarioCount: plan.distinct.size };
+}
+
+/**
+ * Render a presentation deck to a PDF buffer. Throws ClientNotFoundError /
+ * ProjectionInputError (callers map to 404/422) or an Error with a
+ * "Too many … scenarios" message (callers map to 400). No rate-limit, no
+ * audit, no vault write — callers own those.
+ */
+export async function renderPresentationPdf(
+  clientId: string,
+  firmId: string,
+  body: ExportPdfBody,
+): Promise<{ buffer: Buffer; filename: string; clientLastName: string; distinctScenarioCount: number }> {
+  const { props, filename, clientLastName, distinctScenarioCount } = await preparePresentation(
+    clientId,
+    firmId,
+    body,
+  );
+
+  // Cast required: renderToBuffer expects ReactElement<DocumentProps> but
+  // createElement infers ReactElement<PresentationDocumentProps>. The element
+  // is valid at runtime — PresentationDocument wraps react-pdf's <Document>.
+  const doc = React.createElement(PresentationDocument, props) as unknown as React.ReactElement<DocumentProps>;
 
   const buffer = await Promise.race<Buffer>([
     renderToBuffer(doc),
@@ -514,9 +543,5 @@ export async function renderPresentationPdf(
     ),
   ]);
 
-  const filename = body.filename
-    ? body.filename
-    : `${slugify(clientLastName) || "client"}-presentation.pdf`;
-
-  return { buffer, filename, clientLastName, distinctScenarioCount: plan.distinct.size };
+  return { buffer, filename, clientLastName, distinctScenarioCount };
 }

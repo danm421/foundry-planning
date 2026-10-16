@@ -2,6 +2,8 @@ import { z } from "zod";
 import { uuidSchema } from "./common";
 import { AddBusinessInputSchema } from "./accounts-business";
 import { YEAR_REFS } from "@/lib/milestones";
+import { validateMarginFields } from "@/lib/accounts/margin-validation";
+import { DEFAULT_MARGIN_CALL_PCT } from "@/engine/margin";
 import { accountCategoryEnum, accountSubTypeEnum } from "@/db/schema";
 
 // Local per-file enum (mirrors note-receivable.ts / gifts.ts / gift-series.ts —
@@ -98,6 +100,10 @@ const nullDefaultCreate = {
   accountNumberLast4: z.string().nullable().optional().default(null),
   activationYear: z.number().int().gte(1900).lte(2200).nullable().optional().default(null),
   activationYearRef: yearRefZodEnum.nullable().optional().default(null),
+  marginBorrowStartYear: z.number().int().gte(1900).lte(2200).nullable().optional().default(null),
+  marginBorrowStartYearRef: yearRefZodEnum.nullable().optional().default(null),
+  marginRepayYear: z.number().int().gte(1900).lte(2200).nullable().optional().default(null),
+  marginRepayYearRef: yearRefZodEnum.nullable().optional().default(null),
   inheritedDeathYear: z.number().int().nullable().optional().default(null),
   inheritedOwnerBirthYear: z.number().int().nullable().optional().default(null),
   inheritedPayoutFromYear: z.number().int().nullable().optional().default(null),
@@ -118,6 +124,10 @@ const nullDefaultUpdate = {
   accountNumberLast4: z.string().nullable().optional(),
   activationYear: z.number().int().gte(1900).lte(2200).nullable().optional(),
   activationYearRef: yearRefZodEnum.nullable().optional(),
+  marginBorrowStartYear: z.number().int().gte(1900).lte(2200).nullable().optional(),
+  marginBorrowStartYearRef: yearRefZodEnum.nullable().optional(),
+  marginRepayYear: z.number().int().gte(1900).lte(2200).nullable().optional(),
+  marginRepayYearRef: yearRefZodEnum.nullable().optional(),
   inheritedDeathYear: z.number().int().nullable().optional(),
   inheritedOwnerBirthYear: z.number().int().nullable().optional(),
   inheritedPayoutFromYear: z.number().int().nullable().optional(),
@@ -139,6 +149,10 @@ export const accountCreateSchema = z
     countsTowardAum: z.boolean().optional().default(false),
     growthSource: z.string().optional().default("default"),
     turnoverPct: z.union([z.number(), z.string()]).optional().default("0"),
+    marginBalance: decOrZeroOptional.default("0"),
+    marginInterestRate: z.union([z.number(), z.string()]).optional().default("0"),
+    marginCallPct: z.union([z.number(), z.string()]).optional().default(String(DEFAULT_MARGIN_CALL_PCT)),
+    marginBorrowEnabled: z.boolean().optional().default(false),
     annualPropertyTax: z.union([z.number(), z.string()]).optional().default("0"),
     propertyTaxGrowthRate: z.union([z.number(), z.string()]).optional().default("0.03"),
     propertyTaxGrowthSource: z.string().optional().default("custom"),
@@ -161,6 +175,19 @@ export const accountCreateSchema = z
         });
       }
     }
+    const marginError = validateMarginFields({
+      category: data.category,
+      value: data.value,
+      marginBalance: data.marginBalance,
+      marginInterestRate: data.marginInterestRate,
+      marginCallPct: data.marginCallPct,
+      marginBorrowEnabled: data.marginBorrowEnabled,
+      marginBorrowStartYear: data.marginBorrowStartYear,
+      marginRepayYear: data.marginRepayYear,
+    });
+    if (marginError) {
+      ctx.addIssue({ code: "custom", message: marginError, path: ["marginBalance"] });
+    }
   });
 
 // UPDATE: truly partial — every field optional, NO defaults injected, and NO
@@ -178,6 +205,10 @@ export const accountUpdateSchema = z.object({
   countsTowardAum: z.boolean().optional(),
   growthSource: z.string().optional(),
   turnoverPct: z.union([z.number(), z.string()]).optional(),
+  marginBalance: decOrZeroOptional,
+  marginInterestRate: z.union([z.number(), z.string()]).optional(),
+  marginCallPct: z.union([z.number(), z.string()]).optional(),
+  marginBorrowEnabled: z.boolean().optional(),
   annualPropertyTax: z.union([z.number(), z.string()]).optional(),
   propertyTaxGrowthRate: z.union([z.number(), z.string()]).optional(),
   propertyTaxGrowthSource: z.string().optional(),

@@ -5,8 +5,9 @@ import { requireActiveSubscription } from "@/lib/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
-import { detectUploadKind, MAX_UPLOAD_BYTES } from "@/lib/extraction/validate-upload";
+import { detectUploadKind } from "@/lib/extraction/validate-upload";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
+import { stagingPrefix, takeStagedUpload, StagedUploadError } from "@/lib/uploads/staged-upload";
 import { listTaxReturns, getTaxReturn, upsertExtracted } from "@/lib/tax-returns/store";
 import { adoptExtractedReturn, adoptManualReturn } from "@/lib/tax-returns/adopt-extraction";
 import { rowToSummary } from "@/lib/tax-returns/db";
@@ -131,14 +132,10 @@ export async function POST(
       return NextResponse.json({ taxYear: manualYear, status: row.status, warnings: row.warnings });
     }
 
-    const file = form.get("file");
-    if (!(file instanceof Blob)) {
-      return NextResponse.json({ error: "file is required" }, { status: 400 });
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      return NextResponse.json({ error: "File too large (25MB max)" }, { status: 400 });
-    }
-    const buffer = Buffer.from(await file.arrayBuffer());
+    // Staged browser → Blob first (`@/lib/uploads/staged-upload`).
+    const buffer = await takeStagedUpload(stagingPrefix("tax-returns", clientId), form.get("stagedPathname"));
+    const name = form.get("filename");
+    const fileName = typeof name === "string" && name !== "" ? name : "tax-return.pdf";
     const kind = detectUploadKind(buffer);
     if (kind !== "pdf" && kind !== "png" && kind !== "jpeg") {
       return NextResponse.json(
@@ -146,7 +143,6 @@ export async function POST(
         { status: 400 },
       );
     }
-    const fileName = file instanceof File ? file.name : "tax-return.pdf";
     const replace = form.get("replace") === "true";
     const model = form.get("model") === "mini" ? ("mini" as const) : ("full" as const);
 
@@ -216,6 +212,9 @@ export async function POST(
   } catch (err) {
     if (err instanceof UnauthorizedError || (err instanceof Error && err.message === "Unauthorized")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (err instanceof StagedUploadError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
     }
     console.error("POST /api/clients/[id]/tax-returns error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

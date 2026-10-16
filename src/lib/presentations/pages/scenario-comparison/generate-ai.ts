@@ -22,6 +22,7 @@
 
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { chatModel } from "@/domain/forge/llm";
+import { withAiForFirm } from "@/lib/ai/resolve";
 import { getOrComputeMaxSpending } from "@/lib/compute-cache/max-spending";
 import { loadPageScenarioBundles } from "@/lib/scenario/load-page-bundles";
 import { estateHeirTotalsEol } from "@/lib/solver/solver-summary-metrics";
@@ -81,6 +82,8 @@ export interface GeneratedBandNarrative {
 export type GenerateScenarioComparisonAiArgs = ScenarioComparisonAiInputs & {
   /** Redis cache namespace. */
   clientId: string;
+  /** The client's firm — whose terms the model call runs under (`withAiForFirm`). */
+  firmId: string;
   tone: ScenarioComparisonOptions["ai"]["tone"];
   customInstructions: string;
   /** Keyed by scenario id, as the page stores it. */
@@ -212,13 +215,15 @@ export async function generateScenarioComparisonAi(
 
   if (!narratives) {
     try {
-      const model = (await chatModel("full")).withStructuredOutput(NarrativesSchema, {
-        name: "scenario_comparison_narratives",
+      narratives = await withAiForFirm(args.firmId, async () => {
+        const model = (await chatModel("full")).withStructuredOutput(NarrativesSchema, {
+          name: "scenario_comparison_narratives",
+        });
+        return (await model.invoke([
+          new SystemMessage(system),
+          new HumanMessage(user),
+        ])) as Narratives;
       });
-      narratives = (await model.invoke([
-        new SystemMessage(system),
-        new HumanMessage(user),
-      ])) as Narratives;
     } catch (err) {
       console.error("[scenario-comparison-ai] generation failed", err);
       throw err;

@@ -42,6 +42,8 @@ export interface AssetAccountBlock {
   basisEoY: number;
   rothValueBoY?: number;
   rothValueEoY?: number;
+  marginBoY?: number;
+  marginEoY?: number;
   /** basisEoY − basisBoY − Σ(non-bookend row.basis). ~0 once all engine sites are populated. */
   basisResidual: number;
   /** Entries in the order the engine applied them, plus bookend rows prepended/appended. */

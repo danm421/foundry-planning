@@ -142,7 +142,7 @@ describe("BalanceSheetPdfButton read-only gating", () => {
   it("hides Download PDF button under permission='view'", () => {
     render(
       <ClientAccessProvider value={{ permission: "view", access: "shared" }}>
-        <BalanceSheetPdfButton clientId={CLIENT_ID} />
+        <BalanceSheetPdfButton clientId={CLIENT_ID} tab="household" asOf={{ mode: "today" }} entityFilter="all" />
       </ClientAccessProvider>,
     );
     const btn = screen.queryByRole("button", { name: /download pdf/i });
@@ -152,7 +152,7 @@ describe("BalanceSheetPdfButton read-only gating", () => {
   it("shows Download PDF button under permission='edit'", () => {
     render(
       <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
-        <BalanceSheetPdfButton clientId={CLIENT_ID} />
+        <BalanceSheetPdfButton clientId={CLIENT_ID} tab="household" asOf={{ mode: "today" }} entityFilter="all" />
       </ClientAccessProvider>,
     );
     const btn = screen.queryByRole("button", { name: /download pdf/i });

@@ -949,6 +949,28 @@ export interface Account {
    * subtypes (the engine ignores it there).
    */
   rothValue?: number;
+  /** Margin loan (taxable only; spec 2026-10-13). Plan-start debit balance —
+   *  `value` is the full securities value. The projection carries the account
+   *  at NET in `accountBalances` and the live loan in `marginMap`; inside the
+   *  death path this field holds the LIVE loan (see engine/margin.ts). */
+  marginBalance?: number;
+  /** Annual margin interest rate, capitalized onto the loan each year. */
+  marginInterestRate?: number;
+  /** Margin-call warning level: warn when net ÷ securities < this. */
+  marginCallPct?: number;
+  /** Phase 2 (spec 2026-10-14): cover household spending shortfalls by
+   *  borrowing against this account (after cash, before any sale). */
+  marginBorrowEnabled?: boolean;
+  /** First year the plan may borrow (resolved from the ref at load); null = plan start. */
+  marginBorrowStartYear?: number | null;
+  marginBorrowStartYearRef?: string | null;
+  /** Year the plan sells securities to clear the loan; null = never. Borrowing stops the year before. */
+  marginRepayYear?: number | null;
+  marginRepayYearRef?: string | null;
+  /** Projection-only, set inside the death path: the live personal-use share
+   *  of the loan, so every account minted from this one carries it
+   *  (see engine/margin.ts `withLiveMargin`). Never loaded from the DB. */
+  marginPersonalShare?: number;
   /**
    * HSA coverage tier. Present only when `subType === "hsa"`; drives the
    * contribution cap (self vs family limit). Undefined → treated as "self"
@@ -1860,6 +1882,27 @@ export interface GoalYear {
   accumulation?: boolean;
 }
 
+/** A margined account whose year-end equity fell below its margin-call level.
+ *  Lives here, not in margin.ts, because margin.ts imports this module. */
+export interface MarginCallWarning {
+  accountId: string;
+  /** Net ÷ securities at year end (0 when the account is underwater). */
+  ratio: number;
+  threshold: number;
+}
+
+/** A sale of a margined account's securities that paid its loan down (spec
+ *  2026-10-14): forced by a margin call, or the scheduled repay year. Lives
+ *  here, not in margin.ts, because margin.ts imports this module. */
+export interface MarginSale {
+  accountId: string;
+  reason: "call" | "repay";
+  /** Securities sold — equal to the loan repaid; net value is unchanged. */
+  sold: number;
+  /** Long-term gain (signed) realized by the sale, taxed this year. */
+  gain: number;
+}
+
 export interface ProjectionYear {
   year: number;
   ages: { client: number; spouse?: number };
@@ -1993,6 +2036,10 @@ export interface ProjectionYear {
   withdrawals: {
     byAccount: Record<string, number>;
     total: number;
+    /** Spec 2026-10-14: the part of `byAccount` borrowed on margin rather
+     *  than sold. Already inside `byAccount` and `total`. Present only when
+     *  the plan borrowed this year. */
+    borrowedByAccount?: Record<string, number>;
   };
 
   /** Liquidations triggered by entity gap-fill — when an entity's own
@@ -2146,6 +2193,9 @@ export interface ProjectionYear {
       saleValue: number;
       transactionCosts: number;
       mortgagePaidOff: number;
+      /** Margin loan repaid from the proceeds; present only when the sold
+       *  account carried a loan. */
+      marginRepaid?: number;
       netProceeds: number;
       capitalGain: number;
     }[];
@@ -2254,6 +2304,11 @@ export interface ProjectionYear {
   estimatedBeneficiaryTax?: number;
   /** Non-fatal warnings emitted by the trust annual pass. */
   trustWarnings?: TrustWarning[];
+  /** Margined accounts below their margin-call level at year end. The forced
+   *  sale runs at next year's call check (spec 2026-10-14). Absent when no
+   *  account breaches. */
+  marginCallWarnings?: MarginCallWarning[];
+  marginSales?: MarginSale[]; // spec 2026-10-14 — present only in a year with a forced or repay sale
   /** IRC §170(b) charitable-deduction carryforward state at end of this year. */
   charityCarryforward?: CharityCarryforward;
   /** Sum of split-interest-trust outflows to charity this year (CLT annual
@@ -2321,6 +2376,16 @@ export interface AccountLedger {
    * end of the year, after growth, contributions, withdrawals, and any
    * Roth conversions out have settled. */
   rothValueEoY?: number;
+  /** Margin interest charged this year (capitalized onto the loan). Kept OUT
+   *  of `growth`: family-cashflow distributes non-growth entries pro rata, so
+   *  adding it to growth as well would count it twice. */
+  marginInterest?: number;
+  /** Margin loan at the start / end of the year. Present only on margined accounts. */
+  marginBoY?: number;
+  marginEoY?: number;
+  /** The part of `marginInterest` charged on money borrowed for spending —
+   *  personal interest (§1.163-8T), never deducted. Present only when > 0. */
+  marginInterestPersonal?: number;
   /**
    * Itemized entries for everything that happened in this account this year,
    * in the order it was applied. Amounts are signed: positive = inflow, negative = outflow.
@@ -2363,7 +2428,11 @@ export interface AccountLedgerEntry {
     | "entity_distribution"
     | "discretionary"
     | "surplus_transfer"
-    | "surplus_retained";
+    | "surplus_retained"
+    | "margin_interest"
+    | "margin_borrow"
+    | "margin_sale"
+    | "margin_paydown";
   label: string;
   amount: number;
   sourceId?: string;
@@ -2402,11 +2471,18 @@ export interface DeductionBreakdown {
     stateIncomeTax: number;      // estimated state income tax (AGI × flat rate), pre-cap
     propertyTaxes: number;       // property taxes from all sources, pre-cap
     interestPaid: number;
+    /** Schedule A line 9 — margin interest allowed under Form 4952 (capped at
+     *  net investment income; the excess carries forward). */
+    investmentInterest: number;
     otherItemized: number;
     itemizedTotal: number;
     standardDeduction: number;
     taxDeductions: number;
     bySource: Record<string, { label: string; amount: number }>;
+    /** Display only (spec 2026-10-14): margin interest on money borrowed for
+     *  spending — personal interest, never deducted, in NO total. Keyed by
+     *  account id; household-like share. Present only when nonzero. */
+    personalMarginInterest?: Record<string, { label: string; amount: number }>;
   };
 }
 

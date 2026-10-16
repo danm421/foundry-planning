@@ -15,9 +15,10 @@ import { useVaultMutate } from "./use-vault-mutate";
 type Props = {
   householdId: string;
   folders: VaultFolder[];
+  docCounts: Record<string, number>; // folder id → documents; "root" = unfiled
   selectedFolderId: string | null;
   onSelect: (id: string | null) => void;
-  onMutated: () => void; // reloadFolders
+  onMutated: () => void;
 };
 
 type DialogState =
@@ -56,9 +57,20 @@ function KebabIcon() {
   );
 }
 
+function DocCount({ n }: { n: number | undefined }) {
+  if (!n) return null;
+  return (
+    <span className="tabular ml-auto pl-2 text-[11.5px] text-ink-3">
+      {n}
+      <span className="sr-only">{n === 1 ? " document" : " documents"}</span>
+    </span>
+  );
+}
+
 export default function FolderTreePane({
   householdId,
   folders,
+  docCounts,
   selectedFolderId,
   onSelect,
   onMutated,
@@ -144,6 +156,7 @@ export default function FolderTreePane({
             <FolderIcon width={15} height={15} className="shrink-0 text-ink-3" aria-hidden="true" />
             <span className="truncate">{node.name}</span>
             {node.isSystem && <LockIcon />}
+            <DocCount n={docCounts[node.id]} />
           </button>
           <button
             type="button"
@@ -225,12 +238,14 @@ export default function FolderTreePane({
           <button
             type="button"
             onClick={() => onSelect(null)}
-            className={`flex w-full items-center gap-2 py-1.5 pl-3 pr-2 text-[13px] ${
+            // pr-8 lines the count up with folder rows, whose count sits left of the kebab.
+            className={`flex w-full items-center gap-2 py-1.5 pl-3 pr-8 text-[13px] ${
               selectedFolderId === null ? "bg-accent-wash text-ink" : "text-ink-2 hover:bg-card-2/60"
             }`}
           >
             <FolderIcon width={15} height={15} className="shrink-0 text-ink-3" aria-hidden="true" />
             <span className="truncate font-medium">Vault root</span>
+            <DocCount n={docCounts.root} />
           </button>
         </li>
         {tree.map((node) => renderNode(node, 0))}

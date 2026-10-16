@@ -317,6 +317,29 @@ const accountFields = {
     .union([z.number(), z.string()])
     .optional()
     .describe("Roth portion of the value, if applicable (defaults to 0)"),
+  marginBalance: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("Margin loan balance in dollars — taxable accounts only; must be below value"),
+  marginInterestRate: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("Annual margin interest rate as a decimal, e.g. 0.08"),
+  marginCallPct: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("Margin call warning level as a decimal, default 0.3"),
+  marginBorrowEnabled: z
+    .boolean()
+    .optional()
+    .describe("Taxable only: cover spending shortfalls by borrowing on margin (after cash, before any sale, up to half the securities)"),
+  marginBorrowStartYear: z.number().int().nullable().optional().describe("First year the plan may borrow on margin; null = plan start"),
+  marginRepayYear: z
+    .number()
+    .int()
+    .nullable()
+    .optional()
+    .describe("Year the plan sells securities to pay the margin loan off; null = never. Must be after marginBorrowStartYear when borrowing"),
   growthRate: z
     .union([z.number(), z.string()])
     .nullable()

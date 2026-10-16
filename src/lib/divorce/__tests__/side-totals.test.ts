@@ -144,3 +144,37 @@ describe("computeSideTotals — container-owned income/expense (I3)", () => {
     expect(primary.annualIncome).toBe(0);
   });
 });
+
+describe("computeSideTotals — margin loans", () => {
+  const acct = (id: string, marginBalance: number): DivisibleObject => ({
+    kind: "account", id, label: id, subtype: "taxable",
+    value: 1_000_000, basis: 1_000_000, rothValue: 0, marginBalance, annualAmount: 0,
+    ownerSide: "primary", entityOwnedById: null, childIds: [],
+  });
+
+  it("counts a margined account at net value", () => {
+    const objs = [acct("a", 200_000)];
+    const { primary } = computeSideTotals(objs, resolveAllocations(objs, []));
+    expect(primary.netWorth).toBe(800_000);
+  });
+
+  it("splits the loan with the account", () => {
+    const objs = [acct("a", 200_000)];
+    const r = resolveAllocations(objs, [
+      { targetKind: "account", targetId: "a", disposition: "split", splitPercentToSpouse: "50" },
+    ]);
+    const { primary, spouse } = computeSideTotals(objs, r);
+    expect(primary.netWorth).toBe(400_000);
+    expect(spouse.netWorth).toBe(400_000);
+  });
+
+  it("nets each side's cent-rounded share of the loan", () => {
+    const objs = [{ ...acct("a", 2_000_000.01), value: 10_000_000 }];
+    const r = resolveAllocations(objs, [
+      { targetKind: "account", targetId: "a", disposition: "split", splitPercentToSpouse: "40" },
+    ]);
+    const { primary, spouse } = computeSideTotals(objs, r);
+    expect(spouse.netWorth).toBe(3_200_000);
+    expect(primary.netWorth).toBeCloseTo(6_000_000 - 1_200_000.01, 2);
+  });
+});

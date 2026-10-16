@@ -70,6 +70,20 @@ describe("buildRecipientDrilldown", () => {
     });
   });
 
+  it("lists each child's annual gift under that child, labelled as an annual gift", () => {
+    const annual = (fm: string): GiftEvent => ({
+      kind: "cash", year: 2028, amount: 20_000, grantor: "client",
+      useCrummeyPowers: false, recipientFamilyMemberId: fm, seriesId: `s-${fm}`,
+    });
+    const groups = buildRecipientDrilldown(
+      baseInput({ giftEvents: [annual("fm-1"), annual("fm-2")] }),
+    );
+    expect(groups.map((g) => [g.label, g.rows])).toEqual([
+      ["Caroline Sample", [expect.objectContaining({ description: "Annual gift", exclusion: 20_000, taxableGift: 0 })]],
+      ["Henry Sample", [expect.objectContaining({ description: "Annual gift", exclusion: 20_000, taxableGift: 0 })]],
+    ]);
+  });
+
   it("joint cash gift splits into two half-gifts that aggregate two AEs", () => {
     const gift: Gift = {
       id: "g1",

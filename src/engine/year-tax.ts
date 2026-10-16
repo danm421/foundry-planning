@@ -283,6 +283,9 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
         // (IRC §56(b)(1)(A)(ii)) → added back to AMTI for itemizers. The breakdown's
         // taxesPaid is already the capped total (Math.min(rawSalt, saltCap)).
         saltDeducted: deductionBreakdownOut?.belowLine.taxesPaid ?? 0,
+        // Form 8960 line 9a: allowed investment interest lowers the NIIT base
+        // (calculate.ts applies it only in an itemizing year).
+        investmentInterestDeducted: deductionBreakdownOut?.belowLine.investmentInterest ?? 0,
         household: input.household,
       }, { probeNextDollar: input.measureNextDollarRate !== false })
     : calculateTaxYearFlat({

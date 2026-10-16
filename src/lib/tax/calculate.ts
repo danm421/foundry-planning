@@ -242,10 +242,11 @@ export function calculateTaxYear(input: CalcInput, opts: CalcOptions = {}): TaxR
   // Netted figures, not the raw inputs — NIIT must not be charged on gains a
   // loss already erased. Per Reg. §1.1411-4(d) the §1211(b) deduction also
   // reduces net investment income.
+  const investmentInterestForNiit = usedStandard ? 0 : (input.investmentInterestDeducted ?? 0);
   const niitInvestmentClean = Math.max(
     0,
     dividends + capitalGains + shortCapitalGains + interestIncome
-      - capitalLossDeduction,
+      - capitalLossDeduction - investmentInterestForNiit,
   );
   const niitThreshold = fs === "married_joint" ? p.niitThreshold.mfj
                        : fs === "married_separate" ? p.niitThreshold.mfs

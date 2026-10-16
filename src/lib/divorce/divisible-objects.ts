@@ -196,6 +196,7 @@ export async function loadDivisibleObjects(
       value: Number(a.value),
       basis: Number(a.basis),
       rothValue: Number(a.rothValue),
+      ...(Number(a.marginBalance) > 0 ? { marginBalance: Number(a.marginBalance) } : {}),
       annualAmount: 0,
       ownerSide,
       entityOwnedById,
@@ -215,12 +216,14 @@ export async function loadDivisibleObjects(
     let value = Number(e.value);
     let basis = Number(e.basis);
     let rothValue = 0;
+    let marginBalance = 0;
     for (const childId of childIds) {
       const child = accountById.get(childId);
       if (child) {
         value += Number(child.value);
         basis += Number(child.basis);
         rothValue += Number(child.rothValue);
+        marginBalance += Number(child.marginBalance);
       }
     }
 
@@ -235,6 +238,7 @@ export async function loadDivisibleObjects(
       value,
       basis,
       rothValue,
+      ...(marginBalance > 0 ? { marginBalance } : {}),
       annualAmount: 0,
       ownerSide,
       entityOwnedById: null,

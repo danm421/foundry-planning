@@ -6,7 +6,6 @@ import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { BalanceSheetReportContent } from "./balance-sheet-report-content";
 import BalanceSheetReportSkeleton from "./loading-skeleton";
-import BalanceSheetPdfButton from "@/components/balance-sheet-pdf-button";
 import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 import { requireClientPageAccess } from "@/lib/clients/page-access";
 
@@ -30,14 +29,9 @@ export default async function BalanceSheetReportPage({ params, searchParams }: P
 
   return (
     <ScenarioDrawerShell clientId={id} scenarioId={sp.scenario}>
-      <div className="flex flex-col gap-4">
-        <div className="flex justify-end">
-          <BalanceSheetPdfButton clientId={id} />
-        </div>
-        <Suspense fallback={<BalanceSheetReportSkeleton />}>
-          <BalanceSheetReportContent clientId={id} scenarioParam={sp.scenario} />
-        </Suspense>
-      </div>
+      <Suspense fallback={<BalanceSheetReportSkeleton />}>
+        <BalanceSheetReportContent clientId={id} scenarioParam={sp.scenario} />
+      </Suspense>
     </ScenarioDrawerShell>
   );
 }

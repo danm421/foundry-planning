@@ -17,7 +17,7 @@ const facts = () => { const f = emptyTaxReturnFacts(2025); f.income.wages = 150_
 const engineYear = () => engineYearFixture({
   expenses: { ...engineYearFixture().expenses, living: 103_000, liabilities: 20_600 },
   savings: { byAccount: {}, total: 20_600, employerTotal: 5_150 },
-  deductionBreakdown: { aboveLine: { retirementContributions: 10_300, taggedExpenses: 0, manualEntries: 0, studentLoanInterest: 0, total: 10_300, bySource: {} }, belowLine: { charitable: 0, taxesPaid: 0, stateIncomeTax: 0, propertyTaxes: 0, interestPaid: 0, otherItemized: 0, itemizedTotal: 0, standardDeduction: 0, taxDeductions: 0, bySource: {} } },
+  deductionBreakdown: { aboveLine: { retirementContributions: 10_300, taggedExpenses: 0, manualEntries: 0, studentLoanInterest: 0, total: 10_300, bySource: {} }, belowLine: { charitable: 0, taxesPaid: 0, stateIncomeTax: 0, propertyTaxes: 0, interestPaid: 0, investmentInterest: 0, otherItemized: 0, itemizedTotal: 0, standardDeduction: 0, taxDeductions: 0, bySource: {} } },
 });
 const living = { id: "e1", type: "living" as const, name: "Living Expenses", annualAmount: 103_000, growthRate: 0.03, startYear: 2026, endYear: 2060, inflationStartYear: null, isDefault: true, startYearRef: null };
 const retired = { ...living, id: "e2", name: "Retirement Living Expenses", startYear: 2035, startYearRef: "client_retirement" };

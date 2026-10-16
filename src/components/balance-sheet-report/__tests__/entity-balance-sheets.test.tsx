@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
+import { useState, type ComponentProps } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
-import EntityBalanceSheets from "../entity-balance-sheets";
+import BaseEntityBalanceSheets from "../entity-balance-sheets";
+import type { EntityFilter } from "@/lib/balance-sheet/entity-groups";
 import type { EntityGroup } from "../view-model";
 import type { TrustDetails } from "@/lib/balance-sheet/trust-details";
 
@@ -32,6 +34,12 @@ const trustDetails: TrustDetails[] = [
     beneficiaries: [{ group: "Primary", name: "Emma Sample", percentage: 100 }],
   },
 ];
+
+// The report owns the filter state; this harness stands in for it.
+function EntityBalanceSheets(props: Omit<ComponentProps<typeof BaseEntityBalanceSheets>, "filter" | "onFilterChange">) {
+  const [filter, setFilter] = useState<EntityFilter>("all");
+  return <BaseEntityBalanceSheets {...props} filter={filter} onFilterChange={setFilter} />;
+}
 
 describe("EntityBalanceSheets", () => {
   it("renders a trust details card next to trust entities only", () => {

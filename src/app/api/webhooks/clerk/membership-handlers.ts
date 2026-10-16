@@ -4,7 +4,9 @@ import * as Sentry from "@sentry/nextjs";
 import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import {
+  advisorProfiles,
   clerkEvents,
+  clientShares,
   firms,
   notificationPreferences,
   notifications,
@@ -14,6 +16,7 @@ import {
 import { getStripe } from "@/lib/billing/stripe-client";
 import { getOrgMemberCount, expectedSeatQuantity } from "@/lib/billing/seat-count";
 import { recordAudit } from "@/lib/audit";
+import { findOpenImpersonation } from "@/lib/ops/impersonation";
 import { sendWelcomeEmail } from "@/lib/onboarding/welcome-email";
 import type { ClerkEvent } from "./handler";
 
@@ -30,6 +33,8 @@ type UserCreatedData = {
   email_addresses?: Array<{ id?: string; email_address?: string }>;
   primary_email_address_id?: string | null;
   legal_consent?: { tos_accepted_at?: string; tos_version?: string };
+  /** Copied by Clerk from the portal invitation (send-portal-invite.ts). */
+  public_metadata?: { clientId?: string };
 };
 
 /**
@@ -47,6 +52,12 @@ async function claimSvixDelivery(
     .onConflictDoNothing()
     .returning({ id: clerkEvents.id });
   return rows.length > 0;
+}
+
+/** Undo a claim whose handling failed, so Clerk's retry of the same delivery
+ *  runs it again instead of being skipped as a duplicate. */
+async function releaseSvixDelivery(svixId: string): Promise<void> {
+  await db.delete(clerkEvents).where(eq(clerkEvents.svixId, svixId));
 }
 
 /**
@@ -124,6 +135,101 @@ async function stopAlertEmailsFor(firmId: string, userId: string): Promise<void>
 }
 
 /**
+ * A removed member's brand stops being offered and stops resolving: with
+ * their branding off, every household, form and deck that named them falls
+ * back to the firm brand, and intake mail is signed by whoever sends it.
+ * Update, not upsert — a member who never had a brand row needs none; it only
+ * flips a brand that is on, and audits that flip.
+ */
+async function turnOffAdvisorBranding(firmId: string, userId: string): Promise<void> {
+  const flipped = await db
+    .update(advisorProfiles)
+    .set({ brandingEnabled: false, updatedBy: "clerk:webhook", updatedAt: new Date() })
+    .where(
+      and(
+        eq(advisorProfiles.firmId, firmId),
+        eq(advisorProfiles.advisorUserId, userId),
+        eq(advisorProfiles.brandingEnabled, true),
+      ),
+    )
+    .returning({ id: advisorProfiles.id });
+  if (flipped.length > 0) {
+    await recordAudit({
+      action: "advisor_branding.grant",
+      resourceType: "advisor_profile",
+      resourceId: userId,
+      firmId,
+      actorId: "clerk:webhook",
+      metadata: { enabled: false, reason: "member_left_firm" },
+    });
+  }
+}
+
+/**
+ * A removed member keeps no access through this firm's client shares: every
+ * active grant they RECEIVED on its clients is revoked. Grants from other
+ * firms are untouched. Only active rows match, so a retry revokes nothing new.
+ */
+async function revokeSharesReceivedBy(firmId: string, userId: string): Promise<void> {
+  const revoked = await db
+    .update(clientShares)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(clientShares.firmId, firmId),
+        eq(clientShares.recipientUserId, userId),
+        isNull(clientShares.revokedAt),
+      ),
+    )
+    .returning({ id: clientShares.id, clientId: clientShares.clientId, scope: clientShares.scope });
+  for (const share of revoked) {
+    await recordAudit({
+      action: "client_share.revoke",
+      resourceType: "client_share",
+      resourceId: share.id,
+      clientId: share.clientId,
+      firmId,
+      actorId: "clerk:webhook",
+      metadata: { scope: share.scope, reason: "recipient_left_firm" },
+    });
+  }
+}
+
+/**
+ * The active grants a removed member ISSUED stay in force (the firm's clients
+ * stay shared); they are listed on the member.removed audit row for review.
+ */
+function listSharesIssuedBy(firmId: string, userId: string) {
+  return db
+    .select({
+      id: clientShares.id,
+      scope: clientShares.scope,
+      clientId: clientShares.clientId,
+      recipientUserId: clientShares.recipientUserId,
+      recipientEmail: clientShares.recipientEmail,
+    })
+    .from(clientShares)
+    .where(
+      and(
+        eq(clientShares.firmId, firmId),
+        eq(clientShares.ownerUserId, userId),
+        isNull(clientShares.revokedAt),
+      ),
+    );
+}
+
+/**
+ * Team changes made in Clerk's own UI reach us only as these webhooks, which
+ * never say who made them. If an ops operator was signed in as a member of
+ * the firm at the time, name them on the member.* row as a hint; the actor
+ * stays clerk:webhook.
+ */
+async function impersonationHint(firmId: string): Promise<Record<string, unknown>> {
+  const open = await findOpenImpersonation(firmId, new Date());
+  return open ? { possibleImpersonator: open } : {};
+}
+
+/**
  * Resolve the user's primary email from a Clerk user.created payload. Prefers
  * the address flagged primary_email_address_id; falls back to the first entry.
  * Returns null when no usable address is present.
@@ -155,31 +261,42 @@ export async function dispatchClerkMembership(
     if (!isNew) {
       return NextResponse.json({ ok: true, skipped_duplicate: t }, { status: 200 });
     }
-    if (t === "organizationMembership.deleted") {
-      await stopAlertEmailsFor(firmId, userId);
-    }
-    await syncSeatQuantity(firmId);
-    // Pin the first admin as the firm's billing contact if none is set yet.
-    // Handles the checkout flow, where the buyer's userId only exists after
-    // they accept the org:admin invite. Idempotent — only writes when unset.
-    if (t === "organizationMembership.created" && d.role === "org:admin") {
-      const cc = await clerkClient();
-      const org = await cc.organizations.getOrganization({ organizationId: firmId });
-      const meta = (org.publicMetadata ?? {}) as Record<string, unknown>;
-      if (typeof meta.billing_contact_userId !== "string") {
-        await cc.organizations.updateOrganizationMetadata(firmId, {
-          publicMetadata: { ...meta, billing_contact_userId: userId },
-        });
+    // Every step below is safe to repeat, so a failure releases the claim.
+    try {
+      const metadata: Record<string, unknown> = { user_id: userId };
+      if (t === "organizationMembership.deleted") {
+        await stopAlertEmailsFor(firmId, userId);
+        await turnOffAdvisorBranding(firmId, userId);
+        await revokeSharesReceivedBy(firmId, userId);
+        metadata.issued_shares = await listSharesIssuedBy(firmId, userId);
       }
+      await syncSeatQuantity(firmId);
+      // Pin the first admin as the firm's billing contact if none is set yet.
+      // Handles the sales checkout flow, where the buyer's userId only exists
+      // after they accept the org:admin invite (self-serve buyers are pinned by
+      // checkout-session-completed). Only fills an empty pin — never overwrites.
+      if (t === "organizationMembership.created" && d.role === "org:admin") {
+        const cc = await clerkClient();
+        const org = await cc.organizations.getOrganization({ organizationId: firmId });
+        const meta = (org.publicMetadata ?? {}) as Record<string, unknown>;
+        if (typeof meta.billing_contact_userId !== "string") {
+          await cc.organizations.updateOrganizationMetadata(firmId, {
+            publicMetadata: { ...meta, billing_contact_userId: userId },
+          });
+        }
+      }
+      await recordAudit({
+        action: t === "organizationMembership.created" ? "member.invited" : "member.removed",
+        resourceType: "membership",
+        resourceId: `${firmId}:${userId}`,
+        firmId,
+        actorId: "clerk:webhook",
+        metadata: { ...metadata, ...(await impersonationHint(firmId)) },
+      });
+    } catch (err) {
+      await releaseSvixDelivery(svixId);
+      throw err;
     }
-    await recordAudit({
-      action: t === "organizationMembership.created" ? "member.invited" : "member.removed",
-      resourceType: "membership",
-      resourceId: `${firmId}:${userId}`,
-      firmId,
-      actorId: "clerk:webhook",
-      metadata: { user_id: userId },
-    });
     return NextResponse.json({ ok: true, handled: t }, { status: 200 });
   }
 
@@ -199,7 +316,12 @@ export async function dispatchClerkMembership(
         resourceId: `${firmId}:${userId}`,
         firmId,
         actorId: "clerk:webhook",
-        metadata: { from: prevRole, to: newRole, user_id: userId },
+        metadata: {
+          from: prevRole,
+          to: newRole,
+          user_id: userId,
+          ...(await impersonationHint(firmId)),
+        },
       });
     }
     return NextResponse.json({ ok: true, handled: t }, { status: 200 });
@@ -231,8 +353,11 @@ export async function dispatchClerkMembership(
     }
 
     // Welcome the new user. Best-effort — sendWelcomeEmail never throws.
+    // Not a client signing up from a portal invite: the founder's note is for
+    // advisors, and a white-labelled firm's clients must not hear from Foundry.
     const email = resolvePrimaryEmail(d);
-    if (email) {
+    const isPortalClient = Boolean(d.public_metadata?.clientId);
+    if (email && !isPortalClient) {
       await sendWelcomeEmail({ to: email, firstName: d.first_name ?? null });
     }
 

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscription, authErrorResponse } from "@/lib/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireAiAvailableForFirm, withAiForFirm } from "@/lib/ai/resolve";
 import { checkForgeRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { buildGraph } from "@/domain/forge/graph";
@@ -101,6 +102,15 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   }
   if (access.permission !== "edit") {
     return json(403, { error: "View-only access" });
+  }
+  // A client shared in from a firm that runs AI in its own tenant: refused
+  // before the stream opens, so it is a 403 and not a mid-stream error frame.
+  try {
+    await requireAiAvailableForFirm(access.firmId);
+  } catch (err) {
+    const mapped = authErrorResponse(err);
+    if (mapped) return json(mapped.status, mapped.body);
+    throw err;
   }
 
   // 6. Rate limit (fail-closed; exceeded→429 else→503).
@@ -213,7 +223,9 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   const langfuse = maybeLangfuseHandler(authContext, cid);
   const encoder = new TextEncoder();
 
-  const stream = new ReadableStream<Uint8Array>({
+  // Model calls run under the client's firm (see withAiForFirm); start() runs
+  // inside the constructor, so the whole graph run inherits the scope.
+  const stream = withAiForFirm(access.firmId, () => new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false;
       const send = (obj: unknown) => {
@@ -359,7 +371,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
         if (!closed) controller.close();
       }
     },
-  });
+  }));
 
   return new Response(stream, {
     status: 200,

@@ -14,7 +14,8 @@ export type FoundryPage =
   | "estate"
   | "insurance"
   | "family"
-  | "incomeExpenses";
+  | "incomeExpenses"
+  | "presentations";
 
 const PAGE_PATHS: Record<FoundryPage, string> = {
   overview: "overview",
@@ -28,6 +29,7 @@ const PAGE_PATHS: Record<FoundryPage, string> = {
   insurance: "details/insurance",
   family: "details/family",
   incomeExpenses: "details/income-expenses",
+  presentations: "presentations",
 };
 
 function appOrigin(): string {
@@ -46,4 +48,18 @@ export function foundryUrl(clientId: string, page: FoundryPage): string {
  */
 export function foundryCrmNotesUrl(householdId: string): string {
   return `${appOrigin()}/crm/households/${householdId}?tab=notes`;
+}
+
+/** Absolute link that opens the Solver on one scenario (the page reads `?scenario=`). */
+export function foundryScenarioUrl(clientId: string, scenarioId: string): string {
+  return `${foundryUrl(clientId, "scenarios")}?scenario=${encodeURIComponent(scenarioId)}`;
+}
+
+/**
+ * Absolute link to a document in a CRM household's vault — the route that
+ * streams it. It opens only for someone signed in to Foundry with access to
+ * that household; there are no public or signed links.
+ */
+export function foundryDocumentUrl(householdId: string, documentId: string): string {
+  return `${appOrigin()}/api/crm/households/${householdId}/documents/${documentId}`;
 }

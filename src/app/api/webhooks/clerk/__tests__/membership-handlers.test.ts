@@ -4,8 +4,10 @@ const mockSelectFirms = vi.fn();
 const mockSelectSubs = vi.fn();
 const mockTosInsert = vi.fn();
 const mockClerkEventInsert = vi.fn(); // returning() result drives svix dedup
-const mockUpdate = vi.fn(); // (table, patch, where)
+const mockUpdate = vi.fn(); // (table, patch, where) — its result is also what .returning() yields
 const mockDelete = vi.fn(); // (table, where)
+const mockSelectShares = vi.fn(); // (where)
+const mockSelectAudit = vi.fn(); // (where)
 
 vi.mock("@/db", async (orig) => {
   const schema = (await import("@/db/schema")) as Record<string, unknown>;
@@ -14,9 +16,11 @@ vi.mock("@/db", async (orig) => {
     db: {
       select: () => ({
         from: (tbl: unknown) => ({
-          where: () => {
+          where: (w: unknown) => {
             if (tbl === schema.firms) return mockSelectFirms();
             if (tbl === schema.subscriptions) return mockSelectSubs();
+            if (tbl === schema.clientShares) return mockSelectShares(w);
+            if (tbl === schema.auditLog) return mockSelectAudit(w);
             return [];
           },
         }),
@@ -33,7 +37,16 @@ vi.mock("@/db", async (orig) => {
         }),
       }),
       update: (tbl: unknown) => ({
-        set: (patch: unknown) => ({ where: (w: unknown) => mockUpdate(tbl, patch, w) }),
+        set: (patch: unknown) => ({
+          where: (w: unknown) => {
+            const result = mockUpdate(tbl, patch, w);
+            return {
+              returning: () => result,
+              then: (ok: (v: unknown) => unknown, err: (e: unknown) => unknown) =>
+                Promise.resolve(result).then(ok, err),
+            };
+          },
+        }),
       }),
       delete: (tbl: unknown) => ({ where: (w: unknown) => mockDelete(tbl, w) }),
     },
@@ -81,10 +94,14 @@ vi.mock("@/lib/onboarding/welcome-email", () => ({
 
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-import { notificationPreferences, notifications } from "@/db/schema";
+import { advisorProfiles, clerkEvents, clientShares, notificationPreferences, notifications } from "@/db/schema";
 import { dispatchClerkMembership } from "../membership-handlers";
 
 const whereParams = (w: unknown) => new PgDialect().sqlToQuery(w as SQL).params;
+const whereQuery = (w: unknown) => {
+  const { sql, params } = new PgDialect().sqlToQuery(w as SQL);
+  return { sql, params };
+};
 
 beforeEach(() => {
   mockSelectFirms.mockReset();
@@ -92,7 +109,12 @@ beforeEach(() => {
   mockTosInsert.mockReset();
   mockClerkEventInsert.mockReset();
   mockUpdate.mockReset();
+  mockUpdate.mockResolvedValue([]);
   mockDelete.mockReset();
+  mockSelectShares.mockReset();
+  mockSelectShares.mockResolvedValue([]);
+  mockSelectAudit.mockReset();
+  mockSelectAudit.mockResolvedValue([]);
   mockSubsRetrieve.mockReset();
   mockSubsUpdate.mockReset();
   mockListMembers.mockReset();
@@ -306,11 +328,151 @@ describe("organizationMembership.deleted — the removed member's alerts", () =>
     expect(whereParams(pending![2])).toEqual(expect.arrayContaining(["org_paid", "user_z"]));
   });
 
+  it("turns the removed member's advisor branding off in that firm", async () => {
+    mockSelectFirms.mockResolvedValue([]);
+    await dispatchClerkMembership(membershipEvent("organizationMembership.deleted"), "svix_del_brand");
+
+    const brand = mockUpdate.mock.calls.find(([tbl]) => tbl === advisorProfiles);
+    expect(brand).toBeDefined();
+    expect(brand![1]).toMatchObject({ brandingEnabled: false, updatedBy: "clerk:webhook" });
+    expect(whereParams(brand![2])).toEqual(expect.arrayContaining(["org_paid", "user_z"]));
+  });
+
+  it("audits the branding-off when a brand was actually on", async () => {
+    mockSelectFirms.mockResolvedValue([]);
+    mockUpdate.mockImplementation(async (tbl: unknown) => (tbl === advisorProfiles ? [{ id: "ap_1" }] : []));
+    await dispatchClerkMembership(membershipEvent("organizationMembership.deleted"), "svix_del_brand_audit");
+
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "advisor_branding.grant",
+        resourceType: "advisor_profile",
+        resourceId: "user_z",
+        firmId: "org_paid",
+        actorId: "clerk:webhook",
+        metadata: { enabled: false, reason: "member_left_firm" },
+      }),
+    );
+  });
+
+  it("audits nothing when no brand was on", async () => {
+    mockSelectFirms.mockResolvedValue([]);
+    await dispatchClerkMembership(membershipEvent("organizationMembership.deleted"), "svix_del_brand_noop");
+
+    expect(mockRecordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "advisor_branding.grant" }),
+    );
+  });
+
   it("leaves alerts alone when a member is added", async () => {
     mockSelectFirms.mockResolvedValue([]);
     await dispatchClerkMembership(membershipEvent("organizationMembership.created"), "svix_add_alerts");
     expect(mockDelete).not.toHaveBeenCalled();
     expect(mockUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("organizationMembership.deleted — the client shares a removed member holds", () => {
+  const removed = () =>
+    dispatchClerkMembership(
+      {
+        type: "organizationMembership.deleted",
+        data: { organization: { id: "org_paid" }, public_user_data: { user_id: "user_z" } },
+      } as never,
+      "svix_del_shares",
+    );
+
+  beforeEach(() => {
+    mockSelectFirms.mockResolvedValue([]);
+  });
+
+  it("revokes only the ACTIVE shares they RECEIVED on this firm's clients", async () => {
+    await removed();
+
+    const revoke = mockUpdate.mock.calls.find(([tbl]) => tbl === clientShares);
+    expect(revoke).toBeDefined();
+    expect(revoke![1]).toEqual({ revokedAt: expect.any(Date) });
+    // Firm + recipient + still active: grants from other firms, grants they
+    // issued, and already-revoked rows (a webhook retry) are all left alone.
+    expect(whereQuery(revoke![2])).toEqual({
+      sql: '("client_shares"."firm_id" = $1 and "client_shares"."recipient_user_id" = $2 and "client_shares"."revoked_at" is null)',
+      params: ["org_paid", "user_z"],
+    });
+  });
+
+  it("audits each revoked share as a client_share.revoke by the webhook", async () => {
+    mockUpdate.mockImplementation(async (tbl: unknown) =>
+      tbl === clientShares ? [{ id: "share_r", clientId: "client_1", scope: "client" }] : [],
+    );
+    await removed();
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "client_share.revoke",
+        resourceType: "client_share",
+        resourceId: "share_r",
+        clientId: "client_1",
+        firmId: "org_paid",
+        actorId: "clerk:webhook",
+      }),
+    );
+  });
+
+  it("keeps the shares they ISSUED, and lists them on the member.removed row", async () => {
+    const issued = {
+      id: "share_out",
+      scope: "all",
+      clientId: null,
+      recipientUserId: "user_r",
+      recipientEmail: "r@example.test",
+    };
+    mockSelectShares.mockResolvedValue([issued]);
+    await removed();
+
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "member.removed",
+        metadata: expect.objectContaining({ user_id: "user_z", issued_shares: [issued] }),
+      }),
+    );
+    expect(mockSelectShares).toHaveBeenCalledTimes(1);
+    expect(whereQuery(mockSelectShares.mock.calls[0][0])).toEqual({
+      sql: '("client_shares"."firm_id" = $1 and "client_shares"."owner_user_id" = $2 and "client_shares"."revoked_at" is null)',
+      params: ["org_paid", "user_z"],
+    });
+    // The only write to client_shares is the received-share revoke above.
+    expect(mockUpdate.mock.calls.filter(([tbl]) => tbl === clientShares)).toHaveLength(1);
+  });
+
+  it("releases the delivery when handling fails, so Clerk's retry runs it again", async () => {
+    mockUpdate.mockImplementation(async (tbl: unknown) => {
+      if (tbl === clientShares) throw new Error("connection reset");
+      return [];
+    });
+    await expect(removed()).rejects.toThrow("connection reset");
+
+    const release = mockDelete.mock.calls.find(([tbl]) => tbl === clerkEvents);
+    expect(release).toBeDefined();
+    expect(whereQuery(release![1])).toEqual({
+      sql: '"clerk_events"."svix_id" = $1',
+      params: ["svix_del_shares"],
+    });
+  });
+
+  it("keeps the delivery claimed when handling succeeds", async () => {
+    await removed();
+    expect(mockDelete.mock.calls.filter(([tbl]) => tbl === clerkEvents)).toHaveLength(0);
+  });
+
+  it("leaves shares alone when a member is added", async () => {
+    await dispatchClerkMembership(
+      {
+        type: "organizationMembership.created",
+        data: { organization: { id: "org_paid" }, public_user_data: { user_id: "user_z" } },
+      } as never,
+      "svix_add_shares",
+    );
+    expect(mockUpdate.mock.calls.filter(([tbl]) => tbl === clientShares)).toHaveLength(0);
+    expect(mockSelectShares).not.toHaveBeenCalled();
   });
 });
 
@@ -407,6 +569,44 @@ describe("organizationMembership.created — billing contact pin", () => {
     expect(mockUpdateOrganizationMetadata).not.toHaveBeenCalled();
   });
 
+  it("does NOT pin a self-serve buyer's creator membership (org:owner) — checkout pins them", async () => {
+    mockGetOrganization.mockResolvedValue({ publicMetadata: {} });
+    const res = await dispatchClerkMembership(
+      {
+        type: "organizationMembership.created",
+        data: {
+          organization: { id: "org_selfserve" },
+          public_user_data: { user_id: "user_buyer" },
+          role: "org:owner",
+        },
+      } as never,
+      "svix_pin_creator",
+    );
+    expect(res?.status).toBe(200);
+    expect(mockUpdateOrganizationMetadata).not.toHaveBeenCalled();
+  });
+
+  it("leaves the buyer pinned when a colleague later joins as org:admin", async () => {
+    // checkout.session.completed pinned the buyer; the invited admin's join
+    // must not take the billing contact from them.
+    mockGetOrganization.mockResolvedValue({
+      publicMetadata: { billing_contact_userId: "user_buyer" },
+    });
+    const res = await dispatchClerkMembership(
+      {
+        type: "organizationMembership.created",
+        data: {
+          organization: { id: "org_selfserve" },
+          public_user_data: { user_id: "user_colleague" },
+          role: "org:admin",
+        },
+      } as never,
+      "svix_pin_colleague",
+    );
+    expect(res?.status).toBe(200);
+    expect(mockUpdateOrganizationMetadata).not.toHaveBeenCalled();
+  });
+
   it("does NOT pin a non-admin member", async () => {
     const res = await dispatchClerkMembership(
       {
@@ -422,6 +622,115 @@ describe("organizationMembership.created — billing contact pin", () => {
     expect(res?.status).toBe(200);
     expect(mockGetOrganization).not.toHaveBeenCalled();
     expect(mockUpdateOrganizationMetadata).not.toHaveBeenCalled();
+  });
+});
+
+describe("member.* audit rows — possible impersonator hint", () => {
+  const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000);
+  const started = (id: string, at: Date, advisor = "user_adv") => ({
+    id,
+    action: "ops.impersonation.started",
+    actorId: "user_op",
+    resourceId: advisor,
+    createdAt: at,
+  });
+  const ended = (id: string, at: Date, advisor = "user_adv") => ({
+    id,
+    action: "ops.impersonation.ended",
+    actorId: "user_op",
+    resourceId: advisor,
+    createdAt: at,
+  });
+
+  const events = {
+    "member.invited": { type: "organizationMembership.created", data: {} },
+    "member.removed": { type: "organizationMembership.deleted", data: {} },
+    "member.role_changed": {
+      type: "organizationMembership.updated",
+      data: { role: "org:admin", previous_attributes: { role: "org:member" } },
+    },
+  } as const;
+
+  const fire = (action: keyof typeof events) =>
+    dispatchClerkMembership(
+      {
+        type: events[action].type,
+        data: {
+          organization: { id: "org_paid" },
+          public_user_data: { user_id: "user_new" },
+          ...events[action].data,
+        },
+      } as never,
+      `svix_hint_${action}`,
+    );
+
+  const auditRow = (action: string) =>
+    mockRecordAudit.mock.calls.map(([a]) => a).find((a) => a.action === action);
+
+  beforeEach(() => {
+    mockSelectFirms.mockResolvedValue([]);
+  });
+
+  it.each(Object.keys(events) as Array<keyof typeof events>)(
+    "names the operator of an open impersonation of the firm on %s, as a hint only",
+    async (action) => {
+      mockSelectAudit.mockResolvedValue([started("audit_start", minutesAgo(5))]);
+      await fire(action);
+      expect(auditRow(action)).toMatchObject({
+        actorId: "clerk:webhook",
+        metadata: {
+          possibleImpersonator: { opsUserId: "user_op", startedAuditId: "audit_start" },
+        },
+      });
+    },
+  );
+
+  it("reads only this firm's impersonation rows within the 40-minute session window", async () => {
+    await fire("member.invited");
+    expect(mockSelectAudit).toHaveBeenCalledTimes(1);
+    const { sql, params } = whereQuery(mockSelectAudit.mock.calls[0][0]);
+    expect(sql).toContain('"audit_log"."firm_id" = $1');
+    expect(params.slice(0, 3)).toEqual([
+      "org_paid",
+      "ops.impersonation.started",
+      "ops.impersonation.ended",
+    ]);
+    const cutoff = new Date(params[3] as string).getTime();
+    expect(Date.now() - cutoff).toBeGreaterThanOrEqual(40 * 60_000);
+    expect(Date.now() - cutoff).toBeLessThan(41 * 60_000);
+  });
+
+  it("gives no hint once that impersonation has ended", async () => {
+    mockSelectAudit.mockResolvedValue([
+      started("audit_start", minutesAgo(10)),
+      ended("audit_end", minutesAgo(5)),
+    ]);
+    await fire("member.invited");
+    expect(auditRow("member.invited")?.metadata).not.toHaveProperty("possibleImpersonator");
+  });
+
+  it("gives no hint for an impersonation started before the session window", async () => {
+    mockSelectAudit.mockResolvedValue([started("audit_old", minutesAgo(41))]);
+    await fire("member.invited");
+    expect(auditRow("member.invited")?.metadata).not.toHaveProperty("possibleImpersonator");
+  });
+
+  it("is not closed by the end of a different advisor's impersonation", async () => {
+    mockSelectAudit.mockResolvedValue([
+      started("audit_start", minutesAgo(10)),
+      ended("audit_other_end", minutesAgo(5), "user_other"),
+    ]);
+    await fire("member.invited");
+    expect(auditRow("member.invited")?.metadata).toMatchObject({
+      possibleImpersonator: { startedAuditId: "audit_start" },
+    });
+  });
+
+  it("still audits the change when the lookup fails", async () => {
+    mockSelectAudit.mockRejectedValue(new Error("db down"));
+    const res = await fire("member.invited");
+    expect(res?.status).toBe(200);
+    expect(auditRow("member.invited")?.metadata).not.toHaveProperty("possibleImpersonator");
   });
 });
 
@@ -508,6 +817,24 @@ describe("user.created", () => {
       to: "first@example.com",
       firstName: null,
     });
+  });
+
+  it("does not welcome a client who signed up from a portal invite", async () => {
+    // Clerk copies the invitation's public_metadata onto the new user.
+    await dispatchClerkMembership(
+      {
+        type: "user.created",
+        data: {
+          id: "user_portal",
+          first_name: "Sarah",
+          email_addresses: [{ id: "idn_1", email_address: "sarah@example.com" }],
+          primary_email_address_id: "idn_1",
+          public_metadata: { clientId: "client_1" },
+        },
+      } as never,
+      "svix_portal",
+    );
+    expect(mockSendWelcomeEmail).not.toHaveBeenCalled();
   });
 
   it("does not send when the payload has no email address", async () => {

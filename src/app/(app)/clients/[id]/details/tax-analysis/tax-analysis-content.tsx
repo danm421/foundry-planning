@@ -10,18 +10,8 @@ import { FactsReviewForm } from "./facts-review-form";
 import { TaxReportView } from "./tax-report-view";
 import { DocumentsStrip } from "./documents-strip";
 import { PlanVsReturnPanel } from "./plan-vs-return/plan-vs-return-panel";
-
-/** Both `message` (documents endpoints) and `error` (year endpoints) show up
- *  across these routes' failure bodies; a response can also fail to parse as
- *  JSON at all (a 413, or an HTML 500 page). Always resolves — never throws —
- *  so every caller's `setError` is reached instead of an uncaught rejection
- *  silently returning the UI to idle. */
-async function errorMessage(res: Response, fallback: string): Promise<string> {
-  const body = await res.json().catch(() => ({}) as { message?: string; error?: string });
-  if (typeof body.message === "string") return body.message;
-  if (typeof body.error === "string") return body.error;
-  return fallback;
-}
+import { stageFile } from "@/lib/uploads/stage-file";
+import { responseErrorMessage } from "@/lib/response-error-message";
 
 interface Summary {
   taxYear: number;
@@ -83,6 +73,8 @@ export function TaxAnalysisContent({
   const [detail, setDetail] = useState<YearDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  // Browser → Blob progress while a file uploads; null once it's being analyzed.
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [secondReadBusy, setSecondReadBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Kept separate from `error` so it can render INSIDE the panel. The shared
@@ -147,12 +139,30 @@ export function TaxAnalysisContent({
     [selectedYear, loadList, loadDetail],
   );
 
-  async function upload(file: File, replace = false) {
+  // Both uploads send the file browser → Blob first and post only the staged
+  // pathname (`@/lib/uploads/staged-upload`). This owns the busy state and
+  // turns any throw into the banner.
+  async function runUpload(file: File, post: (form: FormData) => Promise<void>) {
     setUploading(true);
     setError(null);
     try {
       const form = new FormData();
-      form.set("file", file);
+      form.set(
+        "stagedPathname",
+        await stageFile(`/api/clients/${clientId}/tax-returns/upload-token`, file, setUploadPercent),
+      );
+      form.set("filename", file.name);
+      await post(form);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed. Please try again.");
+    } finally {
+      setUploading(false);
+      setUploadPercent(null);
+    }
+  }
+
+  async function upload(file: File, replace = false) {
+    await runUpload(file, async (form) => {
       if (replace) form.set("replace", "true");
       const res = await fetch(`/api/clients/${clientId}/tax-returns`, { method: "POST", body: form });
       if (res.status === 409) {
@@ -163,14 +173,12 @@ export function TaxAnalysisContent({
         return;
       }
       if (!res.ok) {
-        setError(await errorMessage(res, "Extraction failed"));
+        setError(await responseErrorMessage(res, "Extraction failed"));
         return;
       }
       const body = (await res.json()) as { taxYear: number };
       await selectYearAfterMutation(body.taxYear);
-    } finally {
-      setUploading(false);
-    }
+    });
   }
 
   function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -185,7 +193,7 @@ export function TaxAnalysisContent({
     form.set("manualTaxYear", yearRaw.trim());
     const res = await fetch(`/api/clients/${clientId}/tax-returns`, { method: "POST", body: form });
     if (!res.ok) {
-      setError(await errorMessage(res, "Could not create the year"));
+      setError(await responseErrorMessage(res, "Could not create the year"));
       return;
     }
     const body = (await res.json()) as { taxYear: number };
@@ -194,25 +202,19 @@ export function TaxAnalysisContent({
 
   async function addDocument(file: File, role: string) {
     if (selectedYear == null) return;
-    setUploading(true);
-    setError(null);
-    try {
-      const form = new FormData();
-      form.set("file", file);
+    await runUpload(file, async (form) => {
       form.set("role", role);
       const res = await fetch(
         `/api/clients/${clientId}/tax-returns/${selectedYear}/documents`,
         { method: "POST", body: form },
       );
       if (!res.ok) {
-        setError(await errorMessage(res, "Couldn't add the document"));
+        setError(await responseErrorMessage(res, "Couldn't add the document"));
         return;
       }
       await loadList();
       void loadDetail(selectedYear);
-    } finally {
-      setUploading(false);
-    }
+    });
   }
 
   async function removeDocument(documentId: string) {
@@ -223,7 +225,7 @@ export function TaxAnalysisContent({
       { method: "DELETE" },
     );
     if (!res.ok) {
-      setError(await errorMessage(res, "Couldn't remove the document"));
+      setError(await responseErrorMessage(res, "Couldn't remove the document"));
       return;
     }
     await loadList();
@@ -258,7 +260,7 @@ export function TaxAnalysisContent({
       if (!res.ok) {
         // The 403 entitlement body carries a machine code, not prose — every
         // other failure body on this route is already a sentence.
-        const message = await errorMessage(res, "The second read couldn't run");
+        const message = await responseErrorMessage(res, "The second read couldn't run");
         setSecondReadError(
           message === "ai_import_not_entitled"
             ? "AI features aren't enabled for this firm."
@@ -289,7 +291,7 @@ export function TaxAnalysisContent({
         { method: "DELETE" },
       );
       if (!res.ok) {
-        setSecondReadError(await errorMessage(res, "Couldn't dismiss that item"));
+        setSecondReadError(await responseErrorMessage(res, "Couldn't dismiss that item"));
         return;
       }
       const body = (await res.json()) as { secondRead: SecondRead };
@@ -342,7 +344,13 @@ export function TaxAnalysisContent({
 
       {uploading && (
         <div className="rounded border border-hair bg-card p-6 text-ink-2">
-          Analyzing the return — this usually takes under a minute…
+          {uploadPercent !== null && uploadPercent < 100 ? (
+            <>
+              Uploading… <span className="tabular">{uploadPercent}%</span>
+            </>
+          ) : (
+            "Analyzing the return — this usually takes under a minute…"
+          )}
         </div>
       )}
 

@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import { recordAudit } from "@/lib/audit";
+import { firmClaudeWritesEnabled } from "@/lib/firm-settings";
 import { checkMcpRateLimit, type RateLimitResult } from "@/lib/rate-limit";
 import { sanitizeRow } from "@/lib/redaction/sanitize-row";
 import { foundryUrl, type FoundryPage } from "@/lib/mcp/foundry-url";
@@ -32,11 +33,49 @@ export class McpRateLimitedError extends Error {
   }
 }
 
-export type McpToolAnnotations = {
+export type McpReadAnnotations = {
   readOnlyHint: true;
   destructiveHint: false;
   openWorldHint: false;
 };
+
+export type McpWriteAnnotations = {
+  readOnlyHint: false;
+  destructiveHint: false;
+  idempotentHint: false;
+  openWorldHint: false;
+};
+
+export type McpToolAnnotations = McpReadAnnotations | McpWriteAnnotations;
+
+export const WRITE_DISABLED_MESSAGE =
+  "Your firm hasn't turned on changes from Claude. A firm admin can turn it on in Settings → Firm.";
+export const VIEW_ONLY_MESSAGE = "You have view-only access to this household.";
+
+/** The firm switch is off. A McpForbiddenError, so the route's allowlist already passes it. */
+export class McpWriteDisabledError extends McpForbiddenError {
+  constructor() {
+    super(WRITE_DISABLED_MESSAGE);
+    this.name = "McpWriteDisabledError";
+  }
+}
+
+/** A dependency the tool cannot run without (the what-if job store) is missing or failing. */
+export class McpUnavailableError extends Error {
+  constructor() {
+    super("Foundry connector is temporarily unavailable. Try again shortly.");
+    this.name = "McpUnavailableError";
+  }
+}
+
+/** An argument the model can fix and retry (an unknown page id, a template it can't use).
+ *  The message is hand-written and model-safe; the route passes it through verbatim. */
+export class McpInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "McpInputError";
+  }
+}
 
 export type McpTool = {
   name: string;
@@ -94,17 +133,81 @@ type DefineToolSpec<S extends z.ZodObject<z.ZodRawShape>, R extends object> = {
 export function defineTool<S extends z.ZodObject<z.ZodRawShape>, R extends object>(
   spec: DefineToolSpec<S, R>,
 ): McpTool {
+  return buildTool(spec, {
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    requireWrite: false,
+    auditAction: "mcp.tool_call",
+    auditMetadata: (args, _result, householdId) => ({
+      tool: spec.name,
+      argKeys: Object.keys(args as object),
+      ...(householdId ? { householdId } : {}),
+    }),
+  });
+}
+
+type DefineWriteToolSpec<S extends z.ZodObject<z.ZodRawShape>, R extends object> = DefineToolSpec<S, R> & {
+  /** Ids and counts for the audit row — never the change contents. */
+  auditMetadata?: (args: z.infer<S>, result: R) => Record<string, unknown>;
+};
+
+/**
+ * A tool that changes data. Same wrapper as `defineTool` (one shared runner —
+ * rate limit, schema, sanitized output, deep link, audit) plus the write
+ * gates: the firm switch (off by default) runs right after the schema parse,
+ * before any client lookup, so a firm that never turned writes on cannot use
+ * a write tool to probe household ids; edit permission runs after the
+ * client-readable check.
+ *
+ * Annotated readOnlyHint:false so Claude asks the advisor before each call.
+ * Every part A write is to one household, so the schema must declare `clientId`.
+ */
+export function defineWriteTool<S extends z.ZodObject<z.ZodRawShape>, R extends object>(
+  spec: DefineWriteToolSpec<S, R>,
+): McpTool {
+  if (!("clientId" in spec.inputSchema.shape)) {
+    throw new Error(`write tool ${spec.name} must declare clientId in its input schema`);
+  }
+  return buildTool(spec, {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    requireWrite: true,
+    auditAction: "mcp.tool_write",
+    // The tool's own ids and counts first, so they can never overwrite tool or via.
+    auditMetadata: (args, result) => ({
+      ...(spec.auditMetadata?.(args, result) ?? {}),
+      tool: spec.name,
+      via: "claude",
+    }),
+  });
+}
+
+type ToolVariant<S extends z.ZodObject<z.ZodRawShape>, R extends object> = {
+  annotations: McpToolAnnotations;
+  /** Write tools: firm switch before any lookup, edit permission after the client check. */
+  requireWrite: boolean;
+  auditAction: "mcp.tool_call" | "mcp.tool_write";
+  auditMetadata: (args: z.infer<S>, result: R, householdId: string | null) => Record<string, unknown>;
+};
+
+/** The one runner behind defineTool and defineWriteTool. */
+function buildTool<S extends z.ZodObject<z.ZodRawShape>, R extends object>(
+  spec: DefineToolSpec<S, R>,
+  variant: ToolVariant<S, R>,
+): McpTool {
   return {
     name: spec.name,
     title: spec.title,
     description: spec.description,
     inputSchema: spec.inputSchema,
-    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    annotations: variant.annotations,
     run: async (rawArgs: unknown, principal: McpPrincipal) => {
       const rl = await checkMcpRateLimit(`${principal.orgId}:${principal.userId}`);
       if (!rl.allowed) throw new McpRateLimitedError(rl.reason);
 
       const args = spec.inputSchema.parse(rawArgs) as z.infer<S>;
+
+      if (variant.requireWrite && !(await firmClaudeWritesEnabled(principal.orgId))) {
+        throw new McpWriteDisabledError();
+      }
 
       // Driven by the SCHEMA, not the parsed value's runtime type: a tool
       // that declares `clientId` must always be checked, even when the
@@ -114,13 +217,14 @@ export function defineTool<S extends z.ZodObject<z.ZodRawShape>, R extends objec
       // check would silently skip and the handler would run unauthorized.
       const declaresClientId = "clientId" in spec.inputSchema.shape;
       let clientId: string | null = null;
+      let clientAccess: Awaited<ReturnType<typeof assertClientReadableForPrincipal>> | null = null;
       if (declaresClientId) {
         const rawClientId = (args as Record<string, unknown>).clientId;
         if (typeof rawClientId !== "string") {
           throw new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE);
         }
         clientId = rawClientId;
-        await assertClientReadableForPrincipal(principal, clientId);
+        clientAccess = await assertClientReadableForPrincipal(principal, clientId);
       }
 
       // Same schema-driven rule as clientId above: a declared `householdId` is
@@ -137,6 +241,11 @@ export function defineTool<S extends z.ZodObject<z.ZodRawShape>, R extends objec
         await assertHouseholdReadableForPrincipal(principal, householdId);
       }
 
+      // Last gate, after every readability check: a write needs edit permission.
+      if (variant.requireWrite && clientAccess?.permission !== "edit") {
+        throw new McpForbiddenError(VIEW_ONLY_MESSAGE);
+      }
+
       const ctx: McpToolContext = { principal, firmId: principal.orgId };
       const result = await spec.handler(args, ctx);
 
@@ -147,18 +256,14 @@ export function defineTool<S extends z.ZodObject<z.ZodRawShape>, R extends objec
           : sanitized;
 
       await recordAudit({
-        action: "mcp.tool_call",
+        action: variant.auditAction,
         resourceType: "mcp_tool",
         resourceId: spec.name,
         clientId,
         firmId: principal.orgId,
         actorId: principal.userId,
         actorKind: "advisor",
-        metadata: {
-          tool: spec.name,
-          argKeys: Object.keys(args as object),
-          ...(householdId ? { householdId } : {}),
-        },
+        metadata: variant.auditMetadata(args, result, householdId),
       });
 
       return withLink;

@@ -7,14 +7,22 @@ import {
   MCP_RESOURCE_URL,
   type McpPrincipal,
 } from "@/lib/mcp/principal";
-import { McpRateLimitedError, type McpTool } from "@/domain/mcp/define-tool";
+import {
+  McpInputError,
+  McpRateLimitedError,
+  McpUnavailableError,
+  McpWriteDisabledError,
+  type McpTool,
+} from "@/domain/mcp/define-tool";
 import { McpForbiddenError } from "@/domain/mcp/guards";
 import { recordAudit } from "@/lib/audit";
+import { WhatIfValidationError } from "@/lib/whatif/errors";
 import { ALL_MCP_TOOLS } from "@/domain/mcp/tools";
 
-// Solver and Monte Carlo tools run the engine. Matches the Forge compute
-// routes; Vercel's function config already gives every route the large machine.
-export const maxDuration = 300;
+// Solver, Monte Carlo and what-if tools run the engine. 800 s (matching
+// presentations/runs) gives a background what-if job's after() work room to
+// finish; ordinary calls are unaffected.
+export const maxDuration = 800;
 
 /**
  * True when a token's `aud` claim (absent, one value, or several) permits
@@ -77,9 +85,19 @@ type ToolCallOutcome = {
  * looser schema so our own parse becomes the throwing one was considered
  * and rejected — it would strip the tool's real schema from `tools/list`
  * and make the model worse at calling it correctly in the first place.
+ *
+ * Part A adds `McpUnavailableError`, `McpInputError` and `WhatIfValidationError`;
+ * each carries hand-written, model-safe text (define-tool.ts,
+ * src/lib/whatif/errors.ts).
  */
 export function toolFailureResult(err: unknown): ToolCallOutcome {
-  if (err instanceof McpRateLimitedError || err instanceof McpForbiddenError) {
+  if (
+    err instanceof McpRateLimitedError ||
+    err instanceof McpForbiddenError ||
+    err instanceof McpUnavailableError ||
+    err instanceof McpInputError ||
+    err instanceof WhatIfValidationError
+  ) {
     return { content: [{ type: "text", text: err.message }], isError: true };
   }
   console.error("MCP tool call failed with an unexpected error:", err);
@@ -97,7 +115,11 @@ export function toolFailureResult(err: unknown): ToolCallOutcome {
  */
 function denialReason(err: unknown): string {
   if (err instanceof McpRateLimitedError) return `rate_limited:${err.reason}`;
+  if (err instanceof McpWriteDisabledError) return "write_disabled";
   if (err instanceof McpForbiddenError) return "forbidden";
+  if (err instanceof WhatIfValidationError) return "invalid_change";
+  if (err instanceof McpInputError) return "invalid_input";
+  if (err instanceof McpUnavailableError) return "unavailable";
   return "error";
 }
 

@@ -163,6 +163,24 @@ describe("applyReinvestments", () => {
    * asserted that basis moves the right way, or that the loss reaches the
    * caller signed rather than floored at zero.
    */
+  it("a taxed switch on a margined account realizes gross − basis", () => {
+    // Net $8M + $2M loan = $10M securities sold and rebought against $9M basis.
+    const basisMap = { m: 9_000_000 };
+    const result = applyReinvestments({
+      reinvestments: [
+        reinvestment({ accountIds: ["m"], realizeTaxesOnSwitch: true, soldFractionByAccount: { m: 1 } }),
+      ],
+      accounts: [taxableAccount("m")],
+      accountBalances: { m: 8_000_000 },
+      basisMap,
+      marginMap: { m: 2_000_000 },
+      accountLedgers: {},
+      year: 2030,
+    });
+    expect(result.capitalGains).toBeCloseTo(1_000_000, 2);
+    expect(basisMap.m).toBeCloseTo(10_000_000, 2); // rebought securities carry the full position's basis
+  });
+
   it("realizes a LOSS on an underwater switch and steps basis DOWN", () => {
     // value 40k against a 100k basis → 60k underwater.
     const basisMap = { a1: 100_000 };

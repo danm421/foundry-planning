@@ -21,6 +21,7 @@ export interface AssetTxInfo {
   capitalGain?: number;
   transactionCosts?: number;
   mortgagePaidOff?: number;
+  marginRepaid?: number;
   // buy
   purchasePrice?: number;
   mortgageAmount?: number;

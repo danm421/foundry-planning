@@ -42,6 +42,9 @@ export function detectTransactionEvents(
             { label: "Sale value", value: currency(saleInfo.saleValue) },
             { label: "Transaction costs", value: currency(saleInfo.transactionCosts) },
             { label: "Mortgage paid off", value: currency(saleInfo.mortgagePaidOff) },
+            ...((saleInfo.marginRepaid ?? 0) > 0
+              ? [{ label: "Margin loan repaid", value: currency(saleInfo.marginRepaid!) }]
+              : []),
             { label: "Net proceeds", value: currency(saleInfo.netProceeds) },
             { label: "Capital gain", value: currency(saleInfo.capitalGain) },
           ]

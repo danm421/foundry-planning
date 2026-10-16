@@ -268,3 +268,23 @@ describe("rateLimitErrorResponse", () => {
     expect(res.headers.get("Retry-After")).toBeNull();
   });
 });
+
+describe("checkMcpComputeRateLimit", () => {
+  it("spends the call's weight, not one unit", async () => {
+    mockLimit.mockResolvedValue({ success: true, remaining: 87, reset: 1 });
+    const { checkMcpComputeRateLimit } = await import("../rate-limit");
+    const result = await checkMcpComputeRateLimit("org_1:user_1", 33);
+    expect(result).toEqual({ allowed: true, remaining: 87, reset: 1 });
+    expect(mockLimit).toHaveBeenCalledWith("org_1:user_1", { rate: 33 });
+    expect(RatelimitMock.slidingWindow).toHaveBeenCalledWith(120, "10 m");
+  });
+
+  it("fails closed when Upstash is not configured", async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { checkMcpComputeRateLimit } = await import("../rate-limit");
+    expect(await checkMcpComputeRateLimit("k", 5)).toEqual({ allowed: false, reason: "unconfigured" });
+    errorSpy.mockRestore();
+  });
+});

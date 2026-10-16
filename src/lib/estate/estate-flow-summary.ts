@@ -20,11 +20,16 @@ import {
 import { accountSlicesAtYear, type OwnerSlice } from "@/lib/estate/account-owner-slices";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import {
+  lifetimeGiftsToPeople,
+  type LifetimeGiftsToPerson,
+} from "@/lib/estate/lifetime-gifts-to-people";
+import {
   isPolicyInForce,
   insuredRetirementYearFor,
   resolveOwnerRetirementYears,
 } from "@/lib/estate/insurance-in-force";
 import { consolidatedBusinessValue } from "@/engine/business/business-tree";
+import { netSeedValue } from "@/engine/margin";
 
 // Account subTypes that the estate-flow Overview treats as already
 // out-of-estate for the household (assets earmarked for heirs that bypass
@@ -602,8 +607,9 @@ function computeSurvivorNetWorth(
   return { ownerLabel: survivor.label, role: survivor.role, amount: total, lines };
 }
 
+/** Authored value net of any margin loan — what the projection seeds. */
 function accountAmount(a: Account): number {
-  return typeof a.value === "number" ? a.value : 0;
+  return typeof a.value === "number" ? netSeedValue(a) : 0;
 }
 
 /**
@@ -616,11 +622,11 @@ function accountAmount(a: Account): number {
  *    trust is a named primary beneficiary (or no beneficiaries are set) is
  *    swapped to face value × ownership percent — that's the ILIT pattern.
  *  - **heirs**: person-owned OOE accounts (today: 529 plans) at their year-aware
- *    balance, PLUS one synthetic entity per family member who has received
- *    cumulative cash gifts on or before `asOfYear`. Cash gifts to persons sit
- *    as a nominal balance (no growth — there's no tracked account on the
- *    recipient side); cash gifts to trusts already flow through the trust's
- *    own account slices via the projection.
+ *    balance, PLUS one synthetic entity per person who has received gifts on
+ *    or before `asOfYear` — the year-aware value of any account share gifted
+ *    to them, and the cash lines of `giftsToPeople`. Cash gifts sit as a
+ *    nominal balance (no growth — there's no tracked account on the recipient
+ *    side).
  *
  * Balances and ownership resolve through `asOfYearResolver`: the projection's
  * row for `asOfYear` when there is one (an account missing from it is worth
@@ -630,7 +636,7 @@ function accountAmount(a: Account): number {
 function computeOutOfEstate(
   clientData: ClientData,
   asOfYear: number,
-  gifts: EstateFlowGift[],
+  giftsToPeople: LifetimeGiftsToPerson[],
   projection: ProjectionResult | null | undefined,
 ): EstateFlowSummary["outOfEstate"] {
   const accounts = clientData.accounts ?? [];
@@ -654,13 +660,25 @@ function computeOutOfEstate(
   // split-owned account don't bleed into entity slices.
   const entitySliceByAccount = new Map<string, Map<string, number>>();
   const entityPercentByAccount = new Map<string, Map<string, number>>();
-  // OOE Heirs accumulator, keyed by recipient id. Filled from two sources: the
-  // `gifted_away` slices collected in the loop below, and the cumulative cash
-  // gifts gathered after the trust section.
-  const giftsByRecipient = new Map<
-    string,
-    { label: string; amount: number; gifts: { label: string; amount: number }[] }
-  >();
+  // OOE Heirs gift entities, keyed by recipient id. Filled from two sources:
+  // the `gifted_away` slices collected in the loop below, and the cash gifts
+  // merged after the trust section.
+  const giftsByRecipient = new Map<string, OoeEntity>();
+  const addGiftToHeir = (
+    recipient: { kind: "family_member" | "external_beneficiary"; id: string },
+    label: string,
+    amount: number,
+  ) => {
+    const acc = giftsByRecipient.get(recipient.id) ?? {
+      entityId: recipient.id,
+      entityLabel: giftRecipientLabel(recipient, clientData),
+      amount: 0,
+      assets: [],
+    };
+    acc.amount += amount;
+    acc.assets.push({ label, amount });
+    giftsByRecipient.set(recipient.id, acc);
+  };
   for (const account of accounts) {
     // Business child accounts roll into their parent — skip them so their
     // value isn't counted twice (once via the parent's consolidated tree and
@@ -695,17 +713,7 @@ function computeOutOfEstate(
       if (sl.value <= 0) continue;
       const { kind, id } = sl.owner.recipient;
       if (kind === "entity") continue; // trust gifts ride the entity slices above
-      const acc = giftsByRecipient.get(id) ?? {
-        label:
-          kind === "family_member"
-            ? familyMemberLabel(id, clientData)
-            : externalBeneficiaryLabel(id, clientData),
-        amount: 0,
-        gifts: [] as { label: string; amount: number }[],
-      };
-      acc.amount += sl.value;
-      acc.gifts.push({ label: account.name, amount: sl.value });
-      giftsByRecipient.set(id, acc);
+      addGiftToHeir({ kind, id }, account.name, sl.value);
     }
     const pctByEntity = new Map<string, number>();
     for (const o of owners) {
@@ -782,11 +790,7 @@ function computeOutOfEstate(
   const irrevTotal = irrevTrustEntities.reduce((s, e) => s + e.amount, 0);
 
   // OOE Heirs: person-owned OOE accounts (529s) at year-aware balance, plus
-  // one synthetic entity per family member with cumulative cash gifts on or
-  // before `asOfYear`. Bare cash gifts to persons carry no tracked account
-  // on the recipient side, so they sit as a nominal balance — growth on a
-  // gifted balance only happens when the gift lands in (or transfers
-  // ownership of) an account that itself grows in the projection.
+  // one synthetic entity per person who has received gifts by `asOfYear`.
   const heirEntities: OoeEntity[] = [];
   for (const account of accounts) {
     if (!OOE_PERSON_ACCOUNT_SUBTYPES.has(account.subType)) continue;
@@ -800,30 +804,12 @@ function computeOutOfEstate(
     });
   }
 
-  // Cumulative cash gifts to family members up to `asOfYear`, plus the
-  // year-aware value of any account percentage gifted to a person or charity
-  // (a `gifted_away` slice). Series gifts target entities only, so they ride
-  // the trust's account slices above.
-  for (const gift of gifts) {
-    if (gift.kind !== "cash-once") continue;
-    if (gift.recipient.kind !== "family_member") continue;
-    if (gift.year > asOfYear) continue;
-    if (gift.amount <= 0) continue;
-    const fmId = gift.recipient.id;
-    const label = familyMemberLabel(fmId, clientData);
-    const existing = giftsByRecipient.get(fmId) ?? { label, amount: 0, gifts: [] };
-    existing.amount += gift.amount;
-    existing.gifts.push({ label: `Cash gift (${gift.year})`, amount: gift.amount });
-    giftsByRecipient.set(fmId, existing);
+  // Cash gifts join the account shares gifted to the same person (the
+  // `gifted_away` slices gathered above).
+  for (const { recipient, lines } of giftsToPeople) {
+    for (const l of lines) if (l.kind === "cash") addGiftToHeir(recipient, l.label, l.amount);
   }
-  for (const [fmId, agg] of giftsByRecipient) {
-    heirEntities.push({
-      entityId: fmId,
-      entityLabel: agg.label,
-      amount: agg.amount,
-      assets: agg.gifts,
-    });
-  }
+  heirEntities.push(...giftsByRecipient.values());
 
   const heirsTotal = heirEntities.reduce((s, e) => s + e.amount, 0);
 
@@ -930,6 +916,15 @@ function familyMemberLabel(id: string, clientData: ClientData): string {
 function externalBeneficiaryLabel(id: string, clientData: ClientData): string {
   const ext = (clientData.externalBeneficiaries ?? []).find((e) => e.id === id);
   return ext?.name ?? id;
+}
+
+function giftRecipientLabel(
+  recipient: { kind: "family_member" | "external_beneficiary"; id: string },
+  clientData: ClientData,
+): string {
+  return recipient.kind === "family_member"
+    ? familyMemberLabel(recipient.id, clientData)
+    : externalBeneficiaryLabel(recipient.id, clientData);
 }
 
 /**
@@ -1151,8 +1146,8 @@ function collectOoeAttribution(
 }
 
 /**
- * Nominal total dollar amount transferred by a lifetime gift, matching the
- * Sankey's value computation:
+ * Nominal total dollar amount transferred by a lifetime gift to a trust (the
+ * only drafts still valued here), matching the Sankey's value computation:
  *  - cash-once → `amount`
  *  - asset-once → `amountOverride ?? account.value * percent`
  *  - series → `annualAmount * (endYear - startYear + 1)` (nominal — series
@@ -1177,22 +1172,35 @@ function giftTotalAmount(gift: EstateFlowGift, clientData: ClientData): number {
 }
 
 /**
- * Rules 4 & 5 — lifetime gifts.
- *  - Gift to a family member → that person's `outright` gets the full amount.
- *  - Gift to a trust entity → the trust's beneficiaries' `inTrust` get the
- *    amount apportioned by `resolveTrustBeneficiaries` weights.
- *  - Gift to a non-trust entity (LLC etc.) or external beneficiary → skipped
- *    (no estate-side heir box to attribute to).
+ * Rule 4 — lifetime gifts to people (`lifetimeGiftsToPeople`, the list the Out
+ * of Estate Heirs box also reads) → each recipient's `outright`, one Prior
+ * Transfers line per gift or series.
  */
-function giftLineLabel(gift: EstateFlowGift): string {
-  // EstateFlowGift carries no human label; mint one from the kind so the
-  // heir panel's Prior Transfers / Trust Interests rows aren't all "Gift".
-  if (gift.kind === "cash-once") return `Cash gift (${gift.year})`;
-  if (gift.kind === "asset-once") return `Asset gift (${gift.year})`;
-  return `Annual gifts (${gift.startYear}–${gift.endYear})`;
+function collectGiftsToPeople(
+  acc: Map<string, HeirAccumulator>,
+  sectionsByHeir: Map<string, HeirSectionAccumulator>,
+  giftsToPeople: LifetimeGiftsToPerson[],
+  clientData: ClientData,
+): void {
+  for (const { recipient, amount, lines } of giftsToPeople) {
+    const entry =
+      acc.get(recipient.id) ??
+      emptyHeirAcc(recipient.id, giftRecipientLabel(recipient, clientData));
+    entry.outright += amount;
+    acc.set(recipient.id, entry);
+    getSectionAcc(sectionsByHeir, recipient.id).priorTransfers.push(
+      ...lines.map(({ label, amount }) => ({ label, amount })),
+    );
+  }
 }
 
-function collectLifetimeGifts(
+/**
+ * Rule 5 — lifetime gifts to a trust entity, from the editor's drafts → the
+ * trust's beneficiaries' `inTrust`, apportioned by `resolveTrustBeneficiaries`
+ * weights. Gifts to a non-trust entity (LLC etc.) are skipped (no estate-side
+ * heir box to attribute to); gifts to people are rule 4.
+ */
+function collectTrustGifts(
   acc: Map<string, HeirAccumulator>,
   sectionsByHeir: Map<string, HeirSectionAccumulator>,
   gifts: EstateFlowGift[],
@@ -1204,46 +1212,32 @@ function collectLifetimeGifts(
       .map((e) => e.id),
   );
   for (const gift of gifts) {
+    const recipient = gift.recipient;
+    if (recipient.kind !== "entity" || !trustEntityIds.has(recipient.id)) continue;
     const amount = giftTotalAmount(gift, clientData);
     if (amount <= 0) continue;
-    const recipient = gift.recipient;
-    if (recipient.kind === "family_member") {
-      const label = familyMemberLabel(recipient.id, clientData);
-      const entry = acc.get(recipient.id) ?? emptyHeirAcc(recipient.id, label);
-      entry.outright += amount;
-      acc.set(recipient.id, entry);
-
-      const sectionEntry = getSectionAcc(sectionsByHeir, recipient.id);
-      sectionEntry.priorTransfers.push({
-        label: giftLineLabel(gift),
-        amount,
+    const splits = resolveTrustBeneficiaries(recipient.id, clientData);
+    if (splits.length === 0) continue;
+    const label = trustLabel(recipient.id, clientData);
+    for (const s of splits) {
+      const entry =
+        acc.get(s.recipientKey) ??
+        emptyHeirAcc(s.recipientKey, s.recipientLabel);
+      const split = amount * s.weight;
+      entry.inTrust += split;
+      entry.trustInterests.push({
+        trustId: recipient.id,
+        trustLabel: label,
+        amount: split,
       });
-    } else if (recipient.kind === "entity") {
-      if (!trustEntityIds.has(recipient.id)) continue;
-      const splits = resolveTrustBeneficiaries(recipient.id, clientData);
-      if (splits.length === 0) continue;
-      const label = trustLabel(recipient.id, clientData);
-      for (const s of splits) {
-        const entry =
-          acc.get(s.recipientKey) ??
-          emptyHeirAcc(s.recipientKey, s.recipientLabel);
-        const split = amount * s.weight;
-        entry.inTrust += split;
-        entry.trustInterests.push({
-          trustId: recipient.id,
-          trustLabel: label,
-          amount: split,
-        });
-        acc.set(s.recipientKey, entry);
+      acc.set(s.recipientKey, entry);
 
-        const sectionEntry = getSectionAcc(sectionsByHeir, s.recipientKey);
-        sectionEntry.trustInterests.push({
-          label,
-          amount: split,
-        });
-      }
+      const sectionEntry = getSectionAcc(sectionsByHeir, s.recipientKey);
+      sectionEntry.trustInterests.push({
+        label,
+        amount: split,
+      });
     }
-    // external_beneficiary → no household-side heir box; skip.
   }
 }
 
@@ -1346,7 +1340,7 @@ function finalizeHeirBoxes(
  * year-aware OOE balance before it feeds rule 3, so the two rules don't
  * double-count gift-driven trust value.
  *
- * Series gifts use the full series total (matching what `collectLifetimeGifts`
+ * Series gifts use the full series total (matching what `collectTrustGifts`
  * attributes), since the heir-box represents the heir's eventual inheritance
  * total, not just the part that's already vested. Cash + asset use
  * `giftTotalAmount` for the same reason.
@@ -1451,16 +1445,21 @@ export function buildEstateFlowSummary(
     input.projection ?? null,
   );
 
+  const giftsToPeople = lifetimeGiftsToPeople(clientData, input.asOfYear, input.projection);
   const outOfEstate = computeOutOfEstate(
     clientData,
     input.asOfYear,
-    input.gifts,
+    giftsToPeople,
     input.projection ?? null,
   );
+  // The editor's drafts now feed only the trust-gift rules. A gift toggled off
+  // stays in the editor's list but is not made, so drop it here (the engine
+  // data behind `giftsToPeople` already leaves it out).
+  const gifts = input.gifts.filter((g) => g.enabled !== false);
 
   // When a projection is provided, `outOfEstate.irrevTrusts.entities[].amount`
   // is year-aware: it includes any trust balance that arrived via gift events
-  // composed up to `asOfYear`. Rule 5 (`collectLifetimeGifts`) separately
+  // composed up to `asOfYear`. Rule 5 (`collectTrustGifts`) separately
   // attributes the same gifts to the trust's beneficiaries. To avoid
   // double-counting on the heir boxes, subtract the cumulative past-gift
   // amount per trust from the OOE entity amount used for attribution. The
@@ -1469,14 +1468,14 @@ export function buildEstateFlowSummary(
   // composition is bypassed and OOE balances are static, so no subtraction
   // is needed.
   const ooeForAttribution: EstateFlowSummary["outOfEstate"] = input.projection
-    ? subtractPastGiftsForAttribution(outOfEstate, input.gifts, input.asOfYear, clientData)
+    ? subtractPastGiftsForAttribution(outOfEstate, gifts, input.asOfYear, clientData)
     : outOfEstate;
 
   // Per-heir composition. Rule 1 populates `outright` from at-death receipts;
   // rule 2 attributes trust bequests to the trust's beneficiaries as `inTrust`;
   // rule 3 attributes OOE balances (529 plans → outright, irrevocable trusts →
-  // inTrust); rules 4-5 attribute lifetime gifts (person → outright,
-  // trust → inTrust via beneficiary weights).
+  // inTrust); rule 4 attributes gifts to people made by `asOfYear` → outright;
+  // rule 5 attributes gifts to trusts → inTrust via beneficiary weights.
   const heirAcc = new Map<string, HeirAccumulator>();
   const sectionsByHeir = new Map<string, HeirSectionAccumulator>();
   collectAtDeathOutright(heirAcc, sectionsByHeir, reportData.firstDeath, "firstDeath");
@@ -1484,7 +1483,8 @@ export function buildEstateFlowSummary(
   collectTrustBequestsInTrust(heirAcc, sectionsByHeir, reportData.firstDeath, clientData);
   collectTrustBequestsInTrust(heirAcc, sectionsByHeir, reportData.secondDeath, clientData);
   collectOoeAttribution(heirAcc, sectionsByHeir, ooeForAttribution, clientData);
-  collectLifetimeGifts(heirAcc, sectionsByHeir, input.gifts, clientData);
+  collectGiftsToPeople(heirAcc, sectionsByHeir, giftsToPeople, clientData);
+  collectTrustGifts(heirAcc, sectionsByHeir, gifts, clientData);
   const heirBoxes = finalizeHeirBoxes(
     heirAcc,
     sectionsByHeir,

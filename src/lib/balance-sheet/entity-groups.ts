@@ -18,3 +18,36 @@ export function prepareEntityGroups(groups: readonly EntityGroup[]): EntityGroup
     .map(dedupeFlatEntityGroup)
     .filter((g) => g.assetRows.length > 0 || g.liabilityRows.length > 0);
 }
+
+/** The chip printed beside each entity's name. */
+export const ENTITY_TYPE_LABEL: Record<string, string> = {
+  trust: "Trust",
+  llc: "LLC",
+  s_corp: "S-Corp",
+  c_corp: "C-Corp",
+  partnership: "Partnership",
+  sole_prop: "Sole Prop",
+  foundation: "Foundation",
+  other: "Entity",
+};
+
+/** The By-Entity tab's All / Trusts / Businesses toggle. */
+export type EntityFilter = "all" | "trusts" | "businesses";
+
+export const ENTITY_FILTERS: readonly EntityFilter[] = ["all", "trusts", "businesses"];
+
+export const isTrust = (g: Pick<EntityGroup, "entityType">) => g.entityType === "trust";
+
+/** The toggle only appears when the household holds both trusts and
+ *  businesses — with one kind there is nothing to filter. */
+export function entityFilterApplies(groups: readonly EntityGroup[]): boolean {
+  const trustCount = groups.filter(isTrust).length;
+  return trustCount > 0 && trustCount < groups.length;
+}
+
+/** The groups the By-Entity tab shows under `filter`. A filter the toggle
+ *  doesn't offer (see `entityFilterApplies`) shows every group. */
+export function filterEntityGroups(groups: readonly EntityGroup[], filter: EntityFilter): EntityGroup[] {
+  if (filter === "all" || !entityFilterApplies(groups)) return [...groups];
+  return groups.filter((g) => (filter === "trusts" ? isTrust(g) : !isTrust(g)));
+}

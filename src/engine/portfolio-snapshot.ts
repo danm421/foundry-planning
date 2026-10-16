@@ -1,5 +1,6 @@
 import type { Account, AccountLedger, GiftEvent, ProjectionYear } from "./types";
 import { ownersForYear, type AccountOwner } from "./ownership";
+import { netGrowthOf } from "./margin";
 
 /** Minimal entity metadata the portfolio snapshot needs. The projection's
  *  entityMap rows (EntitySummary) are wider and always populate both fields;
@@ -378,12 +379,13 @@ const additionOf = (led: AccountLedger) =>
 const distributionOf = (led: AccountLedger) =>
   led.distributions - (led.internalDistributions ?? 0);
 
-/** Growth credited to `liquidTotal` this year. */
+/** Growth credited to `liquidTotal` this year — net of margin interest, which
+ *  leaves net value with no ledger flow (`netGrowthOf`). */
 export function liquidPortfolioGrowth(
   py: PortfolioYear,
   weights: Map<string, number> = liquidPortfolioWeights(py),
 ): number {
-  return sumWeighted(py, weights, (led) => led.growth);
+  return sumWeighted(py, weights, netGrowthOf);
 }
 
 /** External additions minus external distributions against `liquidTotal`. */

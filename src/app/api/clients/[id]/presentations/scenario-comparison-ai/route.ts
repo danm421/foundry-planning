@@ -95,6 +95,7 @@ export async function POST(
     const { byScenario, cached } = await generateScenarioComparisonAi({
       ...inputs,
       clientId: id,
+      firmId: access.firmId,
       tone: body.tone,
       customInstructions: body.customInstructions,
       stored: {},

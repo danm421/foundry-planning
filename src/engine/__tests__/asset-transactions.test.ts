@@ -457,6 +457,29 @@ describe("applyAssetPurchases", () => {
 
     expect(balances["checking-1"]).toBe(50000);
   });
+
+  it("a purchase funded from a margined account sheds basis on the securities ratio", () => {
+    // Net $8M + $2M loan = $10M securities, basis $9M. $1M of equity is 10% of
+    // the securities → $900K of basis leaves (net-based math would take $1.125M).
+    const margined: Account = { ...brokerageAccount, id: "m", value: 10_000_000, basis: 9_000_000, marginBalance: 2_000_000 };
+    const buy: AssetTransaction = {
+      id: "buy-1", name: "Buy Rental", type: "buy", year: 2028,
+      assetName: "New Rental", assetCategory: "real_estate", assetSubType: "rental_property",
+      purchasePrice: 1_000_000, growthRate: 0.03, fundingAccountId: "m",
+    };
+    const balances: Record<string, number> = { m: 8_000_000 };
+    const basisMap: Record<string, number> = { m: 9_000_000 };
+    const ledgers: Record<string, AccountLedger> = { m: makeLedger(8_000_000) };
+
+    applyAssetPurchases({
+      purchases: [buy], accounts: [margined], liabilities: [],
+      accountBalances: balances, basisMap, marginMap: { m: 2_000_000 }, accountLedgers: ledgers,
+      year: 2028, planStartYear: 2026, defaultCheckingId: "checking-1", ownerFmId: LEGACY_FM_CLIENT,
+    });
+
+    expect(balances.m).toBe(7_000_000);
+    expect(basisMap.m).toBeCloseTo(8_100_000, 2);
+  });
 });
 
 describe("applyAssetPurchases — deterministic synthetic ids", () => {
@@ -1053,5 +1076,66 @@ describe("sellAccountFraction — every linked loan", () => {
     const r = sell(0.5);
     expect(r.mortgagePaidOff).toBe(0);
     expect(r.removedLiabilityIds).toEqual([]);
+  });
+});
+
+describe("sellAccountFraction — margined account (R1)", () => {
+  const base = () => ({ accountId: "m", liabilities: [], accountBalances: { m: 8_000_000 }, basisMap: { m: 9_000_000 },
+    accountLedgers: { m: makeLedger(8_000_000) }, saleLabel: "Sale", saleId: "s1", marginMap: { m: 2_000_000 } as Record<string, number> });
+  it("a 50% sale sells half the securities and repays half the loan", () => {
+    const input = { ...base(), fraction: 0.5 };
+    const r = sellAccountFraction(input);
+    expect(r.saleValue).toBeCloseTo(5_000_000, 2);
+    expect(r.marginRepaid).toBeCloseTo(1_000_000, 2);
+    expect(r.netProceeds).toBeCloseTo(4_000_000, 2);
+    expect(r.capitalGain).toBeCloseTo(500_000, 2);
+    expect(input.accountBalances.m).toBeCloseTo(4_000_000, 2);
+    expect(input.marginMap.m).toBeCloseTo(1_000_000, 2);
+  });
+  it("a whole sale repays the loan, credits net, and removes the account", () => {
+    const input = { ...base(), fraction: 1 };
+    const r = sellAccountFraction(input);
+    expect(r.netProceeds).toBeCloseTo(8_000_000, 2);
+    expect(r.capitalGain).toBeCloseTo(1_000_000, 2);
+    expect(r.removedAccountId).toBe("m");
+    expect(input.marginMap.m).toBeUndefined();
+  });
+  it("an underwater partial sale keeps net negative and the account open", () => {
+    // Net −$500K + $2M loan = $1.5M securities. Half of them sell for $750K and
+    // half the loan ($1M) is repaid, so $250K comes in from the proceeds side.
+    const input = { ...base(), accountBalances: { m: -500_000 }, fraction: 0.5 };
+    const r = sellAccountFraction(input);
+    expect(r.saleValue).toBeCloseTo(750_000, 2);
+    expect(r.marginRepaid).toBeCloseTo(1_000_000, 2);
+    expect(r.netProceeds).toBeCloseTo(-250_000, 2);
+    expect(r.removedAccountId).toBeUndefined();
+    expect(input.accountBalances.m).toBeCloseTo(-250_000, 2);
+    expect(input.marginMap.m).toBeCloseTo(1_000_000, 2);
+  });
+});
+
+describe("applyAssetSales — margin repaid on the sale breakdown", () => {
+  const margined: Account = { ...brokerageAccount, id: "m", value: 10_000_000, basis: 9_000_000, marginBalance: 2_000_000 };
+  const sell = (accountId: string): AssetTransaction => ({ id: `sale-${accountId}`, name: "Sell", type: "sell", year: 2028, accountId });
+
+  it("reports the repaid loan on a margined sale and leaves a loan-less sale's row unchanged", () => {
+    const balances: Record<string, number> = { m: 8_000_000, "brokerage-1": 200_000, "checking-1": 0 };
+    const result = applyAssetSales({
+      sales: [sell("m"), sell("brokerage-1")],
+      accounts: [margined, brokerageAccount, checkingAccount],
+      liabilities: [],
+      accountBalances: balances,
+      basisMap: { m: 9_000_000, "brokerage-1": 150_000, "checking-1": 0 },
+      marginMap: { m: 2_000_000 },
+      accountLedgers: {},
+      year: 2028,
+      defaultCheckingId: "checking-1",
+      filingStatus: "married_joint",
+    });
+    const [m, plain] = result.breakdown;
+    expect(m.marginRepaid).toBeCloseTo(2_000_000, 2);
+    expect(m.netProceeds).toBeCloseTo(8_000_000, 2);
+    expect(plain).not.toHaveProperty("marginRepaid");
+    expect(balances["checking-1"]).toBeCloseTo(8_200_000, 2);
   });
 });

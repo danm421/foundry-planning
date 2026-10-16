@@ -15,6 +15,7 @@ import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
 import { buildDrillChartSpec } from "../../shared/build-chart-spec";
 import { STACK_COLORS } from "../cash-flow-assets/view-model";
+import { netGrowthOf } from "@/engine/margin";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
@@ -43,6 +44,13 @@ export interface BuildPortfolioGrowthDrillInput {
   spouseName: string | null;
 }
 
+/** An account's growth this year, net of margin interest (`netGrowthOf`) so
+ *  the drill ties to the Portfolio Assets roll-forward. */
+function growthOf(r: ProjectionYear, accountId: string): number {
+  const led = r.accountLedgers[accountId];
+  return led ? netGrowthOf(led) : 0;
+}
+
 export function buildPortfolioGrowthDrillData(
   input: BuildPortfolioGrowthDrillInput,
 ): DrillPageData {
@@ -53,7 +61,7 @@ export function buildPortfolioGrowthDrillData(
     const byAcct = r.portfolioAssets[bucket] as Record<string, number> | undefined;
     if (!byAcct) return 0;
     let sum = 0;
-    for (const id of Object.keys(byAcct)) sum += r.accountLedgers[id]?.growth ?? 0;
+    for (const id of Object.keys(byAcct)) sum += growthOf(r, id);
     return sum;
   }
 
@@ -68,7 +76,7 @@ export function buildPortfolioGrowthDrillData(
 
   function portfolioGrowthTotal(r: ProjectionYear): number {
     let sum = 0;
-    for (const id of portfolioAccountIds(r)) sum += r.accountLedgers[id]?.growth ?? 0;
+    for (const id of portfolioAccountIds(r)) sum += growthOf(r, id);
     return sum;
   }
 

@@ -119,7 +119,7 @@ describe("ShareDialog", () => {
     });
 
     // Fill in the email
-    const emailInput = screen.getByLabelText(/email/i);
+    const emailInput = screen.getByLabelText(/share with/i);
     fireEvent.change(emailInput, { target: { value: "bob@example.com" } });
 
     // Select "edit" permission
@@ -203,7 +203,7 @@ describe("ShareDialog", () => {
     });
 
     // Fill in the email and submit
-    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "nobody@example.com" } });
+    fireEvent.change(screen.getByLabelText(/share with/i), { target: { value: "nobody@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: /share/i }));
 
     await waitFor(() => {
@@ -235,13 +235,103 @@ describe("ShareDialog", () => {
     });
 
     // Fill in the email and submit
-    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "existing@example.com" } });
+    fireEvent.change(screen.getByLabelText(/share with/i), { target: { value: "existing@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: /share/i }));
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent(
         "This person already has access to this client.",
       );
+    });
+  });
+
+  describe("firm member picker", () => {
+    const member = (userId: string, displayName: string, email: string) => ({
+      userId,
+      displayName,
+      email,
+      imageUrl: null,
+      role: "Member",
+      roleKey: "org:member",
+    });
+    const MEMBERS = [
+      member("u-ann", "Ann Park", "ann@firm.com"),
+      member("u-bob", "Bob Reyes", "bob@firm.com"),
+    ];
+
+    async function renderWithMembers(sharesPayload: object = { shares: [] }) {
+      const fetchMock = makeFetchMock(sharesPayload);
+      global.fetch = fetchMock as typeof fetch;
+      const onOpenChange = vi.fn();
+      render(
+        <ShareDialog
+          open
+          onOpenChange={onOpenChange}
+          clientId={CLIENT_ID}
+          initialIsPrivate={false}
+          members={MEMBERS}
+        />,
+      );
+      await waitFor(() => expect(screen.queryByText(/loading shared access/i)).toBeNull());
+      return { fetchMock, onOpenChange };
+    }
+
+    function postedBody(fetchMock: ReturnType<typeof makeFetchMock>) {
+      const call = fetchMock.mock.calls.find(([, opts]) => opts?.method === "POST");
+      return call ? JSON.parse(call[1]!.body as string) : undefined;
+    }
+
+    it("shares with a firm member picked from the list", async () => {
+      const { fetchMock } = await renderWithMembers();
+      fireEvent.focus(screen.getByLabelText(/share with/i));
+      fireEvent.click(screen.getByRole("option", { name: /bob reyes/i }));
+      expect(screen.getByLabelText(/share with/i)).toHaveValue("bob@firm.com");
+
+      fireEvent.click(screen.getByRole("button", { name: /^share$/i }));
+      await waitFor(() =>
+        expect(postedBody(fetchMock)).toEqual({ email: "bob@firm.com", permission: "view" }),
+      );
+    });
+
+    it("typing a name and pressing Enter picks the best match", async () => {
+      await renderWithMembers();
+      const input = screen.getByLabelText(/share with/i);
+      fireEvent.change(input, { target: { value: "ann" } });
+      expect(screen.getAllByRole("option")).toHaveLength(1);
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(input).toHaveValue("ann@firm.com");
+      expect(screen.queryByRole("listbox")).toBeNull();
+    });
+
+    it("does not offer someone who already has access", async () => {
+      await renderWithMembers({
+        shares: [
+          {
+            id: "s1",
+            clientId: CLIENT_ID,
+            scope: "client",
+            recipientUserId: "u-ann",
+            recipientEmail: "ann@firm.com",
+            permission: "view",
+          },
+        ],
+      });
+      fireEvent.focus(screen.getByLabelText(/share with/i));
+      expect(screen.queryByRole("option", { name: /ann park/i })).toBeNull();
+      expect(screen.getByRole("option", { name: /bob reyes/i })).toBeInTheDocument();
+    });
+
+    it("Escape closes the list without closing the dialog", async () => {
+      const { onOpenChange } = await renderWithMembers();
+      const input = screen.getByLabelText(/share with/i);
+      fireEvent.focus(input);
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(screen.queryByRole("listbox")).toBeNull();
+      expect(onOpenChange).not.toHaveBeenCalled();
+
+      // Clicking the still-focused field brings the list back.
+      fireEvent.click(input);
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
     });
   });
 

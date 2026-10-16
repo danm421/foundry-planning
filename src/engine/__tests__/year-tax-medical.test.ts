@@ -42,6 +42,7 @@ function withBreakdown(i: YearTaxInput, taxesPaid = 0): YearTaxInput {
       aboveLine: { retirementContributions: 0, taggedExpenses: 0, manualEntries: 0, studentLoanInterest: 0, total: 0, bySource: {} },
       belowLine: {
         charitable: 0, taxesPaid, stateIncomeTax: 0, propertyTaxes: 0, interestPaid: 0,
+        investmentInterest: 0,
         otherItemized: 0, itemizedTotal: taxesPaid, standardDeduction: 15_000,
         taxDeductions: Math.max(taxesPaid, 15_000), bySource: {},
       },

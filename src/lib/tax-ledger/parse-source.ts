@@ -1,6 +1,6 @@
 // src/lib/tax-ledger/parse-source.ts
 import type { CellDrillContext } from "@/lib/tax/cell-drill/types";
-import { irmaaCapSuffix, resolveSourceLabel, type BySourceEntry } from "@/lib/tax/cell-drill/_shared";
+import { irmaaCapSuffix, parseMarginSaleSource, resolveSourceLabel, type BySourceEntry } from "@/lib/tax/cell-drill/_shared";
 import { isTaxableCharacter, rawTypeToCharacter } from "./character";
 import type { TaxLedgerRow } from "./types";
 
@@ -55,6 +55,10 @@ export function parseHouseholdSource(
   }
   if (key.startsWith("business_sale:")) {
     return { type: "Business Sale", description: "Capital gain on business sale", character, account: null, amount, taxable };
+  }
+  if (key.startsWith("margin_sale:")) {
+    const { accountId, description } = parseMarginSaleSource(key);
+    return { type: "Margin Loan Sale", description, character, account: ctx.accountNames[accountId] ?? accountId, amount, taxable };
   }
   if (key.startsWith("sale:")) {
     return { type: "Asset Sale", description: "Capital gain on sale", character, account: null, amount, taxable };

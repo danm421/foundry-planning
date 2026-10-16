@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   deleteClientShares: vi.fn(),
   deletePlanningKbChunks: vi.fn(),
   deleteForgeConversations: vi.fn(),
+  purgeForgeHistory: vi.fn(),
   deleteAdvisorProfiles: vi.fn(),
   deleteAdvisorOnboarding: vi.fn(),
   deleteComplianceExportBatches: vi.fn(),
@@ -51,20 +52,31 @@ const mocks = vi.hoisted(() => ({
   deleteBrandingAsset: vi.fn(),
 }));
 
+// The eligibility guard's SELECT list, captured so a test can render it with
+// the real query builder (the mocked db never builds SQL).
+const captured = vi.hoisted(() => ({ firmSelection: undefined as Record<string, unknown> | undefined }));
+
 vi.mock("@/db", async () => {
   const schema = (await import("@/db/schema")) as Record<string, unknown>;
   const s = schema as Record<string, unknown>;
   return {
     db: {
+      // The purge's transactions run on this same fake.
+      transaction(cb: (tx: unknown) => unknown) {
+        return cb(this);
+      },
       // Drizzle queries are chainable and thenable. The collection SELECTs use
       // `.from(t).where(...)` (2 hops) for firmId-scoped tables and
       // `.from(t).where(... inArray subquery ...)` for the blob-ref tables.
       // We dispatch purely on the `from(tbl)` argument.
-      select: () => ({
+      select: (fields?: Record<string, unknown>) => ({
         from: (tbl: unknown) => ({
           where: () => {
             if (tbl === s.crmHouseholds) return mocks.selectHouseholds();
-            if (tbl === s.firms) return mocks.selectFirm();
+            if (tbl === s.firms) {
+              captured.firmSelection = fields;
+              return mocks.selectFirm();
+            }
             if (tbl === s.crmHouseholdDocuments) return mocks.selectHouseholdDocs();
             if (tbl === s.clientImportFiles) return mocks.selectImportFiles();
             if (tbl === s.crmTaskFiles) return mocks.selectTaskFiles();
@@ -119,6 +131,7 @@ vi.mock("@/db", async () => {
   };
 });
 vi.mock("@/lib/crm/households", () => ({ purgeCrmHouseholdById: mocks.purgeHousehold }));
+vi.mock("@/domain/forge/purge-history", () => ({ purgeForgeHistory: mocks.purgeForgeHistory }));
 vi.mock("@/lib/billing/stripe-client", () => ({
   getStripe: () => ({ customers: { del: mocks.stripeCustomersDel } }),
 }));
@@ -130,6 +143,9 @@ vi.mock("@vercel/blob", () => ({ del: mocks.vercelDel }));
 vi.mock("@/lib/imports/blob", () => ({ deleteImportFile: mocks.deleteImportFile }));
 vi.mock("@/lib/branding/blob", () => ({ deleteBrandingAsset: mocks.deleteBrandingAsset }));
 
+import { eq } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import { firms } from "@/db/schema";
 import { purgeFirmById, FirmNotPurgeableError } from "../purge-firm";
 import { PURGED_FIRM_TABLES } from "../purge-coverage";
 
@@ -423,6 +439,17 @@ describe("purgeFirmById", () => {
     }
   });
 
+  // Forge's LangGraph tables have no firm_id column, so PURGED_FIRM_TABLES and
+  // the drift guard can't see them. The purge erases them by firm, and must do
+  // it while the conversations that name their threads still exist.
+  it("erases the firm's Forge chat history and notes before its conversations", async () => {
+    await purgeFirmById("org_1");
+    expect(mocks.purgeForgeHistory).toHaveBeenCalledWith(expect.anything(), { firmId: "org_1" });
+    expect(mocks.purgeForgeHistory.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.deleteForgeConversations.mock.invocationCallOrder[0],
+    );
+  });
+
   it("nulls the retained firms row's PII/branding columns", async () => {
     await purgeFirmById("org_1");
     expect(mocks.updateFirm).toHaveBeenCalledWith(
@@ -474,6 +501,23 @@ describe("purgeFirmById — eligibility guard", () => {
     ]);
     await expect(purgeFirmById("org_active")).rejects.toBeInstanceOf(FirmNotPurgeableError);
     expect(mocks.purgeHousehold).not.toHaveBeenCalled();
+  });
+
+  it("counts only this firm's live subscriptions, not every firm's", async () => {
+    await purgeFirmById("org_1");
+
+    // Render the guard's SELECT exactly as drizzle builds it: a single-table
+    // select strips table names from select-field columns, so a subquery
+    // correlated on firms.firm_id compares subscriptions.firm_id to itself and
+    // counts every paying firm — no firm could ever be purged.
+    const { sql: text, params } = new QueryBuilder()
+      .select(captured.firmSelection as never)
+      .from(firms)
+      .where(eq(firms.firmId, "org_1"))
+      .toSQL();
+    expect(text).not.toMatch(/"firm_id" = "firm_id"/);
+    // Bound twice: once in the live-subscription count, once in the outer WHERE.
+    expect(params.filter((p) => p === "org_1")).toHaveLength(2);
   });
 
   it("throws when the firm row is missing", async () => {

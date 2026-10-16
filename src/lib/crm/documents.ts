@@ -3,7 +3,7 @@ import { put, del } from "@vercel/blob";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { crmHouseholdDocuments, crmDocumentFolders, clientImportFiles } from "@/db/schema";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, count, desc, eq, isNull } from "drizzle-orm";
 import { requireVaultAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
 import { recordActivity } from "./activity";
@@ -113,28 +113,52 @@ export async function uploadCrmDocument(
   return doc;
 }
 
+/**
+ * The documents a vault listing shows. Versioned plans collapse to their
+ * current version — superseded generated plans (is_current_version = false)
+ * never appear in a folder listing or its count; the version-history endpoint
+ * (`listDocumentVersions`) still returns the full set.
+ */
+function listedDocuments(householdId: string) {
+  return and(
+    eq(crmHouseholdDocuments.householdId, householdId),
+    eq(crmHouseholdDocuments.isCurrentVersion, true),
+  );
+}
+
 export async function listCrmDocuments(
   householdId: string,
   opts: { folderId?: string | null } = {},
 ): Promise<CrmDocumentRow[]> {
   await requireVaultAccess(householdId);
-  // Collapse versioned plans to their current version — superseded generated
-  // plans (is_current_version = false) never appear in the folder listing; the
-  // version-history endpoint (`listDocumentVersions`) still returns the full set.
-  const currentOnly = eq(crmHouseholdDocuments.isCurrentVersion, true);
   const folderScope =
     opts.folderId === undefined
       ? undefined
       : opts.folderId === null
         ? isNull(crmHouseholdDocuments.folderId)
         : eq(crmHouseholdDocuments.folderId, opts.folderId);
-  const where = folderScope
-    ? and(eq(crmHouseholdDocuments.householdId, householdId), currentOnly, folderScope)
-    : and(eq(crmHouseholdDocuments.householdId, householdId), currentOnly);
   return db.query.crmHouseholdDocuments.findMany({
-    where,
+    where: and(listedDocuments(householdId), folderScope),
     orderBy: [desc(crmHouseholdDocuments.createdAt)],
   });
+}
+
+/**
+ * Per-folder document counts for the vault tree, keyed by folder id with
+ * `"root"` for unfiled documents (the same key the documents route takes).
+ * Shares `listCrmDocuments`' filter, so a folder's count is exactly what its
+ * listing shows; folders with no documents are absent.
+ */
+export async function countDocumentsByFolder(
+  householdId: string,
+): Promise<Record<string, number>> {
+  await requireVaultAccess(householdId);
+  const rows = await db
+    .select({ folderId: crmHouseholdDocuments.folderId, n: count() })
+    .from(crmHouseholdDocuments)
+    .where(listedDocuments(householdId))
+    .groupBy(crmHouseholdDocuments.folderId);
+  return Object.fromEntries(rows.map((r) => [r.folderId ?? "root", r.n]));
 }
 
 export async function getCrmDocument(

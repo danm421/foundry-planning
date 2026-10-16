@@ -22,6 +22,7 @@ import {
   type DeathEventResult,
 } from "./shared";
 import { controllingEntity, isFullyEntityOwned, ownedByHousehold, controllingFamilyMember } from "../ownership";
+import { seedMarginLoan, withLiveMargin } from "../margin";
 import {
   buildEstateTaxResult,
   computeDeductions,
@@ -52,6 +53,8 @@ interface FirstDeathChainResult {
   accounts: Account[];
   accountBalances: Record<string, number>;
   basisMap: Record<string, number>;
+  marginMap: Record<string, number>;
+  marginPersonalShare: Record<string, number>;
   incomes: Income[];
   liabilities: Liability[];
   transfers: DeathTransfer[];
@@ -105,6 +108,8 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
   const nextLiabilities: Liability[] = [...liabilities];
   const nextAccountBalances: Record<string, number> = { ...accountBalances };
   const nextBasisMap: Record<string, number> = { ...basisMap };
+  const nextMarginMap: Record<string, number> = { ...(input.marginMap ?? {}) };
+  const nextShareMap: Record<string, number> = { ...(input.marginPersonalShare ?? {}) };
   const transfers: DeathTransfer[] = [];
   const warnings: string[] = [];
 
@@ -168,7 +173,8 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
     // Gift-resolved (see `routeAtDeath`): a partly gifted account is
     // partitioned like any other mixed account; a wholly gifted one routes
     // nothing.
-    const route = routeAtDeath(acct, balance, originalBasis, input);
+    // On the LIVE loan: every split below carries its share of it.
+    const route = routeAtDeath(withLiveMargin(acct, input.marginMap, input.marginPersonalShare), balance, originalBasis, input);
     if (route == null) {
       // Nothing of the decedent's is in it, but its AUTHORED rows still name
       // them — and the readers that ask WHICH principal owns an account read
@@ -185,6 +191,7 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
       nextAccounts.push(slice);
       nextAccountBalances[slice.id] = slice.value;
       nextBasisMap[slice.id] = slice.basis;
+      seedMarginLoan(nextMarginMap, slice, nextShareMap);
     }
     const routedAcct = route.account;
     const routedBalance = route.balance;
@@ -198,7 +205,7 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
       && !isFullyEntityOwned(routedAcct);
 
     const steppedBasis = computeSteppedUpBasis(
-      routedAcct.category, routedBalance, routedBasis,
+      routedAcct.category, routedBalance + (routedAcct.marginBalance ?? 0), routedBasis,
       { isJointAtFirstDeath: routedIsJoint, titlingType: routedAcct.titlingType },
     );
     const effectiveAcct: Account = { ...routedAcct, value: routedBalance, basis: steppedBasis };
@@ -299,10 +306,13 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
     // Also: remove the old account's balance / basis maps and add new ones.
     delete nextAccountBalances[acct.id];
     delete nextBasisMap[acct.id];
+    delete nextMarginMap[acct.id];
+    delete nextShareMap[acct.id];
     for (const a of stepAccts) {
       nextAccounts.push(a);
       nextAccountBalances[a.id] = a.value;
       nextBasisMap[a.id] = a.basis;
+      seedMarginLoan(nextMarginMap, a, nextShareMap);
     }
 
     // Swap liability records: drop the original linked liability (if any) and
@@ -328,6 +338,8 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
     accounts: nextAccounts,
     accountBalances: nextAccountBalances,
     basisMap: nextBasisMap,
+    marginMap: nextMarginMap,
+    marginPersonalShare: nextShareMap,
     incomes: nextIncomes,
     liabilities: nextLiabilities,
     transfers,
@@ -487,6 +499,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     // transfer to the heirs again at death.
     giftEvents: input.giftEvents ?? [],
     planStartYear: input.planSettings.planStartYear,
+    marginMap: input.marginMap,
   });
 
   // The precedence chain skips top-level business accounts (handled here
@@ -682,6 +695,9 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
       externalBeneficiaries: input.externalBeneficiaries,
       entities: mutatedEntities,
       year: input.year,
+      // Post-chain, like the accounts: a trust's slice the chain just peeled
+      // off a mixed account carries its loan under the slice's new id.
+      marginMap: chainResult.marginMap,
     });
     ledger = ledger.concat(pourOut.transfers);
     pouredLiabs = pourOut.liabilities;
@@ -816,6 +832,8 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     dsueGenerated: estateTax.dsueGenerated,
     lifeInsurancePayouts: li.lifeInsurancePayouts,
     entities: mutatedEntities,
+    marginMap: chainResult.marginMap,
+    marginPersonalShare: chainResult.marginPersonalShare,
   };
 }
 

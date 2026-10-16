@@ -6,7 +6,7 @@ import {
 } from "@/lib/balance-sheet/attribute";
 import { flatBusinessValueAt } from "@/engine/entity-cashflow";
 import type { FamilyMember, GiftEvent } from "@/engine/types";
-import { businessOfOwnerlessChild, entityOwnersAsOf, ownersAsOf } from "./view-model";
+import { accountLoanForYear, businessOfOwnerlessChild, entityOwnersAsOf, ownersAsOf } from "./view-model";
 import {
   foldPartitionedAccount,
   isPartitionedAt,
@@ -52,6 +52,8 @@ export interface OwnerColumnRow extends OwnerColumns {
   key: string;
   name: string;
   hasLinkedMortgage: boolean;
+  /** In-estate share of the account's margin loan (value is net of it). */
+  marginLoan?: number;
   revocableTrustName?: string | null;
 }
 
@@ -73,7 +75,7 @@ export interface HouseholdColumnsModel {
 
 export interface HouseholdProjYear extends AccountSlicesYear {
   year: number;
-  accountLedgers: Record<string, { endingValue: number; beginningValue: number }>;
+  accountLedgers: Record<string, { endingValue: number; beginningValue: number; marginBoY?: number; marginEoY?: number }>;
   liabilityBalancesBoY: Record<string, number>;
   notesReceivableByNote?: Record<string, { endingBalance: number }>;
 }
@@ -221,9 +223,11 @@ export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): Househ
     const owners = folded ? folded.owners : ownersOf();
     const cols = splitToColumns(attributeToColumns({ id: acct.id, value, owners }, ctx));
     if (cols.total <= 0) continue; // entirely OOE / held back
+    const wholeLoan = accountLoanForYear(yearData, acct.id, asOfMode);
     pushRow(cat, {
       key: acct.id,
       name: acct.name,
+      ...(wholeLoan > 0 ? { marginLoan: wholeLoan * (cols.total / value) } : {}),
       hasLinkedMortgage: cat === "realEstate" && linkedPropertyIds.has(acct.id),
       revocableTrustName: acct.revocableTrustName ?? null,
       ...cols,

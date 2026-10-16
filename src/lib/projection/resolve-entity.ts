@@ -7,6 +7,7 @@ import type {
   SavingsRule,
 } from "@/engine/types";
 import { EDUCATION_529_SENTINEL_OWNER_ID, type AccountOwner } from "@/engine/ownership";
+import { DEFAULT_MARGIN_CALL_PCT } from "@/engine/margin";
 import { asAmountUnit } from "@/lib/social-security/benefit-entry";
 import type { createGrowthSourceResolver } from "./resolve-growth-source";
 
@@ -84,6 +85,14 @@ type RawAccount = {
   value: string | number;
   basis: string | number;
   rothValue?: string | number | null;
+  marginBalance?: string | number | null;
+  marginInterestRate?: string | number | null;
+  marginCallPct?: string | number | null;
+  marginBorrowEnabled?: boolean | null;
+  marginBorrowStartYear?: string | number | null;
+  marginBorrowStartYearRef?: string | null;
+  marginRepayYear?: string | number | null;
+  marginRepayYearRef?: string | null;
   hsaCoverage?: "self" | "family" | null;
   growthSource: string | null;
   growthRate: string | number | null;
@@ -284,6 +293,14 @@ export function resolveAccountFromRaw(
         ? n(raw.basis)
         : ctx.holdingsTotalsByAccountId?.get(raw.id)?.basis ?? n(raw.basis),
     rothValue: raw.rothValue != null ? n(raw.rothValue) : 0,
+    marginBalance: raw.marginBalance != null ? n(raw.marginBalance) : 0,
+    marginInterestRate: raw.marginInterestRate != null ? n(raw.marginInterestRate) : 0,
+    marginCallPct: raw.marginCallPct != null ? n(raw.marginCallPct) : DEFAULT_MARGIN_CALL_PCT,
+    marginBorrowEnabled: raw.marginBorrowEnabled === true,
+    marginBorrowStartYear: nNullable(raw.marginBorrowStartYear) ?? null,
+    marginBorrowStartYearRef: raw.marginBorrowStartYearRef ?? null,
+    marginRepayYear: nNullable(raw.marginRepayYear) ?? null,
+    marginRepayYearRef: raw.marginRepayYearRef ?? null,
     hsaCoverage: raw.hsaCoverage ?? undefined,
     growthRate,
     rmdEnabled: raw.rmdEnabled,

@@ -10,6 +10,7 @@
 // the base-case projection through `buildGoalFunding`. That is the most
 // expensive thing on this page, so it runs inside the same Promise.all as the
 // queries and fails soft — see `loadGoalFunding`.
+import { netAccountValue } from "@/lib/accounts/net-value";
 import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
@@ -263,6 +264,7 @@ export async function loadPortalDashboard(
             name: accounts.name,
             category: accounts.category,
             value: accounts.value,
+            marginBalance: accounts.marginBalance,
             isDefaultChecking: accounts.isDefaultChecking,
             parentAccountId: accounts.parentAccountId,
           })
@@ -286,7 +288,7 @@ export async function loadPortalDashboard(
     }),
   );
   const assetIds = visible.map((r) => r.id);
-  const totalAssets = visible.reduce((s, r) => s + Number(r.value || "0"), 0);
+  const totalAssets = visible.reduce((s, r) => s + netAccountValue(r), 0);
   const debtRows = scenario ? await loadPortalDebt(clientId, scenario.id) : [];
   const debtTotal = debtRows.reduce((s, r) => s + r.balance, 0);
   const nw = summarizeNetWorth({ assets: totalAssets, debt: debtTotal });

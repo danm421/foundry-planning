@@ -60,6 +60,8 @@ export interface HypotheticalEstateTaxInput {
    *  reserved, not yet populated), so this is wiring for a future producer
    *  rather than live data. */
   familyAccountSharesEoY?: Map<string, Map<string, number>>;
+  /** Live margin loan per account id (see engine/margin.ts). */
+  marginMap?: Record<string, number>;
 }
 
 function sumTotals(results: EstateTaxResult[]) {
@@ -108,6 +110,8 @@ function runOrdering(
     priorTaxableGifts: input.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
     entityAccountSharesEoY: input.entityAccountSharesEoY,
     familyAccountSharesEoY: input.familyAccountSharesEoY,
+    // As-is when absent: an empty map would read as "every loan paid off".
+    marginMap: input.marginMap && structuredClone(input.marginMap),
   });
 
   if (!input.isMarried) {
@@ -148,6 +152,9 @@ function runOrdering(
     priorTaxableGifts: input.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
     entityAccountSharesEoY: input.entityAccountSharesEoY,
     familyAccountSharesEoY: input.familyAccountSharesEoY,
+    // No map in ⇒ none here either: a first death run without one seeds only
+    // the accounts it routed, and a partial map would zero every other loan.
+    marginMap: input.marginMap && firstResult.marginMap,
   });
 
   return {
@@ -215,6 +222,7 @@ export interface AnchoredHypotheticalInput {
   priorTaxableGifts: { client: number; spouse: number };
   entityAccountSharesEoY?: Map<string, Map<string, number>>;
   familyAccountSharesEoY?: Map<string, Map<string, number>>;
+  marginMap?: Record<string, number>;
 }
 
 /**
@@ -254,6 +262,8 @@ export function computeAnchoredHypotheticalEstateTax(
     priorTaxableGifts: input.priorTaxableGifts,
     entityAccountSharesEoY: input.entityAccountSharesEoY,
     familyAccountSharesEoY: input.familyAccountSharesEoY,
+    // As-is when absent: an empty map would read as "every loan paid off".
+    marginMap: input.marginMap && structuredClone(input.marginMap),
   });
 
   const primaryFirst: HypotheticalEstateTaxOrdering = {

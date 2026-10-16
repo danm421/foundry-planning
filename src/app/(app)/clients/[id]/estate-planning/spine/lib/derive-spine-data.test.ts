@@ -804,3 +804,40 @@ describe("deriveSpineData — a death-partitioned account in the EoY pair row", 
     expect(data.pair.spouse.netWorth).toBeCloseTo(2_062_784.59, 2);
   });
 });
+
+describe("deriveSpineData — lifetime gifts to heirs", () => {
+  /** $15k a year to Alex, 2026–2035 — all before Tom's 2048 death. */
+  function givingFixture(): ClientData {
+    const tree = twoGrantorFixture();
+    tree.giftEvents = Array.from({ length: 10 }, (_, i) => ({
+      kind: "cash" as const,
+      year: 2026 + i,
+      amount: 15_000,
+      grantor: "client" as const,
+      recipientFamilyMemberId: "fm-child-1",
+      useCrummeyPowers: false,
+      seriesId: "s-alex",
+    }));
+    return tree;
+  }
+  const totalsAt = (asOf: "today" | "split" | number) => {
+    const tree = givingFixture();
+    const data = deriveSpineData({ tree, withResult: runProjectionWithEvents(tree), asOf });
+    if (data.kind !== "two-grantor") throw new Error(`expected two-grantor, got ${data.kind}`);
+    return data.totals;
+  };
+
+  it("counts the gifts made by the last death beside what passes at death", () => {
+    const totals = totalsAt("split");
+    expect(totals.lifetimeGifts).toBe(150_000);
+    expect(totals.toHeirs).toBeGreaterThan(0);
+  });
+
+  it("counts only the gifts made by a chosen year", () => {
+    expect(totalsAt(2030).lifetimeGifts).toBe(75_000);
+  });
+
+  it("counts none today — no gift is modeled before the plan starts", () => {
+    expect(totalsAt("today").lifetimeGifts).toBe(0);
+  });
+});

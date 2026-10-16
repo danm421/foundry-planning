@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { foundryUrl, type FoundryPage } from "../foundry-url";
+import { foundryDocumentUrl, foundryScenarioUrl, foundryUrl, type FoundryPage } from "../foundry-url";
 
 // `.env.local` sets NEXT_PUBLIC_APP_URL for the whole test run (see
 // vitest.setup.ts), so every case here must pin or delete the variable
@@ -52,7 +52,7 @@ describe("foundryUrl", () => {
     // Exact `toBe` against the full URL, not `toContain` — `cashflow` and
     // `monteCarlo` both resolve to paths containing "/cashflow", so a
     // `toContain` check stays green even if the two were transposed. See
-    // R25. All 11 FoundryPage keys are covered, not just the 7 in the brief.
+    // R25. All 12 FoundryPage keys are covered, not just the 7 in the brief.
     const cases: Array<[FoundryPage, string]> = [
       ["overview", "overview"],
       ["balanceSheet", "assets/balance-sheet-report"],
@@ -65,6 +65,7 @@ describe("foundryUrl", () => {
       ["insurance", "details/insurance"],
       ["family", "details/family"],
       ["incomeExpenses", "details/income-expenses"],
+      ["presentations", "presentations"],
     ];
 
     it.each(cases)("maps %s to the /clients/c/%s route", (page, path) => {
@@ -72,5 +73,23 @@ describe("foundryUrl", () => {
         `https://app.foundryplanning.com/clients/c/${path}`,
       );
     });
+  });
+});
+
+describe("foundryScenarioUrl", () => {
+  it("opens the Solver on one scenario", () => {
+    process.env[ENV_KEY] = "https://app.foundryplanning.com";
+    expect(foundryScenarioUrl("c", "s-1")).toBe(
+      "https://app.foundryplanning.com/clients/c/solver?scenario=s-1",
+    );
+  });
+});
+
+describe("foundryDocumentUrl", () => {
+  it("links to a household document through the signed-in download route", () => {
+    process.env[ENV_KEY] = "https://app.foundryplanning.com";
+    expect(foundryDocumentUrl("hh-1", "doc-1")).toBe(
+      "https://app.foundryplanning.com/api/crm/households/hh-1/documents/doc-1",
+    );
   });
 });

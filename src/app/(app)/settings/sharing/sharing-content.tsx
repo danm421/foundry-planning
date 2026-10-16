@@ -8,6 +8,7 @@ import { firmBookSiloEnabled } from "@/lib/firm-settings";
 import { resolveSharesForRecipient } from "@/lib/clients/shared-access";
 import { resolveActors } from "@/lib/activity/resolve-actors";
 import { resolveFirmNames } from "@/lib/activity/resolve-firm-names";
+import { listFirmMembers } from "@/lib/crm-tasks/members";
 import { SharingPanels } from "./sharing-panels";
 
 export type OutgoingShare = {
@@ -39,6 +40,11 @@ export async function SharingContent(): Promise<ReactElement> {
       <p className="text-sm text-ink-3">Sign in to manage sharing.</p>
     );
   }
+
+  // Firm members to pick from instead of typing an email — fetched up front so
+  // the Clerk call overlaps the queries below. A Clerk failure degrades to
+  // typing the email, not to a broken Sharing page.
+  const membersPromise = listFirmMembers(orgId).catch(() => []);
 
   // --- Outgoing shares ---
   // Non-revoked shares owned by this user (members see their own; page is
@@ -147,12 +153,21 @@ export async function SharingContent(): Promise<ReactElement> {
     )
     .orderBy(asc(crmHouseholds.name));
 
+  const [bookSiloEnabled, members] = await Promise.all([
+    firmBookSiloEnabled(orgId),
+    membersPromise,
+  ]);
+  const firmMembers = members
+    .filter((m) => m.userId !== userId)
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+
   return (
     <SharingPanels
       outgoing={outgoing}
       incoming={incoming}
       shareableClients={shareableRows}
-      bookSiloEnabled={await firmBookSiloEnabled(orgId)}
+      bookSiloEnabled={bookSiloEnabled}
+      firmMembers={firmMembers}
     />
   );
 }

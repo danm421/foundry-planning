@@ -36,6 +36,7 @@ import { db } from "@/db";
 import { accounts, accountOwners, savingsRules, scenarios, clients, incomes, expenses, planSettings, expenseDedicatedAccounts } from "@/db/schema";
 import type { Account, SavingsRule } from "@/engine/types";
 import { EDUCATION_529_SENTINEL_OWNER_ID } from "@/engine/ownership";
+import { DEFAULT_MARGIN_CALL_PCT } from "@/engine/margin";
 import type { SolverMutation } from "@/lib/solver/types";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import { mutationsToBaseUpdates } from "@/lib/solver/mutations-to-base-updates";
@@ -156,6 +157,22 @@ function accountGrowthBasis(a: Account): {
   };
 }
 
+/** Margin loan columns — shared by the insert and update paths. */
+function marginLoanFields(a: Account) {
+  return {
+    marginBalance: decOrZero(a.marginBalance),
+    marginInterestRate: decOrZero(a.marginInterestRate),
+    marginCallPct: String(a.marginCallPct ?? DEFAULT_MARGIN_CALL_PCT),
+    // The switch needs a taxable account (`accounts_margin_borrow_taxable_only`):
+    // a scenario that re-categorised the account must not 500 the save.
+    marginBorrowEnabled: a.marginBorrowEnabled === true && a.category === "taxable",
+    marginBorrowStartYear: a.marginBorrowStartYear ?? null,
+    marginBorrowStartYearRef: (a.marginBorrowStartYearRef ?? null) as typeof accounts.$inferInsert.marginBorrowStartYearRef,
+    marginRepayYear: a.marginRepayYear ?? null,
+    marginRepayYearRef: (a.marginRepayYearRef ?? null) as typeof accounts.$inferInsert.marginRepayYearRef,
+  };
+}
+
 function accountInsertValues(
   a: Account,
   clientId: string,
@@ -174,6 +191,7 @@ function accountInsertValues(
     value: decOrZero(a.value),
     basis: decOrZero(a.basis),
     rothValue: decOrZero(a.rothValue),
+    ...marginLoanFields(a),
     hsaCoverage: a.hsaCoverage ?? null,
     // null = inherit the default growth rate for this category from plan_settings.
     growthRate: a.growthRate != null ? String(a.growthRate) : null,
@@ -459,6 +477,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             value: decOrZero(a.value),
             basis: decOrZero(a.basis),
             rothValue: decOrZero(a.rothValue),
+            ...marginLoanFields(a),
             hsaCoverage: a.hsaCoverage ?? null,
             growthRate: a.growthRate != null ? String(a.growthRate) : null,
             ...accountGrowthBasis(a),

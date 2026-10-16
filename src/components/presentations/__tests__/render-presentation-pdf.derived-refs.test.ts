@@ -22,7 +22,11 @@ vi.mock("@/lib/branding/branding", () => ({
   }),
 }));
 vi.mock("@/lib/branding/resolve-for-client", () => ({
-  resolveBrandingForClient: vi.fn(),
+  resolveBrandingForClient: vi.fn().mockResolvedValue({
+    firmName: "Firm Brand",
+    primaryColor: "#222222",
+    logoDataUrl: null,
+  }),
 }));
 vi.mock("@/lib/presentations/default-logo", () => ({
   foundryDefaultLogoDataUrl: vi.fn().mockResolvedValue("data:image/png;base64,DEFAULT"),

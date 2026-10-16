@@ -1,12 +1,10 @@
 import { notFound } from "next/navigation";
 import { db } from "@/db";
-import { clients, crmHouseholdContacts } from "@/db/schema";
+import { clients } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
-import { buildBalanceSheetReportProps } from "@/lib/balance-sheet/build-report-props";
+import { loadBalanceSheetReport } from "@/lib/balance-sheet/load-report";
 import BalanceSheetReport from "@/components/balance-sheet-report/balance-sheet-report";
-import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 interface BalanceSheetReportContentProps {
   clientId: string;
@@ -22,32 +20,9 @@ export async function BalanceSheetReportContent({ clientId: id, scenarioParam }:
     .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
   if (!clientRow) notFound();
 
-  // Owner labels (first names) from CRM contacts; fall back to the tree.
-  // crmHouseholdId is notNull on the clients table so no null-guard needed.
-  // Both reads are independent — run them concurrently.
-  const [{ tree, result }, contactRows] = await Promise.all([
-    loadProjectionForRef(id, firmId, {
-      kind: "scenario",
-      id: scenarioParam ?? "base",
-      toggleState: {},
-    }),
-    db
-      .select({ role: crmHouseholdContacts.role, firstName: crmHouseholdContacts.firstName })
-      .from(crmHouseholdContacts)
-      .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId)),
-  ]);
+  // Shared with the PDF export (titling, year slimming, spouse gating, trust
+  // details, owner labels) so the download matches this page exactly.
+  const { report } = await loadBalanceSheetReport(id, firmId, clientRow.crmHouseholdId, scenarioParam);
 
-  const clientLabel =
-    contactRows.find((c) => c.role === "primary")?.firstName ?? tree.client.firstName ?? "Client";
-  const spouseContact = contactRows.find((c) => c.role === "spouse");
-
-  // Shared derivation (titling, year slimming, spouse gating, trust details)
-  // lives in buildBalanceSheetReportProps — also used by the solver's live
-  // Balance Sheet tab.
-  const reportProps = buildBalanceSheetReportProps(tree, result.years, {
-    clientLabel,
-    spouseName: spouseContact?.firstName ?? tree.client.spouseName ?? CO_CLIENT_LABEL,
-  });
-
-  return <BalanceSheetReport {...reportProps} todayYear={new Date().getFullYear()} />;
+  return <BalanceSheetReport {...report} todayYear={new Date().getFullYear()} pdfClientId={id} />;
 }

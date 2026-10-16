@@ -21,6 +21,28 @@ export interface TrustDetails {
   beneficiaries: TrustBeneficiaryLine[];
 }
 
+/** A trust with nothing recorded gets no details card. */
+export function hasTrustDetails(details: TrustDetails): boolean {
+  return (
+    details.trustee !== null ||
+    details.grantor !== null ||
+    details.subTypeLabel !== null ||
+    details.powers.length > 0 ||
+    details.beneficiaries.length > 0
+  );
+}
+
+const BENEFICIARY_GROUPS: TrustBeneficiaryLine["group"][] = ["Primary", "Contingent", "Income", "Remainder"];
+
+/** Beneficiary lines in card order (Primary → Contingent → Income →
+ *  Remainder), empty groups dropped. */
+export function groupBeneficiaries(details: TrustDetails): { group: TrustBeneficiaryLine["group"]; rows: TrustBeneficiaryLine[] }[] {
+  return BENEFICIARY_GROUPS.map((group) => ({
+    group,
+    rows: details.beneficiaries.filter((b) => b.group === group),
+  })).filter((g) => g.rows.length > 0);
+}
+
 const SUB_TYPE_LABEL: Partial<Record<TrustSubType, string>> = {
   ilit: "ILIT",
   crt: "CRT",

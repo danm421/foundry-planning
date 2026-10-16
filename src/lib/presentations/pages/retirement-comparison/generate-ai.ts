@@ -23,6 +23,7 @@ import { afterTaxLegacy } from "./legacy";
 import { getOrComputeMaxSpending } from "@/lib/compute-cache/max-spending";
 import { hashAiRequest, getCachedAnalysis, setCachedAnalysis } from "@/lib/presentations/ai-cache";
 import { callAIExtraction } from "@/lib/extraction/azure-client";
+import { withAiForFirm } from "@/lib/ai/resolve";
 import type { ScenarioChange, ToggleGroup } from "@/engine/scenario/types";
 
 export interface GenerateRetirementComparisonAiArgs {
@@ -242,7 +243,11 @@ export async function generateRetirementComparisonAi(
 
   // Pin gpt-5.4 explicitly rather than relying on the AZURE_ANALYSIS_MODEL
   // env override — matches the comparison-tool AI route for predictable output.
-  const markdown = (await callAIExtraction(system, user, "gpt-5.4")).trim();
+  // Under `firmId`, the firm this data was loaded from: on a client shared in
+  // from another firm, the caller's own org must not pick the tenant.
+  const markdown = (
+    await withAiForFirm(firmId, () => callAIExtraction(system, user, "gpt-5.4"))
+  ).trim();
   const generatedAt = new Date().toISOString();
 
   await setCachedAnalysis(clientId, hash, { markdown, generatedAt });

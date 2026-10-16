@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { netAccountValue } from "@/lib/accounts/net-value";
 import {
   clients,
   crmHouseholds,
@@ -98,7 +99,12 @@ export async function scanBook(
     await Promise.all([
       // accounts → netWorth(partial)/liquid/cash
       db
-        .select({ clientId: accounts.clientId, category: accounts.category, value: accounts.value })
+        .select({
+          clientId: accounts.clientId,
+          category: accounts.category,
+          value: accounts.value,
+          marginBalance: accounts.marginBalance,
+        })
         .from(accounts)
         .where(inArray(accounts.clientId, clientIds)),
       // business entities → family-share contribution to netWorth
@@ -148,7 +154,7 @@ export async function scanBook(
   // Accounts → netWorth(partial)/liquid/cash, grouped in JS.
   const portfolio = new Map<string, { net: number; liquid: number; cash: number }>();
   for (const a of accountRows) {
-    const v = Number(a.value ?? 0);
+    const v = netAccountValue(a);
     const p = portfolio.get(a.clientId) ?? { net: 0, liquid: 0, cash: 0 };
     p.net += v;
     if (!LIQUID_CATEGORY_EXCLUDE.has(String(a.category))) p.liquid += v;

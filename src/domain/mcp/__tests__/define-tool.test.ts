@@ -7,7 +7,8 @@ import { z } from "zod";
 // throws "Cannot access 'x' before initialization" (TDZ). vi.hoisted() runs
 // ahead of the vi.mock calls themselves, so the references are initialized in
 // time. Each factory still exports exactly one name, unchanged from the brief.
-const { verifyClientAccessFor, recordAudit, checkMcpRateLimit, assertHouseholdReadable } = vi.hoisted(() => ({
+const { verifyClientAccessFor, recordAudit, checkMcpRateLimit, assertHouseholdReadable, firmClaudeWritesEnabled } = vi.hoisted(() => ({
+  firmClaudeWritesEnabled: vi.fn(),
   verifyClientAccessFor: vi.fn(),
   recordAudit: vi.fn(),
   checkMcpRateLimit: vi.fn(),
@@ -17,6 +18,7 @@ const { verifyClientAccessFor, recordAudit, checkMcpRateLimit, assertHouseholdRe
 vi.mock("@/lib/clients/authz", () => ({ verifyClientAccessFor }));
 vi.mock("@/lib/audit", () => ({ recordAudit }));
 vi.mock("@/lib/rate-limit", () => ({ checkMcpRateLimit }));
+vi.mock("@/lib/firm-settings", () => ({ firmClaudeWritesEnabled }));
 // Only `assertHouseholdReadableForPrincipal` is replaced — everything else
 // (McpForbiddenError, CLIENT_UNREADABLE_MESSAGE, the real
 // assertClientReadableForPrincipal that the clientId tests below exercise via
@@ -27,7 +29,14 @@ vi.mock("../guards", async (importOriginal) => {
   return { ...actual, assertHouseholdReadableForPrincipal: assertHouseholdReadable };
 });
 
-import { defineTool, McpRateLimitedError } from "../define-tool";
+import {
+  defineTool,
+  defineWriteTool,
+  McpRateLimitedError,
+  McpWriteDisabledError,
+  VIEW_ONLY_MESSAGE,
+  WRITE_DISABLED_MESSAGE,
+} from "../define-tool";
 import { McpForbiddenError, CLIENT_UNREADABLE_MESSAGE } from "../guards";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 import type { McpToolContext } from "../context";
@@ -56,6 +65,7 @@ beforeEach(() => {
   handlerSpy.mockReset().mockResolvedValue({ secret: "ssn 123-45-6789", accountNumber: "12345678" });
   optionalClientHandlerSpy.mockReset().mockResolvedValue({ ok: true });
   assertHouseholdReadable.mockReset();
+  firmClaudeWritesEnabled.mockReset().mockResolvedValue(true);
 });
 
 const tool = defineTool({
@@ -219,6 +229,15 @@ describe("defineTool", () => {
       openWorldHint: false,
     });
   });
+
+  // The switch's column defaults to false: a read tool that consulted it would
+  // stop working for every firm that never turned Claude's changes on.
+  it("runs a read tool with the firm's write switch off, never consulting the switch", async () => {
+    firmClaudeWritesEnabled.mockResolvedValue(false);
+    await expect(tool.run({ clientId: "c1" }, principal)).resolves.toMatchObject({ accountNumber: "••••5678" });
+    expect(handlerSpy).toHaveBeenCalledTimes(1);
+    expect(firmClaudeWritesEnabled).not.toHaveBeenCalled();
+  });
 });
 
 describe("householdId is guarded from the schema, like clientId", () => {
@@ -278,5 +297,95 @@ describe("householdId is guarded from the schema, like clientId", () => {
     );
     const metadata = recordAudit.mock.calls[0]![0].metadata as Record<string, unknown>;
     expect(metadata).not.toHaveProperty("householdId");
+  });
+});
+
+describe("defineWriteTool", () => {
+  const writeHandler = vi.fn<(args: { clientId: string; name: string }, ctx: McpToolContext) => Promise<{ scenarioId: string }>>();
+  const writeTool = defineWriteTool({
+    name: "test_write",
+    title: "Test Write",
+    description: "A write tool for tests.",
+    inputSchema: z.object({ clientId: z.string(), name: z.string() }),
+    page: "scenarios",
+    handler: writeHandler,
+    auditMetadata: (_args, result) => ({ scenarioId: (result as { scenarioId: string }).scenarioId }),
+  });
+
+  beforeEach(() => {
+    writeHandler.mockReset().mockResolvedValue({ scenarioId: "s1" });
+    verifyClientAccessFor.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_1", access: "own" });
+  });
+
+  it("is annotated as making changes, so Claude asks before calling it", () => {
+    expect(writeTool.annotations).toEqual({
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    });
+  });
+
+  it("refuses when the firm switch is off, before any client lookup", async () => {
+    firmClaudeWritesEnabled.mockResolvedValue(false);
+    await expect(writeTool.run({ clientId: "c1", name: "x" }, principal)).rejects.toBeInstanceOf(McpWriteDisabledError);
+    await expect(writeTool.run({ clientId: "c1", name: "x" }, principal)).rejects.toThrow(WRITE_DISABLED_MESSAGE);
+    expect(verifyClientAccessFor).not.toHaveBeenCalled();
+    expect(writeHandler).not.toHaveBeenCalled();
+  });
+
+  it("refuses a view-only advisor", async () => {
+    verifyClientAccessFor.mockResolvedValue({ ok: true, permission: "view", firmId: "org_1", access: "shared" });
+    await expect(writeTool.run({ clientId: "c1", name: "x" }, principal)).rejects.toThrow(VIEW_ONLY_MESSAGE);
+    expect(writeHandler).not.toHaveBeenCalled();
+  });
+
+  it("refuses another firm's client with the not-found message", async () => {
+    verifyClientAccessFor.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_other", access: "own" });
+    await expect(writeTool.run({ clientId: "c1", name: "x" }, principal)).rejects.toThrow(CLIENT_UNREADABLE_MESSAGE);
+    expect(writeHandler).not.toHaveBeenCalled();
+  });
+
+  it("runs the handler and audits the write as the advisor, via Claude", async () => {
+    const out = (await writeTool.run({ clientId: "c1", name: "x" }, principal)) as { scenarioId: string; foundryUrl: string };
+    expect(out.scenarioId).toBe("s1");
+    expect(out.foundryUrl).toMatch(/\/clients\/c1\/solver$/);
+    expect(recordAudit).toHaveBeenCalledWith({
+      action: "mcp.tool_write",
+      resourceType: "mcp_tool",
+      resourceId: "test_write",
+      clientId: "c1",
+      firmId: "org_1",
+      actorId: "user_1",
+      actorKind: "advisor",
+      metadata: { tool: "test_write", via: "claude", scenarioId: "s1" },
+    });
+  });
+
+  it("never lets a tool's own audit metadata overwrite tool or via", async () => {
+    const spoofing = defineWriteTool({
+      name: "test_write_spoof",
+      title: "Test Write",
+      description: "A write tool whose audit metadata names other values.",
+      inputSchema: z.object({ clientId: z.string() }),
+      handler: async () => ({ scenarioId: "s1" }),
+      auditMetadata: (_args, result) => ({ tool: "other_tool", via: "web", scenarioId: result.scenarioId }),
+    });
+    await spoofing.run({ clientId: "c1" }, principal);
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { tool: "test_write_spoof", via: "claude", scenarioId: "s1" } }),
+    );
+  });
+
+  it("refuses to define a write tool whose schema has no clientId", () => {
+    expect(() =>
+      defineWriteTool({
+        name: "bad",
+        title: "Bad",
+        description: "No client id.",
+        inputSchema: z.object({ name: z.string() }),
+        handler: async () => ({}),
+      }),
+    ).toThrow(/must declare clientId/);
   });
 });

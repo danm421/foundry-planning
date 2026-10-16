@@ -85,7 +85,7 @@ export interface CashFlowTableRow {
     savings: number;            // r.savings.total
     totalExpenses: number;      // r.totalExpenses (= expenses + savings)
     netCashFlow: number;        // r.netCashFlow
-    portfolioGrowth: number;    // sum of ledger.growth over portfolio accounts
+    portfolioGrowth: number;    // sum of ledger growth, net of margin interest, over portfolio accounts
     portfolioActivity: number;  // externalContributions − externalDistributions
     portfolioAssets: number;    // liquid: taxable + cash + retirement + lifeInsurance
   };

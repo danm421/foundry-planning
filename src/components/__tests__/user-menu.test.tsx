@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ReactNode } from "react";
-import { render } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+
+const mockUseAuth = vi.fn();
+const mockSignOut = vi.fn();
+const mockEndImpersonation = vi.fn();
+vi.mock("@/app/(app)/_impersonation", () => ({
+  endImpersonationAction: () => mockEndImpersonation(),
+}));
 
 vi.mock("@clerk/nextjs", () => {
   const UserButton = ({
@@ -25,10 +32,20 @@ vi.mock("@clerk/nextjs", () => {
       </a>
     );
   };
-  return { UserButton };
+  return {
+    UserButton,
+    useAuth: () => mockUseAuth(),
+    useClerk: () => ({ signOut: mockSignOut }),
+  };
 });
 
 import UserMenu from "../user-menu";
+
+beforeEach(() => {
+  mockUseAuth.mockReset().mockReturnValue({ actor: null });
+  mockSignOut.mockReset().mockResolvedValue(undefined);
+  mockEndImpersonation.mockReset().mockResolvedValue(undefined);
+});
 
 describe("UserMenu", () => {
   it("renders the Clerk UserButton", () => {
@@ -58,5 +75,24 @@ describe("UserMenu", () => {
   it("hides the Foundry Ops link by default", () => {
     const { container } = render(<UserMenu />);
     expect(container.querySelector('[data-testid="ops-link"]')).toBeNull();
+  });
+});
+
+describe("UserMenu while an operator is signed in as this user", () => {
+  beforeEach(() => {
+    mockUseAuth.mockReturnValue({ actor: { sub: "user_op" } });
+  });
+
+  it("offers no account menu (profile, security) — only a way out", () => {
+    const { container } = render(<UserMenu isOpsAdmin />);
+    expect(container.querySelector('[data-testid="clerk-user-button"]')).toBeNull();
+    expect(screen.getByRole("button", { name: /end session/i })).not.toBeNull();
+  });
+
+  it("ends the session the way the impersonation banner does", async () => {
+    render(<UserMenu />);
+    fireEvent.click(screen.getByRole("button", { name: /end session/i }));
+    await waitFor(() => expect(mockSignOut).toHaveBeenCalledWith({ redirectUrl: "/admin/orgs" }));
+    expect(mockEndImpersonation).toHaveBeenCalledTimes(1);
   });
 });

@@ -13,6 +13,7 @@ import type {
   TradeoffBand,
 } from "../pages/scenario-comparison/types";
 import type { ScenarioComparisonAiInputs } from "../pages/scenario-comparison/generate-ai";
+import { SharedClientAiError } from "@/lib/ai/shared-client-error";
 
 function rcPage(overrides: Partial<RetirementComparisonOptions> = {}, aiOverrides = {}) {
   return {
@@ -108,6 +109,17 @@ describe("ensureRetirementComparisonAiSummaries", () => {
     expect((out[0].options as RetirementComparisonOptions).ai.generatedText).toBe("previous");
   });
 
+  it("rethrows the shared-client refusal — the advisor must read why, not get stale text", async () => {
+    const generate = vi.fn(async () => {
+      throw new SharedClientAiError();
+    });
+    const pages = [rcPage({}, { sourceHash: "old", generatedText: "previous" })];
+
+    await expect(
+      ensureRetirementComparisonAiSummaries(ARGS.clientId, ARGS.firmId, pages, { generate }),
+    ).rejects.toBeInstanceOf(SharedClientAiError);
+  });
+
   it("passes the page's baseline through to the generator", async () => {
     const generate = fakeGenerate({ hash: "h" });
     const pages = [rcPage({ baselineScenarioId: "s2" })];
@@ -161,6 +173,13 @@ describe("ensureInvestmentProposalAiSummaries", () => {
     const edited = { ...base, ai: { ...base.ai, generatedText: "Old copy." } };
     const [out] = await ensureInvestmentProposalAiSummaries("c1", "f1", [page(edited)], { generate });
     expect((out.options as typeof base).ai.generatedText).toBe("Old copy.");
+  });
+
+  it("rethrows the shared-client refusal rather than keeping the old copy", async () => {
+    const generate = vi.fn(async () => { throw new SharedClientAiError(); });
+    await expect(
+      ensureInvestmentProposalAiSummaries("c1", "f1", [page(base)], { generate }),
+    ).rejects.toBeInstanceOf(SharedClientAiError);
   });
 
   it("leaves a page of another type alone", async () => {
@@ -321,5 +340,23 @@ describe("ensureScenarioComparisonAiSummaries", () => {
 
     expect(aiOf(out[0]).byScenario).toEqual(stored);
     vi.restoreAllMocks();
+  });
+
+  it("rethrows the shared-client refusal rather than keeping the stored bands", async () => {
+    const generate = vi.fn(async () => {
+      throw new SharedClientAiError();
+    });
+
+    await expect(
+      ensureScenarioComparisonAiSummaries("c1", "f1", [scPage()], { prepare: prepare(), generate }),
+    ).rejects.toBeInstanceOf(SharedClientAiError);
+  });
+
+  it("hands the generator the client's firm, so the model call runs under it", async () => {
+    const generate = vi.fn(async () => ({ byScenario: {}, cached: true }));
+
+    await ensureScenarioComparisonAiSummaries("c1", "f1", [scPage()], { prepare: prepare(), generate });
+
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({ firmId: "f1" }));
   });
 });

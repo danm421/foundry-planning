@@ -2,6 +2,7 @@ import { splitAnnuityDistribution } from "./annuity/tax";
 import { computeTradIraPool, iraPoolKey, isTraditionalIra, proRataBasisReturn, type TradIraPool } from "./ira-basis";
 import { isInheritedIra } from "./inherited-ira";
 import type { WithdrawalPriority, Account } from "./types";
+import type { MarginBorrowSource } from "./margin";
 
 interface WithdrawalResult {
   byAccount: Record<string, number>;
@@ -25,12 +26,20 @@ export interface SupplementalDraw {
    *  be reduced by this amount. */
   basisReturn: number;
   earlyWithdrawalPenalty: number; // 10% on Trad pre-59.5 / Roth earnings pre-59.5
+  /** A margin borrow (spec 2026-10-14): no gain, no basis, no penalty — the
+   *  loan grows instead of securities being sold. Absent on every sale. */
+  borrowed?: true;
 }
 
 export interface SupplementalWithdrawalPlan {
-  byAccount: Record<string, number>;   // gross amounts (compatible with current `withdrawals.byAccount`)
+  /** Gross amount SOLD per account — sales only; a margin borrow is never in it. */
+  byAccount: Record<string, number>;
+  /** Σ `draws`, borrows included — so when the plan borrows, `total` ≠ Σ `byAccount`. */
   total: number;
   draws: SupplementalDraw[];
+  /** Amount borrowed on margin per account (in `total`, not in `byAccount`).
+   *  Present only when the plan borrowed. */
+  borrowedByAccount?: Record<string, number>;
   recognizedIncome: {
     ordinaryIncome: number;
     capitalGains: number;
@@ -45,6 +54,9 @@ export interface CategorizeDrawInput {
    *  taken at projection start and drifts from the truth as the plan runs —
    *  callers must pass the current balance from their ledger. */
   balance: number;
+  /** Taxable only: the securities value (net + margin loan) for the gain
+   *  ratio. Omitted ⇒ `balance` (no loan: net == gross). */
+  grossBalance?: number;
   basisMap: Record<string, number>;
   /** Unspent portion of this year's basisIncrease for taxable/cash accounts.
    *  When > 0, dollars up to this amount are drawn from the fresh pool first
@@ -92,10 +104,11 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
     if (balance <= 0) {
       return { ...empty, capitalGains: amount, basisReturn: 0 };
     }
+    const ratioValue = input.grossBalance ?? balance;
 
     const freshDraw = Math.min(amount, fresh);
     const legacyDraw = amount - freshDraw;
-    const legacyValue = balance - fresh;
+    const legacyValue = ratioValue - fresh;
     const legacyBasis = basis - fresh;
 
     // Signed: a ratio below 0 means the lot is underwater and the draw
@@ -245,6 +258,10 @@ export interface PlanSupplementalWithdrawalInput {
   shortfall: number;
   strategy: WithdrawalPriority[];
   householdBalances: Record<string, number>;
+  /** Securities value (net + margin loan) per margined account, from
+   *  `grossBalancesFor` — the gain-ratio denominator. Draws are still capped
+   *  at `householdBalances` (net). */
+  grossBalances?: Record<string, number>;
   basisMap: Record<string, number>;
   /** Per-account unspent fresh-basis pool (current-year basisIncrease that
    *  hasn't been consumed by an earlier in-year withdrawal/transfer).
@@ -260,10 +277,16 @@ export interface PlanSupplementalWithdrawalInput {
   ages: { client: number; spouse: number | null };
   isSpouseAccount: (account: Account) => boolean;
   year: number;
+  /** This year's margin borrowing sources, in the order to use them (from
+   *  `marginBorrowSourcesFor`). The borrow step runs ONCE, just before the
+   *  first non-cash row of the year's strategy (after them all when every row
+   *  is cash). Omitted ⇒ no borrowing — the legacy no-checking path never
+   *  borrows. */
+  marginBorrowSources?: MarginBorrowSource[];
 }
 
 export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInput): SupplementalWithdrawalPlan {
-  const { shortfall, strategy, householdBalances, basisMap, freshBasisMap, rothValueMap, annuityBasisMap, accounts, ages, isSpouseAccount, year } = input;
+  const { shortfall, strategy, householdBalances, grossBalances, basisMap, freshBasisMap, rothValueMap, annuityBasisMap, accounts, ages, isSpouseAccount, year, marginBorrowSources } = input;
 
   const empty: SupplementalWithdrawalPlan = {
     byAccount: {}, total: 0, draws: [],
@@ -307,13 +330,36 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
   let totalOrdinary = 0;
   let totalCapGains = 0;
   let totalPenalty = 0;
+  // Margin borrowing (spec 2026-10-14). Runs once, before the first non-cash
+  // source. Planned on locals only: this function is re-run many times per
+  // year by the caller's convergence loop, and the loan moves once, where the
+  // converged plan is applied.
+  let borrowStepDone = false;
+  const borrowedFrom: Record<string, number> = {};
+  const borrowStep = () => {
+    borrowStepDone = true;
+    for (const src of marginBorrowSources ?? []) {
+      if (remaining <= 0) break;
+      const amount = Math.min(remaining, src.headroom);
+      if (amount <= 0) continue;
+      draws.push({ accountId: src.accountId, amount, ordinaryIncome: 0, capitalGains: 0,
+        basisReturn: 0, earlyWithdrawalPenalty: 0, borrowed: true });
+      borrowedFrom[src.accountId] = (borrowedFrom[src.accountId] ?? 0) + amount;
+      remaining -= amount;
+    }
+  };
 
   for (const entry of sorted) {
     if (remaining <= 0) break;
 
     const account = accountById.get(entry.accountId);
     if (!account) continue;
-    const available = householdBalances[entry.accountId] ?? 0;
+    if (!borrowStepDone && account.category !== "cash") borrowStep();
+    if (remaining <= 0) break;
+    // Borrowing took `borrowedHere` out of net; the securities are untouched,
+    // so a sale's gain ratio still divides by the pre-borrow securities value.
+    const borrowedHere = borrowedFrom[entry.accountId] ?? 0;
+    const available = (householdBalances[entry.accountId] ?? 0) - borrowedHere;
     if (available <= 0) continue;
 
     const ownerAge = isSpouseAccount(account) && ages.spouse != null ? ages.spouse : ages.client;
@@ -323,6 +369,7 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
     const tradIraPool = tradIraPoolFor(account);
     const draw = categorizeDraw({
       account, amount: drawAmount, balance: available,
+      grossBalance: grossBalances?.[account.id] ?? (borrowedHere > 0 ? householdBalances[entry.accountId] : undefined),
       basisMap, rothValueMap, ownerAge,
       freshBasisRemaining: localFresh[account.id] ?? 0,
       annuityRemainingBasis: localAnnuityBasis[account.id],
@@ -353,10 +400,12 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
     totalPenalty += draw.earlyWithdrawalPenalty;
     remaining -= drawAmount;
   }
+  if (!borrowStepDone) borrowStep();
 
   const total = draws.reduce((sum, d) => sum + d.amount, 0);
   return {
     byAccount, total, draws,
+    ...(Object.keys(borrowedFrom).length > 0 ? { borrowedByAccount: borrowedFrom } : {}),
     recognizedIncome: {
       ordinaryIncome: totalOrdinary,
       capitalGains: totalCapGains,

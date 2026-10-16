@@ -307,6 +307,12 @@ describe("detectSocialSecurity", () => {
 });
 
 describe("detectRealizedGains", () => {
+  it("includes margin-call and repay sales", () => {
+    const prev = makeYear({ year: 2062 });
+    const next = makeYear({ year: 2063, taxDetail: makeTaxDetail({ "margin_sale:call:brk": { type: "capGains", amount: 88_000 } }) });
+    expect(detectRealizedGains(args(prev, next))?.incomeDelta).toBe(88_000);
+  });
+
   it("sums sale/equity/note gain keys, ignoring withdrawal keys", () => {
     const prev = makeYear({ year: 2062 });
     const next = makeYear({

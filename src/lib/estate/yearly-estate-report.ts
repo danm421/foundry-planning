@@ -38,11 +38,13 @@ export interface YearlyEstateRow {
   taxesAndExpenses: number;
   /** Form 706 charitable deduction summed across both deaths in chosen ordering. */
   charitableBequests: number;
-  /** grossEstate − charitableBequests − taxesAndExpenses. */
+  /** `estateDistributionAtYear(...).toHeirs`: what heirs receive at the
+   *  year's deaths plus the lifetime gifts already made to them. */
   netToHeirs: number;
   /** Combined household out-of-estate balance at year-end. */
   heirsAssets: number;
-  /** netToHeirs + heirsAssets. */
+  /** Equals `netToHeirs` — the transfer ledger already routes out-of-estate
+   *  value to heirs, so `heirsAssets` is not added again. */
   totalToHeirs: number;
   /** Cumulative lifetime gifts to charity (compounded forward at inflation
    *  rate) plus this year's charitable bequest. */

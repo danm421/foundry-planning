@@ -8,6 +8,14 @@ import { FieldTooltip } from "@/components/forms/field-tooltip";
 import type { ClientSearchResult } from "@/lib/client-search";
 import { ClientPicker } from "./client-picker";
 import { SectionPicker } from "./section-picker";
+import { BrandSelect } from "@/components/brand-select";
+import {
+  brandChoicesFor,
+  canPickBrand,
+  normalizeBrand,
+  type BrandChoice,
+  type BrandPicker,
+} from "@/lib/branding/brand-choice";
 import {
   forceFamilyForProspect,
   sectionsForForm,
@@ -48,6 +56,7 @@ export default function SendIntakeForm({
   defaultSections,
   prefill = null,
   portalEnabled = false,
+  brand,
 }: {
   /** The advisor's saved default, or null for the system default. Seeds the
    *  picker only — what gets stored is whatever is on screen when Send is
@@ -66,6 +75,11 @@ export default function SendIntakeForm({
    *  entitlement anyway, so a caller that forgets this loses a button rather
    *  than offering one that 403s. */
   portalEnabled?: boolean;
+  /** The brand picker and where a prospect send starts (the sender's own brand
+   *  if they may use it, else the firm's). Picking a client switches to that
+   *  household's brand. Absent or with nothing to choose, the dropdown is
+   *  hidden and the send carries no brand: the server uses the default. */
+  brand?: { picker: BrandPicker; prospectDefault: BrandChoice };
 }) {
   const router = useRouter();
   const [recipientKind, setRecipientKind] = useState<"prospect" | "client">(
@@ -81,6 +95,18 @@ export default function SendIntakeForm({
   const [lastName, setLastName] = useState(prefill?.primaryLastName ?? "");
   const [email, setEmail] = useState(prefill?.primaryEmail ?? "");
   const [selected, setSelected] = useState<ClientSearchResult | null>(prefill);
+  const showBrand = brand ? canPickBrand(brand.picker) : false;
+  const [brandValue, setBrandValue] = useState<BrandChoice>(() =>
+    !brand ? "" : prefill ? normalizeBrand(prefill.brand, brand.picker.allBrands) : brand.prospectDefault,
+  );
+  // The brand the list was built around: a household's brand the sender can't
+  // pick must stay listed after they change their mind, so it follows the
+  // start (a client pick or a prospect reset), not the current pick.
+  const [brandStart, setBrandStart] = useState<BrandChoice>(brandValue);
+  function startBrandOn(next: BrandChoice) {
+    setBrandValue(next);
+    setBrandStart(next);
+  }
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   // What the last send actually did, in its own words: a plain confirmation, or
@@ -90,6 +116,7 @@ export default function SendIntakeForm({
   function pickKind(kind: "prospect" | "client") {
     setRecipientKind(kind);
     setSelected(null);
+    if (brand && kind === "prospect") startBrandOn(brand.prospectDefault);
     setError(null);
     // The create route forces Family into a prospect send. Do it here too so
     // the advisor sees the set that will actually be stored, rather than
@@ -103,6 +130,7 @@ export default function SendIntakeForm({
     setLastName(hit.primaryLastName);
     // CRM contacts often carry no email — don't wipe a typed one to fill a gap.
     if (hit.primaryEmail) setEmail(hit.primaryEmail);
+    if (brand) startBrandOn(normalizeBrand(hit.brand, brand.picker.allBrands));
     setError(null);
   }
 
@@ -145,6 +173,7 @@ export default function SendIntakeForm({
           // documents alone, which has no upload surface there — is refused by
           // the create route with copy that says so.
           sections,
+          ...(showBrand ? { brand: brandValue } : {}),
         }),
       });
 
@@ -256,6 +285,20 @@ export default function SendIntakeForm({
         </div>
       )}
 
+      {brand && showBrand && (
+        <div className="mb-5 sm:max-w-xs">
+          <label htmlFor="intake-brand" className={labelCls}>
+            Brand
+          </label>
+          <BrandSelect
+            id="intake-brand"
+            choices={brandChoicesFor(brand.picker, brandStart)}
+            value={brandValue}
+            onChange={setBrandValue}
+            className={inputCls}
+          />
+        </div>
+      )}
       <div className="mb-5">
         <span className={labelCls}>Form steps</span>
         <SectionPicker

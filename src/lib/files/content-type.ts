@@ -24,6 +24,9 @@ const MARKUP_HEAD = /^\s*<(\?xml|!doctype|!--|svg|html|script)/i;
 
 const HEIC_BRANDS = new Set(["heic", "heix", "heif", "mif1", "msf1", "hevc"]);
 
+/** How many leading bytes `detectDocumentKind` reads — all a caller need fetch. */
+export const SNIFF_BYTES = 4096;
+
 export function detectDocumentKind(buffer: Buffer): DocumentKind | null {
   if (buffer.length < 4) return null;
   const b = buffer;
@@ -49,7 +52,7 @@ export function detectDocumentKind(buffer: Buffer): DocumentKind | null {
     return "heic";
   }
 
-  const head = b.subarray(0, Math.min(4096, b.length)).toString("utf-8");
+  const head = b.subarray(0, Math.min(SNIFF_BYTES, b.length)).toString("utf-8");
   if (!CONTROL_CHARS.test(head) && !MARKUP_HEAD.test(head)) return "text";
 
   return null;
@@ -78,7 +81,7 @@ const OFFICE_MIME_ALLOWLIST = new Set([
 ]);
 
 export function validateDocumentUpload(
-  file: File,
+  file: Pick<File, "type">,
   buffer: Buffer,
 ): { kind: DocumentKind; mimeType: string } {
   const kind = detectDocumentKind(buffer);

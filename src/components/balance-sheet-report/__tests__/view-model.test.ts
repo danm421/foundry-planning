@@ -138,6 +138,14 @@ describe("buildViewModel (consolidated)", () => {
     expect(cash.rows[0].owner).toBe("joint");
   });
 
+  it("collapses a joint (client+spouse) liability into one 'Joint' row in the consolidated view", () => {
+    const mortgages = vm.liabilityRows.filter((r) => r.liabilityId === "l-mort");
+    expect(mortgages.length).toBe(1);
+    expect(mortgages[0].balance).toBe(400_000); // full balance, not two halves
+    expect(mortgages[0].ownerLabel).toBe("Joint");
+    expect(mortgages[0].owner).toBe("joint");
+  });
+
   it("surfaces irrevocable-trust slices in outOfEstateRows", () => {
     expect(vm.outOfEstateRows.map((r) => r.accountId)).toEqual(["a-trust"]);
     expect(vm.outOfEstateRows[0].value).toBe(300_000);
@@ -811,5 +819,62 @@ describe("buildViewModel — out-of-estate owner rows", () => {
     const vm = buildViewModel(withChild);
     const point = vm.barChartSeries.find((p) => p.year === 2026);
     expect(point?.assets).toBe(1_550_000); // child's 60k excluded
+  });
+});
+
+describe("margin loan sub-line data", () => {
+  it("a margined taxable row shows net value and its share of the loan", () => {
+    const vm = buildViewModel({
+      ...baseInput,
+      accounts: [...baseInput.accounts, { id: "a-margin", name: "Schwab Margin", category: "taxable", owners: half }],
+      projectionYears: [
+        priorYear,
+        {
+          ...projectionYear,
+          accountLedgers: {
+            ...projectionYear.accountLedgers,
+            "a-margin": { beginningValue: 8_000_000, endingValue: 8_660_000, marginBoY: 2_000_000, marginEoY: 2_040_000 },
+          },
+        },
+      ],
+    });
+    const row = vm.assetCategories
+      .find((c) => c.key === "taxable")!
+      .rows.find((r) => r.accountId === "a-margin")!;
+    expect(row.value).toBe(8_660_000);
+    expect(row.marginLoan).toBeCloseTo(2_040_000, 2);
+  });
+
+  it("a margined taxable account inside a business tree shows net value and its loan", () => {
+    const bizParent = {
+      id: "biz-1", name: "Consulting Business", category: "business",
+      parentAccountId: null, businessType: "llc",
+      owners: [{ kind: "family_member" as const, familyMemberId: FM_CLIENT, percent: 1 }],
+    };
+    const bizBrokerage = {
+      id: "biz-brk", name: "Consulting Business — Brokerage", category: "taxable",
+      parentAccountId: "biz-1", owners: [] as AccountOwner[],
+    };
+    const vm = buildViewModel({
+      ...baseInput,
+      accounts: [...accounts, bizParent, bizBrokerage],
+      projectionYears: [
+        priorYear,
+        {
+          ...projectionYear,
+          accountLedgers: {
+            ...projectionYear.accountLedgers,
+            "biz-1": { beginningValue: 50_000, endingValue: 50_000 },
+            "biz-brk": { beginningValue: 800_000, endingValue: 866_000, marginBoY: 200_000, marginEoY: 204_000 },
+          },
+        },
+      ],
+      view: "entities",
+    });
+    const biz = vm.entityGroups!.find((g) => g.entityId === "biz-1")!;
+    const row = biz.assetRows.find((r) => r.accountId === "biz-brk")!;
+    expect(row.value).toBe(866_000);
+    expect(row.marginLoan).toBeCloseTo(204_000, 2);
+    expect(biz.assetRows.find((r) => r.accountId === "biz-1")!.marginLoan ?? 0).toBe(0);
   });
 });

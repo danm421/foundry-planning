@@ -1,0 +1,1 @@
+ALTER TABLE "firms" ADD COLUMN "claude_writes_enabled" boolean DEFAULT false NOT NULL;

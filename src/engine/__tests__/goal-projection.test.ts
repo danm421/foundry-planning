@@ -128,6 +128,18 @@ describe("goal funding: Other goals", () => {
     expect(y0.taxDetail!.bySource["education_capital:car"]).toBeUndefined();
   });
 
+  it("realizes a margined goal account's gain on its securities value (spec 2026-10-13)", () => {
+    // Net $8M + $2M loan = $10M securities against $9M basis → the $60K draw
+    // realizes 10% = $6K. Net-based math would book a $7.5K loss.
+    const brk: Account = {
+      id: "brk", name: "Brokerage", category: "taxable", subType: "brokerage", titlingType: "jtwros",
+      value: 10_000_000, basis: 9_000_000, growthRate: 0, rmdEnabled: false, owners: CLIENT_OWNER,
+      marginBalance: 2_000_000,
+    };
+    const y0 = runProjection(makeData([checking, brk], [car({ dedicatedAccountIds: ["brk"] })]))[0];
+    expect(y0.taxDetail!.bySource["goal_capital:car"]?.amount).toBeCloseTo(6_000, 2);
+  });
+
   it("leaves an entity-owned Other goal as a plain expense its owner pays, never drawing the savings account", () => {
     // A business- or entity-owned expense is netted against its owner's income
     // (entity-flows / business year-flow); drawing the savings account too

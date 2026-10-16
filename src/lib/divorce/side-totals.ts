@@ -50,15 +50,24 @@ export function computeSideTotals(
     }
     const alloc = resolved.get(allocationKey(obj.kind, obj.id));
     if (!alloc) continue;
+    // Balance-sheet value net of any margin loan (liabilities carry none).
+    const netValue = obj.value - (obj.marginBalance ?? 0);
     if (alloc.disposition === "split" && alloc.splitPercentToSpouse != null) {
-      const r = splitAmounts(obj.value, obj.basis, obj.rothValue, alloc.splitPercentToSpouse);
-      add("primary", r.primary.value);
-      add("spouse", r.spouse.value);
+      const r = splitAmounts(
+        obj.value,
+        obj.basis,
+        obj.rothValue,
+        alloc.splitPercentToSpouse,
+        obj.marginBalance ?? 0,
+      );
+      // The margin loan splits with the account, at the same percentage.
+      add("primary", r.primary.value - r.primary.marginBalance);
+      add("spouse", r.spouse.value - r.spouse.marginBalance);
     } else if (alloc.disposition === "duplicate") {
-      add("primary", obj.value);
-      add("spouse", obj.value);
+      add("primary", netValue);
+      add("spouse", netValue);
     } else {
-      add(alloc.disposition === "spouse" ? "spouse" : "primary", obj.value);
+      add(alloc.disposition === "spouse" ? "spouse" : "primary", netValue);
     }
   }
   return sides;

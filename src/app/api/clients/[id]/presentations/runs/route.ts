@@ -1,27 +1,22 @@
-import { NextRequest, NextResponse, after } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { checkExportPdfRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { requireClientEditAccess } from "@/lib/clients/authz";
+import { assertBrandChoiceAllowed } from "@/lib/branding/brand-options";
+import { householdBrand } from "@/lib/branding/brand-choice";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import {
   BodySchema,
   renderPresentationPdf,
 } from "@/components/presentations/render-presentation-pdf";
+import { recordCompletedRun } from "@/lib/crm/generation-runs";
 import {
-  createQueuedRun,
-  markAnalyzing,
-  markRunning,
-  markDone,
-  markFailed,
-  recordCompletedRun,
-} from "@/lib/crm/generation-runs";
-import {
-  ensureRetirementComparisonAiSummaries,
-  ensureInvestmentProposalAiSummaries,
-  ensureScenarioComparisonAiSummaries,
-} from "@/lib/presentations/ensure-ai-summaries";
+  queuePresentationRun,
+  recordUnreviewedStoryAudits,
+  withAiSummaries,
+} from "@/lib/presentations/queue-run";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { recordAudit } from "@/lib/audit";
 import { unreviewedStoryChapters, InvalidStoryOptionsError } from "@/lib/presentations/story/export-gate";
@@ -70,6 +65,13 @@ export async function POST(
       );
     }
 
+    // A picked brand must be one this caller may use (the household's own
+    // needs no check). Checked before the run exists, so a refusal leaves
+    // nothing in Recent runs.
+    if (parsed.data.brand) {
+      await assertBrandChoiceAllowed(firmId, parsed.data.brand, householdBrand(client));
+    }
+
     const rl = await checkExportPdfRateLimit(firmId);
     if (!rl.allowed) {
       return rateLimitErrorResponse(
@@ -87,59 +89,19 @@ export async function POST(
       // non-fatal — leave email null
     }
 
-    // The soft, audited export gate (spec decision: warn, never block — see
-    // `export-gate.ts`). The COUNT is computed here, ahead of both branches,
-    // because the async branch's response below has to carry it — but the
-    // audit WRITE is deferred to `auditUnreviewedStory`, called from each
-    // branch's own success point (same place `presentations.export_pdf` fires
-    // below), not from here. Two reasons: an audited row means "this
-    // happened", the rule `presentations.export_pdf` already keeps by firing
-    // only after a render lands rather than before one is attempted — a
-    // request that fails after this point (a bad scenario ref, a render
-    // error) must not leave a row claiming a deck went out that never did.
-    // And `recordAudit` is a real DB write, not fire-and-forget, so firing it
-    // here would add it to the async branch's 202 response time — the one
-    // thing `after()` below exists to avoid.
-    const storyReview = await unreviewedStoryChapters(id, parsed.data.pages);
-    const unreviewedPages = storyReview.filter((page) => page.unreviewed > 0);
-    const auditUnreviewedStory = () =>
-      Promise.all(
-        unreviewedPages.map((page) =>
-          recordAudit({
-            action: "plan_story.exported_unreviewed",
-            resourceType: "client",
-            resourceId: id,
-            clientId: id,
-            firmId,
-            metadata: crossFirmAuditMeta({ access }, callerOrg, {
-              pageId: page.pageId,
-              scenarioId: page.scenarioId,
-              documentRole: page.documentRole,
-              unreviewed: page.unreviewed,
-              total: page.total,
-            }),
-          }),
-        ),
-      );
-
     // Synchronous download mode (per-page "Download" button): render now and
     // stream the PDF straight back as an attachment, AND persist a copy to the
     // vault + Recent runs — one render shared by both. The deck-level
     // "Generate PDF" omits this flag and takes the async after()/202 path below
     // (heavy multi-page decks can exceed the response budget).
     if (new URL(request.url).searchParams.get("download") === "1") {
+      // The soft story gate (story/export-gate.ts): counted before the render,
+      // audited only after it lands — an audited row means the deck went out.
+      const storyReview = await unreviewedStoryChapters(id, parsed.data.pages);
       // Generate any Retirement Comparison, Scenario Comparison and Investment
       // Proposal AI commentary server-side first, then render — the synchronous
       // download blocks on all of them anyway.
-      const pages = await ensureInvestmentProposalAiSummaries(
-        id,
-        firmId,
-        await ensureScenarioComparisonAiSummaries(
-          id,
-          firmId,
-          await ensureRetirementComparisonAiSummaries(id, firmId, parsed.data.pages),
-        ),
-      );
+      const pages = await withAiSummaries(id, firmId, parsed.data.pages);
       const { buffer, filename } = await renderPresentationPdf(id, firmId, {
         ...parsed.data,
         pages,
@@ -174,9 +136,15 @@ export async function POST(
         metadata: crossFirmAuditMeta({ access }, callerOrg, {
           pages: parsed.data.pages.map((p) => p.pageId),
           via: "sync-download",
+          brand: parsed.data.brand ?? null,
         }),
       });
-      await auditUnreviewedStory();
+      await recordUnreviewedStoryAudits({
+        storyReview,
+        clientId: id,
+        firmId,
+        metadata: crossFirmAuditMeta({ access }, callerOrg),
+      });
       const safeFilename = filename.replace(/["\\\r\n;]/g, "");
       return new NextResponse(buffer as unknown as BodyInit, {
         status: 200,
@@ -189,63 +157,19 @@ export async function POST(
       });
     }
 
-    const runId = await createQueuedRun({
+    // The deck-level "Generate PDF": a queued run, rendered in after() — shared
+    // with the Claude connector's generate_presentation (queue-run.ts). No
+    // auditActorId: recordAudit reads the actor from this session,
+    // impersonation attribution included.
+    const { runId, storyReview } = await queuePresentationRun({
       clientId: id,
-      householdId,
       firmId,
-      kind: "presentation",
-      scenarioId: parsed.data.scenarioId,
+      householdId,
+      body: parsed.data,
       triggeredBy: userId ?? null,
       triggeredByEmail: email,
-      requestPayload: parsed.data,
-    });
-
-    after(async () => {
-      try {
-        // Phase 1 — "Analyzing…": generate the Retirement Comparison, Scenario
-        // Comparison and Investment Proposal AI commentary now that the run is
-        // visible in Recent runs, with the full projection/MC behind it. No-op
-        // for decks without any of those pages.
-        await markAnalyzing(runId);
-        const pages = await ensureInvestmentProposalAiSummaries(
-          id,
-          firmId,
-          await ensureScenarioComparisonAiSummaries(
-            id,
-            firmId,
-            await ensureRetirementComparisonAiSummaries(id, firmId, parsed.data.pages),
-          ),
-        );
-        // Phase 2 — "Running": render the PDF with the AI text inlined.
-        await markRunning(runId);
-        const { buffer, filename } = await renderPresentationPdf(id, firmId, {
-          ...parsed.data,
-          pages,
-        });
-        const doc = await savePlanToVault({
-          clientId: id,
-          firmId,
-          reportType: "presentation",
-          scenarioId: parsed.data.scenarioId,
-          filename,
-          buffer,
-          uploadedBy: userId ?? null,
-        });
-        await recordAudit({
-          action: "presentations.export_pdf",
-          resourceType: "client",
-          resourceId: id,
-          clientId: id,
-          firmId,
-          metadata: crossFirmAuditMeta({ access }, callerOrg, { pages: parsed.data.pages.map((p) => p.pageId), via: "background-run" }),
-        });
-        await auditUnreviewedStory();
-        await markDone(runId, doc?.id ?? null);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "render failed";
-        console.error("[presentations/runs] background render failed", err);
-        await markFailed(runId, msg);
-      }
+      auditMetadata: crossFirmAuditMeta({ access }, callerOrg),
+      via: "background-run",
     });
 
     // `storyReview` rides only on this path: the download branch's response IS

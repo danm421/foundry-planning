@@ -99,4 +99,20 @@ describe("applyMarketShock", () => {
     applyMarketShock(balances, sampleAccounts, 2030, undefined, ledgers, {});
     expect(balances["acct-401k"]).toBe(500_000);
   });
+
+  it("a margined account loses the drawdown on the full securities position", () => {
+    // Net $8M + $2M loan = $10M of securities; a 30% crash loses $3M, all of
+    // it out of net because the loan is owed in full.
+    const balances: Record<string, number> = { "acct-brokerage": 8_000_000 };
+    const ledgers = emptyLedgers(["acct-brokerage"]);
+    applyMarketShock(balances, sampleAccounts, 2026, { year: 2026, drawdownPct: 0.3 }, ledgers, {}, { "acct-brokerage": 2_000_000 });
+    expect(balances["acct-brokerage"]).toBeCloseTo(5_000_000, 2);
+    expect(ledgers["acct-brokerage"].entries.at(-1)!.amount).toBeCloseTo(-3_000_000, 2);
+  });
+
+  it("a deep crash can push a margined account underwater", () => {
+    const balances: Record<string, number> = { "acct-brokerage": 1_000_000 };
+    applyMarketShock(balances, sampleAccounts, 2026, { year: 2026, drawdownPct: 0.5 }, emptyLedgers(["acct-brokerage"]), {}, { "acct-brokerage": 2_000_000 });
+    expect(balances["acct-brokerage"]).toBeCloseTo(-500_000, 2);
+  });
 });

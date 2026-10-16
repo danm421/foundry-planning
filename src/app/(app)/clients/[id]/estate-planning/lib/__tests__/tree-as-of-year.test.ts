@@ -338,3 +338,40 @@ describe("treeAsOfYear — gift-shaped changes", () => {
     expect(acct.giftsReflectedThrough).toBeUndefined();
   });
 });
+
+describe("treeAsOfYear — margin loan at the Today anchor", () => {
+  it("nets the loan out at BoY of the plan's first year ($10M securities, $2M loan → $8M), like every later BoY", () => {
+    const margined: Account = {
+      id: "acct-margined",
+      name: "Margined Brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      titlingType: "jtwros",
+      value: 10_000_000,
+      marginBalance: 2_000_000,
+      marginInterestRate: 0.02,
+      basis: 10_000_000,
+      growthRate: 0.07,
+      rmdEnabled: false,
+      owners: clientOnly,
+    };
+    const data = buildClientData({
+      client: { ...baseClient, dateOfBirth: "1960-01-01" },
+      familyMembers: soloClient,
+      accounts: [margined],
+      entities: [],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2028 },
+    });
+    const withResult = runProjectionWithEvents(data);
+
+    const today = treeAsOfYear(data, withResult, 2026, "boy");
+    expect(today.accounts[0].value).toBe(8_000_000);
+    expect(today.accounts[0].value).toBe(withResult.years[0].accountLedgers["acct-margined"].beginningValue);
+    expect(rowsForFamilyMember(today, LEGACY_FM_CLIENT)[0].sliceValue).toBe(8_000_000);
+  });
+});

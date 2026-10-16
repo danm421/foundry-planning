@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import crypto from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
-import { db } from "@/db";
-import { clientImportFiles } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import {
   requireImportAccess,
@@ -12,18 +8,16 @@ import {
 } from "@/lib/imports/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
-import { detectUploadKind } from "@/lib/extraction/validate-upload";
-import { uploadImportFile } from "@/lib/imports/blob";
-import { sha256Hex } from "@/lib/imports/file-hash";
-import { recordAudit } from "@/lib/audit";
 import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
 import { readFactFinderState } from "@/lib/fact-finder/state";
 import type { ImportPayloadJson } from "@/lib/imports/types";
+import {
+  storeImportFile,
+  MAX_IMPORT_FILE_SIZE_BYTES as MAX_FILE_SIZE,
+} from "@/lib/imports/store-import-file";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 
 // Mirrors src/db/schema.ts importDocumentTypeEnum. We keep a literal
 // runtime list because the Drizzle pgEnum doesn't expose its values to
@@ -141,74 +135,21 @@ export async function POST(
 
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    // Magic-byte detection — refuse anything we can't safely parse later
-    // even if the filename extension says otherwise.
-    const kind = detectUploadKind(buffer);
-    if (!kind) {
+    const stored = await storeImportFile({
+      importId,
+      clientId,
+      firmId,
+      filename: file.name,
+      buffer,
+      documentType,
+    });
+    if (!stored.ok) {
       return NextResponse.json(
         { error: "Unsupported file type. Upload a PDF, Word, Excel, CSV, or image (PNG/JPEG) file." },
         { status: 400 },
       );
     }
-
-    // Content-hash dedup within this import. If the advisor uploads the
-    // same file twice (common with browser drag-and-drop retries), we
-    // return the existing row instead of re-uploading to blob storage.
-    const hash = await sha256Hex(buffer);
-    const existing = await db
-      .select()
-      .from(clientImportFiles)
-      .where(
-        and(
-          eq(clientImportFiles.importId, importId),
-          eq(clientImportFiles.contentHash, hash),
-          isNull(clientImportFiles.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (existing.length > 0) {
-      return NextResponse.json({ file: existing[0], deduped: true });
-    }
-
-    const fileId = crypto.randomUUID();
-    const { url: blobUrl, pathname: blobPathname } = await uploadImportFile({
-      importId,
-      fileId,
-      filename: file.name,
-      body: buffer,
-    });
-
-    const [row] = await db
-      .insert(clientImportFiles)
-      .values({
-        id: fileId,
-        importId,
-        blobUrl,
-        blobPathname,
-        originalFilename: file.name,
-        contentHash: hash,
-        sizeBytes: file.size,
-        detectedKind: kind,
-        documentType,
-      })
-      .returning();
-
-    await recordAudit({
-      action: "import.file.uploaded",
-      resourceType: "client_import_file",
-      resourceId: fileId,
-      clientId,
-      firmId,
-      metadata: {
-        importId,
-        contentHash: hash,
-        sizeBytes: file.size,
-        detectedKind: kind,
-        documentType,
-      },
-    });
-
-    return NextResponse.json({ file: row, deduped: false });
+    return NextResponse.json({ file: stored.file, deduped: stored.deduped });
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -1134,6 +1134,11 @@ export const clients = pgTable("clients", {
   portalBudgetEnabled: boolean("portal_budget_enabled").notNull().default(true),
   portalDocumentsEnabled: boolean("portal_documents_enabled").notNull().default(true),
   portalCalculatorsEnabled: boolean("portal_calculators_enabled").notNull().default(true),
+  // Which brand this household sees — its portal and client PDFs — and where
+  // intake sends and presentations for it start. NULL = its advisor's brand,
+  // which is what every pre-existing row means; "firm" = the firm's own;
+  // otherwise any advisor's Clerk user id (the household's own included). See lib/branding/brand-choice.ts.
+  brand: text("brand"),
 }, (t) => [
   index("clients_firm_idx").on(t.firmId),
 ]);
@@ -2368,6 +2373,22 @@ export const accounts = pgTable("accounts", {
     onDelete: "set null",
   }),
   turnoverPct: decimal("turnover_pct", { precision: 5, scale: 4 }).notNull().default("0"),
+  // ── Margin loan (taxable only; spec 2026-10-13) ───────────────────────────
+  // `value` stays the full securities value; net = value − marginBalance.
+  // Interest is capitalized onto the loan each projection year.
+  marginBalance: decimal("margin_balance", { precision: 15, scale: 2 }).notNull().default("0"),
+  marginInterestRate: decimal("margin_interest_rate", { precision: 5, scale: 4 }).notNull().default("0"),
+  // Warn when net ÷ securities falls below this (brokerage maintenance level).
+  marginCallPct: decimal("margin_call_pct", { precision: 5, scale: 4 }).notNull().default("0.3"),
+  // ── Borrowing on margin (taxable only; spec 2026-10-14) ───────────────────
+  // When on, the plan covers spending shortfalls by borrowing against this
+  // account (after cash, before any sale) instead of selling it.
+  marginBorrowEnabled: boolean("margin_borrow_enabled").notNull().default(false),
+  marginBorrowStartYear: integer("margin_borrow_start_year"),
+  marginBorrowStartYearRef: yearRefEnum("margin_borrow_start_year_ref"),
+  // The year the plan sells securities to clear the loan (null = never).
+  marginRepayYear: integer("margin_repay_year"),
+  marginRepayYearRef: yearRefEnum("margin_repay_year_ref"),
   overridePctOi: decimal("override_pct_oi", { precision: 5, scale: 4 }),
   overridePctLtCg: decimal("override_pct_lt_cg", { precision: 5, scale: 4 }),
   overridePctQdiv: decimal("override_pct_qdiv", { precision: 5, scale: 4 }),
@@ -2461,6 +2482,14 @@ export const accounts = pgTable("accounts", {
   // Engine load path filters every projection by (client_id, scenario_id);
   // accounts is the hottest table and was previously full-scanned (audit F7).
   clientScenarioIdx: index("accounts_client_scenario_idx").on(t.clientId, t.scenarioId),
+  marginTaxableOnly: check(
+    "accounts_margin_taxable_only",
+    sql`${t.marginBalance} = 0 OR ${t.category} = 'taxable'`,
+  ),
+  marginBorrowTaxableOnly: check(
+    "accounts_margin_borrow_taxable_only",
+    sql`${t.marginBorrowEnabled} = false OR ${t.category} = 'taxable'`,
+  ),
   inheritedFieldsPaired: check(
     "accounts_inherited_fields_paired",
     sql`(${t.inheritedDeathYear} IS NULL) = (${t.inheritedOwnerBirthYear} IS NULL)`,
@@ -5608,6 +5637,9 @@ export const firms = pgTable("firms", {
   // When false (default), advisors keep firm-wide visibility (legacy behavior).
   // Admins are always firm-wide regardless. See spec: per-advisor-books-and-branding.
   bookSiloEnabled: boolean("book_silo_enabled").notNull().default(false),
+  // Off by default: a firm admin must turn on changes from the Claude
+  // connector (Settings → Firm). Read tools never look at this.
+  claudeWritesEnabled: boolean("claude_writes_enabled").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -6432,6 +6464,10 @@ export const intakeForms = pgTable("intake_forms", {
   // Snapshotted at SEND time on purpose: editing your saved default must never
   // reshape a form already out with a client.
   sections: jsonb("sections").$type<IntakeSectionKey[]>(),
+  // The brand this form was sent under: its email, its page, its reminders.
+  // Written on every send; NULL only on forms sent before the picker, which
+  // resolve as they always did (`formBrand` in lib/branding/brand-choice.ts).
+  brand: text("brand"),
   createdByUserId: text("created_by_user_id").notNull(),
   sentAt: timestamp("sent_at"),
   // First time the recipient loaded the form by token. `sent_at` records that

@@ -16,6 +16,8 @@ export interface PreviewRequest {
   pages: PreviewPageDescriptor[];
   /** Overrides the derived download filename when set. */
   filename?: string;
+  /** The brand to render with; absent = the household's. */
+  brand?: string;
 }
 
 interface Props {
@@ -58,6 +60,7 @@ export function PdfPreviewDialog({ request, clientId, onClose }: Props) {
               scenarioId: request.scenarioId,
               preview: true,
               pages: request.pages,
+              ...(request.brand ? { brand: request.brand } : {}),
             }),
           },
         );

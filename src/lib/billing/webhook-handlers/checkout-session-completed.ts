@@ -105,6 +105,8 @@ export async function handleCheckoutSessionCompleted(
     typeof session.metadata?.firm_id === "string" ? session.metadata.firm_id : null;
 
   let firmId: string;
+  // True only when THIS delivery minted the org, so the buyer is its only member.
+  let orgCreatedHere = false;
   if (boundFirmId) {
     firmId = boundFirmId;
   } else {
@@ -116,15 +118,18 @@ export async function handleCheckoutSessionCompleted(
       .from(subscriptions)
       .where(eq(subscriptions.stripeCustomerId, customerId))
       .then((r) => r[0]);
-    firmId =
-      existingSub?.firmId ??
-      (
+    if (existingSub) {
+      firmId = existingSub.firmId;
+    } else {
+      firmId = (
         await cc.organizations.createOrganization(
           buyerUserId
             ? { name: resolvedFirmName, createdBy: buyerUserId }
             : { name: resolvedFirmName },
         )
       ).id;
+      orgCreatedHere = true;
+    }
   }
 
   // 2. Stamp Stripe subscription with the firm_id so future webhooks resolve.
@@ -312,6 +317,18 @@ export async function handleCheckoutSessionCompleted(
   // webhook recomputes entitlements with the real items + overrides.
   const overrides = await getActiveEntitlementOverrides(firmId);
   const entitlements = deriveEntitlements({ items: [], overrides });
+  // The buyer is the billing contact. It is pinned here because the membership
+  // webhook's "first org:admin to join" rule never sees a self-serve buyer:
+  // `createdBy` grants the creator role and step 4 promotes them with an
+  // update. Left unpinned, the first colleague they invite as an admin would
+  // take it. A firm this checkout did not create keeps any contact it has.
+  // (Sales path: no buyer yet — the webhook pins them when they accept.)
+  let pinBuyer = buyerUserId !== null && orgCreatedHere;
+  if (buyerUserId && !orgCreatedHere) {
+    const org = await cc.organizations.getOrganization({ organizationId: firmId });
+    const meta = (org.publicMetadata ?? {}) as Record<string, unknown>;
+    pinBuyer = typeof meta.billing_contact_userId !== "string";
+  }
   await cc.organizations.updateOrganizationMetadata(firmId, {
     publicMetadata: {
       stripe_customer_id: customerId,
@@ -331,6 +348,7 @@ export async function handleCheckoutSessionCompleted(
       // unconditionally would let a stale redelivery un-comp a firm that ops
       // has since comped.
       ...(boundFirmId ? { is_founder: false } : {}),
+      ...(pinBuyer ? { billing_contact_userId: buyerUserId } : {}),
     },
   });
 

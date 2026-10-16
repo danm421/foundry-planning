@@ -11,6 +11,7 @@ import type {
 } from "./types";
 import { resolveEntityFlows } from "./entity-flows";
 import { accrueLockedEntityShare } from "./locked-shares";
+import { netGrowthOf } from "./margin";
 import { collectBusinessTree } from "./business/business-tree";
 import { computeBusinessYearFlow } from "./business/year-flow";
 import type { TrustSubType } from "./types";
@@ -288,7 +289,8 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           // Fully entity-owned — the account's full activity belongs to the entity.
           beginningBalance += ledger.beginningValue;
           endingBalance += ledger.endingValue;
-          growth += ledger.growth;
+          // Net of margin interest, like the split-owned locked share below.
+          growth += netGrowthOf(ledger);
           for (const entry of ledger.entries) {
             if (entry.isInternalTransfer) continue;
             // Asset-sale proceeds are an asset→cash conversion, not income —
@@ -310,11 +312,7 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           const acc = accrueLockedEntityShare({
             carriedBoY: carried?.eoy,
             carriedPercent: carried?.percent,
-            ledger: {
-              beginningValue: ledger.beginningValue,
-              growth: ledger.growth,
-              endingValue: ledger.endingValue,
-            },
+            ledger,
             percent: share,
           });
           beginningBalance += acc.lockedBoY;
@@ -493,7 +491,7 @@ export function computeBusinessAccountCashFlow(input: ComputeBusinessAccountCash
         if (!ledger) continue;
         beginningTotalValue += ledger.beginningValue;
         endingTotalValue += ledger.endingValue;
-        totalGrowth += ledger.growth;
+        totalGrowth += netGrowthOf(ledger);
         beginningBasis += year.accountBasisBoY?.[a.id] ?? 0;
       }
 

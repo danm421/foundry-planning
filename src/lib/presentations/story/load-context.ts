@@ -32,6 +32,7 @@ import { buildViewModelInputs } from "@/lib/balance-sheet/build-view-model-input
 import { mergeSyntheticAccounts } from "@/lib/balance-sheet/merge-synthetic-accounts";
 import { buildMapBoards } from "@/lib/household-map/build-boards";
 import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
+import { lifetimeGiftsToHeirsAtEndOfLife } from "@/lib/estate/estate-distribution-at-year";
 import {
   summarizeHousehold,
   type EstateSummaryHousehold,
@@ -379,8 +380,13 @@ function estateAt(
   });
   if (report.isEmpty) return null;
   const household = summarizeHousehold(report);
+  // Today has no gifts behind it: none is modeled before the plan starts.
+  const gifts =
+    asOf.kind === "split"
+      ? lifetimeGiftsToHeirsAtEndOfLife(projected.effectiveTree, projected.projection)
+      : 0;
   return {
-    totals: { net: household.netToHeirs, cost: household.taxAndCosts },
+    totals: { net: household.netToHeirs, cost: household.taxAndCosts, gifts },
     household,
   };
 }

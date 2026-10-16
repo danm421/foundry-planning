@@ -9,6 +9,7 @@ import {
 } from "@/engine/ownership";
 import { ownersForYearSafe } from "./owners-or-household";
 import { consolidatedBusinessValue } from "@/engine/business/business-tree";
+import { netSeedValue } from "@/engine/margin";
 import type { EstateFlowGift } from "./estate-flow-gifts";
 import { accountSlicesAtYear, isPartitionedAt, resolveOwnerSlices } from "./account-owner-slices";
 import {
@@ -172,7 +173,9 @@ export function buildOwnershipColumn(
   /**
    * Resolve an account's value as of the requested year. When both an
    * `asOfYear` and a `projection` are supplied, the projection's year-N
-   * ending value wins; otherwise the advisor-entered base value is used.
+   * ending value wins; otherwise the advisor-entered value is used, net of
+   * any margin loan (`netSeedValue` — what the projection seeds, so Today
+   * agrees with the death columns beside it).
    *
    * The "today" column (`asOfYear` on or before `todayYear`) is exempt: it
    * shows current balances, so it keeps the base values and never reads a
@@ -186,8 +189,8 @@ export function buildOwnershipColumn(
     options.asOfYear !== undefined && options.projection && !isTodayColumn
       ? options.projection.years.find((y) => y.year === options.asOfYear)
       : undefined;
-  const resolveValue = (accountId: string, baseValue: number): number => {
-    return yearState?.accountLedgers[accountId]?.endingValue ?? baseValue;
+  const resolveValue = (account: Account): number => {
+    return yearState?.accountLedgers[account.id]?.endingValue ?? netSeedValue(account);
   };
 
   const displayYear =
@@ -330,7 +333,7 @@ export function buildOwnershipColumn(
   // Mirrors the convention in computeInEstateAtYear / applyBusinessSuccession.
   const balancesRecord: Record<string, number> = {};
   for (const a of data.accounts) {
-    balancesRecord[a.id] = resolveValue(a.id, a.value);
+    balancesRecord[a.id] = resolveValue(a);
   }
 
   for (const account of data.accounts) {
@@ -351,7 +354,7 @@ export function buildOwnershipColumn(
     const isTopLevelBusiness = account.category === "business";
     const resolvedBaseValue = isTopLevelBusiness
       ? consolidatedBusinessValue(account.id, data.accounts, balancesRecord)
-      : displayValueFor(account, resolveValue(accountId, account.value));
+      : displayValueFor(account, resolveValue(account));
 
     // Substitute inherited owners for cascade resolution. Defers to the
     // account's own owners when present; falls back to walking parent only

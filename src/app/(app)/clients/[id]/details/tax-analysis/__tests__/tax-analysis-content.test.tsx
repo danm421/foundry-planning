@@ -17,6 +17,8 @@ const resolver = createTaxResolver([params2025], { taxInflationRate: 0.025, ssWa
 const analysis = buildTaxAnalysis({ facts: retireeMfj(), prior: null, resolver, primaryAge: 72, spouseAge: 72 });
 
 const fetchMock = vi.fn();
+const putMock = vi.fn();
+vi.mock("@vercel/blob/client", () => ({ put: (...args: unknown[]) => putMock(...args) }));
 
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
@@ -207,9 +209,13 @@ describe("TaxAnalysisContent", () => {
           analysis,
         }),
       )
-      // 3. POST upload (replace) response
+      // 3. upload token (the file then goes browser → Blob via `put`)
+      .mockReturnValueOnce(
+        jsonResponse({ pathname: "staging/tax-returns/c1/1-x-r.pdf", clientToken: "tok" }),
+      )
+      // 4. POST upload (replace) response
       .mockReturnValueOnce(jsonResponse({ taxYear: 2025, status: "needs_review", warnings: [] }))
-      // 4. list refresh after upload
+      // 5. list refresh after upload
       .mockReturnValueOnce(
         jsonResponse({
           returns: [
@@ -217,7 +223,7 @@ describe("TaxAnalysisContent", () => {
           ],
         }),
       )
-      // 5. detail re-fetch for 2025 (post-replace, same year)
+      // 6. detail re-fetch for 2025 (post-replace, same year)
       .mockReturnValueOnce(
         jsonResponse({
           taxYear: 2025,
@@ -256,6 +262,57 @@ describe("TaxAnalysisContent", () => {
     // report heading is gone) rather than the old placeholder text.
     await waitFor(() => expect(screen.getByText(/wages \(1a\)/i)).toBeTruthy());
     expect(screen.queryByText(/2025 tax analysis/i)).toBeNull();
+
+    // The file went browser → Blob, and the POST named the staged copy rather
+    // than carrying the file (a request body caps at 4.5 MB on Vercel).
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/clients/c1/tax-returns/upload-token",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ filename: "r.pdf" }) }),
+    );
+    expect(putMock).toHaveBeenCalledWith(
+      "staging/tax-returns/c1/1-x-r.pdf",
+      file,
+      expect.objectContaining({ access: "private", token: "tok" }),
+    );
+    const post = fetchMock.mock.calls.find(
+      ([url, init]) => url === "/api/clients/c1/tax-returns" && init?.method === "POST",
+    );
+    const sent = post?.[1].body as FormData;
+    expect(sent.get("stagedPathname")).toBe("staging/tax-returns/c1/1-x-r.pdf");
+    expect(sent.get("filename")).toBe("r.pdf");
+    expect(sent.get("file")).toBeNull();
+  });
+
+  it("refuses a file over 50 MB before uploading anything", async () => {
+    fetchMock.mockReturnValueOnce(jsonResponse({ returns: [] }));
+    const user = userEvent.setup();
+    const { container } = render(<TaxAnalysisContent clientId="c1" />);
+    await waitFor(() => expect(screen.getByText(/upload a filed tax return/i)).toBeTruthy());
+
+    const file = new File(["x"], "huge.pdf", { type: "application/pdf" });
+    Object.defineProperty(file, "size", { value: 60 * 1024 * 1024 });
+    await user.upload(container.querySelector('input[type="file"]') as HTMLInputElement, file);
+
+    await waitFor(() => expect(screen.getByText(/"huge\.pdf" is 60 MB — the limit is 50 MB\./)).toBeTruthy());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(putMock).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed upload instead of silently returning to idle", async () => {
+    fetchMock
+      .mockReturnValueOnce(jsonResponse({ returns: [] }))
+      .mockReturnValueOnce(jsonResponse({ pathname: "staging/tax-returns/c1/1-x-r.pdf", clientToken: "tok" }));
+    putMock.mockRejectedValueOnce(new Error("network down"));
+    const user = userEvent.setup();
+    const { container } = render(<TaxAnalysisContent clientId="c1" />);
+    await waitFor(() => expect(screen.getByText(/upload a filed tax return/i)).toBeTruthy());
+
+    const file = new File(["x"], "r.pdf", { type: "application/pdf" });
+    await user.upload(container.querySelector('input[type="file"]') as HTMLInputElement, file);
+
+    await waitFor(() => expect(screen.getByText("Upload failed. Please try again.")).toBeTruthy());
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/clients/c1/tax-returns", expect.objectContaining({ method: "POST" }));
+    expect(screen.queryByText(/analyzing the return/i)).toBeNull();
   });
 
   it("shows the correct year's facts after switching between two needs_review years", async () => {

@@ -9,6 +9,7 @@ import { loadInvestmentProposalBundle } from "@/lib/presentations/investment-pro
 import { buildInvestmentProposalAiPrompt } from "./ai-prompt";
 import { hashAiRequest, getCachedAnalysis, setCachedAnalysis } from "@/lib/presentations/ai-cache";
 import { callAIExtraction } from "@/lib/extraction/azure-client";
+import { withAiForFirm } from "@/lib/ai/resolve";
 
 export interface GenerateInvestmentProposalAiArgs {
   clientId: string;
@@ -62,8 +63,11 @@ export async function generateInvestmentProposalAi(
   }
 
   // Pin gpt-5.4 explicitly rather than relying on AZURE_ANALYSIS_MODEL — matches
-  // the retirement-comparison generator for predictable output.
-  const markdown = (await callAIExtraction(system, user, "gpt-5.4")).trim();
+  // the retirement-comparison generator for predictable output. Under the
+  // client's firm, as that generator does, never the caller's own org.
+  const markdown = (
+    await withAiForFirm(args.firmId, () => callAIExtraction(system, user, "gpt-5.4"))
+  ).trim();
   const generatedAt = new Date().toISOString();
   await setCachedAnalysis(args.clientId, hash, { markdown, generatedAt });
   return { markdown, generatedAt, cached: false, hash };

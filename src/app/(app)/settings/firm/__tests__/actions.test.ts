@@ -45,7 +45,7 @@ vi.mock("@/lib/authz", () => ({
   ForbiddenError: class ForbiddenError extends Error {},
 }));
 
-import { renameFirm, setBookSiloEnabled } from "../actions";
+import { renameFirm, setBookSiloEnabled, setClaudeWritesEnabled } from "../actions";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -185,5 +185,44 @@ describe("setBookSiloEnabled", () => {
   it("revalidates the whole layout, matching renameFirm's broad invalidation", async () => {
     await setBookSiloEnabled(true);
     expect(mockRevalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+});
+
+describe("setClaudeWritesEnabled", () => {
+  it("re-throws ForbiddenError from authz — only admins and owners may flip it", async () => {
+    const { ForbiddenError } = await import("@/lib/authz");
+    mockRequireAdminOrOwner.mockRejectedValueOnce(new ForbiddenError("nope"));
+    await expect(setClaudeWritesEnabled(true)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(mockDbInsert).not.toHaveBeenCalled();
+  });
+
+  it("returns an error when there's no active org", async () => {
+    mockAuth.mockResolvedValue({ userId: null, orgId: null });
+    expect(await setClaudeWritesEnabled(true)).toEqual({ ok: false, error: "No active org" });
+    expect(mockDbInsert).not.toHaveBeenCalled();
+  });
+
+  it("upserts the firm row, so a firm with no row yet still saves", async () => {
+    expect(await setClaudeWritesEnabled(true)).toEqual({ ok: true });
+    expect(mockOnConflictDoUpdate).toHaveBeenCalledWith(
+      { firmId: "org_1", claudeWritesEnabled: true },
+      expect.objectContaining({
+        target: "firms.firm_id",
+        set: expect.objectContaining({ claudeWritesEnabled: true, updatedAt: expect.any(Date) }),
+      }),
+    );
+  });
+
+  it("audits the change with the new value", async () => {
+    await setClaudeWritesEnabled(false);
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "firm.claude_writes_toggled",
+        resourceType: "firm",
+        resourceId: "org_1",
+        firmId: "org_1",
+        metadata: { enabled: false },
+      }),
+    );
   });
 });

@@ -1,7 +1,8 @@
 // src/domain/forge/conversations.ts
-import { eq, and, desc, isNull } from "drizzle-orm";
+import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { forgeConversations } from "@/db/schema";
+import { purgeForgeHistory } from "./purge-history";
 
 /**
  * Create a chat thread. Returns the new conversation id (= checkpointer
@@ -68,6 +69,8 @@ export async function touchConversation(id: string, userId: string, title?: stri
  * client (null = global) when `userId` owns `id` in `firmId` (the caller's
  * active org), else null → 404. Callers then pin `clientId` to their own scope
  * — the URL client, null on the global routes, or a fresh client-access check.
+ * Only the id's stored spelling matches: callers key the thread's chat history
+ * by the id they were sent, and purgeForgeHistory erases it by this spelling.
  */
 export async function findOwnedConversation(
   id: string,
@@ -80,6 +83,7 @@ export async function findOwnedConversation(
     .where(
       and(
         eq(forgeConversations.id, id),
+        eq(sql`${forgeConversations.id}::text`, id),
         eq(forgeConversations.userId, userId),
         eq(forgeConversations.firmId, firmId),
       ),
@@ -96,10 +100,13 @@ export async function renameConversation(id: string, userId: string, title: stri
     .where(and(eq(forgeConversations.id, id), eq(forgeConversations.userId, userId)));
 }
 
-/** Delete a thread (owner-only no-op for non-owners). The checkpointer rows are
- *  keyed by thread_id; they are left for the existing checkpoint-retention path. */
+/** Delete a thread and its chat history (owner-only no-op for non-owners). */
 export async function deleteConversation(id: string, userId: string): Promise<void> {
-  await db
-    .delete(forgeConversations)
-    .where(and(eq(forgeConversations.id, id), eq(forgeConversations.userId, userId)));
+  await db.transaction(async (tx) => {
+    const deleted = await tx
+      .delete(forgeConversations)
+      .where(and(eq(forgeConversations.id, id), eq(forgeConversations.userId, userId)))
+      .returning({ id: forgeConversations.id });
+    if (deleted.length > 0) await purgeForgeHistory(tx, { conversationId: id });
+  });
 }

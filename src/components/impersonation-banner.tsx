@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useClerk } from "@clerk/nextjs";
 import { endImpersonationAction } from "@/app/(app)/_impersonation";
 
-export default function ImpersonationBanner({ advisorName }: { advisorName: string }) {
+/** Ends an ops impersonation: audits the end, then signs the operator out. */
+export function useEndImpersonation(): { ending: boolean; end: () => Promise<void> } {
   const { signOut } = useClerk();
   const [ending, setEnding] = useState(false);
 
@@ -18,6 +19,12 @@ export default function ImpersonationBanner({ advisorName }: { advisorName: stri
       await signOut({ redirectUrl: "/admin/orgs" });
     }
   }
+
+  return { ending, end };
+}
+
+export default function ImpersonationBanner({ advisorName }: { advisorName: string }) {
+  const { ending, end } = useEndImpersonation();
 
   return (
     <div className="sticky top-0 z-50 flex items-center justify-between gap-4 bg-red-600 px-4 py-2 text-sm font-medium text-white">

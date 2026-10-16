@@ -20,8 +20,12 @@ vi.mock("@/lib/intake/tokens", () => ({
   isExpired: vi.fn(),
 }));
 
-vi.mock("@/lib/branding/branding", () => ({
-  resolveIntakeBranding: vi.fn(),
+vi.mock("@/lib/branding/resolve-for-client", () => ({
+  resolveIntakeBrandingForClient: vi.fn(),
+}));
+
+vi.mock("@/lib/intake/form-brand", () => ({
+  resolveFormBrand: vi.fn(),
 }));
 
 // ─── Mock the identity gate ──────────────────────────────────────────────────
@@ -69,13 +73,15 @@ vi.mock("../intake-client", () => ({
 
 import { loadFormByToken } from "@/lib/intake/queries";
 import { isExpired } from "@/lib/intake/tokens";
-import { resolveIntakeBranding } from "@/lib/branding/branding";
+import { resolveIntakeBrandingForClient } from "@/lib/branding/resolve-for-client";
+import { resolveFormBrand } from "@/lib/intake/form-brand";
 import { isGateVerified } from "@/lib/intake/gate-session";
 import IntakePage, { generateMetadata } from "../page";
 
 const mockLoadFormByToken = vi.mocked(loadFormByToken);
 const mockIsExpired = vi.mocked(isExpired);
-const mockResolveIntakeBranding = vi.mocked(resolveIntakeBranding);
+const mockResolveIntakeBranding = vi.mocked(resolveIntakeBrandingForClient);
+const mockResolveFormBrand = vi.mocked(resolveFormBrand);
 const mockIsGateVerified = vi.mocked(isGateVerified);
 
 const ACME_BRANDING = {
@@ -98,12 +104,15 @@ function makeForm(
     expiresAt: Date;
     recipientName: string | null;
     payload: unknown;
+    brand: string | null;
+    clientId: string | null;
   }> = {},
 ) {
   return {
     id: "form-1",
     firmId: "firm-1",
     clientId: null,
+    brand: null,
     mode: "blank",
     status: "draft",
     token: TOKEN,
@@ -126,6 +135,7 @@ function makeForm(
 describe("IntakePage server component branching", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mockResolveFormBrand.mockResolvedValue("user-1");
     mockIsGateVerified.mockResolvedValue(true);
   });
 
@@ -259,7 +269,7 @@ describe("IntakePage server component branching", () => {
     expect(screen.getByTestId("recipient")).toHaveTextContent("anonymous");
   });
 
-  it("passes firm branding to the client wrapper when the firm has a logo", async () => {
+  it("passes the form's branding to the client wrapper when the brand has a logo", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockLoadFormByToken.mockResolvedValue(makeForm() as any);
     mockIsExpired.mockReturnValue(false);
@@ -268,7 +278,19 @@ describe("IntakePage server component branching", () => {
     render(await IntakePage({ params: makeParams() }));
 
     expect(screen.getByTestId("branding")).toHaveTextContent("Acme Wealth");
-    expect(mockResolveIntakeBranding).toHaveBeenCalledWith("firm-1");
+    expect(mockResolveIntakeBranding).toHaveBeenCalledWith("firm-1", "user-1");
+  });
+
+  it("brands the page with the form's own brand", async () => {
+    mockLoadFormByToken.mockResolvedValue(makeForm({ brand: "firm" }) as never);
+    mockIsExpired.mockReturnValue(false);
+    mockResolveFormBrand.mockResolvedValue("firm");
+    mockResolveIntakeBranding.mockResolvedValue(ACME_BRANDING);
+
+    render(await IntakePage({ params: makeParams() }));
+
+    expect(mockResolveFormBrand).toHaveBeenCalledWith("firm-1", null, "firm", "user-1");
+    expect(mockResolveIntakeBranding).toHaveBeenCalledWith("firm-1", "firm");
   });
 
   it("renders the Foundry lockup on the expired state for an unknown token", async () => {

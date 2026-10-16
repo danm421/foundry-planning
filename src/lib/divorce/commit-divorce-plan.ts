@@ -918,7 +918,15 @@ async function handleLinks(
  */
 function accountCopyValues(
   p: typeof accounts.$inferSelect,
-  over: { clientId: string; scenarioId: string; value: string; basis: string; rothValue: string },
+  over: {
+    clientId: string;
+    scenarioId: string;
+    value: string;
+    basis: string;
+    rothValue: string;
+    /** Omit to copy the source's whole loan (duplicate path). */
+    marginBalance?: string;
+  },
 ): typeof accounts.$inferInsert {
   return {
     ...p,
@@ -930,6 +938,7 @@ function accountCopyValues(
     value: over.value,
     basis: over.basis,
     rothValue: over.rothValue,
+    marginBalance: over.marginBalance ?? p.marginBalance,
     priorYearEndValue: null,
     isDefaultChecking: false,
     deriveFromHoldings: false,
@@ -964,6 +973,7 @@ async function splitAccounts(tx: Tx, ctx: CommitCtx): Promise<void> {
       Number(acct.basis),
       Number(acct.rothValue),
       alloc.splitPercentToSpouse,
+      Number(acct.marginBalance ?? 0),
     );
     // splitAmounts returns numbers (shared with the UI/preview); accounts store
     // value/basis/rothValue as decimal strings, so format each share to cents.
@@ -971,6 +981,7 @@ async function splitAccounts(tx: Tx, ctx: CommitCtx): Promise<void> {
       value: s.value.toFixed(2),
       basis: s.basis.toFixed(2),
       rothValue: s.rothValue.toFixed(2),
+      marginBalance: s.marginBalance.toFixed(2),
     });
     const primaryShare = toDecimalStrings(shares.primary);
     const spouseShare = toDecimalStrings(shares.spouse);

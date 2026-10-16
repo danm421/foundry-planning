@@ -17,6 +17,7 @@ import { runProjectionWithEvents, summarizeMonteCarlo } from "@/engine";
 import type { ProjectionResult, ProjectionYear } from "@/engine";
 import type { HypotheticalEstateTaxOrdering } from "@/engine/types";
 import { compactYear } from "@/lib/projection/compact-year";
+import { isTaxGrounded } from "@/lib/projection/is-tax-grounded";
 import { defineTool, type McpTool } from "../define-tool";
 
 const clientIdArg = z
@@ -26,11 +27,6 @@ const clientIdArg = z
       "hasPlan is true). NOT a CRM household id.",
   );
 const scenarioArg = z.string().optional().describe("Scenario id, or omit for the base case.");
-
-/** Tax figures are only bracket-grounded when bracket mode is on AND year rows loaded. */
-function isTaxGrounded(tree: { planSettings?: { taxEngineMode?: string }; taxYearRows?: unknown[] }): boolean {
-  return tree.planSettings?.taxEngineMode === "bracket" && (tree.taxYearRows?.length ?? 0) > 0;
-}
 
 /**
  * C1 (R47): `loadProjectionForRef` takes a structured `EstateCompareRef`, not

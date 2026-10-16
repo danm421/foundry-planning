@@ -1926,6 +1926,34 @@
       "when": 1791469601360,
       "tag": "0274_ltc_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 275,
+      "version": "7",
+      "when": 1791910532661,
+      "tag": "0275_brand_choice",
+      "breakpoints": true
+    },
+    {
+      "idx": 276,
+      "version": "7",
+      "when": 1791920068855,
+      "tag": "0276_margin_loans",
+      "breakpoints": true
+    },
+    {
+      "idx": 277,
+      "version": "7",
+      "when": 1791983477969,
+      "tag": "0277_margin_borrowing",
+      "breakpoints": true
+    },
+    {
+      "idx": 278,
+      "version": "7",
+      "when": 1792007431292,
+      "tag": "0278_claude_writes_enabled",
+      "breakpoints": true
     }
   ]
 }

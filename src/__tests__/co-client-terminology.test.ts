@@ -203,6 +203,14 @@ const ALLOWLIST_PREFIXES = [
   // advisor- or client-visible UI copy. The model needs the precise kinship
   // word to answer correctly; CO_CLIENT_LABEL is a display-copy concern.
   "src/domain/mcp/tools/",
+  // The what-if layer behind the MCP what-if tools (2026-10-14). Its refusal
+  // and caveat prose (WhatIfValidationError messages, schema .describe()
+  // text) is returned to the MODEL through those tools, never rendered in the
+  // app, and it names the schema enum `person: "client" | "spouse"` the model
+  // must emit. Same class as `src/domain/mcp/tools/` above and the
+  // statement-chat tools: renaming the word while the schema keeps `spouse`
+  // would add a mapping the model has to bridge, for no user-visible gain.
+  "src/lib/whatif/",
   // The Details field map (2026-09-23). Model-facing prose — `notes`,
   // `documentHints`, `aliases` and `surface` all describe a field TO THE
   // EXTRACTOR, and `surface` has no UI consumer at all. Same class as

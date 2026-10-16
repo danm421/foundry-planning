@@ -8,7 +8,7 @@
 // the bar chart stops updating.
 
 import { z } from "zod";
-import { valuationDiscount } from "@/lib/schemas/common";
+import { valuationDiscount } from "@/lib/schemas/valuation-discount";
 import { isUSPSStateCode } from "@/lib/usps-states";
 import { MAX_RATE_STRESS_POINTS } from "@/lib/tax/rate-stress";
 import { YEAR_REFS } from "@/lib/milestones";
@@ -168,6 +168,14 @@ const ACCOUNT_VALUE = z
     value: MONEY,
     basis: MONEY,
     growthRate: RATE,
+    marginBalance: MONEY.optional(),
+    marginInterestRate: RATE.optional(),
+    marginCallPct: RATE.optional(),
+    marginBorrowEnabled: z.boolean().optional(),
+    marginBorrowStartYear: z.number().int().nullable().optional(),
+    marginBorrowStartYearRef: z.string().nullable().optional(),
+    marginRepayYear: z.number().int().nullable().optional(),
+    marginRepayYearRef: z.string().nullable().optional(),
     rmdEnabled: z.boolean(),
     titlingType: z.enum(["jtwros", "community_property"]),
     // No `.min(1)` — ownerless accounts are a real state (e.g. "Household Cash",

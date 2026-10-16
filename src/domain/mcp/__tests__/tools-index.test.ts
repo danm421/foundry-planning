@@ -4,8 +4,8 @@ import { ALL_MCP_TOOLS } from "../tools";
 import type { McpTool } from "../define-tool";
 
 describe("the MCP tool registry", () => {
-  it("exposes exactly 19 tools", () => {
-    expect(ALL_MCP_TOOLS).toHaveLength(19);
+  it("exposes exactly 28 tools", () => {
+    expect(ALL_MCP_TOOLS).toHaveLength(28);
   });
 
   it("has unique names, each at most 64 characters", () => {
@@ -14,13 +14,23 @@ describe("the MCP tool registry", () => {
     for (const n of names) expect(n.length).toBeLessThanOrEqual(64);
   });
 
-  it("annotates every tool read-only, which the directory requires", () => {
+  // The two tools that change data. Everything else must stay read-only — the
+  // directory listing depends on it, and a tool that slips out of read-only
+  // without being named here fails this test.
+  const WRITE_TOOLS = new Set(["save_what_if_as_scenario", "generate_presentation"]);
+
+  it("registers every write tool named above, so a misspelled name can't pass unseen", () => {
+    const names = new Set(ALL_MCP_TOOLS.map((t) => t.name));
+    for (const name of WRITE_TOOLS) expect(names.has(name), name).toBe(true);
+  });
+
+  it("annotates the write tools as making changes and every other tool read-only", () => {
     for (const t of ALL_MCP_TOOLS) {
-      expect(t.annotations).toEqual({
-        readOnlyHint: true,
-        destructiveHint: false,
-        openWorldHint: false,
-      });
+      expect(t.annotations).toEqual(
+        WRITE_TOOLS.has(t.name)
+          ? { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+          : { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      );
       expect(t.title.length).toBeGreaterThan(0);
       expect(t.description.length).toBeGreaterThan(40);
     }
@@ -58,7 +68,17 @@ function minimalValueFor(schema: z.ZodTypeAny): unknown {
     return minimalValueFor(schema.unwrap() as z.ZodTypeAny);
   }
   if (schema instanceof z.ZodEnum) return schema.options[0];
-  if (schema instanceof z.ZodUnion) return minimalValueFor(schema.options[0] as z.ZodTypeAny);
+  if (schema instanceof z.ZodUnion) {
+    // The first option the union itself accepts — not blindly the first one:
+    // a change list's first member (retirement_age, age 40–85) has a number
+    // none of the ZodNumber candidates below satisfies.
+    for (const option of schema.options as z.ZodTypeAny[]) {
+      const value = minimalValueFor(option);
+      if (schema.safeParse(value).success) return value;
+    }
+    return minimalValueFor(schema.options[0] as z.ZodTypeAny);
+  }
+  if (schema instanceof z.ZodLiteral) return [...(schema as z.ZodLiteral<string>).values][0];
   if (schema instanceof z.ZodString) return "x";
   if (schema instanceof z.ZodNumber) {
     // A bare `1` fails a fractional bound like `targetPoS`'s (0.01, 0.99).

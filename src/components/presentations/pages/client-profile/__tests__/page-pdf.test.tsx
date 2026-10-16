@@ -24,10 +24,14 @@ const couple: ClientProfilePageData = {
   incomeNotes: [
     "Jane draws a spousal benefit of $21,600/yr on John's work record, starting in 2037 once both have filed.",
   ],
+  expenseColumns: [
+    { label: "Current", year: 2026 },
+    { label: "Retirement", year: 2033 },
+  ],
   expenses: [
-    { label: "Living", current: 52400, retirement: 60000, isTotal: false },
-    { label: "Taxes", current: 41000, retirement: 22000, isTotal: false },
-    { label: "Total", current: 99400, retirement: 88000, isTotal: true },
+    { label: "Living", amounts: [52400, 60000], isTotal: false },
+    { label: "Taxes", amounts: [41000, 22000], isTotal: false },
+    { label: "Total", amounts: [99400, 88000], isTotal: true },
   ],
 };
 
@@ -38,6 +42,7 @@ const single: ClientProfilePageData = {
   children: [],
   income: [],
   incomeNotes: [],
+  expenseColumns: [],
   expenses: [],
 };
 
@@ -48,6 +53,34 @@ describe("ClientProfilePagePdf", () => {
       <Document>
         <ClientProfilePagePdf
           data={couple}
+          firmName="Foundry Planning"
+          clientName="John & Jane Smith"
+          reportDate="June 1, 2026"
+          pageIndex={0}
+          totalPages={1}
+          accent={DEFAULT_ACCENT}
+        />
+      </Document>,
+    );
+    expect(buf.byteLength).toBeGreaterThan(0);
+  });
+
+  it("renders four expense columns without throwing", async () => {
+    ensureFontsRegistered();
+    const fourColumns: ClientProfilePageData = {
+      ...couple,
+      expenseColumns: [
+        { label: "Current", year: 2026 },
+        { label: "In 4 Years", year: 2030 },
+        { label: "Retirement", year: 2033 },
+        { label: "In 20 Years", year: 2046 },
+      ],
+      expenses: couple.expenses.map((r) => ({ ...r, amounts: [...r.amounts, ...r.amounts] })),
+    };
+    const buf = await renderToBuffer(
+      <Document>
+        <ClientProfilePagePdf
+          data={fourColumns}
           firmName="Foundry Planning"
           clientName="John & Jane Smith"
           reportDate="June 1, 2026"

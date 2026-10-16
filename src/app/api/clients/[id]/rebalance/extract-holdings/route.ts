@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
+import { requireAiAvailableForFirm, withAiForFirm } from "@/lib/ai/resolve";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { refuseUnlessAiImportEntitled } from "@/lib/imports/ai-import-gate";
@@ -46,6 +47,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
     await requireActiveSubscriptionForFirm(access.firmId);
+    await requireAiAvailableForFirm(access.firmId);
     const { sessionClaims } = await auth();
     const denied = await refuseUnlessAiImportEntitled({
       sessionClaims,
@@ -97,13 +99,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       );
     }
 
-    const result = await extractDocument(
-      buffer,
-      file.name,
-      "account_statement",
-      "mini",
-      kind,
-      /* extractHoldings */ true,
+    // A statement for this client: read under the client's firm, not the caller's org.
+    const result = await withAiForFirm(access.firmId, () =>
+      extractDocument(
+        buffer,
+        file.name,
+        "account_statement",
+        "mini",
+        kind,
+        /* extractHoldings */ true,
+      ),
     );
 
     const accounts: ExtractedPortfolio[] = result.extracted.accounts

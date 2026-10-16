@@ -6,6 +6,7 @@ import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { getBranding } from "@/lib/branding/db";
 import { resolveFirmName } from "@/lib/branding/branding";
+import { householdBrand } from "@/lib/branding/brand-choice";
 import { resolveIntakeBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { hasUnsubmittedPrefilledForm } from "@/lib/intake/queries";
 import { portalFeatureColumns } from "@/lib/portal/load-features";
@@ -23,6 +24,7 @@ export async function GET(): Promise<Response> {
       .select({
         firmId: clients.firmId,
         advisorId: clients.advisorId,
+        brand: clients.brand,
         crmHouseholdId: clients.crmHouseholdId,
         portalEditEnabled: clients.portalEditEnabled,
         // Spread onto the row this already reads rather than calling
@@ -76,7 +78,7 @@ export async function GET(): Promise<Response> {
     }
 
     const [branding, intakePending] = await Promise.all([
-      resolveIntakeBrandingForClient(row.firmId, row.advisorId),
+      resolveIntakeBrandingForClient(row.firmId, householdBrand(row)),
       hasUnsubmittedPrefilledForm(clientId),
     ]);
 

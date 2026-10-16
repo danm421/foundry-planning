@@ -25,6 +25,8 @@ export type AuditAction =
   | "client.onboarding.finish"
   | "client.quick_start_state.update"
   | "client.base_facts.update"
+  // Which brand the household sees (portal, client PDFs, where sends start).
+  | "client.brand.updated"
   // Accounts (balance-sheet line items)
   | "account.create"
   | "account.update"
@@ -330,6 +332,7 @@ export type AuditAction =
   // Firm-level lifecycle
   | "firm.name_changed"
   | "firm.book_silo_changed"
+  | "firm.claude_writes_toggled"
   | "firm.archived"
   | "firm.purged"
   | "firm.founder_initialized"
@@ -429,6 +432,7 @@ export type AuditAction =
   | "forge.undo" // the advisor reverted the conversation to a prior checkpoint
   // MCP — a remote Claude connector invoked a read tool
   | "mcp.tool_call"
+  | "mcp.tool_write"
   | "copilot.query" // legacy (pre-2026-06-17 cutover)
   | "copilot.tool_call" // legacy
   | "copilot.write_proposed" // legacy

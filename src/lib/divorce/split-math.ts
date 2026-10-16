@@ -5,6 +5,7 @@ export interface SplitShare {
   value: number;
   basis: number;
   rothValue: number;
+  marginBalance: number;
 }
 
 export interface SplitResult {
@@ -21,13 +22,15 @@ export function splitAmounts(
   basis: number,
   rothValue: number,
   pctToSpouse: number,
+  marginBalance = 0,
 ): SplitResult {
   const p = pctToSpouse / 100;
-  const spouse = { value: cents(value * p), basis: cents(basis * p), rothValue: cents(rothValue * p) };
+  const spouse = { value: cents(value * p), basis: cents(basis * p), rothValue: cents(rothValue * p), marginBalance: cents(marginBalance * p) };
   const primary = {
     value: cents(value - spouse.value),
     basis: cents(basis - spouse.basis),
     rothValue: cents(rothValue - spouse.rothValue),
+    marginBalance: cents(marginBalance - spouse.marginBalance),
   };
   return { primary, spouse };
 }

@@ -10,6 +10,7 @@ import { checkExportPdfRateLimit, rateLimitErrorResponse } from "@/lib/rate-limi
 import { getTaxReturn } from "@/lib/tax-returns/store";
 import { parseRowFacts } from "@/lib/tax-returns/db";
 import { buildAnalysisForFacts, parseYear } from "@/lib/tax-returns/assemble-analysis";
+import { householdBrand } from "@/lib/branding/brand-choice";
 import { resolveBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { recordCompletedRun } from "@/lib/crm/generation-runs";
@@ -77,7 +78,7 @@ export async function POST(
             )
         : Promise.resolve([]),
       buildAnalysisForFacts(id, taxYear, facts),
-      resolveBrandingForClient(firmId, client.advisorId),
+      resolveBrandingForClient(firmId, householdBrand(client)),
     ]);
     const [primaryContact] = primaryContactRows;
     const clientName = [primaryContact?.firstName, primaryContact?.lastName].filter(Boolean).join(" ") || "Client";

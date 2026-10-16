@@ -260,4 +260,26 @@ describe("applyTransfers", () => {
     expect(result.taxableOrdinaryIncome).toBe(20000);
     expect(result.earlyWithdrawalPenalty).toBe(2000); // 10% of $20k
   });
+
+  it("a transfer out of a margined account realizes gain on the securities ratio", () => {
+    // Net $8M + $2M loan = $10M securities, basis $9M → 10% gain ratio.
+    const margined: Account = { ...brokerageAccount, id: "m", value: 10_000_000, basis: 9_000_000, marginBalance: 2_000_000 };
+    const transfers: Transfer[] = [{
+      id: "t1", name: "Brokerage to checking", sourceAccountId: "m",
+      targetAccountId: "checking-1", amount: 1_000_000, mode: "one_time",
+      startYear: 2028, growthRate: 0, schedules: [],
+    }];
+    const balances: Record<string, number> = { m: 8_000_000, "checking-1": 50000 };
+    const basisMap: Record<string, number> = { m: 9_000_000, "checking-1": 50000 };
+    const ledgers: Record<string, AccountLedger> = { m: makeLedger(8_000_000), "checking-1": makeLedger(50000) };
+
+    const result = applyTransfers({
+      transfers, accounts: [margined, checkingAccount], accountBalances: balances,
+      basisMap, marginMap: { m: 2_000_000 }, accountLedgers: ledgers, year: 2028, ownerAges: { client: 65 },
+    });
+
+    expect(result.capitalGains).toBeCloseTo(100_000, 2);
+    expect(balances.m).toBe(7_000_000); // the draw comes out of net
+    expect(basisMap.m).toBeCloseTo(8_100_000, 2);
+  });
 });

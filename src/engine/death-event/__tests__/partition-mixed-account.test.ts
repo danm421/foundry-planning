@@ -98,3 +98,37 @@ describe("partitionMixedAccount — gift-resolved ownership", () => {
     expect(withParam.entitySlices[0].value).toBeCloseTo(without.entitySlices[0].value, 6);
   });
 });
+
+describe("partitionMixedAccount — margin loan follows ownership", () => {
+  const margined = {
+    id: "acc-m", name: "Brokerage", category: "taxable", value: 10_000_000,
+    basis: 6_000_000, growthRate: 0, rmdEnabled: false, marginBalance: 2_000_000,
+    owners: [
+      { kind: "family_member" as const, familyMemberId: "fm-c", percent: 0.7 },
+      { kind: "entity" as const, entityId: "trust-1", percent: 0.3 },
+    ],
+  } as unknown as Account;
+
+  it("gives a 30% entity slice 30% of the loan; the family pool keeps 70%", () => {
+    const part = partitionMixedAccount(margined, 8_000_000, 6_000_000, undefined);
+    expect(part.entitySlices[0].marginBalance).toBeCloseTo(600_000, 2);
+    expect(part.familyPool.marginBalance).toBeCloseTo(1_400_000, 2);
+  });
+
+  it("takes a gifted-away share's loan out of the family pool", () => {
+    const solo = { ...margined, owners: [
+      { kind: "family_member" as const, familyMemberId: "fm-c", percent: 1 },
+    ]} as unknown as Account;
+    const events: GiftEvent[] = [{ kind: "asset", year: 2027, accountId: "acc-m",
+      percent: 0.2, grantor: "client", recipientFamilyMemberId: "fm-kid" }];
+    const resolved = giftAwareOwners(solo, events, 2030, 2026);
+    const part = partitionMixedAccount(solo, 8_000_000, 6_000_000, undefined, resolved);
+    expect(part.familyPool.marginBalance).toBeCloseTo(1_600_000, 2);
+  });
+
+  it("adds no loan field to a loan-less account's slices or pool", () => {
+    const r = partitionMixedAccount(savings, 100_000, 40_000, undefined);
+    expect("marginBalance" in r.entitySlices[0]).toBe(false);
+    expect("marginBalance" in r.familyPool).toBe(false);
+  });
+});
