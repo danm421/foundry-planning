@@ -274,6 +274,10 @@ d("saveChangeSet (live DB)", () => {
       targets: { client_household: 2, family_member: 1, entity: 1, account: 2, liability: 1, income: 2 },
       ms: expect.any(Number),
     });
+    // Each saved line by its record, in save order — the writers' own follow-up writes have no audit row of their own.
+    expect((audit.metadata as { records?: unknown }).records).toEqual(
+      calls.map((c) => ({ lineId: c.lineId, target: lines.get(c.lineId)!.target, recordId: c.id })),
+    );
     expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "import.fact_finder_saved", tx: expect.anything() }));
 
     expect(await saveChangeSet(request(r, ticks), deps(writers(calls)))).toEqual({ ok: false, status: 409, error: SAVE_CLOSED_MESSAGE, factFinder: imp.factFinder });

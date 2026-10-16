@@ -253,7 +253,11 @@ export async function saveChangeSet(request: SaveRequest, deps: Partial<SaveDeps
           clientId: scope.clientId,
           firmId: scope.firmId,
           actorId,
-          metadata: { saved: saved.length, leftOut: leftOut.length, creates, updates, targets, ms: Date.now() - started },
+          metadata: {
+            saved: saved.length, leftOut: leftOut.length, creates, updates, targets, ms: Date.now() - started,
+            // Each line by its record: the writers' own follow-up writes (positions, employer, address…) have no audit row.
+            records: saved.map(({ lineId, target, recordId }) => ({ lineId, target, recordId })),
+          },
           tx,
         });
         return closed;
