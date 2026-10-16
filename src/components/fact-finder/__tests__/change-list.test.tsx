@@ -469,7 +469,7 @@ describe("ChangeList", () => {
     const props = {
       onToggleField: vi.fn(), onToggleLine: vi.fn(), onFix: vi.fn(), onBack: vi.fn(),
       onSave: vi.fn(), onReviewAgain: vi.fn(), onDismissSaveError: vi.fn(),
-      hasCoClient: true, saving: false, saveError: null,
+      hasCoClient: true, saving: false, saveError: null, reading: false, chatting: false,
     };
     const { rerender } = render(<ChangeList changeSet={CHANGES} ticks={base} {...props} />);
     vi.mocked(findSection).mockClear();
