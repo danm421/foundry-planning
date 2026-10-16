@@ -32,11 +32,18 @@ describe("payloadFor", () => {
 
   it("splits a month-year into its month and year keys", () => {
     expect(payloadFor("liability", { start: "2015-07", balanceAsOf: "2026-03", linkedPropertyId: newHouse }, resolve)).toEqual({
-      startMonth: 7, startYear: 2015, balanceAsOfMonth: 3, balanceAsOfYear: 2026, linkedPropertyId: "new:re1/account",
+      startMonth: 7, startYear: 2015, startYearRef: null, balanceAsOfMonth: 3, balanceAsOfYear: 2026, linkedPropertyId: "new:re1/account",
     });
     expect(payloadFor("note_receivable", { start: "2020-06", balanceAsOf: "2026-01" }, resolve)).toEqual({
-      startMonth: 6, startYear: 2020, balanceAsOfMonth: 1, balanceAsOfYear: 2026,
+      startMonth: 6, startYear: 2020, startYearRef: null, balanceAsOfMonth: 1, balanceAsOfYear: 2026,
     });
+  });
+
+  it("a typed date clears a date the record ties to a milestone: a loan's or a note's start, a gift's year — a balance date has no tie", () => {
+    expect(payloadFor("liability", { start: "2015-07" }, resolve)).toEqual({ startMonth: 7, startYear: 2015, startYearRef: null });
+    expect(payloadFor("note_receivable", { start: "2020-06" }, resolve)).toEqual({ startMonth: 6, startYear: 2020, startYearRef: null });
+    expect(payloadFor("gift", { year: 2020 }, resolve)).toEqual({ year: 2020, yearRef: null });
+    expect(payloadFor("liability", { balanceAsOf: "2026-03" }, resolve)).toEqual({ balanceAsOfMonth: 3, balanceAsOfYear: 2026 });
   });
 
   it("writes a typed year with no milestone, and a milestone with the year it falls in", () => {

@@ -21,11 +21,23 @@ export interface Resolve {
 type Body = Record<string, unknown>;
 type Entry = { [key: string]: PlacedValue };
 
+/**
+ * A date the record can tie to a milestone instead (Details' year picker), and the key that ties it. The fact
+ * finder's typed date clears the tie, as a typed timing year does — else the record keeps following the
+ * milestone, and a later change to it rewrites the date.
+ */
+const MILESTONE_TIES: Readonly<Record<string /* `${target}.${key}` */, string>> = {
+  "liability.start": "startYearRef",
+  "note_receivable.start": "startYearRef",
+  "gift.year": "yearRef",
+};
+
 /** A line's values (its fixed values + ticked fields + their `with`) as the Details write path's request body. */
 export function payloadFor(target: TargetKind, values: Record<string, PlacedValue>, resolve: Resolve): Body {
   const body: Body = {};
   for (const [key, value] of Object.entries(values)) {
-    Object.assign(body, expand(target, key, value, resolve));
+    const tie = MILESTONE_TIES[`${target}.${key}`];
+    Object.assign(body, expand(target, key, value, resolve), tie ? { [tie]: null } : {});
   }
   return body;
 }

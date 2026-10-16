@@ -430,6 +430,7 @@ export const TARGETS: Readonly<Record<TargetKind, TargetSpec>> = {
 
 const TIMING = "A year, or a milestone (plan start or end, a retirement) that sets the year — the row's start or end year.";
 const MONTH_YEAR = "The fact finder asks one month-and-year cell; Details keeps the month and the year apart.";
+const MONTH_YEAR_TIED = `${MONTH_YEAR} A typed one clears the milestone Details can tie the year to.`;
 const BENEFICIARY_SET = "The record's beneficiaries, written as one set — the route replaces them all.";
 const DESIGNATION_KEYS = ["tier", "percentage", "familyMemberId", "externalBeneficiaryId", "entityIdRef", "householdRole", "sortOrder"] as const;
 
@@ -457,9 +458,9 @@ export const FACT_FINDER_ONLY: Readonly<Record<string /* `${target}.${key}` */, 
   },
   "account_beneficiary_designation.beneficiaries": { expandsTo: DESIGNATION_KEYS, why: BENEFICIARY_SET },
   "note_receivable.balanceAsOf": { expandsTo: ["balanceAsOfMonth", "balanceAsOfYear"], why: MONTH_YEAR },
-  "note_receivable.start": { expandsTo: ["startMonth", "startYear"], why: MONTH_YEAR },
+  "note_receivable.start": { expandsTo: ["startMonth", "startYear", "startYearRef"], why: MONTH_YEAR_TIED },
   "liability.balanceAsOf": { expandsTo: ["balanceAsOfMonth", "balanceAsOfYear"], why: MONTH_YEAR },
-  "liability.start": { expandsTo: ["startMonth", "startYear"], why: MONTH_YEAR },
+  "liability.start": { expandsTo: ["startMonth", "startYear", "startYearRef"], why: MONTH_YEAR_TIED },
   "income.start": { expandsTo: ["startYear", "startYearRef"], why: TIMING },
   "income.end": { expandsTo: ["endYear", "endYearRef"], why: TIMING },
   "expense.start": { expandsTo: ["startYear", "startYearRef"], why: TIMING },
