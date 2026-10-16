@@ -3,9 +3,10 @@
  * The charity, related-party and plan-note save writers: the Details write
  * paths (external-beneficiaries-, related-parties- and observations-writes.ts)
  * on the save's transaction. The one rule beyond them: a charity Create is
- * refused when the plan already has a charity of that name.
+ * refused when the plan already has a charity of that name, or the save has
+ * just added one.
  */
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { clients, externalBeneficiaries } from "@/db/schema";
 import { createExternalBeneficiaryForClient, updateExternalBeneficiaryForClient } from "@/lib/clients/external-beneficiaries-writes";
 import { createObservationForClient, updateObservationForClient } from "@/lib/clients/observations-writes";
@@ -29,10 +30,19 @@ function needRecord(recordId: string | null): string {
 const external_beneficiary: SaveWriter = {
   async create(ctx, input) {
     const name = typeof input.body.name === "string" ? input.body.name.trim() : "";
-    const onPlan = await ctx.tx.select({ name: externalBeneficiaries.name }).from(externalBeneficiaries).where(eq(externalBeneficiaries.clientId, ctx.clientId));
-    if (name && onPlan.some((r) => nameKey(r.name) === nameKey(name))) {
+    const onPlan = await ctx.tx
+      .select({
+        name: externalBeneficiaries.name,
+        // now() is the save's transaction start, so this save's own Creates carry it as created_at (the column's default).
+        addedBySave: sql<boolean>`${externalBeneficiaries.createdAt} = now()`,
+      })
+      .from(externalBeneficiaries)
+      .where(eq(externalBeneficiaries.clientId, ctx.clientId));
+    const same = name ? onPlan.filter((r) => nameKey(r.name) === nameKey(name)) : [];
+    if (same.some((r) => !r.addedBySave)) {
       throw new SaveLineError(`The plan already has a charity named “${name}” — link this row to it, or untick it.`);
     }
+    if (same.length > 0) throw new SaveLineError(`Two charities named “${name}” are being added — merge the rows, or untick one.`);
     return unwrap(await createExternalBeneficiaryForClient({ clientId: ctx.clientId, input: input.body, tx: ctx.tx, afterCommit: ctx.afterCommit })).resourceId;
   },
   async update(ctx, input) {

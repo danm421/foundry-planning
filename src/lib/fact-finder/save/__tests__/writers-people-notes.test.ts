@@ -4,7 +4,7 @@
 // (live dev database): the Details write paths' rows and audit rows commit or
 // roll back with the save, notes made in one save get increasing sort orders,
 // a related party lands on the client's own household, and a charity the plan
-// already has by that name is refused.
+// already has by that name — or one the same save just added — is refused.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -61,23 +61,35 @@ describe("charity save writer", () => {
     expect(await charityRow(id)).toBeUndefined();
   });
 
-  it("(d) a charity the plan already has by that name is refused — trimmed, any case, even a charity made earlier in the same save", async () => {
+  it("(d) a charity the plan already has by that name is refused — trimmed, any case", async () => {
     const dup = changeLine("external_beneficiary", { name: "  red cross " });
     const refused = inSave(scope, (ctx) => charity.create(ctx, inputOf(dup)));
     await expect(refused).rejects.toThrow(SaveLineError);
     await expect(inSave(scope, (ctx) => charity.create(ctx, inputOf(dup)))).rejects.toThrow(
       "The plan already has a charity named “red cross” — link this row to it, or untick it.",
     );
-    // Two Creates of one name in one save: the second sees the first on the transaction.
+    const rows = await db.select().from(externalBeneficiaries).where(eq(externalBeneficiaries.clientId, seed.clientId));
+    expect(rows.filter((r) => r.name === "Red Cross")).toHaveLength(1);
+  });
+
+  it("(d) two charities of one name added in one save — any case — are refused as two new rows, not as one on the plan", async () => {
+    const twice = () =>
+      inSave(scope, async (ctx) => {
+        await charity.create(ctx, inputOf(changeLine("external_beneficiary", { name: "Habitat" })));
+        await charity.create(ctx, inputOf(changeLine("external_beneficiary", { name: " HABITAT " })));
+      });
+    await expect(twice()).rejects.toThrow(SaveLineError);
+    await expect(twice()).rejects.toThrow("Two charities named “HABITAT” are being added — merge the rows, or untick one.");
+    const rows = await db.select().from(externalBeneficiaries).where(eq(externalBeneficiaries.clientId, seed.clientId));
+    expect(rows.filter((r) => r.name.toLowerCase().trim() === "habitat")).toHaveLength(0);
+
+    // A charity on record before the save keeps its own message, even beside a new one made earlier in the save.
     await expect(
       inSave(scope, async (ctx) => {
         await charity.create(ctx, inputOf(changeLine("external_beneficiary", { name: "Habitat" })));
-        await charity.create(ctx, inputOf(changeLine("external_beneficiary", { name: "HABITAT" })));
+        await charity.create(ctx, inputOf(changeLine("external_beneficiary", { name: "Red cross" })));
       }),
-    ).rejects.toThrow("The plan already has a charity named “HABITAT” — link this row to it, or untick it.");
-    const rows = await db.select().from(externalBeneficiaries).where(eq(externalBeneficiaries.clientId, seed.clientId));
-    expect(rows.filter((r) => r.name.toLowerCase().trim() === "habitat")).toHaveLength(0);
-    expect(rows.filter((r) => r.name === "Red Cross")).toHaveLength(1);
+    ).rejects.toThrow("The plan already has a charity named “Red cross” — link this row to it, or untick it.");
   });
 
   it("(d) an Update renaming a charity is not a duplicate check", async () => {
