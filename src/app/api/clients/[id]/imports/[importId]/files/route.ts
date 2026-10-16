@@ -135,7 +135,7 @@ export async function POST(
     });
     if (!stored.ok) {
       return NextResponse.json(
-        { error: "Unsupported file type. Upload a PDF, Word, Excel, CSV, or image (PNG/JPEG) file." },
+        { error: "Unsupported file type. Upload a PDF, Word, Excel (.xlsx), CSV, or image (PNG/JPEG) file." },
         { status: 400 },
       );
     }

@@ -33,9 +33,9 @@ export interface ClientDocumentView {
   typeLabel: string | null;
 }
 
-// What the import reads: its own file picker's types, less legacy .xls, which
-// `detectUploadKind` refuses. The vault also takes HEIC photos, old Office
-// files and slides — they're left off the list rather than offered to fail.
+// What the import reads: the same types as its own file picker. The vault also
+// takes HEIC photos, old Office files (`detectUploadKind` refuses legacy .xls)
+// and slides — they're left off the list rather than offered to fail.
 const IMPORTABLE_FILENAME = /\.(pdf|png|jpe?g|docx|xlsx|csv)$/i;
 
 async function clientHousehold(clientId: string, firmId: string): Promise<string | null> {

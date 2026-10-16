@@ -58,11 +58,12 @@ interface UploadZoneProps {
   clientDocuments?: ClientDocumentView[];
 }
 
-const ACCEPTED_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx", ".xls", ".csv"];
+// No legacy .xls: the server only reads the .xlsx format, so it would always fail.
+const ACCEPTED_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx", ".csv"];
 
 function detectTypeFromExtension(name: string): DocumentType | "auto" {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  if (["xlsx", "xls", "csv"].includes(ext)) return "excel_import";
+  if (["xlsx", "csv"].includes(ext)) return "excel_import";
   return "auto";
 }
 
