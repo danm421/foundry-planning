@@ -211,6 +211,104 @@ describe("planSave — who owns a new record", () => {
     const set = changeSetOf([lineOf("x1/account", "account", { owners: joint }, { unticked: ["owners"] })]);
     expect(leftOutOf(planSave(set, ticksOf(set), WITH_CO_CLIENT))).toEqual([["x1/account", "Nothing ticked."]]);
   });
+
+  // A new note, business, stock option account or life policy can't be saved without an owner on any household.
+  it.each<[TargetKind, string, PlacedValue]>([
+    ["note_receivable", "owners", clientAlone],
+    ["business_account", "owners", clientAlone],
+    ["stock_option_account", "owner", "client"],
+    ["life_insurance_policy", "ownerRef", client],
+  ])("on a single household too, a new %s whose %s is unticked is left out — and so is what needs it", (target, key, owner) => {
+    const set = changeSetOf([
+      lineOf(`x1/${target}`, target, { name: "Lake fund", [key]: owner }, { label: "Lake fund", unticked: [key] }),
+      lineOf("n1/plan_observation", "plan_observation", { body: "Note", notes: lineRef(target, `x1/${target}`) }, { dependsOn: [`x1/${target}`] }),
+      lineOf("c1/account", "account", { name: "Checking" }),
+    ]);
+    const plan = planSave(set, ticksOf(set), SINGLE);
+    expect(leftOutOf(plan)).toEqual([
+      [`x1/${target}`, OWNER_UNTICKED],
+      ["n1/plan_observation", "Needs “Lake fund”, which isn't being saved."],
+    ]);
+    expect(savedIds(plan)).toEqual(["c1/account"]);
+    // Its owner ticked, it saves.
+    const owned = { ...ticksOf(set), [`x1/${target}`]: { name: true, [key]: true } };
+    expect([...(savedIds(planSave(set, owned, SINGLE)) as string[])].sort()).toEqual(["c1/account", "n1/plan_observation", `x1/${target}`]);
+  });
+
+  it("on a single household, a new account's or loan's unticked Owner still saves (as the client's alone)", () => {
+    const set = changeSetOf([
+      lineOf("x1/account", "account", { name: "Checking", owners: clientAlone }, { unticked: ["owners"] }),
+      lineOf("x2/liability", "liability", { name: "Car loan", balance: 9000, owners: clientAlone }, { unticked: ["owners"] }),
+    ]);
+    const plan = planSave(set, ticksOf(set), SINGLE);
+    expect(plan.ok && plan.leftOut).toEqual([]);
+    expect(plan.ok && plan.lines.map((p) => [p.line.id, p.values])).toEqual([
+      ["x1/account", { name: "Checking" }],
+      ["x2/liability", { name: "Car loan", balance: 9000 }],
+    ]);
+  });
+
+  it("on a single household, an Owner ticked as the co-client still needs the co-client", () => {
+    const set = changeSetOf([lineOf("x1/stock_option_account", "stock_option_account", { name: "Initech", owner: "spouse" })]);
+    expect(leftOutOf(planSave(set, ticksOf(set), SINGLE))).toEqual([["x1/stock_option_account", "Needs the co-client, who isn't being saved."]]);
+    expect(leftOutOf(planSave(set, ticksOf(set, { "x1/stock_option_account": ["owner"] }), SINGLE))).toEqual([["x1/stock_option_account", OWNER_UNTICKED]]);
+  });
+});
+
+/** Mark alone on the plan; the fact finder adds one of each new record that has an Owner, each the client's. */
+describe("planSave — a single household's new records, as the review builds them", () => {
+  const mark = bookWith(
+    { client_household: [recordOf("c1", "Mark Hendricks", { firstName: "Mark", lastName: "Hendricks" })] },
+    { people: { client: "fm-client", spouse: null }, names: { client: "Mark", spouse: null } },
+  );
+  const state = stateWith({
+    cash: [rowOf("cash1", { accountName: "Checking", currentValue: 5000, owner: "Client", accountType: "Checking" })],
+    equity: [rowOf("eq1", {
+      company: "Initech", owner: "Client", grantType: "NQSO", grantDate: "2024-01-15", sharesGranted: 1000, strikePrice: 10,
+      expirationDate: "2034-01-15", vestingSchedule: "25% a year over 4 years",
+    })],
+    notes_rec: [rowOf("nr1", {
+      borrower: "Nephew loan", originalAmount: 20000, interestRate: 0.04, paymentType: "Amortizing", monthlyPayment: 400, start: "2024-01", termMonths: 60, owner: "Client",
+    })],
+    business: [rowOf("b1", { businessName: "Acme LLC", businessType: "LLC", currentValue: 250000, costBasis: 50000, ownersAndPercent: "Mark 100%", annualIncome: 90000 })],
+    liab: [rowOf("lb1", { loanName: "Car loan", type: "Auto loan", owner: "Client", balance: 9000, interestRate: 0.05, monthlyPI: 300, loanStart: "2024-01", termYears: 5 })],
+    life: [rowOf("l1", { policyName: "Term Life", carrier: "MetLife", policyType: "Whole life", owner: "Client", insured: "Client", deathBenefit: 500000, primaryBeneficiary: "Mark" })],
+  });
+  const review = async (): Promise<ChangeSet> => ({ builtAtVersion: 4, ...(await buildChangeSet({ state, book: mark, now: NOW, runLeftovers: async () => null })) });
+  const OWNER_UNTICKED = "Who owns it isn't ticked.";
+
+  it("every Owner unticked: the note, business, stock option account and life policy are left out with what hangs off them; the account and loan save as the client's", async () => {
+    const changeSet = await review();
+    expect(changeSet.lines.map((l) => [l.id, l.action, l.blocked?.reason])).toEqual([
+      ["cash1/account", "create", undefined],
+      ["eq1/stock_option_account", "create", undefined],
+      ["eq1/stock_option_grant", "create", undefined],
+      ["nr1/note_receivable", "create", undefined],
+      ["b1/business_account", "create", undefined],
+      ["b1/income", "create", undefined],
+      ["lb1/liability", "create", undefined],
+      ["l1/life_insurance_policy", "create", undefined],
+      ["l1/life_insurance_policy_beneficiary", "create", undefined],
+    ]);
+    const ticks = ticksOf(changeSet, {
+      "cash1/account": ["owners"], "eq1/stock_option_account": ["owner"], "nr1/note_receivable": ["owners"],
+      "b1/business_account": ["owners"], "lb1/liability": ["owners"], "l1/life_insurance_policy": ["ownerRef"],
+    });
+    const plan = planSave(changeSet, ticks, SINGLE);
+    expect(leftOutOf(plan)).toEqual([
+      ["eq1/stock_option_account", OWNER_UNTICKED],
+      ["eq1/stock_option_grant", "Needs “Initech”, which isn't being saved."],
+      ["nr1/note_receivable", OWNER_UNTICKED],
+      ["b1/business_account", OWNER_UNTICKED],
+      ["b1/income", "Needs “Acme LLC”, which isn't being saved."],
+      ["l1/life_insurance_policy", OWNER_UNTICKED],
+      ["l1/life_insurance_policy_beneficiary", "Needs “Term Life”, which isn't being saved."],
+    ]);
+    expect(savedIds(plan)).toEqual(["cash1/account", "lb1/liability"]);
+    expect(plan.ok && plan.lines.map((p) => "owners" in p.values)).toEqual([false, false]);
+    // The review's own ticks save all nine.
+    expect(planSave(changeSet, ticksOf(changeSet), SINGLE)).toMatchObject({ ok: true, leftOut: [] });
+  });
 });
 
 describe("planSave — save order", () => {

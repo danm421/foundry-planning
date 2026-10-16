@@ -3,10 +3,10 @@
  * The save plan (D5, D8): the advisor's ticks over the change list decide which
  * lines the save writes and which it leaves out — a line with nothing ticked,
  * a line that names the co-client nobody is adding, a new record whose Owner
- * isn't ticked on a plan with a co-client, and every line that needs a line
- * left out, each with its reason — and the order the written lines go in. The
- * server plans the save with it; the change list runs it to show what
- * unticking leaves out.
+ * isn't ticked (an account or loan only on a plan with a co-client), and every
+ * line that needs a line left out, each with its reason — and the order the
+ * written lines go in. The server plans the save with it; the change list runs
+ * it to show what unticking leaves out.
  *
  * Client-safe and pure. Type-only imports from save/types.ts (it holds server
  * code too).
@@ -52,10 +52,10 @@ export function planSave(changeSet: ChangeSet, ticks: unknown, opts: { hasCoClie
   for (const p of all) if (!p.line.fields.some((f) => f.ticked)) reasons.set(p.line.id, NOTHING_TICKED);
   // A co-client the plan doesn't have exists only once a household line writes their first name.
   const addsCoClient = writing().some((p) => p.line.target === "client_household" && p.line.fields.some((f) => f.key === "spouseName" && f.ticked));
-  if (opts.hasCoClient || addsCoClient) {
-    for (const p of writing()) if (ownerUnticked(p)) reasons.set(p.line.id, OWNER_UNTICKED);
-  } else {
-    for (const p of writing()) if (namesCoClient(p)) reasons.set(p.line.id, NEEDS_CO_CLIENT);
+  const coClient = opts.hasCoClient || addsCoClient;
+  for (const p of writing()) {
+    if (!coClient && namesCoClient(p)) reasons.set(p.line.id, NEEDS_CO_CLIENT);
+    else if (ownerUnticked(p, coClient)) reasons.set(p.line.id, OWNER_UNTICKED);
   }
   // Pass after pass: a line left out in one pass leaves out the lines that need it in the next.
   for (let changed = true; changed; ) {
@@ -147,8 +147,15 @@ const OWNER_FIELD: Partial<Record<TargetKind, string>> = {
   note_receivable: "owners", business_account: "owners", stock_option_account: "owner",
 };
 
-/** A Create with its Owner unticked: with a co-client, it would be saved as the client's alone (or refused). */
-function ownerUnticked({ line }: PlannedLine): boolean {
+/** New records whose save needs an owner on any household; a new account or loan without one is the client's alone. */
+const OWNER_ALWAYS_NEEDED: ReadonlySet<TargetKind> = new Set(["note_receivable", "business_account", "stock_option_account", "life_insurance_policy"]);
+
+/**
+ * A Create with its Owner unticked that can't save as it stands: a note, business, stock option account or life
+ * policy is refused without an owner; with a co-client, an account or loan would be saved as the client's alone.
+ */
+function ownerUnticked({ line }: PlannedLine, coClient: boolean): boolean {
+  if (!coClient && !OWNER_ALWAYS_NEEDED.has(line.target)) return false;
   const key = OWNER_FIELD[line.target];
   return line.action === "create" && line.fields.some((f) => f.key === key && !f.ticked);
 }
