@@ -148,15 +148,17 @@ const LTD_DETAILS = ["ltdWaitingDays", "ltdBenefitPercent", "ltdMonthlyCap", "be
 
 /**
  * "Short-term coverage?" / "Long-term coverage?". On a new policy a blank is
- * answered by that coverage's own cells — Yes when any is filled, else No,
- * shown on the line — because the create schema's default (Yes, with its own
- * terms) would add coverage the fact finder never mentions. A cell that didn't
- * read gets no answer; on a policy on record a blank stays blank.
+ * answered by that coverage's own cells — Yes when any is filled (a detail that
+ * didn't read was filled), else No, shown on the line — because the create
+ * schema's default (Yes, with its own terms) would add coverage the fact finder
+ * never mentions. A question cell that didn't read gets no answer; on a policy
+ * on record a blank stays blank.
  */
 function putCoverage(b: DraftBuilder, row: FFRow, ctx: PlaceContext, key: string, columnId: string, details: readonly string[], isNew: boolean): void {
   const stated = bool(row, columnId);
+  const filled = (c: string) => num(row, c) !== null || text(row, c) !== null || ctx.removed(row.id, c);
   if (stated !== null || !isNew) b.put(key, stated, [columnId]);
-  else if (!ctx.removed(row.id, columnId)) b.put(key, details.some((c) => num(row, c) !== null || text(row, c) !== null), []);
+  else if (!ctx.removed(row.id, columnId)) b.put(key, details.some(filled), []);
 }
 
 export const DISABILITY_MAP: SectionMap = {

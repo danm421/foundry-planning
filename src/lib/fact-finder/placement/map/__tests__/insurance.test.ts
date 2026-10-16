@@ -33,6 +33,8 @@ function place(map: SectionMap, rows: FFRow[], book: RecordBook = hendricksBook(
 const at = (sectionId: string, rowId: string) => (columnId: string) => ({ sectionId, rowId, columnId });
 const values = (d: TargetDraft) => Object.fromEntries(d.fields.map((f) => [f.key, f.value]));
 const fieldOf = (d: TargetDraft, key: string) => d.fields.find((f) => f.key === key);
+/** What the line writes for `key`: its field's value, else what it creates with (`fixed`). */
+const coverageOf = (d: TargetDraft, key: string) => fieldOf(d, key)?.value ?? d.fixed?.[key];
 
 describe("placements", () => {
   it.each([LIFE_MAP, INSURANCE_NOTES_MAP, DISABILITY_MAP, LTC_MAP])("$sectionId declares every column exactly once", (map) => {
@@ -352,6 +354,20 @@ describe("DISABILITY_MAP", () => {
     const { ctx } = contextOf(stateWith({ disability: [row] }), hendricksBook(kids));
     const unread = DISABILITY_MAP.place([row], { ...ctx, removed: (_rowId, columnId) => columnId === "shortTerm" })[0];
     expect(values(unread)).toEqual({ name: "Acme LTD", hasLongTerm: false });
+  });
+
+  it("a detail cell that didn't read counts as filled: its coverage is Yes, never a No the fact finder doesn't say", () => {
+    // The short-term terms are prose the runner took out ("60% of weekly earnings", "7 days (accident) / 14 (sickness)").
+    const row = rowOf("di-1", { policyName: "Acme LTD", ltdWaitingDays: 90 });
+    const { ctx } = contextOf(stateWith({ disability: [row] }), hendricksBook(kids));
+    const unread = new Set(["stdBenefitPercent", "stdWaitingDays"]);
+    const [draft] = DISABILITY_MAP.place([row], { ...ctx, removed: (_rowId, columnId) => unread.has(columnId) });
+    expect([coverageOf(draft, "hasShortTerm"), coverageOf(draft, "hasLongTerm")]).toEqual([true, true]);
+    // Long-term too: its benefit period didn't read.
+    const ltd = rowOf("di-1", { policyName: "Acme STD", stdWaitingDays: 7 });
+    const { ctx: ltdCtx } = contextOf(stateWith({ disability: [ltd] }), hendricksBook(kids));
+    const [ltdDraft] = DISABILITY_MAP.place([ltd], { ...ltdCtx, removed: (_rowId, columnId) => columnId === "benefitsRunValue" });
+    expect([coverageOf(ltdDraft, "hasShortTerm"), coverageOf(ltdDraft, "hasLongTerm")]).toEqual([true, true]);
   });
 
   it("a new policy that says nothing of either coverage can't save — the review says it must cover one", () => {
