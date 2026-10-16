@@ -161,6 +161,7 @@ import { extractPdfPages } from "@/lib/extraction/pdf-parser";
 import { visionOcrPdf } from "@/lib/extraction/vision-ocr";
 import { runMapEntityPass } from "@/lib/statement-chat/map-entity-pass";
 import type { CandidateRow } from "@/lib/entity-extraction/types";
+import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
 
 function req(body: unknown, method: "POST" | "PATCH" = "POST") {
   return new Request("http://t/api/clients/c1/imports/i1/chat/map-pass", {
@@ -216,6 +217,19 @@ beforeEach(() => {
 });
 
 describe("map-pass route — gate chain", () => {
+  it.each([["POST", { fileId: "f1" }], ["PATCH", { entityId: "entities", rowId: "r1", createdId: "e-1" }]] as const)(
+    "%s refuses a committed import (a fact finder saved to the plan) before reading or writing anything",
+    async (method, body) => {
+      vi.mocked(requireImportAccess).mockResolvedValue({ ...importRowWithEntityRows(), status: "committed" } as never);
+      const res = await (method === "POST" ? POST : PATCH)(req(body, method), params);
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
+      expect(downloadImportFile).not.toHaveBeenCalled();
+      expect(runMapEntityPass).not.toHaveBeenCalled();
+      expect(updateCalls).toHaveLength(0);
+    },
+  );
+
   it("401s an unauthenticated caller and never runs the pass", async () => {
     vi.mocked(auth).mockResolvedValue({ userId: null } as never);
     const res = await POST(req({ fileId: "f1" }), params);

@@ -1,4 +1,4 @@
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, ne } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { clientImports, clientImportExtractions, clientImportFiles } from "@/db/schema";
@@ -9,6 +9,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "@/lib/imports/authz";
+import { refuseCommittedImport } from "@/lib/imports/committed";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -172,6 +173,8 @@ export async function POST(request: Request, { params }: Params) {
     }
     throw err;
   }
+  const committed = refuseCommittedImport(importRow);
+  if (committed) return committed;
 
   // Defense-in-depth: mirrors chat/extract/route.ts's own comment. The
   // middleware already blocks this POST for non-active subscriptions, and
@@ -337,7 +340,7 @@ export async function POST(request: Request, { params }: Params) {
       payloadJson: nextPayloadJson,
       updatedAt: new Date(),
     })
-    .where(eq(clientImports.id, importId));
+    .where(and(eq(clientImports.id, importId), ne(clientImports.status, "committed")));
 
   console.log(`[chat-turn] import ${importId}: ${formatUsage(usage)}`);
 

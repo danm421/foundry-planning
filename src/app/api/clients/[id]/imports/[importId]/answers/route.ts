@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { clientImports } from "@/db/schema";
@@ -10,6 +10,7 @@ import {
     ForbiddenError,
     NotFoundError,
 } from "@/lib/imports/authz";
+import { refuseCommittedImport } from "@/lib/imports/committed";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
 import { normalizeImportPayload, type ImportPayloadJson } from "@/lib/imports/types";
@@ -49,6 +50,8 @@ export async function POST(request: NextRequest, { params }: Params) {
             firmId,
             userId,
         });
+        const committed = refuseCommittedImport(imp);
+        if (committed) return committed;
 
         const body = (await request.json().catch(() => ({}))) as BodyArgs;
         const answers =
@@ -96,7 +99,7 @@ export async function POST(request: NextRequest, { params }: Params) {
                 payloadJson: { ...payloadJson, payload, assemble },
                 updatedAt: new Date(),
             })
-            .where(eq(clientImports.id, importId));
+            .where(and(eq(clientImports.id, importId), ne(clientImports.status, "committed")));
 
         const remaining = assemble.questions.filter((q) => !q.answer).length;
 

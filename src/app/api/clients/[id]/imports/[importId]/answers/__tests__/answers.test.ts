@@ -29,6 +29,17 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { requireImportAccess } from "@/lib/imports/authz";
 import { recordAudit } from "@/lib/audit";
 import { db } from "@/db";
+import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
+
+/** A fact finder saved to the plan: the import is committed, its closed record in the payload. */
+const SAVED_IMPORT = {
+  id: "i1",
+  status: "committed",
+  createdByUserId: "user_1",
+  mode: "onboarding",
+  scenarioId: "sc1",
+  payloadJson: { factFinder: { version: 3, closed: { at: "2026-10-16T09:00:00.000Z" } }, chat: { surface: "chat" } },
+};
 
 function makeReq(body: unknown = {}) {
   return new Request(
@@ -112,6 +123,15 @@ describe("answers route", () => {
         metadata: { answered: 1, remaining: 1 },
       }),
     );
+  });
+
+  it("refuses a committed import before anything is written", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue(SAVED_IMPORT as never);
+    const res = await POST(makeReq({ answers: { "q:primary_dob": "1975-04-02" } }), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
+    expect(setMock).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 
   it("400s when no assemble state exists yet", async () => {

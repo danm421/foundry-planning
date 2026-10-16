@@ -32,8 +32,8 @@ const state: {
   lastSet?: Row;
 } = { imports: [], updateCalled: 0 };
 
-/** Walks a real `eq(column, value)` / `isNull(column)` / `and(...)` condition
- *  against a row. `isNull` carries no Param, so it is read off the SQL text. */
+/** Walks a real `eq(column, value)` / `ne(column, value)` / `isNull(column)` / `and(...)` condition
+ *  against a row. `isNull` carries no Param, so it — and `ne`'s `<>` — is read off the SQL text. */
 function matches(condition: SQL, row: Row): boolean {
   const chunks = condition.queryChunks;
   const column = chunks.find((c): c is Column => c instanceof Column);
@@ -47,8 +47,8 @@ function matches(condition: SQL, row: Row): boolean {
       .map((c) => c.value.join(""))
       .join("");
     if (/is null/i.test(text)) return value === null || value === undefined;
-    if (!param) throw new Error("expected eq(column, value)");
-    return value === param.value;
+    if (!param) throw new Error("expected eq(column, value) or ne(column, value)");
+    return /<>/.test(text) ? value !== param.value : value === param.value;
   }
   return nested.every((n) => matches(n, row));
 }
@@ -278,6 +278,16 @@ describe("runMapEntityPass is scoped to the client and the firm", () => {
     seedExistingEntityRows();
     state.beforeUpdate = () => {
       state.imports[0].clientId = "OTHER-CLIENT";
+    };
+
+    await expect(runMapEntityPass(ARGS)).rejects.toBeInstanceOf(NotFoundError);
+    expectSnapshotUntouched();
+  });
+
+  it("writes nothing over an import saved between the read and the write (a fact finder saved to the plan)", async () => {
+    seedExistingEntityRows();
+    state.beforeUpdate = () => {
+      state.imports[0].status = "committed";
     };
 
     await expect(runMapEntityPass(ARGS)).rejects.toBeInstanceOf(NotFoundError);

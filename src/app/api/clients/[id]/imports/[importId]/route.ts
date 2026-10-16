@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import {
@@ -13,6 +13,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "@/lib/imports/authz";
+import { refuseCommittedImport } from "@/lib/imports/committed";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -218,6 +219,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       firmId,
       userId,
     });
+    const committed = refuseCommittedImport(imp);
+    if (committed) return committed;
 
     let body: unknown;
     try {
@@ -320,7 +323,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     const [updated] = await db
       .update(clientImports)
       .set(updates)
-      .where(eq(clientImports.id, importId))
+      .where(and(eq(clientImports.id, importId), ne(clientImports.status, "committed")))
       .returning();
 
     const changedFields = Object.keys(updates).filter(

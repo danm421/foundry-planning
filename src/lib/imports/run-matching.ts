@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { clientImports } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
@@ -79,7 +79,8 @@ export async function runImportMatching(args: {
             payloadJson: { fileResults, payload: annotated },
             updatedAt: new Date(),
         })
-        .where(eq(clientImports.id, importId));
+        // A committed import is never written over (lib/imports/committed.ts) — this write replaces the whole payload.
+        .where(and(eq(clientImports.id, importId), ne(clientImports.status, "committed")));
 
     await recordAudit({
         action: "import.match.run",

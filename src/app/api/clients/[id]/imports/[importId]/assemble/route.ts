@@ -7,6 +7,7 @@ import {
     ForbiddenError,
     NotFoundError,
 } from "@/lib/imports/authz";
+import { refuseCommittedImport } from "@/lib/imports/committed";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -84,6 +85,8 @@ export async function POST(request: NextRequest, { params }: Params) {
             firmId,
             userId,
         });
+        const committed = refuseCommittedImport(imp);
+        if (committed) return committed;
 
         // Defense-in-depth: the middleware already blocks this POST for
         // non-active subscriptions, and every active seat includes the

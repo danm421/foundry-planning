@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { clientImportFiles, clientImports } from "@/db/schema";
@@ -8,6 +8,7 @@ import {
   ForbiddenError as SubscriptionForbiddenError,
 } from "@/lib/authz";
 import { requireImportAccess, ForbiddenError, NotFoundError } from "@/lib/imports/authz";
+import { refuseCommittedImport } from "@/lib/imports/committed";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -147,6 +148,8 @@ async function runGateChain(paramsPromise: Params["params"], op: "map" | "match"
     }
     throw err;
   }
+  const committed = refuseCommittedImport(imp);
+  if (committed) return { ok: false, response: committed };
 
   // Defense-in-depth, mirroring chat/extract/route.ts's own comment: the
   // middleware already blocks this for non-active subscriptions and every
@@ -349,6 +352,7 @@ export async function PATCH(request: Request, { params }: Params) {
         eq(clientImports.clientId, clientId),
         eq(clientImports.orgId, firmId),
         isNull(clientImports.discardedAt),
+        ne(clientImports.status, "committed"),
       ),
     )
     .returning({ id: clientImports.id });

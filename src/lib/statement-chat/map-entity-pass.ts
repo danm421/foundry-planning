@@ -1,5 +1,5 @@
 // src/lib/statement-chat/map-entity-pass.ts
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { clientImports } from "@/db/schema";
 import { findEntity, type DetailEntity } from "@/domain/forge/detail-fields";
@@ -244,7 +244,8 @@ export async function runMapEntityPass(args: {
   const written = await db
     .update(clientImports)
     .set({ payloadJson: { ...payload, chat: { ...chat, entityRows } }, updatedAt: new Date() })
-    .where(inScope)
+    // A committed import is never written over (lib/imports/committed.ts) — a save may land while the pass reads.
+    .where(and(inScope, ne(clientImports.status, "committed")))
     .returning({ id: clientImports.id });
   if (written.length === 0) throw new NotFoundError("Import not found");
 

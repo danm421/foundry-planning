@@ -86,6 +86,7 @@ import { markTabsCommitted } from "@/lib/imports/commit/orchestrator";
 import { dropRow, mergeRows } from "@/lib/statement-chat/tools";
 import type { ExtractionResult } from "@/lib/extraction/types";
 import type { ImportPayloadJson } from "@/lib/imports/types";
+import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
 
 function extractionResult(
   accounts: Array<{ name: string; custodian?: string; value?: number }>,
@@ -196,6 +197,18 @@ beforeEach(() => {
 });
 
 describe("chat finalize route gates", () => {
+  it("refuses a committed import (a fact finder saved to the plan) before stamping anything", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue({
+      ...importRow({ chat: { surface: "chat", transcript: [], decisions: [], excludedRows: [], committedRowIds: [] } }),
+      status: "committed",
+    } as never);
+    const res = await POST(req(), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
+    expect(markTabsCommitted).not.toHaveBeenCalled();
+    expect(updateCalls).toHaveLength(0);
+  });
+
   it("401s an unauthenticated caller", async () => {
     vi.mocked(auth).mockResolvedValue({ userId: null } as never);
     const res = await POST(req(), params);

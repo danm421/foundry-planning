@@ -13,6 +13,7 @@ import {
     ForbiddenError,
     NotFoundError,
 } from "@/lib/imports/authz";
+import { refuseCommittedImport } from "@/lib/imports/committed";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { refuseUnlessAiImportEntitled } from "@/lib/imports/ai-import-gate";
@@ -125,6 +126,8 @@ export async function POST(request: NextRequest, { params }: Params) {
                 { status: 404 }
             );
         }
+        const committed = refuseCommittedImport(importRow);
+        if (committed) return committed;
 
         const extractHoldings =
             typeof body.extractHoldings === "boolean"

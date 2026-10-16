@@ -88,6 +88,7 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { clientImportExtractions } from "@/db/schema";
 import type { ImportPayloadJson } from "@/lib/imports/types";
+import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
 
 function importRow(payloadJson: ImportPayloadJson) {
   return { id: "i1", payloadJson, createdByUserId: "user_1" };
@@ -141,6 +142,15 @@ beforeEach(() => {
 });
 
 describe("chat turn route gates", () => {
+  it("refuses a committed import (a fact finder saved to the plan) before the turn runs", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue({ ...importRow(CHAT_PAYLOAD), status: "committed" } as never);
+    const res = await POST(req(), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
+    expect(runTurn).not.toHaveBeenCalled();
+    expect(updateCalls).toHaveLength(0);
+  });
+
   it("401s an unauthenticated caller", async () => {
     vi.mocked(auth).mockResolvedValue({ userId: null } as never);
     const res = await POST(req(), params);

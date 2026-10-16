@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import {
@@ -15,6 +15,7 @@ import {
     ForbiddenError,
     NotFoundError,
 } from "@/lib/imports/authz";
+import { refuseCommittedImport } from "@/lib/imports/committed";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -137,6 +138,8 @@ export async function POST(request: NextRequest, { params }: Params) {
         if (!importRow) {
             return NextResponse.json({ error: "Import not found" }, { status: 404 });
         }
+        const committed = refuseCommittedImport(importRow);
+        if (committed) return committed;
 
         const extractHoldings =
             typeof body.extractHoldings === "boolean"
@@ -216,7 +219,8 @@ export async function POST(request: NextRequest, { params }: Params) {
                     payloadJson: { fileResults },
                     updatedAt: new Date(),
                 })
-                .where(eq(clientImports.id, importId));
+                // A fact finder saved to the plan while this file was read keeps its closed record.
+                .where(and(eq(clientImports.id, importId), ne(clientImports.status, "committed")));
 
             await recordAudit({
                 action: "import.extraction.completed",

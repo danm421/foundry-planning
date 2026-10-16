@@ -150,6 +150,7 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { extractDocument } from "@/lib/extraction/extract";
 import { mergeAcrossFiles } from "@/lib/imports/assemble/merge-across-files";
 import type { ImportPayloadJson } from "@/lib/imports/types";
+import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
 
 function req(signal?: AbortSignal) {
   return new Request("http://t/api/clients/c1/imports/i1/chat/extract", {
@@ -292,6 +293,21 @@ describe("chat extract route gates", () => {
     vi.mocked(requireImportAccess).mockRejectedValueOnce(new NotFoundError("Import not found"));
     const res = await POST(req(), params);
     expect(res.status).toBe(404);
+  });
+
+  it("refuses a committed import (a fact finder saved to the plan) before reading or writing anything", async () => {
+    currentImportRow = {
+      id: "i1",
+      payloadJson: { factFinder: { version: 3, closed: { at: "2026-10-16T09:00:00.000Z" } }, chat: { surface: "chat" } },
+      extractHoldings: false,
+      status: "committed",
+    };
+    const res = await POST(req(), params);
+    expect(res.status).toBe(409);
+    expect(res.headers.get("content-type")).not.toContain("event-stream");
+    expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
+    expect(extractDocument).not.toHaveBeenCalled();
+    expect(payloadJsonUpdateCount).toBe(0);
   });
 
   it("streams once every gate passes", async () => {

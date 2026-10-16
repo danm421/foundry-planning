@@ -58,6 +58,17 @@ import { auth } from "@clerk/nextjs/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireImportAccess } from "@/lib/imports/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
+import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
+
+/** A fact finder saved to the plan: the import is committed, its closed record in the payload. */
+const SAVED_IMPORT = {
+  id: "i1",
+  status: "committed",
+  createdByUserId: "user_1",
+  mode: "onboarding",
+  scenarioId: "sc1",
+  payloadJson: { factFinder: { version: 3, closed: { at: "2026-10-16T09:00:00.000Z" } }, chat: { surface: "chat" } },
+};
 
 function makeReq(body: unknown) {
   return new Request(
@@ -78,6 +89,16 @@ beforeEach(() => {
   vi.mocked(checkImportRateLimit).mockResolvedValue({ allowed: true } as never);
   updateReturningResolve.mockReset().mockResolvedValue([{ id: "i1" }]);
   selectSpy.mockClear();
+});
+
+describe("PATCH /api/clients/[id]/imports/[importId] — a committed import", () => {
+  it("is refused before the body is read or anything is written", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue(SAVED_IMPORT as never);
+    const res = await PATCH(makeReq({ payloadJson: { factFinder: {} } }), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
+    expect(updateSetSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe("PATCH /api/clients/[id]/imports/[importId] — payloadJson merge (FIX 3)", () => {

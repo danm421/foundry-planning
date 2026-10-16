@@ -40,6 +40,17 @@ import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { getLatestTaxReturn } from "@/lib/tax-returns/store";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
+import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
+
+/** A fact finder saved to the plan: the import is committed, its closed record in the payload. */
+const SAVED_IMPORT = {
+  id: "i1",
+  status: "committed",
+  createdByUserId: "user_1",
+  mode: "onboarding",
+  scenarioId: "sc1",
+  payloadJson: { factFinder: { version: 3, closed: { at: "2026-10-16T09:00:00.000Z" } }, chat: { surface: "chat" } },
+};
 
 function makeReq(body: unknown = {}) {
   return new Request(
@@ -95,6 +106,14 @@ beforeEach(() => {
 });
 
 describe("assemble route guard + delegation", () => {
+  it("refuses a committed import before assembling anything", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValue(SAVED_IMPORT as never);
+    const res = await POST(makeReq(), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
+    expect(runAssemble).not.toHaveBeenCalled();
+  });
+
   it("delegates to runAssemble with derived mode + scenarioId when entitled and files exist", async () => {
     vi.mocked(requireImportAccess).mockResolvedValue({
       id: "i1",

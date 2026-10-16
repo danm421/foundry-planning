@@ -49,6 +49,15 @@ import { requireActiveSubscription, ForbiddenError } from "@/lib/authz";
 import { requireImportAccess } from "@/lib/imports/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { extractDocument } from "@/lib/extraction/extract";
+import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
+
+/** A fact finder saved to the plan: the import is committed, its closed record in the payload. */
+const SAVED_ROW = {
+  id: "i1",
+  status: "committed",
+  extractHoldings: false,
+  payloadJson: { factFinder: { version: 3, closed: { at: "2026-10-16T09:00:00.000Z" } } },
+};
 
 function makeReq() {
   return new Request(
@@ -92,6 +101,24 @@ describe("per-file re-extract route guards", () => {
     const res = await POST(makeReq(), params);
     expect(res.status).toBe(404);
     expect(extractDocument).not.toHaveBeenCalled();
+  });
+
+  it("refuses a committed import before reading or writing anything", async () => {
+    vi.mocked(auth).mockResolvedValue({
+      userId: "user_1",
+      sessionClaims: { org_public_metadata: { entitlements: ["ai_import"] } },
+    } as never);
+    // The file, then the import row.
+    vi.mocked(db.select)
+      .mockImplementationOnce((() => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([{ id: "f1", documentType: "auto" }]) }) }) })) as never)
+      .mockImplementationOnce((() => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([SAVED_ROW]) }) }) })) as never);
+
+    const res = await POST(makeReq(), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
+    expect(extractDocument).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
   });
 
   it("403s without an active subscription, before doing any work", async () => {
