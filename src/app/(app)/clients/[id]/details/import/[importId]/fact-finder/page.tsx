@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { clientImports, entities, familyMembers } from "@/db/schema";
 import { FactFinderScreen } from "@/components/fact-finder/fact-finder-screen";
 import { requireClientPageAccess } from "@/lib/clients/page-access";
-import { isFactFinderImport } from "@/lib/fact-finder/gate";
+import { isFactFinderImport } from "@/lib/imports/import-kind";
 import { listLiveFiles } from "@/lib/fact-finder/persist";
 import { readFactFinderState } from "@/lib/fact-finder/state";
 import type { ImportPayloadJson } from "@/lib/imports/types";

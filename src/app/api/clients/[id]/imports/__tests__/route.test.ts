@@ -16,6 +16,7 @@ import { auth } from "@clerk/nextjs/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { db } from "@/db";
+import { emptyFactFinderState } from "@/lib/fact-finder/state";
 
 const params = { params: Promise.resolve({ id: "c1" }) };
 
@@ -53,18 +54,16 @@ beforeEach(() => {
 });
 
 describe("POST /api/clients/[id]/imports — surface handling (C1)", () => {
-  it("seeds payloadJson.chat when surface is 'chat'", async () => {
-    const res = await POST(makeReq({ mode: "onboarding", surface: "chat" }), params);
-    expect(res.status).toBe(201);
-    const json = await res.json();
-    expect(json.import.payloadJson.chat).toEqual({
-      surface: "chat",
-      transcript: [],
-      decisions: [],
-      excludedRows: [],
-      committedRowIds: [],
-    });
-  });
+  it.each(["fact_finder", "chat"])(
+    "seeds an empty fact finder slice and no chat slice when surface is '%s'",
+    async (surface) => {
+      const res = await POST(makeReq({ mode: "onboarding", surface }), params);
+      expect(res.status).toBe(201);
+      const json = await res.json();
+      expect(json.import.payloadJson.factFinder).toEqual(emptyFactFinderState());
+      expect(json.import.payloadJson).not.toHaveProperty("chat");
+    },
+  );
 
   it("leaves payloadJson untouched (relies on the column default) when no surface is sent", async () => {
     const res = await POST(makeReq({ mode: "onboarding" }), params);
@@ -74,7 +73,7 @@ describe("POST /api/clients/[id]/imports — surface handling (C1)", () => {
     expect(insertedValues).not.toHaveProperty("payloadJson");
   });
 
-  it("rejects a surface value other than 'chat' rather than silently ignoring it", async () => {
+  it("rejects a surface value other than 'fact_finder' or 'chat' rather than silently ignoring it", async () => {
     const res = await POST(
       makeReq({ mode: "onboarding", surface: "bogus" }),
       params,
@@ -90,15 +89,15 @@ describe("POST /api/clients/[id]/imports — surface handling (C1)", () => {
     expect(json.error).toBe("Invalid or missing mode");
   });
 
-  it("creates a chat-surface import with holdings extraction already on", async () => {
-    const res = await POST(makeReq({ mode: "onboarding", surface: "chat" }), params);
+  it("creates a fact finder import with holdings extraction already on", async () => {
+    const res = await POST(makeReq({ mode: "onboarding", surface: "fact_finder" }), params);
     expect(res.status).toBe(201);
     // The INSERTED row, not the response body — the column is what the
     // extract route reads.
     expect(insertedValues).toMatchObject({ extractHoldings: true });
   });
 
-  it("leaves a non-chat import's holdings flag at the column default", async () => {
+  it("leaves a wizard import's holdings flag at the column default", async () => {
     const res = await POST(makeReq({ mode: "onboarding" }), params);
     expect(res.status).toBe(201);
     expect(insertedValues?.extractHoldings).toBeUndefined();

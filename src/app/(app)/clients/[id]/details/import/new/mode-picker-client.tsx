@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardBody, CardHeader } from "@/components/card";
+import { importScreenPath } from "@/lib/imports/import-kind";
 
 interface ScenarioOption {
   id: string;
@@ -17,7 +18,7 @@ interface ModePickerClientProps {
   defaultScenarioId: string | null;
 }
 
-type Mode = "onboarding" | "updating" | "chat";
+type Mode = "onboarding" | "updating" | "fact_finder";
 
 export default function ModePickerClient({
   clientId,
@@ -43,11 +44,10 @@ export default function ModePickerClient({
       return;
     }
 
-    // The chat card is not a new `import_mode` enum value (no migration for
-    // this plan) — it maps onto the two modes the DB already knows, picking
-    // "updating" only if a scenario happens to already be selected.
+    // The fact finder card is not a new `import_mode` enum value (no
+    // migration) — it is an onboarding import with a scenario-free surface.
     const apiMode: "onboarding" | "updating" =
-      mode === "chat" ? (scenarioId ? "updating" : "onboarding") : mode;
+      mode === "fact_finder" ? "onboarding" : mode;
 
     setIsSubmitting(true);
     try {
@@ -57,7 +57,7 @@ export default function ModePickerClient({
         body: JSON.stringify({
           mode: apiMode,
           scenarioId: apiMode === "updating" ? scenarioId : null,
-          ...(mode === "chat" ? { surface: "chat" } : {}),
+          ...(mode === "fact_finder" ? { surface: "fact_finder" } : {}),
         }),
       });
       if (!res.ok) {
@@ -67,11 +67,7 @@ export default function ModePickerClient({
       const { import: imp } = (await res.json()) as {
         import: { id: string };
       };
-      router.push(
-        mode === "chat"
-          ? `/clients/${clientId}/details/import/${imp.id}/chat`
-          : `/clients/${clientId}/details/import/${imp.id}`,
-      );
+      router.push(importScreenPath(clientId, imp.id, mode === "fact_finder"));
     } catch (err) {
       setIsSubmitting(false);
       setError(err instanceof Error ? err.message : "Create failed");
@@ -118,11 +114,11 @@ export default function ModePickerClient({
                 }
               />
               <ModeOption
-                value="chat"
-                checked={mode === "chat"}
-                onChange={() => setMode("chat")}
-                title="Statement chat"
-                description="Drop account statements and review them as one table. Ask follow-up questions before committing."
+                value="fact_finder"
+                checked={mode === "fact_finder"}
+                onChange={() => setMode("fact_finder")}
+                title="Fact finder import"
+                description="Drop statements or a fact finder. Review it all as one editable fact finder before anything touches the plan."
               />
             </fieldset>
 

@@ -6,6 +6,7 @@ import { ForbiddenError, NotFoundError, requireImportAccess } from "@/lib/import
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit, type ImportRateLimitOp } from "@/lib/rate-limit";
 import { refuseUnlessAiImportEntitled } from "@/lib/imports/ai-import-gate";
+import { isFactFinderImport } from "@/lib/imports/import-kind";
 import type { ImportPayloadJson } from "@/lib/imports/types";
 import { SAVE_CLOSED_MESSAGE } from "./api-types";
 import { readFactFinderState } from "./state";
@@ -41,11 +42,6 @@ const RATE_LIMIT_MESSAGES = {
   redis_error: "Rate limiting is temporarily unavailable. Please retry in a moment.",
   exceeded: "Too many requests. Please wait a moment and try again.",
 } as const;
-
-/** A statement-chat import (the mode picker's card) or one that already has a fact finder. */
-export function isFactFinderImport(payloadJson: ImportPayloadJson): boolean {
-  return payloadJson.chat?.surface === "chat" || payloadJson.factFinder !== undefined;
-}
 
 /**
  * The gate chain every fact finder route runs, in order: org → subscription →

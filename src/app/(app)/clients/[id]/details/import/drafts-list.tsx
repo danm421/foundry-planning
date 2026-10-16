@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardBody, CardHeader } from "@/components/card";
 import type { ImportListRow } from "@/lib/imports/list";
+import { importScreenPath } from "@/lib/imports/import-kind";
 import { useClientAccess } from "@/components/client-access-provider";
 
 interface DraftsListProps {
@@ -32,12 +33,10 @@ const MODE_LABEL: Record<string, string> = {
   updating: "Updating",
 };
 
-// Keyed by `row.surface`, NOT `row.mode` — `chat` is deliberately never a
-// mode value (no `import_mode` migration for this plan), so a chat import's
-// `mode` is still "onboarding" or "updating" underneath. See MODE_LABEL above.
-const SURFACE_LABEL: Record<string, string> = {
-  chat: "Statement chat",
-};
+// A fact finder import is labelled by `row.factFinder`, NOT `row.mode` — it is
+// deliberately never a mode value, so its `mode` is still "onboarding" or
+// "updating" underneath. See MODE_LABEL above.
+const FACT_FINDER_LABEL = "Fact finder import";
 
 function relativeTime(iso: string | Date): string {
   const then = typeof iso === "string" ? new Date(iso) : iso;
@@ -135,10 +134,7 @@ function DraftRow({ row, clientId, kind }: DraftRowProps) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const { access } = useClientAccess();
-  const detailHref =
-    row.surface === "chat"
-      ? `/clients/${clientId}/details/import/${row.id}/chat`
-      : `/clients/${clientId}/details/import/${row.id}`;
+  const detailHref = importScreenPath(clientId, row.id, row.factFinder);
 
   const handleDiscard = async () => {
     setError(null);
@@ -174,8 +170,8 @@ function DraftRow({ row, clientId, kind }: DraftRowProps) {
           {STATUS_LABEL[row.status] ?? row.status}
         </span>
         <span className="shrink-0 text-xs uppercase tracking-wide text-ink-3">
-          {row.surface
-            ? (SURFACE_LABEL[row.surface] ?? row.surface)
+          {row.factFinder
+            ? FACT_FINDER_LABEL
             : (MODE_LABEL[row.mode] ?? row.mode)}
         </span>
         <span className="flex-1 truncate text-ink">

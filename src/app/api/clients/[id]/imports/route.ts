@@ -8,7 +8,7 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { listClientImports } from "@/lib/imports/list";
 import { verifyClientAccess } from "@/lib/clients/authz";
-import { writeChatState } from "@/lib/statement-chat/state";
+import { emptyFactFinderState } from "@/lib/fact-finder/state";
 
 export const dynamic = "force-dynamic";
 
@@ -85,17 +85,17 @@ export async function POST(request: NextRequest, { params }: Params) {
     const importMode = mode as ImportMode;
 
     // `surface` is not an `import_mode` value — it never touches the `mode`
-    // column, it only seeds `payloadJson.chat` so the drafts list and the
-    // review flow route this import to the chat surface instead of the
-    // wizard. Reject anything other than the one supported value rather
-    // than silently ignoring an unrecognized surface.
-    if (surface !== undefined && surface !== "chat") {
+    // column, it only seeds `payloadJson.factFinder` so the drafts list and
+    // the review flow open this import on the fact finder instead of the
+    // wizard. "chat" is what a browser tab loaded before the switch still
+    // sends. Reject anything else rather than silently ignoring it.
+    if (surface !== undefined && surface !== "fact_finder" && surface !== "chat") {
       return NextResponse.json(
         { error: "Invalid surface" },
         { status: 400 },
       );
     }
-    const isChatSurface = surface === "chat";
+    const isFactFinderSurface = surface !== undefined;
 
     if (scenarioId !== undefined && scenarioId !== null && typeof scenarioId !== "string") {
       return NextResponse.json(
@@ -162,17 +162,18 @@ export async function POST(request: NextRequest, { params }: Params) {
         orgId: firmId,
         scenarioId: typeof scenarioId === "string" ? scenarioId : null,
         mode: importMode,
-        // Statement Chat reviews positions, so it reads them. The wizard
-        // keeps the column default and its own checkbox — this is the chat
-        // surface's default, not a new global one.
-        ...(isChatSurface ? { extractHoldings: true } : {}),
+        // The fact finder reviews positions, so it reads them. The wizard
+        // keeps the column default and its own checkbox — this is the fact
+        // finder's default, not a new global one.
+        ...(isFactFinderSurface ? { extractHoldings: true } : {}),
         status: "draft",
         createdByUserId: userId,
         notes: typeof notes === "string" ? notes : null,
-        // Seed the chat slice through the one writer of that shape (Task 6)
-        // rather than hand-rolling the object literal here. Omitted for a
-        // non-chat import so `payloadJson` keeps its `'{}'` column default.
-        ...(isChatSurface ? { payloadJson: writeChatState({}, {}) } : {}),
+        // The slice marks the import as a fact finder import. Omitted for a
+        // wizard import so `payloadJson` keeps its `'{}'` column default.
+        ...(isFactFinderSurface
+          ? { payloadJson: { factFinder: emptyFactFinderState() } }
+          : {}),
       })
       .returning();
 

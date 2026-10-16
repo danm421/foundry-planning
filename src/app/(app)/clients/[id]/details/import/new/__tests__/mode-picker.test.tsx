@@ -36,49 +36,56 @@ afterEach(() => {
 });
 
 describe("mode picker", () => {
-  it("offers Statement chat as a third option", () => {
+  it("offers Fact finder import as a third option, and no statement chat", () => {
     render(
       <ModePickerClient clientId="c1" scenarios={[]} defaultScenarioId={null} />,
     );
     expect(
-      screen.getByRole("radio", { name: /statement chat/i }),
+      screen.getByRole("radio", { name: /fact finder import/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /statement chat/i })).toBeNull();
+    expect(
+      screen.getByText(
+        "Drop statements or a fact finder. Review it all as one editable fact finder before anything touches the plan.",
+      ),
     ).toBeInTheDocument();
   });
 
-  it("keeps the chat option enabled with no scenarios, unlike Updating (C7)", () => {
+  it("keeps the fact finder option enabled with no scenarios, unlike Updating (C7)", () => {
     render(
       <ModePickerClient clientId="c1" scenarios={[]} defaultScenarioId={null} />,
     );
     expect(
-      screen.getByRole("radio", { name: /statement chat/i }),
+      screen.getByRole("radio", { name: /fact finder import/i }),
     ).toBeEnabled();
     expect(screen.getByRole("radio", { name: /updating/i })).toBeDisabled();
   });
 
-  it("routes a statement-chat import to the chat surface", async () => {
+  it("opens a new fact finder import on the fact finder screen", async () => {
     mockFetchOnce({ import: { id: "imp-1" } });
     render(
       <ModePickerClient clientId="c1" scenarios={[]} defaultScenarioId={null} />,
     );
-    await userEvent.click(screen.getByRole("radio", { name: /statement chat/i }));
+    await userEvent.click(screen.getByRole("radio", { name: /fact finder import/i }));
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(pushMock).toHaveBeenCalledWith("/clients/c1/details/import/imp-1/chat");
+    expect(pushMock).toHaveBeenCalledWith("/clients/c1/details/import/imp-1/fact-finder");
   });
 
-  it("still sends a supported mode value to the API", async () => {
+  it("sends mode 'onboarding' with no scenario and surface 'fact_finder', never mode 'chat'", async () => {
     mockFetchOnce({ import: { id: "imp-1" } });
     render(
       <ModePickerClient clientId="c1" scenarios={[]} defaultScenarioId={null} />,
     );
-    await userEvent.click(screen.getByRole("radio", { name: /statement chat/i }));
+    await userEvent.click(screen.getByRole("radio", { name: /fact finder import/i }));
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
     const body = lastRequestBody();
     expect(body.mode).toBe("onboarding");
     expect(body.mode).not.toBe("chat");
-    expect(body.surface).toBe("chat");
+    expect(body.scenarioId).toBeNull();
+    expect(body.surface).toBe("fact_finder");
   });
 
-  it("sends mode 'updating' for a chat import when a scenario is already selected, never 'chat'", async () => {
+  it("sends no scenario even when the client has a base case selected by default (R2)", async () => {
     mockFetchOnce({ import: { id: "imp-2" } });
     render(
       <ModePickerClient
@@ -87,13 +94,12 @@ describe("mode picker", () => {
         defaultScenarioId="s1"
       />,
     );
-    await userEvent.click(screen.getByRole("radio", { name: /statement chat/i }));
+    await userEvent.click(screen.getByRole("radio", { name: /fact finder import/i }));
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
     const body = lastRequestBody();
-    expect(body.mode).toBe("updating");
-    expect(body.mode).not.toBe("chat");
-    expect(body.scenarioId).toBe("s1");
-    expect(body.surface).toBe("chat");
+    expect(body.mode).toBe("onboarding");
+    expect(body.scenarioId).toBeNull();
+    expect(body.surface).toBe("fact_finder");
   });
 
   it("leaves the onboarding card's create-and-navigate behavior byte-identical (C10)", async () => {

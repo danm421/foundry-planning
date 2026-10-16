@@ -30,28 +30,36 @@ function makeRow(overrides: Partial<ImportListRow>): ImportListRow {
     updatedAt: new Date("2026-09-01T00:00:00Z"),
     fileCount: 0,
     extractionCount: 0,
-    surface: undefined,
+    factFinder: false,
     ...overrides,
   } as ImportListRow;
 }
 
-// Round 1 review finding: the RESUME half of C1 (list.ts deriving `surface`,
-// drafts-list.tsx branching href/label on it) had no test — only the CREATE
-// half did. If that derivation ever silently yields `undefined` for a real
-// chat draft, it reopens in the ordinary wizard with no error anywhere.
-describe("DraftsList — resumes a chat draft on the chat surface, not the wizard", () => {
-  it("routes and labels a chat draft distinctly from a plain draft", () => {
-    const chatRow = makeRow({ id: "chat-1", surface: "chat" });
-    const wizardRow = makeRow({ id: "wizard-1", surface: undefined });
+// The RESUME half of the switch: if the list row's `factFinder` flag ever
+// silently comes back false for a real fact finder draft (or a statement-chat
+// draft from before the switch), it reopens in the wizard with no error.
+describe("DraftsList — resumes a fact finder draft on the fact finder screen, not the wizard", () => {
+  it("routes and labels fact finder drafts distinctly from a plain draft", () => {
+    // A legacy chat draft and a new fact finder draft both carry factFinder: true.
+    const legacyChatRow = makeRow({ id: "chat-1", factFinder: true });
+    const factFinderRow = makeRow({ id: "ff-1", factFinder: true });
+    const wizardRow = makeRow({ id: "wizard-1", factFinder: false });
 
     const { container } = render(
-      <DraftsList clientId="c1" inProgress={[chatRow, wizardRow]} completed={[]} />,
+      <DraftsList
+        clientId="c1"
+        inProgress={[legacyChatRow, factFinderRow, wizardRow]}
+        completed={[]}
+      />,
     );
     const links = Array.from(container.querySelectorAll("li a"));
 
-    const chatLink = links.find((a) => a.getAttribute("href")?.includes("chat-1"));
-    expect(chatLink).toHaveAttribute("href", "/clients/c1/details/import/chat-1/chat");
-    expect(chatLink?.textContent).toContain("Statement chat");
+    for (const id of ["chat-1", "ff-1"]) {
+      const link = links.find((a) => a.getAttribute("href")?.includes(id));
+      expect(link).toHaveAttribute("href", `/clients/c1/details/import/${id}/fact-finder`);
+      expect(link?.textContent).toContain("Fact finder import");
+      expect(link?.textContent).not.toContain("Statement chat");
+    }
 
     const wizardLink = links.find((a) => a.getAttribute("href")?.includes("wizard-1"));
     expect(wizardLink).toHaveAttribute("href", "/clients/c1/details/import/wizard-1");
