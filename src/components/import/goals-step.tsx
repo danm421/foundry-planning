@@ -196,7 +196,8 @@ function DedicatedFunding({
  * Controlled, like `plan-basics-step.tsx`: no internal copy of `value`,
  * every edit goes out through `onChange`. A manually ADDED goal's defaults
  * are `stated`, not `derived` — the advisor chose them by clicking Add; only
- * `deriveGoals` emits `derived` provenance, and only with a `reason`.
+ * an earlier plan build's derived goals carry `derived` provenance, and only
+ * with a `reason`.
  */
 export default function GoalsStep({
   value, accountOptions, dependentOptions, currentYear, taggedRiskLevels, onChange,

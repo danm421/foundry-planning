@@ -49,13 +49,15 @@ export interface AssemblePlanBasics {
      * in this mode.
      *
      * TWO PRODUCERS, ONE UNIT. The planner supplies an already-monthly PIA
-     * (`apply-decisions.ts`). The document path extracts an ANNUAL benefit and
-     * DIVIDES IT BY 12 (`assemble/plan-basics.ts`), keeping
+     * (`apply-decisions.ts`). The document path (an earlier plan build's
+     * derivation) extracted an ANNUAL benefit and DIVIDED IT BY 12, keeping
      * `provenance: "document"` — same fact, different units. That conversion is
-     * not a double adjustment, because the document path also defaults the
+     * not a double adjustment, because the document path also defaulted the
      * claiming age to FRA and at FRA the engine applies neither a reduction nor a
      * credit — exactly so for FRA 67y0m (births from 1960 on), and slightly
-     * conservative for 1955-1959 births. See `monthlyPiaFromAnnual` for why.
+     * conservative for 1955-1959 births: the default kept FRA's whole years and
+     * dropped its months, so the claim lands up to 10 months early (at most
+     * about 5.6% under).
      */
     pia: PlanBasicsField<number>;
     claimingAge: PlanBasicsField<number>;

@@ -6,29 +6,25 @@ import { db } from "@/db";
 import { clients, crmHouseholds, expenses } from "@/db/schema";
 import { createTestClientWithScenario } from "@/test/factories";
 
-import { derivePlanBasics, emptyPlanBasics } from "../../assemble/plan-basics";
+import { emptyPlanBasics } from "../../assemble/plan-basics";
 import type { AssemblePlanBasics } from "../../assemble/types";
 import { emptyImportPayload, type ImportPayload } from "../../types";
 import { callsForTable, makeFakeTx, type FakeTx, type FakeTxCall } from "../../__tests__/commit-test-helpers";
 import { commitExpenses } from "../expenses";
 import { commitPlanBasics } from "../plan-basics";
-import {
-  isSummedLivingRow,
-  retirementSlotIdsFromPayload,
-  sumExtractedLiving,
-} from "@/lib/imports/living-rows";
+import { isSummedLivingRow } from "@/lib/imports/living-rows";
 
 /**
  * THE DOUBLE-COUNT REGRESSION.
  *
  * The extraction prompt emits living spending as separate itemized rows
- * (Housing / Groceries / Utilities). `derivePlanBasics` SUMS them into the one
- * figure the advisor reviews on Plan basics, and `commitPlanBasics` writes that
- * sum onto the seeded Current Living Expenses slot. If `commitExpenses` then
- * ALSO writes those same rows, the engine — which sums every `living` row in
- * the scenario — sees the money twice (42k on the slot + 42k of new rows = 84k),
- * and again through retirement, because an inserted row's default window runs
- * `currentYear .. currentYear + 30`.
+ * (Housing / Groceries / Utilities). An earlier plan build SUMMED them into the
+ * one stored figure the advisor reviews on Plan basics, and `commitPlanBasics`
+ * writes that sum onto the seeded Current Living Expenses slot. If
+ * `commitExpenses` then ALSO writes those same rows, the engine — which sums
+ * every `living` row in the scenario — sees the money twice (42k on the slot +
+ * 42k of new rows = 84k), and again through retirement, because an inserted
+ * row's default window runs `currentYear .. currentYear + 30`.
  *
  * These tests drive BOTH commit modules against ONE payload and one fake
  * transaction, and assert on the living total the engine would then see.
@@ -57,13 +53,39 @@ function payloadWith(planBasics?: AssemblePlanBasics): ImportPayload {
   return { ...emptyImportPayload(), expenses: itemizedLivingRows(), planBasics };
 }
 
-/** The figure the advisor actually reviews, built by the real derivation. */
-function reviewedBasics(payload: ImportPayload): AssemblePlanBasics {
-  return derivePlanBasics({
-    payload,
-    known: { retirementAge: 65, lifeExpectancy: 92, hasSpouse: false },
-    mode: "new",
-  });
+/**
+ * The figure the advisor actually reviews: the `planBasics` an earlier plan
+ * build's derivation stored for `payloadWith()`'s three rows (single filer,
+ * retirement age 65, life expectancy 92, a new build), copied verbatim from
+ * what that derivation returned. These tests pin how the commit folds a
+ * stored payload's living figure.
+ */
+function reviewedBasics(): AssemblePlanBasics {
+  return {
+    retirementAge: { value: 65, provenance: "build_request" },
+    lifeExpectancy: { value: 92, provenance: "build_request" },
+    currentLivingSpending: {
+      value: 42000,
+      provenance: "document",
+      reason: "Summed from 3 extracted living-expense rows.",
+    },
+    retirementLivingSpending: {
+      value: 33600,
+      provenance: "derived",
+      reason: "Estimated at 80% of current living expenses.",
+    },
+    socialSecurity: [
+      {
+        owner: "client",
+        pia: { value: null, provenance: "derived" },
+        claimingAge: {
+          value: 67,
+          provenance: "derived",
+          reason: "Defaulted to full retirement age (67); no date of birth on file.",
+        },
+      },
+    ],
+  };
 }
 
 function expenseCalls(fake: FakeTx, op: "insert" | "update"): FakeTxCall[] {
@@ -95,8 +117,7 @@ function currentPeriodLivingTotal(fake: FakeTx): number {
 
 describe("living-expense fold: the reviewed total supersedes the itemized rows", () => {
   it("commits itemized rows + plan basics as the reviewed figure EXACTLY ONCE", async () => {
-    const payload = payloadWith();
-    const basics = reviewedBasics(payload);
+    const basics = reviewedBasics();
     expect(basics.currentLivingSpending.value).toBe(42000); // 24k + 12k + 6k
 
     const fake = makeFakeTx();
@@ -118,7 +139,7 @@ describe("living-expense fold: the reviewed total supersedes the itemized rows",
   });
 
   it("is order-independent — the wizard commits one tab per click, in either order", async () => {
-    const reviewed = payloadWith(reviewedBasics(payloadWith()));
+    const reviewed = payloadWith(reviewedBasics());
 
     const fake = makeFakeTx();
     fake.setSelectResult("expenses", [CURRENT_SLOT]);
@@ -130,7 +151,7 @@ describe("living-expense fold: the reviewed total supersedes the itemized rows",
   });
 
   it("does not double-count through retirement either", async () => {
-    const reviewed = payloadWith(reviewedBasics(payloadWith()));
+    const reviewed = payloadWith(reviewedBasics());
 
     const fake = makeFakeTx();
     fake.setSelectResult("expenses", [CURRENT_SLOT, RETIREMENT_SLOT]);
@@ -148,7 +169,7 @@ describe("living-expense fold: the reviewed total supersedes the itemized rows",
     // An extracted "Total Living Expenses" line matches the seeded slot exactly.
     // commitExpenses runs AFTER commitPlanBasics in COMMIT_TABS order, so
     // writing it would overwrite the reviewed total on the canonical row.
-    const basics = reviewedBasics(payloadWith());
+    const basics = reviewedBasics();
     const reviewed: ImportPayload = {
       ...emptyImportPayload(),
       expenses: [
@@ -187,7 +208,7 @@ describe("living-expense fold: the guard — blank never loses the spending", ()
   });
 
   it("still inserts every itemized row when the advisor cleared the figure", async () => {
-    const basics = reviewedBasics(payloadWith());
+    const basics = reviewedBasics();
     const cleared: AssemblePlanBasics = {
       ...basics,
       currentLivingSpending: { value: null, provenance: "stated" },
@@ -209,7 +230,7 @@ describe("living-expense fold: the guard — blank never loses the spending", ()
 
   it("still inserts every itemized row when there is no seeded slot at all", async () => {
     const reviewed = payloadWith();
-    const basics = reviewedBasics(reviewed);
+    const basics = reviewedBasics();
     const fake = makeFakeTx();
     fake.setSelectResult("expenses", []); // household has no isDefault living slot
 
@@ -226,7 +247,7 @@ describe("living-expense fold: the guard — blank never loses the spending", ()
 
   it("still inserts every itemized row when the slot predates the startYearRef backfill", async () => {
     const reviewed = payloadWith();
-    const basics = reviewedBasics(reviewed);
+    const basics = reviewedBasics();
     const fake = makeFakeTx();
     // Migration 0012 added start_year_ref with NO backfill, so a slot seeded
     // before it classifies as neither current nor retirement — commitPlanBasics
@@ -242,7 +263,7 @@ describe("living-expense fold: the guard — blank never loses the spending", ()
   });
 
   it("never suppresses a non-living row", async () => {
-    const basics = reviewedBasics(payloadWith());
+    const basics = reviewedBasics();
     const reviewed: ImportPayload = {
       ...emptyImportPayload(),
       expenses: [
@@ -261,19 +282,9 @@ describe("living-expense fold: the guard — blank never loses the spending", ()
   });
 });
 
-function payloadWithSlots(): ImportPayload {
-  return {
-    ...emptyImportPayload(),
-    expenseSlots: [
-      { id: "slot-current", name: "Living Expenses", role: "current" },
-      { id: "slot-retirement", name: "Retirement Living Expenses", role: "retirement" },
-    ],
-  };
-}
-
 describe("F3 — phase-aware living-row predicate", () => {
   it("excludes a row matched to the retirement slot from the current-spending sum", () => {
-    const payload = payloadWithSlots();
+    const payload = emptyImportPayload();
     payload.expenses = [
       { type: "living", name: "Living Expenses", annualAmount: 60000,
         match: { kind: "exact", existingId: "slot-current" } },
@@ -281,22 +292,9 @@ describe("F3 — phase-aware living-row predicate", () => {
         match: { kind: "exact", existingId: "slot-retirement" } },
     ];
 
-    const retirementIds = retirementSlotIdsFromPayload(payload);
+    const retirementIds = new Set(["slot-retirement"]);
     expect(isSummedLivingRow(payload.expenses[0], retirementIds)).toBe(true);
     expect(isSummedLivingRow(payload.expenses[1], retirementIds)).toBe(false);
-
-    // The figure the advisor reviews is 60000, not 108000.
-    expect(sumExtractedLiving(payload)).toEqual({ total: 60000, count: 1 });
-  });
-
-  it("treats a payload with no slot roles as all-current (back-compat)", () => {
-    const payload = emptyImportPayload();
-    payload.expenses = [
-      { type: "living", name: "Housing", annualAmount: 24000, match: { kind: "new" } },
-    ];
-    const retirementIds = retirementSlotIdsFromPayload(payload);
-    expect(retirementIds.size).toBe(0);
-    expect(isSummedLivingRow(payload.expenses[0], retirementIds)).toBe(true);
   });
 });
 

@@ -30,8 +30,8 @@ import { resolveImportTiming } from "./timing";
  * retirement alongside the derived retirement figure on its own slot.
  *
  * Which rows fed the sum is decided by `isSummedLivingRow` — the SAME
- * predicate `sumExtractedLiving` uses to build the figure, imported rather
- * than restated, because a second copy that drifts recreates the bug.
+ * predicate an earlier plan build used to sum the stored figure, imported
+ * rather than restated, because a second copy that drifts recreates the bug.
  */
 export async function commitExpenses(
   tx: Tx,
@@ -70,7 +70,7 @@ export async function commitExpenses(
     (r) => livingSlotRole((r.startYearRef ?? null) as YearRef | null) === "current",
   );
 
-  // Same classification the assemble side uses, derived here from the slot
+  // Same classification the assemble side used, derived here from the slot
   // rows this module already queried. Both sides must agree on which rows fed
   // the figure, or the fold suppresses rows that were never summed.
   const retirementSlotIds: ReadonlySet<string> = new Set(

@@ -8,39 +8,19 @@ import type { Annotated, ImportPayload } from "./types";
  * (`extraction-schema.ts`) is a loose Zod object that lets raw LLM output
  * (occasionally a numeric string) flow through unchanged. `commit/incomes.ts`
  * defends against the same thing with `Number(row.annualAmount)`.
- *
- * Lives here rather than in `assemble/plan-basics.ts` because the living-row
- * predicate below is its primary consumer and that predicate has to be
- * byte-identical on both sides of the fold (see `isSummedLivingRow`).
  */
-export function numericAmount(raw: unknown): number | null {
+function numericAmount(raw: unknown): number | null {
   const n = typeof raw === "string" ? Number(raw) : raw;
   return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : null;
-}
-
-/**
- * Ids of the seeded RETIREMENT living slots for this import. A row matched to
- * one of them describes retirement-phase spending and must not be summed into
- * the CURRENT figure (F3).
- *
- * Reads `payload.expenseSlots`, which the matching pass populates with each
- * slot's role. A payload persisted before that field carried a role yields an
- * empty set — the pre-F3 behaviour, which under-classifies rather than
- * misclassifies.
- */
-export function retirementSlotIdsFromPayload(payload: ImportPayload): ReadonlySet<string> {
-  return new Set(
-    (payload.expenseSlots ?? []).filter((s) => s.role === "retirement").map((s) => s.id),
-  );
 }
 
 /**
  * THE rule for "this extracted expense row feeds the reviewed current-living-
  * spending total on the Plan basics step".
  *
- * It is defined exactly once, here, and used from BOTH sides of the fold:
- *   - `sumExtractedLiving` (assemble) adds these rows up into the figure the
- *     advisor reviews, and
+ * It is defined exactly once, here, and was used from BOTH sides of the fold:
+ *   - an earlier plan build's assemble step added these rows up into the
+ *     stored `planBasics` figure the advisor reviews, and
  *   - `commitExpenses` suppresses these rows when that figure is committed.
  * A second, drifting copy of this predicate is precisely what double-counted
  * living spending: the seeded slot carried the sum AND every itemized row was
@@ -70,27 +50,6 @@ export function isSummedLivingRow(
   const existingId = row.match?.kind === "exact" ? row.match.existingId : null;
   if (existingId != null && retirementSlotIds.has(existingId)) return false;
   return true;
-}
-
-/**
- * Sum every extracted living-expense row. The extraction prompt tags housing,
- * groceries, utilities, transportation, dining, etc. as separate
- * `"living"`-typed rows (see `expense-worksheet.ts`) — taking only the first
- * one silently discards the rest. `count` lets the caller disclose when more
- * than one row was combined.
- */
-export function sumExtractedLiving(
-  payload: ImportPayload,
-): { total: number; count: number } | null {
-  const retirementSlotIds = retirementSlotIdsFromPayload(payload);
-  let total = 0;
-  let count = 0;
-  for (const row of payload.expenses) {
-    if (!isSummedLivingRow(row, retirementSlotIds)) continue;
-    total += numericAmount(row.annualAmount)!;
-    count += 1;
-  }
-  return count > 0 ? { total, count } : null;
 }
 
 /**

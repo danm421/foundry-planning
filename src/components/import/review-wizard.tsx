@@ -176,16 +176,17 @@ export default function ReviewWizard({
   const [savings, setSavings] = useState<Annotated<ExtractedSavings>[]>(payload.savings);
 
   // planBasics is absent on an import assembled before this feature existed,
-  // or when derivePlanBasics had too little evidence to run at all. The Plan
-  // basics tab is unconditional, so it must never crash on that — fall back
-  // to an all-blank shape rather than requiring the caller to guarantee one.
+  // or when an earlier plan build's derivation had too little evidence to run
+  // at all. The Plan basics tab is unconditional, so it must never crash on
+  // that — fall back to an all-blank shape rather than requiring the caller to
+  // guarantee one.
   const [planBasics, setPlanBasics] = useState<AssemblePlanBasics>(
     () => payload.planBasics ?? emptyPlanBasics(),
   );
 
   // Same absent-on-old-imports rationale as planBasics: an import assembled
-  // before this feature existed (or with too little evidence for
-  // deriveGoals to run) has no `goals` key at all.
+  // before this feature existed (or with too little evidence for an earlier
+  // plan build's goal derivation to run) has no `goals` key at all.
   const [goals, setGoals] = useState<AssembleGoals>(() => payload.goals ?? emptyGoals());
 
   // Established convention on this branch: a household counts as having a
