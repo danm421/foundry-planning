@@ -173,6 +173,17 @@ describe("prior gift save writer", () => {
     await expect(run()).rejects.toThrow(/not found for this client/);
   });
 
+  it("an update naming another client's gift is refused, and their gift stays as it was", async () => {
+    const other = await seedSaveClient(FIRM);
+    const [charity] = await db.insert(externalBeneficiaries).values({ clientId: other.clientId, name: "Their food bank" }).returning({ id: externalBeneficiaries.id });
+    const [theirs] = await db.insert(gifts).values({ clientId: other.clientId, year: 2019, amount: "5000", grantor: "client", recipientExternalBeneficiaryId: charity.id }).returning();
+    const line = changeLine("gift", { amount: 9000, notes: "Not theirs to change" }, { recordId: theirs.id });
+
+    await expect(inSave(scope, (ctx) => writer.update(ctx, inputOf(line)))).rejects.toMatchObject({ name: "SaveLineError", message: "Gift not found" });
+    expect(await giftRow(theirs.id)).toMatchObject({ amount: "5000.00", notes: null, updatedAt: theirs.updatedAt });
+    expect(await auditOf(theirs.id, "gift.update")).toEqual([]);
+  });
+
   it("an update with no record is refused", async () => {
     await expect(inSave(scope, (ctx) => writer.update(ctx, { ...inputOf(changeLine("gift", { amount: 5 })), recordId: null }))).rejects.toThrow(SaveLineError);
   });
