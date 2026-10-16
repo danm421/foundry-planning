@@ -479,6 +479,41 @@ describe("the change list", () => {
       expect(screen.queryByText(SAVE_STALE_MESSAGE)).toBeNull();
     });
 
+    it.each([
+      { what: "the same lines: the unticked Value stays unticked", value: 41233, ticked: false },
+      { what: "a new Value: it comes back at its default", value: 42000, ticked: true },
+    ])("a record changed since the review → Review again rebuilds the list; $what, and the next Save posts that", async ({ value, ticked }) => {
+      const user = userEvent.setup();
+      const bodies: SaveBody[] = [];
+      const changed = "“Fidelity IRA” changed since you reviewed — review again.";
+      const rebuilt = (s: FactFinderState): FactFinderState => {
+        const next = reviewedAt(s);
+        const [joint, ...rest] = next.changeSet!.lines;
+        const fields = joint.fields.map((f) => (f.key === "value" ? { ...f, next: value, shown: { next: `$${value}` } } : f));
+        return { ...next, changeSet: { ...next.changeSet!, lines: [{ ...joint, fields }, ...rest] } };
+      };
+      const net = stubServer(reviewedAt(ready()), (s) => json(200, { factFinder: rebuilt(s) }), {
+        save: (_s, body) => {
+          bodies.push(body);
+          return json(409, { error: changed });
+        },
+      });
+      renderScreen(reviewedAt(ready()));
+
+      await user.click(screen.getByRole("checkbox", { name: "Include Value" }));
+      await user.click(saveButton());
+      await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(changed));
+      await user.click(screen.getByRole("button", { name: "Review again" }));
+      await waitFor(() => expect(net.reviews()).toBe(1));
+      await waitFor(() => expect(screen.queryByText(changed)).toBeNull());
+
+      expect((screen.getByRole("checkbox", { name: "Include Value" }) as HTMLInputElement).checked).toBe(ticked);
+      expect(screen.getByRole("checkbox", { name: "Include Name" })).toBeChecked();
+      await user.click(saveButton());
+      await waitFor(() => expect(bodies).toHaveLength(2));
+      expect(bodies[1]).toEqual({ changeSetVersion: 2, ticks: { "c1/account": { name: true, value: ticked } } });
+    });
+
     it("unticking a line shows in place that it is left out, and Save waits when nothing is left to write", async () => {
       const user = userEvent.setup();
       renderScreen(reviewedAt(ready()));
