@@ -10,7 +10,7 @@ import { getOrgId } from "@/lib/db-helpers";
 import { normalizeImportPayload, type ImportPayloadJson } from "@/lib/imports/types";
 import { loadImportGrowthContext } from "@/lib/investments/growth-context";
 import { loadImportMilestones } from "@/lib/imports/import-milestones";
-import { listClientIntakeUploads } from "@/lib/imports/intake-documents";
+import { listClientDocuments } from "@/lib/imports/client-documents";
 import ImportFlow from "./import-flow";
 
 interface ImportFlowContentProps {
@@ -57,11 +57,11 @@ export async function ImportFlowContent({ clientId: id, importId }: ImportFlowCo
 
   const payloadJson = imp.payloadJson as ImportPayloadJson | null;
 
-  const [growthContext, importMilestones, clientUploads] = await Promise.all([
+  const [growthContext, importMilestones, clientDocuments] = await Promise.all([
     loadImportGrowthContext(id, firmId, imp.scenarioId),
     loadImportMilestones(id, firmId, imp.scenarioId),
     // Only the draft stage has an upload box to offer them in.
-    imp.status === "draft" ? listClientIntakeUploads(id, firmId) : [],
+    imp.status === "draft" ? listClientDocuments(id, firmId) : [],
   ]);
 
   return (
@@ -86,7 +86,7 @@ export async function ImportFlowContent({ clientId: id, importId }: ImportFlowCo
       milestones={importMilestones?.milestones ?? null}
       clientFirstName={importMilestones?.clientFirstName}
       spouseFirstName={importMilestones?.spouseFirstName}
-      clientUploads={clientUploads}
+      clientDocuments={clientDocuments}
     />
   );
 }

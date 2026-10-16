@@ -3,7 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { Card, CardBody, CardHeader } from "@/components/card";
 import UploadZone, { type InitialUploadedFile } from "@/components/import/upload-zone";
-import type { IntakeDocumentView } from "@/lib/intake/document-types";
+import type { ClientDocumentView } from "@/lib/imports/client-documents";
 import { StepLine } from "@/components/statement-chat/step-line";
 import AccountsTable from "@/components/statement-chat/accounts-table";
 import LiabilitiesTable from "@/components/statement-chat/liabilities-table";
@@ -108,8 +108,8 @@ interface ChatSurfaceProps {
    * written by two routes and read by nobody.
    */
   initialMapRows?: RowsByEntity;
-  /** The client's Data Collection uploads, offered in the upload box. */
-  clientUploads?: IntakeDocumentView[];
+  /** Files in the client's vault, offered in the upload box. */
+  clientDocuments?: ClientDocumentView[];
 }
 
 export function ChatSurface({
@@ -119,7 +119,7 @@ export function ChatSurface({
   initialExtractHoldings,
   reviewContext = EMPTY_CHAT_REVIEW_CONTEXT,
   initialMapRows,
-  clientUploads,
+  clientDocuments,
 }: ChatSurfaceProps) {
   const [uploadedCount, setUploadedCount] = useState(initialFiles.length);
   // The map pass is per FILE (one POST each), so the surface has to carry the
@@ -439,7 +439,7 @@ export function ChatSurface({
             clientId={clientId}
             importId={importId}
             initialFiles={initialFiles}
-            clientUploads={clientUploads}
+            clientDocuments={clientDocuments}
             disabled={isStreaming}
             onUploaded={(info) => {
               setUploadedCount((c) => c + 1);

@@ -4,8 +4,9 @@ import { db } from "@/db";
 import {
   clients, crmHouseholdDocuments, crmDocumentFolders, scenarios, clientImportFiles,
 } from "@/db/schema";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { ensureSystemFolders } from "./folders";
+import { UPLOADED_SOURCE_KINDS } from "./document-constants";
 import { recordAudit } from "@/lib/audit";
 import type { CrmDocumentRow } from "./documents";
 
@@ -197,16 +198,16 @@ export async function linkImportFilesToVault(args: {
       // trade-off: import_ref rows are benign links (storageKey null), commits
       // are rate-limited + user-initiated, and this helper is best-effort.
       //
-      // A file attached from the client's own Data Collection uploads is
-      // already in this vault, so a link would only list it twice. Attaching
-      // copies the name and bytes verbatim, so name + size finds the original.
+      // A file attached from the client's vault is already in it, so a link
+      // would only list it twice. Attaching copies the name and bytes
+      // verbatim, so name + size finds the original.
       const existing = await db.query.crmHouseholdDocuments.findFirst({
         where: and(
           eq(crmHouseholdDocuments.householdId, householdId),
           or(
             eq(crmHouseholdDocuments.importFileId, f.id),
             and(
-              eq(crmHouseholdDocuments.sourceKind, "intake_upload"),
+              inArray(crmHouseholdDocuments.sourceKind, UPLOADED_SOURCE_KINDS),
               eq(crmHouseholdDocuments.filename, f.originalFilename),
               eq(crmHouseholdDocuments.sizeBytes, f.sizeBytes),
             ),

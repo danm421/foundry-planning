@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABELS } from "@/lib/extraction/types";
 import type { DocumentType } from "@/lib/extraction/types";
-import { intakeDocTypeLabel, type IntakeDocumentView } from "@/lib/intake/document-types";
+import type { ClientDocumentSource, ClientDocumentView } from "@/lib/imports/client-documents";
 import { formatBytes } from "@/components/portal/documents/vault-format";
 
 export type UploadState = "queued" | "uploading" | "uploaded" | "failed";
@@ -15,9 +15,9 @@ export interface UploadingFile {
   /** The browser File for an in-session upload. Absent for rows seeded from
    *  already-uploaded server files (those never re-upload). */
   file?: File;
-  /** Set instead of `file` when the row is one of the client's Data Collection
-   *  uploads — the server copies it in from the vault. */
-  clientUploadId?: string;
+  /** Set instead of `file` when the row is a file from the client's vault —
+   *  the server copies it in. */
+  clientDocumentId?: string;
   documentType: DocumentType | "auto";
   state: UploadState;
   /** 0–100. Browsers don't expose download progress for fetch, so XHR is used. */
@@ -53,9 +53,9 @@ interface UploadZoneProps {
   /** Called after a persisted file is removed (its server row is deleted). */
   onRemoved?: () => void;
   disabled?: boolean;
-  /** Documents the client uploaded through Data Collection, offered for adding
-   *  without a download and re-upload. */
-  clientUploads?: IntakeDocumentView[];
+  /** Files in the client's vault, offered for adding without a download and
+   *  re-upload. */
+  clientDocuments?: ClientDocumentView[];
 }
 
 const ACCEPTED_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx", ".xls", ".csv"];
@@ -81,7 +81,7 @@ export default function UploadZone({
   onUploaded,
   onRemoved,
   disabled,
-  clientUploads,
+  clientDocuments,
 }: UploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   // Seed once from the files already persisted for this import so the list
@@ -135,12 +135,12 @@ export default function UploadZone({
 
   const startUpload = useCallback(
     (target: UploadingFile) => {
-      if (target.clientUploadId) {
+      if (target.clientDocumentId) {
         updateFile(target.id, { state: "uploading", progress: 0 });
-        fetch(`/api/clients/${clientId}/imports/${importId}/intake-documents`, {
+        fetch(`/api/clients/${clientId}/imports/${importId}/client-documents`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ documentId: target.clientUploadId }),
+          body: JSON.stringify({ documentId: target.clientDocumentId }),
         })
           .then(async (res) => {
             const body = (await res.json().catch(() => ({}))) as {
@@ -232,12 +232,12 @@ export default function UploadZone({
     [startUpload],
   );
 
-  const addClientUpload = useCallback(
-    (doc: IntakeDocumentView) => {
+  const addClientDocument = useCallback(
+    (doc: ClientDocumentView) => {
       const row: UploadingFile = {
         id: crypto.randomUUID(),
         name: doc.filename,
-        clientUploadId: doc.id,
+        clientDocumentId: doc.id,
         documentType: "auto",
         state: "queued",
         progress: 0,
@@ -248,10 +248,10 @@ export default function UploadZone({
     [startUpload],
   );
 
-  // A client upload leaves the list once it's in the import (matched by name —
-  // the copy keeps the client's filename), and comes back if it's removed.
+  // A vault file leaves the list once it's in the import (matched by name —
+  // the copy keeps its filename), and comes back if it's removed.
   const listedNames = new Set(files.map((f) => f.name));
-  const offeredUploads = (clientUploads ?? []).filter((d) => !listedNames.has(d.filename));
+  const offeredDocuments = (clientDocuments ?? []).filter((d) => !listedNames.has(d.filename));
 
   const retry = useCallback(
     (id: string) => {
@@ -382,10 +382,10 @@ export default function UploadZone({
         />
       </div>
 
-      {offeredUploads.length > 0 && (
-        <ClientUploadsList
-          documents={offeredUploads}
-          onAdd={addClientUpload}
+      {offeredDocuments.length > 0 && (
+        <ClientDocumentsList
+          documents={offeredDocuments}
+          onAdd={addClientDocument}
           disabled={disabled}
         />
       )}
@@ -502,24 +502,36 @@ function StateBadge({ file }: { file: UploadingFile }) {
   }
 }
 
-function ClientUploadsList({
+const SOURCE_LABELS: Record<ClientDocumentSource, string> = {
+  data_collection: "Data Collection",
+  portal: "Client portal",
+  firm: "Your firm",
+};
+
+// A well-kept vault would bury the import's own file list, so only the newest
+// few show until the advisor asks for the rest.
+const CLIENT_DOCUMENTS_SHOWN = 5;
+
+function ClientDocumentsList({
   documents,
   onAdd,
   disabled,
 }: {
-  documents: IntakeDocumentView[];
-  onAdd: (doc: IntakeDocumentView) => void;
+  documents: ClientDocumentView[];
+  onAdd: (doc: ClientDocumentView) => void;
   disabled?: boolean;
 }) {
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll ? documents : documents.slice(0, CLIENT_DOCUMENTS_SHOWN);
+  const hidden = documents.length - shown.length;
   return (
-    <section aria-label="Documents the client uploaded" className="space-y-2">
-      <p className="text-xs text-ink-3">
-        The client uploaded {documents.length === 1 ? "this document" : "these documents"} through
-        Data Collection.
-      </p>
+    <section aria-label="The client's documents" className="space-y-2">
+      <p className="text-xs text-ink-3">From the client&apos;s documents</p>
       <ul className="space-y-2">
-        {documents.map((doc) => {
-          const label = intakeDocTypeLabel(doc.docType);
+        {shown.map((doc) => {
+          const details = [SOURCE_LABELS[doc.source], doc.typeLabel]
+            .filter(Boolean)
+            .join(" · ");
           return (
             <li
               key={doc.id}
@@ -527,7 +539,7 @@ function ClientUploadsList({
             >
               <FileIcon />
               <span className="min-w-0 flex-1 truncate text-sm text-ink-2">{doc.filename}</span>
-              {label ? <span className="text-xs text-ink-3">{label}</span> : null}
+              <span className="text-xs text-ink-3">{details}</span>
               {doc.sizeBytes ? (
                 <span className="tabular text-xs text-ink-4">{formatBytes(doc.sizeBytes)}</span>
               ) : null}
@@ -544,6 +556,15 @@ function ClientUploadsList({
           );
         })}
       </ul>
+      {hidden > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="text-xs text-ink-3 underline-offset-2 hover:text-ink-2 hover:underline"
+        >
+          Show <span className="tabular">{hidden}</span> more
+        </button>
+      )}
     </section>
   );
 }

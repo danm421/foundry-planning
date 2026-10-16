@@ -14,7 +14,7 @@ import {
   type ImportEligibleStep,
 } from "@/lib/onboarding/import-sections";
 import WizardImportReview from "./wizard-import-review";
-import type { IntakeDocumentView } from "@/lib/intake/document-types";
+import type { ClientDocumentView } from "@/lib/imports/client-documents";
 
 interface WizardImportDrawerProps {
   clientId: string;
@@ -23,8 +23,8 @@ interface WizardImportDrawerProps {
   baseScenarioId: string;
   /** Shared wizard draft id from onboarding_state, or null if none yet. */
   activeImportId: string | null;
-  /** The client's Data Collection uploads, offered in the upload box. */
-  clientUploads?: IntakeDocumentView[];
+  /** Files in the client's vault, offered in the upload box. */
+  clientDocuments?: ClientDocumentView[];
   onClose: () => void;
 }
 
@@ -45,7 +45,7 @@ export default function WizardImportDrawer({
   step,
   baseScenarioId,
   activeImportId,
-  clientUploads,
+  clientDocuments,
   onClose,
 }: WizardImportDrawerProps) {
   const router = useRouter();
@@ -338,7 +338,7 @@ export default function WizardImportDrawer({
                 clientId={clientId}
                 importId={imp?.importId ?? null}
                 ensureImport={ensureImport}
-                clientUploads={clientUploads}
+                clientDocuments={clientDocuments}
                 onUploaded={() =>
                   setImp((cur) =>
                     cur ? { ...cur, fileCount: cur.fileCount + 1 } : cur,
@@ -468,14 +468,14 @@ function UploadZoneGate({
   clientId,
   importId,
   ensureImport,
-  clientUploads,
+  clientDocuments,
   onUploaded,
   onError,
 }: {
   clientId: string;
   importId: string | null;
   ensureImport: () => Promise<string>;
-  clientUploads?: IntakeDocumentView[];
+  clientDocuments?: ClientDocumentView[];
   onUploaded: () => void;
   onError: (msg: string) => void;
 }) {
@@ -507,7 +507,7 @@ function UploadZoneGate({
     <UploadZone
       clientId={clientId}
       importId={importId}
-      clientUploads={clientUploads}
+      clientDocuments={clientDocuments}
       onUploaded={onUploaded}
     />
   );

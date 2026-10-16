@@ -16,7 +16,7 @@ vi.mock("@/lib/imports/authz", async () => {
 });
 vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: vi.fn() }));
 vi.mock("@/lib/rate-limit", () => ({ checkImportRateLimit: vi.fn() }));
-vi.mock("@/lib/imports/intake-documents", () => ({ attachIntakeUpload: vi.fn() }));
+vi.mock("@/lib/imports/client-documents", () => ({ attachClientDocument: vi.fn() }));
 
 import { POST } from "../route";
 import { auth } from "@clerk/nextjs/server";
@@ -25,13 +25,13 @@ import { requireActiveSubscription, ForbiddenError } from "@/lib/authz";
 import { requireImportAccess, NotFoundError } from "@/lib/imports/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
-import { attachIntakeUpload } from "@/lib/imports/intake-documents";
+import { attachClientDocument } from "@/lib/imports/client-documents";
 
 const DOC_ID = "11111111-1111-4111-8111-111111111111";
 const params = { params: Promise.resolve({ id: "c1", importId: "i1" }) };
 
 function req(body: unknown) {
-  return new Request("http://t/api/clients/c1/imports/i1/intake-documents", {
+  return new Request("http://t/api/clients/c1/imports/i1/client-documents", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -51,14 +51,14 @@ beforeEach(() => {
   } as never);
   vi.mocked(checkImportRateLimit).mockResolvedValue({ allowed: true } as never);
   vi.mocked(requireImportAccess).mockResolvedValue({ id: "i1" } as never);
-  vi.mocked(attachIntakeUpload).mockResolvedValue({
+  vi.mocked(attachClientDocument).mockResolvedValue({
     ok: true,
     file: { id: "f1" } as never,
     deduped: false,
   });
 });
 
-describe("POST /api/clients/[id]/imports/[importId]/intake-documents", () => {
+describe("POST /api/clients/[id]/imports/[importId]/client-documents", () => {
   it("adds the document to the caller's own import and returns the file", async () => {
     const res = await POST(req({ documentId: DOC_ID }), params);
 
@@ -70,7 +70,7 @@ describe("POST /api/clients/[id]/imports/[importId]/intake-documents", () => {
       firmId: "org_1",
       userId: "user_1",
     });
-    expect(attachIntakeUpload).toHaveBeenCalledWith({
+    expect(attachClientDocument).toHaveBeenCalledWith({
       importId: "i1",
       clientId: "c1",
       firmId: "org_1",
@@ -85,7 +85,7 @@ describe("POST /api/clients/[id]/imports/[importId]/intake-documents", () => {
     );
     const res = await POST(req({ documentId: DOC_ID }), params);
     expect(res.status).toBe(403);
-    expect(attachIntakeUpload).not.toHaveBeenCalled();
+    expect(attachClientDocument).not.toHaveBeenCalled();
   });
 
   it("refuses view-only access", async () => {
@@ -97,14 +97,14 @@ describe("POST /api/clients/[id]/imports/[importId]/intake-documents", () => {
     } as never);
     const res = await POST(req({ documentId: DOC_ID }), params);
     expect(res.status).toBe(403);
-    expect(attachIntakeUpload).not.toHaveBeenCalled();
+    expect(attachClientDocument).not.toHaveBeenCalled();
   });
 
   it("404s an import that isn't the caller's", async () => {
     vi.mocked(requireImportAccess).mockRejectedValueOnce(new NotFoundError("Import not found"));
     const res = await POST(req({ documentId: DOC_ID }), params);
     expect(res.status).toBe(404);
-    expect(attachIntakeUpload).not.toHaveBeenCalled();
+    expect(attachClientDocument).not.toHaveBeenCalled();
   });
 
   it("fails closed when rate limiting is unavailable", async () => {
@@ -114,13 +114,13 @@ describe("POST /api/clients/[id]/imports/[importId]/intake-documents", () => {
     } as never);
     const res = await POST(req({ documentId: DOC_ID }), params);
     expect(res.status).toBe(503);
-    expect(attachIntakeUpload).not.toHaveBeenCalled();
+    expect(attachClientDocument).not.toHaveBeenCalled();
   });
 
   it("400s a body without a document id", async () => {
     const res = await POST(req({ documentId: "not-a-uuid" }), params);
     expect(res.status).toBe(400);
-    expect(attachIntakeUpload).not.toHaveBeenCalled();
+    expect(attachClientDocument).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -128,7 +128,7 @@ describe("POST /api/clients/[id]/imports/[importId]/intake-documents", () => {
     ["too_large", 413],
     ["unsupported_type", 400],
   ] as const)("maps a %s refusal to %i", async (reason, status) => {
-    vi.mocked(attachIntakeUpload).mockResolvedValueOnce({ ok: false, reason });
+    vi.mocked(attachClientDocument).mockResolvedValueOnce({ ok: false, reason });
     const res = await POST(req({ documentId: DOC_ID }), params);
     expect(res.status).toBe(status);
     expect((await res.json()).error).toEqual(expect.any(String));

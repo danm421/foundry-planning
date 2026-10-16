@@ -9,7 +9,7 @@ import {
 import { requireImportAccess, ForbiddenError, NotFoundError } from "@/lib/imports/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
-import { attachIntakeUpload } from "@/lib/imports/intake-documents";
+import { attachClientDocument } from "@/lib/imports/client-documents";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -17,10 +17,10 @@ export const maxDuration = 60;
 const attachBody = z.object({ documentId: z.string().uuid() });
 
 /**
- * Add a document the client uploaded through Data Collection to this import.
+ * Add a file from the client's vault to this import.
  * The server copies the vault file in, so it never round-trips through the
  * advisor's browser (nor its 4.5 MB request cap). The pages that render the
- * upload box list the documents themselves (`listClientIntakeUploads`).
+ * upload box list the documents themselves (`listClientDocuments`).
  *
  * Same gate chain as the advisor's own upload (`../files/route.ts`), plus the
  * subscription check every new write route takes.
@@ -71,7 +71,7 @@ export async function POST(
       return NextResponse.json({ error: "Pick a document to add." }, { status: 400 });
     }
 
-    const result = await attachIntakeUpload({
+    const result = await attachClientDocument({
       importId,
       clientId,
       firmId,
@@ -102,7 +102,7 @@ export async function POST(
       return NextResponse.json({ error: err.message }, { status: 404 });
     }
     const safeMessage = err instanceof Error ? err.message.slice(0, 200) : "unknown error";
-    console.error("POST /api/clients/[id]/imports/[importId]/intake-documents failed:", safeMessage);
+    console.error("POST /api/clients/[id]/imports/[importId]/client-documents failed:", safeMessage);
     return NextResponse.json({ error: "Couldn't add that document. Please try again." }, { status: 500 });
   }
 }

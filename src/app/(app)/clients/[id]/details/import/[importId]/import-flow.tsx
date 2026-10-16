@@ -12,7 +12,7 @@ import type { AssembleAssumption } from "@/lib/imports/assemble/types";
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import type { ClientMilestones } from "@/lib/milestones";
 import { draftErrorMessage } from "@/lib/imports/draft-error-message";
-import type { IntakeDocumentView } from "@/lib/intake/document-types";
+import type { ClientDocumentView } from "@/lib/imports/client-documents";
 
 export interface ImportFlowFile {
   id: string;
@@ -37,8 +37,8 @@ interface ImportFlowProps {
   milestones?: ClientMilestones | null;
   clientFirstName?: string;
   spouseFirstName?: string;
-  /** The client's Data Collection uploads, offered in the upload box. */
-  clientUploads?: IntakeDocumentView[];
+  /** Files in the client's vault, offered in the upload box. */
+  clientDocuments?: ClientDocumentView[];
 }
 
 const MODE_LABEL: Record<string, string> = {
@@ -178,7 +178,7 @@ function DraftStage(props: ImportFlowProps) {
           onUploaded={() => router.refresh()}
           onRemoved={() => router.refresh()}
           disabled={extracting}
-          clientUploads={props.clientUploads}
+          clientDocuments={props.clientDocuments}
         />
         {props.files.length > 0 ? (
           <div className="mt-4 flex flex-col gap-2 border-t border-hair pt-4">

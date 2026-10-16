@@ -23,7 +23,7 @@ vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 import { get, put } from "@vercel/blob";
 import { auth } from "@clerk/nextjs/server";
 import { recordAudit } from "@/lib/audit";
-import { attachIntakeUpload, listClientIntakeUploads } from "../intake-documents";
+import { attachClientDocument, listClientDocuments } from "../client-documents";
 
 const ORG = "org_import_intake_docs_test";
 const ADVISOR = "user_intake_docs_advisor";
@@ -93,37 +93,65 @@ beforeEach(async () => {
   vi.mocked(recordAudit).mockReset();
 });
 
-describe("listClientIntakeUploads", () => {
-  it("lists only the current versions of the client's own Data Collection uploads", async () => {
+describe("listClientDocuments", () => {
+  it("lists the current version of every file uploaded to the client's vault, newest first", async () => {
     const statement = await insertDoc({ filename: "statement.pdf" });
-    await insertDoc({ filename: "advisor-upload.pdf", sourceKind: "upload" });
+    const portal = await insertDoc({
+      filename: "401k.pdf",
+      sourceKind: "upload",
+      storageKey: `crm/${householdId}/portal/1-a-401k.pdf`,
+      description: null,
+      createdAt: new Date(statement.createdAt.getTime() + 1000),
+    });
+    const firm = await insertDoc({
+      filename: "1040.pdf",
+      sourceKind: "upload",
+      storageKey: `crm/${householdId}/1-b-1040.pdf`,
+      description: "From their CPA",
+      createdAt: new Date(statement.createdAt.getTime() + 2000),
+    });
     await insertDoc({ filename: "old-version.pdf", isCurrentVersion: false });
     await insertDoc({ filename: "other-household.pdf", householdId: otherHouseholdId });
 
-    const docs = await listClientIntakeUploads(clientId, ORG);
+    const docs = await listClientDocuments(clientId, ORG);
     expect(docs).toEqual([
+      // The firm's description is a free-text note, never shown as a type.
+      { id: firm.id, filename: "1040.pdf", sizeBytes: PDF.length, source: "firm", typeLabel: null },
+      { id: portal.id, filename: "401k.pdf", sizeBytes: PDF.length, source: "portal", typeLabel: null },
       {
         id: statement.id,
         filename: "statement.pdf",
-        docType: "statement",
         sizeBytes: PDF.length,
-        uploadedAt: statement.createdAt.toISOString(),
+        source: "data_collection",
+        typeLabel: "Account statement",
       },
     ]);
+  });
+
+  it("leaves out what the import can't take", async () => {
+    await insertDoc({ filename: "plan.pdf", sourceKind: "generated_plan" });
+    await insertDoc({ filename: "linked.pdf", sourceKind: "import_ref", storageKey: null });
+    await insertDoc({ filename: "photo.HEIC", sourceKind: "upload" });
+    await insertDoc({ filename: "old-budget.xls", sourceKind: "upload" });
+    await insertDoc({ filename: "huge.pdf", sourceKind: "upload", sizeBytes: 21 * 1024 * 1024 });
+    const kept = await insertDoc({ filename: "Scan.JPG", sourceKind: "upload" });
+
+    const docs = await listClientDocuments(clientId, ORG);
+    expect(docs.map((d) => d.id)).toEqual([kept.id]);
   });
 
   it("is empty for a colleague without access to the client's vault", async () => {
     await insertDoc();
     setAuth("user_some_other_member", "org:member");
-    expect(await listClientIntakeUploads(clientId, ORG)).toEqual([]);
+    expect(await listClientDocuments(clientId, ORG)).toEqual([]);
   });
 });
 
-describe("attachIntakeUpload", () => {
+describe("attachClientDocument", () => {
   it("copies the upload's bytes into the import under the client's filename", async () => {
     const doc = await insertDoc({ filename: "Q3 statement.pdf" });
 
-    const result = await attachIntakeUpload({ importId, clientId, firmId: ORG, documentId: doc.id });
+    const result = await attachClientDocument({ importId, clientId, firmId: ORG, documentId: doc.id });
 
     expect(result).toMatchObject({ ok: true, deduped: false });
     expect(vi.mocked(get)).toHaveBeenCalledWith("crm/hh/statement.pdf", { access: "private" });
@@ -140,27 +168,41 @@ describe("attachIntakeUpload", () => {
     expect(vi.mocked(recordAudit)).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "import.file.uploaded",
-        metadata: expect.objectContaining({ source: "intake_upload", sourceDocumentId: doc.id }),
+        metadata: expect.objectContaining({ source: "vault_document", sourceDocumentId: doc.id }),
       }),
     );
   });
 
   it("adding the same upload twice keeps one file", async () => {
     const doc = await insertDoc();
-    await attachIntakeUpload({ importId, clientId, firmId: ORG, documentId: doc.id });
-    const again = await attachIntakeUpload({ importId, clientId, firmId: ORG, documentId: doc.id });
+    await attachClientDocument({ importId, clientId, firmId: ORG, documentId: doc.id });
+    const again = await attachClientDocument({ importId, clientId, firmId: ORG, documentId: doc.id });
 
     expect(again).toMatchObject({ ok: true, deduped: true });
     const files = await db.select().from(clientImportFiles).where(eq(clientImportFiles.importId, importId));
     expect(files).toHaveLength(1);
   });
 
-  it("refuses a document that isn't one of this client's Data Collection uploads", async () => {
-    const elsewhere = await insertDoc({ householdId: otherHouseholdId });
-    const advisorOwn = await insertDoc({ sourceKind: "upload" });
+  it("adds a file the client sent through the portal", async () => {
+    const doc = await insertDoc({
+      filename: "401k.pdf",
+      sourceKind: "upload",
+      storageKey: `crm/${householdId}/portal/1-a-401k.pdf`,
+    });
 
-    for (const doc of [elsewhere, advisorOwn]) {
-      expect(await attachIntakeUpload({ importId, clientId, firmId: ORG, documentId: doc.id })).toEqual({
+    expect(await attachClientDocument({ importId, clientId, firmId: ORG, documentId: doc.id })).toMatchObject({
+      ok: true,
+      deduped: false,
+    });
+    expect(vi.mocked(get)).toHaveBeenCalledWith(`crm/${householdId}/portal/1-a-401k.pdf`, { access: "private" });
+  });
+
+  it("refuses a document that isn't an upload in this client's vault", async () => {
+    const elsewhere = await insertDoc({ householdId: otherHouseholdId });
+    const generatedPlan = await insertDoc({ sourceKind: "generated_plan" });
+
+    for (const doc of [elsewhere, generatedPlan]) {
+      expect(await attachClientDocument({ importId, clientId, firmId: ORG, documentId: doc.id })).toEqual({
         ok: false,
         reason: "not_found",
       });
@@ -171,7 +213,7 @@ describe("attachIntakeUpload", () => {
   it("refuses a colleague without access to the client's vault", async () => {
     const doc = await insertDoc();
     setAuth("user_some_other_member", "org:member");
-    expect(await attachIntakeUpload({ importId, clientId, firmId: ORG, documentId: doc.id })).toEqual({
+    expect(await attachClientDocument({ importId, clientId, firmId: ORG, documentId: doc.id })).toEqual({
       ok: false,
       reason: "not_found",
     });
@@ -184,7 +226,7 @@ describe("attachIntakeUpload", () => {
       stream: new Response(Buffer.from("\x00\x01\x02\x03 not a document")).body,
     }) as never);
 
-    expect(await attachIntakeUpload({ importId, clientId, firmId: ORG, documentId: doc.id })).toEqual({
+    expect(await attachClientDocument({ importId, clientId, firmId: ORG, documentId: doc.id })).toEqual({
       ok: false,
       reason: "unsupported_type",
     });

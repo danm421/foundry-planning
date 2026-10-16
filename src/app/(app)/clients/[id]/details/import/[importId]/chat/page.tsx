@@ -9,7 +9,7 @@ import { ChatSurface } from "@/components/statement-chat/chat-surface";
 import type { RowsByEntity } from "@/lib/entity-extraction/types";
 import { loadChatReviewContext } from "@/lib/statement-chat/review-context";
 import { requireClientPageAccess } from "@/lib/clients/page-access";
-import { listClientIntakeUploads } from "@/lib/imports/intake-documents";
+import { listClientDocuments } from "@/lib/imports/client-documents";
 
 interface PageProps {
   params: Promise<{ id: string; importId: string }>;
@@ -81,7 +81,7 @@ export default async function StatementChatPage({ params, searchParams }: PagePr
     ((imp.payloadJson ?? {}) as { chat?: { entityRows?: RowsByEntity } }).chat?.entityRows ?? {}
   ) as RowsByEntity;
 
-  const [files, clientUploads] = await Promise.all([
+  const [files, clientDocuments] = await Promise.all([
     db
       .select()
       .from(clientImportFiles)
@@ -92,7 +92,7 @@ export default async function StatementChatPage({ params, searchParams }: PagePr
         ),
       )
       .orderBy(asc(clientImportFiles.uploadedAt)),
-    listClientIntakeUploads(clientId, firmId),
+    listClientDocuments(clientId, firmId),
   ]);
 
   return (
@@ -118,7 +118,7 @@ export default async function StatementChatPage({ params, searchParams }: PagePr
           initialExtractHoldings={imp.extractHoldings === true}
           reviewContext={reviewContext}
           initialMapRows={storedMapRows}
-          clientUploads={clientUploads}
+          clientDocuments={clientDocuments}
         />
       </div>
     </DetailsPageShell>
