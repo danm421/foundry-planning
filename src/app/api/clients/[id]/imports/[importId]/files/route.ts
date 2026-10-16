@@ -16,6 +16,9 @@ import { detectUploadKind } from "@/lib/extraction/validate-upload";
 import { uploadImportFile } from "@/lib/imports/blob";
 import { sha256Hex } from "@/lib/imports/file-hash";
 import { recordAudit } from "@/lib/audit";
+import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
+import { readFactFinderState } from "@/lib/fact-finder/state";
+import type { ImportPayloadJson } from "@/lib/imports/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -93,7 +96,14 @@ export async function POST(
 
     // Loads + verifies the import row (and transitively the client). Throws
     // NotFoundError / ForbiddenError that the catch block maps to status.
-    await requireImportAccess({ importId, clientId, firmId, userId });
+    const imp = await requireImportAccess({ importId, clientId, firmId, userId });
+
+    // A fact finder import saved to the plan is read-only — the gate's refusal,
+    // with the saved fact finder so a tab still open on it shows the closed view.
+    const payloadJson = (imp.payloadJson ?? {}) as ImportPayloadJson;
+    if (payloadJson.factFinder?.closed) {
+      return NextResponse.json({ error: SAVE_CLOSED_MESSAGE, factFinder: readFactFinderState(payloadJson) }, { status: 409 });
+    }
 
     // Cheap pre-buffer rejection for obviously oversized bodies. Real
     // enforcement is the file.size check below — Content-Length is

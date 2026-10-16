@@ -1,6 +1,6 @@
 // src/app/api/clients/[id]/imports/[importId]/fact-finder/turn/__tests__/route.test.ts
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TURN_BUSY_MESSAGE } from "@/lib/fact-finder/api-types";
+import { SAVE_CLOSED_MESSAGE, TURN_BUSY_MESSAGE } from "@/lib/fact-finder/api-types";
 
 vi.mock("@/lib/fact-finder/gate", () => ({
   factFinderGate: vi.fn(),
@@ -8,6 +8,10 @@ vi.mock("@/lib/fact-finder/gate", () => ({
     new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }),
 }));
 vi.mock("@/lib/fact-finder/chat/turn", () => ({ runFactFinderTurn: vi.fn() }));
+vi.mock("@/lib/fact-finder/persist", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/fact-finder/persist")>()),
+  loadFactFinder: vi.fn(),
+}));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 vi.mock("@/db", () => ({ db: {} }));
 
@@ -16,7 +20,7 @@ import { recordAiUsage } from "@/lib/ai/usage";
 import { recordAudit } from "@/lib/audit";
 import { runFactFinderTurn } from "@/lib/fact-finder/chat/turn";
 import { factFinderGate } from "@/lib/fact-finder/gate";
-import { FactFinderBusyError, FactFinderNotFoundError } from "@/lib/fact-finder/persist";
+import { FactFinderBusyError, FactFinderClosedError, FactFinderNotFoundError, loadFactFinder } from "@/lib/fact-finder/persist";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
 
 const params = { params: Promise.resolve({ id: "c1", importId: "i1" }) };
@@ -122,6 +126,17 @@ describe("POST /fact-finder/turn", () => {
       status: 500,
       body: { error: "Could not process that message. Please try again." },
     });
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("a save that lands while the reply runs (after the gate let it through) → 409 with the saved fact finder, so the tab shows the closed view", async () => {
+    const saved = { ...after, version: 6, closed: { at: "2026-10-15T12:00:00.000Z", by: "user_1", saved: [], leftOut: [] } };
+    vi.mocked(runFactFinderTurn).mockRejectedValueOnce(new FactFinderClosedError());
+    vi.mocked(loadFactFinder).mockResolvedValueOnce(saved);
+    const res = await POST(post({ message: "hi" }), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE, factFinder: saved });
+    expect(loadFactFinder).toHaveBeenCalledWith({ importId: "i1", clientId: "c1", firmId: "org_1" });
     expect(recordAudit).not.toHaveBeenCalled();
   });
 });

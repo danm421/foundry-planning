@@ -4,7 +4,7 @@ import { recordAudit } from "@/lib/audit";
 import { TURN_BUSY_MESSAGE, type TurnResponse } from "@/lib/fact-finder/api-types";
 import { runFactFinderTurn } from "@/lib/fact-finder/chat/turn";
 import { factFinderGate, jsonResponse } from "@/lib/fact-finder/gate";
-import { FactFinderBusyError, FactFinderNotFoundError } from "@/lib/fact-finder/persist";
+import { FactFinderBusyError, FactFinderClosedError, FactFinderNotFoundError, loadFactFinder } from "@/lib/fact-finder/persist";
 import { filesReading } from "@/lib/fact-finder/reading-status";
 import { readFactFinderState } from "@/lib/fact-finder/state";
 
@@ -22,6 +22,7 @@ export async function POST(request: Request, { params }: Params) {
   const gate = await factFinderGate(params, "turn");
   if (!gate.ok) return gate.response;
   const { firmId, clientId, importId } = gate;
+  const scope = { importId, clientId, firmId };
 
   const body = (await request.json().catch(() => null)) as { message?: unknown } | null;
   const message = typeof body?.message === "string" ? body.message.trim() : "";
@@ -34,9 +35,14 @@ export async function POST(request: Request, { params }: Params) {
   const usage = newUsageReport();
   let result: Awaited<ReturnType<typeof runFactFinderTurn>>;
   try {
-    result = await inUsageScope(usage, () => runFactFinderTurn({ scope: { importId, clientId, firmId }, message }));
+    result = await inUsageScope(usage, () => runFactFinderTurn({ scope, message }));
   } catch (err) {
     if (err instanceof FactFinderNotFoundError) return jsonResponse(404, { error: err.message });
+    // The save landed after the gate let this through: the saved fact finder, so the tab shows the closed view.
+    if (err instanceof FactFinderClosedError) {
+      const factFinder = await loadFactFinder(scope);
+      return jsonResponse(409, { error: err.message, ...(factFinder && { factFinder }) });
+    }
     if (err instanceof FactFinderBusyError) return jsonResponse(409, { error: err.message });
     const safeMessage = err instanceof Error ? err.message : "unknown error";
     if (safeMessage === "ai_not_configured") {

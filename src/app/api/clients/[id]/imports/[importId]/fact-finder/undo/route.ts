@@ -5,7 +5,7 @@ import type { UndoResponse } from "@/lib/fact-finder/api-types";
 import { factFinderGate, jsonResponse } from "@/lib/fact-finder/gate";
 import { applyLinkScores } from "@/lib/fact-finder/matching/score";
 import { FactFinderOpError, applyOps } from "@/lib/fact-finder/ops";
-import { FactFinderBusyError, FactFinderNotFoundError, updateFactFinder } from "@/lib/fact-finder/persist";
+import { FactFinderBusyError, FactFinderClosedError, FactFinderNotFoundError, loadFactFinder, updateFactFinder } from "@/lib/fact-finder/persist";
 import { loadBaseCaseRecords } from "@/lib/fact-finder/relink";
 import type { FactFinderState } from "@/lib/fact-finder/types";
 
@@ -22,6 +22,7 @@ export async function POST(request: Request, { params }: Params) {
   const gate = await factFinderGate(params, "turn");
   if (!gate.ok) return gate.response;
   const { firmId, clientId, importId } = gate;
+  const scope = { importId, clientId, firmId };
 
   const body = (await request.json().catch(() => null)) as { turnId?: unknown } | null;
   const turnId = body?.turnId;
@@ -31,7 +32,7 @@ export async function POST(request: Request, { params }: Params) {
   let rows = 0;
   let written: FactFinderState;
   try {
-    written = await updateFactFinder({ importId, clientId, firmId }, (fresh) => {
+    written = await updateFactFinder(scope, (fresh) => {
       if (!Object.hasOwn(fresh.undo, turnId)) throw new FactFinderOpError("That reply can't be undone any more.");
       const snapshots = fresh.undo[turnId];
       const now = new Date().toISOString();
@@ -45,6 +46,11 @@ export async function POST(request: Request, { params }: Params) {
   } catch (err) {
     if (err instanceof FactFinderOpError) return jsonResponse(409, { error: err.message });
     if (err instanceof FactFinderNotFoundError) return jsonResponse(404, { error: err.message });
+    // The save landed after the gate let this through: the saved fact finder, so the tab shows the closed view.
+    if (err instanceof FactFinderClosedError) {
+      const factFinder = await loadFactFinder(scope);
+      return jsonResponse(409, { error: err.message, ...(factFinder && { factFinder }) });
+    }
     if (err instanceof FactFinderBusyError) return jsonResponse(409, { error: err.message });
     throw err;
   }

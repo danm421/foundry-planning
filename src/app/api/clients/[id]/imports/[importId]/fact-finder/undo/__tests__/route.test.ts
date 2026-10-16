@@ -1,5 +1,6 @@
 // src/app/api/clients/[id]/imports/[importId]/fact-finder/undo/__tests__/route.test.ts
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
 import type { FactFinderState, FFCell, FFCellValue } from "@/lib/fact-finder/types";
 
 const store = vi.hoisted(() => ({ state: null as FactFinderState | null }));
@@ -11,6 +12,7 @@ vi.mock("@/lib/fact-finder/gate", () => ({
 }));
 vi.mock("@/lib/fact-finder/persist", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/fact-finder/persist")>()),
+  loadFactFinder: vi.fn(),
   updateFactFinder: vi.fn(async (_scope: unknown, mutate: (s: FactFinderState) => FactFinderState) => {
     const next = mutate(store.state!);
     if (next !== store.state) store.state = { ...next, version: store.state!.version + 1 };
@@ -25,7 +27,7 @@ import { POST } from "../route";
 import { recordAudit } from "@/lib/audit";
 import { factFinderGate } from "@/lib/fact-finder/gate";
 import { applyOps, diffSnapshots } from "@/lib/fact-finder/ops";
-import { FactFinderBusyError, FactFinderNotFoundError, updateFactFinder } from "@/lib/fact-finder/persist";
+import { FactFinderBusyError, FactFinderClosedError, FactFinderNotFoundError, loadFactFinder, updateFactFinder } from "@/lib/fact-finder/persist";
 import { loadExistingRecords, resolveBaseCaseScenarioId } from "@/lib/fact-finder/records/load";
 import { emptyExistingRecords } from "@/lib/fact-finder/records/types";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
@@ -149,5 +151,16 @@ describe("POST /fact-finder/undo", () => {
     const busy = await POST(post({ turnId: "a1" }), params);
     expect(busy.status).toBe(409);
     expect(await busy.json()).toEqual({ error: "The fact finder is busy — try again in a moment." });
+  });
+
+  it("a save that lands after the gate let the undo through → 409 with the saved fact finder, so the tab shows the closed view", async () => {
+    const saved = { ...store.state!, version: 5, closed: { at: "2026-10-15T12:00:00.000Z", by: "user_1", saved: [], leftOut: [] } };
+    vi.mocked(updateFactFinder).mockRejectedValueOnce(new FactFinderClosedError());
+    vi.mocked(loadFactFinder).mockResolvedValueOnce(saved);
+    const res = await POST(post({ turnId: "a1" }), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: SAVE_CLOSED_MESSAGE, factFinder: saved });
+    expect(loadFactFinder).toHaveBeenCalledWith({ importId: "i1", clientId: "c1", firmId: "org_1" });
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 });
