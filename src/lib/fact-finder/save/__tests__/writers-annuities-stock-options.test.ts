@@ -84,12 +84,13 @@ d("annuity contract and stock option save writers", () => {
     return { accountId: account.id, grantId: grant.id };
   }
 
+  /** Save by save; within one save by action — its rows share created_at (the transaction's start), so their own order isn't kept. */
   const auditOf = (resourceIds: string[]) =>
     db
       .select({ action: auditLog.action, actorId: auditLog.actorId, resourceId: auditLog.resourceId })
       .from(auditLog)
       .where(and(eq(auditLog.clientId, seed.clientId), inArray(auditLog.resourceId, resourceIds)))
-      .orderBy(asc(auditLog.createdAt));
+      .orderBy(asc(auditLog.createdAt), asc(auditLog.action));
   const auditCount = async () => (await db.select({ id: auditLog.id }).from(auditLog).where(eq(auditLog.clientId, seed.clientId))).length;
   const contractOf = async (accountId: string) => (await db.select().from(annuityContracts).where(eq(annuityContracts.accountId, accountId)))[0];
   const tranchesOf = (grantId: string) =>
@@ -152,8 +153,8 @@ d("annuity contract and stock option save writers", () => {
     expect(await auditOf([accountId, grantId])).toEqual([
       { action: "account.stock_options.create", actorId: SAVE_ACTOR, resourceId: accountId },
       { action: "account.stock_options.grant.create", actorId: SAVE_ACTOR, resourceId: grantId },
-      { action: "account.stock_options.update", actorId: SAVE_ACTOR, resourceId: accountId },
       { action: "account.stock_options.grant.update", actorId: SAVE_ACTOR, resourceId: grantId },
+      { action: "account.stock_options.update", actorId: SAVE_ACTOR, resourceId: accountId },
     ]);
   });
 
@@ -272,11 +273,11 @@ d("annuity contract and stock option save writers", () => {
 
     await inSave(at(), (ctx) => ACCOUNT_WRITERS.account.update(ctx, inputOf(toQualified)));
     expect(await contractOf(accountId)).toMatchObject({ taxTreatment: "qualified", carrier: "Lincoln", productType: "myga", costBasis: "90000.00" });
-    expect((await auditOf([accountId])).map((a) => a.action)).toEqual(["account.update", "account.annuity.update"]);
+    expect((await auditOf([accountId])).map((a) => a.action)).toEqual(["account.annuity.update", "account.update"]);
 
     // An account line that leaves the tax treatment alone leaves the contract alone.
     await inSave(at(), (ctx) => ACCOUNT_WRITERS.account.update(ctx, inputOf(changeLine("account", { value: 125000 }, { recordId: accountId }))));
-    expect((await auditOf([accountId])).map((a) => a.action)).toEqual(["account.update", "account.annuity.update", "account.update"]);
+    expect((await auditOf([accountId])).map((a) => a.action)).toEqual(["account.annuity.update", "account.update", "account.update"]);
   });
 
   it("(d) a new qualified annuity with no contract line gets a contract that taxes it as qualified", async () => {
@@ -287,7 +288,7 @@ d("annuity contract and stock option save writers", () => {
     );
     const { result: accountId } = await inSave(at(), (ctx) => ACCOUNT_WRITERS.account.create(ctx, inputOf(line, { "person:client": seed.clientMemberId })));
     expect(await contractOf(accountId)).toMatchObject({ taxTreatment: "qualified", productType: "fixed", incomeMode: "none", costBasis: null });
-    expect((await auditOf([accountId])).map((a) => a.action)).toEqual(["account.create", "account.annuity.update"]);
+    expect((await auditOf([accountId])).map((a) => a.action)).toEqual(["account.annuity.update", "account.create"]);
   });
 
   it("(d) a new annuity and its contract line in one save: the contract line's values over the synced contract", async () => {
