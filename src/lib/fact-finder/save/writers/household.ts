@@ -60,6 +60,7 @@ export const HOUSEHOLD_WRITERS: { client_household: SaveWriter; plan_settings_ta
       // planned for someone who isn't there (a date of birth moves the plan end) and an employer would
       // land on no contact. Refuse — the save rolls back.
       if (touchesCoClient && !hasCoClient) throw new SaveLineError(NO_CO_CLIENT_REASON);
+      if (!("employer" in values) && !("spouseEmployer" in values)) return;
       const employer = (key: string) => (key in values ? { employer: values[key] } : undefined);
       await upsertPrimaryAndSpouseContacts(ctx.tx, householdId, { primary: employer("employer"), spouse: employer("spouseEmployer") });
     },

@@ -81,6 +81,7 @@ type FamilyMemberPatch = {
   claimedAsDependent?: FamilyMemberRow["claimedAsDependent"];
 };
 
+/** No access check — the caller's gate decides. The update is limited to `memberId` within `clientId`. */
 export async function updateFamilyMemberForClient(args: {
   clientId: string;
   firmId: string;

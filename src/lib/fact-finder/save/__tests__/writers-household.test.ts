@@ -10,10 +10,16 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("@clerk/nextjs/server", () => ({
   auth: async () => ({ userId: "user_test_ff_save", orgId: "firm_test_ff_save_household", orgRole: "org:admin" }),
 }));
+// Watched, not replaced: which contact upserts a save makes.
+vi.mock("@/lib/crm/upsert-household-contact", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/crm/upsert-household-contact")>();
+  return { ...actual, upsertPrimaryAndSpouseContacts: vi.fn(actual.upsertPrimaryAndSpouseContacts) };
+});
 
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { auditLog, clients, crmHouseholdContacts, familyMembers, planSettings, scenarios } from "@/db/schema";
+import { auditLog, clients, crmHouseholdContacts, crmHouseholds, familyMembers, planSettings, scenarios } from "@/db/schema";
+import { upsertPrimaryAndSpouseContacts } from "@/lib/crm/upsert-household-contact";
 import type { DbOrTx } from "@/lib/db-tx";
 import type { PlacedValue } from "../../change-set";
 import { SaveLineError } from "../types";
@@ -146,6 +152,54 @@ d("household save writers", () => {
       ]);
       expect(await clientRow(seed.clientId)).toMatchObject({ spouseRetirementAge: 63, retirementAge: 65, lifeExpectancy: 92, filingStatus: "married_joint" });
       expect(await contactOf(seed, "primary")).toMatchObject({ firstName: "Mark", dateOfBirth: "1968-04-12" });
+    });
+
+    it("a change to the client's and the co-client's identity rolls back with the save — both family members as they were", async () => {
+      const seed = await seedSaveClient(FIRM, { coClient: true });
+      const lines = [
+        household(seed, { firstName: "Marcus", dateOfBirth: "1969-01-01" }, "Client — Mark Hendricks"),
+        household(seed, { spouseDob: "1971-02-03" }, "Co-client — Laura Hendricks"),
+      ];
+      const write = async (ctx: Parameters<typeof W.client_household.update>[0]) => {
+        for (const line of lines) await W.client_household.update(ctx, inputOf(line));
+        return householdMembers(seed.clientId, ctx.tx);
+      };
+
+      const undone = await inSave(at(seed), write, rollback);
+      expect(undone.result).toEqual([
+        { role: "client", firstName: "Marcus", dateOfBirth: "1969-01-01" },
+        { role: "spouse", firstName: "Laura", dateOfBirth: "1971-02-03" },
+      ]);
+      expect(await householdMembers(seed.clientId)).toEqual([
+        { role: "client", firstName: "Mark", dateOfBirth: "1968-04-12" },
+        { role: "spouse", firstName: "Laura", dateOfBirth: "1970-09-30" },
+      ]);
+      expect(await actions(seed.clientId)).toEqual([]);
+
+      await inSave(at(seed), write);
+      expect(await householdMembers(seed.clientId)).toEqual([
+        { role: "client", firstName: "Marcus", dateOfBirth: "1969-01-01" },
+        { role: "spouse", firstName: "Laura", dateOfBirth: "1971-02-03" },
+      ]);
+    });
+
+    it("a save that adds a co-client names the CRM household for both", async () => {
+      const seed = await seedSaveClient(FIRM);
+      const name = async () => (await db.select({ name: crmHouseholds.name }).from(crmHouseholds).where(eq(crmHouseholds.id, seed.householdId)))[0].name;
+      expect(await name()).toBe("Mark Hendricks");
+      const line = household(seed, { spouseName: "Laura", spouseLastName: "Hendricks", spouseDob: "1975-06-15" }, "Co-client");
+      await inSave(at(seed), (ctx) => W.client_household.update(ctx, inputOf(line)));
+      expect(await name()).toBe("Mark & Laura Hendricks");
+    });
+
+    it("a co-client line with no employer makes no contact write of its own", async () => {
+      const seed = await seedSaveClient(FIRM, { coClient: true });
+      vi.mocked(upsertPrimaryAndSpouseContacts).mockClear();
+      await inSave(at(seed), (ctx) => W.client_household.update(ctx, inputOf(household(seed, { spouseRetirementAge: 64 }, "Co-client — Laura Hendricks"))));
+      // The profile's own contact mirror passes a patch for each role; the writer's employer upsert passes none.
+      const patches = vi.mocked(upsertPrimaryAndSpouseContacts).mock.calls.map(([, , p]) => p);
+      expect(patches.filter((p) => !p.primary && !p.spouse)).toEqual([]);
+      expect(await clientRow(seed.clientId)).toMatchObject({ spouseRetirementAge: 64 });
     });
 
     it("a line of employers only writes the employers and leaves the profile alone", async () => {

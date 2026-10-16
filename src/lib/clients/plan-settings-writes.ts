@@ -188,7 +188,8 @@ export async function updatePlanSettingsForClient(args: {
           coveredByWorkplacePlan: clients.coveredByWorkplacePlan,
           spouseCoveredByWorkplacePlan: clients.spouseCoveredByWorkplacePlan,
         });
-      // requireClientEditAccess already proved this client/firm pair exists,
+      // The caller's gate (the route's requireClientEditAccess) or this core's
+      // base-case lookup already proved this client/firm pair exists,
       // so a zero-row match here means something changed underneath us
       // (row deleted, or the predicate widened) — throw rather than
       // silently returning 200 with these two columns unchanged. Inside the
