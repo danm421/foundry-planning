@@ -17,6 +17,7 @@ import { pageCounts } from "@/lib/fact-finder/screen-summary";
 import { countLinksNeedingClick } from "@/lib/fact-finder/state";
 import { BackToFactFinder, ChangeList, ChangesHeading } from "./change-list";
 import { ClosedView } from "./closed-view";
+import { ViewOnlyContext } from "./holdings-rows";
 import { ChatComposerBar, ChatPanel, useChat } from "./chat-panel";
 import { DocumentsPanel, useDocuments } from "./documents-panel";
 import { AlertIcon, LoaderIcon, PanelIcon } from "./icons";
@@ -120,12 +121,14 @@ function ClosedScreen({
         <PageRail counts={pageCounts(state)} selected={page} onSelect={setPage} />
         <div className="flex min-w-0 flex-col gap-4">
           <h2 className="text-lg font-semibold text-ink">{PAGE_ORDER.find((p) => p.id === page)?.label}</h2>
-          {/* A disabled fieldset turns off every input and button inside it, so no cell can be edited; the buttons look it. */}
+          {/* A disabled fieldset turns off every input and button inside it, so no cell can be edited; the buttons look it. The holdings disclosure only views, so it opts out (ViewOnlyContext). */}
           <fieldset
             disabled
             className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0 [&_button:disabled]:cursor-default [&_button:disabled]:opacity-50 [&_select:disabled]:opacity-50"
           >
-            <PageView page={page} state={state} onApply={() => false} fileName={fileName} entities={entities} />
+            <ViewOnlyContext.Provider value>
+              <PageView page={page} state={state} onApply={() => false} fileName={fileName} entities={entities} />
+            </ViewOnlyContext.Provider>
           </fieldset>
         </div>
       </div>
@@ -174,14 +177,15 @@ function OpenScreen({
     clientId,
     importId,
     onSaved(saved) {
-      if (saved.closed) return onClosed(saved);
+      // adopt first, closed or not: it empties the edit queue, so the screen going away sends nothing.
       store.adopt(saved);
+      if (saved.closed) return onClosed(saved);
       setShowChanges(false);
     },
     // A 409 may carry a fresher fact finder (the list is gone, or newer, or another tab saved); the list stays up with the reason when it isn't.
     onStale(fresh) {
-      if (fresh?.closed) return onClosed(fresh);
       if (fresh) store.adopt(fresh);
+      if (fresh?.closed) onClosed(fresh);
     },
   });
   // Saved elsewhere: any reply can bring the saved fact finder (the routes refuse a saved import with it).

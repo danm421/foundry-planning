@@ -12,6 +12,8 @@ import type { ChangeSet, ChangeTicks } from "@/lib/fact-finder/change-set";
 import type { FactFinderState } from "@/lib/fact-finder/types";
 import { JSON_HEADERS, OFFLINE_MESSAGE, factFinderUrl, refusalText } from "./http";
 
+const UNCONFIRMED = "Couldn't confirm the save";
+
 /** Why the last save didn't go through; `lineId` is the line to ring, `stale` means the list needs a new review. */
 export interface SaveError {
   message: string;
@@ -61,11 +63,17 @@ export function useSave({
         return;
       }
       const answer: unknown = await res.json().catch(() => ({}));
-      if (res.ok) {
-        onSaved((answer as SaveResponse).factFinder);
+      const factFinder = res.ok ? (answer as Partial<SaveResponse>).factFinder : undefined;
+      if (factFinder) {
+        onSaved(factFinder);
         return;
       }
       const refusal = answer as Partial<SaveRefusal>;
+      // No `error` means the route didn't answer (a gateway 502/504, a dropped body): the save may have committed.
+      if (res.ok || !refusal.error) {
+        setError({ message: `${UNCONFIRMED} (HTTP ${res.status}) — reload the page to see whether it was saved.` });
+        return;
+      }
       const message = refusalText(res, refusal.error, "Couldn't save to the plan");
       const lineId = refusal.lineId;
       if (res.status === 409) {
@@ -73,7 +81,7 @@ export function useSave({
         setError({ message, ...(lineId ? { lineId } : {}), stale: true });
         return;
       }
-      setError({ message: refusal.error ? message : `${message} Nothing was changed.`, ...(lineId ? { lineId } : {}) });
+      setError({ message, ...(lineId ? { lineId } : {}) });
     } finally {
       running.current = false;
       setSaving(false);

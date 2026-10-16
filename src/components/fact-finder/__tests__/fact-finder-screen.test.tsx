@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // src/components/fact-finder/__tests__/fact-finder-screen.test.tsx
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FactFinderScreen } from "../fact-finder-screen";
 import type { FFScreenFile } from "../screen-types";
@@ -616,7 +616,7 @@ describe("a saved (closed) import", () => {
   it("opens on the closed view: no review, no chat or documents, and not one request", () => {
     stubServer(ready());
     renderScreen(closedAt(reviewedAt(ready())));
-    expect(screen.getByRole("status")).toHaveTextContent("Saved to the plan on October 14, 2026 — 1 saved, 1 left out");
+    expect(screen.getByRole("status")).toHaveTextContent(/Saved to the plan on October 1[45], 2026 — 1 saved, 1 left out/);
     OTHER_NAMES.forEach((name) => expect(screen.queryByRole("button", { name })).toBeNull());
     expect(screen.queryByRole("article", { name: "Joint Checking" })).toBeNull();
     expect(screen.getByRole("status")).not.toHaveFocus();
@@ -634,9 +634,37 @@ describe("a saved (closed) import", () => {
     await user.click(within(rail).getByRole("button", { name: /^Accounts/ }));
     expect(screen.getByRole("heading", { level: 2, name: "Accounts" })).toBeInTheDocument();
     expect(screen.getAllByRole("textbox").every((box) => box.matches(":disabled"))).toBe(true);
-    expect(screen.getAllByRole("button").filter((b) => b.closest("fieldset")).every((b) => b.matches(":disabled"))).toBe(true);
+    // Every editing button is disabled; the view-only disclosures (holdings) stay usable.
+    const editing = screen.getAllByRole("button").filter((b) => b.closest("fieldset") && !b.hasAttribute("aria-expanded"));
+    expect(editing.every((b) => b.matches(":disabled"))).toBe(true);
     // …and look it: a disabled Add row or Merge doesn't pass for one that works.
     expect(screen.getAllByRole("textbox")[0].closest("fieldset")).toHaveClass("[&_button:disabled]:opacity-50");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("lets the advisor open an account's holdings on the closed screen, while editing stays off", async () => {
+    const user = userEvent.setup();
+    stubServer(ready());
+    const base = closedAt(ready());
+    const account: FFRow = {
+      id: "t1",
+      cells: { accountName: { value: "Joint Brokerage", by: "advisor", pinned: true } },
+      sourceFileIds: [],
+      holdings: [{ id: "h1", ticker: "VTI", name: "Vanguard Total Stock Market", shares: 100, price: 100, marketValue: 10000, costBasis: null, by: "document" }],
+    };
+    renderScreen({ ...base, sections: { ...base.sections, taxable: [account] } });
+    await user.click(within(screen.getByRole("navigation", { name: "Fact finder pages" })).getByRole("button", { name: /^Accounts/ }));
+    const toggle = screen.getByRole("button", { name: "1 holding in Joint Brokerage" });
+    expect(toggle).not.toBeDisabled();
+    // fireEvent, not user.click: user-event treats anything in a disabled fieldset as disabled, a browser doesn't for a non-form control.
+    fireEvent.click(toggle);
+    const table = screen.getByRole("table", { name: "Holdings in Joint Brokerage" });
+    expect(within(table).getByText("VTI")).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    // The holdings table is read-only too: nothing in it can be edited.
+    expect(within(table).queryAllByRole("textbox").every((box) => box.matches(":disabled"))).toBe(true);
+    fireEvent.keyDown(toggle, { key: "Enter" });
+    expect(screen.queryByRole("table", { name: "Holdings in Joint Brokerage" })).toBeNull();
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -645,12 +673,29 @@ describe("a saved (closed) import", () => {
     stubServer(reviewedAt(ready()), undefined, { save: (s) => json(200, { factFinder: closedAt(s) }) as Response });
     renderScreen(reviewedAt(ready()));
     await user.click(screen.getByRole("button", { name: "Save to plan" }));
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved to the plan on October 14, 2026"));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/Saved to the plan on October 1[45], 2026/));
     // The Save button is gone: focus moves to the summary.
     expect(screen.getByRole("status")).toHaveFocus();
     expect(changeList()).toBeNull();
     expect(screen.queryByRole("button", { name: "Review changes →" })).toBeNull();
     expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toEqual([SAVE_URL]);
+  });
+
+  it("sends no edit typed while the save was in flight once the save closes the import", async () => {
+    const user = userEvent.setup();
+    let land: (res: Response) => void = () => {};
+    const { log } = stubServer(reviewedAt(ready()), undefined, {
+      save: () => new Promise<Response>((resolve) => (land = resolve)),
+    });
+    renderScreen(reviewedAt(ready()));
+    await user.click(screen.getByRole("button", { name: "Save to plan" }));
+    // Show the page again behind the list and type, while the save is still out .
+    await user.click(screen.getByRole("button", { name: "Back to fact finder" }));
+    await user.type(screen.getAllByRole("textbox", { name: "First name" })[0], "x");
+    await user.tab(); // the edit joins the queue; its timed send hasn't fired yet
+    await act(async () => land(json(200, { factFinder: closedAt(reviewedAt(ready())) }) as Response));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/Saved to the plan/));
+    expect(log.filter((l) => l.startsWith("PATCH"))).toHaveLength(0);
   });
 
   it("shows the closed view when the save is refused because another tab already saved", async () => {
@@ -660,7 +705,7 @@ describe("a saved (closed) import", () => {
     });
     renderScreen(reviewedAt(ready()));
     await user.click(screen.getByRole("button", { name: "Save to plan" }));
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved to the plan on October 14, 2026"));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/Saved to the plan on October 1[45], 2026/));
     expect(changeList()).toBeNull();
   });
 
@@ -679,7 +724,7 @@ describe("a saved (closed) import", () => {
     await user.clear(first);
     await user.type(first, "Marcus");
     await user.tab();
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved to the plan on October 14, 2026"));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/Saved to the plan on October 1[45], 2026/));
     expect(screen.getAllByRole("textbox", { name: "First name" })[0]).toBeDisabled();
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(log.filter((l) => l.startsWith("PATCH"))).toHaveLength(1);

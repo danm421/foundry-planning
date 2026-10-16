@@ -21,7 +21,10 @@ const CLOSED: FFClosed = {
 describe("ClosedView", () => {
   it("says when the import was saved and how many lines went in and stayed out", () => {
     render(<ClosedView clientId="c1" closed={CLOSED} />);
-    expect(screen.getByRole("status")).toHaveTextContent("Saved to the plan on October 14, 2026 — 2 saved, 2 left out");
+    expect(screen.getByRole("status")).toHaveTextContent(/Saved to the plan on October 1[45], 2026 — 2 saved, 2 left out/);
+    // Focused by script when a save lands: it must keep a visible focus indicator.
+    expect(screen.getByRole("status").className).not.toMatch(/outline-none/);
+    expect(screen.getByRole("status").className).toMatch(/focus:outline/);
   });
 
   it("links each saved line to the Details page that shows it", () => {

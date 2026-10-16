@@ -40,7 +40,7 @@ export function ClosedView({ clientId, closed, justSaved = false }: { clientId: 
     <div className="flex flex-col gap-4">
       <Card className="flex items-start gap-2 px-[var(--pad-card)] py-4">
         <CircleCheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-good" />
-        <p ref={summaryRef} role="status" tabIndex={-1} className="text-sm text-ink outline-none">
+        <p ref={summaryRef} role="status" tabIndex={-1} className="text-sm text-ink rounded-[var(--radius-sm)] focus:outline-2 focus:outline-offset-2 focus:outline-accent">
           Saved to the plan on{" "}
           <time dateTime={closed.at} suppressHydrationWarning className="tabular">
             {date}

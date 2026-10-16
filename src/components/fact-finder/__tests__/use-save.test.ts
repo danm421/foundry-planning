@@ -108,9 +108,36 @@ describe("useSave", () => {
 
     vi.mocked(fetch).mockResolvedValueOnce({ ...reply(502, null), json: async () => Promise.reject(new SyntaxError("bad")) } as Response);
     await act(() => result.current.save(CHANGES, TICKS));
-    expect(result.current.error).toEqual({ message: "Couldn't save to the plan (HTTP 502). Nothing was changed." });
+    expect(result.current.error).toEqual({
+      message: "Couldn't confirm the save (HTTP 502) — reload the page to see whether it was saved.",
+    });
 
     act(() => result.current.dismiss());
     expect(result.current.error).toBeNull();
+  });
+
+  it("never says nothing was changed for a reply with no error of the route's own (a 504 after the commit)", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(reply(504, { message: "gateway timeout" }, { "retry-after": "5" }));
+    const { result, onSaved } = renderSave();
+    await act(() => result.current.save(CHANGES, TICKS));
+    expect(result.current.error?.message).toBe("Couldn't confirm the save (HTTP 504) — reload the page to see whether it was saved.");
+    expect(result.current.error?.message).not.toMatch(/nothing was changed|retry/i);
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it("treats a 200 with no fact finder as unconfirmed instead of adopting undefined", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(reply(200, {}));
+    const { result, onSaved } = renderSave();
+    await act(() => result.current.save(CHANGES, TICKS));
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(result.current.error?.message).toMatch(/reload the page to see whether it was saved/);
+    expect(result.current.saving).toBe(false);
+  });
+
+  it("rings the failing line on a 500 that names one", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(reply(500, { error: "The save failed — nothing was changed.", lineId: "c1/account" }));
+    const { result } = renderSave();
+    await act(() => result.current.save(CHANGES, TICKS));
+    expect(result.current.error).toEqual({ message: "The save failed — nothing was changed.", lineId: "c1/account" });
   });
 });

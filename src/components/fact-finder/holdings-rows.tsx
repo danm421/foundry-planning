@@ -5,7 +5,7 @@
 // value, opening to a table where each figure is edited by clicking it and each
 // holding can be removed. Every edit is one op through `onApply`; a refused
 // value (false) shows the stored one again.
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { CurrencyInput } from "@/components/currency-input";
 import { inputCompactClassName } from "@/components/forms/input-styles";
 import { holdingsReconciliation, materiallyUndershoots } from "@/lib/extraction/normalize-holdings";
@@ -212,19 +212,39 @@ export interface HoldingsRowProps {
   onApply: (ops: ClientOp[]) => boolean;
 }
 
+/**
+ * On a read-only screen, which wraps the page in a disabled fieldset: the "N holdings" disclosure only shows
+ * what's already there, and a button inside a disabled fieldset goes dead, so it is drawn as a non-form control.
+ */
+export const ViewOnlyContext = createContext(false);
+
 /** The holdings line under an account row (a table row of its own). */
 export function HoldingsRow({ section, row, colSpan, actionsClassName, onApply }: HoldingsRowProps) {
   const id = useId();
   const [open, setOpen] = useState(false);
+  const viewOnly = useContext(ViewOnlyContext);
   const holdings = row.holdings ?? [];
   const label = rowLabel(section, row);
   const target = { sectionId: section.id, rowId: row.id };
+  const Tag = viewOnly ? "span" : "button";
+  const toggleProps = viewOnly
+    ? {
+        role: "button",
+        tabIndex: 0,
+        onKeyDown: (e: KeyboardEvent<HTMLElement>) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen((was) => !was);
+          }
+        },
+      }
+    : { type: "button" as const };
   return (
     <tr>
       <td colSpan={colSpan} className="border-b border-hair pb-2 pl-8 pr-2">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <button
-            type="button"
+          <Tag
+            {...toggleProps}
             aria-expanded={open}
             aria-controls={open ? `${id}-table` : undefined}
             aria-describedby={`${id}-sum`}
@@ -236,7 +256,7 @@ export function HoldingsRow({ section, row, colSpan, actionsClassName, onApply }
             />
             <span className="tabular">{holdings.length}</span> {holdings.length === 1 ? "holding" : "holdings"}{" "}
             <span className="sr-only">in {label}</span>
-          </button>
+          </Tag>
           <Reconciliation id={`${id}-sum`} row={row} holdings={holdings} />
         </div>
         {open && (
