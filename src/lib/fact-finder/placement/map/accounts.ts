@@ -219,7 +219,7 @@ export const RETIREMENT_MAP: SectionMap = {
       putHoldings(b, row, record);
       const names = beneficiariesOf(b, row, ctx, {
         target: "account_beneficiary_designation", tiers: TIERS, recordId: record?.id ?? null, label,
-        newWarning: "These beneficiaries replace the default beneficiaries a new retirement account gets.",
+        newWarning: "Only the tiers filled in here replace the default beneficiaries a new retirement account gets.",
       });
       return names ? [b.build(), names] : [b.build()];
     });

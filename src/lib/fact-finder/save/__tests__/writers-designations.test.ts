@@ -17,11 +17,18 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { accountOwners, accounts, auditLog, beneficiaryDesignations, entities, externalBeneficiaries, familyMembers } from "@/db/schema";
 import { defaultRetirementBeneficiaries } from "@/lib/beneficiaries/default-retirement-beneficiaries";
+import { createAccountForClient } from "@/lib/clients/accounts-writes";
 import { replaceAccountBeneficiariesForClient, replaceTrustBeneficiariesForClient } from "@/lib/clients/beneficiary-designations-writes";
 import type { DbOrTx, Tx } from "@/lib/db-tx";
-import type { PlacedValue, RecordRef, TargetKind } from "@/lib/fact-finder/change-set";
+import type { ChangeLine, PlacedValue, RecordRef, TargetKind } from "@/lib/fact-finder/change-set";
+import { diffDrafts } from "@/lib/fact-finder/placement/diff";
+import { DraftBuilder } from "@/lib/fact-finder/placement/map/helpers";
+import { findRecord, type RecordBook } from "@/lib/fact-finder/placement/types";
+import { loadRecordBook } from "@/lib/fact-finder/records/book";
+import { unwrap } from "../types";
+import { ACCOUNT_WRITERS } from "../writers/accounts";
 import { DESIGNATION_WRITERS } from "../writers/designations";
-import { changeLine, dropSaveFirm, inSave, inputOf, seedSaveClient, type SaveSeed } from "./harness";
+import { SAVE_ACTOR, changeLine, dropSaveFirm, inSave, inputOf, seedSaveClient, type SaveSeed } from "./harness";
 
 const FIRM = "firm_test_ff_save_designations";
 const HAS_DB = !!process.env.DATABASE_URL;
@@ -238,5 +245,92 @@ d("DESIGNATION_WRITERS", () => {
       inSave(at(), (ctx) => accountSet.update(ctx, inputOf(changeLine("account_beneficiary_designation", { beneficiaries: named(["primary", LAURA, 100]) }, { recordId: foreign.id })))),
     ).rejects.toThrow("Not found");
     expect(await setOf({ accountId: foreign.id })).toEqual([]);
+  });
+
+  describe("an Update line built against the record book, as the review builds it", () => {
+    const SECTION = { account_beneficiary_designation: "retirement", trust_beneficiary_designation: "trusts" } as const;
+
+    /** One tier's rows of a set as the book holds it. */
+    const tierOf = (set: PlacedValue | undefined, tier: string): PlacedValue[] =>
+      Array.isArray(set) ? set.filter((e) => (e as { tier?: PlacedValue }).tier === tier) : [];
+
+    /**
+     * The set line on record `recordId` as Plan 3's beneficiariesOf builds it:
+     * `filled` (tier → its rows) for the tiers the fact finder filled, and every
+     * other tier's rows carried from the book; diffed against the book, so the
+     * field's `onRecord` is the review's snapshot.
+     */
+    function setLine(book: RecordBook, target: keyof typeof SECTION, recordId: string, tiers: readonly string[], filled: Record<string, PlacedValue[]>): ChangeLine {
+      const reviewed = findRecord(book, target, recordId)!.values.beneficiaries;
+      const next = tiers.flatMap((tier) => filled[tier] ?? tierOf(reviewed, tier));
+      const draft = new DraftBuilder({ sectionId: SECTION[target], row: { id: `row-${recordId}`, cells: {}, sourceFileIds: [] }, target, recordId, label: "Set — beneficiaries" })
+        .put("beneficiaries", next, ["beneficiaries"])
+        .build();
+      return diffDrafts([draft], book)[0];
+    }
+
+    /** A household of Mark, Laura and Emma, and Mark's IRA made as the Details page makes one (its default beneficiaries: Laura primary, Emma contingent). */
+    async function householdWithIra() {
+      const s = await seedSaveClient(FIRM, { coClient: true });
+      const [kid] = await db.insert(familyMembers).values({ clientId: s.clientId, firstName: "Emma", lastName: "Hendricks", relationship: "child", dateOfBirth: "2001-05-01" }).returning();
+      const { resourceId: ira } = unwrap(
+        await createAccountForClient({
+          clientId: s.clientId, firmId: FIRM, actorId: SAVE_ACTOR,
+          input: { name: "Mark's IRA", category: "retirement", subType: "traditional_ira", owners: [{ kind: "family_member", familyMemberId: s.clientMemberId, percent: 1 }] },
+        }),
+      );
+      return { s, emma: kid.id, ira };
+    }
+
+    it("an owner change earlier in the save re-points the untouched defaults: a tier the line carries from the review keeps them, the tier the fact finder filled replaces", async () => {
+      const { s, emma: kid, ira } = await householdWithIra();
+      expect(await setOf({ accountId: ira })).toEqual(sorted(`contingent ${kid} 100.00`, "primary spouse 100.00"));
+      const [redCross] = await db.insert(externalBeneficiaries).values({ clientId: s.clientId, name: "American Red Cross" }).returning();
+      const book = await loadRecordBook(s.clientId, FIRM, s.scenarioId);
+      // Primary left blank (Laura carried from the review), Contingent filled.
+      const names = setLine(book, "account_beneficiary_designation", ira, ["primary", "contingent"], {
+        contingent: [{ tier: "contingent", who: record("external_beneficiary", redCross.id), percentage: 100 }],
+      });
+
+      await inSave({ clientId: s.clientId, firmId: FIRM }, async (ctx) => {
+        // The account line (D8: before every designation) hands the IRA to Laura; its core re-points the defaults at Mark.
+        await ACCOUNT_WRITERS.account.update(ctx, inputOf(changeLine("account", { owners: [{ who: LAURA, percent: 1 }] }, { recordId: ira }), { "person:spouse": s.spouseMemberId! }));
+        await accountSet.update(ctx, inputOf(names));
+      });
+
+      expect(await setOf({ accountId: ira })).toEqual(sorted(`contingent ${redCross.id} 100.00`, "primary client 100.00"));
+    });
+
+    it("a remainder row naming the co-client by family member keeps its distribution form — carried, or named again by role in a changed tier", async () => {
+      const s = await seedSaveClient(FIRM, { coClient: true });
+      const [kid] = await db.insert(familyMembers).values({ clientId: s.clientId, firstName: "Emma", lastName: "Hendricks", relationship: "child", dateOfBirth: "2001-05-01" }).returning();
+      const trustOn = async (name: string) => {
+        const [trust] = await db.insert(entities).values({ clientId: s.clientId, name, entityType: "trust" }).returning();
+        await db.insert(beneficiaryDesignations).values({
+          clientId: s.clientId, targetKind: "trust", entityId: trust.id, tier: "remainder", familyMemberId: s.spouseMemberId, percentage: "100.00", distributionForm: "in_trust",
+        });
+        return trust.id;
+      };
+      const carried = await trustOn("Hendricks Legacy Trust");
+      const changed = await trustOn("Hendricks Dynasty Trust");
+      const book = await loadRecordBook(s.clientId, FIRM, s.scenarioId);
+      const emmaRef = record("family_member", kid.id);
+      const tiers = ["income", "remainder"];
+
+      await inSave({ clientId: s.clientId, firmId: FIRM }, async (ctx) => {
+        await trustSet.update(ctx, inputOf(setLine(book, "trust_beneficiary_designation", carried, tiers, { income: [{ tier: "income", who: emmaRef, percentage: 100 }] })));
+        await trustSet.update(
+          ctx,
+          inputOf(setLine(book, "trust_beneficiary_designation", changed, tiers, {
+            remainder: [{ tier: "remainder", who: LAURA, percentage: 60 }, { tier: "remainder", who: emmaRef, percentage: 40 }],
+          })),
+        );
+      });
+
+      expect({ carried: await setOf({ entityId: carried }), changed: await setOf({ entityId: changed }) }).toEqual({
+        carried: sorted(`income ${kid.id} 100.00`, `remainder ${s.spouseMemberId} 100.00 in_trust`),
+        changed: sorted(`remainder ${kid.id} 40.00 outright`, "remainder spouse 60.00 in_trust"),
+      });
+    });
   });
 });

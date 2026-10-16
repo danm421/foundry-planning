@@ -6,17 +6,22 @@
  * the save) — and the id other lines' refs to it resolve to.
  *
  * The Details core replaces the whole set, but a line names only the tiers the
- * fact finder filled (on an Update, Plan 3's maps carry a blank tier's rows on
- * record into the line). So the writer reads the set on record and keeps every
- * row in a tier the line doesn't name — the default beneficiaries a retirement
- * account made earlier in the save got included. The fact finder carries no
- * distribution form: a row naming someone on record in the same tier keeps
- * theirs.
+ * fact finder filled. So the writer reads the set on the transaction and keeps
+ * every row in a tier the line doesn't name — the default beneficiaries a
+ * retirement account made earlier in the save got included. On an Update, a
+ * tier equal to that tier in the review's snapshot (the field's `onRecord`;
+ * Plan 3 carries a blank tier's rows on record into the line) isn't named
+ * either: an earlier line of the save may have changed it since (an owner
+ * change re-points a retirement account's untouched defaults). The fact finder
+ * carries no distribution form: a row naming the same person on record in the
+ * same tier keeps theirs.
  */
-import { and, asc, eq } from "drizzle-orm";
-import { beneficiaryDesignations } from "@/db/schema";
+import { and, asc, eq, inArray } from "drizzle-orm";
+import { beneficiaryDesignations, familyMembers } from "@/db/schema";
 import { replaceAccountBeneficiariesForClient, replaceTrustBeneficiariesForClient, type DesignationRow } from "@/lib/clients/beneficiary-designations-writes";
 import type { EntityWriteResult } from "@/lib/clients/entity-write-result";
+import type { PlacedValue } from "../../change-set";
+import { sameValue } from "../../placement/values";
 import { SaveLineError, unwrap, type SaveContext, type SaveInput, type SaveWriter } from "../types";
 
 /** A designation row as the routes take it (payloadFor's shape). */
@@ -30,13 +35,25 @@ type SetRow = {
   [key: string]: unknown;
 };
 
-/** A row's tier and whom it names. */
-const tierAndWho = (r: SetRow) =>
-  [r.tier, r.householdRole, r.familyMemberId, r.externalBeneficiaryId, r.entityIdRef].map((v) => v ?? "").join("|");
+/** One tier's rows of a set as a line holds it. */
+const tierOf = (set: PlacedValue | undefined, tier: string): PlacedValue[] =>
+  Array.isArray(set) ? set.filter((e) => (e as { tier?: PlacedValue } | null)?.tier === tier) : [];
 
-/** The line's rows, then every row on record in a tier they don't name. */
-async function withKeptTiers(ctx: SaveContext, targetKind: "account" | "trust", parentId: string, body: Record<string, unknown>): Promise<SetRow[]> {
-  const named = (body.beneficiaries ?? []) as SetRow[];
+/** Refs compared as the line holds them: the line and its snapshot come from one record book. */
+const AS_HELD = { client: null, spouse: null };
+
+/** The tiers a line names: on an Update, only those that differ from the review's snapshot. */
+function namedTiers(input: SaveInput, update: boolean): Set<string> {
+  const next = input.values.beneficiaries;
+  const tiers = new Set(Array.isArray(next) ? next.map((e) => String((e as { tier?: PlacedValue }).tier)) : []);
+  if (!update) return tiers;
+  const reviewed = input.line.fields.find((f) => f.key === "beneficiaries")?.onRecord;
+  return new Set([...tiers].filter((tier) => !sameValue("beneficiaries", tierOf(next, tier), tierOf(reviewed, tier), AS_HELD)));
+}
+
+/** The line's rows in the tiers it names, then every row on record in the other tiers. */
+async function withKeptTiers(ctx: SaveContext, targetKind: "account" | "trust", parentId: string, body: Record<string, unknown>, tiers: Set<string>): Promise<SetRow[]> {
+  const named = ((body.beneficiaries ?? []) as SetRow[]).filter((r) => tiers.has(r.tier));
   const onRecord = await ctx.tx
     .select()
     .from(beneficiaryDesignations)
@@ -48,8 +65,15 @@ async function withKeptTiers(ctx: SaveContext, targetKind: "account" | "trust", 
       ),
     )
     .orderBy(asc(beneficiaryDesignations.sortOrder));
+  // A row names the client or co-client by household role or by family member: the same person either way.
+  const principals = await ctx.tx
+    .select({ id: familyMembers.id, role: familyMembers.role })
+    .from(familyMembers)
+    .where(and(eq(familyMembers.clientId, ctx.clientId), inArray(familyMembers.role, ["client", "spouse"])));
+  const roleOf = new Map(principals.map((p) => [p.id, p.role]));
+  const tierAndWho = (r: SetRow) =>
+    [r.tier, r.householdRole ?? roleOf.get(r.familyMemberId ?? "") ?? r.familyMemberId, r.externalBeneficiaryId, r.entityIdRef].map((v) => v ?? "").join("|");
   const formOf = new Map(onRecord.flatMap((r) => (r.distributionForm ? [[tierAndWho(r), r.distributionForm] as const] : [])));
-  const tiers = new Set(named.map((r) => r.tier));
   return [
     ...named.map((r) => (formOf.has(tierAndWho(r)) ? { ...r, distributionForm: formOf.get(tierAndWho(r)) } : r)),
     ...onRecord
@@ -71,16 +95,16 @@ function setWriter(
   targetKind: "account" | "trust",
   replace: (ctx: SaveContext, parentId: string, set: SetRow[]) => Promise<EntityWriteResult<DesignationRow[]>>,
 ): SaveWriter {
-  const write = async (ctx: SaveContext, input: SaveInput): Promise<string> => {
+  const write = async (ctx: SaveContext, input: SaveInput, update: boolean): Promise<string> => {
     const parentId = input.recordId ?? input.parentId;
     if (!parentId) throw new SaveLineError("These beneficiaries have no account, policy or trust to go on.");
-    unwrap(await replace(ctx, parentId, await withKeptTiers(ctx, targetKind, parentId, input.body)));
+    unwrap(await replace(ctx, parentId, await withKeptTiers(ctx, targetKind, parentId, input.body, namedTiers(input, update))));
     return parentId;
   };
   return {
-    create: write,
+    create: (ctx, input) => write(ctx, input, false),
     update: async (ctx, input) => {
-      await write(ctx, input);
+      await write(ctx, input, true);
     },
   };
 }

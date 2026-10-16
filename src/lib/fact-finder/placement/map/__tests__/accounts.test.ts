@@ -351,7 +351,7 @@ describe("RETIREMENT_MAP", () => {
             from: [c("primaryBeneficiary"), c("contingentBeneficiary")],
           },
         ],
-        warnings: ["These beneficiaries replace the default beneficiaries a new retirement account gets."],
+        warnings: ["Only the tiers filled in here replace the default beneficiaries a new retirement account gets."],
         parent: { ref: "line", target: "account", lineId: "ret-1/account" },
         dependsOn: ["ret-1/account"],
       },
