@@ -119,11 +119,9 @@ const CHANGES: ChangeSet = {
   ],
 };
 
-function renderList(
-  ticks: ChangeTicks = defaultTicks(CHANGES),
-  changeSet: ChangeSet = CHANGES,
-  extra: Partial<Pick<ChangeListProps, "hasCoClient" | "saving" | "saveError">> = {},
-) {
+type Extra = Partial<Pick<ChangeListProps, "hasCoClient" | "saving" | "saveError" | "reading" | "chatting">>;
+
+function renderList(ticks: ChangeTicks = defaultTicks(CHANGES), changeSet: ChangeSet = CHANGES, extra: Extra = {}) {
   const props = {
     onToggleField: vi.fn(),
     onToggleLine: vi.fn(),
@@ -133,8 +131,11 @@ function renderList(
     onReviewAgain: vi.fn(),
     onDismissSaveError: vi.fn(),
   };
-  render(<ChangeList changeSet={changeSet} ticks={ticks} hasCoClient saving={false} saveError={null} {...props} {...extra} />);
-  return props;
+  const list = (more: Extra) => (
+    <ChangeList changeSet={changeSet} ticks={ticks} hasCoClient saving={false} saveError={null} reading={false} chatting={false} {...props} {...more} />
+  );
+  const view = render(list(extra));
+  return { ...props, rerender: (more: Extra) => view.rerender(list(more)) };
 }
 
 const line = (name: string) => screen.getByRole("article", { name });
@@ -311,6 +312,22 @@ describe("ChangeList", () => {
       const save = screen.getByRole("button", { name: "Save to plan" });
       expect(save).toBeDisabled();
       expect(save).toHaveAccessibleDescription("There's nothing to save — every row is unticked or left out.");
+    });
+
+    it.each([
+      { what: "a document is being read", busy: { reading: true }, reason: "Wait for the documents to finish reading." },
+      { what: "a chat message or Undo is on its way", busy: { chatting: true }, reason: "Wait for the chat to finish." },
+    ])("waits, with its reason, while $what — and saves once it's done", async ({ busy, reason }) => {
+      const props = renderList(undefined, undefined, busy);
+      const save = screen.getByRole("button", { name: "Save to plan" });
+      expect(save).toBeDisabled();
+      expect(save).toHaveAccessibleDescription(reason);
+
+      props.rerender({});
+      expect(save).toBeEnabled();
+      expect(save).toHaveAccessibleDescription("");
+      await userEvent.click(save);
+      expect(props.onSave).toHaveBeenCalledOnce();
     });
 
     it("waits, with the plan's reason, when the ticks don't match the list", () => {

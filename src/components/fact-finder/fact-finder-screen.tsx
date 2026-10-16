@@ -303,6 +303,8 @@ function OpenScreen({
               onFix={fix}
               onBack={() => setShowChanges(false)}
               hasCoClient={hasCoClient}
+              reading={reading}
+              chatting={chat.pending !== null || chat.undoing !== null}
               onSave={() => void save.save(changes, ticks.ticks)}
               saving={save.saving}
               saveError={save.error}

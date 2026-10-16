@@ -29,7 +29,7 @@ import { accounts, auditLog, clientImports, clients, crmHouseholdContacts, famil
 import { recordAudit } from "@/lib/audit";
 import { snapshotActorName } from "@/lib/audit/actor-name";
 import {
-  SAVE_CLOSED_MESSAGE, SAVE_FAILED_MESSAGE, SAVE_HOUSEHOLD_MESSAGE, SAVE_NOTHING_MESSAGE, SAVE_RACE_MESSAGE, SAVE_STALE_MESSAGE,
+  SAVE_CLOSED_MESSAGE, SAVE_FAILED_MESSAGE, SAVE_HOUSEHOLD_MESSAGE, SAVE_NOTHING_MESSAGE, SAVE_RACE_MESSAGE, SAVE_READING_MESSAGE, SAVE_STALE_MESSAGE,
 } from "../../api-types";
 import { defaultTicks, TARGET_KINDS, type ChangeSet, type ChangeTicks } from "../../change-set";
 import { loadFactFinder, type FactFinderScope } from "../../persist";
@@ -317,6 +317,16 @@ d("saveChangeSet (live DB)", () => {
       ),
     );
     expect(outcome).toEqual({ ok: false, status: 409, error: SAVE_RACE_MESSAGE });
+    await expectNothingWritten(r);
+  });
+
+  it("a document still reading (started two minutes before the save) → 409, wait for it and review again; nothing written, the import still open", async () => {
+    const r = await reviewed({
+      state: (cashId) => ({ ...factFinder(cashId), readings: { f1: { status: "reading", startedAt: "2026-10-15T11:58:00.000Z" } } }),
+    });
+    const calls: Call[] = [];
+    expect(await saveChangeSet(request(r), deps(writers(calls)))).toEqual({ ok: false, status: 409, error: SAVE_READING_MESSAGE });
+    expect(calls).toEqual([]);
     await expectNothingWritten(r);
   });
 

@@ -523,6 +523,26 @@ describe("the change list", () => {
       expect(saveButton()).toHaveAccessibleDescription("There's nothing to save — every row is unticked or left out.");
     });
 
+    it("waits while a document is being read — its rows would land on a saved import — and opens up once the read is done", async () => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      try {
+        const start = reviewedAt(reading());
+        const server = structuredClone(start);
+        stubServer(server);
+        renderScreen(start);
+        expect(saveButton()).toBeDisabled();
+        expect(saveButton()).toHaveAccessibleDescription("Wait for the documents to finish reading.");
+
+        // The read ends; the screen's next check on it (every 5 s) finds that.
+        Object.assign(server, { version: server.version + 1, readings: { f1: READ } });
+        await act(() => vi.advanceTimersByTimeAsync(5000));
+        expect(saveButton()).toBeEnabled();
+        expect(saveButton()).toHaveAccessibleDescription("");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("there is no Save to plan while an edit is waiting to save", async () => {
       const user = userEvent.setup();
       stubServer(reviewedAt(ready()), undefined, { holdSaves: true });

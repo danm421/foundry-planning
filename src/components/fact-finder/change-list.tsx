@@ -14,7 +14,7 @@ import { countLines, type CellRef, type ChangeField, type ChangeLine, type Chang
 import { TARGETS, type ValueKind } from "@/lib/fact-finder/placement/targets";
 import { EMPTY } from "@/lib/fact-finder/placement/values";
 import { PAGE_ORDER, findSection } from "@/lib/fact-finder/schema";
-import { planSave } from "@/lib/fact-finder/save/plan";
+import { planSave, type SavePlan } from "@/lib/fact-finder/save/plan";
 import { GHOST_BUTTON } from "./button-styles";
 import { AlertIcon, ChevronDownIcon, LoaderIcon, SparklesIcon } from "./icons";
 import type { SaveError } from "./use-save";
@@ -29,6 +29,10 @@ export interface ChangeListProps {
   onBack(): void;
   /** Whether the plan has a co-client already — for a change list that doesn't record what the review saw (the save plans with the same). */
   hasCoClient: boolean;
+  /** A document is being read: its rows would land after the save, on a closed import. */
+  reading: boolean;
+  /** A chat message or Undo is on its way: its edit would land after the save. */
+  chatting: boolean;
   onSave(): void;
   saving: boolean;
   /** Why the last save didn't go through. */
@@ -369,7 +373,17 @@ function PageGroup({ label, lines, ticks, leftOut, failure, ...lineProps }: Grou
   );
 }
 
-export function ChangeList({ changeSet, onBack, hasCoClient, onSave, saving, saveError, onReviewAgain, onDismissSaveError, ...groupProps }: ChangeListProps) {
+/** Why Save to plan can't be pressed yet — something still on its way to the fact finder, or the plan's own reason; null when it can. */
+function saveBlockedReason(plan: SavePlan, reading: boolean, chatting: boolean): string | null {
+  if (reading) return "Wait for the documents to finish reading.";
+  if (chatting) return "Wait for the chat to finish.";
+  if (!plan.ok) return plan.error;
+  return plan.lines.length === 0 ? SAVE_NOTHING_MESSAGE : null;
+}
+
+export function ChangeList({
+  changeSet, onBack, hasCoClient, reading, chatting, onSave, saving, saveError, onReviewAgain, onDismissSaveError, ...groupProps
+}: ChangeListProps) {
   const saveReasonId = useId();
   // The save's own plan, run on the ticks: what it writes, and what the ticks leave out with their reasons. With the
   // co-client the review saw, as the server plans it.
@@ -382,7 +396,7 @@ export function ChangeList({ changeSet, onBack, hasCoClient, onSave, saving, sav
     [plan],
   );
   const failure = saveError?.lineId ? { lineId: saveError.lineId, message: saveError.message } : null;
-  const waiting = !plan.ok ? plan.error : plan.lines.length === 0 ? SAVE_NOTHING_MESSAGE : null;
+  const waiting = saveBlockedReason(plan, reading, chatting);
   return (
     <div className="@container flex flex-col gap-4">
       <ChangesHeading />

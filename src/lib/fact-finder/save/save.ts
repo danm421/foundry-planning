@@ -25,12 +25,13 @@ import { loadImportMilestones, type ImportMilestones } from "@/lib/imports/impor
 import { coerceYearRef, resolveMilestone, YEAR_REF_LABELS } from "@/lib/milestones";
 import { safeErrorFields } from "@/lib/redaction/secrets";
 import {
-  SAVE_CLOSED_MESSAGE, SAVE_FAILED_MESSAGE, SAVE_HOUSEHOLD_MESSAGE, SAVE_NOTHING_MESSAGE, SAVE_RACE_MESSAGE, SAVE_STALE_MESSAGE,
+  SAVE_CLOSED_MESSAGE, SAVE_FAILED_MESSAGE, SAVE_HOUSEHOLD_MESSAGE, SAVE_NOTHING_MESSAGE, SAVE_RACE_MESSAGE, SAVE_READING_MESSAGE, SAVE_STALE_MESSAGE,
 } from "../api-types";
 import { countLines, type ChangeSet, type TargetKind } from "../change-set";
 import { closeFactFinder, loadFactFinder, lockFactFinder, type FactFinderScope } from "../persist";
 import { payloadFor, type Resolve } from "../placement/payload";
 import { validateLines } from "../placement/validate";
+import { filesReading } from "../reading-status";
 import { loadRecordBook } from "../records/book";
 import { resolveBaseCaseScenarioId } from "../records/load";
 import type { FactFinderState, FFClosed } from "../types";
@@ -178,9 +179,9 @@ function isConflict(err: unknown): boolean {
 
 /**
  * Saves the change list the advisor reviewed at `changeSetVersion`, with their ticks, to the client's base case.
- * 409: saved already, reviewed again since, ticks that don't match or leave nothing to save, the household or a
- * record changed since the review or while saving; 422: a line the write path refuses (`lineId`); 500: anything
- * else (`lineId` when a line was being written). Every refusal writes nothing.
+ * 409: saved already, reviewed again since, a document still reading, ticks that don't match or leave nothing to
+ * save, the household or a record changed since the review or while saving; 422: a line the write path refuses
+ * (`lineId`); 500: anything else (`lineId` when a line was being written). Every refusal writes nothing.
  */
 export async function saveChangeSet(request: SaveRequest, deps: Partial<SaveDeps> = {}): Promise<SaveOutcome> {
   const { writers, resolveHoldings, now } = { writers: SAVE_WRITERS, resolveHoldings: resolveSaveHoldings, now: () => new Date(), ...deps };
@@ -213,6 +214,8 @@ export async function saveChangeSet(request: SaveRequest, deps: Partial<SaveDeps
         // Another save, or an edit, may have landed since the read above.
         const locked = reviewed(await lockFactFinder(tx, scope), changeSetVersion);
         if (!locked.ok) throw new Refusal(locked);
+        // A document being read lands its rows after the save — on a closed import, which refuses them.
+        if (filesReading(locked.state, at).length > 0) throw new Refusal(refuse(409, SAVE_READING_MESSAGE));
         const book = await loadRecordBook(scope.clientId, scope.firmId, scenarioId, tx);
         // The plan kept or left out the lines naming the co-client by the household the review saw (an older list: as it was before the transaction).
         if ((book.people.spouse !== null) !== hasCoClient) {

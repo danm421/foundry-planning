@@ -106,3 +106,4 @@ export const SAVE_RACE_MESSAGE = "Something on the plan changed while saving —
 export const SAVE_FAILED_MESSAGE = "The save failed — nothing was changed.";
 export const SAVE_HOUSEHOLD_MESSAGE = "The household changed since you reviewed — review again.";
 export const SAVE_NOTHING_MESSAGE = "There's nothing to save — every row is unticked or left out.";
+export const SAVE_READING_MESSAGE = "Wait for the documents to finish reading, then review again.";
