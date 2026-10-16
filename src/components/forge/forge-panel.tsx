@@ -33,7 +33,7 @@ import {
   type FactFinderIdentifyResponse,
 } from "./use-forge-import";
 import { ImportReviewLink } from "./import-review-link";
-import { PlanQuestionsCard } from "./plan-questions-card";
+import { importScreenPath } from "@/lib/imports/import-kind";
 import { FactFinderDuplicateCard } from "./fact-finder-duplicate-card";
 import { ForgeTabPanel, ForgeTabs } from "./forge-tabs";
 import { KnowledgeHub } from "./knowledge-hub";
@@ -95,7 +95,7 @@ function toolStatusLabel(status: string): string {
 type Thread = { id: string; title: string; updatedAt?: Date | string };
 
 /** The client + import a `build_plan` / `ingest_fact_finder` frame names. */
-type PlanBuildTarget = { clientId: string; importId: string; mode: string; householdName?: string };
+type PlanBuildTarget = { clientId: string; importId: string };
 
 interface ForgePanelProps {
   clientId: string | null;
@@ -169,21 +169,9 @@ export function ForgePanel({
   // call, surfaced via the tool_render frame (see the lastToolRender effect
   // below) — null until that frame lands.
   const [planBuild, setPlanBuild] = useState<PlanBuildTarget | null>(null);
-  // `householdName` rides along from the frame so the commit button can say
-  // whose plan it writes to.
-  const [planResult, setPlanResult] = useState<(PlanBuildResult & { householdName?: string }) | null>(null);
-  const [planQuestionsDismissed, setPlanQuestionsDismissed] = useState(false);
-  // "Commit everything now" finish button (Task 8) — commits all 11 tabs for
-  // the assembled plan in one shot, as an alternative to the per-tab review
-  // flow behind ImportReviewLink. `committing` tracks the in-flight request;
-  // `committedImportId` tracks which import's plan has been fully committed.
-  const [committing, setCommitting] = useState(false);
-  // Which import's plan has been fully committed via "Commit everything now".
-  // Keyed by importId (not a bool) so the committed message binds to the
-  // specific plan on screen: a new plan built in the same thread, or a commit
-  // that resolves after the advisor moved on, cannot flip an unrelated plan's
-  // card to "committed".
-  const [committedImportId, setCommittedImportId] = useState<string | null>(null);
+  // The uploaded plan build: its link to the fact finder screen, where the
+  // documents are read, reviewed and saved.
+  const [planResult, setPlanResult] = useState<PlanBuildResult | null>(null);
   // Global attach-first ingest: a duplicate-household decision awaiting the
   // advisor's choice (new vs. update-existing), surfaced by a card in Task 7.
   // Holds the files so the eventual choice can still fire the build/update.
@@ -218,17 +206,14 @@ export function ForgePanel({
     runImport,
     runPlanBuild,
     identifyFactFinder,
-    submitPlanAnswers,
-    commitAllTabs,
   } = useForgeImport();
-  // Shared with the plan-build run (same underlying hook/status) — "assembling"
-  // only ever fires from runPlanBuild, the rest from either path.
+  // Shared with the plan-build run (same underlying hook/status) — a plan
+  // build only ever uploads; the rest is the classic attach.
   const importing =
     importStatus === "creating" ||
     importStatus === "uploading" ||
     importStatus === "extracting" ||
-    importStatus === "matching" ||
-    importStatus === "assembling";
+    importStatus === "matching";
   // Client to attach files to: the client-mode clientId, or (global mode) the
   // client a build_plan tool call just minted.
   const attachTarget = clientId ?? planBuild?.clientId ?? null;
@@ -236,10 +221,6 @@ export function ForgePanel({
   // global mode (clientId == null) where an attach kicks the fact-finder ingest
   // flow (identify → build/update). Paste-to-attach stays client-only for now.
   const canAttach = attachTarget != null || clientId == null;
-  // Whose plan "Commit everything" writes to: the household the server named on
-  // the build's frame, or the open client when the build ran on it.
-  const commitTarget =
-    planResult?.householdName ?? (planResult != null && planResult.clientId === clientId ? clientName : undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
   const busy = status === "streaming";
   // While an approval is pending the graph is checkpointed mid-interrupt; the
@@ -381,18 +362,13 @@ export function ForgePanel({
     ) {
       return; // malformed frame — ignore rather than crash the panel
     }
-    const pb = data as { clientId: string; importId: string; mode: string; householdName?: unknown };
+    const pb = data as { clientId: string; importId: string };
     // lastToolRender is never cleared by the hook, so it stays set across
     // turns/re-renders — guard so a stale frame never re-triggers a build
     // (e.g. on a later unrelated turn, or a re-mount).
     if (handledPlanBuildRef.current === pb.importId) return;
     handledPlanBuildRef.current = pb.importId;
-    const target: PlanBuildTarget = {
-      clientId: pb.clientId,
-      importId: pb.importId,
-      mode: pb.mode,
-      householdName: typeof pb.householdName === "string" ? pb.householdName : undefined,
-    };
+    const target: PlanBuildTarget = { clientId: pb.clientId, importId: pb.importId };
     setPlanBuild(target);
     // If the advisor had already attached files before the tool finished,
     // kick off the build immediately rather than waiting for another Send.
@@ -434,9 +410,6 @@ export function ForgePanel({
     setImportResult(null);
     setPlanBuild(null);
     setPlanResult(null);
-    setPlanQuestionsDismissed(false);
-    setCommitting(false);
-    setCommittedImportId(null);
     setFactFinderDecision(null);
     handledPlanBuildRef.current = null;
     setInput("");
@@ -485,9 +458,6 @@ export function ForgePanel({
     setImportResult(null);
     setPlanBuild(null);
     setPlanResult(null);
-    setPlanQuestionsDismissed(false);
-    setCommitting(false);
-    setCommittedImportId(null);
     setFactFinderDecision(null);
     handledPlanBuildRef.current = null;
     resetTranscriptState();
@@ -503,9 +473,9 @@ export function ForgePanel({
 
   // Shared by onSend's plan-build branch and the lastToolRender effect (files
   // already attached when the build_plan frame lands). Snapshots `files`,
-  // clears the composer, shows the user's turn immediately, runs the
-  // upload→extract→assemble pipeline, then fires one chat turn so Forge
-  // narrates what it found (mirrors the existing import branch below).
+  // clears the composer, shows the user's turn immediately and uploads the
+  // files to the fact finder import; then sends the advisor's own question, if
+  // they typed one.
   async function runPlanBuildTurn(
     target: PlanBuildTarget,
     files: File[],
@@ -518,12 +488,7 @@ export function ForgePanel({
       ...m,
       { role: "user", text: prompt, attachments: files.map((f) => f.name) },
     ]);
-    const result = await runPlanBuild({
-      clientId: target.clientId,
-      importId: target.importId,
-      files,
-      mode: target.mode === "updating" ? "updating" : "new",
-    });
+    const result = await runPlanBuild({ clientId: target.clientId, importId: target.importId, files });
     if (!result) return; // errorMessage bubble already shown by the hook
     // One build per build_plan proposal: clear planBuild now that this build
     // has run so a LATER attach+send in the same thread falls through to the
@@ -533,30 +498,17 @@ export function ForgePanel({
     // guarded by handledPlanBuildRef (left untouched), so clearing planBuild
     // cannot make it re-fire.
     setPlanBuild(null);
-    setPlanResult({ ...result, householdName: target.householdName });
+    setPlanResult(result);
     setPendingImportId(result.importId);
-    // The attachment alone is a valid turn, so `prompt` is often empty — in
-    // which case we'd otherwise narrate the build with a synthetic message.
-    // That only works in CLIENT mode, where the route accepts pendingImportId,
-    // buildSystemPrompt injects the "a document import is pending review"
-    // block, and read_import can inspect it.
-    //
-    // GLOBAL mode has none of that: `send` strips pendingImportId from the body
-    // when clientId is null (use-forge-stream.ts), /api/forge/stream has no
-    // pendingImportId field and no import block in its system prompt, and the
-    // global tool set has no read_import. A synthetic turn therefore arrives as
-    // a bare "I've attached the documents" claim with nothing behind it — and
-    // the model, told by global-system-prompt.ts to expect an "[Attached fact
-    // finder]" block on attachment turns, correctly answers "I don't see
-    // document attachments in this message", a false denial on a plan that in
-    // fact built and committed fine. The ingest_fact_finder / build_plan turn
-    // has already narrated by then and the plan card below reports the result,
-    // so the synthetic turn is pure downside here. A question the advisor
-    // actually typed still goes through in either mode.
-    const narration = prompt || (clientId == null ? "" : "I've attached the documents for the plan build.");
-    if (narration) {
+    // The attachment alone is a valid turn, so `prompt` is often empty. Nothing
+    // was read yet — the fact finder screen reads the documents when the
+    // advisor opens it — so there is nothing to narrate: the build_plan /
+    // ingest_fact_finder turn already said what happens, and the plan card's
+    // link is the next step. A question the advisor actually typed still goes
+    // through, in either mode.
+    if (prompt) {
       await send({
-        message: narration,
+        message: prompt,
         scenarioId: scenarioId ?? "base",
         conversationId,
         currentPage: sectionKeyForPath(pathname),
@@ -618,31 +570,6 @@ export function ForgePanel({
     } finally {
       ingestInFlightRef.current = false;
     }
-  }
-
-  // Answer submit for PlanQuestionsCard — updates planResult in place so
-  // answered questions disappear from the card, leaving the review link.
-  async function submitPlanAnswersHandler(answers: Record<string, string>) {
-    if (!planResult) return;
-    const res = await submitPlanAnswers({
-      clientId: planResult.clientId,
-      importId: planResult.importId,
-      answers,
-    });
-    if (!res) return; // failed submit — leave the card as-is; errorMessage already shown
-    setPlanResult((prev) =>
-      prev
-        ? {
-            ...prev,
-            assemble: {
-              ...prev.assemble,
-              questions: prev.assemble.questions.map((q) =>
-                answers[q.id] !== undefined ? { ...q, answer: answers[q.id] } : q,
-              ),
-            },
-          }
-        : prev,
-    );
   }
 
   async function onSend() {
@@ -953,7 +880,6 @@ export function ForgePanel({
                 {importStatus === "uploading" && "Uploading document…"}
                 {importStatus === "extracting" && "Extracting data…"}
                 {importStatus === "matching" && "Matching against existing accounts…"}
-                {importStatus === "assembling" && "Assembling the plan…"}
               </div>
             )}
 
@@ -962,59 +888,15 @@ export function ForgePanel({
                 batch into one render, so the link never flashes before analysis. */}
             {importResult && clientId != null && !busy && (
               <ImportReviewLink
-                clientId={clientId}
-                importId={importResult.importId}
+                href={importScreenPath(clientId, importResult.importId, false)}
                 warnings={importResult.warnings}
               />
             )}
 
-            {planResult && (
-              <div className="space-y-2">
-                {!planQuestionsDismissed && planResult.assemble.questions.some((q) => !q.answer) && (
-                  <PlanQuestionsCard
-                    questions={planResult.assemble.questions.filter((q) => !q.answer)}
-                    busy={busy}
-                    onSubmit={(answers) => void submitPlanAnswersHandler(answers)}
-                    onSkip={() => setPlanQuestionsDismissed(true)}
-                  />
-                )}
-                {!busy && (
-                  <div className="space-y-2">
-                    <ImportReviewLink
-                      clientId={planResult.clientId}
-                      importId={planResult.importId}
-                      warnings={planResult.warnings}
-                    />
-                    {planResult.importId === committedImportId ? (
-                      <p className="text-[12px] text-ink-3" data-testid="forge-plan-committed">
-                        Committed the whole plan. Open the client to review.
-                      </p>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={committing}
-                        onClick={async () => {
-                          const targetImportId = planResult.importId;
-                          setCommitting(true);
-                          const res = await commitAllTabs(planResult.clientId, planResult.importId);
-                          setCommitting(false);
-                          // Bind the committed state to THIS import; a "review"
-                          // (partial) status or a resolution that lands after the
-                          // advisor moved on must not show a false "committed".
-                          if (res?.status === "committed") setCommittedImportId(targetImportId);
-                        }}
-                        className="rounded-[var(--radius-sm)] border border-hair px-3 py-1.5 text-[12px] text-ink hover:bg-card disabled:opacity-40"
-                      >
-                        {committing
-                          ? "Committing…"
-                          : commitTarget
-                            ? `Commit everything to ${commitTarget}`
-                            : "Commit everything now"}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
+            {/* A plan build's documents are read, reviewed and saved on the
+                fact finder screen — the link is the whole hand-off. */}
+            {planResult && !busy && (
+              <ImportReviewLink href={planResult.reviewPath} warnings={planResult.warnings} />
             )}
 
             {/* Global attach-first ingest: duplicate-household match found with no

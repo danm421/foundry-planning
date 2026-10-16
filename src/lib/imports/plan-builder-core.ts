@@ -1,8 +1,8 @@
 // Shared core for the Forge `build_plan` tool (both modes): ensure/get the
-// client, then create the `clientImports` row the panel attaches files to.
-// Assemble runs later (after files land, via the A6 route) — this function's
-// only job is to establish client + import fast and return the three ids the
-// tool needs.
+// client, then create the fact finder import the panel attaches files to.
+// The fact finder screen reads the files when the advisor opens it — this
+// function's only job is to establish client + import fast and return the
+// three ids the tool needs.
 //
 // Pure server-side lib: throws on error (client-not-found, no base scenario)
 // rather than returning error strings — the B3 tool layer wraps this in
@@ -14,6 +14,7 @@ import { recordAudit } from "@/lib/audit";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { createCrmHousehold, recordHouseholdOpen } from "@/lib/crm/households";
 import { createClientForHousehold, type FilingStatus } from "@/lib/clients/create-client";
+import { emptyFactFinderState } from "@/lib/fact-finder/state";
 import { isUSPSStateCode } from "@/lib/usps-states";
 
 export interface EnsurePlanImportArgs {
@@ -165,8 +166,10 @@ export async function ensurePlanImport(
     }
   }
 
-  // Shared insert — mirror src/app/api/clients/[id]/imports/route.ts:143-166.
-  // `origin` is deliberately omitted: it defaults to "extraction" in the schema.
+  // Shared insert — a fact finder import, as POST /api/clients/[id]/imports
+  // creates one for the mode picker's card (the slice marks it; the fact
+  // finder reviews positions, so it reads them). `origin` is deliberately
+  // omitted: it defaults to "extraction" in the schema.
   const [imp] = await db
     .insert(clientImports)
     .values({
@@ -174,8 +177,10 @@ export async function ensurePlanImport(
       orgId: args.firmId,
       scenarioId,
       mode,
+      extractHoldings: true,
       status: "draft",
       createdByUserId: args.actorUserId,
+      payloadJson: { factFinder: emptyFactFinderState() },
     })
     .returning();
 

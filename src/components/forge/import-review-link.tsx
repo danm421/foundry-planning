@@ -2,19 +2,19 @@
 "use client";
 
 interface ImportReviewLinkProps {
-  clientId: string;
-  importId: string;
+  /** The screen the import is reviewed on (`importScreenPath`). */
+  href: string;
   /** Non-fatal orchestration warnings (e.g. partial extraction). */
   warnings: string[];
 }
 
 /**
- * Compact commit affordance shown after an in-chat import. The agent narrates
- * what it found; this is the one-click hand-off to the existing review wizard,
- * plus any non-fatal warnings worth surfacing inline.
+ * Compact commit affordance shown after an in-chat import: the one-click
+ * hand-off to the screen the import is reviewed on — the Review Wizard for a
+ * classic attach, the fact finder for a plan build — plus any non-fatal
+ * warnings worth surfacing inline.
  */
-export function ImportReviewLink({ clientId, importId, warnings }: ImportReviewLinkProps) {
-  const reviewHref = `/clients/${clientId}/details/import/${importId}`;
+export function ImportReviewLink({ href, warnings }: ImportReviewLinkProps) {
   return (
     <div data-testid="forge-import-review" className="space-y-1">
       {warnings.length > 0 && (
@@ -25,7 +25,7 @@ export function ImportReviewLink({ clientId, importId, warnings }: ImportReviewL
         </ul>
       )}
       <a
-        href={reviewHref}
+        href={href}
         className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] bg-secondary px-2.5 py-1 text-[12px] font-medium text-secondary-on hover:bg-secondary-ink"
       >
         Review &amp; apply →

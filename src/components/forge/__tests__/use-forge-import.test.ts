@@ -86,23 +86,12 @@ describe("useForgeImport", () => {
 describe("useForgeImport — runPlanBuild", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  const ASSEMBLE_STATE = {
-    version: 1 as const,
-    mergedFileCount: 1,
-    assumptions: [],
-    questions: [{ id: "q:retirement_age", kind: "assumption" as const, field: "client.retirementAge", prompt: "?" }],
-  };
-
-  it("runs files → extract → assemble in order, never calls /match, and the assemble body carries no mode/scenarioId", async () => {
-    const calls: { url: string; body: string | undefined }[] = [];
+  it("uploads each file to the import, then stops — no extract, match or assemble — and returns the fact finder screen", async () => {
+    const calls: { url: string; method: string | undefined }[] = [];
     globalThis.fetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       const u = String(url);
-      calls.push({ url: u, body: init?.body as string | undefined });
+      calls.push({ url: u, method: init?.method });
       if (u.endsWith("/files")) return jsonResponse({ file: { id: "f1" }, deduped: false });
-      if (u.endsWith("/extract")) return jsonResponse({ succeeded: 1, failed: 0 });
-      if (u.endsWith("/assemble")) {
-        return jsonResponse({ ok: true, questionCount: 1, rowCount: 2, assemble: ASSEMBLE_STATE });
-      }
       throw new Error(`unexpected ${u}`);
     }) as unknown as typeof fetch;
 
@@ -112,46 +101,50 @@ describe("useForgeImport — runPlanBuild", () => {
       res = await result.current.runPlanBuild({
         clientId: "client_1",
         importId: "imp_1",
-        files: [new File(["x"], "stmt.pdf")],
+        files: [new File(["x"], "stmt.pdf"), new File(["y"], "fact-finder.pdf")],
       });
     });
 
-    expect(res!).not.toBeNull();
-    expect(res!.importId).toBe("imp_1");
-    expect(res!.clientId).toBe("client_1");
-    expect(res!.reviewPath).toBe("/clients/client_1/details/import/imp_1");
-    expect(res!.assemble).toEqual(ASSEMBLE_STATE);
-
-    // No /match call at all in this flow.
-    expect(calls.some((c) => c.url.endsWith("/match"))).toBe(false);
-
-    // Ordering: files before extract before assemble.
-    const filesIdx = calls.findIndex((c) => c.url.endsWith("/files"));
-    const extractIdx = calls.findIndex((c) => c.url.endsWith("/extract"));
-    const assembleIdx = calls.findIndex((c) => c.url.endsWith("/assemble"));
-    expect(filesIdx).toBeGreaterThanOrEqual(0);
-    expect(extractIdx).toBeGreaterThan(filesIdx);
-    expect(assembleIdx).toBeGreaterThan(extractIdx);
-
-    // The assemble POST body carries no mode/scenarioId (route derives them
-    // from the import row) — body is empty/undefined.
-    const assembleCall = calls[assembleIdx];
-    if (assembleCall.body !== undefined) {
-      const parsed = JSON.parse(assembleCall.body) as Record<string, unknown>;
-      expect(parsed.mode).toBeUndefined();
-      expect(parsed.scenarioId).toBeUndefined();
-    }
-
+    expect(res!).toEqual({
+      importId: "imp_1",
+      clientId: "client_1",
+      reviewPath: "/clients/client_1/details/import/imp_1/fact-finder",
+      warnings: [],
+    });
+    expect(calls).toEqual([
+      { url: "/api/clients/client_1/imports/imp_1/files", method: "POST" },
+      { url: "/api/clients/client_1/imports/imp_1/files", method: "POST" },
+    ]);
     expect(result.current.status).toBe("done");
   });
 
-  it("returns null and sets errorMessage when extract fails", async () => {
-    globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
-      const u = String(url);
-      if (u.endsWith("/files")) return jsonResponse({ file: { id: "f1" } });
-      if (u.endsWith("/extract")) return jsonResponse({ error: "Extraction failed." }, false, 500);
-      throw new Error(`unexpected ${u}`);
-    }) as unknown as typeof fetch;
+  it("is uploading while the files go up, and done after", async () => {
+    let release!: (r: Response) => void;
+    globalThis.fetch = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve;
+        }),
+    ) as unknown as typeof fetch;
+
+    const { result } = renderHook(() => useForgeImport());
+    let run!: Promise<unknown>;
+    act(() => {
+      run = result.current.runPlanBuild({ clientId: "client_1", importId: "imp_1", files: [new File(["x"], "stmt.pdf")] });
+    });
+    expect(result.current.status).toBe("uploading");
+
+    await act(async () => {
+      release(jsonResponse({ file: { id: "f1" } }));
+      await run;
+    });
+    expect(result.current.status).toBe("done");
+  });
+
+  it("returns null and shows the route's error when an upload fails", async () => {
+    globalThis.fetch = vi.fn(async () =>
+      jsonResponse({ error: "That file is too large." }, false, 413),
+    ) as unknown as typeof fetch;
 
     const { result } = renderHook(() => useForgeImport());
     let res: unknown;
@@ -165,7 +158,7 @@ describe("useForgeImport — runPlanBuild", () => {
 
     expect(res).toBeNull();
     expect(result.current.status).toBe("error");
-    expect(result.current.errorMessage).toMatch(/extraction failed/i);
+    expect(result.current.errorMessage).toBe("That file is too large.");
   });
 });
 

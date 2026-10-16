@@ -54,6 +54,20 @@ describe("get_plan_status tool", () => {
     expect(out.status).toBe("review");
   });
 
+  it.each([
+    ["a fact finder import", { factFinder: { version: 0 } }],
+    ["a statement-chat import from before the switch", { chat: { surface: "chat" } }],
+  ])("links %s to the fact finder screen, with no questions", async (_label, payloadJson) => {
+    row.payloadJson = payloadJson;
+    const out = JSON.parse(await buildPlanBuilderTools(TOOL_CTX)[0].invoke({ importId: "imp1" }));
+    expect(out).toEqual({
+      status: "review",
+      questionCount: 0,
+      unanswered: [],
+      reviewPath: "/clients/c1/details/import/imp1/fact-finder",
+    });
+  });
+
   it("returns a JSON error string, not a throw, when the import is out of scope", async () => {
     state.found = false;
     const out = JSON.parse(await buildPlanBuilderTools(TOOL_CTX)[0].invoke({ importId: "imp-other-client" }));
@@ -81,6 +95,13 @@ describe("build_plan tool (mode existing)", () => {
     const buildPlan = buildPlanBuilderTools(TOOL_CTX)[1];
     const out = await buildPlan.invoke({});
     expect(out).toBe("Client not found or access denied.");
+  });
+
+  it("tells the model the documents go to a fact finder import, not an assemble with questions", () => {
+    const { description } = buildPlanBuilderTools(TOOL_CTX)[1];
+    expect(description).toContain("fact finder screen");
+    expect(description).toContain("Requires human approval.");
+    expect(description).not.toMatch(/assemble|smart questions/);
   });
 
   it("is registered in WRITE_TOOL_NAMES (HITL-gated)", () => {

@@ -10,15 +10,16 @@ import { tool } from "@langchain/core/tools";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
 import { auth } from "@clerk/nextjs/server";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { scenarios, clientImports } from "@/db/schema";
+import { scenarios, clientImports, clientImportFiles } from "@/db/schema";
 import {
   normalizeImportPayload,
   type ImportPayload,
   type ImportPayloadJson,
   type MatchAnnotation,
 } from "@/lib/imports/types";
+import { importScreenPath, isFactFinderImport } from "@/lib/imports/import-kind";
 import { runImportExtraction } from "@/lib/imports/run-extraction";
 import { hasAiImportEntitlement } from "@/lib/imports/ai-import-gate";
 import { runImportMatching } from "@/lib/imports/run-matching";
@@ -48,6 +49,9 @@ const DETAIL_KINDS = {
 } satisfies Record<string, (t: ClientData) => unknown[]>;
 
 type DetailKind = keyof typeof DETAIL_KINDS;
+
+/** What Forge says about a fact finder import: it has no extracted payload to summarize or re-extract. */
+const FACT_FINDER_SCREEN_NOTE = "This is a fact finder import — its documents are read on the fact finder screen.";
 
 /** Join a first/last name into a display string, or null when both are empty. */
 function joinName(
@@ -299,7 +303,24 @@ export function buildReadTools(
         return JSON.stringify({ found: false, note: `import ${importId} not found in scope` });
       }
 
-      const persisted = (row.payloadJson as ImportPayloadJson | null)?.payload;
+      const payloadJson = row.payloadJson as ImportPayloadJson | null;
+      if (isFactFinderImport(payloadJson)) {
+        const [files] = await db
+          .select({ count: count() })
+          .from(clientImportFiles)
+          .where(and(eq(clientImportFiles.importId, row.id), isNull(clientImportFiles.deletedAt)));
+        return JSON.stringify({
+          found: true,
+          importId: row.id,
+          status: row.status,
+          factFinder: true,
+          fileCount: files?.count ?? 0,
+          reviewPath: importScreenPath(ctx.clientId, row.id, true),
+          note: FACT_FINDER_SCREEN_NOTE,
+        });
+      }
+
+      const persisted = payloadJson?.payload;
       const payload = persisted ? normalizeImportPayload(persisted) : null;
       return JSON.stringify(summarizeImport(row.id, row.status, payload));
     },
@@ -328,11 +349,16 @@ export function buildReadTools(
       }
 
       const [row] = await db
-        .select({ id: clientImports.id, status: clientImports.status, mode: clientImports.mode, scenarioId: clientImports.scenarioId })
+        .select({ id: clientImports.id, status: clientImports.status, mode: clientImports.mode, scenarioId: clientImports.scenarioId, payloadJson: clientImports.payloadJson })
         .from(clientImports)
         .where(and(eq(clientImports.id, importId), eq(clientImports.clientId, ctx.clientId), eq(clientImports.orgId, firmId), isNull(clientImports.discardedAt)))
         .limit(1);
       if (!row) return JSON.stringify({ found: false, note: `import ${importId} not found in scope` });
+      // A fact finder import is read on its own screen, never by this pass —
+      // refused before the rate limit and the AI read.
+      if (isFactFinderImport(row.payloadJson as ImportPayloadJson | null)) {
+        return JSON.stringify({ found: true, importId, note: FACT_FINDER_SCREEN_NOTE, reviewPath: importScreenPath(ctx.clientId, importId, true) });
+      }
 
       const rl = await checkImportRateLimit(firmId, "extract");
       if (!rl.allowed) return JSON.stringify({ found: true, importId, note: "rate_limited", status: row.status });

@@ -4,9 +4,9 @@
 //   • runImport        — classic import: create (updating, base case) → upload →
 //                        extract (with holdings) → match. Matching is non-fatal
 //                        (the review wizard can re-run it on open).
-//   • runPlanBuild     — Plan Builder: uploads then branches on mode — "new"
-//                        assembles a fresh plan, "updating" matches into an
-//                        existing one.
+//   • runPlanBuild     — Plan Builder: uploads the files to the fact finder
+//                        import build_plan / ingest_fact_finder minted, then
+//                        stops — the fact finder screen reads them on open.
 //   • identifyFactFinder — clientless identity "peek" for global attach-first
 //                        ingest (hits /forge/fact-finder/identify; no client yet).
 //   • commitAllTabs    — one-shot finish: POST /commit for all tabs.
@@ -15,7 +15,7 @@
 
 import { useCallback, useState } from "react";
 import { resolveBaseScenarioId } from "./actions";
-import type { AssembleState } from "@/lib/imports/assemble/types";
+import { importScreenPath } from "@/lib/imports/import-kind";
 // `commit/types.ts` is safe to import from a client component: its only two
 // imports are `import type`, so they are erased at compile, and `COMMIT_TABS`
 // itself is a plain `as const` array. This file used to carry a hand-copied
@@ -36,7 +36,6 @@ export type ForgeImportStatus =
   | "uploading"
   | "extracting"
   | "matching"
-  | "assembling"
   | "done"
   | "error";
 
@@ -55,7 +54,6 @@ export interface PlanBuildResult {
   importId: string;
   clientId: string;
   reviewPath: string;
-  assemble: AssembleState;
   warnings: string[];
 }
 
@@ -63,12 +61,7 @@ export interface UseForgeImportResult {
   status: ForgeImportStatus;
   errorMessage: string | null;
   runImport: (clientId: string, files: File[]) => Promise<ForgeImportResult | null>;
-  runPlanBuild: (args: {
-    clientId: string;
-    importId: string;
-    files: File[];
-    mode?: "new" | "updating";
-  }) => Promise<PlanBuildResult | null>;
+  runPlanBuild: (args: { clientId: string; importId: string; files: File[] }) => Promise<PlanBuildResult | null>;
   identifyFactFinder: (files: File[]) => Promise<FactFinderIdentifyResponse | null>;
   commitAllTabs: (clientId: string, importId: string) => Promise<{ status: "committed" | "review" } | null>;
   submitPlanAnswers: (args: {
@@ -172,17 +165,14 @@ export function useForgeImport(): UseForgeImportResult {
   );
 
   const runPlanBuild = useCallback(
-    async (args: {
-      clientId: string;
-      importId: string;
-      files: File[];
-      mode?: "new" | "updating";
-    }): Promise<PlanBuildResult | null> => {
-      const { clientId, importId, files, mode = "new" } = args;
+    async (args: { clientId: string; importId: string; files: File[] }): Promise<PlanBuildResult | null> => {
+      const { clientId, importId, files } = args;
       setErrorMessage(null);
       try {
-        // 1. Upload each file to the already-minted import (created by the
-        //    build_plan tool — no separate create step here).
+        // Upload each file to the already-minted fact finder import (created
+        // by the build_plan tool — no separate create step here). Nothing is
+        // read here: the fact finder screen reads the documents when the
+        // advisor opens it.
         setStatus("uploading");
         for (const file of files) {
           const fd = new FormData();
@@ -194,48 +184,8 @@ export function useForgeImport(): UseForgeImportResult {
           if (!upRes.ok) throw new Error(await errText(upRes, `Could not upload ${file.name}.`));
         }
 
-        // 2. Extract (with holdings).
-        setStatus("extracting");
-        const exRes = await fetch(`/api/clients/${clientId}/imports/${importId}/extract`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ extractHoldings: true }),
-        });
-        if (!exRes.ok) throw new Error(await errText(exRes, "Extraction failed."));
-        const { succeeded, failed } = (await exRes.json()) as { succeeded: number; failed: number };
-        const warnings: string[] = [];
-        if (failed > 0) warnings.push(`${failed} of ${succeeded + failed} file(s) failed to extract.`);
-
-        // 3. Annotate the payload: NEW → assemble (smart questions); UPDATING →
-        //    match (reconcile vs existing base-case rows). Both leave the import's
-        //    payloadJson ready for the Review Wizard / commit.
-        if (mode === "updating") {
-          setStatus("matching");
-          const mRes = await fetch(`/api/clients/${clientId}/imports/${importId}/match`, { method: "POST" });
-          if (!mRes.ok) warnings.push("Matching couldn't run — the review screen will match on open.");
-          setStatus("done");
-          return {
-            importId,
-            clientId,
-            reviewPath: `/clients/${clientId}/details/import/${importId}`,
-            assemble: { version: 1, mergedFileCount: 0, assumptions: [], questions: [] },
-            warnings,
-          };
-        }
-
-        setStatus("assembling");
-        const asRes = await fetch(`/api/clients/${clientId}/imports/${importId}/assemble`, { method: "POST" });
-        if (!asRes.ok) throw new Error(await errText(asRes, "Assembling the plan failed."));
-        const { assemble } = (await asRes.json()) as { assemble: AssembleState };
-
         setStatus("done");
-        return {
-          importId,
-          clientId,
-          reviewPath: `/clients/${clientId}/details/import/${importId}`,
-          assemble,
-          warnings,
-        };
+        return { importId, clientId, reviewPath: importScreenPath(clientId, importId, true), warnings: [] };
       } catch (err) {
         setStatus("error");
         setErrorMessage(err instanceof Error ? err.message : String(err));

@@ -14,6 +14,7 @@ import { db } from "@/db";
 import { clientImports } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
 import type { ImportPayloadJson } from "@/lib/imports/types";
+import { importScreenPath, isFactFinderImport } from "@/lib/imports/import-kind";
 import { ensurePlanImport } from "@/lib/imports/plan-builder-core";
 import { recordAudit } from "@/lib/audit";
 import { emitToolRender } from "@/domain/forge/custom-events";
@@ -51,10 +52,11 @@ export function buildPlanBuilderTools(
         return JSON.stringify({ error: "Import not found for this client." });
       }
 
-      const assemble = (row.payloadJson as ImportPayloadJson | null)?.assemble;
-      const questions = assemble?.questions ?? [];
+      const payloadJson = row.payloadJson as ImportPayloadJson | null;
+      // A fact finder import has no assemble step, so no questions.
+      const questions = payloadJson?.assemble?.questions ?? [];
       const unanswered = questions.filter((q) => !q.answer);
-      const reviewPath = `/clients/${ctx.clientId}/details/import/${importId}`;
+      const reviewPath = importScreenPath(ctx.clientId, importId, isFactFinderImport(payloadJson));
 
       return JSON.stringify({
         status: row.status,
@@ -98,8 +100,8 @@ export function buildPlanBuilderTools(
       name: "build_plan",
       description:
         "Start assembling a refreshed financial plan for the CURRENT client from documents the advisor will " +
-        "upload (statements, tax returns). Creates a draft import to attach files to; after files land, the panel " +
-        "runs extraction + assemble and surfaces a short list of smart questions. Requires human approval.",
+        "upload (statements, tax returns). Creates a draft fact finder import to attach files to; the advisor " +
+        "reviews the documents on the fact finder screen and saves what changes. Requires human approval.",
       schema: z.object({}),
     },
   );

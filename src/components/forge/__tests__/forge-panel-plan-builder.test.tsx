@@ -230,8 +230,7 @@ describe("ForgePanel — build_plan tool_render wiring (Task B5)", () => {
     importMocks.runPlanBuild.mockResolvedValue({
       importId: "imp_1",
       clientId: "c9",
-      reviewPath: "/clients/c9/details/import/imp_1",
-      assemble: { version: 1, mergedFileCount: 1, assumptions: [], questions: [] },
+      reviewPath: "/clients/c9/details/import/imp_1/fact-finder",
       warnings: [],
     });
 
@@ -257,8 +256,7 @@ describe("ForgePanel — build_plan tool_render wiring (Task B5)", () => {
     importMocks.runPlanBuild.mockResolvedValue({
       importId: "imp_1",
       clientId: "c9",
-      reviewPath: "/clients/c9/details/import/imp_1",
-      assemble: { version: 1, mergedFileCount: 1, assumptions: [], questions: [] },
+      reviewPath: "/clients/c9/details/import/imp_1/fact-finder",
       warnings: [],
     });
 
@@ -335,8 +333,7 @@ describe("ForgePanel — planBuild clears after a successful build (FIX 4)", () 
     importMocks.runPlanBuild.mockResolvedValue({
       importId: "imp_1",
       clientId: "c1",
-      reviewPath: "/clients/c1/details/import/imp_1",
-      assemble: { version: 1, mergedFileCount: 1, assumptions: [], questions: [] },
+      reviewPath: "/clients/c1/details/import/imp_1/fact-finder",
       warnings: [],
     });
     importMocks.runImport.mockResolvedValue({
@@ -389,17 +386,15 @@ describe("ForgePanel — planBuild clears after a successful build (FIX 4)", () 
     expect(importMocks.runPlanBuild).toHaveBeenCalledTimes(1);
   });
 
-  // The global-mode narration suppression must NOT bleed into client mode: the
-  // client route accepts pendingImportId, buildSystemPrompt injects the
-  // "a document import is pending review" block, and read_import can inspect
-  // it — so the synthetic turn is grounded there and still earns its keep.
-  it("still fires the synthetic narration turn in CLIENT mode, where an import context grounds it", async () => {
+  // A plan build reads nothing in the panel — the fact finder screen reads the
+  // documents when the advisor opens it — so there is nothing to narrate in
+  // client mode either: the plan card's link says what happens next.
+  it("sends no synthetic narration turn in CLIENT mode either", async () => {
     const send = vi.fn();
     importMocks.runPlanBuild.mockResolvedValue({
       importId: "imp_1",
       clientId: "c1",
-      reviewPath: "/clients/c1/details/import/imp_1",
-      assemble: { version: 1, mergedFileCount: 1, assumptions: [], questions: [] },
+      reviewPath: "/clients/c1/details/import/imp_1/fact-finder",
       warnings: [],
     });
 
@@ -413,9 +408,36 @@ describe("ForgePanel — planBuild clears after a successful build (FIX 4)", () 
       rerender(<ForgePanel clientId="c1" scenarioNames={{}} forceOpenForTest />);
     });
 
+    expect(importMocks.runPlanBuild).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("sends a question the advisor typed in CLIENT mode, with the import", async () => {
+    const send = vi.fn();
+    importMocks.runPlanBuild.mockResolvedValue({
+      importId: "imp_1",
+      clientId: "c1",
+      reviewPath: "/clients/c1/details/import/imp_1/fact-finder",
+      warnings: [],
+    });
+
+    mockStreamState = makeStreamState({ lastToolRender: null, send });
+    const { rerender } = render(<ForgePanel clientId="c1" scenarioNames={{}} forceOpenForTest />);
+    fireEvent.change(screen.getByPlaceholderText(/ask about this plan/i), {
+      target: { value: "anything missing?" },
+    });
+    fireEvent.change(screen.getByTestId("forge-file-input"), {
+      target: { files: [new File(["x"], "stmt.pdf")] },
+    });
+
+    mockStreamState = makeStreamState({ lastToolRender: clientBuildPlanFrame("imp_1"), send });
+    await act(async () => {
+      rerender(<ForgePanel clientId="c1" scenarioNames={{}} forceOpenForTest />);
+    });
+
     expect(send).toHaveBeenCalledTimes(1);
     const sent = send.mock.calls[0][0] as { message: string; pendingImportId?: string };
-    expect(sent.message.trim().length).toBeGreaterThan(0);
+    expect(sent.message).toBe("anything missing?");
     expect(sent.pendingImportId).toBe("imp_1");
   });
 });
@@ -479,19 +501,11 @@ describe("clientless Forge discoverability", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Task 8 review findings — "Commit everything now" success must be keyed to
-// the SPECIFIC importId on screen, not a global boolean:
-//   1. Committing plan A, then a second build_plan proposal landing in the
-//      SAME thread (a fresh planResult for plan B) must not show plan B as
-//      already committed.
-//   2. (covered in forge-panel.tsx by construction, not separately testable
-//      here without a real async race) a commitAllTabs resolution landing
-//      after the advisor moved to a different plan must not flip an unrelated
-//      plan's card to "committed".
-//   3. commitAllTabs can resolve a PARTIAL "review" status (not every tab
-//      committed cleanly) — that must not show the "committed" message either.
+// A plan build is a fact finder import (Plan 5, D9): the panel uploads the
+// files and links to the fact finder screen, where the documents are read,
+// reviewed and saved. No questions card, no "commit everything" button.
 // ---------------------------------------------------------------------------
-describe("ForgePanel — Commit everything now (Task 8)", () => {
+describe("ForgePanel — a plan build's result", () => {
   beforeEach(() => {
     mockStreamState = makeStreamState();
     importMocks.runImport.mockClear();
@@ -499,74 +513,60 @@ describe("ForgePanel — Commit everything now (Task 8)", () => {
     importMocks.runPlanBuild.mockResolvedValue(null);
     importMocks.submitPlanAnswers.mockClear();
     importMocks.commitAllTabs.mockClear();
-    importMocks.commitAllTabs.mockResolvedValue(null);
   });
 
   function planBuildResult(importId: string): PlanBuildResult {
     return {
       importId,
       clientId: "c9",
-      reviewPath: `/clients/c9/details/import/${importId}`,
-      assemble: { version: 1, mergedFileCount: 0, assumptions: [], questions: [] },
+      reviewPath: `/clients/c9/details/import/${importId}/fact-finder`,
       warnings: [],
     };
   }
 
-  // Attaches a file, delivers the build_plan frame for `importId`, and waits
-  // for runPlanBuild (mocked to resolve `result`) to land planResult on
-  // screen. Returns the harness bits later steps in a test need.
   async function mountWithBuiltPlan(importId: string, result: PlanBuildResult) {
-    const send = vi.fn();
     importMocks.runPlanBuild.mockResolvedValueOnce(result);
-    mockStreamState = makeStreamState({ lastToolRender: null, send });
+    mockStreamState = makeStreamState({ lastToolRender: null });
     const rendered = mountGlobalPanel();
-    const fileInput = screen.getByTestId("forge-file-input") as HTMLInputElement;
-    fireEvent.change(fileInput, { target: { files: [new File(["x"], `${importId}.pdf`)] } });
-
-    mockStreamState = makeStreamState({ lastToolRender: buildPlanFrame(importId), send });
+    fireEvent.change(screen.getByTestId("forge-file-input"), {
+      target: { files: [new File(["x"], `${importId}.pdf`)] },
+    });
+    mockStreamState = makeStreamState({ lastToolRender: buildPlanFrame(importId) });
     await act(async () => {
       rendered.rerender(<ForgePanel clientId={null} scenarioNames={{}} forceOpenForTest />);
     });
-    return { ...rendered, send, fileInput };
+    return rendered;
   }
 
-  async function clickCommitButton() {
-    const commitButton = screen.getByRole("button", { name: "Commit everything now" });
-    await act(async () => {
-      fireEvent.click(commitButton);
-    });
-  }
-
-  it("shows the committed message after a full commit resolves (success path)", async () => {
-    importMocks.commitAllTabs.mockResolvedValue({ status: "committed" });
+  it("runs the build with the import's ids and files only", async () => {
     await mountWithBuiltPlan("imp_1", planBuildResult("imp_1"));
 
-    await clickCommitButton();
-
-    expect(screen.getByTestId("forge-plan-committed")).toBeInTheDocument();
-  });
-
-  it("clears the committed state when a NEW build_plan proposal lands in the same thread (finding 1)", async () => {
-    importMocks.commitAllTabs.mockResolvedValue({ status: "committed" });
-    const { rerender, send, fileInput } = await mountWithBuiltPlan("imp_1", planBuildResult("imp_1"));
-
-    await clickCommitButton();
-    expect(screen.getByTestId("forge-plan-committed")).toBeInTheDocument();
-
-    // A second build_plan proposal lands in the SAME thread — mints a fresh
-    // planResult for plan B (imp_2). The prior commit must not leak onto it.
-    importMocks.runPlanBuild.mockResolvedValueOnce(planBuildResult("imp_2"));
-    fireEvent.change(fileInput, { target: { files: [new File(["y"], "imp_2.pdf")] } });
-    mockStreamState = makeStreamState({ lastToolRender: buildPlanFrame("imp_2"), send });
-    await act(async () => {
-      rerender(<ForgePanel clientId={null} scenarioNames={{}} forceOpenForTest />);
+    expect(importMocks.runPlanBuild).toHaveBeenCalledExactlyOnceWith({
+      clientId: "c9",
+      importId: "imp_1",
+      files: [expect.any(File)],
     });
-
-    expect(screen.queryByTestId("forge-plan-committed")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Commit everything now" })).toBeInTheDocument();
   });
 
-  it("names the household the plan commits to, taken from the server's frame", async () => {
+  it("links to the fact finder screen the build returned", async () => {
+    await mountWithBuiltPlan("imp_1", planBuildResult("imp_1"));
+
+    expect(screen.getByRole("link", { name: /review & apply/i })).toHaveAttribute(
+      "href",
+      "/clients/c9/details/import/imp_1/fact-finder",
+    );
+  });
+
+  it("shows no commit button and asks no questions", async () => {
+    await mountWithBuiltPlan("imp_1", planBuildResult("imp_1"));
+
+    expect(screen.queryByRole("button", { name: /commit/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /skip/i })).not.toBeInTheDocument();
+    expect(importMocks.commitAllTabs).not.toHaveBeenCalled();
+    expect(importMocks.submitPlanAnswers).not.toHaveBeenCalled();
+  });
+
+  it("an ingest_fact_finder frame ends the same way — the link only", async () => {
     importMocks.runPlanBuild.mockResolvedValueOnce(planBuildResult("imp_1"));
     mockStreamState = makeStreamState({ lastToolRender: null });
     const { rerender } = mountGlobalPanel();
@@ -586,45 +586,11 @@ describe("ForgePanel — Commit everything now (Task 8)", () => {
       rerender(<ForgePanel clientId={null} scenarioNames={{}} forceOpenForTest />);
     });
 
-    expect(screen.getByRole("button", { name: /commit everything/i })).toHaveTextContent(
-      "Commit everything to Jones-Smith Household",
+    expect(importMocks.runPlanBuild).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("link", { name: /review & apply/i })).toHaveAttribute(
+      "href",
+      "/clients/c9/details/import/imp_1/fact-finder",
     );
-  });
-
-  it("names the open client when the build ran in that client's workspace", async () => {
-    importMocks.runPlanBuild.mockResolvedValueOnce({ ...planBuildResult("imp_1"), clientId: "c1" });
-    mockStreamState = makeStreamState({ lastToolRender: null });
-    const { rerender } = render(
-      <ForgePanel clientId="c1" clientName="Smith Household" scenarioNames={{}} forceOpenForTest />,
-    );
-    fireEvent.change(screen.getByTestId("forge-file-input"), {
-      target: { files: [new File(["x"], "stmt.pdf")] },
-    });
-
-    mockStreamState = makeStreamState({
-      lastToolRender: {
-        type: "tool_render",
-        name: "build_plan",
-        status: "complete",
-        data: { clientId: "c1", importId: "imp_1", mode: "existing" },
-      },
-    });
-    await act(async () => {
-      rerender(<ForgePanel clientId="c1" clientName="Smith Household" scenarioNames={{}} forceOpenForTest />);
-    });
-
-    expect(screen.getByRole("button", { name: /commit everything/i })).toHaveTextContent(
-      "Commit everything to Smith Household",
-    );
-  });
-
-  it("does not show the committed message when commitAllTabs resolves a partial 'review' status (finding 3)", async () => {
-    importMocks.commitAllTabs.mockResolvedValue({ status: "review" });
-    await mountWithBuiltPlan("imp_1", planBuildResult("imp_1"));
-
-    await clickCommitButton();
-
-    expect(screen.queryByTestId("forge-plan-committed")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Commit everything now" })).toBeInTheDocument();
+    expect(screen.queryByText(/commit everything/i)).not.toBeInTheDocument();
   });
 });

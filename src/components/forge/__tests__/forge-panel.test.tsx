@@ -153,8 +153,12 @@ describe("ForgePanel", () => {
       fireEvent.click(screen.getByLabelText("Send message"));
     });
 
-    // Review link (commit hand-off) appears.
+    // Review link (commit hand-off) appears — a classic attach is a wizard import.
     expect(await screen.findByTestId("forge-import-review")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /review & apply/i })).toHaveAttribute(
+      "href",
+      "/clients/c1/details/import/imp_1",
+    );
 
     // The chat turn fired with the import id and an empty (attachment-only) message.
     const calls = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;

@@ -49,10 +49,16 @@ vi.mock("@/db", () => {
     db: { select },
   };
 });
-// drizzle-orm eq is called inside the tool; pass it through harmlessly.
+// drizzle-orm's filters are called inside the tool; record them as plain
+// markers so a test can read which rows a query asked for.
 vi.mock("drizzle-orm", async (orig) => {
   const actual = (await orig()) as Record<string, unknown>;
-  return { ...actual, eq: (...a: unknown[]) => ({ __eq: a }) };
+  return {
+    ...actual,
+    eq: (...a: unknown[]) => ({ __eq: a }),
+    and: (...a: unknown[]) => ({ __and: a }),
+    isNull: (...a: unknown[]) => ({ __isNull: a }),
+  };
 });
 vi.mock("@/db/schema", () => ({
   scenarios: { id: "id", name: "name", isBaseCase: "isBaseCase", clientId: "clientId" },
@@ -66,6 +72,7 @@ vi.mock("@/db/schema", () => ({
     orgId: "orgId",
     discardedAt: "discardedAt",
   },
+  clientImportFiles: { importId: "importId", deletedAt: "deletedAt" },
 }));
 
 const loadPanelData = vi.fn();
@@ -369,11 +376,68 @@ describe("summarizeImport — dependents count", () => {
   });
 });
 
+describe("read.ts — read_import", () => {
+  it("summarizes a fact finder import by its live files and its screen, not the legacy payload", async () => {
+    dbWhere
+      // 1. the import row
+      .mockResolvedValueOnce([{ id: "imp1", status: "draft", payloadJson: { factFinder: { version: 3 } } }])
+      // 2. its live (not deleted) files
+      .mockResolvedValueOnce([{ count: 2 }]);
+
+    const out = JSON.parse((await tool("read_import").invoke({ importId: "imp1" })) as string);
+
+    expect(out).toEqual({
+      found: true,
+      importId: "imp1",
+      status: "draft",
+      factFinder: true,
+      fileCount: 2,
+      reviewPath: "/clients/client-1/details/import/imp1/fact-finder",
+      note: "This is a fact finder import — its documents are read on the fact finder screen.",
+    });
+    // Counts only the import's live files — a removed file isn't one.
+    expect(dbWhere).toHaveBeenNthCalledWith(2, {
+      __and: [{ __eq: ["importId", "imp1"] }, { __isNull: ["deletedAt"] }],
+    });
+  });
+
+  it("still summarizes a wizard import's extracted payload", async () => {
+    dbWhere.mockResolvedValueOnce([{ id: "imp1", status: "draft", payloadJson: {} }]);
+
+    const out = JSON.parse((await tool("read_import").invoke({ importId: "imp1" })) as string);
+
+    expect(out).toEqual({ found: true, importId: "imp1", status: "draft", note: "extraction not complete yet", counts: {} });
+    expect(dbWhere).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("read.ts — extract_import", () => {
   beforeEach(() => {
     authMock.mockResolvedValue({
       sessionClaims: { org_public_metadata: { entitlements: ["ai_import"] } },
     });
+  });
+
+  it.each([
+    ["a fact finder import", { factFinder: { version: 0 } }],
+    ["a statement-chat import from before the switch", { chat: { surface: "chat" } }],
+  ])("refuses %s before the AI read", async (_label, payloadJson) => {
+    checkImportRateLimit.mockResolvedValue({ allowed: true });
+    dbWhere.mockResolvedValueOnce([
+      { id: "imp1", status: "draft", mode: "onboarding", scenarioId: "scen-1", payloadJson },
+    ]);
+
+    const out = JSON.parse((await tool("extract_import").invoke({ importId: "imp1" })) as string);
+
+    expect(out).toEqual({
+      found: true,
+      importId: "imp1",
+      note: "This is a fact finder import — its documents are read on the fact finder screen.",
+      reviewPath: "/clients/client-1/details/import/imp1/fact-finder",
+    });
+    expect(runImportExtraction).not.toHaveBeenCalled();
+    expect(runImportMatching).not.toHaveBeenCalled();
+    expect(checkImportRateLimit).not.toHaveBeenCalled();
   });
 
   it("refuses without calling the extractor when the firm's AI import is off", async () => {

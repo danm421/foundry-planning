@@ -47,6 +47,8 @@ vi.mock("@/lib/clients/authz", () => ({
 }));
 
 import { ensurePlanImport, findImportTargetName } from "../plan-builder-core";
+import { isFactFinderImport } from "../import-kind";
+import { emptyFactFinderState } from "@/lib/fact-finder/state";
 
 beforeEach(() => {
   Object.values(m).forEach((fn) => fn.mockReset());
@@ -82,8 +84,12 @@ describe("ensurePlanImport", () => {
         mode: "updating",
         status: "draft",
         createdByUserId: "u1",
+        extractHoldings: true,
       });
       expect(insertArg).not.toHaveProperty("origin");
+      // A fact finder import, exactly as the mode picker creates one.
+      expect(insertArg.payloadJson).toEqual({ factFinder: emptyFactFinderState() });
+      expect(isFactFinderImport(insertArg.payloadJson as never)).toBe(true);
 
       expect(m.recordAudit).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -205,8 +211,11 @@ describe("ensurePlanImport", () => {
         mode: "onboarding",
         status: "draft",
         createdByUserId: "u1",
+        extractHoldings: true,
       });
       expect(insertArg).not.toHaveProperty("origin");
+      expect(insertArg.payloadJson).toEqual({ factFinder: emptyFactFinderState() });
+      expect(isFactFinderImport(insertArg.payloadJson as never)).toBe(true);
 
       expect(m.recordAudit).toHaveBeenCalledWith(
         expect.objectContaining({
