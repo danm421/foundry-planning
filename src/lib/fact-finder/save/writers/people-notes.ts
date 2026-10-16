@@ -31,7 +31,7 @@ const external_beneficiary: SaveWriter = {
     const name = typeof input.body.name === "string" ? input.body.name.trim() : "";
     const onPlan = await ctx.tx.select({ name: externalBeneficiaries.name }).from(externalBeneficiaries).where(eq(externalBeneficiaries.clientId, ctx.clientId));
     if (name && onPlan.some((r) => nameKey(r.name) === nameKey(name))) {
-      throw new SaveLineError(`A charity named “${name}” was added to the plan since you reviewed — review again.`);
+      throw new SaveLineError(`The plan already has a charity named “${name}” — link this row to it, or untick it.`);
     }
     return unwrap(await createExternalBeneficiaryForClient({ clientId: ctx.clientId, input: input.body, tx: ctx.tx, afterCommit: ctx.afterCommit })).resourceId;
   },

@@ -66,7 +66,7 @@ describe("charity save writer", () => {
     const refused = inSave(scope, (ctx) => charity.create(ctx, inputOf(dup)));
     await expect(refused).rejects.toThrow(SaveLineError);
     await expect(inSave(scope, (ctx) => charity.create(ctx, inputOf(dup)))).rejects.toThrow(
-      "A charity named “red cross” was added to the plan since you reviewed — review again.",
+      "The plan already has a charity named “red cross” — link this row to it, or untick it.",
     );
     // Two Creates of one name in one save: the second sees the first on the transaction.
     await expect(
@@ -74,7 +74,7 @@ describe("charity save writer", () => {
         await charity.create(ctx, inputOf(changeLine("external_beneficiary", { name: "Habitat" })));
         await charity.create(ctx, inputOf(changeLine("external_beneficiary", { name: "HABITAT" })));
       }),
-    ).rejects.toThrow(/added to the plan since you reviewed/);
+    ).rejects.toThrow("The plan already has a charity named “HABITAT” — link this row to it, or untick it.");
     const rows = await db.select().from(externalBeneficiaries).where(eq(externalBeneficiaries.clientId, seed.clientId));
     expect(rows.filter((r) => r.name.toLowerCase().trim() === "habitat")).toHaveLength(0);
     expect(rows.filter((r) => r.name === "Red Cross")).toHaveLength(1);
