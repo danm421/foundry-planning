@@ -2,6 +2,7 @@
 
 import type { ReactElement } from "react";
 import { CurrencyInput } from "@/components/portal/currency-input";
+import { formatAccountSubType } from "@/lib/accounts/category-labels";
 import { CATEGORY_LABELS, CATEGORY_ORDER } from "@/lib/portal/account-rail";
 import { PORTAL_VISIBLE_CATEGORIES } from "@/lib/portal/account-visibility";
 
@@ -20,7 +21,9 @@ interface TrustEntity {
 export const SUBTYPES_BY_CATEGORY: Record<string, string[]> = {
   cash: ["checking", "savings", "other"],
   taxable: ["brokerage", "other"],
-  retirement: ["traditional_ira", "roth_ira", "401k", "403b", "529", "other"],
+  // HSA belongs here, not under cash: the engine's HSA tax and withdrawal
+  // rules key on category "retirement". 529 is its own category now.
+  retirement: ["traditional_ira", "roth_ira", "401k", "403b", "401a", "sep_ira", "simple_ira", "hsa", "other"],
   // An annuity's sub-type IS its tax treatment (`account_sub_type` carries the
   // same three values as `annuity_tax_treatment`). 'other' is no longer one
   // the advisor's Account Type dropdown offers.
@@ -108,7 +111,9 @@ export function AccountFormPanel({
   disabled: boolean;
   plaidLocked: boolean;
 }): ReactElement {
-  const subTypes = SUBTYPES_BY_CATEGORY[form.category] ?? ["other"];
+  const offered = SUBTYPES_BY_CATEGORY[form.category] ?? ["other"];
+  // Keep an existing sub-type the list doesn't offer, so Save never rewrites it.
+  const subTypes = offered.includes(form.subType) ? offered : [...offered, form.subType];
   const eligibleOwners = familyMembers.filter((m) => m.role === "client" || m.role === "spouse");
 
   function toggleFm(id: string) {
@@ -185,7 +190,7 @@ export function AccountFormPanel({
             className="rounded-md border border-hair bg-paper px-2 py-1"
           >
             {subTypes.map((s) => (
-              <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
+              <option key={s} value={s}>{formatAccountSubType(s)}</option>
             ))}
           </select>
         </label>

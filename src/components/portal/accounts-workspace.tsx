@@ -11,6 +11,7 @@ import {
 } from "@/lib/portal/account-rail";
 import { PLAID_LOCKED_FIELDS, LIABILITY_PLAID_LOCKED_FIELDS } from "@/lib/portal/plaid-locked-fields";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
+import { formatAccountSubType } from "@/lib/accounts/category-labels";
 import { AccountRailNav, TOTAL_KEY, type RailSelection } from "@/components/portal/account-rail-nav";
 import { AccountsPanel } from "@/components/portal/accounts-panel";
 import { AccountDetailPanel, DebtDetailPanel } from "@/components/portal/account-detail-panel";
@@ -363,7 +364,7 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
             name: a.name,
             value: a.value,
             categoryLabel: CATEGORY_LABELS[a.category] ?? a.category,
-            subTypeLabel: a.subType.replace(/_/g, " "),
+            subTypeLabel: formatAccountSubType(a.subType),
             last4: a.last4,
             isPlaid: a.isPlaidLinked,
             ownerLabel: accountOwnerLabel(a.id),
