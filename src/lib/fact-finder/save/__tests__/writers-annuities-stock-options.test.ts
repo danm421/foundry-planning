@@ -27,6 +27,7 @@ import {
 } from "@/db/schema";
 import type { RecordRef, TargetKind } from "@/lib/fact-finder/change-set";
 import { SaveLineError } from "../types";
+import { ACCOUNT_WRITERS } from "../writers/accounts";
 import { ANNUITY_STOCK_WRITERS } from "../writers/annuities-stock-options";
 import { SAVE_ACTOR, changeLine, dropSaveFirm, inSave, inputOf, seedSaveClient, type SaveSeed } from "./harness";
 
@@ -37,6 +38,7 @@ const d = HAS_DB ? describe : describe.skip;
 const { annuity_contract: contracts, stock_option_account: optionAccounts, stock_option_grant: grants } = ANNUITY_STOCK_WRITERS;
 const rollback = { rollback: true };
 const record = (target: TargetKind, id: string): RecordRef => ({ ref: "record", target, id });
+const CLIENT: RecordRef = { ref: "person", role: "client" };
 const FOUR_VESTS = [
   { vestDate: "2025-03-01", shares: 250 },
   { vestDate: "2026-03-01", shares: 250 },
@@ -243,6 +245,74 @@ d("annuity contract and stock option save writers", () => {
       rollback,
     );
     expect(result.owners).toEqual([result.laura]);
+  });
+
+  it("(c) a stock option account on record moved to the co-client a household line added earlier in the save", async () => {
+    const { result: accountId } = await inSave(at(), (ctx) => optionAccounts.create(ctx, inputOf(changeLine("stock_option_account", { name: "Acme Options", owner: "client" }))));
+    const { result } = await inSave(
+      at(),
+      async (ctx) => {
+        const [laura] = await ctx.tx
+          .insert(familyMembers)
+          .values({ clientId: seed.clientId, firstName: "Laura", lastName: "Hendricks", role: "spouse", relationship: "other", dateOfBirth: "1970-09-30" })
+          .returning({ id: familyMembers.id });
+        await optionAccounts.update(ctx, inputOf(changeLine("stock_option_account", { owner: "spouse" }, { recordId: accountId })));
+        const owners = await ctx.tx.select().from(accountOwners).where(eq(accountOwners.accountId, accountId));
+        return { laura: laura.id, owners: owners.map((o) => o.familyMemberId) };
+      },
+      rollback,
+    );
+    expect(result.owners).toEqual([result.laura]);
+  });
+
+  it("(d) an annuity account changed to Qualified with no contract line: its contract follows the account, as the Details form re-saves it", async () => {
+    const accountId = await annuityAccount("Lincoln MYGA");
+    await db.insert(annuityContracts).values({ accountId, carrier: "Lincoln", productType: "myga", taxTreatment: "non_qualified", costBasis: "90000" });
+    const toQualified = changeLine("account", { subType: "qualified" }, { recordId: accountId });
+
+    await inSave(at(), (ctx) => ACCOUNT_WRITERS.account.update(ctx, inputOf(toQualified)));
+    expect(await contractOf(accountId)).toMatchObject({ taxTreatment: "qualified", carrier: "Lincoln", productType: "myga", costBasis: "90000.00" });
+    expect((await auditOf([accountId])).map((a) => a.action)).toEqual(["account.update", "account.annuity.update"]);
+
+    // An account line that leaves the tax treatment alone leaves the contract alone.
+    await inSave(at(), (ctx) => ACCOUNT_WRITERS.account.update(ctx, inputOf(changeLine("account", { value: 125000 }, { recordId: accountId }))));
+    expect((await auditOf([accountId])).map((a) => a.action)).toEqual(["account.update", "account.annuity.update", "account.update"]);
+  });
+
+  it("(d) a new qualified annuity with no contract line gets a contract that taxes it as qualified", async () => {
+    const line = changeLine(
+      "account",
+      { name: "Pacific IRA Annuity", value: 80000, subType: "qualified", owners: [{ who: CLIENT, percent: 1 }] },
+      { fixed: { category: "annuity" } },
+    );
+    const { result: accountId } = await inSave(at(), (ctx) => ACCOUNT_WRITERS.account.create(ctx, inputOf(line, { "person:client": seed.clientMemberId })));
+    expect(await contractOf(accountId)).toMatchObject({ taxTreatment: "qualified", productType: "fixed", incomeMode: "none", costBasis: null });
+    expect((await auditOf([accountId])).map((a) => a.action)).toEqual(["account.create", "account.annuity.update"]);
+  });
+
+  it("(d) a new annuity and its contract line in one save: the contract line's values over the synced contract", async () => {
+    const accountLine = changeLine(
+      "account",
+      { name: "Nationwide Roth Annuity", value: 60000, subType: "tax_free", owners: [{ who: CLIENT, percent: 1 }] },
+      { fixed: { category: "annuity" } },
+    );
+    const contractLine = changeLine(
+      "annuity_contract",
+      { costBasis: 40000, productType: "variable" },
+      { parent: { ref: "line", target: "account", lineId: accountLine.id } },
+    );
+    const { result: accountId } = await inSave(at(), async (ctx) => {
+      const id = await ACCOUNT_WRITERS.account.create(ctx, inputOf(accountLine, { "person:client": seed.clientMemberId }));
+      await contracts.create(ctx, inputOf(contractLine, { [`line:${accountLine.id}`]: id }));
+      return id;
+    });
+    expect(await contractOf(accountId)).toMatchObject({ taxTreatment: "tax_free", productType: "variable", costBasis: "40000.00" });
+  });
+
+  it("(d) a new account that isn't an annuity gets no contract", async () => {
+    const line = changeLine("account", { name: "Plain Brokerage", value: 1000, owners: [{ who: CLIENT, percent: 1 }] }, { fixed: { category: "taxable" } });
+    const { result: accountId } = await inSave(at(), (ctx) => ACCOUNT_WRITERS.account.create(ctx, inputOf(line, { "person:client": seed.clientMemberId })));
+    expect(await contractOf(accountId)).toBeUndefined();
   });
 
   it("(d) a contract Update keeps every column the line doesn't carry", async () => {

@@ -19,6 +19,7 @@ import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-hol
 import type { PlacedValue } from "../../change-set";
 import { holdingKey, holdingValue } from "../../state";
 import { unwrap, type PlannedLine, type SaveContext, type SaveWriter } from "../types";
+import { syncContractToAccount } from "./annuities-stock-options";
 
 type HoldingRow = typeof accountHoldings.$inferSelect;
 type Position = Record<string, PlacedValue>;
@@ -153,10 +154,15 @@ async function saveHoldings(ctx: SaveContext, accountId: string, positions: Posi
   ctx.afterCommit(() => syncAccountFromHoldings(accountId));
 }
 
-/** A business is an account (category business): the same write path; its lines carry no address or positions. */
+/**
+ * A business is an account (category business): the same write path; its lines carry no address or positions.
+ * An annuity's contract follows its account (syncContractToAccount) when the account is new or its tax treatment
+ * (its sub-type) is on the line — the engine taxes an annuity by its contract.
+ */
 const accountWriter: SaveWriter = {
   async create(ctx, { values, body }) {
     const { data } = unwrap(await createAccountForClient({ ...coreArgs(ctx), input: body }));
+    if (data.category === "annuity") await syncContractToAccount(ctx, data.id);
     if (typeof values.propertyAddress === "string") {
       await ctx.tx
         .update(accounts)
@@ -169,6 +175,7 @@ const accountWriter: SaveWriter = {
   },
   async update(ctx, { values, body, recordId }) {
     const { data } = unwrap(await updateAccountForClient({ ...coreArgs(ctx), accountId: recordId!, input: body }));
+    if (data.category === "annuity" && "subType" in values) await syncContractToAccount(ctx, data.id);
     const positions = positionsOf(values);
     if (positions) await saveHoldings(ctx, data.id, positions, numberOf(values.value));
   },

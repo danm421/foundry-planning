@@ -57,6 +57,17 @@ async function upsertContract(ctx: SaveContext, accountId: string, body: Body): 
   return accountId;
 }
 
+/**
+ * An annuity account's contract brought in step with it — the Details form's
+ * second write when it saves an annuity account: the contract on record (else
+ * the schema's defaults) upserted, audited, the core taking the tax treatment
+ * from the account's sub-type. The account writer calls it; a contract line
+ * later in the save upserts over it.
+ */
+export async function syncContractToAccount(ctx: SaveContext, accountId: string): Promise<void> {
+  await upsertContract(ctx, accountId, {});
+}
+
 /** A grant on record (scoped by account and client), its vest rows in their order; null when it isn't there. */
 async function grantOnRecord(ctx: SaveContext, accountId: string, grantId: string): Promise<GrantOnRecord | null> {
   const [row] = await ctx.tx
