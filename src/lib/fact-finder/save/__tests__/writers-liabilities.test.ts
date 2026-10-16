@@ -8,7 +8,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { accountOwners, accounts, auditLog, entities, liabilities, liabilityOwners } from "@/db/schema";
+import { accountOwners, accounts, auditLog, entities, familyMembers, liabilities, liabilityOwners } from "@/db/schema";
 import { LIABILITY_WRITERS } from "../writers/liabilities";
 import { SaveLineError } from "../types";
 import { changeLine, dropSaveFirm, inputOf, inSave, seedSaveClient, type SaveSeed } from "./harness";
@@ -157,6 +157,31 @@ describe("liability save writer", () => {
     });
     expect((await liabilityRow(loanId)).linkedPropertyId).toBe(houseId);
     expect((await ownerRows(loanId)).map((o) => o.entityId)).toEqual([trustId]);
+    // The update's after-snapshot read the house on the same transaction — not "(deleted)".
+    const [audit] = await auditOf(loanId, "liability.update");
+    expect(JSON.stringify(audit.metadata)).toContain("Lake House");
+    expect(JSON.stringify(audit.metadata)).not.toContain("(deleted)");
+  });
+
+  it("(c) a joint loan owned with the co-client a household line added earlier in the save", async () => {
+    const single = await seedSaveClient(FIRM);
+    const { result } = await inSave(
+      { clientId: single.clientId, firmId: FIRM },
+      async (ctx) => {
+        // As the household writer leaves it: the co-client's family member, on the transaction.
+        const [laura] = await ctx.tx
+          .insert(familyMembers)
+          .values({ clientId: single.clientId, firstName: "Laura", lastName: "Hendricks", role: "spouse", relationship: "other", dateOfBirth: "1970-09-30" })
+          .returning({ id: familyMembers.id });
+        const line = changeLine("liability", { ...loanFields("Joint HELOC"), owners: [...jointOwners] });
+        const id = await writer.create(ctx, inputOf(line, { "person:client": single.clientMemberId, "person:spouse": laura.id }));
+        const owners = await ctx.tx.select().from(liabilityOwners).where(eq(liabilityOwners.liabilityId, id));
+        return { laura: laura.id, owners: owners.map((o) => [o.familyMemberId, Number(o.percent)]) };
+      },
+      { rollback: true },
+    );
+    expect(result.owners).toEqual(expect.arrayContaining([[single.clientMemberId, 0.5], [result.laura, 0.5]]));
+    expect(result.owners).toHaveLength(2);
   });
 
   it("(c) the same mortgage in a save that rolls back leaves neither the house, the trust nor the loan", async () => {
@@ -225,6 +250,33 @@ describe("liability save writer", () => {
     const line = changeLine("liability", { owners: [{ who: { ref: "person", role: "spouse" }, percent: 1 }] }, { recordId: id });
     await inSave(scope, (ctx) => writer.update(ctx, inputOf(line, ids())));
     expect((await ownerRows(id)).map((o) => [o.familyMemberId, Number(o.percent)])).toEqual([[seed.spouseMemberId, 1]]);
+  });
+
+  it("a loan type the plan can't save is refused before the loan is written or changed", async () => {
+    const { result } = await inSave(
+      scope,
+      async (ctx) => {
+        const auditRows = () => ctx.tx.select({ id: auditLog.id }).from(auditLog).where(eq(auditLog.clientId, seed.clientId));
+        const before = (await auditRows()).length;
+        const onRecord = await writer.create(ctx, inputOf(changeLine("liability", loanFields("Typed loan")), ids()));
+        const afterCreate = (await auditRows()).length;
+        const create = await writer.create(ctx, inputOf(changeLine("liability", { ...loanFields("Boat loan"), liabilityType: "boat" }), ids())).catch((e: unknown) => e);
+        const update = await writer.update(ctx, inputOf(changeLine("liability", { balance: 1, liabilityType: "boat" }, { recordId: onRecord }), ids())).catch((e: unknown) => e);
+        const boat = await ctx.tx.select().from(liabilities).where(and(eq(liabilities.clientId, seed.clientId), eq(liabilities.name, "Boat loan")));
+        const [typed] = await ctx.tx.select().from(liabilities).where(eq(liabilities.id, onRecord));
+        return { create, update, boat, balance: Number(typed.balance), audits: [before, afterCreate, (await auditRows()).length] };
+      },
+      { rollback: true },
+    );
+    for (const refused of [result.create, result.update]) {
+      expect(refused).toBeInstanceOf(SaveLineError);
+      expect(refused).toMatchObject({ message: "The loan type isn't one the plan can save." });
+    }
+    expect(result.boat).toEqual([]);
+    expect(result.balance).toBe(18500);
+    // Only the typed loan's own audit row: neither refused line reached the write path.
+    expect(result.audits[2]).toBe(result.audits[1]);
+    expect(result.audits[1]).toBe(result.audits[0] + 1);
   });
 
   it("an update with no record is refused", async () => {
