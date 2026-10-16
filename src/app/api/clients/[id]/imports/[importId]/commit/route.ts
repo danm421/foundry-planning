@@ -11,7 +11,7 @@ import {
     NotFoundError,
     requireImportAccess,
 } from "@/lib/imports/authz";
-import { refuseSavedFactFinder, refuseFactFinderImport } from "@/lib/imports/saved-fact-finder";
+import { refuseFactFinderImport } from "@/lib/imports/saved-fact-finder";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { resolveHoldingsForCommit } from "@/lib/imports/commit/holdings";
 import { commitTabs } from "@/lib/imports/commit/orchestrator";
@@ -144,10 +144,8 @@ export async function POST(request: NextRequest, { params }: Params) {
             firmId,
             userId,
         });
-        const saved = refuseSavedFactFinder(imp);
-        if (saved) return saved;
-        const notFactFinder = refuseFactFinderImport(imp);
-        if (notFactFinder) return notFactFinder;
+        const notWizardImport = refuseFactFinderImport(imp);
+        if (notWizardImport) return notWizardImport;
 
         if (imp.mode === "updating" && !imp.scenarioId) {
             return NextResponse.json(

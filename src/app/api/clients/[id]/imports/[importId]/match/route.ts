@@ -7,7 +7,7 @@ import {
     ForbiddenError,
     NotFoundError,
 } from "@/lib/imports/authz";
-import { refuseSavedFactFinder, refuseFactFinderImport } from "@/lib/imports/saved-fact-finder";
+import { refuseFactFinderImport } from "@/lib/imports/saved-fact-finder";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { runImportMatching } from "@/lib/imports/run-matching";
@@ -71,10 +71,8 @@ export async function POST(_request: NextRequest, { params }: Params) {
             firmId,
             userId,
         });
-        const saved = refuseSavedFactFinder(imp);
-        if (saved) return saved;
-        const notFactFinder = refuseFactFinderImport(imp);
-        if (notFactFinder) return notFactFinder;
+        const notWizardImport = refuseFactFinderImport(imp);
+        if (notWizardImport) return notWizardImport;
 
         const fileResults =
             (imp.payloadJson as ImportPayloadJson)?.fileResults ?? {};

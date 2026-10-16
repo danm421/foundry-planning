@@ -2,15 +2,6 @@
 // file, so a value import here would close a runtime require cycle.
 import type { Annotated } from "../types";
 
-export type AssembleQuestionKind = "identity" | "assumption" | "conflict" | "missing";
-export interface AssembleQuestion {
-  id: string;              // stable, deterministic (no Math.random) — e.g. `q:retirement_age`
-  kind: AssembleQuestionKind;
-  field: string;           // dotted path, e.g. "client.retirementAge"
-  prompt: string;          // advisor-facing question
-  options?: string[];      // optional multiple-choice
-  answer?: string;         // filled once answered
-}
 export interface AssembleAssumption {
   field: string;           // dotted path
   value: string | number;  // the defaulted value
@@ -68,7 +59,6 @@ export interface AssembleState {
   version: 1;
   mergedFileCount: number; // how many source files were merged
   assumptions: AssembleAssumption[];
-  questions: AssembleQuestion[];
   /**
    * Free-text notes surfaced by the planner (Task 13/15) — advisor-facing
    * context that isn't a question or an assumption. Optional and additive:

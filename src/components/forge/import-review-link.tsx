@@ -5,7 +5,7 @@ interface ImportReviewLinkProps {
   /** The screen the import is reviewed on (`importScreenPath`). */
   href: string;
   /** Non-fatal orchestration warnings (e.g. partial extraction). */
-  warnings: string[];
+  warnings?: string[];
 }
 
 /**
@@ -14,7 +14,7 @@ interface ImportReviewLinkProps {
  * classic attach, the fact finder for a plan build — plus any non-fatal
  * warnings worth surfacing inline.
  */
-export function ImportReviewLink({ href, warnings }: ImportReviewLinkProps) {
+export function ImportReviewLink({ href, warnings = [] }: ImportReviewLinkProps) {
   return (
     <div data-testid="forge-import-review" className="space-y-1">
       {warnings.length > 0 && (

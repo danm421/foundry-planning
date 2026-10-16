@@ -18,7 +18,7 @@ import {
 } from "@/lib/crm/households";
 import { isUSPSStateCode } from "@/lib/usps-states";
 import { createClientForHousehold } from "@/lib/clients/create-client";
-import { ensurePlanImport, findImportTargetName } from "@/lib/imports/plan-builder-core";
+import { ensurePlanImport } from "@/lib/imports/plan-builder-core";
 import { emitNavigate, emitPageLink, emitToolRender } from "../custom-events";
 import type { ForgeGlobalToolContext } from "../context";
 
@@ -272,9 +272,7 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
           firmId, actorId: ctx.userId,
           metadata: { tool: "build_plan", conversationId, clientId, mode: "new" },
         });
-        await emitToolRender("build_plan", "complete", {
-          clientId, importId, mode: "new", householdName: args.householdName,
-        });
+        await emitToolRender("build_plan", "complete", { clientId, importId });
         // NO emitNavigate — the advisor stays in Forge to drop files.
         return JSON.stringify({ clientId, importId, mode: "new" });
       } catch (e) {
@@ -350,12 +348,7 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
             actorId: ctx.userId,
             metadata: { tool: "ingest_fact_finder", conversationId, clientId, mode: "updating" },
           });
-          // The panel names this household on its commit button. A failed
-          // lookup only drops the name — the import is already made.
-          const householdName = await findImportTargetName(clientId, firmId).catch(() => null);
-          await emitToolRender("ingest_fact_finder", "complete", {
-            clientId, importId, mode: "updating", householdName,
-          });
+          await emitToolRender("ingest_fact_finder", "complete", { clientId, importId });
           return JSON.stringify({ clientId, importId, mode: "updating" });
         }
 
@@ -399,9 +392,7 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
           actorId: ctx.userId,
           metadata: { tool: "ingest_fact_finder", conversationId, clientId, mode: "new" },
         });
-        await emitToolRender("ingest_fact_finder", "complete", {
-          clientId, importId, mode: "new", householdName: args.householdName,
-        });
+        await emitToolRender("ingest_fact_finder", "complete", { clientId, importId });
         return JSON.stringify({ clientId, importId, mode: "new" });
       } catch (e) {
         return e instanceof Error ? e.message : "Failed to ingest the fact finder.";

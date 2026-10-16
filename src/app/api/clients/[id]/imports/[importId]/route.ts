@@ -13,7 +13,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "@/lib/imports/authz";
-import { noSavedFactFinder, refuseSavedFactFinder, refuseFactFinderImport, savedFactFinderRefusal } from "@/lib/imports/saved-fact-finder";
+import { noSavedFactFinder, refuseFactFinderImport, savedFactFinderRefusal } from "@/lib/imports/saved-fact-finder";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -219,10 +219,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       firmId,
       userId,
     });
-    const saved = refuseSavedFactFinder(imp);
-    if (saved) return saved;
-    const notFactFinder = refuseFactFinderImport(imp);
-    if (notFactFinder) return notFactFinder;
+    const notWizardImport = refuseFactFinderImport(imp);
+    if (notWizardImport) return notWizardImport;
 
     let body: unknown;
     try {

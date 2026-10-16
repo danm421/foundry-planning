@@ -8,7 +8,7 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { listClientImports } from "@/lib/imports/list";
 import { verifyClientAccess } from "@/lib/clients/authz";
-import { emptyFactFinderState } from "@/lib/fact-finder/state";
+import { factFinderImportSeed } from "@/lib/imports/import-kind";
 
 export const dynamic = "force-dynamic";
 
@@ -162,18 +162,12 @@ export async function POST(request: NextRequest, { params }: Params) {
         orgId: firmId,
         scenarioId: typeof scenarioId === "string" ? scenarioId : null,
         mode: importMode,
-        // The fact finder reviews positions, so it reads them. The wizard
-        // keeps the column default and its own checkbox — this is the fact
-        // finder's default, not a new global one.
-        ...(isFactFinderSurface ? { extractHoldings: true } : {}),
         status: "draft",
         createdByUserId: userId,
         notes: typeof notes === "string" ? notes : null,
-        // The slice marks the import as a fact finder import. Omitted for a
-        // wizard import so `payloadJson` keeps its `'{}'` column default.
-        ...(isFactFinderSurface
-          ? { payloadJson: { factFinder: emptyFactFinderState() } }
-          : {}),
+        // A wizard import keeps the column defaults: `payloadJson` `'{}'` and
+        // its own holdings checkbox.
+        ...(isFactFinderSurface ? factFinderImportSeed() : {}),
       })
       .returning();
 

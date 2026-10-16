@@ -5,8 +5,7 @@ import { clientImports, entities, familyMembers } from "@/db/schema";
 import { FactFinderScreen } from "@/components/fact-finder/fact-finder-screen";
 import { FinishedImportNotice } from "@/components/fact-finder/finished-import-notice";
 import { requireClientPageAccess } from "@/lib/clients/page-access";
-import { importScreenPath, isFactFinderImport } from "@/lib/imports/import-kind";
-import { isSavedFactFinder } from "@/lib/imports/saved-fact-finder";
+import { importScreenPath, isFactFinderImport, isFinishedInStatementChat, isSavedFactFinder } from "@/lib/imports/import-kind";
 import { listClientDocuments } from "@/lib/imports/client-documents";
 import { listLiveFiles } from "@/lib/fact-finder/persist";
 import { readFactFinderState } from "@/lib/fact-finder/state";
@@ -50,11 +49,10 @@ export default async function FactFinderPage({ params }: PageProps) {
 
   const payloadJson = (imp.payloadJson ?? {}) as ImportPayloadJson;
   if (!isFactFinderImport(payloadJson)) redirect(importScreenPath(clientId, importId, false));
-  // Committed without a saved fact finder: finished in statement chat, before the switch.
-  const saved = isSavedFactFinder(payloadJson);
-  if (imp.status === "committed" && !saved) {
+  if (isFinishedInStatementChat(imp.status, payloadJson)) {
     return <FinishedImportNotice clientId={clientId} finishedAt={(imp.committedAt ?? imp.updatedAt).toISOString()} />;
   }
+  const saved = isSavedFactFinder(payloadJson);
 
   const [files, entityRows, coClient, clientDocuments] = await Promise.all([
     listLiveFiles(importId),

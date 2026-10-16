@@ -341,7 +341,7 @@ export function ForgePanel({
   }, [pendingWalkthrough, walkthrough, setPendingWalkthrough, close]);
 
   // Custom-streaming seam: consume a `build_plan` or `ingest_fact_finder`
-  // tool_render frame (same {clientId, importId, mode} shape). Tool results go
+  // tool_render frame (same {clientId, importId} shape). Tool results go
   // to the model, not the client — this is the only way the panel learns the
   // clientId/importId either call just minted (client mode already knows its
   // clientId; global mode does not until this frame lands).
@@ -357,8 +357,7 @@ export function ForgePanel({
       typeof data !== "object" ||
       data === null ||
       typeof (data as Record<string, unknown>).clientId !== "string" ||
-      typeof (data as Record<string, unknown>).importId !== "string" ||
-      typeof (data as Record<string, unknown>).mode !== "string"
+      typeof (data as Record<string, unknown>).importId !== "string"
     ) {
       return; // malformed frame — ignore rather than crash the panel
     }
@@ -896,7 +895,7 @@ export function ForgePanel({
             {/* A plan build's documents are read, reviewed and saved on the
                 fact finder screen — the link is the whole hand-off. */}
             {planResult && !busy && (
-              <ImportReviewLink href={planResult.reviewPath} warnings={planResult.warnings} />
+              <ImportReviewLink href={planResult.reviewPath} />
             )}
 
             {/* Global attach-first ingest: duplicate-household match found with no

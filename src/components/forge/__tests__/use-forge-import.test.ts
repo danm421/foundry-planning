@@ -105,12 +105,7 @@ describe("useForgeImport — runPlanBuild", () => {
       });
     });
 
-    expect(res!).toEqual({
-      importId: "imp_1",
-      clientId: "client_1",
-      reviewPath: "/clients/client_1/details/import/imp_1/fact-finder",
-      warnings: [],
-    });
+    expect(res!).toEqual({ importId: "imp_1", reviewPath: "/clients/client_1/details/import/imp_1/fact-finder" });
     expect(calls).toEqual([
       { url: "/api/clients/client_1/imports/imp_1/files", method: "POST" },
       { url: "/api/clients/client_1/imports/imp_1/files", method: "POST" },

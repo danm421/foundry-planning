@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { importScreenPath, isFactFinderImport } from "../import-kind";
+import { emptyFactFinderState } from "@/lib/fact-finder/state";
+import { factFinderImportSeed, importScreenPath, isFactFinderImport, isFinishedInStatementChat } from "../import-kind";
 import type { ImportPayloadJson } from "../types";
 
 describe("isFactFinderImport", () => {
@@ -17,6 +18,29 @@ describe("isFactFinderImport", () => {
     expect(isFactFinderImport({} as ImportPayloadJson)).toBe(false);
     expect(isFactFinderImport(null)).toBe(false);
     expect(isFactFinderImport(undefined)).toBe(false);
+  });
+});
+
+describe("isFinishedInStatementChat", () => {
+  const SAVED = { factFinder: { closed: { at: "2026-10-16T09:00:00.000Z" } } } as unknown as ImportPayloadJson;
+  const STATEMENT_CHAT = { chat: { surface: "chat" } } as unknown as ImportPayloadJson;
+
+  it("is true for a committed statement-chat import with no saved fact finder", () => {
+    expect(isFinishedInStatementChat("committed", STATEMENT_CHAT)).toBe(true);
+  });
+
+  it("is false for a saved fact finder, an open one, and a finished wizard import", () => {
+    expect(isFinishedInStatementChat("committed", SAVED)).toBe(false);
+    expect(isFinishedInStatementChat("review", STATEMENT_CHAT)).toBe(false);
+    expect(isFinishedInStatementChat("committed", { payload: { accounts: [] } } as unknown as ImportPayloadJson)).toBe(false);
+  });
+});
+
+describe("factFinderImportSeed", () => {
+  it("marks a new import as a fact finder import that reads positions", () => {
+    const seed = factFinderImportSeed();
+    expect(seed).toEqual({ extractHoldings: true, payloadJson: { factFinder: emptyFactFinderState() } });
+    expect(isFactFinderImport(seed.payloadJson)).toBe(true);
   });
 });
 

@@ -302,8 +302,8 @@ describe("GET /api/clients/[id]/imports/[importId] — payloadJson slimming (R8)
   // Keep this assertion, but NOT for the reason an earlier revision gave: no
   // consumer of THIS GET reads `assemble`. extraction-progress reads status +
   // files; wizard-import-drawer reads payload + perTabCommittedAt. The Assumed
-  // chip and get_plan_status read it from the DB (import-flow-content.tsx:81,
-  // plan-builder.ts:54), not from here. It stays because `assemble` is small and
+  // chip reads it from the DB (import-flow-content.tsx), not from here. It
+  // stays because `assemble` is small and
   // narrowing the response further is a separate decision — a false rationale is
   // what invites the next person to delete a line that should stay.
   it("STILL ships assemble — small, and narrowing it is a separate call", async () => {

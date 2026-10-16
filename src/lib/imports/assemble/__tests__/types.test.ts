@@ -4,7 +4,7 @@ import type { AssembleState } from "../types";
 describe("AssembleState", () => {
   it("shapes an assemble sub-state", () => {
     const s: AssembleState = {
-      version: 1, mergedFileCount: 3, assumptions: [], questions: [],
+      version: 1, mergedFileCount: 3, assumptions: [],
     };
     expect(s.version).toBe(1);
   });

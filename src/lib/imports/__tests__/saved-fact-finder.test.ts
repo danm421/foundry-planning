@@ -7,12 +7,19 @@ import { FACT_FINDER_ONLY_MESSAGE, refuseFactFinderImport, refuseSavedFactFinder
 describe("refuseFactFinderImport", () => {
   it.each([
     ["an open fact finder", { factFinder: { version: 0 } }],
-    ["a saved fact finder", { factFinder: { version: 3, closed: { at: "2026-10-16T09:00:00.000Z" } } }],
     ["a statement-chat import", { chat: { surface: "chat" } }],
   ])("answers 409 with the fact finder message for %s", async (_name, payloadJson) => {
     const res = refuseFactFinderImport({ payloadJson });
     expect(res?.status).toBe(409);
     expect(await res?.json()).toEqual({ error: FACT_FINDER_ONLY_MESSAGE });
+  });
+
+  it("answers 409 with the saved message, and no fact finder, for a saved fact finder", async () => {
+    const res = refuseFactFinderImport({
+      payloadJson: { factFinder: { version: 3, closed: { at: "2026-10-16T09:00:00.000Z" } } },
+    });
+    expect(res?.status).toBe(409);
+    expect(await res?.json()).toEqual({ error: SAVE_CLOSED_MESSAGE });
   });
 
   it.each([

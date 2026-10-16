@@ -137,7 +137,7 @@ function buildPlanFrame(importId: string): Extract<UseForgeStreamResult["lastToo
     type: "tool_render",
     name: "build_plan",
     status: "complete",
-    data: { clientId: "c9", importId, mode: "new" },
+    data: { clientId: "c9", importId },
   };
 }
 
@@ -223,9 +223,7 @@ describe("ForgePanel — build_plan tool_render wiring (Task B5)", () => {
     const send = vi.fn();
     importMocks.runPlanBuild.mockResolvedValue({
       importId: "imp_1",
-      clientId: "c9",
       reviewPath: "/clients/c9/details/import/imp_1/fact-finder",
-      warnings: [],
     });
 
     mockStreamState = makeStreamState({ lastToolRender: null, send });
@@ -249,9 +247,7 @@ describe("ForgePanel — build_plan tool_render wiring (Task B5)", () => {
     const send = vi.fn();
     importMocks.runPlanBuild.mockResolvedValue({
       importId: "imp_1",
-      clientId: "c9",
       reviewPath: "/clients/c9/details/import/imp_1/fact-finder",
-      warnings: [],
     });
 
     mockStreamState = makeStreamState({ lastToolRender: null, send });
@@ -316,7 +312,7 @@ describe("ForgePanel — planBuild clears after a successful build (FIX 4)", () 
       type: "tool_render",
       name: "build_plan",
       status: "complete",
-      data: { clientId: "c1", importId, mode: "existing" },
+      data: { clientId: "c1", importId },
     };
   }
 
@@ -324,9 +320,7 @@ describe("ForgePanel — planBuild clears after a successful build (FIX 4)", () 
     const send = vi.fn();
     importMocks.runPlanBuild.mockResolvedValue({
       importId: "imp_1",
-      clientId: "c1",
       reviewPath: "/clients/c1/details/import/imp_1/fact-finder",
-      warnings: [],
     });
     importMocks.runImport.mockResolvedValue({
       importId: "imp_2",
@@ -385,9 +379,7 @@ describe("ForgePanel — planBuild clears after a successful build (FIX 4)", () 
     const send = vi.fn();
     importMocks.runPlanBuild.mockResolvedValue({
       importId: "imp_1",
-      clientId: "c1",
       reviewPath: "/clients/c1/details/import/imp_1/fact-finder",
-      warnings: [],
     });
 
     mockStreamState = makeStreamState({ lastToolRender: null, send });
@@ -408,9 +400,7 @@ describe("ForgePanel — planBuild clears after a successful build (FIX 4)", () 
     const send = vi.fn();
     importMocks.runPlanBuild.mockResolvedValue({
       importId: "imp_1",
-      clientId: "c1",
       reviewPath: "/clients/c1/details/import/imp_1/fact-finder",
-      warnings: [],
     });
 
     mockStreamState = makeStreamState({ lastToolRender: null, send });
@@ -504,12 +494,7 @@ describe("ForgePanel — a plan build's result", () => {
   });
 
   function planBuildResult(importId: string): PlanBuildResult {
-    return {
-      importId,
-      clientId: "c9",
-      reviewPath: `/clients/c9/details/import/${importId}/fact-finder`,
-      warnings: [],
-    };
+    return { importId, reviewPath: `/clients/c9/details/import/${importId}/fact-finder` };
   }
 
   async function mountWithBuiltPlan(importId: string, result: PlanBuildResult) {
@@ -565,7 +550,7 @@ describe("ForgePanel — a plan build's result", () => {
         type: "tool_render",
         name: "ingest_fact_finder",
         status: "complete",
-        data: { clientId: "c9", importId: "imp_1", mode: "updating", householdName: "Jones-Smith Household" },
+        data: { clientId: "c9", importId: "imp_1" },
       },
     });
     await act(async () => {

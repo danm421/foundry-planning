@@ -3,7 +3,7 @@
 // The flagship plan-builder path, pinned end-to-end on the server side.
 //
 // Approving `build_plan` in a GLOBAL (clientless) thread must ship a
-// `tool_render` frame carrying { clientId, importId, mode }. That frame is the
+// `tool_render` frame carrying { clientId, importId }. That frame is the
 // ONLY channel by which the panel learns the ids it just minted — tool RESULTS
 // go to the model, not the browser. No frame → no attach-files paperclip → the
 // documents-to-plan flow dead-ends at the approval card with a draft import
@@ -74,7 +74,7 @@ beforeEach(() => {
 });
 
 describe("global build_plan — the approved write's tool_render frame reaches the stream", () => {
-  it("emits { clientId, importId, mode } on confirm — the paperclip's only input", async () => {
+  it("emits { clientId, importId } on confirm — the paperclip's only input", async () => {
     invoke
       .mockResolvedValueOnce(new AIMessage({ content: "", tool_calls: [BUILD_PLAN_CALL] }))
       .mockResolvedValue(new AIMessage("Started the build — drop the statements in."));
@@ -103,15 +103,10 @@ describe("global build_plan — the approved write's tool_render frame reaches t
     expect(ensurePlanImport).toHaveBeenCalledTimes(1);
     const buildFrame = resumeFrames.find((f) => f.name === "build_plan");
     expect(buildFrame).toBeDefined();
-    // forge-panel drops any frame missing one of these three rather than
+    // forge-panel drops any frame missing one of these two rather than
     // crashing, so assert the exact shape the consumer validates — a frame that
     // arrives malformed is indistinguishable from no frame at all.
-    expect(buildFrame!.data).toEqual({
-      clientId: "client_new",
-      importId: "import_new",
-      mode: "new",
-      householdName: "Nguyen Household",
-    });
+    expect(buildFrame!.data).toEqual({ clientId: "client_new", importId: "import_new" });
   });
 
   it("emits no frame and mints nothing on reject", async () => {
@@ -217,7 +212,7 @@ describe("global ingest_fact_finder — the approval card says what will happen 
     expect(cardText(preview)).toMatch(/can't find that household/i);
   });
 
-  it("the approval interrupt names household B for a scripted update, and the frame carries its name", async () => {
+  it("the approval interrupt names household B for a scripted update, and the frame carries its ids", async () => {
     invoke
       .mockResolvedValueOnce(new AIMessage({ content: "", tool_calls: [UPDATE_B_CALL] }))
       .mockResolvedValue(new AIMessage("Started the update."));
@@ -253,8 +248,6 @@ describe("global ingest_fact_finder — the approval card says what will happen 
     expect(resumeFrames.find((f) => f.name === "ingest_fact_finder")?.data).toEqual({
       clientId: CLIENT_B,
       importId: "import_ff",
-      mode: "updating",
-      householdName: "Jones-Smith Household",
     });
   });
 });

@@ -6,11 +6,10 @@ import { ForbiddenError, NotFoundError, requireImportAccess } from "@/lib/import
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit, type ImportRateLimitOp } from "@/lib/rate-limit";
 import { refuseUnlessAiImportEntitled } from "@/lib/imports/ai-import-gate";
-import { isFactFinderImport } from "@/lib/imports/import-kind";
-import { isSavedFactFinder } from "@/lib/imports/saved-fact-finder";
+import { isFactFinderImport, isFinishedInStatementChat } from "@/lib/imports/import-kind";
+import { refuseSavedFactFinderWithState } from "@/lib/imports/saved-fact-finder";
 import type { ImportPayloadJson } from "@/lib/imports/types";
 import { SAVE_CLOSED_MESSAGE } from "./api-types";
-import { readFactFinderState } from "./state";
 
 export type ImportRow = Awaited<ReturnType<typeof requireImportAccess>>;
 
@@ -100,18 +99,15 @@ export async function factFinderGate(
   const payloadJson = (imp.payloadJson ?? {}) as ImportPayloadJson;
   if (!isFactFinderImport(payloadJson)) return deny(400, "This import isn't a fact finder import.");
 
-  // A saved import is read-only: only the view (GET) still answers. The refusal
-  // carries the saved fact finder, so a screen still open on it (another tab)
-  // can switch to the closed view.
-  if (isSavedFactFinder(payloadJson) && op !== "view") {
-    return {
-      ok: false,
-      response: jsonResponse(409, { error: SAVE_CLOSED_MESSAGE, factFinder: readFactFinderState(payloadJson) }),
-    };
+  if (op !== "view") {
+    // A saved import is read-only: only the view (GET) still answers. The refusal
+    // carries the saved fact finder, so a screen still open on it (another tab)
+    // can switch to the closed view.
+    const saved = refuseSavedFactFinderWithState({ payloadJson });
+    if (saved) return { ok: false, response: saved };
+    // Finished in statement chat: the screen shows a notice — there is no fact finder to send.
+    if (isFinishedInStatementChat(imp.status, payloadJson)) return deny(409, SAVE_CLOSED_MESSAGE);
   }
-  // Committed without a saved fact finder: a statement-chat import finished
-  // before the switch. The screen shows a notice — there is no fact finder to send.
-  if (imp.status === "committed" && op !== "view") return deny(409, SAVE_CLOSED_MESSAGE);
 
   return { ok: true, firmId, userId, clientId, importId, imp, payloadJson };
 }

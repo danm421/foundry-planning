@@ -14,7 +14,7 @@ import { recordAudit } from "@/lib/audit";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { createCrmHousehold, recordHouseholdOpen } from "@/lib/crm/households";
 import { createClientForHousehold, type FilingStatus } from "@/lib/clients/create-client";
-import { emptyFactFinderState } from "@/lib/fact-finder/state";
+import { factFinderImportSeed } from "@/lib/imports/import-kind";
 import { isUSPSStateCode } from "@/lib/usps-states";
 
 export interface EnsurePlanImportArgs {
@@ -166,10 +166,8 @@ export async function ensurePlanImport(
     }
   }
 
-  // Shared insert — a fact finder import, as POST /api/clients/[id]/imports
-  // creates one for the mode picker's card (the slice marks it; the fact
-  // finder reviews positions, so it reads them). `origin` is deliberately
-  // omitted: it defaults to "extraction" in the schema.
+  // Shared insert — a fact finder import. `origin` is deliberately omitted:
+  // it defaults to "extraction" in the schema.
   const [imp] = await db
     .insert(clientImports)
     .values({
@@ -177,10 +175,9 @@ export async function ensurePlanImport(
       orgId: args.firmId,
       scenarioId,
       mode,
-      extractHoldings: true,
       status: "draft",
       createdByUserId: args.actorUserId,
-      payloadJson: { factFinder: emptyFactFinderState() },
+      ...factFinderImportSeed(),
     })
     .returning();
 

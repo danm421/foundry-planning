@@ -13,7 +13,7 @@ import {
     ForbiddenError,
     NotFoundError,
 } from "@/lib/imports/authz";
-import { refuseSavedFactFinder, refuseFactFinderImport } from "@/lib/imports/saved-fact-finder";
+import { refuseFactFinderImport } from "@/lib/imports/saved-fact-finder";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { refuseUnlessAiImportEntitled } from "@/lib/imports/ai-import-gate";
@@ -126,10 +126,8 @@ export async function POST(request: NextRequest, { params }: Params) {
                 { status: 404 }
             );
         }
-        const saved = refuseSavedFactFinder(importRow);
-        if (saved) return saved;
-        const notFactFinder = refuseFactFinderImport(importRow);
-        if (notFactFinder) return notFactFinder;
+        const notWizardImport = refuseFactFinderImport(importRow);
+        if (notWizardImport) return notWizardImport;
 
         const extractHoldings =
             typeof body.extractHoldings === "boolean"

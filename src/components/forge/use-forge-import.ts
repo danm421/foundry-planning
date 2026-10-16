@@ -44,9 +44,7 @@ export interface ForgeImportResult {
 
 export interface PlanBuildResult {
   importId: string;
-  clientId: string;
   reviewPath: string;
-  warnings: string[];
 }
 
 export interface UseForgeImportResult {
@@ -171,7 +169,7 @@ export function useForgeImport(): UseForgeImportResult {
         }
 
         setStatus("done");
-        return { importId, clientId, reviewPath: importScreenPath(clientId, importId, true), warnings: [] };
+        return { importId, reviewPath: importScreenPath(clientId, importId, true) };
       } catch (err) {
         setStatus("error");
         setErrorMessage(err instanceof Error ? err.message : String(err));

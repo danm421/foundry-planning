@@ -1,9 +1,8 @@
 // src/domain/forge/tools/plan-builder.ts
 //
 // Forge Plan Builder tools. `get_plan_status` is a read-only tool that
-// reports where a plan-build stands for a pending import: its status, how
-// many smart questions the assemble step still needs answered, and the
-// review-surface link. Mirrors the read.ts idiom: re-derive firmId via
+// reports where a plan-build stands for a pending import: its status and the
+// screen to review it on. Mirrors the read.ts idiom: re-derive firmId via
 // requireOrgId(), gate with assertClientReadable(ctx, ctx.clientId), then
 // scope the clientImports read to id + clientId + orgId + not-discarded.
 import { tool } from "@langchain/core/tools";
@@ -52,23 +51,18 @@ export function buildPlanBuilderTools(
         return JSON.stringify({ error: "Import not found for this client." });
       }
 
-      const payloadJson = row.payloadJson as ImportPayloadJson | null;
-      // A fact finder import has no assemble step, so no questions.
-      const questions = payloadJson?.assemble?.questions ?? [];
-      const unanswered = questions.filter((q) => !q.answer);
-      const reviewPath = importScreenPath(ctx.clientId, importId, isFactFinderImport(payloadJson));
+      const reviewPath = importScreenPath(
+        ctx.clientId,
+        importId,
+        isFactFinderImport(row.payloadJson as ImportPayloadJson | null),
+      );
 
-      return JSON.stringify({
-        status: row.status,
-        questionCount: questions.length,
-        unanswered,
-        reviewPath,
-      });
+      return JSON.stringify({ status: row.status, reviewPath });
     },
     {
       name: "get_plan_status",
       description:
-        "Check where a Forge plan-build stands for a pending import: its status, the smart questions the assemble step still needs answered, and the link to the review screen. Read-only, scoped to the current client.",
+        "Check where a Forge plan-build stands for a pending import: its status and the link to the screen to review it on. Read-only, scoped to the current client.",
       schema: z.object({
         importId: z.string().describe("The client import id whose plan-build status to check."),
       }),
@@ -90,7 +84,7 @@ export function buildPlanBuilderTools(
           clientId: ctx.clientId, firmId, actorId: ctx.userId,
           metadata: { tool: "build_plan", conversationId, mode: "existing" },
         });
-        await emitToolRender("build_plan", "complete", { clientId: ctx.clientId, importId, mode: "existing" });
+        await emitToolRender("build_plan", "complete", { clientId: ctx.clientId, importId });
         return JSON.stringify({ clientId: ctx.clientId, importId, mode: "existing" });
       } catch {
         return "Sorry — that action couldn't be completed.";

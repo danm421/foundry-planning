@@ -35,37 +35,32 @@ describe("get_plan_status tool", () => {
     expect(buildPlanBuilderTools(TOOL_CTX).map((t) => t.name)).toEqual(["get_plan_status", "build_plan"]);
   });
 
-  it("returns unanswered questions + reviewPath from the assemble state", async () => {
+  it("reports a wizard import's status and links it to the wizard — never an older build's questions", async () => {
     row.payloadJson = {
       assemble: {
         version: 1,
         mergedFileCount: 1,
         assumptions: [],
-        questions: [
-          { id: "q:primary_dob", kind: "identity", field: "client.primaryDob", prompt: "?", answer: "1975-01-01" },
-          { id: "q:retirement_age", kind: "assumption", field: "client.retirementAge", prompt: "?" },
-        ],
+        questions: [{ id: "q:retirement_age", kind: "assumption", field: "client.retirementAge", prompt: "?" }],
       },
     };
     const out = JSON.parse(await buildPlanBuilderTools(TOOL_CTX)[0].invoke({ importId: "imp1" }));
-    expect(out.questionCount).toBe(2);
-    expect(out.unanswered.map((q: { id: string }) => q.id)).toEqual(["q:retirement_age"]);
-    expect(out.reviewPath).toBe("/clients/c1/details/import/imp1");
-    expect(out.status).toBe("review");
+    expect(out).toEqual({ status: "review", reviewPath: "/clients/c1/details/import/imp1" });
   });
 
   it.each([
     ["a fact finder import", { factFinder: { version: 0 } }],
     ["a statement-chat import from before the switch", { chat: { surface: "chat" } }],
-  ])("links %s to the fact finder screen, with no questions", async (_label, payloadJson) => {
+  ])("links %s to the fact finder screen", async (_label, payloadJson) => {
     row.payloadJson = payloadJson;
     const out = JSON.parse(await buildPlanBuilderTools(TOOL_CTX)[0].invoke({ importId: "imp1" }));
-    expect(out).toEqual({
-      status: "review",
-      questionCount: 0,
-      unanswered: [],
-      reviewPath: "/clients/c1/details/import/imp1/fact-finder",
-    });
+    expect(out).toEqual({ status: "review", reviewPath: "/clients/c1/details/import/imp1/fact-finder" });
+  });
+
+  it("tells the model it reports a status and a review link, not questions", () => {
+    const { description } = buildPlanBuilderTools(TOOL_CTX)[0];
+    expect(description).toContain("its status and the link to the screen to review it on");
+    expect(description).not.toMatch(/question/);
   });
 
   it("returns a JSON error string, not a throw, when the import is out of scope", async () => {

@@ -19,10 +19,8 @@ export interface ChatComposerProps {
   /** True only while THIS composer's own request is in flight — lets the
    *  button say "Sending…" rather than just "disabled for some reason". */
   sending: boolean;
-  /** Defaults to "Ask a question about these statements…". The fact finder's
-   *  chat panel passes its own, as it does `ariaLabel`. */
-  placeholder?: string;
-  ariaLabel?: string;
+  placeholder: string;
+  ariaLabel: string;
 }
 
 /** Caps how tall the box grows for a long Shift+Enter question — beyond
@@ -42,8 +40,8 @@ export function ChatComposer({
   onSend,
   disabled,
   sending,
-  placeholder = "Ask a question about these statements…",
-  ariaLabel = "Ask a follow-up question",
+  placeholder,
+  ariaLabel,
 }: ChatComposerProps) {
   const [value, setValue] = useState("");
   const isDisabled = disabled || sending;
