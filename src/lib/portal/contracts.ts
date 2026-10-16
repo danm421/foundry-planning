@@ -277,6 +277,9 @@ export interface PortalAccountRow {
   last4: string | null;
   value: number;
   isPlaidLinked: boolean;
+  /** Null = typed in by hand. Mirrors `LinkedSource` (lib/accounts/linked-source.ts),
+   *  which this file may not import; linked-source.test.ts pins the two equal. */
+  linkedSource: "plaid" | "orion" | "schwab" | "addepar" | null;
 }
 
 export interface AccountsOverviewDTO {

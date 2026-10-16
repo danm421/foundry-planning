@@ -2,10 +2,11 @@
 /**
  * Tests for the linked-account indicator in BalanceSheetView.
  *
- * Accounts and liabilities whose balances are fed by an external integration
- * (Plaid today; Orion/Addepar/Black Diamond later) carry `linkedSource` and
- * render a small badge next to the name whose accessible label names the
- * source. Manually-entered rows leave `linkedSource` unset and render no badge.
+ * Accounts and liabilities whose balances are fed by a connection (the
+ * client's Plaid link, or an Orion / Schwab / Addepar integration) carry
+ * `linkedSource` and render a small badge before the name whose accessible
+ * label names the source. Manually-entered rows leave `linkedSource` unset and
+ * render no badge.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -191,5 +192,37 @@ describe("BalanceSheetView linked-account indicator", () => {
     fireEvent.click(screen.getByRole("button", { name: /taxable/i }));
 
     expect(screen.getByRole("img", { name: "Synced from Orion" })).toBeTruthy();
+  });
+
+  it("labels Schwab- and Addepar-synced accounts by their integration", () => {
+    renderView({
+      accounts: [
+        { ...ORION_ACCOUNT, id: "acct-schwab", name: "Schwab Joint", linkedSource: "schwab" },
+        { ...ORION_ACCOUNT, id: "acct-addepar", name: "Addepar Trust", linkedSource: "addepar" },
+      ],
+      liabilities: [],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /taxable/i }));
+
+    expect(screen.getByRole("img", { name: "Synced from Schwab" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Synced from Addepar" })).toBeTruthy();
+  });
+
+  it("draws the badge before the name, on accounts and liabilities alike", () => {
+    renderView({ accounts: [PLAID_ACCOUNT], liabilities: [PLAID_LIABILITY] });
+
+    fireEvent.click(screen.getByRole("button", { name: /taxable/i }));
+
+    const [accountBadge, liabilityBadge] = screen.getAllByRole("img", { name: "Linked via Plaid" });
+    for (const [badge, name] of [
+      [accountBadge, "Chase Brokerage"],
+      [liabilityBadge, "Chase Card"],
+    ] as const) {
+      const nameEl = screen.getByText(name);
+      // Same line, badge first.
+      expect(badge.parentElement).toBe(nameEl.parentElement);
+      expect(badge.compareDocumentPosition(nameEl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
   });
 });

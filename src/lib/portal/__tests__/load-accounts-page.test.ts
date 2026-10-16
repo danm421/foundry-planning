@@ -149,6 +149,13 @@ describe("loadAccountsPage", () => {
     });
   });
 
+  it("marks an integration-synced account with its source", async () => {
+    // The fixture rows predate these two columns; the loader reads them when present.
+    mockAccounts = [{ ...mockAccounts[1], externalProvider: "orion", source: "orion" }] as never;
+    const dto = await loadAccountsPage("c1");
+    expect(dto.assets[0]).toMatchObject({ isPlaidLinked: false, linkedSource: "orion" });
+  });
+
   it("returns owners keyed by account id", async () => {
     const dto = await loadAccountsPage("c1");
     expect(dto.ownersByAccountId["a1"]).toEqual([

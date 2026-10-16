@@ -1,9 +1,4 @@
-import type { LinkedSource } from "@/components/balance-sheet-view";
-
-const LINKED_SOURCE_LABEL: Record<LinkedSource, string> = {
-  plaid: "Linked via Plaid",
-  orion: "Synced from Orion",
-};
+import { linkedSourceLabel, type LinkedSource } from "@/lib/accounts/linked-source";
 
 export function TrashIcon() {
   return (
@@ -52,14 +47,14 @@ export function LinkIcon() {
   );
 }
 
-/** Small indicator shown next to an account/liability name when its balance is
- *  fed by an external integration (Plaid today; Orion/Addepar/Black Diamond
- *  later). Hover or focus reveals which one via the native tooltip; a bare row
+/** Small indicator shown before an account/liability name when its balance is
+ *  fed by a connection — the client's Plaid link or a firm integration (Orion,
+ *  Schwab, Addepar). Hover reveals which one via the native tooltip; a bare row
  *  (no badge) reads as a manual entry. Kept neutral — the accent stays reserved
  *  for actions, and a native `title` avoids clipping inside the list's
  *  overflow-hidden containers. */
 export function LinkedSourceBadge({ source }: { source: LinkedSource }) {
-  const label = LINKED_SOURCE_LABEL[source];
+  const label = linkedSourceLabel(source);
   return (
     <span
       role="img"

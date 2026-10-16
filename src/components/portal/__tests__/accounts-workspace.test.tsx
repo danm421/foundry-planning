@@ -63,8 +63,8 @@ function pendingScope(container: HTMLElement): string | null {
 function dto(over: Partial<AccountsPageDTO> = {}): AccountsPageDTO {
   return {
     assets: [
-      { id: "a1", name: "Joint Checking", category: "cash", subType: "checking", last4: null, value: 10_000, isPlaidLinked: false },
-      { id: "a2", name: "Rollover IRA", category: "retirement", subType: "traditional_ira", last4: null, value: 965_186, isPlaidLinked: true },
+      { id: "a1", name: "Joint Checking", category: "cash", subType: "checking", last4: null, value: 10_000, isPlaidLinked: false, linkedSource: null },
+      { id: "a2", name: "Rollover IRA", category: "retirement", subType: "traditional_ira", last4: null, value: 965_186, isPlaidLinked: true, linkedSource: "plaid" },
     ],
     debts: [
       { id: "l1", name: "Home Loan", balance: 125_000, rawBalance: 125_000, liabilityType: "mortgage", aprPercentage: null, statementBalance: null, minimumPayment: null, nextPaymentDueDate: null, interestRate: null, monthlyPayment: null, payoffYear: null, isPlaidLinked: false, ownerFmIds: [], ownerEntityIds: [] },

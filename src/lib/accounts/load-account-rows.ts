@@ -14,7 +14,8 @@ import { db } from "@/db";
 import { accounts } from "@/db/schema";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 import type { AccountMeta } from "@/lib/scenario/account-meta";
-import type { AccountRow, LinkedSource } from "@/components/balance-sheet-view";
+import type { AccountRow } from "@/components/balance-sheet-view";
+import { linkedSourceOf, type LinkedSource } from "./linked-source";
 import type { StockOptionPlan } from "@/engine/equity/types";
 import { withDerivedEquityValues } from "./equity-derived-values";
 import { inheritedIraRowFields } from "./inherited-ira";
@@ -49,14 +50,13 @@ export async function loadAccountMetaRows(clientId: string, baseScenarioId: stri
     .where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, baseScenarioId)));
 }
 
-/** `plaidItemId` is the reliable Plaid signal — the `source` enum can lag until
- *  holdings ingest. Base-scoped, so scenario-added accounts correctly read as
- *  manual with no badge. */
+/** Base-scoped, so scenario-added accounts correctly read as manual with no
+ *  badge. */
 export function linkedSourceMapFrom(rows: AccountMetaRow[]): Map<string, LinkedSource> {
   const out = new Map<string, LinkedSource>();
   for (const r of rows) {
-    if (r.plaidItemId != null) out.set(r.id, "plaid");
-    else if (r.externalProvider === "orion" || r.source === "orion") out.set(r.id, "orion");
+    const source = linkedSourceOf(r);
+    if (source) out.set(r.id, source);
   }
   return out;
 }

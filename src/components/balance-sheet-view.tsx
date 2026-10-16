@@ -58,14 +58,9 @@ import {
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import type { CategoryDefaultRateMap } from "@/lib/investments/category-default-rates";
 import { isEditFocus, type EditorFocus } from "@/lib/scenario/change-editor-target";
+import type { LinkedSource } from "@/lib/accounts/linked-source";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options" | "education_savings";
-
-/** Which external integration feeds a row's balance. `null`/`undefined` means
- *  the account or liability was entered by hand. Drives the small linked
- *  indicator next to the name. Extend this union (and LINKED_SOURCE_LABEL) as
- *  integrations are added — addepar, black_diamond, … */
-export type LinkedSource = "plaid" | "orion";
 
 export interface AccountRow {
   id: string;
@@ -1577,7 +1572,7 @@ export default function BalanceSheetView({
                         onEdit={canEdit ? () => handleAccountClick(a) : undefined}
                         deletable={!a.isDefaultChecking}
                         label={a.name}
-                        labelBadge={
+                        leadingIcon={
                           a.linkedSource ? <LinkedSourceBadge source={a.linkedSource} /> : undefined
                         }
                         // Owner and growth moved into their own cells; the
@@ -1727,7 +1722,7 @@ export default function BalanceSheetView({
                     onDelete={canEdit ? () => setDeletingLiability(l) : undefined}
                     onEdit={canEdit ? () => setEditingLiability(l) : undefined}
                     label={l.name}
-                    labelBadge={
+                    leadingIcon={
                       l.linkedSource ? <LinkedSourceBadge source={l.linkedSource} /> : undefined
                     }
                     // The interest rate moved into its own cell; the old
@@ -1863,8 +1858,8 @@ export default function BalanceSheetView({
                         >
                           <div className="min-w-0">
                             <div className="flex min-w-0 items-center gap-1.5">
-                              <span className="truncate text-sm font-medium text-ink">{a.name}</span>
                               {a.linkedSource && <LinkedSourceBadge source={a.linkedSource} />}
+                              <span className="truncate text-sm font-medium text-ink">{a.name}</span>
                             </div>
                             <div className="text-xs text-ink-3">
                               {CATEGORY_LABELS[a.category]} · {growthDisplay(a)}

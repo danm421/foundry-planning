@@ -1,5 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { netAccountValue } from "@/lib/accounts/net-value";
+import { linkedSourceOf } from "@/lib/accounts/linked-source";
 import { db } from "@/db";
 import {
   accountHoldings,
@@ -107,6 +108,8 @@ export async function loadAccountsPage(clientId: string): Promise<AccountsPageDT
       marginBalance: accounts.marginBalance,
       accountNumberLast4: accounts.accountNumberLast4,
       plaidItemId: accounts.plaidItemId,
+      externalProvider: accounts.externalProvider,
+      source: accounts.source,
       isDefaultChecking: accounts.isDefaultChecking,
       parentAccountId: accounts.parentAccountId,
     })
@@ -131,6 +134,7 @@ export async function loadAccountsPage(clientId: string): Promise<AccountsPageDT
     last4: r.accountNumberLast4,
     value: netAccountValue(r),
     isPlaidLinked: r.plaidItemId != null,
+    linkedSource: linkedSourceOf(r),
   }));
 
   const accountIds = assets.map((a) => a.id);

@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { netAccountValue } from "@/lib/accounts/net-value";
+import { linkedSourceOf } from "@/lib/accounts/linked-source";
 import { db } from "@/db";
 import { accounts, scenarios } from "@/db/schema";
 import { isPortalVisibleAccount } from "@/lib/portal/account-visibility";
@@ -35,6 +36,8 @@ export async function loadAccountsOverview(clientId: string): Promise<AccountsOv
       marginBalance: accounts.marginBalance,
       accountNumberLast4: accounts.accountNumberLast4,
       plaidItemId: accounts.plaidItemId,
+      externalProvider: accounts.externalProvider,
+      source: accounts.source,
       isDefaultChecking: accounts.isDefaultChecking,
       parentAccountId: accounts.parentAccountId,
     })
@@ -57,6 +60,7 @@ export async function loadAccountsOverview(clientId: string): Promise<AccountsOv
       last4: r.accountNumberLast4,
       value: netAccountValue(r),
       isPlaidLinked: r.plaidItemId != null,
+      linkedSource: linkedSourceOf(r),
     }));
 
   const debts = await loadPortalDebt(clientId, scenario.id);

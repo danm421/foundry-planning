@@ -6,8 +6,8 @@ import { buildAccountRail } from "@/lib/portal/account-rail";
 
 const rail = buildAccountRail({
   assets: [
-    { id: "1", name: "Checking", category: "cash", subType: "checking", last4: null, value: 10_000, isPlaidLinked: false },
-    { id: "2", name: "401k", category: "retirement", subType: "401k", last4: null, value: 965_186, isPlaidLinked: false },
+    { id: "1", name: "Checking", category: "cash", subType: "checking", last4: null, value: 10_000, isPlaidLinked: false, linkedSource: null },
+    { id: "2", name: "401k", category: "retirement", subType: "401k", last4: null, value: 965_186, isPlaidLinked: false, linkedSource: null },
   ],
   debts: [
     { id: "l1", name: "Mortgage", balance: 125_000, rawBalance: 125_000, liabilityType: "mortgage", aprPercentage: null, statementBalance: null, minimumPayment: null, nextPaymentDueDate: null, interestRate: null, monthlyPayment: null, payoffYear: null, isPlaidLinked: false, ownerFmIds: [], ownerEntityIds: [] },
@@ -74,7 +74,7 @@ describe("AccountRailNav", () => {
 
   it("omits a group entirely when it has no rows", () => {
     const assetsOnly = buildAccountRail({
-      assets: [{ id: "1", name: "Checking", category: "cash", subType: "checking", last4: null, value: 10, isPlaidLinked: false }],
+      assets: [{ id: "1", name: "Checking", category: "cash", subType: "checking", last4: null, value: 10, isPlaidLinked: false, linkedSource: null }],
       debts: [],
     });
     const { container } = render(

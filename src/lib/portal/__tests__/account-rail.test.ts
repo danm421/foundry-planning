@@ -5,7 +5,7 @@ import type { PortalAccountRow, PortalDebtRow } from "../contracts";
 function asset(over: Partial<PortalAccountRow> = {}): PortalAccountRow {
   return {
     id: "a1", name: "Acct", category: "cash", subType: "checking",
-    last4: null, value: 100, isPlaidLinked: false, ...over,
+    last4: null, value: 100, isPlaidLinked: false, linkedSource: null, ...over,
   };
 }
 
