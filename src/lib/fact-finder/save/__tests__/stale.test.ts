@@ -43,9 +43,9 @@ const AI: LeftoversOutput = {
   items: [{ itemId: "final_notes:Notes:notes", action: "note", lineId: null, key: null, value: null, quote: null, topic: "retirement", reason: null }],
 };
 
-/** The review's change list for `state` against `book`. */
-async function review(book: RecordBook = reviewed): Promise<ChangeLine[]> {
-  return (await buildChangeSet({ state, book, now: NOW, runLeftovers: async () => AI })).lines;
+/** The review's change list for `of` (the fact finder above unless named) against `book`. */
+async function review(book: RecordBook = reviewed, of: FactFinderState = state): Promise<ChangeLine[]> {
+  return (await buildChangeSet({ state: of, book, now: NOW, runLeftovers: async () => AI })).lines;
 }
 
 /** What the save hands the check (Task 15): Create and Update lines that aren't blocked, ticked as the advisor left them, each with a field ticked. */
@@ -97,6 +97,20 @@ describe("staleProblem", () => {
     });
   });
 
+  it("a Links to whose record was deleted since names the row as the fact finder shows it, not the record", async () => {
+    // No account name: the line is labelled by its record, the row by its first words — the custodian.
+    const unnamed: FactFinderState = {
+      ...state,
+      sections: { ...state.sections, cash: [rowOf("c1", { currentValue: 12500, custodian: "Chase Bank" }, { link: linkedTo("a-1") })] },
+    };
+    const lines = planned(await review(reviewed, unnamed));
+    expect(lines.find((l) => l.id === "c1/account")).toMatchObject({ action: "update", recordId: "a-1", label: "Joint Checking" });
+    expect(staleProblem(lines, unnamed, without(reviewed, "account", "a-1"), NOW)).toEqual({
+      lineId: "c1/account",
+      message: "“Chase Bank” is no longer on the plan — review again.",
+    });
+  });
+
   it("a deleted record linked from a row the save writes nothing from is no problem", async () => {
     expect(await stale(without(reviewed, "account", "a-1"), { unticked: { "c1/account": ["value", "custodian", "growthRate"] } })).toBeNull();
   });
@@ -108,6 +122,15 @@ describe("staleProblem", () => {
     expect(await stale(reviewed, { book: withAttorney })).toEqual({
       lineId: "estate_docs:Client/related_party",
       message: "“Estate attorney — Jane Smith” is no longer on the plan — review again.",
+    });
+  });
+
+  it("a record the review matched by its identity, still on the plan but no longer matching (a related party renamed in Details)", async () => {
+    const withAttorney = adding(reviewed, "related_party", recordOf("rp-1", "Jane Smith", { firstName: "Jane", lastName: "Smith", employer: "Smith Law", notes: null }));
+    const renamed = edited(withAttorney, "related_party", (rs) => rs.map((r) => (r.id === "rp-1" ? { ...r, label: "Janet Smith", values: { ...r.values, firstName: "Janet" } } : r)));
+    expect(await stale(renamed, { book: withAttorney })).toEqual({
+      lineId: "estate_docs:Client/related_party",
+      message: "“Estate attorney — Jane Smith” changed since you reviewed — review again.",
     });
   });
 
@@ -183,6 +206,20 @@ describe("staleProblem", () => {
     expect(await stale(without(without(reviewed, "will", "w-1"), "will_residuary_recipient", "w-1"))).toEqual(problem);
   });
 
+  it("a line naming a record that's gone only in what a Create writes besides its fields, or in a ticked field's companion values", async () => {
+    const gone = { ref: "record", target: "account", id: "a-2" } as const;
+    const lines = planned(await review());
+    // The plan note (a Create, before the provision in line order) writes the account only in its fixed values; the account line only beside a ticked field.
+    const inFixed = lines.map((l) => (l.id === "estate_docs:Client/plan_observation" ? { ...l, fixed: { ...l.fixed, accountId: gone } } : l));
+    const inWith = lines.map((l) => (l.id === "c1/account" ? { ...l, fields: l.fields.map((f) => (f.key === "value" ? { ...f, with: { accountId: gone } } : f)) } : l));
+    const now = without(reviewed, "account", "a-2");
+    expect(staleProblem(inFixed, state, now, NOW)).toEqual({
+      lineId: "estate_docs:Client/plan_observation",
+      message: "“Plan note: Client's estate documents were last updated in 2019.” names a record that's no longer on the plan — review again.",
+    });
+    expect(staleProblem(inWith, state, now, NOW)).toEqual({ lineId: "c1/account", message: "“Joint Checking” names a record that's no longer on the plan — review again." });
+  });
+
   it("a record named only in an unticked field isn't checked", async () => {
     expect(await stale(without(reviewed, "account", "a-2"), { unticked: { "b1/will_bequest": ["accountId"] } })).toBeNull();
   });
@@ -192,6 +229,11 @@ describe("staleProblem", () => {
     expect(await stale(changing(reviewed, "account", "a-1", { value: 12100 }))).toEqual({ lineId: "c1/account", message });
     expect(await stale(changing(reviewed, "account", "a-1", { custodian: "JPMorgan Chase" }))).toEqual({ lineId: "c1/account", message });
     expect(await stale(changing(reviewed, "account", "a-1", { growthRate: null }))).toEqual({ lineId: "c1/account", message });
+  });
+
+  it("a ticked field the catalog no longer knows counts as changed", async () => {
+    const lines = planned(await review()).map((l) => (l.id === "c1/account" ? { ...l, fields: l.fields.map((f) => (f.key === "custodian" ? { ...f, key: "retiredField" } : f)) } : l));
+    expect(staleProblem(lines, state, reviewed, NOW)).toEqual({ lineId: "c1/account", message: "“Joint Checking” changed since you reviewed — review again." });
   });
 
   it("the review's tolerances: money 0.004 off and a rate 0.00004 off aren't changes; 0.006 and 0.00006 are", async () => {
