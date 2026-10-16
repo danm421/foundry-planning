@@ -159,10 +159,24 @@ function saveOrder(lines: readonly PlannedLine[], needs: ReadonlyMap<string, str
   const pending = [...lines].sort((a, b) => rank(a) - rank(b));
   const done = new Set<string>();
   const ordered: PlannedLine[] = [];
+  /** The line needs itself, through the lines it needs that aren't placed yet. */
+  const looped = (start: string) => {
+    const seen = new Set<string>();
+    const stack = (needs.get(start) ?? []).filter((id) => !done.has(id));
+    for (let id = stack.pop(); id !== undefined; id = stack.pop()) {
+      if (id === start) return true;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      stack.push(...(needs.get(id) ?? []).filter((n) => !done.has(n)));
+    }
+    return false;
+  };
   while (pending.length > 0) {
-    // The first line whose needs are all placed; lines that need each other keep rank order.
+    // The first line whose needs are all placed. None: lines that need each other — the first of them in rank
+    // order goes, never a line that only waits on them.
     const ready = pending.findIndex((p) => (needs.get(p.line.id) ?? []).every((id) => done.has(id)));
-    const [next] = pending.splice(Math.max(ready, 0), 1);
+    const at = ready >= 0 ? ready : pending.findIndex((p) => looped(p.line.id));
+    const [next] = pending.splice(Math.max(at, 0), 1);
     ordered.push(next);
     done.add(next.line.id);
   }

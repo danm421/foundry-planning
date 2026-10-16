@@ -136,6 +136,21 @@ describe("planSave — lines left out", () => {
     expect(leftOutOf(planSave(set, ticksOf(set), SINGLE))).toEqual([["cash5/account", "Needs “another row”, which isn't being saved."]]);
   });
 
+  it("a reference in what a Create is created with needs its line: a business's income, the business wholly unticked", () => {
+    const business = lineOf("b1/business_account", "business_account", { name: "Acme LLC", value: 250000 }, {
+      page: "realEstateDebts", sectionId: "business", label: "Acme LLC", fixed: { category: "business" }, unticked: ["name", "value"],
+    });
+    const income = lineOf("b1/income", "income", { annualAmount: 120000 }, {
+      page: "realEstateDebts", sectionId: "business", label: "Acme LLC income",
+      fixed: { type: "business", ownerAccountId: lineRef("business_account", "b1/business_account") }, dependsOn: ["b1/business_account"],
+    });
+    const set = changeSetOf([business, income]);
+    expect(leftOutOf(planSave(set, ticksOf(set), SINGLE))).toEqual([
+      ["b1/business_account", "Nothing ticked."],
+      ["b1/income", "Needs “Acme LLC”, which isn't being saved."],
+    ]);
+  });
+
   it("a reference only in an unticked field needs nothing: the save doesn't write it", () => {
     const owned = changeSetOf([trust, lineOf("r2/account", "account", { value: 1000, owners: [{ who: lineRef("entity", "t1/entity"), percent: 1 }] }, {
       action: "update", recordId: "a-2", label: "Brokerage", dependsOn: ["t1/entity"], unticked: ["owners"],
@@ -234,7 +249,16 @@ describe("planSave — save order", () => {
     expect(savedIds(planSave(set, ticksOf(set), SINGLE))).toEqual(["f1/family_member", "a1/account"]);
   });
 
-  it("keeps each line's field order, and its with values after their field", () => {
+  it("when lines need each other, one of them goes first — never a line that only needs one of them", () => {
+    const set = changeSetOf([
+      lineOf("c1/family_member", "family_member", { firstName: "Cy", notes: lineRef("account", "a1/account") }, { dependsOn: ["a1/account"] }),
+      lineOf("a1/account", "account", { name: "A", notes: lineRef("income", "b1/income") }, { dependsOn: ["b1/income"] }),
+      lineOf("b1/income", "income", { name: "B", notes: lineRef("account", "a1/account") }, { dependsOn: ["a1/account"] }),
+    ]);
+    expect(savedIds(planSave(set, ticksOf(set), SINGLE))).toEqual(["a1/account", "c1/family_member", "b1/income"]);
+  });
+
+  it("keeps each line's field order, and its with values just before their field", () => {
     const set = changeSetOf([lineOf("i1/income", "income", { growthRate: 0.04, annualAmount: 90000, start: 2026 }, { fixed: { type: "salary" } })]);
     set.lines[0].fields[0].with = { growthSource: "custom" };
     const plan = planSave(set, ticksOf(set), SINGLE);
@@ -338,6 +362,13 @@ describe("planSave — a co-client the fact finder adds", () => {
   ])("names her: %s", (_case, target, fields) => {
     const set = changeSetOf([lineOf(`x1/${target}`, target, fields)]);
     expect(leftOutOf(planSave(set, ticksOf(set), SINGLE))).toEqual([[`x1/${target}`, NEEDS_CO_CLIENT]]);
+  });
+
+  it("names her only in what it's created with: her salary, its End unticked", () => {
+    const set = changeSetOf([
+      lineOf("x1/income", "income", { annualAmount: 80000, end: { yearRef: "spouse_retirement" } }, { fixed: { type: "salary", owner: "spouse" }, unticked: ["end"] }),
+    ]);
+    expect(leftOutOf(planSave(set, ticksOf(set), SINGLE))).toEqual([["x1/income", NEEDS_CO_CLIENT]]);
   });
 
   it("doesn't name her: the client, or a name that only reads like a role", () => {
