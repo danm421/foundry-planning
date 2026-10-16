@@ -222,11 +222,12 @@ const SAVE_ORDER = [
 
 /**
  * The audit rows newHousehold's save leaves: each core's own, as Details leaves them (a client.update per
- * household line that changes the profile, and one more from the tax settings' coverage; a will.update per
+ * household line that changes the profile, and one more from the tax settings' coverage; an annuity contract
+ * upsert for the new annuity account and another for its contract line; a will.update per
  * provision and remaining estate; none for a charity or a beneficiary set), and the save's.
  */
 const NEW_HOUSEHOLD_AUDIT = [
-  "account.annuity.update", ...Array(9).fill("account.create"), "account.stock_options.create", "account.stock_options.grant.create",
+  ...Array(2).fill("account.annuity.update"), ...Array(9).fill("account.create"), "account.stock_options.create", "account.stock_options.grant.create",
   ...Array(4).fill("client.update"), "disability_policy.create", "entity.create", ...Array(2).fill("expense.create"),
   ...Array(2).fill("expense.update"), "family_member.create", "family_member.update", "gift.create", "import.fact_finder_saved",
   ...Array(4).fill("income.create"), "income.update", "insurance_policy.create", "liability.create", "ltc_policy.create",
