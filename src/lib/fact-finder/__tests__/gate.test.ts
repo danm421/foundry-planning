@@ -156,6 +156,18 @@ describe("factFinderGate", () => {
     expect((await factFinderGate(params(), "view")).ok).toBe(true);
   });
 
+  it("refuses every op but view on a statement-chat import finished before the switch — no fact finder rides on the refusal", async () => {
+    const finished = { ...IMPORT, status: "committed", payloadJson: { chat: { surface: "chat" } } };
+    for (const op of ["edit", "extract", "turn", "match", "commit"] as const) {
+      vi.mocked(requireImportAccess).mockResolvedValueOnce(finished as never);
+      const refused = await refusal(op);
+      expect(refused).toMatchObject({ status: 409, body: { error: SAVE_CLOSED_MESSAGE } });
+      expect(refused.body).not.toHaveProperty("factFinder");
+    }
+    vi.mocked(requireImportAccess).mockResolvedValueOnce(finished as never);
+    expect((await factFinderGate(params(), "view")).ok).toBe(true);
+  });
+
   it("does not treat an open fact finder as closed", async () => {
     vi.mocked(requireImportAccess).mockResolvedValueOnce({ ...IMPORT, payloadJson: { factFinder: { version: 5 } } } as never);
     expect((await factFinderGate(params(), "commit")).ok).toBe(true);

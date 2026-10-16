@@ -7,26 +7,35 @@ import { READ_BUSY_MESSAGE, type ReadFrame } from "@/lib/fact-finder/api-types";
 import { STALE_READING_MS } from "@/lib/fact-finder/reading-status";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
 import type { FactFinderState, FFFileReading, FFRow } from "@/lib/fact-finder/types";
+import type { IntakeDocumentView } from "@/lib/intake/document-types";
 import { DocumentsPanel, type Documents } from "../documents-panel";
 import { FactFinderScreen } from "../fact-finder-screen";
 import type { FFScreenFile } from "../screen-types";
 
 // The real zone uploads over XMLHttpRequest; this one reports an upload or a removal on a click.
+// Its Add copies a client upload the way the real one does (upload-zone-client-uploads.test.tsx): onUploaded with the copy's id.
 vi.mock("@/components/import/upload-zone", () => ({
   default: ({
     initialFiles,
     onUploaded,
     onRemoved,
+    clientUploads,
   }: {
     initialFiles?: { serverFileId: string; name: string; documentType: string }[];
     onUploaded?: (info: { serverFileId: string; name: string; deduped: boolean }) => void;
     onRemoved?: (serverFileId: string) => void;
+    clientUploads?: IntakeDocumentView[];
   }) => (
     <div>
       <p>Upload list: {initialFiles?.map((f) => `${f.serverFileId} ${f.name} (${f.documentType})`).join("; ")}</p>
       <button type="button" onClick={() => onUploaded?.({ serverFileId: "f3", name: "fidelity-401k.pdf", deduped: false })}>
         Upload fidelity-401k.pdf
       </button>
+      {clientUploads?.map((doc) => (
+        <button key={doc.id} type="button" onClick={() => onUploaded?.({ serverFileId: "f4", name: doc.filename, deduped: false })}>
+          Add {doc.filename}
+        </button>
+      ))}
       <button type="button" onClick={() => onRemoved?.("f2")}>
         Remove schwab-june.pdf
       </button>
@@ -99,9 +108,17 @@ function stubFetch(
   return { reads: () => count(READ_URL, "POST"), gets: () => count(FF_URL) };
 }
 
-function renderScreen(state: FactFinderState, files: FFScreenFile[] = FILES) {
+function renderScreen(state: FactFinderState, files: FFScreenFile[] = FILES, clientUploads?: IntakeDocumentView[]) {
   return render(
-    <FactFinderScreen clientId="c1" importId="i1" initialState={state} initialFiles={files} entities={[]} hasCoClient />,
+    <FactFinderScreen
+      clientId="c1"
+      importId="i1"
+      initialState={state}
+      initialFiles={files}
+      entities={[]}
+      hasCoClient
+      clientUploads={clientUploads}
+    />,
   );
 }
 
@@ -290,6 +307,25 @@ describe("uploads", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Accounts/ }));
     const table = screen.getByRole("table", { name: "Cash Accounts" });
     expect(within(table).getByRole("tooltip")).toHaveTextContent("From fidelity-401k.pdf");
+  });
+
+  it("offers the client's Data Collection uploads, and reads one the advisor adds like any upload", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const net = stubFetch([liveStream().response]);
+    const statement: IntakeDocumentView = {
+      id: "11111111-1111-4111-8111-111111111111",
+      filename: "brokerage-statement.pdf",
+      docType: "statement",
+      sizeBytes: 245_760,
+      uploadedAt: "2026-08-01T12:00:00.000Z",
+    };
+    renderScreen(withReadings({ f1: DONE, f2: DONE }), FILES, [statement]);
+    fireEvent.click(screen.getByRole("button", { name: "Documents & chat" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Add brokerage-statement.pdf" }));
+    expect(line("brokerage-statement.pdf")).toHaveTextContent("Waiting to read");
+    await elapse(1500);
+    expect(net.reads()).toBe(1);
   });
 
   it("drops a removed document's line", () => {

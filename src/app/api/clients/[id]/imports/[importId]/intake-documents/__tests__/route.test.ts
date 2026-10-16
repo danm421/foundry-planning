@@ -26,6 +26,7 @@ import { requireImportAccess, NotFoundError } from "@/lib/imports/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { attachIntakeUpload } from "@/lib/imports/intake-documents";
+import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
 
 const DOC_ID = "11111111-1111-4111-8111-111111111111";
 const params = { params: Promise.resolve({ id: "c1", importId: "i1" }) };
@@ -115,6 +116,27 @@ describe("POST /api/clients/[id]/imports/[importId]/intake-documents", () => {
     const res = await POST(req({ documentId: DOC_ID }), params);
     expect(res.status).toBe(503);
     expect(attachIntakeUpload).not.toHaveBeenCalled();
+  });
+
+  it("refuses a fact finder import saved to the plan — 409 with the saved fact finder — and copies nothing", async () => {
+    const closed = { at: "2026-10-15T12:00:00.000Z", by: "user_1", saved: [], leftOut: [] };
+    vi.mocked(requireImportAccess).mockResolvedValueOnce({
+      id: "i1",
+      payloadJson: { factFinder: { version: 3, closed } },
+    } as never);
+    const res = await POST(req({ documentId: DOC_ID }), params);
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toBe(SAVE_CLOSED_MESSAGE);
+    expect(body.factFinder).toMatchObject({ version: 3, closed });
+    expect(attachIntakeUpload).not.toHaveBeenCalled();
+  });
+
+  it("still adds a document to a fact finder import that isn't saved", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValueOnce({ id: "i1", payloadJson: { factFinder: { version: 3 } } } as never);
+    const res = await POST(req({ documentId: DOC_ID }), params);
+    expect(res.status).toBe(200);
+    expect(attachIntakeUpload).toHaveBeenCalledTimes(1);
   });
 
   it("400s a body without a document id", async () => {

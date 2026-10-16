@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import UploadZone, { type UploadedFileInfo } from "@/components/import/upload-zone";
 import { filesReading, isReadingNow, needsReading } from "@/lib/fact-finder/reading-status";
 import type { FactFinderState, FFFileReading } from "@/lib/fact-finder/types";
+import type { IntakeDocumentView } from "@/lib/intake/document-types";
 import { AlertIcon, CircleCheckIcon, ClockIcon, LoaderIcon } from "./icons";
 import type { FFScreenFile } from "./screen-types";
 import { useReadStream, type ReadLine, type ReadStream } from "./use-read-stream";
@@ -215,9 +216,11 @@ interface DocumentsPanelProps {
   importId: string;
   docs: Documents;
   state: FactFinderState;
+  /** The client's Data Collection uploads; one added is copied in, then read like any upload. */
+  clientUploads?: IntakeDocumentView[];
 }
 
-export function DocumentsPanel({ clientId, importId, docs, state }: DocumentsPanelProps) {
+export function DocumentsPanel({ clientId, importId, docs, state, clientUploads }: DocumentsPanelProps) {
   const { read } = docs;
   const now = new Date();
   return (
@@ -255,6 +258,7 @@ export function DocumentsPanel({ clientId, importId, docs, state }: DocumentsPan
         initialFiles={docs.files.map((file) => ({ serverFileId: file.id, name: file.name, documentType: file.documentType }))}
         onUploaded={docs.uploaded}
         onRemoved={docs.removed}
+        clientUploads={clientUploads}
       />
     </section>
   );

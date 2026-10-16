@@ -8,6 +8,7 @@ import {
 } from "@/db/schema";
 import { getOrgId } from "@/lib/db-helpers";
 import { normalizeImportPayload, type ImportPayloadJson } from "@/lib/imports/types";
+import { importScreenPath, isFactFinderImport } from "@/lib/imports/import-kind";
 import { loadImportGrowthContext } from "@/lib/investments/growth-context";
 import { loadImportMilestones } from "@/lib/imports/import-milestones";
 import { listClientIntakeUploads } from "@/lib/imports/intake-documents";
@@ -44,6 +45,11 @@ export async function ImportFlowContent({ clientId: id, importId }: ImportFlowCo
     redirect(`/clients/${id}/details/import`);
   }
 
+  // A fact finder import (an old link, or a statement-chat import from before
+  // the switch) opens on its own screen.
+  const payloadJson = imp.payloadJson as ImportPayloadJson | null;
+  if (isFactFinderImport(payloadJson)) redirect(importScreenPath(id, importId, true));
+
   const files = await db
     .select()
     .from(clientImportFiles)
@@ -54,8 +60,6 @@ export async function ImportFlowContent({ clientId: id, importId }: ImportFlowCo
       ),
     )
     .orderBy(asc(clientImportFiles.uploadedAt));
-
-  const payloadJson = imp.payloadJson as ImportPayloadJson | null;
 
   const [growthContext, importMilestones, clientUploads] = await Promise.all([
     loadImportGrowthContext(id, firmId, imp.scenarioId),

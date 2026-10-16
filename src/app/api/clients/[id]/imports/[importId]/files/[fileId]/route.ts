@@ -166,7 +166,14 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
 
-    await requireImportAccess({ importId, clientId, firmId, userId });
+    const imp = await requireImportAccess({ importId, clientId, firmId, userId });
+
+    // A fact finder import saved to the plan is read-only — the gate's refusal,
+    // with the saved fact finder so a tab still open on it shows the closed view.
+    const payloadJson = (imp.payloadJson ?? {}) as ImportPayloadJson;
+    if (payloadJson.factFinder?.closed) {
+      return NextResponse.json({ error: SAVE_CLOSED_MESSAGE, factFinder: readFactFinderState(payloadJson) }, { status: 409 });
+    }
 
     const body = (await request.json().catch(() => ({}))) as {
       documentType?: string;

@@ -47,7 +47,7 @@ const RATE_LIMIT_MESSAGES = {
  * The gate chain every fact finder route runs, in order: org → subscription →
  * auth → client access → rate limit (fails closed) → import ownership →
  * `ai_import` entitlement → "is a fact finder import" → "not saved yet" (a
- * saved import answers only `view`). All of it resolves
+ * saved import, or one finished in statement chat, answers only `view`). All of it resolves
  * before a route does any work, so an SSE route can open its stream after.
  */
 export async function factFinderGate(
@@ -108,6 +108,9 @@ export async function factFinderGate(
       response: jsonResponse(409, { error: SAVE_CLOSED_MESSAGE, factFinder: readFactFinderState(payloadJson) }),
     };
   }
+  // Committed without a saved fact finder: a statement-chat import finished
+  // before the switch. The screen shows a notice — there is no fact finder to send.
+  if (imp.status === "committed" && op !== "view") return deny(409, SAVE_CLOSED_MESSAGE);
 
   return { ok: true, firmId, userId, clientId, importId, imp, payloadJson };
 }
