@@ -297,7 +297,7 @@ describe("TRUSTS_MAP", () => {
   });
 
   it("a charitable lead or remainder trust on record keeps its grantor: a different one is left off the line, which says where it changes — its other fields still save", () => {
-    const GRANTOR = "A charitable lead or remainder trust's grantor changes in Details — its remainder gift moves with it.";
+    const GRANTOR = "A charitable lead or remainder trust's grantor changes in Details, with its split-interest terms.";
     const clt = recordOf("ent-1", "Hendricks CLT", { name: "Hendricks CLT", trustSubType: "clt", grantor: "client", trustee: "Jane Smith" }, { trustSubType: "clt" });
     const crt = recordOf("ent-2", "Hendricks CRT", { name: "Hendricks CRT", trustSubType: "crt", grantor: "none", trustee: "Jane Smith" }, { trustSubType: "crt" });
     const ilit = recordOf("ent-3", "Hendricks ILIT", { name: "Hendricks ILIT", trustSubType: "ilit", grantor: "client", trustee: "Jane Smith" }, { trustSubType: "ilit" });

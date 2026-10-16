@@ -204,7 +204,7 @@ d("trust writers", () => {
         const line = changeLine("entity", { grantor, trustee: "Denver Foundation" }, { recordId: id });
         refused.push(await inSave(at(seed), (ctx) => TRUST_WRITERS.entity.update(ctx, inputOf(line))).then(() => `saved grantor ${grantor}`, (err: unknown) => err));
       }
-      const REFUSED = { name: "SaveLineError", message: "A charitable lead or remainder trust's grantor changes in Details — its remainder gift moves with it." };
+      const REFUSED = { name: "SaveLineError", message: "A charitable lead or remainder trust's grantor changes in Details, with its split-interest terms." };
       expect(refused).toMatchObject([REFUSED, REFUSED]);
       expect(await entityOf(id)).toMatchObject({ grantor: "client", trustee: null });
       expect(await giftGrantor()).toEqual(["client"]);

@@ -4,10 +4,10 @@
  * through the entities core (a new one gets its default cash account, as from
  * the Details page) and a revocable living trust through its own core.
  *
- * A charitable lead or remainder trust's grantor never changes here: its
- * remainder gift carries the grantor too, and only the Details form sends the
- * terms that move it (the review leaves such a change off the line; this is
- * the backstop).
+ * A charitable lead or remainder trust's grantor never changes here: it goes
+ * with the split-interest terms (and a lead trust's remainder gift), which only
+ * the Details form sends (the review leaves such a change off the line; this
+ * is the backstop).
  */
 import { and, eq } from "drizzle-orm";
 import { accounts, entities } from "@/db/schema";
@@ -33,7 +33,7 @@ async function keepCharitableGrantor(ctx: SaveContext, trustId: string, body: Re
     .from(entities)
     .where(and(eq(entities.id, trustId), eq(entities.clientId, ctx.clientId)));
   if (trust?.trustSubType === "clt" || trust?.trustSubType === "crt") {
-    throw new SaveLineError("A charitable lead or remainder trust's grantor changes in Details — its remainder gift moves with it.");
+    throw new SaveLineError("A charitable lead or remainder trust's grantor changes in Details, with its split-interest terms.");
   }
 }
 
