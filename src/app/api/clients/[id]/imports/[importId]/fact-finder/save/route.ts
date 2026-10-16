@@ -1,7 +1,8 @@
 // src/app/api/clients/[id]/imports/[importId]/fact-finder/save/route.ts
-import type { SaveBody, SaveRefusal, SaveResponse } from "@/lib/fact-finder/api-types";
+import { SAVE_FAILED_MESSAGE, type SaveBody, type SaveRefusal, type SaveResponse } from "@/lib/fact-finder/api-types";
 import { factFinderGate, jsonResponse } from "@/lib/fact-finder/gate";
-import { saveChangeSet } from "@/lib/fact-finder/save/save";
+import { saveChangeSet, type SaveOutcome } from "@/lib/fact-finder/save/save";
+import { safeErrorFields } from "@/lib/redaction/secrets";
 
 export const dynamic = "force-dynamic";
 // The whole save is one transaction: every line's write path, then the queued holdings sync.
@@ -33,7 +34,14 @@ export async function POST(request: Request, { params }: Params) {
     return jsonResponse(400, { error: "Send the change list's version and ticks." });
   }
 
-  const outcome = await saveChangeSet({ scope: { importId, clientId, firmId }, actorId: userId, changeSetVersion, ticks });
+  let outcome: SaveOutcome;
+  try {
+    outcome = await saveChangeSet({ scope: { importId, clientId, firmId }, actorId: userId, changeSetVersion, ticks });
+  } catch (err) {
+    // A read before the save's transaction failed (the save answers everything after it): nothing was written.
+    console.error(`[fact-finder-save] import ${importId}: the save failed before writing:`, safeErrorFields(err));
+    return jsonResponse(500, { error: SAVE_FAILED_MESSAGE } satisfies SaveRefusal);
+  }
   if (outcome.ok) return jsonResponse(200, { factFinder: outcome.factFinder } satisfies SaveResponse);
   const { status, error, lineId, factFinder } = outcome;
   return jsonResponse(status, {

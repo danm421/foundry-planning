@@ -105,4 +105,30 @@ describe("POST /fact-finder/save", () => {
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: "The save failed — nothing was changed." });
   });
+
+  it("keeps the line a 409 or a 500 names (a record changed since the review; the line being written when it failed)", async () => {
+    const changed = "“Fidelity IRA” changed since you reviewed — review again.";
+    vi.mocked(saveChangeSet).mockResolvedValueOnce({ ok: false, status: 409, error: changed, lineId: "r1/account" });
+    const stale = await POST(save({ changeSetVersion: 4, ticks: TICKS }), params);
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toEqual({ error: changed, lineId: "r1/account" });
+
+    vi.mocked(saveChangeSet).mockResolvedValueOnce({ ok: false, status: 500, error: SAVE_FAILED_MESSAGE, lineId: "r1/account" });
+    const failed = await POST(save({ changeSetVersion: 4, ticks: TICKS }), params);
+    expect(failed.status).toBe(500);
+    expect(await failed.json()).toEqual({ error: SAVE_FAILED_MESSAGE, lineId: "r1/account" });
+  });
+
+  it("answers a save that throws before its transaction (a dropped connection on its first read) with the JSON 500 — nothing was written — and logs it", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      vi.mocked(saveChangeSet).mockRejectedValueOnce(new Error("Connection terminated unexpectedly"));
+      const res = await POST(save({ changeSetVersion: 4, ticks: TICKS }), params);
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: SAVE_FAILED_MESSAGE });
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining("import i1"), expect.objectContaining({ message: "Connection terminated unexpectedly" }));
+    } finally {
+      logged.mockRestore();
+    }
+  });
 });
