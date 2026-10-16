@@ -9,13 +9,14 @@
  *
  * A life insurance account can be on the plan without its details row (Data
  * Collection adds one bare). The core's PATCH writes the details to that row
- * and doesn't check it's there, so an update whose ticked values go to it is
- * refused instead of reported as saved.
+ * and doesn't check it's there (nor does Details' own edit), so an update whose
+ * ticked values go to it is refused instead of reported as saved.
  */
 import { and, eq, inArray } from "drizzle-orm";
 import { accounts, lifeInsurancePolicies } from "@/db/schema";
 import { createInsurancePolicyForClient, updateInsurancePolicyForClient } from "@/lib/clients/insurance-policies-writes";
 import type { ChangeLine, PlacedValue } from "../../change-set";
+import { targetField } from "../../placement/targets";
 import { SaveLineError, unwrap, type SaveContext, type SaveWriter } from "../types";
 
 /** A policy line's keys that write its details row (life_insurance_policies): the core's, then the writer's own two. */
@@ -67,7 +68,16 @@ async function writePolicyDetails(ctx: SaveContext, policyId: string, details: P
       ),
     )
     .returning({ id: lifeInsurancePolicies.accountId });
-  if (written.length === 0) throw new SaveLineError("This policy has no details on the plan yet — add them in Details.");
+  if (written.length === 0) {
+    throw noDetailsRow(Object.keys(details).map((key) => `“${targetField("life_insurance_policy", key)?.label ?? key}”`));
+  }
+}
+
+/** Ticked fields (their quoted labels) that go to a details row the policy doesn't have: what's true, and what works. */
+function noDetailsRow(labels: readonly string[]): SaveLineError {
+  const them = labels.length === 1 ? "it" : "them";
+  const named = labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
+  return new SaveLineError(`This policy has no details on the plan, so ${named} can't be saved by an update — untick ${them} to save the rest.`);
 }
 
 /** Refuses an update whose ticked values go to a details row the client's policy doesn't have. */
@@ -81,9 +91,7 @@ async function needDetailsRow(ctx: SaveContext, policyId: string, line: ChangeLi
     .where(and(eq(accounts.id, policyId), eq(accounts.clientId, ctx.clientId)));
   // No policy at all: the core answers "Policy not found".
   if (!policy || policy.details !== null) return;
-  const them = labels.length === 1 ? "it" : "them";
-  const named = labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
-  throw new SaveLineError(`This policy has no details on the plan yet, so ${named} can't be saved — add ${them} in Details, or untick ${them} to save the rest.`);
+  throw noDetailsRow(labels);
 }
 
 const coreArgs = (ctx: SaveContext) => ({

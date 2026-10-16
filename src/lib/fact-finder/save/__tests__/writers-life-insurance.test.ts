@@ -310,7 +310,7 @@ d("life insurance policy writer", () => {
       );
       expect(result.refused).toMatchObject({
         name: "SaveLineError",
-        message: "This policy has no details on the plan yet, so “Death benefit” and “Annual premium” can't be saved — add them in Details, or untick them to save the rest.",
+        message: "This policy has no details on the plan, so “Death benefit” and “Annual premium” can't be saved by an update — untick them to save the rest.",
       });
       expect(result).toMatchObject({ name: "Old policy", audit: [] });
 
@@ -318,13 +318,18 @@ d("life insurance policy writer", () => {
       expect((await policyOf(id)).account.name).toBe("MetLife Term");
     });
 
-    it("refuses its carrier and last 4 the same way, rather than drop them", async () => {
+    it("refuses its carrier and last 4 the same way, rather than drop them — one alone is “it”", async () => {
       const seed = await seedSaveClient(FIRM);
-      const line = changeLine("life_insurance_policy", { carrier: "MetLife" }, { recordId: await bare(seed) });
+      const id = await bare(seed);
+      const line = changeLine("life_insurance_policy", { carrier: "MetLife", policyNumberLast4: "1234" }, { recordId: id });
 
       await expect(inSave(at(seed), (ctx) => writer.update(ctx, inputOf(line)))).rejects.toMatchObject({
         name: "SaveLineError",
-        message: "This policy has no details on the plan yet, so “Carrier” can't be saved — add it in Details, or untick it to save the rest.",
+        message: "This policy has no details on the plan, so “Carrier” and “Policy # (last 4)” can't be saved by an update — untick them to save the rest.",
+      });
+      await expect(inSave(at(seed), (ctx) => writer.update(ctx, inputOf(untick(line, "policyNumberLast4"))))).rejects.toMatchObject({
+        name: "SaveLineError",
+        message: "This policy has no details on the plan, so “Carrier” can't be saved by an update — untick it to save the rest.",
       });
       expect(await auditOf(seed.clientId)).toEqual([]);
     });
