@@ -14,34 +14,26 @@ import { createExpenseForClient, updateExpenseForClient } from "@/lib/clients/ex
 import { createIncomeForClient, updateIncomeForClient } from "@/lib/clients/incomes-writes";
 import { createSavingsRuleForClient, updateSavingsRuleForClient } from "@/lib/clients/savings-rules-writes";
 import { defaultDeductibleForSubtype, supportsDeductibility } from "@/lib/tax/derive-deductions";
-import { recordIdOf, unwrap, type SaveContext, type SaveWriter } from "../types";
-
-const scope = (ctx: SaveContext) => ({
-  clientId: ctx.clientId,
-  firmId: ctx.firmId,
-  actorId: ctx.actorId,
-  tx: ctx.tx,
-  afterCommit: ctx.afterCommit,
-});
+import { coreArgs, recordIdOf, unwrap, type SaveContext, type SaveWriter } from "../types";
 
 const NO_RECORD = "This line updates a record, but names none.";
 
 const income: SaveWriter = {
   async create(ctx, input) {
-    return unwrap(await createIncomeForClient({ ...scope(ctx), input: input.body })).resourceId;
+    return unwrap(await createIncomeForClient({ ...coreArgs(ctx), input: input.body })).resourceId;
   },
   async update(ctx, input) {
-    unwrap(await updateIncomeForClient({ ...scope(ctx), incomeId: recordIdOf(input, NO_RECORD), input: input.body }));
+    unwrap(await updateIncomeForClient({ ...coreArgs(ctx), incomeId: recordIdOf(input, NO_RECORD), input: input.body }));
   },
 };
 
 // An itemized list rides the expense update: the core sets the row's total from it.
 const expense: SaveWriter = {
   async create(ctx, input) {
-    return unwrap(await createExpenseForClient({ ...scope(ctx), input: input.body })).resourceId;
+    return unwrap(await createExpenseForClient({ ...coreArgs(ctx), input: input.body })).resourceId;
   },
   async update(ctx, input) {
-    unwrap(await updateExpenseForClient({ ...scope(ctx), expenseId: recordIdOf(input, NO_RECORD), input: input.body }));
+    unwrap(await updateExpenseForClient({ ...coreArgs(ctx), expenseId: recordIdOf(input, NO_RECORD), input: input.body }));
   },
 };
 
@@ -66,10 +58,10 @@ const savingsRule: SaveWriter = {
   async create(ctx, input) {
     const isDeductible = "isDeductible" in input.body ? undefined : await deductibleByDefault(ctx, input.body.accountId);
     const body = isDeductible === undefined ? input.body : { ...input.body, isDeductible };
-    return unwrap(await createSavingsRuleForClient({ ...scope(ctx), input: body })).resourceId;
+    return unwrap(await createSavingsRuleForClient({ ...coreArgs(ctx), input: body })).resourceId;
   },
   async update(ctx, input) {
-    unwrap(await updateSavingsRuleForClient({ ...scope(ctx), ruleId: recordIdOf(input, NO_RECORD), input: input.body }));
+    unwrap(await updateSavingsRuleForClient({ ...coreArgs(ctx), ruleId: recordIdOf(input, NO_RECORD), input: input.body }));
   },
 };
 

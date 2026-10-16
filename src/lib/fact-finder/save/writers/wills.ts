@@ -15,7 +15,7 @@ import {
   replaceWillResiduaryForClient,
   updateWillBequestForClient,
 } from "@/lib/clients/wills-writes";
-import { SaveLineError, unwrap, type SaveContext, type SaveInput, type SaveWriter } from "../types";
+import { coreArgs, SaveLineError, unwrap, type SaveInput, type SaveWriter } from "../types";
 
 /** The wills routes' refusal codes, as the advisor reads them. */
 const PLAIN: Record<string, string> = {
@@ -31,8 +31,6 @@ function idOf<T>(result: EntityWriteResult<T>): string {
   return unwrap(result).resourceId;
 }
 
-const opts = (ctx: SaveContext) => ({ tx: ctx.tx, afterCommit: ctx.afterCommit, clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId });
-
 /** The will a provision or the remaining estate hangs off: the line's parent, resolved. */
 function willOf(input: SaveInput): string {
   if (input.parentId !== null) return input.parentId;
@@ -44,23 +42,23 @@ const residuaryOf = (input: SaveInput) => ({ residuaryRecipients: input.body.rec
 
 export const WILL_WRITERS: { will: SaveWriter; will_bequest: SaveWriter; will_residuary_recipient: SaveWriter } = {
   will: {
-    create: async (ctx, input) => idOf(await createWillForClient({ ...opts(ctx), input: input.body })),
+    create: async (ctx, input) => idOf(await createWillForClient({ ...coreArgs(ctx), input: input.body })),
     update: async () => {
       throw new SaveLineError("The import doesn't change a will on the plan — only its provisions and remaining estate.");
     },
   },
   will_bequest: {
-    create: async (ctx, input) => idOf(await addWillBequestForClient({ ...opts(ctx), willId: willOf(input), input: input.body })),
+    create: async (ctx, input) => idOf(await addWillBequestForClient({ ...coreArgs(ctx), willId: willOf(input), input: input.body })),
     update: async (ctx, input) => {
       if (input.recordId === null) throw new SaveLineError("This provision isn't on the plan.");
-      idOf(await updateWillBequestForClient({ ...opts(ctx), willId: willOf(input), bequestId: input.recordId, input: input.body }));
+      idOf(await updateWillBequestForClient({ ...coreArgs(ctx), willId: willOf(input), bequestId: input.recordId, input: input.body }));
     },
   },
   // A set: its id is its will's.
   will_residuary_recipient: {
-    create: async (ctx, input) => idOf(await replaceWillResiduaryForClient({ ...opts(ctx), willId: willOf(input), input: residuaryOf(input) })),
+    create: async (ctx, input) => idOf(await replaceWillResiduaryForClient({ ...coreArgs(ctx), willId: willOf(input), input: residuaryOf(input) })),
     update: async (ctx, input) => {
-      idOf(await replaceWillResiduaryForClient({ ...opts(ctx), willId: willOf(input), input: residuaryOf(input) }));
+      idOf(await replaceWillResiduaryForClient({ ...coreArgs(ctx), willId: willOf(input), input: residuaryOf(input) }));
     },
   },
 };

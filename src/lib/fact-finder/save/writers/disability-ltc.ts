@@ -9,29 +9,25 @@
  */
 import { createDisabilityPolicyForClient, updateDisabilityPolicyForClient } from "@/lib/clients/disability-policies-writes";
 import { createLtcPolicyForClient, updateLtcPolicyForClient } from "@/lib/clients/ltc-policies-writes";
-import { recordIdOf, unwrap, type SaveContext, type SaveWriter } from "../types";
-
-const base = (ctx: SaveContext) => ({
-  clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, tx: ctx.tx, afterCommit: ctx.afterCommit,
-});
+import { coreArgs, recordIdOf, unwrap, type SaveWriter } from "../types";
 
 const disability_policy: SaveWriter = {
   async create(ctx, input) {
-    return unwrap(await createDisabilityPolicyForClient({ ...base(ctx), input: input.body })).resourceId;
+    return unwrap(await createDisabilityPolicyForClient({ ...coreArgs(ctx), input: input.body })).resourceId;
   },
   async update(ctx, input) {
     const policyId = recordIdOf(input, "The disability policy to change isn't on the plan.");
-    unwrap(await updateDisabilityPolicyForClient({ ...base(ctx), policyId, input: input.body }));
+    unwrap(await updateDisabilityPolicyForClient({ ...coreArgs(ctx), policyId, input: input.body }));
   },
 };
 
 const ltc_policy: SaveWriter = {
   async create(ctx, input) {
-    return unwrap(await createLtcPolicyForClient({ ...base(ctx), input: input.body })).resourceId;
+    return unwrap(await createLtcPolicyForClient({ ...coreArgs(ctx), input: input.body })).resourceId;
   },
   async update(ctx, input) {
     const policyId = recordIdOf(input, "The long-term care policy to change isn't on the plan.");
-    unwrap(await updateLtcPolicyForClient({ ...base(ctx), policyId, input: input.body }));
+    unwrap(await updateLtcPolicyForClient({ ...coreArgs(ctx), policyId, input: input.body }));
   },
 };
 

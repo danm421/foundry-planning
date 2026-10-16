@@ -17,7 +17,7 @@ import { accounts, lifeInsurancePolicies } from "@/db/schema";
 import { createInsurancePolicyForClient, updateInsurancePolicyForClient } from "@/lib/clients/insurance-policies-writes";
 import type { ChangeLine, PlacedValue } from "../../change-set";
 import { targetField } from "../../placement/targets";
-import { SaveLineError, unwrap, type SaveContext, type SaveWriter } from "../types";
+import { coreArgs, SaveLineError, unwrap, type SaveContext, type SaveWriter } from "../types";
 
 /** A policy line's keys that write its details row (life_insurance_policies): the core's, then the writer's own two. */
 const DETAIL_KEYS = new Set([
@@ -93,14 +93,6 @@ async function needDetailsRow(ctx: SaveContext, policyId: string, line: ChangeLi
   if (!policy || policy.details !== null) return;
   throw noDetailsRow(labels);
 }
-
-const coreArgs = (ctx: SaveContext) => ({
-  clientId: ctx.clientId,
-  firmId: ctx.firmId,
-  actorId: ctx.actorId,
-  tx: ctx.tx,
-  afterCommit: ctx.afterCommit,
-});
 
 export const LIFE_WRITERS: { life_insurance_policy: SaveWriter } = {
   life_insurance_policy: {

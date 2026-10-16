@@ -103,7 +103,7 @@ function planned(line: ChangeLine, ticks: Record<string, boolean>): PlannedLine 
 }
 
 /** Every ref inside a value. */
-function refsIn(value: PlacedValue): RecordRef[] {
+export function refsIn(value: PlacedValue): RecordRef[] {
   if (isRecordRef(value)) return [value];
   if (Array.isArray(value)) return value.flatMap(refsIn);
   if (value !== null && typeof value === "object") return Object.values(value).flatMap(refsIn);

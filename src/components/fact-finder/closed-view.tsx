@@ -14,11 +14,11 @@ import { CircleCheckIcon } from "./icons";
 const LIST = "divide-y divide-hair";
 const ITEM = "flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-[var(--pad-card)] py-2.5 text-sm";
 
-function Group({ title, name, children }: { title: string; name: string; children: React.ReactNode }) {
+function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <Card>
       <h3 className="border-b border-hair px-[var(--pad-card)] py-3 text-sm font-semibold text-ink-2">{title}</h3>
-      <ul aria-label={name} className={LIST}>
+      <ul aria-label={title} className={LIST}>
         {children}
       </ul>
     </Card>
@@ -49,7 +49,7 @@ export function ClosedView({ clientId, closed, justSaved = false }: { clientId: 
         </p>
       </Card>
       <p className="text-sm text-ink-3">This import is saved. Change the plan on its Details pages, or start a new import.</p>
-      <Group title="Saved to the plan" name="Saved to the plan">
+      <Group title="Saved to the plan">
         {saved.map((line) => (
           <li key={line.lineId} className={ITEM}>
             <Link href={detailsHrefFor(clientId, line.target)} className="font-medium text-ink underline underline-offset-2 hover:no-underline">
@@ -59,7 +59,7 @@ export function ClosedView({ clientId, closed, justSaved = false }: { clientId: 
         ))}
       </Group>
       {leftOut.length > 0 && (
-        <Group title="Left out" name="Left out">
+        <Group title="Left out">
           {leftOut.map((line) => (
             <li key={line.lineId} className={ITEM}>
               <span className="font-medium text-ink">{line.label}</span>

@@ -18,16 +18,11 @@ import type { ResolvedHoldingsMap } from "@/lib/imports/commit/types";
 import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
 import type { PlacedValue } from "../../change-set";
 import { holdingKey, holdingValue } from "../../state";
-import { unwrap, type PlannedLine, type SaveContext, type SaveWriter } from "../types";
+import { coreArgs, unwrap, type PlannedLine, type SaveContext, type SaveWriter } from "../types";
 import { syncContractToAccount } from "./annuities-stock-options";
 
 type HoldingRow = typeof accountHoldings.$inferSelect;
 type Position = Record<string, PlacedValue>;
-
-/** Who writes, on the save's transaction, with its after-commit queue. */
-function coreArgs(ctx: SaveContext) {
-  return { clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, tx: ctx.tx, afterCommit: ctx.afterCommit };
-}
 
 /** The positions a line lists, else null — the line says nothing about them. */
 function positionsOf(values: Record<string, PlacedValue>): Position[] | null {

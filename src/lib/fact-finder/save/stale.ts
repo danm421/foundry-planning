@@ -7,7 +7,7 @@
  * Placement runs again (no AI) to find each line's record as the review would
  * now. Only ticked fields count: the save writes nothing else. Pure.
  */
-import { cellKey, isRecordRef, type ChangeLine, type PlacedValue, type RecordRef } from "../change-set";
+import { cellKey, type ChangeLine, type PlacedValue } from "../change-set";
 import { applyLeftovers, type LeftoversOutput } from "../placement/leftovers";
 import { checkLinks } from "../placement/links";
 import { placeFactFinder, type Placed } from "../placement/place";
@@ -15,6 +15,7 @@ import { targetField } from "../placement/targets";
 import { findRecord, type RecordBook, type TargetDraft } from "../placement/types";
 import { sameValue } from "../placement/values";
 import type { FactFinderState } from "../types";
+import { refsIn } from "./plan";
 
 export interface StaleProblem {
   lineId: string;
@@ -86,14 +87,6 @@ function goneRecord(lines: readonly ChangeLine[], book: RecordBook): StaleProble
   return line ? { lineId: line.id, message: GONE(line.label) } : null;
 }
 
-/** Every record ref inside a value. */
-function recordRefs(value: PlacedValue | undefined): Extract<RecordRef, { ref: "record" }>[] {
-  if (isRecordRef(value)) return value.ref === "record" ? [value] : [];
-  if (Array.isArray(value)) return value.flatMap(recordRefs);
-  if (value !== null && typeof value === "object") return Object.values(value).flatMap(recordRefs);
-  return [];
-}
-
 /** A record the line writes a reference to — the record it hangs off, a value it creates with, a ticked value and its companions — gone from the plan. */
 function goneRef(lines: readonly ChangeLine[], book: RecordBook): StaleProblem | null {
   for (const line of lines) {
@@ -102,7 +95,7 @@ function goneRef(lines: readonly ChangeLine[], book: RecordBook): StaleProblem |
       line.fixed ?? null,
       ...line.fields.filter((f) => f.ticked).flatMap((f) => [f.next, f.with ?? null]),
     ];
-    if (written.flatMap(recordRefs).some((ref) => !findRecord(book, ref.target, ref.id))) return { lineId: line.id, message: NAMES_GONE(line.label) };
+    if (written.flatMap(refsIn).some((ref) => ref.ref === "record" && !findRecord(book, ref.target, ref.id))) return { lineId: line.id, message: NAMES_GONE(line.label) };
   }
   return null;
 }

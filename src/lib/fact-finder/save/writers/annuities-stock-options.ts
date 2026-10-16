@@ -18,20 +18,12 @@ import {
   updateStockOptionAccountForClient,
   updateStockOptionGrantForClient,
 } from "@/lib/clients/stock-options-writes";
-import { unwrap, type SaveContext, type SaveWriter } from "../types";
+import { coreArgs, unwrap, type SaveContext, type SaveWriter } from "../types";
 
 type Body = Record<string, unknown>;
 type Tranche = { vestDate: string; shares: number } & Body;
 /** A grant on record in the shape its PUT takes (no planned events). */
 type GrantOnRecord = Body & { tranches: Tranche[] };
-
-const options = (ctx: SaveContext) => ({
-  clientId: ctx.clientId,
-  firmId: ctx.firmId,
-  actorId: ctx.actorId,
-  tx: ctx.tx,
-  afterCommit: ctx.afterCommit,
-});
 
 function idOf(id: string | null, what: string): string {
   if (!id) throw new Error(`annuities-stock-options writer: no ${what} id`);
@@ -53,7 +45,7 @@ async function contractOnRecord(ctx: SaveContext, accountId: string): Promise<Bo
 /** Both a Create and an Update upsert the contract keyed by its account; returns that account's id. */
 async function upsertContract(ctx: SaveContext, accountId: string, body: Body): Promise<string> {
   const input = { ...(await contractOnRecord(ctx, accountId)), ...body };
-  unwrap(await upsertAnnuityContractForClient({ ...options(ctx), accountId, input }));
+  unwrap(await upsertAnnuityContractForClient({ ...coreArgs(ctx), accountId, input }));
   return accountId;
 }
 
@@ -140,16 +132,16 @@ export const ANNUITY_STOCK_WRITERS: { annuity_contract: SaveWriter; stock_option
   },
   stock_option_account: {
     async create(ctx, input) {
-      return unwrap(await createStockOptionAccountForClient({ ...options(ctx), input: input.body })).resourceId;
+      return unwrap(await createStockOptionAccountForClient({ ...coreArgs(ctx), input: input.body })).resourceId;
     },
     async update(ctx, input) {
-      unwrap(await updateStockOptionAccountForClient({ ...options(ctx), accountId: idOf(input.recordId, "account"), input: input.body }));
+      unwrap(await updateStockOptionAccountForClient({ ...coreArgs(ctx), accountId: idOf(input.recordId, "account"), input: input.body }));
     },
   },
   stock_option_grant: {
     async create(ctx, input) {
       const accountId = idOf(input.parentId, "stock option account");
-      return unwrap(await createStockOptionGrantForClient({ ...options(ctx), accountId, input: input.body })).resourceId;
+      return unwrap(await createStockOptionGrantForClient({ ...coreArgs(ctx), accountId, input: input.body })).resourceId;
     },
     async update(ctx, input) {
       const accountId = idOf(input.parentId, "stock option account");
@@ -157,7 +149,7 @@ export const ANNUITY_STOCK_WRITERS: { annuity_contract: SaveWriter; stock_option
       const record = await grantOnRecord(ctx, accountId, grantId);
       // No grant on record: the core refuses it ("Grant not found").
       const body = record ? mergeGrantBody(record, input.body) : input.body;
-      unwrap(await updateStockOptionGrantForClient({ ...options(ctx), accountId, grantId, input: body }));
+      unwrap(await updateStockOptionGrantForClient({ ...coreArgs(ctx), accountId, grantId, input: body }));
     },
   },
 };

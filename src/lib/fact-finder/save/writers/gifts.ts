@@ -7,25 +7,15 @@
 import { and, eq } from "drizzle-orm";
 import { gifts } from "@/db/schema";
 import { createGiftForClient, updateGiftForClient } from "@/lib/clients/gifts-writes";
-import { recordIdOf, unwrap, type SaveWriter } from "../types";
+import { coreArgs, recordIdOf, unwrap, type SaveWriter } from "../types";
 
 const gift: SaveWriter = {
   async create(ctx, input) {
-    const { resourceId } = unwrap(
-      await createGiftForClient({
-        clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, input: input.body, tx: ctx.tx, afterCommit: ctx.afterCommit,
-      }),
-    );
-    return resourceId;
+    return unwrap(await createGiftForClient({ ...coreArgs(ctx), input: input.body })).resourceId;
   },
   async update(ctx, input) {
     const giftId = recordIdOf(input, "The gift to change isn't on the plan.");
-    unwrap(
-      await updateGiftForClient({
-        clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, giftId, input: input.body,
-        tx: ctx.tx, afterCommit: ctx.afterCommit,
-      }),
-    );
+    unwrap(await updateGiftForClient({ ...coreArgs(ctx), giftId, input: input.body }));
     // The update path never writes `yearRef`: a typed year unties the gift from the milestone Details tied it to,
     // else the record keeps following the milestone and a later change to it rewrites the year.
     if ("year" in input.body) {

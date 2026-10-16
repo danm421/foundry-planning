@@ -62,6 +62,11 @@ export class SaveLineError extends Error {
   }
 }
 
+/** What a writer's core call passes: the save's client and actor, its transaction and after-commit queue. */
+export function coreArgs(ctx: SaveContext) {
+  return { clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, tx: ctx.tx, afterCommit: ctx.afterCommit };
+}
+
 /** An Update line's record (the save resolves it before it calls a writer), or a SaveLineError with the writer's own `message`. */
 export function recordIdOf(input: SaveInput, message: string): string {
   if (!input.recordId) throw new SaveLineError(message);

@@ -16,12 +16,7 @@ import { createFamilyMemberForClient, updateFamilyMemberForClient } from "@/lib/
 import { updatePlanSettingsForClient } from "@/lib/clients/plan-settings-writes";
 import { upsertPrimaryAndSpouseContacts } from "@/lib/crm/upsert-household-contact";
 import { NO_CO_CLIENT_REASON } from "../../placement/refs";
-import { recordIdOf, SaveLineError, unwrap, type SaveContext, type SaveWriter } from "../types";
-
-/** What every core call of the save passes: its client, its actor, its transaction and queue. */
-const writeArgs = (ctx: SaveContext) => ({
-  clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, tx: ctx.tx, afterCommit: ctx.afterCommit,
-});
+import { coreArgs, recordIdOf, SaveLineError, unwrap, type SaveContext, type SaveWriter } from "../types";
 
 const updateOnly = (message: string) => async (): Promise<string> => {
   throw new SaveLineError(message);
@@ -46,7 +41,7 @@ export const HOUSEHOLD_WRITERS: { client_household: SaveWriter; plan_settings_ta
     create: updateOnly("A household is only ever updated."),
     async update(ctx, { values, body }) {
       // An Employer line carries no profile keys: the profile update would write nothing but timestamps.
-      if (Object.keys(body).length > 0) unwrap(await updateClientProfileForClient({ ...writeArgs(ctx), body }));
+      if (Object.keys(body).length > 0) unwrap(await updateClientProfileForClient({ ...coreArgs(ctx), body }));
       const touchesCoClient = Object.keys(values).some((key) => key.startsWith("spouse"));
       if (!touchesCoClient && !("employer" in values)) return;
 
@@ -64,20 +59,20 @@ export const HOUSEHOLD_WRITERS: { client_household: SaveWriter; plan_settings_ta
   plan_settings_tax_rates: {
     create: updateOnly("Tax settings are only ever updated."),
     async update(ctx, { body }) {
-      unwrap(await updatePlanSettingsForClient({ ...writeArgs(ctx), body }));
+      unwrap(await updatePlanSettingsForClient({ ...coreArgs(ctx), body }));
     },
   },
 
   family_member: {
     async create(ctx, { body }) {
-      const { resourceId } = unwrap(await createFamilyMemberForClient({ ...writeArgs(ctx), input: body }));
+      const { resourceId } = unwrap(await createFamilyMemberForClient({ ...coreArgs(ctx), input: body }));
       if (body.claimedAsDependent !== undefined) {
-        unwrap(await updateFamilyMemberForClient({ ...writeArgs(ctx), memberId: resourceId, input: { claimedAsDependent: body.claimedAsDependent } }));
+        unwrap(await updateFamilyMemberForClient({ ...coreArgs(ctx), memberId: resourceId, input: { claimedAsDependent: body.claimedAsDependent } }));
       }
       return resourceId;
     },
     async update(ctx, input) {
-      unwrap(await updateFamilyMemberForClient({ ...writeArgs(ctx), memberId: recordIdOf(input, "This line names no record to update."), input: input.body }));
+      unwrap(await updateFamilyMemberForClient({ ...coreArgs(ctx), memberId: recordIdOf(input, "This line names no record to update."), input: input.body }));
     },
   },
 };

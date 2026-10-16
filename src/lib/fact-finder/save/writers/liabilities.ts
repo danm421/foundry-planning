@@ -8,7 +8,7 @@
 import { and, eq } from "drizzle-orm";
 import { liabilities, liabilityTypeEnum } from "@/db/schema";
 import { createLiabilityForClient, updateLiabilityForClient } from "@/lib/clients/liabilities-writes";
-import { recordIdOf, SaveLineError, unwrap, type SaveContext, type SaveInput, type SaveWriter } from "../types";
+import { coreArgs, recordIdOf, SaveLineError, unwrap, type SaveContext, type SaveInput, type SaveWriter } from "../types";
 
 type LiabilityType = (typeof liabilityTypeEnum.enumValues)[number];
 
@@ -31,23 +31,14 @@ async function writeLiabilityType(ctx: SaveContext, liabilityId: string, type: L
 const liability: SaveWriter = {
   async create(ctx, input) {
     const type = liabilityTypeOf(input);
-    const { resourceId } = unwrap(
-      await createLiabilityForClient({
-        clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, input: input.body, tx: ctx.tx, afterCommit: ctx.afterCommit,
-      }),
-    );
+    const { resourceId } = unwrap(await createLiabilityForClient({ ...coreArgs(ctx), input: input.body }));
     await writeLiabilityType(ctx, resourceId, type);
     return resourceId;
   },
   async update(ctx, input) {
     const liabilityId = recordIdOf(input, "The loan to change isn't on the plan.");
     const type = liabilityTypeOf(input);
-    unwrap(
-      await updateLiabilityForClient({
-        clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, liabilityId, input: input.body,
-        tx: ctx.tx, afterCommit: ctx.afterCommit,
-      }),
-    );
+    unwrap(await updateLiabilityForClient({ ...coreArgs(ctx), liabilityId, input: input.body }));
     await writeLiabilityType(ctx, liabilityId, type);
   },
 };

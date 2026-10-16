@@ -13,12 +13,7 @@ import { and, eq } from "drizzle-orm";
 import { accounts, entities } from "@/db/schema";
 import { createEntityForClient, updateEntityForClient } from "@/lib/clients/entities-writes";
 import { createRevocableTrustForClient, updateRevocableTrustForClient } from "@/lib/clients/revocable-trusts-writes";
-import { recordIdOf, SaveLineError, unwrap, type SaveContext, type SaveWriter } from "../types";
-
-/** Who and where every core call of the save writes. */
-function writeAs(ctx: SaveContext) {
-  return { clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, tx: ctx.tx, afterCommit: ctx.afterCommit };
-}
+import { coreArgs, recordIdOf, SaveLineError, unwrap, type SaveContext, type SaveWriter } from "../types";
 
 const NO_TRUST = "The trust to change isn't on the plan.";
 
@@ -46,23 +41,23 @@ async function heldAccountIds(ctx: SaveContext, trustId: string): Promise<string
 export const TRUST_WRITERS: { entity: SaveWriter; revocable_trust: SaveWriter } = {
   entity: {
     async create(ctx, { body }) {
-      return unwrap(await createEntityForClient({ ...writeAs(ctx), input: body })).resourceId;
+      return unwrap(await createEntityForClient({ ...coreArgs(ctx), input: body })).resourceId;
     },
     async update(ctx, input) {
       const entityId = recordIdOf(input, NO_TRUST);
       await keepCharitableGrantor(ctx, entityId, input.body);
-      unwrap(await updateEntityForClient({ ...writeAs(ctx), entityId, input: input.body }));
+      unwrap(await updateEntityForClient({ ...coreArgs(ctx), entityId, input: input.body }));
     },
   },
   revocable_trust: {
     async create(ctx, { body }) {
-      return unwrap(await createRevocableTrustForClient({ ...writeAs(ctx), input: body })).resourceId;
+      return unwrap(await createRevocableTrustForClient({ ...coreArgs(ctx), input: body })).resourceId;
     },
     // A line carries the name only; the PATCH untags every account its body doesn't list.
     async update(ctx, input) {
       const trustId = recordIdOf(input, NO_TRUST);
       const body = { accountIds: await heldAccountIds(ctx, trustId), ...input.body };
-      unwrap(await updateRevocableTrustForClient({ ...writeAs(ctx), trustId, input: body }));
+      unwrap(await updateRevocableTrustForClient({ ...coreArgs(ctx), trustId, input: body }));
     },
   },
 };

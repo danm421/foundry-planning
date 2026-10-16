@@ -11,7 +11,7 @@ import { clients, externalBeneficiaries } from "@/db/schema";
 import { createExternalBeneficiaryForClient, updateExternalBeneficiaryForClient } from "@/lib/clients/external-beneficiaries-writes";
 import { createObservationForClient, updateObservationForClient } from "@/lib/clients/observations-writes";
 import { createRelatedPartyForClient, updateRelatedPartyForClient } from "@/lib/clients/related-parties-writes";
-import { recordIdOf, SaveLineError, unwrap, type SaveContext, type SaveWriter } from "../types";
+import { coreArgs, recordIdOf, SaveLineError, unwrap, type SaveContext, type SaveWriter } from "../types";
 
 const nameKey = (name: string) => name.trim().toLowerCase();
 
@@ -53,38 +53,21 @@ const external_beneficiary: SaveWriter = {
 
 const related_party: SaveWriter = {
   async create(ctx, input) {
-    return unwrap(
-      await createRelatedPartyForClient({
-        clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, householdId: await householdOf(ctx),
-        input: input.body, tx: ctx.tx, afterCommit: ctx.afterCommit,
-      }),
-    ).resourceId;
+    return unwrap(await createRelatedPartyForClient({ ...coreArgs(ctx), householdId: await householdOf(ctx), input: input.body })).resourceId;
   },
   async update(ctx, input) {
     unwrap(
-      await updateRelatedPartyForClient({
-        clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, householdId: await householdOf(ctx),
-        partyId: recordIdOf(input, NO_RECORD), input: input.body, tx: ctx.tx, afterCommit: ctx.afterCommit,
-      }),
+      await updateRelatedPartyForClient({ ...coreArgs(ctx), householdId: await householdOf(ctx), partyId: recordIdOf(input, NO_RECORD), input: input.body }),
     );
   },
 };
 
 const plan_observation: SaveWriter = {
   async create(ctx, input) {
-    return unwrap(
-      await createObservationForClient({
-        clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, input: input.body, tx: ctx.tx, afterCommit: ctx.afterCommit,
-      }),
-    ).resourceId;
+    return unwrap(await createObservationForClient({ ...coreArgs(ctx), input: input.body })).resourceId;
   },
   async update(ctx, input) {
-    unwrap(
-      await updateObservationForClient({
-        clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, observationId: recordIdOf(input, NO_RECORD),
-        input: input.body, tx: ctx.tx, afterCommit: ctx.afterCommit,
-      }),
-    );
+    unwrap(await updateObservationForClient({ ...coreArgs(ctx), observationId: recordIdOf(input, NO_RECORD), input: input.body }));
   },
 };
 
