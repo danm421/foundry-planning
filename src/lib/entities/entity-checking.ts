@@ -5,7 +5,7 @@ import type { Account, ClientData } from "@/engine/types";
  * engine has nowhere to route its cash.
  *
  * Three paths put an entity on the effective tree, and all three must agree:
- *   • the API (`app/api/clients/[id]/entities/route.ts`) inserts a real
+ *   • the API (`createEntityForClient`, `lib/clients/entities-writes.ts`) inserts a real
  *     `entity_name — Cash` account row per base scenario;
  *   • the live solver (`lib/solver/apply-mutations.ts`, `entity-upsert`)
  *     synthesizes one on the in-memory tree;
@@ -48,7 +48,7 @@ export const isSyntheticEntityChecking = (id: string) =>
  * SPOUSAL co-titling forms — and its own doc comment says it is "Ignored for
  * solo-owned or entity-owned accounts; the engine only consults it when
  * `isJointHousehold(a)` is true." The DB/API path
- * (`app/api/clients/[id]/entities/route.ts`) also leaves the column unset, so
+ * (`createEntityForClient`, `lib/clients/entities-writes.ts`) also leaves the column unset, so
  * inventing a value here would introduce a NEW divergence from the third path
  * instead of removing one.
  */

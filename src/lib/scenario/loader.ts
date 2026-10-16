@@ -326,7 +326,8 @@ export const loadEffectiveTree = cache(
           }
         : baseTree;
       // Entity checking synthesis runs here too. Base entities normally carry a
-      // real account row (entities/route.ts creates one per entity), but
+      // real account row (createEntityForClient in clients/entities-writes.ts
+      // creates one per entity), but
       // promote-to-base writes an `entities` row through
       // PROMOTE_TABLE_REGISTRY with no child writer — so a promoted entity
       // reaches base with no checking account. Skipping it here would leave the

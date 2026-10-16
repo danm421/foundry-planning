@@ -296,6 +296,27 @@ describe("TRUSTS_MAP", () => {
     expect(becoming.blocked).toEqual({ reason: SPLIT, cell: c("trustType") });
   });
 
+  it("a charitable lead or remainder trust on record keeps its grantor: a different one is left off the line, which says where it changes — its other fields still save", () => {
+    const GRANTOR = "A charitable lead or remainder trust's grantor changes in Details — its remainder gift moves with it.";
+    const clt = recordOf("ent-1", "Hendricks CLT", { name: "Hendricks CLT", trustSubType: "clt", grantor: "client", trustee: "Jane Smith" }, { trustSubType: "clt" });
+    const crt = recordOf("ent-2", "Hendricks CRT", { name: "Hendricks CRT", trustSubType: "crt", grantor: "none", trustee: "Jane Smith" }, { trustSubType: "crt" });
+    const ilit = recordOf("ent-3", "Hendricks ILIT", { name: "Hendricks ILIT", trustSubType: "ilit", grantor: "client", trustee: "Jane Smith" }, { trustSubType: "ilit" });
+    const lineOf = (book: RecordBook, recordId: string, cells: Parameters<typeof rowOf>[1]) =>
+      diffDrafts(place(TRUSTS_MAP, [rowOf("t1", { trustee: "Denver Foundation", ...cells }, { link: linkedTo(recordId) })], book).drafts, book)[0];
+    const keysAndWarnings = (line: ReturnType<typeof lineOf>) => ({ keys: line.fields.map((f) => f.key), warnings: line.warnings, blocked: line.blocked });
+
+    const book = hendricksBook({ entity: [clt, crt, ilit] });
+    expect(keysAndWarnings(lineOf(book, "ent-1", { trustType: "CLT", grantor: "Co-client" }))).toEqual({ keys: ["trustee"], warnings: [GRANTOR], blocked: undefined });
+    expect(keysAndWarnings(lineOf(book, "ent-1", { grantor: "Someone else" }))).toEqual({ keys: ["trustee"], warnings: [GRANTOR], blocked: undefined });
+    expect(keysAndWarnings(lineOf(book, "ent-2", { trustType: "CRT", grantor: "Client" }))).toEqual({ keys: ["trustee"], warnings: [GRANTOR], blocked: undefined });
+    // A grantor the plan has no co-client for isn't saved, so it blocks nothing.
+    const single = bookWith({ entity: [clt] }, { people: { client: "fm-client", spouse: null }, names: { client: "Mark", spouse: null } });
+    expect(keysAndWarnings(lineOf(single, "ent-1", { grantor: "Co-client" }))).toEqual({ keys: ["trustee"], warnings: [GRANTOR], blocked: undefined });
+    // The grantor on record: nothing to say. Any other trust takes a new grantor.
+    expect(keysAndWarnings(lineOf(book, "ent-1", { grantor: "Client" }))).toEqual({ keys: ["trustee"], warnings: [], blocked: undefined });
+    expect(keysAndWarnings(lineOf(book, "ent-3", { grantor: "Co-client" }))).toEqual({ keys: ["grantor", "trustee"], warnings: [], blocked: undefined });
+  });
+
   it("on a trust on record: its id for both lines — and a blank tier keeps that tier's beneficiaries on record", () => {
     const book = hendricksBook({
       ...kids,

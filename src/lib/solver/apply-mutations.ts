@@ -356,7 +356,8 @@ export function applyMutations(
         const list = (result.entities ?? []).filter((e) => e.id !== m.id);
         if (m.value !== null) list.push(m.value);
         result.entities = list;
-        // F13: mirror the API path (entities/route.ts:236-260) — an entity with
+        // F13: mirror the API path (createEntityForClient in
+        // src/lib/clients/entities-writes.ts) — an entity with
         // no checking account cannot receive or pay anything, so every trust
         // payment pass silently `continue`s and the scenario computes zeros.
         // The engine keys off isDefaultChecking + full entity ownership

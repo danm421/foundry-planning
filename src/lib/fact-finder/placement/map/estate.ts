@@ -228,7 +228,12 @@ export const TRUSTS_MAP: SectionMap = {
       if (type === "revocable") return [revocableDraft(row, ctx, name)];
       const recordId = linkedRecordId(row, ctx, ["entity"]);
       const label = name ?? "Trust";
-      const grantor = valueFor(TRUST_GRANTOR_MAP, text(row, "grantor"));
+      const record = findRecord(ctx.book, "entity", recordId);
+      const onRecord = record?.facts?.trustSubType;
+      const typed = valueFor(TRUST_GRANTOR_MAP, text(row, "grantor"));
+      // A charitable lead or remainder trust's remainder gift carries its grantor; only Details moves the two together.
+      const grantorKept = (onRecord === "clt" || onRecord === "crt") && typed !== null && typed !== record?.values.grantor;
+      const grantor = grantorKept ? null : typed;
       const b = new DraftBuilder({ sectionId: "trusts", row, target: "entity", recordId, label, fixed: { entityType: "trust", isIrrevocable: true } })
         .put("name", name, ["trustName"])
         .put("trustSubType", type, ["trustType"])
@@ -238,8 +243,8 @@ export const TRUSTS_MAP: SectionMap = {
         .put("isGrantor", bool(row, "grantorTrust"), ["grantorTrust"])
         .put("crummeyPowers", bool(row, "crummey"), ["crummey"])
         .put("trustEnds", valueFor(TRUST_ENDS_MAP, text(row, "trustEnds")), ["trustEnds"]);
+      if (grantorKept) b.warn("A charitable lead or remainder trust's grantor changes in Details — its remainder gift moves with it.");
       // A charitable lead or remainder trust needs terms the fact finder doesn't ask — unless it's already one on record.
-      const onRecord = findRecord(ctx.book, "entity", recordId)?.facts?.trustSubType;
       if ((type === "clt" || type === "crt") && onRecord !== type) {
         b.block("A charitable lead or remainder trust needs its split-interest terms — add it in Details.", "trustType");
       }

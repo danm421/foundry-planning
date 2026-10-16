@@ -182,6 +182,42 @@ d("trust writers", () => {
       expect(await remainderGift()).toEqual(giftsBefore);
     });
 
+    it("an Update never changes a charitable lead trust's grantor — to the co-client or to no one — so its remainder gift can't be left behind", async () => {
+      const seed = await seedSaveClient(FIRM, { coClient: true });
+      const [charity] = await db.insert(externalBeneficiaries).values({ clientId: seed.clientId, name: "Denver Foundation", kind: "charity", charityType: "public" }).returning();
+      const onRecord = await createEntityForClient({
+        clientId: seed.clientId,
+        firmId: FIRM,
+        actorId: SAVE_ACTOR,
+        input: {
+          name: "Hendricks CLT", entityType: "trust", trustSubType: "clt", isIrrevocable: true, grantor: "client",
+          splitInterest: { inceptionYear: 2026, inceptionValue: 1_000_000, payoutType: "unitrust", payoutPercent: 0.06, irc7520Rate: 0.022, termType: "years", termYears: 10, charityId: charity.id },
+        },
+      });
+      if (!onRecord.ok) throw new Error(onRecord.error);
+      const id = onRecord.resourceId;
+      const giftGrantor = async () =>
+        (await db.select({ grantor: gifts.grantor }).from(gifts).where(and(eq(gifts.recipientEntityId, id), eq(gifts.eventKind, "clt_remainder_interest")))).map((g) => g.grantor);
+
+      const refused = [];
+      for (const grantor of ["spouse", "none"]) {
+        const line = changeLine("entity", { grantor, trustee: "Denver Foundation" }, { recordId: id });
+        refused.push(await inSave(at(seed), (ctx) => TRUST_WRITERS.entity.update(ctx, inputOf(line))).then(() => `saved grantor ${grantor}`, (err: unknown) => err));
+      }
+      const REFUSED = { name: "SaveLineError", message: "A charitable lead or remainder trust's grantor changes in Details — its remainder gift moves with it." };
+      expect(refused).toMatchObject([REFUSED, REFUSED]);
+      expect(await entityOf(id)).toMatchObject({ grantor: "client", trustee: null });
+      expect(await giftGrantor()).toEqual(["client"]);
+    });
+
+    it("an Update line with no record refuses in the advisor's words", async () => {
+      const seed = await seedSaveClient(FIRM);
+      const input = { ...inputOf(changeLine("entity", { trustee: "First Western Trust" }, { recordId: randomUUID() })), recordId: null };
+      for (const writer of [TRUST_WRITERS.entity, TRUST_WRITERS.revocable_trust]) {
+        await expect(inSave(at(seed), (ctx) => writer.update(ctx, input))).rejects.toMatchObject({ name: "SaveLineError", message: "The trust to change isn't on the plan." });
+      }
+    });
+
     it("a trust the write path can't find refuses the line with its message", async () => {
       const seed = await seedSaveClient(FIRM);
       const line = changeLine("entity", { trustee: "First Western Trust" }, { recordId: randomUUID() });

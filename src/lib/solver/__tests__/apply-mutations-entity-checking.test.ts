@@ -1,6 +1,6 @@
 /**
  * Audit F13 — a solver-created entity must get a checking account, mirroring
- * the API path at src/app/api/clients/[id]/entities/route.ts:236-260.
+ * the API path, createEntityForClient in src/lib/clients/entities-writes.ts.
  *
  * Without it, entityCheckingByEntityId (projection.ts:557-563) has no entry and
  * every trust payment pass silently `continue`s — a CRT/CLT in a scenario the
