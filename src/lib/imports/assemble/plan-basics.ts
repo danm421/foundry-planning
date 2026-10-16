@@ -104,7 +104,7 @@ function claimingAgeField(dob: string | undefined): PlanBasicsField<number> {
 /**
  * Derive the plan-level values from evidence. Pure and deterministic — no
  * Date.now, no Math.random, no IO. The tax-return read happens in the caller
- * and arrives as an argument, mirroring how fillAssumptions takes `known`.
+ * and arrives as an argument.
  *
  * The governing rule: derive from evidence, or go blank and flag it. Never a
  * bare constant presented as a finding.
@@ -192,7 +192,7 @@ export function derivePlanBasics(input: DerivePlanBasicsInput): AssemblePlanBasi
 /**
  * All-blank plan basics for an import assembled before this feature
  * existed, or one where `derivePlanBasics` had too little evidence to run
- * at all (see `runAssemble` — it requires both `retirementAge` and
+ * at all (the assemble step required both `retirementAge` and
  * `lifeExpectancy` to be known). Every field is blank and unflagged — no
  * `reason`, so no chip — so the wizard's Plan basics step renders empty
  * inputs instead of crashing on a missing `planBasics` block.

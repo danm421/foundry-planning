@@ -9,20 +9,12 @@
 //                        stops — the fact finder screen reads them on open.
 //   • identifyFactFinder — clientless identity "peek" for global attach-first
 //                        ingest (hits /forge/fact-finder/identify; no client yet).
-//   • commitAllTabs    — one-shot finish: POST /commit for all tabs.
-//   • submitPlanAnswers / reset — plan follow-up answers and state reset.
+//   • reset            — state reset.
 "use client";
 
 import { useCallback, useState } from "react";
 import { resolveBaseScenarioId } from "./actions";
 import { importScreenPath } from "@/lib/imports/import-kind";
-// `commit/types.ts` is safe to import from a client component: its only two
-// imports are `import type`, so they are erased at compile, and `COMMIT_TABS`
-// itself is a plain `as const` array. This file used to carry a hand-copied
-// mirror of it under a comment claiming "the commit module is server-only" —
-// which was never true, and the drift it invited is exactly what made the Task
-// 17 PIA-clobber invisible.
-import { COMMIT_TABS } from "@/lib/imports/commit/types";
 // The identify response shape lives with the prompt block that consumes it
 // (`domain/forge/fact-finder-turn.ts`), and is re-exported here so callers keep
 // importing it from the hook that performs the call.
@@ -63,12 +55,6 @@ export interface UseForgeImportResult {
   runImport: (clientId: string, files: File[]) => Promise<ForgeImportResult | null>;
   runPlanBuild: (args: { clientId: string; importId: string; files: File[] }) => Promise<PlanBuildResult | null>;
   identifyFactFinder: (files: File[]) => Promise<FactFinderIdentifyResponse | null>;
-  commitAllTabs: (clientId: string, importId: string) => Promise<{ status: "committed" | "review" } | null>;
-  submitPlanAnswers: (args: {
-    clientId: string;
-    importId: string;
-    answers: Record<string, string>;
-  }) => Promise<{ ok: boolean; remaining: number } | null>;
   reset: () => void;
 }
 
@@ -195,36 +181,6 @@ export function useForgeImport(): UseForgeImportResult {
     [],
   );
 
-  const submitPlanAnswers = useCallback(
-    async (args: {
-      clientId: string;
-      importId: string;
-      answers: Record<string, string>;
-    }): Promise<{ ok: boolean; remaining: number } | null> => {
-      const { clientId, importId, answers } = args;
-      // Clear any prior error first (mirrors runPlanBuild). Without this a
-      // failed submit's message survives a successful retry, leaving a stale
-      // error box under a card that just accepted the answer.
-      setErrorMessage(null);
-      try {
-        const res = await fetch(`/api/clients/${clientId}/imports/${importId}/answers`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ answers }),
-        });
-        if (!res.ok) {
-          setErrorMessage(await errText(res, "Could not submit answers."));
-          return null;
-        }
-        return (await res.json()) as { ok: boolean; remaining: number };
-      } catch (err) {
-        setErrorMessage(err instanceof Error ? err.message : String(err));
-        return null;
-      }
-    },
-    [],
-  );
-
   const identifyFactFinder = useCallback(
     async (files: File[]): Promise<FactFinderIdentifyResponse | null> => {
       setErrorMessage(null);
@@ -248,36 +204,12 @@ export function useForgeImport(): UseForgeImportResult {
     [],
   );
 
-  const commitAllTabs = useCallback(
-    async (clientId: string, importId: string): Promise<{ status: "committed" | "review" } | null> => {
-      setErrorMessage(null);
-      try {
-        const res = await fetch(`/api/clients/${clientId}/imports/${importId}/commit`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ tabs: COMMIT_TABS }),
-        });
-        if (!res.ok) {
-          setErrorMessage(await errText(res, "Could not commit the plan."));
-          return null;
-        }
-        return (await res.json()) as { status: "committed" | "review" };
-      } catch (err) {
-        setErrorMessage(err instanceof Error ? err.message : String(err));
-        return null;
-      }
-    },
-    [],
-  );
-
   return {
     status,
     errorMessage,
     runImport,
     runPlanBuild,
     identifyFactFinder,
-    commitAllTabs,
-    submitPlanAnswers,
     reset,
   };
 }

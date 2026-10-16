@@ -1388,8 +1388,8 @@ describe("commitIncomes — Social Security reconciliation", () => {
   /**
    * REGRESSION: this pass must not revert a row `commitPlanBasics` already put
    * on the PIA path. `COMMIT_TABS` dispatches "plan-basics" (index 0) before
-   * "incomes" (index 4), and the Forge fact-finder import commits EVERY tab in
-   * one request (`use-forge-import.ts:317`, `ALL_COMMIT_TABS` at :51-54). So on
+   * "incomes" (index 4), and `/commit` accepts a request that commits EVERY
+   * tab at once (Forge's plan build used to send one). So on
    * that path both run back to back against the same rows, and without the
    * guard the imported literal annual amount would silently undo the actuarial
    * path and strand `piaMonthly` as dead data.

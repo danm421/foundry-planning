@@ -258,10 +258,10 @@ export function reconcileGroup(
 /**
  * Run reconciliation over a built payload and stamp superseded income rows.
  *
- * Called from BOTH payload builders' consumers — run-matching.ts (classic
- * import) and run-assemble.ts (plan builder) — because they merge differently
- * and both leak. Keeping this a separate pass rather than an edit inside either
- * merger is what makes one implementation cover both paths.
+ * Called from run-matching.ts (the classic import's payload builder), which
+ * leaks duplicate incomes on its own. It was also the plan builder's pass until
+ * that builder was deleted; it stays a separate pass rather than an edit inside
+ * the merger.
  *
  * Idempotent: rows already carrying `reconciliation` are skipped, and the
  * warning is only added for a row newly marked.

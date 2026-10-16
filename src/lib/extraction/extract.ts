@@ -500,8 +500,8 @@ export async function extractDocument(
                 // never the raw `pdfPages`) here, and NOT `text`. For PDFs,
                 // `text = pdfPages.join("\n")` (above) holds the SAME content
                 // as `pages` joined, so writing both would store every
-                // document TWICE at rest. `runAssemble` derives whichever
-                // form it needs from just this one field.
+                // document TWICE at rest. Readers (`mergeAcrossFiles`) take
+                // `text ?? pages`, so this one field is enough.
                 pages: capped.pages,
             };
         }

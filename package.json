@@ -11,7 +11,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "eval:forge": "TSX_TSCONFIG_PATH=src/domain/forge/evals/tsconfig.eval.json __FOUNDRY_SYSTEM_AI=1 promptfoo --env-file .env.local eval -c src/domain/forge/evals/promptfoo.yaml",
-    "eval:planner": "vitest run -c vitest.eval.config.ts --testTimeout=180000",
     "seed:tax-data": "tsx scripts/seed-tax-data.ts",
     "check:migrations": "tsx scripts/check-drizzle-migrations.ts",
     "recompute:cma-projected": "tsx scripts/recompute-cma-projected.ts"

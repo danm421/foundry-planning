@@ -161,39 +161,3 @@ describe("useForgeImport — runPlanBuild", () => {
     expect(result.current.errorMessage).toBe("That file is too large.");
   });
 });
-
-describe("useForgeImport — submitPlanAnswers", () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it("posts answers and returns { ok, remaining }", async () => {
-    globalThis.fetch = vi.fn(async () => jsonResponse({ ok: true, remaining: 1 })) as unknown as typeof fetch;
-    const { result } = renderHook(() => useForgeImport());
-    let res: Awaited<ReturnType<typeof result.current.submitPlanAnswers>>;
-    await act(async () => {
-      res = await result.current.submitPlanAnswers({
-        clientId: "client_1",
-        importId: "imp_1",
-        answers: { "q:retirement_age": "65" },
-      });
-    });
-    expect(res!).toEqual({ ok: true, remaining: 1 });
-  });
-
-  it("returns null and sets errorMessage without tearing down a completed build on failure", async () => {
-    globalThis.fetch = vi.fn(async () => jsonResponse({ error: "nope" }, false, 500)) as unknown as typeof fetch;
-    const { result } = renderHook(() => useForgeImport());
-    let res: unknown;
-    await act(async () => {
-      res = await result.current.submitPlanAnswers({
-        clientId: "client_1",
-        importId: "imp_1",
-        answers: { "q:retirement_age": "65" },
-      });
-    });
-    expect(res).toBeNull();
-    expect(result.current.errorMessage).toBe("nope");
-    // Must NOT flip status to "error" — a failed answer submit shouldn't
-    // tear down the completed build.
-    expect(result.current.status).not.toBe("error");
-  });
-});

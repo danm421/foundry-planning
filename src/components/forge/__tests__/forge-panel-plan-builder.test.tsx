@@ -79,8 +79,6 @@ vi.mock("../walkthrough-context", () => ({
 const importMocks = vi.hoisted(() => ({
   runImport: vi.fn(),
   runPlanBuild: vi.fn(async () => null as unknown),
-  submitPlanAnswers: vi.fn(async () => null as unknown),
-  commitAllTabs: vi.fn(async () => null as unknown),
 }));
 vi.mock("../use-forge-import", () => ({
   useForgeImport: () => ({
@@ -88,8 +86,6 @@ vi.mock("../use-forge-import", () => ({
     errorMessage: null,
     runImport: importMocks.runImport,
     runPlanBuild: importMocks.runPlanBuild,
-    submitPlanAnswers: importMocks.submitPlanAnswers,
-    commitAllTabs: importMocks.commitAllTabs,
     reset: vi.fn(),
   }),
 }));
@@ -155,8 +151,6 @@ describe("ForgePanel — build_plan tool_render wiring (Task B5)", () => {
     importMocks.runImport.mockClear();
     importMocks.runPlanBuild.mockClear();
     importMocks.runPlanBuild.mockResolvedValue(null);
-    importMocks.submitPlanAnswers.mockClear();
-    importMocks.commitAllTabs.mockClear();
   });
 
   // Task 6 un-gates the paperclip in global mode (attach-first fact-finder
@@ -315,8 +309,6 @@ describe("ForgePanel — planBuild clears after a successful build (FIX 4)", () 
     importMocks.runPlanBuild.mockClear();
     importMocks.runPlanBuild.mockResolvedValue(null);
     importMocks.runImport.mockResolvedValue(null);
-    importMocks.submitPlanAnswers.mockClear();
-    importMocks.commitAllTabs.mockClear();
   });
 
   function clientBuildPlanFrame(importId: string): Extract<UseForgeStreamResult["lastToolRender"], { name: string }> {
@@ -461,8 +453,6 @@ describe("clientless Forge discoverability", () => {
     mockStreamState = makeStreamState();
     importMocks.runImport.mockClear();
     importMocks.runPlanBuild.mockClear();
-    importMocks.submitPlanAnswers.mockClear();
-    importMocks.commitAllTabs.mockClear();
   });
 
   it("advertises the plan builder in the empty state when there is no client", () => {
@@ -511,8 +501,6 @@ describe("ForgePanel — a plan build's result", () => {
     importMocks.runImport.mockClear();
     importMocks.runPlanBuild.mockClear();
     importMocks.runPlanBuild.mockResolvedValue(null);
-    importMocks.submitPlanAnswers.mockClear();
-    importMocks.commitAllTabs.mockClear();
   });
 
   function planBuildResult(importId: string): PlanBuildResult {
@@ -562,8 +550,6 @@ describe("ForgePanel — a plan build's result", () => {
 
     expect(screen.queryByRole("button", { name: /commit/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /skip/i })).not.toBeInTheDocument();
-    expect(importMocks.commitAllTabs).not.toHaveBeenCalled();
-    expect(importMocks.submitPlanAnswers).not.toHaveBeenCalled();
   });
 
   it("an ingest_fact_finder frame ends the same way — the link only", async () => {

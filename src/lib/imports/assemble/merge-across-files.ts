@@ -59,9 +59,8 @@ function countNonNullFields(row: Record<string, unknown>): number {
 }
 
 /** Advisor-facing whole-dollar formatting for a value-conflict warning. Kept
- * local (this module stays dependency-free — see gap-fill.ts's header
- * comment for the same convention) rather than pulling in a shared currency
- * formatter from an unrelated feature. */
+ * local (this module stays dependency-free) rather than pulling in a shared
+ * currency formatter from an unrelated feature. */
 function formatMoney(n: number | undefined): string {
   if (n === undefined) return "unknown";
   return `$${Math.round(n).toLocaleString("en-US")}`;
@@ -296,11 +295,11 @@ function unionFields<T extends object>(base: T, other: T): T {
  * advisor's review table and committing books the 401(k) twice.
  *
  * Deliberately here rather than in `extractWithMultiPass`, where the
- * duplication is made. `fileResults` is PERSISTED (assemble/route.ts hands the
- * stored column straight in), so a collapse at extraction time would bake into
+ * duplication is made. `fileResults` is PERSISTED (the fact finder's read hands
+ * the stored column straight in), so a collapse at extraction time would bake into
  * new extractions only and leave every existing draft duplicated forever —
  * the trap `condense-account-name.ts` documents for itself. Here it is
- * re-derived on every assemble, so old drafts heal, the single-pass path in
+ * re-derived on every read, so old drafts heal, the single-pass path in
  * `extract.ts` is covered too, and `payload.warnings` is in reach to say what
  * happened.
  */
@@ -658,7 +657,7 @@ const TRUNCATION_MARKER = "... [truncated]";
  *
  * - No `text` and no `pages`. A `.docx` whose parser yielded nothing, and every
  *   `fileResults` entry persisted before those fields existed — the merge is
- *   re-derived on every assemble precisely so old drafts heal, so this is a
+ *   re-derived on every read precisely so old drafts heal, so this is a
  *   live shape, not a legacy curiosity.
  * - The truncation marker, from either path that cuts mid-content: the
  *   single-pass `MAX_DOCUMENT_TEXT_CHARS` cap, and `capPersistedPages` when
@@ -873,7 +872,7 @@ function assertsSomething(row: ExtractedAccount): boolean {
  * WHY HERE AND NOT IN THE PROMPT. Eventually both. But `fileResults` is
  * PERSISTED, so a better prompt only helps documents extracted after it ships
  * and leaves every draft already in review double-counted. This is re-derived
- * on every assemble, so existing drafts heal — the same argument that puts
+ * on every read, so existing drafts heal — the same argument that puts
  * `collapseDuplicateReadings` in this file.
  *
  * WHY IT IS NARROW. Adopting an institution is adopting an identity, and a
@@ -1769,7 +1768,7 @@ export function mergeAcrossFiles(
     }
     // `?? []` for the same reason as `merge.ts`'s savings loop — see the long
     // comment there. `result` is a PERSISTED `payloadJson.fileResults` entry
-    // (assemble/route.ts reads the column and hands it straight in), and
+    // (the fact finder's read loads the column and hands it straight in), and
     // `extracted.savings` only exists on this branch (`0038b216f`), so a
     // pre-branch fileResults row has no key for it. This loop is older than
     // `merge.ts`'s, so this path was already crashing on those imports.

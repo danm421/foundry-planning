@@ -2,8 +2,8 @@
 //
 // R1 (whole-branch review, C1). `ImportPayload.savings` was added as a
 // REQUIRED section, but `client_imports.payloadJson.payload` rows persisted
-// before this branch carry NO `savings` key. Three readers dereference it
-// bare — `presenceFromPayload`, `stepHasImportData`, `countRows` — so opening
+// before this branch carry NO `savings` key. Two readers dereference it
+// bare — `presenceFromPayload` and `stepHasImportData` — so opening
 // any pre-branch import threw `Cannot read properties of undefined (reading
 // 'length')`.
 //
@@ -17,11 +17,7 @@
 // `savings`), which is why the fix is a type — `PersistedImportPayload` +
 // `normalizeImportPayload` — rather than scattered `?? []`.
 
-import { describe, it, expect, vi } from "vitest";
-
-// `run-assemble.ts` imports the real db client at module load; nothing here
-// touches it (only `countRows`, a pure function).
-vi.mock("@/db", () => ({ db: {} }));
+import { describe, it, expect } from "vitest";
 
 import {
   normalizeImportPayload,
@@ -30,7 +26,6 @@ import {
 } from "../types";
 import { presenceFromPayload } from "../required-tabs";
 import { stepHasImportData } from "@/lib/onboarding/import-sections";
-import { countRows } from "../assemble/run-assemble";
 import { mergeExtractionResults } from "../merge";
 import { mergeAcrossFiles } from "../assemble/merge-across-files";
 import type { ExtractionResult } from "@/lib/extraction/types";
@@ -74,7 +69,7 @@ describe("R1 — the fixture itself (assert the instrument)", () => {
 });
 
 describe("R1 — the raw persisted payload is the production crash", () => {
-  // These three pin WHY the normalizer is load-bearing: hand any reader the
+  // These pin WHY the normalizer is load-bearing: hand any reader the
   // on-disk shape directly and it throws. `PersistedImportPayload` makes each
   // of these casts the compile error it should always have been.
   it("presenceFromPayload throws on the raw pre-branch payload", () => {
@@ -99,12 +94,6 @@ describe("R1 — the raw persisted payload is the production crash", () => {
     expect(
       stepHasImportData(PRE_BRANCH as unknown as ImportPayload, "accounts"),
     ).toBe(true);
-  });
-
-  it("countRows throws on the raw pre-branch payload", () => {
-    expect(() => countRows(PRE_BRANCH as unknown as ImportPayload)).toThrow(
-      /Cannot read properties of undefined \(reading 'length'\)/,
-    );
   });
 });
 
@@ -155,7 +144,7 @@ describe("R1 — normalizeImportPayload is the boundary", () => {
   });
 });
 
-describe("R1 — the three readers survive a normalized pre-branch payload", () => {
+describe("R1 — the two readers survive a normalized pre-branch payload", () => {
   const normalized = normalizeImportPayload(PRE_BRANCH);
 
   it("presenceFromPayload reports savings and goals absent, accounts present", () => {
@@ -173,19 +162,14 @@ describe("R1 — the three readers survive a normalized pre-branch payload", () 
     expect(stepHasImportData(normalized, "liabilities")).toBe(false);
     expect(stepHasImportData(normalized, "insurance")).toBe(false);
   });
-
-  it("countRows counts the rows that are there", () => {
-    // 2 accounts + 1 income, and 0 for every absent section.
-    expect(countRows(normalized)).toBe(3);
-  });
 });
 
 // The same hazard one layer up, found while wiring R3's savings loop.
 // `extracted.savings` was added to `ExtractionResult` by THIS BRANCH alone
 // (`0038b216f`, not on main), and both merge functions are fed a PERSISTED
 // `payloadJson.fileResults` entry straight off the column (`match/route.ts` and
-// `assemble/route.ts`). So a fileResults row written before this branch has no
-// `savings` key, and bare iteration crashes `/match` and `/assemble` on exactly
+// the fact finder's read). So a fileResults row written before this branch has
+// no `savings` key, and bare iteration crashes `/match` and the read on exactly
 // the pre-branch imports R1 exists to protect. The type says
 // `ExtractedSavings[]`, so only a runtime guard catches it — which is why the
 // fixture below is a cast, exactly as the persisted column is.

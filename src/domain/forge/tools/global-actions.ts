@@ -382,8 +382,8 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
             filingStatus: args.filingStatus ?? (hasSpouse ? "married_joint" : "single"),
             // Attach-first defaults: the fact finder often omits horizon numbers.
             // Use documented platform defaults (retire 65 / mortality 95) rather
-            // than refusing — the Review Wizard's Plan basics step lets the
-            // advisor correct them (unlike the conversational build_plan tool,
+            // than refusing — the fact finder's Client & Co-client section lets
+            // the advisor correct them (unlike the conversational build_plan tool,
             // which refuses so the advisor states them).
             retirementAge: args.retirementAge ?? 65,
             lifeExpectancy: args.lifeExpectancy ?? 95,

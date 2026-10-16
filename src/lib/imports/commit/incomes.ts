@@ -250,10 +250,8 @@ async function reconcileSocialSecurity(
     // (commit/types.ts) dispatches "plan-basics" at index 0 and "incomes" at
     // index 4. A caller that commits every tab at once therefore reaches both.
     //
-    // That caller is real, not hypothetical: the Forge fact-finder import posts
-    // `{ tabs: ALL_COMMIT_TABS }` in ONE request
-    // (components/forge/use-forge-import.ts:317, list at :51-54, a hardcoded
-    // mirror of COMMIT_TABS carrying BOTH tabs). Without this guard that path
+    // `/commit` accepts any tab list, and Forge's plan build used to post every
+    // tab in ONE request. Without this guard such a request
     // would write the PIA and then immediately revert the row to
     // `manual_amount` with a literal annual figure — silently undoing the
     // actuarial path (early reduction, delayed credit, spousal, survivor) and
