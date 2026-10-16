@@ -14,88 +14,25 @@ vi.mock("@clerk/nextjs/server", () => ({
 
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, auditLog, clientImports, incomes } from "@/db/schema";
+import { accounts, auditLog, incomes } from "@/db/schema";
 import { SAVE_CLOSED_MESSAGE, SAVE_FAILED_MESSAGE } from "../../api-types";
-import { defaultTicks, type ChangeSet, type ChangeTicks, type TargetKind } from "../../change-set";
-import { loadFactFinder, writeFactFinder, type FactFinderScope } from "../../persist";
-import { buildChangeSet } from "../../placement/build";
+import type { TargetKind } from "../../change-set";
 import { rowOf, stateWith } from "../../placement/__tests__/fixtures";
-import { loadRecordBook } from "../../records/book";
 import type { FactFinderState, FFRow } from "../../types";
-import { saveChangeSet, type SaveDeps } from "../save";
 import type { SaveWriter } from "../types";
 import { SAVE_WRITERS } from "../writers";
-import { dropSaveFirm, SAVE_ACTOR, seedSaveClient, type SaveSeed } from "./harness";
+import { auditOf, CLIENT, endToEnd, expectUnmoved, importOf, JOINT, LAURA, record, recordOf, save, type Plan } from "./end-to-end";
+import { dropSaveFirm, seedSaveClient } from "./harness";
 
 const FIRM = "firm_test_ff_save_e2e";
 const HAS_DB = !!process.env.DATABASE_URL;
 const d = HAS_DB ? describe : describe.skip;
-const NOW = new Date("2026-10-15T12:00:00Z");
-
-interface Reviewed {
-  seed: SaveSeed;
-  scope: FactFinderScope;
-  changeSet: ChangeSet;
-  ticks: ChangeTicks;
-}
-
-/** `state` on a new import, reviewed against the client's plan (no AI step) and stored with its change list — as the review route does it. */
-async function review(seed: SaveSeed, state: FactFinderState): Promise<Reviewed> {
-  const [imp] = await db
-    .insert(clientImports)
-    .values({ clientId: seed.clientId, orgId: FIRM, mode: "onboarding", createdByUserId: SAVE_ACTOR, payloadJson: { factFinder: state } })
-    .returning({ id: clientImports.id });
-  const scope = { importId: imp.id, clientId: seed.clientId, firmId: FIRM };
-  const built = await buildChangeSet({ state, book: await planOf(seed), now: NOW, runLeftovers: async () => null });
-  const written = await writeFactFinder(scope, state.version, { ...state, changeSet: { ...built, builtAtVersion: state.version + 1 } }, { keepChangeSet: true });
-  return { seed, scope, changeSet: written!.changeSet!, ticks: defaultTicks(written!.changeSet!) };
-}
-
-/** The save as the route calls it, with the real writers; no tickers to price. */
-const save = (r: Reviewed, ticks: ChangeTicks = r.ticks, deps: Partial<SaveDeps> = {}) =>
-  saveChangeSet(
-    { scope: r.scope, actorId: SAVE_ACTOR, changeSetVersion: r.changeSet.builtAtVersion, ticks },
-    { resolveHoldings: async () => new Map(), now: () => NOW, ...deps },
-  );
-
-const planOf = (seed: SaveSeed) => loadRecordBook(seed.clientId, FIRM, seed.scenarioId);
-type Plan = Awaited<ReturnType<typeof planOf>>;
-
-/** The one record of `target` with this label. */
-function recordOf(plan: Plan, target: TargetKind, label: string) {
-  const found = plan.records[target].filter((r) => r.label === label);
-  expect(found, `${target} “${label}”`).toHaveLength(1);
-  return found[0];
-}
+const { planOf, review } = endToEnd(FIRM);
 
 /** A row's cell values, to make a changed copy of it. */
 const cellsOf = (row: FFRow) => Object.fromEntries(Object.entries(row.cells).map(([k, c]) => [k, c.value]));
 
 const labelsOf = (plan: Plan, target: TargetKind) => plan.records[target].map((r) => r.label).sort();
-
-/** Every record of `before` is in `after` as it was, except the records the save wrote. */
-function expectUnmoved(before: Plan, after: Plan, written: ReadonlySet<string>) {
-  for (const [target, records] of Object.entries(before.records)) {
-    for (const was of records.filter((r) => !written.has(r.id))) {
-      expect(after.records[target as TargetKind].find((r) => r.id === was.id), `${target} “${was.label}”`).toEqual(was);
-    }
-  }
-}
-
-async function auditOf(seed: SaveSeed): Promise<string[]> {
-  const rows = await db.select({ action: auditLog.action }).from(auditLog).where(eq(auditLog.clientId, seed.clientId));
-  return rows.map((r) => r.action).sort();
-}
-
-async function importOf(scope: FactFinderScope) {
-  const [row] = await db.select({ status: clientImports.status, committedAt: clientImports.committedAt }).from(clientImports).where(eq(clientImports.id, scope.importId));
-  return { ...row, factFinder: await loadFactFinder(scope) };
-}
-
-const CLIENT = { ref: "person", role: "client" } as const;
-const LAURA = { ref: "person", role: "spouse" } as const;
-const JOINT = [{ who: CLIENT, percent: 0.5 }, { who: LAURA, percent: 0.5 }];
-const record = (target: TargetKind, id: string) => ({ ref: "record", target, id });
 
 /**
  * Mark (on the plan alone) fills in every page: Laura joins as co-client (her employer, her workplace
@@ -368,16 +305,12 @@ d("the save end to end — a new household (live DB)", () => {
     expect(rec("gift", "2022 gift").values).toMatchObject({ year: 2022, grantor: "client", recipient: record("external_beneficiary", redCross), amount: 20000 });
 
     // Nothing on the plan before the save moved, except the four records its Updates name.
-    expectUnmoved(
-      before,
-      plan,
-      new Set([
-        seed.clientId,
-        recordOf(before, "plan_settings_tax_rates", "Tax settings").id,
-        recordOf(before, "expense", "Current Living Expenses").id,
-        recordOf(before, "income", "Social Security — Mark").id,
-      ]),
-    );
+    expectUnmoved(before, plan, [
+      seed.clientId,
+      recordOf(before, "plan_settings_tax_rates", "Tax settings").id,
+      recordOf(before, "expense", "Current Living Expenses").id,
+      recordOf(before, "income", "Social Security — Mark").id,
+    ]);
   });
 
   it("a Create left unticked leaves out every line that needs it, and an unticked co-client first name every line naming her — each with its reason; the rest saved", async () => {
@@ -416,7 +349,7 @@ d("the save end to end — a new household (live DB)", () => {
     expect(recordOf(plan, "account", "Emergency Fund").values).toMatchObject({ value: 20000, owners: [{ who: CLIENT, percent: 1 }] });
     for (const target of ["entity", "life_insurance_policy", "ltc_policy"] as const) expect(plan.records[target], target).toEqual([]);
     // Every record on the plan before the save as it was, but the client its household line updated.
-    expectUnmoved(before, plan, new Set([seed.clientId]));
+    expectUnmoved(before, plan, [seed.clientId]);
     expect(await auditOf(seed)).toEqual(["account.create", "client.update", "family_member.create", "import.fact_finder_saved"]);
   });
 

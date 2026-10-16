@@ -15,86 +15,21 @@ vi.mock("@clerk/nextjs/server", () => ({
 
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { auditLog, clientImports, crmHouseholdContacts, liabilityOwners, willBequests } from "@/db/schema";
+import { auditLog, crmHouseholdContacts, liabilityOwners, willBequests } from "@/db/schema";
 import { createAccountForClient, updateAccountForClient } from "@/lib/clients/accounts-writes";
 import { createExternalBeneficiaryForClient } from "@/lib/clients/external-beneficiaries-writes";
 import { createFamilyMemberForClient } from "@/lib/clients/family-members-writes";
 import { createLiabilityForClient } from "@/lib/clients/liabilities-writes";
 import { createWillForClient } from "@/lib/clients/wills-writes";
-import { defaultTicks, type ChangeSet, type ChangeTicks, type TargetKind } from "../../change-set";
-import { loadFactFinder, writeFactFinder, type FactFinderScope } from "../../persist";
-import { buildChangeSet } from "../../placement/build";
 import { linkedTo, rowOf, stateWith } from "../../placement/__tests__/fixtures";
-import { loadRecordBook } from "../../records/book";
-import type { FactFinderState } from "../../types";
-import { saveChangeSet } from "../save";
 import { unwrap } from "../types";
-import { dropSaveFirm, SAVE_ACTOR, seedSaveClient, type SaveSeed } from "./harness";
+import { auditOf, endToEnd, expectUnmoved, importOf, JOINT, record, recordOf, save } from "./end-to-end";
+import { dropSaveFirm, SAVE_ACTOR, seedSaveClient } from "./harness";
 
 const FIRM = "firm_test_ff_save_e2e_updates";
 const HAS_DB = !!process.env.DATABASE_URL;
 const d = HAS_DB ? describe : describe.skip;
-const NOW = new Date("2026-10-15T12:00:00Z");
-
-interface Reviewed {
-  seed: SaveSeed;
-  scope: FactFinderScope;
-  changeSet: ChangeSet;
-  ticks: ChangeTicks;
-}
-
-/** `state` on a new import, reviewed against the client's plan (no AI step) and stored with its change list — as the review route does it. */
-async function review(seed: SaveSeed, state: FactFinderState): Promise<Reviewed> {
-  const [imp] = await db
-    .insert(clientImports)
-    .values({ clientId: seed.clientId, orgId: FIRM, mode: "onboarding", createdByUserId: SAVE_ACTOR, payloadJson: { factFinder: state } })
-    .returning({ id: clientImports.id });
-  const scope = { importId: imp.id, clientId: seed.clientId, firmId: FIRM };
-  const built = await buildChangeSet({ state, book: await planOf(seed), now: NOW, runLeftovers: async () => null });
-  const written = await writeFactFinder(scope, state.version, { ...state, changeSet: { ...built, builtAtVersion: state.version + 1 } }, { keepChangeSet: true });
-  return { seed, scope, changeSet: written!.changeSet!, ticks: defaultTicks(written!.changeSet!) };
-}
-
-/** The save as the route calls it, with the real writers; no tickers to price. */
-const save = (r: Reviewed, ticks: ChangeTicks = r.ticks) =>
-  saveChangeSet(
-    { scope: r.scope, actorId: SAVE_ACTOR, changeSetVersion: r.changeSet.builtAtVersion, ticks },
-    { resolveHoldings: async () => new Map(), now: () => NOW },
-  );
-
-const planOf = (seed: SaveSeed) => loadRecordBook(seed.clientId, FIRM, seed.scenarioId);
-type Plan = Awaited<ReturnType<typeof planOf>>;
-
-/** The one record of `target` with this label. */
-function recordOf(plan: Plan, target: TargetKind, label: string) {
-  const found = plan.records[target].filter((r) => r.label === label);
-  expect(found, `${target} “${label}”`).toHaveLength(1);
-  return found[0];
-}
-
-/** Every record of `before` is in `after` as it was, except the records the save wrote. */
-function expectUnmoved(before: Plan, after: Plan, written: readonly string[]) {
-  for (const [target, records] of Object.entries(before.records)) {
-    for (const was of records.filter((r) => !written.includes(r.id))) {
-      expect(after.records[target as TargetKind].find((r) => r.id === was.id), `${target} “${was.label}”`).toEqual(was);
-    }
-  }
-}
-
-async function auditOf(seed: SaveSeed): Promise<string[]> {
-  const rows = await db.select({ action: auditLog.action }).from(auditLog).where(eq(auditLog.clientId, seed.clientId));
-  return rows.map((r) => r.action).sort();
-}
-
-async function importOf(scope: FactFinderScope) {
-  const [row] = await db.select({ status: clientImports.status, committedAt: clientImports.committedAt }).from(clientImports).where(eq(clientImports.id, scope.importId));
-  return { ...row, factFinder: await loadFactFinder(scope) };
-}
-
-const CLIENT = { ref: "person", role: "client" } as const;
-const LAURA = { ref: "person", role: "spouse" } as const;
-const JOINT = [{ who: CLIENT, percent: 0.5 }, { who: LAURA, percent: 0.5 }];
-const record = (target: TargetKind, id: string) => ({ ref: "record", target, id });
+const { planOf, review } = endToEnd(FIRM);
 
 /**
  * Mark and Laura, as Details leaves them: Emma and Lucas, a charity, a brokerage account and a car loan
