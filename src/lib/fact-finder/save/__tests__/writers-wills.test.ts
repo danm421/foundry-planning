@@ -208,7 +208,7 @@ d("wills writers (Plan 4, Task 13)", () => {
     const { clientId, scenarioId } = seed;
     const made = await db
       .insert(accounts)
-      .values(["Schwab Brokerage", "Chase Savings", "Fidelity IRA", "Vanguard Roth"].map((name) => ({ clientId, scenarioId, name, category: "taxable" as const, subType: "brokerage" })))
+      .values(["Schwab Brokerage", "Chase Savings", "Fidelity IRA", "Vanguard Roth"].map((name) => ({ clientId, scenarioId, name, category: "taxable" as const, subType: "brokerage" as const })))
       .returning();
     const [laurasWill] = await db.insert(wills).values({ clientId, grantor: "spouse" }).returning();
     await db.insert(willBequests).values(
