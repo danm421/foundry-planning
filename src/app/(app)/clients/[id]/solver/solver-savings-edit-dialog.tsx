@@ -21,7 +21,7 @@ import {
   type ContributionMode,
   inferContributionMode,
 } from "@/components/forms/contribution-amount-fields";
-import { supportsDeductibility } from "@/components/forms/deductible-contribution-checkbox";
+import { supportsDeductibility } from "@/lib/tax/derive-deductions";
 import { supportsContributionCap } from "@/components/forms/contribution-cap-checkbox";
 import SalaryBasisFields, {
   inferSalaryBasis,

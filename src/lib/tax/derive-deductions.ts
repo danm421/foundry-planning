@@ -68,6 +68,22 @@ export const DEDUCTIBLE_ELIGIBLE_SUBTYPES = new Set([
   "other",
 ]);
 
+/** True if the deductibility checkbox should be rendered for this account.
+ *  Hides the checkbox for Roth, non-retirement, 529, cash, taxable, etc. */
+export function supportsDeductibility(category: string | undefined, subType: string | undefined): boolean {
+  if (category !== "retirement") return false;
+  return DEDUCTIBLE_ELIGIBLE_SUBTYPES.has(subType ?? "");
+}
+
+/** Initial checked state for a new rule based on subtype.
+ *  - traditional_ira / 401k / 403b → checked
+ *  - other (retirement)            → unchecked (advisor asserts eligibility) */
+export function defaultDeductibleForSubtype(subType: string | undefined): boolean {
+  if (!subType) return false;
+  if (subType === "other") return false;
+  return true;
+}
+
 export interface SavingsRuleForDeduction {
   id: string;
   accountId: string;

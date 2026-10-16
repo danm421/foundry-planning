@@ -23,10 +23,8 @@ import ContributionAmountFields, {
   supportsRothSplit,
   inferContributionMode,
 } from "./contribution-amount-fields";
-import DeductibleContributionCheckbox, {
-  supportsDeductibility,
-  defaultDeductibleForSubtype,
-} from "./deductible-contribution-checkbox";
+import DeductibleContributionCheckbox from "./deductible-contribution-checkbox";
+import { supportsDeductibility, defaultDeductibleForSubtype } from "@/lib/tax/derive-deductions";
 import ContributionCapCheckbox, {
   supportsContributionCap,
 } from "./contribution-cap-checkbox";

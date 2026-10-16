@@ -13,7 +13,7 @@ import { accounts } from "@/db/schema";
 import { createExpenseForClient, updateExpenseForClient } from "@/lib/clients/expenses-writes";
 import { createIncomeForClient, updateIncomeForClient } from "@/lib/clients/incomes-writes";
 import { createSavingsRuleForClient, updateSavingsRuleForClient } from "@/lib/clients/savings-rules-writes";
-import { DEDUCTIBLE_ELIGIBLE_SUBTYPES } from "@/lib/tax/derive-deductions";
+import { defaultDeductibleForSubtype, supportsDeductibility } from "@/lib/tax/derive-deductions";
 import { SaveLineError, unwrap, type SaveContext, type SaveInput, type SaveWriter } from "../types";
 
 const scope = (ctx: SaveContext) => ({
@@ -63,8 +63,7 @@ async function deductibleByDefault(ctx: SaveContext, accountId: unknown): Promis
     .from(accounts)
     .where(and(eq(accounts.id, accountId), eq(accounts.clientId, ctx.clientId)));
   if (!account) return undefined;
-  const checkboxShows = account.category === "retirement" && DEDUCTIBLE_ELIGIBLE_SUBTYPES.has(account.subType);
-  return checkboxShows ? account.subType !== "other" : true;
+  return supportsDeductibility(account.category, account.subType) ? defaultDeductibleForSubtype(account.subType) : true;
 }
 
 const savingsRule: SaveWriter = {

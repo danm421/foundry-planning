@@ -7,7 +7,7 @@ import {
   type ClientMilestones,
   type YearRef,
 } from "@/lib/milestones";
-import { defaultDeductibleForSubtype } from "@/components/forms/deductible-contribution-checkbox";
+import { defaultDeductibleForSubtype } from "@/lib/tax/derive-deductions";
 import { isRmdEligibleSubType } from "@/engine/rmd";
 import type { USPSStateCode } from "@/lib/usps-states";
 import type {
