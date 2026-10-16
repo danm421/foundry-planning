@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABELS } from "@/lib/extraction/types";
 import type { DocumentType } from "@/lib/extraction/types";
+import { intakeDocTypeLabel, type IntakeDocumentView } from "@/lib/intake/document-types";
+import { formatBytes } from "@/components/portal/documents/vault-format";
 
 export type UploadState = "queued" | "uploading" | "uploaded" | "failed";
 
@@ -13,6 +15,9 @@ export interface UploadingFile {
   /** The browser File for an in-session upload. Absent for rows seeded from
    *  already-uploaded server files (those never re-upload). */
   file?: File;
+  /** Set instead of `file` when the row is one of the client's Data Collection
+   *  uploads — the server copies it in from the vault. */
+  clientUploadId?: string;
   documentType: DocumentType | "auto";
   state: UploadState;
   /** 0–100. Browsers don't expose download progress for fetch, so XHR is used. */
@@ -48,6 +53,9 @@ interface UploadZoneProps {
   /** Called after a persisted file is removed (its server row is deleted). */
   onRemoved?: () => void;
   disabled?: boolean;
+  /** Documents the client uploaded through Data Collection, offered for adding
+   *  without a download and re-upload. */
+  clientUploads?: IntakeDocumentView[];
 }
 
 const ACCEPTED_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx", ".xls", ".csv"];
@@ -73,6 +81,7 @@ export default function UploadZone({
   onUploaded,
   onRemoved,
   disabled,
+  clientUploads,
 }: UploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   // Seed once from the files already persisted for this import so the list
@@ -107,8 +116,50 @@ export default function UploadZone({
     [],
   );
 
+  const markUploaded = useCallback(
+    (target: UploadingFile, body: { file: { id: string }; deduped: boolean }) => {
+      updateFile(target.id, {
+        state: "uploaded",
+        progress: 100,
+        serverFileId: body.file.id,
+        deduped: body.deduped,
+      });
+      onUploadedRef.current?.({
+        serverFileId: body.file.id,
+        name: target.name,
+        deduped: body.deduped,
+      });
+    },
+    [updateFile],
+  );
+
   const startUpload = useCallback(
     (target: UploadingFile) => {
+      if (target.clientUploadId) {
+        updateFile(target.id, { state: "uploading", progress: 0 });
+        fetch(`/api/clients/${clientId}/imports/${importId}/intake-documents`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ documentId: target.clientUploadId }),
+        })
+          .then(async (res) => {
+            const body = (await res.json().catch(() => ({}))) as {
+              file?: { id: string };
+              deduped?: boolean;
+              error?: string;
+            };
+            if (res.ok && body.file) {
+              markUploaded(target, { file: body.file, deduped: Boolean(body.deduped) });
+            } else {
+              updateFile(target.id, {
+                state: "failed",
+                errorMessage: body.error ?? `Couldn't add this document (${res.status})`,
+              });
+            }
+          })
+          .catch(() => updateFile(target.id, { state: "failed", errorMessage: "Network error" }));
+        return;
+      }
       // Only in-session rows carry a File; seeded server rows never upload.
       if (!target.file) return;
       const xhr = new XMLHttpRequest();
@@ -127,17 +178,7 @@ export default function UploadZone({
               file: { id: string };
               deduped: boolean;
             };
-            updateFile(target.id, {
-              state: "uploaded",
-              progress: 100,
-              serverFileId: body.file.id,
-              deduped: body.deduped,
-            });
-            onUploadedRef.current?.({
-              serverFileId: body.file.id,
-              name: target.name,
-              deduped: body.deduped,
-            });
+            markUploaded(target, body);
           } catch {
             updateFile(target.id, {
               state: "failed",
@@ -168,7 +209,7 @@ export default function UploadZone({
       updateFile(target.id, { state: "uploading", progress: 0 });
       xhr.send(fd);
     },
-    [clientId, importId, updateFile],
+    [clientId, importId, updateFile, markUploaded],
   );
 
   const addFiles = useCallback(
@@ -190,6 +231,27 @@ export default function UploadZone({
     },
     [startUpload],
   );
+
+  const addClientUpload = useCallback(
+    (doc: IntakeDocumentView) => {
+      const row: UploadingFile = {
+        id: crypto.randomUUID(),
+        name: doc.filename,
+        clientUploadId: doc.id,
+        documentType: "auto",
+        state: "queued",
+        progress: 0,
+      };
+      setFiles((prev) => [...prev, row]);
+      setTimeout(() => startUpload(row), 0);
+    },
+    [startUpload],
+  );
+
+  // A client upload leaves the list once it's in the import (matched by name —
+  // the copy keeps the client's filename), and comes back if it's removed.
+  const listedNames = new Set(files.map((f) => f.name));
+  const offeredUploads = (clientUploads ?? []).filter((d) => !listedNames.has(d.filename));
 
   const retry = useCallback(
     (id: string) => {
@@ -320,6 +382,14 @@ export default function UploadZone({
         />
       </div>
 
+      {offeredUploads.length > 0 && (
+        <ClientUploadsList
+          documents={offeredUploads}
+          onAdd={addClientUpload}
+          disabled={disabled}
+        />
+      )}
+
       {files.length > 0 && (
         <div className="space-y-2">
           {files.map((f) => (
@@ -393,7 +463,7 @@ function UploadRow({ file, onRetry, onRemove, onTypeChange, disabled }: UploadRo
         </button>
       </div>
 
-      {file.state === "uploading" && (
+      {file.state === "uploading" && file.file && (
         <div className="mt-2 h-1 w-full overflow-hidden rounded bg-card-2">
           <div
             className="h-full bg-accent transition-all"
@@ -415,8 +485,11 @@ function StateBadge({ file }: { file: UploadingFile }) {
         <span className="text-xs text-ink-4">Queued</span>
       );
     case "uploading":
-      return (
+      // A client upload is copied server side, so there is no progress to show.
+      return file.file ? (
         <span className="text-xs text-accent">Uploading… {file.progress}%</span>
+      ) : (
+        <span className="text-xs text-accent">Adding…</span>
       );
     case "uploaded":
       return (
@@ -427,6 +500,52 @@ function StateBadge({ file }: { file: UploadingFile }) {
     case "failed":
       return <span className="text-xs text-crit">Failed</span>;
   }
+}
+
+function ClientUploadsList({
+  documents,
+  onAdd,
+  disabled,
+}: {
+  documents: IntakeDocumentView[];
+  onAdd: (doc: IntakeDocumentView) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <section aria-label="Documents the client uploaded" className="space-y-2">
+      <p className="text-xs text-ink-3">
+        The client uploaded {documents.length === 1 ? "this document" : "these documents"} through
+        Data Collection.
+      </p>
+      <ul className="space-y-2">
+        {documents.map((doc) => {
+          const label = intakeDocTypeLabel(doc.docType);
+          return (
+            <li
+              key={doc.id}
+              className="flex items-center gap-3 rounded-md border border-hair bg-card px-3 py-2"
+            >
+              <FileIcon />
+              <span className="min-w-0 flex-1 truncate text-sm text-ink-2">{doc.filename}</span>
+              {label ? <span className="text-xs text-ink-3">{label}</span> : null}
+              {doc.sizeBytes ? (
+                <span className="tabular text-xs text-ink-4">{formatBytes(doc.sizeBytes)}</span>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => onAdd(doc)}
+                disabled={disabled}
+                aria-label={`Add ${doc.filename}`}
+                className="rounded border border-hair-2 px-2 py-1 text-xs font-medium text-ink-2 hover:border-accent hover:text-accent-ink disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Add
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
 }
 
 function UploadIcon() {

@@ -166,4 +166,25 @@ describe("linkImportFilesToVault", () => {
     expect(refs).toHaveLength(1);
     expect(refs[0]!.filename).toBe("live.pdf");
   });
+
+  it("skips a file the household already holds as the client's intake upload", async () => {
+    const importId = await seedImportWithFiles(2);
+    // stmt-0.pdf at 100 bytes is what attaching the client's upload copies in.
+    await db.insert(crmHouseholdDocuments).values({
+      householdId, filename: "stmt-0.pdf", storageProvider: "vercel-blob",
+      storageKey: "crm/x/stmt-0.pdf", sizeBytes: 100, sourceKind: "intake_upload",
+    });
+    // Same name, different size — a different file; still linked.
+    await db.insert(crmHouseholdDocuments).values({
+      householdId, filename: "stmt-1.pdf", storageProvider: "vercel-blob",
+      storageKey: "crm/x/stmt-1.pdf", sizeBytes: 999, sourceKind: "intake_upload",
+    });
+    const created = await linkImportFilesToVault({ importId, clientId, firmId: ORG });
+    expect(created).toBe(1);
+    const refs = await db.query.crmHouseholdDocuments.findMany({
+      where: and(eq(crmHouseholdDocuments.householdId, householdId),
+                 eq(crmHouseholdDocuments.sourceKind, "import_ref")),
+    });
+    expect(refs.map((r) => r.filename)).toEqual(["stmt-1.pdf"]);
+  });
 });

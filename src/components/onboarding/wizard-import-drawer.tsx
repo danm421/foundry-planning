@@ -14,6 +14,7 @@ import {
   type ImportEligibleStep,
 } from "@/lib/onboarding/import-sections";
 import WizardImportReview from "./wizard-import-review";
+import type { IntakeDocumentView } from "@/lib/intake/document-types";
 
 interface WizardImportDrawerProps {
   clientId: string;
@@ -22,6 +23,8 @@ interface WizardImportDrawerProps {
   baseScenarioId: string;
   /** Shared wizard draft id from onboarding_state, or null if none yet. */
   activeImportId: string | null;
+  /** The client's Data Collection uploads, offered in the upload box. */
+  clientUploads?: IntakeDocumentView[];
   onClose: () => void;
 }
 
@@ -42,6 +45,7 @@ export default function WizardImportDrawer({
   step,
   baseScenarioId,
   activeImportId,
+  clientUploads,
   onClose,
 }: WizardImportDrawerProps) {
   const router = useRouter();
@@ -334,6 +338,7 @@ export default function WizardImportDrawer({
                 clientId={clientId}
                 importId={imp?.importId ?? null}
                 ensureImport={ensureImport}
+                clientUploads={clientUploads}
                 onUploaded={() =>
                   setImp((cur) =>
                     cur ? { ...cur, fileCount: cur.fileCount + 1 } : cur,
@@ -463,12 +468,14 @@ function UploadZoneGate({
   clientId,
   importId,
   ensureImport,
+  clientUploads,
   onUploaded,
   onError,
 }: {
   clientId: string;
   importId: string | null;
   ensureImport: () => Promise<string>;
+  clientUploads?: IntakeDocumentView[];
   onUploaded: () => void;
   onError: (msg: string) => void;
 }) {
@@ -500,6 +507,7 @@ function UploadZoneGate({
     <UploadZone
       clientId={clientId}
       importId={importId}
+      clientUploads={clientUploads}
       onUploaded={onUploaded}
     />
   );

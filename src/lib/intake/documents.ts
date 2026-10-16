@@ -235,7 +235,7 @@ export async function adoptParkedUploads(
   return { documentsMoved: moved.length, placeholderTrashed: trashed.length > 0 };
 }
 
-function toView(row: typeof crmHouseholdDocuments.$inferSelect): IntakeDocumentView {
+export function toView(row: typeof crmHouseholdDocuments.$inferSelect): IntakeDocumentView {
   return {
     id: row.id,
     filename: row.filename,
