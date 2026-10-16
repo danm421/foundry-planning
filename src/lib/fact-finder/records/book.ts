@@ -168,8 +168,9 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
           .orderBy(asc(willResiduaryRecipients.sortOrder))
       : [],
     accountIds.length > 0 ? q.select().from(accountOwners).where(inArray(accountOwners.accountId, accountIds)) : [],
+    // Sort order, then id: the save's writer reads positions in this order too, so two lots of one ticker pair with the same rows.
     accountIds.length > 0
-      ? q.select().from(accountHoldings).where(inArray(accountHoldings.accountId, accountIds)).orderBy(asc(accountHoldings.sortOrder))
+      ? q.select().from(accountHoldings).where(inArray(accountHoldings.accountId, accountIds)).orderBy(asc(accountHoldings.sortOrder), asc(accountHoldings.id))
       : [],
     accountIds.length > 0
       ? q

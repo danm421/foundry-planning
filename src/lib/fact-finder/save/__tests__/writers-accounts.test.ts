@@ -39,6 +39,9 @@ import { resolveTickers } from "@/lib/imports/commit/holdings";
 import type { ResolvedHoldingsMap } from "@/lib/imports/commit/types";
 import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
 import type { PlacedValue, RecordRef } from "../../change-set";
+import { mergeHoldings } from "../../placement/values";
+import { loadRecordBook } from "../../records/book";
+import { holdingValue } from "../../state";
 import { ACCOUNT_WRITERS, resolveSaveHoldings } from "../writers/accounts";
 import { SAVE_ACTOR, changeLine, dropSaveFirm, inSave, inputOf, seedSaveClient, type SaveSeed } from "./harness";
 
@@ -77,6 +80,26 @@ async function accountOnPlan(clientId: string, memberId: string, input: Record<s
   });
   if (!made.ok) throw new Error(made.error);
   return made.data.id;
+}
+
+/** An account's positions as the review reads them: the record book's. */
+async function bookHoldings(s: SaveSeed, accountId: string): Promise<PlacedValue> {
+  const book = await loadRecordBook(s.clientId, FIRM, s.scenarioId);
+  return book.records.account.find((r) => r.id === accountId)!.values.holdings;
+}
+
+/** The fact finder's positions merged into the account's on record, as the review merges them (Plan 3). */
+async function reviewed(s: SaveSeed, accountId: string, listed: PlacedValue): Promise<PlacedValue> {
+  return mergeHoldings(listed, await bookHoldings(s, accountId));
+}
+
+/** A position the fact finder lists: blank but for what it names. */
+const listed = (p: Record<string, PlacedValue>) => ({ ticker: null, name: null, shares: null, price: null, marketValue: null, costBasis: null, ...p });
+
+/** What a position is worth, as the book values it. */
+async function worth(holdingId: string): Promise<number | null> {
+  const [h] = await db.select().from(accountHoldings).where(eq(accountHoldings.id, holdingId));
+  return holdingValue({ marketValue: h.marketValue === null ? null : Number(h.marketValue), shares: Number(h.shares) || null, price: Number(h.price) || null });
 }
 
 d("account and business writers (live dev database)", () => {
@@ -179,6 +202,30 @@ d("account and business writers (live dev database)", () => {
     expect(audit).toEqual([{ action: "account.create", resourceId: onPlan }]);
   });
 
+  it("(b) positions roll back with the save: one updated in place and one added are as they were", async () => {
+    const id = await accountOnPlan(seed.clientId, seed.clientMemberId, { name: "Rollback Positions Brokerage" });
+    const [bond] = await db
+      .insert(accountHoldings)
+      .values({ accountId: id, displayTicker: "OLDB", shares: "2", price: "25", costBasis: "40", sortOrder: 0 })
+      .returning();
+    const merged = await reviewed(seed, id, [listed({ ticker: "OLDB", shares: 9 }), listed({ name: "Cash", marketValue: 500 })]);
+    const line = changeLine("account", { holdings: merged }, { recordId: id });
+
+    const { result } = await inSave(
+      at(),
+      async (ctx) => {
+        await ACCOUNT_WRITERS.account.update(ctx, inputOf(line));
+        return ctx.tx.select().from(accountHoldings).where(eq(accountHoldings.accountId, id));
+      },
+      { rollback: true },
+    );
+    // On the transaction the save wrote both.
+    expect(result.map((h) => Number(h.shares)).sort((a, b) => a - b)).toEqual([9, 500]);
+    // Rolled back: the plan's one position, as it was.
+    const after = await db.select().from(accountHoldings).where(eq(accountHoldings.accountId, id));
+    expect(after).toEqual([bond]);
+  });
+
   it("(c) accounts owned by a family member and by a trust, both created earlier in the save — new and on record", async () => {
     const onPlan = await accountOnPlan(seed.clientId, seed.clientMemberId, { name: "Morgan Stanley Brokerage" });
     const utma = changeLine("account", { name: "Emma's UTMA", subType: "brokerage", owners: solely(CHILD_LINE) }, { fixed: { category: "taxable" } });
@@ -260,6 +307,21 @@ d("account and business writers (live dev database)", () => {
     );
   });
 
+  it("(c) a 529 on record updated to name a child created earlier in the save", async () => {
+    const id = await accountOnPlan(seed.clientId, seed.clientMemberId, {
+      name: "Hendricks 529", category: "education_savings", subType: "529", beneficiaryName: "First grandchild",
+    });
+    const named = changeLine("account", { beneficiary: CHILD_LINE }, { recordId: id });
+    expect(named.dependsOn).toEqual([CHILD_LINE.lineId]);
+
+    const { result: child } = await inSave(at(), async (ctx) => {
+      const [noah] = await ctx.tx.insert(familyMembers).values({ clientId: seed.clientId, firstName: "Noah", lastName: "Hendricks", role: "child", relationship: "child" }).returning();
+      await ACCOUNT_WRITERS.account.update(ctx, inputOf(named, { [`line:${CHILD_LINE.lineId}`]: noah.id }));
+      return noah.id;
+    });
+    expect(await accountRow(id)).toMatchObject({ beneficiaryFamilyMemberId: child, beneficiaryName: null });
+  });
+
   it("(d) a new property's address — which the create schema drops — is saved; an update's goes through the account update", async () => {
     const home = changeLine(
       "account",
@@ -313,7 +375,7 @@ d("account and business writers (live dev database)", () => {
     expect(syncAccountFromHoldings).toHaveBeenCalledWith(id);
   });
 
-  it("(d) the line's merged positions are written one by one — updated in place, added, never deleted; positions well short of the stated value keep the value and say so", async () => {
+  it("(d) the line's merged positions are written one by one — updated in place, added, never deleted; with no value stated, an account with positions on record keeps its derive flag and notes", async () => {
     const id = await accountOnPlan(seed.clientId, seed.clientMemberId, { name: "Edward Jones Brokerage", value: 50000 });
     await db.update(accounts).set({ notes: "Rebalanced in 2025." }).where(eq(accounts.id, id));
     const [fund, bond, other, unnamed] = await db
@@ -352,12 +414,117 @@ d("account and business writers (live dev database)", () => {
     expect(cash).toMatchObject({ securityId: null, shares: "900.000000", price: "1.0000", marketValue: "900.00", costBasis: "900.00", sortOrder: 3 });
     expect(await db.select({ holdingId: holdingAssetClassOverrides.holdingId }).from(holdingAssetClassOverrides).where(eq(holdingAssetClassOverrides.assetClassId, largeCap.id))).toEqual([{ holdingId: fund.id }]);
 
+    // The line states no value: the stored $50,000 is no measure of a deriving account (its balance is the
+    // positions' roll-up), so the derive flag and the notes stay as they are.
+    const account = await accountRow(id);
+    expect(Number(account.value)).toBe(50000);
+    expect(account.deriveFromHoldings).toBe(true);
+    expect(account.notes).toBe("Rebalanced in 2025.");
+    // Queued like every account whose positions were written; the roll-up itself skips an account that doesn't derive.
+    expect(save.queued).toBe(1);
+  });
+
+  it("(d) a value the line states decides: positions well short of it keep that value and say so", async () => {
+    const id = await accountOnPlan(seed.clientId, seed.clientMemberId, { name: "Raymond James Brokerage", value: 40000 });
+    await db.update(accounts).set({ notes: "Rebalanced in 2025." }).where(eq(accounts.id, id));
+    await db.insert(accountHoldings).values({ accountId: id, displayTicker: "OLDB", shares: "2", price: "25", costBasis: "40", sortOrder: 0 });
+    const merged = await reviewed(seed, id, [listed({ ticker: "OLDB", shares: 4 })]);
+    const line = changeLine("account", { value: 50000, holdings: merged }, { recordId: id });
+
+    await inSave(at(), (ctx) => ACCOUNT_WRITERS.account.update(ctx, inputOf(line)));
     const account = await accountRow(id);
     expect(Number(account.value)).toBe(50000);
     expect(account.deriveFromHoldings).toBe(false);
-    expect(account.notes).toBe("Rebalanced in 2025.\n⚠ Holdings $1,525 below stated $50,000 on import — value preserved, not derived from holdings.");
-    // Queued like every account whose positions were written; the roll-up itself skips an account that doesn't derive.
+    expect(account.notes).toBe("Rebalanced in 2025.\n⚠ Holdings $100 below stated $50,000 on import — value preserved, not derived from holdings.");
+  });
+
+  it("(d) with no value stated, an account with positions on record that doesn't derive stays that way", async () => {
+    // The advisor turned derive off (a custom growth rate); the positions roughly cover the stored value.
+    const id = await accountOnPlan(seed.clientId, seed.clientMemberId, { name: "Wells Fargo Brokerage", value: 1000 });
+    await db.update(accounts).set({ deriveFromHoldings: false }).where(eq(accounts.id, id));
+    await db.insert(accountHoldings).values({ accountId: id, displayTicker: "OLDB", shares: "40", price: "25", costBasis: "900", sortOrder: 0 });
+    const merged = await reviewed(seed, id, [listed({ ticker: "OLDB", shares: 41 })]);
+
+    await inSave(at(), (ctx) => ACCOUNT_WRITERS.account.update(ctx, inputOf(changeLine("account", { holdings: merged }, { recordId: id }))));
+    expect(await accountRow(id)).toMatchObject({ deriveFromHoldings: false, notes: null });
+  });
+
+  it("(d) with no value stated, an account with no positions on record takes its value from the line's — the review's warning", async () => {
+    const id = await accountOnPlan(seed.clientId, seed.clientMemberId, { name: "Ameritrade Brokerage", value: 50000 });
+    await db.update(accounts).set({ deriveFromHoldings: false }).where(eq(accounts.id, id));
+    const merged = await reviewed(seed, id, [listed({ ticker: "OLDB", shares: 4, price: 25 })]);
+
+    const save = await inSave(at(), (ctx) => ACCOUNT_WRITERS.account.update(ctx, inputOf(changeLine("account", { holdings: merged }, { recordId: id }))));
+    expect(await accountRow(id)).toMatchObject({ deriveFromHoldings: true, notes: null });
     expect(save.queued).toBe(1);
+  });
+
+  it("(d) an untickered position whose row stores no value takes the value the line lists", async () => {
+    const id = await accountOnPlan(seed.clientId, seed.clientMemberId, { name: "Muni Ladder", value: 12000 });
+    // Worth 100 × 98 = $9,800 as the book reads it.
+    const [muni] = await db
+      .insert(accountHoldings)
+      .values({ accountId: id, displayName: "Muni bond", shares: "100", price: "98", costBasis: "9500", sortOrder: 0 })
+      .returning();
+    const merged = await reviewed(seed, id, [listed({ name: "Muni bond", marketValue: 12000 })]);
+
+    await inSave(at(), (ctx) => ACCOUNT_WRITERS.account.update(ctx, inputOf(changeLine("account", { holdings: merged }, { recordId: id }))));
+    expect(await worth(muni.id)).toBe(12000);
+    expect(await bookHoldings(seed, id)).toEqual([expect.objectContaining({ name: "Muni bond", marketValue: 12000, costBasis: 9500 })]);
+  });
+
+  it("(d) a ticker unclassified on record and priced now: the statement value it stored gives way to shares × the live price", async () => {
+    const id = await accountOnPlan(seed.clientId, seed.clientMemberId, { name: "Ally Invest" });
+    const [fund] = await db
+      .insert(accountHoldings)
+      .values({ accountId: id, displayTicker: TICKER, shares: "10", price: "95", marketValue: "950", costBasis: "800", sortOrder: 0 })
+      .returning();
+    const merged = await reviewed(seed, id, [listed({ ticker: TICKER, shares: 12 })]);
+    const priced: ResolvedHoldingsMap = new Map([[TICKER, { securityId, price: 101.5, asOf: "2026-10-14" }]]);
+
+    await inSave(at(), (ctx) => ACCOUNT_WRITERS.account.update({ ...ctx, holdings: priced }, inputOf(changeLine("account", { holdings: merged }, { recordId: id }))));
+    const [after] = await db.select().from(accountHoldings).where(eq(accountHoldings.id, fund.id));
+    expect(after).toMatchObject({ securityId, shares: "12.000000", price: "101.5000", priceAsOf: "2026-10-14", marketValue: null });
+    expect(await worth(fund.id)).toBe(1218);
+  });
+
+  it("(d) a ticker the pricing didn't resolve and the line didn't change keeps the price on record — not the review's older one", async () => {
+    const id = await accountOnPlan(seed.clientId, seed.clientMemberId, { name: "Firstrade Brokerage" });
+    const [bond] = await db
+      .insert(accountHoldings)
+      .values({ accountId: id, displayTicker: "OLDB", shares: "2", price: "25", priceAsOf: "2026-09-30", costBasis: "40", sortOrder: 0 })
+      .returning();
+    const merged = await reviewed(seed, id, [listed({ name: "Cash", marketValue: 300 })]);
+    // The nightly price refresh runs between the review and the save.
+    await db.update(accountHoldings).set({ price: "26", priceAsOf: "2026-10-15" }).where(eq(accountHoldings.id, bond.id));
+
+    // Pricing resolved nothing (resolveTickers never throws; it leaves a ticker out).
+    await inSave(at(), (ctx) => ACCOUNT_WRITERS.account.update(ctx, inputOf(changeLine("account", { holdings: merged }, { recordId: id }))));
+    const [after] = await db.select().from(accountHoldings).where(eq(accountHoldings.id, bond.id));
+    expect(after).toMatchObject({ shares: "2.000000", price: "26.0000", priceAsOf: "2026-10-15" });
+  });
+
+  it("(d) two lots of one ticker with the same sort order: the lot the review changed is the lot the save changes", async () => {
+    const id = await accountOnPlan(seed.clientId, seed.clientMemberId, { name: "Two Lots Brokerage" });
+    // Inserted in the reverse of their id order, both at sort order 0 (the Holdings tab's default).
+    const [lotA] = await db
+      .insert(accountHoldings)
+      .values({ id: "ffffffff-ffff-4fff-bfff-ffffffffffff", accountId: id, displayTicker: "LOTS", shares: "4", price: "10", costBasis: "30", sortOrder: 0, notes: "Lot A" })
+      .returning();
+    const [lotB] = await db
+      .insert(accountHoldings)
+      .values({ id: "00000000-0000-4000-8000-000000000000", accountId: id, displayTicker: "LOTS", shares: "6", price: "10", costBasis: "50", sortOrder: 0, notes: "Lot B" })
+      .returning();
+    // The review pairs the listed lot with the first lot the book reads.
+    const held = (await bookHoldings(seed, id)) as { shares: number }[];
+    const merged = mergeHoldings([listed({ ticker: "LOTS", shares: 7 })], held);
+    const changed = held[0].shares === 4 ? lotA : lotB;
+    const kept = changed === lotA ? lotB : lotA;
+
+    await inSave(at(), (ctx) => ACCOUNT_WRITERS.account.update(ctx, inputOf(changeLine("account", { holdings: merged }, { recordId: id }))));
+    const rows = new Map((await db.select().from(accountHoldings).where(eq(accountHoldings.accountId, id))).map((h) => [h.id, h]));
+    expect(rows.get(changed.id)).toMatchObject({ shares: "7.000000", costBasis: changed.costBasis, notes: changed.notes });
+    expect(rows.get(kept.id)).toMatchObject({ shares: kept.shares, costBasis: kept.costBasis, notes: kept.notes });
   });
 
   it("(e) an update that turns on derive-from-holdings queues the core's roll-up for after the commit", async () => {
