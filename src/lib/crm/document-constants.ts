@@ -18,3 +18,11 @@ export const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024;
 /** Maximum size for a browser → Blob direct upload (the client portal's, and
  *  every `@/lib/uploads/staged-upload` caller's). */
 export const MAX_DIRECT_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024;
+
+/** Source kinds of a vault row that holds an uploaded file of its own — not a
+ *  generated plan (Foundry's output) or an import link (no bytes). */
+export const UPLOADED_SOURCE_KINDS = ["upload", "intake_upload"] as const;
+
+/** Where the client portal's direct uploads land; the portal refuses any other
+ *  pathname, so the prefix marks a file the client sent through the portal. */
+export const portalUploadPrefix = (householdId: string) => `crm/${householdId}/portal/`;

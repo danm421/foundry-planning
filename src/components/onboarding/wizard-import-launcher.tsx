@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import type { ImportEligibleStep } from "@/lib/onboarding/import-sections";
-import type { IntakeDocumentView } from "@/lib/intake/document-types";
+import type { ClientDocumentView } from "@/lib/imports/client-documents";
 import WizardImportDrawer from "./wizard-import-drawer";
 
 interface WizardImportLauncherProps {
@@ -10,7 +10,7 @@ interface WizardImportLauncherProps {
   step: ImportEligibleStep;
   baseScenarioId: string;
   activeImportId: string | null;
-  clientUploads?: IntakeDocumentView[];
+  clientDocuments?: ClientDocumentView[];
 }
 
 export default function WizardImportLauncher({
@@ -18,7 +18,7 @@ export default function WizardImportLauncher({
   step,
   baseScenarioId,
   activeImportId,
-  clientUploads,
+  clientDocuments,
 }: WizardImportLauncherProps) {
   const [open, setOpen] = useState(false);
   // Stable identity — the drawer keys an effect off onClose.
@@ -44,7 +44,7 @@ export default function WizardImportLauncher({
           step={step}
           baseScenarioId={baseScenarioId}
           activeImportId={activeImportId}
-          clientUploads={clientUploads}
+          clientDocuments={clientDocuments}
           onClose={handleClose}
         />
       ) : null}

@@ -33,7 +33,8 @@ function makeForm(overrides: Partial<IntakeFormRow> = {}): IntakeFormRow {
     openedAt: null,
     submittedAt: null,
     appliedAt: null,
-    expiresAt: new Date("2026-10-16T14:30:00Z"),
+    // Relative to now: an open form must stay open however long this test lives.
+    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     createdAt: new Date("2026-09-16T14:30:00Z"),
     updatedAt: new Date("2026-09-16T14:30:00Z"),
     ...overrides,

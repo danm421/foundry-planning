@@ -5,8 +5,7 @@ import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { deriveStepStatuses } from "@/lib/onboarding/step-status";
 import { isImportEligibleStep } from "@/lib/onboarding/import-sections";
-import { listClientIntakeUploads } from "@/lib/imports/intake-documents";
-import type { IntakeDocumentView } from "@/lib/intake/document-types";
+import { listClientDocuments, type ClientDocumentView } from "@/lib/imports/client-documents";
 import type { OnboardingState, StepSlug } from "@/lib/onboarding/types";
 import OnboardingShell from "../onboarding-shell";
 import WizardImportLauncher from "@/components/onboarding/wizard-import-launcher";
@@ -34,17 +33,17 @@ export async function OnboardingStepContent({ clientId, firmId, step, completedA
 
   const importEligible = isImportEligibleStep(step);
   let baseScenarioId: string | null = null;
-  let clientUploads: IntakeDocumentView[] = [];
+  let clientDocuments: ClientDocumentView[] = [];
   if (importEligible) {
     const [[base], uploads] = await Promise.all([
       db
         .select({ id: scenarios.id })
         .from(scenarios)
         .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true))),
-      listClientIntakeUploads(clientId, firmId),
+      listClientDocuments(clientId, firmId),
     ]);
     baseScenarioId = base?.id ?? null;
-    clientUploads = uploads;
+    clientDocuments = uploads;
   }
   const activeImportId = state.activeImportId ?? null;
 
@@ -89,7 +88,7 @@ export async function OnboardingStepContent({ clientId, firmId, step, completedA
           step={step}
           baseScenarioId={baseScenarioId}
           activeImportId={activeImportId}
-          clientUploads={clientUploads}
+          clientDocuments={clientDocuments}
         />
       ) : null}
       {body}

@@ -4,7 +4,7 @@ import { generateClientTokenFromReadWriteToken } from "@vercel/blob/client";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { crmHouseholdDocuments } from "@/db/schema";
-import { MAX_DIRECT_UPLOAD_SIZE_BYTES } from "@/lib/crm/document-constants";
+import { MAX_DIRECT_UPLOAD_SIZE_BYTES, portalUploadPrefix } from "@/lib/crm/document-constants";
 import {
   STORAGE_PROVIDER,
   sanitizeFilename,
@@ -81,10 +81,10 @@ export async function listPortalDocuments(folderId: string | null): Promise<Port
   return rows.map(toDTO);
 }
 
-// Portal uploads get their own folder; the file part is one path segment of
-// exactly the shape step 1 issues, so a pathname echoed back by the browser
-// can't climb (`/`, `\`, `..`) into another household's blobs.
-const portalUploadPrefix = (householdId: string) => `crm/${householdId}/portal/`;
+// Portal uploads get their own folder (`portalUploadPrefix`); the file part is
+// one path segment of exactly the shape step 1 issues, so a pathname echoed
+// back by the browser can't climb (`/`, `\`, `..`) into another household's
+// blobs.
 const ISSUED_FILE_PART = /^\d+-[0-9a-f-]{36}-[A-Za-z0-9._-]+$/;
 
 /**
