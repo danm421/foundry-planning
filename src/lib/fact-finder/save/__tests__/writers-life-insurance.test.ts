@@ -108,9 +108,6 @@ const auditOf = (clientId: string) =>
     .from(auditLog)
     .where(eq(auditLog.clientId, clientId));
 
-const lifePolicies = (clientId: string) =>
-  db.select({ id: accounts.id }).from(accounts).where(and(eq(accounts.clientId, clientId), eq(accounts.category, "life_insurance")));
-
 d("life insurance policy writer", () => {
   beforeAll(() => dropSaveFirm(FIRM));
   afterAll(() => dropSaveFirm(FIRM));
@@ -266,32 +263,86 @@ d("life insurance policy writer", () => {
 
   it("refuses a carrier over 200 characters or a last 4 that isn't four digits, before anything is written", async () => {
     const seed = await seedSaveClient(FIRM);
-    const save = (line: ChangeLine) => inSave(at(seed), (ctx) => writer.create(ctx, inputOf(line, people(seed))));
+    const { result } = await inSave(
+      at(seed),
+      async (ctx) => {
+        // Caught inside the save: the transaction is still usable, and shows what the refused lines wrote.
+        const refused = [];
+        for (const line of [wholeLife({ carrier: "x".repeat(201) }), wholeLife({ policyNumberLast4: "12" })]) {
+          refused.push(await writer.create(ctx, inputOf(line, people(seed))).catch((err: unknown) => err));
+        }
+        const onTx = await ctx.tx.select({ id: accounts.id }).from(accounts).where(and(eq(accounts.clientId, seed.clientId), eq(accounts.category, "life_insurance")));
+        return { refused, onTx };
+      },
+      { rollback: true },
+    );
 
-    await expect(save(wholeLife({ carrier: "x".repeat(201) }))).rejects.toMatchObject({
-      name: "SaveLineError",
-      message: "Carrier: a name of up to 200 characters.",
-    });
-    await expect(save(wholeLife({ policyNumberLast4: "12" }))).rejects.toMatchObject({
-      name: "SaveLineError",
-      message: "Policy # (last 4): the policy number's last four digits.",
-    });
-    expect(await lifePolicies(seed.clientId)).toEqual([]);
+    expect(result.refused).toMatchObject([
+      { name: "SaveLineError", message: "Carrier: a name of up to 200 characters." },
+      { name: "SaveLineError", message: "Policy # (last 4): the policy number's last four digits." },
+    ]);
+    expect(result.onTx).toEqual([]);
   });
 
-  it("refuses the carrier and last 4 of a policy with no details row on record, rather than drop them", async () => {
-    const seed = await seedSaveClient(FIRM);
-    const [bare] = await db
-      .insert(accounts)
-      .values({ clientId: seed.clientId, scenarioId: seed.scenarioId, name: "Old policy", category: "life_insurance", subType: "term" })
-      .returning({ id: accounts.id });
-    const line = changeLine("life_insurance_policy", { carrier: "MetLife" }, { recordId: bare.id });
+  describe("a policy on record with no details row (Data Collection adds a bare life insurance account)", () => {
+    const bare = async (seed: SaveSeed) =>
+      (
+        await db
+          .insert(accounts)
+          .values({ clientId: seed.clientId, scenarioId: seed.scenarioId, name: "Old policy", category: "life_insurance", subType: "term" })
+          .returning({ id: accounts.id })
+      )[0].id;
 
-    await expect(inSave(at(seed), (ctx) => writer.update(ctx, inputOf(line)))).rejects.toMatchObject({
-      name: "SaveLineError",
-      message: "This policy's details are missing on the plan, so its carrier and policy number can't be saved — untick them to save the rest.",
+    it("refuses ticked details that would go nowhere, naming them, before the core writes anything — unticked, the rest saves", async () => {
+      const seed = await seedSaveClient(FIRM);
+      const id = await bare(seed);
+      const line = changeLine("life_insurance_policy", { name: "MetLife Term", faceValue: 500000, premiumAmount: 6000 }, { recordId: id });
+
+      const { result } = await inSave(
+        at(seed),
+        async (ctx) => {
+          const refused = await writer.update(ctx, inputOf(line)).catch((err: unknown) => err);
+          const [account] = await ctx.tx.select({ name: accounts.name }).from(accounts).where(eq(accounts.id, id));
+          const audit = await ctx.tx.select({ id: auditLog.id }).from(auditLog).where(eq(auditLog.clientId, seed.clientId));
+          return { refused, name: account.name, audit };
+        },
+        { rollback: true },
+      );
+      expect(result.refused).toMatchObject({
+        name: "SaveLineError",
+        message: "This policy has no details on the plan yet, so “Death benefit” and “Annual premium” can't be saved — add them in Details, or untick them to save the rest.",
+      });
+      expect(result).toMatchObject({ name: "Old policy", audit: [] });
+
+      await inSave(at(seed), (ctx) => writer.update(ctx, inputOf(untick(untick(line, "faceValue"), "premiumAmount"))));
+      expect((await policyOf(id)).account.name).toBe("MetLife Term");
     });
-    expect(await auditOf(seed.clientId)).toEqual([]);
+
+    it("refuses its carrier and last 4 the same way, rather than drop them", async () => {
+      const seed = await seedSaveClient(FIRM);
+      const line = changeLine("life_insurance_policy", { carrier: "MetLife" }, { recordId: await bare(seed) });
+
+      await expect(inSave(at(seed), (ctx) => writer.update(ctx, inputOf(line)))).rejects.toMatchObject({
+        name: "SaveLineError",
+        message: "This policy has no details on the plan yet, so “Carrier” can't be saved — add it in Details, or untick it to save the rest.",
+      });
+      expect(await auditOf(seed.clientId)).toEqual([]);
+    });
+  });
+
+  it("a new policy owned by the co-client the save added earlier: the owner check reads the transaction", async () => {
+    const seed = await seedSaveClient(FIRM);
+    const { result } = await inSave(at(seed), async (ctx) => {
+      // The co-client's family member, as the household line leaves it on the transaction.
+      const [laura] = await ctx.tx
+        .insert(familyMembers)
+        .values({ clientId: seed.clientId, firstName: "Laura", lastName: "Hendricks", role: "spouse", relationship: "other", dateOfBirth: "1970-09-30" })
+        .returning({ id: familyMembers.id });
+      const id = await writer.create(ctx, inputOf(wholeLife({ insuredPerson: "spouse", ownerRef: { ref: "person", role: "spouse" } }), { "person:spouse": laura.id }));
+      return { id, lauraId: laura.id };
+    });
+
+    expect((await policyOf(result.id)).owners).toEqual([{ familyMemberId: result.lauraId, entityId: null, percent: "1.0000" }]);
   });
 
   it("without a transaction the core answers as the routes did", async () => {

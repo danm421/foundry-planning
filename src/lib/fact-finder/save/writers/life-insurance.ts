@@ -6,12 +6,23 @@
  * policy number's last 4 (their schemas strip them) — on the same transaction,
  * scoped by client. An update sends only the line's ticked keys, and a line
  * never carries a cash value schedule, so the schedule on record stays.
+ *
+ * A life insurance account can be on the plan without its details row (Data
+ * Collection adds one bare). The core's PATCH writes the details to that row
+ * and doesn't check it's there, so an update whose ticked values go to it is
+ * refused instead of reported as saved.
  */
 import { and, eq, inArray } from "drizzle-orm";
 import { accounts, lifeInsurancePolicies } from "@/db/schema";
 import { createInsurancePolicyForClient, updateInsurancePolicyForClient } from "@/lib/clients/insurance-policies-writes";
-import type { PlacedValue } from "../../change-set";
+import type { ChangeLine, PlacedValue } from "../../change-set";
 import { SaveLineError, unwrap, type SaveContext, type SaveWriter } from "../types";
+
+/** A policy line's keys that write its details row (life_insurance_policies): the core's, then the writer's own two. */
+const DETAIL_KEYS = new Set([
+  "faceValue", "costBasis", "premiumAmount", "premiumYears", "premiumPayer", "policyType", "termIssueYear", "termLengthYears", "endsAtInsuredRetirement",
+  "carrier", "policyNumberLast4",
+]);
 
 interface PolicyDetails {
   carrier?: string;
@@ -56,9 +67,23 @@ async function writePolicyDetails(ctx: SaveContext, policyId: string, details: P
       ),
     )
     .returning({ id: lifeInsurancePolicies.accountId });
-  if (written.length === 0) {
-    throw new SaveLineError("This policy's details are missing on the plan, so its carrier and policy number can't be saved — untick them to save the rest.");
-  }
+  if (written.length === 0) throw new SaveLineError("This policy has no details on the plan yet — add them in Details.");
+}
+
+/** Refuses an update whose ticked values go to a details row the client's policy doesn't have. */
+async function needDetailsRow(ctx: SaveContext, policyId: string, line: ChangeLine, values: Record<string, PlacedValue>): Promise<void> {
+  const labels = line.fields.filter((f) => DETAIL_KEYS.has(f.key) && f.key in values).map((f) => `“${f.label}”`);
+  if (labels.length === 0) return;
+  const [policy] = await ctx.tx
+    .select({ details: lifeInsurancePolicies.accountId })
+    .from(accounts)
+    .leftJoin(lifeInsurancePolicies, eq(lifeInsurancePolicies.accountId, accounts.id))
+    .where(and(eq(accounts.id, policyId), eq(accounts.clientId, ctx.clientId)));
+  // No policy at all: the core answers "Policy not found".
+  if (!policy || policy.details !== null) return;
+  const them = labels.length === 1 ? "it" : "them";
+  const named = labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
+  throw new SaveLineError(`This policy has no details on the plan yet, so ${named} can't be saved — add ${them} in Details, or untick ${them} to save the rest.`);
 }
 
 const coreArgs = (ctx: SaveContext) => ({
@@ -77,9 +102,10 @@ export const LIFE_WRITERS: { life_insurance_policy: SaveWriter } = {
       await writePolicyDetails(ctx, resourceId, details);
       return resourceId;
     },
-    async update(ctx, { values, body, recordId }) {
+    async update(ctx, { line, values, body, recordId }) {
       if (!recordId) throw new SaveLineError("This line has no policy on the plan to update.");
       const details = policyDetails(values);
+      await needDetailsRow(ctx, recordId, line, values);
       unwrap(await updateInsurancePolicyForClient({ ...coreArgs(ctx), policyId: recordId, input: coreInput(body) }));
       await writePolicyDetails(ctx, recordId, details);
     },
