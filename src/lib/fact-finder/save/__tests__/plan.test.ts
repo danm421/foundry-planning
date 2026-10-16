@@ -311,6 +311,72 @@ describe("planSave — a single household's new records, as the review builds th
   });
 });
 
+/**
+ * Mark's group disability policy: "Short-term coverage? No — Long-term? Yes, 60% after 90 days". Unticked, a stated
+ * coverage answer on a new policy would leave the create schema's Yes (with terms nobody stated), so the policy is
+ * left out instead.
+ */
+describe("planSave — a new disability policy's coverage answers, as the review builds them", () => {
+  const book = (extra: Parameters<typeof bookWith>[0] = {}) =>
+    bookWith(
+      { client_household: [recordOf("c1", "Mark Hendricks", { firstName: "Mark", lastName: "Hendricks" })], ...extra },
+      { people: { client: "fm-client", spouse: null }, names: { client: "Mark", spouse: null } },
+    );
+  const ltd = { ltdWaitingDays: 90, ltdBenefitPercent: 60, benefitsRun: "To age", benefitsRunValue: 65 };
+  const groupLtd = { policyName: "Group LTD", whoIsCovered: "Client", shortTerm: "No", longTerm: "Yes", ...ltd };
+  const review = async (cells: Parameters<typeof rowOf>[1], onPlan = book(), link?: string): Promise<ChangeSet> => ({
+    builtAtVersion: 4,
+    ...(await buildChangeSet({
+      state: stateWith({ disability: [rowOf("di1", cells, link ? { link: { kind: "existing", recordId: link, score: 1, confirmed: true, by: "advisor" } } : {})] }),
+      book: onPlan,
+      now: NOW,
+      runLeftovers: async () => null,
+    })),
+  });
+
+  it.each([
+    { unticked: ["hasShortTerm"], reason: "Short-term coverage isn't ticked." },
+    { unticked: ["hasLongTerm"], reason: "Long-term coverage isn't ticked." },
+    { unticked: ["hasLongTerm", "hasShortTerm"], reason: "Short-term coverage isn't ticked." },
+  ])("a stated answer unticked ($unticked) leaves the policy out, naming it", async ({ unticked, reason }) => {
+    const changeSet = await review(groupLtd);
+    const [policy] = changeSet.lines;
+    expect([policy.id, policy.action, policy.blocked]).toEqual(["di1/disability_policy", "create", undefined]);
+    expect(policy.fields.filter((f) => unticked.includes(f.key)).map((f) => f.label).sort()).toEqual(
+      unticked.map((key) => (key === "hasShortTerm" ? "Short-term coverage" : "Long-term coverage")).sort(),
+    );
+    const plan = planSave(changeSet, ticksOf(changeSet, { "di1/disability_policy": unticked }), SINGLE);
+    expect(leftOutOf(plan)).toEqual([["di1/disability_policy", reason]]);
+    expect(savedIds(plan)).toEqual([]);
+    // Ticked, it saves with the answers stated.
+    const ticked = planSave(changeSet, ticksOf(changeSet), SINGLE);
+    expect(ticked.ok && ticked.lines.map((p) => [p.line.id, p.values.hasShortTerm, p.values.hasLongTerm])).toEqual([["di1/disability_policy", false, true]]);
+  });
+
+  it("an inferred answer (no question answered, the coverage's own cells filled) is written with the policy: it saves with any field unticked", async () => {
+    const changeSet = await review({ policyName: "Group LTD", whoIsCovered: "Client", ...ltd });
+    const [policy] = changeSet.lines;
+    expect(policy.fixed).toEqual({ hasShortTerm: false, hasLongTerm: true });
+    expect(policy.fields.map((f) => f.key)).not.toContain("hasShortTerm");
+    const plan = planSave(changeSet, ticksOf(changeSet, { "di1/disability_policy": ["ltdEliminationDays"] }), SINGLE);
+    expect(savedIds(plan)).toEqual(["di1/disability_policy"]);
+    expect(plan.ok && plan.lines[0].values).toMatchObject({ hasShortTerm: false, hasLongTerm: true });
+  });
+
+  it("an Update's unticked coverage answer leaves the policy's own as it is: the rest of the line saves", async () => {
+    const onRecord = recordOf("dp-1", "Group LTD", {
+      name: "Group LTD", insured: "client", hasShortTerm: true, hasLongTerm: true, ltdEliminationDays: 90, ltdBenefitPct: 0.5,
+      ltdBenefitPeriodMode: "to_age", ltdBenefitPeriodAge: 65,
+    });
+    const changeSet = await review(groupLtd, book({ disability_policy: [onRecord] }), "dp-1");
+    const [policy] = changeSet.lines;
+    expect([policy.action, policy.fields.map((f) => f.key)]).toEqual(["update", ["hasShortTerm", "ltdBenefitPct"]]);
+    const plan = planSave(changeSet, ticksOf(changeSet, { "di1/disability_policy": ["hasShortTerm"] }), SINGLE);
+    expect(leftOutOf(plan)).toEqual([]);
+    expect(plan.ok && plan.lines[0].values).toEqual({ ltdBenefitPct: 0.6 });
+  });
+});
+
 describe("planSave — save order", () => {
   it("by target rank (D8); within a rank, change-set order", () => {
     const household = (row: string, key: string) => lineOf(`${row}/client_household`, "client_household", { [key]: "x" }, { action: "update", recordId: "c1" });

@@ -3,7 +3,8 @@
  * The save plan (D5, D8): the advisor's ticks over the change list decide which
  * lines the save writes and which it leaves out — a line with nothing ticked,
  * a line that names the co-client nobody is adding, a new record whose Owner
- * isn't ticked (an account or loan only on a plan with a co-client), and every
+ * isn't ticked (an account or loan only on a plan with a co-client), a new
+ * disability policy whose stated coverage answer isn't ticked, and every
  * line that needs a line left out, each with its reason — and the order the
  * written lines go in. The server plans the save with it; the change list runs
  * it to show what unticking leaves out.
@@ -54,8 +55,8 @@ export function planSave(changeSet: ChangeSet, ticks: unknown, opts: { hasCoClie
   const addsCoClient = writing().some((p) => p.line.target === "client_household" && p.line.fields.some((f) => f.key === "spouseName" && f.ticked));
   const coClient = opts.hasCoClient || addsCoClient;
   for (const p of writing()) {
-    if (!coClient && namesCoClient(p)) reasons.set(p.line.id, NEEDS_CO_CLIENT);
-    else if (ownerUnticked(p, coClient)) reasons.set(p.line.id, OWNER_UNTICKED);
+    const reason = !coClient && namesCoClient(p) ? NEEDS_CO_CLIENT : ownerUnticked(p, coClient) ? OWNER_UNTICKED : coverageUnticked(p);
+    if (reason) reasons.set(p.line.id, reason);
   }
   // Pass after pass: a line left out in one pass leaves out the lines that need it in the next.
   for (let changed = true; changed; ) {
@@ -158,6 +159,20 @@ function ownerUnticked({ line }: PlannedLine, coClient: boolean): boolean {
   if (!coClient && !OWNER_ALWAYS_NEEDED.has(line.target)) return false;
   const key = OWNER_FIELD[line.target];
   return line.action === "create" && line.fields.some((f) => f.key === key && !f.ticked);
+}
+
+/** A disability policy's coverage questions, short-term first. */
+const COVERAGE_KEYS = ["hasShortTerm", "hasLongTerm"] as const;
+
+/**
+ * A new disability policy with a stated coverage answer unticked: the create schema would answer Yes, with terms
+ * nobody stated, so the policy is left out — naming the first such answer by its label on the change list. An
+ * answer the review inferred is written with the policy (`fixed`), and an Update leaves the policy's own.
+ */
+function coverageUnticked({ line }: PlannedLine): string | null {
+  if (line.target !== "disability_policy" || line.action !== "create") return null;
+  const field = COVERAGE_KEYS.map((key) => line.fields.find((f) => f.key === key)).find((f) => f !== undefined && !f.ticked);
+  return field ? `${field.label} isn't ticked.` : null;
 }
 
 /** By target rank, then change-set order; a line that needs a later line goes after it. */

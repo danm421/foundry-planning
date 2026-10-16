@@ -421,6 +421,18 @@ describe("ChangeList", () => {
       expect(within(line("Laura's salary")).getByText("Left out — Needs the co-client, who isn't being saved.")).toBeInTheDocument();
     });
 
+    it("leaves out a new disability policy whose stated coverage answer is unticked, saying which, in place", () => {
+      const policy: ChangeLine = {
+        ...CHANGES.lines[1],
+        id: "di1/disability_policy", rowId: "di1", page: "insurance", sectionId: "disability", target: "disability_policy", label: "Group LTD", fixed: undefined,
+        fields: [field("name", "Policy name", "Group LTD"), field("hasShortTerm", "Short-term coverage", "No"), field("hasLongTerm", "Long-term coverage", "Yes")],
+      };
+      const changeSet: ChangeSet = { ...CHANGES, notices: [], lines: [policy] };
+      renderList({ "di1/disability_policy": { name: true, hasShortTerm: false, hasLongTerm: true } }, changeSet);
+      expect(within(line("Group LTD")).getByText("Left out — Short-term coverage isn't ticked.").closest("p")).toHaveClass("text-warn");
+      expect(screen.getByRole("button", { name: "Save to plan" })).toBeDisabled();
+    });
+
     // A new account whose Owner is unticked: left out only where there's a co-client (it would be the client's alone).
     const lake: ChangeLine = {
       ...CHANGES.lines[1],
