@@ -36,6 +36,7 @@ import { updateFactFinder } from "../persist";
 import type { ReadEvent } from "../api-types";
 import { READ_BUDGET_MS, runFactFinderRead } from "../read-run";
 import { needsReading } from "../reading-status";
+import { FileReadError } from "../readers/read-error";
 import { pagesForSectionReader, routeFile } from "../readers/route-file";
 import { readSections } from "../readers/section-reader";
 import { loadExistingRecords, resolveBaseCaseScenarioId } from "../records/load";
@@ -136,7 +137,7 @@ describe("runFactFinderRead", () => {
   it("marks a failing file failed and carries on with the rest", async () => {
     store.files = [file("f1"), file("f2")];
     vi.mocked(routeFile).mockImplementation(async ({ fileName }) => {
-      if (fileName === "f1.pdf") throw new Error("Couldn't read any text from this file.");
+      if (fileName === "f1.pdf") throw new FileReadError("Couldn't read any text from this file.");
       return { reader: "section", pages: ["p"], warnings: [] };
     });
     vi.mocked(readSections).mockResolvedValue(charity("f2", "Food Bank"));
@@ -154,12 +155,42 @@ describe("runFactFinderRead", () => {
   it("marks a file failed when its reader throws, so the next read retries it", async () => {
     store.files = [file("f1")];
     vi.mocked(routeFile).mockResolvedValue({ reader: "section", pages: ["p"], warnings: [] });
-    vi.mocked(readSections).mockRejectedValue(new Error("Couldn't read this document — try again."));
+    vi.mocked(readSections).mockRejectedValue(new FileReadError("Couldn't read this document — try again."));
 
     const { state } = await run({ now: () => NOW });
 
     expect(state.readings.f1).toMatchObject({ status: "failed", reason: "Couldn't read this document — try again." });
     expect(needsReading(state.readings.f1, NOW)).toBe(true);
+  });
+
+  it("never shows an unexpected error's own text as the reason — a plain line, the detail logged", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      store.files = [file("f1")];
+      vi.mocked(routeFile).mockRejectedValue(new Error("Failed query: select * from client_import_files params: f1"));
+      const { state, result } = await run();
+      expect(state.readings.f1).toMatchObject({ status: "failed", reason: "This file couldn't be read — try again." });
+      expect(JSON.stringify(result)).not.toContain("Failed query");
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining("f1"), expect.objectContaining({ message: expect.stringContaining("Failed query") }));
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it("a statement the statement reader failed on says so plainly", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      store.files = [file("f1")];
+      vi.mocked(routeFile).mockResolvedValue({ reader: "statement" });
+      vi.mocked(runImportExtraction).mockImplementation(async (args) => {
+        args.onFile?.({ fileId: "f1", fileName: "f1.pdf", accountCount: 0, error: "Azure OpenAI 500: upstream connect error" });
+        return { succeeded: 0, failed: 1, status: "review", warnings: [], filesProcessed: 1 };
+      });
+      const { state } = await run();
+      expect(state.readings.f1).toMatchObject({ status: "failed", reason: "Couldn't read this statement — try again." });
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   it("claims no file when loading the plan's records fails", async () => {

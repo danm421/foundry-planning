@@ -4,6 +4,7 @@ import { extractDocxText } from "@/lib/extraction/docx-parser";
 import { extractPdfPages } from "@/lib/extraction/pdf-parser";
 import { visionOcrImage, visionOcrPdf } from "@/lib/extraction/vision-ocr";
 import { isOurFactFinder, readFormFields, type FormField } from "./form-reader";
+import { FileReadError } from "./read-error";
 
 export type FileRoute =
   | { reader: "form"; fields: FormField[] }
@@ -58,6 +59,6 @@ export async function pagesForSectionReader(
       if (ocr.truncated) warnings.push(`Only the first ${ocr.pagesProcessed} of ${ocr.pageCount} pages were read.`);
     }
   }
-  if (pages.every((p) => p.trim().length === 0)) throw new Error("Couldn't read any text from this file.");
+  if (pages.every((p) => p.trim().length === 0)) throw new FileReadError("Couldn't read any text from this file.");
   return { pages, warnings };
 }

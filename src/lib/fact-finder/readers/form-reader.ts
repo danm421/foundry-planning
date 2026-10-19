@@ -1,3 +1,4 @@
+import { redactSsns } from "@/lib/extraction/redact-ssn";
 import {
   FACT_FINDER_SECTIONS,
   PDF_HOLDINGS_TABLE,
@@ -123,7 +124,8 @@ function slotFor(field: FormField): Slot | { holdingsRow: number; column: FFColu
 }
 
 function readCell(column: FFColumn, field: FormField, fileId: string): FFReadCell | null {
-  const text = field.value.trim();
+  // An SSN a client wrote into any box never reaches the fact finder, as the other readers redact their pages.
+  const text = redactSsns(field.value).text.trim();
   if (text === "" || text === "Off") return null;
   const source = { fileId, ...(field.page !== null ? { page: field.page } : {}) };
   const result = normalizeCell(column, text);

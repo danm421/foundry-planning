@@ -4,6 +4,7 @@ import { recordAudit } from "@/lib/audit";
 import { mergeAcrossFiles } from "@/lib/imports/assemble/merge-across-files";
 import { downloadImportFile } from "@/lib/imports/blob";
 import { runImportExtraction } from "@/lib/imports/run-extraction";
+import { safeErrorFields } from "@/lib/redaction/secrets";
 import { narrate } from "@/lib/fact-finder/narrate";
 import { detectRollups } from "@/lib/fact-finder/rollups";
 import { applyLinkScores } from "./matching/score";
@@ -19,6 +20,7 @@ import {
 } from "./persist";
 import { buildReadSummary } from "./read-summary";
 import { readingsFromFormFields } from "./readers/form-reader";
+import { FileReadError } from "./readers/read-error";
 import { pagesForSectionReader, routeFile } from "./readers/route-file";
 import { readSections } from "./readers/section-reader";
 import { readingsFromStatements } from "./readers/statement-adapter";
@@ -58,7 +60,18 @@ async function eachLimited<T>(items: T[], limit: number, fn: (item: T) => Promis
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
-const errorText = (err: unknown) => (err instanceof Error ? err.message.slice(0, 200) : "Couldn't read this file.");
+const UNREADABLE_FILE = "This file couldn't be read — try again.";
+const UNREADABLE_STATEMENT = "Couldn't read this statement — try again.";
+
+/**
+ * A failed file's reason, as the screen shows it and the chat is told it: a reader's own plain words, else a
+ * fixed line — never an error's raw text (a driver's "Failed query: … params: …"). The detail is logged.
+ */
+function failureReason(err: unknown, fileId: string): string {
+  if (err instanceof FileReadError) return err.message;
+  console.error(`[fact-finder-read] file ${fileId} couldn't be read:`, safeErrorFields(err));
+  return UNREADABLE_FILE;
+}
 
 /**
  * Pass 1 for one import: read every unread file with its reader, merge each
@@ -72,7 +85,7 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
     try {
       args.onEvent?.(event);
     } catch (err) {
-      console.error("[fact-finder-read] onEvent threw:", errorText(err));
+      console.error("[fact-finder-read] onEvent threw:", safeErrorFields(err));
     }
   };
 
@@ -159,7 +172,7 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
 
   const downloadOrThrow = async (file: ImportFileRow) => {
     const buffer = await downloadImportFile(file.blobUrl);
-    if (!buffer) throw new Error("Couldn't download this file.");
+    if (!buffer) throw new FileReadError("Couldn't download this file.");
     return buffer;
   };
 
@@ -197,14 +210,13 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
         await settle(file, route.reader, output);
         await audit(file, true, { reader: route.reader, rows: output.readings.length });
       } catch (err) {
-        const reason = errorText(err);
+        const reason = failureReason(err, file.id);
         await settle(file, undefined, null, reason);
         await audit(file, false, { error: reason });
       }
     });
 
     if (statementFiles.length > 0 && !signal?.aborted) {
-      const extractionErrors = new Map<string, string | undefined>();
       try {
         await runImportExtraction({
           importId: scope.importId,
@@ -215,10 +227,10 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
           skipExtracted: true,
           fileIds: statementFiles.map((f) => f.id),
           signal,
-          onFile: (p) => extractionErrors.set(p.fileId, p.error),
         });
       } catch (err) {
-        for (const f of statementFiles) extractionErrors.set(f.id, errorText(err));
+        // Every statement then has no result, and says so below.
+        console.error(`[fact-finder-read] import ${scope.importId}: the statement reader failed:`, safeErrorFields(err));
       }
       const [fileResults, current] = await Promise.all([loadFileResults(scope), loadFactFinder(scope)]);
 
@@ -226,7 +238,8 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
       for (const f of statementFiles) {
         const result = fileResults[f.id];
         if (!result) {
-          await settle(f, "statement", null, extractionErrors.get(f.id) ?? "Couldn't read this statement.");
+          // The statement reader logs and records a file's own error; the advisor gets the plain line.
+          await settle(f, "statement", null, UNREADABLE_STATEMENT);
         } else if (
           result.extracted.accounts.length === 0 &&
           result.extracted.liabilities.length === 0 &&
@@ -238,7 +251,7 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
             const note = `${f.originalFilename} had no accounts a statement reader could find, so it was read as a general document.`;
             await settle(f, "section", await readAsSections(f, [note]));
           } catch (err) {
-            await settle(f, undefined, null, errorText(err));
+            await settle(f, undefined, null, failureReason(err, f.id));
           }
         } else {
           fresh.push(f);

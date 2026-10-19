@@ -168,6 +168,12 @@ describe("runFactFinderTurn — the loop", () => {
     expect(store.state!.transcript[1]).toMatchObject({ role: "tool", summary: expect.not.stringContaining("123-45-6789") });
   });
 
+  it("names the fence's own markers in the system prompt", async () => {
+    const fake = scripted(new AIMessage("Hello."));
+    await turn("Hi", fake.model);
+    expect(text(fake.seen[0][0])).toContain(`Everything between ${FENCE_OPEN} and ${FENCE_CLOSE} markers`);
+  });
+
   it("uses the mini model with the tool defs when no model is given", async () => {
     const fake = scripted(new AIMessage("Hello."));
     vi.mocked(chatModel).mockResolvedValue(fake.model as never);

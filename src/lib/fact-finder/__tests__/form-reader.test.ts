@@ -110,6 +110,13 @@ describe("readingsFromFormFields", () => {
     ]);
   });
 
+  it("redacts an SSN a client wrote into any box", () => {
+    const out = readingsFromFormFields("f1", [field("final_notes", "Mark's SSN is 123-45-6789 if you need it", "text", 10)]);
+    const notes = out.readings[0].cells.notes.value;
+    expect(notes).not.toContain("123-45-6789");
+    expect(notes).toContain("[REDACTED-SSN]");
+  });
+
   it("ignores fields it doesn't know", () => {
     expect(readingsFromFormFields("f1", [field("signature", "M.H."), field("zzz_r1_c1", "x")]).readings).toEqual([]);
   });

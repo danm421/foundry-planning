@@ -9,6 +9,7 @@ import { redactSsns } from "@/lib/extraction/redact-ssn";
 import { findSection, fixedLabelsOf, type FFSection } from "../schema";
 import { matchOption, normalizeCell } from "../normalize";
 import type { FFReadCell, FFReaderOutput, FFReading } from "../types";
+import { FileReadError } from "./read-error";
 import { buildSectionPrompt, sectionVocabulary } from "./section-prompt";
 
 const UNTRUSTED_PREAMBLE =
@@ -48,7 +49,7 @@ export async function readSections(args: { fileId: string; pages: string[] }): P
     anchors: anchorsOf(pages),
     entities: sectionVocabulary(),
   });
-  if (!regions) throw new Error(UNREADABLE);
+  if (!regions) throw new FileReadError(UNREADABLE);
   const jobs = Object.entries(regions).flatMap(([sectionId, ranges]) => {
     const section = findSection(sectionId);
     if (!section || ranges.length === 0) return [];
@@ -56,7 +57,7 @@ export async function readSections(args: { fileId: string; pages: string[] }): P
     return region.text.trim() ? [{ section, ...region }] : [];
   });
   const results = await Promise.all(jobs.map((job) => readRegion(args.fileId, job.section, job.text, job.firstPage)));
-  if (results.length > 0 && results.every((r) => r.failed)) throw new Error(UNREADABLE);
+  if (results.length > 0 && results.every((r) => r.failed)) throw new FileReadError(UNREADABLE);
   return {
     readings: results.flatMap((r) => r.readings),
     unassignedHoldings: [],
