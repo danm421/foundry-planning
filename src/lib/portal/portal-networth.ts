@@ -1,5 +1,6 @@
 import type { NetWorthSummary, PortalDebtRow } from "@/lib/portal/contracts";
 import { payoffYear } from "@/lib/portal/loan-details";
+import { linkedStatusOf } from "@/lib/accounts/linked-source";
 export type { NetWorthSummary, PortalDebtRow };
 
 export type FamilyRole = string;
@@ -37,6 +38,9 @@ export interface RawLiability {
   liabilityType: string | null;
   plaidItemId: string | null;
   plaidAccountId: string | null;
+  /** The Plaid item's refresh state, joined in for the link icon's hover. */
+  plaidRefreshedAt: Date | null;
+  plaidRefreshError: string | null;
   minimumPayment: string | null;
   statementBalance: string | null;
   aprPercentage: string | null;
@@ -83,6 +87,7 @@ export function buildPortalLiabilityRows(
       monthlyPayment: num(l.monthlyPayment),
       payoffYear: payoffYear(l.startYear, l.termMonths, l.startMonth),
       isPlaidLinked: l.plaidItemId != null,
+      linked: linkedStatusOf(l),
       ownerFmIds: owners
         .filter((o) => o.kind === "family_member" && o.familyMemberId != null)
         .map((o) => o.familyMemberId!),

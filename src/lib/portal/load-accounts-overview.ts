@@ -1,8 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { netAccountValue } from "@/lib/accounts/net-value";
-import { linkedSourceOf } from "@/lib/accounts/linked-source";
+import { linkedStatusOf } from "@/lib/accounts/linked-source";
 import { db } from "@/db";
-import { accounts, scenarios } from "@/db/schema";
+import { accounts, plaidItems, scenarios } from "@/db/schema";
 import { isPortalVisibleAccount } from "@/lib/portal/account-visibility";
 import { loadPortalDebt } from "@/lib/portal/load-portal-financials";
 import { summarizeNetWorth } from "@/lib/portal/portal-networth";
@@ -38,10 +38,14 @@ export async function loadAccountsOverview(clientId: string): Promise<AccountsOv
       plaidItemId: accounts.plaidItemId,
       externalProvider: accounts.externalProvider,
       source: accounts.source,
+      lastSyncedAt: accounts.lastSyncedAt,
+      plaidRefreshedAt: plaidItems.lastRefreshedAt,
+      plaidRefreshError: plaidItems.lastRefreshError,
       isDefaultChecking: accounts.isDefaultChecking,
       parentAccountId: accounts.parentAccountId,
     })
     .from(accounts)
+    .leftJoin(plaidItems, eq(plaidItems.id, accounts.plaidItemId))
     .where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, scenario.id)));
 
   const assets: PortalAccountRow[] = rawRows
@@ -60,7 +64,7 @@ export async function loadAccountsOverview(clientId: string): Promise<AccountsOv
       last4: r.accountNumberLast4,
       value: netAccountValue(r),
       isPlaidLinked: r.plaidItemId != null,
-      linkedSource: linkedSourceOf(r),
+      linked: linkedStatusOf(r),
     }));
 
   const debts = await loadPortalDebt(clientId, scenario.id);

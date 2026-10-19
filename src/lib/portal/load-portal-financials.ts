@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { liabilities, liabilityOwners, familyMembers, plaidTransactions } from "@/db/schema";
+import { liabilities, liabilityOwners, familyMembers, plaidItems, plaidTransactions } from "@/db/schema";
 import {
   buildPortalLiabilityRows,
   type LiabilityOwnerShare,
@@ -21,6 +21,8 @@ export async function loadPortalDebt(
       liabilityType: liabilities.liabilityType,
       plaidItemId: liabilities.plaidItemId,
       plaidAccountId: liabilities.plaidAccountId,
+      plaidRefreshedAt: plaidItems.lastRefreshedAt,
+      plaidRefreshError: plaidItems.lastRefreshError,
       minimumPayment: liabilities.minimumPayment,
       statementBalance: liabilities.statementBalance,
       aprPercentage: liabilities.aprPercentage,
@@ -32,6 +34,7 @@ export async function loadPortalDebt(
       startMonth: liabilities.startMonth,
     })
     .from(liabilities)
+    .leftJoin(plaidItems, eq(plaidItems.id, liabilities.plaidItemId))
     .where(and(eq(liabilities.clientId, clientId), eq(liabilities.scenarioId, scenarioId)));
 
   if (raw.length === 0) return [];

@@ -26,7 +26,7 @@ import {
 } from "@/lib/scenario/view-adapters";
 import {
   buildAccountRows,
-  linkedSourceMapFrom,
+  linkedStatusMapFrom,
   loadAccountMetaRows,
 } from "@/lib/accounts/load-account-rows";
 import { loadOverlaidAccountMeta } from "@/lib/scenario/account-meta";
@@ -273,7 +273,7 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       accounts: effectiveTree.accounts,
       familyMembers: effectiveTree.familyMembers ?? [],
       accountMetaById,
-      linkedSourceById: linkedSourceMapFrom(accountMetaRows),
+      linkedById: linkedStatusMapFrom(accountMetaRows),
       stockOptionPlans: effectiveTree.stockOptionPlans,
       planStartYear: effectiveTree.planSettings.planStartYear,
     }).map((r) => [r.id, r]),

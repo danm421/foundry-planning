@@ -2,7 +2,7 @@
 
 import type { ReactElement } from "react";
 import { fmtUsd } from "@/lib/portal/format";
-import { LINKED_SOURCE_NAME, type LinkedSource } from "@/lib/accounts/linked-source";
+import { LINKED_SOURCE_NAME, type LinkedStatus } from "@/lib/accounts/linked-source";
 import { LinkedSourceBadge } from "@/components/balance-sheet/icons";
 
 export interface AccountCardData {
@@ -13,7 +13,7 @@ export interface AccountCardData {
   subtitle: string;
   value: number;
   /** Null = typed in by hand. */
-  linkedSource: LinkedSource | null;
+  linked: LinkedStatus | null;
 }
 
 /**
@@ -35,7 +35,7 @@ export function AccountCard({
     >
       <span className="min-w-0">
         <span className="flex min-w-0 items-center gap-1.5">
-          {card.linkedSource && <LinkedSourceBadge source={card.linkedSource} />}
+          {card.linked && <LinkedSourceBadge status={card.linked} />}
           <span className="truncate text-[14px] font-medium text-ink">
             {card.name}
             {card.last4 && <span className="tabular ml-1 text-[12px] text-ink-3">·· {card.last4}</span>}
@@ -46,7 +46,7 @@ export function AccountCard({
       <span className="shrink-0 text-right">
         <span className="tabular block text-[14px] text-ink">{fmtUsd(card.value)}</span>
         <span className="mt-0.5 block text-[12px] text-ink-3">
-          {card.linkedSource ? LINKED_SOURCE_NAME[card.linkedSource] : "Manual"}
+          {card.linked ? LINKED_SOURCE_NAME[card.linked.source] : "Manual"}
         </span>
       </span>
     </button>

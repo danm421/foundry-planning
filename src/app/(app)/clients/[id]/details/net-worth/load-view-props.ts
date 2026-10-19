@@ -13,6 +13,7 @@ import {
   modelPortfolioAllocations,
   assetClasses,
   clientCmaOverrides,
+  plaidItems,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -24,7 +25,8 @@ import { loadOverlaidAccountMeta } from "@/lib/scenario/account-meta";
 import { loadFundPortfolioOptions } from "@/lib/investments/load-fund-portfolio-options";
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import { controllingEntity } from "@/engine/ownership";
-import { buildAccountRows, loadAccountMetaRows, linkedSourceMapFrom } from "@/lib/accounts/load-account-rows";
+import { buildAccountRows, loadAccountMetaRows, linkedStatusMapFrom } from "@/lib/accounts/load-account-rows";
+import { linkedStatusOf } from "@/lib/accounts/linked-source";
 import { categoryDefaultRates } from "@/lib/investments/category-default-rates";
 import { planSettingsEngineToFormProps, savingsRuleEngineToView } from "@/lib/scenario/view-adapters";
 import { buildIncomeRows } from "@/lib/balance-sheet/build-income-rows";
@@ -106,8 +108,11 @@ export async function loadNetWorthViewProps(
         id: liabilities.id,
         termUnit: liabilities.termUnit,
         plaidItemId: liabilities.plaidItemId,
+        plaidRefreshedAt: plaidItems.lastRefreshedAt,
+        plaidRefreshError: plaidItems.lastRefreshError,
       })
       .from(liabilities)
+      .leftJoin(plaidItems, eq(plaidItems.id, liabilities.plaidItemId))
       .where(and(eq(liabilities.clientId, id), eq(liabilities.scenarioId, scenario.id))),
     db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
     db
@@ -137,13 +142,11 @@ export async function loadNetWorthViewProps(
   const accountMetaById = await loadOverlaidAccountMeta(id, accountMetaRows, scenarioParam);
   const liabilityMetaById = new Map(liabilityMetaRows.map((r) => [r.id, r]));
 
-  // Linked-account indicator: an account fed by an external integration shows a
-  // small badge next to its name in the Net Worth view. `plaidItemId` is the
-  // reliable Plaid signal (the `source` enum can lag until holdings ingest);
-  // `externalProvider === "orion"` drives the Orion label. Base-scoped like the
-  // metadata above, so scenario-added accounts (no entry) correctly read as
-  // manual with no badge.
-  const linkedSourceById = linkedSourceMapFrom(accountMetaRows);
+  // Linked-account indicator: an account fed by Plaid or a firm integration
+  // shows a link icon before its name, hover-dated by its last sync
+  // (`linkedStatusOf`). Base-scoped like the metadata above, so scenario-added
+  // accounts (no entry) correctly read as manual with no badge.
+  const linkedById = linkedStatusMapFrom(accountMetaRows);
 
   // Compute blended returns for each model portfolio
   const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
@@ -242,7 +245,7 @@ export async function loadNetWorthViewProps(
     accounts: effectiveTree.accounts,
     familyMembers: effectiveTree.familyMembers ?? [],
     accountMetaById,
-    linkedSourceById,
+    linkedById,
     stockOptionPlans: effectiveTree.stockOptionPlans,
     planStartYear,
   });
@@ -265,7 +268,7 @@ export async function loadNetWorthViewProps(
       ownerEntityId: controllingEntity(l) ?? null,
       isInterestDeductible: l.isInterestDeductible ?? false,
       forgiveAtTermEnd: l.forgiveAtTermEnd ?? false,
-      linkedSource: meta?.plaidItemId != null ? "plaid" : null,
+      linked: meta ? linkedStatusOf(meta) : null,
       owners: l.owners,
       parentAccountId: l.parentAccountId ?? null,
     };

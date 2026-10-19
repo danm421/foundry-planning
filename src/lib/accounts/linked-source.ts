@@ -1,4 +1,5 @@
 import type { ProviderId } from "@/lib/integrations/types";
+import { plaidIssueOf, type PlaidIssue } from "@/lib/plaid/errors";
 
 /** Firm integrations that sync accounts — every provider but the AI one. */
 type AccountIntegration = Exclude<ProviderId, "azure_openai">;
@@ -37,4 +38,54 @@ export function linkedSourceOf(row: {
   if (isIntegration(row.externalProvider)) return row.externalProvider;
   if (isIntegration(row.source)) return row.source;
   return null;
+}
+
+const LINKED_ISSUE_TEXT: Record<PlaidIssue, string> = {
+  reconnect: "Needs reconnecting",
+  revoked: "Access revoked",
+};
+
+/** Everything the link icon's hover says about a connected balance. */
+export interface LinkedStatus {
+  source: LinkedSource;
+  /** ISO time the connection last refreshed the balance; null = never yet. */
+  syncedAt: string | null;
+  /** A broken Plaid link — the balance has stopped updating until the client
+   *  acts. Integrations have no per-client equivalent. */
+  issue: PlaidIssue | null;
+}
+
+/** Plaid refreshes per bank connection, so a Plaid account is dated by its
+ *  item's `lastRefreshedAt` (joined in by the caller); an integration stamps
+ *  each account's own `lastSyncedAt`. */
+export function linkedStatusOf(
+  row: Parameters<typeof linkedSourceOf>[0] & {
+    lastSyncedAt?: Date | null;
+    plaidRefreshedAt?: Date | null;
+    plaidRefreshError?: string | null;
+  },
+): LinkedStatus | null {
+  const source = linkedSourceOf(row);
+  if (!source) return null;
+  if (source !== "plaid") {
+    return { source, syncedAt: row.lastSyncedAt?.toISOString() ?? null, issue: null };
+  }
+  return {
+    source,
+    syncedAt: row.plaidRefreshedAt?.toISOString() ?? null,
+    // Only the codes the client can fix — a product-config code is stored on
+    // the item while its balances keep refreshing.
+    issue: plaidIssueOf(row.plaidRefreshError ?? null),
+  };
+}
+
+/** The hover text, one fact per line. `formatTime` renders the ISO time in the
+ *  viewer's zone; without it (the server render) the time line is left out
+ *  rather than printed in the server's zone. */
+export function linkedStatusLines(status: LinkedStatus, formatTime?: (iso: string) => string): string[] {
+  const lines = [linkedSourceLabel(status.source)];
+  if (status.syncedAt == null) lines.push("Not synced yet");
+  else if (formatTime) lines.push(`Last updated ${formatTime(status.syncedAt)}`);
+  if (status.issue) lines.push(LINKED_ISSUE_TEXT[status.issue]);
+  return lines;
 }

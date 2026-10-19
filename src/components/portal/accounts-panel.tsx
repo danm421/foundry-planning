@@ -21,7 +21,7 @@ function assetCard(a: PortalAccountRow): AccountCardData {
     last4: a.last4,
     subtitle: assetCardSubtitle(a),
     value: a.value,
-    linkedSource: a.linkedSource,
+    linked: a.linked,
   };
 }
 
@@ -32,8 +32,7 @@ function debtCard(d: PortalDebtRow): AccountCardData {
     last4: null,
     subtitle: debtCardSubtitle(d),
     value: d.balance,
-    // Debts connect through Plaid only — no integration syncs a liability.
-    linkedSource: d.isPlaidLinked ? "plaid" : null,
+    linked: d.linked,
   };
 }
 

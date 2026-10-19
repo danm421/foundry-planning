@@ -36,7 +36,7 @@ export type LiabilityPatch = Partial<
  */
 const NON_WRITABLE_KEYS: ReadonlySet<string> = new Set([
   "id",
-  "linkedSource",
+  "linked",
   "ownerEntityId",
 ]);
 

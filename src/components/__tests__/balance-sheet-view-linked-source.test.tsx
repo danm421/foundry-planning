@@ -4,9 +4,9 @@
  *
  * Accounts and liabilities whose balances are fed by a connection (the
  * client's Plaid link, or an Orion / Schwab / Addepar integration) carry
- * `linkedSource` and render a small badge before the name whose accessible
- * label names the source. Manually-entered rows leave `linkedSource` unset and
- * render no badge.
+ * `linked` and render a small badge before the name whose accessible label
+ * and hover text name the source and when it last synced. Manually-entered
+ * rows leave `linked` unset and render no badge.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -81,7 +81,7 @@ const PLAID_ACCOUNT: AccountRow = {
   owner: "client",
   value: "100000",
   basis: "80000",
-  linkedSource: "plaid",
+  linked: { source: "plaid", syncedAt: "2026-10-14T19:42:00.000Z", issue: null },
   growthRate: null,
 };
 
@@ -93,7 +93,7 @@ const ORION_ACCOUNT: AccountRow = {
   owner: "client",
   value: "50000",
   basis: "40000",
-  linkedSource: "orion",
+  linked: { source: "orion", syncedAt: "2026-10-14T19:42:00.000Z", issue: null },
   growthRate: null,
 };
 
@@ -105,7 +105,7 @@ const MANUAL_ACCOUNT: AccountRow = {
   owner: "client",
   value: "25000",
   basis: "25000",
-  linkedSource: null,
+  linked: null,
   growthRate: null,
 };
 
@@ -120,7 +120,7 @@ const PLAID_LIABILITY: LiabilityRow = {
   termMonths: 12,
   termUnit: "annual",
   forgiveAtTermEnd: false,
-  linkedSource: "plaid",
+  linked: { source: "plaid", syncedAt: null, issue: "reconnect" },
 };
 
 const MANUAL_LIABILITY: LiabilityRow = {
@@ -134,7 +134,7 @@ const MANUAL_LIABILITY: LiabilityRow = {
   termMonths: 360,
   termUnit: "monthly",
   forgiveAtTermEnd: false,
-  linkedSource: null,
+  linked: null,
 };
 
 function renderView(props: {
@@ -169,7 +169,7 @@ describe("BalanceSheetView linked-account indicator", () => {
 
     const badges = screen.getAllByRole("img", { name: /Linked via|Synced from/ });
     expect(badges).toHaveLength(1);
-    expect(badges[0].getAttribute("aria-label")).toBe("Linked via Plaid");
+    expect(badges[0].getAttribute("aria-label")).toMatch(/^Linked via Plaid/);
   });
 
   it("badges a Plaid account after expanding its category, not the manual sibling", () => {
@@ -183,7 +183,7 @@ describe("BalanceSheetView linked-account indicator", () => {
 
     const badges = screen.getAllByRole("img", { name: /Linked via|Synced from/ });
     expect(badges).toHaveLength(1);
-    expect(badges[0].getAttribute("aria-label")).toBe("Linked via Plaid");
+    expect(badges[0].getAttribute("aria-label")).toMatch(/^Linked via Plaid/);
   });
 
   it("labels an Orion-synced account 'Synced from Orion'", () => {
@@ -191,22 +191,45 @@ describe("BalanceSheetView linked-account indicator", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /taxable/i }));
 
-    expect(screen.getByRole("img", { name: "Synced from Orion" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: /^Synced from Orion/ })).toBeTruthy();
+  });
+
+  it("dates the badge's hover by the last sync, in the viewer's zone", () => {
+    renderView({ accounts: [ORION_ACCOUNT], liabilities: [] });
+
+    fireEvent.click(screen.getByRole("button", { name: /taxable/i }));
+
+    const [source, updated, ...rest] = screen
+      .getByRole("img", { name: /^Synced from Orion/ })
+      .getAttribute("title")!
+      .split("\n");
+    expect(source).toBe("Synced from Orion");
+    // 19:42 UTC falls on Oct 14 or 15 depending on the runner's zone.
+    expect(updated).toMatch(/^Last updated Oct 1[45], 2026, \d{1,2}:\d{2} [AP]M$/);
+    expect(rest).toEqual([]);
+  });
+
+  it("says when a Plaid link has never synced and needs reconnecting", () => {
+    renderView({ accounts: [], liabilities: [PLAID_LIABILITY] });
+
+    expect(screen.getByRole("img", { name: /^Linked via Plaid/ }).getAttribute("title")).toBe(
+      "Linked via Plaid\nNot synced yet\nNeeds reconnecting",
+    );
   });
 
   it("labels Schwab- and Addepar-synced accounts by their integration", () => {
     renderView({
       accounts: [
-        { ...ORION_ACCOUNT, id: "acct-schwab", name: "Schwab Joint", linkedSource: "schwab" },
-        { ...ORION_ACCOUNT, id: "acct-addepar", name: "Addepar Trust", linkedSource: "addepar" },
+        { ...ORION_ACCOUNT, id: "acct-schwab", name: "Schwab Joint", linked: { source: "schwab", syncedAt: null, issue: null } },
+        { ...ORION_ACCOUNT, id: "acct-addepar", name: "Addepar Trust", linked: { source: "addepar", syncedAt: null, issue: null } },
       ],
       liabilities: [],
     });
 
     fireEvent.click(screen.getByRole("button", { name: /taxable/i }));
 
-    expect(screen.getByRole("img", { name: "Synced from Schwab" })).toBeTruthy();
-    expect(screen.getByRole("img", { name: "Synced from Addepar" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: /^Synced from Schwab/ })).toBeTruthy();
+    expect(screen.getByRole("img", { name: /^Synced from Addepar/ })).toBeTruthy();
   });
 
   it("draws the badge before the name, on accounts and liabilities alike", () => {
@@ -214,7 +237,7 @@ describe("BalanceSheetView linked-account indicator", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /taxable/i }));
 
-    const [accountBadge, liabilityBadge] = screen.getAllByRole("img", { name: "Linked via Plaid" });
+    const [accountBadge, liabilityBadge] = screen.getAllByRole("img", { name: /^Linked via Plaid/ });
     for (const [badge, name] of [
       [accountBadge, "Chase Brokerage"],
       [liabilityBadge, "Chase Card"],

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildAccountRows, linkedSourceMapFrom } from "../load-account-rows";
+import { buildAccountRows, linkedStatusMapFrom } from "../load-account-rows";
 import type { AccountMeta } from "@/lib/scenario/account-meta";
 import type { StockOptionPlan } from "@/engine/equity/types";
 
@@ -51,7 +51,7 @@ describe("buildAccountRows", () => {
       accountMetaById: new Map([
         ["acct-1", meta({ id: "acct-1", growthSource: "model_portfolio", modelPortfolioId: "mp-7" })],
       ]),
-      linkedSourceById: new Map(),
+      linkedById: new Map(),
       stockOptionPlans: [],
       planStartYear: 2026,
     });
@@ -65,7 +65,7 @@ describe("buildAccountRows", () => {
       accounts: [engineAccount()],
       familyMembers: [],
       accountMetaById: new Map(),
-      linkedSourceById: new Map(),
+      linkedById: new Map(),
       stockOptionPlans: [],
       planStartYear: 2026,
     });
@@ -79,7 +79,7 @@ describe("buildAccountRows", () => {
       accounts: [engineAccount({ growthRate: 0.062 })],
       familyMembers: [],
       accountMetaById: new Map(),
-      linkedSourceById: new Map(),
+      linkedById: new Map(),
       stockOptionPlans: [],
       planStartYear: 2026,
     });
@@ -98,7 +98,7 @@ describe("buildAccountRows", () => {
       ],
       familyMembers: [{ id: "fm-kid", role: "child", firstName: "Kelly", lastName: "Cooper" }],
       accountMetaById: new Map(),
-      linkedSourceById: new Map(),
+      linkedById: new Map(),
       stockOptionPlans: [],
       planStartYear: 2026,
     });
@@ -111,7 +111,7 @@ describe("buildAccountRows", () => {
       accounts: [engineAccount({ inheritedDeathYear: 2022, inheritedOwnerBirthYear: 1945, inheritedHeirDisabled: true, inheritedPayoutFromYear: 2026, inheritedPayoutThroughYear: 2030 })],
       familyMembers: [],
       accountMetaById: new Map([["acct-1", meta({ id: "acct-1" })]]),
-      linkedSourceById: new Map(),
+      linkedById: new Map(),
       stockOptionPlans: [],
       planStartYear: 2026,
     });
@@ -123,7 +123,7 @@ describe("buildAccountRows", () => {
       accounts: [engineAccount()],
       familyMembers: [],
       accountMetaById: new Map([["acct-1", meta({ id: "acct-1" })]]),
-      linkedSourceById: new Map(),
+      linkedById: new Map(),
       stockOptionPlans: [],
       planStartYear: 2026,
     });
@@ -131,16 +131,22 @@ describe("buildAccountRows", () => {
   });
 });
 
-describe("linkedSourceMapFrom", () => {
-  it("prefers plaidItemId over the source enum", () => {
-    const map = linkedSourceMapFrom([
-      { id: "a", plaidItemId: "item-1", externalProvider: null, source: "orion" },
-      { id: "b", plaidItemId: null, externalProvider: "orion", source: "manual" },
+describe("linkedStatusMapFrom", () => {
+  it("prefers plaidItemId over the source enum, dating Plaid by the item refresh", () => {
+    const map = linkedStatusMapFrom([
+      {
+        id: "a", plaidItemId: "item-1", externalProvider: null, source: "orion",
+        lastSyncedAt: null, plaidRefreshedAt: new Date("2026-10-15T12:00:00Z"), plaidRefreshError: null,
+      },
+      {
+        id: "b", plaidItemId: null, externalProvider: "orion", source: "manual",
+        lastSyncedAt: new Date("2026-10-14T19:42:00Z"), plaidRefreshedAt: null, plaidRefreshError: null,
+      },
       { id: "c", plaidItemId: null, externalProvider: null, source: "manual" },
     ] as never);
 
-    expect(map.get("a")).toBe("plaid");
-    expect(map.get("b")).toBe("orion");
+    expect(map.get("a")).toEqual({ source: "plaid", syncedAt: "2026-10-15T12:00:00.000Z", issue: null });
+    expect(map.get("b")).toEqual({ source: "orion", syncedAt: "2026-10-14T19:42:00.000Z", issue: null });
     expect(map.has("c")).toBe(false);
   });
 });
@@ -202,7 +208,7 @@ describe("buildAccountRows — stock_options accounts", () => {
       accounts: [equityAccount()],
       familyMembers: [],
       accountMetaById: new Map(),
-      linkedSourceById: new Map(),
+      linkedById: new Map(),
       stockOptionPlans: [equityPlan],
       planStartYear: 2026,
     });
@@ -215,7 +221,7 @@ describe("buildAccountRows — stock_options accounts", () => {
       accounts: [engineAccount(), equityAccount()],
       familyMembers: [],
       accountMetaById: new Map(),
-      linkedSourceById: new Map(),
+      linkedById: new Map(),
       stockOptionPlans: [equityPlan],
       planStartYear: 2026,
     });

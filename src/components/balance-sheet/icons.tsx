@@ -1,4 +1,5 @@
-import { linkedSourceLabel, type LinkedSource } from "@/lib/accounts/linked-source";
+import { useSyncExternalStore } from "react";
+import { linkedStatusLines, type LinkedStatus } from "@/lib/accounts/linked-source";
 
 export function TrashIcon() {
   return (
@@ -31,7 +32,7 @@ export function ChevronRight() {
 export function LinkIcon() {
   return (
     <svg
-      className="h-3.5 w-3.5"
+      className="h-4 w-4"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -47,20 +48,35 @@ export function LinkIcon() {
   );
 }
 
-/** Small indicator shown before an account/liability name when its balance is
- *  fed by a connection — the client's Plaid link or a firm integration (Orion,
- *  Schwab, Addepar). Hover reveals which one via the native tooltip; a bare row
- *  (no badge) reads as a manual entry. Kept neutral — the accent stays reserved
- *  for actions, and a native `title` avoids clipping inside the list's
- *  overflow-hidden containers. */
-export function LinkedSourceBadge({ source }: { source: LinkedSource }) {
-  const label = linkedSourceLabel(source);
+const noSubscribe = () => () => {};
+
+function formatSyncedAt(iso: string): string {
+  return new Date(iso).toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/** Indicator shown before an account/liability name when its balance is fed
+ *  by a connection — the client's Plaid link or a firm integration (Orion,
+ *  Schwab, Addepar). Hover names the source and when it last updated; a bare
+ *  row (no badge) reads as a manual entry. Kept neutral — the accent stays
+ *  reserved for actions — and a native `title`, which the list's
+ *  overflow-hidden containers cannot clip. */
+export function LinkedSourceBadge({ status }: { status: LinkedStatus }) {
+  // The time is formatted in the viewer's zone, which the server render
+  // cannot know; it joins the label once hydrated, so the two renders match.
+  const hydrated = useSyncExternalStore(noSubscribe, () => true, () => false);
+  const lines = linkedStatusLines(status, hydrated ? formatSyncedAt : undefined);
   return (
     <span
       role="img"
-      aria-label={label}
-      title={label}
-      className="inline-flex shrink-0 cursor-help items-center text-ink-4"
+      aria-label={lines.join(". ")}
+      title={lines.join("\n")}
+      className="inline-flex shrink-0 cursor-help items-center text-ink-2"
     >
       <LinkIcon />
     </span>

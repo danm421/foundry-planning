@@ -18,7 +18,7 @@ beforeEach(() => {
   resolveMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
   loadMock.mockReset();
   loadMock.mockResolvedValue({
-    assets: [{ id: "a1", name: "Checking", category: "cash", subType: "checking", last4: "1234", value: 5000, isPlaidLinked: true, linkedSource: "plaid" }],
+    assets: [{ id: "a1", name: "Checking", category: "cash", subType: "checking", last4: "1234", value: 5000, isPlaidLinked: true, linked: { source: "plaid", syncedAt: null, issue: null } }],
     debts: [],
     netWorth: { assets: 5000, debt: 0, netWorth: 5000 },
   });
