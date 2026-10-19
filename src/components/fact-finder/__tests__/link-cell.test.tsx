@@ -168,12 +168,30 @@ describe("LinkCell — where the picker opens", () => {
     expect(dialog.style.top).toBe("96px");
   });
 
-  it("scrolling moves it with its trigger instead of closing it", async () => {
-    renderLink(SUGGESTED);
-    triggerAt(500);
+  // Left open, it would float detached from a trigger scrolled out of sight.
+  it("a scroll that moves the trigger closes it, the page's or a box it sits in; scrolling its own list doesn't", async () => {
+    const { container } = renderLink(SUGGESTED);
     await userEvent.click(trigger());
-    triggerAt(300);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    fireEvent.scroll(screen.getByRole("listbox"));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    // The container stands in for the table and the content pane: it holds the trigger.
+    fireEvent.scroll(container);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(trigger()).toHaveAttribute("aria-expanded", "false");
+
+    await userEvent.click(trigger());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     fireEvent.scroll(document);
-    expect(screen.getByRole("dialog").style.left).toBe("300px");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("a scroll somewhere that doesn't hold the trigger leaves it open", async () => {
+    renderLink(SUGGESTED);
+    const elsewhere = document.body.appendChild(document.createElement("div"));
+    await userEvent.click(trigger());
+    fireEvent.scroll(elsewhere);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    elsewhere.remove();
   });
 });

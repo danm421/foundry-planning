@@ -5,7 +5,7 @@
 // picker of the row's candidates. No link is a quiet "—": editing an
 // auto-linked row drops its link until the save's reply brings back the
 // re-scored one, a moment later.
-import { useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import MatchLinkPicker, { type MatchEntityKind } from "@/components/import/match-link-picker";
 import type { MatchAnnotation } from "@/lib/imports/types";
 import type { ClientOp } from "@/lib/fact-finder/ops";
@@ -37,6 +37,17 @@ export function LinkCell({ sectionId, row, onApply, highlighted }: LinkCellProps
   // The picker places itself against the trigger, outside the table, so a
   // table that scrolls sideways neither clips it nor grows to fit it.
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    // A scroll of the page, the table or the pane they sit in moves the
+    // trigger away: close, rather than leave the picker floating. Scrolling
+    // the picker's own list doesn't (it doesn't hold the trigger).
+    const close = (e: Event) => {
+      if (e.target instanceof Node && trigger.current && e.target.contains(trigger.current)) setOpen(false);
+    };
+    window.addEventListener("scroll", close, { capture: true, passive: true });
+    return () => window.removeEventListener("scroll", close, { capture: true });
+  }, [open]);
   const recordKind = findSection(sectionId)?.links;
   const entityKind = PICKER_KINDS.find((k) => k === recordKind);
 
