@@ -9,7 +9,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { editFactFinder } from "@/lib/fact-finder/edit";
-import { factFinderGateFor } from "@/lib/fact-finder/gate";
+import { factFinderCreateCheckFor, factFinderGateFor, type FactFinderRefusal } from "@/lib/fact-finder/gate";
 import { createFactFinderImport } from "@/lib/fact-finder/import-lifecycle";
 import type { FFOp } from "@/lib/fact-finder/ops";
 import { loadRecordBook } from "@/lib/fact-finder/records/book";
@@ -20,6 +20,7 @@ import { fixedRowId, locateRow, readFactFinderState } from "@/lib/fact-finder/st
 import type { McpPrincipal } from "@/lib/mcp/principal";
 import type { ImportRateLimitOp } from "@/lib/rate-limit";
 import { defineWriteTool, McpInputError, type McpTool } from "../define-tool";
+import { CLIENT_UNREADABLE_MESSAGE, McpForbiddenError } from "../guards";
 import {
   describeStep,
   draftRows,
@@ -72,16 +73,23 @@ const fillRow = z.object({
 type FillRow = z.infer<typeof fillRow>;
 
 /**
- * The fact finder gate on the principal; a refusal becomes a sentence the model
- * can act on. A step another advisor started reads as not found.
+ * A fact finder refusal as the model reads it. Access refusals (a missing or
+ * shared client, view-only access, no AI import) are forbidden; the rest are a
+ * sentence to act on. A step another advisor started reads as not found.
  */
+function refusalError({ status, body: { error } }: FactFinderRefusal): Error {
+  if (error === "Not found") return new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE);
+  if (status === 404 || error === "Forbidden") return new McpInputError(STEP_NOT_FOUND_MESSAGE);
+  if (error === "ai_import_not_entitled") return new McpForbiddenError("AI features aren't enabled for this firm.");
+  if (status === 403) return new McpForbiddenError(error);
+  return new McpInputError(error);
+}
+
+/** The fact finder gate on the principal, for a step that exists. */
 async function openStep(principal: McpPrincipal, clientId: string, importId: string, op: ImportRateLimitOp) {
   const gate = await factFinderGateFor(principal, clientId, importId, op);
-  if (gate.ok) return gate;
-  const { error } = gate.body;
-  if (gate.status === 404 || error === "Forbidden") throw new McpInputError(STEP_NOT_FOUND_MESSAGE);
-  if (error === "ai_import_not_entitled") throw new McpInputError("AI features aren't enabled for this firm.");
-  throw new McpInputError(error);
+  if (!gate.ok) throw refusalError(gate);
+  return gate;
 }
 
 /** The draft row a fill names: its rowId, its fixed row, or null for a new row. */
@@ -151,6 +159,9 @@ const startFactFinderStep = defineWriteTool({
   }),
   page: "netWorth",
   handler: async ({ clientId, step }, { principal, firmId }) => {
+    // The gate's client and entitlement refusals, before a draft exists to refuse later.
+    const check = await factFinderCreateCheckFor(principal, clientId);
+    if (!check.ok) throw refusalError(check);
     const scenarioId = await resolveBaseCaseScenarioId(clientId);
     if (!scenarioId) throw new McpInputError(NO_BASE_PLAN_MESSAGE);
     // The book first: a failed read leaves no draft behind.

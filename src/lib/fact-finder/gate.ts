@@ -30,6 +30,9 @@ export type FactFinderAccess =
   | FactFinderAllowed
   | { ok: false; status: number; body: { error: string; factFinder?: FactFinderState }; headers?: Record<string, string> };
 
+/** A refusal from the chain, as a status and body either doorway turns into its own answer. */
+export type FactFinderRefusal = Extract<FactFinderAccess, { ok: false }>;
+
 export type FactFinderGate = { ok: false; response: Response } | FactFinderAllowed;
 
 export function jsonResponse(status: number, body: unknown, headers?: Record<string, string>): Response {
@@ -41,7 +44,7 @@ export function jsonResponse(status: number, body: unknown, headers?: Record<str
 
 const deny = (status: number, error: string): FactFinderGate => ({ ok: false, response: jsonResponse(status, { error }) });
 
-const refuse = (status: number, error: string, headers?: Record<string, string>): FactFinderAccess => ({
+const refuse = (status: number, error: string, headers?: Record<string, string>): FactFinderRefusal => ({
   ok: false,
   status,
   body: { error },
@@ -108,18 +111,51 @@ export async function factFinderGateFor(
   importId: string,
   op: ImportRateLimitOp,
 ): Promise<FactFinderAccess> {
+  return factFinderAccess({ ...(await connectorCaller(principal, clientId, { importId })), clientId, importId, op });
+}
+
+/**
+ * Before the connector creates a fact finder import: the chain's own-client and
+ * `ai_import` refusals, the ones that need no import — same answers, same
+ * refused-entitlement audit. A refusal means nothing should be created.
+ */
+export async function factFinderCreateCheckFor(
+  principal: McpPrincipal,
+  clientId: string,
+): Promise<{ ok: true } | FactFinderRefusal> {
+  const caller = await connectorCaller(principal, clientId, {});
+  return (
+    clientRefusal(caller.access) ??
+    (await entitlementRefusal(caller.aiImportEntitled, caller.deniedAudit)) ?? { ok: true }
+  );
+}
+
+/** The connector's caller as the chain reads it: firm, user and entitlement from the principal, never a session. */
+async function connectorCaller(principal: McpPrincipal, clientId: string, auditMetadata: Record<string, unknown>) {
   const firmId = principal.orgId;
-  return factFinderAccess({
+  return {
     firmId,
     userId: principal.userId,
-    clientId,
-    importId,
-    op,
     access: await verifyClientAccessFor(principal, clientId),
     aiImportEntitled: principal.entitlements.includes("ai_import"),
     deniedAudit: () =>
-      recordAiImportDenied({ firmId, clientId, actorId: principal.userId, metadata: { importId, via: "claude" } }),
-  });
+      recordAiImportDenied({ firmId, clientId, actorId: principal.userId, metadata: { ...auditMetadata, via: "claude" } }),
+  };
+}
+
+/** The client checks every doorway runs first: found, the caller's own firm, edit permission. */
+function clientRefusal(access: ClientAccessCheck): FactFinderRefusal | null {
+  if (!access.ok) return refuse(404, "Not found");
+  if (access.access !== "own") return refuse(403, "Cross-organization imports are not supported.");
+  if (access.permission !== "edit") return refuse(403, "View-only access");
+  return null;
+}
+
+/** The `ai_import` entitlement; a refusal is audited. */
+async function entitlementRefusal(entitled: boolean, deniedAudit: () => Promise<void>): Promise<FactFinderRefusal | null> {
+  if (entitled) return null;
+  await deniedAudit();
+  return refuse(403, "ai_import_not_entitled");
 }
 
 /**
@@ -137,11 +173,10 @@ export async function factFinderAccess(args: {
   aiImportEntitled: boolean;
   deniedAudit: () => Promise<void>;
 }): Promise<FactFinderAccess> {
-  const { firmId, userId, clientId, importId, op, access } = args;
+  const { firmId, userId, clientId, importId, op } = args;
 
-  if (!access.ok) return refuse(404, "Not found");
-  if (access.access !== "own") return refuse(403, "Cross-organization imports are not supported.");
-  if (access.permission !== "edit") return refuse(403, "View-only access");
+  const clientRefused = clientRefusal(args.access);
+  if (clientRefused) return clientRefused;
 
   const rl = await checkImportRateLimit(firmId, op);
   if (!rl.allowed) {
@@ -159,10 +194,8 @@ export async function factFinderAccess(args: {
     throw err;
   }
 
-  if (!args.aiImportEntitled) {
-    await args.deniedAudit();
-    return refuse(403, "ai_import_not_entitled");
-  }
+  const entitlementRefused = await entitlementRefusal(args.aiImportEntitled, args.deniedAudit);
+  if (entitlementRefused) return entitlementRefused;
 
   const payloadJson = (imp.payloadJson ?? {}) as ImportPayloadJson;
   if (!isFactFinderImport(payloadJson)) return refuse(400, "This import isn't a fact finder import.");

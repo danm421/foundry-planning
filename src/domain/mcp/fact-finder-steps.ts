@@ -38,7 +38,11 @@ export interface FactFinderStep {
   id: FactFinderStepId;
   label: string;
   sectionIds: readonly string[];
-  /** The kinds of existing record the step's rows are matched against. */
+  /**
+   * The existing records the step's rows describe. Where a section links, the
+   * record its rows link to (an annuity row's account, an equity row's grant),
+   * never a second view of the same record.
+   */
   targets: readonly TargetKind[];
   /** Narrows a target to the records this step holds; a target without one shows all of its records. */
   keep?: Partial<Record<TargetKind, (record: BookRecord) => boolean>>;
@@ -62,7 +66,7 @@ export const FACT_FINDER_STEPS: readonly FactFinderStep[] = [
     id: "balance_sheet",
     label: "Balance sheet",
     sectionIds: ["cash", "taxable", "retirement", "annuity", "edu", "equity", "notes_rec", "liab"],
-    targets: ["account", "annuity_contract", "stock_option_account", "note_receivable", "liability"],
+    targets: ["account", "stock_option_grant", "note_receivable", "liability"],
     keep: { account: (r) => !isRealEstate(r) && r.facts?.category !== "business" },
     guidance:
       "One row per account, annuity, education account, equity grant, note receivable and debt, each with its current value; a retirement account's ongoing contributions belong in the savings step.",
@@ -96,7 +100,8 @@ export const FACT_FINDER_STEPS: readonly FactFinderStep[] = [
     label: "Goals",
     sectionIds: ["expenses"],
     targets: ["expense"],
-    keep: { expense: (r) => r.values.isGoal === true },
+    // The expenses section holds goals and every other expense outside living expenses.
+    keep: { expense: (r) => r.facts?.type !== "living" },
     guidance:
       "Each row is an expense outside living expenses, such as education, travel, a large purchase or care for a parent, with an annual amount and the years it starts and ends; isGoal marks a goal.",
   },

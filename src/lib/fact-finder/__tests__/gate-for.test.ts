@@ -31,7 +31,7 @@ import { requireImportAccess } from "@/lib/imports/authz";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { SAVE_CLOSED_MESSAGE } from "../api-types";
-import { factFinderGateFor } from "../gate";
+import { factFinderCreateCheckFor, factFinderGateFor } from "../gate";
 
 const PRINCIPAL: McpPrincipal = {
   userId: "user_1",
@@ -129,5 +129,47 @@ describe("factFinderGateFor", () => {
     if (gate.ok) throw new Error("expected a refusal");
     expect(Number(gate.headers?.["Retry-After"])).toBeGreaterThanOrEqual(1);
     expect(requireImportAccess).not.toHaveBeenCalled();
+  });
+});
+
+// Before the connector creates a draft there is no import to check, only the
+// client and the entitlement — refused with the same answers the gate gives.
+describe("factFinderCreateCheckFor", () => {
+  it("lets the principal's own client through, reading neither the session, the rate limit nor an import", async () => {
+    expect(await factFinderCreateCheckFor(PRINCIPAL, "c1")).toEqual({ ok: true });
+    expect(verifyClientAccessFor).toHaveBeenCalledWith(PRINCIPAL, "c1");
+    expect(checkImportRateLimit).not.toHaveBeenCalled();
+    expect(requireImportAccess).not.toHaveBeenCalled();
+    expect(auth).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("refuses a shared client, view-only access and a missing client with the gate's answers", async () => {
+    vi.mocked(verifyClientAccessFor).mockResolvedValueOnce({ ok: true, permission: "edit", firmId: "org_1", access: "shared" });
+    expect(await factFinderCreateCheckFor(PRINCIPAL, "c1")).toEqual({
+      ok: false,
+      status: 403,
+      body: { error: "Cross-organization imports are not supported." },
+    });
+    vi.mocked(verifyClientAccessFor).mockResolvedValueOnce({ ok: true, permission: "view", firmId: "org_1", access: "own" });
+    expect(await factFinderCreateCheckFor(PRINCIPAL, "c1")).toEqual({ ok: false, status: 403, body: { error: "View-only access" } });
+    vi.mocked(verifyClientAccessFor).mockResolvedValueOnce({ ok: false });
+    expect(await factFinderCreateCheckFor(PRINCIPAL, "c1")).toEqual({ ok: false, status: 404, body: { error: "Not found" } });
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("403s a firm without the AI import entitlement and audits the refusal as the advisor", async () => {
+    const check = await factFinderCreateCheckFor({ ...PRINCIPAL, entitlements: [] }, "c1");
+    expect(check).toEqual({ ok: false, status: 403, body: { error: "ai_import_not_entitled" } });
+    expect(recordAudit).toHaveBeenCalledTimes(1);
+    expect(recordAudit).toHaveBeenCalledWith({
+      action: "billing.access_denied",
+      resourceType: "firm",
+      resourceId: "org_1",
+      clientId: "c1",
+      firmId: "org_1",
+      actorId: "user_1",
+      metadata: { reason: "ai_import_not_entitled", via: "claude" },
+    });
   });
 });

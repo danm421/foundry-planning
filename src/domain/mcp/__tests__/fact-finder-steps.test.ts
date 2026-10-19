@@ -25,11 +25,18 @@ function book(): RecordBook {
         rec("acc-cash", "Household Cash", { name: "Household Cash", value: 0 }, { category: "cash", isDefaultChecking: true }),
         rec("acc-ira", "Schwab IRA ••4471", { name: "Schwab IRA", value: 380000 }, { category: "retirement", isDefaultChecking: false }),
         rec("acc-home", "Lake House", { name: "Lake House", value: 650000 }, { category: "real_estate", isDefaultChecking: false }),
+        rec("acc-ann", "Jackson Annuity", { name: "Jackson Annuity", value: 90000 }, { category: "annuity", isDefaultChecking: false }),
       ],
+      // The same annuity again, keyed by its account; an annuity row links to the account.
+      annuity_contract: [rec("acc-ann", "Jackson Annuity", { costBasis: 60000 })],
+      // An equity row links to a grant, not to the options account that holds it.
+      stock_option_account: [rec("acc-opt", "Acme options", { name: "Acme options" })],
+      stock_option_grant: [rec("grant-1", "Acme options RSU 2024-03-01", { grantType: "rsu" }, { accountId: "acc-opt" })],
       expense: [
         rec("exp-cur", "Current living", { isGoal: false }, { type: "living", livingSlot: "current" }),
         rec("exp-ret", "Retirement living", { isGoal: false }, { type: "living", livingSlot: "retirement" }),
         rec("exp-trip", "Trip to Japan", { isGoal: true }, { type: "other", livingSlot: null }),
+        rec("exp-care", "Care for Mom", { isGoal: false }, { type: "other", livingSlot: null }),
       ],
       income: [
         rec("inc-ss1", "Mark's Social Security", { piaMonthly: 0 }, { type: "social_security", owner: "client" }),
@@ -78,9 +85,8 @@ describe("describeStep", () => {
   it("marks the seeded Household Cash, default living rows and $0 Social Security rows", () => {
     const state = emptyFactFinderState();
     const balance = describeStep("balance_sheet", state, book()).existingRecords;
-    expect(balance).toEqual([
+    expect(balance.filter((r) => r.seeded)).toEqual([
       { target: "account", recordId: "acc-cash", label: "Household Cash", seeded: true },
-      { target: "account", recordId: "acc-ira", label: "Schwab IRA ••4471" },
     ]);
 
     const income = describeStep("income", state, book()).existingRecords;
@@ -94,13 +100,25 @@ describe("describeStep", () => {
     ]);
   });
 
-  it("shows each step only its own records: real estate by category, goals by isGoal", () => {
+  // R22: one entry per record a row can link to — the record the section's rows link to.
+  it("lists the balance sheet's records once each, as the records its rows link to", () => {
+    expect(describeStep("balance_sheet", emptyFactFinderState(), book()).existingRecords).toEqual([
+      { target: "account", recordId: "acc-cash", label: "Household Cash", seeded: true },
+      { target: "account", recordId: "acc-ira", label: "Schwab IRA ••4471" },
+      { target: "account", recordId: "acc-ann", label: "Jackson Annuity" },
+      { target: "stock_option_grant", recordId: "grant-1", label: "Acme options RSU 2024-03-01" },
+    ]);
+  });
+
+  // R21: the expenses section holds goals and every other expense outside living expenses.
+  it("shows each step only its own records: real estate by category, goals as every expense but living", () => {
     const state = emptyFactFinderState();
     expect(describeStep("real_estate", state, book()).existingRecords).toEqual([
       { target: "account", recordId: "acc-home", label: "Lake House" },
     ]);
     expect(describeStep("goals", state, book()).existingRecords).toEqual([
       { target: "expense", recordId: "exp-trip", label: "Trip to Japan" },
+      { target: "expense", recordId: "exp-care", label: "Care for Mom" },
     ]);
   });
 

@@ -12,7 +12,11 @@ const h = vi.hoisted(() => ({
   recordAudit: vi.fn(),
 }));
 
-vi.mock("@/lib/fact-finder/gate", () => ({ factFinderGateFor: h.factFinderGateFor }));
+// The real create check (it reads the mocked client access and audit); the import gate is stubbed.
+vi.mock("@/lib/fact-finder/gate", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/fact-finder/gate")>()),
+  factFinderGateFor: h.factFinderGateFor,
+}));
 vi.mock("@/lib/fact-finder/import-lifecycle", () => ({ createFactFinderImport: h.createFactFinderImport }));
 vi.mock("@/lib/fact-finder/edit", () => ({ editFactFinder: h.editFactFinder }));
 vi.mock("@/lib/fact-finder/records/book", () => ({ loadRecordBook: h.loadRecordBook }));
@@ -26,6 +30,7 @@ vi.mock("@/lib/rate-limit", () => ({
 
 import { householdBuildingTools } from "../tools/household-building";
 import { McpInputError } from "../define-tool";
+import { CLIENT_UNREADABLE_MESSAGE, McpForbiddenError } from "../guards";
 import { emptyRecordBook, type RecordBook } from "@/lib/fact-finder/placement/types";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
 import type { FactFinderState } from "@/lib/fact-finder/types";
@@ -140,6 +145,33 @@ describe("start_fact_finder_step", () => {
     expect(err).toBeInstanceOf(McpInputError);
     expect((err as Error).message).toBe("This household has no base plan yet.");
     expect(h.createFactFinderImport).not.toHaveBeenCalled();
+  });
+
+  // R23: the import gate's client and entitlement refusals run before a draft exists.
+  it("refuses a shared client before creating anything", async () => {
+    h.verifyClientAccessFor.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_1", access: "shared" });
+    const err = await start.run({ clientId: "c1", step: "household" }, principal).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(McpForbiddenError);
+    expect((err as Error).message).toBe("Cross-organization imports are not supported.");
+    expect(h.createFactFinderImport).not.toHaveBeenCalled();
+    expect(h.loadRecordBook).not.toHaveBeenCalled();
+  });
+
+  it("refuses a firm without AI import before creating anything, and audits the refusal", async () => {
+    const err = await start
+      .run({ clientId: "c1", step: "household" }, { ...principal, entitlements: [] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(McpForbiddenError);
+    expect((err as Error).message).toBe("AI features aren't enabled for this firm.");
+    expect(h.createFactFinderImport).not.toHaveBeenCalled();
+    expect(h.recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "billing.access_denied",
+        clientId: "c1",
+        actorId: "u1",
+        metadata: { reason: "ai_import_not_entitled", via: "claude" },
+      }),
+    );
   });
 
   it("refuses a step that isn't in the catalog at schema parse", async () => {
@@ -334,13 +366,26 @@ describe("fill_fact_finder_step", () => {
     expect(h.editFactFinder).not.toHaveBeenCalled();
   });
 
-  it("refuses a step the gate refuses, with a sentence rather than a code", async () => {
-    h.factFinderGateFor.mockResolvedValue({ ok: false, status: 403, body: { error: "ai_import_not_entitled" } });
-    const err = await call({ rows: [{ sectionId: "retirement", rowId: "row-ira", cells: {}, link: "new" }] }).catch(
-      (e: unknown) => e,
-    );
-    expect(err).toBeInstanceOf(McpInputError);
-    expect((err as Error).message).toBe("AI features aren't enabled for this firm.");
+  it("maps the gate's refusals the way start does: access refusals forbidden, the rest a sentence to act on", async () => {
+    const refusedWith = async (status: number, error: string) => {
+      h.factFinderGateFor.mockResolvedValueOnce({ ok: false, status, body: { error } });
+      return call({ rows: [{ sectionId: "retirement", rowId: "row-ira", cells: {}, link: "new" }] }).catch((e: unknown) => e);
+    };
+    const entitlement = await refusedWith(403, "ai_import_not_entitled");
+    expect(entitlement).toBeInstanceOf(McpForbiddenError);
+    expect((entitlement as Error).message).toBe("AI features aren't enabled for this firm.");
+    const share = await refusedWith(403, "Cross-organization imports are not supported.");
+    expect(share).toBeInstanceOf(McpForbiddenError);
+    const client = await refusedWith(404, "Not found");
+    expect(client).toEqual(new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE));
+    // Another advisor's import, or none: the same answer.
+    for (const [status, error] of [[404, "Import not found"], [403, "Forbidden"]] as const) {
+      const step = await refusedWith(status, error);
+      expect(step).toBeInstanceOf(McpInputError);
+      expect((step as Error).message).toBe("That fact finder step wasn't found. Use the importId start_fact_finder_step returned.");
+    }
+    const closed = await refusedWith(409, "This import is saved to the plan — start a new import to change it.");
+    expect(closed).toEqual(new McpInputError("This import is saved to the plan — start a new import to change it."));
     expect(h.editFactFinder).not.toHaveBeenCalled();
   });
 
