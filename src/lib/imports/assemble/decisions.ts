@@ -4,8 +4,9 @@
  * untruthful-by-construction impossible: a sentence with no decision behind
  * it cannot be rendered.
  *
- * The type lives under `assemble/` rather than beside the chat surface that
- * reads it, so `lib/imports` never imports from the feature that consumes it.
+ * The type lives under `assemble/` rather than beside its reader
+ * (`fact-finder/narrate.ts`), so `lib/imports` never imports from the feature
+ * that consumes it.
  */
 export type MergeDecision =
   | {
@@ -49,12 +50,12 @@ export type MergeDecision =
        * never had. Only the COUNT is read — `narrate.ts` still never names a
        * file (C2).
        *
-       * OPTIONAL because `ChatState` is persisted to
-       * `client_imports.payloadJson`: decisions written before this field
-       * existed are still read back and re-narrated, and they cannot be
-       * made to know their own provenance. Absent means UNKNOWN, not "one
-       * file" — a caveat that treated it as one would start asserting the
-       * SINGULAR it never checked, which is the same defect mirrored.
+       * OPTIONAL because statement chat persisted decisions in its
+       * `ChatState` before this field existed, and those could not be made to
+       * know their own provenance. Nothing reads them back now, but absent
+       * still means UNKNOWN, not "one file" — a caveat that treated it as one
+       * would start asserting the SINGULAR it never checked, which is the
+       * same defect mirrored.
        */
       fileNames?: string[];
     }

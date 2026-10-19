@@ -1191,9 +1191,9 @@ function chooseBase<T>(
  * collapsed (mergeCount > 1), emitted AFTER the merge loop finishes rather
  * than once per merge — three files carrying the same entity produce a
  * single accurate "seen in 3 documents" warning instead of two ("seen in 2
- * documents." then "seen in 3 documents."), which downstream `questions.ts`
- * would otherwise turn into two questions sharing the same slugified id
- * (duplicate React keys / colliding `answers[q.id]` in the questions card).
+ * documents." then "seen in 3 documents."). (The assemble step's
+ * `questions.ts`, removed since, turned each warning into a question, so two
+ * would have shared one id.)
  *
  * `computeKey` returning `null` means "not enough information to dedupe" —
  * the row is always appended standalone.

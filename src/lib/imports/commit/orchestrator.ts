@@ -70,7 +70,8 @@ const FAMILY_DEPENDENT_TABS: ReadonlySet<CommitTab> = new Set([
  * with the just-finished tabs and the import status is flipped to
  * 'committed' if every tab this import requires (see `requiredCommitTabs`)
  * is now present — UNLESS `ctx.rowIds` is set, meaning this is a row-
- * filtered commit from the chat surface. A partial commit is by definition
+ * filtered commit (statement chat sent those; no first-party caller does
+ * since it was removed). A partial commit is by definition
  * not a completed tab, so it takes the `persistPartialCommit` path instead:
  * still persists `payloadJson` (carrying the links `linkCreated` just
  * stamped, so a re-commit of the same row updates rather than duplicates),

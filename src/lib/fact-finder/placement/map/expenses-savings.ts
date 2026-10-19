@@ -120,6 +120,7 @@ export const LIVING_ITEMS_MAP: SectionMap = {
   },
   place(rows, ctx) {
     // One line for the whole list, on the first item's row: the list is one value of the Current row.
+    // Reordering or removing that row re-keys the line, so an advisor's tick on it doesn't carry over "Review again".
     const first = rows.find((row) => num(row, "amount") !== null);
     if (!first) return [];
     const { items, from, monthlyAssumed } = itemsOf(rows);

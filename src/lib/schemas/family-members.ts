@@ -1,7 +1,8 @@
 // src/lib/schemas/family-members.ts
 //
-// CLIENT-SAFE: reached from a "use client" component through
-// `entity-writer/create-schemas.ts`. Import nothing but zod.
+// CLIENT-SAFE by rule: import nothing but zod. (It was reached from a
+// "use client" component through `entity-writer/create-schemas.ts`, removed
+// with statement chat; the rule keeps it safe for the next one.)
 import { z } from "zod";
 
 export const FAMILY_RELATIONSHIPS = [

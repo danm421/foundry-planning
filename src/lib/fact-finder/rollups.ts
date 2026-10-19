@@ -40,13 +40,9 @@ function isVetoedFromRollup(name: string): boolean {
 }
 
 /**
- * Canonical wording for why a detected rollup was excluded. Exported so the
- * ONE place that has to backfill this sentence from a bare `rollup-excluded`
- * `MergeDecision` (the accounts table's defensive normalizer, for an input
- * that carries a decision but no `reason` of its own) reuses this instead of
- * rebuilding the string a third time — see excluded-rows.tsx's review note
- * (Task 10 review, Important 4/5) on why that generic component must never
- * do this derivation itself.
+ * Canonical wording for why a detected rollup was excluded. (Exported for
+ * statement chat's accounts table, which backfilled it from a bare
+ * `rollup-excluded` decision — removed since; only this file calls it now.)
  */
 export function rollupExclusionReason(coversCount: number): string {
   // Singular since I6 dropped the sibling floor to 1 — this sentence is read

@@ -36,10 +36,9 @@ const AMBIGUOUS_ROW_SOURCES: Partial<
  * could not decide between it and an existing record.
  *
  * The single home for the `fuzzy` → not-written rule that every commit module
- * in `AMBIGUOUS_ROW_SOURCES` applies. Exported so a REVIEW surface can withhold
- * its Commit button instead of POSTing a row that writes nothing and then
- * reporting it as committed — the rule and the warning about the rule now read
- * the same test.
+ * in `AMBIGUOUS_ROW_SOURCES` applies; the orchestrator's warning about it reads
+ * the same test. (It was exported for statement chat's review table, which
+ * withheld its Commit button on it — removed since.)
  *
  * Type-only imports keep this module free of any runtime dependency, so a
  * "use client" component can import it.

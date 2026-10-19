@@ -83,10 +83,11 @@ export async function commitLiabilities(
   const rowIdFilter = ctx.rowIds ? new Set(ctx.rowIds) : null;
 
   for (const row of payload.liabilities) {
-    // An explicit id list means the advisor committed specific rows from the
-    // chat surface. Absent list = commit everything, which is what the
-    // wizard has always done and must keep doing. A row with no `__rowId`
-    // can never be "listed", so it is skipped rather than guessed at.
+    // An explicit id list commits only those rows (no first-party caller has
+    // sent one since statement chat was removed). Absent list = commit
+    // everything, which is what the wizard has always done and must keep
+    // doing. A row with no `__rowId` can never be "listed", so it is skipped
+    // rather than guessed at.
     if (rowIdFilter && (!row.__rowId || !rowIdFilter.has(row.__rowId))) {
       continue;
     }

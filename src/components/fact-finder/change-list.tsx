@@ -66,7 +66,6 @@ const CELL = "border-t border-hair py-1.5 align-top @max-md:border-t-0 @max-md:p
 
 const sectionLabel = (line: ChangeLine) => findSection(line.sectionId)?.label;
 
-/** "12 to create · 8 to update · 3 can't save · 5 unchanged", leaving out what there's none of. */
 /** The heading over the review, wherever it shows (the list, or the notice that it's out of date). Focus goes to it when the list opens. */
 export function ChangesHeading({ ref }: { ref?: Ref<HTMLHeadingElement> }) {
   return (
@@ -89,6 +88,7 @@ export function BackToFactFinder({ onClick }: { onClick(): void }) {
   );
 }
 
+/** "12 to create · 8 to update · 3 can't save · 5 unchanged", leaving out what there's none of. */
 function Summary({ lines }: { lines: readonly ChangeLine[] }) {
   const { creates, updates, blocked, unchanged } = countLines(lines);
   const parts = (

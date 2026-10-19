@@ -15,8 +15,9 @@ export interface VisionOcrResult {
    * TRANSCRIBED BATCH (up to `batchSize` rendered pages each), not per page.
    *
    * Callers that need an ordered array of text chunks rather than one blob —
-   * the map-entity pass, whose region classifier targets ranges over whatever
-   * array it is given — use these. Because the classifier builds its outline
+   * the fact finder's section reader (`fact-finder/readers/route-file.ts`),
+   * whose region classifier targets ranges over whatever array it is given —
+   * use these. Because the classifier builds its outline
    * from the same array it later slices, the coarser granularity stays
    * internally consistent: a "page" range simply addresses a batch.
    */

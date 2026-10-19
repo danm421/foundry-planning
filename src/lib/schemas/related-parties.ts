@@ -3,8 +3,9 @@
 // The external people a client's documents name — trustees, executors, powers
 // of attorney, CPAs, attorneys — stored as `crm_household_contacts` rows.
 //
-// CLIENT-SAFE: reached from a "use client" component through
-// `entity-writer/create-schemas.ts`. Import nothing but zod.
+// CLIENT-SAFE by rule: import nothing but zod. (It was reached from a
+// "use client" component through `entity-writer/create-schemas.ts`, removed
+// with statement chat; the rule keeps it safe for the next one.)
 import { z } from "zod";
 
 /** A nullable text column on CREATE: an absent key stores NULL, because a

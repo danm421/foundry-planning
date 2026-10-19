@@ -467,9 +467,9 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
     // disabilityPolicies has a clientId column and no scenarioId, so a write
     // through these routes lands in the one base row set. A scenario overlays
     // that set through `disability_policy` scenario changes, which reach this
-    // table only when the scenario is promoted. Stays false: Statement Chat refuses to identity-match a
-    // scenarioScoped entity (`loadExistingRows`), and with no scenario column
-    // there are no other scenarios' rows to mis-match.
+    // table only when the scenario is promoted. Stays false: with no scenario column there are no other
+    // scenarios' rows to mis-match. (Statement chat's map pass, removed since, refused to identity-match a
+    // scenarioScoped entity.)
     scenarioScoped: false,
     documentEvidence: true,
     identity: ["name", "insured", "carrier"],
@@ -701,8 +701,8 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
     createSchema: { module: "@/lib/schemas/ltc-policies", export: "ltcPolicyCreateSchema" },
     // Client-level (clientId column, no scenarioId): a write lands in the one
     // base row set, and a scenario overlays it through `ltc_policy` changes.
-    // Not document evidence yet — reading LTC policies from statements is
-    // future work, so Statement Chat never sees this entity.
+    // Not document evidence (the flag statement chat's map pass read, removed
+    // since); the fact finder reads LTC policies from its own LTC section.
     scenarioScoped: false,
     scopePath: { via: "column" },
     fields: [

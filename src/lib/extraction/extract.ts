@@ -98,7 +98,8 @@ const MAX_DOCUMENT_TEXT_CHARS = 100000;
  * FIRST page alone already exceeds the budget, whole-page dropping would
  * keep zero pages and persist nothing for that document - the exact
  * opposite of what this cap exists to protect (a long fact finder still
- * reaching the planner). So in that one case, truncate the first page to
+ * keeping its text; the planner that read it was removed with the assemble
+ * step). So in that one case, truncate the first page to
  * the budget instead of dropping it, mirroring the single-pass path's own
  * truncation marker (`"\n... [truncated]"`, see step 5 below) rather than
  * inventing a new one. This only caps the return value written to

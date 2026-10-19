@@ -154,7 +154,8 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
         // there. `create_household` → `set_up_plan` is a first-class alternative
         // to build_plan, and it reaches the identical defect: a spouse on the
         // household means createClientForHousehold stamps its 65/95 defaults,
-        // which the Plan basics step then shows unchipped as `build_request`.
+        // and a guessed horizon would silently set the plan's retirement and
+        // mortality years.
         // Keyed on the HOUSEHOLD's spouse contact rather than a request arg,
         // because that is what decides whether the defaults get stamped.
         if (
@@ -227,12 +228,9 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
     }) => {
       try {
         // A spouse in the request means `createClientForHousehold` will stamp
-        // its 65/95 chokepoint defaults onto the clients row — and the import's
-        // Plan basics step then reads those columns back and presents the
-        // constants as `provenance: "build_request"` with no reason, so no
-        // "Assumed" chip: a platform default shown to the advisor as a stated
-        // fact, labelled as though it came in as a build_plan argument. Refuse
-        // the call instead, so the advisor supplies real numbers.
+        // its 65/95 chokepoint defaults onto the clients row — a guessed horizon
+        // that would silently set the plan's retirement and mortality years.
+        // Refuse the call instead, so the advisor supplies real numbers.
         //
         // Enforced in the tool body, NOT as a Zod `superRefine` on the schema:
         // build_plan is HITL-gated, and `approvalNode` in graph.ts invokes the

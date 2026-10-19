@@ -2396,8 +2396,9 @@ export const accounts = pgTable("accounts", {
   // ── real_estate only ──────────────────────────────────────────────────────
   // The property's street address as the source document printed it. Nullable
   // because every non-real-estate account has none, and because it is only
-  // populated by paths that actually read one (statement-chat mortgage import
-  // today). It is also the exact key `matchMortgageToProperty` prefers over
+  // populated by paths that actually read one (a mortgage statement, through
+  // the Review Wizard or the fact finder, or a fact finder's real estate
+  // Address). It is also the exact key `matchMortgageToProperty` prefers over
   // name-token scoring when linking a mortgage to the property it secures.
   propertyAddress: text("property_address"),
   annualPropertyTax: decimal("annual_property_tax", { precision: 15, scale: 2 }).notNull().default("0"),

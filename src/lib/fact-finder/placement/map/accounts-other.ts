@@ -177,6 +177,8 @@ export const EQUITY_MAP: SectionMap = {
 
     const drafts: TargetDraft[] = [];
     for (const { company, holder, split, rows: group } of groups.values()) {
+      // The account's line hangs off the group's first row: reordering or removing that row re-keys it,
+      // so an advisor's tick on it doesn't carry over "Review again".
       const [first] = group;
       const recordId = accountOfLinkedGrant(group, ctx) ?? accountByName(company, holder, ctx);
       const label = split ? `${company} — ${labelFor(PERSON_MAP, holder) ?? "Owner not given"}` : company;

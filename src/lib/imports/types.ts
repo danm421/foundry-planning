@@ -38,7 +38,8 @@ export type Annotated<T> = T & {
    * Stable per-import handle. Assigned at merge time (`mergeAcrossFiles`),
    * never reused for a different row. Derived from the row's dedupe key so
    * it is deterministic across a re-merge of the same files — Task 6, C1:
-   * a random id would orphan every id already saved to `committedRowIds`
+   * a random id would orphan every id saved against a row (statement chat
+   * kept them as `committedRowIds`; the commit route's `rowIds` takes them)
    * the moment the import's files change and the merge re-runs.
    */
   __rowId?: string;

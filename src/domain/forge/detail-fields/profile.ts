@@ -448,9 +448,9 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
     // `routes.list` (the sole consumers of `.routes` are build-request.ts's
     // `create`/`update` lookups), and the conformance test checks only that a
     // route FILE exists, never which methods it exports — so a declared `list`
-    // here would be a claim the map cannot back and nobody would catch. The
-    // map pass reads existing rows straight from the table via `scopePath`,
-    // not over HTTP, so no consumer wants one.
+    // here would be a claim the map cannot back and nobody would catch. (The
+    // statement chat's map pass read existing rows straight from the table via
+    // `scopePath`, not over HTTP; it is removed, and no consumer wants one.)
     routes: {
       create: "/related-parties",
       update: "/related-parties/[partyId]",

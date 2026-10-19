@@ -68,9 +68,10 @@ export interface CommitContext {
    * This field lives on the shared `CommitContext`, so it is visible to all
    * twelve `COMMIT_TABS` — but only `commitAccounts` and `commitLiabilities`
    * honour it. The other ten tabs ignore it and commit their section
-   * unfiltered, so the chat surface (the only caller that sets this) must name
-   * only honouring tabs alongside `rowIds`; pairing it with any other tab
-   * commits that tab's rows unfiltered.
+   * unfiltered, so a caller that sets this must name only honouring tabs
+   * alongside `rowIds`; pairing it with any other tab commits that tab's rows
+   * unfiltered. No first-party caller sends `rowIds` since statement chat (the
+   * only one that did) was removed.
    *
    * Residual from Task 6: a row whose dedupe key was null gets an id keyed by
    * its position, so it is deterministic but not stable across a

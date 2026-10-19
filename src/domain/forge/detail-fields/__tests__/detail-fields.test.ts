@@ -251,10 +251,11 @@ describe("document-evidence marking", () => {
   // CREATED from a document (the client already exists), and it declares no
   // `identity`, so it never reaches `matchByIdentity` at all.
   //
-  // It IS written. `buildHouseholdCommitRow`
-  // (`src/components/statement-chat/household-diff.ts`) synthesises a row
-  // carrying `match: { kind: "exact", existingId: clientId }`, which routes it
-  // to the update leg it declares. `routes.create || nestedIn` cannot see that
+  // It IS written — through its update leg (`routes.update`): statement chat's
+  // `buildHouseholdCommitRow` (`statement-chat/household-diff.ts`, removed
+  // since) synthesised a row carrying `match: { kind: "exact", existingId:
+  // clientId }` for it, and the fact finder's save updates the household the
+  // same way. `routes.create || nestedIn` cannot see that
   // path by design, and never will: `profile.ts` states there is no create
   // route below /api/clients/[id] and none is coming. So this entry is
   // PERMANENT, not pending — do not delete it expecting the household to pass

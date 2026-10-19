@@ -39,8 +39,9 @@ export interface AssemblePlanBasics {
      * forever. `incomes.annualAmount` is left untouched; the engine ignores it
      * in this mode.
      *
-     * TWO PRODUCERS, ONE UNIT. The planner supplies an already-monthly PIA
-     * (`apply-decisions.ts`). The document path (an earlier plan build's
+     * TWO PRODUCERS, ONE UNIT. The planner supplied an already-monthly PIA
+     * (`apply-decisions.ts`, removed with the assemble step; stored payloads
+     * still carry what it wrote). The document path (an earlier plan build's
      * derivation) extracted an ANNUAL benefit and DIVIDED IT BY 12, keeping
      * `provenance: "document"` — same fact, different units. That conversion is
      * not a double adjustment, because the document path also defaulted the
@@ -70,9 +71,9 @@ export interface AssembleState {
    * `PLANNER_VERSION` of the prompt whose proposal was applied to this payload.
    *
    * ABSENT means no prompt shaped this payload — the planner never ran (no
-   * document text, timeout, Azure outage, unconfigured env), or it ran and its
-   * proposal failed to apply, in which case `run-assemble` keeps the purely
-   * deterministic payload. Absence is therefore load-bearing, not "unknown":
+   * document text, timeout, Azure outage, unconfigured env; and none since the
+   * assemble step was removed), or it ran and its proposal failed to apply, in
+   * which case `run-assemble` kept the purely deterministic payload. Absence is therefore load-bearing, not "unknown":
    * stamping it unconditionally would attribute a deterministic payload to a
    * prompt that contributed nothing to it.
    *

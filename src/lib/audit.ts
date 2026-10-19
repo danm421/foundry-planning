@@ -262,9 +262,9 @@ export type AuditAction =
   // one at a time — this is that closing act (Task 10b / Ruling 61/70),
   // distinct from "import.commit.tab" because no new data is written here.
   | "import.chat.finalized"
-  // One conversational turn over a statement-chat import's extracted table
-  // (Task 11) — the transcript append and any tool-driven row edit both land
-  // in the same `payloadJson` write this audits.
+  // One chat reply on a fact finder (`fact-finder/turn/route.ts`; statement
+  // chat wrote it before the switch) — the transcript append and any edit the
+  // reply made land in the same `payloadJson` write this audits.
   | "import.chat.turn"
   // A fact finder chat reply undone: its rows put back as they were before it.
   | "import.chat.undo"

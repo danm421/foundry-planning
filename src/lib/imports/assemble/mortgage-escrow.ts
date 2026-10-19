@@ -17,9 +17,9 @@ import {
  * account and stamp `propertyAddress` + `annualPropertyTax` onto it.
  *
  * ESCROW IS TAXES *AND* INSURANCE. The whole escrow lands on
- * `annualPropertyTax` per that ruling. The review table's column is labelled
- * "Escrow → property tax" so the figure reads as derived rather than as
- * something the statement asserted.
+ * `annualPropertyTax` per that ruling. (Statement chat's review table, removed
+ * since, labelled its column "Escrow → property tax" so the figure read as
+ * derived rather than as something the statement asserted.)
  *
  * Framework-free by construction (engine-purity rule): no Next, no DB, no
  * React. `matchMortgageToProperty` is likewise pure.
@@ -33,9 +33,8 @@ import {
  * would read on the account form as "this house has no property tax", which is
  * a claim the document never made.
  *
- * Exported so `liabilities-columns.ts`'s "Escrow → property tax" review
- * column can delegate to this exact computation instead of keeping a second
- * copy that could drift from what `splitMortgageEscrow` actually writes.
+ * Exported (statement chat's "Escrow → property tax" review column delegated
+ * to it — removed since); `splitMortgageEscrow` below is its caller now.
  */
 export function annualEscrow(row: ExtractedLiability): { annual?: number; warning?: string } {
   const { totalPayment, monthlyPayment } = row;

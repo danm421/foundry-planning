@@ -134,6 +134,7 @@ function attorneyDrafts(rows: readonly FFRow[], ctx: PlaceContext): TargetDraft[
     const { name, firm } = readAttorney(value);
     const cell = cellOf("estate_docs", row, "estateAttorney");
     const key = normText(name ?? firm);
+    // The line hangs off the first row naming this attorney: removing that row re-keys it.
     const entry = named.get(key) ?? { row, name, firm: null, cells: [], firmCells: [] };
     entry.cells.push(cell);
     if (firm !== null) {
@@ -394,6 +395,7 @@ const UNREAD_SHARE = `"% of it" didn't read as a number — enter the percent, o
  * scaling its shares. It replaces the set on record — the will's id (Task 14).
  */
 function residuaryDraft(rows: readonly FFRow[], ctx: PlaceContext, person: Person, will: Will): TargetDraft | null {
+  // The line hangs off the first "Remaining estate" row: reordering or removing it re-keys the line.
   const b = new DraftBuilder({
     sectionId: "bequests", row: rows[0], target: "will_residuary_recipient", recordId: will.recordId, label: `${will.label} — remaining estate`, parent: will.ref,
   });

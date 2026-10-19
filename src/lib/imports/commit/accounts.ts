@@ -44,10 +44,11 @@ const POLICY_TYPE_BY_SUBTYPE: Record<string, "term" | "whole" | "universal" | "v
 };
 
 /**
- * Moved to `account-category.ts` and re-exported here (final review I5): the
- * review table has to ask what the commit will actually write, and it cannot
- * import this file without pulling `@/db/schema` into the browser bundle.
- * One definition, two safe import paths.
+ * Lives in `account-category.ts` and is re-exported here (final review I5):
+ * the fact finder's statement reader (`fact-finder/readers/statement-adapter.ts`)
+ * asks what the commit would write without importing this file's DB code. (It
+ * was split out for statement chat's review table, removed since.) One
+ * definition, two import paths.
  */
 export { resolveAccountCategory };
 
@@ -145,10 +146,11 @@ export async function commitAccounts(
   const overrideFilter = ctx.overrideRowIds ? new Set(ctx.overrideRowIds) : null;
 
   for (const row of payload.accounts) {
-    // An explicit id list means the advisor committed specific rows from the
-    // chat surface. Absent list = commit everything, which is what the
-    // wizard has always done and must keep doing. A row with no `__rowId`
-    // can never be "listed", so it is skipped rather than guessed at.
+    // An explicit id list commits only those rows (no first-party caller has
+    // sent one since statement chat was removed). Absent list = commit
+    // everything, which is what the wizard has always done and must keep
+    // doing. A row with no `__rowId` can never be "listed", so it is skipped
+    // rather than guessed at.
     if (rowIdFilter && (!row.__rowId || !rowIdFilter.has(row.__rowId))) {
       continue;
     }
