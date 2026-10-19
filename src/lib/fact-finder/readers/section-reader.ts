@@ -25,7 +25,8 @@ function anchorsOf(pages: string[]): string {
 function sliceRegion(pages: string[], ranges: Array<[number, number]>): { text: string; firstPage: number } {
   const wanted = new Set<number>();
   for (const [start, end] of ranges) {
-    for (let p = start; p <= end; p++) if (p >= 1 && p <= pages.length) wanted.add(p);
+    // Clamped to the document: a model's range can run to 1e12 (the region schema has no upper bound).
+    for (let p = Math.max(1, start); p <= Math.min(end, pages.length); p++) wanted.add(p);
   }
   const sorted = [...wanted].sort((a, b) => a - b);
   return { text: sorted.map((p) => pages[p - 1]).join("\n\n"), firstPage: sorted[0] ?? 1 };

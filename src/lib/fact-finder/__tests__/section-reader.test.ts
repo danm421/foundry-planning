@@ -120,6 +120,17 @@ describe("readSections", () => {
     expect(out.warnings).toEqual(["Could not read Life Insurance: model timed out"]);
   });
 
+  it("reads a page range that runs far past the document as the pages it has, at once", async () => {
+    vi.mocked(classifyRegions).mockResolvedValue({ retirement: [[1, 1e12]] });
+    vi.mocked(callAIExtraction).mockResolvedValue(JSON.stringify({ rows: [] }));
+    const started = performance.now();
+    await readSections({ fileId: "f1", pages });
+    expect(performance.now() - started).toBeLessThan(1000);
+    const [, user] = vi.mocked(callAIExtraction).mock.calls[0];
+    expect(user).toContain("Retirement accounts");
+    expect(user).toContain("Life insurance: Term 20");
+  });
+
   it("fails, so the file can be retried, when finding the sections fails", async () => {
     vi.mocked(classifyRegions).mockResolvedValue(null);
     await expect(readSections({ fileId: "f1", pages })).rejects.toThrow("Couldn't read this document — try again.");
