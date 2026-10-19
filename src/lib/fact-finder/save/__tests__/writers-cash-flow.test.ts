@@ -146,7 +146,7 @@ describe("income writer", () => {
     expect(row).toMatchObject({ id: kept.result.income, ownerAccountId: kept.result.business, type: "business" });
   });
 
-  it("(c) an owner account that is not a business is refused with the core's reason", async () => {
+  it("(c) an owner account that is not a business is refused with the core's reason, in plain words", async () => {
     const save = inSave(firm(), async (ctx) => {
       const taxable = await newAccount(ctx.tx, { name: "Brokerage", category: "taxable", subType: "brokerage" });
       const line = changeLine("income", { name: "Misowned", annualAmount: 1, start: 2026, end: 2030 }, { fixed: { type: "business", owner: "client", ownerAccountId: { ref: "record", target: "account", id: taxable } } });
@@ -154,7 +154,7 @@ describe("income writer", () => {
     });
     await expect(save).rejects.toThrow(SaveLineError);
     // The business check refused it — not the ownership check, which sees the brokerage made earlier in the save.
-    await expect(save).rejects.toThrow(/^Account [0-9a-f-]{36} is not a business account$/);
+    await expect(save).rejects.toThrow(/^The business this line names isn't a business account on the plan — review again\.$/);
     expect(await incomeNamed("Misowned")).toBeUndefined();
   });
 });
@@ -398,8 +398,10 @@ describe("savings-rule writer", () => {
     expect(result).toEqual({ newOther: false, onRecordOther: false, k401: true, ira: true, brokerage: true });
   });
 
-  it("an account that is not the client's is refused with the core's reason", async () => {
+  it("an account that is not the client's is refused with the core's reason, in plain words", async () => {
     const line = RULE("00000000-0000-4000-8000-000000000000");
-    await expect(inSave(firm(), (ctx) => CASH_FLOW_WRITERS.savings_rule.create(ctx, inputOf(line)))).rejects.toThrow(/Account .* not owned by this client/);
+    await expect(inSave(firm(), (ctx) => CASH_FLOW_WRITERS.savings_rule.create(ctx, inputOf(line)))).rejects.toThrow(
+      "An account this line names isn't on the plan — review again.",
+    );
   });
 });

@@ -18,15 +18,16 @@ import {
   updateStockOptionAccountForClient,
   updateStockOptionGrantForClient,
 } from "@/lib/clients/stock-options-writes";
-import { coreArgs, unwrap, type SaveContext, type SaveWriter } from "../types";
+import { coreArgs, SaveLineError, unwrap, type SaveContext, type SaveWriter } from "../types";
 
 type Body = Record<string, unknown>;
 type Tranche = { vestDate: string; shares: number } & Body;
 /** A grant on record in the shape its PUT takes (no planned events). */
 type GrantOnRecord = Body & { tranches: Tranche[] };
 
+/** The record or parent a line names, or a SaveLineError (a 422 naming the line). */
 function idOf(id: string | null, what: string): string {
-  if (!id) throw new Error(`annuities-stock-options writer: no ${what} id`);
+  if (!id) throw new SaveLineError(`This line names no ${what}.`);
   return id;
 }
 
@@ -125,7 +126,7 @@ function mergeGrantBody(record: GrantOnRecord, body: Body): Body {
 export const ANNUITY_STOCK_WRITERS: { annuity_contract: SaveWriter; stock_option_account: SaveWriter; stock_option_grant: SaveWriter } = {
   // The contract's record is its account (the parent): an Update's recordId, a Create's parent.
   annuity_contract: {
-    create: (ctx, input) => upsertContract(ctx, idOf(input.parentId, "annuity account"), input.body),
+    create: async (ctx, input) => upsertContract(ctx, idOf(input.parentId, "annuity account"), input.body),
     async update(ctx, input) {
       await upsertContract(ctx, idOf(input.recordId, "annuity account"), input.body);
     },

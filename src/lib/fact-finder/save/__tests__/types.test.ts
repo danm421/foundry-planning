@@ -31,13 +31,32 @@ describe("unwrap", () => {
   it("turns a core's refusal into a SaveLineError carrying the core's message", () => {
     let thrown: unknown;
     try {
-      unwrap(writeError(400, "Account acct-9 not owned by this client"));
+      unwrap(writeError(404, "Grant not found"));
     } catch (err) {
       thrown = err;
     }
     expect(thrown).toBeInstanceOf(SaveLineError);
     expect((thrown as SaveLineError).name).toBe("SaveLineError");
-    expect((thrown as SaveLineError).message).toBe("Account acct-9 not owned by this client");
+    expect((thrown as SaveLineError).message).toBe("Grant not found");
+  });
+
+  it("says a refusal that names an id or a column in plain words", () => {
+    const id = "6f1c2a4e-1b2c-4d5e-8f90-123456789abc";
+    expect(() => unwrap(writeError(400, `Account ${id} not owned by this client`))).toThrow(
+      new SaveLineError("An account this line names isn't on the plan — review again."),
+    );
+    expect(() => unwrap(writeError(400, `External beneficiary ${id} not owned by this client`))).toThrow(
+      "A charity or beneficiary this line names isn't on the plan — review again.",
+    );
+    expect(() => unwrap(writeError(409, "A will already exists for grantor='spouse'"))).toThrow(
+      new SaveLineError("The plan already has this person's will — review again."),
+    );
+    expect(() => unwrap(writeError(400, `Account ${id} is not a business account`))).toThrow(
+      "The business this line names isn't a business account on the plan — review again.",
+    );
+    expect(() => unwrap(writeError(400, `Model portfolio ${id} not available to this firm`))).toThrow(
+      "A record this line names doesn't match the plan any more — review again.",
+    );
   });
 
   it("names the route body's first issue, with its path, instead of the bare error", () => {

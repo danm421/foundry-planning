@@ -80,10 +80,34 @@ export function recordIdOf(input: SaveInput, message: string): string {
   return input.recordId;
 }
 
-/** A core's result, or a SaveLineError with its message. */
+/** A core's result, or a SaveLineError with its message in plain words. */
 export function unwrap<T>(result: EntityWriteResult<T>): { data: T; resourceId: string } {
-  if (!result.ok) throw new SaveLineError(reasonOf(result));
+  if (!result.ok) throw new SaveLineError(plainReason(reasonOf(result)));
   return { data: result.data, resourceId: result.resourceId };
+}
+
+/** db-scoping's "<Kind> <id> not owned by this client", by the kind's name as the advisor knows it. */
+const NOT_OWNED = /^(Account|Income|Liability|Entity|Family member|External beneficiary) \S+ not owned by this client$/;
+const OWNED_NOUN: Record<string, string> = {
+  Account: "An account", Income: "An income", Liability: "A debt", Entity: "A trust or business",
+  "Family member": "A family member", "External beneficiary": "A charity or beneficiary",
+};
+/** db-scoping's "Account <id> is not a business account" (or real estate). */
+const NOT_KIND = /^Account \S+ is not a (business|real estate) account$/;
+const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
+
+/**
+ * The refusals a core can still give past the save's stale check — a record gone or another client's, a will
+ * already on file — in the advisor's words: never an id or a column name. Anything else is the core's own.
+ */
+function plainReason(error: string): string {
+  const notOwned = NOT_OWNED.exec(error);
+  if (notOwned) return `${OWNED_NOUN[notOwned[1]]} this line names isn't on the plan — review again.`;
+  const notKind = NOT_KIND.exec(error);
+  if (notKind) return `The ${notKind[1] === "business" ? "business" : "property"} this line names isn't a ${notKind[1]} account on the plan — review again.`;
+  if (error.startsWith("A will already exists for grantor=")) return "The plan already has this person's will — review again.";
+  if (UUID.test(error)) return "A record this line names doesn't match the plan any more — review again.";
+  return error;
 }
 
 /** The route body's first issue ("benefitAmount: Must be more than 0") when it has one — "Invalid body" says nothing — else the core's error. */

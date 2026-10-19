@@ -1,7 +1,7 @@
 // src/lib/fact-finder/save/__tests__/writers-index.test.ts
 import { describe, expect, it } from "vitest";
 import { TARGET_KINDS, type TargetKind } from "../../change-set";
-import type { SaveWriter } from "../types";
+import { SaveLineError, type SaveContext, type SaveInput, type SaveWriter } from "../types";
 import { SAVE_WRITERS } from "../writers";
 import { ACCOUNT_WRITERS } from "../writers/accounts";
 import { ANNUITY_STOCK_WRITERS } from "../writers/annuities-stock-options";
@@ -41,5 +41,17 @@ describe("SAVE_WRITERS", () => {
     }
     expect([...owners.keys()].sort()).toEqual([...TARGET_KINDS].sort());
     expect([...owners.values()].every((n) => n === 1)).toBe(true);
+  });
+});
+
+describe("ANNUITY_STOCK_WRITERS", () => {
+  // Before any write: the line is refused in plain words, which the save answers 422 naming the line.
+  const ctx = {} as SaveContext;
+  const input = (over: Partial<SaveInput>) => ({ line: {}, values: {}, body: {}, recordId: null, parentId: null, ...over }) as SaveInput;
+
+  it("refuses a line that names no record or parent as a line the save can't write, not a crash", async () => {
+    await expect(ANNUITY_STOCK_WRITERS.annuity_contract.create(ctx, input({}))).rejects.toThrow(new SaveLineError("This line names no annuity account."));
+    await expect(ANNUITY_STOCK_WRITERS.stock_option_account.update(ctx, input({}))).rejects.toThrow(new SaveLineError("This line names no account."));
+    await expect(ANNUITY_STOCK_WRITERS.stock_option_grant.update(ctx, input({ parentId: "acct-1" }))).rejects.toThrow(new SaveLineError("This line names no grant."));
   });
 });

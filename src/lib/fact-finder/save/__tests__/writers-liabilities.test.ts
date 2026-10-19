@@ -214,7 +214,7 @@ describe("liability save writer", () => {
       .returning({ id: accounts.id });
     const line = changeLine("liability", { ...loanFields("Wrong house"), linkedPropertyId: { ref: "record", target: "account", id: foreign.id } });
     await expect(inSave(scope, (ctx) => writer.create(ctx, inputOf(line, ids())))).rejects.toThrow(SaveLineError);
-    await expect(inSave(scope, (ctx) => writer.create(ctx, inputOf(line, ids())))).rejects.toThrow(/not owned by this client/);
+    await expect(inSave(scope, (ctx) => writer.create(ctx, inputOf(line, ids())))).rejects.toThrow("An account this line names isn't on the plan — review again.");
   });
 
   it("(d) the debt type is written only when the line carries it; the owners are the line's", async () => {
