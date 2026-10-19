@@ -336,6 +336,21 @@ describe("toolFailureResult — part A errors", () => {
       "Foundry connector is temporarily unavailable. Try again shortly.",
     );
   });
+
+  // A fact finder fill that lost a race: the model needs the current rows to
+  // re-apply its changes, as an error, so it can't read them as a success.
+  it("appends an input error's details as JSON, sanitized like a tool result", () => {
+    const out = toolFailureResult(
+      new McpInputError("Someone else changed this step.", {
+        version: 7,
+        rows: [{ rowId: "r1", cells: { notes: "SSN 123-45-6789" } }],
+      }),
+    );
+    expect(out.isError).toBe(true);
+    const [message, json] = out.content[0].text.split("\n");
+    expect(message).toBe("Someone else changed this step.");
+    expect(JSON.parse(json)).toEqual({ version: 7, rows: [{ rowId: "r1", cells: { notes: "SSN [REDACTED-SSN]" } }] });
+  });
 });
 
 describe("recordDenial — part A reasons", () => {

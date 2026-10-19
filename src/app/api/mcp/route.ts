@@ -17,6 +17,7 @@ import {
 } from "@/domain/mcp/define-tool";
 import { McpForbiddenError } from "@/domain/mcp/guards";
 import { recordAudit } from "@/lib/audit";
+import { sanitizeRow } from "@/lib/redaction/sanitize-row";
 import { WhatIfValidationError } from "@/lib/whatif/errors";
 import { ALL_MCP_TOOLS } from "@/domain/mcp/tools";
 
@@ -89,9 +90,15 @@ type ToolCallOutcome = {
  *
  * Part A adds `McpUnavailableError`, `McpInputError` and `WhatIfValidationError`;
  * each carries hand-written, model-safe text (define-tool.ts,
- * src/lib/whatif/errors.ts).
+ * src/lib/whatif/errors.ts). An `McpInputError`'s `details` (part B: a fact
+ * finder step's current rows after a lost race) follow the message as JSON,
+ * through the same `sanitizeRow` a successful result gets.
  */
 export function toolFailureResult(err: unknown): ToolCallOutcome {
+  if (err instanceof McpInputError && err.details) {
+    const text = `${err.message}\n${JSON.stringify(sanitizeRow(err.details))}`;
+    return { content: [{ type: "text", text }], isError: true };
+  }
   if (
     err instanceof McpRateLimitedError ||
     err instanceof McpForbiddenError ||

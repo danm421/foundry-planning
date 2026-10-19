@@ -80,9 +80,14 @@ export class McpUnavailableError extends Error {
 }
 
 /** An argument the model can fix and retry (an unknown page id, a template it can't use).
- *  The message is hand-written and model-safe; the route passes it through verbatim. */
+ *  The message is hand-written and model-safe; the route passes it through verbatim.
+ *  `details` is what the model needs to retry (a fact finder step's current rows); the
+ *  route appends it as JSON, sanitized like a tool result. */
 export class McpInputError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    public readonly details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = "McpInputError";
   }
