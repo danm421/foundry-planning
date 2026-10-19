@@ -351,7 +351,12 @@ describe("resolveMcpPrincipal", () => {
         ],
         totalCount: 1,
       });
-      await expect(resolveMcpPrincipal(await mintToken())).resolves.toMatchObject({ orgRole: "org:member" });
+      // Connected for reads, but never writable: the site's write gate refuses
+      // an unpaid firm whatever the mode.
+      await expect(resolveMcpPrincipal(await mintToken())).resolves.toMatchObject({
+        orgRole: "org:member",
+        canWrite: false,
+      });
     });
 
     it("denies the same terminal billing state once enforcement mode flips to 'enforce'", async () => {
@@ -419,15 +424,16 @@ describe("resolveMcpPrincipal", () => {
       });
     });
 
-    it("lets the same firm write while enforcement mode is 'log'", async () => {
+    it("refuses the same firm's writes in 'log' mode too, as the site's write gate does", async () => {
+      // requireActiveSubscription ignores the rollout flag; following it here
+      // would let Claude write where the site answers 403.
       process.env.BILLING_ENFORCEMENT_MODE = "log";
       pastDueBeyondGrace();
-      await expect(resolveMcpPrincipal(await mintToken())).resolves.toMatchObject({ canWrite: true });
+      await expect(resolveMcpPrincipal(await mintToken())).resolves.toMatchObject({ canWrite: false });
     });
 
     it("stops a firm whose comp ended from writing even in 'log' mode, as the web does", async () => {
-      // comp_ended is one of the two states `isEnforced` applies regardless
-      // of the rollout flag.
+      // comp_ended blocks mutations, and canWrite never consults the flag.
       process.env.BILLING_ENFORCEMENT_MODE = "log";
       h.getOrganizationMembershipList.mockResolvedValue({
         data: [

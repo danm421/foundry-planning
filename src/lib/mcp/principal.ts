@@ -266,9 +266,12 @@ export async function resolveMcpPrincipal(bearerToken: string): Promise<McpPrinc
     );
   }
 
-  // `isEnforced` is false for "allow", so this is "a mutating request would be
-  // refused" — the web's read-only state, under the same rollout flag.
-  const canWrite = !isEnforced(billingState, decideAccess(billingState, "POST", "/api/mcp"));
+  // Mirrors the site's write gate, `requireActiveSubscription` (authz.ts
+  // `metaIsActive`): founder, trialing, active, active_canceling, and past_due
+  // within grace. It deliberately ignores the rollout flag, as that gate does —
+  // following the flag would let a lapsed firm write through Claude in "log"
+  // mode while the site refuses the same write with a 403.
+  const canWrite = decideAccess(billingState, "POST", "/api/mcp") === "allow";
   const entitlements = orgMeta?.entitlements ?? [];
 
   return { userId, orgId, orgRole, scopes, tokenSubject: userId, canWrite, entitlements };
