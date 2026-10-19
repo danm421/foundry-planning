@@ -60,7 +60,7 @@
 import { db } from "@/db";
 import { accounts, accountOwners, beneficiaryDesignations, familyMembers } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccessAs, type Principal } from "@/lib/clients/authz";
 import {
   assertAccountsInClient,
   assertEntitiesInClient,
@@ -158,7 +158,7 @@ export async function createAccountForClient(args: {
 } & WriteOptions): Promise<EntityWriteResult<AccountRow>> {
   const { clientId, firmId, actorId, input, crossFirmMeta } = args;
 
-  const scenarioId = await baseCaseScenarioId(clientId, firmId);
+  const scenarioId = await baseCaseScenarioId(clientId, firmId, args.principal);
   if (!scenarioId) return writeError(404, "Client not found");
 
   // ── Business pre-branch (port of POST ~104-125) ───────────────────────────
@@ -451,7 +451,7 @@ export async function updateAccountForClient(args: {
 } & WriteOptions): Promise<EntityWriteResult<AccountRow>> {
   const { clientId, firmId, actorId, accountId, input, crossFirmMeta } = args;
 
-  const a = await verifyClientAccess(clientId);
+  const a = await verifyClientAccessAs(args.principal, clientId);
   if (!a.ok || a.firmId !== firmId) {
     return writeError(404, "Client not found");
   }
@@ -714,10 +714,11 @@ export async function deleteAccountForClient(args: {
   actorId: string;
   accountId: string;
   crossFirmMeta?: Record<string, unknown>;
+  principal?: Principal;
 }): Promise<EntityWriteResult<{ id: string }>> {
   const { clientId, firmId, actorId, accountId, crossFirmMeta } = args;
 
-  const a = await verifyClientAccess(clientId);
+  const a = await verifyClientAccessAs(args.principal, clientId);
   if (!a.ok || a.firmId !== firmId) {
     return writeError(404, "Client not found");
   }

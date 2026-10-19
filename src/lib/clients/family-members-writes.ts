@@ -8,7 +8,7 @@
 import { familyMembers, dependentOverrideEnum } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccessAs } from "@/lib/clients/authz";
 import { handleOf, type WriteOptions } from "@/lib/db-tx";
 import { summarizeZodIssues } from "@/lib/schemas/common";
 import { familyMemberCreateSchema } from "@/lib/schemas/family-members";
@@ -27,7 +27,7 @@ export async function createFamilyMemberForClient(args: {
 } & WriteOptions): Promise<EntityWriteResult<FamilyMemberRow>> {
   const { clientId, firmId, actorId, input, crossFirmMeta } = args;
 
-  const a = await verifyClientAccess(clientId);
+  const a = await verifyClientAccessAs(args.principal, clientId);
   if (!a.ok || a.firmId !== firmId) return writeError(404, "Client not found");
 
   const parsed = familyMemberCreateSchema.safeParse(input);

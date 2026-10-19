@@ -23,7 +23,7 @@
 import { db } from "@/db";
 import { incomes } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccessAs, type Principal } from "@/lib/clients/authz";
 import {
   assertAccountsInClient,
   assertBusinessAccountsInClient,
@@ -52,7 +52,7 @@ export async function createIncomeForClient(args: {
 } & WriteOptions): Promise<EntityWriteResult<IncomeRow>> {
   const { clientId, firmId, actorId, input, crossFirmMeta, actorKind } = args;
 
-  const scenarioId = await baseCaseScenarioId(clientId, firmId);
+  const scenarioId = await baseCaseScenarioId(clientId, firmId, args.principal);
   if (!scenarioId) return writeError(404, "Client not found");
 
   const parsed = incomeCreateSchema.safeParse(input);
@@ -144,7 +144,7 @@ export async function updateIncomeForClient(args: {
   const { clientId, firmId, actorId, incomeId, input, crossFirmMeta, actorKind } = args;
   const handle = handleOf(args);
 
-  const a = await verifyClientAccess(clientId);
+  const a = await verifyClientAccessAs(args.principal, clientId);
   if (!a.ok || a.firmId !== firmId) {
     return writeError(404, "Client not found");
   }
@@ -252,10 +252,11 @@ export async function deleteIncomeForClient(args: {
   incomeId: string;
   crossFirmMeta?: Record<string, unknown>;
   actorKind?: "advisor" | "client" | "system";
+  principal?: Principal;
 }): Promise<EntityWriteResult<{ id: string }>> {
   const { clientId, firmId, actorId, incomeId, crossFirmMeta, actorKind } = args;
 
-  const a = await verifyClientAccess(clientId);
+  const a = await verifyClientAccessAs(args.principal, clientId);
   if (!a.ok || a.firmId !== firmId) {
     return writeError(404, "Client not found");
   }

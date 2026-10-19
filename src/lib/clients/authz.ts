@@ -98,6 +98,18 @@ export async function verifyClientAccess(clientId: string): Promise<ClientAccess
   return verifyClientAccessFor(p, clientId);
 }
 
+/**
+ * A write core's access check: on the caller's principal when it passes one
+ * (the Claude connector, whose call has no Clerk session), else on the session
+ * exactly as `verifyClientAccess`.
+ */
+export async function verifyClientAccessAs(
+  principal: Principal | undefined,
+  clientId: string,
+): Promise<ClientAccessCheck> {
+  return principal ? verifyClientAccessFor(principal, clientId) : verifyClientAccess(clientId);
+}
+
 export type ClientAccess = {
   client: typeof clients.$inferSelect;
   firmId: string;

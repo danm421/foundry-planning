@@ -15,10 +15,15 @@ vi.mock("@/lib/db-scoping", () => ({
   assertBusinessAccountsInClient: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
-vi.mock("@/lib/clients/authz", () => ({
-  verifyClientAccess: vi.fn().mockResolvedValue({ ok: true, permission: "edit", firmId: "firm_test", access: "own" }),
-  requireClientEditAccess: vi.fn().mockResolvedValue({ firmId: "firm_test", access: "own" }),
-}));
+vi.mock("@/lib/clients/authz", () => {
+  const verifyClientAccess = vi.fn().mockResolvedValue({ ok: true, permission: "edit", firmId: "firm_test", access: "own" });
+  return {
+    verifyClientAccess,
+    // The write cores check access through verifyClientAccessAs: a route passes no principal, so it is this check.
+    verifyClientAccessAs: (_p: unknown, id: string) => verifyClientAccess(id),
+    requireClientEditAccess: vi.fn().mockResolvedValue({ firmId: "firm_test", access: "own" }),
+  };
+});
 
 vi.mock("@/lib/authz", async () => {
   const actual = await vi.importActual<typeof import("@/lib/authz")>("@/lib/authz");

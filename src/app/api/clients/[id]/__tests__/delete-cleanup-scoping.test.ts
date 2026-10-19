@@ -42,10 +42,15 @@ vi.mock("@/lib/db-helpers", () => ({
   requireOrgAndUser: vi.fn().mockResolvedValue({ orgId: "f1", userId: "u1" }),
   requireOrgId: vi.fn().mockResolvedValue("f1"),
 }));
-vi.mock("@/lib/clients/authz", () => ({
-  requireClientEditAccess: vi.fn().mockResolvedValue({ firmId: "f1", access: "own" }),
-  verifyClientAccess: vi.fn().mockResolvedValue({ ok: true, firmId: "f1", permission: "edit" }),
-}));
+vi.mock("@/lib/clients/authz", () => {
+  const verifyClientAccess = vi.fn().mockResolvedValue({ ok: true, firmId: "f1", permission: "edit" });
+  return {
+    requireClientEditAccess: vi.fn().mockResolvedValue({ firmId: "f1", access: "own" }),
+    verifyClientAccess,
+    // The write cores check access through verifyClientAccessAs: a route passes no principal, so it is this check.
+    verifyClientAccessAs: (_p: unknown, id: string) => verifyClientAccess(id),
+  };
+});
 vi.mock("@/lib/authz", () => ({
   requireActiveSubscriptionForFirm: vi.fn().mockResolvedValue(undefined),
   authErrorResponse: () => null,

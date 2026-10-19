@@ -15,16 +15,16 @@ vi.mock("@/db", () => ({
     }),
   },
 }));
-vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: vi.fn() }));
+vi.mock("@/lib/clients/authz", () => ({ verifyClientAccessAs: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 
 import { createFamilyMemberForClient } from "../family-members-writes";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccessAs } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(verifyClientAccess).mockResolvedValue({ ok: true, permission: "edit", firmId: "org_1", access: "own" } as never);
+  vi.mocked(verifyClientAccessAs).mockResolvedValue({ ok: true, permission: "edit", firmId: "org_1", access: "own" } as never);
 });
 
 describe("createFamilyMemberForClient", () => {
@@ -69,7 +69,7 @@ describe("createFamilyMemberForClient", () => {
   });
 
   it("is a 404 for a client in another firm", async () => {
-    vi.mocked(verifyClientAccess).mockResolvedValue({ ok: true, permission: "edit", firmId: "org_2", access: "own" } as never);
+    vi.mocked(verifyClientAccessAs).mockResolvedValue({ ok: true, permission: "edit", firmId: "org_2", access: "own" } as never);
     const r = await createFamilyMemberForClient({ clientId: "client_1", firmId: "org_1", input: { firstName: "Emma" } });
     expect(r).toEqual({ ok: false, status: 404, error: "Client not found" });
     expect(values).not.toHaveBeenCalled();

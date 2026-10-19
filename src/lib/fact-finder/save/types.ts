@@ -7,6 +7,7 @@
  * Type-only imports: the browser's save plan (save/plan.ts) imports this
  * file's types, and nothing here may pull a server module into its bundle.
  */
+import type { Principal } from "@/lib/clients/authz";
 import type { EntityWriteResult } from "@/lib/clients/entity-write-result";
 import type { AfterCommit, Tx } from "@/lib/db-tx";
 import type { ResolvedHoldingsMap } from "@/lib/imports/commit/types";
@@ -19,6 +20,8 @@ export interface SaveContext {
   actorId: string;
   /** The advisor an ops operator is acting as (`actorId` is then the operator). */
   actingAsAdvisor?: string;
+  /** Whose access every core checks when the save has no Clerk session (the Claude connector's); else the session's. */
+  principal?: Principal;
   afterCommit: AfterCommit;
   /** Tickers priced before the transaction (Task 2's resolveSaveHoldings). */
   holdings: ResolvedHoldingsMap;
@@ -65,12 +68,15 @@ export class SaveLineError extends Error {
 }
 
 /**
- * What a writer's core call passes: the save's client and actor, its transaction and after-commit queue —
- * and, while an ops operator saves, the advisor they act as, on the cores' extra audit metadata
- * (`crossFirmMeta`, which every core that audits spreads into its row).
+ * What a writer's core call passes: the save's client and actor, its transaction and after-commit queue,
+ * the principal it runs on when it has one — and, while an ops operator saves, the advisor they act as, on
+ * the cores' extra audit metadata (`crossFirmMeta`, which every core that audits spreads into its row).
  */
 export function coreArgs(ctx: SaveContext) {
-  const core = { clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, tx: ctx.tx, afterCommit: ctx.afterCommit };
+  const core = {
+    clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, tx: ctx.tx, afterCommit: ctx.afterCommit,
+    ...(ctx.principal ? { principal: ctx.principal } : {}),
+  };
   return ctx.actingAsAdvisor ? { ...core, crossFirmMeta: { actingAsAdvisor: ctx.actingAsAdvisor } } : core;
 }
 

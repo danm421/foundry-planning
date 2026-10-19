@@ -80,15 +80,15 @@ vi.mock("@/lib/authz", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/clients/authz", () => ({
-  verifyClientAccess: vi.fn().mockResolvedValue({
-    ok: true,
-    permission: "edit",
-    firmId: FIRM_ID,
-    access: "own",
-  }),
-  requireClientEditAccess: vi.fn().mockResolvedValue({ firmId: FIRM_ID, access: "own" }),
-}));
+vi.mock("@/lib/clients/authz", () => {
+  const verifyClientAccess = vi.fn().mockResolvedValue({ ok: true, permission: "edit", firmId: FIRM_ID, access: "own" });
+  return {
+    verifyClientAccess,
+    // The write cores check access through verifyClientAccessAs: a route passes no principal, so it is this check.
+    verifyClientAccessAs: (_p: unknown, id: string) => verifyClientAccess(id),
+    requireClientEditAccess: vi.fn().mockResolvedValue({ firmId: FIRM_ID, access: "own" }),
+  };
+});
 
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 

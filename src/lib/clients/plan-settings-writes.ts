@@ -27,7 +27,7 @@ export async function updatePlanSettingsForClient(args: {
 } & WriteOptions): Promise<EntityWriteResult<Record<string, unknown>>> {
   const { clientId, firmId, actorId, body, crossFirmMeta } = args;
 
-  const scenarioId = await baseCaseScenarioId(clientId, firmId);
+  const scenarioId = await baseCaseScenarioId(clientId, firmId, args.principal);
   if (!scenarioId) return writeError(404, "Client not found");
 
   const {

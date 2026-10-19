@@ -110,7 +110,7 @@ function setWriter(
 }
 
 const accountSet = setWriter("account", (ctx, accountId, set) =>
-  replaceAccountBeneficiariesForClient({ clientId: ctx.clientId, firmId: ctx.firmId, accountId, input: set, tx: ctx.tx, afterCommit: ctx.afterCommit }),
+  replaceAccountBeneficiariesForClient({ clientId: ctx.clientId, firmId: ctx.firmId, accountId, input: set, tx: ctx.tx, afterCommit: ctx.afterCommit, principal: ctx.principal }),
 );
 
 export const DESIGNATION_WRITERS: {
@@ -121,6 +121,6 @@ export const DESIGNATION_WRITERS: {
   account_beneficiary_designation: accountSet,
   life_insurance_policy_beneficiary: accountSet,
   trust_beneficiary_designation: setWriter("trust", (ctx, entityId, set) =>
-    replaceTrustBeneficiariesForClient({ clientId: ctx.clientId, firmId: ctx.firmId, entityId, input: set, tx: ctx.tx, afterCommit: ctx.afterCommit }),
+    replaceTrustBeneficiariesForClient({ clientId: ctx.clientId, firmId: ctx.firmId, entityId, input: set, tx: ctx.tx, afterCommit: ctx.afterCommit, principal: ctx.principal }),
   ),
 };

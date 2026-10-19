@@ -9,6 +9,7 @@
  * follow the commit goes to `afterCommit`.
  */
 import { db } from "@/db";
+import type { Principal } from "@/lib/clients/authz";
 import { safeErrorFields } from "@/lib/redaction/secrets";
 
 /** A Drizzle transaction handle. */
@@ -26,6 +27,8 @@ export type AfterCommit = (work: () => Promise<void>) => void;
 export interface WriteOptions {
   tx?: Tx;
   afterCommit?: AfterCommit;
+  /** Whose access the core checks when the call has no Clerk session (the Claude connector's); without it, the session's. */
+  principal?: Principal;
 }
 
 /** The caller's transaction, else module `db`. */

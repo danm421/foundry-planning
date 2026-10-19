@@ -66,7 +66,7 @@ vi.mock("@/lib/db-scoping", () => ({
   assertTickerPortfoliosInFirm: async () => ({ ok: true }),
 }));
 vi.mock("@/lib/clients/authz", () => ({
-  verifyClientAccess: async () => ({ ok: true, permission: "edit", firmId: FIRM, access: "own" }),
+  verifyClientAccessAs: async () => ({ ok: true, permission: "edit", firmId: FIRM, access: "own" }),
 }));
 vi.mock("../base-case", () => ({ baseCaseScenarioId: async () => "scenario-1" }));
 vi.mock("@/lib/audit", () => ({

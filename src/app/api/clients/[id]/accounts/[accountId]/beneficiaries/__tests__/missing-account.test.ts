@@ -6,10 +6,15 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/lib/clients/authz", () => ({
-  verifyClientAccess: vi.fn(),
-  requireClientEditAccess: vi.fn(),
-}));
+vi.mock("@/lib/clients/authz", () => {
+  const verifyClientAccess = vi.fn();
+  return {
+    verifyClientAccess,
+    // The write cores check access through verifyClientAccessAs: a route passes no principal, so it is this check.
+    verifyClientAccessAs: (_p: unknown, id: string) => verifyClientAccess(id),
+    requireClientEditAccess: vi.fn(),
+  };
+});
 vi.mock("@/lib/authz", () => ({
   requireActiveSubscriptionForFirm: vi.fn(),
   authErrorResponse: () => null,
