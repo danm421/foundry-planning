@@ -2,7 +2,8 @@ import { auth } from "@clerk/nextjs/server";
 
 export type SubscriptionState =
   | { kind: "founder" }
-  | { kind: "trialing"; trialEndsAt: Date }
+  /** `canceling`: the firm cancelled during the trial, so it will not convert. */
+  | { kind: "trialing"; trialEndsAt: Date; canceling?: true }
   | { kind: "active" }
   | { kind: "active_canceling"; periodEnd: Date }
   | { kind: "past_due"; pastDueSince: Date | null }
@@ -37,6 +38,7 @@ export type OrgMeta = {
   current_period_end?: string;
   /** When the firm went past due. Written by the subscription webhook. */
   past_due_since?: string;
+  /** Any booked cancellation, not just Stripe's flag — see `isCancellationScheduled`. */
   cancel_at_period_end?: boolean;
   archived_at?: string;
   entitlements?: string[];
@@ -46,6 +48,20 @@ function parseDate(s: string | undefined): Date | null {
   if (!s) return null;
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Whether Stripe has a cancellation booked. This account books them as a
+ * `cancel_at` DATE — the customer portal's "cancel at period end" included —
+ * and leaves `cancel_at_period_end` false, so the flag alone misses every real
+ * cancellation (measured 2026-10-19 through the portal; every cancelled prod
+ * row agrees).
+ */
+export function isCancellationScheduled(sub: {
+  cancel_at_period_end?: boolean | null;
+  cancel_at?: number | null;
+}): boolean {
+  return sub.cancel_at_period_end === true || sub.cancel_at != null;
 }
 
 /**
@@ -103,7 +119,9 @@ export function stateFromMeta(meta: OrgMeta | undefined): SubscriptionState {
   if (status === "trialing") {
     const trialEndsAt = parseDate(meta.trial_ends_at);
     if (trialEndsAt) {
-      return { kind: "trialing", trialEndsAt };
+      return meta.cancel_at_period_end === true
+        ? { kind: "trialing", trialEndsAt, canceling: true }
+        : { kind: "trialing", trialEndsAt };
     }
   }
   if (status === "active") {

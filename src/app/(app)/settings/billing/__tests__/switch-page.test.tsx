@@ -97,4 +97,16 @@ describe("/settings/billing/switch", () => {
     expect(screen.getByRole("alert").textContent).toMatch(/already have a change scheduled/i);
     expect(screen.queryByRole("button", { name: /switch to/i })).toBeNull();
   });
+
+  it("tells a cancelled subscriber to renew first instead of offering a switch that would fail", async () => {
+    vi.mocked(readPlanSwitchPreview).mockResolvedValue({
+      ok: false,
+      reason: "not_switchable",
+    } as never);
+
+    render(await SwitchPage({ searchParams: Promise.resolve({ plan: "monthly" }) }));
+
+    expect(screen.getByRole("alert").textContent).toMatch(/renew/i);
+    expect(screen.queryByRole("button", { name: /switch to/i })).toBeNull();
+  });
 });

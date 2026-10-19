@@ -17,7 +17,7 @@ import {
   clearPendingSignup,
 } from "@/lib/billing/pending-signup";
 import { recordAudit } from "@/lib/audit";
-import { nextPastDueSince } from "@/lib/billing/subscription-state";
+import { isCancellationScheduled, nextPastDueSince } from "@/lib/billing/subscription-state";
 
 const TOS_VERSION_DEFAULT = "v1";
 
@@ -263,7 +263,7 @@ export async function handleCheckoutSessionCompleted(
       status: sub.status,
       currentPeriodStart: periodStart ? new Date(periodStart * 1000) : null,
       currentPeriodEnd: periodEnd ? new Date(periodEnd * 1000) : null,
-      cancelAtPeriodEnd: sub.cancel_at_period_end ?? false,
+      cancelAtPeriodEnd: isCancellationScheduled(sub),
       trialStart: sub.trial_start ? new Date(sub.trial_start * 1000) : null,
       trialEnd: sub.trial_end ? new Date(sub.trial_end * 1000) : null,
     })

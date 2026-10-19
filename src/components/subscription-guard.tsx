@@ -31,6 +31,16 @@ function bannerFor(state: SubscriptionState): Banner | null {
     case "active":
       return null;
     case "trialing":
+      if (state.canceling) {
+        return {
+          severity: "info-gray",
+          message: `Free trial ends ${fmt(state.trialEndsAt)}. You've canceled, so you won't be billed. Reactivate anytime in billing.`,
+          actionHref: "/settings/billing#manage",
+          actionLabel: "Reactivate",
+          dismissible: true,
+          dismissKey: `trialing_canceling:${state.trialEndsAt.toISOString()}`,
+        };
+      }
       return {
         severity: "info-yellow",
         message: `Free trial ends ${fmt(state.trialEndsAt)}. You'll be billed automatically when it ends.`,

@@ -32,6 +32,8 @@ const REFUSALS: Record<string, string> = {
   already_on_plan: "You're already on that billing cycle.",
   pending_exists:
     "You already have a change scheduled. Cancel it on the billing page first if you want a different one.",
+  not_switchable:
+    "Your billing cycle can't be changed while your subscription is canceled or inactive. If you canceled, renew it under Cards, invoices & cancellation on the billing page first.",
 };
 
 function Refusal({ message }: { message: string }): ReactElement {

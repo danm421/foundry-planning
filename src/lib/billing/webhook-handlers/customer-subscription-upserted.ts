@@ -11,7 +11,11 @@ import {
 } from "@/lib/billing/entitlements";
 import { getActiveEntitlementOverrides } from "@/lib/ops/entitlements";
 import { readSubscriptionItemMeta } from "@/lib/billing/subscription-item-meta";
-import { nextPastDueSince, type OrgMeta } from "@/lib/billing/subscription-state";
+import {
+  isCancellationScheduled,
+  nextPastDueSince,
+  type OrgMeta,
+} from "@/lib/billing/subscription-state";
 import { recordAudit } from "@/lib/audit";
 
 // The partial unique index subscriptions_firm_active_unique only indexes rows in
@@ -111,6 +115,8 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
     | undefined;
   const periodStart = firstItem?.current_period_start ?? null;
   const periodEnd = firstItem?.current_period_end ?? null;
+  // Portal cancellations arrive as a `cancel_at` date with the flag still false.
+  const cancelScheduled = isCancellationScheduled(sub);
 
   const itemsView: StripeItemView[] = sub.items.data.map((it) => ({
     ...readSubscriptionItemMeta(it),
@@ -128,7 +134,7 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
       status: sub.status,
       currentPeriodStart: periodStart ? new Date(periodStart * 1000) : null,
       currentPeriodEnd: periodEnd ? new Date(periodEnd * 1000) : null,
-      cancelAtPeriodEnd: sub.cancel_at_period_end ?? false,
+      cancelAtPeriodEnd: cancelScheduled,
       canceledAt: sub.canceled_at ? new Date(sub.canceled_at * 1000) : null,
       trialStart: sub.trial_start ? new Date(sub.trial_start * 1000) : null,
       trialEnd: sub.trial_end ? new Date(sub.trial_end * 1000) : null,
@@ -139,7 +145,7 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
         status: sub.status,
         currentPeriodStart: periodStart ? new Date(periodStart * 1000) : null,
         currentPeriodEnd: periodEnd ? new Date(periodEnd * 1000) : null,
-        cancelAtPeriodEnd: sub.cancel_at_period_end ?? false,
+        cancelAtPeriodEnd: cancelScheduled,
         canceledAt: sub.canceled_at ? new Date(sub.canceled_at * 1000) : null,
         trialStart: sub.trial_start ? new Date(sub.trial_start * 1000) : null,
         trialEnd: sub.trial_end ? new Date(sub.trial_end * 1000) : null,
@@ -206,7 +212,7 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
         stripe_customer_id: customerId,
         stripe_subscription_id: sub.id,
         subscription_status: sub.status,
-        cancel_at_period_end: sub.cancel_at_period_end ?? false,
+        cancel_at_period_end: cancelScheduled,
         current_period_end: periodEnd
           ? new Date(periodEnd * 1000).toISOString()
           : null,

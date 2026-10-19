@@ -66,6 +66,15 @@ export default function ManageBillingButton({
             <span className="tabular text-ink">{formatPlanDate(switchState.effectiveAt)}</span>.
           </p>
         ) : null}
+        {switchState.kind === "canceling" ? (
+          <p className="text-sm text-ink-3">
+            Your <span className="font-medium capitalize text-ink">{switchState.currentPlan}</span>{" "}
+            subscription is canceled and ends on{" "}
+            <span className="tabular text-ink">{formatPlanDate(switchState.endsAt)}</span>. To
+            keep it, or to change your billing cycle, renew it under Cards, invoices &amp;
+            cancellation.
+          </p>
+        ) : null}
         {switchState.kind === "unavailable" ? (
           <p className="text-sm text-ink-3">
             We couldn&apos;t reach Stripe to read your billing cycle, so cycle changes are

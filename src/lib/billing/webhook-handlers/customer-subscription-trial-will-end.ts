@@ -3,6 +3,7 @@ import { getStripe } from "@/lib/billing/stripe-client";
 import { sendBillingEmail } from "@/lib/billing/email-stub";
 import { recordAudit } from "@/lib/audit";
 import { resolveBillingContact } from "@/lib/billing/billing-contact";
+import { isCancellationScheduled } from "@/lib/billing/subscription-state";
 
 /**
  * trial_will_end — Stripe fires this 3 days before trial conversion.
@@ -28,10 +29,7 @@ export async function handleTrialWillEnd(event: Stripe.Event): Promise<void> {
   // cancellations with `cancel_at` (a date) — which leaves cancel_at_period_end
   // false on a subscription that has genuinely been cancelled. Same reasoning
   // as lib/billing/trial-feedback.ts.
-  const canceled =
-    sub.cancel_at_period_end === true ||
-    sub.canceled_at != null ||
-    sub.cancel_at != null;
+  const canceled = isCancellationScheduled(sub) || sub.canceled_at != null;
 
   const contact = await resolveBillingContact(firmId);
   const ownerEmail = contact?.email ?? undefined;

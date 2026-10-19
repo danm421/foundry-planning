@@ -55,6 +55,24 @@ describe("<ManageBillingButton>", () => {
     expect(screen.queryByRole("link", { name: /switch to/i })).toBeNull();
   });
 
+  it("says when a cancelled subscription ends and offers no switch", () => {
+    render(
+      <ManageBillingButton
+        switchState={{
+          kind: "canceling",
+          currentPlan: "monthly",
+          endsAt: new Date("2026-11-19T12:00:00Z"),
+        }}
+        canSwitch
+      />,
+    );
+    expect(screen.getByText(/ends on/i)).toHaveTextContent("Nov 19, 2026");
+    expect(screen.queryByRole("link", { name: /switch to/i })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /cards, invoices & cancellation/i }),
+    ).not.toBeNull();
+  });
+
   it("hides the switch control when Stripe could not be read", () => {
     render(<ManageBillingButton switchState={{ kind: "unavailable" }} canSwitch />);
     expect(screen.queryByRole("link", { name: /switch to/i })).toBeNull();

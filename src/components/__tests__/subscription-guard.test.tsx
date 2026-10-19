@@ -50,6 +50,17 @@ describe("<SubscriptionGuard>", () => {
     expect(screen.getByRole("status")).toHaveTextContent("billed automatically");
   });
 
+  it("tells a firm that cancelled its trial it will NOT be billed", async () => {
+    await renderGuard({
+      kind: "trialing",
+      trialEndsAt: new Date("2026-05-15T00:00:00Z"),
+      canceling: true,
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Free trial ends");
+    expect(screen.getByRole("status")).toHaveTextContent("won't be billed");
+    expect(screen.getByRole("status")).not.toHaveTextContent("billed automatically");
+  });
+
   it("renders past_due banner with persistent (non-dismissible) variant", async () => {
     await renderGuard({ kind: "past_due", pastDueSince: null });
     const alert = screen.getByRole("alert");

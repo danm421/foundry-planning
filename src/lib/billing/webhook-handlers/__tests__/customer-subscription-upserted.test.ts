@@ -149,6 +149,51 @@ describe("handleSubscriptionUpsert", () => {
     );
   });
 
+  it("records a portal cancellation, which Stripe books as a cancel_at DATE with the flag still false", async () => {
+    mockSubsRetrieve.mockResolvedValue({
+      id: "sub_1",
+      customer: "cus_1",
+      status: "active",
+      cancel_at_period_end: false,
+      cancel_at: 1795000000,
+      canceled_at: 1792400000,
+      trial_start: null,
+      trial_end: null,
+      metadata: { firm_id: "org_1" },
+      items: {
+        data: [
+          {
+            id: "si_seat",
+            price: { id: "price_seat", unit_amount: 19900, currency: "usd" },
+            quantity: 1,
+            metadata: { kind: "seat" },
+            current_period_start: 1792400000,
+            current_period_end: 1795000000,
+          },
+        ],
+      },
+    });
+    mockSelectFirms.mockResolvedValue([{ firmId: "org_1", isFounder: false }]);
+    mockSubsUpsert.mockResolvedValue([{ id: "internal-sub-uuid" }]);
+    mockItemsUpsert.mockResolvedValue([]);
+
+    await handleSubscriptionUpsert({
+      id: "evt_cancel",
+      type: "customer.subscription.updated",
+      data: { object: { id: "sub_1" } },
+    } as never);
+
+    expect(mockSubsUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ cancelAtPeriodEnd: true }),
+    );
+    expect(mockUpdateOrgMeta).toHaveBeenCalledWith(
+      "org_1",
+      expect.objectContaining({
+        publicMetadata: expect.objectContaining({ cancel_at_period_end: true }),
+      }),
+    );
+  });
+
   it("refreshes the stored seat quantity from Stripe on conflict (not a self-referential no-op)", async () => {
     // A subscription.updated whose seat quantity changed. The item already
     // exists (stripeItemId conflict), so the upsert takes the DO UPDATE branch.

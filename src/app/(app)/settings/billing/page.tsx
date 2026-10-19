@@ -191,7 +191,9 @@ const STATUS_LABEL: Record<SubscriptionState["kind"], string> = {
 };
 
 function StateSummary({ state }: { state: SubscriptionState }): ReactElement {
-  const rows: [string, string][] = [["Status", STATUS_LABEL[state.kind]]];
+  const status =
+    state.kind === "trialing" && state.canceling ? "Trialing — canceled" : STATUS_LABEL[state.kind];
+  const rows: [string, string][] = [["Status", status]];
   if (state.kind === "trialing") {
     rows.push(["Trial ends", fmtDate(state.trialEndsAt)]);
   } else if (state.kind === "active_canceling") {

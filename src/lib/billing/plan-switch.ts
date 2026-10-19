@@ -6,6 +6,7 @@ import { recordAudit } from "@/lib/audit";
 import { getStripe } from "./stripe-client";
 import { getPriceCatalog } from "./price-catalog";
 import { billingPlanForPriceId, type BillingPlan } from "./billing-plan";
+import { isCancellationScheduled } from "./subscription-state";
 import {
   planSwitchMode,
   previewPlanSwitch,
@@ -40,6 +41,8 @@ export type PlanSwitchState =
       effectiveAt: Date;
       scheduleId: string;
     }
+  /** A cancellation is booked; the cycle can't change until it is renewed. */
+  | { kind: "canceling"; currentPlan: BillingPlan; endsAt: Date }
   | { kind: "unavailable" };
 
 type Subject = {
@@ -94,6 +97,17 @@ function phaseToParams(
     start_date: phase.start_date,
     end_date: phase.end_date,
   };
+}
+
+/**
+ * Whether the cycle can change at all. One rule for the confirm screen and the
+ * commit, so the screen never offers a switch the commit would refuse.
+ */
+function isSwitchable(subscription: Stripe.Subscription): boolean {
+  return (
+    ["trialing", "active"].includes(subscription.status) &&
+    !isCancellationScheduled(subscription)
+  );
 }
 
 /**
@@ -175,6 +189,15 @@ export async function readPlanSwitchState(firmId: string): Promise<PlanSwitchSta
     const subject = await loadSubject(firmId);
     if (!subject) return { kind: "unavailable" };
 
+    if (isCancellationScheduled(subject.subscription)) {
+      const { cancel_at } = subject.subscription;
+      return {
+        kind: "canceling",
+        currentPlan: subject.view.currentPlan,
+        endsAt: cancel_at ? new Date(cancel_at * 1000) : subject.view.periodEnd,
+      };
+    }
+
     const future = futurePhaseOf(subject.schedule, nowSeconds());
     if (future && subject.schedule) {
       const targetPlan = seatPlanOf(future.items);
@@ -201,12 +224,16 @@ export async function readPlanSwitchPreview(
   targetPlan: BillingPlan,
 ): Promise<
   | { ok: true; preview: PlanSwitchPreview }
-  | { ok: false; reason: "unavailable" | "already_on_plan" | "pending_exists" }
+  | {
+      ok: false;
+      reason: "unavailable" | "already_on_plan" | "pending_exists" | "not_switchable";
+    }
 > {
   try {
     const subject = await loadSubject(firmId);
     if (!subject) return { ok: false, reason: "unavailable" };
     if (subject.view.currentPlan === targetPlan) return { ok: false, reason: "already_on_plan" };
+    if (!isSwitchable(subject.subscription)) return { ok: false, reason: "not_switchable" };
     if (futurePhaseOf(subject.schedule, nowSeconds())) {
       return { ok: false, reason: "pending_exists" };
     }
@@ -362,13 +389,7 @@ export async function commitPlanSwitch(
     const subject = await loadSubject(firmId);
     if (!subject) return { ok: false, reason: "unavailable" };
     if (subject.view.currentPlan === targetPlan) return { ok: false, reason: "already_on_plan" };
-    if (
-      !["trialing", "active"].includes(subject.subscription.status) ||
-      subject.subscription.cancel_at_period_end ||
-      subject.subscription.cancel_at
-    ) {
-      return { ok: false, reason: "not_switchable" };
-    }
+    if (!isSwitchable(subject.subscription)) return { ok: false, reason: "not_switchable" };
     if (futurePhaseOf(subject.schedule, nowSeconds())) {
       return { ok: false, reason: "pending_exists" };
     }

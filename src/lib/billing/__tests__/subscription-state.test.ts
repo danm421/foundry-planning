@@ -5,7 +5,7 @@ vi.mock("@clerk/nextjs/server", () => ({
   auth: () => mockAuth(),
 }));
 
-import { getSubscriptionState, stateFromMeta } from "../subscription-state";
+import { getSubscriptionState, isCancellationScheduled, stateFromMeta } from "../subscription-state";
 import { decideAccess } from "../access-policy";
 
 beforeEach(() => mockAuth.mockReset());
@@ -197,6 +197,17 @@ describe("stateFromMeta (pure)", () => {
     ).toEqual({ kind: "active_canceling", periodEnd: new Date(periodEnd) });
   });
 
+  it("marks a trial whose cancellation is booked as canceling", () => {
+    const trialEnd = "2026-05-15T00:00:00Z";
+    expect(
+      stateFromMeta({
+        subscription_status: "trialing",
+        trial_ends_at: trialEnd,
+        cancel_at_period_end: true,
+      }),
+    ).toEqual({ kind: "trialing", trialEndsAt: new Date(trialEnd), canceling: true });
+  });
+
   it("carries pastDueSince for past_due", () => {
     const periodEnd = "2026-06-01T00:00:00Z";
     expect(
@@ -264,5 +275,22 @@ describe("past_due read-only cutoff counts from when the firm went past due", ()
 
   it("keeps reads open after the cutoff", () => {
     expect(decideAccess(pastDue(20), "GET", MUTATE_PATH)).toBe("allow");
+  });
+});
+
+describe("isCancellationScheduled", () => {
+  // The customer portal's "cancel at period end" lands as a `cancel_at` DATE on
+  // this account and leaves the boolean false — measured 2026-10-19 in test
+  // mode, and every cancelled prod row agrees.
+  it("counts a cancellation booked as a cancel_at date", () => {
+    expect(isCancellationScheduled({ cancel_at_period_end: false, cancel_at: 1795000000 })).toBe(true);
+  });
+
+  it("counts the cancel_at_period_end flag", () => {
+    expect(isCancellationScheduled({ cancel_at_period_end: true, cancel_at: null })).toBe(true);
+  });
+
+  it("is false when neither is set", () => {
+    expect(isCancellationScheduled({ cancel_at_period_end: false, cancel_at: null })).toBe(false);
   });
 });

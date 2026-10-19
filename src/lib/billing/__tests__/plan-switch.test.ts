@@ -11,7 +11,7 @@ vi.mock("@/lib/billing/price-catalog", () => ({
 vi.mock("@/db", () => ({ db: { select: vi.fn() } }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 
-import { readPlanSwitchState } from "../plan-switch";
+import { readPlanSwitchPreview, readPlanSwitchState } from "../plan-switch";
 import { getStripe } from "@/lib/billing/stripe-client";
 import { db } from "@/db";
 
@@ -90,6 +90,23 @@ describe("readPlanSwitchState", () => {
     expect(state.kind).toBe("none");
   });
 
+  it("reports a booked cancellation instead of offering a switch the commit would refuse", async () => {
+    stripeWith({
+      status: "active",
+      cancel_at_period_end: false,
+      cancel_at: 1820536000,
+      items: { data: [SEAT] },
+      schedule: null,
+      trial_end: null,
+    });
+    const state = await readPlanSwitchState("org_1");
+    expect(state).toEqual({
+      kind: "canceling",
+      currentPlan: "annual",
+      endsAt: new Date(1820536000 * 1000),
+    });
+  });
+
   it("is unavailable — never a guess — when Stripe cannot be reached", async () => {
     vi.mocked(getStripe).mockReturnValue({
       subscriptions: { retrieve: vi.fn().mockRejectedValue(new Error("stripe down")) },
@@ -102,5 +119,29 @@ describe("readPlanSwitchState", () => {
     mockRow(undefined);
     const state = await readPlanSwitchState("org_1");
     expect(state.kind).toBe("unavailable");
+  });
+});
+
+describe("readPlanSwitchPreview", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRow({ stripeSubscriptionId: "sub_1", stripeCustomerId: "cus_1", status: "active" });
+  });
+
+  // The confirm screen must refuse exactly what `commitPlanSwitch` refuses, or
+  // it shows a full confirm page whose button can only fail.
+  it("refuses a subscription whose cancellation is booked", async () => {
+    stripeWith({
+      status: "trialing",
+      cancel_at_period_end: false,
+      cancel_at: 1820536000,
+      items: { data: [SEAT] },
+      schedule: null,
+      trial_end: 1820536000,
+    });
+    expect(await readPlanSwitchPreview("org_1", "monthly")).toEqual({
+      ok: false,
+      reason: "not_switchable",
+    });
   });
 });
