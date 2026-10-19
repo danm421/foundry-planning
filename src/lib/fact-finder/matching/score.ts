@@ -20,7 +20,7 @@ import {
   SECTION_ACCOUNT_CATEGORY,
   valueFor,
 } from "../enums";
-import { grantTypesAgree, last4Of, normText } from "../identity";
+import { custodiansAgree, grantTypesAgree, last4Of, normText } from "../identity";
 import type { ExistingRecords } from "../records/types";
 import { FACT_FINDER_SECTIONS, fixedLabelsOf, sectionsLinkingTo, type FFSection, type RecordKind } from "../schema";
 import { fixedLabelOfRow, rowHasValues, rowValues, sameJson } from "../state";
@@ -29,6 +29,13 @@ import type { FactFinderState, FFCellValue, FFLink, FFLinkCandidate, FFRow } fro
 export const AUTO_LINK_SCORE = 0.9;
 export const LINK_FLOOR = 0.45;
 const MAX_CANDIDATES = 5;
+/**
+ * The most a candidate the row contradicts can score — another account or
+ * policy number, another custodian or carrier, another date of birth. Still
+ * offered (an account can move firms), but only ever as a suggestion: the old
+ * matchers' fuzzy scores rank candidates, they never weigh a contradiction.
+ */
+const CONTRADICTED_SCORE = 0.6;
 
 export interface ScoredCandidate {
   recordId: string;
@@ -41,6 +48,12 @@ const str = (v: FFCellValue | undefined): string | undefined =>
   typeof v === "string" && v.trim() ? v.trim() : typeof v === "number" ? String(v) : undefined;
 const num = (v: FFCellValue | undefined): number | undefined => (typeof v === "number" ? v : undefined);
 const opt = <T extends string>(v: string | null): T | undefined => (v === null ? undefined : (v as T));
+const contradicted = (c: ScoredCandidate): ScoredCandidate => ({ ...c, score: Math.min(c.score, CONTRADICTED_SCORE), exact: false });
+/** Both sides carry a number (last 4s) and they differ. */
+const numbersDiffer = (a: string | undefined, b: string | null | undefined) => {
+  const other = last4Of(b);
+  return !!a && !!other && a !== other;
+};
 
 function fromAnnotation(match: MatchAnnotation, labelOf: (id: string) => string): ScoredCandidate[] {
   if (match.kind === "exact") return [{ recordId: match.existingId, label: labelOf(match.existingId), score: 1, exact: true }];
@@ -88,17 +101,21 @@ function scoreAccount(section: FFSection, v: Record<string, FFCellValue>, record
   const last4 = last4Of(v.last4) || undefined;
   if (!category || (!name && !last4)) return [];
   const pool = records.candidates.accounts.filter((a) => a.category !== "life_insurance" && a.category !== "stock_options");
+  const custodian = str(v[section.id === "annuity" ? "carrier" : "custodian"]);
   const incoming: ExtractedAccount = {
     name: name ?? "",
     category,
     value: num(v[section.id === "annuity" ? "cashValue" : "currentValue"]),
     accountNumberLast4: last4,
-    custodian: str(v[section.id === "annuity" ? "carrier" : "custodian"]),
+    custodian,
   };
   return fromAnnotation(
     matchAccount(incoming, pool, ownerIdsFor(str(v.owner), records.candidates.family)),
     (id) => accountLabel(pool, id),
-  );
+  ).map((c) => {
+    const a = pool.find((x) => x.id === c.recordId);
+    return numbersDiffer(last4, a?.accountNumberLast4) || !custodiansAgree(custodian, a?.custodian) ? contradicted(c) : c;
+  });
 }
 
 function scoreLifePolicy(v: Record<string, FFCellValue>, records: ExistingRecords): ScoredCandidate[] {
@@ -119,7 +136,10 @@ function scoreLifePolicy(v: Record<string, FFCellValue>, records: ExistingRecord
         pool,
       ),
       labelOf,
-    );
+    ).map((c) => {
+      const p = pool.find((x) => x.id === c.recordId);
+      return numbersDiffer(last4, p?.policyNumberLast4) || !custodiansAgree(carrier, p?.carrier) ? contradicted(c) : c;
+    });
   }
   if (!carrier || !last4) return [];
   return pool
@@ -142,13 +162,17 @@ function scoreByKind(kind: RecordKind, section: FFSection, v: Record<string, FFC
       if (!firstName) return [];
       const household = new Set(c.family.filter((f) => f.role === "client" || f.role === "spouse").map((f) => f.id));
       const pool = c.familyMembers.filter((f) => !household.has(f.id));
+      const dateOfBirth = str(v.dateOfBirth);
       return fromAnnotation(
-        matchFamilyMember({ firstName, lastName: str(v.lastName), dateOfBirth: str(v.dateOfBirth) }, pool),
+        matchFamilyMember({ firstName, lastName: str(v.lastName), dateOfBirth }, pool),
         (id) => {
           const f = pool.find((x) => x.id === id);
           return f ? [f.firstName, f.lastName].filter(Boolean).join(" ") : id;
         },
-      );
+      ).map((cand) => {
+        const other = pool.find((x) => x.id === cand.recordId)?.dateOfBirth;
+        return dateOfBirth && other && other !== dateOfBirth ? contradicted(cand) : cand;
+      });
     }
     case "lifePolicy":
       return scoreLifePolicy(v, records);

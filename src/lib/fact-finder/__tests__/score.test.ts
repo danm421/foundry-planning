@@ -88,6 +88,71 @@ describe("applyLinkScores — accounts", () => {
   });
 });
 
+describe("applyLinkScores — a contradiction never links on its own", () => {
+  it("an account whose last 4 and custodian both differ is offered, but needs a click", () => {
+    const r = records();
+    r.candidates.accounts = [
+      { id: "a-fid", name: "Roth IRA", category: "retirement", accountNumberLast4: "1234", custodian: "Fidelity", value: 100000, ownerIds: ["fm-c"] },
+    ];
+    const s = applyLinkScores(
+      stateWith({ retirement: [row("r", { accountName: "Roth IRA", custodian: "Charles Schwab", last4: "9999", owner: "Client", currentValue: 80000 })] }),
+      r,
+    );
+    const link = linkOf(s, "retirement");
+    expect(link).toMatchObject({ kind: "existing", recordId: "a-fid", confirmed: false });
+    expect(link?.kind === "existing" && link.score).toBeLessThan(0.9);
+    expect(s.sections.retirement[0].linkCandidates?.map((c) => c.recordId)).toEqual(["a-fid"]);
+  });
+
+  it("an account with the same last 4 at another custodian needs a click", () => {
+    const r = records();
+    r.candidates.accounts = [
+      { id: "a-fid", name: "Roth IRA", category: "retirement", accountNumberLast4: "1234", custodian: "Fidelity", value: 100000, ownerIds: ["fm-c"] },
+    ];
+    const s = applyLinkScores(
+      stateWith({ retirement: [row("r", { accountName: "Roth IRA", custodian: "Vanguard", last4: "1234", owner: "Client", currentValue: 100000 })] }),
+      r,
+    );
+    expect(linkOf(s, "retirement")).toMatchObject({ recordId: "a-fid", confirmed: false });
+  });
+
+  it("a life policy from another carrier with another policy number needs a click", () => {
+    const r = records();
+    r.candidates.lifePolicies = [
+      { id: "p-banner", carrier: "Banner Life", policyNumberLast4: "1111", insuredPerson: "client", policyType: "term", faceValue: 1000000 },
+    ];
+    const s = applyLinkScores(
+      stateWith({ life: [row("l", { carrier: "Prudential", policyNumber: "5678", policyType: "Term", insured: "Client", deathBenefit: 1000000 })] }),
+      r,
+    );
+    const link = linkOf(s, "life");
+    expect(link).toMatchObject({ kind: "existing", recordId: "p-banner", confirmed: false });
+    expect(link?.kind === "existing" && link.score).toBeLessThan(0.9);
+  });
+
+  it("a family member with the same name but another date of birth needs a click", () => {
+    const s = applyLinkScores(
+      stateWith({ family: [row("e", { firstName: "Emma", lastName: "Hendricks", dateOfBirth: "2006-01-02" })] }),
+      records(),
+    );
+    const link = linkOf(s, "family");
+    expect(link).toMatchObject({ kind: "existing", recordId: "fm-e", confirmed: false });
+    expect(link?.kind === "existing" && link.score).toBeLessThan(0.9);
+  });
+
+  it("still links when nothing contradicts: one side has no last 4, and the custodians agree", () => {
+    const r = records();
+    r.candidates.accounts = [
+      { id: "a-sch", name: "Roth IRA", category: "retirement", accountNumberLast4: null, custodian: "Schwab", value: 100000, ownerIds: ["fm-c"] },
+    ];
+    const s = applyLinkScores(
+      stateWith({ retirement: [row("r", { accountName: "Roth IRA", custodian: "Charles Schwab", last4: "9999", owner: "Client", currentValue: 100000 })] }),
+      r,
+    );
+    expect(linkOf(s, "retirement")).toMatchObject({ recordId: "a-sch", confirmed: true });
+  });
+});
+
 describe("applyLinkScores — what it leaves alone", () => {
   it("keeps advisor decisions and rows with no values, and rescores automatic New", () => {
     const start = stateWith({

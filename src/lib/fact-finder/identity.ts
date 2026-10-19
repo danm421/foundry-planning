@@ -35,7 +35,7 @@ const agrees = (a: FFCellValue | undefined, b: FFCellValue | undefined) => {
  * "Fidelity" / "Fidelity Investments" (prefix) and "Schwab" / "Charles Schwab"
  * (a shared word of 4+ letters). Missing on either side is no contradiction.
  */
-function custodiansAgree(a: FFCellValue | undefined, b: FFCellValue | undefined): boolean {
+export function custodiansAgree(a: FFCellValue | undefined, b: FFCellValue | undefined): boolean {
   const ca = normalizeCustodian(a === null || a === undefined ? null : String(a));
   const cb = normalizeCustodian(b === null || b === undefined ? null : String(b));
   if (!ca || !cb) return true;
