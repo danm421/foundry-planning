@@ -68,6 +68,10 @@ const req = (path: string, body: unknown = {}) =>
   }) as never;
 const params = { params: Promise.resolve({ id: "c1", importId: "i1" }) };
 
+/** The discard's own read of the import it is about to discard. */
+const discardReads = (imp: unknown) =>
+  vi.mocked(db.select).mockReturnValueOnce({ from: () => ({ where: async () => [imp] }) } as never);
+
 /** A Review Wizard import finished with "Commit": committed, and no fact finder in its payload. */
 const FINISHED_WIZARD_IMPORT = { ...SAVED_IMPORT, payloadJson: { fileResults: { f1: { warnings: [] } }, payload: { accounts: [] } } };
 
@@ -98,6 +102,7 @@ describe("a fact finder saved to the plan is refused before any work", () => {
   });
 
   it("discard — with the refusal every committed import gets", async () => {
+    discardReads(SAVED_IMPORT);
     const res = await discard(req("discard"), params);
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "cannot_discard_committed_import" });
@@ -166,6 +171,7 @@ describe("discard re-checks the import at its write", () => {
 
   beforeEach(() => {
     vi.mocked(requireImportAccess).mockResolvedValue(OPEN_FACT_FINDER as never);
+    discardReads(OPEN_FACT_FINDER);
   });
 
   it("a save that lands while the discard waits on the row: 409, the import and its files left as the save left them", async () => {

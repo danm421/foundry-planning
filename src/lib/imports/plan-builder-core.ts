@@ -11,13 +11,12 @@
 // try/catch and stringifies for the model.
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, crmHouseholds, scenarios, clientImports } from "@/db/schema";
-import { recordAudit } from "@/lib/audit";
+import { clients, crmHouseholds, scenarios } from "@/db/schema";
 import { verifyClientAccessAs, type Principal } from "@/lib/clients/authz";
 import { findVisibleCrmHousehold, verifyCrmHouseholdAccessFor } from "@/lib/crm/authz";
 import { createCrmHousehold, recordHouseholdOpen } from "@/lib/crm/households";
 import { createClientForHousehold, type FilingStatus } from "@/lib/clients/create-client";
-import { factFinderImportSeed } from "@/lib/fact-finder/state";
+import { createFactFinderImport } from "@/lib/fact-finder/import-lifecycle";
 import { isUSPSStateCode } from "@/lib/usps-states";
 
 export interface EnsurePlanImportArgs {
@@ -268,30 +267,14 @@ export async function ensurePlanImport(
     }
   }
 
-  // Shared insert — a fact finder import. `origin` is deliberately omitted:
-  // it defaults to "extraction" in the schema.
-  const [imp] = await db
-    .insert(clientImports)
-    .values({
-      clientId,
-      orgId: args.firmId,
-      scenarioId,
-      mode,
-      status: "draft",
-      createdByUserId: args.actorUserId,
-      notes: args.label,
-      ...factFinderImportSeed(),
-    })
-    .returning();
-
-  await recordAudit({
-    action: "import.created",
-    resourceType: "client_import",
-    resourceId: imp.id,
+  const imp = await createFactFinderImport({
     clientId,
     firmId: args.firmId,
-    actorId: args.actorUserId,
-    metadata: { mode, scenarioId, planBuilder: true },
+    userId: args.actorUserId,
+    scenarioId,
+    mode,
+    notes: args.label,
+    audit: { planBuilder: true },
   });
 
   return { clientId, scenarioId, importId: imp.id };

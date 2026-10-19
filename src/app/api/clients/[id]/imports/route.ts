@@ -8,7 +8,7 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { listClientImports } from "@/lib/imports/list";
 import { verifyClientAccess } from "@/lib/clients/authz";
-import { factFinderImportSeed } from "@/lib/fact-finder/state";
+import { createFactFinderImport } from "@/lib/fact-finder/import-lifecycle";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +42,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 export async function POST(request: NextRequest, { params }: Params) {
   try {
     const firmId = await requireOrgId();
-    const { userId } = await auth();
+    const { userId, actor } = await auth();
     if (!userId) {
       // requireOrgId already verified userId, but TS doesn't know that.
       throw new UnauthorizedError();
@@ -155,20 +155,31 @@ export async function POST(request: NextRequest, { params }: Params) {
       }
     }
 
+    const created = {
+      clientId,
+      scenarioId: typeof scenarioId === "string" ? scenarioId : null,
+      mode: importMode,
+      notes: typeof notes === "string" ? notes : null,
+    };
+
+    if (isFactFinderSurface) {
+      // Attributed as recordAudit attributes a session it reads itself: while an ops operator impersonates
+      // the advisor, the session's user is the advisor and the operator is `actor.sub`.
+      const operator = typeof actor?.sub === "string" ? actor.sub : null;
+      const imp = await createFactFinderImport({
+        ...created,
+        firmId,
+        userId,
+        ...(operator && { actorId: operator, audit: { actingAsAdvisor: userId } }),
+      });
+      return NextResponse.json({ import: imp }, { status: 201 });
+    }
+
+    // A wizard import keeps the column defaults: `payloadJson` `'{}'` and
+    // its own holdings checkbox.
     const [imp] = await db
       .insert(clientImports)
-      .values({
-        clientId,
-        orgId: firmId,
-        scenarioId: typeof scenarioId === "string" ? scenarioId : null,
-        mode: importMode,
-        status: "draft",
-        createdByUserId: userId,
-        notes: typeof notes === "string" ? notes : null,
-        // A wizard import keeps the column defaults: `payloadJson` `'{}'` and
-        // its own holdings checkbox.
-        ...(isFactFinderSurface ? factFinderImportSeed() : {}),
-      })
+      .values({ ...created, orgId: firmId, status: "draft", createdByUserId: userId })
       .returning();
 
     await recordAudit({
@@ -177,10 +188,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       resourceId: imp.id,
       clientId,
       firmId,
-      metadata: {
-        mode: importMode,
-        scenarioId: typeof scenarioId === "string" ? scenarioId : null,
-      },
+      metadata: { mode: importMode, scenarioId: created.scenarioId },
     });
 
     return NextResponse.json({ import: imp }, { status: 201 });
