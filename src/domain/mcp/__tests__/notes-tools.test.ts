@@ -36,6 +36,7 @@ import type { McpPrincipal } from "@/lib/mcp/principal";
 
 const principal: McpPrincipal = {
   userId: "user_1", orgId: "org_1", orgRole: "org:member", scopes: [], tokenSubject: "sub_1",
+  canWrite: true, entitlements: ["ai_import"],
 };
 const byName = (n: string) => notesTools.find((t) => t.name === n)!;
 

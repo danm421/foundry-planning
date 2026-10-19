@@ -39,9 +39,11 @@ import {
   verifyToken,
 } from "../route";
 import {
+  BILLING_WRITE_BLOCKED_MESSAGE,
   McpInputError,
   McpRateLimitedError,
   McpUnavailableError,
+  McpWriteBlockedError,
   McpWriteDisabledError,
   WRITE_DISABLED_MESSAGE,
   type McpTool,
@@ -56,6 +58,8 @@ const principal: McpPrincipal = {
   orgRole: "org:member",
   scopes: [],
   tokenSubject: "user_1",
+  canWrite: true,
+  entitlements: ["ai_import"],
 };
 
 const fakeTool = { name: "test_tool" } as McpTool;
@@ -324,8 +328,9 @@ describe("toolFailureResult — part A errors", () => {
     });
   });
 
-  it("passes the write-disabled, input and unavailable messages through", () => {
+  it("passes the write-disabled, billing, input and unavailable messages through", () => {
     expect(toolFailureResult(new McpWriteDisabledError()).content[0].text).toBe(WRITE_DISABLED_MESSAGE);
+    expect(toolFailureResult(new McpWriteBlockedError()).content[0].text).toBe(BILLING_WRITE_BLOCKED_MESSAGE);
     expect(toolFailureResult(new McpInputError("Unknown page(s): x.")).content[0].text).toBe("Unknown page(s): x.");
     expect(toolFailureResult(new McpUnavailableError()).content[0].text).toBe(
       "Foundry connector is temporarily unavailable. Try again shortly.",
@@ -336,6 +341,7 @@ describe("toolFailureResult — part A errors", () => {
 describe("recordDenial — part A reasons", () => {
   it.each([
     [new McpWriteDisabledError(), "write_disabled"],
+    [new McpWriteBlockedError(), "write_blocked"],
     [new WhatIfValidationError("Change 1: x"), "invalid_change"],
     [new McpInputError("Unknown page(s): x."), "invalid_input"],
     [new McpUnavailableError(), "unavailable"],

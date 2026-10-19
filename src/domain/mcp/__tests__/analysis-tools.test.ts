@@ -47,6 +47,8 @@ const principal: McpPrincipal = {
   orgRole: "org:member",
   scopes: [],
   tokenSubject: "sub_1",
+  canWrite: true,
+  entitlements: ["ai_import"],
 };
 const byName = (n: string) => analysisTools.find((t) => t.name === n)!;
 const DENIED_MESSAGE = "Household not found or access denied";

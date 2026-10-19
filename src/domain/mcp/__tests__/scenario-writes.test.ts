@@ -25,14 +25,22 @@ vi.mock("@/lib/rate-limit", () => ({
 }));
 
 import { scenarioWriteTools, SAVE_FAILED_MESSAGE } from "../tools/scenario-writes";
-import { WRITE_DISABLED_MESSAGE } from "../define-tool";
+import { BILLING_WRITE_BLOCKED_MESSAGE, WRITE_DISABLED_MESSAGE } from "../define-tool";
 import { WhatIfValidationError } from "@/lib/whatif/errors";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 import type { ResolutionContext } from "@/lib/projection/resolve-entity";
 import type { SolverMutation } from "@/lib/solver/types";
 import { IDS, whatIfTree } from "@/lib/whatif/__tests__/fixtures";
 
-const principal: McpPrincipal = { userId: "u1", orgId: "org_1", orgRole: "org:member", scopes: [], tokenSubject: "u1" };
+const principal: McpPrincipal = {
+  userId: "u1",
+  orgId: "org_1",
+  orgRole: "org:member",
+  scopes: [],
+  tokenSubject: "u1",
+  canWrite: true,
+  entitlements: ["ai_import"],
+};
 const tool = scenarioWriteTools[0];
 const SAVED = "33333333-3333-4333-8333-333333333333";
 const START = "44444444-4444-4444-8444-444444444444";
@@ -165,6 +173,14 @@ describe("save_what_if_as_scenario", () => {
       WRITE_DISABLED_MESSAGE,
     );
     expect(h.saveSolverScenario).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the firm's billing blocks writes", async () => {
+    await expect(
+      tool.run({ clientId: "c1", name: "x", changes: [retire62] }, { ...principal, canWrite: false }),
+    ).rejects.toThrow(BILLING_WRITE_BLOCKED_MESSAGE);
+    expect(h.saveSolverScenario).not.toHaveBeenCalled();
+    expect(h.recordAudit).not.toHaveBeenCalled();
   });
 
   it("says so plainly when the save can't be expressed, and audits nothing", async () => {

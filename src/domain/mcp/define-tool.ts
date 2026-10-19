@@ -41,7 +41,8 @@ export type McpReadAnnotations = {
 
 export type McpWriteAnnotations = {
   readOnlyHint: false;
-  destructiveHint: false;
+  /** True only for a tool that removes data, so Claude always asks first. */
+  destructiveHint: boolean;
   idempotentHint: false;
   openWorldHint: false;
 };
@@ -51,12 +52,22 @@ export type McpToolAnnotations = McpReadAnnotations | McpWriteAnnotations;
 export const WRITE_DISABLED_MESSAGE =
   "Your firm hasn't turned on changes from Claude. A firm admin can turn it on in Settings → Firm.";
 export const VIEW_ONLY_MESSAGE = "You have view-only access to this household.";
+export const BILLING_WRITE_BLOCKED_MESSAGE =
+  "Your firm's Foundry subscription can't make changes right now. Restore billing in Foundry under Settings → Billing, then try again.";
 
 /** The firm switch is off. A McpForbiddenError, so the route's allowlist already passes it. */
 export class McpWriteDisabledError extends McpForbiddenError {
   constructor() {
     super(WRITE_DISABLED_MESSAGE);
     this.name = "McpWriteDisabledError";
+  }
+}
+
+/** The firm's billing allows reads but not changes (`principal.canWrite`). A McpForbiddenError too. */
+export class McpWriteBlockedError extends McpForbiddenError {
+  constructor() {
+    super(BILLING_WRITE_BLOCKED_MESSAGE);
+    this.name = "McpWriteBlockedError";
   }
 }
 
@@ -153,42 +164,85 @@ type DefineWriteToolSpec<S extends z.ZodObject<z.ZodRawShape>, R extends object>
 /**
  * A tool that changes data. Same wrapper as `defineTool` (one shared runner —
  * rate limit, schema, sanitized output, deep link, audit) plus the write
- * gates: the firm switch (off by default) runs right after the schema parse,
- * before any client lookup, so a firm that never turned writes on cannot use
- * a write tool to probe household ids; edit permission runs after the
- * client-readable check.
+ * gates: the firm switch (off by default) and then billing run right after
+ * the schema parse, before any client lookup, so a firm that never turned
+ * writes on — or whose billing allows reads only — cannot use a write tool to
+ * probe household ids; edit permission runs after the client-readable check.
  *
- * Annotated readOnlyHint:false so Claude asks the advisor before each call.
- * Every part A write is to one household, so the schema must declare `clientId`.
+ * Annotated readOnlyHint:false so Claude asks the advisor before each call;
+ * `destructive` (a removal) adds destructiveHint:true. Every write here is to
+ * one household, so the schema must declare `clientId`.
  */
 export function defineWriteTool<S extends z.ZodObject<z.ZodRawShape>, R extends object>(
-  spec: DefineWriteToolSpec<S, R>,
+  spec: DefineWriteToolSpec<S, R> & { destructive?: true },
 ): McpTool {
   if (!("clientId" in spec.inputSchema.shape)) {
     throw new Error(`write tool ${spec.name} must declare clientId in its input schema`);
   }
   return buildTool(spec, {
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    annotations: writeAnnotations(spec.destructive === true),
     requireWrite: true,
     auditAction: "mcp.tool_write",
-    // The tool's own ids and counts first, so they can never overwrite tool or via.
-    auditMetadata: (args, result) => ({
-      ...(spec.auditMetadata?.(args, result) ?? {}),
-      tool: spec.name,
-      via: "claude",
-    }),
+    auditMetadata: writeAuditMetadata(spec),
+  });
+}
+
+/**
+ * A write that creates a household, so there is no client to name yet. The
+ * same runner and gates as `defineWriteTool` — firm switch, billing, a
+ * declared `householdId` checked when given — but no `clientId` is required
+ * and there is no edit-permission step. The audit row names the client the
+ * write returns.
+ */
+export function defineHouseholdWriteTool<
+  S extends z.ZodObject<z.ZodRawShape>,
+  // `object &` so a result with no clientId at all (a write that created
+  // nothing) still type-checks; alone, `{ clientId?: string }` is a "weak"
+  // type that TypeScript refuses for a result sharing none of its properties.
+  R extends object & { clientId?: string },
+>(
+  // No `page`: the deep link needs a client id from the arguments, and these
+  // tools have none.
+  spec: DefineWriteToolSpec<S, R> & { page?: never },
+): McpTool {
+  return buildTool(spec, {
+    annotations: writeAnnotations(false),
+    requireWrite: true,
+    householdIdMayBeAbsent: true,
+    auditAction: "mcp.tool_write",
+    auditMetadata: writeAuditMetadata(spec),
+    auditClientId: (result) => result.clientId ?? null,
+  });
+}
+
+function writeAnnotations(destructive: boolean): McpWriteAnnotations {
+  return { readOnlyHint: false, destructiveHint: destructive, idempotentHint: false, openWorldHint: false };
+}
+
+function writeAuditMetadata<S extends z.ZodObject<z.ZodRawShape>, R extends object>(
+  spec: DefineWriteToolSpec<S, R>,
+) {
+  // The tool's own ids and counts first, so they can never overwrite tool or via.
+  return (args: z.infer<S>, result: R) => ({
+    ...(spec.auditMetadata?.(args, result) ?? {}),
+    tool: spec.name,
+    via: "claude",
   });
 }
 
 type ToolVariant<S extends z.ZodObject<z.ZodRawShape>, R extends object> = {
   annotations: McpToolAnnotations;
-  /** Write tools: firm switch before any lookup, edit permission after the client check. */
+  /** Write tools: firm switch and billing before any lookup, edit permission after the client check. */
   requireWrite: boolean;
+  /** defineHouseholdWriteTool only: an omitted `householdId` is a new household, with nothing to check. */
+  householdIdMayBeAbsent?: boolean;
   auditAction: "mcp.tool_call" | "mcp.tool_write";
   auditMetadata: (args: z.infer<S>, result: R, householdId: string | null) => Record<string, unknown>;
+  /** The audit row's `clientId` when it isn't the checked argument. */
+  auditClientId?: (result: R) => string | null;
 };
 
-/** The one runner behind defineTool and defineWriteTool. */
+/** The one runner behind defineTool, defineWriteTool and defineHouseholdWriteTool. */
 function buildTool<S extends z.ZodObject<z.ZodRawShape>, R extends object>(
   spec: DefineToolSpec<S, R>,
   variant: ToolVariant<S, R>,
@@ -207,6 +261,9 @@ function buildTool<S extends z.ZodObject<z.ZodRawShape>, R extends object>(
 
       if (variant.requireWrite && !(await firmClaudeWritesEnabled(principal.orgId))) {
         throw new McpWriteDisabledError();
+      }
+      if (variant.requireWrite && !principal.canWrite) {
+        throw new McpWriteBlockedError();
       }
 
       // Driven by the SCHEMA, not the parsed value's runtime type: a tool
@@ -230,19 +287,28 @@ function buildTool<S extends z.ZodObject<z.ZodRawShape>, R extends object>(
       // Same schema-driven rule as clientId above: a declared `householdId` is
       // ALWAYS checked. A tool may declare either, or neither; no tool today
       // declares both, and if one ever does, both checks run.
+      //
+      // The one exception is a household write (defineHouseholdWriteTool),
+      // where an OMITTED `householdId` means "create a new household": absence
+      // names no existing record, so there is nothing to check. A present id
+      // is still checked here, and `ensurePlanImport`'s prospect mode
+      // re-verifies it with `verifyCrmHouseholdAccessFor`. Only `undefined`
+      // counts as omitted; any other non-string still refuses.
       const declaresHouseholdId = "householdId" in spec.inputSchema.shape;
       let householdId: string | null = null;
       if (declaresHouseholdId) {
         const rawHouseholdId = (args as Record<string, unknown>).householdId;
-        if (typeof rawHouseholdId !== "string") {
+        if (typeof rawHouseholdId === "string") {
+          householdId = rawHouseholdId;
+          await assertHouseholdReadableForPrincipal(principal, householdId);
+        } else if (!(variant.householdIdMayBeAbsent && rawHouseholdId === undefined)) {
           throw new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE);
         }
-        householdId = rawHouseholdId;
-        await assertHouseholdReadableForPrincipal(principal, householdId);
       }
 
-      // Last gate, after every readability check: a write needs edit permission.
-      if (variant.requireWrite && clientAccess?.permission !== "edit") {
+      // Last gate, after every readability check: a write to a client needs
+      // edit permission on it. A household write names no client to check.
+      if (variant.requireWrite && declaresClientId && clientAccess?.permission !== "edit") {
         throw new McpForbiddenError(VIEW_ONLY_MESSAGE);
       }
 
@@ -259,7 +325,7 @@ function buildTool<S extends z.ZodObject<z.ZodRawShape>, R extends object>(
         action: variant.auditAction,
         resourceType: "mcp_tool",
         resourceId: spec.name,
-        clientId,
+        clientId: variant.auditClientId ? variant.auditClientId(result) : clientId,
         firmId: principal.orgId,
         actorId: principal.userId,
         actorKind: "advisor",

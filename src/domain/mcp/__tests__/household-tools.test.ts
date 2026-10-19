@@ -45,6 +45,7 @@ import { foundryUrl } from "@/lib/mcp/foundry-url";
 // pass every case here undetected if the two collided.
 const principal: McpPrincipal = {
   userId: "user_1", orgId: "org_1", orgRole: "org:member", scopes: [], tokenSubject: "sub_1",
+  canWrite: true, entitlements: ["ai_import"],
 };
 const byName = (n: string) => householdTools.find((t) => t.name === n)!;
 

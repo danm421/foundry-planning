@@ -36,7 +36,15 @@ import { WhatIfValidationError } from "@/lib/whatif/errors";
 import type { JobKv, WhatIfJob } from "@/lib/whatif/job-store";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 
-const principal: McpPrincipal = { userId: "u1", orgId: "org_1", orgRole: "org:member", scopes: [], tokenSubject: "u1" };
+const principal: McpPrincipal = {
+  userId: "u1",
+  orgId: "org_1",
+  orgRole: "org:member",
+  scopes: [],
+  tokenSubject: "u1",
+  canWrite: true,
+  entitlements: ["ai_import"],
+};
 
 function memoryKv(failSetsAfter = Infinity) {
   const store = new Map<string, WhatIfJob>();

@@ -11,6 +11,7 @@ import {
   McpInputError,
   McpRateLimitedError,
   McpUnavailableError,
+  McpWriteBlockedError,
   McpWriteDisabledError,
   type McpTool,
 } from "@/domain/mcp/define-tool";
@@ -116,6 +117,7 @@ export function toolFailureResult(err: unknown): ToolCallOutcome {
 function denialReason(err: unknown): string {
   if (err instanceof McpRateLimitedError) return `rate_limited:${err.reason}`;
   if (err instanceof McpWriteDisabledError) return "write_disabled";
+  if (err instanceof McpWriteBlockedError) return "write_blocked";
   if (err instanceof McpForbiddenError) return "forbidden";
   if (err instanceof WhatIfValidationError) return "invalid_change";
   if (err instanceof McpInputError) return "invalid_input";

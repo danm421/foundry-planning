@@ -50,7 +50,15 @@ import { scenarioNotFoundMessage } from "../whatif-jobs";
 import { WhatIfValidationError } from "@/lib/whatif/errors";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 
-const principal: McpPrincipal = { userId: "u1", orgId: "org_1", orgRole: "org:member", scopes: [], tokenSubject: "u1" };
+const principal: McpPrincipal = {
+  userId: "u1",
+  orgId: "org_1",
+  orgRole: "org:member",
+  scopes: [],
+  tokenSubject: "u1",
+  canWrite: true,
+  entitlements: ["ai_import"],
+};
 const byName = (n: string) => presentationTools.find((t) => t.name === n)!;
 const OWNED = "11111111-1111-4111-8111-111111111111";
 const FOREIGN = "99999999-9999-4999-8999-999999999999";
