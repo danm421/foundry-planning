@@ -228,6 +228,7 @@ function scoreByKind(kind: RecordKind, section: FFSection, v: Record<string, FFC
       const year = num(v.year);
       const from = valueFor(GIFT_FROM_MAP, str(v.from));
       const amount = num(v.amount);
+      const recipient = normText(v.recipient);
       return records.gifts.flatMap((g): ScoredCandidate[] => {
         const checks: boolean[] = [];
         if (year !== undefined) checks.push(g.year === year);
@@ -235,9 +236,11 @@ function scoreByKind(kind: RecordKind, section: FFSection, v: Record<string, FFC
         if (amount !== undefined && g.amount !== null) {
           checks.push(Math.abs(g.amount - amount) <= Math.max(1, Math.abs(g.amount) * 0.01));
         }
+        if (recipient && g.recipient) checks.push([g.recipient.name, g.recipient.firstName].some((n) => normText(n) === recipient));
         if (checks.length < 2) return [];
         const agreed = checks.filter(Boolean).length;
-        const label = g.amount !== null ? `${g.year} gift of $${g.amount.toLocaleString("en-US")}` : `${g.year} gift`;
+        const gift = g.amount !== null ? `${g.year} gift of $${g.amount.toLocaleString("en-US")}` : `${g.year} gift`;
+        const label = g.recipient ? `${gift} to ${g.recipient.name}` : gift;
         return [{ recordId: g.id, label, score: agreed / checks.length, exact: agreed === checks.length }];
       });
     }
@@ -280,17 +283,19 @@ function needsScoring(row: FFRow): boolean {
 /**
  * Links for one record kind's rows, in two passes so neither row order nor a
  * second run changes the result. First every automatic confirm settles: only a
- * row's best candidate can auto-confirm, exact before fuzzy, then by score,
- * ties in section and row order. Then each other row — including one whose best
- * candidate another row took — suggests its best unclaimed candidate ("needs a
- * click"), or says New.
+ * row's best candidate can auto-confirm, and only when it stands alone — a
+ * runner-up that is also exact, or scores the same, is the advisor's call —
+ * exact before fuzzy, then by score, ties in section and row order. Then each
+ * other row — including one whose best candidate another row took — suggests
+ * its best unclaimed candidate ("needs a click"), or says New.
  */
 function pickLinks(scoredRows: ScoredCandidate[][], claimed: Set<string>): FFLink[] {
   const confirmed: Array<FFLink | undefined> = [];
   const autos = scoredRows
     .flatMap((scored, i) => {
-      const best = scored[0];
-      return best && (best.exact || best.score >= AUTO_LINK_SCORE) ? [{ i, c: best }] : [];
+      const [best, runnerUp] = scored;
+      if (!best || !(best.exact || best.score >= AUTO_LINK_SCORE)) return [];
+      return runnerUp && (runnerUp.exact || runnerUp.score === best.score) ? [] : [{ i, c: best }];
     })
     .sort((a, b) => Number(b.c.exact) - Number(a.c.exact) || b.c.score - a.c.score);
   for (const { i, c } of autos) {

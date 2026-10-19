@@ -10,7 +10,14 @@ export interface ExistingRecords {
   externalBeneficiaries: Array<{ id: string; name: string }>;
   disabilityPolicies: Array<{ id: string; name: string; insured: string; carrier: string | null }>;
   ltcPolicies: Array<{ id: string; name: string; insured: string; carrier: string | null }>;
-  gifts: Array<{ id: string; year: number; grantor: string; amount: number | null }>;
+  gifts: Array<{
+    id: string;
+    year: number;
+    grantor: string;
+    amount: number | null;
+    /** Who it went to: a family member (with their first name, which a row often gives alone), a trust or a charity. */
+    recipient: { name: string; firstName?: string } | null;
+  }>;
   savingsRules: Array<{ id: string; accountId: string; accountName: string }>;
   stockOptionGrants: Array<{
     id: string;

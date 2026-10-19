@@ -53,13 +53,14 @@ describe.skipIf(!HAS_DB)("loadExistingRecords (live DB)", () => {
       .insert(familyMembers)
       .values({ clientId, firstName: "Emma", lastName: "Hendricks", relationship: "child", dateOfBirth: "2004-05-21" })
       .returning({ id: familyMembers.id });
-    await db.insert(externalBeneficiaries).values({ clientId, name: "Denver Rescue Mission" });
+    const [charity] = await db.insert(externalBeneficiaries).values({ clientId, name: "Denver Rescue Mission" }).returning({ id: externalBeneficiaries.id });
     await db.insert(disabilityPolicies).values({ clientId, name: "Acme LTD", insured: "client", carrier: "Unum" });
     await db.insert(notesReceivable).values({
       clientId, scenarioId, name: "Loan to Lucas", faceValue: "20000", basis: "20000",
       paymentType: "amortizing", startYear: 2024, termMonths: 60,
     });
     await db.insert(gifts).values({ clientId, year: 2022, grantor: "joint", amount: "34000", recipientFamilyMemberId: child.id });
+    await db.insert(gifts).values({ clientId, year: 2021, grantor: "client", amount: "5000", recipientExternalBeneficiaryId: charity.id });
   });
   afterAll(dropFirm);
 
@@ -77,7 +78,10 @@ describe.skipIf(!HAS_DB)("loadExistingRecords (live DB)", () => {
     expect(r.externalBeneficiaries.map((e) => e.name)).toEqual(["Denver Rescue Mission"]);
     expect(r.disabilityPolicies).toEqual([{ id: expect.any(String), name: "Acme LTD", insured: "client", carrier: "Unum" }]);
     expect(r.notesReceivable).toEqual([{ id: expect.any(String), name: "Loan to Lucas", faceValue: 20000 }]);
-    expect(r.gifts).toEqual([{ id: expect.any(String), year: 2022, grantor: "joint", amount: 34000 }]);
+    expect([...r.gifts].sort((a, b) => a.year - b.year)).toEqual([
+      { id: expect.any(String), year: 2021, grantor: "client", amount: 5000, recipient: { name: "Denver Rescue Mission" } },
+      { id: expect.any(String), year: 2022, grantor: "joint", amount: 34000, recipient: { name: "Emma Hendricks", firstName: "Emma" } },
+    ]);
     expect(r.ltcPolicies).toEqual([]);
     expect(r.stockOptionGrants).toEqual([]);
   });

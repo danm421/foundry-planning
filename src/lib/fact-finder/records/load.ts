@@ -4,7 +4,9 @@ import { db } from "@/db";
 import {
   accounts,
   disabilityPolicies,
+  entities,
   externalBeneficiaries,
+  familyMembers,
   gifts,
   ltcPolicies,
   notesReceivable,
@@ -25,6 +27,12 @@ export async function resolveBaseCaseScenarioId(clientId: string): Promise<strin
   return row?.id ?? null;
 }
 
+/** A gift's recipient: a family member by full and first name, else the trust's or charity's name. */
+function giftRecipient(first: string | null, last: string | null, otherName: string | null): ExistingRecords["gifts"][number]["recipient"] {
+  if (first) return { name: [first, last].filter(Boolean).join(" "), firstName: first };
+  return otherName ? { name: otherName } : null;
+}
+
 export async function loadExistingRecords(clientId: string, scenarioId: string): Promise<ExistingRecords> {
   const [candidates, livingSlots, external, disability, ltc, giftRows, savings, grants, notes] = await Promise.all([
     loadCandidates(clientId, scenarioId),
@@ -42,8 +50,20 @@ export async function loadExistingRecords(clientId: string, scenarioId: string):
       .from(ltcPolicies)
       .where(eq(ltcPolicies.clientId, clientId)),
     db
-      .select({ id: gifts.id, year: gifts.year, grantor: gifts.grantor, amount: gifts.amount })
+      .select({
+        id: gifts.id,
+        year: gifts.year,
+        grantor: gifts.grantor,
+        amount: gifts.amount,
+        memberFirst: familyMembers.firstName,
+        memberLast: familyMembers.lastName,
+        trustName: entities.name,
+        charityName: externalBeneficiaries.name,
+      })
       .from(gifts)
+      .leftJoin(familyMembers, eq(familyMembers.id, gifts.recipientFamilyMemberId))
+      .leftJoin(entities, eq(entities.id, gifts.recipientEntityId))
+      .leftJoin(externalBeneficiaries, eq(externalBeneficiaries.id, gifts.recipientExternalBeneficiaryId))
       .where(and(eq(gifts.clientId, clientId), isNull(gifts.parentGiftId))),
     db
       .select({ id: savingsRules.id, accountId: savingsRules.accountId, accountName: accounts.name })
@@ -72,7 +92,11 @@ export async function loadExistingRecords(clientId: string, scenarioId: string):
     externalBeneficiaries: external,
     disabilityPolicies: disability,
     ltcPolicies: ltc,
-    gifts: giftRows.map((g) => ({ ...g, amount: g.amount === null ? null : Number(g.amount) })),
+    gifts: giftRows.map(({ memberFirst, memberLast, trustName, charityName, ...g }) => ({
+      ...g,
+      amount: g.amount === null ? null : Number(g.amount),
+      recipient: giftRecipient(memberFirst, memberLast, trustName ?? charityName),
+    })),
     savingsRules: savings,
     stockOptionGrants: grants.map((g) => ({ ...g, grantDate: String(g.grantDate) })),
     notesReceivable: notes.map((n) => ({ ...n, faceValue: Number(n.faceValue) })),

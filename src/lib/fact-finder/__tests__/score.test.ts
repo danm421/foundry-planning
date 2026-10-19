@@ -153,6 +153,52 @@ describe("applyLinkScores — a contradiction never links on its own", () => {
   });
 });
 
+describe("applyLinkScores — a tie at the top never links on its own", () => {
+  it("two debts with the row's name: the row needs a click", () => {
+    const r = records();
+    r.candidates.liabilities = [
+      { id: "l-c", name: "Student Loan", balance: 20000 },
+      { id: "l-s", name: "Student Loan", balance: 35000 },
+    ];
+    const s = applyLinkScores(stateWith({ liab: [row("l", { loanName: "Student Loan", balance: 30000 })] }), r);
+    expect(linkOf(s, "liab")).toMatchObject({ kind: "existing", confirmed: false });
+  });
+
+  it("two same-year, same-amount gifts: the recipient tells them apart", () => {
+    const r = records();
+    r.gifts = [
+      { id: "g-emma", year: 2023, grantor: "client", amount: 18000, recipient: { name: "Emma Hendricks", firstName: "Emma" } },
+      { id: "g-lucas", year: 2023, grantor: "client", amount: 18000, recipient: { name: "Lucas Hendricks", firstName: "Lucas" } },
+    ];
+    const s = applyLinkScores(stateWith({ gifts: [row("g", { year: 2023, from: "Client", recipient: "Lucas", amount: 18000 })] }), r);
+    expect(linkOf(s, "gifts")).toMatchObject({ kind: "existing", recordId: "g-lucas", confirmed: true });
+    expect(s.sections.gifts[0].linkCandidates?.map((c) => c.label)).toEqual([
+      "2023 gift of $18,000 to Lucas Hendricks",
+      "2023 gift of $18,000 to Emma Hendricks",
+    ]);
+  });
+
+  it("two same-year, same-amount gifts and a row naming no recipient: the row needs a click", () => {
+    const r = records();
+    r.gifts = [
+      { id: "g-emma", year: 2023, grantor: "client", amount: 18000, recipient: { name: "Emma Hendricks", firstName: "Emma" } },
+      { id: "g-lucas", year: 2023, grantor: "client", amount: 18000, recipient: { name: "Lucas Hendricks", firstName: "Lucas" } },
+    ];
+    const s = applyLinkScores(stateWith({ gifts: [row("g", { year: 2023, from: "Client", amount: 18000 })] }), r);
+    expect(linkOf(s, "gifts")).toMatchObject({ kind: "existing", confirmed: false });
+  });
+
+  it("an unnamed disability row that two policies fit needs a click", () => {
+    const r = records();
+    r.disabilityPolicies = [
+      { id: "d-ltd", name: "Acme LTD", insured: "client", carrier: "Unum" },
+      { id: "d-std", name: "Acme STD", insured: "client", carrier: "Unum" },
+    ];
+    const s = applyLinkScores(stateWith({ disability: [row("d", { whoIsCovered: "Client", carrier: "Unum" })] }), r);
+    expect(linkOf(s, "disability")).toMatchObject({ kind: "existing", confirmed: false });
+  });
+});
+
 describe("applyLinkScores — what it leaves alone", () => {
   it("keeps advisor decisions and rows with no values, and rescores automatic New", () => {
     const start = stateWith({
