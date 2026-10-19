@@ -5,10 +5,11 @@
 // picker of the row's candidates. No link is a quiet "—": editing an
 // auto-linked row drops its link until the save's reply brings back the
 // re-scored one, a moment later.
-import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import MatchLinkPicker from "@/components/import/match-link-picker";
+import { useId, useRef, useState, type ReactNode } from "react";
+import MatchLinkPicker, { type MatchEntityKind } from "@/components/import/match-link-picker";
 import type { MatchAnnotation } from "@/lib/imports/types";
 import type { ClientOp } from "@/lib/fact-finder/ops";
+import { findSection } from "@/lib/fact-finder/schema";
 import { linkNeedsClick } from "@/lib/fact-finder/state";
 import type { FFRow } from "@/lib/fact-finder/types";
 import { CheckIcon, ChevronDownIcon, LinkIcon } from "./icons";
@@ -24,44 +25,23 @@ export interface LinkCellProps {
 
 type LinkChoice = Extract<ClientOp, { op: "setLink" }>["link"];
 
-// MatchLinkPicker hangs from its host's bottom-right corner, 24rem wide and at
-// most about 23rem tall; the host is moved so all of it stays in the window.
-const PICKER_WIDTH = 384;
-const PICKER_HEIGHT = 368;
-const EDGE = 8;
+// The record kinds the picker has words for ("Search existing accounts…"); any
+// other kind gets its generic "record".
+const PICKER_KINDS: readonly MatchEntityKind[] = [
+  "account", "liability", "familyMember", "income", "expense", "lifePolicy", "entity",
+];
 
 export function LinkCell({ sectionId, row, onApply, highlighted }: LinkCellProps) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
-  const host = useRef<HTMLDivElement>(null);
-  // Where the picker opens: `fixed` at the trigger, so a table that scrolls
-  // sideways neither clips it nor grows to fit it. null = closed.
-  const [place, setPlace] = useState<CSSProperties | null>(null);
-  const open = place !== null;
-  useEffect(() => {
-    if (!open) return;
-    // Scrolling the page or a table moves the trigger away: close. Scrolling
-    // the picker's own list doesn't.
-    const close = (e: Event) => {
-      if (!(e.target instanceof Node && host.current?.contains(e.target))) setPlace(null);
-    };
-    window.addEventListener("scroll", close, { capture: true, passive: true });
-    return () => window.removeEventListener("scroll", close, { capture: true });
-  }, [open]);
+  // The picker places itself against the trigger, outside the table, so a
+  // table that scrolls sideways neither clips it nor grows to fit it.
+  const [open, setOpen] = useState(false);
+  const recordKind = findSection(sectionId)?.links;
+  const entityKind = PICKER_KINDS.find((k) => k === recordKind);
 
-  const toggle = () => {
-    if (open || !trigger.current) {
-      setPlace(null);
-      return;
-    }
-    const r = trigger.current.getBoundingClientRect();
-    setPlace({
-      top: Math.max(EDGE, Math.min(r.bottom, window.innerHeight - PICKER_HEIGHT)),
-      left: Math.min(Math.max(r.right, PICKER_WIDTH + EDGE), window.innerWidth - EDGE),
-    });
-  };
   const setLink = (link: LinkChoice) => {
-    setPlace(null);
+    setOpen(false);
     onApply([{ op: "setLink", sectionId, rowId: row.id, link }]);
     trigger.current?.focus();
   };
@@ -115,12 +95,7 @@ export function LinkCell({ sectionId, row, onApply, highlighted }: LinkCellProps
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-describedby={highlighted ? `${id}-changed` : undefined}
-        // While open, a press on the trigger shouldn't also count as a click
-        // outside the picker (that would close it, then this click reopen it).
-        onMouseDown={(e) => {
-          if (open) e.stopPropagation();
-        }}
-        onClick={toggle}
+        onClick={() => setOpen(!open)}
         className="flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-[var(--radius-sm)] border border-transparent px-2 text-left text-xs transition-colors hover:border-hair-2 hover:bg-card-2"
       >
         <span className="sr-only">Links to:</span>{" "}
@@ -139,14 +114,14 @@ export function LinkCell({ sectionId, row, onApply, highlighted }: LinkCellProps
         </button>
       )}
       {open && (
-        <div ref={host} style={place} className="fixed z-30">
-          <MatchLinkPicker
-            currentMatch={link?.kind === "existing" ? { kind: "exact", existingId: link.recordId } : undefined}
-            candidates={candidates.map((c) => ({ id: c.recordId, name: c.label, score: c.score }))}
-            onPick={pick}
-            onClose={() => setPlace(null)}
-          />
-        </div>
+        <MatchLinkPicker
+          anchorRef={trigger}
+          entityKind={entityKind}
+          currentMatch={link?.kind === "existing" ? { kind: "exact", existingId: link.recordId } : undefined}
+          candidates={candidates.map((c) => ({ id: c.recordId, name: c.label, score: c.score }))}
+          onPick={pick}
+          onClose={() => setOpen(false)}
+        />
       )}
       {highlighted && (
         <span id={`${id}-changed`} className="sr-only">

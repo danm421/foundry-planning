@@ -27,15 +27,16 @@ const rowWith = (link: FFLink | undefined): FFRow => ({
 });
 
 /**
- * One Cash Accounts row's link the way the screen renders it: onApply runs the
- * real ops (false on a refused edit) and the cell re-renders from the new state.
+ * One row's link the way the screen renders it (a Cash Accounts row unless
+ * `sectionId` says otherwise): onApply runs the real ops (false on a refused
+ * edit) and the cell re-renders from the new state.
  */
-function renderLink(link: FFLink | undefined, { highlighted = false } = {}) {
+function renderLink(link: FFLink | undefined, { highlighted = false, sectionId = "cash" } = {}) {
   const applied = vi.fn<(ops: ClientOp[]) => void>();
   function Harness() {
     const [state, setState] = useState((): FactFinderState => {
       const s = emptyFactFinderState();
-      return { ...s, sections: { ...s.sections, cash: [rowWith(link)] } };
+      return { ...s, sections: { ...s.sections, [sectionId]: [rowWith(link)] } };
     });
     const onApply = (ops: ClientOp[]) => {
       applied(ops);
@@ -47,10 +48,10 @@ function renderLink(link: FFLink | undefined, { highlighted = false } = {}) {
         throw e;
       }
     };
-    return <LinkCell sectionId="cash" row={state.sections.cash[0]} onApply={onApply} highlighted={highlighted} />;
+    return <LinkCell sectionId={sectionId} row={state.sections[sectionId][0]} onApply={onApply} highlighted={highlighted} />;
   }
-  render(<Harness />);
-  return { applied };
+  const { container } = render(<Harness />);
+  return { applied, container };
 }
 
 const trigger = () => screen.getByRole("button", { name: /^Links to:/ });
@@ -105,8 +106,8 @@ describe("LinkCell — confirming and picking", () => {
     await userEvent.click(trigger());
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getAllByRole("option").map((o) => o.textContent)).toEqual([
-      "Joint Checking74%",
-      "Household Savings52%",
+      "Joint Checking74% match",
+      "Household Savings52% match",
     ]);
     await userEvent.click(within(dialog).getByRole("button", { name: /Household Savings/ }));
     expect(applied).toHaveBeenLastCalledWith([
@@ -119,12 +120,19 @@ describe("LinkCell — confirming and picking", () => {
   it("Create as new sets the row to New", async () => {
     const { applied } = renderLink(LINKED);
     await userEvent.click(trigger());
-    await userEvent.click(screen.getByRole("button", { name: "✚ Create as new" }));
+    await userEvent.click(screen.getByRole("button", { name: "Create as new account" }));
     expect(applied).toHaveBeenLastCalledWith([{ op: "setLink", sectionId: "cash", rowId: "r1", link: { kind: "new" } }]);
     expect(trigger()).toHaveAccessibleName("Links to: New");
   });
 
-  it("the trigger opens and closes the picker; Escape closes it too", async () => {
+  it("names the records the section links to, or calls them records when the picker has no word for them", async () => {
+    renderLink(undefined, { sectionId: "gifts" });
+    await userEvent.click(trigger());
+    expect(screen.getByRole("textbox")).toHaveAttribute("placeholder", "Search existing records…");
+    expect(screen.getByRole("button", { name: "Create as new record" })).toBeInTheDocument();
+  });
+
+  it("the trigger opens and closes the picker; Escape closes it and returns to the trigger", async () => {
     renderLink(undefined);
     await userEvent.click(trigger());
     expect(trigger()).toHaveAttribute("aria-expanded", "true");
@@ -133,8 +141,10 @@ describe("LinkCell — confirming and picking", () => {
     expect(trigger()).toHaveAttribute("aria-expanded", "false");
 
     await userEvent.click(trigger());
+    expect(screen.getByRole("textbox")).toHaveFocus();
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(trigger()).toHaveFocus();
   });
 });
 
@@ -143,33 +153,27 @@ describe("LinkCell — where the picker opens", () => {
     vi.restoreAllMocks();
   });
 
-  const triggerAt = (rect: { top: number; bottom: number; left: number; right: number }) =>
-    vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
-      ...rect, width: rect.right - rect.left, height: rect.bottom - rect.top, x: rect.left, y: rect.top, toJSON: () => ({}),
+  const triggerAt = (left: number, top = 60) =>
+    vi.spyOn(trigger(), "getBoundingClientRect").mockReturnValue({
+      left, right: left + 200, top, bottom: top + 32, width: 200, height: 32, x: left, y: top, toJSON: () => ({}),
     } as DOMRect);
 
-  it("in a fixed box at the trigger's bottom-right corner, so a table that scrolls sideways can't clip it; scrolling the page closes it, scrolling its list doesn't", async () => {
-    triggerAt({ top: 60, bottom: 92, left: 500, right: 700 });
-    renderLink(SUGGESTED);
+  it("against its trigger, outside the table's markup, so a table that scrolls sideways can't clip it", async () => {
+    const { container } = renderLink(SUGGESTED);
+    triggerAt(500);
     await userEvent.click(trigger());
-    const host = screen.getByRole("dialog").parentElement as HTMLElement;
-    expect(host).toHaveClass("fixed");
-    expect(host.style.top).toBe("92px");
-    expect(host.style.left).toBe("700px");
-
-    fireEvent.scroll(screen.getByRole("listbox"));
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    fireEvent.scroll(window);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    const dialog = screen.getByRole("dialog");
+    expect(container.contains(dialog)).toBe(false);
+    expect(dialog.style.left).toBe("500px");
+    expect(dialog.style.top).toBe("96px");
   });
 
-  it("stays inside the window near its left and bottom edges", async () => {
-    triggerAt({ top: 668, bottom: 700, left: 20, right: 100 });
+  it("scrolling moves it with its trigger instead of closing it", async () => {
     renderLink(SUGGESTED);
+    triggerAt(500);
     await userEvent.click(trigger());
-    const host = screen.getByRole("dialog").parentElement as HTMLElement;
-    // jsdom's window is 1024 × 768; the picker is 384 px wide and up to 368 px tall.
-    expect(host.style.left).toBe("392px");
-    expect(host.style.top).toBe("400px");
+    triggerAt(300);
+    fireEvent.scroll(document);
+    expect(screen.getByRole("dialog").style.left).toBe("300px");
   });
 });

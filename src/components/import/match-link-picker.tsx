@@ -43,7 +43,9 @@ interface MatchLinkPickerProps {
   anchorRef: RefObject<HTMLElement | null>;
   currentMatch: MatchAnnotation | undefined;
   candidates: MatchCandidate[];
-  /** Not read by the picker; the fact finder's record kinds aren't all in this union, so it passes none. */
+  /** Names the rows in the picker's wording ("Search existing accounts…",
+   *  "Create as new account"). A caller whose rows are none of these kinds —
+   *  most of the fact finder's — passes none, and the picker says "record". */
   entityKind?: MatchEntityKind;
   onPick: (next: MatchAnnotation) => void;
   onClose: () => void;
@@ -100,7 +102,7 @@ export default function MatchLinkPicker({
   const [query, setQuery] = useState("");
   const [placement, setPlacement] = useState<Placement | null>(null);
   const ref = useRef<HTMLDivElement>(null);
-  const [one, many] = NOUN[entityKind];
+  const [one, many] = entityKind ? NOUN[entityKind] : ["record", "records"];
 
   // Portaled to <body> and fixed against the trigger. Rendered in place it
   // hung off the trigger's right edge, so a trigger near the left of the
