@@ -38,6 +38,15 @@ below protects.
 The founding price stays in the catalog only because `getPriceCatalog()`
 requires its env var; nothing sells it.
 
+**Live mode as of 2026-10-19.** Live was never split by
+`setup-stripe-plan-products.ts`; the cut did it instead, by hand through the
+Stripe CLI (the CLI's own live key works only through the CLI). Monthly $99
+went onto the original product, renamed `Foundry seat — billed monthly`, beside
+the archived $199 price and the archived founding price. Annual $999 went onto a
+new `Foundry seat — billed annually` product (metadata
+`foundry_plan=seatAnnual`). No live firm was on annual, so nobody moved. Each
+plan can now be targeted on its own.
+
 AI import is **not** on this list any more: it ships with every seat as a base
 entitlement, and `docs/bundle-ai-into-plan-runbook.md` archives the standalone
 product and price. Nothing bills it, so it is deliberately outside the price
