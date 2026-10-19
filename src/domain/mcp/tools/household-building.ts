@@ -18,6 +18,7 @@ import { aiImportCheckFor, factFinderCreateCheckFor, factFinderGateFor, type Fac
 import { createFactFinderImport } from "@/lib/fact-finder/import-lifecycle";
 import type { FFOp } from "@/lib/fact-finder/ops";
 import { runLeftovers } from "@/lib/fact-finder/placement/leftovers-run";
+import { missingFacts, missingFactsByStep } from "@/lib/fact-finder/missing-facts";
 import { loadRecordBook } from "@/lib/fact-finder/records/book";
 import { resolveBaseCaseScenarioId } from "@/lib/fact-finder/records/load";
 import { reviewFactFinder } from "@/lib/fact-finder/review";
@@ -31,7 +32,7 @@ import { ensurePlanImport } from "@/lib/imports/plan-builder-core";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 import type { ImportRateLimitOp } from "@/lib/rate-limit";
 import { changeListView } from "../change-list-view";
-import { defineHouseholdWriteTool, defineWriteTool, McpInputError, type McpTool } from "../define-tool";
+import { defineHouseholdWriteTool, defineTool, defineWriteTool, McpInputError, type McpTool } from "../define-tool";
 import { CLIENT_UNREADABLE_MESSAGE, McpForbiddenError } from "../guards";
 import {
   describeStep,
@@ -485,10 +486,32 @@ const createHousehold = defineHouseholdWriteTool({
   }),
 });
 
+const getMissingFacts = defineTool({
+  name: "get_missing_facts",
+  title: "What a plan still lacks",
+  description:
+    "List the facts a household's base plan still lacks, such as a missing date of birth, salary or property tax. " +
+    "Returns missing (step, record, label and what is missing) and byStep, the count of gaps in every onboarding " +
+    "step; step narrows missing to one step only.",
+  inputSchema: z.object({
+    clientId: clientIdArg,
+    step: z.enum(FACT_FINDER_STEP_IDS).optional().describe("Only list gaps from this onboarding step."),
+  }),
+  page: "netWorth",
+  handler: async ({ clientId, step }, { firmId }) => {
+    const scenarioId = await resolveBaseCaseScenarioId(clientId);
+    if (!scenarioId) throw new McpInputError(NO_BASE_PLAN_MESSAGE);
+    const book = await loadRecordBook(clientId, firmId, scenarioId);
+    const all = missingFacts(book, { currentYear: new Date().getFullYear() });
+    return { missing: step ? all.filter((m) => m.step === step) : all, byStep: missingFactsByStep(all) };
+  },
+});
+
 export const householdBuildingTools: McpTool[] = [
   createHousehold,
   startFactFinderStep,
   fillFactFinderStep,
   reviewFactFinderStep,
   saveFactFinderStep,
+  getMissingFacts,
 ];

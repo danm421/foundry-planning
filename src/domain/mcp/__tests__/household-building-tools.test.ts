@@ -47,6 +47,7 @@ import { WRITE_DISABLED_MESSAGE } from "../define-tool";
 import { changeListView } from "../change-list-view";
 import { McpInputError } from "../define-tool";
 import { CLIENT_UNREADABLE_MESSAGE, McpForbiddenError } from "../guards";
+import { FACT_FINDER_STEP_IDS } from "../fact-finder-steps";
 import { SAVE_STALE_MESSAGE } from "@/lib/fact-finder/api-types";
 import { defaultTicks, type ChangeField, type ChangeLine, type ChangeSet } from "@/lib/fact-finder/change-set";
 import { emptyRecordBook, type RecordBook } from "@/lib/fact-finder/placement/types";
@@ -69,6 +70,7 @@ const fill = tool("fill_fact_finder_step");
 const review = tool("review_fact_finder_step");
 const save = tool("save_fact_finder_step");
 const create = tool("create_household");
+const missingFactsTool = tool("get_missing_facts");
 
 const BASE = "11111111-1111-4111-8111-111111111111";
 const IMPORT = "22222222-2222-4222-8222-222222222222";
@@ -826,5 +828,57 @@ describe("create_household", () => {
     h.firmClaudeWritesEnabled.mockResolvedValue(false);
     await expect(create.run({ household: newHousehold }, principal)).rejects.toThrow(WRITE_DISABLED_MESSAGE);
     expect(h.ensurePlanImport).not.toHaveBeenCalled();
+  });
+});
+
+describe("get_missing_facts", () => {
+  /** An empty plan: no living expenses, so exactly one gap, under living_expenses. */
+  const emptyPlan = () => ({ ...emptyRecordBook("c1"), scenarioId: BASE });
+
+  it("reads the base case's book and lists what is missing with a count for every step", async () => {
+    h.loadRecordBook.mockResolvedValue(emptyPlan());
+    const out = (await missingFactsTool.run({ clientId: "c1" }, principal)) as {
+      missing: { step: string; missing: string }[];
+      byStep: Record<string, number>;
+      foundryUrl: string;
+    };
+    expect(h.loadRecordBook).toHaveBeenCalledWith("c1", "org_1", BASE);
+    expect(out.missing).toMatchObject([{ step: "living_expenses", missing: "current living expenses" }]);
+    expect(Object.keys(out.byStep)).toEqual(FACT_FINDER_STEP_IDS);
+    expect(out.byStep.living_expenses).toBe(1);
+    expect(out.byStep.estate).toBe(0);
+    expect(out.foundryUrl).toMatch(/\/clients\/c1\//);
+  });
+
+  it("filters the list to one step but still counts the whole household", async () => {
+    h.loadRecordBook.mockResolvedValue(emptyPlan());
+    const out = (await missingFactsTool.run({ clientId: "c1", step: "estate" }, principal)) as {
+      missing: unknown[];
+      byStep: Record<string, number>;
+    };
+    expect(out.missing).toEqual([]);
+    expect(out.byStep.living_expenses).toBe(1);
+  });
+
+  it("refuses a household with no base plan", async () => {
+    h.resolveBaseCaseScenarioId.mockResolvedValue(null);
+    const err = await missingFactsTool.run({ clientId: "c1" }, principal).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(McpInputError);
+    expect((err as Error).message).toBe("This household has no base plan yet.");
+  });
+
+  it("is a read: needs neither the write switch nor AI import, and creates nothing", async () => {
+    h.firmClaudeWritesEnabled.mockResolvedValue(false);
+    h.loadRecordBook.mockResolvedValue(emptyPlan());
+    await missingFactsTool.run({ clientId: "c1" }, { ...principal, canWrite: false, entitlements: [] });
+    expect(missingFactsTool.annotations.readOnlyHint).toBe(true);
+    expect(h.createFactFinderImport).not.toHaveBeenCalled();
+  });
+
+  it("refuses a client the caller can't read", async () => {
+    h.verifyClientAccessFor.mockResolvedValue({ ok: false });
+    const err = await missingFactsTool.run({ clientId: "c1" }, principal).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(McpForbiddenError);
+    expect(h.loadRecordBook).not.toHaveBeenCalled();
   });
 });
