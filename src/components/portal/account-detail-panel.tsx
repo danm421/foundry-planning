@@ -296,7 +296,9 @@ export function AccountDetailPanel({
     categoryLabel: string;
     subTypeLabel: string;
     last4: string | null;
-    isPlaid: boolean;
+    /** Who keeps the balance current: the client's Plaid link or the firm's
+     *  integration. Null = typed in by hand. */
+    syncedBy: "institution" | "advisor" | null;
     ownerLabel: string;
     /** null → no Holdings tab; the drawer shows activity only, as before. */
     holdingsTab: HoldingsTabKind | null;
@@ -326,7 +328,11 @@ export function AccountDetailPanel({
         <Row label="Category">{account.categoryLabel}</Row>
         <Row label="Type">{account.subTypeLabel}</Row>
         <Row label="Owner">{account.ownerLabel || "—"}</Row>
-        {account.isPlaid && <Row label="Balance">Synced from your institution</Row>}
+        {account.syncedBy && (
+          <Row label="Balance">
+            {account.syncedBy === "institution" ? "Synced from your institution" : "Kept up to date by your advisor"}
+          </Row>
+        )}
       </dl>
       <div className={PANEL_SECTION}>
         {account.holdingsTab ? (

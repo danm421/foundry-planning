@@ -19,6 +19,7 @@ import {
 } from "@/lib/ownership";
 import { validateTrustOnlyEntityOwners } from "@/lib/portal/validate-trust-owners";
 import { PLAID_LOCKED_FIELDS } from "@/lib/portal/plaid-locked-fields";
+import { isFirmSynced } from "@/lib/accounts/linked-source";
 import { recordUpdate, recordDelete } from "@/lib/audit/record-helpers";
 import type { EntitySnapshot } from "@/lib/audit/types";
 import { isPortalVisibleAccount } from "@/lib/portal/account-visibility";
@@ -38,9 +39,13 @@ type AccountRow = {
   accountNumberLast4: string | null;
   custodian: string | null;
   plaidItemId: string | null;
+  externalProvider: string | null;
+  source: string;
   isDefaultChecking: boolean;
   parentAccountId: string | null;
 };
+
+const FIRM_SYNCED_ERROR = "Your advisor keeps this account up to date. Ask them to change it.";
 
 const ALLOWED_FIELDS = [
   "name",
@@ -80,6 +85,8 @@ async function loadOwnedRow(
     accountNumberLast4: row.accountNumberLast4,
     custodian: (row as { custodian?: string | null }).custodian ?? null,
     plaidItemId: (row as { plaidItemId?: string | null }).plaidItemId ?? null,
+    externalProvider: row.externalProvider,
+    source: row.source,
     isDefaultChecking:
       (row as { isDefaultChecking?: boolean }).isDefaultChecking ?? false,
     parentAccountId:
@@ -125,6 +132,10 @@ export async function PUT(
         { error: "This account can't be edited from the portal" },
         { status: 403 },
       );
+    }
+
+    if (isFirmSynced(row)) {
+      return NextResponse.json({ error: FIRM_SYNCED_ERROR }, { status: 403 });
     }
 
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -305,6 +316,10 @@ export async function DELETE(
       );
     }
 
+    if (isFirmSynced(raw)) {
+      return NextResponse.json({ error: FIRM_SYNCED_ERROR }, { status: 403 });
+    }
+
     // Phase 3 introduces plaid_item_id; until then the column may be absent.
     // Do NOT import plaidItems — that table doesn't exist yet.
     const plaidItemId =
@@ -333,6 +348,8 @@ export async function DELETE(
       accountNumberLast4: raw.accountNumberLast4,
       custodian: (raw as { custodian?: string | null }).custodian ?? null,
       plaidItemId,
+      externalProvider: raw.externalProvider,
+      source: raw.source,
       isDefaultChecking:
         (raw as { isDefaultChecking?: boolean }).isDefaultChecking ?? false,
       parentAccountId:

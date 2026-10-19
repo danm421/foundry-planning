@@ -37,6 +37,15 @@ const acct = (id: string, over: Record<string, unknown> = {}) => ({
 });
 
 describe("loadLinkCandidates", () => {
+  it("never offers an account the firm's integration keeps current", async () => {
+    rows.accounts = [
+      acct("manual"),
+      acct("orion", { externalProvider: "orion", source: "orion" }),
+    ];
+    const { existingCandidates } = await loadLinkCandidates("c1");
+    expect(existingCandidates.map((c) => c.id)).toEqual(["manual"]);
+  });
+
   it("offers only accounts the portal shows the client", async () => {
     rows.accounts = [
       acct("visible"),

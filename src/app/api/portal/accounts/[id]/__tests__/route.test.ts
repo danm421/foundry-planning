@@ -506,3 +506,28 @@ describe("DELETE /api/portal/accounts/[id] — portal-hidden account guards", ()
     expect(deleteAccountsMock).not.toHaveBeenCalled();
   });
 });
+
+describe("portal account mutations — firm-synced accounts", () => {
+  // The firm's Orion/Schwab/Addepar sync owns these rows: an edit would be
+  // overwritten on the next sync, and a delete would come back with it.
+  const orionRow = () => ({ ...accountRow!, externalProvider: "orion", source: "orion" });
+
+  it("PUT 403s even for a rename, and writes nothing", async () => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    accountRow = orionRow();
+    const res = await PUT(putReq({ name: "My nickname", owners: [] }), ctx);
+    expect(res.status).toBe(403);
+    expect((await res.json() as { error: string }).error).toMatch(/advisor/i);
+    expect(transactionMock).not.toHaveBeenCalled();
+    expect(recordUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("DELETE 403s and deletes nothing", async () => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    accountRow = orionRow();
+    const res = await DELETE(delReq(), ctx);
+    expect(res.status).toBe(403);
+    expect(deleteAccountsMock).not.toHaveBeenCalled();
+    expect(recordDeleteMock).not.toHaveBeenCalled();
+  });
+});

@@ -1,5 +1,6 @@
 import { describe, it, expect, expectTypeOf } from "vitest";
 import {
+  isFirmSynced,
   linkedSourceLabel,
   linkedSourceOf,
   linkedStatusLines,
@@ -42,6 +43,18 @@ describe("linkedSourceOf", () => {
   // either side gains a member the other lacks.
   it("matches the portal contract's copy of the shape", () => {
     expectTypeOf<PortalLinkedStatus>().toEqualTypeOf<LinkedStatus>();
+  });
+});
+
+describe("isFirmSynced", () => {
+  it("is true for an account a firm integration keeps current", () => {
+    expect(isFirmSynced({ plaidItemId: null, externalProvider: "orion", source: "orion" })).toBe(true);
+    expect(isFirmSynced({ plaidItemId: null, externalProvider: null, source: "addepar" })).toBe(true);
+  });
+
+  it("is false for the client's own Plaid link and for hand-typed accounts", () => {
+    expect(isFirmSynced({ plaidItemId: "item-1", externalProvider: null, source: "plaid" })).toBe(false);
+    expect(isFirmSynced({ plaidItemId: null, externalProvider: null, source: "manual" })).toBe(false);
   });
 });
 

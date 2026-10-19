@@ -299,6 +299,26 @@ describe("POST /api/portal/plaid/exchange/commit", () => {
     expect(recordCreate).not.toHaveBeenCalled();
   });
 
+  it("refuses to link an account the firm's integration keeps current", async () => {
+    nextResponses(
+      [{ clientId: "client-1", institutionName: "Chase" }],
+      [{ firmId: "firm-1" }],
+      [{ id: "scenario-1" }],
+      [{ id: "orion-1", clientId: "client-1", plaidItemId: null, externalProvider: "orion", source: "orion", category: "taxable", isDefaultChecking: false, parentAccountId: null }],
+    );
+    const { POST } = await import("../route");
+    const res = await POST(
+      commitReq({
+        itemId: "item-1",
+        decisions: [{ plaidAccountId: "pa-1", action: "link", existingAccountId: "orion-1" }],
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(dbTransaction).not.toHaveBeenCalled();
+    expect(txUpdate).not.toHaveBeenCalled();
+    expect(recordCreate).not.toHaveBeenCalled();
+  });
+
   it("400s a create decision with an invalid asset type (enum allowlist)", async () => {
     nextResponses(
       [{ clientId: "client-1", institutionName: "Chase" }],

@@ -157,6 +157,20 @@ describe("AccountsWorkspace", () => {
     expect(queryByRole("button", { name: "Delete" })).toBeNull();
   });
 
+  it("offers neither Edit nor Delete on an account the firm's integration keeps current", () => {
+    const orion = {
+      id: "a3", name: "Orion Brokerage", category: "taxable", subType: "brokerage", last4: null, value: 50_000,
+      isPlaidLinked: false, linked: { source: "orion" as const, syncedAt: null, issue: null },
+    };
+    const { getByText, queryByRole, container } = render(
+      <AccountsWorkspace dto={dto({ assets: [...dto().assets, orion] })} />,
+    );
+    fireEvent.click(getByText("Orion Brokerage"));
+    expect(queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(queryByRole("button", { name: "Delete" })).toBeNull();
+    expect(container.textContent).toContain("Kept up to date by your advisor");
+  });
+
   // Plaid can't require one product that fits every account type, so banking and
   // investment links are separate tokens. Losing either entry point silently
   // strands half a client's accounts — the bug this guard replaced. Now that

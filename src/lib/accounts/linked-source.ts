@@ -40,6 +40,14 @@ export function linkedSourceOf(row: {
   return null;
 }
 
+/** A firm integration keeps this account current, so the client portal treats
+ *  it as read-only: the next sync would overwrite a client's edit, and a
+ *  deleted account would come back with it. */
+export function isFirmSynced(row: Parameters<typeof linkedSourceOf>[0]): boolean {
+  const source = linkedSourceOf(row);
+  return source != null && source !== "plaid";
+}
+
 const LINKED_ISSUE_TEXT: Record<PlaidIssue, string> = {
   reconnect: "Needs reconnecting",
   revoked: "Access revoked",
