@@ -18,6 +18,7 @@ const m = vi.hoisted(() => ({
   createClientForHousehold: vi.fn(),
   recordAudit: vi.fn(),
   verifyClientAccess: vi.fn(),
+  verifyClientAccessFor: vi.fn(),
 }));
 
 vi.mock("@/db", () => ({
@@ -42,17 +43,22 @@ vi.mock("@/lib/audit", () => ({
   recordAudit: (...a: unknown[]) => m.recordAudit(...a),
 }));
 
+// `verifyClientAccessAs` routes as the real one does: the principal's check
+// when one is passed, else the session's.
 vi.mock("@/lib/clients/authz", () => ({
-  verifyClientAccess: (...a: unknown[]) => m.verifyClientAccess(...a),
+  verifyClientAccessAs: (p: unknown, id: string) => (p ? m.verifyClientAccessFor(p, id) : m.verifyClientAccess(id)),
 }));
 
 import { ensurePlanImport, findImportTargetName } from "../plan-builder-core";
 import { isFactFinderImport } from "../import-kind";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
 
+const principal = { userId: "u1", orgId: "org1", orgRole: "org:admin" };
+
 beforeEach(() => {
   Object.values(m).forEach((fn) => fn.mockReset());
   m.verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "org1", access: "own" });
+  m.verifyClientAccessFor.mockResolvedValue({ ok: true, permission: "edit", firmId: "org1", access: "own" });
   m.insertValues.mockResolvedValue([{ id: "imp1" }]);
 });
 
@@ -127,6 +133,23 @@ describe("ensurePlanImport", () => {
       expect(m.recordAudit).not.toHaveBeenCalled();
     });
 
+    it("checks access on the principal, never the session, when one is passed", async () => {
+      m.where
+        .mockResolvedValueOnce([{ id: "c1" }])
+        .mockResolvedValueOnce([{ id: "base1" }]);
+
+      await ensurePlanImport({
+        mode: "existing",
+        principal,
+        firmId: "org1",
+        actorUserId: "u1",
+        existing: { clientId: "c1" },
+      });
+
+      expect(m.verifyClientAccessFor).toHaveBeenCalledWith(principal, "c1");
+      expect(m.verifyClientAccess).not.toHaveBeenCalled();
+    });
+
     it("throws when the client does not belong to the firm", async () => {
       m.where.mockResolvedValueOnce([]); // no client row for this firm
 
@@ -182,16 +205,20 @@ describe("ensurePlanImport", () => {
 
       expect(result).toEqual({ clientId: "c2", scenarioId: "scn2", importId: "imp1" });
 
-      expect(m.createCrmHousehold).toHaveBeenCalledWith({
-        name: "The Smiths",
-        status: "prospect",
-        advisorId: "u1",
-        state: "NJ",
-        contacts: [
-          { role: "primary", firstName: "Jane", lastName: "Smith", dateOfBirth: "1980-01-01" },
-          { role: "spouse", firstName: "John", lastName: "Smith", dateOfBirth: "1981-02-02" },
-        ],
-      });
+      // No firm or actor override: the session supplies both, as before.
+      expect(m.createCrmHousehold).toHaveBeenCalledWith(
+        {
+          name: "The Smiths",
+          status: "prospect",
+          advisorId: "u1",
+          state: "NJ",
+          contacts: [
+            { role: "primary", firstName: "Jane", lastName: "Smith", dateOfBirth: "1980-01-01" },
+            { role: "spouse", firstName: "John", lastName: "Smith", dateOfBirth: "1981-02-02" },
+          ],
+        },
+        undefined,
+      );
 
       expect(m.createClientForHousehold).toHaveBeenCalledWith({
         household: { id: "hh1", firmId: "org1", advisorId: "u1", state: "NJ" },
@@ -246,7 +273,32 @@ describe("ensurePlanImport", () => {
         },
       });
 
-      expect(m.recordHouseholdOpen).toHaveBeenCalledWith("hh1", "u1");
+      expect(m.recordHouseholdOpen).toHaveBeenCalledWith("hh1", "u1", undefined);
+    });
+
+    it("names the firm and actor to every inner create when a principal is passed", async () => {
+      m.createCrmHousehold.mockResolvedValue({ id: "hh1", name: "The Smiths" });
+      m.createClientForHousehold.mockResolvedValue({ clientId: "c2", scenarioId: "scn2" });
+
+      await ensurePlanImport({
+        mode: "new",
+        principal,
+        firmId: "org1",
+        actorUserId: "u1",
+        label: "Claude: Household",
+        newHousehold: {
+          householdName: "The Smiths",
+          primary: { firstName: "Jane", lastName: "Smith", dateOfBirth: "1980-01-01" },
+          filingStatus: "single",
+          retirementAge: 65,
+          lifeExpectancy: 95,
+        },
+      });
+
+      expect(m.createCrmHousehold).toHaveBeenCalledWith(expect.anything(), { firmId: "org1", actorId: "u1" });
+      expect(m.createClientForHousehold).toHaveBeenCalledWith(expect.objectContaining({ actorId: "u1" }));
+      expect(m.recordHouseholdOpen).toHaveBeenCalledWith("hh1", "u1", principal);
+      expect(m.insertValues.mock.calls[0][0]).toMatchObject({ notes: "Claude: Household", createdByUserId: "u1" });
     });
 
     it("still builds the plan when recording the open fails", async () => {
@@ -347,6 +399,7 @@ describe("ensurePlanImport", () => {
         expect.objectContaining({ state: undefined, contacts: [
           { role: "primary", firstName: "Ann", lastName: "Onymous", dateOfBirth: "1970-01-01" },
         ] }),
+        undefined,
       );
       expect(m.createClientForHousehold).toHaveBeenCalledWith(
         expect.objectContaining({

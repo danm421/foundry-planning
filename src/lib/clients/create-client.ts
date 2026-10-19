@@ -54,6 +54,9 @@ export interface CreateClientForHouseholdArgs {
   filingStatus: FilingStatus;
   /** `clients.brand`; omitted = NULL, the household follows its advisor's brand. */
   brand?: string | null;
+  /** Who the `client.create` audit names. Omitted = resolved from the session
+   *  (see the audit below); the Claude connector, whose call has none, passes it. */
+  actorId?: string;
   // Optional caller-supplied transaction handle (the prospect-apply path runs
   // this create inside a larger transaction). When omitted, the service wraps
   // all its inserts in its own db.transaction so the standalone path is atomic.
@@ -276,17 +279,19 @@ async function runCreate(
     ),
   );
 
-  // Record the client.create audit. Mirror the original route: pass NO explicit
-  // actorId so recordAudit self-resolves the actor via Clerk auth() — preserving
-  // ops-impersonation attribution (the ops operator is recorded as the actor with
-  // an actingAsAdvisor stamp). Best-effort/append-only: runs on the global db
-  // path, outside the create transaction, exactly as before.
+  // Record the client.create audit. Mirror the original route: unless the caller
+  // names the actor, pass NO explicit actorId so recordAudit self-resolves the
+  // actor via Clerk auth() — preserving ops-impersonation attribution (the ops
+  // operator is recorded as the actor with an actingAsAdvisor stamp).
+  // Best-effort/append-only: runs on the global db path, outside the create
+  // transaction, exactly as before.
   await recordAudit({
     action: "client.create",
     resourceType: "client",
     resourceId: client.id,
     clientId: client.id,
     firmId: household.firmId,
+    actorId: args.actorId,
     metadata: { firstName, lastName, crmHouseholdId: household.id },
   });
 
@@ -298,8 +303,9 @@ async function runCreate(
  * Case `scenarios` row, default `planSettings`, `familyMembers` (client + spouse
  * when married), the default "Household Cash" checking account, two default
  * "living" expense rows, and Social Security `incomes` rows. Always records the
- * `client.create` audit, self-resolving the actor via Clerk `auth()` (preserving
- * ops-impersonation attribution) — matching the original route behavior.
+ * `client.create` audit, naming `actorId` when given and otherwise self-resolving
+ * the actor via Clerk `auth()` (preserving ops-impersonation attribution) —
+ * matching the original route behavior.
  *
  * Shared between POST /api/clients and the prospect-apply path so both create a
  * client through one implementation. Pre-flight (household load, primary-DOB

@@ -12,7 +12,8 @@ import {
 import { and, desc, eq, ilike, inArray, isNull, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import { containsPattern } from "@/lib/like-pattern";
 import { requireOrgId } from "@/lib/db-helpers";
-import { findVisibleCrmHousehold, requireCrmHouseholdAccess } from "./authz";
+import { findVisibleCrmHousehold, requireCrmHouseholdAccess, verifyCrmHouseholdAccessFor } from "./authz";
+import type { Principal } from "@/lib/clients/authz";
 import { auth } from "@clerk/nextjs/server";
 import {
   resolveVisibleAdvisorIds,
@@ -203,11 +204,20 @@ export async function listRecentlyOpenedHouseholds(opts: {
 
 /**
  * Upsert the current user's "opened" timestamp for a household. Access-checked
- * and firm-scoped via {@link requireCrmHouseholdAccess}. Fire-and-forget from
- * the UI — failures are non-fatal to navigation.
+ * and firm-scoped via {@link requireCrmHouseholdAccess} — or, when a principal
+ * is passed (the Claude connector, whose call has no session), via
+ * {@link verifyCrmHouseholdAccessFor} on it. Fire-and-forget from the UI —
+ * failures are non-fatal to navigation.
  */
-export async function recordHouseholdOpen(householdId: string, userId: string) {
-  const { orgId } = await requireCrmHouseholdAccess(householdId);
+export async function recordHouseholdOpen(householdId: string, userId: string, principal?: Principal) {
+  let orgId: string;
+  if (principal) {
+    const gate = await verifyCrmHouseholdAccessFor(principal, householdId);
+    if (!gate.ok) throw new Error(`CRM household not found or access denied: ${householdId}`);
+    orgId = gate.firmId;
+  } else {
+    ({ orgId } = await requireCrmHouseholdAccess(householdId));
+  }
   await db
     .insert(crmHouseholdViews)
     .values({ householdId, firmId: orgId, userId })
@@ -330,10 +340,14 @@ function ownerDisplayName(o: {
  * `opts.firmId` names the firm that owns the new household. Callers minting a
  * household for an existing client pass that client's firm: the caller may be
  * signed in to another firm through a share. Without it, the session's firm.
+ *
+ * `opts.actorId` names who created it, for the audit and activity rows; with
+ * it (and `firmId`) the session is never read — the Claude connector's call
+ * has none. Without it, the session's user.
  */
 export async function createCrmHousehold(
   input: CreateCrmHouseholdInput,
-  opts: { firmId?: string } = {},
+  opts: { firmId?: string; actorId?: string } = {},
 ) {
   const firmId = opts.firmId ?? (await requireOrgId());
 
@@ -377,12 +391,13 @@ export async function createCrmHousehold(
 
   // Audit + activity are side records written with the global `db` after the
   // transaction commits (recordAudit/recordActivity don't accept a tx handle).
-  const { userId: actorId } = await auth();
+  const actorId = opts.actorId ?? (await auth()).userId;
   await recordAudit({
     action: "crm.household.create",
     resourceType: "crm_household",
     resourceId: household.id,
     firmId,
+    actorId: opts.actorId,
   });
   await recordActivity(
     {
@@ -399,6 +414,7 @@ export async function createCrmHousehold(
       resourceType: "crm_contact",
       resourceId: contact.id,
       firmId,
+      actorId: opts.actorId,
     });
     await recordActivity(
       {
