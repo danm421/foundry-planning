@@ -57,6 +57,8 @@ export interface EnsurePlanImportResult {
   clientId: string;
   scenarioId: string;
   importId: string;
+  /** The CRM household a "new" or "prospect" call created the plan for. */
+  householdId?: string;
 }
 
 /** Same rule as POST /api/clients/[id]/imports: the caller (the principal when
@@ -224,6 +226,7 @@ export async function ensurePlanImport(
   let clientId: string;
   let scenarioId: string;
   let mode: "onboarding" | "updating";
+  let householdId: string | undefined;
 
   if (args.mode === "existing") {
     if (!args.existing) throw new Error("existing.clientId is required for mode \"existing\".");
@@ -255,6 +258,7 @@ export async function ensurePlanImport(
       args.mode === "prospect" ? await createProspectPlan(args) : await createNewHouseholdPlan(args);
     clientId = created.clientId;
     scenarioId = created.scenarioId;
+    householdId = created.householdId;
     mode = "onboarding";
 
     // Surface the household in the advisor's "Recently opened" clients list,
@@ -277,5 +281,5 @@ export async function ensurePlanImport(
     audit: { planBuilder: true },
   });
 
-  return { clientId, scenarioId, importId: imp.id };
+  return { clientId, scenarioId, importId: imp.id, ...(householdId && { householdId }) };
 }

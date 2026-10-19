@@ -130,6 +130,17 @@ export async function factFinderCreateCheckFor(
   );
 }
 
+/**
+ * Before the connector creates a household, which has no client yet: the
+ * `ai_import` refusal alone, with the same answer and audit as the chain's.
+ */
+export async function aiImportCheckFor(principal: McpPrincipal): Promise<{ ok: true } | FactFinderRefusal> {
+  const refused = await entitlementRefusal(principal.entitlements.includes("ai_import"), () =>
+    recordAiImportDenied({ firmId: principal.orgId, actorId: principal.userId, metadata: { via: "claude" } }),
+  );
+  return refused ?? { ok: true };
+}
+
 /** The connector's caller as the chain reads it: firm, user and entitlement from the principal, never a session. */
 async function connectorCaller(principal: McpPrincipal, clientId: string, auditMetadata: Record<string, unknown>) {
   const firmId = principal.orgId;

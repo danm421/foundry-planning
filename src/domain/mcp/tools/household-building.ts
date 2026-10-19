@@ -14,7 +14,7 @@ import { withAiCallerOrg } from "@/lib/ai/resolve";
 import { SAVE_STALE_MESSAGE, type ReviewRefusal } from "@/lib/fact-finder/api-types";
 import { countLines, defaultTicks, type ChangeSet, type ChangeTicks } from "@/lib/fact-finder/change-set";
 import { editFactFinder } from "@/lib/fact-finder/edit";
-import { factFinderCreateCheckFor, factFinderGateFor, type FactFinderRefusal } from "@/lib/fact-finder/gate";
+import { aiImportCheckFor, factFinderCreateCheckFor, factFinderGateFor, type FactFinderRefusal } from "@/lib/fact-finder/gate";
 import { createFactFinderImport } from "@/lib/fact-finder/import-lifecycle";
 import type { FFOp } from "@/lib/fact-finder/ops";
 import { runLeftovers } from "@/lib/fact-finder/placement/leftovers-run";
@@ -26,10 +26,12 @@ import { findSection, fixedLabelsOf } from "@/lib/fact-finder/schema";
 import type { SourceStamp } from "@/lib/fact-finder/sources";
 import { fixedRowId, locateRow, readFactFinderState } from "@/lib/fact-finder/state";
 import type { FactFinderState } from "@/lib/fact-finder/types";
+import { findLikelyDuplicateHousehold } from "@/lib/crm/duplicate-household";
+import { ensurePlanImport } from "@/lib/imports/plan-builder-core";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 import type { ImportRateLimitOp } from "@/lib/rate-limit";
 import { changeListView } from "../change-list-view";
-import { defineWriteTool, McpInputError, type McpTool } from "../define-tool";
+import { defineHouseholdWriteTool, defineWriteTool, McpInputError, type McpTool } from "../define-tool";
 import { CLIENT_UNREADABLE_MESSAGE, McpForbiddenError } from "../guards";
 import {
   describeStep,
@@ -368,7 +370,123 @@ const saveFactFinderStep = defineWriteTool({
   auditMetadata: (args) => ({ importId: args.importId, changeSetVersion: args.changeSetVersion }),
 });
 
+const LIFE_EXPECTANCY = 95;
+const dateOfBirth = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD.");
+const retirementAge = z.number().int().min(40).max(85);
+const filingStatus = z.enum(["single", "married_joint", "married_separate", "head_of_household"]);
+const person = z.object({ firstName: z.string().min(1), lastName: z.string().min(1), dateOfBirth });
+
+/** The core's refusals written for a person; anything else is not model-safe. */
+const PLAN_REFUSAL = /retirement age is required|already has a plan|needs a date of birth/;
+
+const createHousehold = defineHouseholdWriteTool({
+  name: "create_household",
+  title: "Create a household",
+  description:
+    "Create a household with its plan, or start the plan of an existing prospect household, and open step 0 of " +
+    "its fact finder as a draft. Give household (a new household) or householdId with prospect (a household " +
+    "that has no plan yet), not both. A new household is checked first for a likely duplicate: a household you " +
+    "can see whose primary contact has the same name and date of birth. If one exists nothing is created and " +
+    "likelyDuplicate is returned; pass its householdId as differentFromHouseholdId to create anyway. Life " +
+    "expectancy is set to 95 for everyone. Returns clientId, householdId and importId for " +
+    "fill_fact_finder_step.",
+  inputSchema: z
+    .object({
+      householdId: z.string().optional().describe("An existing household with no plan yet. Needs prospect."),
+      prospect: z
+        .object({
+          filingStatus,
+          retirementAge: retirementAge.describe("The primary person's retirement age."),
+          spouseRetirementAge: retirementAge.optional().describe("Required when the household has a spouse."),
+        })
+        .optional(),
+      household: z
+        .object({
+          name: z.string().min(1).describe("The household's name, e.g. \"Smith Household\"."),
+          state: z.string().optional().describe("USPS two-letter state code."),
+          primary: person.extend({ retirementAge }),
+          spouse: person.extend({ retirementAge }).optional(),
+          filingStatus,
+        })
+        .optional(),
+      differentFromHouseholdId: z
+        .string()
+        .optional()
+        .describe("The likelyDuplicate householdId, when it is a different family."),
+    })
+    .refine((a) => (a.householdId === undefined) !== (a.household === undefined), {
+      message: "Give either household or householdId, not both.",
+    })
+    .refine((a) => (a.householdId === undefined) === (a.prospect === undefined), {
+      message: "householdId goes with prospect, and prospect with householdId.",
+    }),
+  handler: async (args, { principal, firmId }) => {
+    // Before anything is created: a refusal leaves no household, client or draft behind.
+    const entitled = await aiImportCheckFor(principal);
+    if (!entitled.ok) throw refusalError(entitled);
+    const base = { firmId, actorUserId: principal.userId, principal, label: "Claude: Household" };
+
+    if (args.householdId !== undefined && args.prospect) {
+      const { filingStatus: status, retirementAge: age, spouseRetirementAge: spouseAge } = args.prospect;
+      try {
+        const created = await ensurePlanImport({
+          ...base,
+          mode: "prospect",
+          prospect: {
+            householdId: args.householdId,
+            filingStatus: status,
+            retirementAge: age,
+            lifeExpectancy: LIFE_EXPECTANCY,
+            ...(spouseAge !== undefined && { spouseRetirementAge: spouseAge, spouseLifeExpectancy: LIFE_EXPECTANCY }),
+          },
+        });
+        return { created: true as const, clientId: created.clientId, householdId: args.householdId, importId: created.importId, nextStep: "household" as const };
+      } catch (err) {
+        if (err instanceof Error && PLAN_REFUSAL.test(err.message)) throw new McpInputError(err.message);
+        throw err;
+      }
+    }
+
+    const h = args.household!;
+    const duplicate = await findLikelyDuplicateHousehold(principal, h.primary);
+    if (duplicate && duplicate.householdId !== args.differentFromHouseholdId) {
+      return {
+        created: false as const,
+        likelyDuplicate: {
+          householdId: duplicate.householdId,
+          name: duplicate.name,
+          hasPlan: duplicate.clientId !== null,
+          clientId: duplicate.clientId,
+        },
+      };
+    }
+    const created = await ensurePlanImport({
+      ...base,
+      mode: "new",
+      newHousehold: {
+        householdName: h.name,
+        state: h.state,
+        primary: { firstName: h.primary.firstName, lastName: h.primary.lastName, dateOfBirth: h.primary.dateOfBirth },
+        ...(h.spouse && {
+          spouse: { firstName: h.spouse.firstName, lastName: h.spouse.lastName, dateOfBirth: h.spouse.dateOfBirth },
+        }),
+        filingStatus: h.filingStatus,
+        retirementAge: h.primary.retirementAge,
+        lifeExpectancy: LIFE_EXPECTANCY,
+        ...(h.spouse && { spouseRetirementAge: h.spouse.retirementAge, spouseLifeExpectancy: LIFE_EXPECTANCY }),
+      },
+    });
+    return { created: true as const, clientId: created.clientId, householdId: created.householdId!, importId: created.importId, nextStep: "household" as const };
+  },
+  auditMetadata: (args, result) => ({
+    mode: args.household ? "new" : "prospect",
+    householdId: "householdId" in result ? result.householdId : (args.householdId ?? null),
+    ...("importId" in result && { importId: result.importId }),
+  }),
+});
+
 export const householdBuildingTools: McpTool[] = [
+  createHousehold,
   startFactFinderStep,
   fillFactFinderStep,
   reviewFactFinderStep,

@@ -211,7 +211,7 @@ describe("ensurePlanImport", () => {
         },
       });
 
-      expect(result).toEqual({ clientId: "c2", scenarioId: "scn2", importId: "imp1" });
+      expect(result).toEqual({ clientId: "c2", scenarioId: "scn2", importId: "imp1", householdId: "hh1" });
 
       // No firm or actor override: the session supplies both, as before.
       expect(m.createCrmHousehold).toHaveBeenCalledWith(
@@ -328,7 +328,7 @@ describe("ensurePlanImport", () => {
         },
       });
 
-      expect(result).toEqual({ clientId: "c2", scenarioId: "scn2", importId: "imp1" });
+      expect(result).toEqual({ clientId: "c2", scenarioId: "scn2", importId: "imp1", householdId: "hh1" });
       err.mockRestore();
     });
 

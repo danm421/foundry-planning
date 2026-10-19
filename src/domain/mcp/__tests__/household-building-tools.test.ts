@@ -14,6 +14,9 @@ const h = vi.hoisted(() => ({
   saveChangeSet: vi.fn(),
   runLeftovers: vi.fn(),
   withAiCallerOrg: vi.fn(),
+  ensurePlanImport: vi.fn(),
+  findLikelyDuplicateHousehold: vi.fn(),
+  verifyCrmHouseholdAccessFor: vi.fn(),
 }));
 
 // The real create check (it reads the mocked client access and audit); the import gate is stubbed.
@@ -34,9 +37,13 @@ vi.mock("@/lib/rate-limit", () => ({
 vi.mock("@/lib/fact-finder/review", () => ({ reviewFactFinder: h.reviewFactFinder }));
 vi.mock("@/lib/fact-finder/save/save", () => ({ saveChangeSet: h.saveChangeSet }));
 vi.mock("@/lib/fact-finder/placement/leftovers-run", () => ({ runLeftovers: h.runLeftovers }));
+vi.mock("@/lib/imports/plan-builder-core", () => ({ ensurePlanImport: h.ensurePlanImport }));
+vi.mock("@/lib/crm/duplicate-household", () => ({ findLikelyDuplicateHousehold: h.findLikelyDuplicateHousehold }));
+vi.mock("@/lib/crm/authz", () => ({ verifyCrmHouseholdAccessFor: h.verifyCrmHouseholdAccessFor }));
 vi.mock("@/lib/ai/resolve", () => ({ withAiCallerOrg: h.withAiCallerOrg }));
 
 import { householdBuildingTools } from "../tools/household-building";
+import { WRITE_DISABLED_MESSAGE } from "../define-tool";
 import { changeListView } from "../change-list-view";
 import { McpInputError } from "../define-tool";
 import { CLIENT_UNREADABLE_MESSAGE, McpForbiddenError } from "../guards";
@@ -61,6 +68,7 @@ const start = tool("start_fact_finder_step");
 const fill = tool("fill_fact_finder_step");
 const review = tool("review_fact_finder_step");
 const save = tool("save_fact_finder_step");
+const create = tool("create_household");
 
 const BASE = "11111111-1111-4111-8111-111111111111";
 const IMPORT = "22222222-2222-4222-8222-222222222222";
@@ -110,6 +118,9 @@ beforeEach(() => {
   h.firmClaudeWritesEnabled.mockResolvedValue(true);
   h.verifyClientAccessFor.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_1", access: "own" });
   h.recordAudit.mockResolvedValue(undefined);
+  h.verifyCrmHouseholdAccessFor.mockResolvedValue({ ok: true, firmId: "org_1", advisorId: "u1" });
+  h.findLikelyDuplicateHousehold.mockResolvedValue(null);
+  h.ensurePlanImport.mockResolvedValue({ clientId: "c9", scenarioId: BASE, importId: IMPORT, householdId: "hh9" });
   h.resolveBaseCaseScenarioId.mockResolvedValue(BASE);
   h.loadRecordBook.mockResolvedValue(seededBook());
   h.createFactFinderImport.mockResolvedValue({ id: IMPORT, payloadJson: { factFinder: emptyFactFinderState() } });
@@ -675,5 +686,145 @@ describe("save_fact_finder_step", () => {
     await call({ leaveOut: [{ lineId: "L2" }] });
     const audit = h.recordAudit.mock.calls.find(([a]) => a.action === "mcp.tool_write")![0];
     expect(audit.metadata).toEqual({ importId: IMPORT, changeSetVersion: 4, tool: "save_fact_finder_step", via: "claude" });
+  });
+});
+
+describe("create_household", () => {
+  const primary = { firstName: "Ada", lastName: "Quill", dateOfBirth: "1970-02-03", retirementAge: 65 };
+  const spouse = { firstName: "Ben", lastName: "Quill", dateOfBirth: "1972-04-05", retirementAge: 63 };
+  const newHousehold = { name: "Quill Household", state: "CA", primary, spouse, filingStatus: "married_joint" };
+
+  it("creates a household and its plan with the exact core arguments, life expectancy 95 for both", async () => {
+    const out = await create.run({ household: newHousehold }, principal);
+
+    expect(h.ensurePlanImport).toHaveBeenCalledWith({
+      mode: "new",
+      firmId: "org_1",
+      actorUserId: "u1",
+      principal,
+      label: "Claude: Household",
+      newHousehold: {
+        householdName: "Quill Household",
+        state: "CA",
+        primary: { firstName: "Ada", lastName: "Quill", dateOfBirth: "1970-02-03" },
+        spouse: { firstName: "Ben", lastName: "Quill", dateOfBirth: "1972-04-05" },
+        filingStatus: "married_joint",
+        retirementAge: 65,
+        lifeExpectancy: 95,
+        spouseRetirementAge: 63,
+        spouseLifeExpectancy: 95,
+      },
+    });
+    expect(out).toEqual({ created: true, clientId: "c9", householdId: "hh9", importId: IMPORT, nextStep: "household" });
+  });
+
+  it("audits the mode and the household, and records the client", async () => {
+    await create.run({ household: newHousehold }, principal);
+    const row = h.recordAudit.mock.calls.map((c) => c[0]).find((a) => a.action === "mcp.tool_write");
+    expect(row.metadata).toMatchObject({ mode: "new", householdId: "hh9", tool: "create_household" });
+    expect(row.clientId).toBe("c9");
+  });
+
+  it("returns a visible duplicate and creates nothing", async () => {
+    h.findLikelyDuplicateHousehold.mockResolvedValue({ householdId: "hh-dup", name: "Quill Household", clientId: null });
+    const out = await create.run({ household: newHousehold }, principal);
+
+    expect(h.findLikelyDuplicateHousehold).toHaveBeenCalledWith(principal, newHousehold.primary);
+    expect(out).toEqual({
+      created: false,
+      likelyDuplicate: { householdId: "hh-dup", name: "Quill Household", hasPlan: false, clientId: null },
+    });
+    expect(h.ensurePlanImport).not.toHaveBeenCalled();
+  });
+
+  it("says a duplicate has a plan when it has a planning client", async () => {
+    h.findLikelyDuplicateHousehold.mockResolvedValue({ householdId: "hh-dup", name: "Q", clientId: "c5" });
+    const out = (await create.run({ household: newHousehold }, principal)) as { likelyDuplicate: unknown };
+    expect(out.likelyDuplicate).toMatchObject({ hasPlan: true, clientId: "c5" });
+  });
+
+  it("creates when differentFromHouseholdId names that duplicate", async () => {
+    h.findLikelyDuplicateHousehold.mockResolvedValue({ householdId: "hh-dup", name: "Q", clientId: null });
+    const out = await create.run({ household: newHousehold, differentFromHouseholdId: "hh-dup" }, principal);
+    expect(h.ensurePlanImport).toHaveBeenCalledTimes(1);
+    expect(out).toMatchObject({ created: true });
+  });
+
+  it("still returns the duplicate when differentFromHouseholdId names another household", async () => {
+    h.findLikelyDuplicateHousehold.mockResolvedValue({ householdId: "hh-dup", name: "Q", clientId: null });
+    const out = await create.run({ household: newHousehold, differentFromHouseholdId: "hh-other" }, principal);
+    expect(out).toMatchObject({ created: false });
+    expect(h.ensurePlanImport).not.toHaveBeenCalled();
+  });
+
+  it("starts a prospect's plan after the household access check, with the retirement ages and 95", async () => {
+    const out = await create.run(
+      { householdId: "hh9", prospect: { filingStatus: "single", retirementAge: 66 } },
+      principal,
+    );
+    expect(h.verifyCrmHouseholdAccessFor).toHaveBeenCalledWith(principal, "hh9");
+    expect(h.findLikelyDuplicateHousehold).not.toHaveBeenCalled();
+    expect(h.ensurePlanImport).toHaveBeenCalledWith({
+      mode: "prospect",
+      firmId: "org_1",
+      actorUserId: "u1",
+      principal,
+      label: "Claude: Household",
+      prospect: { householdId: "hh9", filingStatus: "single", retirementAge: 66, lifeExpectancy: 95 },
+    });
+    expect(out).toEqual({ created: true, clientId: "c9", householdId: "hh9", importId: IMPORT, nextStep: "household" });
+  });
+
+  it("passes the spouse's retirement age for a prospect", async () => {
+    await create.run(
+      { householdId: "hh9", prospect: { filingStatus: "married_joint", retirementAge: 66, spouseRetirementAge: 64 } },
+      principal,
+    );
+    expect(h.ensurePlanImport.mock.calls[0][0].prospect).toMatchObject({ spouseRetirementAge: 64, spouseLifeExpectancy: 95 });
+  });
+
+  it("answers the core's retirement-age refusal as an input error", async () => {
+    h.ensurePlanImport.mockRejectedValue(new Error("Ben's retirement age is required."));
+    await expect(
+      create.run({ householdId: "hh9", prospect: { filingStatus: "married_joint", retirementAge: 66 } }, principal),
+    ).rejects.toThrow(McpInputError);
+  });
+
+  it("refuses a household the caller can't see, creating nothing", async () => {
+    h.verifyCrmHouseholdAccessFor.mockResolvedValue({ ok: false });
+    await expect(
+      create.run({ householdId: "hh9", prospect: { filingStatus: "single", retirementAge: 66 } }, principal),
+    ).rejects.toThrow(McpForbiddenError);
+    expect(h.ensurePlanImport).not.toHaveBeenCalled();
+  });
+
+  it("refuses a firm without AI import before creating anything, and audits the denial", async () => {
+    const noAi = { ...principal, entitlements: [] };
+    await expect(create.run({ household: newHousehold }, noAi)).rejects.toThrow("AI features aren't enabled for this firm.");
+    expect(h.findLikelyDuplicateHousehold).not.toHaveBeenCalled();
+    expect(h.ensurePlanImport).not.toHaveBeenCalled();
+    expect(h.recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "billing.access_denied", firmId: "org_1", actorId: "u1" }),
+    );
+  });
+
+  it("fails the schema for householdId with household, or either without its partner", async () => {
+    const prospect = { filingStatus: "single", retirementAge: 66 };
+    await expect(create.run({ householdId: "hh9", prospect, household: newHousehold }, principal)).rejects.toThrow();
+    await expect(create.run({ householdId: "hh9" }, principal)).rejects.toThrow();
+    await expect(create.run({ prospect }, principal)).rejects.toThrow();
+    await expect(create.run({}, principal)).rejects.toThrow();
+    expect(h.ensurePlanImport).not.toHaveBeenCalled();
+  });
+
+  it("requires a spouse's retirement age", async () => {
+    const noAge = { firstName: spouse.firstName, lastName: spouse.lastName, dateOfBirth: spouse.dateOfBirth };
+    await expect(create.run({ household: { ...newHousehold, spouse: noAge } }, principal)).rejects.toThrow();
+  });
+
+  it("refuses while the firm's switch is off", async () => {
+    h.firmClaudeWritesEnabled.mockResolvedValue(false);
+    await expect(create.run({ household: newHousehold }, principal)).rejects.toThrow(WRITE_DISABLED_MESSAGE);
+    expect(h.ensurePlanImport).not.toHaveBeenCalled();
   });
 });

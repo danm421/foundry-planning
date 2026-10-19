@@ -30,7 +30,7 @@ export async function refuseUnlessAiImportEntitled(args: {
 /** The audit row a refused AI import writes. Without `actorId`, recordAudit names the session's actor. */
 export async function recordAiImportDenied(args: {
   firmId: string;
-  clientId: string;
+  clientId?: string;
   actorId?: string;
   metadata?: Record<string, unknown>;
 }): Promise<void> {
