@@ -43,6 +43,7 @@ vi.mock("@/db", () => {
     const node = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
     node.where = () => node;
     node.orderBy = () => node;
+    node.leftJoin = () => node;
     return node;
   };
   return {
@@ -76,7 +77,7 @@ vi.mock("@/lib/investments/load-fund-portfolio-options", () => ({
 vi.mock("@/lib/accounts/load-account-rows", () => ({
   loadAccountMetaRows: vi.fn().mockResolvedValue([]),
   buildAccountRows: vi.fn().mockReturnValue([]),
-  linkedSourceMapFrom: vi.fn().mockReturnValue(new Map()),
+  linkedStatusMapFrom: vi.fn().mockReturnValue(new Map()),
 }));
 vi.mock("@/lib/milestones", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/milestones")>()),

@@ -44,7 +44,7 @@ function business(overrides: Record<string, unknown> = {}) {
 
 const args = {
   familyMembers: [],
-  linkedSourceById: new Map(),
+  linkedById: new Map(),
   stockOptionPlans: [],
   planStartYear: 2026,
 };

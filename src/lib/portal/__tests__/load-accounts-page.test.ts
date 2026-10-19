@@ -12,6 +12,7 @@ vi.mock("@/db/schema", () => ({
   liabilityOwners: { _name: "liabilityOwners" },
   plaidTransactions: { _name: "plaidTransactions" },
   accountHoldings: { _name: "accountHoldings" },
+  plaidItems: { _name: "plaidItems" },
 }));
 vi.mock("drizzle-orm", () => ({ and: (...a: unknown[]) => a, eq: (...a: unknown[]) => a, inArray: (...a: unknown[]) => a }));
 
@@ -52,49 +53,54 @@ let mockClientRow: Record<string, boolean> = {
 vi.mock("@/db", () => ({
   db: {
     select: () => ({
-      from: (tbl: { _name: string }) => ({
-        where: () => {
-          if (tbl._name === "clients") {
-            return { limit: () => Promise.resolve([mockClientRow]) };
-          }
-          if (tbl._name === "scenarios") {
-            return { limit: () => Promise.resolve(mockNoScenario ? [] : [{ id: "scenario-base" }]) };
-          }
-          if (tbl._name === "accounts") {
-            const rows = mockAccounts;
-            return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
-          }
-          if (tbl._name === "accountOwners") {
-            const rows = mockAccountOwners;
-            return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
-          }
-          if (tbl._name === "familyMembers") {
-            const rows = mockFamilyMembers;
-            return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
-          }
-          if (tbl._name === "entities") {
-            const rows = [{ id: "ent1", name: "Pat Family Trust" }];
-            return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
-          }
-          if (tbl._name === "liabilities") {
-            const rows = mockLiabilities;
-            return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
-          }
-          if (tbl._name === "liabilityOwners") {
-            const rows = mockLiabilityOwners;
-            return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
-          }
-          if (tbl._name === "plaidTransactions") {
-            const rows = mockPlaidTransactions;
-            return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
-          }
-          if (tbl._name === "accountHoldings") {
-            const rows = mockHoldings;
-            return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
-          }
-          return { then: (resolve: (v: unknown) => unknown) => resolve([]) };
-        },
-      }),
+      // The accounts and liabilities reads left-join their Plaid item; the
+      // join changes nothing here, the fixture rows carry its columns.
+      from: (tbl: { _name: string }) => {
+        const query = {
+          where: () => {
+            if (tbl._name === "clients") {
+              return { limit: () => Promise.resolve([mockClientRow]) };
+            }
+            if (tbl._name === "scenarios") {
+              return { limit: () => Promise.resolve(mockNoScenario ? [] : [{ id: "scenario-base" }]) };
+            }
+            if (tbl._name === "accounts") {
+              const rows = mockAccounts;
+              return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
+            }
+            if (tbl._name === "accountOwners") {
+              const rows = mockAccountOwners;
+              return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
+            }
+            if (tbl._name === "familyMembers") {
+              const rows = mockFamilyMembers;
+              return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
+            }
+            if (tbl._name === "entities") {
+              const rows = [{ id: "ent1", name: "Pat Family Trust" }];
+              return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
+            }
+            if (tbl._name === "liabilities") {
+              const rows = mockLiabilities;
+              return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
+            }
+            if (tbl._name === "liabilityOwners") {
+              const rows = mockLiabilityOwners;
+              return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
+            }
+            if (tbl._name === "plaidTransactions") {
+              const rows = mockPlaidTransactions;
+              return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
+            }
+            if (tbl._name === "accountHoldings") {
+              const rows = mockHoldings;
+              return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
+            }
+            return { then: (resolve: (v: unknown) => unknown) => resolve([]) };
+          },
+        };
+        return { ...query, leftJoin: () => query };
+      },
     }),
   },
 }));
@@ -146,6 +152,33 @@ describe("loadAccountsPage", () => {
     expect(dto.assets[1]).toMatchObject({
       id: "a2", name: "Brokerage", category: "taxable", subType: "brokerage",
       last4: "1234", value: 5000, isPlaidLinked: false,
+    });
+  });
+
+  it("marks an integration-synced account with its source", async () => {
+    // The fixture rows predate these two columns; the loader reads them when present.
+    mockAccounts = [{ ...mockAccounts[1], externalProvider: "orion", source: "orion" }] as never;
+    const dto = await loadAccountsPage("c1");
+    expect(dto.assets[0]).toMatchObject({
+      isPlaidLinked: false,
+      linked: { source: "orion", syncedAt: null, issue: null },
+    });
+  });
+
+  it("dates a Plaid account by its bank connection and flags a broken link", async () => {
+    mockAccounts = [
+      {
+        ...mockAccounts[0],
+        plaidItemId: "item-1",
+        plaidRefreshedAt: new Date("2026-10-15T12:00:00Z"),
+        plaidRefreshError: "ITEM_LOGIN_REQUIRED",
+      },
+    ] as never;
+    const dto = await loadAccountsPage("c1");
+    expect(dto.assets[0].linked).toEqual({
+      source: "plaid",
+      syncedAt: "2026-10-15T12:00:00.000Z",
+      issue: "reconnect",
     });
   });
 

@@ -11,6 +11,7 @@ function Row({
   onEdit,
   deletable = true,
   label,
+  leadingIcon,
   labelBadge,
   subLabel,
   value,
@@ -28,6 +29,8 @@ function Row({
   onEdit?: () => void;
   deletable?: boolean;
   label: string;
+  /** Sits before the name — the connected-account link icon. */
+  leadingIcon?: ReactNode;
   labelBadge?: ReactNode;
   subLabel?: string;
   value: string;
@@ -55,6 +58,7 @@ function Row({
     >
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-ink">
+          {leadingIcon}
           {nameOpensEditor ? (
             <button
               type="button"

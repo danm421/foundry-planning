@@ -16,8 +16,12 @@
 export const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024;
 
 /** Maximum size for a browser → Blob direct upload (the client portal's, and
- *  every `@/lib/uploads/staged-upload` caller's). */
+ *  the default for every `@/lib/uploads/staged-upload` caller). */
 export const MAX_DIRECT_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024;
+
+/** Per-file cap on a Data Collection upload — a browser → Blob staged upload,
+ *  so the 4.5 MB function-body cap doesn't apply. */
+export const MAX_INTAKE_FILE_BYTES = 30 * 1024 * 1024;
 
 /** Source kinds of a vault row that holds an uploaded file of its own — not a
  *  generated plan (Foundry's output) or an import link (no bytes). */

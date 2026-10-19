@@ -21,7 +21,7 @@ function assetCard(a: PortalAccountRow): AccountCardData {
     last4: a.last4,
     subtitle: assetCardSubtitle(a),
     value: a.value,
-    isPlaidLinked: a.isPlaidLinked,
+    linked: a.linked,
   };
 }
 
@@ -32,7 +32,7 @@ function debtCard(d: PortalDebtRow): AccountCardData {
     last4: null,
     subtitle: debtCardSubtitle(d),
     value: d.balance,
-    isPlaidLinked: d.isPlaidLinked,
+    linked: d.linked,
   };
 }
 

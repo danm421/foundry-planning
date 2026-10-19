@@ -21,7 +21,7 @@ function row(overrides: Partial<LiabilityRow> = {}): LiabilityRow {
     linkedPropertyId: null,
     ownerEntityId: null,
     isInterestDeductible: true,
-    linkedSource: null,
+    linked: null,
     owners: [{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }],
     parentAccountId: null,
     ...overrides,
@@ -47,9 +47,9 @@ describe("buildLiabilityScenarioDesiredFields", () => {
     expect(buildLiabilityScenarioDesiredFields(row(), {})).not.toHaveProperty("id");
   });
 
-  it("strips linkedSource — a view-only integration marker", () => {
-    const out = buildLiabilityScenarioDesiredFields(row({ linkedSource: "plaid" }), {});
-    expect(out).not.toHaveProperty("linkedSource");
+  it("strips linked — a view-only integration marker", () => {
+    const out = buildLiabilityScenarioDesiredFields(row({ linked: { source: "plaid", syncedAt: null, issue: null } }), {});
+    expect(out).not.toHaveProperty("linked");
   });
 
   it("strips ownerEntityId — derived from owners by controllingEntity()", () => {

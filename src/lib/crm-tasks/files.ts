@@ -7,7 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { crmTaskActivity, crmTaskFiles } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
-import { validateDocumentUpload } from "@/lib/files/content-type";
+import { documentMimeType } from "@/lib/files/content-type";
 import { toSafeDisplayFilename } from "@/lib/files/safe-filename";
 
 /**
@@ -27,8 +27,8 @@ import { toSafeDisplayFilename } from "@/lib/files/safe-filename";
  * that re-checks task scoping before streaming the blob. `del()`
  * accepts the stored pathname.
  *
- * Content is validated by magic bytes (`validateDocumentUpload`) before
- * anything is written, so the persisted `mimeType` is server-trusted
+ * Any file is accepted. Its type is read from the magic bytes
+ * (`documentMimeType`), so the persisted `mimeType` is server-trusted
  * rather than the caller-supplied `file.type`.
  *
  * Callers pass `firmId`, `taskId`, and `uploadedByUserId` explicitly;
@@ -61,7 +61,7 @@ export async function uploadCrmTaskFile(args: {
   }
 
   const buffer = Buffer.from(await args.file.arrayBuffer());
-  const { mimeType } = validateDocumentUpload(args.file, buffer);
+  const mimeType = documentMimeType(args.file.type, buffer);
 
   const safe = sanitizeFilename(args.file.name || "attachment");
   // The stored display filename is reused downstream in download headers —

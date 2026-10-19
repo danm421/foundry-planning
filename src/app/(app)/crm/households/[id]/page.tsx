@@ -15,6 +15,7 @@ import {
 import { coerceQuickFilter, normalizeQuickFilters } from "@/lib/crm-tasks/filters";
 import { listFirmMembers } from "@/lib/crm-tasks/members";
 import { requireOrgId } from "@/lib/db-helpers";
+import { currentUserHasClientPortal } from "@/lib/authz";
 
 import { HouseholdDetail, type HouseholdDetailTasksBootstrap } from "./household-detail";
 import type { TaskDetailBundle } from "@/app/(app)/tasks/_components/tasks-page";
@@ -51,6 +52,7 @@ export default async function CrmHouseholdPage({
     firmTags,
     households,
     relationships,
+    portalEnabled,
   ] = await Promise.all([
     resolveActors([household.advisorId]),
     listTasks(firmId, { householdId: id }, {}, filters),
@@ -58,6 +60,7 @@ export default async function CrmHouseholdPage({
     listFirmTags(firmId),
     listHouseholdPickerOptions(firmId, userId, orgRole),
     listHouseholdRelationships(id),
+    currentUserHasClientPortal(),
   ]);
   const advisorName = advisorActors.get(household.advisorId)?.name ?? household.advisorId;
 
@@ -135,6 +138,7 @@ export default async function CrmHouseholdPage({
       tasksBootstrap={tasksBootstrap}
       canManage={canManage}
       relationships={relationships}
+      portalEnabled={portalEnabled}
     />
   );
 }

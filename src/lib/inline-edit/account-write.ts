@@ -60,7 +60,7 @@ export type AccountPatch = Partial<
  */
 const NON_WRITABLE_KEYS = new Set<keyof AccountRow>([
   "id",
-  "linkedSource",
+  "linked",
   "beneficiaryDisplayName",
   "owner",
   // Derived, exactly like `owner`: `buildAccountRows` computes it as

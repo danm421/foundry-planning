@@ -5,7 +5,7 @@ import type { PortalAccountRow, PortalDebtRow } from "../contracts";
 function asset(over: Partial<PortalAccountRow> = {}): PortalAccountRow {
   return {
     id: "a1", name: "Acct", category: "cash", subType: "checking",
-    last4: null, value: 100, isPlaidLinked: false, ...over,
+    last4: null, value: 100, isPlaidLinked: false, linked: null, ...over,
   };
 }
 
@@ -14,7 +14,7 @@ function debt(over: Partial<PortalDebtRow> = {}): PortalDebtRow {
     id: "l1", name: "Loan", balance: 100, rawBalance: 100, liabilityType: "mortgage",
     aprPercentage: null, statementBalance: null, minimumPayment: null,
     nextPaymentDueDate: null, interestRate: null, monthlyPayment: null, payoffYear: null,
-    isPlaidLinked: false, ownerFmIds: [], ownerEntityIds: [],
+    isPlaidLinked: false, linked: null, ownerFmIds: [], ownerEntityIds: [],
     ...over,
   };
 }

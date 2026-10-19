@@ -7,6 +7,7 @@ import {
   isPortalVisibleAccount,
   toPortalAccountVisibility,
 } from "@/lib/portal/account-visibility";
+import { isFirmSynced } from "@/lib/accounts/linked-source";
 
 export type { PlaidMappedAccount };
 
@@ -30,15 +31,18 @@ export async function loadLinkCandidates(clientId: string) {
       subType: accounts.subType,
       isDefaultChecking: accounts.isDefaultChecking,
       parentAccountId: accounts.parentAccountId,
+      plaidItemId: accounts.plaidItemId,
+      externalProvider: accounts.externalProvider,
+      source: accounts.source,
     })
     .from(accounts)
     .where(and(eq(accounts.clientId, clientId), isNull(accounts.plaidItemId)))
     .orderBy(accounts.name);
 
-  // Offer only accounts the portal shows the client; the commit route enforces
-  // the same rule.
+  // Offer only accounts the portal shows the client and the firm's integration
+  // doesn't already keep current; the commit route enforces the same rules.
   const existingCandidates = candidateRows
-    .filter((a) => isPortalVisibleAccount(toPortalAccountVisibility(a)))
+    .filter((a) => isPortalVisibleAccount(toPortalAccountVisibility(a)) && !isFirmSynced(a))
     .map(({ id, name, category, subType }) => ({ id, name, category, subType }));
 
   const existingLiabilityCandidates = await db

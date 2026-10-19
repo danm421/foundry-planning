@@ -265,8 +265,21 @@ export interface PortalDebtRow {
   /** Calendar year the plan clears this debt. Null without terms. */
   payoffYear: number | null;
   isPlaidLinked: boolean;
+  /** Null = typed in by hand. Debts connect through Plaid only. */
+  linked: PortalLinkedStatus | null;
   ownerFmIds: string[];
   ownerEntityIds: string[];
+}
+
+/** The connection that keeps a balance current, and when it last did. Mirrors
+ *  `LinkedStatus` (lib/accounts/linked-source.ts), which this file may not
+ *  import; linked-source.test.ts pins the two equal. */
+export interface PortalLinkedStatus {
+  source: "plaid" | "orion" | "schwab" | "addepar";
+  /** ISO time the connection last refreshed the balance; null = never yet. */
+  syncedAt: string | null;
+  /** A broken Plaid link the client has to fix. */
+  issue: "reconnect" | "revoked" | null;
 }
 
 export interface PortalAccountRow {
@@ -277,6 +290,8 @@ export interface PortalAccountRow {
   last4: string | null;
   value: number;
   isPlaidLinked: boolean;
+  /** Null = typed in by hand. */
+  linked: PortalLinkedStatus | null;
 }
 
 export interface AccountsOverviewDTO {

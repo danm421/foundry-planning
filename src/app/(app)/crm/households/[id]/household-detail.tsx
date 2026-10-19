@@ -8,6 +8,7 @@ import type { TaskListRow } from "@/lib/crm-tasks/queries";
 import type { FirmMember } from "@/lib/crm-tasks/members";
 import type { TaskDetailBundle } from "@/app/(app)/tasks/_components/tasks-page";
 import { HouseholdTrashActions } from "@/components/household-trash-actions";
+import { OverflowMenu, type OverflowMenuItem } from "@/components/overflow-menu";
 import {
   SectionLabel,
   chipAccentClass,
@@ -71,6 +72,7 @@ export function HouseholdDetail({
   tasksBootstrap,
   canManage,
   relationships,
+  portalEnabled,
 }: {
   household: Household;
   advisorName: string;
@@ -79,6 +81,9 @@ export function HouseholdDetail({
   tasksBootstrap: HouseholdDetailTasksBootstrap;
   canManage: boolean;
   relationships: HouseholdRelationshipView[];
+  /** The caller's client-portal entitlement — gates Preview, as on the
+   *  client's Manage Portal page. Manage itself works without it (intake). */
+  portalEnabled: boolean;
 }) {
   const planningClientId = household.planningClient?.id ?? null;
   const tabs: Tab[] = [...ALL_TABS];
@@ -90,6 +95,17 @@ export function HouseholdDetail({
   const planningHref = planningClientId
     ? `/clients/${planningClientId}/details`
     : `/clients/new?crmHouseholdId=${household.id}`;
+
+  // The portal belongs to the planning client, so a household that has none
+  // has no portal to manage or preview yet.
+  const portalItems: OverflowMenuItem[] = planningClientId
+    ? [
+        { label: "Manage", href: `/clients/${planningClientId}/portal` },
+        ...(portalEnabled
+          ? [{ label: "Preview", href: `/clients/${planningClientId}/portal/preview`, newTab: true }]
+          : []),
+      ]
+    : [];
 
   return (
     <div className="px-6 pb-10 pt-5 sm:px-8">
@@ -121,6 +137,9 @@ export function HouseholdDetail({
             >
               Meeting Prep
             </Link>
+          )}
+          {!household.deletedAt && portalItems.length > 0 && (
+            <OverflowMenu variant="button" triggerLabel="Portal" items={portalItems} />
           )}
           <Link href={planningHref} className={primaryButtonClass}>
             {household.planningClient ? "Access planning" : "Start planning"}

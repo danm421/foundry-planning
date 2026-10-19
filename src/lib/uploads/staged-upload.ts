@@ -5,12 +5,13 @@ import { MAX_DIRECT_UPLOAD_SIZE_BYTES } from "@/lib/crm/document-constants";
 import { sanitizeFilename } from "@/lib/crm/documents";
 
 /**
- * Browser → Blob uploads for routes that READ a file rather than keep it (AI
- * extraction). Vercel caps a function request body at 4.5 MB, so the browser
- * uploads straight to Blob under a pathname the server picked (step 1, then
- * `stageFile` in the browser), and posts only that pathname; the route takes
- * the bytes back and the staged copy is deleted (step 2). Blob enforces the
- * size cap on the upload itself.
+ * Browser → Blob uploads for routes that take a file in through a function (AI
+ * extraction reads it; Data Collection files it in the vault). Vercel caps a
+ * function request body at 4.5 MB, so the browser uploads straight to Blob
+ * under a pathname the server picked (step 1, then `stageFile` in the
+ * browser), and posts only that pathname; the route takes the bytes back and
+ * the staged copy is deleted (step 2). Blob enforces the size cap on the
+ * upload itself.
  *
  * Each route stages under a `stagingPrefix` scoped to what it already
  * authorised (one client). The pathname comes back from the browser, so step 2
@@ -32,11 +33,12 @@ export class StagedUploadError extends Error {
 export async function issueStagedUpload(
   prefix: string,
   filename: string,
+  maximumSizeInBytes = MAX_DIRECT_UPLOAD_SIZE_BYTES,
 ): Promise<{ pathname: string; clientToken: string }> {
   const pathname = `${prefix}${Date.now()}-${randomUUID()}-${sanitizeFilename(filename)}`;
   const clientToken = await generateClientTokenFromReadWriteToken({
     pathname,
-    maximumSizeInBytes: MAX_DIRECT_UPLOAD_SIZE_BYTES,
+    maximumSizeInBytes,
     // The SDK's own default is 30 seconds — too short for a large file.
     validUntil: Date.now() + 60 * 60 * 1000,
   });
@@ -44,7 +46,7 @@ export async function issueStagedUpload(
 }
 
 /** Step 2: read the staged file back, then delete it whether or not the read succeeded. */
-export async function takeStagedUpload(prefix: string, pathname: unknown): Promise<Buffer> {
+export async function takeStagedUpload(prefix: string, pathname: unknown): Promise<Buffer<ArrayBuffer>> {
   if (typeof pathname !== "string" || pathname === "") {
     throw new StagedUploadError(400, "file is required");
   }

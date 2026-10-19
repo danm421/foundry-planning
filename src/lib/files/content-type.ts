@@ -1,9 +1,13 @@
 // src/lib/files/content-type.ts
 /**
- * Magic-byte content validation for the document-upload surfaces (CRM
- * household docs + CRM task attachments). Mirrors lib/extraction/validate-upload.ts
- * but covers a broad business-document allowlist and refuses the render-in-origin
- * XSS class (HTML/SVG/XML-SVG) even when the bytes are otherwise text.
+ * Magic-byte typing for the document-upload surfaces (CRM household docs, CRM
+ * task attachments, the client portal, Data Collection). Any file is accepted;
+ * the bytes only decide the MIME type it is stored under. Mirrors
+ * lib/extraction/validate-upload.ts for the kinds it recognises, and never
+ * labels the render-in-origin XSS class (HTML/SVG/XML-SVG) as text — those, and
+ * anything unrecognised, are stored as `application/octet-stream`. Every
+ * download route also sends `attachment` + `nosniff`, so no stored file can
+ * render in the app's origin.
  */
 
 export type DocumentKind =
@@ -18,8 +22,8 @@ export type DocumentKind =
   | "text"; // csv / plain text
 
 const CONTROL_CHARS = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
-// Refuse anything that opens like markup — SVG/HTML render+execute in the app
-// origin if ever served inline, so they must never pass the text branch.
+// Anything that opens like markup must never pass the text branch — SVG/HTML
+// render+execute in the app origin if ever served inline.
 const MARKUP_HEAD = /^\s*<(\?xml|!doctype|!--|svg|html|script)/i;
 
 const HEIC_BRANDS = new Set(["heic", "heix", "heif", "mif1", "msf1", "hevc"]);
@@ -80,19 +84,13 @@ const OFFICE_MIME_ALLOWLIST = new Set([
   "application/zip",
 ]);
 
-export function validateDocumentUpload(
-  file: Pick<File, "type">,
-  buffer: Buffer,
-): { kind: DocumentKind; mimeType: string } {
+/** The MIME type to store an upload under — server-trusted, never the
+ *  caller's own claim except to tell the Office formats apart. */
+export function documentMimeType(clientType: string | undefined, buffer: Buffer): string {
   const kind = detectDocumentKind(buffer);
-  if (!kind) {
-    throw new Error(
-      "Unsupported or unsafe file type. Allowed: PDF, Office documents, images, and text/CSV.",
-    );
-  }
+  if (!kind) return "application/octet-stream";
   const canonical = CANONICAL_MIME[kind];
-  if (canonical) return { kind, mimeType: canonical };
-  const clientMime = (file.type || "").toLowerCase();
-  const mimeType = OFFICE_MIME_ALLOWLIST.has(clientMime) ? clientMime : "application/octet-stream";
-  return { kind, mimeType };
+  if (canonical) return canonical;
+  const clientMime = (clientType || "").toLowerCase();
+  return OFFICE_MIME_ALLOWLIST.has(clientMime) ? clientMime : "application/octet-stream";
 }

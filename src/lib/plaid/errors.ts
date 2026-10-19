@@ -37,6 +37,19 @@ export const REVOKED_CODES = new Set([
   "USER_ACCOUNT_REVOKED",
 ]);
 
+/** A broken link the client has to fix: log in again, or (access revoked)
+ *  unlink and re-link. */
+export type PlaidIssue = "reconnect" | "revoked";
+
+/** Which fix a stored last_refresh_error calls for — revoked wins, since
+ *  update mode can't repair it. Null when the client has nothing to do. */
+export function plaidIssueOf(code: string | null): PlaidIssue | null {
+  if (code == null) return null;
+  if (REVOKED_CODES.has(code)) return "revoked";
+  if (REAUTH_CODES.has(code)) return "reconnect";
+  return null;
+}
+
 /** True when the stored last_refresh_error requires the client to act. */
 export function needsUserAction(code: string | null): boolean {
   return code != null && (REAUTH_CODES.has(code) || REVOKED_CODES.has(code));

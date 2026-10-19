@@ -565,9 +565,11 @@ const getIntakeSubmitLimiter = buildLimiter(10, "1 h", "rl:intake-submit");
 // autosave: 8/hr allows for genuine typos and a spouse's second guess, and
 // nothing like enough for an attacker holding the link to enumerate.
 const getIntakeVerifyLimiter = buildLimiter(8, "1 h", "rl:intake-verify");
-// Document uploads on the public intake link. Lower than autosave — each call
-// carries up to 10MB and writes a live vault row.
-const getIntakeDocumentLimiter = buildLimiter(30, "1 h", "rl:intake-documents");
+// Document requests on the public intake link — an upload spends three (its
+// Blob token, its filing, the list refetch), so this leaves room for the form's
+// 25-file cap plus retries. Lower than autosave — each upload is up to 30MB and
+// writes a live vault row.
+const getIntakeDocumentLimiter = buildLimiter(100, "1 h", "rl:intake-documents");
 // Advisor-side nudge on a form already out with a client. Keyed on the FORM,
 // not the firm: one client being chased must not use up another's budget, and
 // the thing to stop is the same person receiving the same mail all afternoon.

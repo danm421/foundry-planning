@@ -11,10 +11,11 @@
 // columns — it is not a substitute and stays as-is.
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts } from "@/db/schema";
+import { accounts, plaidItems } from "@/db/schema";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 import type { AccountMeta } from "@/lib/scenario/account-meta";
-import type { AccountRow, LinkedSource } from "@/components/balance-sheet-view";
+import type { AccountRow } from "@/components/balance-sheet-view";
+import { linkedStatusOf, type LinkedStatus } from "./linked-source";
 import type { StockOptionPlan } from "@/engine/equity/types";
 import { withDerivedEquityValues } from "./equity-derived-values";
 import { inheritedIraRowFields } from "./inherited-ira";
@@ -44,19 +45,22 @@ export async function loadAccountMetaRows(clientId: string, baseScenarioId: stri
       source: accounts.source,
       plaidItemId: accounts.plaidItemId,
       externalProvider: accounts.externalProvider,
+      lastSyncedAt: accounts.lastSyncedAt,
+      plaidRefreshedAt: plaidItems.lastRefreshedAt,
+      plaidRefreshError: plaidItems.lastRefreshError,
     })
     .from(accounts)
+    .leftJoin(plaidItems, eq(plaidItems.id, accounts.plaidItemId))
     .where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, baseScenarioId)));
 }
 
-/** `plaidItemId` is the reliable Plaid signal — the `source` enum can lag until
- *  holdings ingest. Base-scoped, so scenario-added accounts correctly read as
- *  manual with no badge. */
-export function linkedSourceMapFrom(rows: AccountMetaRow[]): Map<string, LinkedSource> {
-  const out = new Map<string, LinkedSource>();
+/** Base-scoped, so scenario-added accounts correctly read as manual with no
+ *  badge. */
+export function linkedStatusMapFrom(rows: AccountMetaRow[]): Map<string, LinkedStatus> {
+  const out = new Map<string, LinkedStatus>();
   for (const r of rows) {
-    if (r.plaidItemId != null) out.set(r.id, "plaid");
-    else if (r.externalProvider === "orion" || r.source === "orion") out.set(r.id, "orion");
+    const status = linkedStatusOf(r);
+    if (status) out.set(r.id, status);
   }
   return out;
 }
@@ -73,7 +77,7 @@ export interface BuildAccountRowsArgs {
    *  scenario-effective name, not the base one. */
   familyMembers: readonly { id: string; role: string; firstName: string; lastName?: string | null }[];
   accountMetaById: ReadonlyMap<string, AccountMeta>;
-  linkedSourceById: ReadonlyMap<string, LinkedSource>;
+  linkedById: ReadonlyMap<string, LinkedStatus>;
   /** `effectiveTree.stockOptionPlans`. Required, not optional: a stock_options
    *  account's stored value is a permanent "0", so a caller that omitted these
    *  would silently render a real equity position as $0 — the bug this exists
@@ -136,7 +140,7 @@ export function buildAccountRows({
   accounts: treeAccounts,
   familyMembers,
   accountMetaById,
-  linkedSourceById,
+  linkedById,
   stockOptionPlans,
   planStartYear,
 }: BuildAccountRowsArgs): AccountRow[] {
@@ -181,7 +185,7 @@ export function buildAccountRows({
       owner: ownerKeyOf(a),
       value: String(a.value),
       basis: String(a.basis),
-      linkedSource: linkedSourceById.get(a.id) ?? null,
+      linked: linkedById.get(a.id) ?? null,
       rothValue: a.rothValue != null ? String(a.rothValue) : null,
       hsaCoverage: a.hsaCoverage ?? null,
       growthRate: a.growthRate == null ? null : String(a.growthRate),

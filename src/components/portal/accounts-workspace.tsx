@@ -357,6 +357,8 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
     if (drill.kind === "account") {
       const a = account(drill.id);
       if (!a) return null;
+      // The firm's integration owns this account; the API refuses edits too.
+      const firmSynced = a.linked != null && a.linked.source !== "plaid";
       return (
         <AccountDetailPanel
           account={{
@@ -366,7 +368,7 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
             categoryLabel: CATEGORY_LABELS[a.category] ?? a.category,
             subTypeLabel: formatAccountSubType(a.subType),
             last4: a.last4,
-            isPlaid: a.isPlaidLinked,
+            syncedBy: a.isPlaidLinked ? "institution" : firmSynced ? "advisor" : null,
             ownerLabel: accountOwnerLabel(a.id),
             // A bank account holds cash and nothing else, so it needs no
             // positions query; anything else earns the tab only once the
@@ -380,10 +382,11 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
           }}
           onClose={closeDrill}
           busy={inFlight}
-          onEdit={dto.editEnabled ? () => openEditAccount(a.id) : undefined}
-          // Delete stays manual-only — unlink the institution first.
+          onEdit={dto.editEnabled && !firmSynced ? () => openEditAccount(a.id) : undefined}
+          // Delete stays manual-only — unlink the institution first, and the
+          // firm's sync would bring its account straight back.
           onDelete={
-            dto.editEnabled && !a.isPlaidLinked
+            dto.editEnabled && !a.linked
               ? () => remove("accounts", a.id, a.name)
               : undefined
           }

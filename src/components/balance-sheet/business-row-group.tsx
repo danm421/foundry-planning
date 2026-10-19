@@ -67,8 +67,8 @@ function BusinessRowGroup({
         >
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-1.5">
+              {biz.linked && <LinkedSourceBadge status={biz.linked} />}
               <span className="truncate text-sm font-medium text-ink">{biz.name}</span>
-              {biz.linkedSource && <LinkedSourceBadge source={biz.linkedSource} />}
             </div>
             <div className="truncate text-xs text-ink-3">
               {ownerDisplay(biz)} · {growthDisplay(biz)}
@@ -113,8 +113,8 @@ function BusinessRowGroup({
                   >
                     <div className="min-w-0">
                       <div className="flex min-w-0 items-center gap-1.5">
+                        {c.linked && <LinkedSourceBadge status={c.linked} />}
                         <span className="truncate text-[13px] text-ink">{c.name}</span>
-                        {c.linkedSource && <LinkedSourceBadge source={c.linkedSource} />}
                       </div>
                       <div className="truncate text-[11px] text-ink-4">{c.category}</div>
                     </div>

@@ -1,5 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { netAccountValue } from "@/lib/accounts/net-value";
+import { linkedStatusOf } from "@/lib/accounts/linked-source";
 import { db } from "@/db";
 import {
   accountHoldings,
@@ -9,6 +10,7 @@ import {
   entities,
   familyMembers,
   liabilities,
+  plaidItems,
   scenarios,
 } from "@/db/schema";
 import { isPortalVisibleAccount } from "@/lib/portal/account-visibility";
@@ -107,10 +109,16 @@ export async function loadAccountsPage(clientId: string): Promise<AccountsPageDT
       marginBalance: accounts.marginBalance,
       accountNumberLast4: accounts.accountNumberLast4,
       plaidItemId: accounts.plaidItemId,
+      externalProvider: accounts.externalProvider,
+      source: accounts.source,
+      lastSyncedAt: accounts.lastSyncedAt,
+      plaidRefreshedAt: plaidItems.lastRefreshedAt,
+      plaidRefreshError: plaidItems.lastRefreshError,
       isDefaultChecking: accounts.isDefaultChecking,
       parentAccountId: accounts.parentAccountId,
     })
     .from(accounts)
+    .leftJoin(plaidItems, eq(plaidItems.id, accounts.plaidItemId))
     .where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, scenario.id)));
 
   // Lean bank-style view: hide engine cash-flow buckets, business sub-accounts,
@@ -131,6 +139,7 @@ export async function loadAccountsPage(clientId: string): Promise<AccountsPageDT
     last4: r.accountNumberLast4,
     value: netAccountValue(r),
     isPlaidLinked: r.plaidItemId != null,
+    linked: linkedStatusOf(r),
   }));
 
   const accountIds = assets.map((a) => a.id);

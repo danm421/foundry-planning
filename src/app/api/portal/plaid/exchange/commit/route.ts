@@ -27,6 +27,7 @@ import {
   loadAccountIdByPlaidAccountId,
 } from "@/lib/plaid/transactions-sync";
 import { redactPlaidError } from "@/lib/plaid/errors";
+import { isFirmSynced } from "@/lib/accounts/linked-source";
 
 export const dynamic = "force-dynamic";
 
@@ -126,6 +127,8 @@ export async function POST(req: Request): Promise<Response> {
           id: accounts.id,
           clientId: accounts.clientId,
           plaidItemId: accounts.plaidItemId,
+          externalProvider: accounts.externalProvider,
+          source: accounts.source,
           category: accounts.category,
           isDefaultChecking: accounts.isDefaultChecking,
           parentAccountId: accounts.parentAccountId,
@@ -144,6 +147,13 @@ export async function POST(req: Request): Promise<Response> {
       if (!isPortalVisibleAccount(toPortalAccountVisibility(row))) {
         return NextResponse.json(
           { error: "This account can't be linked from the portal" },
+          { status: 403 },
+        );
+      }
+      // Two feeds would fight over one balance.
+      if (isFirmSynced(row)) {
+        return NextResponse.json(
+          { error: "Your advisor already keeps this account up to date" },
           { status: 403 },
         );
       }

@@ -8,7 +8,7 @@ import { requireVaultAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
 import { recordActivity } from "./activity";
 import { MAX_DOCUMENT_SIZE_BYTES } from "./document-constants";
-import { validateDocumentUpload } from "@/lib/files/content-type";
+import { documentMimeType } from "@/lib/files/content-type";
 import { toSafeDisplayFilename } from "@/lib/files/safe-filename";
 
 /**
@@ -53,7 +53,7 @@ export async function uploadCrmDocument(
   const { userId } = await auth();
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const { mimeType } = validateDocumentUpload(file, buffer);
+  const mimeType = documentMimeType(file.type, buffer);
 
   const safe = sanitizeFilename(file.name || "document");
   // The stored display filename is reused downstream as a zip entry name

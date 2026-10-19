@@ -274,15 +274,15 @@ describe("POST /api/portal/documents (file an uploaded blob)", () => {
     expect((await POST(postJson({ pathname, filename: "scan.pdf", folderId: null }))).status).toBe(404);
   });
 
-  it("deletes a blob whose bytes are not an allowed file type", async () => {
+  it("files any type of file, storing markup as octet-stream whatever the blob claims", async () => {
     const pathname = issued();
     mockHead.mockResolvedValue({ size: 40, contentType: "application/pdf" });
     mockGet.mockResolvedValue({ statusCode: 200, stream: streamOf("<svg onload=alert(1)>") });
     const { POST } = await import("../route");
     const res = await POST(postJson({ pathname, filename: "scan.pdf", folderId: null }));
-    expect(res.status).toBe(400);
-    expect(mockDel).toHaveBeenCalledWith(pathname);
+    expect(res.status).toBe(201);
+    expect(mockDel).not.toHaveBeenCalled();
     const row = await db.query.crmHouseholdDocuments.findFirst({ where: eq(crmHouseholdDocuments.storageKey, pathname) });
-    expect(row).toBeUndefined();
+    expect(row?.mimeType).toBe("application/octet-stream");
   });
 });

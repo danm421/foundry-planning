@@ -132,14 +132,14 @@ describe("buildScenarioDesiredFields", () => {
   });
 
   it("never sends identity or tenancy fields", () => {
-    // linkedSource and beneficiaryDisplayName must be POPULATED here — the
+    // linked and beneficiaryDisplayName must be POPULATED here — the
     // base row() fixture never sets them, so asserting their absence against
     // an unset field is vacuous (it would pass even if NON_WRITABLE_KEYS were
     // reduced to just {"id"}). See the mutation check recorded in the task
     // report for this file.
     const fields = buildScenarioDesiredFields(
       row({
-        linkedSource: "plaid",
+        linked: { source: "plaid", syncedAt: null, issue: null },
         beneficiaryDisplayName: "Ava Cooper",
         // Populated with a REAL id, not null: `buildScenarioDesiredFields`
         // skips `undefined` but not `null`, so a null here would be emitted
@@ -149,7 +149,7 @@ describe("buildScenarioDesiredFields", () => {
       { value: "1" },
     );
     expect(fields).not.toHaveProperty("id");
-    expect(fields).not.toHaveProperty("linkedSource");
+    expect(fields).not.toHaveProperty("linked");
     expect(fields).not.toHaveProperty("beneficiaryDisplayName");
     expect(fields).not.toHaveProperty("ownerEntityId");
     // `AccountRow` declares no `clientId` field at all today, so this
@@ -169,7 +169,7 @@ describe("buildScenarioDesiredFields", () => {
       owner: "client",
       value: "400000",
       basis: "0",
-      linkedSource: "plaid",
+      linked: { source: "plaid", syncedAt: null, issue: null },
       rothValue: "0",
       hsaCoverage: null,
       growthRate: "0.062",

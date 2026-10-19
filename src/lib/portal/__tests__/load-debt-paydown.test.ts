@@ -20,6 +20,7 @@ function row(over: Partial<PortalDebtRow>): PortalDebtRow {
     monthlyPayment: null,
     payoffYear: null,
     isPlaidLinked: false,
+    linked: null,
     ownerFmIds: [],
     ownerEntityIds: [],
     ...over,

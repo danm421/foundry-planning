@@ -41,6 +41,14 @@ describe("issueStagedUpload", () => {
       expect.objectContaining({ pathname, maximumSizeInBytes: 50 * 1024 * 1024 }),
     );
   });
+
+  it("takes a surface's own, smaller cap", async () => {
+    mockGenerateClientToken.mockResolvedValue("client-token");
+    await issueStagedUpload(PREFIX, "a.pdf", 30 * 1024 * 1024);
+    expect(mockGenerateClientToken).toHaveBeenCalledWith(
+      expect.objectContaining({ maximumSizeInBytes: 30 * 1024 * 1024 }),
+    );
+  });
 });
 
 describe("takeStagedUpload", () => {

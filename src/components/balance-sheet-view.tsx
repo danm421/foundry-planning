@@ -58,14 +58,9 @@ import {
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import type { CategoryDefaultRateMap } from "@/lib/investments/category-default-rates";
 import { isEditFocus, type EditorFocus } from "@/lib/scenario/change-editor-target";
+import type { LinkedStatus } from "@/lib/accounts/linked-source";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options" | "education_savings";
-
-/** Which external integration feeds a row's balance. `null`/`undefined` means
- *  the account or liability was entered by hand. Drives the small linked
- *  indicator next to the name. Extend this union (and LINKED_SOURCE_LABEL) as
- *  integrations are added — addepar, black_diamond, … */
-export type LinkedSource = "plaid" | "orion";
 
 export interface AccountRow {
   id: string;
@@ -75,10 +70,11 @@ export interface AccountRow {
   owner: string;
   value: string;
   basis: string;
-  /** External integration that feeds this account (plaid/orion). Null/undefined
-   *  = manually entered. Set only by the Net Worth loader; report builders leave
-   *  it unset. Drives the linked indicator next to the name. */
-  linkedSource?: LinkedSource | null;
+  /** The connection that feeds this account (Plaid or a firm integration) and
+   *  when it last synced. Null/undefined = manually entered. Set only by the
+   *  Net Worth loader; report builders leave it unset. Drives the linked
+   *  indicator before the name. */
+  linked?: LinkedStatus | null;
   rothValue?: string | null;
   /** HSA coverage tier (self/family). Hydrated from `accounts.hsa_coverage`
    * so the edit form round-trips the value instead of silently defaulting to
@@ -182,9 +178,10 @@ export interface LiabilityRow {
    *  bug where editing a liability dropped its forgiveness flag, and `tsc`
    *  would stay green while it happened. */
   forgiveAtTermEnd: boolean;
-  /** External integration that feeds this liability (plaid). Null/undefined =
-   *  manually entered. Drives the linked indicator next to the name. */
-  linkedSource?: LinkedSource | null;
+  /** The Plaid link that feeds this liability and when it last refreshed.
+   *  Null/undefined = manually entered. Drives the linked indicator before the
+   *  name. */
+  linked?: LinkedStatus | null;
   owners?: AccountOwner[];
   /** Parent business account id when this liability hangs off a business
    *  (e.g. an LLC's mortgage). Null for household liabilities. */
@@ -1577,8 +1574,8 @@ export default function BalanceSheetView({
                         onEdit={canEdit ? () => handleAccountClick(a) : undefined}
                         deletable={!a.isDefaultChecking}
                         label={a.name}
-                        labelBadge={
-                          a.linkedSource ? <LinkedSourceBadge source={a.linkedSource} /> : undefined
+                        leadingIcon={
+                          a.linked ? <LinkedSourceBadge status={a.linked} /> : undefined
                         }
                         // Owner and growth moved into their own cells; the
                         // beneficiary has no cell, so 529 rows keep a subLabel
@@ -1638,7 +1635,7 @@ export default function BalanceSheetView({
                           // the same reason: the number shown is derived from
                           // them, so an edit here would be silently recomputed
                           // away on the next render. Change the grants instead.
-                          canEdit && a.linkedSource == null && a.category !== "stock_options" ? (
+                          canEdit && a.linked == null && a.category !== "stock_options" ? (
                             <InlineAmount
                               amount={Number(a.value)}
                               label={a.name}
@@ -1727,8 +1724,8 @@ export default function BalanceSheetView({
                     onDelete={canEdit ? () => setDeletingLiability(l) : undefined}
                     onEdit={canEdit ? () => setEditingLiability(l) : undefined}
                     label={l.name}
-                    labelBadge={
-                      l.linkedSource ? <LinkedSourceBadge source={l.linkedSource} /> : undefined
+                    leadingIcon={
+                      l.linked ? <LinkedSourceBadge status={l.linked} /> : undefined
                     }
                     // The interest rate moved into its own cell; the old
                     // "4.00% interest" subLabel would just repeat it.
@@ -1784,7 +1781,7 @@ export default function BalanceSheetView({
                       // A linked liability's balance is owned by the
                       // integration — editing it here would be overwritten on
                       // the next sync without warning.
-                      canEdit && l.linkedSource == null ? (
+                      canEdit && l.linked == null ? (
                         // `amount` and `format` deliberately show DIFFERENT
                         // numbers. `amount` is the stored as-of principal —
                         // the column the write lands in. `format` reproduces
@@ -1863,8 +1860,8 @@ export default function BalanceSheetView({
                         >
                           <div className="min-w-0">
                             <div className="flex min-w-0 items-center gap-1.5">
+                              {a.linked && <LinkedSourceBadge status={a.linked} />}
                               <span className="truncate text-sm font-medium text-ink">{a.name}</span>
-                              {a.linkedSource && <LinkedSourceBadge source={a.linkedSource} />}
                             </div>
                             <div className="text-xs text-ink-3">
                               {CATEGORY_LABELS[a.category]} · {growthDisplay(a)}

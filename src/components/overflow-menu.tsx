@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { PlusIcon } from "@/components/icons";
+import { ChevronDownIcon, PlusIcon } from "@/components/icons";
 import { useDismissableMenu } from "@/lib/use-dismissable-menu";
 
 /** Which edge a dropdown panel hangs from. */
@@ -12,7 +12,15 @@ export type OverflowMenuItem = {
   disabled?: boolean;
   /** "destructive" = crit-colored (e.g. Unlink, Remove). Defaults to "default". */
   variant?: "default" | "destructive";
-} & ({ href: string; onClick?: undefined } | { href?: undefined; onClick: () => void });
+} & (
+  | {
+      href: string;
+      onClick?: undefined;
+      /** Opens the link in a new tab. */
+      newTab?: boolean;
+    }
+  | { href?: undefined; onClick: () => void; newTab?: undefined }
+);
 
 const ITEM_CLASS: Record<"default" | "destructive", string> = {
   default:
@@ -28,10 +36,12 @@ const ITEM_CLASS: Record<"default" | "destructive", string> = {
  * contacts-tab.tsx) so the interaction logic lives in one place. Each item is
  * either a Link (href) or a button (onClick).
  *
- * Two triggers, one menu. "kebab" is the ⋯ icon a table row wears; "cta" is the
+ * Three triggers, one menu. "kebab" is the ⋯ icon a table row wears; "cta" is the
  * compact accent pill the portal's "Add Account" menu wears, which shows
- * `triggerLabel` after a plus. They share the dropdown, the item markup and the
- * dismissal behaviour (`useDismissableMenu`) — only the trigger differs.
+ * `triggerLabel` after a plus; "button" is the hairline header button the CRM
+ * household's Portal menu wears, `triggerLabel` then a chevron. They share the
+ * dropdown, the item markup and the dismissal behaviour (`useDismissableMenu`)
+ * — only the trigger differs.
  */
 export function OverflowMenu({
   triggerLabel,
@@ -46,8 +56,9 @@ export function OverflowMenu({
   items: OverflowMenuItem[];
   /** Preserves each call site's original dropdown width. */
   minWidthClassName?: string;
-  /** "kebab" = ⋯ icon (default). "cta" = accent pill showing `triggerLabel`. */
-  variant?: "kebab" | "cta";
+  /** "kebab" = ⋯ icon (default). "cta" = accent pill showing `triggerLabel`.
+   *  "button" = hairline button showing `triggerLabel` and a chevron. */
+  variant?: "kebab" | "cta" | "button";
   /** Which edge the dropdown hangs from. A kebab sits at a row's right edge, so
    *  "right" stays the default; a CTA at the start of a column wants "left". */
   align?: MenuAlign;
@@ -66,6 +77,17 @@ export function OverflowMenu({
         >
           <PlusIcon width={13} height={13} aria-hidden />
           {triggerLabel}
+        </button>
+      ) : variant === "button" ? (
+        <button
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-hair-2 px-3.5 py-2 text-[13px] font-semibold text-ink transition-colors duration-150 hover:bg-card-hover"
+        >
+          {triggerLabel}
+          <ChevronDownIcon width={14} height={14} aria-hidden />
         </button>
       ) : (
         <button
@@ -91,6 +113,7 @@ export function OverflowMenu({
                 key={item.label}
                 href={item.href}
                 role="menuitem"
+                {...(item.newTab ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                 onClick={() => setOpen(false)}
                 className={ITEM_CLASS[item.variant ?? "default"]}
               >
