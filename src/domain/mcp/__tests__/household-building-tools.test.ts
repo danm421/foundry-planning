@@ -378,12 +378,13 @@ describe("fill_fact_finder_step", () => {
     expect(share).toBeInstanceOf(McpForbiddenError);
     const client = await refusedWith(404, "Not found");
     expect(client).toEqual(new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE));
-    // Another advisor's import, or none: the same answer.
-    for (const [status, error] of [[404, "Import not found"], [403, "Forbidden"]] as const) {
-      const step = await refusedWith(status, error);
-      expect(step).toBeInstanceOf(McpInputError);
-      expect((step as Error).message).toBe("That fact finder step wasn't found. Use the importId start_fact_finder_step returned.");
-    }
+    // Another advisor's import and a missing one read the same, so nothing is
+    // disclosed — but only the missing one is a typo; the other is audited as forbidden.
+    const notFound = "That fact finder step wasn't found. Use the importId start_fact_finder_step returned.";
+    expect(await refusedWith(404, "Import not found")).toEqual(new McpInputError(notFound));
+    const othersImport = await refusedWith(403, "Forbidden");
+    expect(othersImport).toBeInstanceOf(McpForbiddenError);
+    expect((othersImport as Error).message).toBe(notFound);
     const closed = await refusedWith(409, "This import is saved to the plan — start a new import to change it.");
     expect(closed).toEqual(new McpInputError("This import is saved to the plan — start a new import to change it."));
     expect(h.editFactFinder).not.toHaveBeenCalled();

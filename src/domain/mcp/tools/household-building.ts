@@ -75,11 +75,13 @@ type FillRow = z.infer<typeof fillRow>;
 /**
  * A fact finder refusal as the model reads it. Access refusals (a missing or
  * shared client, view-only access, no AI import) are forbidden; the rest are a
- * sentence to act on. A step another advisor started reads as not found.
+ * sentence to act on. A step another advisor started reads as not found, so
+ * nothing is disclosed, but is forbidden, so the denial audit shows the probe.
  */
 function refusalError({ status, body: { error } }: FactFinderRefusal): Error {
   if (error === "Not found") return new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE);
-  if (status === 404 || error === "Forbidden") return new McpInputError(STEP_NOT_FOUND_MESSAGE);
+  if (error === "Forbidden") return new McpForbiddenError(STEP_NOT_FOUND_MESSAGE);
+  if (status === 404) return new McpInputError(STEP_NOT_FOUND_MESSAGE);
   if (error === "ai_import_not_entitled") return new McpForbiddenError("AI features aren't enabled for this firm.");
   if (status === 403) return new McpForbiddenError(error);
   return new McpInputError(error);
