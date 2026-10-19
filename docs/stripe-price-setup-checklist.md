@@ -22,9 +22,21 @@ plan it bills.
 
 | Product (on the receipt) | Amount | Interval | Nickname | Public? | Metadata |
 |---|---|---|---|---|---|
-| `Foundry seat — billed monthly` | $199.00 USD | month | `seat_monthly` | yes | kind=seat |
-| `Foundry seat — billed annually` | $1,990.00 USD | year | `seat_annual` | yes | kind=seat |
-| `Foundry seat — founding rate, billed annually` | $1,788.00 USD | year | `seat_founding_annual` | **internal only** | kind=seat, founding=true |
+| `Foundry seat — billed monthly` | $99.00 USD | month | `seat_monthly` | yes | kind=seat |
+| `Foundry seat — billed annually` | $999.00 USD | year | `seat_annual` | yes | kind=seat |
+| `Foundry seat — founding rate, billed annually` | $1,788.00 USD | year | `seat_founding_annual` | **retired 2026-10** — no longer sold | kind=seat, founding=true |
+
+**Changing a price** (the 2026-10 cut was $199 → $99 and $1,990 → $999): run
+`npx tsx scripts/cut-seat-prices.ts`. It adds the new price to the plan's
+*existing* product, so promo codes keep reaching the plan they were made for.
+Firms already subscribed stay on the old price object; point
+`STRIPE_PRICE_ID_SEAT_MONTHLY_LEGACY` / `_ANNUAL_LEGACY` at the old ids so the
+billing page still names their plan, and archive the old prices once the new ids
+are deployed. That keeps one *active* price per product, which is what the rule
+below protects.
+
+The founding price stays in the catalog only because `getPriceCatalog()`
+requires its env var; nothing sells it.
 
 AI import is **not** on this list any more: it ships with every seat as a base
 entitlement, and `docs/bundle-ai-into-plan-runbook.md` archives the standalone

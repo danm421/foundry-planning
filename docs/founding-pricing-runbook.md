@@ -1,5 +1,9 @@
 # Founding Customer Pricing — Sales Runbook
 
+> **RETIRED 2026-10-19 — do not offer this deal.** The public price dropped to
+> $99/mo or $999/yr, below this $1,788/yr founding rate. Nobody ever subscribed
+> on it. Kept for the history only.
+
 **Audience:** Internal only. Do not link from the public site.
 
 ## What it is

@@ -88,11 +88,11 @@ function assertValid(input: CreatePromoInput): void {
  * The discount half. One coupon has to serve both Foundry prices, and Stripe
  * measures a coupon only in months, so "N years" becomes N*12 months in effect.
  *
- * Monthly ($199/mo): the discount window opens at signup and the first invoice
+ * Monthly ($99/mo): the discount window opens at signup and the first invoice
  * lands when the 14-day trial ends, so one year covers the invoices at day 14
  * through month 11.5 — 12 of them — and month 12.5 renews at full price.
  *
- * Annual ($1,990/yr): the renewal invoice lands 14 days AFTER the window
+ * Annual ($999/yr): the renewal invoice lands 14 days AFTER the window
  * closes, for the same reason — the trial pushes the whole billing cycle out.
  * That 14-day margin is what keeps year two at full price, so it does not
  * depend on how Stripe rounds a discount that ends exactly on a renewal.
