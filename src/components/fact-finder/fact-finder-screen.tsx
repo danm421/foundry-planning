@@ -152,9 +152,14 @@ function OpenScreen({
   const reading = docs.read.running || filesReading(state, new Date()).length > 0;
   const chat = useChat({ clientId, importId, flushNow: store.flushNow, adopt: store.adopt });
   const [page, setPage] = useState<FFPage>("household");
-  // Open while a document is reading or about to, and when one couldn't be read, so its Retry shows.
+  // Open while a document is reading or about to, when one couldn't be read (so its Retry shows), and
+  // on an import with no documents yet — the drop zone is where it starts.
   const [panelOpen, setPanelOpen] = useState(
-    () => reading || docs.readsOnOpen || docs.files.some((file) => state.readings[file.id]?.status === "failed"),
+    () =>
+      initialFiles.length === 0 ||
+      reading ||
+      docs.readsOnOpen ||
+      docs.files.some((file) => state.readings[file.id]?.status === "failed"),
   );
   // The change list in place of the page: on opening with one, after a review, and on "Review changes →".
   const [showChanges, setShowChanges] = useState(initialState.changeSet !== undefined);

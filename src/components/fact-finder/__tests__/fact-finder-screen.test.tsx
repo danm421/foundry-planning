@@ -282,6 +282,13 @@ describe("side panel", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 
+  it("starts open on an import with no documents yet, so the drop zone is the first thing there", () => {
+    render(<FactFinderScreen clientId="c1" importId="i1" initialState={emptyFactFinderState()} initialFiles={[]} entities={[]} hasCoClient />);
+    const panel = screen.getByRole("complementary", { name: "Documents & chat" });
+    expect(within(panel).getByText(/Drag & drop files here/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Documents & chat" })).toHaveAttribute("aria-expanded", "true");
+  });
+
   it("starts open while a document is reading", () => {
     renderScreen(reading());
     expect(screen.getByRole("complementary", { name: "Documents & chat" })).toBeInTheDocument();
