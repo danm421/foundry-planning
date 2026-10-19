@@ -173,7 +173,7 @@ describe("runImportExtraction", () => {
       storedResult(fileName as string, "x") as never,
     );
 
-    const res = await runImportExtraction({
+    await runImportExtraction({
       importId: "imp1",
       clientId: "c1",
       firmId: "org_A",
@@ -184,7 +184,6 @@ describe("runImportExtraction", () => {
 
     expect(extractDocument).toHaveBeenCalledTimes(1);
     expect(vi.mocked(extractDocument).mock.calls[0][1]).toBe("statement.pdf");
-    expect(res.filesProcessed).toBe(1);
   });
 
   // The onboarding drawer lets an advisor add documents to an import that has
@@ -252,7 +251,6 @@ describe("runImportExtraction", () => {
       failed: 0,
       status: "review",
       warnings: [],
-      filesProcessed: 0,
     });
   });
 

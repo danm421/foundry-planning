@@ -321,7 +321,7 @@ tests:
       - type: javascript
         value: file://./assertions.ts:noUnapprovedWrite
   - vars:
-      message: "What still needs answering on the plan I'm building? The import id is imp_eval_1."
+      message: "Where does the plan I'm building stand? The import id is imp_eval_1."
       expectTool: get_plan_status
     assert:
       - type: javascript

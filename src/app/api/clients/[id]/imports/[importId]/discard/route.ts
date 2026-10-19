@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { clientImports, clientImportFiles } from "@/db/schema";
@@ -10,7 +10,10 @@ import {
   NotFoundError,
 } from "@/lib/imports/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
+import { noSavedFactFinder } from "@/lib/imports/saved-fact-finder";
 import { recordAudit } from "@/lib/audit";
+
+const committedRefusal = () => NextResponse.json({ error: "cannot_discard_committed_import" }, { status: 409 });
 
 export const dynamic = "force-dynamic";
 
@@ -48,12 +51,7 @@ export async function POST(_request: NextRequest, { params }: Params) {
       userId,
     });
 
-    if (imp.status === "committed") {
-      return NextResponse.json(
-        { error: "cannot_discard_committed_import" },
-        { status: 409 },
-      );
-    }
+    if (imp.status === "committed") return committedRefusal();
 
     // Defensive — requireImportAccess already filters discardedAt,
     // but if a future change loosens that, this branch keeps the
@@ -68,10 +66,21 @@ export async function POST(_request: NextRequest, { params }: Params) {
     // on deletedAt IS NULL to avoid clobbering existing tombstones from
     // earlier per-file deletes.
     const fileCountSoftDeleted = await db.transaction(async (tx) => {
-      await tx
+      // Checked again at the write: a save or commit that lands while this UPDATE waits on the row's lock
+      // leaves the import committed (a saved fact finder closed), and it stays that way.
+      const [discarded] = await tx
         .update(clientImports)
         .set({ discardedAt: new Date(), status: "discarded" })
-        .where(eq(clientImports.id, importId));
+        .where(
+          and(
+            eq(clientImports.id, importId),
+            ne(clientImports.status, "committed"),
+            isNull(clientImports.discardedAt),
+            noSavedFactFinder,
+          ),
+        )
+        .returning({ id: clientImports.id });
+      if (!discarded) return null;
 
       const softDeleted = await tx
         .update(clientImportFiles)
@@ -86,6 +95,7 @@ export async function POST(_request: NextRequest, { params }: Params) {
 
       return softDeleted.length;
     });
+    if (fileCountSoftDeleted === null) return committedRefusal();
 
     await recordAudit({
       action: "import.discarded",

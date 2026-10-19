@@ -1,14 +1,18 @@
 // src/app/api/clients/[id]/imports/[importId]/fact-finder/read/route.ts
 import { READ_BUSY_MESSAGE, type ReadFrame } from "@/lib/fact-finder/api-types";
 import { factFinderGate, jsonResponse } from "@/lib/fact-finder/gate";
+import { FactFinderBusyError, FactFinderNotFoundError } from "@/lib/fact-finder/persist";
 import { READ_BUDGET_MS, runFactFinderRead } from "@/lib/fact-finder/read-run";
 import { filesReading } from "@/lib/fact-finder/reading-status";
 import { readFactFinderState } from "@/lib/fact-finder/state";
+import { safeErrorFields } from "@/lib/redaction/secrets";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 type Params = { params: Promise<{ id: string; importId: string }> };
+
+const READING_STOPPED = "Reading stopped — try again.";
 
 /**
  * Pass 1: read the import's unread files into the fact finder, streaming one
@@ -44,9 +48,11 @@ export async function POST(request: Request, { params }: Params) {
         });
         send({ type: "done", summary: result.summary, caveats: result.caveats, version: result.version });
       } catch (err) {
-        const message = err instanceof Error ? err.message.slice(0, 200) : "Reading failed.";
-        console.error(`POST /api/clients/${clientId}/imports/${importId}/fact-finder/read failed:`, message);
-        send({ type: "error", message });
+        console.error(`POST /api/clients/${clientId}/imports/${importId}/fact-finder/read failed:`, safeErrorFields(err));
+        // The fact finder's own refusals (busy, saved — FactFinderClosedError is a busy one — or gone) are
+        // written for the advisor; any other error's text is never sent.
+        const plain = err instanceof FactFinderBusyError || err instanceof FactFinderNotFoundError;
+        send({ type: "error", message: plain ? err.message : READING_STOPPED });
       } finally {
         if (open) {
           open = false;

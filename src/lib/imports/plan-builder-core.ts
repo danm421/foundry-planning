@@ -14,7 +14,7 @@ import { recordAudit } from "@/lib/audit";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { createCrmHousehold, recordHouseholdOpen } from "@/lib/crm/households";
 import { createClientForHousehold, type FilingStatus } from "@/lib/clients/create-client";
-import { factFinderImportSeed } from "@/lib/imports/import-kind";
+import { factFinderImportSeed } from "@/lib/fact-finder/state";
 import { isUSPSStateCode } from "@/lib/usps-states";
 
 export interface EnsurePlanImportArgs {

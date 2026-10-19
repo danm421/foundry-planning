@@ -12,7 +12,9 @@ vi.mock("@/db", () => ({ db: {} }));
 
 import { POST } from "../route";
 import { factFinderGate } from "@/lib/fact-finder/gate";
+import { FactFinderBusyError, FactFinderClosedError } from "@/lib/fact-finder/persist";
 import { runFactFinderRead } from "@/lib/fact-finder/read-run";
+import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
 
 const params = { params: Promise.resolve({ id: "c1", importId: "i1" }) };
 const req = () => new Request("http://t/api/clients/c1/imports/i1/fact-finder/read", { method: "POST" });
@@ -73,11 +75,21 @@ describe("POST /fact-finder/read", () => {
     });
   });
 
-  it("ends the stream with an error frame when the read throws", async () => {
-    vi.mocked(runFactFinderRead).mockRejectedValue(new Error("The fact finder is busy — try again in a moment."));
+  it("ends the stream with an error frame when the read throws — the fact finder's own refusals in their words", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(runFactFinderRead).mockRejectedValueOnce(new FactFinderBusyError());
     expect(await readSse(await POST(req(), params))).toEqual([
       { type: "error", message: "The fact finder is busy — try again in a moment." },
     ]);
+    vi.mocked(runFactFinderRead).mockRejectedValueOnce(new FactFinderClosedError());
+    expect(await readSse(await POST(req(), params))).toEqual([{ type: "error", message: SAVE_CLOSED_MESSAGE }]);
+  });
+
+  it("never sends any other error's text: a fixed line, the detail logged", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(runFactFinderRead).mockRejectedValueOnce(new Error("Connection terminated unexpectedly"));
+    expect(await readSse(await POST(req(), params))).toEqual([{ type: "error", message: "Reading stopped — try again." }]);
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining("fact-finder/read"), expect.objectContaining({ message: "Connection terminated unexpectedly" }));
   });
 
   it("refuses a second read while a document is reading (Review Focus 4)", async () => {

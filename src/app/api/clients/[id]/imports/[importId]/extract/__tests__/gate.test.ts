@@ -111,7 +111,7 @@ describe("extract route entitlement guard", () => {
     vi.mocked(db.select)
       .mockImplementationOnce((() => ({ from: () => ({ where: () => Promise.resolve([{ id: "f1" }]) }) })) as never)
       .mockImplementationOnce((() => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([{ ...SAVED_ROW, payloadJson: { fileResults: {} } }]) }) }) })) as never);
-    vi.mocked(runImportExtraction).mockResolvedValue({ succeeded: 1, failed: 0, status: "review", warnings: [], filesProcessed: 1 });
+    vi.mocked(runImportExtraction).mockResolvedValue({ succeeded: 1, failed: 0, status: "review", warnings: [] });
 
     const res = await POST(makeReq(), params);
     expect(res.status).toBe(200);

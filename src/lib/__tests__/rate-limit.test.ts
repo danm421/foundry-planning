@@ -206,6 +206,15 @@ describe("checkImportRateLimit", () => {
     const windows = RatelimitMock.slidingWindow.mock.calls as unknown as [number][];
     expect(windows[0][0]).toBeGreaterThanOrEqual(240);
   });
+
+  it("spends a document read (the fact finder's and the wizard's) from the extract bucket, 5 a minute", async () => {
+    mockLimit.mockResolvedValue({ success: true, remaining: 1, reset: 1 });
+    const { checkImportRateLimit } = await import("../rate-limit");
+    await checkImportRateLimit("firm-1", "extract");
+    expect(mockLimit).toHaveBeenCalledWith("firm-1:extract");
+    expect((RatelimitMock.mock.calls as unknown as [{ prefix: string }][]).map((c) => c[0].prefix)).toEqual(["rl:import:extract"]);
+    expect(RatelimitMock.slidingWindow).toHaveBeenCalledWith(5, "1 m");
+  });
 });
 
 describe("rateLimitErrorResponse", () => {

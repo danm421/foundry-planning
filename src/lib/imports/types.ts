@@ -72,10 +72,10 @@ export type ImportPayload = {
    * scenario, surfaced to the review UI so the expenses tab can offer them as
    * link targets. Set by the matching pass; absent until then.
    *
-   * `role` classifies the slot (F3). It is optional because a payload
-   * persisted before this field existed has no role on its slots — those
-   * degrade to "not retirement", i.e. exactly the pre-F3 behaviour, which is
-   * the safe direction.
+   * `role` (current / retirement) is still written by the matching pass, but
+   * nothing reads it now — its only reader went with the assemble step.
+   * Stored payloads carry it, and the wizard round-trips it through PATCH, so
+   * the key stays.
    */
   expenseSlots?: Array<{ id: string; name: string; role?: "current" | "retirement" }>;
   /** Advisor-edited plan-level values. Round-trips through buildLatestPayload. */

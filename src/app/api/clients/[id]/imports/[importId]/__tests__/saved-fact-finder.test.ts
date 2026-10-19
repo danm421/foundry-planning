@@ -36,6 +36,7 @@ import { POST as discard } from "../discard/route";
 import { POST as match } from "../match/route";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
+import { clientImportFiles, clientImports } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
 import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
 import { FACT_FINDER_ONLY_MESSAGE } from "@/lib/imports/saved-fact-finder";
@@ -144,5 +145,41 @@ describe("a finished Review Wizard import (committed, no fact finder) works as b
     const res = await commit(req("commit", { tabs: ["goals"] }), params);
     expect(res.status).toBe(200);
     expect(commitTabs).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("discard re-checks the import at its write", () => {
+  /** The discard's transaction: the import UPDATE answers `importRows`; the files UPDATE one row. */
+  function discardTx(importRows: unknown[]) {
+    const updated: unknown[] = [];
+    const tx = {
+      update: vi.fn((table: unknown) => {
+        updated.push(table);
+        const rows = table === clientImports ? importRows : [{ id: "f1" }];
+        return { set: () => ({ where: () => ({ returning: async () => rows }) }) };
+      }),
+    };
+    vi.mocked(db.transaction).mockImplementation(async (fn: (t: never) => unknown) => fn(tx as never) as never);
+    return updated;
+  }
+  const OPEN_FACT_FINDER = { ...SAVED_IMPORT, status: "review", payloadJson: { factFinder: { version: 2 } } };
+
+  beforeEach(() => {
+    vi.mocked(requireImportAccess).mockResolvedValue(OPEN_FACT_FINDER as never);
+  });
+
+  it("a save that lands while the discard waits on the row: 409, the import and its files left as the save left them", async () => {
+    const updated = discardTx([]);
+    const res = await discard(req("discard"), params);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "cannot_discard_committed_import" });
+    expect(updated).toEqual([clientImports]);
+  });
+
+  it("an open import is discarded with its files", async () => {
+    const updated = discardTx([{ id: "i1" }]);
+    const res = await discard(req("discard"), params);
+    expect(res.status).toBe(200);
+    expect(updated).toEqual([clientImports, clientImportFiles]);
   });
 });

@@ -7,6 +7,7 @@ import {
   countCellsToCheck,
   countLinksNeedingClick,
   emptyFactFinderState,
+  factFinderImportSeed,
   fixedLabelOfRow,
   fixedRowId,
   holdingKey,
@@ -18,6 +19,7 @@ import {
   rowValues,
   sameJson,
 } from "../state";
+import { isFactFinderImport } from "@/lib/imports/import-kind";
 import type { ChangeSet } from "../change-set";
 import type { FFRow } from "../types";
 
@@ -30,6 +32,14 @@ describe("emptyFactFinderState", () => {
     expect(s.sections.cash).toEqual([]);
     expect(s.removed).toEqual([]);
     expect(s.unassignedHoldings).toEqual([]);
+  });
+});
+
+describe("factFinderImportSeed", () => {
+  it("marks a new import as a fact finder import that reads positions", () => {
+    const seed = factFinderImportSeed();
+    expect(seed).toEqual({ extractHoldings: true, payloadJson: { factFinder: emptyFactFinderState() } });
+    expect(isFactFinderImport(seed.payloadJson)).toBe(true);
   });
 });
 

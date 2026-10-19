@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { emptyFactFinderState } from "@/lib/fact-finder/state";
-import { factFinderImportSeed, importScreenPath, isFactFinderImport, isFinishedInStatementChat } from "../import-kind";
+import { importScreenPath, isFactFinderImport, isFinishedInStatementChat } from "../import-kind";
 import type { ImportPayloadJson } from "../types";
 
 describe("isFactFinderImport", () => {
@@ -36,15 +35,13 @@ describe("isFinishedInStatementChat", () => {
   });
 });
 
-describe("factFinderImportSeed", () => {
-  it("marks a new import as a fact finder import that reads positions", () => {
-    const seed = factFinderImportSeed();
-    expect(seed).toEqual({ extractHoldings: true, payloadJson: { factFinder: emptyFactFinderState() } });
-    expect(isFactFinderImport(seed.payloadJson)).toBe(true);
-  });
-});
-
 describe("importScreenPath", () => {
+  it("import-kind stays a leaf: client components import it on every page", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync(new URL("../import-kind.ts", import.meta.url), "utf8");
+    expect(source).not.toMatch(/from "@\/lib\/fact-finder\//);
+  });
+
   it("points a fact finder import at the fact finder screen", () => {
     expect(importScreenPath("c1", "i1", true)).toBe("/clients/c1/details/import/i1/fact-finder");
   });

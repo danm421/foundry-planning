@@ -247,6 +247,13 @@ it("appends a pending-import line and points at read_import + the review screen"
   expect(prompt).toMatch(/review/i);
 });
 
+it("tells Forge a fact finder import has nothing read yet: point to its link, don't extract it", () => {
+  const prompt = buildSystemPrompt({ ...baseCtx, pendingImport: { importId: "imp_42" } });
+  expect(prompt).toContain(
+    "If read_import says it is a fact finder import, nothing has been read yet: point the advisor to its review link; don't call extract_import.",
+  );
+});
+
 it("omits the pending-import line when none is pending", () => {
   const prompt = buildSystemPrompt(baseCtx);
   expect(prompt).not.toMatch(/read_import/);

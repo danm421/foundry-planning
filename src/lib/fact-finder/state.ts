@@ -32,6 +32,11 @@ export function emptyFactFinderState(): FactFinderState {
   return { version: 0, sections, removed: [], unassignedHoldings: [], transcript: [], undo: {}, readings: {} };
 }
 
+/** The insert values that make a new import a fact finder import: its slice marks it, and it reads positions because the fact finder reviews them. */
+export function factFinderImportSeed() {
+  return { extractHoldings: true, payloadJson: { factFinder: emptyFactFinderState() } };
+}
+
 /**
  * The stored slice, or an empty fact finder. Sections and fixed rows added to
  * the schema after the slice was written are filled in, so an older draft

@@ -73,7 +73,7 @@ function extractionWrites(results: Record<string, ExtractionResult>) {
       if (results[id]) store.fileResults = { ...store.fileResults, [id]: results[id] };
       args.onFile?.({ fileId: id, fileName: `${id}.pdf`, accountCount: results[id]?.extracted.accounts.length ?? 0 });
     }
-    return { succeeded: 1, failed: 0, status: "review", warnings: [], filesProcessed: 1 };
+    return { succeeded: 1, failed: 0, status: "review", warnings: [] };
   });
 }
 const NOW = new Date("2026-10-12T12:00:00Z");
@@ -184,7 +184,7 @@ describe("runFactFinderRead", () => {
       vi.mocked(routeFile).mockResolvedValue({ reader: "statement" });
       vi.mocked(runImportExtraction).mockImplementation(async (args) => {
         args.onFile?.({ fileId: "f1", fileName: "f1.pdf", accountCount: 0, error: "Azure OpenAI 500: upstream connect error" });
-        return { succeeded: 0, failed: 1, status: "review", warnings: [], filesProcessed: 1 };
+        return { succeeded: 0, failed: 1, status: "review", warnings: [] };
       });
       const { state } = await run();
       expect(state.readings.f1).toMatchObject({ status: "failed", reason: "Couldn't read this statement — try again." });
@@ -374,7 +374,7 @@ describe("runFactFinderRead", () => {
       store.fileResults = { f1: statement("f1", []) };
       args.onFile?.({ fileId: "f1", fileName: "f1.pdf", accountCount: 0 });
       budget.abort();
-      return { succeeded: 1, failed: 0, status: "review", warnings: [], filesProcessed: 1 };
+      return { succeeded: 1, failed: 0, status: "review", warnings: [] };
     });
 
     const { result, state } = await run({ signal: budget.signal, now: () => NOW });

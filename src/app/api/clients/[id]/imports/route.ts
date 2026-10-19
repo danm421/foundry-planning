@@ -8,7 +8,7 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { listClientImports } from "@/lib/imports/list";
 import { verifyClientAccess } from "@/lib/clients/authz";
-import { factFinderImportSeed } from "@/lib/imports/import-kind";
+import { factFinderImportSeed } from "@/lib/fact-finder/state";
 
 export const dynamic = "force-dynamic";
 

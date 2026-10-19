@@ -15,7 +15,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { DETAIL_ENTITIES, TAB_ROUTES, documentEvidenceEntities, findEntity } from "../index";
+import { DETAIL_ENTITIES, TAB_ROUTES, findEntity } from "../index";
 import { YEAR_REFS } from "@/lib/milestones";
 import type { DetailEntity } from "../types";
 import * as schema from "@/db/schema";
@@ -198,6 +198,10 @@ describe("Details field map", () => {
 });
 
 describe("document-evidence marking", () => {
+  // The `documentEvidence` flag is data the map keeps (no production reader since the statement chat's map
+  // pass went); these pin what it says.
+  const documentEvidenceEntities = () => DETAIL_ENTITIES.filter((e) => e.documentEvidence === true);
+
   it("marks exactly the entities a document can state", () => {
     expect(documentEvidenceEntities().map((e) => e.id).sort()).toEqual([
       "client_household",
