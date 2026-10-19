@@ -401,6 +401,21 @@ d("saveChangeSet (live DB)", () => {
     expect(beforeTheFirstLine).toEqual([[SAVE_ACTOR]]);
   });
 
+  it("an ops operator's save names the operator on every audit row and stamps the advisor they act as", async () => {
+    const r = await reviewed();
+    vi.mocked(snapshotActorName).mockClear();
+    const outcome = await saveChangeSet({ ...request(r), actorId: "user_test_ff_ops", actingAsAdvisor: SAVE_ACTOR }, deps(writers([])));
+    expect(outcome.ok).toBe(true);
+    expect(vi.mocked(snapshotActorName).mock.calls[0]).toEqual(["user_test_ff_ops"]);
+    const rows = await db.select({ action: auditLog.action, actorId: auditLog.actorId, metadata: auditLog.metadata }).from(auditLog).where(eq(auditLog.clientId, r.seed.clientId));
+    // The household core's two rows and the save's own.
+    expect(rows.map((a) => a.action).sort()).toEqual(["client.update", "client.update", "import.fact_finder_saved"]);
+    for (const row of rows) {
+      expect(row.actorId).toBe("user_test_ff_ops");
+      expect(row.metadata).toMatchObject({ actingAsAdvisor: SAVE_ACTOR });
+    }
+  });
+
   it("re-checks each written line with the advisor's ticks: a Create left without its first name → 422 before any write", async () => {
     const r = await reviewed();
     const calls: Call[] = [];

@@ -17,6 +17,8 @@ export interface SaveContext {
   clientId: string;
   firmId: string;
   actorId: string;
+  /** The advisor an ops operator is acting as (`actorId` is then the operator). */
+  actingAsAdvisor?: string;
   afterCommit: AfterCommit;
   /** Tickers priced before the transaction (Task 2's resolveSaveHoldings). */
   holdings: ResolvedHoldingsMap;
@@ -62,9 +64,14 @@ export class SaveLineError extends Error {
   }
 }
 
-/** What a writer's core call passes: the save's client and actor, its transaction and after-commit queue. */
+/**
+ * What a writer's core call passes: the save's client and actor, its transaction and after-commit queue —
+ * and, while an ops operator saves, the advisor they act as, on the cores' extra audit metadata
+ * (`crossFirmMeta`, which every core that audits spreads into its row).
+ */
 export function coreArgs(ctx: SaveContext) {
-  return { clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, tx: ctx.tx, afterCommit: ctx.afterCommit };
+  const core = { clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, tx: ctx.tx, afterCommit: ctx.afterCommit };
+  return ctx.actingAsAdvisor ? { ...core, crossFirmMeta: { actingAsAdvisor: ctx.actingAsAdvisor } } : core;
 }
 
 /** An Update line's record (the save resolves it before it calls a writer), or a SaveLineError with the writer's own `message`. */

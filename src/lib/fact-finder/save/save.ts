@@ -43,7 +43,10 @@ import { resolveSaveHoldings } from "./writers/accounts";
 
 export interface SaveRequest {
   scope: FactFinderScope;
+  /** Who every audit row names: the advisor, or the ops operator impersonating them. */
   actorId: string;
+  /** The advisor an ops operator is acting as (`actorId` is then the operator): stamped on every audit row. */
+  actingAsAdvisor?: string;
   changeSetVersion: number;
   /** As the request sent them: planSave checks them against the change list. */
   ticks: unknown;
@@ -185,7 +188,7 @@ function isConflict(err: unknown): boolean {
  */
 export async function saveChangeSet(request: SaveRequest, deps: Partial<SaveDeps> = {}): Promise<SaveOutcome> {
   const { writers, resolveHoldings, now } = { writers: SAVE_WRITERS, resolveHoldings: resolveSaveHoldings, now: () => new Date(), ...deps };
-  const { scope, actorId, changeSetVersion } = request;
+  const { scope, actorId, actingAsAdvisor, changeSetVersion } = request;
   const started = Date.now();
   const at = now();
 
@@ -224,7 +227,7 @@ export async function saveChangeSet(request: SaveRequest, deps: Partial<SaveDeps
         const stale = staleProblem(lines, locked.state, book, at);
         if (stale) throw new Refusal(refuse(409, stale.message, { lineId: stale.lineId }));
 
-        const ctx: SaveContext = { tx, clientId: scope.clientId, firmId: scope.firmId, actorId, afterCommit: queue.afterCommit, holdings };
+        const ctx: SaveContext = { tx, clientId: scope.clientId, firmId: scope.firmId, actorId, actingAsAdvisor, afterCommit: queue.afterCommit, holdings };
         const ids = new Map<string, string>();
         const saved: FFClosed["saved"] = [];
         let household: Household | null = null;
@@ -257,6 +260,7 @@ export async function saveChangeSet(request: SaveRequest, deps: Partial<SaveDeps
             saved: saved.length, leftOut: leftOut.length, creates, updates, targets, ms: Date.now() - started,
             // Each line by its record: the writers' own follow-up writes (positions, employer, address…) have no audit row.
             records: saved.map(({ lineId, target, recordId }) => ({ lineId, target, recordId })),
+            ...(actingAsAdvisor ? { actingAsAdvisor } : {}),
           },
           tx,
         });

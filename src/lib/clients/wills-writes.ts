@@ -387,7 +387,7 @@ export async function updateWillForClient(args: RouteArgs & { willId: string }):
 
 // ---- the fact finder save's own writes ------------------------------------------------------
 
-type SaveArgs = { clientId: string; firmId: string; actorId: string; willId: string; input: unknown } & WriteOptions;
+type SaveArgs = { clientId: string; firmId: string; actorId: string; willId: string; input: unknown; crossFirmMeta?: Record<string, unknown> } & WriteOptions;
 
 /** `will.update`, as the PATCH audits it: the will's provision count after the write. */
 async function auditWillUpdate(args: SaveArgs, handle: DbOrTx): Promise<void> {
@@ -399,7 +399,7 @@ async function auditWillUpdate(args: SaveArgs, handle: DbOrTx): Promise<void> {
     clientId: args.clientId,
     firmId: args.firmId,
     actorId: args.actorId,
-    metadata: { bequestCount: n },
+    metadata: { bequestCount: n, ...args.crossFirmMeta },
     tx: args.tx,
   });
 }

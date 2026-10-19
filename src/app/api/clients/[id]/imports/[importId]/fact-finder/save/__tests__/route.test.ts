@@ -9,7 +9,9 @@ vi.mock("@/lib/fact-finder/gate", () => ({
     new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }),
 }));
 vi.mock("@/lib/fact-finder/save/save", () => ({ saveChangeSet: vi.fn() }));
+vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
 
+import { auth } from "@clerk/nextjs/server";
 import { POST, dynamic, maxDuration } from "../route";
 import { factFinderGate } from "@/lib/fact-finder/gate";
 import { saveChangeSet } from "@/lib/fact-finder/save/save";
@@ -36,6 +38,7 @@ beforeEach(() => {
     imp: {} as never,
     payloadJson: {} as never,
   });
+  vi.mocked(auth).mockResolvedValue({ userId: "user_1" } as never);
 });
 
 describe("POST /fact-finder/save", () => {
@@ -76,6 +79,13 @@ describe("POST /fact-finder/save", () => {
     expect(saveChangeSet).toHaveBeenCalledExactlyOnceWith({ scope: SCOPE, actorId: "user_1", changeSetVersion: 4, ticks: TICKS });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ factFinder: FINDER });
+  });
+
+  it("names the ops operator as the actor while they impersonate the advisor, and stamps the advisor", async () => {
+    vi.mocked(auth).mockResolvedValueOnce({ userId: "user_1", actor: { sub: "user_ops" } } as never);
+    vi.mocked(saveChangeSet).mockResolvedValueOnce({ ok: true, factFinder: FINDER });
+    await POST(save({ changeSetVersion: 4, ticks: TICKS }), params);
+    expect(saveChangeSet).toHaveBeenCalledExactlyOnceWith({ scope: SCOPE, actorId: "user_ops", actingAsAdvisor: "user_1", changeSetVersion: 4, ticks: TICKS });
   });
 
   it("answers a stale or already-saved import with 409 and the fact finder to show", async () => {

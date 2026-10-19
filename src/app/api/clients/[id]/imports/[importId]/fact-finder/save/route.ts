@@ -1,4 +1,5 @@
 // src/app/api/clients/[id]/imports/[importId]/fact-finder/save/route.ts
+import { auth } from "@clerk/nextjs/server";
 import { SAVE_FAILED_MESSAGE, type SaveBody, type SaveRefusal, type SaveResponse } from "@/lib/fact-finder/api-types";
 import { factFinderGate, jsonResponse } from "@/lib/fact-finder/gate";
 import { saveChangeSet, type SaveOutcome } from "@/lib/fact-finder/save/save";
@@ -34,9 +35,15 @@ export async function POST(request: Request, { params }: Params) {
     return jsonResponse(400, { error: "Send the change list's version and ticks." });
   }
 
+  // Attributed as recordAudit attributes a session it reads itself: while an ops operator impersonates
+  // the advisor, the session's user is the advisor and the operator is `actor.sub`.
+  const { actor } = await auth();
+  const operator = typeof actor?.sub === "string" ? actor.sub : null;
+  const actorArgs = operator ? { actorId: operator, actingAsAdvisor: userId } : { actorId: userId };
+
   let outcome: SaveOutcome;
   try {
-    outcome = await saveChangeSet({ scope: { importId, clientId, firmId }, actorId: userId, changeSetVersion, ticks });
+    outcome = await saveChangeSet({ scope: { importId, clientId, firmId }, ...actorArgs, changeSetVersion, ticks });
   } catch (err) {
     // A read before the save's transaction failed (the save answers everything after it): nothing was written.
     console.error(`[fact-finder-save] import ${importId}: the save failed before writing:`, safeErrorFields(err));

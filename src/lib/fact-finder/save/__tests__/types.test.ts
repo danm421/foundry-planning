@@ -6,7 +6,19 @@
 // writer's own words.
 import { describe, expect, it } from "vitest";
 import { writeError } from "@/lib/clients/entity-write-result";
-import { recordIdOf, SaveLineError, unwrap, type SaveInput } from "../types";
+import { coreArgs, recordIdOf, SaveLineError, unwrap, type SaveContext, type SaveInput } from "../types";
+
+describe("coreArgs", () => {
+  const ctx = { clientId: "c1", firmId: "org_1", actorId: "user_ops", tx: {}, afterCommit: () => {}, holdings: new Map() } as unknown as SaveContext;
+
+  it("passes the save's client, actor, transaction and queue", () => {
+    expect(coreArgs(ctx)).toEqual({ clientId: "c1", firmId: "org_1", actorId: "user_ops", tx: ctx.tx, afterCommit: ctx.afterCommit });
+  });
+
+  it("stamps the impersonated advisor on every core's audit row while an ops operator saves", () => {
+    expect(coreArgs({ ...ctx, actingAsAdvisor: "user_1" })).toMatchObject({ actorId: "user_ops", crossFirmMeta: { actingAsAdvisor: "user_1" } });
+  });
+});
 
 describe("unwrap", () => {
   it("hands back a core's data and resource id", () => {
