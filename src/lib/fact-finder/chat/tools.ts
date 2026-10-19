@@ -4,7 +4,7 @@ import { redactSsns } from "@/lib/extraction/redact-ssn";
 import { applyOps, type ClientOp } from "../ops";
 import { FACT_FINDER_SECTIONS, findColumn, findSection, isListLike, type FFSection } from "../schema";
 import { isBlank, locateRow, rowLabel } from "../state";
-import { HOLDING_FIELDS, type FactFinderState, type FFCell, type FFHolding, type FFRow } from "../types";
+import { CLAUDE_FILE_ID, HOLDING_FIELDS, type FactFinderState, type FFCell, type FFHolding, type FFRow } from "../types";
 import { fenceUntrusted } from "./fence";
 import { formatValue, holdingName, quote, sectionView } from "./view";
 
@@ -272,10 +272,13 @@ async function rereadDocument(args: z.infer<typeof ARGS.reread_document>, ctx: T
 }
 
 function sourceText(cell: FFCell, fileName: (fileId: string) => string): string {
-  if (cell.by === "advisor") return "typed by the advisor";
-  if (cell.by === "chat") return "set in this chat";
+  const claudeRead = cell.source?.fileId === CLAUDE_FILE_ID;
+  if (!claudeRead) {
+    if (cell.by === "advisor") return "typed by the advisor";
+    if (cell.by === "chat") return "set in this chat";
+  }
   if (!cell.source) return "from a document";
-  const parts = [`from ${quote(fileName(cell.source.fileId))}`];
+  const parts = [`from ${quote(claudeRead ? (cell.source.documentName ?? "a document Claude read") : fileName(cell.source.fileId))}`];
   if (cell.source.page !== undefined) parts.push(`page ${cell.source.page}`);
   if (cell.confidence !== undefined) parts.push(`${Math.round(cell.confidence * 100)}% sure`);
   const snippet = cell.source.snippet ? ` — ${quote(cell.source.snippet.slice(0, 200))}` : "";

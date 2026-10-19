@@ -322,6 +322,17 @@ describe("CellEditor — clear, source, Check this, highlight", () => {
     );
   });
 
+  it("names a document Claude read, with its quote, though Foundry holds no file for it", () => {
+    renderCell("cash", "r1", "currentValue", {
+      currentValue: doc(412000, {
+        source: { fileId: "claude", documentName: "Schwab statement March 2026.pdf", snippet: "Ending value $412,000.00" },
+      }),
+    });
+    const tip = screen.getByRole("tooltip");
+    expect(tip).toHaveTextContent("From Schwab statement March 2026.pdf");
+    expect(tip).toHaveTextContent("“Ending value $412,000.00”");
+  });
+
   it("says when the source document has since been removed", () => {
     renderCell("cash", "r1", "accountName", { accountName: doc("Joint Checking", { source: { fileId: "gone" } }) });
     expect(screen.getByRole("tooltip")).toHaveTextContent("From a removed document");

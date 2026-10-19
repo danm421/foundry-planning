@@ -293,6 +293,22 @@ describe("runTool — reading tools change nothing", () => {
     );
   });
 
+  it("explain names the document Claude read, ahead of 'set in this chat'", async () => {
+    const state = fixture();
+    state.sections.cash[0].cells.currentValue = {
+      value: 12500,
+      by: "chat",
+      pinned: true,
+      source: { fileId: "claude", documentName: "Schwab statement March 2026.pdf", page: 4, snippet: "Ending value $12,500.00" },
+    };
+    state.sections.cash[0].cells.owner = { value: "Joint", by: "chat", pinned: true };
+    const out = await runTool("explain", { rowId: "c1" }, state, context());
+    expect(out.result).toContain(
+      '- currentValue=12500: from "Schwab statement March 2026.pdf", page 4 — "Ending value $12,500.00"',
+    );
+    expect(out.result).toContain('- owner="Joint": set in this chat');
+  });
+
   it("reread_document reads the named document once and returns its most relevant pages first, fenced", async () => {
     const readDocument = vi.fn(async () => [
       "Cover page. Hendricks household.",

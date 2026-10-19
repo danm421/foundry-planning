@@ -229,7 +229,7 @@ export function CellEditor({ sectionId, rowId, column, cell, onApply, highlighte
           }`}
         >
           <p className="font-medium text-ink">
-            From {fileName(source.fileId) ?? "a removed document"}
+            From {fileName(source.fileId) ?? source.documentName ?? "a removed document"}
             {source.page !== undefined && (
               <>
                 , page <span className="tabular">{source.page}</span>
