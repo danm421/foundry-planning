@@ -200,7 +200,7 @@ async function createProspectPlan(args: EnsurePlanImportArgs): Promise<CreatedPl
   // retirement-age default; never guess it (Forge's `set_up_plan` refuses alike).
   // Life expectancy may take the site's default.
   if (spouse && prospect.spouseRetirementAge == null) {
-    throw new Error("The spouse's retirement age is required.");
+    throw new Error(`${spouse.firstName}'s retirement age is required.`);
   }
 
   const created = await createClientForHousehold({

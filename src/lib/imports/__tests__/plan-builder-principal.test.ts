@@ -167,7 +167,7 @@ d("ensurePlanImport on a principal, with no session (live DB)", () => {
 
     await expect(
       ensurePlanImport({ ...args, prospect: { ...args.prospect, spouseRetirementAge: undefined } }),
-    ).rejects.toThrow("The spouse's retirement age is required.");
+    ).rejects.toThrow("Ivy's retirement age is required.");
     expect(await clientsOf(householdId)).toHaveLength(0);
   });
 
