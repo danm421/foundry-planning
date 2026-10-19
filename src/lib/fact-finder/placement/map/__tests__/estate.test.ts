@@ -148,8 +148,18 @@ describe("ESTATE_DOCS_MAP", () => {
       expect(values(place(ESTATE_DOCS_MAP, [docs("Client", { estateAttorney: "John Doe Jr." })]).drafts[0])).toEqual({ firstName: "John", lastName: "Doe" });
     });
 
+    it("a related party with the attorney's name who isn't an attorney on the plan (a CPA) is someone else", () => {
+      const cpa = recordOf("rp-cpa", "Jane Smith", { firstName: "Jane", lastName: "Smith", employer: "Smith CPAs" }, { relationshipLabel: "CPA" });
+      const { drafts } = place(ESTATE_DOCS_MAP, [docs("Client", { estateAttorney: "Jane Smith" })], hendricksBook({ related_party: [cpa] }));
+      expect(drafts.map((d) => [d.target, d.recordId])).toEqual([["related_party", null]]);
+      const lawyer = recordOf("rp-law", "Jane Smith", { firstName: "Jane", lastName: "Smith" }, { relationshipLabel: "Attorney" });
+      expect(place(ESTATE_DOCS_MAP, [docs("Client", { estateAttorney: "Jane Smith" })], hendricksBook({ related_party: [cpa, lawyer] })).drafts[0].recordId).toBe("rp-law");
+    });
+
     it("two attorneys make two lines; one on record (same first and last name) is that record", () => {
-      const book = hendricksBook({ related_party: [recordOf("rp-1", "Jane Smith", { firstName: "Jane", lastName: "Smith", employer: "Smith & Co" })] });
+      const book = hendricksBook({
+        related_party: [recordOf("rp-1", "Jane Smith", { firstName: "Jane", lastName: "Smith", employer: "Smith & Co" }, { relationshipLabel: "Estate attorney" })],
+      });
       const rows = [docs("Client", { estateAttorney: "Jane Smith" }), docs("Co-client", { estateAttorney: "Ann Lee, Lee Law" })];
       const { drafts } = place(ESTATE_DOCS_MAP, rows, book);
       expect(drafts.map((d) => [d.lineId, d.recordId, d.label])).toEqual([
@@ -709,6 +719,17 @@ describe("GIFTS_MAP", () => {
       expect(place(GIFTS_MAP, [rowOf("g1", { year: 2020, from })], bookWith({})).drafts[0].blocked).toEqual({ reason: NO_CO_CLIENT_REASON, cell: c("from") });
     }
     expect(place(GIFTS_MAP, [rowOf("g1", { year: 2020, from: "Client" })], bookWith({})).drafts[0].blocked).toBeUndefined();
+  });
+
+  it("the gift's notes start unticked over different notes on record — ticked when the record has none", () => {
+    const row = rowOf("g1", { year: 2022, given: "Cash.", amount: 36000 }, { link: linkedTo("gift-1") });
+    const notesTick = (notes: string | null) => {
+      const book = hendricksBook({ ...kids, gift: [recordOf("gift-1", "2022 gift", { year: 2022, amount: 36000, notes })] });
+      const [line] = diffDrafts(place(GIFTS_MAP, [row], book).drafts, book);
+      return line.fields.find((f) => f.key === "notes")?.ticked;
+    };
+    expect(notesTick("Annual exclusion gift to Emma's 529.")).toBe(false);
+    expect(notesTick(null)).toBe(true);
   });
 
   it("a gift on record by its link; a row linked to a record not in the book never updates it", () => {

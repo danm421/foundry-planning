@@ -258,6 +258,19 @@ describe("sharesOf", () => {
     });
   });
 
+  it("takes a whole name that holds a separator as one name: a joint ILIT, a charity with an ampersand", () => {
+    const named = stateWith({
+      trusts: [rowOf("t1", { trustName: "Mark and Laura Hendricks ILIT", trustType: "ILIT" })],
+      external: [rowOf("x1", { name: "Boys & Girls Club", kind: "Charity" })],
+    });
+    const { ctx: withThem } = contextOf(named, hendricksBook());
+    const ilit = { ref: "line", target: "entity", lineId: "t1/entity" };
+    const club = { ref: "line", target: "external_beneficiary", lineId: "x1/external_beneficiary" };
+    expect(sharesOf("Mark and Laura Hendricks ILIT", withThem, ["trust"])).toEqual({ ok: true, shares: [{ who: ilit, percent: 100, label: "Mark and Laura Hendricks ILIT" }] });
+    expect(sharesOf("Boys & Girls Club 100%", withThem, ["external"])).toMatchObject({ ok: true, shares: [{ who: club, percent: 100 }] });
+    expect(sharesOf("Boys & Girls Club 50%", withThem, ["external"])).toEqual({ ok: false, reason: "Shares add up to 50%, not 100%." });
+  });
+
   it("is not ok with the first reason: shares that don't add up, or a name that doesn't resolve", () => {
     expect(sharesOf("Emma 60%, Lucas 30%", ctx, ["family"])).toEqual({ ok: false, reason: "Shares add up to 90%, not 100%." });
     expect(sharesOf("Emma 50%, Zoe 50%", ctx, ["family"])).toEqual({

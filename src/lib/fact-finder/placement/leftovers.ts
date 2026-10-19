@@ -12,6 +12,7 @@ import { redactSsns } from "@/lib/extraction/redact-ssn";
 import { lineIdOf, type PlacedValue } from "../change-set";
 import { FENCE_CLOSE, FENCE_OPEN, fenceUntrusted } from "../chat/fence";
 import { parseDate, parseMoney, parseNumber, parsePercent, parseYear } from "../normalize";
+import { findColumn } from "../schema";
 import { TARGETS, targetField, type ValueKind } from "./targets";
 import { noteFixed, noteOnRecord } from "./map/helpers";
 import { toFraction } from "./translate";
@@ -265,7 +266,9 @@ export function applyLeftovers(
     : [];
 
   const planNote = (item: LeftoverItem, topic: NoteTopic): TargetDraft => {
-    let n = 0;
+    // Numbered by the item's column, not by how many notes its row has, so a note keeps its id — and the
+    // advisor's tick on it — when an earlier item on its row is a field on the next review. A taken id moves on.
+    let n = findColumn(item.cell.sectionId, item.cell.columnId)?.pdfIndex ?? 0;
     while (taken.has(lineIdOf(item.cell.rowId, "plan_observation", n))) n++;
     const lineId = lineIdOf(item.cell.rowId, "plan_observation", n);
     taken.add(lineId);

@@ -131,6 +131,16 @@ describe("REALESTATE_MAP", () => {
     expect(draft.warnings).toEqual(["Joint titling is saved only when the owner is Joint."]);
   });
 
+  it("a blank Owner on a property the client and co-client own on record keeps its joint titling", () => {
+    const owned = recordOf("a-house", "Main St House", { name: "Main St House", owners: joint }, PROPERTY);
+    const row = rowOf("re1", { propertyName: "Main St House", jointTitling: "JTWROS" }, { link: linkedTo("a-house") });
+    const [draft] = place(REALESTATE_MAP, [row], { book: hendricksBook({ account: [owned] }) });
+    expect(fieldOf(draft, "titlingType")?.value).toBe("jtwros");
+    expect(draft.warnings).toEqual([]);
+    const alone = recordOf("a-house", "Main St House", { name: "Main St House", owners: [{ who: client, percent: 1 }] }, PROPERTY);
+    expect(place(REALESTATE_MAP, [row], { book: hendricksBook({ account: [alone] }) })[0].warnings).toEqual(["Joint titling is saved only when the owner is Joint."]);
+  });
+
   it("a property the plan holds through a business keeps the business's ownership", () => {
     const held = recordOf("a-shop", "Shop Building", { name: "Shop Building" }, { ...PROPERTY, parentAccountId: "b-acme" });
     const book = hendricksBook({ account: [held], business_account: [acme] });

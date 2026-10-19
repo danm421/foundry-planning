@@ -560,6 +560,7 @@ describe.skipIf(!HAS_DB)("loadRecordBook (live DB)", () => {
       id: ids.jane,
       label: "Jane Smith",
       values: { firstName: "Jane", lastName: "Smith", employer: "Smith & Co", notes: "Drafted both wills." },
+      facts: { relationshipLabel: "Estate attorney" },
     }]);
   });
 

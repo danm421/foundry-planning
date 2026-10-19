@@ -47,6 +47,7 @@ export interface TargetField {
   kind: ValueKind;
   options?: OptionMap;                 // choice fields: how the change list prints the value
   identity?: "name" | "owner";         // starts unticked on an existing record unless on record is blank (D8)
+  overwritesNotes?: true;              // replaces notes an advisor wrote: starts unticked the same way
   replacesSet?: true;                  // the record's whole set: changing one that names someone says it replaces them
   proposable?: true;                   // the AI step may fill it (scalar kinds only)
 }
@@ -416,7 +417,7 @@ export const TARGETS: Readonly<Record<TargetKind, TargetSpec>> = {
       grantor: choice("From", GIFT_FROM_MAP),
       recipient: field("Recipient", "ref"),
       amount: field("Amount", "money", AI),
-      notes: field("Notes", "text", AI),
+      notes: field("Notes", "text", { ...AI, overwritesNotes: true }),
     },
   },
   plan_observation: {

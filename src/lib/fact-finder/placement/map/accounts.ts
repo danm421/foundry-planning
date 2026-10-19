@@ -19,7 +19,7 @@ import { findPerson, hasCoClient, householdPerson } from "../refs";
 import { str, withLast4 } from "../text";
 import type { BookRecord, TargetDraft } from "../types";
 import { mergeHoldings } from "../values";
-import { beneficiariesOf, bool, DraftBuilder, linkedRecord, num, putOwners, rate, text } from "./helpers";
+import { beneficiariesOf, bool, DraftBuilder, jointOnRecord, linkedRecord, num, putOwners, rate, text } from "./helpers";
 import type { PlaceContext, SectionMap } from "./types";
 
 type AccountSection = "cash" | "taxable" | "retirement" | "edu";
@@ -63,16 +63,6 @@ function putTypeAndOwners(b: DraftBuilder, row: FFRow, ctx: PlaceContext, record
 
   if (!managed) putOwners(b, row, ctx, record, "account");
   else if (text(row, "owner") !== null) b.warn(MANAGED);
-}
-
-/** The client and the co-client own the account on record. */
-function jointOnRecord(record: BookRecord | undefined): boolean {
-  const owners = record?.values.owners;
-  const roles = (Array.isArray(owners) ? owners : []).map((o) => {
-    const who = (o as { who?: { ref?: string; role?: string } } | null)?.who;
-    return who?.ref === "person" ? who.role : null;
-  });
-  return roles.includes("client") && roles.includes("spouse");
 }
 
 /** Joint titling means something only on a joint account: the row's Owner, else the owners on record. */

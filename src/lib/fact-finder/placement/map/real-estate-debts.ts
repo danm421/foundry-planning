@@ -17,7 +17,7 @@ import { monthsBetween, termMonthsFromYears, toFraction } from "../translate";
 import { stringOf } from "../text";
 import type { TargetDraft } from "../types";
 import {
-  bool, cellOf, DraftBuilder, fallbackAsOf, heldThrough, linkedRecord, num, planNoteDraft, putBalanceAsOf, putOwners, rate, sharesOf, text,
+  bool, cellOf, DraftBuilder, fallbackAsOf, heldThrough, jointOnRecord, linkedRecord, num, planNoteDraft, putBalanceAsOf, putOwners, rate, sharesOf, text,
 } from "./helpers";
 import type { PlaceContext, SectionMap } from "./types";
 
@@ -79,8 +79,10 @@ export const REALESTATE_MAP: SectionMap = {
         .put("propertyAddress", address, ["address"])
         .put("annualPropertyTax", num(row, "annualPropertyTax"), ["annualPropertyTax"]);
       putOwners(b, row, ctx, record, "property");
+      // Joint: the row's Owner, else (a blank Owner) the owners on record.
       const titling = valueFor(TITLING_MAP, text(row, "jointTitling"));
-      if (titling && text(row, "owner") !== "Joint") b.warn("Joint titling is saved only when the owner is Joint.");
+      const owner = text(row, "owner");
+      if (titling && !(owner === "Joint" || (owner === null && jointOnRecord(record)))) b.warn("Joint titling is saved only when the owner is Joint.");
       else b.put("titlingType", titling, ["jointTitling"]);
       const loan = mortgageLink(row, b, ctx);
       return loan ? [b.build(), loan] : [b.build()];

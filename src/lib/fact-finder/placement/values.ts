@@ -48,7 +48,8 @@ export function sameValue(
     case "money": case "rate": case "percent": case "number": case "integer": case "year": case "month":
       return close(a, b, TOLERANCE[kind] ?? 0);
     case "text":
-      return words(a) === words(b);
+      // Letter case alone is no change: a statement's "FIDELITY INVESTMENTS" never re-cases a record (Details can).
+      return words(a).toLowerCase() === words(b).toLowerCase();
     case "ref": case "personOrName": case "policyOwner":
       return whoKey(a, people) === whoKey(b, people);
     case "timing":

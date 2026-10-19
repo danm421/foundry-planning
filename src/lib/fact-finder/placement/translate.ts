@@ -60,6 +60,16 @@ const PERCENT = /(\d+(?:\.\d+)?)\s*%/;
 const EDGE_PUNCTUATION = /^[\s.,;:=\-–—]+|[\s.,;:=\-–—]+$/g;
 
 /**
+ * The whole text as one name, with a trailing share if it has one: "Boys & Girls Club 100%" →
+ * { name: "Boys & Girls Club", percent: 100 }. Null when no name is left.
+ */
+export function asOneName(text: string): { name: string; percent: number | null } | null {
+  const m = /(\d+(?:\.\d+)?)\s*%\s*$/.exec(text);
+  const name = (m ? text.slice(0, m.index) : text).replace(EDGE_PUNCTUATION, "").replace(/\s+/g, " ");
+  return name === "" ? null : { name, percent: m ? Number(m[1]) : null };
+}
+
+/**
  * "Emma 60%, Lucas 40%" or "Emma and Lucas equally" → names with whole
  * percents. Every name has a share (they must total 100) or none does (an even
  * split; the last name takes the rounding). "equally", "in equal shares" and

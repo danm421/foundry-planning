@@ -350,17 +350,27 @@ describe("applyLeftovers", () => {
     const { drafts, notices } = applyLeftovers([livingNotes, finalNotes], DRAFTS, answers(note("fn:notes", "estate")), BOOK);
     expect(drafts).toEqual([
       ...DRAFTS,
-      planNote(livingNotes, "lv1/plan_observation/0", "cash-flow", "Current — Notes: Mortgage is at 6.5% fixed.\nRefinanced in 2021."),
+      planNote(livingNotes, "lv1/plan_observation/5", "cash-flow", "Current — Notes: Mortgage is at 6.5% fixed.\nRefinanced in 2021."),
       planNote(finalNotes, "fn/plan_observation/0", "estate", FINAL_NOTES_BODY),
     ]);
     expect(notices).toEqual([]);
   });
 
-  it("numbers a row's plan notes past every line id already taken", () => {
-    const escrow: TargetDraft = { ...mortgage, lineId: lineIdOf("lv1", "plan_observation", 0), target: "plan_observation", fields: [] };
+  it("numbers a plan note by its column; an id already taken moves on to the next free one", () => {
+    const escrow: TargetDraft = { ...mortgage, lineId: lineIdOf("lv1", "plan_observation", 5), target: "plan_observation", fields: [] };
     const other: LeftoverItem = { ...livingNotes, id: "lv1:other", cell: cell("living", "lv1", "other"), text: "Varies a lot." };
     const { drafts } = applyLeftovers([livingNotes, other], [escrow], answers(), BOOK);
-    expect(drafts.map((d) => d.lineId)).toEqual(["lv1/plan_observation/0", "lv1/plan_observation/1", "lv1/plan_observation/2"]);
+    expect(drafts.map((d) => d.lineId)).toEqual(["lv1/plan_observation/5", "lv1/plan_observation/6", "lv1/plan_observation/0"]);
+  });
+
+  it("keeps a plan note's id when an earlier item on its row stops being a note", () => {
+    const growth: LeftoverItem = {
+      ...livingNotes, id: "lv1:annualIncrease", cell: cell("living", "lv1", "annualIncrease"), text: "about 3", kind: "unfit", columnLabel: "Annual increase %",
+    };
+    const idOfNotes = (output: LeftoversOutput) =>
+      applyLeftovers([growth, livingNotes], DRAFTS, output, BOOK).drafts.find((d) => d.label.includes("Notes"))?.lineId;
+    expect(idOfNotes(answers())).toBe("lv1/plan_observation/5");
+    expect(idOfNotes(answers(skip("lv1:annualIncrease", "Not a rate.")))).toBe("lv1/plan_observation/5");
   });
 
   it("matches a plan note already on the plan by its body", () => {
@@ -410,7 +420,7 @@ describe("applyLeftovers", () => {
     const { drafts, notices } = applyLeftovers([livingNotes], DRAFTS, output, BOOK);
     expect(drafts).toEqual([
       ...DRAFTS,
-      planNote(livingNotes, "lv1/plan_observation/0", "tax", "Current — Notes: Mortgage is at 6.5% fixed.\nRefinanced in 2021."),
+      planNote(livingNotes, "lv1/plan_observation/5", "tax", "Current — Notes: Mortgage is at 6.5% fixed.\nRefinanced in 2021."),
     ]);
     expect(notices).toEqual([]);
   });
@@ -464,7 +474,7 @@ describe("applyLeftovers", () => {
       const saves = (draft: TargetDraft) => !keysOn(draft).includes("monthlyPayment");
       expect(applyLeftovers([livingNotes, finalNotes], DRAFTS, output, BOOK, saves).drafts).toEqual([
         ...DRAFTS,
-        planNote(livingNotes, "lv1/plan_observation/0", "cash-flow", LIVING_BODY),
+        planNote(livingNotes, "lv1/plan_observation/5", "cash-flow", LIVING_BODY),
         planNote(finalNotes, "fn/plan_observation/0", "general", FINAL_NOTES_BODY),
       ]);
     });
@@ -484,7 +494,7 @@ describe("applyLeftovers", () => {
       const saves = (draft: TargetDraft) => !draft.fields.some((f) => f.key === "interestRate" && f.value === 0.065);
       const { drafts } = applyLeftovers([livingNotes, second], DRAFTS, rates, BOOK, saves);
       expect(drafts[1].fields.map((f) => [f.key, f.value])).toEqual([["balance", 300000], ["interestRate", 0.0625]]);
-      expect(drafts.slice(DRAFTS.length)).toEqual([planNote(livingNotes, "lv1/plan_observation/0", "cash-flow", LIVING_BODY)]);
+      expect(drafts.slice(DRAFTS.length)).toEqual([planNote(livingNotes, "lv1/plan_observation/5", "cash-flow", LIVING_BODY)]);
     });
   });
 

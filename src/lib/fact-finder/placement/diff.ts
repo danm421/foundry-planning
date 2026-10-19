@@ -4,8 +4,8 @@
  * every value it placed; one with a record is an Update with only the values
  * that differ, or "No changes" when none do. An empty value never becomes a
  * field, so a blank fact finder cell never erases a value on record. A name or
- * owner that would overwrite one on record starts unticked, and a set that
- * replaces one naming someone says so. Pure.
+ * owner (or a gift's notes) that would overwrite one on record starts unticked,
+ * and a set that replaces one naming someone says so. Pure.
  */
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import { isRecordRef, type ChangeField, type ChangeLine, type PlacedValue, type RecordRef } from "../change-set";
@@ -92,7 +92,7 @@ function changeField(
     next: placed.value,
     ...(onRecord !== undefined ? { onRecord } : {}),
     shown: onRecord === undefined ? { next: show(placed.value) } : { next: show(placed.value), onRecord: show(onRecord) },
-    ticked: !(spec.identity && onRecord !== undefined && onRecord !== null),
+    ticked: !((spec.identity || spec.overwritesNotes) && onRecord !== undefined && onRecord !== null),
     from: placed.from,
     ...(placed.with ? { with: placed.with } : {}),
     ...(placed.ai ? { ai: placed.ai } : {}),

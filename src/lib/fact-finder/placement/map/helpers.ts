@@ -11,7 +11,7 @@ import { findColumn } from "../../schema";
 import type { FFRow } from "../../types";
 import { findPerson, findTrust, hasCoClient, householdPerson, NO_CO_CLIENT_REASON, type PersonKind } from "../refs";
 import { targetField } from "../targets";
-import { parseShares, toFraction, yesNo } from "../translate";
+import { asOneName, parseShares, toFraction, yesNo } from "../translate";
 import { findRecord, type BookRecord, type DraftField, type NoteTopic, type RecordBook, type TargetDraft } from "../types";
 import type { PlaceContext } from "./types";
 
@@ -227,6 +227,16 @@ export function heldThrough(ctx: PlaceContext, record: BookRecord | undefined): 
   return findRecord(ctx.book, "business_account", parentId)?.label ?? "its business";
 }
 
+/** The client and the co-client own the account (or property) on record. */
+export function jointOnRecord(record: BookRecord | undefined): boolean {
+  const owners = record?.values.owners;
+  const roles = (Array.isArray(owners) ? owners : []).map((o) => {
+    const who = (o as { who?: { ref?: string; role?: string } } | null)?.who;
+    return who?.ref === "person" ? who.role : null;
+  });
+  return roles.includes("client") && roles.includes("spouse");
+}
+
 /** Owner + "Which trust / entity" — except on a record held through a business, which is owned through it (Task 15 ruling). */
 export function putOwners(b: DraftBuilder, row: FFRow, ctx: PlaceContext, record: BookRecord | undefined, noun: string): void {
   const held = heldThrough(ctx, record);
@@ -308,12 +318,23 @@ export function planNoteDraft(
     .build();
 }
 
-/** "Emma 60%, Lucas 40%" (or "… equally") → each name resolved by findPerson, with its whole percent. Not ok: the first reason. */
+/**
+ * "Emma 60%, Lucas 40%" (or "… equally") → each name resolved by findPerson, with its whole percent. The
+ * whole text is tried as one name first: "Mark and Laura Hendricks ILIT" and "Boys & Girls Club" hold a
+ * separator. Not ok: the first reason.
+ */
 export function sharesOf(
   value: string,
   ctx: PlaceContext,
   allow: readonly PersonKind[],
 ): { ok: true; shares: { who: RecordRef; percent: number; label: string }[] } | { ok: false; reason: string } {
+  const whole = asOneName(value);
+  const one = whole ? findPerson(ctx.refs, whole.name, { allow }) : null;
+  if (whole && one?.ok) {
+    const percent = whole.percent ?? 100;
+    if (Math.abs(percent - 100) > 0.01) return { ok: false, reason: `Shares add up to ${percent}%, not 100%.` };
+    return { ok: true, shares: [{ who: one.ref, percent: 100, label: one.label }] };
+  }
   const parsed = parseShares(value);
   if (!parsed.ok) return parsed;
   const shares: { who: RecordRef; percent: number; label: string }[] = [];

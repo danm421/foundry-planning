@@ -48,9 +48,10 @@ describe("sameValue", () => {
     expect(same("percent", 50, 50.004)).toBe(true);
   });
 
-  it("text ignores outer and repeated spaces, not case", () => {
+  it("text ignores outer and repeated spaces, and letter case — a statement alone never re-cases a record", () => {
     expect(same("text", " Fidelity  401(k) ", "Fidelity 401(k)")).toBe(true);
-    expect(same("text", "fidelity 401(k)", "Fidelity 401(k)")).toBe(false);
+    expect(same("text", "FIDELITY INVESTMENTS", "Fidelity Investments")).toBe(true);
+    expect(same("text", "Fidelity 401(k)", "Fidelity 403(b)")).toBe(false);
   });
 
   it("choices, dates and booleans compare exactly", () => {

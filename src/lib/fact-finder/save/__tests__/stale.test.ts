@@ -10,6 +10,7 @@ import { staleProblem } from "../stale";
 
 const NOW = new Date("2026-03-15T12:00:00Z");
 const CASH = { category: "cash", subType: "checking", parentAccountId: null, isDefaultChecking: false };
+const ATTORNEY = { relationshipLabel: "Estate attorney" };
 const AI_BODY = "Anything else we should know? — Notes: Laura plans to retire early if the business sells.";
 
 /** Mark & Laura's plan as the advisor reviewed it: two accounts, and Mark's will with no provisions yet. */
@@ -116,7 +117,7 @@ describe("staleProblem", () => {
   });
 
   it("a record the review matched by its identity, deleted since", async () => {
-    const withAttorney = adding(reviewed, "related_party", recordOf("rp-1", "Jane Smith", { firstName: "Jane", lastName: "Smith", employer: "Smith Law", notes: null }));
+    const withAttorney = adding(reviewed, "related_party", recordOf("rp-1", "Jane Smith", { firstName: "Jane", lastName: "Smith", employer: "Smith Law", notes: null }, ATTORNEY));
     expect(planned(await review(withAttorney)).find((l) => l.id === "estate_docs:Client/related_party")).toMatchObject({ action: "update", recordId: "rp-1" });
     expect(await stale(withAttorney, { book: withAttorney })).toBeNull();
     expect(await stale(reviewed, { book: withAttorney })).toEqual({
@@ -126,7 +127,7 @@ describe("staleProblem", () => {
   });
 
   it("a record the review matched by its identity, still on the plan but no longer matching (a related party renamed in Details)", async () => {
-    const withAttorney = adding(reviewed, "related_party", recordOf("rp-1", "Jane Smith", { firstName: "Jane", lastName: "Smith", employer: "Smith Law", notes: null }));
+    const withAttorney = adding(reviewed, "related_party", recordOf("rp-1", "Jane Smith", { firstName: "Jane", lastName: "Smith", employer: "Smith Law", notes: null }, ATTORNEY));
     const renamed = edited(withAttorney, "related_party", (rs) => rs.map((r) => (r.id === "rp-1" ? { ...r, label: "Janet Smith", values: { ...r.values, firstName: "Janet" } } : r)));
     expect(await stale(renamed, { book: withAttorney })).toEqual({
       lineId: "estate_docs:Client/related_party",
@@ -143,7 +144,7 @@ describe("staleProblem", () => {
     ],
     [
       "a related party with the same name",
-      adding(reviewed, "related_party", recordOf("rp-9", "Jane Smith", { firstName: "Jane", lastName: "Smith", employer: null, notes: null })),
+      adding(reviewed, "related_party", recordOf("rp-9", "Jane Smith", { firstName: "Jane", lastName: "Smith", employer: null, notes: null }, ATTORNEY)),
       "estate_docs:Client/related_party",
       "“Estate attorney — Jane Smith” is on the plan now — review again.",
     ],

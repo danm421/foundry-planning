@@ -14,7 +14,7 @@ import type { FFRow } from "../../types";
 import { numberOf, stringOf, withLast4 } from "../text";
 import { findRecord, type BookRecord, type TargetDraft } from "../types";
 import {
-  cellOf, DraftBuilder, linkedRecord, linkedRecordId, needsCoClient, num, ownersOf, putBalanceAsOf, rate, text,
+  cellOf, DraftBuilder, linkedRecord, needsCoClient, num, ownersOf, putBalanceAsOf, putOwners, rate, text,
 } from "./helpers";
 import type { PlaceContext, SectionMap } from "./types";
 import { NEEDS_START, parseVestingSchedule } from "./vesting";
@@ -43,7 +43,8 @@ export const ANNUITY_MAP: SectionMap = {
       const name = text(row, "contractName");
       const l4 = last4Of(text(row, "last4"));
       const label = withLast4(name ?? "Annuity", l4);
-      const recordId = linkedRecordId(row, ctx, ["account"]);
+      const record = linkedRecord(row, ctx, ["account"]);
+      const recordId = record?.id ?? null;
       const account = new DraftBuilder({
         sectionId: "annuity", row, target: "account", recordId, label,
         fixed: { category: SECTION_ACCOUNT_CATEGORY.annuity },
@@ -53,9 +54,7 @@ export const ANNUITY_MAP: SectionMap = {
         .put("accountNumberLast4", l4 || null, ["last4"])
         .put("custodian", text(row, "carrier"), ["carrier"])
         .put("subType", valueFor(ANNUITY_TAX_MAP, text(row, "taxTreatment")), ["taxTreatment"]);
-      const owners = ownersOf("annuity", row, ctx, { create: recordId === null });
-      if (!owners.ok) account.block(owners.reason, owners.columnId);
-      else account.put("owners", owners.owners, owners.columns);
+      putOwners(account, row, ctx, record, "annuity");
 
       // The contract is keyed by its account: an update only when this account already has one.
       const hasContract = findRecord(ctx.book, "annuity_contract", recordId) !== undefined;

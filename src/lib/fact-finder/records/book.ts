@@ -330,6 +330,7 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
         id: c.id,
         label: fullName(c.firstName, c.lastName),
         values: { firstName: c.firstName, lastName: c.lastName, employer: c.employer, notes: c.notes },
+        facts: { relationshipLabel: c.relationshipLabel },
       })),
     income: incomeRows.map((r) => ({
       id: r.id,

@@ -17,7 +17,7 @@ import type { FFRow } from "../../types";
 import { findAccount, findLiability, findPerson, type RefResult } from "../refs";
 import { roleLabel, willLabel } from "../text";
 import { parseShares, splitPersonName } from "../translate";
-import { findRecord, type TargetDraft } from "../types";
+import { findRecord, type BookRecord, type TargetDraft } from "../types";
 import {
   beneficiariesOf, bool, cellOf, DraftBuilder, linkedRecordId, needsCoClient, num, planNoteDraft, putOrDefault, quotedLabels, sharesOf, text,
 } from "./helpers";
@@ -110,6 +110,8 @@ const SUFFIX = /^(esq|jr|sr|ii|iii|iv)\.?$/i;
 /** What makes a name a firm's ("Smith & Co", "Baker McKenzie LLP", "Law Offices of…", "Jane Smith (Smith & Co)"). */
 const FIRM_MARKER = /[&()[\]]|\b(?:llp|llc|pllc|pc|p\.c|p\.a|law|associates|group|firm|of)\b/i;
 const NEEDS_ATTORNEY_NAME = "Estate attorney: give the attorney's first and last name.";
+/** A related party on record the plan knows as an attorney — a CPA who shares the name is someone else. */
+const isAttorney = (r: BookRecord) => /\b(?:attorney|lawyer)\b/i.test(String(r.facts?.relationshipLabel ?? ""));
 
 /**
  * "Jane Smith, Smith & Co" → the name before the first comma, and the firm
@@ -144,7 +146,9 @@ function attorneyDrafts(rows: readonly FFRow[], ctx: PlaceContext): TargetDraft[
     const split = name === null ? null : splitPersonName(name);
     const recordId = split === null
       ? null
-      : ctx.book.records.related_party.find((r) => sameText(r.values.firstName, split.firstName) && sameText(r.values.lastName, split.lastName))?.id ?? null;
+      : ctx.book.records.related_party.find(
+          (r) => isAttorney(r) && sameText(r.values.firstName, split.firstName) && sameText(r.values.lastName, split.lastName),
+        )?.id ?? null;
     const b = new DraftBuilder({
       sectionId: "estate_docs", row, target: "related_party", recordId,
       label: name || firm ? `Estate attorney — ${name || firm}` : "Estate attorney",

@@ -34,18 +34,23 @@ function livingRecord(ctx: PlaceContext, slot: Slot): BookRecord | undefined {
 
 const noLivingRow = (slot: Slot) => `This plan has no ${slot} living expense row.`;
 
-/** The itemized rows with an Amount (the form pre-prints item names): blank Item → "Item", blank Frequency → monthly. */
-function itemsOf(rows: readonly FFRow[]): { items: Item[]; from: CellRef[] } {
+/**
+ * The itemized rows with an Amount (the form pre-prints item names): blank Item → "Item", blank Frequency →
+ * monthly (`monthlyAssumed` counts those).
+ */
+function itemsOf(rows: readonly FFRow[]): { items: Item[]; from: CellRef[]; monthlyAssumed: number } {
   const items: Item[] = [];
   const from: CellRef[] = [];
+  let monthlyAssumed = 0;
   for (const row of rows) {
     const amount = num(row, "amount");
     if (amount === null) continue;
-    const frequency = (valueFor(FREQ_MAP, text(row, "frequency")) ?? "monthly") as Item["frequency"];
-    items.push({ name: text(row, "item") ?? "Item", amount, frequency });
+    const read = valueFor(FREQ_MAP, text(row, "frequency"));
+    if (read === null) monthlyAssumed += 1;
+    items.push({ name: text(row, "item") ?? "Item", amount, frequency: (read ?? "monthly") as Item["frequency"] });
     from.push(...["item", "amount", "frequency"].filter((c) => c === "amount" || text(row, c) !== null).map((c) => cellOf("living_items", row, c)));
   }
-  return { items, from };
+  return { items, from, monthlyAssumed };
 }
 
 const itemKey = (item: PlacedValue) => {
@@ -117,7 +122,7 @@ export const LIVING_ITEMS_MAP: SectionMap = {
     // One line for the whole list, on the first item's row: the list is one value of the Current row.
     const first = rows.find((row) => num(row, "amount") !== null);
     if (!first) return [];
-    const { items, from } = itemsOf(rows);
+    const { items, from, monthlyAssumed } = itemsOf(rows);
     const record = livingRecord(ctx, "current");
     const b = new DraftBuilder({ sectionId: "living_items", row: first, target: "expense", recordId: record?.id ?? null, label: "Itemized living expenses" })
       .put("livingItems", items, from);
@@ -126,6 +131,10 @@ export const LIVING_ITEMS_MAP: SectionMap = {
     // with only that Amount reads empty and never reaches the map).
     const unread = (ctx.state.sections.living_items ?? []).find((row) => ctx.removed(row.id, "amount"));
     if (unread) b.block(`"Amount" didn't read as a number — enter it, or clear it to leave this item out of the list.`, cellOf("living_items", unread, "amount"));
+    // An annual amount read as monthly is twelve times too big — and the list's total replaces Living Expenses — Current.
+    if (monthlyAssumed > 0 && !sameItems(items, record?.values.livingItems)) {
+      b.warn(`Frequency was blank on ${monthlyAssumed === 1 ? "1 item" : `${monthlyAssumed} items`} — read as monthly.`);
+    }
     const replaces = itemsReplaceWarning(ctx, items);
     if (replaces) b.warn(replaces);
     return [b.build()];

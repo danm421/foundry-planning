@@ -41,6 +41,20 @@ describe("ANNUITY_MAP", () => {
     expect([single.blocked, valueOf(single, "owners")]).toEqual([undefined, [{ who: client, percent: 1 }]]);
   });
 
+  it("an annuity the plan holds through a business keeps the business's ownership", () => {
+    const BUSINESS = { category: "business", subType: "llc", parentAccountId: null, isDefaultChecking: false };
+    const ANNUITY = { category: "annuity", subType: "non_qualified", parentAccountId: "b-acme", isDefaultChecking: false };
+    const book = hendricksBook({
+      business_account: [recordOf("b-acme", "Acme LLC", { name: "Acme LLC" }, BUSINESS)],
+      account: [recordOf("a-ann", "Lincoln Fixed Annuity", { name: "Lincoln Fixed Annuity" }, ANNUITY)],
+    });
+    const row = rowOf("an1", { contractName: "Lincoln Fixed Annuity", owner: "Client", cashValue: 182000 }, { link: linkedTo("a-ann") });
+    const [account] = place(ANNUITY_MAP, [row], book).drafts;
+    expect(account.blocked).toBeUndefined();
+    expect(keys(account)).not.toContain("owners");
+    expect(account.warnings).toContain("This annuity is owned through Acme LLC.");
+  });
+
   const full = rowOf("an1", {
     contractName: "Lincoln Fixed Annuity",
     cashValue: 182000,

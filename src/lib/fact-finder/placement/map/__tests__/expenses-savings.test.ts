@@ -130,6 +130,7 @@ describe("LIVING_ITEMS_MAP", () => {
     rowOf("li4", { amount: 150 }),
   ];
   const replaces = (current: string) => `The itemized total ($17,400 a year) replaces Living Expenses — Current (${current}).`;
+  const MONTHLY_ASSUMED = "Frequency was blank on 1 item — read as monthly.";
 
   it("the rows with an amount are one list on the current living expenses row", () => {
     const book = hendricksBook({ expense: [{ ...current, values: { ...current.values, annualAmount: 17400 } }] });
@@ -152,16 +153,23 @@ describe("LIVING_ITEMS_MAP", () => {
             ],
           },
         ],
-        warnings: [],
+        warnings: [MONTHLY_ASSUMED],
       },
     ]);
   });
 
+  it("says how many items' blank Frequency it read as monthly", () => {
+    const blanks = [rowOf("li1", { item: "Gifts", amount: 2400 }), rowOf("li2", { item: "Travel", amount: 6000 }), rowOf("li3", { item: "Dining", amount: 300, frequency: "Monthly" })];
+    expect(place(LIVING_ITEMS_MAP, blanks, livingBook())[0].warnings[0]).toBe("Frequency was blank on 2 items — read as monthly.");
+    const named = [rowOf("li1", { item: "Travel", amount: 6000, frequency: "Annually" })];
+    expect(place(LIVING_ITEMS_MAP, named, livingBook())[0].warnings.filter((w) => w.startsWith("Frequency"))).toEqual([]);
+  });
+
   it("a total that differs from Living Expenses — Current is said on both lines: the fact finder's Current first, else on record", () => {
     const living = rowOf("living:Current", { annualAmount: 100000 });
-    expect(place(LIVING_ITEMS_MAP, items, livingBook(), { living: [living] })[0].warnings).toEqual([replaces("$100,000")]);
+    expect(place(LIVING_ITEMS_MAP, items, livingBook(), { living: [living] })[0].warnings).toEqual([MONTHLY_ASSUMED, replaces("$100,000")]);
     expect(place(LIVING_MAP, [living], livingBook(), { living_items: items })[0].warnings).toEqual([replaces("$100,000")]);
-    expect(place(LIVING_ITEMS_MAP, items, livingBook())[0].warnings).toEqual([replaces("$96,000")]);
+    expect(place(LIVING_ITEMS_MAP, items, livingBook())[0].warnings).toEqual([MONTHLY_ASSUMED, replaces("$96,000")]);
   });
 
   it("the same items on record (in any order) replace nothing — no warning", () => {
