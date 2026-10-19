@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { MatchAnnotation } from "@/lib/imports/types";
+import { ChevronDown } from "@/components/balance-sheet/icons";
 import MatchLinkPicker, {
   type MatchCandidate,
   type MatchEntityKind,
@@ -44,6 +45,8 @@ export default function MatchColumn({
   readOnly,
 }: MatchColumnProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const closePicker = useCallback(() => setPickerOpen(false), []);
   const kind = match?.kind ?? "new";
 
   const badge = (
@@ -65,26 +68,30 @@ export default function MatchColumn({
   };
 
   return (
-    <div className="relative inline-flex items-center gap-1">
+    <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setPickerOpen((v) => !v)}
-        className="inline-flex items-center gap-1 hover:underline"
-        aria-haspopup="listbox"
+        className="inline-flex items-center gap-1 rounded-md p-0.5 text-ink-3 hover:bg-card-2 hover:text-ink-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+        aria-haspopup="dialog"
         aria-expanded={pickerOpen}
       >
         {badge}
-        <span className="text-xs text-ink-3">▾</span>
+        <span className={`transition-transform ${pickerOpen ? "rotate-180" : ""}`}>
+          <ChevronDown />
+        </span>
       </button>
       {pickerOpen ? (
         <MatchLinkPicker
+          anchorRef={triggerRef}
           currentMatch={match}
           candidates={candidates}
           entityKind={entityKind}
           onPick={handlePick}
-          onClose={() => setPickerOpen(false)}
+          onClose={closePicker}
         />
       ) : null}
-    </div>
+    </>
   );
 }

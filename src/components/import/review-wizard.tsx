@@ -48,6 +48,12 @@ import ReviewStepWills, {
   type WizardWill,
 } from "./review-step-wills";
 import type { MatchCandidate } from "./match-link-picker";
+import {
+  accountPickerOption,
+  toPickerAccount,
+  type AccountRow,
+  type PickerAccount,
+} from "./account-picker-option";
 import { SourceFilesContext } from "./source-badge";
 import WarningsBanner from "./warnings-banner";
 
@@ -86,7 +92,7 @@ interface CanonicalRows {
   /** `category`/`subType` carry through for the Goals step, which must scope
    *  its dedicated-funding list to education accounts the way `commitGoals`
    *  scopes its resolution candidates. */
-  accounts: { id: string; name: string; category: string; subType: string }[];
+  accounts: (PickerAccount & { subType: string })[];
   liabilities: { id: string; name: string }[];
   familyMembers: { id: string; firstName: string; lastName: string | null; role: string }[];
   entities: { id: string; name: string }[];
@@ -228,12 +234,7 @@ export default function ReviewWizard({
         fetch(`/api/clients/${clientId}/family-members`).catch(() => null),
         fetch(`/api/clients/${clientId}/entities`).catch(() => null),
       ]);
-      const accountsRaw = await safeJson<{
-        id: string;
-        name: string;
-        category?: string;
-        subType?: string;
-      }>(aRes);
+      const accountsRaw = await safeJson<AccountRow>(aRes);
       const liabilitiesRaw = await safeJson<{ id: string; name: string }>(lRes);
       const familyRaw = await safeJson<{
         id: string;
@@ -244,9 +245,7 @@ export default function ReviewWizard({
       const entitiesRaw = await safeJson<{ id: string; name: string }>(eRes);
       setCanonical({
         accounts: accountsRaw.map((a) => ({
-          id: a.id,
-          name: a.name,
-          category: a.category ?? "",
+          ...toPickerAccount(a),
           subType: a.subType ?? "",
         })),
         liabilities: liabilitiesRaw.map((l) => ({ id: l.id, name: l.name })),
@@ -530,7 +529,7 @@ export default function ReviewWizard({
 
   // Match-column candidates for review-step-accounts
   const accountCandidates: MatchCandidate[] = useMemo(
-    () => canonical.accounts.map((a) => ({ id: a.id, name: a.name })),
+    () => canonical.accounts.map(accountPickerOption),
     [canonical.accounts],
   );
   const accountMatches = accounts.map((a) => a.match);

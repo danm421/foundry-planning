@@ -8,10 +8,9 @@ import { candidatesForRow } from "@/lib/imports/candidates-for-row";
 import { isAmbiguousMatch } from "@/lib/imports/commit/ambiguous-rows";
 import { isUnpricedProperty } from "@/lib/imports/commit/account-category";
 import type { AccountCandidate } from "@/lib/imports/match-keys/account";
-import { formatAccountCategory } from "@/lib/accounts/category-labels";
 import { rollupExclusionReason } from "@/lib/statement-chat/rollups";
-import type { MatchCandidate } from "@/components/import/match-link-picker";
-import EntityTable, { formatValue } from "./entity-table";
+import { accountPickerOption } from "@/components/import/account-picker-option";
+import EntityTable from "./entity-table";
 import type { ExcludedRow } from "./excluded-rows";
 import {
   accountColumns,
@@ -50,36 +49,7 @@ export interface AccountsTableProps {
   matchCandidates?: AccountCandidate[];
 }
 
-/**
- * Enough of an existing account to tell two similar ones apart in the picker.
- * The search box filters on name AND subtitle, so owner, custodian and last 4
- * are searchable too — which is how an advisor finds the right "Brokerage"
- * among four of them.
- *
- * OWNER leads the subtitle and VALUE is lifted out onto its own line opposite
- * the name. Whenever the matcher cannot settle a row the advisor settles it by
- * hand, and the two questions they ask of a candidate are "is this the right
- * person's account" and "is that roughly the right money" — a picker that
- * answers neither without leaving the page is the reason a row stays
- * Ambiguous. Custodian, last 4 and category stay, after the owner, because
- * they are what separates two of one person's accounts from each other.
- */
 const NO_CANDIDATES: AccountCandidate[] = [];
-
-function pickerOption(a: AccountCandidate): MatchCandidate {
-  const parts = [
-    a.ownerNames?.length ? a.ownerNames.join(" & ") : null,
-    a.custodian,
-    a.accountNumberLast4 ? `x${a.accountNumberLast4}` : null,
-    formatAccountCategory(a.category),
-  ].filter(Boolean);
-  return {
-    id: a.id,
-    name: a.name,
-    subtitle: parts.join(" · "),
-    amount: formatValue("money", a.value),
-  };
-}
 
 /**
  * Why a row's Commit button is withheld.
@@ -157,7 +127,7 @@ export default function AccountsTable({
   ...props
 }: AccountsTableProps) {
   const { rows, onEditCell } = props;
-  const options = useMemo(() => matchCandidates.map(pickerOption), [matchCandidates]);
+  const options = useMemo(() => matchCandidates.map(accountPickerOption), [matchCandidates]);
 
   // Built HERE rather than in the column spec because it needs the whole row
   // set: `candidatesForRow` withholds a record another row already claimed,

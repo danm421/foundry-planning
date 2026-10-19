@@ -21,6 +21,12 @@ import ReviewStepLiabilities from "@/components/import/review-step-liabilities";
 import ReviewStepFamily from "@/components/import/review-step-family";
 import ReviewStepInsurance from "@/components/import/review-step-insurance";
 import type { MatchCandidate } from "@/components/import/match-link-picker";
+import {
+  accountPickerOption,
+  toPickerAccount,
+  type AccountRow,
+  type PickerAccount,
+} from "@/components/import/account-picker-option";
 import { SourceFilesContext } from "@/components/import/source-badge";
 import {
   STEP_COMMIT_TABS,
@@ -28,7 +34,7 @@ import {
 } from "@/lib/onboarding/import-sections";
 
 interface CanonicalRows {
-  accounts: { id: string; name: string }[];
+  accounts: PickerAccount[];
   familyMembers: {
     id: string;
     firstName: string;
@@ -111,7 +117,7 @@ export default function WizardImportReview({
         fetch(`/api/clients/${clientId}/family-members`).catch(() => null),
         fetch(`/api/clients/${clientId}/entities`).catch(() => null),
       ]);
-      const accountsRaw = await safeJson<{ id: string; name: string }>(aRes);
+      const accountsRaw = await safeJson<AccountRow>(aRes);
       const familyRaw = await safeJson<{
         id: string;
         firstName: string;
@@ -120,7 +126,7 @@ export default function WizardImportReview({
       }>(fRes);
       const entitiesRaw = await safeJson<{ id: string; name: string }>(eRes);
       setCanonical({
-        accounts: accountsRaw.map((a) => ({ id: a.id, name: a.name })),
+        accounts: accountsRaw.map(toPickerAccount),
         familyMembers: familyRaw.map((f) => ({
           id: f.id,
           firstName: f.firstName,
@@ -154,7 +160,7 @@ export default function WizardImportReview({
   );
 
   const accountCandidates: MatchCandidate[] = useMemo(
-    () => canonical.accounts.map((a) => ({ id: a.id, name: a.name })),
+    () => canonical.accounts.map(accountPickerOption),
     [canonical.accounts],
   );
   const accountMatches = accounts.map((a) => a.match);
