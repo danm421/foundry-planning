@@ -188,6 +188,21 @@ describe("diffDrafts", () => {
     expect(bought.fields).toMatchObject([{ key: "holdings", shown: { next: "2 holdings · $54,375 (1 changed)", onRecord: "2 holdings · $45,000" } }]);
   });
 
+  it("holdings: a statement that only fills in a position's cost basis is an Update", () => {
+    const vti = (costBasis: number | null) => ({ ticker: "VTI", name: "Vanguard Total Stock", shares: 100, price: 250, marketValue: 25000, costBasis });
+    const brokerage: BookRecord = {
+      id: "acct-3",
+      label: "Schwab Brokerage ··4821",
+      values: { name: "Schwab Brokerage", holdings: [vti(0)] },
+      facts: { category: "taxable", subType: "brokerage" },
+    };
+    const [line] = diffDrafts([
+      draft({ lineId: "t1/account", sectionId: "taxable", rowId: "t1", target: "account", recordId: "acct-3", fields: [put("holdings", [vti(18000)])] }),
+    ], book({ account: [brokerage] }));
+    expect(line.action).toBe("update");
+    expect(line.fields).toMatchObject([{ key: "holdings", shown: { next: "1 holding · $25,000 (1 changed)" } }]);
+  });
+
   it("changing a date of birth or plan-to age warns that every scenario's plan end moves", () => {
     const person = (fields: DraftField[], warnings: string[] = []) => draft({
       lineId: "people:Client/client_household", sectionId: "people", rowId: "people:Client",

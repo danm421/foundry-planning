@@ -109,9 +109,17 @@ function entries(value: PlacedValue | undefined): Entry[] {
 /** A position pairs with another by ticker, else by name ("" with neither). */
 const positionKey = (e: Entry): string => holdingKey({ ticker: stringOf(e.ticker), name: stringOf(e.name) }) ?? "";
 
-/** A ticker's value on record moves with the nightly price, so only a position with no ticker compares its value. */
+/**
+ * Shares and cost basis must agree (a statement that only fills in a basis is
+ * a change). A ticker's value on record moves with the nightly price, so only
+ * a position with no ticker compares its value.
+ */
 function samePosition(x: Entry, y: Entry): boolean {
-  return closeUnlessBlank(x.shares, y.shares, NUMBER) && (!isEmptyValue(x.ticker) || closeUnlessBlank(x.marketValue, y.marketValue, MONEY));
+  return (
+    closeUnlessBlank(x.shares, y.shares, NUMBER) &&
+    closeUnlessBlank(x.costBasis, y.costBasis, MONEY) &&
+    (!isEmptyValue(x.ticker) || closeUnlessBlank(x.marketValue, y.marketValue, MONEY))
+  );
 }
 
 /**
