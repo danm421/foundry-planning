@@ -63,6 +63,16 @@ describe("UploadZone — files from the client's vault", () => {
     expect(clientDocumentsList()).toBeNull();
   });
 
+  it("gives each file name a title so a truncated name can be read on hover", () => {
+    render(<UploadZone clientId="c1" importId="i1" clientDocuments={[STATEMENT, PAYSTUB]} />);
+    const list = clientDocumentsList()!;
+    expect(within(list).getByText("brokerage-statement.pdf")).toHaveAttribute(
+      "title",
+      "brokerage-statement.pdf",
+    );
+    expect(within(list).getByText("paystub-sept.pdf")).toHaveAttribute("title", "paystub-sept.pdf");
+  });
+
   it("says where each file came from", () => {
     render(
       <UploadZone
