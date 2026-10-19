@@ -318,6 +318,32 @@ describe("applyLinkScores — other record kinds", () => {
     expect(linkOf(s, "family", 1)).toEqual({ kind: "new", by: "auto" });
   });
 
+  it("links family on first name and date of birth, whatever the last names say", () => {
+    const s = applyLinkScores(
+      stateWith({
+        family: [
+          row("no-last", { firstName: "Emma", dateOfBirth: "2004-05-21" }),
+          row("married", { firstName: "Emma", lastName: "Carter", dateOfBirth: "2004-05-21" }),
+        ],
+      }),
+      records(),
+    );
+    // One record, two rows: the first confirms it, the second is offered it.
+    expect(linkOf(s, "family", 0)).toMatchObject({ recordId: "fm-e", confirmed: true });
+    expect(s.sections.family[1].linkCandidates?.map((c) => c.recordId)).toEqual(["fm-e"]);
+    const married = applyLinkScores(stateWith({ family: [row("married", { firstName: "Emma", lastName: "Carter", dateOfBirth: "2004-05-21" })] }), records());
+    expect(linkOf(married, "family")).toMatchObject({ recordId: "fm-e", confirmed: true });
+  });
+
+  it("without a date of birth, family links only on first and last name", () => {
+    const s = applyLinkScores(
+      stateWith({ family: [row("same", { firstName: "Emma", lastName: "Hendricks" }), row("other", { firstName: "Emma", lastName: "Carter" })] }),
+      records(),
+    );
+    expect(linkOf(s, "family", 0)).toMatchObject({ recordId: "fm-e", confirmed: true });
+    expect(linkOf(s, "family", 1)).toEqual({ kind: "new", by: "auto" });
+  });
+
   it("links charities by name and insurance policies by name, insured and carrier", () => {
     const s = applyLinkScores(
       stateWith({

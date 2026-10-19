@@ -4,7 +4,6 @@ import type { AccountCandidate } from "@/lib/imports/match-keys/account";
 import { matchAccount, nameSimilarity } from "@/lib/imports/match-keys/account";
 import { matchEntity } from "@/lib/imports/match-keys/entity";
 import { matchExpense } from "@/lib/imports/match-keys/expense";
-import { matchFamilyMember } from "@/lib/imports/match-keys/family-member";
 import { matchIncome } from "@/lib/imports/match-keys/income";
 import { matchLiability } from "@/lib/imports/match-keys/liability";
 import { matchLifePolicy } from "@/lib/imports/match-keys/life-policy";
@@ -160,18 +159,19 @@ function scoreByKind(kind: RecordKind, section: FFSection, v: Record<string, FFC
     case "familyMember": {
       const firstName = str(v.firstName);
       if (!firstName) return [];
-      const household = new Set(c.family.filter((f) => f.role === "client" || f.role === "spouse").map((f) => f.id));
-      const pool = c.familyMembers.filter((f) => !household.has(f.id));
+      const lastName = normText(v.lastName);
       const dateOfBirth = str(v.dateOfBirth);
-      return fromAnnotation(
-        matchFamilyMember({ firstName, lastName: str(v.lastName), dateOfBirth }, pool),
-        (id) => {
-          const f = pool.find((x) => x.id === id);
-          return f ? [f.firstName, f.lastName].filter(Boolean).join(" ") : id;
-        },
-      ).map((cand) => {
-        const other = pool.find((x) => x.id === cand.recordId)?.dateOfBirth;
-        return dateOfBirth && other && other !== dateOfBirth ? contradicted(cand) : cand;
+      const household = new Set(c.family.filter((f) => f.role === "client" || f.role === "spouse").map((f) => f.id));
+      return c.familyMembers.flatMap((f): ScoredCandidate[] => {
+        if (household.has(f.id) || normText(f.firstName) !== normText(firstName)) return [];
+        const label = [f.firstName, f.lastName].filter(Boolean).join(" ");
+        const sameLast = normText(f.lastName) === lastName;
+        // Both dates of birth known: they decide, whatever the last names say (a married name, a row with none).
+        if (dateOfBirth && f.dateOfBirth) {
+          if (f.dateOfBirth === dateOfBirth) return [{ recordId: f.id, label, score: 1, exact: true }];
+          return sameLast ? [contradicted({ recordId: f.id, label, score: 1, exact: false })] : [];
+        }
+        return sameLast ? [{ recordId: f.id, label, score: 1, exact: false }] : [];
       });
     }
     case "lifePolicy":
