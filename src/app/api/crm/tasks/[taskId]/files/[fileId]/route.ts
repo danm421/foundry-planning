@@ -65,7 +65,9 @@ export async function GET(
     const safeFilename = toSafeDisplayFilename(row.filename);
     return new Response(result.stream, {
       headers: {
-        "Content-Type": result.blob.contentType ?? row.mimeType ?? "application/octet-stream",
+        // The row's type is the sniffed one; the blob's is put()'s guess from
+        // the extension (a .html file's would be text/html).
+        "Content-Type": row.mimeType ?? result.blob.contentType ?? "application/octet-stream",
         "Content-Disposition": `attachment; filename="${safeFilename}"`,
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, no-store",

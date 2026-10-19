@@ -6,7 +6,7 @@ import {
   INTAKE_DOC_TYPES,
   type IntakeDocType,
 } from "@/lib/intake/documents";
-import { MAX_DOCUMENT_SIZE_BYTES } from "@/lib/crm/document-constants";
+import { stagingPrefix, takeStagedUpload, StagedUploadError } from "@/lib/uploads/staged-upload";
 
 export const dynamic = "force-dynamic";
 
@@ -23,14 +23,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   const gated = await gateIntakeDocumentRequest(token, req);
   if (gated.error) return gated.error;
 
-  // Cheap pre-flight before buffering the body. +64KB covers multipart
-  // boundary/header overhead around the file bytes; the real cap is enforced
-  // by uploadIntakeDocument below regardless of this check's outcome.
-  const declared = Number(req.headers.get("content-length") ?? 0);
-  if (declared > MAX_DOCUMENT_SIZE_BYTES + 65536) {
-    return NextResponse.json({ error: "File too large." }, { status: 413 });
-  }
-
   let formData: FormData;
   try {
     formData = await req.formData();
@@ -38,14 +30,28 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     return NextResponse.json({ error: "Invalid upload." }, { status: 400 });
   }
 
-  const file = formData.get("file");
-  if (!(file instanceof File)) {
-    return NextResponse.json({ error: "No file provided." }, { status: 400 });
+  // The bytes went browser → Blob first (`@/lib/uploads/staged-upload`): a
+  // function request body caps at 4.5 MB. Taken before any refusal below, so
+  // the staged copy is always deleted.
+  let bytes: Buffer<ArrayBuffer>;
+  try {
+    bytes = await takeStagedUpload(stagingPrefix("intake", gated.form.id), formData.get("stagedPathname"));
+  } catch (err) {
+    if (err instanceof StagedUploadError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    throw err;
   }
+
   const docType = String(formData.get("docType") ?? "other");
   if (!(INTAKE_DOC_TYPES as readonly string[]).includes(docType)) {
     return NextResponse.json({ error: "Unknown document type." }, { status: 400 });
   }
+  const name = formData.get("filename");
+  const type = formData.get("contentType");
+  const file = new File([bytes], typeof name === "string" && name ? name : "document", {
+    type: typeof type === "string" ? type : "",
+  });
 
   try {
     const document = await uploadIntakeDocument(gated.form.id, file, docType as IntakeDocType);
@@ -55,7 +61,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     if (/too large/i.test(message)) {
       return NextResponse.json({ error: message }, { status: 413 });
     }
-    if (/unsupported|unsafe|too many documents|total size limit/i.test(message)) {
+    if (/too many documents|total size limit/i.test(message)) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
     throw err;

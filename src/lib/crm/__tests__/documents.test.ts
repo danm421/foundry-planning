@@ -176,19 +176,16 @@ describe("uploadCrmDocument", () => {
     expect(put).not.toHaveBeenCalled();
   });
 
-  it("rejects a file whose bytes are not an allowed type", async () => {
+  it("accepts any file, storing unrecognised or markup bytes as octet-stream", async () => {
     const h = await makeHousehold(ORG);
     const html = new File(
       [new TextEncoder().encode("<html><script>alert(1)</script></html>")],
       "evil.pdf",
       { type: "application/pdf" },
     );
-    await expect(uploadCrmDocument(h.id, html)).rejects.toThrow(/unsupported or unsafe/i);
-    const docs = await db.query.crmHouseholdDocuments.findMany({
-      where: eq(crmHouseholdDocuments.householdId, h.id),
-    });
-    expect(docs).toHaveLength(0);
-    expect(put).not.toHaveBeenCalled();
+    const doc = await uploadCrmDocument(h.id, html);
+    expect(doc.mimeType).toBe("application/octet-stream");
+    expect(put).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -1,42 +1,40 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { IntakeDocumentView } from "@/lib/intake/document-types";
 import { IntakeUploadZone, SampleUploadZone } from "../intake-upload-zone";
 
-// ─── Fake XHR ────────────────────────────────────────────────────────────────
+// ─── Network fakes ───────────────────────────────────────────────────────────
 //
-// The component uses XMLHttpRequest rather than fetch because it is the only
-// API that reports upload progress, so the test has to stand one up. Each
-// instance records what was opened and sent, and the test drives the response.
+// An upload is two steps: `stageFile` sends the bytes straight to Blob (its own
+// tests cover that), then a small POST files the staged copy. The test fakes
+// the first and drives the second through a stubbed fetch.
 
-class FakeXhr {
-  static instances: FakeXhr[] = [];
-  method = "";
-  url = "";
-  body: FormData | null = null;
-  status = 0;
-  responseText = "";
-  onload: (() => void) | null = null;
-  onerror: (() => void) | null = null;
-  upload = { onprogress: null as ((e: ProgressEvent) => void) | null };
+const { stageFile } = vi.hoisted(() => ({ stageFile: vi.fn() }));
+vi.mock("@/lib/uploads/stage-file", () => ({ stageFile }));
 
-  constructor() {
-    FakeXhr.instances.push(this);
+const STAGED = "staging/intake/form-1/1-uuid-statement.pdf";
+
+/** A fetch whose filing POSTs answer, in order, with `responses`. */
+function stubFiling(...responses: Array<{ status: number; body?: unknown }>) {
+  const fetchMock = vi.fn();
+  for (const { status, body } of responses) {
+    fetchMock.mockResolvedValueOnce({
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => {
+        if (body === undefined) throw new SyntaxError("Unexpected end of JSON input");
+        return body;
+      },
+    } as unknown as Response);
   }
-  open(method: string, url: string) {
-    this.method = method;
-    this.url = url;
-  }
-  send(body: FormData) {
-    this.body = body;
-  }
-  /** Drive the response the component is waiting on. */
-  respond(status: number, responseText = "") {
-    this.status = status;
-    this.responseText = responseText;
-    this.onload?.();
-  }
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+/** The FormData of the nth filing POST. */
+function filed(fetchMock: ReturnType<typeof vi.fn>, n = 0): FormData {
+  return (fetchMock.mock.calls[n][1] as RequestInit).body as FormData;
 }
 
 const STATEMENT: IntakeDocumentView = {
@@ -52,7 +50,7 @@ const TOKEN = "tok_abc";
 function makeFile(name = "statement.pdf", size = 1024): File {
   const file = new File(["x"], name, { type: "application/pdf" });
   // File.size is read-only and derived from the parts; override it so a test
-  // can describe a 20MB file without allocating one.
+  // can describe a 31MB file without allocating one.
   Object.defineProperty(file, "size", { value: size });
   return file;
 }
@@ -79,8 +77,8 @@ function chooseFiles(container: HTMLElement, files: File[]) {
 }
 
 beforeEach(() => {
-  FakeXhr.instances = [];
-  vi.stubGlobal("XMLHttpRequest", FakeXhr);
+  stageFile.mockReset();
+  stageFile.mockResolvedValue(STAGED);
 });
 
 afterEach(() => {
@@ -107,72 +105,99 @@ describe("IntakeUploadZone", () => {
     expect(container.innerHTML).not.toContain("blob.vercel-storage.com");
   });
 
-  it("posts the file to the form's own endpoint with the fixed docType", async () => {
+  it("lets the picker choose any type of file", () => {
+    const { container } = renderZone();
+    expect(container.querySelector('input[type="file"]')).not.toHaveAttribute("accept");
+  });
+
+  it("stages the file through the form's own token route, then files it with the fixed docType", async () => {
+    const fetchMock = stubFiling({ status: 201, body: { document: { ...STATEMENT, id: "srv-1" } } });
     const { container, onChanged } = renderZone();
+    const file = makeFile();
+
+    chooseFiles(container, [file]);
+
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+    expect(stageFile).toHaveBeenCalledWith(
+      `/api/intake/${TOKEN}/documents/upload-token`,
+      file,
+      expect.any(Function),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(`/api/intake/${TOKEN}/documents`, {
+      method: "POST",
+      body: expect.any(FormData),
+    });
+    const body = filed(fetchMock);
+    expect(body.get("stagedPathname")).toBe(STAGED);
+    expect(body.get("filename")).toBe("statement.pdf");
+    expect(body.get("contentType")).toBe("application/pdf");
+    expect(body.get("docType")).toBe("statement");
+  });
+
+  it("reports the server's own message when filing is refused", async () => {
+    stubFiling({
+      status: 400,
+      body: { error: "You've attached too many documents. The limit is 25." },
+    });
+    const { container } = renderZone();
 
     chooseFiles(container, [makeFile()]);
 
-    await waitFor(() => expect(FakeXhr.instances).toHaveLength(1));
-    const xhr = FakeXhr.instances[0];
-    expect(xhr.method).toBe("POST");
-    expect(xhr.url).toBe(`/api/intake/${TOKEN}/documents`);
-    expect(xhr.body?.get("docType")).toBe("statement");
-    expect((xhr.body?.get("file") as File).name).toBe("statement.pdf");
-    expect(onChanged).not.toHaveBeenCalled();
-
-    act(() => xhr.respond(201, JSON.stringify({ document: { ...STATEMENT, id: "srv-1" } })));
-
-    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
-  });
-
-  it("reports the server's own message when an upload is rejected", async () => {
-    const { container } = renderZone();
-
-    chooseFiles(container, [makeFile("resume.html")]);
-    await waitFor(() => expect(FakeXhr.instances).toHaveLength(1));
-    act(() =>
-      FakeXhr.instances[0].respond(
-        400,
-        JSON.stringify({
-          error:
-            "Unsupported or unsafe file type. Allowed: PDF, Office documents, images, and text/CSV.",
-        }),
-      ),
-    );
-
     expect(
-      await screen.findByText(
-        "Unsupported or unsafe file type. Allowed: PDF, Office documents, images, and text/CSV.",
-      ),
+      await screen.findByText("You've attached too many documents. The limit is 25."),
     ).toBeInTheDocument();
   });
 
-  it("retries a failed upload", async () => {
+  it("reports a staging failure's own message, and files nothing", async () => {
+    const fetchMock = stubFiling();
+    stageFile.mockRejectedValue(new Error("This form link has expired."));
     const { container } = renderZone();
 
     chooseFiles(container, [makeFile()]);
-    await waitFor(() => expect(FakeXhr.instances).toHaveLength(1));
-    act(() => FakeXhr.instances[0].respond(500, ""));
+
+    expect(await screen.findByText("This form link has expired.")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("says the connection failed when a request never got out", async () => {
+    stageFile.mockRejectedValue(new TypeError("Failed to fetch"));
+    const { container } = renderZone();
+
+    chooseFiles(container, [makeFile()]);
+
+    expect(await screen.findByText(/couldn't reach the server/i)).toBeInTheDocument();
+  });
+
+  it("retries a failed upload", async () => {
+    const fetchMock = stubFiling({ status: 500 }, { status: 201, body: { document: STATEMENT } });
+    const { container } = renderZone();
+
+    chooseFiles(container, [makeFile()]);
 
     const retry = await screen.findByRole("button", {
       name: /try uploading statement\.pdf again/i,
     });
     fireEvent.click(retry);
 
-    await waitFor(() => expect(FakeXhr.instances).toHaveLength(2));
-    expect(FakeXhr.instances[1].url).toBe(`/api/intake/${TOKEN}/documents`);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(stageFile).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toBe(`/api/intake/${TOKEN}/documents`);
   });
 
-  it("refuses an oversized file without sending it", async () => {
+  it("takes a file just under 30MB, and refuses a bigger one without sending it", async () => {
+    stubFiling({ status: 201, body: { document: STATEMENT } });
     const { container } = renderZone();
 
-    chooseFiles(container, [makeFile("huge.pdf", 11 * 1024 * 1024)]);
+    chooseFiles(container, [makeFile("big.pdf", 29 * 1024 * 1024)]);
+    await waitFor(() => expect(stageFile).toHaveBeenCalledTimes(1));
 
-    expect(await screen.findByText(/Maximum size is 10MB/)).toBeInTheDocument();
-    expect(FakeXhr.instances).toHaveLength(0);
+    chooseFiles(container, [makeFile("huge.pdf", 31 * 1024 * 1024)]);
+    expect(await screen.findByText(/Maximum size is 30MB/)).toBeInTheDocument();
+    expect(stageFile).toHaveBeenCalledTimes(1);
   });
 
   it("uploads under the type the client picked, and only offers the picker when asked", async () => {
+    const fetchMock = stubFiling({ status: 201, body: { document: STATEMENT } });
     const { container, rerender } = renderZone();
     expect(screen.queryByLabelText(/what kind of document/i)).not.toBeInTheDocument();
 
@@ -192,11 +217,12 @@ describe("IntakeUploadZone", () => {
     });
     chooseFiles(container, [makeFile("1040.pdf")]);
 
-    await waitFor(() => expect(FakeXhr.instances).toHaveLength(1));
-    expect(FakeXhr.instances[0].body?.get("docType")).toBe("tax_return");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(filed(fetchMock).get("docType")).toBe("tax_return");
   });
 
   it("hands a finished upload over to the refetched list without listing it twice", async () => {
+    stubFiling({ status: 201, body: { document: STATEMENT } });
     const onChanged = vi.fn();
     const props = {
       token: TOKEN,
@@ -208,8 +234,7 @@ describe("IntakeUploadZone", () => {
     const { container, rerender } = render(<IntakeUploadZone {...props} />);
 
     chooseFiles(container, [makeFile("brokerage-statement.pdf")]);
-    await waitFor(() => expect(FakeXhr.instances).toHaveLength(1));
-    act(() => FakeXhr.instances[0].respond(201, JSON.stringify({ document: STATEMENT })));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
 
     // Still shown while the caller's refetch is in flight — a file must not
     // blink out of the list between the 201 and the new `documents` arriving.
@@ -263,7 +288,7 @@ describe("SampleUploadZone", () => {
 
     expect(screen.getByText("Add a statement")).toBeInTheDocument();
     expect(screen.getByText(/drag and drop, or/i)).toBeInTheDocument();
-    expect(screen.getByText(/PDF, Word, Excel, CSV, or a photo/i)).toBeInTheDocument();
+    expect(screen.getByText(/Any file type, up to 30MB each/i)).toBeInTheDocument();
   });
 
   it("renders no file input and no clickable drop target", () => {
@@ -303,7 +328,7 @@ describe("SampleUploadZone", () => {
     expect(remove).toBeDisabled();
 
     fireEvent.click(remove);
-    expect(FakeXhr.instances).toHaveLength(0);
+    expect(stageFile).not.toHaveBeenCalled();
     expect(screen.getByText("brokerage-statement.pdf")).toBeInTheDocument();
   });
 
@@ -331,7 +356,7 @@ describe("SampleUploadZone", () => {
     // Changing it moves local state and nothing else — no request, ever.
     fireEvent.change(picker, { target: { value: "paystub" } });
     expect(picker).toHaveValue("paystub");
-    expect(FakeXhr.instances).toHaveLength(0);
+    expect(stageFile).not.toHaveBeenCalled();
   });
 
   it("hides the picker when the caller does not ask for it", () => {

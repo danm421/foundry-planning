@@ -12,6 +12,9 @@ const {
   listIntakeDocuments,
   deleteIntakeDocument,
   checkIntakeDocumentRateLimit,
+  takeStagedUpload,
+  issueStagedUpload,
+  StagedUploadError,
 } = vi.hoisted(() => ({
   loadFormByToken: vi.fn(),
   isGateVerified: vi.fn(),
@@ -19,6 +22,16 @@ const {
   listIntakeDocuments: vi.fn(),
   deleteIntakeDocument: vi.fn(),
   checkIntakeDocumentRateLimit: vi.fn(),
+  takeStagedUpload: vi.fn(),
+  issueStagedUpload: vi.fn(),
+  StagedUploadError: class StagedUploadError extends Error {
+    constructor(
+      readonly status: 400 | 404,
+      message: string,
+    ) {
+      super(message);
+    }
+  },
 }));
 
 vi.mock("@/lib/intake/queries", () => ({ loadFormByToken }));
@@ -32,6 +45,14 @@ vi.mock("@/lib/intake/documents", () => ({
   // src/lib/intake/documents.ts by inspection; it's a stable, near-frozen list.
   INTAKE_DOC_TYPES: ["statement", "paystub", "mortgage", "tax_return", "estate", "insurance", "other"],
 }));
+// The real module pulls in @/db via @/lib/crm/documents; stagingPrefix is
+// restated here so the prefix assertions below pin its real shape.
+vi.mock("@/lib/uploads/staged-upload", () => ({
+  stagingPrefix: (surface: string, id: string) => `staging/${surface}/${id}/`,
+  takeStagedUpload,
+  issueStagedUpload,
+  StagedUploadError,
+}));
 vi.mock("@/lib/rate-limit", () => ({
   extractClientIp: () => "1.2.3.4",
   checkIntakeDocumentRateLimit,
@@ -40,6 +61,7 @@ vi.mock("@/lib/rate-limit", () => ({
 
 import { POST, GET } from "../[token]/documents/route";
 import { DELETE } from "../[token]/documents/[docId]/route";
+import { POST as POST_TOKEN } from "../[token]/documents/upload-token/route";
 
 const DRAFT_FORM = {
   id: "form-1",
@@ -58,10 +80,14 @@ const DOC_VIEW = {
   uploadedAt: "2026-08-06T00:00:00.000Z",
 };
 
-function uploadRequest(): Request {
+const STAGED = "staging/intake/form-1/1760000000000-123e4567-e89b-12d3-a456-426614174000-s.pdf";
+
+function uploadRequest(docType = "statement"): Request {
   const fd = new FormData();
-  fd.set("file", new File([Buffer.from("%PDF-1.4\n")], "s.pdf", { type: "application/pdf" }));
-  fd.set("docType", "statement");
+  fd.set("stagedPathname", STAGED);
+  fd.set("filename", "s.pdf");
+  fd.set("contentType", "application/pdf");
+  fd.set("docType", docType);
   return new Request("http://localhost/api/intake/tok/documents", { method: "POST", body: fd });
 }
 
@@ -75,6 +101,7 @@ beforeEach(() => {
   listIntakeDocuments.mockResolvedValue([]);
   deleteIntakeDocument.mockResolvedValue(true);
   checkIntakeDocumentRateLimit.mockResolvedValue({ allowed: true });
+  takeStagedUpload.mockResolvedValue(Buffer.from("%PDF-1.4\n"));
 });
 
 describe("rate limiting", () => {
@@ -117,12 +144,30 @@ describe("POST /api/intake/[token]/documents", () => {
     expect(uploadIntakeDocument).not.toHaveBeenCalled();
   });
 
-  it("400s on an unknown docType", async () => {
-    const fd = new FormData();
-    fd.set("file", new File([Buffer.from("%PDF-1.4\n")], "s.pdf", { type: "application/pdf" }));
-    fd.set("docType", "not-a-type");
-    const req = new Request("http://localhost/api/intake/tok/documents", { method: "POST", body: fd });
-    expect((await POST(req, params)).status).toBe(400);
+  it("400s on an unknown docType, still taking (and so deleting) the staged copy", async () => {
+    expect((await POST(uploadRequest("not-a-type"), params)).status).toBe(400);
+    expect(takeStagedUpload).toHaveBeenCalled();
+    expect(uploadIntakeDocument).not.toHaveBeenCalled();
+  });
+
+  it("files the staged bytes from this form's own prefix, under the client's name and type", async () => {
+    await POST(uploadRequest(), params);
+    expect(takeStagedUpload).toHaveBeenCalledWith("staging/intake/form-1/", STAGED);
+    const [formId, file, docType] = uploadIntakeDocument.mock.calls[0];
+    expect(formId).toBe("form-1");
+    expect(file).toBeInstanceOf(File);
+    expect((file as File).name).toBe("s.pdf");
+    expect((file as File).type).toBe("application/pdf");
+    expect(Buffer.from(await (file as File).arrayBuffer()).toString()).toBe("%PDF-1.4\n");
+    expect(docType).toBe("statement");
+  });
+
+  it("passes a staged-upload refusal through without filing anything", async () => {
+    takeStagedUpload.mockRejectedValue(new StagedUploadError(404, "Upload not found. Please try again."));
+    const res = await POST(uploadRequest(), params);
+    expect(res.status).toBe(404);
+    await expect(res.json()).resolves.toEqual({ error: "Upload not found. Please try again." });
+    expect(uploadIntakeDocument).not.toHaveBeenCalled();
   });
 
   it("uploads and returns exactly what uploadIntakeDocument resolved, with no keys added by the route", async () => {
@@ -134,13 +179,47 @@ describe("POST /api/intake/[token]/documents", () => {
   });
 
   it("413s when the lib reports the file is too large", async () => {
-    uploadIntakeDocument.mockRejectedValue(new Error("File too large. Maximum size is 10MB."));
+    uploadIntakeDocument.mockRejectedValue(new Error("File too large. Maximum size is 30MB."));
     expect((await POST(uploadRequest(), params)).status).toBe(413);
   });
 
-  it("400s when content validation rejects the bytes", async () => {
-    uploadIntakeDocument.mockRejectedValue(new Error("Unsupported or unsafe file type. Allowed: …"));
+  it("400s when the form's file-count or total-size cap is reached", async () => {
+    uploadIntakeDocument.mockRejectedValue(new Error("You've attached too many documents. The limit is 25."));
     expect((await POST(uploadRequest(), params)).status).toBe(400);
+    uploadIntakeDocument.mockRejectedValue(new Error("These documents exceed the total size limit for one form."));
+    expect((await POST(uploadRequest(), params)).status).toBe(400);
+  });
+});
+
+describe("POST /api/intake/[token]/documents/upload-token", () => {
+  function tokenRequest(body: unknown = { filename: "s.pdf" }): Request {
+    return new Request("http://localhost/api/intake/tok/documents/upload-token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("issues a 30 MB token under this form's own staging prefix", async () => {
+    issueStagedUpload.mockResolvedValue({ pathname: STAGED, clientToken: "ct" });
+    const res = await POST_TOKEN(tokenRequest(), params);
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ pathname: STAGED, clientToken: "ct" });
+    expect(issueStagedUpload).toHaveBeenCalledWith("staging/intake/form-1/", "s.pdf", 30 * 1024 * 1024);
+  });
+
+  it("is behind the same gate as the upload itself", async () => {
+    isGateVerified.mockResolvedValue(false);
+    expect((await POST_TOKEN(tokenRequest(), params)).status).toBe(401);
+    loadFormByToken.mockResolvedValue({ ...DRAFT_FORM, status: "submitted" });
+    isGateVerified.mockResolvedValue(true);
+    expect((await POST_TOKEN(tokenRequest(), params)).status).toBe(409);
+    expect(issueStagedUpload).not.toHaveBeenCalled();
+  });
+
+  it("400s without a filename", async () => {
+    expect((await POST_TOKEN(tokenRequest({}), params)).status).toBe(400);
+    expect(issueStagedUpload).not.toHaveBeenCalled();
   });
 });
 

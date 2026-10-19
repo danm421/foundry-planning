@@ -11,7 +11,7 @@ import {
   resolveDocumentBlobPathname,
   type CrmDocumentRow,
 } from "@/lib/crm/documents";
-import { SNIFF_BYTES, validateDocumentUpload } from "@/lib/files/content-type";
+import { SNIFF_BYTES, documentMimeType } from "@/lib/files/content-type";
 import { toSafeDisplayFilename } from "@/lib/files/safe-filename";
 import { recordActivity } from "@/lib/crm/activity";
 import { recordCreate, recordDelete, recordUpdate } from "@/lib/audit/record-helpers";
@@ -120,7 +120,7 @@ async function readBlobHead(pathname: string): Promise<Buffer> {
  * Step 2: file the uploaded blob as a document. The pathname comes back from
  * the browser, so it must be one step 1 could have issued for THIS household
  * and must not already back a document. The bytes are sniffed here, after the
- * fact; a rejected blob is deleted.
+ * fact, for the type to store.
  */
 export async function registerPortalUpload(opts: {
   pathname: string;
@@ -142,14 +142,7 @@ export async function registerPortalUpload(opts: {
   const blob = await head(opts.pathname).catch(() => null);
   if (!blob) throw new PortalVaultNotFoundError();
 
-  const leadingBytes = await readBlobHead(opts.pathname);
-  let mimeType: string;
-  try {
-    ({ mimeType } = validateDocumentUpload({ type: blob.contentType }, leadingBytes));
-  } catch (err) {
-    await del(opts.pathname).catch(() => {});
-    throw err;
-  }
+  const mimeType = documentMimeType(blob.contentType, await readBlobHead(opts.pathname));
 
   const [doc] = await db.insert(crmHouseholdDocuments).values({
     householdId: ctx.householdId,

@@ -100,15 +100,18 @@ describe("uploadIntakeDocument", () => {
     expect(typeof row.sizeBytes).toBe("number");
   });
 
-  it("rejects a file whose bytes are not on the allowlist", async () => {
+  it("accepts any file, storing unrecognised or markup bytes as octet-stream", async () => {
     const formId = await seedForm();
     const html = new File([Buffer.from("<html><body>hi</body></html>")], "x.pdf", {
       type: "application/pdf",
     });
 
-    await expect(uploadIntakeDocument(formId, html, "statement")).rejects.toThrow(
-      /Unsupported or unsafe file type/,
-    );
+    const view = await uploadIntakeDocument(formId, html, "statement");
+    const [row] = await db
+      .select()
+      .from(crmHouseholdDocuments)
+      .where(eq(crmHouseholdDocuments.id, view.id));
+    expect(row.mimeType).toBe("application/octet-stream");
   });
 
   // 26 sequential round trips to a shared dev Postgres — comfortably over

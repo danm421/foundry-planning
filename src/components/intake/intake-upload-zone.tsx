@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MAX_DOCUMENT_SIZE_BYTES } from "@/lib/crm/document-constants";
+import { MAX_INTAKE_FILE_BYTES } from "@/lib/crm/document-constants";
 import {
   INTAKE_DOC_TYPES,
   INTAKE_DOC_TYPE_LABELS,
@@ -9,6 +9,8 @@ import {
   type IntakeDocType,
   type IntakeDocumentView,
 } from "@/lib/intake/document-types";
+import { responseErrorMessage } from "@/lib/response-error-message";
+import { stageFile } from "@/lib/uploads/stage-file";
 import { formatBytes } from "@/components/portal/documents/vault-format";
 import { labelCls, selectCls } from "./steps/card-list";
 
@@ -51,40 +53,19 @@ export interface IntakeUploadZoneProps {
   onChanged: () => void;
   /** Primary line inside the drop zone, e.g. "Add a statement". */
   label: string;
-  /** Second line; defaults to the accepted formats and the per-file size cap. */
+  /** Second line; defaults to the per-file size cap. */
   hint?: string;
 }
 
 // ─── Upload constraints ──────────────────────────────────────────────────────
 
-const MAX_MB = Math.floor(MAX_DOCUMENT_SIZE_BYTES / (1024 * 1024));
+const MAX_MB = Math.floor(MAX_INTAKE_FILE_BYTES / (1024 * 1024));
 
 /** Mirrors the message `uploadIntakeDocument` throws for the same condition, so
  *  a file rejected here reads identically to one rejected by the server. */
 const TOO_LARGE_MESSAGE = `File too large. Maximum size is ${MAX_MB}MB.`;
 
-/** A hint to the file picker only — the server re-derives the real type from
- *  the magic bytes (`validateDocumentUpload`), so this list can never widen
- *  what is actually accepted. */
-const ACCEPTED_EXTENSIONS = [
-  ".pdf",
-  ".doc",
-  ".docx",
-  ".xls",
-  ".xlsx",
-  ".ppt",
-  ".pptx",
-  ".csv",
-  ".txt",
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".webp",
-  ".heic",
-];
-
-const DEFAULT_HINT = `PDF, Word, Excel, CSV, or a photo — up to ${MAX_MB}MB each.`;
+const DEFAULT_HINT = `Any file type, up to ${MAX_MB}MB each.`;
 
 /** Shape and spacing of the dashed drop target, shared by the live zone and the
  *  preview's inert twin so the sample can't drift from what clients see. The
@@ -107,7 +88,7 @@ interface PendingUpload {
   file: File;
   docType: IntakeDocType;
   state: UploadState;
-  /** 0–100. Browsers report upload progress on XHR only, never on fetch. */
+  /** 0–100, as the Blob upload reports it. */
   progress: number;
   errorMessage?: string;
   serverId?: string;
@@ -124,16 +105,7 @@ function stillPending(row: PendingUpload, documents: IntakeDocumentView[]): bool
   return row.serverId != null && !documents.some((d) => d.id === row.serverId);
 }
 
-/** The server writes client-readable messages; prefer them over a status code. */
-function errorFromResponse(status: number, body: string): string {
-  try {
-    const parsed = JSON.parse(body) as { error?: string };
-    if (parsed.error) return parsed.error;
-  } catch {
-    /* fall through to the generic message */
-  }
-  return `Upload failed (${status}). Please try again.`;
-}
+const CONNECTION_MESSAGE = "Couldn't reach the server. Check your connection and try again.";
 
 // ─── IntakeUploadZone ────────────────────────────────────────────────────────
 
@@ -154,8 +126,8 @@ export function IntakeUploadZone({
   const inputRef = useRef<HTMLInputElement>(null);
   const nextRowId = useRef(0);
 
-  // Pinned so an XHR handler created at upload time still calls the caller's
-  // current callback, without `startUpload` changing identity mid-flight.
+  // Pinned so an upload started earlier still calls the caller's current
+  // callback, without `startUpload` changing identity mid-flight.
   const onChangedRef = useRef(onChanged);
   useEffect(() => {
     onChangedRef.current = onChanged;
@@ -166,42 +138,39 @@ export function IntakeUploadZone({
   }, []);
 
   const startUpload = useCallback(
-    (row: PendingUpload) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", `/api/intake/${token}/documents`);
-      xhr.upload.onprogress = (e) => {
-        if (!e.lengthComputable) return;
-        patchRow(row.id, { progress: Math.round((e.loaded / e.total) * 100) });
-      };
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          let serverId: string | undefined;
-          try {
-            serverId = (JSON.parse(xhr.responseText) as { document?: { id?: string } })
-              .document?.id;
-          } catch {
-            /* the row yields to the refetch instead — see stillPending */
-          }
-          patchRow(row.id, { state: "uploaded", progress: 100, serverId });
-          onChangedRef.current();
+    async (row: PendingUpload) => {
+      try {
+        // Straight to Blob first: a function request body caps at 4.5 MB.
+        const stagedPathname = await stageFile(
+          `/api/intake/${token}/documents/upload-token`,
+          row.file,
+          (progress) => patchRow(row.id, { progress }),
+        );
+        const form = new FormData();
+        form.append("stagedPathname", stagedPathname);
+        form.append("filename", row.file.name);
+        form.append("contentType", row.file.type);
+        form.append("docType", row.docType);
+        const res = await fetch(`/api/intake/${token}/documents`, { method: "POST", body: form });
+        if (!res.ok) {
+          patchRow(row.id, {
+            state: "failed",
+            errorMessage: await responseErrorMessage(res, `Upload failed (${res.status}). Please try again.`),
+          });
           return;
         }
+        // No id to match on → the row yields to the refetch — see stillPending.
+        const body = (await res.json().catch(() => ({}))) as { document?: { id?: string } };
+        patchRow(row.id, { state: "uploaded", progress: 100, serverId: body.document?.id });
+        onChangedRef.current();
+      } catch (err) {
+        // fetch rejects with a TypeError only when the request never got out;
+        // stageFile's own failures carry a message fit to show.
         patchRow(row.id, {
           state: "failed",
-          errorMessage: errorFromResponse(xhr.status, xhr.responseText),
+          errorMessage: err instanceof TypeError ? CONNECTION_MESSAGE : (err as Error).message,
         });
-      };
-      xhr.onerror = () => {
-        patchRow(row.id, {
-          state: "failed",
-          errorMessage: "Couldn't reach the server. Check your connection and try again.",
-        });
-      };
-
-      const form = new FormData();
-      form.append("file", row.file);
-      form.append("docType", row.docType);
-      xhr.send(form);
+      }
     },
     [token, patchRow],
   );
@@ -210,10 +179,9 @@ export function IntakeUploadZone({
     (fileList: FileList | File[]) => {
       const rows = Array.from(fileList).map((file) => {
         nextRowId.current += 1;
-        // Oversized files never leave the device: the server would reject them
-        // after the whole body was uploaded, which on a phone is a long wait
-        // for a no.
-        const tooLarge = file.size > MAX_DOCUMENT_SIZE_BYTES;
+        // Oversized files never leave the device: Blob would refuse them only
+        // after the upload began, which on a phone is a long wait for a no.
+        const tooLarge = file.size > MAX_INTAKE_FILE_BYTES;
         return {
           id: `u${nextRowId.current}`,
           name: file.name,
@@ -227,7 +195,7 @@ export function IntakeUploadZone({
       if (rows.length === 0) return;
       setPending((prev) => [...prev, ...rows]);
       for (const row of rows) {
-        if (row.state === "uploading") startUpload(row);
+        if (row.state === "uploading") void startUpload(row);
       }
     },
     [allowTypeChoice, selectedType, docType, startUpload],
@@ -246,7 +214,7 @@ export function IntakeUploadZone({
         errorMessage: undefined,
       };
       patchRow(id, refreshed);
-      startUpload(refreshed);
+      void startUpload(refreshed);
     },
     [pending, patchRow, startUpload],
   );
@@ -271,7 +239,7 @@ export function IntakeUploadZone({
         }
         onChangedRef.current();
       } catch {
-        setRemoveError("Couldn't reach the server. Check your connection and try again.");
+        setRemoveError(CONNECTION_MESSAGE);
       } finally {
         setRemovingId(null);
       }
@@ -322,7 +290,6 @@ export function IntakeUploadZone({
         ref={inputRef}
         type="file"
         multiple
-        accept={ACCEPTED_EXTENSIONS.join(",")}
         onChange={(e) => {
           if (e.target.files && e.target.files.length > 0) addFiles(e.target.files);
           e.target.value = "";

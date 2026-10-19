@@ -56,12 +56,10 @@ describe("uploadCrmTaskFile", () => {
     expect(body).toBeInstanceOf(File);
   });
 
-  it("rejects a disallowed file and writes nothing", async () => {
-    const html = new File([new TextEncoder().encode("<html></html>")], "x.pdf", { type: "application/pdf" });
-    await expect(uploadCrmTaskFile({ taskId, firmId: FIRM, uploadedByUserId: "u_task_files", file: html })).rejects.toThrow(/unsupported or unsafe/i);
-    expect(put).not.toHaveBeenCalled();
-    const rows = await db.select().from(crmTaskFiles).where(eq(crmTaskFiles.taskId, taskId));
-    expect(rows).toHaveLength(0);
+  it("accepts any file, storing markup as octet-stream", async () => {
+    const html = new File([new TextEncoder().encode("<html></html>")], "x.html", { type: "text/html" });
+    const row = await uploadCrmTaskFile({ taskId, firmId: FIRM, uploadedByUserId: "u_task_files", file: html });
+    expect(row.mimeType).toBe("application/octet-stream");
   });
 });
 

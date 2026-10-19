@@ -46,7 +46,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     const r = portalVaultErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
     const msg = err instanceof Error ? err.message : "error";
-    if (/unsupported|unsafe/i.test(msg)) return NextResponse.json({ error: msg }, { status: 400 });
     console.error("POST /api/portal/documents error:", msg.slice(0, 200));
     return NextResponse.json({ error: "Upload failed. Please try again." }, { status: 500 });
   }

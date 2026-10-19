@@ -11,11 +11,11 @@ import {
 } from "@/db/schema";
 import { ensureIntakeFolder } from "@/lib/crm/folders";
 import { prospectHouseholdOwner } from "./prospect-owner";
-import { MAX_DOCUMENT_SIZE_BYTES } from "@/lib/crm/document-constants";
 import { sanitizeFilename, STORAGE_PROVIDER } from "@/lib/crm/documents";
-import { validateDocumentUpload } from "@/lib/files/content-type";
+import { documentMimeType } from "@/lib/files/content-type";
 import { toSafeDisplayFilename } from "@/lib/files/safe-filename";
 import { recordAudit } from "@/lib/audit";
+import { MAX_INTAKE_FILE_BYTES } from "@/lib/crm/document-constants";
 import type { IntakeDocType, IntakeDocumentView } from "./document-types";
 
 /**
@@ -29,9 +29,9 @@ import type { IntakeDocType, IntakeDocumentView } from "./document-types";
  * a thin parallel module beats making audited advisor code dual-tenant.
  */
 
-/** Public surface — the 10MB per-file cap alone doesn't bound a form's total. */
+/** Public surface — the 30MB per-file cap alone doesn't bound a form's total. */
 export const MAX_INTAKE_FILES = 25;
-export const MAX_INTAKE_TOTAL_BYTES = 50 * 1024 * 1024;
+export const MAX_INTAKE_TOTAL_BYTES = 250 * 1024 * 1024;
 
 /** The doc-type taxonomy and the client-facing view shape live in
  *  `document-types.ts` so the wizard's client components can import them
@@ -250,9 +250,9 @@ export async function uploadIntakeDocument(
   file: File,
   docType: IntakeDocType,
 ): Promise<IntakeDocumentView> {
-  if (file.size > MAX_DOCUMENT_SIZE_BYTES) {
+  if (file.size > MAX_INTAKE_FILE_BYTES) {
     throw new Error(
-      `File too large. Maximum size is ${Math.floor(MAX_DOCUMENT_SIZE_BYTES / (1024 * 1024))}MB.`,
+      `File too large. Maximum size is ${Math.floor(MAX_INTAKE_FILE_BYTES / (1024 * 1024))}MB.`,
     );
   }
 
@@ -284,7 +284,7 @@ export async function uploadIntakeDocument(
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const { mimeType } = validateDocumentUpload(file, buffer);
+  const mimeType = documentMimeType(file.type, buffer);
 
   const folderId = await ensureIntakeFolder(householdId, firmId);
 

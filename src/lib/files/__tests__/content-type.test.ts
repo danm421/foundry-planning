@@ -1,6 +1,6 @@
 // src/lib/files/__tests__/content-type.test.ts
 import { describe, it, expect } from "vitest";
-import { detectDocumentKind, validateDocumentUpload } from "../content-type";
+import { detectDocumentKind, documentMimeType } from "../content-type";
 
 const pdf = Buffer.from("%PDF-1.4\n%â…\n");
 const zip = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]);
@@ -32,7 +32,7 @@ describe("detectDocumentKind", () => {
   it("treats control-char-free non-markup bytes as text/csv", () => {
     expect(detectDocumentKind(csv)).toBe("text");
   });
-  it("rejects markup, executables, too-short, and unknown binary", () => {
+  it("recognizes no kind for markup, executables, too-short, and unknown binary", () => {
     expect(detectDocumentKind(html)).toBeNull();
     expect(detectDocumentKind(svg)).toBeNull();
     expect(detectDocumentKind(xmlSvg)).toBeNull();
@@ -42,17 +42,20 @@ describe("detectDocumentKind", () => {
   });
 });
 
-describe("validateDocumentUpload", () => {
+describe("documentMimeType", () => {
   it("returns canonical mime for unambiguous kinds", () => {
-    expect(validateDocumentUpload(new File([pdf], "a.pdf"), pdf)).toEqual({ kind: "pdf", mimeType: "application/pdf" });
-    expect(validateDocumentUpload(new File([png], "a.png"), png)).toEqual({ kind: "png", mimeType: "image/png" });
+    expect(documentMimeType("", pdf)).toBe("application/pdf");
+    expect(documentMimeType("", png)).toBe("image/png");
   });
   it("trusts an allowlisted client mime for office-zip, else octet-stream", () => {
     const xlsxType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    expect(validateDocumentUpload(new File([zip], "a.xlsx", { type: xlsxType }), zip)).toEqual({ kind: "office-zip", mimeType: xlsxType });
-    expect(validateDocumentUpload(new File([zip], "a.xlsx", { type: "text/html" }), zip)).toEqual({ kind: "office-zip", mimeType: "application/octet-stream" });
+    expect(documentMimeType(xlsxType, zip)).toBe(xlsxType);
+    expect(documentMimeType("text/html", zip)).toBe("application/octet-stream");
   });
-  it("throws on a disallowed/unsafe file", () => {
-    expect(() => validateDocumentUpload(new File([html], "evil.pdf", { type: "application/pdf" }), html)).toThrow(/unsupported or unsafe/i);
+  it("accepts any other file as octet-stream — markup never as text, whatever it claims", () => {
+    expect(documentMimeType("application/pdf", html)).toBe("application/octet-stream");
+    expect(documentMimeType("image/svg+xml", svg)).toBe("application/octet-stream");
+    expect(documentMimeType("application/x-msdownload", exe)).toBe("application/octet-stream");
+    expect(documentMimeType(undefined, unknownBin)).toBe("application/octet-stream");
   });
 });
