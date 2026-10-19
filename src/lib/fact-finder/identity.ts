@@ -30,18 +30,28 @@ const agrees = (a: FFCellValue | undefined, b: FFCellValue | undefined) => {
   return x === "" || y === "" || x === y;
 };
 
+/** Words that say what kind of firm it is, not which one: "Chase Bank" and "Wells Fargo Bank" share only "bank". */
+const GENERIC_FIRM_WORDS = new Set([
+  "a", "advisors", "and", "bank", "brokerage", "capital", "co", "company", "credit", "federal", "financial", "group", "inc",
+  "insurance", "investments", "life", "llc", "management", "n", "na", "national", "of", "savings", "securities", "services",
+  "the", "trust", "union", "wealth",
+]);
+const firmWords = (normalized: string) => normalized.split(" ").filter((w) => !GENERIC_FIRM_WORDS.has(w));
+
 /**
  * Same custodian, allowing for how differently one firm gets printed:
- * "Fidelity" / "Fidelity Investments" (prefix) and "Schwab" / "Charles Schwab"
- * (a shared word of 4+ letters). Missing on either side is no contradiction.
+ * "Fidelity" / "Fidelity Investments" (prefix), and "Schwab" / "Charles Schwab"
+ * or "Edward Jones" / "Edward D. Jones & Co." (every word of one that names the
+ * firm is in the other). "Morgan Stanley" / "J.P. Morgan" share a word but are
+ * two firms. Missing on either side is no contradiction.
  */
 export function custodiansAgree(a: FFCellValue | undefined, b: FFCellValue | undefined): boolean {
   const ca = normalizeCustodian(a === null || a === undefined ? null : String(a));
   const cb = normalizeCustodian(b === null || b === undefined ? null : String(b));
   if (!ca || !cb) return true;
   if (custodianMatches(ca, cb)) return true;
-  const words = new Set(ca.split(" ").filter((w) => w.length >= 4));
-  return cb.split(" ").some((w) => words.has(w));
+  const [fewer, more] = [firmWords(ca), firmWords(cb)].sort((x, y) => x.length - y.length);
+  return fewer.length > 0 && fewer.every((w) => more.includes(w));
 }
 
 function sameAccount(a: Values, b: Values, nameColumn: string, custodianColumn: string): boolean {

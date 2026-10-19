@@ -35,6 +35,18 @@ describe("sameIdentity", () => {
     expect(sameIdentity("cash", { accountName: "Checking", custodian: "Chase" }, { accountName: "Checking" })).toBe(true);
   });
 
+  it("never takes a word that names a kind of firm for the firm", () => {
+    const checking = (a: string, b: string) => sameIdentity("cash", { accountName: "Checking", custodian: a }, { accountName: "Checking", custodian: b });
+    expect(checking("Chase Bank", "Wells Fargo Bank")).toBe(false);
+    expect(checking("JPMorgan Chase Bank, N.A.", "Wells Fargo Bank, N.A.")).toBe(false);
+    expect(checking("Fidelity Investments", "Vanguard Investments")).toBe(false);
+    expect(checking("Morgan Stanley", "J.P. Morgan")).toBe(false);
+    // The same firm printed two ways still agrees.
+    expect(checking("Chase Bank", "JPMorgan Chase Bank, N.A.")).toBe(true);
+    expect(checking("Edward Jones", "Edward D. Jones & Co., L.P.")).toBe(true);
+    expect(checking("Wells Fargo Advisors", "Wells Fargo Bank")).toBe(true);
+  });
+
   it("matches loans on name, refusing a different property", () => {
     expect(sameIdentity("liab", { loanName: "Mortgage", propertyName: "1450 Aspen Ridge Dr" }, { loanName: "Mortgage", propertyName: "88 Rental Ln" })).toBe(false);
     expect(sameIdentity("liab", { loanName: "Mortgage", propertyName: "1450 Aspen Ridge Dr" }, { loanName: "mortgage" })).toBe(true);
