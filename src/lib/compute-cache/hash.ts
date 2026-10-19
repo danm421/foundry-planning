@@ -46,8 +46,11 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
  *     accounts; household-owned goal draws book as withdrawals + expenses and
  *     leave the surplus split alone (spec 2026-10-05-solver-goals-design,
  *     2026-10-05)
+ * 13: household checking is never a business's own "— Cash" account, and a
+ *     business sale is priced at its grown balance, not its plan-start value
+ *     (2026-10-19)
  */
-export const ENGINE_VERSION = 12;
+export const ENGINE_VERSION = 13;
 
 /** Round to 6 decimals so float representation noise can't cause spurious misses. */
 function round(n: number): number {

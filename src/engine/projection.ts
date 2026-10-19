@@ -723,9 +723,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // the legacy surplus/deficit model (preserves tests + pre-migration data).
   // Migration 0055's default-checking trigger guarantees `isDefaultChecking`
   // accounts are either fully household-owned OR have exactly one entity
-  // owner (never mixed), so the find-and-assert below is safe.
+  // owner (never mixed), so the find-and-assert below is safe. A business's own
+  // "— Cash" account is also flagged default but has NO owner rows (it rides
+  // with its business via `parentAccountId`), so ownership alone can't exclude
+  // it — taken as the household hub, it ran every household bill through the
+  // business while the distributions sat unused in the real household checking.
   const defaultChecking = data.accounts.find(
-    (a) => a.isDefaultChecking && !isFullyEntityOwned(a)
+    (a) => a.isDefaultChecking && !isFullyEntityOwned(a) && a.parentAccountId == null
   );
   const hasChecking = defaultChecking != null;
   const entityCheckingByEntityId: Record<string, string> = {};

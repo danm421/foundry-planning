@@ -158,14 +158,16 @@ export function buildDissolveTrustMutations(
     (owners ?? []).some((o) => isTrustSlice(o, entity.id));
 
   // Does the household keep a cash hub of its own through this dissolve? The
-  // engine picks it with `.find(a => a.isDefaultChecking && !isFullyEntityOwned(a))`
-  // (projection.ts:683-684), so every entity-owned account is invisible to it —
+  // engine picks it as the first default checking that is neither fully
+  // entity-owned nor a business's own cash (`defaultChecking` in runProjection),
+  // so every entity-owned account is invisible to it —
   // which means an account the loop below is about to return can be the only
   // candidate there will ever be. Mirrored inline rather than importing the
   // engine predicate: lib/solver imports engine TYPES only.
   let householdKeepsAHub = tree.accounts.some(
     (a) =>
       a.isDefaultChecking === true &&
+      a.parentAccountId == null &&
       !(a.owners.length > 0 && a.owners.every((o) => o.kind === "entity")),
   );
 

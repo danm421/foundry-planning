@@ -736,3 +736,42 @@ describe("applyBusinessSales — only an irrevocable trust banks its own slice",
     expect(input.accountBalances[HOUSEHOLD_CHECKING]).toBe(0);
   });
 });
+
+// The projection grows a business in `accountBalances`; `business.value` is the
+// value the advisor typed in the plan's first year. A sale years out priced off
+// `value` sold a grown business at its starting price and left the sold slice
+// of a partial sale growing on in the balance.
+describe("applyBusinessSales — prices the business at its grown balance", () => {
+  function run(fractionSold: number) {
+    const business = makeBusiness(); // value 500k, basis 100k
+    const accountBalances: Record<string, number> = { "acct-cash": 0, biz: 800_000 };
+    const result = applyBusinessSales({
+      sales: [makeSale({ fractionSold })],
+      accounts: [makeChecking("acct-cash", 0), business],
+      liabilities: [],
+      accountBalances,
+      basisMap: { "acct-cash": 0 },
+      accountLedgers: { "acct-cash": makeLedger(0) },
+      year: 2030,
+      defaultCheckingId: "acct-cash",
+      entitiesById: {},
+      giftEvents: [],
+      planStartYear: 2026,
+    });
+    return { result, accountBalances, business };
+  }
+
+  it("full sale realizes the grown value", () => {
+    const { result, accountBalances } = run(1);
+    expect(result.capitalGains).toBe(700_000);
+    expect(accountBalances["acct-cash"]).toBe(800_000);
+  });
+
+  it("partial sale takes the sold slice out of the grown balance", () => {
+    const { result, accountBalances, business } = run(0.5);
+    expect(result.capitalGains).toBe(350_000);
+    expect(accountBalances["acct-cash"]).toBe(400_000);
+    expect(accountBalances.biz).toBe(400_000);
+    expect(business.value).toBe(400_000);
+  });
+});

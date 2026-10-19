@@ -1238,3 +1238,34 @@ describe("business distributions — pro-rating across gift-resolved owners", ()
     expect(y.income.business).toBeCloseTo(1_000_000, 2);
   });
 });
+
+// A business's "— Cash" account is saved with NO owner rows — it rides with its
+// business via `parentAccountId`. When it sorted ahead of the household's own
+// checking, the engine took it as the household hub: every household bill ran
+// through the business cash while the distribution it paid out sat unused in
+// the real household checking, so the plan sold investments every year.
+describe("household checking is never a business's own cash account", () => {
+  it("routes household flows to household checking when business cash is listed first", () => {
+    const owner = (id: string, percent: number) =>
+      ({ kind: "family_member", familyMemberId: id, percent }) as const;
+    const living: Expense = {
+      id: "e1", type: "living", name: "Living", annualAmount: 40_000,
+      startYear: 2026, endYear: 2050, growthRate: 0,
+    };
+    const data: ClientData = {
+      ...mkData({ expenses: [living] }),
+      accounts: [
+        { ...bizChecking("biz-llc"), owners: [] } as Account,
+        bizAccount({ owners: [owner("fm-a", 1)] }),
+        { ...hhChecking, owners: [owner("fm-a", 0.5), owner("fm-b", 0.5)] },
+      ],
+    };
+    const y0 = runProjection(data)[0];
+
+    const hhEntries = y0.accountLedgers["hh-checking"].entries;
+    expect(hhEntries.some((e) => e.category === "expense" && e.amount === -40_000)).toBe(true);
+    expect(creditedTo(y0, "hh-checking")).toBeCloseTo(100_000, 2);
+    expect(y0.withdrawals.total).toBe(0);
+    expect(endBalance(y0, "biz-llc-checking")).toBeCloseTo(0, 2);
+  });
+});

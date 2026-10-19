@@ -893,8 +893,11 @@ export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSale
       continue;
     }
 
-    // Operating-value sale on the business itself.
-    const operatingValue = sale.overrideSaleValue ?? business.value ?? 0;
+    // Operating-value sale on the business itself. The projection grows the
+    // business in `accountBalances`; `business.value` is only its plan-start
+    // value, so it is the fallback for callers that don't track the balance.
+    const operatingValue =
+      sale.overrideSaleValue ?? accountBalances[business.id] ?? business.value ?? 0;
     const operatingBasis = sale.overrideBasis ?? business.basis ?? 0;
     const operatingGross = f * operatingValue;
     // Signed: a business sold below its inside basis realizes a genuine loss.
@@ -1067,6 +1070,7 @@ export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSale
       business.basis = 0;
     } else {
       business.value = operatingValue * (1 - f);
+      if (business.id in accountBalances) accountBalances[business.id] = business.value;
       // The sold tranche consumed f of the basis; the residual keeps (1 − f)
       // or a later tranche would compute its gain against the full original
       // basis and recognize $0.

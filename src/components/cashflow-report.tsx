@@ -1213,7 +1213,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   function buildCashGiftYearDetails(year: number): LineItem[] {
     if (!clientData) return [];
     const defaultChecking = clientData.accounts.find(
-      (a) => a.isDefaultChecking && !isFullyEntityOwned(a),
+      (a) => a.isDefaultChecking && !isFullyEntityOwned(a) && a.parentAccountId == null,
     );
     const items: LineItem[] = [];
     for (const gift of clientData.giftEvents ?? []) {
