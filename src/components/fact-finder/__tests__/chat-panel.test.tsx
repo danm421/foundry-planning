@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { TURN_BUSY_MESSAGE, type PatchFactFinderBody } from "@/lib/fact-finder/api-types";
+import { SAVE_CLOSED_MESSAGE, TURN_BUSY_MESSAGE, type PatchFactFinderBody } from "@/lib/fact-finder/api-types";
 import { applyOps } from "@/lib/fact-finder/ops";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
 import type { FactFinderState, FFChatTurn, FFFileReading } from "@/lib/fact-finder/types";
@@ -190,6 +190,9 @@ describe("sending a message", () => {
     expect(composer()).toHaveValue("");
     expect(within(chat()).getByText(MESSAGE)).toBeInTheDocument();
     expect(within(chat()).getByText("Working on it…")).toBeInTheDocument();
+    // Read-only while it sends, not disabled: focus stays in the box for the next message.
+    expect(composer()).toHaveFocus();
+    expect(composer()).toHaveAttribute("readonly");
     expect(within(panel()).getByRole("button", { name: "Sending…" })).toBeDisabled();
     expect(within(chat()).getByRole("button", { name: "Undo" })).toBeDisabled();
 
@@ -229,6 +232,19 @@ describe("sending a message", () => {
     expect(within(chat()).queryByText(MESSAGE)).toBeNull();
     expect(within(chat()).queryByText("Working on it…")).toBeNull();
     expect(net.log).toEqual([`POST ${TURN_URL}`]);
+  });
+
+  it("a message refused because another tab saved the import switches the screen to the saved view", async () => {
+    const user = userEvent.setup();
+    const saved = (s: FactFinderState): FactFinderState => ({ ...s, version: s.version + 1, closed: { at: AT, by: "user_2", saved: [], leftOut: [] } });
+    stubFetch(chatted(), { turn: [(server) => json(409, { error: SAVE_CLOSED_MESSAGE, factFinder: saved(server) })] });
+    renderScreen(chatted());
+    await openPanel(user);
+
+    await user.type(composer(), `${MESSAGE}{Enter}`);
+
+    expect(await screen.findByText(/^Saved to the plan on/)).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Documents & chat" })).toBeNull();
   });
 
   it("when the server can't be reached, says so in plain words and keeps the message", async () => {

@@ -373,6 +373,28 @@ describe("the change list", () => {
     expect(net.reviews()).toBe(0);
   });
 
+  it("moves focus to the heading of what shows: the page on Back, the change list when it opens", async () => {
+    const user = userEvent.setup();
+    stubServer(reviewedAt(ready()));
+    renderScreen(reviewedAt(ready()));
+    // Opening the screen moves no focus.
+    expect(changeList()).not.toHaveFocus();
+
+    await user.click(screen.getByRole("button", { name: "Back to fact finder" }));
+    expect(screen.getByRole("heading", { level: 2, name: "Household" })).toHaveFocus();
+
+    await user.click(reviewButton());
+    expect(changeList()).toHaveFocus();
+  });
+
+  it("moves focus to the change list's heading when a review lands", async () => {
+    const user = userEvent.setup();
+    stubServer(ready(), (s) => json(200, { factFinder: reviewedAt(s) }));
+    renderScreen(ready());
+    await user.click(reviewButton());
+    await waitFor(() => expect(changeList()).toHaveFocus());
+  });
+
   it("the rail marks no page while the list shows, and the page again on Back", async () => {
     const user = userEvent.setup();
     renderScreen(reviewedAt(ready()));
@@ -702,6 +724,13 @@ describe("a saved (closed) import", () => {
     // …and look it: a disabled Add row or Merge doesn't pass for one that works.
     expect(screen.getAllByRole("textbox")[0].closest("fieldset")).toHaveClass("[&_button:disabled]:opacity-50");
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("draws no clear button on a saved cell (a disabled one would still show its ×)", () => {
+    stubServer(ready());
+    renderScreen(closedAt(ready()));
+    expect(screen.getAllByRole("textbox", { name: "First name" })[0]).toHaveValue("Mark");
+    expect(screen.queryAllByRole("button", { name: /^Clear / })).toEqual([]);
   });
 
   it("lets the advisor open an account's holdings on the closed screen, while editing stays off", async () => {

@@ -215,6 +215,7 @@ export interface HoldingsRowProps {
 /**
  * On a read-only screen, which wraps the page in a disabled fieldset: the "N holdings" disclosure only shows
  * what's already there, and a button inside a disabled fieldset goes dead, so it is drawn as a non-form control.
+ * A cell draws no clear button there at all.
  */
 export const ViewOnlyContext = createContext(false);
 

@@ -10,6 +10,7 @@ import { Card } from "@/components/card";
 import { detailsHrefFor } from "@/lib/fact-finder/record-links";
 import type { FFClosed } from "@/lib/fact-finder/types";
 import { CircleCheckIcon } from "./icons";
+import { LocalDate } from "./local-date";
 
 const LIST = "divide-y divide-hair";
 const ITEM = "flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-[var(--pad-card)] py-2.5 text-sm";
@@ -34,17 +35,12 @@ export function ClosedView({ clientId, closed, justSaved = false }: { clientId: 
     summaryRef.current?.scrollIntoView?.({ block: "center" });
     summaryRef.current?.focus({ preventScroll: true });
   }, [justSaved]);
-  // The browser's own timezone, so the server's render may differ by a day near midnight.
-  const date = new Date(closed.at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   return (
     <div className="flex flex-col gap-4">
       <Card className="flex items-start gap-2 px-[var(--pad-card)] py-4">
         <CircleCheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-good" />
         <p ref={summaryRef} role="status" tabIndex={-1} className="text-sm text-ink rounded-[var(--radius-sm)] focus:outline-2 focus:outline-offset-2 focus:outline-accent">
-          Saved to the plan on{" "}
-          <time dateTime={closed.at} suppressHydrationWarning className="tabular">
-            {date}
-          </time>{" "}
+          Saved to the plan on <LocalDate iso={closed.at} />{" "}
           — <span className="tabular">{saved.length}</span> saved, <span className="tabular">{leftOut.length}</span> left out
         </p>
       </Card>

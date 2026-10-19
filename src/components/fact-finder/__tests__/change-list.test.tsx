@@ -458,10 +458,13 @@ describe("ChangeList", () => {
     });
   });
 
-  it("says so when nothing would change", () => {
+  it("says so when nothing would change — and Save says there's nothing to save yet, not that every row is unticked", () => {
     renderList({}, { ...CHANGES, lines: [], notices: [] });
     expect(screen.getByText("Nothing here changes the plan.")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { level: 3 })).toBeNull();
+    const save = screen.getByRole("button", { name: "Save to plan" });
+    expect(save).toBeDisabled();
+    expect(save).toHaveAccessibleDescription("Nothing to save yet — the fact finder has no changes for the plan.");
   });
 
   it("re-renders only the line whose ticks changed", () => {

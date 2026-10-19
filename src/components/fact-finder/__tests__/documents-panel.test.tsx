@@ -20,14 +20,17 @@ vi.mock("@/components/import/upload-zone", () => ({
     onUploaded,
     onRemoved,
     clientDocuments,
+    typePicker,
   }: {
     initialFiles?: { serverFileId: string; name: string; documentType: string }[];
     onUploaded?: (info: { serverFileId: string; name: string; deduped: boolean }) => void;
     onRemoved?: (serverFileId: string) => void;
     clientDocuments?: ClientDocumentView[];
+    typePicker?: boolean;
   }) => (
     <div>
       <p>Upload list: {initialFiles?.map((f) => `${f.serverFileId} ${f.name} (${f.documentType})`).join("; ")}</p>
+      <p>Type picker: {typePicker === false ? "hidden" : "shown"}</p>
       <button type="button" onClick={() => onUploaded?.({ serverFileId: "f3", name: "fidelity-401k.pdf", deduped: false })}>
         Upload fidelity-401k.pdf
       </button>
@@ -227,6 +230,7 @@ describe("progress lines", () => {
     readsOnOpen: false,
     uploaded: vi.fn(),
     removed: vi.fn(),
+    removedAny: false,
   });
 
   it("shows each document's state from the live read, else from the fact finder", async () => {
@@ -248,10 +252,19 @@ describe("progress lines", () => {
     expect(line("d.pdf")).toHaveTextContent("Waiting to read");
     expect(line("e.pdf")).toHaveTextContent("Reading…");
     expect(line("f.pdf")).toHaveTextContent("Waiting to read");
-    expect(screen.getAllByRole("button", { name: /^Retry/ })).toHaveLength(1);
+    // A failed line, and a waiting one (never read, or read elsewhere and gone stale), each offer Retry.
+    expect(screen.getAllByRole("button", { name: /^Retry/ }).map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Retry reading c.pdf", "Retry reading d.pdf", "Retry reading f.pdf",
+    ]);
 
     await userEvent.click(screen.getByRole("button", { name: "Retry reading c.pdf" }));
-    expect(props.read.start).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByRole("button", { name: "Retry reading f.pdf" }));
+    expect(props.read.start).toHaveBeenCalledTimes(2);
+  });
+
+  it("hides the upload zone's document-type picker: a file is read once, so a later type would do nothing", () => {
+    render(<DocumentsPanel clientId="c1" importId="i1" docs={docs(FILES)} state={emptyFactFinderState()} />);
+    expect(screen.getByText(/^Type picker:/)).toHaveTextContent("Type picker: hidden");
   });
 
   it("hands the upload zone the documents it already has", () => {
@@ -333,9 +346,12 @@ describe("uploads", () => {
     renderScreen(withReadings({ f1: DONE, f2: DONE }));
     fireEvent.click(screen.getByRole("button", { name: "Documents & chat" }));
 
+    expect(screen.queryByText(/^Values read from it stay/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Remove schwab-june.pdf" }));
     expect(within(screen.getByRole("list", { name: "Reading progress" })).queryByText("schwab-june.pdf")).toBeNull();
     expect(line("hendricks-fact-finder.pdf")).toBeInTheDocument();
+    // Its rows stay on the fact finder, and the panel says so.
+    expect(screen.getByText("Values read from it stay — remove those rows if you don't want them.")).toHaveAttribute("role", "status");
   });
 });
 

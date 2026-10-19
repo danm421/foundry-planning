@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { getOrgId } from "@/lib/db-helpers";
-import { listClientImports } from "@/lib/imports/list";
+import { draftsListRow, listClientImports } from "@/lib/imports/list";
 import DraftsList from "./drafts-list";
 
 interface ImportContentProps {
@@ -28,8 +28,8 @@ export async function ImportContent({ clientId: id }: ImportContentProps) {
   return (
     <DraftsList
       clientId={id}
-      inProgress={inProgress}
-      completed={completed}
+      inProgress={inProgress.map(draftsListRow)}
+      completed={completed.map(draftsListRow)}
     />
   );
 }

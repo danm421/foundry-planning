@@ -30,6 +30,14 @@ export type ImportListRow = typeof clientImports.$inferSelect & {
   factFinder: boolean;
 };
 
+/** What the imports page lists of a row — never its payload (a fact finder, its transcript and change list). */
+export type DraftsListRow = Pick<ImportListRow, "id" | "status" | "mode" | "notes" | "fileCount" | "updatedAt" | "factFinder">;
+
+/** A row as the page's list renders it: only that goes to the browser. */
+export function draftsListRow({ id, status, mode, notes, fileCount, updatedAt, factFinder }: ImportListRow): DraftsListRow {
+  return { id, status, mode, notes, fileCount, updatedAt, factFinder };
+}
+
 export interface ImportListResult {
   inProgress: ImportListRow[];
   completed: ImportListRow[];

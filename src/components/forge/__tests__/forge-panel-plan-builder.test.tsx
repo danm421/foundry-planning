@@ -524,7 +524,7 @@ describe("ForgePanel — a plan build's result", () => {
   it("links to the fact finder screen the build returned", async () => {
     await mountWithBuiltPlan("imp_1", planBuildResult("imp_1"));
 
-    expect(screen.getByRole("link", { name: /review & apply/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Open the fact finder →" })).toHaveAttribute(
       "href",
       "/clients/c9/details/import/imp_1/fact-finder",
     );
@@ -558,7 +558,7 @@ describe("ForgePanel — a plan build's result", () => {
     });
 
     expect(importMocks.runPlanBuild).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("link", { name: /review & apply/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Open the fact finder →" })).toHaveAttribute(
       "href",
       "/clients/c9/details/import/imp_1/fact-finder",
     );

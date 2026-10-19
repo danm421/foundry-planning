@@ -4,7 +4,8 @@
 // progress frames. One read at a time — asking again while one runs queues a
 // single follow-up, and the server then reads whatever still needs reading.
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ErrorResponse, ReadEvent, ReadFrame } from "@/lib/fact-finder/api-types";
+import type { ConflictResponse, ErrorResponse, ReadEvent, ReadFrame } from "@/lib/fact-finder/api-types";
+import type { FactFinderState } from "@/lib/fact-finder/types";
 import { OFFLINE_MESSAGE, factFinderUrl, refusalText } from "./http";
 
 /** A file's latest progress. */
@@ -58,20 +59,23 @@ export function useReadStream({
   importId,
   onFileFinished,
   onDone,
+  adopt,
 }: {
   clientId: string;
   importId: string;
   /** A file is done or failed. */
   onFileFinished?: (line: ReadLine) => void;
   onDone?: (done: ReadDone) => void;
+  /** A refusal that carries the fact finder — another tab saved the import — hands it to the screen. */
+  adopt?: (fresh: FactFinderState) => void;
 }): ReadStream {
   const url = `${factFinderUrl(clientId, importId)}/read`;
   const [lines, setLines] = useState<Record<string, ReadLine>>({});
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const handlers = useRef({ onFileFinished, onDone });
+  const handlers = useRef({ onFileFinished, onDone, adopt });
   useEffect(() => {
-    handlers.current = { onFileFinished, onDone };
+    handlers.current = { onFileFinished, onDone, adopt };
   });
   const active = useRef(false);
   const queued = useRef(false);
@@ -86,7 +90,8 @@ export function useReadStream({
       return;
     }
     if (!res.ok || !res.body) {
-      const body = (await res.json().catch(() => ({}))) as Partial<ErrorResponse>;
+      const body = (await res.json().catch(() => ({}))) as Partial<ErrorResponse & ConflictResponse>;
+      if (res.status === 409 && body.factFinder) handlers.current.adopt?.(body.factFinder);
       setError(refusalText(res, body.error, "Couldn't start reading"));
       return;
     }

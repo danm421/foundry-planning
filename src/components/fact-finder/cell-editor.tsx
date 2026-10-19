@@ -4,7 +4,7 @@
 // it empty, where a document value came from, "Check this", and the highlight
 // for cells the last chat reply changed. Every edit is one op through
 // `onApply`; a refused edit (false) shows the stored value again.
-import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type SyntheticEvent } from "react";
+import { useContext, useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type SyntheticEvent } from "react";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import { inputCompactClassName, selectChevronClassName, textareaClassName } from "@/components/forms/input-styles";
@@ -12,6 +12,7 @@ import type { ClientOp } from "@/lib/fact-finder/ops";
 import type { ColumnKind, FFColumn } from "@/lib/fact-finder/schema";
 import { cellNeedsCheck, isBlank } from "@/lib/fact-finder/state";
 import type { FFCell } from "@/lib/fact-finder/types";
+import { ViewOnlyContext } from "./holdings-rows";
 import { AlertIcon, CloseIcon } from "./icons";
 
 export interface CellEditorProps {
@@ -45,6 +46,8 @@ function textOf(cell: FFCell | undefined): string {
 
 export function CellEditor({ sectionId, rowId, column, cell, onApply, highlighted, fileName }: CellEditorProps) {
   const id = useId();
+  // A read-only screen: no clear button (a disabled one still shows its faint ×).
+  const viewOnly = useContext(ViewOnlyContext);
   // What the advisor is typing; null = show the stored value.
   const [draft, setDraft] = useState<string | null>(null);
   // Where the source note shows: `fixed` under the cell (above it when the
@@ -193,7 +196,7 @@ export function CellEditor({ sectionId, rowId, column, cell, onApply, highlighte
       className={`group relative min-w-0 rounded-[var(--radius-sm)] ${highlighted ? "ring-2 ring-secondary/50" : ""}`}
     >
       {editor}
-      {!blank && column.kind !== "check" && (
+      {!blank && !viewOnly && column.kind !== "check" && (
         <button
           type="button"
           aria-label={`Clear ${column.label}`}

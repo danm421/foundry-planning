@@ -10,9 +10,10 @@ describe("ImportReviewLink", () => {
     expect(link).toHaveAttribute("href", "/clients/client_1/details/import/imp_1");
   });
 
-  it("links to the fact finder screen for a plan build, which has no warnings to pass", () => {
-    render(<ImportReviewLink href="/clients/client_1/details/import/imp_1/fact-finder" />);
-    expect(screen.getByRole("link", { name: /review & apply/i })).toHaveAttribute(
+  it("links to the fact finder screen for a plan build — nothing read yet, so nothing to apply — with no warnings to pass", () => {
+    render(<ImportReviewLink href="/clients/client_1/details/import/imp_1/fact-finder" factFinder />);
+    expect(screen.queryByRole("link", { name: /review & apply/i })).toBeNull();
+    expect(screen.getByRole("link", { name: "Open the fact finder →" })).toHaveAttribute(
       "href",
       "/clients/client_1/details/import/imp_1/fact-finder",
     );

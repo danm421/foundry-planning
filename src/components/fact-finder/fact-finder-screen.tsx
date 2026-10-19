@@ -5,7 +5,7 @@
 // documents & chat panel. A saved import shows ClosedScreen instead: the same
 // pages, read-only, under the summary of what was saved.
 // Imports only client-safe leaf modules from src/lib/fact-finder.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import Link from "next/link";
 import { Card } from "@/components/card";
@@ -15,7 +15,7 @@ import { filesReading } from "@/lib/fact-finder/reading-status";
 import { PAGE_ORDER, findSection, type FFPage } from "@/lib/fact-finder/schema";
 import { pageCounts } from "@/lib/fact-finder/screen-summary";
 import { countLinksNeedingClick } from "@/lib/fact-finder/state";
-import { BackToFactFinder, ChangeList, ChangesHeading } from "./change-list";
+import { BackToFactFinder, ChangeList, ChangesHeading, HEADING_FOCUS_TARGET } from "./change-list";
 import { ClosedView } from "./closed-view";
 import { ViewOnlyContext } from "./holdings-rows";
 import { ChatComposerBar, ChatPanel, useChat } from "./chat-panel";
@@ -148,7 +148,7 @@ function OpenScreen({
 }: FactFinderScreenProps & { onClosed(closed: FactFinderState): void }) {
   const store = useFactFinder({ clientId, importId, initialState });
   const state = store.state;
-  const docs = useDocuments({ clientId, importId, initialFiles, state, refresh: store.refresh });
+  const docs = useDocuments({ clientId, importId, initialFiles, state, refresh: store.refresh, adopt: store.adopt });
   const reading = docs.read.running || filesReading(state, new Date()).length > 0;
   const chat = useChat({ clientId, importId, flushNow: store.flushNow, adopt: store.adopt });
   const [page, setPage] = useState<FFPage>("household");
@@ -163,6 +163,13 @@ function OpenScreen({
   );
   // The change list in place of the page: on opening with one, after a review, and on "Review changes →".
   const [showChanges, setShowChanges] = useState(initialState.changeSet !== undefined);
+  // The heading of what the main column shows — the page's, or the change list's.
+  const mainHeading = useRef<HTMLHeadingElement>(null);
+  /** The advisor swapped the page and the change list: show the other, and take focus to its heading (the button they pressed is gone). */
+  const swapTo = useCallback((changesShown: boolean) => {
+    flushSync(() => setShowChanges(changesShown));
+    mainHeading.current?.focus();
+  }, []);
   const narrow = useNarrowScreen();
   const pageLabel = PAGE_ORDER.find((p) => p.id === page)?.label;
 
@@ -176,7 +183,7 @@ function OpenScreen({
     adopt(fresh) {
       store.adopt(fresh);
       save.dismiss();
-      if (fresh.changeSet) setShowChanges(true);
+      if (fresh.changeSet) swapTo(true);
     },
   });
   const save = useSave({
@@ -194,7 +201,8 @@ function OpenScreen({
       if (fresh?.closed) onClosed(fresh);
     },
   });
-  // Saved elsewhere: any reply can bring the saved fact finder (the routes refuse a saved import with it).
+  // Saved elsewhere: the routes refuse a saved import with the saved fact finder, and an edit, a read, a chat
+  // message, an Undo, a review and a save each adopt it from that refusal.
   useEffect(() => {
     if (state.closed) onClosed(state);
   }, [state, onClosed]);
@@ -203,7 +211,7 @@ function OpenScreen({
 
   function startReview() {
     // The change set held with no edit since is the current one: show it again, ticks and all.
-    if (changes) setShowChanges(true);
+    if (changes) swapTo(true);
     else void review.review();
   }
 
@@ -307,7 +315,8 @@ function OpenScreen({
               onToggleField={ticks.toggleField}
               onToggleLine={ticks.toggleLine}
               onFix={fix}
-              onBack={() => setShowChanges(false)}
+              onBack={() => swapTo(false)}
+              headingRef={mainHeading}
               hasCoClient={hasCoClient}
               reading={reading}
               chatting={chat.pending !== null || chat.undoing !== null}
@@ -319,13 +328,13 @@ function OpenScreen({
             />
           ) : showChanges ? (
             <>
-              <ChangesHeading />
+              <ChangesHeading ref={mainHeading} />
               <Card className="flex flex-wrap items-center justify-between gap-3 px-[var(--pad-card)] py-4">
                 <p role="status" className="text-sm text-ink-2">
                   {save.error?.stale ? save.error.message : "The fact finder changed — review again."}
                 </p>
                 <div className="flex items-center gap-3">
-                  <BackToFactFinder onClick={() => setShowChanges(false)} />
+                  <BackToFactFinder onClick={() => swapTo(false)} />
                   <button
                     type="button"
                     disabled={!canReview}
@@ -340,7 +349,9 @@ function OpenScreen({
             </>
           ) : (
             <>
-              <h2 className="text-lg font-semibold text-ink">{pageLabel}</h2>
+              <h2 ref={mainHeading} tabIndex={-1} className={HEADING_FOCUS_TARGET}>
+                {pageLabel}
+              </h2>
               <PageView page={page} state={state} onApply={store.apply} fileName={docs.fileName} entities={entities} />
             </>
           )}

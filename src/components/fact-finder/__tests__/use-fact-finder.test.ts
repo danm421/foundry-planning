@@ -249,8 +249,8 @@ describe("useFactFinder — saving", () => {
   it("a save that throws unexpectedly shows Not saved, and Retry, later saves and flushNow still work", async () => {
     const server = fakeServer(start());
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-    // A 409 without the fact finder in it: reading the reply throws.
-    vi.mocked(fetch).mockResolvedValueOnce(reply(409, { error: "conflict" }));
+    // A 409 whose fact finder is malformed: adopting it throws.
+    vi.mocked(fetch).mockResolvedValueOnce(reply(409, { error: "conflict", factFinder: { version: 99 } }));
     const { result } = renderStore();
     act(() => {
       result.current.apply([setCell("c1", "currentValue", 100)]);
@@ -323,6 +323,22 @@ describe("useFactFinder — refusals and conflicts", () => {
     expect(result.current.state.closed).toEqual(closed.closed);
     expect(result.current.pending).toBe(false);
     expect(cell(result.current.state, "c1", "custodian")).toBeUndefined();
+  });
+
+  it("a 409 with no fact finder to take (finished in statement chat) shows the refusal and stops — the edits are never sent again", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(reply(409, { error: SAVE_CLOSED_MESSAGE }))
+      .mockImplementation(() => new Promise<Response>(() => {}));
+    const { result } = renderStore();
+    act(() => {
+      result.current.apply([setCell("c1", "custodian", "Chase")]);
+    });
+    await settle();
+    await settle(5_000);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(result.current.error).toBe(SAVE_CLOSED_MESSAGE);
+    expect(result.current.pending).toBe(false);
+    expect(result.current.status).not.toBe("error");
   });
 
   it("on a 409 keeps the edit to a cell nobody else changed and drops the one whose cell changed, with a notice (RF1)", async () => {

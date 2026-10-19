@@ -7,7 +7,7 @@
 // the ticked fields; a line the ticks leave out says why in place, and a line the
 // save couldn't write is ringed with its reason. Imports only client-safe leaf
 // modules from src/lib/fact-finder.
-import { Fragment, memo, useEffect, useId, useMemo, useRef } from "react";
+import { Fragment, memo, useEffect, useId, useMemo, useRef, type Ref } from "react";
 import { Card } from "@/components/card";
 import { SAVE_NOTHING_MESSAGE } from "@/lib/fact-finder/api-types";
 import { countLines, type CellRef, type ChangeField, type ChangeLine, type ChangeSet, type ChangeTicks } from "@/lib/fact-finder/change-set";
@@ -40,6 +40,8 @@ export interface ChangeListProps {
   /** A stale list or record: build the change list again. */
   onReviewAgain(): void;
   onDismissSaveError(): void;
+  /** The "Changes to the plan" heading, which the screen focuses when the list opens. */
+  headingRef?: Ref<HTMLHeadingElement>;
 }
 
 type GroupProps = Pick<ChangeListProps, "ticks" | "onToggleField" | "onToggleLine" | "onFix"> & {
@@ -65,10 +67,18 @@ const CELL = "border-t border-hair py-1.5 align-top @max-md:border-t-0 @max-md:p
 const sectionLabel = (line: ChangeLine) => findSection(line.sectionId)?.label;
 
 /** "12 to create · 8 to update · 3 can't save · 5 unchanged", leaving out what there's none of. */
-/** The heading over the review, wherever it shows (the list, or the notice that it's out of date). */
-export function ChangesHeading() {
-  return <h2 className="text-lg font-semibold text-ink">Changes to the plan</h2>;
+/** The heading over the review, wherever it shows (the list, or the notice that it's out of date). Focus goes to it when the list opens. */
+export function ChangesHeading({ ref }: { ref?: Ref<HTMLHeadingElement> }) {
+  return (
+    <h2 ref={ref} tabIndex={-1} className={HEADING_FOCUS_TARGET}>
+      Changes to the plan
+    </h2>
+  );
 }
+
+/** A heading focus is moved to (not tabbed to): the page's, or the change list's. */
+export const HEADING_FOCUS_TARGET =
+  "rounded-[var(--radius-sm)] text-lg font-semibold text-ink focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 export function BackToFactFinder({ onClick }: { onClick(): void }) {
   return (
@@ -373,16 +383,20 @@ function PageGroup({ label, lines, ticks, leftOut, failure, ...lineProps }: Grou
   );
 }
 
+const NO_CHANGES_MESSAGE = "Nothing to save yet — the fact finder has no changes for the plan.";
+
 /** Why Save to plan can't be pressed yet — something still on its way to the fact finder, or the plan's own reason; null when it can. */
-function saveBlockedReason(plan: SavePlan, reading: boolean, chatting: boolean): string | null {
+function saveBlockedReason(changeSet: ChangeSet, plan: SavePlan, reading: boolean, chatting: boolean): string | null {
   if (reading) return "Wait for the documents to finish reading.";
   if (chatting) return "Wait for the chat to finish.";
   if (!plan.ok) return plan.error;
-  return plan.lines.length === 0 ? SAVE_NOTHING_MESSAGE : null;
+  if (plan.lines.length > 0) return null;
+  // No line changes the plan at all (an empty import), or the ticks leave out every one that does.
+  return changeSet.lines.every((line) => line.action === "none") ? NO_CHANGES_MESSAGE : SAVE_NOTHING_MESSAGE;
 }
 
 export function ChangeList({
-  changeSet, onBack, hasCoClient, reading, chatting, onSave, saving, saveError, onReviewAgain, onDismissSaveError, ...groupProps
+  changeSet, onBack, hasCoClient, reading, chatting, onSave, saving, saveError, onReviewAgain, onDismissSaveError, headingRef, ...groupProps
 }: ChangeListProps) {
   const saveReasonId = useId();
   // The save's own plan, run on the ticks: what it writes, and what the ticks leave out with their reasons. With the
@@ -396,10 +410,10 @@ export function ChangeList({
     [plan],
   );
   const failure = saveError?.lineId ? { lineId: saveError.lineId, message: saveError.message } : null;
-  const waiting = saveBlockedReason(plan, reading, chatting);
+  const waiting = saveBlockedReason(changeSet, plan, reading, chatting);
   return (
     <div className="@container flex flex-col gap-4">
-      <ChangesHeading />
+      <ChangesHeading ref={headingRef} />
       <Summary lines={changeSet.lines} />
       {changeSet.notices.length > 0 && (
         <ul className="flex flex-col gap-1.5 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2">

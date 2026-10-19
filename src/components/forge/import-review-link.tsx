@@ -4,17 +4,19 @@
 interface ImportReviewLinkProps {
   /** The screen the import is reviewed on (`importScreenPath`). */
   href: string;
+  /** A plan build: its documents are read on the fact finder screen, so there is nothing to apply yet. */
+  factFinder?: boolean;
   /** Non-fatal orchestration warnings (e.g. partial extraction). */
   warnings?: string[];
 }
 
 /**
- * Compact commit affordance shown after an in-chat import: the one-click
- * hand-off to the screen the import is reviewed on — the Review Wizard for a
- * classic attach, the fact finder for a plan build — plus any non-fatal
- * warnings worth surfacing inline.
+ * The one-click hand-off after an in-chat import to the screen it is reviewed
+ * on — "Review & apply" in the Review Wizard for a classic attach, "Open the
+ * fact finder" for a plan build — plus any non-fatal warnings worth surfacing
+ * inline.
  */
-export function ImportReviewLink({ href, warnings = [] }: ImportReviewLinkProps) {
+export function ImportReviewLink({ href, factFinder = false, warnings = [] }: ImportReviewLinkProps) {
   return (
     <div data-testid="forge-import-review" className="space-y-1">
       {warnings.length > 0 && (
@@ -28,7 +30,7 @@ export function ImportReviewLink({ href, warnings = [] }: ImportReviewLinkProps)
         href={href}
         className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] bg-secondary px-2.5 py-1 text-[12px] font-medium text-secondary-on hover:bg-secondary-ink"
       >
-        Review &amp; apply →
+        {factFinder ? "Open the fact finder →" : "Review & apply →"}
       </a>
     </div>
   );

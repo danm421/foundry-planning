@@ -140,11 +140,18 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
       moveTo(next, next);
       return "ok";
     }
-    if (res.status === 409) {
-      adopt((body as ConflictResponse).factFinder);
-      return "ok";
-    }
     const message = (body as Partial<ErrorResponse>).error;
+    if (res.status === 409) {
+      const fresh = (body as Partial<ConflictResponse>).factFinder;
+      if (fresh) {
+        adopt(fresh);
+        return "ok";
+      }
+      // A refusal with no fact finder to move to (an import finished in statement chat): these edits can never land.
+      setQueue([]);
+      show.setRefusal(message ?? "That edit wasn't accepted.");
+      return "refused";
+    }
     if (res.status === 400) {
       forget(batch);
       show.setRefusal(message ?? "That edit wasn't accepted.");

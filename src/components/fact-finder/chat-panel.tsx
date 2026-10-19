@@ -8,7 +8,7 @@
 // Imports only client-safe leaf modules from src/lib/fact-finder.
 import { useState } from "react";
 import { ChatComposer } from "@/components/fact-finder/chat-composer";
-import type { ErrorResponse, TurnBody, TurnResponse, UndoBody, UndoResponse } from "@/lib/fact-finder/api-types";
+import type { ConflictResponse, ErrorResponse, TurnBody, TurnResponse, UndoBody, UndoResponse } from "@/lib/fact-finder/api-types";
 import type { FactFinderState } from "@/lib/fact-finder/types";
 import { ChatTranscript } from "./chat-transcript";
 import { JSON_HEADERS, OFFLINE_MESSAGE, factFinderUrl, refusalText } from "./http";
@@ -58,6 +58,9 @@ export function useChat({
     }
     const answer: unknown = await res.json().catch(() => ({}));
     if (res.ok) return answer as T;
+    // Another tab saved the import: the refusal carries the saved fact finder, and the screen closes on it.
+    const saved = (answer as Partial<ConflictResponse>).factFinder;
+    if (res.status === 409 && saved) adopt(saved);
     setError(refusalText(res, (answer as Partial<ErrorResponse>).error, failed));
     return null;
   }

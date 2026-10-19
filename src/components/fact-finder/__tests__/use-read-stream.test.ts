@@ -2,7 +2,8 @@
 // src/components/fact-finder/__tests__/use-read-stream.test.ts
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { READ_BUSY_MESSAGE, type ReadFrame } from "@/lib/fact-finder/api-types";
+import { READ_BUSY_MESSAGE, SAVE_CLOSED_MESSAGE, type ReadFrame } from "@/lib/fact-finder/api-types";
+import { emptyFactFinderState } from "@/lib/fact-finder/state";
 import { parseReadSse, useReadStream } from "../use-read-stream";
 
 const READ_URL = "/api/clients/c1/imports/i1/fact-finder/read";
@@ -55,8 +56,9 @@ function renderRead(...responses: Array<Response | Error>) {
   vi.stubGlobal("fetch", fetchMock);
   const onFileFinished = vi.fn();
   const onDone = vi.fn();
-  const hook = renderHook(() => useReadStream({ clientId: "c1", importId: "i1", onFileFinished, onDone }));
-  return { ...hook, fetchMock, onFileFinished, onDone };
+  const adopt = vi.fn();
+  const hook = renderHook(() => useReadStream({ clientId: "c1", importId: "i1", onFileFinished, onDone, adopt }));
+  return { ...hook, fetchMock, onFileFinished, onDone, adopt };
 }
 
 afterEach(() => {
@@ -150,6 +152,17 @@ describe("useReadStream", () => {
     act(() => result.current.start());
     await waitFor(() => expect(result.current.error).toBe("Too many requests. Retry in 30s."));
     expect(result.current.running).toBe(false);
+  });
+
+  it("a read refused because another tab saved the import hands the saved fact finder to the screen", async () => {
+    const saved = { ...emptyFactFinderState(), version: 6, closed: { at: "2026-10-15T12:00:00.000Z", by: "user_2", saved: [], leftOut: [] } };
+    const { result, adopt } = renderRead(jsonResponse(409, { error: SAVE_CLOSED_MESSAGE, factFinder: saved }), jsonResponse(409, { error: READ_BUSY_MESSAGE }));
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.error).toBe(SAVE_CLOSED_MESSAGE));
+    expect(adopt).toHaveBeenCalledExactlyOnceWith(saved);
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.error).toBe(READ_BUSY_MESSAGE));
+    expect(adopt).toHaveBeenCalledOnce();
   });
 
   it("an error frame ends the read with its message; files left reading drop back to the screen's state", async () => {

@@ -895,7 +895,7 @@ export function ForgePanel({
             {/* A plan build's documents are read, reviewed and saved on the
                 fact finder screen — the link is the whole hand-off. */}
             {planResult && !busy && (
-              <ImportReviewLink href={planResult.reviewPath} />
+              <ImportReviewLink href={planResult.reviewPath} factFinder />
             )}
 
             {/* Global attach-first ingest: duplicate-household match found with no

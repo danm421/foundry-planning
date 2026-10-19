@@ -163,7 +163,8 @@ describe("UploadZone — files from the client's vault", () => {
     await screen.findByText("✓ Uploaded");
     fireEvent.click(screen.getByTitle("Remove file"));
 
-    expect(within(clientDocumentsList()!).getByText("brokerage-statement.pdf")).toBeInTheDocument();
+    // Once the server has let the file go.
+    await waitFor(() => expect(within(clientDocumentsList()!).getByText("brokerage-statement.pdf")).toBeInTheDocument());
     expect(vi.mocked(fetch).mock.calls[1]![0]).toBe("/api/clients/c1/imports/i1/files/f1");
   });
 });

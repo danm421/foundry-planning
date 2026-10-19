@@ -73,7 +73,9 @@ export function ChatComposer({
             void submit();
           }
         }}
-        disabled={isDisabled}
+        // Read-only, not disabled, while its own message sends: focus stays in the box for the next one.
+        disabled={disabled}
+        readOnly={sending}
         placeholder={placeholder}
         rows={rows}
         className={textareaBaseClassName + " flex-1 resize-none"}

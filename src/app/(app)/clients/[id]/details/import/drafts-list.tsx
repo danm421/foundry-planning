@@ -4,14 +4,14 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardBody, CardHeader } from "@/components/card";
-import type { ImportListRow } from "@/lib/imports/list";
+import type { DraftsListRow } from "@/lib/imports/list";
 import { importScreenPath } from "@/lib/imports/import-kind";
 import { useClientAccess } from "@/components/client-access-provider";
 
 interface DraftsListProps {
   clientId: string;
-  inProgress: ImportListRow[];
-  completed: ImportListRow[];
+  inProgress: DraftsListRow[];
+  completed: DraftsListRow[];
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -124,7 +124,7 @@ function Section({ title, emptyMessage, children }: SectionProps) {
 }
 
 interface DraftRowProps {
-  row: ImportListRow;
+  row: DraftsListRow;
   clientId: string;
   kind: "in-progress" | "completed";
 }

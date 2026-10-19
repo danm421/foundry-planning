@@ -34,6 +34,8 @@ export interface Documents {
   readsOnOpen: boolean;
   uploaded(info: UploadedFileInfo): void;
   removed(fileId: string): void;
+  /** A document was removed this visit. */
+  removedAny: boolean;
 }
 
 export function useDocuments({
@@ -42,6 +44,7 @@ export function useDocuments({
   initialFiles,
   state,
   refresh,
+  adopt,
 }: {
   clientId: string;
   importId: string;
@@ -50,6 +53,8 @@ export function useDocuments({
   state: FactFinderState;
   /** `useFactFinder`'s `refresh`: fetches the saved fact finder and adopts it. */
   refresh: () => Promise<void>;
+  /** `useFactFinder`'s `adopt`: a read refused because another tab saved the import carries the saved fact finder. */
+  adopt: (fresh: FactFinderState) => void;
 }): Documents {
   const [known, setKnown] = useState(initialFiles);
   const [removedIds, setRemovedIds] = useState<string[]>([]);
@@ -70,6 +75,7 @@ export function useDocuments({
   const read = useReadStream({
     clientId,
     importId,
+    adopt,
     onFileFinished: () => {
       if (refreshTimer.current) return;
       refreshTimer.current = setTimeout(() => {
@@ -142,6 +148,7 @@ export function useDocuments({
     readsOnOpen,
     uploaded,
     removed,
+    removedAny: removedIds.length > 0,
   };
 }
 
@@ -202,7 +209,8 @@ function ProgressLine({ name, state, onRetry }: { name: string; state: LineState
         )}
         {state.kind === "waiting" && <p className="text-ink-3">Waiting to read</p>}
       </div>
-      {state.kind === "failed" && (
+      {/* Waiting: never read, or a read abandoned elsewhere went stale — nothing else will read it now. */}
+      {(state.kind === "failed" || state.kind === "waiting") && (
         <button type="button" onClick={onRetry} aria-label={`Retry reading ${name}`} className={RETRY_CLASS}>
           Retry
         </button>
@@ -259,7 +267,13 @@ export function DocumentsPanel({ clientId, importId, docs, state, clientDocument
         onUploaded={docs.uploaded}
         onRemoved={docs.removed}
         clientDocuments={clientDocuments}
+        typePicker={false}
       />
+      {docs.removedAny && (
+        <p role="status" className="text-xs text-ink-3">
+          Values read from it stay — remove those rows if you don&apos;t want them.
+        </p>
+      )}
     </section>
   );
 }

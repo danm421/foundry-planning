@@ -56,6 +56,17 @@ interface UploadZoneProps {
   /** Files in the client's vault, offered for adding without a download and
    *  re-upload. */
   clientDocuments?: ClientDocumentView[];
+  /** Each file's document-type picker (default on). The fact finder screen
+   *  hides it: it reads a file once, so a type changed after that does nothing. */
+  typePicker?: boolean;
+}
+
+const OFFLINE = "Couldn't reach the server — try again.";
+
+/** A refused request's own words (the routes write them for the advisor), else `fallback`. */
+async function refusalOf(res: Response, fallback: string): Promise<string> {
+  const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+  return typeof body?.error === "string" ? body.error : fallback;
 }
 
 // No legacy .xls: the server only reads the .xlsx format, so it would always fail.
@@ -83,6 +94,7 @@ export default function UploadZone({
   onRemoved,
   disabled,
   clientDocuments,
+  typePicker = true,
 }: UploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   // Seed once from the files already persisted for this import so the list
@@ -273,20 +285,27 @@ export default function UploadZone({
   const removeFile = useCallback(
     (id: string) => {
       const target = files.find((f) => f.id === id);
-      setFiles((prev) => prev.filter((f) => f.id !== id));
-      // A persisted file leaves a server row behind; delete it so it doesn't
-      // reappear on reload (and stays out of the next extraction run).
-      if (target?.serverFileId) {
-        const serverFileId = target.serverFileId;
-        fetch(
-          `/api/clients/${clientId}/imports/${importId}/files/${serverFileId}`,
-          { method: "DELETE" },
-        )
-          .then(() => onRemovedRef.current?.(serverFileId))
-          .catch((err) => console.error("Failed to delete file:", err));
+      const serverFileId = target?.serverFileId;
+      if (!serverFileId) {
+        setFiles((prev) => prev.filter((f) => f.id !== id));
+        return;
       }
+      // A persisted file leaves a server row behind; delete it so it doesn't
+      // reappear on reload (and stays out of the next extraction run). The row
+      // stays until the server lets the file go — a refusal shows on it.
+      updateFile(id, { errorMessage: undefined });
+      fetch(`/api/clients/${clientId}/imports/${importId}/files/${serverFileId}`, { method: "DELETE" })
+        .then(async (res) => {
+          if (!res.ok) {
+            updateFile(id, { errorMessage: await refusalOf(res, "Couldn't remove this file — try again.") });
+            return;
+          }
+          setFiles((prev) => prev.filter((f) => f.id !== id));
+          onRemovedRef.current?.(serverFileId);
+        })
+        .catch(() => updateFile(id, { errorMessage: OFFLINE }));
     },
-    [files, clientId, importId],
+    [files, clientId, importId, updateFile],
   );
 
   const updateFileType = useCallback(
@@ -304,17 +323,22 @@ export default function UploadZone({
         }),
       );
       if (target && target.state === "uploaded" && target.serverFileId) {
+        // A refused change goes back to the type the server kept, and says why.
+        const kept = target.documentType;
         const url = `/api/clients/${clientId}/imports/${importId}/files/${target.serverFileId}`;
         fetch(url, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ documentType: type }),
-        }).catch((err) => {
-          console.error("Failed to update document type:", err);
-        });
+        })
+          .then(async (res) => {
+            if (res.ok) return;
+            updateFile(id, { documentType: kept, errorMessage: await refusalOf(res, "Couldn't change this file's type — try again.") });
+          })
+          .catch(() => updateFile(id, { documentType: kept, errorMessage: OFFLINE }));
       }
     },
-    [clientId, importId],
+    [clientId, importId, updateFile],
   );
 
   const handleDragOver = useCallback(
@@ -351,14 +375,26 @@ export default function UploadZone({
     [addFiles],
   );
 
+  const browse = () => {
+    if (!disabled) inputRef.current?.click();
+  };
+
   return (
     <div className="space-y-4">
       <div
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled || undefined}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onClick={() => !disabled && inputRef.current?.click()}
-        className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors ${
+        onClick={browse}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter" && e.key !== " ") return;
+          e.preventDefault();
+          browse();
+        }}
+        className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
           disabled
             ? "cursor-not-allowed border-hair-3 bg-card-2/50 opacity-50"
             : isDragging
@@ -379,6 +415,8 @@ export default function UploadZone({
           multiple
           accept={ACCEPTED_EXTENSIONS.join(",")}
           onChange={handleInputChange}
+          // Its own click (the zone's doing) mustn't bubble back to the zone and open the picker again.
+          onClick={(e) => e.stopPropagation()}
           className="hidden"
           disabled={disabled}
         />
@@ -400,7 +438,7 @@ export default function UploadZone({
               file={f}
               onRetry={() => retry(f.id)}
               onRemove={() => removeFile(f.id)}
-              onTypeChange={(t) => updateFileType(f.id, t)}
+              onTypeChange={typePicker ? (t) => updateFileType(f.id, t) : undefined}
               disabled={disabled}
             />
           ))}
@@ -414,7 +452,8 @@ interface UploadRowProps {
   file: UploadingFile;
   onRetry: () => void;
   onRemove: () => void;
-  onTypeChange: (t: DocumentType | "auto") => void;
+  /** Absent: no type picker. */
+  onTypeChange?: (t: DocumentType | "auto") => void;
   disabled?: boolean;
 }
 
@@ -431,19 +470,21 @@ function UploadRow({ file, onRetry, onRemove, onTypeChange, disabled }: UploadRo
           {file.name}
         </span>
         <div className="ml-auto flex items-center gap-3">
-          <select
-            value={file.documentType}
-            onChange={(e) => onTypeChange(e.target.value as DocumentType | "auto")}
-            disabled={pickerDisabled}
-            className="rounded border border-hair-2 bg-paper px-2 py-1 text-xs text-ink-3 focus:border-accent focus:outline-none disabled:opacity-60"
-          >
-            <option value="auto">Auto-detect</option>
-            {DOCUMENT_TYPES.map((dt) => (
-              <option key={dt} value={dt}>
-                {DOCUMENT_TYPE_LABELS[dt]}
-              </option>
-            ))}
-          </select>
+          {onTypeChange && (
+            <select
+              value={file.documentType}
+              onChange={(e) => onTypeChange(e.target.value as DocumentType | "auto")}
+              disabled={pickerDisabled}
+              className="rounded border border-hair-2 bg-paper px-2 py-1 text-xs text-ink-3 focus:border-accent focus:outline-none disabled:opacity-60"
+            >
+              <option value="auto">Auto-detect</option>
+              {DOCUMENT_TYPES.map((dt) => (
+                <option key={dt} value={dt}>
+                  {DOCUMENT_TYPE_LABELS[dt]}
+                </option>
+              ))}
+            </select>
+          )}
           <StateBadge file={file} />
           {file.state === "failed" && (
             <button
@@ -476,9 +517,8 @@ function UploadRow({ file, onRetry, onRemove, onTypeChange, disabled }: UploadRo
           />
         </div>
       )}
-      {file.state === "failed" && file.errorMessage && (
-        <p className="mt-1 text-xs text-crit">{file.errorMessage}</p>
-      )}
+      {/* An upload that failed, or a remove or type change the server refused. */}
+      {file.errorMessage && <p className="mt-1 text-xs text-crit">{file.errorMessage}</p>}
     </div>
   );
 }
