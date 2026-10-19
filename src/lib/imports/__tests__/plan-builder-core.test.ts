@@ -19,6 +19,9 @@ const m = vi.hoisted(() => ({
   recordAudit: vi.fn(),
   verifyClientAccess: vi.fn(),
   verifyClientAccessFor: vi.fn(),
+  findHousehold: vi.fn(),
+  findVisibleCrmHousehold: vi.fn(),
+  verifyCrmHouseholdAccessFor: vi.fn(),
 }));
 
 vi.mock("@/db", () => ({
@@ -30,11 +33,16 @@ vi.mock("@/db", () => ({
       }),
     }),
     insert: () => ({ values: (v: unknown) => ({ returning: () => m.insertValues(v) }) }),
+    query: { crmHouseholds: { findFirst: (...a: unknown[]) => m.findHousehold(...a) } },
   },
 }));
 vi.mock("@/lib/crm/households", () => ({
   createCrmHousehold: (...a: unknown[]) => m.createCrmHousehold(...a),
   recordHouseholdOpen: (...a: unknown[]) => m.recordHouseholdOpen(...a),
+}));
+vi.mock("@/lib/crm/authz", () => ({
+  findVisibleCrmHousehold: (...a: unknown[]) => m.findVisibleCrmHousehold(...a),
+  verifyCrmHouseholdAccessFor: (...a: unknown[]) => m.verifyCrmHouseholdAccessFor(...a),
 }));
 vi.mock("@/lib/clients/create-client", () => ({
   createClientForHousehold: (...a: unknown[]) => m.createClientForHousehold(...a),
@@ -407,6 +415,32 @@ describe("ensurePlanImport", () => {
           spouseContact: null,
         }),
       );
+    });
+  });
+
+  describe("mode: prospect", () => {
+    it("checks the household on the session when no principal is passed", async () => {
+      m.findVisibleCrmHousehold.mockResolvedValue({ household: { id: "hh1" }, orgId: "org1" });
+      m.findHousehold.mockResolvedValue({
+        id: "hh1",
+        advisorId: "u2",
+        state: "NJ",
+        contacts: [],
+        planningClient: { id: "c9" },
+      });
+
+      await expect(
+        ensurePlanImport({
+          mode: "prospect",
+          firmId: "org1",
+          actorUserId: "u1",
+          prospect: { householdId: "hh1", filingStatus: "single", retirementAge: 65, lifeExpectancy: 95 },
+        }),
+      ).rejects.toThrow("This household already has a plan.");
+
+      expect(m.findVisibleCrmHousehold).toHaveBeenCalledWith("hh1");
+      expect(m.verifyCrmHouseholdAccessFor).not.toHaveBeenCalled();
+      expect(m.createClientForHousehold).not.toHaveBeenCalled();
     });
   });
 });

@@ -196,6 +196,12 @@ async function createProspectPlan(args: EnsurePlanImportArgs): Promise<CreatedPl
   const primary = household.contacts.find((c) => c.role === "primary");
   if (!primary?.dateOfBirth) throw new Error("The household's primary contact needs a date of birth.");
   const spouse = household.contacts.find((c) => c.role === "spouse");
+  // A spouse on the household means createClientForHousehold would stamp its
+  // retirement-age default; never guess it (Forge's `set_up_plan` refuses alike).
+  // Life expectancy may take the site's default.
+  if (spouse && prospect.spouseRetirementAge == null) {
+    throw new Error("The spouse's retirement age is required.");
+  }
 
   const created = await createClientForHousehold({
     household: { id: household.id, firmId: args.firmId, advisorId: household.advisorId, state: household.state },

@@ -161,6 +161,16 @@ d("ensurePlanImport on a principal, with no session (live DB)", () => {
     expect(await clientsOf(householdId)).toHaveLength(0);
   });
 
+  it("refuses a married prospect without the spouse's retirement age", async () => {
+    const householdId = await seedProspect({ firstName: "Rhea", lastName: "Morrowind", dateOfBirth: "1969-12-03" });
+    const args = prospectArgs(householdId);
+
+    await expect(
+      ensurePlanImport({ ...args, prospect: { ...args.prospect, spouseRetirementAge: undefined } }),
+    ).rejects.toThrow("The spouse's retirement age is required.");
+    expect(await clientsOf(householdId)).toHaveLength(0);
+  });
+
   it("refuses a prospect the principal cannot see, as if it did not exist", async () => {
     const householdId = await seedProspect({ firstName: "Quinn", lastName: "Ashgrove", dateOfBirth: "1975-02-27" });
 
