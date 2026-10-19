@@ -211,4 +211,20 @@ describe("rowsNeedingDecision", () => {
       },
     ]);
   });
+
+  it("also names the rows a review refusal named, whatever their link", () => {
+    const state = emptyFactFinderState();
+    state.sections.retirement = [
+      {
+        id: "row-401k",
+        cells: { accountName: { value: "401(k)", by: "chat", pinned: true } },
+        link: { kind: "existing", recordId: "acc-401k", score: 0.95, confirmed: true, by: "auto" },
+        sourceFileIds: [],
+      },
+      { id: "row-roth", cells: { accountName: { value: "Roth IRA", by: "chat", pinned: true } }, sourceFileIds: [] },
+    ];
+    expect(rowsNeedingDecision(state, ["row-401k"])).toEqual([
+      { sectionId: "retirement", rowId: "row-401k", label: "401(k)", candidates: [] },
+    ]);
+  });
 });

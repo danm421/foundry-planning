@@ -10,6 +10,10 @@ const h = vi.hoisted(() => ({
   firmClaudeWritesEnabled: vi.fn(),
   verifyClientAccessFor: vi.fn(),
   recordAudit: vi.fn(),
+  reviewFactFinder: vi.fn(),
+  saveChangeSet: vi.fn(),
+  runLeftovers: vi.fn(),
+  withAiCallerOrg: vi.fn(),
 }));
 
 // The real create check (it reads the mocked client access and audit); the import gate is stubbed.
@@ -27,10 +31,17 @@ vi.mock("@/lib/audit", () => ({ recordAudit: h.recordAudit }));
 vi.mock("@/lib/rate-limit", () => ({
   checkMcpRateLimit: vi.fn().mockResolvedValue({ allowed: true, remaining: 1, reset: 0 }),
 }));
+vi.mock("@/lib/fact-finder/review", () => ({ reviewFactFinder: h.reviewFactFinder }));
+vi.mock("@/lib/fact-finder/save/save", () => ({ saveChangeSet: h.saveChangeSet }));
+vi.mock("@/lib/fact-finder/placement/leftovers-run", () => ({ runLeftovers: h.runLeftovers }));
+vi.mock("@/lib/ai/resolve", () => ({ withAiCallerOrg: h.withAiCallerOrg }));
 
 import { householdBuildingTools } from "../tools/household-building";
+import { changeListView } from "../change-list-view";
 import { McpInputError } from "../define-tool";
 import { CLIENT_UNREADABLE_MESSAGE, McpForbiddenError } from "../guards";
+import { SAVE_STALE_MESSAGE } from "@/lib/fact-finder/api-types";
+import { defaultTicks, type ChangeField, type ChangeLine, type ChangeSet } from "@/lib/fact-finder/change-set";
 import { emptyRecordBook, type RecordBook } from "@/lib/fact-finder/placement/types";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
 import type { FactFinderState } from "@/lib/fact-finder/types";
@@ -48,6 +59,8 @@ const principal: McpPrincipal = {
 const tool = (name: string) => householdBuildingTools.find((t) => t.name === name)!;
 const start = tool("start_fact_finder_step");
 const fill = tool("fill_fact_finder_step");
+const review = tool("review_fact_finder_step");
+const save = tool("save_fact_finder_step");
 
 const BASE = "11111111-1111-4111-8111-111111111111";
 const IMPORT = "22222222-2222-4222-8222-222222222222";
@@ -77,6 +90,9 @@ function draft(): FactFinderState {
   return state;
 }
 
+/** The org withAiCallerOrg is running a call as; null outside one. */
+let aiCallerOrg: string | null = null;
+
 function gateAllows(state: FactFinderState = draft()) {
   h.factFinderGateFor.mockResolvedValue({
     ok: true,
@@ -103,6 +119,15 @@ beforeEach(() => {
     ok: true,
     state: { ...current, version: current.version + 1 },
   }));
+  // The org an AI call inside it runs as, while it runs.
+  h.withAiCallerOrg.mockImplementation((orgId: string, fn: () => unknown) => {
+    aiCallerOrg = orgId;
+    try {
+      return fn();
+    } finally {
+      aiCallerOrg = null;
+    }
+  });
 });
 
 describe("start_fact_finder_step", () => {
@@ -400,5 +425,255 @@ describe("fill_fact_finder_step", () => {
     const rows = Array.from({ length: 51 }, () => ({ sectionId: "cash", cells: { accountName: "x" } }));
     await expect(call({ rows })).rejects.toThrow();
     expect(h.factFinderGateFor).not.toHaveBeenCalled();
+  });
+});
+
+const changeField = (key: string, ticked: boolean): ChangeField => ({
+  key,
+  label: key,
+  next: key,
+  shown: { next: key },
+  ticked,
+  from: [],
+});
+
+function changeLine(id: string, action: ChangeLine["action"], fields: ChangeField[], extra: Partial<ChangeLine> = {}): ChangeLine {
+  return {
+    id,
+    page: "accounts",
+    sectionId: "retirement",
+    rowId: `row-${id}`,
+    target: "account",
+    action,
+    recordId: action === "create" ? null : `rec-${id}`,
+    label: `Account ${id}`,
+    fields,
+    warnings: [],
+    ...extra,
+  };
+}
+
+/** L1 updates a record (its name starts left out), L2 creates one, L3 can't save, L4 changes nothing. */
+function reviewed(): ChangeSet {
+  return {
+    builtAtVersion: 4,
+    builtAt: "2026-10-19T12:00:00.000Z",
+    lines: [
+      changeLine("L1", "update", [changeField("name", false), changeField("value", true)]),
+      changeLine("L2", "create", [changeField("name", true), changeField("value", true), changeField("growthRate", true)]),
+      changeLine("L3", "create", [changeField("name", true)], { blocked: { reason: "Pick who the 529 is for." } }),
+      changeLine("L4", "none", []),
+    ],
+    notices: [],
+  };
+}
+
+describe("review_fact_finder_step", () => {
+  const call = () => review.run({ clientId: "c1", importId: IMPORT }, principal);
+
+  it("builds the change list the screen's review builds, its AI step in the caller's org, and shows it with the default ticks", async () => {
+    const changeSet = reviewed();
+    let reviewedAs: string | null = null;
+    h.reviewFactFinder.mockImplementation(async () => {
+      reviewedAs = aiCallerOrg;
+      return { ok: true, changeSet, factFinder: { ...draft(), version: 4, changeSet } };
+    });
+
+    const out = (await call()) as Record<string, unknown>;
+
+    expect(h.factFinderGateFor).toHaveBeenCalledWith(principal, "c1", IMPORT, "match");
+    expect(h.withAiCallerOrg).toHaveBeenCalledWith("org_1", expect.any(Function));
+    expect(reviewedAs).toBe("org_1");
+    const [scope, state, opts] = h.reviewFactFinder.mock.calls[0];
+    expect(scope).toEqual({ importId: IMPORT, clientId: "c1", firmId: "org_1" });
+    expect(state.version).toBe(3);
+    expect(opts).toEqual({ now: expect.any(Date), actorId: "u1", runLeftovers: h.runLeftovers });
+    expect(out).toEqual(changeListView(changeSet, defaultTicks(changeSet)));
+  });
+
+  it("audits the import and the change list's version, never its contents", async () => {
+    const changeSet = reviewed();
+    h.reviewFactFinder.mockResolvedValue({ ok: true, changeSet, factFinder: { ...draft(), version: 4, changeSet } });
+    await call();
+    const audit = h.recordAudit.mock.calls.find(([a]) => a.action === "mcp.tool_write")![0];
+    expect(audit.metadata).toEqual({ importId: IMPORT, changeSetVersion: 4, tool: "review_fact_finder_step", via: "claude" });
+  });
+
+  it("answers a link waiting on the advisor with the review's own message and the rows that need the decision", async () => {
+    const state = draft();
+    state.sections.retirement[0].link = { kind: "existing", recordId: "acc-ira", score: 0.74, confirmed: false, by: "auto" };
+    state.sections.retirement[0].linkCandidates = [{ recordId: "acc-ira", label: "Schwab Rollover IRA", score: 0.74 }];
+    gateAllows(state);
+    h.reviewFactFinder.mockResolvedValue({ ok: false, status: 409, body: { error: "1 link needs a click first." } });
+
+    const err = await call().catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(McpInputError);
+    expect((err as McpInputError).message).toBe("1 link needs a click first.");
+    expect((err as McpInputError).details).toEqual({
+      needsDecision: [
+        {
+          sectionId: "retirement",
+          rowId: "row-ira",
+          label: "Schwab IRA",
+          candidates: [{ recordId: "acc-ira", label: "Schwab Rollover IRA", score: 0.74 }],
+        },
+      ],
+    });
+    expect(h.recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("answers a refusal that names rows with those rows, from the draft as the review left it", async () => {
+    const after = draft();
+    after.version = 4;
+    after.sections.retirement[0].linkCandidates = [{ recordId: "acc-roth", label: "Roth IRA", score: 0.5 }];
+    const error = '1 link pointed at a record that\'s no longer on the plan — "Schwab IRA". Check it and review again.';
+    h.reviewFactFinder.mockResolvedValue({ ok: false, status: 409, body: { error, factFinder: after, rows: ["row-ira"] } });
+
+    const err = await call().catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(McpInputError);
+    expect((err as McpInputError).message).toBe(error);
+    expect((err as McpInputError).details).toEqual({
+      version: 4,
+      needsDecision: [
+        { sectionId: "retirement", rowId: "row-ira", label: "Schwab IRA", candidates: [{ recordId: "acc-roth", label: "Roth IRA", score: 0.5 }] },
+      ],
+    });
+  });
+
+  it("answers a refusal with nothing to look at with its message alone", async () => {
+    h.reviewFactFinder.mockResolvedValue({
+      ok: false,
+      status: 409,
+      body: { error: "Wait for the documents to finish reading, then review." },
+    });
+    const err = await call().catch((e: unknown) => e);
+    expect(err).toEqual(new McpInputError("Wait for the documents to finish reading, then review."));
+    expect((err as McpInputError).details).toBeUndefined();
+  });
+
+  it("refuses an import already saved before reviewing it", async () => {
+    h.factFinderGateFor.mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      body: { error: "This import is saved to the plan — start a new import to change it." },
+    });
+    await expect(call()).rejects.toThrow(new McpInputError("This import is saved to the plan — start a new import to change it."));
+    expect(h.reviewFactFinder).not.toHaveBeenCalled();
+  });
+});
+
+describe("save_fact_finder_step", () => {
+  const call = (args: Record<string, unknown> = {}) =>
+    save.run({ clientId: "c1", importId: IMPORT, changeSetVersion: 4, ...args }, principal);
+
+  beforeEach(() => {
+    gateAllows({ ...draft(), version: 4, changeSet: reviewed() });
+    h.saveChangeSet.mockResolvedValue({
+      ok: true,
+      factFinder: {
+        ...draft(),
+        version: 5,
+        closed: {
+          at: "2026-10-19T12:05:00.000Z",
+          by: "u1",
+          saved: [
+            { lineId: "L1", rowId: "row-L1", target: "account", recordId: "rec-L1", label: "Account L1" },
+            { lineId: "L2", rowId: "row-L2", target: "account", recordId: "acc-new", label: "Account L2" },
+          ],
+          leftOut: [{ lineId: "L3", rowId: "row-L3", label: "Account L3", reason: "Pick who the 529 is for." }],
+        },
+      },
+    });
+  });
+
+  const ticksSent = () => h.saveChangeSet.mock.calls[0][0].ticks;
+
+  it("saves the reviewed list with its default ticks, as the advisor, through the principal's access", async () => {
+    const out = await call();
+
+    expect(h.factFinderGateFor).toHaveBeenCalledWith(principal, "c1", IMPORT, "commit");
+    expect(h.saveChangeSet).toHaveBeenCalledWith({
+      scope: { importId: IMPORT, clientId: "c1", firmId: "org_1" },
+      actorId: "u1",
+      principal,
+      changeSetVersion: 4,
+      ticks: defaultTicks(reviewed()),
+    });
+    expect(out).toEqual({
+      saved: { create: 1, update: 1 },
+      leftOut: 1,
+      foundryUrl: expect.stringMatching(/\/clients\/c1\//),
+    });
+  });
+
+  it("leaves out a whole line, or one field of a line", async () => {
+    await call({ leaveOut: [{ lineId: "L2" }, { lineId: "L1", key: "value" }] });
+    expect(ticksSent()).toEqual({
+      L1: { name: false, value: false },
+      L2: { name: false, value: false, growthRate: false },
+    });
+  });
+
+  it("includes a field the review left out by default", async () => {
+    await call({ include: [{ lineId: "L1", key: "name" }] });
+    expect(ticksSent().L1).toEqual({ name: true, value: true });
+  });
+
+  it("takes a line that can't save as already left out", async () => {
+    await call({ leaveOut: [{ lineId: "L3" }] });
+    expect(ticksSent()).toEqual(defaultTicks(reviewed()));
+  });
+
+  // R27: a tick the change list can't take refuses — never one quietly dropped.
+  it("refuses a line or field the change list doesn't have, and including a line that can't save, before anything saves", async () => {
+    await expect(call({ leaveOut: [{ lineId: "L9" }] })).rejects.toThrow(
+      new McpInputError("Line L9 isn't in this change list. Use a lineId review_fact_finder_step returned."),
+    );
+    await expect(call({ leaveOut: [{ lineId: "L1", key: "owners" }] })).rejects.toThrow(
+      new McpInputError('Line L1 has no field "owners".'),
+    );
+    await expect(call({ include: [{ lineId: "L9", key: "name" }] })).rejects.toThrow(
+      new McpInputError("Line L9 isn't in this change list. Use a lineId review_fact_finder_step returned."),
+    );
+    await expect(call({ include: [{ lineId: "L3", key: "name" }] })).rejects.toThrow(
+      new McpInputError("Account L3 can't save: Pick who the 529 is for."),
+    );
+    expect(h.saveChangeSet).not.toHaveBeenCalled();
+  });
+
+  it("refuses a change list reviewed again since, or never reviewed, in the save's own words", async () => {
+    await expect(call({ changeSetVersion: 3 })).rejects.toThrow(new McpInputError(SAVE_STALE_MESSAGE));
+    gateAllows(draft());
+    await expect(call()).rejects.toThrow(new McpInputError(SAVE_STALE_MESSAGE));
+    expect(h.saveChangeSet).not.toHaveBeenCalled();
+  });
+
+  it("passes the stale check's refusal back with the line it names", async () => {
+    h.saveChangeSet.mockResolvedValue({
+      ok: false,
+      status: 409,
+      error: "“Account L1” changed since you reviewed — review again.",
+      lineId: "L1",
+    });
+    const err = await call().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(McpInputError);
+    expect((err as McpInputError).message).toBe("“Account L1” changed since you reviewed — review again.");
+    expect((err as McpInputError).details).toEqual({ lineId: "L1" });
+    expect(h.recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("passes a refusal that names no line back alone", async () => {
+    h.saveChangeSet.mockResolvedValue({ ok: false, status: 409, error: "There's nothing to save — every row is unticked or left out." });
+    const err = await call().catch((e: unknown) => e);
+    expect(err).toEqual(new McpInputError("There's nothing to save — every row is unticked or left out."));
+    expect((err as McpInputError).details).toBeUndefined();
+  });
+
+  it("audits the import and the change list's version, never a value", async () => {
+    await call({ leaveOut: [{ lineId: "L2" }] });
+    const audit = h.recordAudit.mock.calls.find(([a]) => a.action === "mcp.tool_write")![0];
+    expect(audit.metadata).toEqual({ importId: IMPORT, changeSetVersion: 4, tool: "save_fact_finder_step", via: "claude" });
   });
 });

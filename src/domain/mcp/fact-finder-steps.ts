@@ -217,10 +217,15 @@ export function draftRows(state: FactFinderState, sectionIds: Iterable<string>):
   });
 }
 
-/** Rows anywhere in the draft whose link waits on the advisor: matched to a record, but not surely enough to confirm. */
-export function rowsNeedingDecision(state: FactFinderState): DecisionRow[] {
+/**
+ * Rows anywhere in the draft whose link waits on the advisor: matched to a
+ * record, but not surely enough to confirm. Plus the rows in `named` (the ones
+ * a review refused over), whatever their link.
+ */
+export function rowsNeedingDecision(state: FactFinderState, named: readonly string[] = []): DecisionRow[] {
+  const also = new Set(named);
   return FACT_FINDER_SECTIONS.flatMap((section) =>
-    (state.sections[section.id] ?? []).filter(linkNeedsClick).map((row) => ({
+    (state.sections[section.id] ?? []).filter((row) => linkNeedsClick(row) || also.has(row.id)).map((row) => ({
       sectionId: section.id,
       rowId: row.id,
       label: rowLabel(section, row),

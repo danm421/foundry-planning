@@ -4,21 +4,31 @@
 // fact finder import (../fact-finder-steps.ts) that Claude starts, fills from
 // the statements it has read, reviews and saves — through the same cores the
 // fact finder screen uses, so its rules hold unchanged: minted row ids,
-// compare-and-set versions, matching, claim-once. defineWriteTool gates every
-// tool: the firm switch, billing, then edit access to the household.
+// compare-and-set versions, matching, claim-once, the stale check and the
+// all-or-nothing save. defineWriteTool gates every tool: the firm switch,
+// billing, then edit access to the household — the access check for the save's
+// lines whose cores don't make one.
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { withAiCallerOrg } from "@/lib/ai/resolve";
+import { SAVE_STALE_MESSAGE, type ReviewRefusal } from "@/lib/fact-finder/api-types";
+import { countLines, defaultTicks, type ChangeSet, type ChangeTicks } from "@/lib/fact-finder/change-set";
 import { editFactFinder } from "@/lib/fact-finder/edit";
 import { factFinderCreateCheckFor, factFinderGateFor, type FactFinderRefusal } from "@/lib/fact-finder/gate";
 import { createFactFinderImport } from "@/lib/fact-finder/import-lifecycle";
 import type { FFOp } from "@/lib/fact-finder/ops";
+import { runLeftovers } from "@/lib/fact-finder/placement/leftovers-run";
 import { loadRecordBook } from "@/lib/fact-finder/records/book";
 import { resolveBaseCaseScenarioId } from "@/lib/fact-finder/records/load";
+import { reviewFactFinder } from "@/lib/fact-finder/review";
+import { saveChangeSet } from "@/lib/fact-finder/save/save";
 import { findSection, fixedLabelsOf } from "@/lib/fact-finder/schema";
 import type { SourceStamp } from "@/lib/fact-finder/sources";
 import { fixedRowId, locateRow, readFactFinderState } from "@/lib/fact-finder/state";
+import type { FactFinderState } from "@/lib/fact-finder/types";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 import type { ImportRateLimitOp } from "@/lib/rate-limit";
+import { changeListView } from "../change-list-view";
 import { defineWriteTool, McpInputError, type McpTool } from "../define-tool";
 import { CLIENT_UNREADABLE_MESSAGE, McpForbiddenError } from "../guards";
 import {
@@ -240,4 +250,127 @@ const fillFactFinderStep = defineWriteTool({
   auditMetadata: (args) => ({ importId: args.importId, rowCount: args.rows.length }),
 });
 
-export const householdBuildingTools: McpTool[] = [startFactFinderStep, fillFactFinderStep];
+/**
+ * A review refusal as the model reads it: the review's message, the draft's
+ * version when the review changed it, and the rows to look at again — the ones
+ * it names and every link still waiting on the advisor.
+ */
+function reviewRefusal({ error, factFinder, rows }: ReviewRefusal, state: FactFinderState): McpInputError {
+  const needsDecision = rowsNeedingDecision(factFinder ?? state, rows);
+  const details = {
+    ...(factFinder && { version: factFinder.version }),
+    ...(needsDecision.length > 0 && { needsDecision }),
+  };
+  return new McpInputError(error, Object.keys(details).length > 0 ? details : undefined);
+}
+
+const reviewFactFinderStep = defineWriteTool({
+  name: "review_fact_finder_step",
+  title: "Review a fact finder step",
+  description:
+    "Build a fact finder step's change list: the records saving it would create and update in the plan, each " +
+    "field from its value on record (from) to the new one (to), and the lines that can't save with the reason. " +
+    "Saves nothing to the plan. included marks what the save writes by default; a name or owner that would " +
+    "replace one on record starts left out. Refused while a row's link to an existing record waits on the " +
+    "advisor; the refusal lists those rows as needsDecision. changeSetVersion is what save_fact_finder_step " +
+    "takes, and the draft's version for a later fill.",
+  inputSchema: z.object({ clientId: clientIdArg, importId: importIdArg }),
+  handler: async ({ clientId, importId }, { principal }) => {
+    const gate = await openStep(principal, clientId, importId, "match");
+    const state = readFactFinderState(gate.payloadJson);
+    // The review's AI step runs in the firm's tenant: the verified token's org, as there's no Clerk session.
+    const outcome = await withAiCallerOrg(principal.orgId, () =>
+      reviewFactFinder({ importId, clientId, firmId: gate.firmId }, state, {
+        now: new Date(),
+        actorId: principal.userId,
+        runLeftovers,
+      }),
+    );
+    if (!outcome.ok) throw reviewRefusal(outcome.body, state);
+    return changeListView(outcome.changeSet, defaultTicks(outcome.changeSet));
+  },
+  auditMetadata: (args, result) => ({ importId: args.importId, changeSetVersion: result.changeSetVersion }),
+});
+
+type LineChoice = { lineId: string; key?: string };
+
+/**
+ * The advisor's ticks: the review's defaults, less `leaveOut` (a whole line,
+ * or one field), plus `include`. R27: a line or field the change list doesn't
+ * have refuses, so a mistyped id never saves a line the advisor turned down.
+ */
+function approvedTicks(changeSet: ChangeSet, leaveOut: readonly LineChoice[], include: readonly Required<LineChoice>[]): ChangeTicks {
+  const ticks = defaultTicks(changeSet);
+  const lineOf = ({ lineId, key }: LineChoice) => {
+    const line = changeSet.lines.find((l) => l.id === lineId);
+    if (!line) throw new McpInputError(`Line ${lineId} isn't in this change list. Use a lineId review_fact_finder_step returned.`);
+    if (key !== undefined && !line.fields.some((f) => f.key === key)) {
+      throw new McpInputError(`Line ${lineId} has no field "${key}".`);
+    }
+    return line;
+  };
+  for (const choice of leaveOut) {
+    lineOf(choice);
+    // A line that can't save has no ticks: it is left out already.
+    const lineTicks = ticks[choice.lineId] ?? {};
+    for (const key of choice.key === undefined ? Object.keys(lineTicks) : [choice.key]) lineTicks[key] = false;
+  }
+  for (const choice of include) {
+    const line = lineOf(choice);
+    const lineTicks = ticks[choice.lineId];
+    if (!lineTicks) throw new McpInputError(`${line.label} can't save: ${line.blocked?.reason ?? "it changes nothing."}`);
+    lineTicks[choice.key] = true;
+  }
+  return ticks;
+}
+
+const saveFactFinderStep = defineWriteTool({
+  name: "save_fact_finder_step",
+  title: "Save a fact finder step",
+  description:
+    "Save a reviewed fact finder step to the plan: the included fields of the change list " +
+    "review_fact_finder_step returned, less leaveOut, plus include. All or nothing: a line the plan refuses, or " +
+    "a draft or record changed since the review, saves nothing, and the refusal names the line (lineId). Closes " +
+    "the step. Returns the records created and updated, and how many lines were left out, including lines that " +
+    "can't save.",
+  inputSchema: z.object({
+    clientId: clientIdArg,
+    importId: importIdArg,
+    changeSetVersion: z.number().int().min(0).describe("The changeSetVersion review_fact_finder_step returned."),
+    leaveOut: z
+      .array(z.object({ lineId: z.string(), key: z.string().optional() }))
+      .optional()
+      .describe("Lines the advisor left out; with key, one field of the line."),
+    include: z
+      .array(z.object({ lineId: z.string(), key: z.string() }))
+      .optional()
+      .describe("Fields not included by default that the advisor wants saved."),
+  }),
+  page: "netWorth",
+  handler: async ({ clientId, importId, changeSetVersion, leaveOut = [], include = [] }, { principal }) => {
+    const gate = await openStep(principal, clientId, importId, "commit");
+    const { changeSet } = readFactFinderState(gate.payloadJson);
+    // The ticks are the list's: one reviewed again since (or never) is the save's own stale refusal.
+    if (!changeSet || changeSet.builtAtVersion !== changeSetVersion) throw new McpInputError(SAVE_STALE_MESSAGE);
+    const outcome = await saveChangeSet({
+      scope: { importId, clientId, firmId: gate.firmId },
+      actorId: principal.userId,
+      principal,
+      changeSetVersion,
+      ticks: approvedTicks(changeSet, leaveOut, include),
+    });
+    if (!outcome.ok) throw new McpInputError(outcome.error, outcome.lineId !== undefined ? { lineId: outcome.lineId } : undefined);
+    const { saved = [], leftOut = [] } = outcome.factFinder.closed ?? {};
+    const savedIds = new Set(saved.map((s) => s.lineId));
+    const { creates, updates } = countLines(changeSet.lines.filter((l) => savedIds.has(l.id)));
+    return { saved: { create: creates, update: updates }, leftOut: leftOut.length };
+  },
+  auditMetadata: (args) => ({ importId: args.importId, changeSetVersion: args.changeSetVersion }),
+});
+
+export const householdBuildingTools: McpTool[] = [
+  startFactFinderStep,
+  fillFactFinderStep,
+  reviewFactFinderStep,
+  saveFactFinderStep,
+];
