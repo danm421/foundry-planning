@@ -1,13 +1,9 @@
 // src/app/api/clients/[id]/imports/[importId]/fact-finder/route.ts
-import { randomUUID } from "node:crypto";
-import { recordAudit } from "@/lib/audit";
 import type { PatchFactFinderResponse } from "@/lib/fact-finder/api-types";
+import { editFactFinder } from "@/lib/fact-finder/edit";
 import { factFinderGate, jsonResponse } from "@/lib/fact-finder/gate";
-import { FactFinderOpError, applyOps, countOps, parseOps, type FFOp } from "@/lib/fact-finder/ops";
-import { loadFactFinder, writeFactFinder } from "@/lib/fact-finder/persist";
-import { opsNeedRelink, relinkBaseCase } from "@/lib/fact-finder/relink";
+import { FactFinderOpError, parseOps, type FFOp } from "@/lib/fact-finder/ops";
 import { readFactFinderState } from "@/lib/fact-finder/state";
-import type { FactFinderState } from "@/lib/fact-finder/types";
 
 export const dynamic = "force-dynamic";
 
@@ -38,32 +34,17 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   let ops: FFOp[];
-  let next: FactFinderState;
-  const current = readFactFinderState(gate.payloadJson);
   try {
     ops = parseOps(body?.ops);
-    if (current.version !== baseVersion) return jsonResponse(409, { error: "conflict", factFinder: current });
-    next = applyOps(current, ops, { by: "advisor", now: new Date().toISOString(), newId: randomUUID });
   } catch (err) {
     if (err instanceof FactFinderOpError) return jsonResponse(400, { error: err.message });
     throw err;
   }
-  if (opsNeedRelink(ops)) next = await relinkBaseCase(next, gate.clientId);
 
   const scope = { importId: gate.importId, clientId: gate.clientId, firmId: gate.firmId };
-  const written = await writeFactFinder(scope, baseVersion, next);
-  if (!written) {
-    const fresh = await loadFactFinder(scope);
-    return jsonResponse(409, { error: "conflict", factFinder: fresh ?? current });
-  }
-
-  await recordAudit({
-    action: "import.payload.edited",
-    resourceType: "client_import",
-    resourceId: gate.importId,
-    clientId: gate.clientId,
-    firmId: gate.firmId,
-    metadata: { surface: "fact_finder", ops: countOps(ops), version: written.version },
-  });
-  return jsonResponse(200, { version: written.version, factFinder: written } satisfies PatchFactFinderResponse);
+  const outcome = await editFactFinder(scope, readFactFinderState(gate.payloadJson), baseVersion, ops, { by: "advisor" });
+  // A 400 carries no fact finder (JSON drops the undefined key).
+  if (!outcome.ok) return jsonResponse(outcome.status, { error: outcome.error, factFinder: outcome.factFinder });
+  const { state } = outcome;
+  return jsonResponse(200, { version: state.version, factFinder: state } satisfies PatchFactFinderResponse);
 }
