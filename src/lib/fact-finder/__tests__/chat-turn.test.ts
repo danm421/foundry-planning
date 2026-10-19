@@ -255,6 +255,41 @@ describe("runFactFinderTurn — the commit", () => {
     expect(Object.keys(store.state!.undo).sort()).toEqual([...ids.slice(1), result.turnId!].sort());
   });
 
+  it("applies nothing when the advisor typed into a cell the reply changes, keeping the advisor's value", async () => {
+    // The advisor corrected Checking to $13,500 while the model was thinking.
+    const started = fixture();
+    vi.mocked(loadFactFinder).mockResolvedValueOnce(started);
+    const typed: FFCell = { value: 13500, by: "advisor", pinned: true };
+    store.state = { ...started, version: 4, sections: { ...started.sections, cash: [{ ...started.sections.cash[0], cells: { ...started.sections.cash[0].cells, currentValue: typed } }] } };
+    const fake = scripted(
+      callTool("set_cell", { rowId: "c1", columnId: "currentValue", value: 13000 }),
+      callTool("set_cell", { rowId: "c1", columnId: "accountName", value: "Joint Checking (Chase)" }, "call-2"),
+      new AIMessage("Done."),
+    );
+    const result = await turn("Checking is $13,000 at Chase", fake.model);
+
+    expect(result).toMatchObject({ turnId: null, ops: {} });
+    expect(store.state!.sections.cash[0].cells.currentValue).toEqual(typed);
+    expect(cellValue(store.state!.sections.cash[0], "accountName")).toBe("Joint Checking");
+    expect(store.state!.undo).toEqual({});
+    expect(store.state!.transcript.map((t) => (t.role === "tool" ? t.role : `${t.role}: ${t.text}`))).toEqual([
+      "user: Checking is $13,000 at Chase",
+      "assistant: The fact finder changed while I was working on that — ask me again.",
+    ]);
+  });
+
+  it("keeps a typed edit to another cell that landed meanwhile, and applies the reply", async () => {
+    const started = fixture();
+    vi.mocked(loadFactFinder).mockResolvedValueOnce(started);
+    const typed: FFCell = { value: "Chase", by: "advisor", pinned: true };
+    store.state = { ...started, version: 4, sections: { ...started.sections, cash: [{ ...started.sections.cash[0], cells: { ...started.sections.cash[0].cells, custodian: typed } }] } };
+    const fake = scripted(callTool("set_cell", { rowId: "c1", columnId: "currentValue", value: 13000 }), new AIMessage("Done."));
+    await turn("Checking is $13,000", fake.model);
+
+    expect(store.state!.sections.cash[0].cells.custodian).toEqual(typed);
+    expect(cellValue(store.state!.sections.cash[0], "currentValue")).toBe(13000);
+  });
+
   it("applies nothing when the reply no longer fits the fresh state, and says so in the transcript", async () => {
     // A typed edit moved Joint Checking to the Removed tray while the model was thinking.
     const started = fixture();
@@ -273,7 +308,7 @@ describe("runFactFinderTurn — the commit", () => {
     expect(store.state!.undo).toEqual({});
     expect(store.state!.transcript.map((t) => (t.role === "tool" ? t.role : `${t.role}: ${t.text}`))).toEqual([
       "user: Checking is $13,000",
-      "assistant: I couldn't apply that: That row isn't in Cash Accounts any more.",
+      "assistant: The fact finder changed while I was working on that — ask me again.",
     ]);
   });
 });

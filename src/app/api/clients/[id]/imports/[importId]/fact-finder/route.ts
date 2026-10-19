@@ -21,7 +21,8 @@ export async function GET(_request: Request, { params }: Params) {
 
 /**
  * Typed edits. Strict on `baseVersion`: a stale client gets 409 and the fresh
- * fact finder, and re-applies its own pending edits if they don't collide —
+ * fact finder, and re-applies its own pending edits if they don't collide; a
+ * chat reply that a typed edit landed under applies nothing (`chat/turn.ts`) —
  * so a typed edit and a chat edit never silently overwrite each other. Links
  * are re-scored after an edit that can change one, and the 200 carries the
  * written state so the screen shows them.

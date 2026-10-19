@@ -4,8 +4,9 @@ import { AIMessage, HumanMessage, SystemMessage, ToolMessage, type BaseMessage }
 import { chatModel } from "@/domain/forge/llm";
 import { recordMessageUsage } from "@/lib/ai/usage";
 import { redactSsns } from "@/lib/extraction/redact-ssn";
+import { rebaseOps } from "../client-ops";
 import { applyLinkScores } from "../matching/score";
-import { FactFinderOpError, applyOps, countOps, diffSnapshots, locationOf, type ClientOp } from "../ops";
+import { applyOps, countOps, diffSnapshots, locationOf, type ClientOp, type OpContext } from "../ops";
 import { FactFinderNotFoundError, listLiveFiles, loadFactFinder, updateFactFinder, type FactFinderScope } from "../persist";
 import { loadBaseCaseRecords } from "../relink";
 import type { FactFinderState, FFChatTurn, FFSnapshot } from "../types";
@@ -17,15 +18,17 @@ import { factFinderView } from "./view";
 /**
  * One chat reply (spec § 5). The model's tool calls edit a WORKING copy of the
  * fact finder, so a later call sees an earlier one. The reply then commits by
- * replaying the same ops on the fresh state in ONE compare-and-set — a typed
- * edit that landed meanwhile is kept, and if the replay no longer applies,
- * nothing is. No LangGraph: a plain loop.
+ * replaying the same ops on the fresh state in ONE compare-and-set. An edit
+ * that landed meanwhile elsewhere is kept; if anything the reply's ops touch
+ * changed meanwhile — a typed edit to the same cell, a row removed — nothing
+ * from the reply applies, and it says so. No LangGraph: a plain loop.
  */
 
 export const MAX_TOOL_CALLS_PER_TURN = 12;
 /** Replies that keep their Undo; older ones lose it. */
 const MAX_UNDO_REPLIES = 10;
 const OUT_OF_STEPS = "I ran out of steps for one reply — ask me to carry on.";
+const CHANGED_MEANWHILE = "The fact finder changed while I was working on that — ask me again.";
 
 /** `chatModel()`'s shape, narrow enough for a test double. */
 export interface TurnModel {
@@ -175,15 +178,14 @@ export async function runFactFinderTurn(args: {
   const assistant = (text: string): FFChatTurn => ({ id: assistantId, role: "assistant", text, at });
   const records = await loadBaseCaseRecords(scope.clientId);
 
+  const opContext: OpContext = { by: "chat", now: at, newId: ctx.newId };
   const written = await updateFactFinder(scope, (fresh) => {
-    let afterOps: FactFinderState;
-    try {
-      afterOps = applyOps(fresh, ops, { by: "chat", now: at, newId: ctx.newId });
-    } catch (err) {
-      if (!(err instanceof FactFinderOpError)) throw err;
-      const refused = assistant(`I couldn't apply that: ${redactSsns(err.message).text}`);
-      return { ...fresh, transcript: [...fresh.transcript, userTurn, refused] };
+    // The ops were made against `start`. If what any of them touches changed since, or one
+    // no longer applies, none of them does: a value typed meanwhile is never overwritten.
+    if (rebaseOps(ops, start, fresh, opContext).kept.length < ops.length) {
+      return { ...fresh, transcript: [...fresh.transcript, userTurn, assistant(CHANGED_MEANWHILE)] };
     }
+    const afterOps = applyOps(fresh, ops, opContext);
     const next = applyLinkScores(afterOps, records);
     // The rows the reply's OPS changed, each as the re-score left it: a row the
     // re-score alone changed stays out of this reply's Undo and highlight, and
