@@ -21,13 +21,15 @@ export function savedFactFinderRefusal(): NextResponse {
   return NextResponse.json({ error: SAVE_CLOSED_MESSAGE }, { status: 409 });
 }
 
+/** A saved fact finder's 409 body: the refusal, and the fact finder as saved. */
+export function savedFactFinderBody(payloadJson: unknown) {
+  return { error: SAVE_CLOSED_MESSAGE, factFinder: readFactFinderState(payloadJson) };
+}
+
 /** The 409 a saved fact finder gets on the shared file routes, or null to go on — the body carries the saved fact finder, which only the fact finder screen's own requests adopt. */
 export function refuseSavedFactFinderWithState(imp: { payloadJson: unknown }): NextResponse | null {
   return isSavedFactFinder(imp.payloadJson)
-    ? NextResponse.json(
-        { error: SAVE_CLOSED_MESSAGE, factFinder: readFactFinderState(imp.payloadJson) },
-        { status: 409 },
-      )
+    ? NextResponse.json(savedFactFinderBody(imp.payloadJson), { status: 409 })
     : null;
 }
 

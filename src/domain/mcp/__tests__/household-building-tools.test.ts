@@ -27,6 +27,7 @@ const h = vi.hoisted(() => ({
   deleteSavingsRuleForClient: vi.fn(),
   labelRows: vi.fn(),
 }));
+const { PlanImportRefusal } = vi.hoisted(() => ({ PlanImportRefusal: class PlanImportRefusal extends Error {} }));
 
 // The real create check (it reads the mocked client access and audit); the import gate is stubbed.
 vi.mock("@/lib/fact-finder/gate", async (importOriginal) => ({
@@ -61,7 +62,7 @@ vi.mock("@/lib/rate-limit", () => ({
 vi.mock("@/lib/fact-finder/review", () => ({ reviewFactFinder: h.reviewFactFinder }));
 vi.mock("@/lib/fact-finder/save/save", () => ({ saveChangeSet: h.saveChangeSet }));
 vi.mock("@/lib/fact-finder/placement/leftovers-run", () => ({ runLeftovers: h.runLeftovers }));
-vi.mock("@/lib/imports/plan-builder-core", () => ({ ensurePlanImport: h.ensurePlanImport }));
+vi.mock("@/lib/imports/plan-builder-core", () => ({ ensurePlanImport: h.ensurePlanImport, PlanImportRefusal }));
 vi.mock("@/lib/crm/duplicate-household", () => ({ findLikelyDuplicateHousehold: h.findLikelyDuplicateHousehold }));
 vi.mock("@/lib/crm/authz", () => ({ verifyCrmHouseholdAccessFor: h.verifyCrmHouseholdAccessFor }));
 vi.mock("@/lib/ai/resolve", () => ({ withAiCallerOrg: h.withAiCallerOrg }));
@@ -814,7 +815,7 @@ describe("create_household", () => {
   });
 
   it("answers the core's retirement-age refusal as an input error", async () => {
-    h.ensurePlanImport.mockRejectedValue(new Error("Ben's retirement age is required."));
+    h.ensurePlanImport.mockRejectedValue(new PlanImportRefusal("Ben's retirement age is required."));
     await expect(
       create.run({ householdId: "hh9", prospect: { filingStatus: "married_joint", retirementAge: 66 } }, principal),
     ).rejects.toThrow(McpInputError);

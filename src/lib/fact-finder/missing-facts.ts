@@ -5,9 +5,8 @@
  * that collects it. Pure — no IO. Labels name the person from the book's
  * first names, or use the record's own label.
  */
-import type { FactFinderStepId } from "@/domain/mcp/fact-finder-steps";
-import { FACT_FINDER_STEP_IDS } from "@/domain/mcp/fact-finder-steps";
-import type { PlacedValue, TargetKind } from "./change-set";
+import { FACT_FINDER_STEP_IDS, type FactFinderStepId } from "@/domain/mcp/fact-finder-steps";
+import { isRecordRef, type PlacedValue, type TargetKind } from "./change-set";
 import type { BookRecord, RecordBook } from "./placement/types";
 
 export interface MissingFact {
@@ -32,7 +31,7 @@ function ownerRoles(owners: PlacedValue | undefined): Role[] {
   if (!Array.isArray(owners)) return [];
   return owners.flatMap((o) => {
     const who = typeof o === "object" && o !== null && !Array.isArray(o) ? (o as { who?: PlacedValue }).who : null;
-    return typeof who === "object" && who !== null && !Array.isArray(who) && who.ref === "person" ? [who.role as Role] : [];
+    return isRecordRef(who) && who.ref === "person" ? [who.role] : [];
   });
 }
 

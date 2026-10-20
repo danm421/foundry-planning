@@ -11,9 +11,7 @@ import { REVIEW_READING_MESSAGE, REVIEW_STALE_MESSAGE, type ReviewRefusal } from
 import { countLines, type ChangeSet } from "./change-set";
 import { loadFactFinder, writeFactFinder, type FactFinderScope } from "./persist";
 import { buildChangeSet } from "./placement/build";
-import type { LeftoversOutput } from "./placement/leftovers";
 import { checkLinks, dropLinks, type LinkedRow } from "./placement/links";
-import type { LeftoverItem, TargetDraft } from "./placement/types";
 import { filesReading } from "./reading-status";
 import { loadRecordBook } from "./records/book";
 import { resolveBaseCaseScenarioId } from "./records/load";
@@ -57,7 +55,7 @@ export async function reviewFactFinder(
   opts: {
     now: Date;
     actorId?: string;
-    runLeftovers: ((items: readonly LeftoverItem[], drafts: readonly TargetDraft[]) => Promise<LeftoversOutput | null>) | null;
+    runLeftovers: Parameters<typeof buildChangeSet>[0]["runLeftovers"] | null;
   },
 ): Promise<ReviewOutcome> {
   const { importId, clientId, firmId } = scope;

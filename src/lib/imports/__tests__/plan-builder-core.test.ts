@@ -57,7 +57,7 @@ vi.mock("@/lib/clients/authz", () => ({
   verifyClientAccessAs: (p: unknown, id: string) => (p ? m.verifyClientAccessFor(p, id) : m.verifyClientAccess(id)),
 }));
 
-import { ensurePlanImport, findImportTargetName } from "../plan-builder-core";
+import { ensurePlanImport, findImportTargetName, PlanImportRefusal } from "../plan-builder-core";
 import { isFactFinderImport } from "../import-kind";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
 
@@ -429,14 +429,15 @@ describe("ensurePlanImport", () => {
         planningClient: { id: "c9" },
       });
 
-      await expect(
-        ensurePlanImport({
-          mode: "prospect",
-          firmId: "org1",
-          actorUserId: "u1",
-          prospect: { householdId: "hh1", filingStatus: "single", retirementAge: 65, lifeExpectancy: 95 },
-        }),
-      ).rejects.toThrow("This household already has a plan.");
+      const refused = ensurePlanImport({
+        mode: "prospect",
+        firmId: "org1",
+        actorUserId: "u1",
+        prospect: { householdId: "hh1", filingStatus: "single", retirementAge: 65, lifeExpectancy: 95 },
+      });
+      await expect(refused).rejects.toThrow("This household already has a plan.");
+      // Typed, so the Claude connector shows it as written.
+      await expect(refused).rejects.toBeInstanceOf(PlanImportRefusal);
 
       expect(m.findVisibleCrmHousehold).toHaveBeenCalledWith("hh1");
       expect(m.verifyCrmHouseholdAccessFor).not.toHaveBeenCalled();

@@ -7,10 +7,10 @@ import { verifyClientAccess, verifyClientAccessFor, type ClientAccessCheck } fro
 import { checkImportRateLimit, type ImportRateLimitOp } from "@/lib/rate-limit";
 import { hasAiImportEntitlement, recordAiImportDenied } from "@/lib/imports/ai-import-gate";
 import { isFactFinderImport, isFinishedInStatementChat, isSavedFactFinder } from "@/lib/imports/import-kind";
+import { savedFactFinderBody } from "@/lib/imports/saved-fact-finder";
 import type { ImportPayloadJson } from "@/lib/imports/types";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 import { SAVE_CLOSED_MESSAGE } from "./api-types";
-import { readFactFinderState } from "./state";
 import type { FactFinderState } from "./types";
 
 export type ImportRow = Awaited<ReturnType<typeof requireImportAccess>>;
@@ -174,7 +174,7 @@ async function entitlementRefusal(entitled: boolean, deniedAudit: () => Promise<
  * ownership → entitlement (`deniedAudit` records a refusal) → "is a fact
  * finder import" → "not saved yet".
  */
-export async function factFinderAccess(args: {
+async function factFinderAccess(args: {
   firmId: string;
   userId: string;
   clientId: string;
@@ -215,9 +215,7 @@ export async function factFinderAccess(args: {
     // A saved import is read-only: only the view (GET) still answers. The refusal
     // carries the saved fact finder, so a screen still open on it (another tab)
     // can switch to the closed view.
-    if (isSavedFactFinder(payloadJson)) {
-      return { ok: false, status: 409, body: { error: SAVE_CLOSED_MESSAGE, factFinder: readFactFinderState(payloadJson) } };
-    }
+    if (isSavedFactFinder(payloadJson)) return { ok: false, status: 409, body: savedFactFinderBody(payloadJson) };
     // Finished in statement chat: the screen shows a notice — there is no fact finder to send.
     if (isFinishedInStatementChat(imp.status, payloadJson)) return refuse(409, SAVE_CLOSED_MESSAGE);
   }

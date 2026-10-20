@@ -61,6 +61,14 @@ export interface EnsurePlanImportResult {
   householdId?: string;
 }
 
+/** A refusal written for the person asking, safe to show as it stands. */
+export class PlanImportRefusal extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PlanImportRefusal";
+  }
+}
+
 /** Same rule as POST /api/clients/[id]/imports: the caller (the principal when
  *  passed, else the session) must have own-firm edit access (book silo, Private
  *  clients, shares). */
@@ -192,16 +200,16 @@ async function createProspectPlan(args: EnsurePlanImportArgs): Promise<CreatedPl
     with: { contacts: true, planningClient: { columns: { id: true } } },
   });
   if (!household) throw notFound;
-  if (household.planningClient) throw new Error("This household already has a plan.");
+  if (household.planningClient) throw new PlanImportRefusal("This household already has a plan.");
 
   const primary = household.contacts.find((c) => c.role === "primary");
-  if (!primary?.dateOfBirth) throw new Error("The household's primary contact needs a date of birth.");
+  if (!primary?.dateOfBirth) throw new PlanImportRefusal("The household's primary contact needs a date of birth.");
   const spouse = household.contacts.find((c) => c.role === "spouse");
   // A spouse on the household means createClientForHousehold would stamp its
   // retirement-age default; never guess it (Forge's `set_up_plan` refuses alike).
   // Life expectancy may take the site's default.
   if (spouse && prospect.spouseRetirementAge == null) {
-    throw new Error(`${spouse.firstName}'s retirement age is required.`);
+    throw new PlanImportRefusal(`${spouse.firstName}'s retirement age is required.`);
   }
 
   const created = await createClientForHousehold({

@@ -75,7 +75,7 @@ export class SaveLineError extends Error {
 export function coreArgs(ctx: SaveContext) {
   const core = {
     clientId: ctx.clientId, firmId: ctx.firmId, actorId: ctx.actorId, tx: ctx.tx, afterCommit: ctx.afterCommit,
-    ...(ctx.principal ? { principal: ctx.principal } : {}),
+    principal: ctx.principal,
   };
   return ctx.actingAsAdvisor ? { ...core, crossFirmMeta: { actingAsAdvisor: ctx.actingAsAdvisor } } : core;
 }

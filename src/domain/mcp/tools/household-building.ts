@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { accounts, expenses, incomes, liabilities, savingsRules } from "@/db/schema";
+import { accounts, expenses, filingStatusEnum, incomes, liabilities, savingsRules } from "@/db/schema";
 import { withAiCallerOrg } from "@/lib/ai/resolve";
 import { SAVE_STALE_MESSAGE, type ReviewRefusal } from "@/lib/fact-finder/api-types";
 import { countLines, defaultTicks, type ChangeLine, type ChangeSet, type ChangeTicks } from "@/lib/fact-finder/change-set";
@@ -34,14 +34,16 @@ import type { SourceStamp } from "@/lib/fact-finder/sources";
 import { fixedRowId, locateRow, readFactFinderState } from "@/lib/fact-finder/state";
 import type { FactFinderState, FFClosed } from "@/lib/fact-finder/types";
 import { deleteAccountForClient } from "@/lib/clients/accounts-writes";
+import type { EntityWriteResult } from "@/lib/clients/entity-write-result";
 import { deleteExpenseForClient } from "@/lib/clients/expenses-writes";
 import { deleteIncomeForClient } from "@/lib/clients/incomes-writes";
 import { deleteLiabilityForClient } from "@/lib/clients/liabilities-writes";
 import { deleteSavingsRuleForClient } from "@/lib/clients/savings-rules-writes";
 import { updatePlanSettingsForClient } from "@/lib/clients/plan-settings-writes";
 import { findLikelyDuplicateHousehold } from "@/lib/crm/duplicate-household";
-import { ensurePlanImport } from "@/lib/imports/plan-builder-core";
+import { ensurePlanImport, PlanImportRefusal } from "@/lib/imports/plan-builder-core";
 import type { McpPrincipal } from "@/lib/mcp/principal";
+import { ASSUMED_LIFE_EXPECTANCY } from "@/lib/plan-horizon";
 import type { ImportRateLimitOp } from "@/lib/rate-limit";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { changeListView } from "../change-list-view";
@@ -372,20 +374,21 @@ function approvedTicks(changeSet: ChangeSet, leaveOut: readonly LineChoice[], in
 }
 
 /**
- * The reviewed list saved as the principal, the import closed: what it saved
- * and what it left out. All or nothing — a refusal writes nothing and names
- * its line.
+ * The reviewed list saved as the principal, the import closed: the lines it
+ * saved and what it left out. All or nothing — a refusal writes nothing and
+ * names its line.
  */
 async function saveDraft(
   scope: FactFinderScope,
   principal: McpPrincipal,
-  changeSetVersion: number,
+  changeSet: ChangeSet,
   ticks: ChangeTicks,
-): Promise<Pick<FFClosed, "saved" | "leftOut">> {
-  const outcome = await saveChangeSet({ scope, actorId: principal.userId, principal, changeSetVersion, ticks });
+): Promise<{ savedLines: ChangeLine[]; leftOut: FFClosed["leftOut"] }> {
+  const outcome = await saveChangeSet({ scope, actorId: principal.userId, principal, changeSetVersion: changeSet.builtAtVersion, ticks });
   if (!outcome.ok) throw new McpInputError(outcome.error, outcome.lineId !== undefined ? { lineId: outcome.lineId } : undefined);
   const { saved = [], leftOut = [] } = outcome.factFinder.closed ?? {};
-  return { saved, leftOut };
+  const savedIds = new Set(saved.map((s) => s.lineId));
+  return { savedLines: changeSet.lines.filter((l) => savedIds.has(l.id)), leftOut };
 }
 
 const saveFactFinderStep = defineWriteTool({
@@ -417,22 +420,17 @@ const saveFactFinderStep = defineWriteTool({
     // The ticks are the list's: one reviewed again since (or never) is the save's own stale refusal.
     if (!changeSet || changeSet.builtAtVersion !== changeSetVersion) throw new McpInputError(SAVE_STALE_MESSAGE);
     const scope = { importId, clientId, firmId: gate.firmId };
-    const { saved, leftOut } = await saveDraft(scope, principal, changeSetVersion, approvedTicks(changeSet, leaveOut, include));
-    const savedIds = new Set(saved.map((s) => s.lineId));
-    const { creates, updates } = countLines(changeSet.lines.filter((l) => savedIds.has(l.id)));
+    const { savedLines, leftOut } = await saveDraft(scope, principal, changeSet, approvedTicks(changeSet, leaveOut, include));
+    const { creates, updates } = countLines(savedLines);
     return { saved: { create: creates, update: updates }, leftOut: leftOut.length };
   },
   auditMetadata: (args) => ({ importId: args.importId, changeSetVersion: args.changeSetVersion }),
 });
 
-const LIFE_EXPECTANCY = 95;
 const dateOfBirth = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD.");
 const retirementAge = z.number().int().min(40).max(85);
-const filingStatus = z.enum(["single", "married_joint", "married_separate", "head_of_household"]);
+const filingStatus = z.enum(filingStatusEnum.enumValues);
 const person = z.object({ firstName: z.string().min(1), lastName: z.string().min(1), dateOfBirth });
-
-/** The core's refusals written for a person; anything else is not model-safe. */
-const PLAN_REFUSAL = /retirement age is required|already has a plan|needs a date of birth/;
 
 const createHousehold = defineHouseholdWriteTool({
   name: "create_household",
@@ -491,13 +489,14 @@ const createHousehold = defineHouseholdWriteTool({
             householdId: args.householdId,
             filingStatus: status,
             retirementAge: age,
-            lifeExpectancy: LIFE_EXPECTANCY,
-            ...(spouseAge !== undefined && { spouseRetirementAge: spouseAge, spouseLifeExpectancy: LIFE_EXPECTANCY }),
+            lifeExpectancy: ASSUMED_LIFE_EXPECTANCY,
+            ...(spouseAge !== undefined && { spouseRetirementAge: spouseAge, spouseLifeExpectancy: ASSUMED_LIFE_EXPECTANCY }),
           },
         });
         return { created: true as const, clientId: created.clientId, householdId: args.householdId, importId: created.importId, nextStep: "household" as const };
       } catch (err) {
-        if (err instanceof Error && PLAN_REFUSAL.test(err.message)) throw new McpInputError(err.message);
+        // The core's refusals written for a person; anything else is not model-safe.
+        if (err instanceof PlanImportRefusal) throw new McpInputError(err.message);
         throw err;
       }
     }
@@ -527,8 +526,8 @@ const createHousehold = defineHouseholdWriteTool({
         }),
         filingStatus: h.filingStatus,
         retirementAge: h.primary.retirementAge,
-        lifeExpectancy: LIFE_EXPECTANCY,
-        ...(h.spouse && { spouseRetirementAge: h.spouse.retirementAge, spouseLifeExpectancy: LIFE_EXPECTANCY }),
+        lifeExpectancy: ASSUMED_LIFE_EXPECTANCY,
+        ...(h.spouse && { spouseRetirementAge: h.spouse.retirementAge, spouseLifeExpectancy: ASSUMED_LIFE_EXPECTANCY }),
       },
     });
     return { created: true as const, clientId: created.clientId, householdId: created.householdId!, importId: created.importId, nextStep: "household" as const };
@@ -569,7 +568,7 @@ const MAX_EDIT_CELLS = 30;
  * is refused with the ids it could be, so Claude learns them without opening a
  * draft (R39). A fixed row's label is targetRowId's to check.
  */
-function checkEdit(sectionId: string, fixedRow: string | undefined, cells: Record<string, unknown>): void {
+function checkEdit(sectionId: string, fixedRow: string | undefined, cells: Record<string, unknown>): FFSection {
   const section = findSection(sectionId);
   if (!section) {
     throw new McpInputError(`There's no fact finder section "${sectionId}". Sections: ${FACT_FINDER_SECTIONS.map((s) => s.id).join(", ")}.`);
@@ -580,6 +579,7 @@ function checkEdit(sectionId: string, fixedRow: string | undefined, cells: Recor
   if (unknown.length > 0) {
     throw new McpInputError(`Section ${sectionId} has no column ${quoted(unknown)}. Its columns: ${columns.join(", ")}.`);
   }
+  return section;
 }
 
 /**
@@ -635,12 +635,11 @@ const updatePlanDetail = defineWriteTool({
   page: "netWorth",
   handler: async ({ clientId, sectionId, recordId, fixedRow, cells, sources }, { principal, firmId }) => {
     // Checked and built before anything is created: an unknown section, column or fixed row leaves no draft.
-    checkEdit(sectionId, fixedRow, cells);
+    const section = checkEdit(sectionId, fixedRow, cells);
     const link = recordId !== undefined ? { recordId } : fixedRow === undefined ? ("new" as const) : undefined;
     const { rowId, ops, stamps } = rowOps({ sectionId, fixedRow, cells, link, sources });
     const scenarioId = await draftBaseCase(principal, clientId);
-    const notes = `Claude edit: ${findSection(sectionId)?.label ?? sectionId}`;
-    const imp = await createDraft(principal, clientId, firmId, scenarioId, notes);
+    const imp = await createDraft(principal, clientId, firmId, scenarioId, `Claude edit: ${section.label}`);
     const scope = { importId: imp.id, clientId, firmId };
 
     // R37: everything that can refuse comes before the save, which writes all or nothing.
@@ -656,11 +655,10 @@ const updatePlanDetail = defineWriteTool({
       if (blocked.length > 0) throw new McpInputError(blocked.map(cannotSave).join(" "));
       if (changeSet.lines.every((l) => l.action === "none")) throw new McpInputError(NOTHING_TO_CHANGE_MESSAGE);
       const ticks = editTicks(changeSet, rowId, cells);
-      return { changeSet, ticks, closed: await saveDraft(scope, principal, changeSet.builtAtVersion, ticks) };
+      return { changeSet, ticks, closed: await saveDraft(scope, principal, changeSet, ticks) };
     });
 
-    const savedIds = new Set(closed.saved.map((s) => s.lineId));
-    const { lines, warnings } = changeListView({ ...changeSet, lines: changeSet.lines.filter((l) => savedIds.has(l.id)) }, ticks);
+    const { lines, warnings } = changeListView({ ...changeSet, lines: closed.savedLines }, ticks);
     return {
       importId: imp.id,
       saved: lines,
@@ -735,9 +733,10 @@ const updatePlanAssumptions = defineWriteTool({
 });
 
 const REMOVABLE_KINDS = ["account", "liability", "income", "expense", "savings_rule"] as const;
+type RemovableKind = (typeof REMOVABLE_KINDS)[number];
 
 /** The row's name as start_fact_finder_step shows it; a savings rule shows its account's. Read before the delete. */
-async function removableLabel(kind: (typeof REMOVABLE_KINDS)[number], clientId: string, recordId: string) {
+async function removableLabel(kind: RemovableKind, clientId: string, recordId: string) {
   if (kind === "savings_rule") {
     const [row] = await db
       .select({ name: accounts.name })
@@ -754,6 +753,27 @@ async function removableLabel(kind: (typeof REMOVABLE_KINDS)[number], clientId: 
   return row?.name ?? null;
 }
 
+/** R5: the four access-checking cores take the principal; the savings rule core has no access check of its own. */
+function removeRecord(
+  kind: RemovableKind,
+  recordId: string,
+  base: { clientId: string; firmId: string; actorId: string },
+  principal: McpPrincipal,
+): Promise<EntityWriteResult<{ id: string }>> {
+  switch (kind) {
+    case "account":
+      return deleteAccountForClient({ ...base, accountId: recordId, principal });
+    case "liability":
+      return deleteLiabilityForClient({ ...base, liabilityId: recordId, principal });
+    case "income":
+      return deleteIncomeForClient({ ...base, incomeId: recordId, principal });
+    case "expense":
+      return deleteExpenseForClient({ ...base, expenseId: recordId, principal });
+    case "savings_rule":
+      return deleteSavingsRuleForClient({ ...base, ruleId: recordId });
+  }
+}
+
 const removePlanDetail = defineWriteTool({
   name: "remove_plan_detail",
   title: "Remove a plan row",
@@ -768,18 +788,7 @@ const removePlanDetail = defineWriteTool({
   page: "netWorth",
   handler: async ({ clientId, kind, recordId }, { principal, firmId }) => {
     const label = await removableLabel(kind, clientId, recordId);
-    const base = { clientId, firmId, actorId: principal.userId };
-    // R5: the four access-checking cores take the principal; the savings rule core has no access check of its own.
-    const result =
-      kind === "account"
-        ? await deleteAccountForClient({ ...base, accountId: recordId, principal })
-        : kind === "liability"
-          ? await deleteLiabilityForClient({ ...base, liabilityId: recordId, principal })
-          : kind === "income"
-            ? await deleteIncomeForClient({ ...base, incomeId: recordId, principal })
-            : kind === "expense"
-              ? await deleteExpenseForClient({ ...base, expenseId: recordId, principal })
-              : await deleteSavingsRuleForClient({ ...base, ruleId: recordId });
+    const result = await removeRecord(kind, recordId, { clientId, firmId, actorId: principal.userId }, principal);
     if (!result.ok) throw new McpInputError(result.error);
     return { removed: { kind, recordId, label: label ?? kind.replace("_", " ") } };
   },
