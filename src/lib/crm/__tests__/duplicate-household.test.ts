@@ -2,21 +2,26 @@
 // the REAL household access check (book silo, Private clients, trash, other firm).
 // The database and the firm setting are faked: `candidates` is what the name and
 // date-of-birth query returns, and `households` the access check's row for each
-// candidate, in order. (The query's own SQL is not exercised here.)
+// candidate, in order. (The query's own SQL runs live in household-building-e2e.test.ts.)
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const ORG = "org_dup";
 const state = vi.hoisted(() => ({
   candidates: [] as { householdId: string; name: string; clientId: string | null }[],
   households: [] as unknown[],
+  /** The columns the query ordered its rows by. */
+  orderBy: [] as unknown[],
   silo: true,
 }));
 
 vi.mock("@/lib/firm-settings", () => ({ firmBookSiloEnabled: async () => state.silo }));
 vi.mock("@/db", () => {
   const chain: Record<string, unknown> = {};
-  for (const m of ["from", "innerJoin", "leftJoin"]) chain[m] = () => chain;
-  chain.where = async () => state.candidates;
+  for (const m of ["from", "innerJoin", "leftJoin", "where"]) chain[m] = () => chain;
+  chain.orderBy = async (...columns: unknown[]) => {
+    state.orderBy = columns;
+    return state.candidates;
+  };
   return {
     db: {
       select: () => chain,
@@ -25,6 +30,7 @@ vi.mock("@/db", () => {
   };
 });
 
+import { crmHouseholds } from "@/db/schema";
 import { findLikelyDuplicateHousehold } from "../duplicate-household";
 
 const person = { firstName: "Ada", lastName: "Quill", dateOfBirth: "1970-02-03" };
@@ -42,6 +48,7 @@ beforeEach(() => {
   state.silo = true;
   state.candidates = [];
   state.households = [];
+  state.orderBy = [];
 });
 
 describe("findLikelyDuplicateHousehold", () => {
@@ -77,6 +84,14 @@ describe("findLikelyDuplicateHousehold", () => {
       row("adv_b"),
     ];
     expect(await findLikelyDuplicateHousehold(member, person)).toMatchObject({ householdId: "hh-ok" });
+  });
+
+  // Two visible matches come back in one order every time, so the one named is always the oldest.
+  it("asks for the oldest household first", async () => {
+    await findLikelyDuplicateHousehold(member, person);
+    expect(state.orderBy).toHaveLength(2);
+    expect(state.orderBy[0]).toBe(crmHouseholds.createdAt);
+    expect(state.orderBy[1]).toBe(crmHouseholds.id);
   });
 
   it("finds nothing without candidates or without an organization", async () => {

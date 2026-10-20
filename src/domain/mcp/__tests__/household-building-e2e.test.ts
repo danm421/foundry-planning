@@ -5,8 +5,9 @@
 // 0; each step is started, filled, reviewed and saved through the fact
 // finder's own cores; a near-match row is refused rather than saved on a
 // guess; then one single edit, two removals, and what the plan still lacks.
-// A second firm's principal is refused at every step. Everything lives under
-// firm ids no other suite uses.
+// A likely duplicate is caught by the live query, and a second firm's
+// principal is refused at every step. Everything lives under firm ids no
+// other suite uses.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 // No session at all: every access check, and every audit row's actor, must come from the principal.
@@ -26,7 +27,7 @@ vi.mock("@/lib/rate-limit", async (importOriginal) => ({
 
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, auditLog, clientImports, clients, expenses, familyMembers, incomes, planSettings } from "@/db/schema";
+import { accounts, auditLog, clientImports, clients, crmHouseholds, expenses, familyMembers, incomes, planSettings } from "@/db/schema";
 import { SAVE_STALE_MESSAGE } from "@/lib/fact-finder/api-types";
 import { dropSaveFirm } from "@/lib/fact-finder/save/__tests__/harness";
 import { readFactFinderState } from "@/lib/fact-finder/state";
@@ -307,5 +308,27 @@ d("Claude builds a household end to end, on a principal with no session (live DB
     }
 
     expect(await planOf(own.clientId)).toEqual(was);
+  }, 300_000);
+
+  it("names the likely duplicate the live query finds, trimmed and in any case, and creates only when told it differs", async () => {
+    const NORA = { firstName: "Nora", lastName: "Dupe", dateOfBirth: "1975-06-01", retirementAge: 65 };
+    const first = await createHousehold(PRINCIPAL, { name: "Dupe Household", primary: NORA, filingStatus: "single" });
+    const counts = async () => ({
+      households: (await db.select({ id: crmHouseholds.id }).from(crmHouseholds).where(eq(crmHouseholds.firmId, FIRM))).length,
+      clients: (await db.select({ id: clients.id }).from(clients).where(eq(clients.firmId, FIRM))).length,
+    });
+    const before = await counts();
+    const again = { name: "Nora Dupe Household", primary: { ...NORA, firstName: "  nORA ", lastName: "DUPE  " }, filingStatus: "single" };
+
+    expect(await run("create_household", { household: again })).toEqual({
+      created: false,
+      likelyDuplicate: { householdId: first.householdId, name: "Dupe Household", hasPlan: true, clientId: first.clientId },
+    });
+    expect(await counts()).toEqual(before);
+
+    const different = (await run("create_household", { household: again, differentFromHouseholdId: first.householdId })) as Created;
+    expect(different).toMatchObject({ created: true, clientId: expect.any(String) });
+    expect(different.householdId).not.toBe(first.householdId);
+    expect(await counts()).toEqual({ households: before.households + 1, clients: before.clients + 1 });
   }, 300_000);
 });
