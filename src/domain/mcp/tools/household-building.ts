@@ -95,7 +95,7 @@ const fillRow = z.object({
   sectionId: z.string(),
   rowId: z.string().optional().describe("An existing draft row. Omit with fixedRow for a new row."),
   fixedRow: z.string().optional().describe("A fixed row's label from the section's fixedRows, e.g. \"Client\"."),
-  cells: z.record(z.string(), cellValue).describe("Column id to value. null clears a cell."),
+  cells: z.record(z.string(), cellValue).describe("Column id to value; a percent column takes 6.5 for 6.5%. null clears a cell."),
   link: z
     .union([z.object({ recordId: z.string() }), z.literal("new")])
     .optional()
@@ -664,7 +664,7 @@ const updatePlanDetail = defineWriteTool({
     cells: z
       .record(z.string(), cellValue)
       .refine((c) => Object.keys(c).length >= 1 && Object.keys(c).length <= MAX_EDIT_CELLS, `Give 1 to ${MAX_EDIT_CELLS} cells.`)
-      .describe("Column id to value. null clears a cell."),
+      .describe("Column id to value; a percent column takes 6.5 for 6.5%."),
     sources: cellSources,
   }),
   page: "netWorth",

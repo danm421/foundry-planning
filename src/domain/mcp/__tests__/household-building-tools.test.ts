@@ -67,8 +67,9 @@ vi.mock("@/lib/crm/duplicate-household", () => ({ findLikelyDuplicateHousehold: 
 vi.mock("@/lib/crm/authz", () => ({ verifyCrmHouseholdAccessFor: h.verifyCrmHouseholdAccessFor }));
 vi.mock("@/lib/ai/resolve", () => ({ withAiCallerOrg: h.withAiCallerOrg }));
 
+import { z } from "zod";
 import { householdBuildingTools } from "../tools/household-building";
-import { VIEW_ONLY_MESSAGE, WRITE_DISABLED_MESSAGE } from "../define-tool";
+import { VIEW_ONLY_MESSAGE, WRITE_DISABLED_MESSAGE, type McpTool } from "../define-tool";
 import { changeListView } from "../change-list-view";
 import { McpInputError } from "../define-tool";
 import { CLIENT_UNREADABLE_MESSAGE, McpForbiddenError } from "../guards";
@@ -100,6 +101,10 @@ const missingFactsTool = tool("get_missing_facts");
 const editTool = tool("update_plan_detail");
 const assumptionsTool = tool("update_plan_assumptions");
 const removeTool = tool("remove_plan_detail");
+
+/** A tool's input schema as the tool list sends it. */
+type JsonSchema = { properties?: Record<string, JsonSchema>; items?: JsonSchema; description?: string };
+const listed = (t: McpTool) => z.toJSONSchema(t.inputSchema) as JsonSchema;
 
 const BASE = "11111111-1111-4111-8111-111111111111";
 const IMPORT = "22222222-2222-4222-8222-222222222222";
@@ -461,6 +466,13 @@ describe("fill_fact_finder_step", () => {
     await call({ rows: [{ sectionId: "retirement", rowId: "row-ira", cells: { currentValue: 380000 } }] });
     const audit = h.recordAudit.mock.calls.find(([a]) => a.action === "mcp.tool_write")![0];
     expect(audit.metadata).toEqual({ importId: IMPORT, rowCount: 1, tool: "fill_fact_finder_step", via: "claude" });
+  });
+
+  // R46: the fact finder's percent columns take whole numbers, unlike the plan assumptions' fractions.
+  it("tells Claude a percent column takes 6.5 for 6.5%, and that null clears a cell", () => {
+    expect(listed(fill).properties?.rows?.items?.properties?.cells?.description).toBe(
+      "Column id to value; a percent column takes 6.5 for 6.5%. null clears a cell.",
+    );
   });
 
   it("takes at most 50 rows", async () => {
@@ -1198,6 +1210,11 @@ describe("update_plan_detail", () => {
 
   it("never sends Claude to open a draft just to learn the ids", () => {
     expect(editTool.description).not.toMatch(/start_fact_finder_step/);
+  });
+
+  // R46: an edit saves with no review in between. And a blank never erases a value on record.
+  it("tells Claude a percent column takes 6.5 for 6.5%, and never that null clears a cell", () => {
+    expect(listed(editTool).properties?.cells?.description).toBe("Column id to value; a percent column takes 6.5 for 6.5%.");
   });
 
   it("refuses no cells or more than 30 before creating anything", async () => {
