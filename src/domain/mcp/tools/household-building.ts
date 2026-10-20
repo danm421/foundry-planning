@@ -762,7 +762,7 @@ const removePlanDetail = defineWriteTool({
   inputSchema: z.object({
     clientId: clientIdArg,
     kind: z.enum(REMOVABLE_KINDS),
-    recordId: z.string().describe("From list_plan_details."),
+    recordId: z.string().describe("From list_plan_details, or a step's existingRecords (savings rules are only there)."),
   }),
   destructive: true,
   page: "netWorth",
