@@ -26,7 +26,7 @@ import { loadRecordBook } from "@/lib/fact-finder/records/book";
 import { resolveBaseCaseScenarioId } from "@/lib/fact-finder/records/load";
 import { reviewFactFinder } from "@/lib/fact-finder/review";
 import { saveChangeSet } from "@/lib/fact-finder/save/save";
-import { findSection, fixedLabelsOf } from "@/lib/fact-finder/schema";
+import { FACT_FINDER_SECTIONS, findSection, fixedLabelsOf, isListLike, type FFSection } from "@/lib/fact-finder/schema";
 import type { SourceStamp } from "@/lib/fact-finder/sources";
 import { fixedRowId, locateRow, readFactFinderState } from "@/lib/fact-finder/state";
 import type { FactFinderState, FFClosed } from "@/lib/fact-finder/types";
@@ -112,6 +112,14 @@ async function openStep(principal: McpPrincipal, clientId: string, importId: str
   return gate;
 }
 
+const quoted = (names: readonly string[]) => names.map((n) => `"${n}"`).join(", ");
+
+/** A section's fixed rows, for a refusal that names them. */
+function fixedRowsNote(section: FFSection): string {
+  const labels = fixedLabelsOf(section);
+  return labels.length > 0 ? `Its fixed rows: ${quoted(labels)}.` : "It has no fixed rows.";
+}
+
 /** The draft row a fill names: its rowId, its fixed row, or null for a new row. */
 function targetRowId(row: FillRow): string | null {
   if (row.rowId !== undefined && row.fixedRow !== undefined) {
@@ -120,7 +128,7 @@ function targetRowId(row: FillRow): string | null {
   if (row.fixedRow === undefined) return row.rowId ?? null;
   const section = findSection(row.sectionId);
   if (section && !fixedLabelsOf(section).includes(row.fixedRow)) {
-    throw new McpInputError(`Section ${row.sectionId} has no fixed row "${row.fixedRow}"; use one of its fixedRows.`);
+    throw new McpInputError(`Section ${row.sectionId} has no fixed row "${row.fixedRow}". ${fixedRowsNote(section)}`);
   }
   return fixedRowId(row.sectionId, row.fixedRow);
 }
@@ -549,6 +557,24 @@ const NOTHING_TO_CHANGE_MESSAGE = "Nothing to change — the plan already has th
 const MAX_EDIT_CELLS = 30;
 
 /**
+ * A single edit's section and columns, before any draft exists: an unknown one
+ * is refused with the ids it could be, so Claude learns them without opening a
+ * draft (R39). A fixed row's label is targetRowId's to check.
+ */
+function checkEdit(sectionId: string, fixedRow: string | undefined, cells: Record<string, unknown>): void {
+  const section = findSection(sectionId);
+  if (!section) {
+    throw new McpInputError(`There's no fact finder section "${sectionId}". Sections: ${FACT_FINDER_SECTIONS.map((s) => s.id).join(", ")}.`);
+  }
+  if (fixedRow === undefined && !isListLike(section)) throw new McpInputError(`Section ${sectionId} needs a fixedRow. ${fixedRowsNote(section)}`);
+  const columns = section.columns.map((c) => c.id);
+  const unknown = Object.keys(cells).filter((id) => !columns.includes(id));
+  if (unknown.length > 0) {
+    throw new McpInputError(`Section ${sectionId} has no column ${quoted(unknown)}. Its columns: ${columns.join(", ")}.`);
+  }
+}
+
+/**
  * The review's ticks, plus every field the edit's own cells set — a name or
  * owner on record included, which the review leaves out by default.
  */
@@ -582,11 +608,11 @@ const updatePlanDetail = defineWriteTool({
   title: "Update a plan detail",
   description:
     "Change one record of a household's plan, or add one, and save it to the base plan at once through the fact " +
-    "finder's review and save, all or nothing. sectionId and the cells' column ids are the fact finder's, as " +
-    "start_fact_finder_step lists them. recordId updates that record, fixedRow sets that fixed row, and neither " +
-    "adds a record. Nothing is saved, and no draft is left, when nothing changes, a line can't save or the record " +
-    "changed meanwhile. Returns the saved lines, each field from its value on record to the new one, and any line " +
-    "left out, with the reason.",
+    "finder's review and save, all or nothing. sectionId and the cells' keys are fact finder section and column " +
+    "ids; an unknown one is refused with the valid ids. recordId updates that record, fixedRow sets that fixed " +
+    "row, and neither adds a record. Nothing is saved, and no draft is left, when nothing changes, a line can't " +
+    "save or the record changed meanwhile. Returns the saved lines, each field from its value on record to the " +
+    "new one, and any line left out, with the reason.",
   inputSchema: z.object({
     clientId: clientIdArg,
     sectionId: z.string().describe("A fact finder section id, e.g. \"retirement\"."),
@@ -600,7 +626,8 @@ const updatePlanDetail = defineWriteTool({
   }),
   page: "netWorth",
   handler: async ({ clientId, sectionId, recordId, fixedRow, cells, sources }, { principal, firmId }) => {
-    // Built before anything is created: a fixed row the section doesn't have refuses with no draft behind it.
+    // Checked and built before anything is created: an unknown section, column or fixed row leaves no draft.
+    checkEdit(sectionId, fixedRow, cells);
     const link = recordId !== undefined ? { recordId } : fixedRow === undefined ? ("new" as const) : undefined;
     const { rowId, ops, stamps } = rowOps({ sectionId, fixedRow, cells, link, sources });
     const scenarioId = await draftBaseCase(principal, clientId);
@@ -638,6 +665,13 @@ const updatePlanDetail = defineWriteTool({
 
 const rate = z.number().optional();
 
+/**
+ * R38: rates the core bounds only to ±1000%, or not at all, so 3 sent for 3%
+ * would save as 300%. The tax rates keep the core's own 0..1 check.
+ */
+const isGrowthOrInflation = (key: string) =>
+  key === "inflationRate" || key === "taxInflationRate" || key === "ssWageGrowthRate" || key.startsWith("defaultGrowth");
+
 /** A stored value as the plan reads it: numeric columns come back as strings. */
 const asRead = (value: unknown) =>
   typeof value === "string" && value.trim() !== "" && !Number.isNaN(Number(value)) ? Number(value) : (value ?? null);
@@ -671,6 +705,11 @@ const updatePlanAssumptions = defineWriteTool({
   }),
   page: "assumptions",
   handler: async ({ clientId, changes }, { principal, firmId }) => {
+    for (const [key, value] of Object.entries(changes)) {
+      if (isGrowthOrInflation(key) && typeof value === "number" && Math.abs(value) > 1) {
+        throw new McpInputError(`${key} is out of range: rates are fractions, 0.03 = 3%.`);
+      }
+    }
     const body: Record<string, unknown> = { ...changes };
     if (changes.inflationRate !== undefined) body.inflationRateSource = "custom";
     for (const key of Object.keys(changes)) {

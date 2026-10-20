@@ -401,7 +401,7 @@ describe("fill_fact_finder_step", () => {
 
   it("refuses a row it can't place, a removal of a row the draft doesn't have, and a call that writes nothing", async () => {
     await expect(call({ rows: [{ sectionId: "people", fixedRow: "Partner", cells: { firstName: "x" } }] })).rejects.toThrow(
-      'Section people has no fixed row "Partner"; use one of its fixedRows.',
+      'Section people has no fixed row "Partner". Its fixed rows: "Client", "Co-client".',
     );
     await expect(
       call({ rows: [{ sectionId: "people", rowId: "people:Client", fixedRow: "Client", cells: { firstName: "x" } }] }),
@@ -1105,10 +1105,11 @@ describe("update_plan_detail", () => {
   });
 
   it("discards the import when the fact finder refuses a value", async () => {
-    h.editFactFinder.mockResolvedValue({ ok: false, status: 400, error: "Retirement Accounts has no column \"nope\"." });
-    const err = await call({ sectionId: "retirement", recordId: "acc-ira", cells: { nope: 1 } }).catch((e: unknown) => e);
+    const refused = '"lots" isn\'t a valid Current value (a dollar amount).';
+    h.editFactFinder.mockResolvedValue({ ok: false, status: 400, error: refused });
+    const err = await call({ sectionId: "retirement", recordId: "acc-ira", cells: { currentValue: "lots" } }).catch((e: unknown) => e);
 
-    expect(err).toEqual(new McpInputError("Retirement Accounts has no column \"nope\"."));
+    expect(err).toEqual(new McpInputError(refused));
     expect(h.reviewFactFinder).not.toHaveBeenCalled();
     expect(h.discardImport).toHaveBeenCalledWith(SCOPE, "u1");
   });
@@ -1123,10 +1124,40 @@ describe("update_plan_detail", () => {
     expect(h.discardImport).not.toHaveBeenCalled();
   });
 
-  it("refuses a fixed row the section doesn't have, and no cells or more than 30, before creating anything", async () => {
-    await expect(call({ sectionId: "people", fixedRow: "Partner", cells: { firstName: "x" } })).rejects.toThrow(
-      'Section people has no fixed row "Partner"; use one of its fixedRows.',
+  // R39: the refusals teach the ids, so Claude never opens a draft just to read them.
+  it("refuses an unknown section, listing the sections, before creating anything", async () => {
+    const err = await call({ sectionId: "retirment", cells: { currentValue: 1 } }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(McpInputError);
+    expect((err as Error).message).toMatch(/^There's no fact finder section "retirment"\. Sections: .*\bpeople\b.*\bretirement\b.*\.$/);
+    expect(h.createFactFinderImport).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unknown column, listing the section's columns, before creating anything", async () => {
+    const err = await call({ sectionId: "salary", fixedRow: "Client", cells: { amount: 1, annualRaise: 0.03 } }).catch((e: unknown) => e);
+    expect(err).toEqual(
+      new McpInputError('Section salary has no column "amount". Its columns: employer, annualSalary, annualRaise, startYear, endYear.'),
     );
+    expect(h.createFactFinderImport).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unknown fixed row, or a fixed-row section without one, listing its fixed rows, before creating anything", async () => {
+    await expect(call({ sectionId: "people", fixedRow: "Partner", cells: { firstName: "x" } })).rejects.toThrow(
+      new McpInputError('Section people has no fixed row "Partner". Its fixed rows: "Client", "Co-client".'),
+    );
+    await expect(call({ sectionId: "people", cells: { firstName: "x" } })).rejects.toThrow(
+      new McpInputError('Section people needs a fixedRow. Its fixed rows: "Client", "Co-client".'),
+    );
+    await expect(call({ sectionId: "retirement", fixedRow: "Client", cells: { currentValue: 1 } })).rejects.toThrow(
+      new McpInputError('Section retirement has no fixed row "Client". It has no fixed rows.'),
+    );
+    expect(h.createFactFinderImport).not.toHaveBeenCalled();
+  });
+
+  it("never sends Claude to open a draft just to learn the ids", () => {
+    expect(editTool.description).not.toMatch(/start_fact_finder_step/);
+  });
+
+  it("refuses no cells or more than 30 before creating anything", async () => {
     await expect(call({ sectionId: "retirement", recordId: "acc-ira", cells: {} })).rejects.toThrow();
     const tooMany = Object.fromEntries(Array.from({ length: 31 }, (_, i) => [`c${i}`, i]));
     await expect(call({ sectionId: "retirement", recordId: "acc-ira", cells: tooMany })).rejects.toThrow();
@@ -1187,6 +1218,25 @@ describe("update_plan_assumptions", () => {
   it("passes the core's refusal back in its own words", async () => {
     await expect(call({ flatFederalRate: 1.5 })).rejects.toThrow(new McpInputError("flatFederalRate must be between 0 and 1"));
     expect(h.recordAudit.mock.calls.some(([a]) => a.action === "mcp.tool_write")).toBe(false);
+  });
+
+  // R38: the core bounds these to ±1000% (or not at all), so 3 meant as 3% would save as 300%.
+  it("refuses a rate sent as a percent, naming it, before reading or writing anything", async () => {
+    await expect(call({ inflationRate: 1.5 })).rejects.toThrow(
+      new McpInputError("inflationRate is out of range: rates are fractions, 0.03 = 3%."),
+    );
+    await expect(call({ flatFederalRate: 0.22, defaultGrowthTaxable: 6 })).rejects.toThrow(
+      new McpInputError("defaultGrowthTaxable is out of range: rates are fractions, 0.03 = 3%."),
+    );
+    await expect(call({ ssWageGrowthRate: -2 })).rejects.toThrow(/^ssWageGrowthRate is out of range/);
+    await expect(call({ taxInflationRate: 3 })).rejects.toThrow(/^taxInflationRate is out of range/);
+    expect(h.loadEffectiveTree).not.toHaveBeenCalled();
+    expect(h.updatePlanSettingsForClient).not.toHaveBeenCalled();
+  });
+
+  it("takes a negative or whole-number fraction up to 1", async () => {
+    await call({ defaultGrowthCash: -0.01, inflationRate: 1 });
+    expect(h.updatePlanSettingsForClient).toHaveBeenCalledTimes(1);
   });
 
   it("audits the settings changed, never their values", async () => {
