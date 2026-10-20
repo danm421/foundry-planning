@@ -6,6 +6,7 @@ import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { fieldLabelClassName, inputClassName, selectClassName } from "./input-styles";
+import { BaseFactsNote } from "@/hooks/base-facts-edit";
 
 interface DeductionRow {
   id: string;
@@ -135,6 +136,8 @@ export function AddDeductionForm({
             ×
           </button>
         </div>
+
+        <BaseFactsNote />
 
         <div>
           <label className={fieldLabelClassName}>Type</label>

@@ -11,8 +11,9 @@
 // own editor in place, Delete asks first (SolverDeleteConfirm) and then opens
 // the same host, which runs the view's delete and reports back. Every write the
 // view makes is reported up through `onTargetsWritten` so the Solver can drop
-// the draft levers that write replaced. The base case gets the toolbar greyed
-// out and a way to create a scenario: nothing here ever writes the base plan.
+// the draft levers that write replaced. On the base case the same toolbar
+// writes the base facts, as the Details page does, under a line saying so and
+// a way to create a scenario instead.
 //
 // Clicking a change's title opens where it's edited (resolveChangeEditor):
 // a Solver tab (Stress, Retirement) switches the left pane; a Details page
@@ -107,45 +108,12 @@ export function SolverChangesTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot open on arrival
   }, [initialOpenChangeId]);
 
-  if (!panel) {
-    return (
-      <>
-        {scenarioPicker}
-        {canEdit && (
-          <div className="mb-3">
-            <SolverDetailActions
-              inventory={inventory}
-              disabled
-              willGrantors={willGrantors}
-              onAdd={() => {}}
-              onEdit={() => {}}
-              onDelete={() => {}}
-            />
-            <div className="flex items-center gap-3 text-[12px] text-ink-3">
-              <span>Add, edit and remove work inside a scenario.</span>
-              <button
-                type="button"
-                onClick={openCreate}
-                className="h-7 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[12px] text-ink-2 hover:border-hair focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-              >
-                Create scenario
-              </button>
-            </div>
-          </div>
-        )}
-        <div className="rounded-lg border border-hair bg-card p-6 text-center text-[12px] text-ink-3">
-          Pick a scenario to see its changes.
-        </div>
-      </>
-    );
-  }
-
   // Ruling F-C1: only a change the scenario currently applies can be opened.
   // The editors load the tree with every group at its saved on/off state, so a
   // change in a switched-off group (or one whose required parent group is off)
   // would open on base values — and saving would delete the change or pull it
   // out of its group. Same test the engine applies (`applyScenarioChanges`).
-  const groupOn = resolveEffectiveToggleState({}, panel.toggleGroups);
+  const groupOn = resolveEffectiveToggleState({}, panel?.toggleGroups ?? []);
   const isApplied = (change: ChangesPanelChange) =>
     change.toggleGroupId == null || groupOn[change.toggleGroupId] === true;
 
@@ -173,7 +141,6 @@ export function SolverChangesTab({
       {canEdit && (
         <SolverDetailActions
           inventory={inventory}
-          disabled={false}
           willGrantors={willGrantors}
           onAdd={(key: DetailTypeKey, variant?: CreateVariant) =>
             openEditor(detailEditorTarget(key, { intent: "create", variant }), detailType(key).label)
@@ -182,12 +149,25 @@ export function SolverChangesTab({
           onDelete={setConfirming}
         />
       )}
+      {canEdit && !panel && (
+        <div className="mb-3 flex items-center gap-3 text-[12px] text-ink-3">
+          <span>No scenario selected. Add, Edit and Remove change the client&apos;s base facts.</span>
+          <button
+            type="button"
+            onClick={openCreate}
+            className="h-7 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[12px] text-ink-2 hover:border-hair focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          >
+            Create scenario
+          </button>
+        </div>
+      )}
       {confirming && (
         <SolverDeleteConfirm
+          clientId={clientId}
           tree={planTree}
           inventory={inventory}
           item={confirming}
-          scenarioName={panel.scenarioName}
+          scenarioName={panel?.scenarioName ?? null}
           onCancel={() => setConfirming(null)}
           onConfirm={() => {
             openEditor(detailEditorTarget(confirming.typeKey, { intent: "delete", id: confirming.id }), confirming.label);
@@ -195,7 +175,7 @@ export function SolverChangesTab({
           }}
         />
       )}
-      {ltcEditing && (
+      {ltcEditing && panel && (
         <LtcEventDialog
           key={ltcEditing.seq}
           clientId={clientId}
@@ -210,27 +190,33 @@ export function SolverChangesTab({
         <SolverChangeEditor
           key={editing.seq}
           clientId={clientId}
-          scenarioId={panel.scenarioId}
+          scenarioId={panel?.scenarioId ?? null}
           target={editing.target}
           label={editing.label}
           onDone={() => setEditing(null)}
           onWrite={(event) => onTargetsWritten([hostEvent(event, editing.target)], editing.label)}
         />
       )}
-      <ChangesPanel
-        variant="embedded"
-        clientId={clientId}
-        scenarioId={panel.scenarioId}
-        scenarioName={panel.scenarioName}
-        changes={panel.changes}
-        toggleGroups={panel.toggleGroups}
-        cascadeWarnings={panel.cascadeWarnings}
-        targetNames={panel.targetNames}
-        onOpenChange={openChange}
-        canOpenChange={(c) => canEdit && isApplied(c) && resolveChangeEditor(c) !== null}
-        // Ruling F-M4: a jump to a Solver tab opens a tab, not an editor.
-        openVerbFor={(c) => (resolveChangeEditor(c)?.surface === "solver-tab" ? "Open" : "Edit")}
-      />
+      {panel ? (
+        <ChangesPanel
+          variant="embedded"
+          clientId={clientId}
+          scenarioId={panel.scenarioId}
+          scenarioName={panel.scenarioName}
+          changes={panel.changes}
+          toggleGroups={panel.toggleGroups}
+          cascadeWarnings={panel.cascadeWarnings}
+          targetNames={panel.targetNames}
+          onOpenChange={openChange}
+          canOpenChange={(c) => canEdit && isApplied(c) && resolveChangeEditor(c) !== null}
+          // Ruling F-M4: a jump to a Solver tab opens a tab, not an editor.
+          openVerbFor={(c) => (resolveChangeEditor(c)?.surface === "solver-tab" ? "Open" : "Edit")}
+        />
+      ) : (
+        <div className="rounded-lg border border-hair bg-card p-6 text-center text-[12px] text-ink-3">
+          Pick a scenario to see its changes.
+        </div>
+      )}
     </>
   );
 }

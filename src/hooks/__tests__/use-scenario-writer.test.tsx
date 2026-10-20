@@ -12,6 +12,7 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useScenarioWriter } from "../use-scenario-writer";
 import { ScenarioWriteListener, type ScenarioWriteEvent } from "../scenario-write-listener";
+import { BaseFactsEditProvider, BASE_FACTS_SAVE_DECLINED } from "../base-facts-edit";
 
 const CLIENT_ID = "client-123";
 const SCENARIO_ID = "scen-456";
@@ -473,6 +474,34 @@ describe("useScenarioWriter — write listener", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
+  // The Solver's editor host opens these editors on the base case too; a base
+  // write replaces the same unsaved levers a scenario write does.
+  it("notifies after a successful base write — every edit the one fallback stood for", async () => {
+    setUrl("");
+    const listener = vi.fn();
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID), {
+      wrapper: wrapperFor(listener),
+    });
+    const second = { ...edit, targetKind: "plan_settings" as const, targetId: "ps1" };
+    await result.current.submit([edit, second], fallback);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(listener.mock.calls).toEqual([
+      [{ targetKind: "income", targetId: "i1", op: "edit" }],
+      [{ targetKind: "plan_settings", targetId: "ps1", op: "edit" }],
+    ]);
+  });
+
+  it("does not notify when the base write fails", async () => {
+    setUrl("");
+    fetchSpy.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+    const listener = vi.fn();
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID), {
+      wrapper: wrapperFor(listener),
+    });
+    await result.current.submit(edit, fallback);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it("notifies for submitDirect only when given a target", async () => {
     setUrl(`scenario=${SCENARIO_ID}`);
     const listener = vi.fn();
@@ -486,5 +515,45 @@ describe("useScenarioWriter — write listener", () => {
       { targetKind: "gift", targetId: "g1", op: "remove" },
     );
     expect(listener).toHaveBeenCalledWith({ targetKind: "gift", targetId: "g1", op: "remove" });
+  });
+});
+
+describe("useScenarioWriter — editing the base facts from the Solver", () => {
+  const edit = { op: "edit" as const, targetKind: "expense" as const, targetId: "e1", desiredFields: {} };
+  const fallback = { url: "/api/clients/client-123/expenses/e1", method: "PUT" as const, body: { amount: 1 } };
+
+  function writerWith(confirmSave: () => boolean) {
+    return renderHook(() => useScenarioWriter(CLIENT_ID), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <BaseFactsEditProvider value={{ confirmSave }}>{children}</BaseFactsEditProvider>
+      ),
+    });
+  }
+
+  it("asks before a base write, and writes once the advisor says yes", async () => {
+    const confirmSave = vi.fn(() => true);
+    const { result } = writerWith(confirmSave);
+    const res = await result.current.submit(edit, fallback);
+    expect(confirmSave).toHaveBeenCalledTimes(1);
+    expect(res.ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("a declined base write sends nothing and answers not-ok, so the editor stays open", async () => {
+    const { result } = writerWith(() => false);
+    const res = await result.current.submit(edit, fallback);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(refreshSpy).not.toHaveBeenCalled();
+    expect(res.ok).toBe(false);
+    expect(await res.json()).toEqual({ error: BASE_FACTS_SAVE_DECLINED });
+  });
+
+  it("submitDirect asks too", async () => {
+    const confirmSave = vi.fn(() => false);
+    const { result } = writerWith(confirmSave);
+    const res = await result.current.submitDirect({ url: "/api/clients/client-123/gifts/series/g1", method: "DELETE" });
+    expect(confirmSave).toHaveBeenCalledTimes(1);
+    expect(res.ok).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

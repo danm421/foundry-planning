@@ -33,7 +33,7 @@ export function usePlanSettingsAutosave(
 ) {
   const router = useRouter();
   const { scenarioId } = useScenarioState(clientId);
-  const { submit } = useScenarioWriter(clientId);
+  const { submit, submitDirect } = useScenarioWriter(clientId);
   const giftsClient = opts?.current?.priorTaxableGifts.client ?? 0;
   const giftsSpouse = opts?.current?.priorTaxableGifts.spouse ?? 0;
   const [state, setState] = useState<AutosaveState>("idle");
@@ -72,11 +72,12 @@ export function usePlanSettingsAutosave(
           return;
         }
       } else {
-        res = await fetch(`/api/clients/${clientId}/plan-settings`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
+        // Through the writer so the Solver's editor host hears it (and confirms
+        // a base write); refreshed below, once the save is known to have landed.
+        res = await submitDirect(
+          { url: `/api/clients/${clientId}/plan-settings`, method: "PUT", body, skipRefresh: true },
+          { targetKind: "plan_settings", targetId: clientId, op: "edit" },
+        );
       }
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
@@ -95,7 +96,7 @@ export function usePlanSettingsAutosave(
       setError(err instanceof Error ? err.message : "Unknown error");
       setState("error");
     }
-  }, [clientId, router, scenarioId, submit, giftsClient, giftsSpouse]);
+  }, [clientId, router, scenarioId, submit, submitDirect, giftsClient, giftsSpouse]);
 
   // Held in a ref so `save` and the unmount flush stay stable — a changing
   // `flush` identity in a dep array would fire the cleanup mid-edit.

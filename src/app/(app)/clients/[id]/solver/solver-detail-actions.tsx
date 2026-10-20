@@ -22,7 +22,6 @@ import { MENU_ROW_CLASS, MenuGroup, MenuHeader, SolverDetailPicker } from "./sol
 
 export interface SolverDetailActionsProps {
   inventory: InventoryItem[];
-  disabled: boolean;
   /** Grantors with no will in the scenario: the only ones "Will" can be added for. */
   willGrantors: readonly WillGrantor[];
   onAdd: (key: DetailTypeKey, variant?: CreateVariant) => void;
@@ -39,8 +38,7 @@ type Open = { menu: Verb; anchor: HTMLElement } | null;
 // Hover and open both settle on the deeper `-ink` fill, which still holds AA.
 const BUTTON_CLASS =
   "inline-flex h-7 items-center rounded-md px-3 text-[13px] font-semibold text-action-on transition-colors " +
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent " +
-  "disabled:cursor-not-allowed disabled:opacity-50 disabled:saturate-0";
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 const VERBS: Record<Verb, { label: string; title: string; tone: string; fill: string }> = {
   add: {
@@ -63,7 +61,7 @@ const VERBS: Record<Verb, { label: string; title: string; tone: string; fill: st
   },
 };
 
-export function SolverDetailActions({ inventory, disabled, willGrantors, onAdd, onEdit, onDelete }: SolverDetailActionsProps) {
+export function SolverDetailActions({ inventory, willGrantors, onAdd, onEdit, onDelete }: SolverDetailActionsProps) {
   const [open, setOpen] = useState<Open>(null);
   const close = () => setOpen(null);
 
@@ -77,7 +75,6 @@ export function SolverDetailActions({ inventory, disabled, willGrantors, onAdd, 
         <button
           key={verb}
           type="button"
-          disabled={disabled}
           aria-haspopup="dialog"
           aria-expanded={open?.menu === verb}
           onClick={(e) => toggle(verb, e.currentTarget)}

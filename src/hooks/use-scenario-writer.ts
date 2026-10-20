@@ -33,6 +33,7 @@ import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioState } from "@/hooks/use-scenario-state";
 import { useScenarioWriteListener, type ScenarioWriteEvent } from "@/hooks/scenario-write-listener";
+import { BASE_FACTS_SAVE_DECLINED, useBaseFactsEdit } from "@/hooks/base-facts-edit";
 import type { TargetKind } from "@/engine/scenario/types";
 
 export interface ScenarioEdit {
@@ -104,9 +105,16 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
   const { scenarioId } = useScenarioState(clientId);
   const router = useRouter();
   const onWrite = useScenarioWriteListener();
+  const baseFacts = useBaseFactsEdit();
 
   const submitDirect = useCallback(
     async (request: BaseFallback, target?: ScenarioWriteEvent): Promise<Response> => {
+      // Opened from the Solver on the base case: this write changes the base
+      // facts, so the advisor confirms first. A "no" answers like a refused
+      // write, which keeps the editor open with its edits.
+      if (baseFacts && !baseFacts.confirmSave()) {
+        return Response.json({ error: BASE_FACTS_SAVE_DECLINED }, { status: 409 });
+      }
       const init: RequestInit = { method: request.method };
       if (request.body !== undefined) {
         init.headers = { "Content-Type": "application/json" };
@@ -117,7 +125,7 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
       if (res.ok && target) onWrite?.(target);
       return res;
     },
-    [router, onWrite],
+    [router, onWrite, baseFacts],
   );
 
   const submit = useCallback(
@@ -125,16 +133,23 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
       edit: ScenarioEdit | ScenarioEdit[],
       baseFallback: BaseFallback,
     ): Promise<Response> => {
+      const edits = Array.isArray(edit) ? edit : [edit];
+
       // Base mode: pass through to the per-entity legacy route. ONE call even
-      // for a batch — see the header note on `baseFallback`.
-      if (!scenarioId) return submitDirect(baseFallback);
+      // for a batch — see the header note on `baseFallback`. Once it lands,
+      // every edit it stood for is announced, as in scenario mode: the Solver
+      // opens these editors on the base case too.
+      if (!scenarioId) {
+        const res = await submitDirect(baseFallback);
+        if (res.ok) for (const e of edits) onWrite?.(writeEventOf(e));
+        return res;
+      }
 
       // Scenario mode: one POST per edit, in order, stopping at the first
       // failure. Refreshing per-edit instead would re-render the page against a
       // HALF-written batch — for life expectancy that is the new age beside the
       // old horizon, the exact disagreement the batch exists to avoid — so the
       // refresh waits until every edit has landed.
-      const edits = Array.isArray(edit) ? edit : [edit];
       let last: Response | null = null;
       for (const e of edits) {
         const body: Record<string, unknown> = { op: e.op, targetKind: e.targetKind };
@@ -158,11 +173,7 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
         last = res;
         // Announced per edit, as it lands: a batch that stops partway still
         // reconciles the edits that did.
-        onWrite?.({
-          targetKind: e.targetKind,
-          targetId: e.targetId ?? (typeof e.entity?.id === "string" ? e.entity.id : null),
-          op: e.op,
-        });
+        onWrite?.(writeEventOf(e));
       }
       if (last && !baseFallback.skipRefresh) router.refresh();
       // Only reachable for an empty batch, which no caller passes. "Nothing to
@@ -174,4 +185,13 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
   );
 
   return { submit, submitDirect, scenarioActive: scenarioId != null };
+}
+
+/** What a landed edit tells the write listener. */
+function writeEventOf(e: ScenarioEdit): ScenarioWriteEvent {
+  return {
+    targetKind: e.targetKind,
+    targetId: e.targetId ?? (typeof e.entity?.id === "string" ? e.entity.id : null),
+    op: e.op,
+  };
 }

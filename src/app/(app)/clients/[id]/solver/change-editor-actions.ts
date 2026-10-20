@@ -8,8 +8,11 @@
 // Read-only. Auth follows the scenario routes (the promote route:
 // `requireClientEditAccess` for the owning firm + edit permission, then
 // `assertScenarioRouteScope` for "this scenario is this client's", then a
-// base-case refusal). The editors it opens write through the scenario writer,
-// so a caller who can't write, or a base "scenario", gets nothing.
+// refusal of the base case's own scenario row). The editors it opens write
+// through the scenario writer, so a caller who can't write gets nothing. A null
+// scenario id opens the base plan — with no `?scenario=` in the URL those same
+// editors write the base facts, as they do on the Details page — so it needs
+// edit access alone.
 
 import { z } from "zod";
 import { requireClientEditAccess } from "@/lib/clients/authz";
@@ -46,42 +49,47 @@ export type ChangeEditorViewProps =
 // non-uuid id would otherwise reach Postgres as a 22P02).
 const INPUT = z.object({
   clientId: z.string().uuid(),
-  scenarioId: z.string().uuid(),
+  scenarioId: z.string().uuid().nullable(),
   page: z.enum(["income-expenses", "net-worth", "techniques", "family", "wills", "insurance", "assumptions"]),
 });
 
 /**
- * Load one Details view's props for `clientId` inside scenario `scenarioId`.
- * Throws on bad input, no edit access, a scenario that isn't this client's, the
- * base case, or a plan with no base case; the host shows any failure inline.
+ * Load one Details view's props for `clientId` inside scenario `scenarioId`, or
+ * from the base plan when it is null. Throws on bad input, no edit access, a
+ * scenario that isn't this client's, the base case's own scenario row, or a
+ * plan with no base case; the host shows any failure inline.
  */
 export async function loadChangeEditorProps(
   clientId: string,
-  scenarioId: string,
+  scenarioId: string | null,
   page: DetailsEditorPage,
 ): Promise<ChangeEditorViewProps> {
   const input = INPUT.parse({ clientId, scenarioId, page });
 
   const { firmId } = await requireClientEditAccess(input.clientId);
-  const scope = await assertScenarioRouteScope(input.clientId, input.scenarioId, firmId);
-  if (scope.kind === "miss") throw new Error("Scenario not found");
-  if (scope.scenario.isBaseCase) throw new Error("The base case has no changes to edit");
+  if (input.scenarioId) {
+    const scope = await assertScenarioRouteScope(input.clientId, input.scenarioId, firmId);
+    if (scope.kind === "miss") throw new Error("Scenario not found");
+    if (scope.scenario.isBaseCase) throw new Error("The base case has no changes to edit");
+  }
+  // The loaders read "no scenario" as the base plan.
+  const scenario = input.scenarioId ?? undefined;
 
   switch (input.page) {
     case "income-expenses":
-      return { page: input.page, props: okProps(await loadIncomeExpensesViewProps(input.clientId, input.scenarioId)) };
+      return { page: input.page, props: okProps(await loadIncomeExpensesViewProps(input.clientId, scenario)) };
     case "net-worth":
-      return { page: input.page, props: okProps(await loadNetWorthViewProps(input.clientId, input.scenarioId)) };
+      return { page: input.page, props: okProps(await loadNetWorthViewProps(input.clientId, scenario)) };
     case "techniques":
-      return { page: input.page, props: okProps(await loadTechniquesViewProps(input.clientId, input.scenarioId)) };
+      return { page: input.page, props: okProps(await loadTechniquesViewProps(input.clientId, scenario)) };
     case "family":
-      return { page: input.page, props: (await loadFamilyViewProps(input.clientId, input.scenarioId)).props };
+      return { page: input.page, props: (await loadFamilyViewProps(input.clientId, scenario)).props };
     case "wills":
-      return { page: input.page, props: okProps(await loadWillsViewProps(input.clientId, input.scenarioId)) };
+      return { page: input.page, props: okProps(await loadWillsViewProps(input.clientId, scenario)) };
     case "assumptions":
-      return { page: input.page, props: okProps(await loadAssumptionsViewProps(input.clientId, input.scenarioId)) };
+      return { page: input.page, props: okProps(await loadAssumptionsViewProps(input.clientId, scenario)) };
     case "insurance":
-      return insuranceProps(await loadInsuranceViewProps(input.clientId, input.scenarioId));
+      return insuranceProps(await loadInsuranceViewProps(input.clientId, scenario));
   }
 }
 

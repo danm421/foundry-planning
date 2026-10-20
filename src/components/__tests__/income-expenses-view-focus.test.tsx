@@ -27,6 +27,7 @@ vi.mock("next/navigation", () => ({
 import IncomeExpensesView from "@/components/income-expenses-view";
 import { ClientAccessProvider } from "@/components/client-access-provider";
 import { PAGE_FOCUS_KINDS, type EditorFocus } from "@/lib/scenario/change-editor-target";
+import { BaseFactsEditProvider } from "@/hooks/base-facts-edit";
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -451,5 +452,29 @@ describe("IncomeExpensesView focus mode", () => {
 
   it("PAGE_FOCUS_KINDS lists exactly the kinds this view handles", () => {
     expect(PAGE_FOCUS_KINDS["income-expenses"]).toEqual(["income", "expense", "savings_rule"]);
+  });
+});
+
+describe("IncomeExpensesView focus mode — opened by the Solver on the base case", () => {
+  const NOTE = "No scenario selected. Saving changes the client's base facts.";
+
+  it.each([
+    ["income", "inc-1", "Edit Income"],
+    ["expense", "exp-1", "Edit Expense"],
+  ] as const)("the %s dialog says it edits the base facts", (kind, id, heading) => {
+    render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <BaseFactsEditProvider value={{ confirmSave: () => true }}>
+          <IncomeExpensesView {...BASE_PROPS} focus={{ intent: "edit", kind, id }} onFocusClose={vi.fn()} />
+        </BaseFactsEditProvider>
+      </ClientAccessProvider>,
+    );
+    expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
+    expect(screen.getByRole("note")).toHaveTextContent(NOTE);
+  });
+
+  it("says nothing on the Details page", () => {
+    renderFocused({ intent: "edit", kind: "expense", id: "exp-1" });
+    expect(screen.queryByText(NOTE)).toBeNull();
   });
 });

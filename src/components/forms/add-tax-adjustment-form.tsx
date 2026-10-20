@@ -13,6 +13,7 @@ import {
 } from "./input-styles";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import type { IncomeTaxType } from "@/engine/tax-adjustments";
+import { BaseFactsNote } from "@/hooks/base-facts-edit";
 
 /** The tax-adjustment row as the UI sees it: DB-shaped (owner, year refs) rather
  *  than engine-shaped. Declared here, the deepest node in the
@@ -194,6 +195,8 @@ export function AddTaxAdjustmentForm({
             ×
           </button>
         </div>
+
+        <BaseFactsNote />
 
         <div>
           <label className={fieldLabelClassName}>Tax treatment</label>

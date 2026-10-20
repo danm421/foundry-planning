@@ -19,12 +19,22 @@
 //   partition) → unmount the view, explain, and link nowhere: the Details page
 //   has the same bug.
 //
+// With no scenario selected the view writes the base facts, as on the Details
+// page. The host then says so (`BaseFactsEditProvider`: a line atop the dialog,
+// and a confirm before the first save), except for a delete the Changes tab
+// has already confirmed. A few base-only sub-tabs (a Schedule override, the
+// Medicare tab, a debt's extra payments) save on their own, past the writer —
+// unconfirmed, and without refreshing the route — and a trust's beneficiaries
+// land after its own refresh, so the host re-reads the plan whenever a base
+// editor closes, even when a save just did.
+//
 // The views are loaded with next/dynamic so five large Details views stay out
 // of the Solver's initial bundle.
 
 import { createContext, startTransition, useContext, useEffect, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   focusRowId,
   type ChangeEditorTarget,
@@ -33,6 +43,8 @@ import {
 } from "@/lib/scenario/change-editor-target";
 import type { FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 import { ScenarioWriteListener, type ScenarioWriteEvent } from "@/hooks/scenario-write-listener";
+import { useScenarioState } from "@/hooks/use-scenario-state";
+import { BASE_FACTS_SAVE_CONFIRM, BaseFactsEditProvider, type BaseFactsEdit } from "@/hooks/base-facts-edit";
 import { loadChangeEditorProps, type ChangeEditorViewProps } from "./change-editor-actions";
 
 // While a delete runs the host shows its own "Removing {label}…" strip, in every
@@ -76,7 +88,9 @@ export type EditorHostTarget = DetailsEditorTarget;
 
 interface Props {
   clientId: string;
-  scenarioId: string;
+  /** The scenario a save writes into, or null for the base case: the view then
+   *  writes the base facts, as it does on the Details page. */
+  scenarioId: string | null;
   target: EditorHostTarget;
   /** What the editor is about, in the advisor's words: "Removing {label}…". */
   label: string;
@@ -104,11 +118,24 @@ export function SolverChangeEditor({
 }: Props) {
   const { page, focus } = target;
   const focusId = focusRowId(focus);
+  const router = useRouter();
+  // The views write wherever the URL's `?scenario=` points. Told "base case"
+  // while the URL names a scenario (the base case's own id, typed by hand), the
+  // editor would say "base facts" and write a scenario change: open nothing.
+  // (Two sources of truth; the deeper fix is one the writer and host share.)
+  const urlScenarioId = useScenarioState(clientId).scenarioId;
+  const writesElsewhere = scenarioId === null && urlScenarioId !== null;
   const [state, setState] = useState<HostState>({ status: "loading" });
+  const deleting = focus.intent === "delete";
+  // One per mount: the host is mounted fresh for every click.
+  const [baseFacts] = useState<BaseFactsEdit | null>(() =>
+    scenarioId === null ? askOnce(deleting) : null,
+  );
   // Bumped by "Try again" to re-run the load.
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    if (writesElsewhere) return;
     let cancelled = false;
     startTransition(async () => {
       try {
@@ -127,9 +154,10 @@ export function SolverChangeEditor({
     return () => {
       cancelled = true;
     };
-  }, [clientId, scenarioId, page, focusId, attempt]);
+  }, [clientId, scenarioId, page, focusId, attempt, writesElsewhere]);
 
   function onFocusClose(outcome?: FocusCloseOutcome) {
+    if (baseFacts && (outcome === undefined || outcome === "failed")) router.refresh();
     if (outcome === undefined) {
       onDone();
       return;
@@ -145,9 +173,14 @@ export function SolverChangeEditor({
     setState({ status: "unavailable", href: detailsHref(clientId, scenarioId, state.status === "open" ? state.loaded.page : page) });
   }
 
-  const deleting = focus.intent === "delete";
-
   function stateView(): ReactNode {
+    if (writesElsewhere) {
+      return (
+        <HostStrip role="alert" onDismiss={onDone}>
+          <span className="text-crit">Couldn&apos;t open this editor.</span>
+        </HostStrip>
+      );
+    }
     switch (state.status) {
       case "loading":
         return deleting ? <HostStrip role="status">Removing {label}…</HostStrip> : <LoadingLine />;
@@ -200,15 +233,22 @@ export function SolverChangeEditor({
         return (
           <>
             {deleting && <HostStrip role="status">Removing {label}…</HostStrip>}
-            <ScenarioWriteListener value={onWrite ?? null}>
-              {renderView(state.loaded, focus, onFocusClose)}
-            </ScenarioWriteListener>
+            <BaseFactsEditProvider value={baseFacts}>
+              <ScenarioWriteListener value={onWrite ?? null}>
+                {renderView(state.loaded, focus, onFocusClose)}
+              </ScenarioWriteListener>
+            </BaseFactsEditProvider>
           </>
         );
     }
   }
 
   return <RemovingCtx.Provider value={deleting}>{stateView()}</RemovingCtx.Provider>;
+}
+
+/** Asks before the editor's first base write and remembers a yes; `confirmed` skips the question. */
+function askOnce(confirmed: boolean): BaseFactsEdit {
+  return { confirmSave: () => (confirmed ||= window.confirm(BASE_FACTS_SAVE_CONFIRM)) };
 }
 
 /** Ruling F-I2: no link — the Details page's editor has the same bug. */
@@ -264,10 +304,10 @@ function isLifePolicyOnNetWorth(loaded: ChangeEditorViewProps, focusId: string |
   );
 }
 
-/** Where the Details page edits this change, inside the same scenario. */
-function detailsHref(clientId: string, scenarioId: string, page: DetailsEditorPage): string {
-  const query = new URLSearchParams({ scenario: scenarioId });
-  return `/clients/${clientId}/details/${page}?${query.toString()}`;
+/** Where the Details page edits this change, inside the same scenario (or the base case). */
+function detailsHref(clientId: string, scenarioId: string | null, page: DetailsEditorPage): string {
+  const path = `/clients/${clientId}/details/${page}`;
+  return scenarioId ? `${path}?${new URLSearchParams({ scenario: scenarioId }).toString()}` : path;
 }
 
 /** The small, quiet line the host's own states render in, above the list. */

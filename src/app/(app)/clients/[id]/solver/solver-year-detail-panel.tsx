@@ -4,7 +4,6 @@ import { useMemo, useState, type ReactNode } from "react";
 import type { ClientData, ProjectionYear } from "@/engine";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { ChevronDownIcon } from "@/components/icons";
-import { useScenarioModeUI } from "@/components/scenario/scenario-mode-wrapper";
 import {
   buildCashFlowYearDetail,
   CASH_FLOW_INFLOW_COLORS,
@@ -38,7 +37,7 @@ const EDIT_NAME =
 /** What clicking a name needs to open the Changes tab's editor for it. */
 export interface YearDetailEditing {
   clientId: string;
-  /** The scenario a save writes into; null on the base case, which never writes. */
+  /** The scenario a save writes into; null on the base case, where it writes the base facts. */
   scenarioId: string | null;
   /** The persisted plan's items, as the Changes tab lists them. */
   inventory: InventoryItem[];
@@ -87,19 +86,15 @@ export function SolverYearDetailPanel({ year, years, clientData, editing }: Prop
       </div>
 
       {open && editing ? (
-        editing.scenarioId ? (
-          <SolverChangeEditor
-            key={open.seq}
-            clientId={editing.clientId}
-            scenarioId={editing.scenarioId}
-            target={detailEditorTarget(open.item.typeKey, { intent: "edit", id: open.item.id })}
-            label={open.item.label}
-            onDone={() => setOpen(null)}
-            onWrite={(event) => editing.onTargetsWritten([event], open.item.label)}
-          />
-        ) : (
-          <BaseCaseNotice label={open.item.label} onDismiss={() => setOpen(null)} />
-        )
+        <SolverChangeEditor
+          key={open.seq}
+          clientId={editing.clientId}
+          scenarioId={editing.scenarioId}
+          target={detailEditorTarget(open.item.typeKey, { intent: "edit", id: open.item.id })}
+          label={open.item.label}
+          onDone={() => setOpen(null)}
+          onWrite={(event) => editing.onTargetsWritten([event], open.item.label)}
+        />
       ) : null}
 
       {/* items-start: a table stretched to its taller neighbor spreads the
@@ -296,33 +291,5 @@ function CategoryRows({
           })
         : null}
     </tbody>
-  );
-}
-
-/** The base case never writes, so a click points the advisor at a scenario. */
-function BaseCaseNotice({ label, onDismiss }: { label: string; onDismiss: () => void }) {
-  const { openCreate } = useScenarioModeUI();
-  return (
-    <div
-      role="status"
-      className="mb-4 flex items-center gap-3 rounded-lg border border-hair bg-card-2 px-3 py-2 text-[13px] text-ink-2"
-    >
-      <span className="min-w-0 flex-1">To edit {label}, switch to a scenario or create one.</span>
-      <button
-        type="button"
-        onClick={openCreate}
-        className="h-7 shrink-0 rounded-md border border-hair-2 bg-card px-2.5 text-[12px] text-ink-2 hover:border-hair focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-      >
-        Create scenario
-      </button>
-      <button
-        type="button"
-        onClick={onDismiss}
-        aria-label="Dismiss"
-        className="shrink-0 rounded px-1 text-ink-3 hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-      >
-        ×
-      </button>
-    </div>
   );
 }

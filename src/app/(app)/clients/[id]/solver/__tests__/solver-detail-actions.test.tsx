@@ -28,7 +28,6 @@ function setup(props: Partial<React.ComponentProps<typeof SolverDetailActions>> 
   render(
     <SolverDetailActions
       inventory={INVENTORY}
-      disabled={false}
       willGrantors={["client", "spouse"]}
       {...handlers}
       {...props}
@@ -225,15 +224,6 @@ describe("SolverDetailActions — Edit and Remove pickers", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
-  });
-});
-
-describe("SolverDetailActions — disabled", () => {
-  it("disables all three buttons", () => {
-    setup({ disabled: true });
-    for (const name of ["+ Add", "Edit", "Remove"]) {
-      expect(screen.getByRole("button", { name })).toBeDisabled();
-    }
   });
 });
 

@@ -8,11 +8,6 @@ import type { DetailTypeKey } from "@/lib/scenario/plan-detail-catalog";
 // Reuse the same minimal factories as the helper test.
 import type { ClientData, ProjectionYear } from "@/engine";
 
-const { openCreateMock } = vi.hoisted(() => ({ openCreateMock: vi.fn() }));
-vi.mock("@/components/scenario/scenario-mode-wrapper", () => ({
-  useScenarioModeUI: () => ({ openCreate: openCreateMock }),
-}));
-
 // Stand-in for the Changes tab's editor host: shows what it was asked to open
 // and exposes its two callbacks. The host itself is covered by the Changes tab tests.
 vi.mock("../solver-change-editor", () => ({
@@ -23,13 +18,13 @@ vi.mock("../solver-change-editor", () => ({
     onDone,
     onWrite,
   }: {
-    scenarioId: string;
+    scenarioId: string | null;
     target: { page: string; focus: unknown };
     label: string;
     onDone: () => void;
     onWrite?: (e: { targetKind: string; targetId: string; op: string }) => void;
   }) => (
-    <div data-testid="editor" data-scenario={scenarioId} data-page={target.page} data-focus={JSON.stringify(target.focus)}>
+    <div data-testid="editor" data-scenario={scenarioId ?? "base"} data-page={target.page} data-focus={JSON.stringify(target.focus)}>
       {label}
       <button type="button" onClick={() => onWrite?.({ targetKind: "income", targetId: "inc-pen", op: "edit" })}>
         stub write
@@ -157,7 +152,6 @@ describe("SolverYearDetailPanel", () => {
 
     beforeEach(() => {
       onTargetsWritten.mockReset();
-      openCreateMock.mockReset();
     });
 
     it("opens a clicked item's editor in the scenario and closes it when done", () => {
@@ -199,13 +193,18 @@ describe("SolverYearDetailPanel", () => {
       expect(screen.getByText("401(k)").closest("button")).toBeNull();
     });
 
-    it("on the base case, points to a scenario instead of opening an editor", () => {
+    it("on the base case, opens the same editor with no scenario, and reports its writes", () => {
       render(<SolverYearDetailPanel year={makeYear()} years={[]} clientData={makeClientData()} editing={editing(null)} />);
       fireEvent.click(screen.getByRole("button", { name: "Edit Pension" }));
-      expect(screen.queryByTestId("editor")).not.toBeInTheDocument();
-      expect(screen.getByRole("status")).toHaveTextContent("To edit Pension, switch to a scenario or create one.");
-      fireEvent.click(screen.getByRole("button", { name: "Create scenario" }));
-      expect(openCreateMock).toHaveBeenCalled();
+      const editor = screen.getByTestId("editor");
+      expect(editor.dataset.scenario).toBe("base");
+      expect(JSON.parse(editor.dataset.focus!)).toEqual({ intent: "edit", kind: "income", id: "inc-pen" });
+
+      fireEvent.click(screen.getByRole("button", { name: "stub write" }));
+      expect(onTargetsWritten).toHaveBeenCalledWith(
+        [{ targetKind: "income", targetId: "inc-pen", op: "edit" }],
+        "Pension",
+      );
     });
 
     it("leaves every name plain for an advisor who can't edit", () => {

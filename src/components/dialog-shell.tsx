@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import DialogTabs, { type DialogTab } from "./dialog-tabs";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
+import { BaseFactsNote } from "@/hooks/base-facts-edit";
 
 type Size = "sm" | "md" | "lg" | "wide" | "xl";
 
@@ -69,6 +70,9 @@ interface DialogShellProps {
   children: ReactNode;
 }
 
+// True inside a dialog's body, so a dialog opened from inside another knows it.
+const NestedDialog = createContext(false);
+
 const sizeClass: Record<Size, string> = {
   sm: "max-w-[480px]",
   md: "max-w-[640px]",
@@ -98,6 +102,7 @@ export default function DialogShell({
   children,
 }: DialogShellProps) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const nested = useContext(NestedDialog);
 
   // Esc-to-close. A dialog opened from *inside* another (the holdings row's
   // asset-class editor lives in the account form) puts a second listener on
@@ -229,7 +234,10 @@ export default function DialogShell({
             bodyTopFlush ? "pt-0" : "pt-6"
           } ${contentFill ? "flex flex-col" : ""}`}
         >
-          {children}
+          {/* Opened from the Solver with no scenario selected. Said once, by the
+              outermost dialog: one opened inside it is part of the same edit. */}
+          {!nested && <BaseFactsNote className="mb-4" />}
+          <NestedDialog.Provider value>{children}</NestedDialog.Provider>
         </div>
 
         {/* Footer */}

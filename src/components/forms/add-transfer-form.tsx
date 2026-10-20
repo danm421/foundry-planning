@@ -7,6 +7,7 @@ import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { fieldLabelClassName, inputClassName, selectClassName } from "./input-styles";
+import { BaseFactsNote } from "@/hooks/base-facts-edit";
 
 interface ScheduleRow {
   id: string;
@@ -245,6 +246,8 @@ export default function AddTransferForm({
             ×
           </button>
         </div>
+
+        <BaseFactsNote />
 
         {/* Name */}
         <div>

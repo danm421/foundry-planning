@@ -409,18 +409,20 @@ export default function WillsPanel(props: WillsPanelProps) {
         return;
       }
 
-      // Base mode: legacy per-entity routes (unchanged).
+      // Base mode: legacy per-entity routes, through the writer so the Solver's
+      // editor host hears them (and confirms a base write). No refresh: the
+      // panel re-reads the will itself.
       let willId: string;
       if (!existing) {
-        const res = await fetch(`/api/clients/${props.clientId}/wills`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            grantor: g,
-            bequests: nextBequests,
-            residuaryRecipients: nextResiduary,
-          }),
-        });
+        const res = await writer.submitDirect(
+          {
+            url: `/api/clients/${props.clientId}/wills`,
+            method: "POST",
+            body: { grantor: g, bequests: nextBequests, residuaryRecipients: nextResiduary },
+            skipRefresh: true,
+          },
+          { targetKind: "will", targetId: null, op: "add" },
+        );
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -428,16 +430,14 @@ export default function WillsPanel(props: WillsPanelProps) {
         const out = (await res.json()) as { id: string };
         willId = out.id;
       } else {
-        const res = await fetch(
-          `/api/clients/${props.clientId}/wills/${existing.id}`,
+        const res = await writer.submitDirect(
           {
+            url: `/api/clients/${props.clientId}/wills/${existing.id}`,
             method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              bequests: nextBequests,
-              residuaryRecipients: nextResiduary,
-            }),
+            body: { bequests: nextBequests, residuaryRecipients: nextResiduary },
+            skipRefresh: true,
           },
+          { targetKind: "will", targetId: existing.id, op: "edit" },
         );
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -485,9 +485,9 @@ export default function WillsPanel(props: WillsPanelProps) {
         );
         if (!res.ok) throw new Error(`scenario remove failed: HTTP ${res.status}`);
       } else {
-        const res = await fetch(
-          `/api/clients/${props.clientId}/wills/${willId}`,
-          { method: "DELETE" },
+        const res = await writer.submitDirect(
+          { url: `/api/clients/${props.clientId}/wills/${willId}`, method: "DELETE", skipRefresh: true },
+          { targetKind: "will", targetId: willId, op: "remove" },
         );
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };

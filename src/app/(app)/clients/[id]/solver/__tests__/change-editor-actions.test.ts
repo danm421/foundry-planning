@@ -128,6 +128,47 @@ describe("loadChangeEditorProps — refusals", () => {
   });
 });
 
+describe("loadChangeEditorProps — the base case (no scenario id)", () => {
+  it("still requires edit access, before any loader", async () => {
+    vi.mocked(requireClientEditAccess).mockRejectedValue(new Error("Edit access required"));
+
+    await expect(loadChangeEditorProps(CLIENT_ID, null, "income-expenses")).rejects.toThrow(
+      "Edit access required",
+    );
+    expect(requireClientEditAccess).toHaveBeenCalledWith(CLIENT_ID);
+    expectNoLoaderCalled();
+  });
+
+  it("loads the base plan: no scenario scope, the loader gets no scenario", async () => {
+    const props = { clientId: CLIENT_ID, marker: "base" };
+    vi.mocked(loadIncomeExpensesViewProps).mockResolvedValue({ status: "ok", props } as never);
+
+    const result = await loadChangeEditorProps(CLIENT_ID, null, "income-expenses");
+
+    expect(result).toEqual({ page: "income-expenses", props });
+    expect(requireClientEditAccess).toHaveBeenCalledWith(CLIENT_ID);
+    expect(assertScenarioRouteScope).not.toHaveBeenCalled();
+    expect(loadIncomeExpensesViewProps).toHaveBeenCalledWith(CLIENT_ID, undefined);
+  });
+
+  it("insurance loads the base plan's panels", async () => {
+    const props = { clientId: CLIENT_ID, marker: "insurance" };
+    const disabilityProps = { clientId: CLIENT_ID, marker: "disability" };
+    const ltcProps = { clientId: CLIENT_ID, marker: "ltc" };
+    vi.mocked(loadInsuranceViewProps).mockResolvedValue({
+      status: "ok",
+      props,
+      disabilityProps,
+      ltcProps,
+    } as never);
+
+    const result = await loadChangeEditorProps(CLIENT_ID, null, "insurance");
+
+    expect(result).toEqual({ page: "insurance", props, disabilityProps, ltcProps });
+    expect(loadInsuranceViewProps).toHaveBeenCalledWith(CLIENT_ID, undefined);
+  });
+});
+
 describe("loadChangeEditorProps — assumptions and insurance", () => {
   it("assumptions → { page, props } from the existing loader, called with the scenario id", async () => {
     const props = { clientId: CLIENT_ID, marker: "assumptions" };
