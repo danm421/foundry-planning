@@ -2,6 +2,7 @@ import type { ClientData, Income, ProjectionYear } from "@/engine";
 import { controllingFamilyMember } from "@/engine/ownership";
 import { applyLtcEvent } from "@/engine/ltc-event";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
+import type { DataColorKey } from "@/brand";
 
 export interface CashFlowLineItem {
   id: string;
@@ -29,16 +30,27 @@ export interface CashFlowYearDetail {
   totals: { inflows: number; outflows: number; net: number; endingPortfolio: number };
 }
 
+/** Inflow category colors — the solver Cash Flow chart stacks its bars in
+ *  these same colors, keyed by these same category keys, so a row and its bar
+ *  can't drift apart. Outflow categories have no bar (the chart draws Total
+ *  Out as one line), so they have no color. */
+export const CASH_FLOW_INFLOW_COLORS = {
+  socialSecurity: "blue",
+  salaries: "green",
+  otherInflows: "teal",
+  rmds: "orange",
+  withdrawals: "yellow",
+} as const satisfies Record<string, DataColorKey>;
+
 // Synthetic income.bySource key prefixes that represent one-off / portfolio
 // inflows rather than named recurring income rows. They surface under
-// "Other Inflows", not "Income".
+// "Other Inflows", named from `otherInflowNames`.
 const OTHER_INFLOW_PREFIXES = [
   "technique-proceeds:",
   "life-insurance-proceeds:",
   "equity-proceeds:",
   // Annuity contract income: the engine books gross contract cash into
-  // `income.other`, so it belongs in Other Inflows, not the Income category
-  // (whose items are named income ROWS).
+  // `income.other` under an `annuity:<accountId>` key, not an income row id.
   "annuity:",
 ];
 
@@ -63,6 +75,11 @@ export function buildNameMaps(clientData: ClientData) {
   for (const entity of clientData.entities ?? []) {
     if (entity.entityType === "trust") continue;
     incomeNames[entity.id] = entity.name ?? entity.id;
+  }
+  // The engine keys a business's distributions by the business's own id, and a
+  // business held as an account has no entity row to name it.
+  for (const acc of clientData.accounts ?? []) {
+    if (acc.category === "business") incomeNames[acc.id] ??= acc.name;
   }
 
   const accountNames: Record<string, string> = {};
@@ -232,13 +249,25 @@ function canonicalCategory(
   if (nonZero.length > 0 && Math.abs(total - itemsSum) >= EPSILON) {
     nonZero.push({ id: `${key}-other`, label: "Other", amount: total - itemsSum });
   }
-  return { key, label, total, items: nonZero };
+  return category(key, label, total, nonZero);
 }
 
 /** Category whose header total is the sum of its enumerated items. */
 function summedCategory(key: string, label: string, items: CashFlowLineItem[]): CashFlowCategory {
   const nonZero = items.filter((i) => Math.abs(i.amount) >= EPSILON);
-  return { key, label, total: sum(nonZero), items: nonZero };
+  return category(key, label, sum(nonZero), nonZero);
+}
+
+/** A lone item named like its category ("Social Security" under Social
+ *  Security) only repeats the header row, so it's dropped. */
+function category(
+  key: string,
+  label: string,
+  total: number,
+  items: CashFlowLineItem[],
+): CashFlowCategory {
+  const repeatsHeader = items.length === 1 && items[0].label === label;
+  return { key, label, total, items: repeatsHeader ? [] : items };
 }
 
 export function buildCashFlowYearDetail(
@@ -248,9 +277,25 @@ export function buildCashFlowYearDetail(
   const m = buildNameMaps(clientData);
 
   // ── Inflows ───────────────────────────────────────────────────────────
-  const incomeItems: CashFlowLineItem[] = Object.entries(year.income.bySource)
-    .filter(([key]) => !isOtherInflowKey(key))
-    .map(([id, amount]) => ({ id, label: m.incomeNames[id] ?? id, amount }));
+  // Split the same way the solver Cash Flow chart stacks its bars (Social
+  // Security, Salaries, Other Inflows, RMDs), so each row can wear its bar's
+  // color. Every income row that isn't Social Security or a salary is part of
+  // the chart's Other Inflows segment.
+  const ssItems: CashFlowLineItem[] = [];
+  const salaryItems: CashFlowLineItem[] = [];
+  const otherInflowItems: CashFlowLineItem[] = [];
+  for (const [id, amount] of Object.entries(year.income.bySource)) {
+    if (isOtherInflowKey(id)) {
+      otherInflowItems.push({ id, label: m.otherInflowNames[id] ?? id, amount });
+      continue;
+    }
+    const item = { id, label: m.incomeNames[id] ?? id, amount };
+    const type = m.incomeTypeById[id];
+    if (type === "social_security") ssItems.push(item);
+    else if (type === "salary") salaryItems.push(item);
+    else otherInflowItems.push(item);
+  }
+  otherInflowItems.push(...noteReceivableItems(year, m));
 
   // Household-only, so the RMD category reconciles to totalIncome instead of
   // overshooting by every entity RMD.
@@ -259,17 +304,11 @@ export function buildCashFlowYearDetail(
   const withdrawalItems: CashFlowLineItem[] = Object.entries(year.withdrawals.byAccount)
     .map(([id, amount]) => ({ id, label: m.accountNames[id] ?? id, amount }));
 
-  const otherInflowItems: CashFlowLineItem[] = [
-    ...Object.entries(year.income.bySource)
-      .filter(([key]) => isOtherInflowKey(key))
-      .map(([id, amount]) => ({ id, label: m.otherInflowNames[id] ?? id, amount })),
-    ...noteReceivableItems(year, m),
-  ];
-
   const inflows: CashFlowCategory[] = [
-    summedCategory("income", "Income", incomeItems),
-    summedCategory("rmds", "RMDs", rmdItems),
+    summedCategory("socialSecurity", "Social Security", ssItems),
+    summedCategory("salaries", "Salaries", salaryItems),
     summedCategory("otherInflows", "Other Inflows", otherInflowItems),
+    summedCategory("rmds", "RMDs", rmdItems),
   ].filter((c) => Math.abs(c.total) >= EPSILON);
 
   // Reconcile the income-derived categories against year.totalIncome (which

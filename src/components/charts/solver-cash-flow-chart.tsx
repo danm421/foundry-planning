@@ -17,6 +17,7 @@ import { Chart } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine";
 import { chartChrome, useThemeName } from "@/lib/chart-colors";
 import { colors, colorsLight, data as brandData, dataLight as brandDataLight } from "@/brand";
+import { CASH_FLOW_INFLOW_COLORS } from "@/lib/solver/cashflow-year-detail";
 
 ChartJS.register(
   BarController,
@@ -95,7 +96,7 @@ export function buildSolverCashFlowChartData(
         type: "bar",
         label: "Social Security",
         data: years.map((y) => y.income.socialSecurity),
-        backgroundColor: palette.blue,
+        backgroundColor: palette[CASH_FLOW_INFLOW_COLORS.socialSecurity],
         stack: "inflows",
         order: 1,
       },
@@ -103,7 +104,7 @@ export function buildSolverCashFlowChartData(
         type: "bar",
         label: "Salaries",
         data: years.map((y) => y.income.salaries),
-        backgroundColor: palette.green,
+        backgroundColor: palette[CASH_FLOW_INFLOW_COLORS.salaries],
         stack: "inflows",
         order: 1,
       },
@@ -111,7 +112,7 @@ export function buildSolverCashFlowChartData(
         type: "bar",
         label: "Other Inflows",
         data: years.map(otherIncome),
-        backgroundColor: palette.teal,
+        backgroundColor: palette[CASH_FLOW_INFLOW_COLORS.otherInflows],
         stack: "inflows",
         order: 1,
       },
@@ -119,7 +120,7 @@ export function buildSolverCashFlowChartData(
         type: "bar",
         label: "RMDs",
         data: years.map(rmd),
-        backgroundColor: palette.orange,
+        backgroundColor: palette[CASH_FLOW_INFLOW_COLORS.rmds],
         stack: "inflows",
         order: 1,
       },
@@ -127,7 +128,7 @@ export function buildSolverCashFlowChartData(
         type: "bar",
         label: "Withdrawals",
         data: years.map((y) => y.withdrawals.total),
-        backgroundColor: palette.yellow,
+        backgroundColor: palette[CASH_FLOW_INFLOW_COLORS.withdrawals],
         stack: "inflows",
         order: 1,
       },

@@ -23,7 +23,7 @@ function makeClientData(): ClientData {
   return {
     client: { firstName: "A", lastName: "B" },
     incomes: [ { id: "inc-ss", name: "Social Security", type: "social_security" }, { id: "inc-pen", name: "Pension", type: "deferred" } ],
-    entities: [], accounts: [ { id: "acc-ira", name: "Traditional IRA", category: "retirement" }, { id: "acc-brokerage", name: "Joint Brokerage", category: "taxable" }, { id: "acc-401k", name: "401(k)", category: "retirement" } ],
+    entities: [], accounts: [ { id: "acc-ira", name: "Traditional IRA", category: "retirement", owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }] }, { id: "acc-brokerage", name: "Joint Brokerage", category: "taxable" }, { id: "acc-401k", name: "401(k)", category: "retirement" } ],
     liabilities: [{ id: "liab-mortgage", name: "Home Mortgage" }], expenses: [], assetTransactions: [], stockOptionPlans: [], notesReceivable: [], medicareCoverage: [],
   } as unknown as ClientData;
 }
@@ -37,20 +37,31 @@ describe("SolverYearDetailPanel", () => {
     expect(screen.getByText("Outflows")).toBeInTheDocument();
   });
 
-  it("shows category rows and reveals items on expand", () => {
+  it("lists the inflows in the chart's order, each with its bar's color", () => {
     render(<SolverYearDetailPanel year={makeYear()} clientData={makeClientData()} />);
-    const incomeRow = screen.getByRole("button", { name: /Income/ });
-    // Items hidden until expanded
-    expect(screen.queryByText("Social Security")).not.toBeInTheDocument();
-    fireEvent.click(incomeRow);
-    expect(screen.getByText("Social Security")).toBeInTheDocument();
+    const swatchOf = (name: string) =>
+      screen.getByRole("rowheader", { name: new RegExp(`^${name}`) }).querySelector("[style]")?.getAttribute("style");
+    expect(swatchOf("Social Security")).toContain("var(--data-blue)");
+    expect(swatchOf("Other Inflows")).toContain("var(--data-teal)");
+    expect(swatchOf("RMDs")).toContain("var(--data-orange)");
+    expect(swatchOf("Portfolio Withdrawals")).toContain("var(--data-yellow)");
+    // Outflow categories have no bar on the chart, so no swatch color.
+    expect(swatchOf("Living Expenses")).toBeUndefined();
+  });
+
+  it("shows every category's items by default and collapses on click", () => {
+    render(<SolverYearDetailPanel year={makeYear()} clientData={makeClientData()} />);
     expect(screen.getByText("Pension")).toBeInTheDocument();
+    expect(screen.getByText("Home Mortgage")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Other Inflows/ }));
+    expect(screen.queryByText("Pension")).not.toBeInTheDocument();
+    expect(screen.getByText("Home Mortgage")).toBeInTheDocument();
   });
 
   it("renders the net cash flow with a positive tone when in surplus", () => {
     render(<SolverYearDetailPanel year={makeYear()} clientData={makeClientData()} />);
     const net = screen.getByTestId("year-detail-net");
     expect(within(net).getByText(/\$14,000/)).toBeInTheDocument();
-    expect(net.className).toContain("text-pos");
+    expect(net.className).toContain("text-good");
   });
 });

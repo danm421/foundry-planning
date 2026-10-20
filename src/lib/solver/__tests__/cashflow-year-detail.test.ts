@@ -89,11 +89,42 @@ describe("buildCashFlowYearDetail", () => {
     expect(d.totals.net).toBe(-18_000);
   });
 
-  it("resolves income source names and drops $0 sources", () => {
+  it("splits income rows the way the Cash Flow chart stacks them", () => {
     const d = buildCashFlowYearDetail(makeYear(), makeClientData());
-    const income = d.inflows.find((c) => c.key === "income")!;
-    expect(income.items.map((i) => i.label)).toEqual(["Social Security", "Pension"]);
-    expect(income.items.every((i) => i.amount > 0)).toBe(true);
+    expect(d.inflows.map((c) => c.key)).toEqual(["socialSecurity", "otherInflows", "rmds"]);
+    // Its one item is named "Social Security" too, so it would only repeat the header.
+    const ss = d.inflows.find((c) => c.key === "socialSecurity")!;
+    expect(ss.total).toBe(40_000);
+    expect(ss.items).toEqual([]);
+    // A pension is a "deferred" income row — the chart's Other Inflows segment.
+    const other = d.inflows.find((c) => c.key === "otherInflows")!;
+    expect(other.items).toEqual([{ id: "inc-pen", label: "Pension", amount: 30_000 }]);
+  });
+
+  it("files salary rows under Salaries and drops $0 sources", () => {
+    const client = makeClientData();
+    client.incomes.push({ id: "inc-sal", name: "Pat's Salary", type: "salary" } as never);
+    const year = makeYear({
+      income: {
+        ...makeYear().income,
+        bySource: { "inc-ss": 40_000, "inc-pen": 30_000, "inc-sal": 0 },
+      },
+    });
+    expect(buildCashFlowYearDetail(year, client).inflows.find((c) => c.key === "salaries")).toBeUndefined();
+
+    year.income.bySource["inc-sal"] = 50_000;
+    const salaries = buildCashFlowYearDetail(year, client).inflows.find((c) => c.key === "salaries")!;
+    expect(salaries.items).toEqual([{ id: "inc-sal", label: "Pat's Salary", amount: 50_000 }]);
+  });
+
+  it("names a business account's distributions by the account's name", () => {
+    const client = makeClientData();
+    client.accounts.push({ id: "acc-biz", name: "Consulting Business", category: "business" } as never);
+    const year = makeYear({
+      income: { ...makeYear().income, bySource: { ...makeYear().income.bySource, "acc-biz": 24_000 } },
+    });
+    const other = buildCashFlowYearDetail(year, client).inflows.find((c) => c.key === "otherInflows")!;
+    expect(other.items).toContainEqual({ id: "acc-biz", label: "Consulting Business", amount: 24_000 });
   });
 
   it("lists RMDs only for household-owned accounts, excluding entity-owned RMDs", () => {
@@ -119,8 +150,8 @@ describe("buildCashFlowYearDetail", () => {
     });
     const d = buildCashFlowYearDetail(year, makeClientData());
 
-    const income = d.inflows.find((c) => c.key === "income")!;
-    expect(income.items.map((i) => i.id)).not.toContain("annuity:acc-ann");
+    const ss = d.inflows.find((c) => c.key === "socialSecurity")!;
+    expect(ss.items.map((i) => i.id)).not.toContain("annuity:acc-ann");
 
     const other = d.inflows.find((c) => c.key === "otherInflows")!;
     expect(other.items).toContainEqual({

@@ -1,9 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { ClientData, ProjectionYear } from "@/engine";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
+import { ChevronDownIcon } from "@/components/icons";
 import {
   buildCashFlowYearDetail,
+  CASH_FLOW_INFLOW_COLORS,
   type CashFlowCategory,
 } from "@/lib/solver/cashflow-year-detail";
 
@@ -12,6 +15,8 @@ const fmt = new Intl.NumberFormat("en-US", {
   currency: "USD",
   maximumFractionDigits: 0,
 });
+
+const EYEBROW = "text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-3";
 
 interface Props {
   year: ProjectionYear;
@@ -23,107 +28,162 @@ export function SolverYearDetailPanel({ year, clientData }: Props) {
     () => buildCashFlowYearDetail(year, clientData),
     [year, clientData],
   );
-  const netTone = detail.totals.net >= 0 ? "text-pos" : "text-crit";
+  const netTone = detail.totals.net >= 0 ? "text-good" : "text-crit";
 
   return (
-    <div className="rounded-lg border border-hair bg-card px-4 py-3">
-      <div className="mb-3 flex items-baseline gap-2">
-        <span className="text-[15px] font-semibold text-ink">{detail.year}</span>
-        <span className="text-[12px] text-ink-3">{detail.ageLabel}</span>
+    <div className="rounded-lg border border-hair bg-card px-5 py-4">
+      <div className="mb-4 flex items-baseline gap-3">
+        <span className="tabular text-[20px] font-semibold text-ink">{detail.year}</span>
+        <span className="text-[14px] text-ink-3">{detail.ageLabel}</span>
       </div>
 
-      <div className="grid grid-cols-1 gap-x-8 gap-y-1 sm:grid-cols-2">
-        <Column heading="Inflows" categories={detail.inflows} />
-        <Column heading="Outflows" categories={detail.outflows} />
-      </div>
-
-      {detail.withdrawals ? (
-        <div className="mt-3 border-t border-hair pt-2">
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-4">
-            Portfolio Drawdown
-          </div>
-          <CategoryRow category={detail.withdrawals} />
-          <p className="mt-0.5 text-[11px] text-ink-4">
-            Funds the cash-flow gap; not counted in Total Inflows.
-          </p>
+      {/* items-start: a table stretched to its taller neighbor spreads the
+          extra height across its rows. */}
+      <div className="grid grid-cols-1 items-start gap-x-10 gap-y-6 md:grid-cols-2">
+        <div>
+          <BreakdownTable
+            heading="Inflows"
+            categories={detail.inflows}
+            totalLabel="Total Inflows"
+            total={detail.totals.inflows}
+          />
+          {detail.withdrawals ? (
+            <table className="mt-4 w-full border-collapse">
+              <CategoryRows
+                category={detail.withdrawals}
+                help="Drawn from the portfolio when outflows exceed inflows. Not counted in Total Inflows."
+              />
+            </table>
+          ) : null}
         </div>
-      ) : null}
+        <BreakdownTable
+          heading="Outflows"
+          categories={detail.outflows}
+          totalLabel="Total Outflows"
+          total={detail.totals.outflows}
+          // The chart draws Total Out as an ink line over the bars.
+          totalMarker={<span className="h-0.5 w-3 rounded-full bg-ink" />}
+        />
+      </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-x-8 gap-y-1 border-t border-hair pt-2 text-[12px] sm:grid-cols-2">
-        <TotalRow label="Total Inflows" amount={detail.totals.inflows} />
-        <TotalRow label="Total Outflows" amount={detail.totals.outflows} />
-      </div>
-      <div className="mt-2 flex items-center justify-between border-t border-hair pt-2">
-        <span className="text-[12px] font-medium text-ink-3">Net Cash Flow</span>
-        <span data-testid="year-detail-net" className={`text-[14px] font-semibold ${netTone}`}>
-          {fmt.format(detail.totals.net)}
-        </span>
-      </div>
-      <div className="mt-1 flex items-center justify-between">
-        <span className="text-[11px] text-ink-4">Ending Portfolio</span>
-        <span className="text-[12px] text-ink-3">{fmt.format(detail.totals.endingPortfolio)}</span>
-      </div>
+      <dl className="mt-5 flex flex-wrap gap-x-12 gap-y-3 border-t border-hair-2 pt-4">
+        <div>
+          <dt className={EYEBROW}>Net Cash Flow</dt>
+          <dd
+            data-testid="year-detail-net"
+            className={`tabular mt-1 text-[20px] font-semibold ${netTone}`}
+          >
+            {fmt.format(detail.totals.net)}
+          </dd>
+        </div>
+        <div>
+          <dt className={EYEBROW}>Ending Portfolio</dt>
+          <dd className="tabular mt-1 text-[20px] font-semibold text-ink">
+            {fmt.format(detail.totals.endingPortfolio)}
+          </dd>
+        </div>
+      </dl>
     </div>
   );
 }
 
-function Column({ heading, categories }: { heading: string; categories: CashFlowCategory[] }) {
+function BreakdownTable({
+  heading,
+  categories,
+  totalLabel,
+  total,
+  totalMarker,
+}: {
+  heading: string;
+  categories: CashFlowCategory[];
+  totalLabel: string;
+  total: number;
+  totalMarker?: ReactNode;
+}) {
   return (
-    <div>
-      <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-4">
-        {heading}
-      </div>
+    <table className="w-full border-collapse">
+      <thead>
+        <tr className="border-b border-hair-2">
+          <th scope="col" className={`pb-2 text-left ${EYEBROW}`}>{heading}</th>
+          <th scope="col" className={`pb-2 text-right ${EYEBROW}`}>Amount</th>
+        </tr>
+      </thead>
       {categories.map((c) => (
-        <CategoryRow key={c.key} category={c} />
+        <CategoryRows key={c.key} category={c} />
       ))}
-    </div>
+      <tfoot>
+        <tr className="border-t border-hair-2">
+          <th scope="row" className="pt-2.5 text-left text-[15px] font-semibold text-ink">
+            <span className="flex items-center gap-2">
+              {/* Spans the chevron + swatch columns, so the label lines up
+                  with the category labels above. */}
+              <span aria-hidden="true" className="flex w-[34px] shrink-0 justify-end">
+                {totalMarker}
+              </span>
+              {totalLabel}
+            </span>
+          </th>
+          <td className="tabular pt-2.5 text-right text-[15px] font-semibold text-ink">
+            {fmt.format(total)}
+          </td>
+        </tr>
+      </tfoot>
+    </table>
   );
 }
 
-function CategoryRow({ category }: { category: CashFlowCategory }) {
-  const [open, setOpen] = useState(false);
+function CategoryRows({ category, help }: { category: CashFlowCategory; help?: string }) {
+  const [open, setOpen] = useState(true);
   const expandable = category.items.length > 0;
+  const color = CASH_FLOW_INFLOW_COLORS[category.key as keyof typeof CASH_FLOW_INFLOW_COLORS];
 
   return (
-    <div>
-      <button
-        type="button"
-        disabled={!expandable}
-        aria-expanded={expandable ? open : undefined}
-        onClick={() => expandable && setOpen((v) => !v)}
-        className={`flex w-full items-center justify-between py-1 text-[13px] ${
-          expandable ? "text-ink hover:text-accent" : "text-ink cursor-default"
-        }`}
-      >
-        <span className="flex items-center gap-1">
-          {expandable ? (
-            <span aria-hidden="true" className="text-ink-4">{open ? "▾" : "▸"}</span>
-          ) : (
-            <span aria-hidden="true" className="w-[1ch]" />
-          )}
-          {category.label}
-        </span>
-        <span className="tabular-nums text-ink-3">{fmt.format(category.total)}</span>
-      </button>
-      {expandable && open ? (
-        <div className="mb-1 ml-[1.4ch] border-l border-hair-2 pl-2">
-          {category.items.map((it) => (
-            <div key={it.id} className="flex items-center justify-between py-0.5 text-[12px] text-ink-3">
-              <span>{it.label}</span>
-              <span className="tabular-nums">{fmt.format(it.amount)}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function TotalRow({ label, amount }: { label: string; amount: number }) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="font-medium text-ink-3">{label}</span>
-      <span className="tabular-nums text-ink">{fmt.format(amount)}</span>
-    </div>
+    <tbody className="border-b border-hair">
+      <tr>
+        <th scope="row" className="py-2 text-left text-[15px] font-medium text-ink">
+          <span className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!expandable}
+              aria-expanded={expandable ? open : undefined}
+              onClick={() => setOpen((v) => !v)}
+              className="flex items-center gap-2 text-left enabled:hover:text-ink-2"
+            >
+              <span aria-hidden="true" className="flex w-4 shrink-0 justify-center text-ink-3">
+                {expandable ? (
+                  <ChevronDownIcon
+                    width={16}
+                    height={16}
+                    className={`transition-transform ${open ? "" : "-rotate-90"}`}
+                  />
+                ) : null}
+              </span>
+              <span
+                aria-hidden="true"
+                className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
+                style={color ? { backgroundColor: `var(--data-${color})` } : undefined}
+              />
+              {category.label}
+            </button>
+            {help ? <FieldTooltip text={help} /> : null}
+          </span>
+        </th>
+        <td className="tabular py-2 text-right text-[15px] font-medium text-ink">
+          {fmt.format(category.total)}
+        </td>
+      </tr>
+      {expandable && open
+        ? category.items.map((it, i) => {
+            const pad = i === category.items.length - 1 ? "pb-2" : "pb-1";
+            return (
+              <tr key={it.id} className="text-[14px] text-ink-2">
+                {/* Indented past the chevron + swatch, under the category label. */}
+                <td className={`pl-[42px] ${pad}`}>{it.label}</td>
+                <td className={`tabular text-right ${pad}`}>{fmt.format(it.amount)}</td>
+              </tr>
+            );
+          })
+        : null}
+    </tbody>
   );
 }
