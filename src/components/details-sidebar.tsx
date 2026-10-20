@@ -118,12 +118,12 @@ function InsuranceIcon() {
 
 const TABS: SidebarTab[] = [
   { label: "Profile", href: "family", icon: <ProfileIcon /> },
-  { label: "Observations", href: "observations", icon: <ObservationsIcon /> },
   { label: "Net Worth", href: "net-worth", icon: <NetWorthIcon /> },
   { label: "Inflows & Outflows", href: "income-expenses", icon: <CashflowIcon /> },
   { label: "Insurance", href: "insurance", icon: <InsuranceIcon /> },
-  { label: "Techniques", href: "techniques", icon: <TechniquesIcon /> },
   { label: "Wills", href: "wills", icon: <WillsIcon /> },
+  { label: "Techniques", href: "techniques", icon: <TechniquesIcon /> },
+  { label: "Observations", href: "observations", icon: <ObservationsIcon /> },
   { label: "Assumptions", href: "assumptions", icon: <AssumptionsIcon /> },
 ];
 
