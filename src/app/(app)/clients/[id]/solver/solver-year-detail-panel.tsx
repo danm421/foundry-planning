@@ -66,7 +66,7 @@ export function SolverYearDetailPanel({ year, clientData }: Props) {
         />
       </div>
 
-      <dl className="mt-5 flex flex-wrap gap-x-12 gap-y-3 border-t border-hair-2 pt-4">
+      <dl className="mt-5 flex flex-wrap justify-center gap-x-12 gap-y-3 border-t border-hair-2 pt-4 text-center">
         <div>
           <dt className={EYEBROW}>Net Cash Flow</dt>
           <dd
