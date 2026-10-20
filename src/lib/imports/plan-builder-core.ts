@@ -17,6 +17,7 @@ import { findVisibleCrmHousehold, verifyCrmHouseholdAccessFor } from "@/lib/crm/
 import { createCrmHousehold, recordHouseholdOpen } from "@/lib/crm/households";
 import { createClientForHousehold, type FilingStatus } from "@/lib/clients/create-client";
 import { createFactFinderImport } from "@/lib/fact-finder/import-lifecycle";
+import { safeErrorFields } from "@/lib/redaction/secrets";
 import { isUSPSStateCode } from "@/lib/usps-states";
 
 export interface EnsurePlanImportArgs {
@@ -275,7 +276,7 @@ export async function ensurePlanImport(
     try {
       await recordHouseholdOpen(created.householdId, args.actorUserId, args.principal);
     } catch (viewErr) {
-      console.error("Failed to record household open on plan build:", viewErr);
+      console.error("Failed to record household open on plan build:", safeErrorFields(viewErr));
     }
   }
 

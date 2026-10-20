@@ -60,6 +60,7 @@ vi.mock("@/lib/clients/authz", () => ({
 import { ensurePlanImport, findImportTargetName, PlanImportRefusal } from "../plan-builder-core";
 import { isFactFinderImport } from "../import-kind";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
+import { safeErrorFields } from "@/lib/redaction/secrets";
 
 const principal = { userId: "u1", orgId: "org1", orgRole: "org:admin" };
 
@@ -309,10 +310,12 @@ describe("ensurePlanImport", () => {
       expect(m.insertValues.mock.calls[0][0]).toMatchObject({ notes: "Claude: Household", createdByUserId: "u1" });
     });
 
-    it("still builds the plan when recording the open fails", async () => {
+    it("still builds the plan when recording the open fails, logging only the error's safe fields", async () => {
       m.createCrmHousehold.mockResolvedValue({ id: "hh1", name: "The Smiths" });
       m.createClientForHousehold.mockResolvedValue({ clientId: "c2", scenarioId: "scn2" });
-      m.recordHouseholdOpen.mockRejectedValue(new Error("db down"));
+      // The pool pins its client, credentials and all, onto an idle-connection error.
+      const viewErr = Object.assign(new Error("db down"), { client: { password: "pw-in-the-client" } });
+      m.recordHouseholdOpen.mockRejectedValue(viewErr);
       const err = vi.spyOn(console, "error").mockImplementation(() => {});
 
       const result = await ensurePlanImport({
@@ -329,6 +332,8 @@ describe("ensurePlanImport", () => {
       });
 
       expect(result).toEqual({ clientId: "c2", scenarioId: "scn2", importId: "imp1", householdId: "hh1" });
+      expect(err).toHaveBeenCalledWith("Failed to record household open on plan build:", safeErrorFields(viewErr));
+      expect(JSON.stringify(err.mock.calls)).not.toContain("pw-in-the-client");
       err.mockRestore();
     });
 

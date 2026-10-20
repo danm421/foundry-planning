@@ -49,6 +49,7 @@ import {
   type McpTool,
 } from "@/domain/mcp/define-tool";
 import { WhatIfValidationError } from "@/lib/whatif/errors";
+import { safeErrorFields } from "@/lib/redaction/secrets";
 import { McpForbiddenError, CLIENT_UNREADABLE_MESSAGE } from "@/domain/mcp/guards";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 
@@ -137,6 +138,16 @@ describe("toolFailureResult (D5, F4, F6)", () => {
   it("falls back to a generic, model-safe message for a non-Error throw", () => {
     const out = toolFailureResult("boom");
     expect(out.content[0].text).toBe("Foundry could not complete that request.");
+  });
+
+  it("logs an unexpected error's safe fields only, never what the driver pinned on it", () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    // The pool pins its client, credentials and all, onto an idle-connection error.
+    const err = Object.assign(new Error("Connection terminated unexpectedly"), { client: { password: "pw-in-the-client" } });
+    toolFailureResult(err);
+    expect(log).toHaveBeenCalledWith("MCP tool call failed with an unexpected error:", safeErrorFields(err));
+    expect(JSON.stringify(log.mock.calls)).not.toContain("pw-in-the-client");
+    log.mockRestore();
   });
 });
 
