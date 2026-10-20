@@ -96,9 +96,29 @@ describe("buildCashFlowYearDetail", () => {
     const ss = d.inflows.find((c) => c.key === "socialSecurity")!;
     expect(ss.total).toBe(40_000);
     expect(ss.items).toEqual([]);
+    // …so the category row stands in for it.
+    expect(ss.soleItemId).toBe("inc-ss");
     // A pension is a "deferred" income row — the chart's Other Inflows segment.
     const other = d.inflows.find((c) => c.key === "otherInflows")!;
     expect(other.items).toEqual([{ id: "inc-pen", label: "Pension", amount: 30_000 }]);
+  });
+
+  it("lets a lone living expense's category row stand in for it", () => {
+    const client = makeClientData();
+    client.expenses.push({ id: "exp-living", name: "Retirement Living", type: "living" } as never);
+    const one = makeYear();
+    one.expenses.bySource = { ...one.expenses.bySource, "exp-living": 60_000 };
+    const living = buildCashFlowYearDetail(one, client).outflows.find((c) => c.key === "living")!;
+    expect(living.items).toEqual([]);
+    expect(living.soleItemId).toBe("exp-living");
+
+    // Two living rows list as items; the category stands for neither.
+    client.expenses.push({ id: "exp-travel", name: "Travel", type: "living" } as never);
+    const two = makeYear();
+    two.expenses.bySource = { ...two.expenses.bySource, "exp-living": 50_000, "exp-travel": 10_000 };
+    const both = buildCashFlowYearDetail(two, client).outflows.find((c) => c.key === "living")!;
+    expect(both.items.map((i) => i.id)).toEqual(["exp-living", "exp-travel"]);
+    expect(both.soleItemId).toBeUndefined();
   });
 
   it("files salary rows under Salaries and drops $0 sources", () => {

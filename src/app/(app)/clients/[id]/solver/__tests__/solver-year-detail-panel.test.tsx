@@ -1,10 +1,45 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import { SolverYearDetailPanel } from "../solver-year-detail-panel";
+import { SolverYearDetailPanel, type YearDetailEditing } from "../solver-year-detail-panel";
+import type { InventoryItem } from "@/lib/scenario/plan-inventory";
+import type { DetailTypeKey } from "@/lib/scenario/plan-detail-catalog";
 
 // Reuse the same minimal factories as the helper test.
 import type { ClientData, ProjectionYear } from "@/engine";
+
+const { openCreateMock } = vi.hoisted(() => ({ openCreateMock: vi.fn() }));
+vi.mock("@/components/scenario/scenario-mode-wrapper", () => ({
+  useScenarioModeUI: () => ({ openCreate: openCreateMock }),
+}));
+
+// Stand-in for the Changes tab's editor host: shows what it was asked to open
+// and exposes its two callbacks. The host itself is covered by the Changes tab tests.
+vi.mock("../solver-change-editor", () => ({
+  SolverChangeEditor: ({
+    scenarioId,
+    target,
+    label,
+    onDone,
+    onWrite,
+  }: {
+    scenarioId: string;
+    target: { page: string; focus: unknown };
+    label: string;
+    onDone: () => void;
+    onWrite?: (e: { targetKind: string; targetId: string; op: string }) => void;
+  }) => (
+    <div data-testid="editor" data-scenario={scenarioId} data-page={target.page} data-focus={JSON.stringify(target.focus)}>
+      {label}
+      <button type="button" onClick={() => onWrite?.({ targetKind: "income", targetId: "inc-pen", op: "edit" })}>
+        stub write
+      </button>
+      <button type="button" onClick={onDone}>
+        stub close
+      </button>
+    </div>
+  ),
+}));
 
 function makeYear(): ProjectionYear {
   return {
@@ -103,5 +138,80 @@ describe("SolverYearDetailPanel", () => {
     render(<SolverYearDetailPanel year={year} years={[year]} clientData={makeClientData()} />);
     expect(screen.queryByTestId("year-detail-withdrawal-rate")).not.toBeInTheDocument();
     expect(screen.queryByText("Withdrawal %")).not.toBeInTheDocument();
+  });
+
+  describe("editing a line item", () => {
+    const item = (typeKey: DetailTypeKey, id: string, label: string): InventoryItem => ({
+      key: `${typeKey}:${id}`, typeKey, id, label, canEdit: true, canDelete: true,
+    });
+    const inventory = [
+      item("social_security", "inc-ss", "Social Security"),
+      item("income", "inc-pen", "Pension"),
+      item("liability", "liab-mortgage", "Home Mortgage"),
+      item("account", "acc-brokerage", "Joint Brokerage"),
+    ];
+    const onTargetsWritten = vi.fn();
+    const editing = (scenarioId: string | null): YearDetailEditing => ({
+      clientId: "c1", scenarioId, inventory, onTargetsWritten,
+    });
+
+    beforeEach(() => {
+      onTargetsWritten.mockReset();
+      openCreateMock.mockReset();
+    });
+
+    it("opens a clicked item's editor in the scenario and closes it when done", () => {
+      render(<SolverYearDetailPanel year={makeYear()} years={[]} clientData={makeClientData()} editing={editing("s1")} />);
+      fireEvent.click(screen.getByRole("button", { name: "Edit Home Mortgage" }));
+      const editor = screen.getByTestId("editor");
+      expect(editor.dataset.scenario).toBe("s1");
+      expect(editor.dataset.page).toBe("net-worth");
+      expect(JSON.parse(editor.dataset.focus!)).toEqual({ intent: "edit", kind: "liability", id: "liab-mortgage" });
+      expect(editor).toHaveTextContent("Home Mortgage");
+
+      fireEvent.click(screen.getByRole("button", { name: "stub close" }));
+      expect(screen.queryByTestId("editor")).not.toBeInTheDocument();
+    });
+
+    it("reports the editor's writes so replaced Solver levers drop", () => {
+      render(<SolverYearDetailPanel year={makeYear()} years={[]} clientData={makeClientData()} editing={editing("s1")} />);
+      fireEvent.click(screen.getByRole("button", { name: "Edit Pension" }));
+      fireEvent.click(screen.getByRole("button", { name: "stub write" }));
+      expect(onTargetsWritten).toHaveBeenCalledWith(
+        [{ targetKind: "income", targetId: "inc-pen", op: "edit" }],
+        "Pension",
+      );
+    });
+
+    it("lets a category with no item rows open the one item it stands for", () => {
+      render(<SolverYearDetailPanel year={makeYear()} years={[]} clientData={makeClientData()} editing={editing("s1")} />);
+      fireEvent.click(screen.getByRole("button", { name: "Edit Social Security" }));
+      expect(JSON.parse(screen.getByTestId("editor").dataset.focus!)).toEqual({
+        intent: "edit", kind: "income", id: "inc-ss",
+      });
+    });
+
+    it("keeps rows with nothing to edit as plain text", () => {
+      render(<SolverYearDetailPanel year={makeYear()} years={[]} clientData={makeClientData()} editing={editing("s1")} />);
+      // Not in the inventory (the test plan never saved it).
+      expect(screen.getByText("Traditional IRA").closest("button")).toBeNull();
+      // Savings with no rule behind it.
+      expect(screen.getByText("401(k)").closest("button")).toBeNull();
+    });
+
+    it("on the base case, points to a scenario instead of opening an editor", () => {
+      render(<SolverYearDetailPanel year={makeYear()} years={[]} clientData={makeClientData()} editing={editing(null)} />);
+      fireEvent.click(screen.getByRole("button", { name: "Edit Pension" }));
+      expect(screen.queryByTestId("editor")).not.toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent("To edit Pension, switch to a scenario or create one.");
+      fireEvent.click(screen.getByRole("button", { name: "Create scenario" }));
+      expect(openCreateMock).toHaveBeenCalled();
+    });
+
+    it("leaves every name plain for an advisor who can't edit", () => {
+      render(<SolverYearDetailPanel year={makeYear()} years={[]} clientData={makeClientData()} />);
+      expect(screen.getByText("Pension").closest("button")).toBeNull();
+      expect(screen.queryByRole("button", { name: /^Edit / })).not.toBeInTheDocument();
+    });
   });
 });

@@ -15,6 +15,9 @@ export interface CashFlowCategory {
   label: string;
   total: number;
   items: CashFlowLineItem[];
+  /** The one line item a category shows no rows for (a lone item named like
+   *  the category, or the only living expense) — its row stands in for it. */
+  soleItemId?: string;
 }
 
 export interface CashFlowYearDetail {
@@ -267,7 +270,9 @@ function category(
   items: CashFlowLineItem[],
 ): CashFlowCategory {
   const repeatsHeader = items.length === 1 && items[0].label === label;
-  return { key, label, total, items: repeatsHeader ? [] : items };
+  return repeatsHeader
+    ? { key, label, total, items: [], soleItemId: items[0].id }
+    : { key, label, total, items };
 }
 
 export function buildCashFlowYearDetail(
@@ -340,7 +345,11 @@ export function buildCashFlowYearDetail(
     .map(([id, amount]) => ({ id, label: m.accountNames[id] ?? id, amount }));
 
   const outflows: CashFlowCategory[] = [
-    canonicalCategory("living", "Living Expenses", year.expenses.living, livingItems.length > 1 ? livingItems : []),
+    // One living expense is the category itself; its rows list only when
+    // there are several.
+    livingItems.length > 1
+      ? canonicalCategory("living", "Living Expenses", year.expenses.living, livingItems)
+      : { ...canonicalCategory("living", "Living Expenses", year.expenses.living, []), soleItemId: livingItems[0]?.id },
     summedCategory("liabilities", "Liabilities", liabilityItems),
     canonicalCategory("other", "Other Expenses", year.expenses.other, otherExpenseItems),
     canonicalCategory("insurance", "Insurance Premiums", year.expenses.insurance, insuranceItems),

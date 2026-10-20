@@ -1923,7 +1923,25 @@ export function LiveSolverWorkspace({
               ? (() => {
                   const y = currentProjection.find((r) => r.year === selectedYear);
                   return y ? (
-                    <SolverYearDetailPanel year={y} years={currentProjection} clientData={workingTree} />
+                    <>
+                      <DraftReconciliationNotice notice={draftNotice} onDismiss={dismissDraftNotice} />
+                      <SolverYearDetailPanel
+                        year={y}
+                        years={currentProjection}
+                        clientData={workingTree}
+                        // Clicking a name opens the same editor the Changes tab does.
+                        editing={
+                          canEdit
+                            ? {
+                                clientId,
+                                scenarioId: changesPanel?.scenarioId ?? null,
+                                inventory,
+                                onTargetsWritten,
+                              }
+                            : undefined
+                        }
+                      />
+                    </>
                   ) : null;
                 })()
               : null}
