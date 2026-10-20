@@ -11,7 +11,10 @@
 // to the household — the access check for the save's lines whose cores don't
 // make one.
 import { randomUUID } from "node:crypto";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { db } from "@/db";
+import { accounts, expenses, incomes, liabilities, savingsRules } from "@/db/schema";
 import { withAiCallerOrg } from "@/lib/ai/resolve";
 import { SAVE_STALE_MESSAGE, type ReviewRefusal } from "@/lib/fact-finder/api-types";
 import { countLines, defaultTicks, type ChangeLine, type ChangeSet, type ChangeTicks } from "@/lib/fact-finder/change-set";
@@ -30,6 +33,11 @@ import { FACT_FINDER_SECTIONS, findSection, fixedLabelsOf, isListLike, type FFSe
 import type { SourceStamp } from "@/lib/fact-finder/sources";
 import { fixedRowId, locateRow, readFactFinderState } from "@/lib/fact-finder/state";
 import type { FactFinderState, FFClosed } from "@/lib/fact-finder/types";
+import { deleteAccountForClient } from "@/lib/clients/accounts-writes";
+import { deleteExpenseForClient } from "@/lib/clients/expenses-writes";
+import { deleteIncomeForClient } from "@/lib/clients/incomes-writes";
+import { deleteLiabilityForClient } from "@/lib/clients/liabilities-writes";
+import { deleteSavingsRuleForClient } from "@/lib/clients/savings-rules-writes";
 import { updatePlanSettingsForClient } from "@/lib/clients/plan-settings-writes";
 import { findLikelyDuplicateHousehold } from "@/lib/crm/duplicate-household";
 import { ensurePlanImport } from "@/lib/imports/plan-builder-core";
@@ -726,6 +734,58 @@ const updatePlanAssumptions = defineWriteTool({
   auditMetadata: (args) => ({ keys: Object.keys(args.changes) }),
 });
 
+const REMOVABLE_KINDS = ["account", "liability", "income", "expense", "savings_rule"] as const;
+
+/** The row's name as start_fact_finder_step shows it; a savings rule shows its account's. Read before the delete. */
+async function removableLabel(kind: (typeof REMOVABLE_KINDS)[number], clientId: string, recordId: string) {
+  if (kind === "savings_rule") {
+    const [row] = await db
+      .select({ name: accounts.name })
+      .from(savingsRules)
+      .leftJoin(accounts, eq(savingsRules.accountId, accounts.id))
+      .where(and(eq(savingsRules.id, recordId), eq(savingsRules.clientId, clientId)));
+    return row ? (row.name ?? "Planned savings") : null;
+  }
+  const table = { account: accounts, liability: liabilities, income: incomes, expense: expenses }[kind];
+  const [row] = await db
+    .select({ name: table.name })
+    .from(table)
+    .where(and(eq(table.id, recordId), eq(table.clientId, clientId)));
+  return row?.name ?? null;
+}
+
+const removePlanDetail = defineWriteTool({
+  name: "remove_plan_detail",
+  title: "Remove a plan row",
+  description:
+    "Permanently remove one account, liability, income, expense or savings rule from a household's plan. Never a household.",
+  inputSchema: z.object({
+    clientId: clientIdArg,
+    kind: z.enum(REMOVABLE_KINDS),
+    recordId: z.string().describe("From list_plan_details."),
+  }),
+  destructive: true,
+  page: "netWorth",
+  handler: async ({ clientId, kind, recordId }, { principal, firmId }) => {
+    const label = await removableLabel(kind, clientId, recordId);
+    const base = { clientId, firmId, actorId: principal.userId };
+    // R5: the four access-checking cores take the principal; the savings rule core has no access check of its own.
+    const result =
+      kind === "account"
+        ? await deleteAccountForClient({ ...base, accountId: recordId, principal })
+        : kind === "liability"
+          ? await deleteLiabilityForClient({ ...base, liabilityId: recordId, principal })
+          : kind === "income"
+            ? await deleteIncomeForClient({ ...base, incomeId: recordId, principal })
+            : kind === "expense"
+              ? await deleteExpenseForClient({ ...base, expenseId: recordId, principal })
+              : await deleteSavingsRuleForClient({ ...base, ruleId: recordId });
+    if (!result.ok) throw new McpInputError(result.error);
+    return { removed: { kind, recordId, label: label ?? kind.replace("_", " ") } };
+  },
+  auditMetadata: (args) => ({ kind: args.kind, recordId: args.recordId }),
+});
+
 export const householdBuildingTools: McpTool[] = [
   createHousehold,
   startFactFinderStep,
@@ -735,4 +795,5 @@ export const householdBuildingTools: McpTool[] = [
   getMissingFacts,
   updatePlanDetail,
   updatePlanAssumptions,
+  removePlanDetail,
 ];

@@ -20,6 +20,12 @@ const h = vi.hoisted(() => ({
   discardImport: vi.fn(),
   updatePlanSettingsForClient: vi.fn(),
   loadEffectiveTree: vi.fn(),
+  deleteAccountForClient: vi.fn(),
+  deleteLiabilityForClient: vi.fn(),
+  deleteIncomeForClient: vi.fn(),
+  deleteExpenseForClient: vi.fn(),
+  deleteSavingsRuleForClient: vi.fn(),
+  labelRows: vi.fn(),
 }));
 
 // The real create check (it reads the mocked client access and audit); the import gate is stubbed.
@@ -32,6 +38,16 @@ vi.mock("@/lib/fact-finder/import-lifecycle", () => ({
   discardImport: h.discardImport,
 }));
 vi.mock("@/lib/clients/plan-settings-writes", () => ({ updatePlanSettingsForClient: h.updatePlanSettingsForClient }));
+vi.mock("@/lib/clients/accounts-writes", () => ({ deleteAccountForClient: h.deleteAccountForClient }));
+vi.mock("@/lib/clients/liabilities-writes", () => ({ deleteLiabilityForClient: h.deleteLiabilityForClient }));
+vi.mock("@/lib/clients/incomes-writes", () => ({ deleteIncomeForClient: h.deleteIncomeForClient }));
+vi.mock("@/lib/clients/expenses-writes", () => ({ deleteExpenseForClient: h.deleteExpenseForClient }));
+vi.mock("@/lib/clients/savings-rules-writes", () => ({ deleteSavingsRuleForClient: h.deleteSavingsRuleForClient }));
+// The label read: select(...).from(...)[.leftJoin(...)].where(...) resolves to the rows.
+vi.mock("@/db", () => {
+  const where = () => h.labelRows();
+  return { db: { select: () => ({ from: () => ({ where, leftJoin: () => ({ where }) }) }) } };
+});
 vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree: h.loadEffectiveTree }));
 vi.mock("@/lib/fact-finder/edit", () => ({ editFactFinder: h.editFactFinder }));
 vi.mock("@/lib/fact-finder/records/book", () => ({ loadRecordBook: h.loadRecordBook }));
@@ -82,6 +98,7 @@ const create = tool("create_household");
 const missingFactsTool = tool("get_missing_facts");
 const editTool = tool("update_plan_detail");
 const assumptionsTool = tool("update_plan_assumptions");
+const removeTool = tool("remove_plan_detail");
 
 const BASE = "11111111-1111-4111-8111-111111111111";
 const IMPORT = "22222222-2222-4222-8222-222222222222";
@@ -1250,5 +1267,89 @@ describe("update_plan_assumptions", () => {
     h.verifyClientAccessFor.mockResolvedValue({ ok: true, permission: "view", firmId: "org_1", access: "own" });
     await expect(call({ inflationRate: 0.03 })).rejects.toThrow(VIEW_ONLY_MESSAGE);
     expect(h.updatePlanSettingsForClient).not.toHaveBeenCalled();
+  });
+});
+
+describe("remove_plan_detail", () => {
+  const call = (args: Record<string, unknown>) => removeTool.run({ clientId: "c1", recordId: "r1", ...args }, principal);
+  const cores = {
+    account: h.deleteAccountForClient,
+    liability: h.deleteLiabilityForClient,
+    income: h.deleteIncomeForClient,
+    expense: h.deleteExpenseForClient,
+  };
+  const idArg = { account: "accountId", liability: "liabilityId", income: "incomeId", expense: "expenseId" } as const;
+
+  beforeEach(() => {
+    h.labelRows.mockResolvedValue([{ name: "Schwab IRA" }]);
+    for (const core of [...Object.values(cores), h.deleteSavingsRuleForClient]) {
+      core.mockResolvedValue({ ok: true, data: { id: "r1" }, resourceId: "r1" });
+    }
+  });
+
+  it("is a destructive write", () => {
+    expect(removeTool.annotations?.destructiveHint).toBe(true);
+  });
+
+  for (const kind of ["account", "liability", "income", "expense"] as const) {
+    it(`removes a ${kind} through its core with the principal, naming it`, async () => {
+      const out = await call({ kind });
+      expect(cores[kind]).toHaveBeenCalledWith({ clientId: "c1", firmId: "org_1", actorId: "u1", [idArg[kind]]: "r1", principal });
+      expect(out).toMatchObject({ removed: { kind, recordId: "r1", label: "Schwab IRA" } });
+    });
+  }
+
+  it("removes a savings rule with no principal, labelled by its account", async () => {
+    const out = await call({ kind: "savings_rule" });
+    expect(h.deleteSavingsRuleForClient).toHaveBeenCalledWith({ clientId: "c1", firmId: "org_1", actorId: "u1", ruleId: "r1" });
+    expect(out).toMatchObject({ removed: { kind: "savings_rule", recordId: "r1", label: "Schwab IRA" } });
+  });
+
+  it("labels a savings rule with no account as Planned savings", async () => {
+    h.labelRows.mockResolvedValue([{ name: null }]);
+    const out = (await call({ kind: "savings_rule" })) as { removed: { label: string } };
+    expect(out.removed.label).toBe("Planned savings");
+  });
+
+  it("reads the label before the delete, and never loads the whole record book", async () => {
+    const order: string[] = [];
+    h.labelRows.mockImplementation(async () => (order.push("label"), [{ name: "Joint Brokerage" }]));
+    h.deleteAccountForClient.mockImplementation(async () => (order.push("delete"), { ok: true, data: { id: "r1" }, resourceId: "r1" }));
+    await call({ kind: "account" });
+    expect(order).toEqual(["label", "delete"]);
+    expect(h.loadRecordBook).not.toHaveBeenCalled();
+  });
+
+  it("still calls the core when no row is found, and shows its refusal verbatim", async () => {
+    h.labelRows.mockResolvedValue([]);
+    h.deleteAccountForClient.mockResolvedValue({ ok: false, status: 404, error: "Account not found" });
+    await expect(call({ kind: "account" })).rejects.toThrow(new McpInputError("Account not found"));
+    expect(h.deleteAccountForClient).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces the default cash account's refusal verbatim", async () => {
+    const msg = "This is a system-managed cash account and can't be deleted.";
+    h.deleteAccountForClient.mockResolvedValue({ ok: false, status: 400, error: msg });
+    await expect(call({ kind: "account" })).rejects.toThrow(new McpInputError(msg));
+  });
+
+  it("fails schema parse on an unknown kind, calling nothing", async () => {
+    await expect(call({ kind: "client" })).rejects.toThrow();
+    await expect(call({ kind: "household" })).rejects.toThrow();
+    expect(h.labelRows).not.toHaveBeenCalled();
+    for (const core of [...Object.values(cores), h.deleteSavingsRuleForClient]) expect(core).not.toHaveBeenCalled();
+  });
+
+  it("audits the kind and id", async () => {
+    await call({ kind: "income" });
+    const audit = h.recordAudit.mock.calls.find(([a]) => a.action === "mcp.tool_write")![0];
+    expect(audit.metadata).toEqual({ kind: "income", recordId: "r1", tool: "remove_plan_detail", via: "claude" });
+  });
+
+  it("refuses a view-only household before reading or deleting", async () => {
+    h.verifyClientAccessFor.mockResolvedValue({ ok: true, permission: "view", firmId: "org_1", access: "own" });
+    await expect(call({ kind: "account" })).rejects.toThrow(VIEW_ONLY_MESSAGE);
+    expect(h.labelRows).not.toHaveBeenCalled();
+    expect(h.deleteAccountForClient).not.toHaveBeenCalled();
   });
 });
