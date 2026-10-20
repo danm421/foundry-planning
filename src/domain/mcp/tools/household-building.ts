@@ -24,6 +24,7 @@ import { createFactFinderImport, discardImport } from "@/lib/fact-finder/import-
 import type { FFOp } from "@/lib/fact-finder/ops";
 import type { FactFinderScope } from "@/lib/fact-finder/persist";
 import { runLeftovers } from "@/lib/fact-finder/placement/leftovers-run";
+import type { RecordBook } from "@/lib/fact-finder/placement/types";
 import { missingFacts, missingFactsByStep } from "@/lib/fact-finder/missing-facts";
 import { loadRecordBook } from "@/lib/fact-finder/records/book";
 import { resolveBaseCaseScenarioId } from "@/lib/fact-finder/records/load";
@@ -31,7 +32,7 @@ import { reviewFactFinder } from "@/lib/fact-finder/review";
 import { saveChangeSet } from "@/lib/fact-finder/save/save";
 import { FACT_FINDER_SECTIONS, findSection, fixedLabelsOf, isListLike, type FFSection } from "@/lib/fact-finder/schema";
 import type { SourceStamp } from "@/lib/fact-finder/sources";
-import { fixedRowId, locateRow, readFactFinderState } from "@/lib/fact-finder/state";
+import { factFinderImportSeed, fixedRowId, locateRow, readFactFinderState } from "@/lib/fact-finder/state";
 import type { FactFinderState } from "@/lib/fact-finder/types";
 import { deleteAccountForClient } from "@/lib/clients/accounts-writes";
 import type { EntityWriteResult } from "@/lib/clients/entity-write-result";
@@ -41,11 +42,13 @@ import { deleteLiabilityForClient } from "@/lib/clients/liabilities-writes";
 import { deleteSavingsRuleForClient } from "@/lib/clients/savings-rules-writes";
 import { updatePlanSettingsForClient } from "@/lib/clients/plan-settings-writes";
 import { findLikelyDuplicateHousehold } from "@/lib/crm/duplicate-household";
-import { ensurePlanImport, PlanImportRefusal } from "@/lib/imports/plan-builder-core";
+import { ensurePlanImport, PlanImportRefusal, type EnsurePlanImportResult } from "@/lib/imports/plan-builder-core";
+import { foundryUrl } from "@/lib/mcp/foundry-url";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 import { ASSUMED_LIFE_EXPECTANCY } from "@/lib/plan-horizon";
 import type { ImportRateLimitOp } from "@/lib/rate-limit";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { isUSPSStateCode } from "@/lib/usps-states";
 import { changeListView } from "../change-list-view";
 import { defineHouseholdWriteTool, defineTool, defineWriteTool, McpInputError, type McpTool } from "../define-tool";
 import { CLIENT_UNREADABLE_MESSAGE, McpForbiddenError } from "../guards";
@@ -55,6 +58,7 @@ import {
   FACT_FINDER_STEP_IDS,
   factFinderStep,
   rowsNeedingDecision,
+  type FactFinderStepId,
 } from "../fact-finder-steps";
 
 const NO_BASE_PLAN_MESSAGE = "This household has no base plan yet.";
@@ -208,6 +212,12 @@ function createDraft(principal: McpPrincipal, clientId: string, firmId: string, 
   });
 }
 
+/** What a new draft's first fill needs: its id and version, and the step as describeStep shows it. */
+function newStepView(stepId: FactFinderStepId, importId: string, payloadJson: unknown, book: RecordBook) {
+  const state = readFactFinderState(payloadJson);
+  return { importId, version: state.version, ...describeStep(stepId, state, book) };
+}
+
 const startFactFinderStep = defineWriteTool({
   name: "start_fact_finder_step",
   title: "Start a fact finder step",
@@ -226,8 +236,7 @@ const startFactFinderStep = defineWriteTool({
     // The book first: a failed read leaves no draft behind.
     const book = await loadRecordBook(clientId, firmId, scenarioId);
     const imp = await createDraft(principal, clientId, firmId, scenarioId, `Claude: ${factFinderStep(step).label}`);
-    const state = readFactFinderState(imp.payloadJson);
-    return { importId: imp.id, version: state.version, ...describeStep(step, state, book) };
+    return newStepView(step, imp.id, imp.payloadJson, book);
   },
   auditMetadata: (args, result) => ({ importId: result.importId, step: args.step }),
 });
@@ -434,6 +443,25 @@ const retirementAge = z.number().int().min(40).max(85);
 const filingStatus = z.enum(filingStatusEnum.enumValues);
 const person = z.object({ firstName: z.string().min(1), lastName: z.string().min(1), dateOfBirth });
 
+/**
+ * The household `ensurePlanImport` just created a plan for, with its step 0
+ * draft as start_fact_finder_step shows a step — so Claude fills that draft
+ * rather than opening a second one.
+ */
+async function householdCreated(created: EnsurePlanImportResult, householdId: string, firmId: string) {
+  const book = await loadRecordBook(created.clientId, firmId, created.scenarioId);
+  // The core's draft is the fact finder's seed, not edited yet.
+  const step0 = newStepView("household", created.importId, factFinderImportSeed().payloadJson, book);
+  return {
+    created: true as const,
+    clientId: created.clientId,
+    householdId,
+    nextStep: "household" as const,
+    ...step0,
+    foundryUrl: foundryUrl(created.clientId, "netWorth"),
+  };
+}
+
 const createHousehold = defineHouseholdWriteTool({
   name: "create_household",
   title: "Create a household",
@@ -443,8 +471,8 @@ const createHousehold = defineHouseholdWriteTool({
     "that has no plan yet), not both. A new household is checked first for a likely duplicate: a household you " +
     "can see whose primary contact has the same name and date of birth. If one exists nothing is created and " +
     "likelyDuplicate is returned; pass its householdId as differentFromHouseholdId to create anyway. Life " +
-    "expectancy is set to 95 for everyone. Returns clientId, householdId and importId for " +
-    "fill_fact_finder_step.",
+    "expectancy is set to 95 for everyone. Returns clientId, householdId and step 0's draft as " +
+    "start_fact_finder_step returns it; don't start step 0 again.",
   inputSchema: z
     .object({
       householdId: z.string().optional().describe("An existing household with no plan yet. Needs prospect."),
@@ -477,6 +505,11 @@ const createHousehold = defineHouseholdWriteTool({
     }),
   handler: async (args, { principal, firmId }) => {
     // Before anything is created: a refusal leaves no household, client or draft behind.
+    const state = args.household?.state;
+    // R47: the core drops a state it can't hold, so Claude would believe it was set.
+    if (state !== undefined && !isUSPSStateCode(state)) {
+      throw new McpInputError(`"${state}" isn't a USPS state code. Give the two-letter code, e.g. "CO".`);
+    }
     const entitled = await aiImportCheckFor(principal);
     if (!entitled.ok) throw refusalError(entitled);
     const base = { firmId, actorUserId: principal.userId, principal, label: "Claude: Household" };
@@ -495,7 +528,7 @@ const createHousehold = defineHouseholdWriteTool({
             ...(spouseAge !== undefined && { spouseRetirementAge: spouseAge, spouseLifeExpectancy: ASSUMED_LIFE_EXPECTANCY }),
           },
         });
-        return { created: true as const, clientId: created.clientId, householdId: args.householdId, importId: created.importId, nextStep: "household" as const };
+        return await householdCreated(created, args.householdId, firmId);
       } catch (err) {
         // The core's refusals written for a person; anything else is not model-safe.
         if (err instanceof PlanImportRefusal) throw new McpInputError(err.message);
@@ -532,7 +565,7 @@ const createHousehold = defineHouseholdWriteTool({
         ...(h.spouse && { spouseRetirementAge: h.spouse.retirementAge, spouseLifeExpectancy: ASSUMED_LIFE_EXPECTANCY }),
       },
     });
-    return { created: true as const, clientId: created.clientId, householdId: created.householdId!, importId: created.importId, nextStep: "household" as const };
+    return householdCreated(created, created.householdId!, firmId);
   },
   auditMetadata: (args, result) => ({
     mode: args.household ? "new" : "prospect",

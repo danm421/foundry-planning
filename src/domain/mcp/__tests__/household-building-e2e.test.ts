@@ -64,8 +64,8 @@ const run = (name: string, args: Record<string, unknown>, principal: McpPrincipa
 /** What a call threw; "not refused" when it didn't. */
 const refusalOf = (call: Promise<unknown>) => call.then(() => "not refused", (err: unknown) => err);
 
-type Created = { created: true; clientId: string; householdId: string; importId: string };
 type Started = StepView & { importId: string; version: number };
+type Created = Started & { created: true; clientId: string; householdId: string };
 type Filled = { version: number; needsDecision: unknown[] };
 type Reviewed = { changeSetVersion: number; lines: { action: string; what: string; label: string }[] };
 type Saved = { saved: { create: number; update: number }; leftOut: unknown[] };
@@ -129,7 +129,8 @@ d("Claude builds a household end to end, on a principal with no session (live DB
   afterAll(async () => Promise.all([dropSaveFirm(FIRM), dropSaveFirm(OTHER_FIRM)]), 120_000);
 
   it("creates the household, saves three steps, edits a fixed row and removes a row", async () => {
-    // Step 0: the household, its plan and step 0's draft, which has never been edited.
+    // Step 0: the household, its plan and step 0's draft, which has never been edited — returned
+    // as start_fact_finder_step returns a step, so it is filled from the result alone.
     const home = await createHousehold(PRINCIPAL, {
       name: "Check Household",
       state: "CO",
@@ -138,7 +139,9 @@ d("Claude builds a household end to end, on a principal with no session (live DB
       filingStatus: "married_joint",
     });
     const { clientId } = home;
-    const step0 = await fillReviewSave(clientId, home.importId, 0, [
+    expect(home).toMatchObject({ version: 0, step: { id: "household" } });
+    expect(home.sections.map((s) => s.id)).toEqual(["people", "household", "family", "external"]);
+    const step0 = await fillReviewSave(clientId, home.importId, home.version, [
       { sectionId: "family", cells: { firstName: "Emma", lastName: "Check", relationship: "Child", dateOfBirth: "2003-05-21" } },
     ]);
     expect(step0.reviewed.lines).toMatchObject([{ action: "create", what: "Family member", label: expect.stringContaining("Emma") }]);
@@ -277,7 +280,7 @@ d("Claude builds a household end to end, on a principal with no session (live DB
     const steps: [string, Record<string, unknown>][] = [
       ["create_household", { householdId: own.householdId, prospect: { filingStatus: "single", retirementAge: 63 } }],
       ["start_fact_finder_step", { clientId, step: "balance_sheet" }],
-      ["fill_fact_finder_step", { clientId, importId: own.importId, baseVersion: 0, rows: [row] }],
+      ["fill_fact_finder_step", { clientId, importId: own.importId, baseVersion: own.version, rows: [row] }],
       ["review_fact_finder_step", { clientId, importId: own.importId }],
       ["save_fact_finder_step", { clientId, importId: own.importId, changeSetVersion: 1 }],
       ["get_missing_facts", { clientId }],
@@ -293,7 +296,7 @@ d("Claude builds a household end to end, on a principal with no session (live DB
 
     // Naming its own household with this firm's draft finds no such step.
     const viaOwnClient: [string, Record<string, unknown>][] = [
-      ["fill_fact_finder_step", { clientId: theirs.clientId, importId: own.importId, baseVersion: 0, rows: [row] }],
+      ["fill_fact_finder_step", { clientId: theirs.clientId, importId: own.importId, baseVersion: own.version, rows: [row] }],
       ["review_fact_finder_step", { clientId: theirs.clientId, importId: own.importId }],
       ["save_fact_finder_step", { clientId: theirs.clientId, importId: own.importId, changeSetVersion: 1 }],
     ];

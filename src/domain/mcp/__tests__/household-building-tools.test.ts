@@ -746,7 +746,31 @@ describe("create_household", () => {
         spouseLifeExpectancy: 95,
       },
     });
-    expect(out).toEqual({ created: true, clientId: "c9", householdId: "hh9", importId: IMPORT, nextStep: "household" });
+    expect(out).toMatchObject({ created: true, clientId: "c9", householdId: "hh9", importId: IMPORT, nextStep: "household" });
+  });
+
+  // Step 0's draft comes back with the household, so Claude never opens a second one for it.
+  it("returns step 0's draft as start_fact_finder_step shows a step, read from the new plan's book", async () => {
+    const out = await create.run({ household: newHousehold }, principal);
+    expect(h.loadRecordBook).toHaveBeenCalledWith("c9", "org_1", BASE);
+
+    const started = (await start.run({ clientId: "c9", step: "household" }, principal)) as Record<string, unknown>;
+    expect(started.version).toBe(0);
+    expect(out).toEqual({ created: true, clientId: "c9", householdId: "hh9", nextStep: "household", ...started });
+  });
+
+  it("links to the new household's plan", async () => {
+    const out = (await create.run({ household: newHousehold }, principal)) as { foundryUrl: string };
+    expect(out.foundryUrl).toMatch(/\/clients\/c9\/details\/net-worth$/);
+  });
+
+  // R47: a state the plan can't hold is refused, never dropped while Claude believes it was set.
+  it("refuses a state that isn't a USPS code before checking for duplicates or creating anything", async () => {
+    await expect(create.run({ household: { ...newHousehold, state: "Colorado" } }, principal)).rejects.toThrow(
+      new McpInputError('"Colorado" isn\'t a USPS state code. Give the two-letter code, e.g. "CO".'),
+    );
+    expect(h.findLikelyDuplicateHousehold).not.toHaveBeenCalled();
+    expect(h.ensurePlanImport).not.toHaveBeenCalled();
   });
 
   it("audits the mode and the household, and records the client", async () => {
@@ -803,7 +827,8 @@ describe("create_household", () => {
       label: "Claude: Household",
       prospect: { householdId: "hh9", filingStatus: "single", retirementAge: 66, lifeExpectancy: 95 },
     });
-    expect(out).toEqual({ created: true, clientId: "c9", householdId: "hh9", importId: IMPORT, nextStep: "household" });
+    expect(out).toMatchObject({ created: true, clientId: "c9", householdId: "hh9", importId: IMPORT, version: 0, nextStep: "household" });
+    expect(out).toMatchObject({ step: { id: "household" }, foundryUrl: expect.stringMatching(/\/clients\/c9\//) });
   });
 
   it("passes the spouse's retirement age for a prospect", async () => {
