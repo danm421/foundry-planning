@@ -6,6 +6,7 @@ import { runProjection } from "@/engine/projection";
 import type {
   Account,
   AccountFlowOverride,
+  AssetTransaction,
   ClientInfo,
   EntityFlowOverride,
   Expense,
@@ -49,6 +50,7 @@ interface ApiData {
   expenses: Expense[];
   entityFlowOverrides?: EntityFlowOverride[];
   accountFlowOverrides?: AccountFlowOverride[];
+  assetTransactions?: AssetTransaction[];
   client?: ClientInfo;
 }
 
@@ -168,6 +170,7 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
       expenses: apiData.expenses,
       entityFlowOverrides: apiData.entityFlowOverrides ?? [],
       accountFlowOverrides: apiData.accountFlowOverrides ?? [],
+      assetTransactions: apiData.assetTransactions,
       client: apiData.client,
     });
   }, [openLedger, apiData, ledgerLookups, years]);

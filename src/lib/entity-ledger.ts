@@ -11,6 +11,7 @@
 import type {
   Account,
   AccountFlowOverride,
+  AssetTransaction,
   ClientInfo,
   EntityFlowOverride,
   Expense,
@@ -25,6 +26,7 @@ import {
 import { resolveEntityFlows } from "@/engine/entity-flows";
 import { collectBusinessTree } from "@/engine/business/business-tree";
 import { netGrowthOf } from "@/engine/margin";
+import { survivingSaleFraction } from "@/engine/linked-income";
 
 export type LedgerSection = "growth" | "income" | "expenses" | "ending";
 
@@ -73,6 +75,9 @@ export interface EntityLedgerContext {
   /** Per-year (income, expense, distribution%) override grid for business
    *  accounts in schedule mode. */
   accountFlowOverrides?: AccountFlowOverride[];
+  /** A business sale scales a business account's rows to the unsold share,
+   *  as `computeBusinessYearFlow` does for the row totals. */
+  assetTransactions?: AssetTransaction[];
   /** Optional. Enables retirement-month proration on the no-override
    *  growth-mode fallback inside resolveEntityFlowAmount, matching the
    *  engine's per-row crediting in the projection. */
@@ -303,6 +308,9 @@ function getBusinessAccountLedger(
     });
   }
 
+  // After a sale the household keeps only the unsold share of each row.
+  const owned = survivingSaleFraction(ctx.assetTransactions ?? [], accountId, ctx.year.year);
+
   // Schedule mode: a single override cell is the source of truth for the
   // year's income/expense — same model as schedule-mode entities.
   const flowMode = biz.flowMode ?? "annual";
@@ -310,18 +318,20 @@ function getBusinessAccountLedger(
     const ovr = (ctx.accountFlowOverrides ?? []).find(
       (o) => o.accountId === accountId && o.year === ctx.year.year,
     );
-    if (ovr?.incomeAmount != null && ovr.incomeAmount !== 0) {
+    const scheduledIncome = (ovr?.incomeAmount ?? 0) * owned;
+    const scheduledExpense = (ovr?.expenseAmount ?? 0) * owned;
+    if (scheduledIncome !== 0) {
       income.push({
         label: "Schedule income",
-        amount: ovr.incomeAmount,
+        amount: scheduledIncome,
         sourceKind: "flow-override",
         sourceId: `schedule:${accountId}:${ctx.year.year}:income`,
       });
     }
-    if (ovr?.expenseAmount != null && ovr.expenseAmount !== 0) {
+    if (scheduledExpense !== 0) {
       expenses.push({
         label: "Schedule expense",
-        amount: ovr.expenseAmount,
+        amount: scheduledExpense,
         sourceKind: "flow-override",
         sourceId: `schedule:${accountId}:${ctx.year.year}:expense`,
       });
@@ -335,7 +345,7 @@ function getBusinessAccountLedger(
       if (inc.ownerAccountId !== accountId) continue;
       if (y < inc.startYear || y > inc.endYear) continue;
       const inflateFrom = inc.inflationStartYear ?? inc.startYear;
-      const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, y - inflateFrom);
+      const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, y - inflateFrom) * owned;
       if (amount === 0) continue;
       income.push({
         label: inc.name,
@@ -348,7 +358,7 @@ function getBusinessAccountLedger(
       if (exp.ownerAccountId !== accountId) continue;
       if (y < exp.startYear || y > exp.endYear) continue;
       const inflateFrom = exp.inflationStartYear ?? exp.startYear;
-      const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, y - inflateFrom);
+      const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, y - inflateFrom) * owned;
       if (amount === 0) continue;
       expenses.push({
         label: exp.name,

@@ -2,6 +2,7 @@
 import type {
   Account,
   AccountFlowOverride,
+  AssetTransaction,
   ClientInfo,
   EntityFlowMode,
   EntityFlowOverride,
@@ -215,6 +216,8 @@ export interface ComputeBusinessAccountCashFlowInput {
   /** Per-year (income, expense, distribution%) override grid for business
    *  accounts in schedule mode. */
   accountFlowOverrides?: AccountFlowOverride[];
+  /** A business sale scales the year's income/expense to the unsold share. */
+  assetTransactions?: AssetTransaction[];
 }
 
 /**
@@ -503,6 +506,7 @@ export function computeBusinessAccountCashFlow(input: ComputeBusinessAccountCash
         input.incomes,
         input.expenses,
         input.accountFlowOverrides,
+        input.assetTransactions,
       );
       const netIncome = flow.gross - flow.exp;
       // Match the engine's distribution rule (projection.ts Phase 3):

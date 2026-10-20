@@ -49,8 +49,10 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
  * 13: household checking is never a business's own "— Cash" account, and a
  *     business sale is priced at its grown balance, not its plan-start value
  *     (2026-10-19)
+ * 14: a sold business stops paying its owners — income, expenses and the
+ *     schedule grid scale to the unsold share from the sale year (2026-10-19)
  */
-export const ENGINE_VERSION = 13;
+export const ENGINE_VERSION = 14;
 
 /** Round to 6 decimals so float representation noise can't cause spurious misses. */
 function round(n: number): number {

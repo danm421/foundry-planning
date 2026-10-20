@@ -16,6 +16,7 @@ import type {
   ClientData,
   EntitySummary,
   Account,
+  AssetTransaction,
   Income,
   Expense,
   GiftEvent,
@@ -1267,5 +1268,76 @@ describe("household checking is never a business's own cash account", () => {
     expect(creditedTo(y0, "hh-checking")).toBeCloseTo(100_000, 2);
     expect(y0.withdrawals.total).toBe(0);
     expect(endBalance(y0, "biz-llc-checking")).toBeCloseTo(0, 2);
+  });
+});
+
+describe("a sold business stops paying its owners", () => {
+  // Sold at the start of 2027: 2026 is a full year of the business, every
+  // year from 2027 on belongs to the buyer (or, after a partial sale, only the
+  // retained share belongs to the household).
+  const sale = (fractionSold: number | null): AssetTransaction => ({
+    id: "sell-llc",
+    name: "Sell LLC",
+    type: "sell",
+    year: 2027,
+    businessAccountId: "biz-llc",
+    fractionSold,
+  });
+  const llcCosts: Expense = {
+    id: "e-llc", type: "other", name: "LLC Costs", annualAmount: 30_000,
+    startYear: 2026, endYear: 2050, growthRate: 0, ownerAccountId: "biz-llc",
+  };
+  const run = (data: ClientData, fractionSold: number | null) =>
+    runProjection({
+      ...data,
+      planSettings: { ...planSettings, planEndYear: 2028 },
+      assetTransactions: [sale(fractionSold)],
+    });
+  const k1 = (y: ReturnType<typeof runProjection>[number]) =>
+    y.taxDetail!.bySource["business_passthrough:biz-llc"]?.amount ?? 0;
+
+  it("pays nothing from the sale year on after a full sale", () => {
+    const years = run(mkData({ bizOverrides: { value: 500_000, basis: 500_000 } }), null);
+
+    expect(creditedTo(years[0], "hh-checking")).toBeCloseTo(100_000, 2);
+    for (const y of years.slice(1)) {
+      expect(totalCredited(y)).toBe(0);
+      expect(k1(y)).toBe(0);
+      expect(y.income.business).toBe(0);
+      expect(y.entityCashFlow.get("biz-llc")?.income ?? 0).toBe(0);
+    }
+  });
+
+  it("pays the retained share of income and costs after a partial sale", () => {
+    const years = run(
+      mkData({ bizOverrides: { value: 500_000, basis: 500_000 }, expenses: [llcCosts] }),
+      0.4,
+    );
+
+    expect(creditedTo(years[0], "hh-checking")).toBeCloseTo(70_000, 2);
+    for (const y of years.slice(1)) {
+      expect(creditedTo(y, "hh-checking")).toBeCloseTo(42_000, 2);
+      expect(k1(y)).toBeCloseTo(42_000, 2);
+      expect(y.entityCashFlow.get("biz-llc")?.income).toBeCloseTo(60_000, 2);
+      expect(y.entityCashFlow.get("biz-llc")?.expenses).toBeCloseTo(18_000, 2);
+    }
+  });
+
+  it("ignores the schedule grid's cells after a full sale", () => {
+    const years = run(
+      {
+        ...mkData({ bizOverrides: { value: 500_000, basis: 500_000, flowMode: "schedule" }, incomes: [] }),
+        accountFlowOverrides: [2026, 2027, 2028].map((year) => ({
+          accountId: "biz-llc", year, incomeAmount: 100_000,
+        })),
+      },
+      null,
+    );
+
+    expect(creditedTo(years[0], "hh-checking")).toBeCloseTo(100_000, 2);
+    for (const y of years.slice(1)) {
+      expect(totalCredited(y)).toBe(0);
+      expect(k1(y)).toBe(0);
+    }
   });
 });

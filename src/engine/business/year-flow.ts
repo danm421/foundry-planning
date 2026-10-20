@@ -1,4 +1,5 @@
-import type { Account, AccountFlowOverride, Expense, Income } from "../types";
+import type { Account, AccountFlowOverride, AssetTransaction, Expense, Income } from "../types";
+import { survivingSaleFraction } from "../linked-income";
 
 /**
  * Resolve the year's gross income, expenses, and distribution percent for a
@@ -10,6 +11,10 @@ import type { Account, AccountFlowOverride, Expense, Income } from "../types";
  *     with `ownerAccountId`, applying inflation/growth. `distPercent` from
  *     account-level field, default 1.0.
  *
+ * Both modes describe the WHOLE business. Once a sale (BoY) has sold some or
+ * all of it, the household keeps only the unsold share of the income and
+ * expenses — a fully sold business pays its old owners nothing.
+ *
  * Lives in `engine/business/` (not directly in `projection.ts`) so the entity
  * cashflow pass can import it without forming a cycle through projection.
  */
@@ -19,15 +24,17 @@ export function computeBusinessYearFlow(
   currentIncomes: readonly Income[],
   allExpenses: readonly Expense[],
   accountFlowOverrides: AccountFlowOverride[] | undefined,
+  assetTransactions: readonly AssetTransaction[] | undefined,
 ): { gross: number; exp: number; distPercent: number } {
   const accountDistDefault = business.distributionPolicyPercent ?? 1.0;
+  const owned = survivingSaleFraction(assetTransactions ?? [], business.id, year);
   if (business.flowMode === "schedule") {
     const ovr = (accountFlowOverrides ?? []).find(
       (r) => r.accountId === business.id && r.year === year,
     );
     return {
-      gross: ovr?.incomeAmount ?? 0,
-      exp: ovr?.expenseAmount ?? 0,
+      gross: (ovr?.incomeAmount ?? 0) * owned,
+      exp: (ovr?.expenseAmount ?? 0) * owned,
       distPercent: ovr?.distributionPercent ?? accountDistDefault,
     };
   }
@@ -45,5 +52,5 @@ export function computeBusinessYearFlow(
     const inflateFrom = e.inflationStartYear ?? e.startYear;
     exp += e.annualAmount * Math.pow(1 + e.growthRate, year - inflateFrom);
   }
-  return { gross, exp, distPercent: accountDistDefault };
+  return { gross: gross * owned, exp: exp * owned, distPercent: accountDistDefault };
 }

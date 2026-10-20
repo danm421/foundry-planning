@@ -3134,6 +3134,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         currentIncomes,
         allExpenses,
         data.accountFlowOverrides,
+        data.assetTransactions,
       );
       const netIncome = flow.gross - flow.exp;
       if (netIncome <= 0) continue;
@@ -6300,6 +6301,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         currentIncomes,
         allExpenses,
         data.accountFlowOverrides,
+        data.assetTransactions,
       );
       const netIncome = flow.gross - flow.exp;
       // Source: the business's own child cash account if one exists. When the
@@ -9633,6 +9635,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     incomes: currentIncomes,
     expenses: lastAllExpenses,
     accountFlowOverrides: data.accountFlowOverrides,
+    assetTransactions: data.assetTransactions,
   });
 
   // Future-activated business accounts: `computeBusinessAccountCashFlow` walks

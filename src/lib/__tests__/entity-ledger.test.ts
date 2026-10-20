@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { getEntityLedger, type EntityLedgerContext } from "../entity-ledger";
 import { computeEntityCashFlow, type EntityMetadata } from "@/engine/entity-cashflow";
-import type { ProjectionYear } from "@/engine/types";
+import type { Account, ProjectionYear } from "@/engine/types";
 import { runProjection } from "@/engine/projection";
 import { LEGACY_FM_CLIENT } from "@/engine/ownership";
 import { basePlanSettings, buildClientData } from "@/engine/__tests__/fixtures";
@@ -711,5 +711,43 @@ describe("getEntityLedger — runProjection integration", () => {
     });
     const sum = ledger.ending.reduce((a, r) => a + r.amount, 0);
     expect(sum).toBeCloseTo(row.endingBalance, 2);
+  });
+});
+
+describe("getEntityLedger — a business account after its sale", () => {
+  const biz = {
+    id: "biz", name: "LLC", category: "business", subType: "llc", value: 0, basis: 0,
+    growthRate: 0, rmdEnabled: false, parentAccountId: null, owners: [],
+  } as unknown as Account;
+  const ctx = (fractionSold: number | null): EntityLedgerContext => ({
+    year: makeYear(2028),
+    planStartYear: 2026,
+    entitiesById: new Map(),
+    accountNamesById: new Map([["biz", "LLC"]]),
+    businessAccountsById: new Map([["biz", { id: "biz", name: "LLC", businessType: "llc", flowMode: "annual" }]]),
+    accounts: [biz],
+    incomes: [{
+      id: "inc", type: "business", name: "LLC Revenue", annualAmount: 100_000,
+      startYear: 2026, endYear: 2050, growthRate: 0, owner: "client", ownerAccountId: "biz",
+    }],
+    expenses: [{
+      id: "exp", type: "other", name: "LLC Costs", annualAmount: 30_000,
+      startYear: 2026, endYear: 2050, growthRate: 0, ownerAccountId: "biz",
+    }],
+    entityFlowOverrides: [],
+    assetTransactions: [{ id: "s", name: "Sell", type: "sell", year: 2027, businessAccountId: "biz", fractionSold }],
+  });
+  const sum = (rows: { amount: number }[]) => rows.reduce((s, r) => s + r.amount, 0);
+
+  it("lists nothing after a full sale", () => {
+    const ledger = getEntityLedger("biz", ctx(null));
+    expect(ledger.income).toEqual([]);
+    expect(ledger.expenses).toEqual([]);
+  });
+
+  it("lists the retained share after a partial sale", () => {
+    const ledger = getEntityLedger("biz", ctx(0.4));
+    expect(sum(ledger.income)).toBeCloseTo(60_000, 2);
+    expect(sum(ledger.expenses)).toBeCloseTo(18_000, 2);
   });
 });

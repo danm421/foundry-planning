@@ -11,9 +11,11 @@ export interface LinkedIncomeContext {
 }
 
 /** Fraction of the asset still owned (not yet sold) as of `year`. A full sale
- *  (fractionSold null or >= 1) drops it to 0; sequential partial sales compound. */
+ *  (fractionSold null or >= 1) drops it to 0; sequential partial sales compound.
+ *  A business is sold through `businessAccountId`, any other asset through
+ *  `accountId`; either names the asset. */
 export function survivingSaleFraction(
-  transactions: AssetTransaction[],
+  transactions: readonly AssetTransaction[],
   accountId: string,
   year: number,
 ): number {
@@ -23,7 +25,7 @@ export function survivingSaleFraction(
       (t) =>
         (t.enabled ?? true) &&
         t.type === "sell" &&
-        t.accountId === accountId &&
+        (t.accountId === accountId || t.businessAccountId === accountId) &&
         t.year <= year,
     )
     .sort((a, b) => a.year - b.year);
