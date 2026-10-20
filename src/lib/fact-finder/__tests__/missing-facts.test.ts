@@ -39,8 +39,14 @@ const living = (annualAmount: number): BookRecord => ({
 const salary = (owner: string): BookRecord => ({
   id: `sal-${owner}`,
   label: "Salary",
-  values: { type: "salary", owner },
+  values: { type: "salary", owner, annualAmount: 90000 },
   facts: { type: "salary", owner },
+});
+const business = (owner: string): BookRecord => ({
+  id: `biz-${owner}`,
+  label: "Consulting",
+  values: { type: "business", owner, annualAmount: 50000 },
+  facts: { type: "business", owner },
 });
 
 /** Everything a plan needs: both people working with salaries, living costs on record. */
@@ -117,17 +123,46 @@ describe("missingFacts", () => {
     expect(forStep(bookWith({ ...complete(), income: [salary("joint")] }), "income")).toEqual([]);
   });
 
-  it("asks for a benefit estimate on Social Security income with no PIA", () => {
-    const ss = (piaMonthly: number | null): BookRecord => ({
+  describe("Social Security follows the benefit mode", () => {
+    const ss = (values: Record<string, unknown>): BookRecord => ({
       id: "ss1",
       label: "Alex Social Security",
-      values: { type: "social_security", piaMonthly },
+      values: { type: "social_security", ...values } as BookRecord["values"],
       facts: { type: "social_security" },
     });
-    const missing = (pia: number | null) => forStep(bookWith({ ...complete(), income: [...complete().income!, ss(pia)] }), "income");
-    expect(missing(null)).toEqual([{ step: "income", target: "income", recordId: "ss1", label: "Alex Social Security", missing: "a benefit estimate" }]);
-    expect(missing(0)).toHaveLength(1);
-    expect(missing(2400)).toEqual([]);
+    const found = (values: Record<string, unknown>) =>
+      forStep(bookWith({ ...complete(), income: [...complete().income!, ss(values)] }), "income");
+    const gap = [{ step: "income", target: "income", recordId: "ss1", label: "Alex Social Security", missing: "a benefit estimate" }];
+
+    it("never flags no_benefit", () => {
+      expect(found({ ssBenefitMode: "no_benefit", piaMonthly: null, annualAmount: 0 })).toEqual([]);
+    });
+    it("accepts a PIA of 0 under pia_at_fra", () => {
+      expect(found({ ssBenefitMode: "pia_at_fra", piaMonthly: 0 })).toEqual([]);
+    });
+    it("flags pia_at_fra with no PIA (the new-plan seed)", () => {
+      expect(found({ ssBenefitMode: "pia_at_fra", piaMonthly: null })).toEqual(gap);
+    });
+    it("accepts manual_amount with an amount", () => {
+      expect(found({ ssBenefitMode: "manual_amount", annualAmount: 30000 })).toEqual([]);
+    });
+    it("flags manual_amount with 0", () => {
+      expect(found({ ssBenefitMode: "manual_amount", annualAmount: 0 })).toEqual(gap);
+    });
+    it("flags a null mode with 0", () => {
+      expect(found({ ssBenefitMode: null, annualAmount: 0 })).toEqual(gap);
+    });
+  });
+
+  it("does not ask a working-age business owner for a salary", () => {
+    expect(forStep(bookWith({ ...complete(), income: [business("client"), salary("spouse")] }), "income")).toEqual([]);
+  });
+
+  it("asks for the amount of a salary at $0, not of one with an amount", () => {
+    const zero: BookRecord = { ...salary("client"), id: "sal-zero", label: "Alex's pay", values: { type: "salary", owner: "client", annualAmount: 0 } };
+    expect(forStep(bookWith({ ...complete(), income: [zero, salary("spouse")] }), "income")).toEqual([
+      { step: "income", target: "income", recordId: "sal-zero", label: "Alex's pay", missing: "amount" },
+    ]);
   });
 
   it("asks for contributions to a retirement account whose owner is still working", () => {

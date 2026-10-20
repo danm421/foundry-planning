@@ -54,7 +54,7 @@ export function missingFacts(book: RecordBook, opts: { currentYear: number }): M
       role,
       exists: !!home && hasSecond,
       dob,
-      name: book.names[role] ?? (role === "client" ? "The client" : "The second person"),
+      name: book.names[role] || (role === "client" ? "The client" : "The second person"),
       // Still working: under retirement age this year. Unknown without both.
       working: born !== null && retireAge !== null && opts.currentYear - born < retireAge,
     };
@@ -81,11 +81,16 @@ export function missingFacts(book: RecordBook, opts: { currentYear: number }): M
   const incomes = rec("income");
   for (const p of people) {
     if (!p.working) continue;
-    const hasSalary = incomes.some((r) => r.facts?.type === "salary" && (r.facts.owner === p.role || r.facts.owner === "joint"));
+    const hasSalary = incomes.some((r) => (r.facts?.type === "salary" || r.facts?.type === "business") && (r.facts.owner === p.role || r.facts.owner === "joint"));
     if (!hasSalary) add("income", "client_household", home, p.name, "a salary, or confirmation there is none");
   }
   for (const r of incomes) {
-    if (r.facts?.type === "social_security" && unset(r.values.piaMonthly)) add("income", "income", r, r.label, "a benefit estimate");
+    if (r.facts?.type === "salary" && unset(r.values.annualAmount)) add("income", "income", r, r.label, "amount");
+    if (r.facts?.type !== "social_security") continue;
+    // The estimate depends on the benefit mode; a PIA of 0 is a real answer (no work record).
+    const mode = r.values.ssBenefitMode;
+    const lacksEstimate = mode === "no_benefit" ? false : mode === "pia_at_fra" ? r.values.piaMonthly === null || r.values.piaMonthly === undefined : unset(r.values.annualAmount);
+    if (lacksEstimate) add("income", "income", r, r.label, "a benefit estimate");
   }
 
   // savings

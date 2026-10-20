@@ -851,12 +851,17 @@ describe("get_missing_facts", () => {
   });
 
   it("filters the list to one step but still counts the whole household", async () => {
-    h.loadRecordBook.mockResolvedValue(emptyPlan());
-    const out = (await missingFactsTool.run({ clientId: "c1", step: "estate" }, principal)) as {
+    const book = emptyPlan();
+    book.records.family_member = [{ id: "fm1", label: "Jo Rivera", values: { dateOfBirth: null } }];
+    h.loadRecordBook.mockResolvedValue(book);
+    const out = (await missingFactsTool.run({ clientId: "c1", step: "household" }, principal)) as {
       missing: unknown[];
       byStep: Record<string, number>;
     };
-    expect(out.missing).toEqual([]);
+    expect(out.missing).toEqual([
+      { step: "household", target: "family_member", recordId: "fm1", label: "Jo Rivera", missing: "date of birth" },
+    ]);
+    expect(out.byStep.household).toBe(1);
     expect(out.byStep.living_expenses).toBe(1);
   });
 
