@@ -568,6 +568,19 @@ html {
 }
 
 /* ------------------------------------------------------------------ */
+/* Select chevron — the arrow `appearance-none` strips. Pair with pr-8. */
+/* A utility, not an arbitrary background-image class: the inline SVG */
+/* holds spaces, which split a class attribute into dead tokens.       */
+/* ------------------------------------------------------------------ */
+
+@utility select-chevron {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%238b909c'><path fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.04l3.71-3.81a.75.75 0 111.08 1.04l-4.25 4.36a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z' clip-rule='evenodd'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 1.25rem;
+}
+
+/* ------------------------------------------------------------------ */
 /* Thin scrollbar — matches the dark surface hairlines                 */
 /* ------------------------------------------------------------------ */
 

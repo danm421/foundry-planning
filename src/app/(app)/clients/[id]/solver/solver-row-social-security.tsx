@@ -20,6 +20,7 @@ import {
 } from "@/lib/solver/types";
 import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { FieldHintPopover, type HintRow } from "@/components/forms/field-hint-popover";
+import { selectChevronClassName } from "@/components/forms/input-styles";
 import { SolverBaseHint } from "./solver-base-hint";
 import { CurrencyAmountInput } from "./solver-currency-amount-input";
 import { SolverFieldActions } from "./solver-field-actions";
@@ -332,30 +333,20 @@ function EditableSummary({
             }}
           />
           <span className="text-[13px] text-ink-3">{unitSuffix(row)} at</span>
-          <span className="relative">
-            <select
-              aria-label={`${label} claim age`}
-              value={claimAgeMonths}
-              onChange={(e) =>
-                claimAgeMutations(row, client, person, Math.floor(Number(e.target.value) / 12)).forEach(onChange)
-              }
-              className="h-9 appearance-none rounded-md border border-hair-2 border-l-2 border-l-accent/70 bg-card-2 pl-2.5 pr-7 text-[14px] text-ink tabular focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-            >
-              {claimAgeOptions(claimAgeMonths).map((m) => (
-                <option key={m} value={m}>
-                  {ageLabel(Math.floor(m / 12), m % 12)}
-                </option>
-              ))}
-            </select>
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 20 20"
-              className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3"
-              fill="currentColor"
-            >
-              <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.04l3.71-3.81a.75.75 0 111.08 1.04l-4.25 4.36a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-            </svg>
-          </span>
+          <select
+            aria-label={`${label} claim age`}
+            value={claimAgeMonths}
+            onChange={(e) =>
+              claimAgeMutations(row, client, person, Math.floor(Number(e.target.value) / 12)).forEach(onChange)
+            }
+            className={`h-9 rounded-md border border-hair-2 border-l-2 border-l-accent/70 bg-card-2 pl-2.5 text-[14px] text-ink tabular focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 ${selectChevronClassName}`}
+          >
+            {claimAgeOptions(claimAgeMonths).map((m) => (
+              <option key={m} value={m}>
+                {ageLabel(Math.floor(m / 12), m % 12)}
+              </option>
+            ))}
+          </select>
         </div>
       ) : (
         <button

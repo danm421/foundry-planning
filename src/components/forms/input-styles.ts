@@ -35,10 +35,12 @@ const inputCompactCore =
 export const inputCompactBaseClassName = inputCompactCore;
 export const inputCompactClassName = "w-full " + inputCompactCore;
 
-const selectExtras =
-  " appearance-none pr-8 bg-no-repeat bg-[right_0.5rem_center] " +
-  // amber chevron, base64-inlined to avoid an asset import
-  "bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 20 20%22 fill=%22%238b909c%22><path fill-rule=%22evenodd%22 d=%22M5.23 7.21a.75.75 0 011.06.02L10 11.04l3.71-3.81a.75.75 0 111.08 1.04l-4.25 4.36a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z%22 clip-rule=%22evenodd%22/></svg>')]";
+// The chevron is the `select-chevron` utility in globals.css. It can't be an
+// arbitrary background-image class here: the inline SVG holds spaces, and a
+// class attribute splits on whitespace, so that class never matched and every
+// select drew no arrow at all. (Don't spell such a class out in a comment
+// either — Tailwind scans comments and would emit it.)
+const selectExtras = " appearance-none pr-8 select-chevron";
 
 /**
  * The chevron + appearance reset alone, with NO border, fill or size.
