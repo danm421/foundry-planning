@@ -79,6 +79,28 @@ describe("InlineSelect", () => {
     expect(ancestorClick).not.toHaveBeenCalled();
   });
 
+  // A visible <select> sized itself to its longest option and spilled over the
+  // next column. The cell now keeps showing its own text while the list opens.
+  it("keeps the display text in place while picking and opens the list in one click", async () => {
+    const user = userEvent.setup();
+    const showPicker = vi.fn();
+    const proto = HTMLSelectElement.prototype as { showPicker?: () => void };
+    const original = proto.showPicker;
+    proto.showPicker = showPicker;
+    try {
+      render(
+        <InlineSelect display="Cooper (shown)" value="client" options={OPTIONS}
+          onSelect={vi.fn()} label="owner for Schwab" canEdit />,
+      );
+      await user.click(screen.getByRole("button"));
+      const combobox = screen.getByRole("combobox", { name: "Owner for Schwab" });
+      expect(combobox.parentElement).toHaveTextContent(/^Cooper \(shown\)/);
+      expect(showPicker).toHaveBeenCalledTimes(1);
+    } finally {
+      proto.showPicker = original;
+    }
+  });
+
   it("closes without dispatching on blur", async () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();
