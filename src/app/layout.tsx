@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { ClerkProvider } from "@clerk/nextjs";
 import { dark } from "@clerk/themes";
 import { Inter, B612_Mono } from "next/font/google";
+import { PasswordManagerGuard } from "@/components/password-manager-guard";
 import { SentryUserContext } from "@/components/sentry-user-context";
 import { ToastProvider } from "@/components/toast";
 import { resolveTheme, THEME_COOKIE } from "@/lib/theme";
@@ -92,6 +93,7 @@ export default async function RootLayout({
             Skip to content
           </a>
           <SentryUserContext />
+          <PasswordManagerGuard />
           <ToastProvider>{children}</ToastProvider>
         </body>
       </html>
