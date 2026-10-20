@@ -146,4 +146,66 @@ describe("changeListView", () => {
     expect(roth.aiPlaced).toBe(true);
     expect(roth.fields.find((f) => f.key === "growthRate")?.included).toBe(false);
   });
+
+  it("labels a line that can't save and changes nothing as such, not as an update", () => {
+    const blockedNone: ChangeSet = {
+      ...set,
+      lines: set.lines.map((l) => (l.rowId === "row-cash" ? { ...l, blocked: { reason: "Pick the account type." } } : l)),
+    };
+    expect(changeListView(blockedNone, defaultTicks(blockedNone)).lines.find((l) => l.lineId === "row-cash/account")).toMatchObject({
+      action: "none",
+      cannotSave: "Pick the account type.",
+    });
+  });
+});
+
+describe("changeListView: the lines the save leaves out, as the screen shows them before saving", () => {
+  const joint = [{ who: client, percent: 0.5 }, { who: second, percent: 0.5 }];
+  const chk = draft({
+    lineId: "row-chk/account",
+    rowId: "row-chk",
+    sectionId: "cash",
+    label: "Chase Checking",
+    fields: [put("name", "Chase Checking"), put("value", 18500), put("owners", [{ who: client, percent: 1 }])],
+  });
+  const savings = draft({
+    lineId: "row-sav/savings_rule",
+    rowId: "row-sav",
+    sectionId: "savings",
+    target: "savings_rule",
+    label: "Monthly savings",
+    fields: [put("accountId", { ref: "line", target: "account", lineId: "row-chk/account" }), put("annualAmount", 6000)],
+  });
+  const brokerage = draft({
+    lineId: "row-brk/account",
+    rowId: "row-brk",
+    sectionId: "taxable",
+    label: "Joint Brokerage",
+    fields: [put("name", "Joint Brokerage"), put("value", 90000), put("owners", joint)],
+  });
+  const reviewedWith = (drafts: TargetDraft[], hasCoClient: boolean): ChangeSet => ({
+    builtAtVersion: 2,
+    builtAt: "2026-10-19T12:00:00.000Z",
+    lines: diffDrafts(drafts, book()),
+    notices: [],
+    hasCoClient,
+  });
+
+  it("names a line left out, and every line that needs it, each with the save's reason", () => {
+    const set = reviewedWith([chk, savings], true);
+    const ticks = defaultTicks(set);
+    for (const key of Object.keys(ticks["row-chk/account"])) ticks["row-chk/account"][key] = false;
+    const view = changeListView(set, ticks);
+    expect(view.lines.map(({ lineId, leftOut }) => ({ lineId, leftOut }))).toEqual([
+      { lineId: "row-chk/account", leftOut: "Nothing ticked." },
+      { lineId: "row-sav/savings_rule", leftOut: "Needs “Chase Checking”, which isn't being saved." },
+    ]);
+  });
+
+  it("leaves out a line naming the second person on a plan without them, in the fact finder's own words", () => {
+    const set = reviewedWith([brokerage, chk], false);
+    const view = changeListView(set, defaultTicks(set));
+    expect(view.lines.find((l) => l.lineId === "row-brk/account")?.leftOut).toMatch(/^Needs the .+, who isn't being saved\.$/);
+    expect(view.lines.find((l) => l.lineId === "row-chk/account")).not.toHaveProperty("leftOut");
+  });
 });

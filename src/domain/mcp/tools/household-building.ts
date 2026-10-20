@@ -32,7 +32,7 @@ import { saveChangeSet } from "@/lib/fact-finder/save/save";
 import { FACT_FINDER_SECTIONS, findSection, fixedLabelsOf, isListLike, type FFSection } from "@/lib/fact-finder/schema";
 import type { SourceStamp } from "@/lib/fact-finder/sources";
 import { fixedRowId, locateRow, readFactFinderState } from "@/lib/fact-finder/state";
-import type { FactFinderState, FFClosed } from "@/lib/fact-finder/types";
+import type { FactFinderState } from "@/lib/fact-finder/types";
 import { deleteAccountForClient } from "@/lib/clients/accounts-writes";
 import type { EntityWriteResult } from "@/lib/clients/entity-write-result";
 import { deleteExpenseForClient } from "@/lib/clients/expenses-writes";
@@ -321,10 +321,10 @@ const reviewFactFinderStep = defineWriteTool({
   description:
     "Build a fact finder step's change list: the records saving it would create and update in the plan, each " +
     "field from its value on record (from) to the new one (to), and the lines that can't save with the reason. " +
-    "Saves nothing to the plan. included marks what the save writes by default; a name or owner that would " +
-    "replace one on record starts left out. Refused while a row's link to an existing record waits on the " +
-    "advisor; the refusal lists those rows as needsDecision. changeSetVersion is what save_fact_finder_step " +
-    "takes, and the draft's version for a later fill.",
+    "Saves nothing to the plan. included marks what the save writes by default, and leftOut why it would leave " +
+    "a line out; a name or owner that would replace one on record starts left out. Refused while a row's link " +
+    "to an existing record waits on the advisor; the refusal lists those rows as needsDecision. " +
+    "changeSetVersion is what save_fact_finder_step takes, and the draft's version for a later fill.",
   inputSchema: z.object({ clientId: clientIdArg, importId: importIdArg }),
   handler: async ({ clientId, importId }, { principal }) => {
     const gate = await openStep(principal, clientId, importId, "match");
@@ -375,20 +375,23 @@ function approvedTicks(changeSet: ChangeSet, leaveOut: readonly LineChoice[], in
 
 /**
  * The reviewed list saved as the principal, the import closed: the lines it
- * saved and what it left out. All or nothing — a refusal writes nothing and
- * names its line.
+ * saved, and each line it left out with the reason. All or nothing — a
+ * refusal writes nothing and names its line.
  */
 async function saveDraft(
   scope: FactFinderScope,
   principal: McpPrincipal,
   changeSet: ChangeSet,
   ticks: ChangeTicks,
-): Promise<{ savedLines: ChangeLine[]; leftOut: FFClosed["leftOut"] }> {
+): Promise<{ savedLines: ChangeLine[]; leftOut: { lineId: string; label: string; reason: string }[] }> {
   const outcome = await saveChangeSet({ scope, actorId: principal.userId, principal, changeSetVersion: changeSet.builtAtVersion, ticks });
   if (!outcome.ok) throw new McpInputError(outcome.error, outcome.lineId !== undefined ? { lineId: outcome.lineId } : undefined);
   const { saved = [], leftOut = [] } = outcome.factFinder.closed ?? {};
   const savedIds = new Set(saved.map((s) => s.lineId));
-  return { savedLines: changeSet.lines.filter((l) => savedIds.has(l.id)), leftOut };
+  return {
+    savedLines: changeSet.lines.filter((l) => savedIds.has(l.id)),
+    leftOut: leftOut.map(({ lineId, label, reason }) => ({ lineId, label, reason })),
+  };
 }
 
 const saveFactFinderStep = defineWriteTool({
@@ -398,8 +401,7 @@ const saveFactFinderStep = defineWriteTool({
     "Save a reviewed fact finder step to the plan: the included fields of the change list " +
     "review_fact_finder_step returned, less leaveOut, plus include. All or nothing: a line the plan refuses, or " +
     "a draft or record changed since the review, saves nothing, and the refusal names the line (lineId). Closes " +
-    "the step. Returns the records created and updated, and how many lines were left out, including lines that " +
-    "can't save.",
+    "the step. Returns the records created and updated, and each line left out, with the reason.",
   inputSchema: z.object({
     clientId: clientIdArg,
     importId: importIdArg,
@@ -422,7 +424,7 @@ const saveFactFinderStep = defineWriteTool({
     const scope = { importId, clientId, firmId: gate.firmId };
     const { savedLines, leftOut } = await saveDraft(scope, principal, changeSet, approvedTicks(changeSet, leaveOut, include));
     const { creates, updates } = countLines(savedLines);
-    return { saved: { create: creates, update: updates }, leftOut: leftOut.length };
+    return { saved: { create: creates, update: updates }, leftOut };
   },
   auditMetadata: (args) => ({ importId: args.importId, changeSetVersion: args.changeSetVersion }),
 });
@@ -662,7 +664,7 @@ const updatePlanDetail = defineWriteTool({
     return {
       importId: imp.id,
       saved: lines,
-      ...(closed.leftOut.length > 0 && { leftOut: closed.leftOut.map(({ label, reason }) => ({ label, reason })) }),
+      ...(closed.leftOut.length > 0 && { leftOut: closed.leftOut }),
       ...(warnings.length > 0 && { warnings }),
     };
   },

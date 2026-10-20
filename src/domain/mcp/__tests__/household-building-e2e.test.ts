@@ -68,7 +68,7 @@ type Created = { created: true; clientId: string; householdId: string; importId:
 type Started = StepView & { importId: string; version: number };
 type Filled = { version: number; needsDecision: unknown[] };
 type Reviewed = { changeSetVersion: number; lines: { action: string; what: string; label: string }[] };
-type Saved = { saved: { create: number; update: number }; leftOut: number };
+type Saved = { saved: { create: number; update: number }; leftOut: unknown[] };
 type Missing = { missing: { step: string; label: string; missing: string }[] };
 
 async function createHousehold(principal: McpPrincipal, household: Record<string, unknown>): Promise<Created> {
@@ -142,7 +142,7 @@ d("Claude builds a household end to end, on a principal with no session (live DB
       { sectionId: "family", cells: { firstName: "Emma", lastName: "Check", relationship: "Child", dateOfBirth: "2003-05-21" } },
     ]);
     expect(step0.reviewed.lines).toMatchObject([{ action: "create", what: "Family member", label: expect.stringContaining("Emma") }]);
-    expect(step0.saved).toMatchObject({ saved: { create: 1, update: 0 }, leftOut: 0 });
+    expect(step0.saved).toMatchObject({ saved: { create: 1, update: 0 }, leftOut: [] });
 
     // Before the income step, Mark lacks a salary.
     const before = (await run("get_missing_facts", { clientId })) as Missing;

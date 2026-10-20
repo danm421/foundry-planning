@@ -645,7 +645,7 @@ describe("save_fact_finder_step", () => {
     });
     expect(out).toEqual({
       saved: { create: 1, update: 1 },
-      leftOut: 1,
+      leftOut: [{ lineId: "L3", label: "Account L3", reason: "Pick who the 529 is for." }],
       foundryUrl: expect.stringMatching(/\/clients\/c1\//),
     });
   });
@@ -1079,7 +1079,7 @@ describe("update_plan_detail", () => {
   it("names a line the save left out, and why, without refusing", async () => {
     saveCloses([{ lineId: "x/beneficiary", rowId: "x", label: "Schwab IRA beneficiaries", reason: "Nothing ticked." }]);
     const out = (await call({ sectionId: "retirement", recordId: "acc-ira", cells: { currentValue: 412000 } })) as Record<string, unknown>;
-    expect(out.leftOut).toEqual([{ label: "Schwab IRA beneficiaries", reason: "Nothing ticked." }]);
+    expect(out.leftOut).toEqual([{ lineId: "x/beneficiary", label: "Schwab IRA beneficiaries", reason: "Nothing ticked." }]);
     expect((out.saved as unknown[]).length).toBe(1);
     expect(h.discardImport).not.toHaveBeenCalled();
   });
