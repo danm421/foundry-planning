@@ -5,9 +5,9 @@
 // 0; each step is started, filled, reviewed and saved through the fact
 // finder's own cores; a near-match row is refused rather than saved on a
 // guess; then one single edit, two removals, and what the plan still lacks.
-// A likely duplicate is caught by the live query, and a second firm's
-// principal is refused at every step. Everything lives under firm ids no
-// other suite uses.
+// A likely duplicate is caught by the live query, a second firm's principal is
+// refused at every step, and so is every write from a same-firm advisor
+// holding a view share. Everything lives under firm ids no other suite uses.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 // No session at all: every access check, and every audit row's actor, must come from the principal.
@@ -27,13 +27,13 @@ vi.mock("@/lib/rate-limit", async (importOriginal) => ({
 
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, auditLog, clientImports, clients, crmHouseholds, expenses, familyMembers, incomes, planSettings } from "@/db/schema";
+import { accounts, auditLog, clientImports, clientShares, clients, crmHouseholds, expenses, familyMembers, incomes, planSettings } from "@/db/schema";
 import { SAVE_STALE_MESSAGE } from "@/lib/fact-finder/api-types";
 import { dropSaveFirm } from "@/lib/fact-finder/save/__tests__/harness";
 import { readFactFinderState } from "@/lib/fact-finder/state";
 import { CLAUDE_FILE_ID } from "@/lib/fact-finder/types";
 import type { McpPrincipal } from "@/lib/mcp/principal";
-import { McpInputError } from "../define-tool";
+import { McpInputError, VIEW_ONLY_MESSAGE } from "../define-tool";
 import type { StepView } from "../fact-finder-steps";
 import { CLIENT_UNREADABLE_MESSAGE, McpForbiddenError } from "../guards";
 import { householdBuildingTools } from "../tools/household-building";
@@ -54,6 +54,8 @@ const principalOf = (orgId: string, userId: string): McpPrincipal => ({
 });
 const PRINCIPAL = principalOf(FIRM, "user_test_mcp_household_e2e");
 const OUTSIDER = principalOf(OTHER_FIRM, "user_test_mcp_household_e2e_other");
+/** A member of the same firm, who sees a colleague's Private client only through a share. */
+const VIEWER: McpPrincipal = { ...principalOf(FIRM, "user_test_mcp_household_e2e_viewer"), orgRole: "org:member" };
 
 const MARK = { firstName: "Mark", lastName: "Check", dateOfBirth: "1968-04-12", retirementAge: 65 };
 const LAURA = { firstName: "Laura", lastName: "Check", dateOfBirth: "1970-09-30", retirementAge: 63 };
@@ -330,5 +332,51 @@ d("Claude builds a household end to end, on a principal with no session (live DB
     expect(different).toMatchObject({ created: true, clientId: expect.any(String) });
     expect(different.householdId).not.toBe(first.householdId);
     expect(await counts()).toEqual({ households: before.households + 1, clients: before.clients + 1 });
+  }, 300_000);
+
+  // Spec §1: the runner's edit gate is the only check some writes have (the cores ignore permission).
+  it("refuses every write from a same-firm advisor holding a view share of a Private client, changing nothing", async () => {
+    const IRIS = { firstName: "Iris", lastName: "Viewshare", dateOfBirth: "1972-03-15", retirementAge: 64 };
+    const home = await createHousehold(PRINCIPAL, { name: "Viewshare Household", primary: IRIS, filingStatus: "single" });
+    const { clientId } = home;
+    // Private, so the viewer reaches it only through the share.
+    await db.update(clients).set({ isPrivate: true }).where(eq(clients.id, clientId));
+    await db.insert(clientShares).values({
+      firmId: FIRM,
+      ownerUserId: PRINCIPAL.userId,
+      recipientUserId: VIEWER.userId,
+      recipientEmail: "viewer@example.test",
+      scope: "client",
+      clientId,
+      permission: "view",
+      createdBy: PRINCIPAL.userId,
+    });
+    // The owner's step 0, reviewed and ready to save.
+    await run("fill_fact_finder_step", {
+      clientId,
+      importId: home.importId,
+      baseVersion: home.version,
+      rows: [{ sectionId: "family", cells: { firstName: "Theo", lastName: "Viewshare", relationship: "Child", dateOfBirth: "2005-01-09" } }],
+    });
+    const reviewed = (await run("review_fact_finder_step", { clientId, importId: home.importId })) as Reviewed;
+    const was = await planOf(clientId);
+
+    // The share is real: the viewer can read the household.
+    expect(await run("get_missing_facts", { clientId }, VIEWER)).toMatchObject({ missing: expect.any(Array) });
+
+    const writes: [string, Record<string, unknown>][] = [
+      ["update_plan_detail", { clientId, sectionId: "people", fixedRow: "Client", cells: { retirementAge: 70 } }],
+      ["save_fact_finder_step", { clientId, importId: home.importId, changeSetVersion: reviewed.changeSetVersion }],
+      ["remove_plan_detail", { clientId, kind: "income", recordId: was.incomes[0].id }],
+      ["update_plan_assumptions", { clientId, changes: { inflationRate: 0.05 } }],
+    ];
+    for (const [name, args] of writes) {
+      const err = await refusalOf(run(name, args, VIEWER));
+      expect(err, name).toBeInstanceOf(McpForbiddenError);
+      expect((err as Error).message, name).toBe(VIEW_ONLY_MESSAGE);
+    }
+
+    expect(await planOf(clientId)).toEqual(was);
+    expect((await importOf(home.importId)).status).toBe("draft");
   }, 300_000);
 });
