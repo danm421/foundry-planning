@@ -46,3 +46,21 @@ export function buildLifeEventsByYear(client: ClientInfo): LifeEventsByYear {
 
   return events;
 }
+
+/** Chart timeline markers for the events that fall within the charted years,
+ *  indexed from the first one (the chart's first bar). */
+export function lifeEventMarkers(
+  events: LifeEventsByYear,
+  years: readonly { year: number }[],
+): (LifeEvent & { yearIndex: number })[] {
+  if (years.length === 0) return [];
+  const firstYear = years[0].year;
+  const lastYear = years[years.length - 1].year;
+  const markers: (LifeEvent & { yearIndex: number })[] = [];
+  for (const [yearStr, yearEvents] of Object.entries(events)) {
+    const year = Number(yearStr);
+    if (year < firstYear || year > lastYear) continue;
+    for (const ev of yearEvents) markers.push({ yearIndex: year - firstYear, ...ev });
+  }
+  return markers;
+}

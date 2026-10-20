@@ -51,12 +51,11 @@ import {
 import { QuickNavDropdown } from "@/components/cashflow/quick-nav-dropdown";
 import { DrillChart } from "@/components/cashflow/charts/drill-chart";
 import { filterAllZeroColumns } from "@/components/cashflow/all-zero-columns";
-import { buildLifeEventsByYear } from "@/lib/life-event-markers";
+import { buildLifeEventsByYear, lifeEventMarkers } from "@/lib/life-event-markers";
 import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
 import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
 import { ExportButton } from "@/components/exports/export-button";
 import { PortfolioBarsChart } from "@/components/charts/portfolio-bars-chart";
-import type { PortfolioBarsTimelineMarker } from "@/components/charts/portfolio-bars-chart";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-data";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
@@ -466,20 +465,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     [ltcTree],
   );
 
-  const firstYear = visibleYears[0]?.year ?? 0;
-  const lastYear = visibleYears[visibleYears.length - 1]?.year ?? 0;
-  const timelineMarkers: PortfolioBarsTimelineMarker[] = [];
-  for (const [yearStr, events] of Object.entries(eventsByYear)) {
-    const year = Number(yearStr);
-    if (visibleYears.length === 0 || year < firstYear || year > lastYear) continue;
-    for (const ev of events) {
-      timelineMarkers.push({
-        yearIndex: year - firstYear,
-        label: ev.label,
-        color: ev.color,
-      });
-    }
-  }
+  const timelineMarkers = lifeEventMarkers(eventsByYear, visibleYears);
 
   const chrome = chartChrome(chartTheme);
   const baseChartOptions = {

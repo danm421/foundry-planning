@@ -244,8 +244,8 @@ export function PortfolioBarsChart({
       maintainAspectRatio: false,
       animation,
       // Top padding only exists to clear the timeline-marker labels drawn above
-      // the plot. With no markers (e.g. the solver chart) that 20px is dead
-      // space — drop it so the chart sits tight under the header when pinned.
+      // the plot. With no markers that 20px is dead space — drop it so the
+      // chart sits tight under the header when pinned.
       layout: { padding: { top: timelineMarkers.length > 0 ? 20 : 6 } },
       // Index mode keeps the tooltip reachable on flat (0-height) underwater
       // years, where there is no bar to hover.
