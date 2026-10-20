@@ -197,6 +197,34 @@ export function ssEntryLabel(row: Income, client: ClientInfo): string | null {
   return `${money(unit === "annual" ? annual : annual / 12)}${suffix} at ${ageLabel(at.years, at.months)}`;
 }
 
+/** SSA's early-reduction / delayed-credit factor at an age, for this DOB. */
+const claimFactor = (dob: string, ageMonths: number) =>
+  computeOwnMonthlyBenefit({ piaMonthly: 1, claimAgeMonths: ageMonths, dob });
+
+/** What a row pays at its own claim age — monthly, today's dollars (COLA off),
+ *  priced by the engine. Null when it is not priced off a PIA (No benefit, a
+ *  year-by-year schedule, nothing entered) or the DOB / claim age is missing. */
+export function ownMonthlyAtClaim(row: Income, client: ClientInfo): number | null {
+  const pia = resolvePiaMonthly(row, client);
+  const dob = row.owner === "spouse" ? client.spouseDob : client.dateOfBirth;
+  const claim = resolveClaimAgeMonths(row, client);
+  if (pia == null || !dob || claim == null) return null;
+  return pia * claimFactor(dob, claim);
+}
+
+/** The inverse of `ownMonthlyAtClaim`: the figure to store so the row pays
+ *  `monthly` at its claim age — the PIA (monthly) for a PIA row, else the
+ *  stated benefit (annual) at the row's own stated age, which stays put. */
+export function storedFigureForMonthlyAtClaim(row: Income, client: ClientInfo, monthly: number): number | null {
+  if (resolvePiaMonthly(row, client) == null) return null;
+  const dob = row.owner === "spouse" ? client.spouseDob : client.dateOfBirth;
+  const claim = resolveClaimAgeMonths(row, client);
+  if (!dob || claim == null) return null;
+  const pia = monthly / claimFactor(dob, claim);
+  if (row.ssBenefitMode === "pia_at_fra") return round2(pia);
+  return round2(pia * claimFactor(dob, statedAgeMonths(row, client) ?? claim) * 12);
+}
+
 export interface SsEntryPreview {
   /** The PIA every adjustment runs off, monthly, today's dollars. */
   piaMonthly: number;

@@ -15,11 +15,13 @@ export function CurrencyAmountInput({
   label,
   value,
   onCommit,
+  widthClassName = "w-32",
 }: {
   id: string;
   label: string;
   value: number;
   onCommit: (n: number) => void;
+  widthClassName?: string;
 }) {
   const [display, setDisplay] = useState<string>(Math.round(value).toLocaleString());
   useEffect(() => {
@@ -43,7 +45,7 @@ export function CurrencyAmountInput({
         inputMode="numeric"
         value={display}
         onChange={handleChange}
-        className="h-9 w-32 rounded-md border border-hair-2 bg-card-2 pl-6 pr-2.5 text-[14px] text-ink tabular border-l-2 border-l-accent/70 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+        className={`h-9 ${widthClassName} rounded-md border border-hair-2 bg-card-2 pl-6 pr-2.5 text-[14px] text-ink tabular border-l-2 border-l-accent/70 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30`}
         aria-label={label}
       />
     </div>

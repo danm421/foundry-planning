@@ -5,7 +5,7 @@ import {
   asSsIncome, otherSsRow, entryUnit, toMonthly, toAnnual, convertAmountText,
   initialEntryAmount, initialStatedAge, statedAgeYear, ageLabel, ssEntryLabel, ssEntryPreview, ssDraftRow, claimTracksStatedAge,
   SS_STATED_AGES, isStatedAge, statedAgeFields, asAmountUnit, round2, initialEntry,
-  claimAfterStatedAgeChange, claimOnSelectStated,
+  claimAfterStatedAgeChange, claimOnSelectStated, ownMonthlyAtClaim, storedFigureForMonthlyAtClaim,
 } from "../benefit-entry";
 
 const douglas: ClientInfo = {
@@ -264,5 +264,46 @@ describe("ssEntryPreview claim age", () => {
     expect(ssEntryPreview(paul, null, douglas)!.claimAgeMonths).toBe(840);
     const fra = { ...paul, claimingAgeMode: "fra" } as Income;
     expect(ssEntryPreview(fra, null, douglas)!.claimAgeMonths).toBe(66 * 12 + 8);
+  });
+});
+
+describe("the benefit at the claim age, and back", () => {
+  // Cynthia: born 1960, FRA 67 — 36 delayed months to 70 at 2/3% each = +24%.
+  const cynthiaPia = {
+    ...paul, id: "c", owner: "spouse", ssBenefitMode: "pia_at_fra", piaMonthly: 3000, annualAmount: 0,
+  } as Income;
+
+  it("prices a PIA at the claim age", () => {
+    expect(ownMonthlyAtClaim(cynthiaPia, douglas)).toBeCloseTo(3720, 9);
+    expect(ownMonthlyAtClaim({ ...cynthiaPia, claimingAge: 67 }, douglas)).toBeCloseTo(3000, 9);
+  });
+  it("a stated benefit with no stated age is quoted at the claim age", () => {
+    expect(ownMonthlyAtClaim(paul, douglas)).toBeCloseTo(5706.5, 9);
+  });
+  it("a stated benefit re-prices from its stated age to the claim age", () => {
+    const stated = { ...cynthiaPia, ssBenefitMode: "manual_amount", piaMonthly: undefined, annualAmount: 36000, ssStatedAge: 67, ssStatedAgeMonths: 0 } as Income;
+    expect(ownMonthlyAtClaim(stated, douglas)).toBeCloseTo(3720, 9);
+  });
+  it("is null where nothing is priced", () => {
+    expect(ownMonthlyAtClaim({ ...paul, ssBenefitMode: "no_benefit" }, douglas)).toBeNull();
+    expect(ownMonthlyAtClaim({ ...cynthiaPia, piaMonthly: undefined }, douglas)).toBeNull();
+    expect(ownMonthlyAtClaim(paul, { ...douglas, dateOfBirth: undefined } as unknown as ClientInfo)).toBeNull();
+  });
+
+  it("a figure at the claim age stores as the PIA it implies", () => {
+    expect(storedFigureForMonthlyAtClaim(cynthiaPia, douglas, 3720)).toBe(3000);
+  });
+  it("a figure at the claim age stores as the stated benefit at the row's own stated age", () => {
+    const stated = { ...cynthiaPia, ssBenefitMode: "manual_amount", piaMonthly: undefined, annualAmount: 36000, ssStatedAge: 67, ssStatedAgeMonths: 0 } as Income;
+    expect(storedFigureForMonthlyAtClaim(stated, douglas, 4340)).toBe(42000);
+    expect(storedFigureForMonthlyAtClaim(paul, douglas, 6000)).toBe(72000);
+  });
+  it("round-trips what the card shows", () => {
+    const at62 = { ...cynthiaPia, claimingAge: 62, claimingAgeMonths: 3 } as Income;
+    const pia = storedFigureForMonthlyAtClaim(at62, douglas, 2801)!;
+    expect(Math.round(ownMonthlyAtClaim({ ...at62, piaMonthly: pia }, douglas)!)).toBe(2801);
+  });
+  it("is null for No benefit", () => {
+    expect(storedFigureForMonthlyAtClaim({ ...paul, ssBenefitMode: "no_benefit" }, douglas, 3000)).toBeNull();
   });
 });
