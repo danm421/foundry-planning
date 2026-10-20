@@ -62,51 +62,8 @@ import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler);
 
-// Draws vertical dashed markers at specific data indices with a short label and a
-// colored cap at the top. Used to show retirement and life-expectancy events for
-// each client on the cash-flow and portfolio charts. Enable via:
-//   options.plugins.timelineMarkers = { markers: [{ yearIndex, label, color }] }
-interface TimelineMarker {
-  yearIndex: number;
-  label: string;
-  color: string;
-}
-const timelineMarkersPlugin = {
-  id: "timelineMarkers",
-  afterDatasetsDraw(chart: {
-    ctx: CanvasRenderingContext2D;
-    chartArea: { top: number; bottom: number; left: number; right: number };
-    scales: { x: { getPixelForValue(v: number): number } };
-  }, _args: unknown, options: { markers?: TimelineMarker[] }) {
-    const { ctx, chartArea, scales } = chart;
-    const markers = options?.markers ?? [];
-    if (markers.length === 0) return;
-    ctx.save();
-    for (const m of markers) {
-      const x = scales.x.getPixelForValue(m.yearIndex);
-      if (x < chartArea.left - 1 || x > chartArea.right + 1) continue;
-      ctx.strokeStyle = m.color;
-      ctx.setLineDash([4, 4]);
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(x, chartArea.top + 8);
-      ctx.lineTo(x, chartArea.bottom);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      // Cap + label at the top
-      ctx.fillStyle = m.color;
-      ctx.beginPath();
-      ctx.arc(x, chartArea.top + 6, 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.font = "10px ui-sans-serif, system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "bottom";
-      ctx.fillText(m.label, x, chartArea.top - 2);
-    }
-    ctx.restore();
-  },
-};
-ChartJS.register(timelineMarkersPlugin);
+// Retirement / life-expectancy markers (options.plugins.timelineMarkers) are
+// drawn by the plugin portfolio-bars-chart registers.
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -511,7 +468,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   const firstYear = visibleYears[0]?.year ?? 0;
   const lastYear = visibleYears[visibleYears.length - 1]?.year ?? 0;
-  const timelineMarkers: TimelineMarker[] = [];
+  const timelineMarkers: PortfolioBarsTimelineMarker[] = [];
   for (const [yearStr, events] of Object.entries(eventsByYear)) {
     const year = Number(yearStr);
     if (visibleYears.length === 0 || year < firstYear || year > lastYear) continue;
@@ -575,10 +532,6 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   // baseline is null and the component renders a plain blue bar.
   const isScenarioView = !!searchParams?.get("scenario");
   const portfolioBaseline = isScenarioView ? baseYears : null;
-
-  // Timeline markers typed for PortfolioBarsChart (same shape as the local
-  // TimelineMarker interface — re-exported for reuse).
-  const portfolioTimelineMarkers: PortfolioBarsTimelineMarker[] = timelineMarkers;
 
   const chartOptionsWithMarkers = {
     ...baseChartOptions,
@@ -2285,7 +2238,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                   <PortfolioBarsChart
                     current={visibleYears}
                     baseline={portfolioBaseline}
-                    timelineMarkers={portfolioTimelineMarkers}
+                    timelineMarkers={timelineMarkers}
                     yearRange={{ start: yearRange[0], end: yearRange[1] }}
                   />
                 </div>
