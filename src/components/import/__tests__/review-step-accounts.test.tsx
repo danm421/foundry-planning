@@ -39,7 +39,16 @@ describe("ReviewStepAccounts name display", () => {
         onChange={() => {}}
         matches={[{ kind: "exact", existingId: "acct-1" }]}
         existingAccountsById={{ "acct-1": { name: "Fidelity Rollover IRA" } }}
-        candidates={[{ id: "acct-1", name: "Fidelity Rollover IRA" }]}
+        existingAccounts={[
+          {
+            id: "acct-1",
+            name: "Fidelity Rollover IRA",
+            category: "retirement",
+            custodian: null,
+            accountNumberLast4: null,
+            value: 100,
+          },
+        ]}
         onMatchChange={() => {}}
       />,
     );
@@ -212,6 +221,43 @@ describe("ReviewStepAccounts 529 fields", () => {
     fireEvent.change(categorySelect, { target: { value: "education_savings" } });
     expect(onChange).toHaveBeenLastCalledWith([
       expect.objectContaining({ category: "education_savings", rmdEnabled: false }),
+    ]);
+  });
+});
+
+describe("ReviewStepAccounts link picker", () => {
+  it("lists a taxable statement's likeliest accounts first and leaves out properties", () => {
+    const existing = (id: string, name: string, category: string, value: number) => ({
+      id,
+      name,
+      category,
+      custodian: null,
+      accountNumberLast4: null,
+      value,
+    });
+    render(
+      <ReviewStepAccounts
+        accounts={[{ name: "Schwab Brokerage", category: "taxable", value: 500_000 }]}
+        onChange={() => {}}
+        matches={[{ kind: "fuzzy", candidates: [] }]}
+        onMatchChange={() => {}}
+        existingAccounts={[
+          existing("ira", "Rollover IRA", "retirement", 500_000),
+          existing("house", "Primary Residence", "real_estate", 500_000),
+          existing("joint", "Joint Account", "taxable", 90_000),
+          existing("trust", "Trust Account", "taxable", 480_000),
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
+
+    const picker = screen.getByRole("dialog", { name: "Link to an existing account" });
+    const options = within(picker).getAllByRole("option").map((o) => o.textContent ?? "");
+    expect(options.map((t) => t.split("$")[0])).toEqual([
+      "Trust Account",
+      "Joint Account",
+      "Rollover IRA",
     ]);
   });
 });

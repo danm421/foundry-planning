@@ -22,7 +22,6 @@ import ReviewStepFamily from "@/components/import/review-step-family";
 import ReviewStepInsurance from "@/components/import/review-step-insurance";
 import type { MatchCandidate } from "@/components/import/match-link-picker";
 import {
-  accountPickerOption,
   toPickerAccount,
   type AccountRow,
   type PickerAccount,
@@ -159,10 +158,6 @@ export default function WizardImportReview({
     [canonical.familyMembers],
   );
 
-  const accountCandidates: MatchCandidate[] = useMemo(
-    () => canonical.accounts.map(accountPickerOption),
-    [canonical.accounts],
-  );
   const accountMatches = accounts.map((a) => a.match);
   const existingAccountsById = useMemo(() => {
     const map: Record<string, Partial<ExtractedAccount> & { name?: string }> = {};
@@ -311,7 +306,7 @@ export default function WizardImportReview({
             onMatchChange={(i, m) =>
               setAccounts(accounts.map((a, idx) => (idx === i ? { ...a, match: m } : a)))
             }
-            candidates={accountCandidates}
+            existingAccounts={canonical.accounts}
             existingAccountsById={existingAccountsById}
             familyMembers={accountFamilyMembers}
             entities={canonical.entities}

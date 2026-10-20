@@ -6,6 +6,7 @@ import { holdingsReconciliation, holdingMarketValue } from "@/lib/extraction/nor
 import type { MatchAnnotation } from "@/lib/imports/types";
 import type { FieldMap } from "@/lib/imports/merge-strategies";
 import { candidatesForRow } from "@/lib/imports/candidates-for-row";
+import { rankAccountCandidates } from "@/lib/imports/rank-account-candidates";
 import { CurrencyInput } from "@/components/currency-input";
 import { GrowthRateField, parseGrowthSourceSelection } from "@/components/forms/growth-rate-field";
 import { inputClassName, selectClassName, fieldLabelClassName } from "@/components/forms/input-styles";
@@ -16,7 +17,7 @@ import { CATEGORY_OPTIONS, SUB_TYPE_OPTIONS } from "@/lib/accounts/category-labe
 import type { GrowthSource } from "@/lib/investments/allocation";
 import type { AccountOwner } from "@/engine/ownership";
 import MatchColumn from "./match-column";
-import type { MatchCandidate } from "./match-link-picker";
+import { accountPickerOption, type PickerAccount } from "./account-picker-option";
 import DiffPreview from "./diff-preview";
 import SourceBadge from "./source-badge";
 import { basisFieldLabel } from "@/lib/accounts/basis-label";
@@ -80,8 +81,9 @@ interface ReviewStepAccountsProps {
   matches?: Array<MatchAnnotation | undefined>;
   /** Called when the user resolves a match via the link picker. */
   onMatchChange?: (index: number, match: MatchAnnotation) => void;
-  /** Candidate list passed to the match-link picker (typically all client accounts). */
-  candidates?: MatchCandidate[];
+  /** The client's existing accounts — each row's link picker offers them,
+   *  ranked against that row by `rankAccountCandidates`. */
+  existingAccounts?: PickerAccount[];
   /**
    * Existing canonical rows keyed by id, used by the diff preview when a
    * row is matched exact. Only the fields in ACCOUNT_FIELD_MAP are read.
@@ -114,7 +116,7 @@ export default function ReviewStepAccounts({
   existingAccountNames = [],
   matches,
   onMatchChange,
-  candidates = [],
+  existingAccounts = [],
   existingAccountsById,
   modelPortfolios = [],
   fundPortfolios = [],
@@ -318,7 +320,11 @@ export default function ReviewStepAccounts({
                   <MatchColumn
                     match={match}
                     existingName={existingRow?.name}
-                    candidates={candidatesForRow(i, matches ?? [], candidates)}
+                    candidates={rankAccountCandidates(
+                      account,
+                      candidatesForRow(i, matches ?? [], existingAccounts),
+                      existingId ?? undefined,
+                    ).map(accountPickerOption)}
                     entityKind="account"
                     onChange={(next) => onMatchChange?.(i, next)}
                   />

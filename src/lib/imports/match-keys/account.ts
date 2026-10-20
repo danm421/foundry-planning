@@ -125,7 +125,7 @@ function ownerAgreement(incoming: string[], candidate: string[] | undefined): nu
  * hyperbolically and never actually reaches 0 unless one side is 0: a doubling
  * scores 0.5, a 10x gap still scores 0.1.
  */
-function valueProximity(incoming: number | undefined, candidate: number): number {
+export function valueProximity(incoming: number | undefined, candidate: number): number {
   if (incoming === undefined || !Number.isFinite(incoming)) return 0.5;
   const base = Math.max(Math.abs(candidate), Math.abs(incoming), 1);
   return Math.max(0, 1 - Math.abs(candidate - incoming) / base);

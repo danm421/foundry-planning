@@ -49,7 +49,6 @@ import ReviewStepWills, {
 } from "./review-step-wills";
 import type { MatchCandidate } from "./match-link-picker";
 import {
-  accountPickerOption,
   toPickerAccount,
   type AccountRow,
   type PickerAccount,
@@ -529,10 +528,6 @@ export default function ReviewWizard({
   };
 
   // Match-column candidates for review-step-accounts
-  const accountCandidates: MatchCandidate[] = useMemo(
-    () => canonical.accounts.map(accountPickerOption),
-    [canonical.accounts],
-  );
   const accountMatches = accounts.map((a) => a.match);
   const onAccountMatchChange = (i: number, m: MatchAnnotation) => {
     setAccounts(accounts.map((a, idx) => (idx === i ? { ...a, match: m } : a)));
@@ -665,7 +660,7 @@ export default function ReviewWizard({
             onChange={(a) => setAccounts(a as Annotated<ExtractedAccount>[])}
             matches={accountMatches}
             onMatchChange={onAccountMatchChange}
-            candidates={accountCandidates}
+            existingAccounts={canonical.accounts}
             existingAccountsById={existingAccountsById}
             modelPortfolios={growthContext.modelPortfolios}
             fundPortfolios={growthContext.fundPortfolios}
