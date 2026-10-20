@@ -3,7 +3,7 @@
 //
 // It reads left to right as the year's cash story: what came in without
 // touching the portfolio, what the portfolio had to cover and from which tax
-// treatment, how hard that leaned on it, then what went out and what was left.
+// treatment, how hard that leaned on it, then what went out.
 //
 // SPLIT BY TAX TREATMENT, deliberately unlike the Net Cash Flow sheet, which
 // splits the same dollars by ASSET CATEGORY. Two different conversations: this
@@ -46,7 +46,7 @@ const SOURCE_COLOR: Record<WithdrawalSourceKey, DataColorKey> = {
   roth: "green",
 };
 
-/** Two-line headers. The table is up to eleven columns wide, so a header that
+/** Two-line headers. The table is up to nine columns wide, so a header that
  *  wraps on its own would wrap in a different place per column width. */
 const HEADERS: Record<WithdrawalSourceKey, string> = {
   cash: "Cash",
@@ -89,11 +89,7 @@ export function buildWithdrawalsDrillData(
     { key: "withdrawalsTotal", header: "Total\nWithdrawals", width: 56, strong: true },
     { key: "portfolioBoy", header: "Portfolio\n(BoY)", width: 56 },
     { key: "withdrawalRate", header: "Withdrawal\n%", width: 50, format: "percent" },
-    { key: "livingExpenses", header: "Living\nExpenses", width: 52 },
     { key: "totalExpenses", header: "Total\nExpenses", width: 52 },
-    // The one column where the sign is the message: a negative year is the year
-    // the portfolio had to close the gap.
-    { key: "netCashFlow", header: "Net Cash\nFlow", width: 56, strong: true, signColor: true },
   ];
 
   const rows: DrillRow[] = rowsInRange.map((r) => {
@@ -102,9 +98,7 @@ export function buildWithdrawalsDrillData(
       withdrawalsTotal: r.withdrawalsTotal,
       portfolioBoy: r.portfolioBoy,
       withdrawalRate: r.withdrawalRate,
-      livingExpenses: r.livingExpenses,
       totalExpenses: r.totalExpenses,
-      netCashFlow: r.netCashFlow,
     };
     for (const s of sources) cells[`wd_${s.key}`] = r.withdrawals[s.key];
     return {
@@ -128,10 +122,10 @@ export function buildWithdrawalsDrillData(
     // the bars is what income covered without touching the portfolio.
     lines: [
       {
-        seriesId: "livingExpenses",
-        label: "Living Expenses",
+        seriesId: "totalExpenses",
+        label: "Total Expenses",
         color: PRESENTATION_THEME.chartLine,
-        values: rowsInRange.map((r) => r.livingExpenses),
+        values: rowsInRange.map((r) => r.totalExpenses),
       },
     ],
     markers,

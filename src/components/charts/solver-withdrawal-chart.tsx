@@ -75,8 +75,8 @@ interface WithdrawalChartDataset {
  * Pure dataset builder for the solver Withdrawals chart. Same bars-plus-line shape as
  * `buildSolverCashFlowChartData`, narrowed to the portfolio draw: the stack is
  * the year's withdrawals split by where they came from, and the line is the
- * living expense they help cover. The gap between the stack and the line is what
- * income, Social Security, and RMDs paid for.
+ * year's total expenses they help cover. The gap between the stack and the line
+ * is what income, Social Security, and RMDs paid for.
  *
  * Sources with no draw anywhere in the projection are dropped rather than
  * rendered as a flat zero band, so the legend only names what's in play.
@@ -104,8 +104,8 @@ export function buildSolverWithdrawalChartData(
       })),
       {
         type: "line",
-        label: "Living Expenses",
-        data: rows.map((r) => r.livingExpenses),
+        label: "Total Expenses",
+        data: rows.map((r) => r.totalExpenses),
         borderColor: c.ink,
         backgroundColor: "transparent",
         borderWidth: 2,

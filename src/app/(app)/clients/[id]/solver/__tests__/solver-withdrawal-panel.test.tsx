@@ -58,9 +58,7 @@ describe("SolverWithdrawalPanel", () => {
       "Total Withdrawals",
       "Portfolio (BoY)",
       "Withdrawal %",
-      "Living Expenses",
       "Total Expenses",
-      "Net Cash Flow",
     ]);
   });
 
@@ -101,24 +99,20 @@ describe("SolverWithdrawalPanel", () => {
       "Total Withdrawals",
       "Portfolio (BoY)",
       "Withdrawal %",
-      "Living Expenses",
       "Total Expenses",
-      "Net Cash Flow",
     ]);
     expect(within(screen.getAllByRole("row")[1]).getByText("0.00%")).toBeTruthy();
   });
 
-  it("renders each year's figures as currency and flags a negative Net Cash Flow", () => {
+  it("renders each year's figures as currency", () => {
     render(
       <SolverWithdrawalPanel
         rows={[
           row({
             year: 2031,
             ages: { client: 70, spouse: 68 },
-            livingExpenses: 80_000,
             totalExpenses: 110_000,
             totalIncome: 60_000,
-            netCashFlow: -50_000,
             withdrawals: { cash: 0, taxable: 50_000, preTax: 0, roth: 0 },
             withdrawalsTotal: 50_000,
           }),
@@ -131,10 +125,8 @@ describe("SolverWithdrawalPanel", () => {
     const cells = screen.getAllByRole("row")[1];
     expect(within(cells).getByText("2031")).toBeTruthy();
     expect(within(cells).getByText("70 / 68")).toBeTruthy();
-    expect(within(cells).getByText("$80,000")).toBeTruthy();
-
-    const net = within(cells).getByText("-$50,000");
-    expect(net.className).toContain("text-crit");
+    expect(within(cells).getByText("$110,000")).toBeTruthy();
+    expect(within(cells).getByText("$60,000")).toBeTruthy();
   });
 
   it("selects a year when its Year cell is clicked", () => {
@@ -169,7 +161,7 @@ describe("SolverWithdrawalPanel", () => {
     // top of the opaque card color, never replace it.
     render(
       <SolverWithdrawalPanel
-        rows={[row({ year: 2031, netCashFlow: -1_000 })]}
+        rows={[row({ year: 2031, totalExpenses: 1_000 })]}
         selectedYear={2031}
         onYearClick={vi.fn()}
       />,
@@ -178,7 +170,7 @@ describe("SolverWithdrawalPanel", () => {
     const rowCells = within(screen.getAllByRole("row")[1]);
     for (const cell of [
       screen.getByText("2031"), // sticky left (Year)
-      rowCells.getByText("-$1,000"), // sticky right (Net Cash Flow)
+      rowCells.getByText("$1,000"), // sticky right (Total Expenses)
     ]) {
       expect(cell.className).toContain("sticky");
       expect(cell.className).toContain("bg-card");

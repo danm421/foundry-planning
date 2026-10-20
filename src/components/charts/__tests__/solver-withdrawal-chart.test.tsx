@@ -3,12 +3,12 @@ import { withdrawalRow as row } from "@/lib/solver/__tests__/withdrawal-report-f
 import { buildSolverWithdrawalChartData } from "../solver-withdrawal-chart";
 
 describe("buildSolverWithdrawalChartData", () => {
-  it("stacks one bar per drawn source, plus a Living Expenses line", () => {
+  it("stacks one bar per drawn source, plus a Total Expenses line", () => {
     const data = buildSolverWithdrawalChartData([
       row({
         year: 2026,
         withdrawals: { cash: 1_000, taxable: 0, preTax: 9_000, roth: 0 },
-        livingExpenses: 80_000,
+        totalExpenses: 110_000,
       }),
     ]);
 
@@ -20,8 +20,8 @@ describe("buildSolverWithdrawalChartData", () => {
     expect(bars.map((d) => d.data)).toEqual([[1_000], [9_000]]);
 
     const lines = data.datasets.filter((d) => d.type === "line");
-    expect(lines.map((d) => d.label)).toEqual(["Living Expenses"]);
-    expect(lines[0].data).toEqual([80_000]);
+    expect(lines.map((d) => d.label)).toEqual(["Total Expenses"]);
+    expect(lines[0].data).toEqual([110_000]);
   });
 
   it("omits a source that is never drawn on across the whole projection", () => {
@@ -51,7 +51,7 @@ describe("buildSolverWithdrawalChartData", () => {
   });
 
   it("renders a bare line when nothing is withdrawn in any year", () => {
-    const data = buildSolverWithdrawalChartData([row({ livingExpenses: 50_000 })]);
+    const data = buildSolverWithdrawalChartData([row({ totalExpenses: 50_000 })]);
     expect(data.datasets.filter((d) => d.type === "bar")).toEqual([]);
     expect(data.datasets).toHaveLength(1);
   });

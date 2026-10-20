@@ -44,8 +44,6 @@ interface Column {
   value: (r: WithdrawalReportRow) => number;
   /** Starts a new column group: draws the vertical rule to its left. */
   groupStart?: boolean;
-  /** Red when negative. Only Net Cash Flow, where the sign is the message. */
-  signed?: boolean;
   /** Percent columns are ratios, not dollars. */
   format?: "percent";
 }
@@ -53,7 +51,7 @@ interface Column {
 /**
  * Reads left to right as the year's cash story: what came in without touching
  * the portfolio, what the portfolio had to cover and from which tax treatment,
- * how hard that leaned on it, then what went out and what was left over.
+ * how hard that leaned on it, then what went out.
  *
  * There is no all-zero column sweep here, unlike the cash-flow drill-downs:
  * every column below is a total, a reconciling figure, or a ratio whose zero is
@@ -72,7 +70,7 @@ function buildColumns(rows: WithdrawalReportRow[]): Column[] {
       key: "withdrawalsTotal",
       label: "Total Withdrawals",
       tooltip:
-        "Total drawn from the portfolio this year. In a deficit year this equals the negative Net Cash Flow — the withdrawal is what closes the gap.",
+        "Total drawn from the portfolio this year — in a year that spends more than it earns, the withdrawal is what closes the gap.",
       value: (r) => r.withdrawalsTotal,
     },
     {
@@ -107,25 +105,12 @@ function buildColumns(rows: WithdrawalReportRow[]): Column[] {
     },
     ...draws,
     {
-      key: "livingExpenses",
-      label: "Living Expenses",
-      tooltip: "The household's living expense need — the line on the chart above.",
-      value: (r) => r.livingExpenses,
-      groupStart: true,
-    },
-    {
       key: "totalExpenses",
       label: "Total Expenses",
-      tooltip: "Living expenses plus liabilities, insurance, taxes, savings, and gifts.",
-      value: (r) => r.totalExpenses,
-    },
-    {
-      key: "netCashFlow",
-      label: "Net Cash Flow",
       tooltip:
-        "Total Income − Total Expenses. Negative years are funded by the withdrawals to the left.",
-      value: (r) => r.netCashFlow,
-      signed: true,
+        "Living expenses plus liabilities, insurance, taxes, savings, and gifts — the line on the chart above.",
+      value: (r) => r.totalExpenses,
+      groupStart: true,
     },
   ];
 }
@@ -157,7 +142,7 @@ export const SolverWithdrawalPanel = memo(function SolverWithdrawalPanel({
       <table className="min-w-full border-separate border-spacing-0 text-sm">
         <caption className="sr-only">
           Year-by-year portfolio withdrawals by source, the rate they draw the
-          portfolio down at, and net cash flow
+          portfolio down at, and total expenses
         </caption>
         <thead className="bg-card text-xs uppercase text-ink-3">
           <tr>
@@ -208,7 +193,7 @@ export const SolverWithdrawalPanel = memo(function SolverWithdrawalPanel({
                   return (
                     <td
                       key={col.key}
-                      className={`border-b border-hair px-3 py-2 text-right tabular-nums group-hover:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)] ${col.groupStart ? "border-l" : ""} ${isLast ? "sticky right-0 z-10 border-l" : ""} ${col.signed && v < 0 ? "text-crit" : ""} ${rowBg}`}
+                      className={`border-b border-hair px-3 py-2 text-right tabular-nums group-hover:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)] ${col.groupStart ? "border-l" : ""} ${isLast ? "sticky right-0 z-10 border-l" : ""} ${rowBg}`}
                     >
                       {col.format === "percent" ? fmtPct.format(v) : fmt.format(v)}
                     </td>

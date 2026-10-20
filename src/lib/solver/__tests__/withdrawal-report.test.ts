@@ -34,11 +34,9 @@ function yr(year: number, over: Record<string, unknown>): ProjectionYear {
     ages: { client: 65 },
     withdrawals: { byAccount: {}, total: 0 },
     accountLedgers: {},
-    expenses: { living: 0 },
     portfolioAssets: { liquidTotal: 0 },
     totalIncome: 0,
     totalExpenses: 0,
-    netCashFlow: 0,
     ...over,
   } as unknown as ProjectionYear;
 }
@@ -93,15 +91,13 @@ describe("buildWithdrawalReportRows", () => {
     expect(rows[0].withdrawals.preTax).toBe(0);
   });
 
-  it("passes the engine's own income, expense and net-cash-flow scalars straight through", () => {
+  it("passes the engine's own income and expense scalars straight through", () => {
     const rows = buildWithdrawalReportRows(
       [
         yr(2031, {
           ages: { client: 66, spouse: 64 },
-          expenses: { living: 80_000 },
           totalIncome: 60_000,
           totalExpenses: 110_000,
-          netCashFlow: -50_000,
         }),
       ],
       ACCOUNTS,
@@ -110,10 +106,7 @@ describe("buildWithdrawalReportRows", () => {
     const r = rows[0];
     expect(r.ages).toEqual({ client: 66, spouse: 64 });
     expect(r.totalIncome).toBe(60_000);
-    expect(r.livingExpenses).toBe(80_000);
     expect(r.totalExpenses).toBe(110_000);
-    expect(r.netCashFlow).toBe(-50_000);
-    expect(r.totalIncome - r.totalExpenses).toBe(r.netCashFlow);
   });
 });
 

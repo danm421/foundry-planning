@@ -63,9 +63,7 @@ describe("buildWithdrawalsDrillData", () => {
       "withdrawalsTotal",
       "portfolioBoy",
       "withdrawalRate",
-      "livingExpenses",
       "totalExpenses",
-      "netCashFlow",
     ]);
   });
 
@@ -99,15 +97,6 @@ describe("buildWithdrawalsDrillData", () => {
     expect(row.cells.withdrawalsTotal).toBe(40_000);
   });
 
-  it("reconciles income minus expenses to net cash flow on every row", () => {
-    for (const r of build().table.rows) {
-      expect(r.cells.totalIncome - r.cells.totalExpenses).toBeCloseTo(
-        r.cells.netCashFlow,
-        6,
-      );
-    }
-  });
-
   it("measures the withdrawal rate against the prior year's liquid portfolio, RMDs included", () => {
     const row = build().table.rows.find((r) => r.year === 2040)!;
     expect(row.cells.portfolioBoy).toBe(1_000_000);
@@ -115,7 +104,7 @@ describe("buildWithdrawalsDrillData", () => {
     expect(row.cells.withdrawalRate).toBeCloseTo(0.06, 10);
   });
 
-  it("stacks the chart by source and overlays the living-expense line", () => {
+  it("stacks the chart by source and overlays the total-expense line", () => {
     const spec = build().chartSpec!;
     expect(spec.stacks.map((s) => s.label)).toEqual([
       "Cash",
@@ -123,10 +112,10 @@ describe("buildWithdrawalsDrillData", () => {
       "Tax-Deferred",
       "Roth",
     ]);
-    expect(spec.lines.map((l) => l.label)).toEqual(["Living Expenses"]);
+    expect(spec.lines.map((l) => l.label)).toEqual(["Total Expenses"]);
     // One value per visible year, in the same order as the rows.
     expect(spec.stacks[0].values).toHaveLength(3);
-    expect(spec.lines[0].values).toEqual([0, 90_000, 92_000]);
+    expect(spec.lines[0].values).toEqual([0, 100_000, 102_000]);
   });
 
   it("clips rows to the range but still finds the denominator outside it", () => {

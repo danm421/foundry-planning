@@ -3,8 +3,7 @@
 // and how hard that leaned on the portfolio.
 //
 // Every income and expense figure is the engine's own scalar, passed through
-// whole, so `totalIncome - totalExpenses === netCashFlow` holds on every row and
-// the table can't drift from the chart above it.
+// whole, so the table can't drift from the chart above it.
 import type { Account, ProjectionYear } from "@/engine/types";
 import { controllingFamilyMember } from "@/engine/ownership";
 import { liquidPortfolioBoy } from "@/engine/portfolio-snapshot";
@@ -49,10 +48,7 @@ export interface WithdrawalReportRow {
    *  `withdrawalsTotal / portfolioBoy` in an RMD year. 0 when there is no
    *  portfolio to draw against. */
   withdrawalRate: number;
-  livingExpenses: number;
   totalExpenses: number;
-  /** Total Income − Total Expenses. Negative years are funded by `withdrawals`. */
-  netCashFlow: number;
 }
 
 function emptyWithdrawals(): Record<WithdrawalSourceKey, number> {
@@ -122,9 +118,7 @@ export function buildWithdrawalReportRows(
       withdrawalsTotal: y.withdrawals.total,
       portfolioBoy,
       withdrawalRate: portfolioBoy > 0 ? numerator / portfolioBoy : 0,
-      livingExpenses: y.expenses.living,
       totalExpenses: y.totalExpenses,
-      netCashFlow: y.netCashFlow,
     };
   });
 }
