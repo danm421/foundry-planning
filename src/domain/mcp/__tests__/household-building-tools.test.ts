@@ -17,6 +17,9 @@ const h = vi.hoisted(() => ({
   ensurePlanImport: vi.fn(),
   findLikelyDuplicateHousehold: vi.fn(),
   verifyCrmHouseholdAccessFor: vi.fn(),
+  discardImport: vi.fn(),
+  updatePlanSettingsForClient: vi.fn(),
+  loadEffectiveTree: vi.fn(),
 }));
 
 // The real create check (it reads the mocked client access and audit); the import gate is stubbed.
@@ -24,7 +27,12 @@ vi.mock("@/lib/fact-finder/gate", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/fact-finder/gate")>()),
   factFinderGateFor: h.factFinderGateFor,
 }));
-vi.mock("@/lib/fact-finder/import-lifecycle", () => ({ createFactFinderImport: h.createFactFinderImport }));
+vi.mock("@/lib/fact-finder/import-lifecycle", () => ({
+  createFactFinderImport: h.createFactFinderImport,
+  discardImport: h.discardImport,
+}));
+vi.mock("@/lib/clients/plan-settings-writes", () => ({ updatePlanSettingsForClient: h.updatePlanSettingsForClient }));
+vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree: h.loadEffectiveTree }));
 vi.mock("@/lib/fact-finder/edit", () => ({ editFactFinder: h.editFactFinder }));
 vi.mock("@/lib/fact-finder/records/book", () => ({ loadRecordBook: h.loadRecordBook }));
 vi.mock("@/lib/fact-finder/records/load", () => ({ resolveBaseCaseScenarioId: h.resolveBaseCaseScenarioId }));
@@ -43,7 +51,7 @@ vi.mock("@/lib/crm/authz", () => ({ verifyCrmHouseholdAccessFor: h.verifyCrmHous
 vi.mock("@/lib/ai/resolve", () => ({ withAiCallerOrg: h.withAiCallerOrg }));
 
 import { householdBuildingTools } from "../tools/household-building";
-import { WRITE_DISABLED_MESSAGE } from "../define-tool";
+import { VIEW_ONLY_MESSAGE, WRITE_DISABLED_MESSAGE } from "../define-tool";
 import { changeListView } from "../change-list-view";
 import { McpInputError } from "../define-tool";
 import { CLIENT_UNREADABLE_MESSAGE, McpForbiddenError } from "../guards";
@@ -54,6 +62,7 @@ import { emptyRecordBook, type RecordBook } from "@/lib/fact-finder/placement/ty
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
 import type { FactFinderState } from "@/lib/fact-finder/types";
 import type { McpPrincipal } from "@/lib/mcp/principal";
+import { validatePlanSettingsPatch } from "@/lib/plan-settings/validate-patch";
 
 const principal: McpPrincipal = {
   userId: "u1",
@@ -71,6 +80,8 @@ const review = tool("review_fact_finder_step");
 const save = tool("save_fact_finder_step");
 const create = tool("create_household");
 const missingFactsTool = tool("get_missing_facts");
+const editTool = tool("update_plan_detail");
+const assumptionsTool = tool("update_plan_assumptions");
 
 const BASE = "11111111-1111-4111-8111-111111111111";
 const IMPORT = "22222222-2222-4222-8222-222222222222";
@@ -885,5 +896,309 @@ describe("get_missing_facts", () => {
     const err = await missingFactsTool.run({ clientId: "c1" }, principal).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(McpForbiddenError);
     expect(h.loadRecordBook).not.toHaveBeenCalled();
+  });
+});
+
+describe("update_plan_detail", () => {
+  const call = (args: Record<string, unknown>) => editTool.run({ clientId: "c1", ...args }, principal);
+  const SCOPE = { importId: IMPORT, clientId: "c1", firmId: "org_1" };
+
+  /** The row the edit added (or the fixed row it set): the first op names it. */
+  const editedRowId = () => h.editFactFinder.mock.calls[0][3][0].rowId as string;
+
+  /** The edited row's account line: its name starts left out, as a name that would replace one on record does. */
+  function accountLine(rowId: string, extra: Partial<ChangeLine> = {}): ChangeLine {
+    const field = (key: string, columnId: string, ticked: boolean): ChangeField => ({
+      key,
+      label: key,
+      next: key,
+      shown: { next: `new ${key}`, onRecord: `old ${key}` },
+      ticked,
+      from: [{ sectionId: "retirement", rowId, columnId }],
+    });
+    return changeLine(`${rowId}/account`, "update", [field("name", "accountName", false), field("value", "currentValue", true)], {
+      rowId,
+      recordId: "acc-ira",
+      label: "Schwab IRA",
+      ...extra,
+    });
+  }
+
+  /** The review builds the edited row's lines (made by `lines`) at the draft's next version. */
+  function reviewBuilds(lines: (rowId: string) => ChangeLine[]) {
+    h.reviewFactFinder.mockImplementation(async (_scope, state: FactFinderState) => {
+      const changeSet: ChangeSet = { builtAtVersion: state.version + 1, builtAt: "2026-10-19T12:00:00.000Z", lines: lines(editedRowId()), notices: [] };
+      return { ok: true, changeSet, factFinder: { ...state, version: state.version + 1, changeSet } };
+    });
+  }
+
+  function saveCloses(leftOut: { lineId: string; rowId: string; label: string; reason: string }[] = []) {
+    h.saveChangeSet.mockImplementation(async () => {
+      const rowId = editedRowId();
+      return {
+        ok: true,
+        factFinder: {
+          ...emptyFactFinderState(),
+          closed: {
+            at: "2026-10-19T12:05:00.000Z",
+            by: "u1",
+            saved: [{ lineId: `${rowId}/account`, rowId, target: "account", recordId: "acc-ira", label: "Schwab IRA" }],
+            leftOut,
+          },
+        },
+      };
+    });
+  }
+
+  beforeEach(() => {
+    gateAllows(emptyFactFinderState());
+    h.discardImport.mockResolvedValue("discarded");
+    reviewBuilds((rowId) => [accountLine(rowId)]);
+    saveCloses();
+  });
+
+  it("turns a recordId edit into a new row linked to that record, and saves every field it sets, name included", async () => {
+    const out = (await call({
+      sectionId: "retirement",
+      recordId: "acc-ira",
+      cells: { accountName: "Schwab Rollover IRA", currentValue: 412000 },
+      sources: { currentValue: { document: "Schwab Q3.pdf", page: 2 }, last4: { document: "Schwab Q3.pdf" } },
+    })) as Record<string, unknown>;
+
+    expect(h.createFactFinderImport).toHaveBeenCalledWith({
+      clientId: "c1",
+      firmId: "org_1",
+      userId: "u1",
+      scenarioId: BASE,
+      mode: "updating",
+      notes: "Claude edit: Retirement Accounts",
+      audit: { via: "claude" },
+    });
+    expect(h.factFinderGateFor).toHaveBeenCalledWith(principal, "c1", IMPORT, "commit");
+
+    const rowId = editedRowId();
+    expect(rowId).toMatch(UUID);
+    const [scope, , baseVersion, ops, ctx] = h.editFactFinder.mock.calls[0];
+    expect(scope).toEqual(SCOPE);
+    expect(baseVersion).toBe(0);
+    expect(ops).toEqual([
+      { op: "addRow", sectionId: "retirement", rowId, cells: { accountName: "Schwab Rollover IRA", currentValue: 412000 } },
+      { op: "setLink", sectionId: "retirement", rowId, link: { kind: "existing", recordId: "acc-ira" } },
+    ]);
+    // R17: a source only for a cell this edit sets.
+    expect(ctx).toEqual({
+      by: "chat",
+      actorId: "u1",
+      stamps: [{ sectionId: "retirement", rowId, columnId: "currentValue", documentName: "Schwab Q3.pdf", page: 2 }],
+    });
+
+    // R19: no AI step for a single edit.
+    expect(h.reviewFactFinder.mock.calls[0][2]).toEqual({ now: expect.any(Date), actorId: "u1", runLeftovers: null });
+    expect(h.withAiCallerOrg).not.toHaveBeenCalled();
+
+    expect(h.saveChangeSet).toHaveBeenCalledWith({
+      scope: SCOPE,
+      actorId: "u1",
+      principal,
+      // The edit moved the draft to version 1, and the review to 2.
+      changeSetVersion: 2,
+      ticks: { [`${rowId}/account`]: { name: true, value: true } },
+    });
+    expect(h.discardImport).not.toHaveBeenCalled();
+    expect(out).toEqual({
+      importId: IMPORT,
+      saved: [
+        {
+          lineId: `${rowId}/account`,
+          action: "update",
+          what: "Account",
+          label: "Schwab IRA",
+          fields: [
+            { key: "name", label: "name", from: "old name", to: "new name", included: true },
+            { key: "value", label: "value", from: "old value", to: "new value", included: true },
+          ],
+        },
+      ],
+      foundryUrl: expect.stringMatching(/\/clients\/c1\//),
+    });
+  });
+
+  it("leaves a field the edit doesn't set at the review's default", async () => {
+    await call({ sectionId: "retirement", recordId: "acc-ira", cells: { currentValue: 412000 } });
+    expect(h.saveChangeSet.mock.calls[0][0].ticks).toEqual({ [`${editedRowId()}/account`]: { name: false, value: true } });
+  });
+
+  it("sets a fixed row's cells in place, links it to a recordId when given, and links a new row as new", async () => {
+    await call({ sectionId: "people", fixedRow: "Client", cells: { retirementAge: 63 } });
+    expect(h.editFactFinder.mock.calls[0][3]).toEqual([
+      { op: "setCell", sectionId: "people", rowId: "people:Client", columnId: "retirementAge", value: 63 },
+    ]);
+    expect(h.createFactFinderImport.mock.calls[0][0].notes).toBe("Claude edit: Client & Co-client");
+
+    // How a fixed row that needs a decision is answered: the record it is.
+    h.editFactFinder.mockClear();
+    await call({ sectionId: "salary", fixedRow: "Client", recordId: "inc-1", cells: { annualSalary: 150000 } });
+    expect(h.editFactFinder.mock.calls[0][3]).toEqual([
+      { op: "setCell", sectionId: "salary", rowId: "salary:Client", columnId: "annualSalary", value: 150000 },
+      { op: "setLink", sectionId: "salary", rowId: "salary:Client", link: { kind: "existing", recordId: "inc-1" } },
+    ]);
+
+    h.editFactFinder.mockClear();
+    await call({ sectionId: "cash", cells: { accountName: "Chase Checking", currentValue: 5000 } });
+    const ops = h.editFactFinder.mock.calls[0][3];
+    expect(ops).toEqual([
+      { op: "addRow", sectionId: "cash", rowId: ops[0].rowId, cells: { accountName: "Chase Checking", currentValue: 5000 } },
+      { op: "setLink", sectionId: "cash", rowId: ops[0].rowId, link: { kind: "new" } },
+    ]);
+  });
+
+  it("audits the import, the section and the lines saved, never a value", async () => {
+    await call({ sectionId: "retirement", recordId: "acc-ira", cells: { currentValue: 412000 } });
+    const audit = h.recordAudit.mock.calls.find(([a]) => a.action === "mcp.tool_write")![0];
+    expect(audit.metadata).toEqual({ importId: IMPORT, sectionId: "retirement", saved: 1, tool: "update_plan_detail", via: "claude" });
+  });
+
+  it("names a line the save left out, and why, without refusing", async () => {
+    saveCloses([{ lineId: "x/beneficiary", rowId: "x", label: "Schwab IRA beneficiaries", reason: "Nothing ticked." }]);
+    const out = (await call({ sectionId: "retirement", recordId: "acc-ira", cells: { currentValue: 412000 } })) as Record<string, unknown>;
+    expect(out.leftOut).toEqual([{ label: "Schwab IRA beneficiaries", reason: "Nothing ticked." }]);
+    expect((out.saved as unknown[]).length).toBe(1);
+    expect(h.discardImport).not.toHaveBeenCalled();
+  });
+
+  // Review Focus #5: a single edit that can't save writes nothing and leaves no draft behind.
+  it("discards the import it created and says so when the edit changes nothing", async () => {
+    reviewBuilds((rowId) => [accountLine(rowId, { action: "none", fields: [] })]);
+    const err = await call({ sectionId: "retirement", recordId: "acc-ira", cells: { currentValue: 300000 } }).catch((e: unknown) => e);
+
+    expect(err).toEqual(new McpInputError("Nothing to change — the plan already has these values."));
+    expect(h.saveChangeSet).not.toHaveBeenCalled();
+    expect(h.discardImport).toHaveBeenCalledWith(SCOPE, "u1");
+    expect(h.recordAudit.mock.calls.some(([a]) => a.action === "mcp.tool_write")).toBe(false);
+  });
+
+  it("refuses a line that can't save with its reason, and discards the import", async () => {
+    reviewBuilds((rowId) => [accountLine(rowId, { blocked: { reason: "Pick who owns it." } })]);
+    const err = await call({ sectionId: "retirement", recordId: "acc-ira", cells: { currentValue: 412000 } }).catch((e: unknown) => e);
+
+    expect(err).toEqual(new McpInputError("Schwab IRA can't save: Pick who owns it."));
+    expect(h.saveChangeSet).not.toHaveBeenCalled();
+    expect(h.discardImport).toHaveBeenCalledWith(SCOPE, "u1");
+  });
+
+  it("passes a save refusal back and discards the import", async () => {
+    h.saveChangeSet.mockResolvedValue({ ok: false, status: 409, error: "“Schwab IRA” changed since you reviewed — review again.", lineId: "L1" });
+    const err = await call({ sectionId: "retirement", recordId: "acc-ira", cells: { currentValue: 412000 } }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(McpInputError);
+    expect((err as Error).message).toBe("“Schwab IRA” changed since you reviewed — review again.");
+    expect(h.discardImport).toHaveBeenCalledWith(SCOPE, "u1");
+  });
+
+  it("passes a link waiting on the advisor back with its candidates, and discards the import", async () => {
+    h.reviewFactFinder.mockResolvedValue({ ok: false, status: 409, body: { error: "1 link needs a click first." } });
+    const err = await call({ sectionId: "salary", fixedRow: "Client", cells: { annualSalary: 150000 } }).catch((e: unknown) => e);
+
+    expect(err).toEqual(new McpInputError("1 link needs a click first."));
+    expect(h.saveChangeSet).not.toHaveBeenCalled();
+    expect(h.discardImport).toHaveBeenCalledWith(SCOPE, "u1");
+  });
+
+  it("discards the import when the fact finder refuses a value", async () => {
+    h.editFactFinder.mockResolvedValue({ ok: false, status: 400, error: "Retirement Accounts has no column \"nope\"." });
+    const err = await call({ sectionId: "retirement", recordId: "acc-ira", cells: { nope: 1 } }).catch((e: unknown) => e);
+
+    expect(err).toEqual(new McpInputError("Retirement Accounts has no column \"nope\"."));
+    expect(h.reviewFactFinder).not.toHaveBeenCalled();
+    expect(h.discardImport).toHaveBeenCalledWith(SCOPE, "u1");
+  });
+
+  // R23: the create check's refusals come before a draft exists, so there is nothing to discard.
+  it("refuses a shared client before creating anything", async () => {
+    h.verifyClientAccessFor.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_1", access: "shared" });
+    const err = await call({ sectionId: "retirement", recordId: "acc-ira", cells: { currentValue: 1 } }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(McpForbiddenError);
+    expect(h.createFactFinderImport).not.toHaveBeenCalled();
+    expect(h.discardImport).not.toHaveBeenCalled();
+  });
+
+  it("refuses a fixed row the section doesn't have, and no cells or more than 30, before creating anything", async () => {
+    await expect(call({ sectionId: "people", fixedRow: "Partner", cells: { firstName: "x" } })).rejects.toThrow(
+      'Section people has no fixed row "Partner"; use one of its fixedRows.',
+    );
+    await expect(call({ sectionId: "retirement", recordId: "acc-ira", cells: {} })).rejects.toThrow();
+    const tooMany = Object.fromEntries(Array.from({ length: 31 }, (_, i) => [`c${i}`, i]));
+    await expect(call({ sectionId: "retirement", recordId: "acc-ira", cells: tooMany })).rejects.toThrow();
+    expect(h.createFactFinderImport).not.toHaveBeenCalled();
+  });
+});
+
+describe("update_plan_assumptions", () => {
+  const call = (changes: Record<string, unknown>) => assumptionsTool.run({ clientId: "c1", changes }, principal);
+
+  beforeEach(() => {
+    h.loadEffectiveTree.mockResolvedValue({
+      effectiveTree: {
+        planSettings: { inflationRate: 0.025, inflationRateSource: "asset_class", defaultGrowthTaxable: 0.05, growthSourceTaxable: "model_portfolio", flatFederalRate: 0.22 },
+      },
+    });
+    // The core's own validation; the stored row comes back with numeric columns as strings.
+    h.updatePlanSettingsForClient.mockImplementation(async ({ body }: { body: Record<string, unknown> }) => {
+      const invalid = validatePlanSettingsPatch(body);
+      if (invalid) return { ok: false, status: 400, error: invalid };
+      const data = Object.fromEntries(Object.entries(body).map(([k, v]) => [k, typeof v === "number" ? v.toFixed(4) : v]));
+      return { ok: true, data, resourceId: "ps1" };
+    });
+  });
+
+  it("sets a default growth rate as a custom rate, on the principal, and returns each change before → after", async () => {
+    const out = await call({ defaultGrowthTaxable: 0.06 });
+
+    expect(h.updatePlanSettingsForClient).toHaveBeenCalledWith({
+      clientId: "c1",
+      firmId: "org_1",
+      actorId: "u1",
+      body: { defaultGrowthTaxable: 0.06, growthSourceTaxable: "custom" },
+      principal,
+    });
+    expect(h.loadEffectiveTree).toHaveBeenCalledWith("c1", "org_1", "base", {});
+    expect(h.loadEffectiveTree.mock.invocationCallOrder[0]).toBeLessThan(h.updatePlanSettingsForClient.mock.invocationCallOrder[0]);
+    expect(out).toEqual({
+      changed: [
+        { key: "defaultGrowthTaxable", from: 0.05, to: 0.06 },
+        { key: "growthSourceTaxable", from: "model_portfolio", to: "custom" },
+      ],
+      foundryUrl: expect.stringMatching(/\/clients\/c1\/details\/assumptions$/),
+    });
+  });
+
+  it("sets inflation as a custom rate", async () => {
+    const out = (await call({ inflationRate: 0.03 })) as { changed: unknown[] };
+    expect(h.updatePlanSettingsForClient.mock.calls[0][0].body).toEqual({ inflationRate: 0.03, inflationRateSource: "custom" });
+    expect(out.changed).toEqual([
+      { key: "inflationRate", from: 0.025, to: 0.03 },
+      { key: "inflationRateSource", from: "asset_class", to: "custom" },
+    ]);
+  });
+
+  // The brief named inflationRate: 1.5, but the core bounds inflation only to ±10 (validate-patch's
+  // NEVER_EMPTY_RATE_KEYS); flatFederalRate is one of the rates it bounds to 0..1.
+  it("passes the core's refusal back in its own words", async () => {
+    await expect(call({ flatFederalRate: 1.5 })).rejects.toThrow(new McpInputError("flatFederalRate must be between 0 and 1"));
+    expect(h.recordAudit.mock.calls.some(([a]) => a.action === "mcp.tool_write")).toBe(false);
+  });
+
+  it("audits the settings changed, never their values", async () => {
+    await call({ flatFederalRate: 0.24, residenceState: "CO" });
+    const audit = h.recordAudit.mock.calls.find(([a]) => a.action === "mcp.tool_write")![0];
+    expect(audit.metadata).toEqual({ keys: ["flatFederalRate", "residenceState"], tool: "update_plan_assumptions", via: "claude" });
+  });
+
+  it("refuses a call that changes nothing, and a view-only household, before writing", async () => {
+    await expect(call({})).rejects.toThrow();
+    h.verifyClientAccessFor.mockResolvedValue({ ok: true, permission: "view", firmId: "org_1", access: "own" });
+    await expect(call({ inflationRate: 0.03 })).rejects.toThrow(VIEW_ONLY_MESSAGE);
+    expect(h.updatePlanSettingsForClient).not.toHaveBeenCalled();
   });
 });

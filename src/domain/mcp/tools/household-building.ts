@@ -5,18 +5,21 @@
 // the statements it has read, reviews and saves — through the same cores the
 // fact finder screen uses, so its rules hold unchanged: minted row ids,
 // compare-and-set versions, matching, claim-once, the stale check and the
-// all-or-nothing save. defineWriteTool gates every tool: the firm switch,
-// billing, then edit access to the household — the access check for the save's
-// lines whose cores don't make one.
+// all-or-nothing save. A single edit runs the same cores on a one-row import in
+// one call; plan assumptions go straight to the plan settings core.
+// defineWriteTool gates every tool: the firm switch, billing, then edit access
+// to the household — the access check for the save's lines whose cores don't
+// make one.
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { withAiCallerOrg } from "@/lib/ai/resolve";
 import { SAVE_STALE_MESSAGE, type ReviewRefusal } from "@/lib/fact-finder/api-types";
-import { countLines, defaultTicks, type ChangeSet, type ChangeTicks } from "@/lib/fact-finder/change-set";
+import { countLines, defaultTicks, type ChangeLine, type ChangeSet, type ChangeTicks } from "@/lib/fact-finder/change-set";
 import { editFactFinder } from "@/lib/fact-finder/edit";
 import { aiImportCheckFor, factFinderCreateCheckFor, factFinderGateFor, type FactFinderRefusal } from "@/lib/fact-finder/gate";
-import { createFactFinderImport } from "@/lib/fact-finder/import-lifecycle";
+import { createFactFinderImport, discardImport } from "@/lib/fact-finder/import-lifecycle";
 import type { FFOp } from "@/lib/fact-finder/ops";
+import type { FactFinderScope } from "@/lib/fact-finder/persist";
 import { runLeftovers } from "@/lib/fact-finder/placement/leftovers-run";
 import { missingFacts, missingFactsByStep } from "@/lib/fact-finder/missing-facts";
 import { loadRecordBook } from "@/lib/fact-finder/records/book";
@@ -26,11 +29,13 @@ import { saveChangeSet } from "@/lib/fact-finder/save/save";
 import { findSection, fixedLabelsOf } from "@/lib/fact-finder/schema";
 import type { SourceStamp } from "@/lib/fact-finder/sources";
 import { fixedRowId, locateRow, readFactFinderState } from "@/lib/fact-finder/state";
-import type { FactFinderState } from "@/lib/fact-finder/types";
+import type { FactFinderState, FFClosed } from "@/lib/fact-finder/types";
+import { updatePlanSettingsForClient } from "@/lib/clients/plan-settings-writes";
 import { findLikelyDuplicateHousehold } from "@/lib/crm/duplicate-household";
 import { ensurePlanImport } from "@/lib/imports/plan-builder-core";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 import type { ImportRateLimitOp } from "@/lib/rate-limit";
+import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { changeListView } from "../change-list-view";
 import { defineHouseholdWriteTool, defineTool, defineWriteTool, McpInputError, type McpTool } from "../define-tool";
 import { CLIENT_UNREADABLE_MESSAGE, McpForbiddenError } from "../guards";
@@ -120,8 +125,8 @@ function targetRowId(row: FillRow): string | null {
   return fixedRowId(row.sectionId, row.fixedRow);
 }
 
-/** One fill row as the fact finder's ops, and the sources for the cells it writes. */
-function rowOps(row: FillRow): { ops: FFOp[]; stamps: SourceStamp[] } {
+/** One fill row as the fact finder's ops on its row, and the sources for the cells it writes. */
+function rowOps(row: FillRow): { rowId: string; ops: FFOp[]; stamps: SourceStamp[] } {
   const { sectionId, cells } = row;
   const existing = targetRowId(row);
   const rowId = existing ?? randomUUID();
@@ -157,7 +162,32 @@ function rowOps(row: FillRow): { ops: FFOp[]; stamps: SourceStamp[] } {
       ...(page !== undefined ? { page } : {}),
       ...(quote !== undefined ? { quote } : {}),
     }));
-  return { ops, stamps };
+  return { rowId, ops, stamps };
+}
+
+/**
+ * The base case a new draft goes on, after the import gate's client and
+ * entitlement refusals — so a refusal leaves no draft behind (R23).
+ */
+async function draftBaseCase(principal: McpPrincipal, clientId: string): Promise<string> {
+  const check = await factFinderCreateCheckFor(principal, clientId);
+  if (!check.ok) throw refusalError(check);
+  const scenarioId = await resolveBaseCaseScenarioId(clientId);
+  if (!scenarioId) throw new McpInputError(NO_BASE_PLAN_MESSAGE);
+  return scenarioId;
+}
+
+/** A new updating draft on the base case, the principal's own. */
+function createDraft(principal: McpPrincipal, clientId: string, firmId: string, scenarioId: string, notes: string) {
+  return createFactFinderImport({
+    clientId,
+    firmId,
+    userId: principal.userId,
+    scenarioId,
+    mode: "updating",
+    notes,
+    audit: { via: "claude" },
+  });
 }
 
 const startFactFinderStep = defineWriteTool({
@@ -174,22 +204,10 @@ const startFactFinderStep = defineWriteTool({
   }),
   page: "netWorth",
   handler: async ({ clientId, step }, { principal, firmId }) => {
-    // The gate's client and entitlement refusals, before a draft exists to refuse later.
-    const check = await factFinderCreateCheckFor(principal, clientId);
-    if (!check.ok) throw refusalError(check);
-    const scenarioId = await resolveBaseCaseScenarioId(clientId);
-    if (!scenarioId) throw new McpInputError(NO_BASE_PLAN_MESSAGE);
+    const scenarioId = await draftBaseCase(principal, clientId);
     // The book first: a failed read leaves no draft behind.
     const book = await loadRecordBook(clientId, firmId, scenarioId);
-    const imp = await createFactFinderImport({
-      clientId,
-      firmId,
-      userId: principal.userId,
-      scenarioId,
-      mode: "updating",
-      notes: `Claude: ${factFinderStep(step).label}`,
-      audit: { via: "claude" },
-    });
+    const imp = await createDraft(principal, clientId, firmId, scenarioId, `Claude: ${factFinderStep(step).label}`);
     const state = readFactFinderState(imp.payloadJson);
     return { importId: imp.id, version: state.version, ...describeStep(step, state, book) };
   },
@@ -267,6 +285,18 @@ function reviewRefusal({ error, factFinder, rows }: ReviewRefusal, state: FactFi
   return new McpInputError(error, Object.keys(details).length > 0 ? details : undefined);
 }
 
+/** The draft's change list as the review builds and stores it, or its refusal. `leftovers` null: no AI step. */
+async function reviewDraft(
+  scope: FactFinderScope,
+  state: FactFinderState,
+  actorId: string,
+  leftovers: typeof runLeftovers | null,
+): Promise<ChangeSet> {
+  const outcome = await reviewFactFinder(scope, state, { now: new Date(), actorId, runLeftovers: leftovers });
+  if (!outcome.ok) throw reviewRefusal(outcome.body, state);
+  return outcome.changeSet;
+}
+
 const reviewFactFinderStep = defineWriteTool({
   name: "review_fact_finder_step",
   title: "Review a fact finder step",
@@ -282,20 +312,18 @@ const reviewFactFinderStep = defineWriteTool({
     const gate = await openStep(principal, clientId, importId, "match");
     const state = readFactFinderState(gate.payloadJson);
     // The review's AI step runs in the firm's tenant: the verified token's org, as there's no Clerk session.
-    const outcome = await withAiCallerOrg(principal.orgId, () =>
-      reviewFactFinder({ importId, clientId, firmId: gate.firmId }, state, {
-        now: new Date(),
-        actorId: principal.userId,
-        runLeftovers,
-      }),
+    const changeSet = await withAiCallerOrg(principal.orgId, () =>
+      reviewDraft({ importId, clientId, firmId: gate.firmId }, state, principal.userId, runLeftovers),
     );
-    if (!outcome.ok) throw reviewRefusal(outcome.body, state);
-    return changeListView(outcome.changeSet, defaultTicks(outcome.changeSet));
+    return changeListView(changeSet, defaultTicks(changeSet));
   },
   auditMetadata: (args, result) => ({ importId: args.importId, changeSetVersion: result.changeSetVersion }),
 });
 
 type LineChoice = { lineId: string; key?: string };
+
+/** Why a line saves nothing: the review's reason, or no change at all. */
+const cannotSave = (line: ChangeLine) => `${line.label} can't save: ${line.blocked?.reason ?? "it changes nothing."}`;
 
 /**
  * The advisor's ticks: the review's defaults, less `leaveOut` (a whole line,
@@ -321,10 +349,27 @@ function approvedTicks(changeSet: ChangeSet, leaveOut: readonly LineChoice[], in
   for (const choice of include) {
     const line = lineOf(choice);
     const lineTicks = ticks[choice.lineId];
-    if (!lineTicks) throw new McpInputError(`${line.label} can't save: ${line.blocked?.reason ?? "it changes nothing."}`);
+    if (!lineTicks) throw new McpInputError(cannotSave(line));
     lineTicks[choice.key] = true;
   }
   return ticks;
+}
+
+/**
+ * The reviewed list saved as the principal, the import closed: what it saved
+ * and what it left out. All or nothing — a refusal writes nothing and names
+ * its line.
+ */
+async function saveDraft(
+  scope: FactFinderScope,
+  principal: McpPrincipal,
+  changeSetVersion: number,
+  ticks: ChangeTicks,
+): Promise<Pick<FFClosed, "saved" | "leftOut">> {
+  const outcome = await saveChangeSet({ scope, actorId: principal.userId, principal, changeSetVersion, ticks });
+  if (!outcome.ok) throw new McpInputError(outcome.error, outcome.lineId !== undefined ? { lineId: outcome.lineId } : undefined);
+  const { saved = [], leftOut = [] } = outcome.factFinder.closed ?? {};
+  return { saved, leftOut };
 }
 
 const saveFactFinderStep = defineWriteTool({
@@ -355,15 +400,8 @@ const saveFactFinderStep = defineWriteTool({
     const { changeSet } = readFactFinderState(gate.payloadJson);
     // The ticks are the list's: one reviewed again since (or never) is the save's own stale refusal.
     if (!changeSet || changeSet.builtAtVersion !== changeSetVersion) throw new McpInputError(SAVE_STALE_MESSAGE);
-    const outcome = await saveChangeSet({
-      scope: { importId, clientId, firmId: gate.firmId },
-      actorId: principal.userId,
-      principal,
-      changeSetVersion,
-      ticks: approvedTicks(changeSet, leaveOut, include),
-    });
-    if (!outcome.ok) throw new McpInputError(outcome.error, outcome.lineId !== undefined ? { lineId: outcome.lineId } : undefined);
-    const { saved = [], leftOut = [] } = outcome.factFinder.closed ?? {};
+    const scope = { importId, clientId, firmId: gate.firmId };
+    const { saved, leftOut } = await saveDraft(scope, principal, changeSetVersion, approvedTicks(changeSet, leaveOut, include));
     const savedIds = new Set(saved.map((s) => s.lineId));
     const { creates, updates } = countLines(changeSet.lines.filter((l) => savedIds.has(l.id)));
     return { saved: { create: creates, update: updates }, leftOut: leftOut.length };
@@ -507,6 +545,148 @@ const getMissingFacts = defineTool({
   },
 });
 
+const NOTHING_TO_CHANGE_MESSAGE = "Nothing to change — the plan already has these values.";
+const MAX_EDIT_CELLS = 30;
+
+/**
+ * The review's ticks, plus every field the edit's own cells set — a name or
+ * owner on record included, which the review leaves out by default.
+ */
+function editTicks(changeSet: ChangeSet, rowId: string, cells: Record<string, unknown>): ChangeTicks {
+  const ticks = defaultTicks(changeSet);
+  for (const line of changeSet.lines) {
+    for (const field of line.fields) {
+      const set = field.from.some((c) => c.rowId === rowId && Object.hasOwn(cells, c.columnId));
+      if (set && ticks[line.id]) ticks[line.id][field.key] = true;
+    }
+  }
+  return ticks;
+}
+
+/**
+ * `run` on a draft this call created; when it throws, that draft is discarded
+ * first. Only ever this call's own import (discardImport doesn't check who
+ * created one), and never a saved one — discardImport leaves those as they are.
+ */
+async function orDiscard<T>(scope: FactFinderScope, actorId: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    await discardImport(scope, actorId);
+    throw err;
+  }
+}
+
+const updatePlanDetail = defineWriteTool({
+  name: "update_plan_detail",
+  title: "Update a plan detail",
+  description:
+    "Change one record of a household's plan, or add one, and save it to the base plan at once through the fact " +
+    "finder's review and save, all or nothing. sectionId and the cells' column ids are the fact finder's, as " +
+    "start_fact_finder_step lists them. recordId updates that record, fixedRow sets that fixed row, and neither " +
+    "adds a record. Nothing is saved, and no draft is left, when nothing changes, a line can't save or the record " +
+    "changed meanwhile. Returns the saved lines, each field from its value on record to the new one, and any line " +
+    "left out, with the reason.",
+  inputSchema: z.object({
+    clientId: clientIdArg,
+    sectionId: z.string().describe("A fact finder section id, e.g. \"retirement\"."),
+    recordId: z.string().optional().describe("The record to update, from list_plan_details or a step's existingRecords."),
+    fixedRow: fillRow.shape.fixedRow,
+    cells: z
+      .record(z.string(), cellValue)
+      .refine((c) => Object.keys(c).length >= 1 && Object.keys(c).length <= MAX_EDIT_CELLS, `Give 1 to ${MAX_EDIT_CELLS} cells.`)
+      .describe("Column id to value. null clears a cell."),
+    sources: cellSources,
+  }),
+  page: "netWorth",
+  handler: async ({ clientId, sectionId, recordId, fixedRow, cells, sources }, { principal, firmId }) => {
+    // Built before anything is created: a fixed row the section doesn't have refuses with no draft behind it.
+    const link = recordId !== undefined ? { recordId } : fixedRow === undefined ? ("new" as const) : undefined;
+    const { rowId, ops, stamps } = rowOps({ sectionId, fixedRow, cells, link, sources });
+    const scenarioId = await draftBaseCase(principal, clientId);
+    const notes = `Claude edit: ${findSection(sectionId)?.label ?? sectionId}`;
+    const imp = await createDraft(principal, clientId, firmId, scenarioId, notes);
+    const scope = { importId: imp.id, clientId, firmId };
+
+    // R37: everything that can refuse comes before the save, which writes all or nothing.
+    const { changeSet, ticks, closed } = await orDiscard(scope, principal.userId, async () => {
+      // The commit gate: an edit is a save, so it counts against the fact finder's save limit.
+      const gate = await openStep(principal, clientId, imp.id, "commit");
+      const current = readFactFinderState(gate.payloadJson);
+      const edited = await editFactFinder(scope, current, current.version, ops, { by: "chat", actorId: principal.userId, stamps });
+      if (!edited.ok) throw new McpInputError(edited.error);
+      // R19: no AI step — a single edit carries no free text to place.
+      const changeSet = await reviewDraft(scope, edited.state, principal.userId, null);
+      const blocked = changeSet.lines.filter((l) => l.blocked);
+      if (blocked.length > 0) throw new McpInputError(blocked.map(cannotSave).join(" "));
+      if (changeSet.lines.every((l) => l.action === "none")) throw new McpInputError(NOTHING_TO_CHANGE_MESSAGE);
+      const ticks = editTicks(changeSet, rowId, cells);
+      return { changeSet, ticks, closed: await saveDraft(scope, principal, changeSet.builtAtVersion, ticks) };
+    });
+
+    const savedIds = new Set(closed.saved.map((s) => s.lineId));
+    const { lines, warnings } = changeListView({ ...changeSet, lines: changeSet.lines.filter((l) => savedIds.has(l.id)) }, ticks);
+    return {
+      importId: imp.id,
+      saved: lines,
+      ...(closed.leftOut.length > 0 && { leftOut: closed.leftOut.map(({ label, reason }) => ({ label, reason })) }),
+      ...(warnings.length > 0 && { warnings }),
+    };
+  },
+  auditMetadata: (args, result) => ({ importId: result.importId, sectionId: args.sectionId, saved: result.saved.length }),
+});
+
+const rate = z.number().optional();
+
+/** A stored value as the plan reads it: numeric columns come back as strings. */
+const asRead = (value: unknown) =>
+  typeof value === "string" && value.trim() !== "" && !Number.isNaN(Number(value)) ? Number(value) : (value ?? null);
+
+const updatePlanAssumptions = defineWriteTool({
+  name: "update_plan_assumptions",
+  title: "Change plan assumptions",
+  description:
+    "Change a household's plan assumptions in its base plan. Setting inflationRate or a defaultGrowth rate makes " +
+    "it the plan's custom rate. Returns each setting changed, from the value the plan used to the new one.",
+  inputSchema: z.object({
+    clientId: clientIdArg,
+    changes: z
+      .object({
+        inflationRate: rate,
+        taxInflationRate: rate.describe("Tax bracket inflation."),
+        ssWageGrowthRate: rate,
+        defaultGrowthTaxable: rate,
+        defaultGrowthCash: rate,
+        defaultGrowthRetirement: rate,
+        defaultGrowthRealEstate: rate,
+        defaultGrowthBusiness: rate,
+        defaultGrowthLifeInsurance: rate,
+        flatFederalRate: rate,
+        flatStateRate: rate,
+        irdTaxRate: rate.describe("Heirs' income tax rate on inherited retirement accounts."),
+        residenceState: z.string().optional().describe("USPS two-letter state code."),
+      })
+      .refine((c) => Object.keys(c).length > 0, "Give at least one change.")
+      .describe("Rates are fractions, 0.03 = 3%. defaultGrowth<X>: the default growth rate of that asset class's accounts."),
+  }),
+  page: "assumptions",
+  handler: async ({ clientId, changes }, { principal, firmId }) => {
+    const body: Record<string, unknown> = { ...changes };
+    if (changes.inflationRate !== undefined) body.inflationRateSource = "custom";
+    for (const key of Object.keys(changes)) {
+      if (key.startsWith("defaultGrowth")) body[key.replace("defaultGrowth", "growthSource")] = "custom";
+    }
+    // Before: the base case as the plan reads it — the loader the Details screen and Forge read it through.
+    const { effectiveTree } = await loadEffectiveTree(clientId, firmId, "base", {});
+    const before: Record<string, unknown> = { ...effectiveTree.planSettings };
+    // R4: the principal is for the core's base-case lookup; the runner's edit gate is the access check.
+    const result = await updatePlanSettingsForClient({ clientId, firmId, actorId: principal.userId, body, principal });
+    if (!result.ok) throw new McpInputError(result.error);
+    return { changed: Object.keys(body).map((key) => ({ key, from: before[key] ?? null, to: asRead(result.data[key]) })) };
+  },
+  auditMetadata: (args) => ({ keys: Object.keys(args.changes) }),
+});
+
 export const householdBuildingTools: McpTool[] = [
   createHousehold,
   startFactFinderStep,
@@ -514,4 +694,6 @@ export const householdBuildingTools: McpTool[] = [
   reviewFactFinderStep,
   saveFactFinderStep,
   getMissingFacts,
+  updatePlanDetail,
+  updatePlanAssumptions,
 ];
