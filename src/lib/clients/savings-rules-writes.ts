@@ -94,7 +94,7 @@ export async function createSavingsRuleForClient(args: {
   const { clientId, firmId, actorId, crossFirmMeta, actorKind } = args;
   const p = (args.input ?? {}) as SavingsRuleInput;
 
-  const scenarioId = await baseCaseScenarioId(clientId, firmId);
+  const scenarioId = await baseCaseScenarioId(clientId, firmId, args.principal);
   if (!scenarioId) return writeError(404, "Client not found");
 
   if (!p.accountId || !p.startYear || !p.endYear) {

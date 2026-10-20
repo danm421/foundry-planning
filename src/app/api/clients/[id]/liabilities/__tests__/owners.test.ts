@@ -39,10 +39,15 @@ vi.mock("@/lib/db-helpers", () => ({
   requireOrgAndUser: vi.fn(),
 }));
 
-vi.mock("@/lib/clients/authz", () => ({
-  verifyClientAccess: vi.fn(),
-  requireClientEditAccess: vi.fn(),
-}));
+vi.mock("@/lib/clients/authz", () => {
+  const verifyClientAccess = vi.fn();
+  return {
+    verifyClientAccess,
+    // The write cores check access through verifyClientAccessAs: a route passes no principal, so it is this check.
+    verifyClientAccessAs: (_p: unknown, id: string) => verifyClientAccess(id),
+    requireClientEditAccess: vi.fn(),
+  };
+});
 
 vi.mock("@/lib/authz", async () => {
   const actual = await vi.importActual<typeof import("@/lib/authz")>("@/lib/authz");

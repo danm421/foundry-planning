@@ -4,8 +4,8 @@ import { ALL_MCP_TOOLS } from "../tools";
 import type { McpTool } from "../define-tool";
 
 describe("the MCP tool registry", () => {
-  it("exposes exactly 28 tools", () => {
-    expect(ALL_MCP_TOOLS).toHaveLength(28);
+  it("exposes exactly 37 tools", () => {
+    expect(ALL_MCP_TOOLS).toHaveLength(37);
   });
 
   it("has unique names, each at most 64 characters", () => {
@@ -14,10 +14,23 @@ describe("the MCP tool registry", () => {
     for (const n of names) expect(n.length).toBeLessThanOrEqual(64);
   });
 
-  // The two tools that change data. Everything else must stay read-only — the
+  // The tools that change data. Everything else must stay read-only — the
   // directory listing depends on it, and a tool that slips out of read-only
   // without being named here fails this test.
-  const WRITE_TOOLS = new Set(["save_what_if_as_scenario", "generate_presentation"]);
+  const WRITE_TOOLS = new Set([
+    "save_what_if_as_scenario",
+    "generate_presentation",
+    "create_household",
+    "start_fact_finder_step",
+    "fill_fact_finder_step",
+    "review_fact_finder_step",
+    "save_fact_finder_step",
+    "update_plan_detail",
+    "update_plan_assumptions",
+    "remove_plan_detail",
+  ]);
+  // The writes that remove data, so Claude always asks first. Every other write is not destructive.
+  const DESTRUCTIVE_TOOLS = new Set(["remove_plan_detail"]);
 
   it("registers every write tool named above, so a misspelled name can't pass unseen", () => {
     const names = new Set(ALL_MCP_TOOLS.map((t) => t.name));
@@ -26,9 +39,9 @@ describe("the MCP tool registry", () => {
 
   it("annotates the write tools as making changes and every other tool read-only", () => {
     for (const t of ALL_MCP_TOOLS) {
-      expect(t.annotations).toEqual(
+      expect(t.annotations, t.name).toEqual(
         WRITE_TOOLS.has(t.name)
-          ? { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+          ? { readOnlyHint: false, destructiveHint: DESTRUCTIVE_TOOLS.has(t.name), idempotentHint: false, openWorldHint: false }
           : { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       );
       expect(t.title.length).toBeGreaterThan(0);
@@ -41,6 +54,18 @@ describe("the MCP tool registry", () => {
       expect(t.description.toLowerCase()).not.toContain("co-client");
     }
     expect(ALL_MCP_TOOLS.map((t) => t.name)).not.toContain("get_goals");
+  });
+
+  // What the connector lists on the wire, roughly as the client receives it.
+  it("keeps the whole tool list within 140,000 characters", () => {
+    const listed = ALL_MCP_TOOLS.map((t) => ({
+      name: t.name,
+      title: t.title,
+      description: t.description,
+      inputSchema: z.toJSONSchema(t.inputSchema),
+      annotations: t.annotations,
+    }));
+    expect(JSON.stringify(listed).length).toBeLessThanOrEqual(140_000);
   });
 });
 
@@ -85,7 +110,8 @@ function minimalValueFor(schema: z.ZodTypeAny): unknown {
     // Try a small set of candidates and keep the first this schema's OWN
     // constraints actually accept, instead of hand-parsing `.min()`/`.max()`
     // out of zod's internals for each field.
-    const candidates = [1, 0.5, 0, 2, -1, 100];
+    // 65 for an age bound (create_household's retirementAge, 40–85).
+    const candidates = [1, 0.5, 0, 2, -1, 100, 65];
     return candidates.find((n) => schema.safeParse(n).success) ?? 1;
   }
   if (schema instanceof z.ZodBoolean) return true;
@@ -98,6 +124,11 @@ function minimalValueFor(schema: z.ZodTypeAny): unknown {
       ? []
       : [minimalValueFor(schema.element as z.ZodTypeAny)];
   }
+  if (schema instanceof z.ZodRecord) {
+    // As an array: empty when the schema takes it (a step's sources), one
+    // entry when it doesn't (update_plan_detail's cells).
+    return schema.safeParse({}).success ? {} : { x: minimalValueFor(schema.valueType as z.ZodTypeAny) };
+  }
   if (schema instanceof z.ZodObject) {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(schema.shape)) out[k] = minimalValueFor(v as z.ZodTypeAny);
@@ -106,14 +137,25 @@ function minimalValueFor(schema: z.ZodTypeAny): unknown {
   return undefined;
 }
 
-/** The smallest args object that PASSES tool `t`'s own schema, derived from the schema. */
+/**
+ * The smallest args object that PASSES tool `t`'s own schema, derived from the
+ * schema: its required keys, plus the optional ones a refinement across keys
+ * asks for (create_household takes household, or householdId with prospect).
+ */
 function minimalArgsFor(t: McpTool): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
+  const required: Record<string, unknown> = {};
+  const optional: [string, unknown][] = [];
   for (const [k, v] of Object.entries(t.inputSchema.shape)) {
-    if (v instanceof z.ZodOptional || v instanceof z.ZodDefault) continue;
-    out[k] = minimalValueFor(v as z.ZodTypeAny);
+    const value = minimalValueFor(v as z.ZodTypeAny);
+    if (v instanceof z.ZodOptional || v instanceof z.ZodDefault) optional.push([k, value]);
+    else required[k] = value;
   }
-  return out;
+  // Each subset of the optional keys, none first; the first the schema accepts.
+  for (let mask = 0; mask < 2 ** optional.length; mask++) {
+    const args = { ...required, ...Object.fromEntries(optional.filter((_, i) => mask & (1 << i))) };
+    if (t.inputSchema.safeParse(args).success) return args;
+  }
+  return required;
 }
 
 describe("every tool's input schema drops an unrecognized key (F3 / R90)", () => {

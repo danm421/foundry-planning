@@ -30,6 +30,8 @@ const principal: McpPrincipal = {
   orgRole: "org:member",
   scopes: [],
   tokenSubject: "user_1",
+  canWrite: true,
+  entitlements: ["ai_import"],
 };
 
 /**

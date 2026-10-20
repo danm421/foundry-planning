@@ -12,7 +12,8 @@
  *
  * The account routes' test mocks `@/lib/db-scoping` with only
  * `assertAccountsInClient` and `@/lib/clients/authz` with only
- * `verifyClientAccess` / `requireClientEditAccess` — import nothing else from
+ * `verifyClientAccess` / `requireClientEditAccess` (the account cores never
+ * reach the grant cores' `verifyClientAccessAs`) — import nothing else from
  * them. `actorId`: the save's actor; a route leaves it out and the audit reads
  * the session, as before.
  */
@@ -30,7 +31,7 @@ import {
   stockOptionVestTranches,
 } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccessAs } from "@/lib/clients/authz";
 import { assertAccountsInClient } from "@/lib/db-scoping";
 import { handleOf, inTransaction, type DbOrTx, type WriteOptions } from "@/lib/db-tx";
 import { formatZodIssues } from "@/lib/schemas/common";
@@ -377,7 +378,7 @@ export async function createStockOptionGrantForClient(
   const handle = handleOf(args);
 
   // Org-scope guard: verify client → account ownership and category.
-  const access = await verifyClientAccess(id);
+  const access = await verifyClientAccessAs(args.principal, id);
   if (!access.ok) return writeError(404, "Client not found");
   const [account] = await handle
     .select({ id: accounts.id })
@@ -441,7 +442,7 @@ export async function updateStockOptionGrantForClient(
   const handle = handleOf(args);
 
   // Org-scope guard: verify client → account → grant ownership.
-  const access = await verifyClientAccess(id);
+  const access = await verifyClientAccessAs(args.principal, id);
   if (!access.ok) return writeError(404, "Client not found");
   if (access.permission !== "edit") return writeError(403, "View-only access");
   const [account] = await handle

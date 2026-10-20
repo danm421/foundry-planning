@@ -15,8 +15,13 @@ export type FFCellValue = string | number | boolean | null;
 /** Who last wrote a value. Advisor and chat writes always pin. */
 export type FFActor = "document" | "advisor" | "chat";
 
+/** The `fileId` of a value Claude read from a statement that stays in Claude — Foundry holds no file for it. */
+export const CLAUDE_FILE_ID = "claude";
+
 export interface FFSource {
   fileId: string;
+  /** The document's name, for a source Foundry holds no file for (`fileId` is CLAUDE_FILE_ID). */
+  documentName?: string;
   page?: number;
   snippet?: string;
 }

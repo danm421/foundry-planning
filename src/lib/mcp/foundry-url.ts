@@ -15,6 +15,7 @@ export type FoundryPage =
   | "insurance"
   | "family"
   | "incomeExpenses"
+  | "assumptions"
   | "presentations";
 
 const PAGE_PATHS: Record<FoundryPage, string> = {
@@ -29,6 +30,7 @@ const PAGE_PATHS: Record<FoundryPage, string> = {
   insurance: "details/insurance",
   family: "details/family",
   incomeExpenses: "details/income-expenses",
+  assumptions: "details/assumptions",
   presentations: "presentations",
 };
 

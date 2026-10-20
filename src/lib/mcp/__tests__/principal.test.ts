@@ -34,6 +34,7 @@ vi.mock("@clerk/nextjs/server", () => ({
 
 import { McpUnauthorizedError, resolveMcpPrincipal } from "../principal";
 import type { Principal } from "@/lib/clients/authz";
+import { PAST_DUE_GRACE_DAYS } from "@/lib/billing/access-policy";
 
 // The dev instance the Phase 0 spike ran against. `pk_test_` body is
 // base64("assuring-monkfish-94.clerk.accounts.dev$").
@@ -136,7 +137,23 @@ describe("resolveMcpPrincipal", () => {
       orgRole: "org:member",
       scopes: ["profile", "email", "user:org:read", "offline_access"],
       tokenSubject: USER_ID,
+      canWrite: true,
+      entitlements: [],
     });
+  });
+
+  it("carries the firm's entitlements", async () => {
+    h.getOrganizationMembershipList.mockResolvedValue({
+      data: [
+        {
+          role: "org:member",
+          organization: { id: ORG_ID, publicMetadata: { is_founder: true, entitlements: ["ai_import"] } },
+        },
+      ],
+      totalCount: 1,
+    });
+    const principal = await resolveMcpPrincipal(await mintToken());
+    expect(principal.entitlements).toEqual(["ai_import"]);
   });
 
   it("stays assignable to Principal with a non-nullable orgRole", async () => {
@@ -334,7 +351,12 @@ describe("resolveMcpPrincipal", () => {
         ],
         totalCount: 1,
       });
-      await expect(resolveMcpPrincipal(await mintToken())).resolves.toMatchObject({ orgRole: "org:member" });
+      // Connected for reads, but never writable: the site's write gate refuses
+      // an unpaid firm whatever the mode.
+      await expect(resolveMcpPrincipal(await mintToken())).resolves.toMatchObject({
+        orgRole: "org:member",
+        canWrite: false,
+      });
     });
 
     it("denies the same terminal billing state once enforcement mode flips to 'enforce'", async () => {
@@ -369,7 +391,57 @@ describe("resolveMcpPrincipal", () => {
         ],
         totalCount: 1,
       });
-      await expect(resolveMcpPrincipal(await mintToken())).resolves.toMatchObject({ orgRole: "org:member" });
+      // Still connected for reads, but a write is a mutating request the web
+      // refuses in this state, so the connector's write tools refuse it too.
+      await expect(resolveMcpPrincipal(await mintToken())).resolves.toMatchObject({
+        orgRole: "org:member",
+        canWrite: false,
+      });
+    });
+
+    const pastDueBeyondGrace = () => {
+      const since = new Date(Date.now() - (PAST_DUE_GRACE_DAYS + 1) * 24 * 60 * 60 * 1000);
+      h.getOrganizationMembershipList.mockResolvedValue({
+        data: [
+          {
+            role: "org:member",
+            organization: {
+              id: ORG_ID,
+              publicMetadata: { subscription_status: "past_due", past_due_since: since.toISOString() },
+            },
+          },
+        ],
+        totalCount: 1,
+      });
+    };
+
+    it("marks a firm past due beyond grace as unable to write but still connected", async () => {
+      process.env.BILLING_ENFORCEMENT_MODE = "enforce";
+      pastDueBeyondGrace();
+      await expect(resolveMcpPrincipal(await mintToken())).resolves.toMatchObject({
+        orgId: ORG_ID,
+        canWrite: false,
+      });
+    });
+
+    it("refuses the same firm's writes in 'log' mode too, as the site's write gate does", async () => {
+      // requireActiveSubscription ignores the rollout flag; following it here
+      // would let Claude write where the site answers 403.
+      process.env.BILLING_ENFORCEMENT_MODE = "log";
+      pastDueBeyondGrace();
+      await expect(resolveMcpPrincipal(await mintToken())).resolves.toMatchObject({ canWrite: false });
+    });
+
+    it("stops a firm whose comp ended from writing even in 'log' mode, as the web does", async () => {
+      // comp_ended blocks mutations, and canWrite never consults the flag.
+      process.env.BILLING_ENFORCEMENT_MODE = "log";
+      h.getOrganizationMembershipList.mockResolvedValue({
+        data: [
+          { role: "org:member", organization: { id: ORG_ID, publicMetadata: { subscription_status: "comp_ended" } } },
+        ],
+        totalCount: 1,
+      });
+      await expect(resolveMcpPrincipal(await mintToken())).resolves.toMatchObject({ canWrite: false });
     });
   });
 

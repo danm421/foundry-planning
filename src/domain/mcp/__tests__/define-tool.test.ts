@@ -30,9 +30,12 @@ vi.mock("../guards", async (importOriginal) => {
 });
 
 import {
+  BILLING_WRITE_BLOCKED_MESSAGE,
+  defineHouseholdWriteTool,
   defineTool,
   defineWriteTool,
   McpRateLimitedError,
+  McpWriteBlockedError,
   McpWriteDisabledError,
   VIEW_ONLY_MESSAGE,
   WRITE_DISABLED_MESSAGE,
@@ -47,7 +50,12 @@ const principal: McpPrincipal = {
   orgRole: "org:member",
   scopes: [],
   tokenSubject: "user_1",
+  canWrite: true,
+  entitlements: ["ai_import"],
 };
+
+/** A firm whose billing lets it read but not change anything. */
+const billingBlocked: McpPrincipal = { ...principal, canWrite: false };
 
 // A real spy (not an inline arrow) so tests can assert exactly what
 // defineTool hands the handler — args and ctx — and, separately, that a
@@ -238,6 +246,11 @@ describe("defineTool", () => {
     expect(handlerSpy).toHaveBeenCalledTimes(1);
     expect(firmClaudeWritesEnabled).not.toHaveBeenCalled();
   });
+
+  it("runs a read tool for a firm whose billing blocks writes", async () => {
+    await expect(tool.run({ clientId: "c1" }, billingBlocked)).resolves.toMatchObject({ accountNumber: "••••5678" });
+    expect(handlerSpy).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("householdId is guarded from the schema, like clientId", () => {
@@ -334,6 +347,33 @@ describe("defineWriteTool", () => {
     expect(writeHandler).not.toHaveBeenCalled();
   });
 
+  it("refuses a write when billing blocks writes, before any client lookup", async () => {
+    const err = await writeTool.run({ clientId: "c1", name: "x" }, billingBlocked).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(McpWriteBlockedError);
+    expect((err as Error).message).toBe(BILLING_WRITE_BLOCKED_MESSAGE);
+    // The firm switch answered first; nothing after the billing gate ran.
+    expect(firmClaudeWritesEnabled).toHaveBeenCalledTimes(1);
+    expect(verifyClientAccessFor).not.toHaveBeenCalled();
+    expect(writeHandler).not.toHaveBeenCalled();
+  });
+
+  it("annotates a destructive write tool", () => {
+    const removing = defineWriteTool({
+      name: "test_remove",
+      title: "Test Remove",
+      description: "Removes one row.",
+      inputSchema: z.object({ clientId: z.string(), recordId: z.string() }),
+      destructive: true,
+      handler: async () => ({ removed: true }),
+    });
+    expect(removing.annotations).toEqual({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    });
+  });
+
   it("refuses a view-only advisor", async () => {
     verifyClientAccessFor.mockResolvedValue({ ok: true, permission: "view", firmId: "org_1", access: "shared" });
     await expect(writeTool.run({ clientId: "c1", name: "x" }, principal)).rejects.toThrow(VIEW_ONLY_MESSAGE);
@@ -387,5 +427,84 @@ describe("defineWriteTool", () => {
         handler: async () => ({}),
       }),
     ).toThrow(/must declare clientId/);
+  });
+});
+
+describe("defineHouseholdWriteTool", () => {
+  const householdHandler = vi.fn<
+    (args: { name: string }, ctx: McpToolContext) => Promise<{ clientId?: string; householdId: string }>
+  >();
+  const createTool = defineHouseholdWriteTool({
+    name: "test_create_household",
+    title: "Test Create Household",
+    description: "Creates a household for tests.",
+    inputSchema: z.object({ name: z.string() }),
+    handler: householdHandler,
+    auditMetadata: (_args, result) => ({ householdId: result.householdId }),
+  });
+
+  // Absent = a brand-new household; present = an existing prospect (R2).
+  const prospectHandler = vi.fn<() => Promise<{ clientId?: string }>>();
+  const prospectTool = defineHouseholdWriteTool({
+    name: "test_prospect_plan",
+    title: "Test Prospect Plan",
+    description: "Starts a plan, for an existing prospect when householdId is given.",
+    inputSchema: z.object({ householdId: z.string().optional(), name: z.string() }),
+    handler: prospectHandler,
+  });
+
+  beforeEach(() => {
+    householdHandler.mockReset().mockResolvedValue({ clientId: "c9", householdId: "hh9" });
+    prospectHandler.mockReset().mockResolvedValue({});
+  });
+
+  it("runs a household write tool with no clientId and audits the clientId it returns", async () => {
+    expect(createTool.annotations).toEqual({
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    });
+    const out = await createTool.run({ name: "Smith" }, principal);
+    expect(out).toEqual({ clientId: "c9", householdId: "hh9" });
+    expect(verifyClientAccessFor).not.toHaveBeenCalled();
+    expect(recordAudit).toHaveBeenCalledWith({
+      action: "mcp.tool_write",
+      resourceType: "mcp_tool",
+      resourceId: "test_create_household",
+      clientId: "c9",
+      firmId: "org_1",
+      actorId: "user_1",
+      actorKind: "advisor",
+      metadata: { tool: "test_create_household", via: "claude", householdId: "hh9" },
+    });
+  });
+
+  it("runs with no household check when the optional householdId is absent, and audits no client when none came back", async () => {
+    await prospectTool.run({ name: "Smith" }, principal);
+    expect(prospectHandler).toHaveBeenCalledTimes(1);
+    expect(assertHouseholdReadable).not.toHaveBeenCalled();
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ clientId: null }));
+  });
+
+  it("refuses a householdId the principal cannot read", async () => {
+    assertHouseholdReadable.mockRejectedValue(new McpForbiddenError(CLIENT_UNREADABLE_MESSAGE));
+    await expect(prospectTool.run({ householdId: "hh1", name: "Smith" }, principal)).rejects.toThrow(
+      CLIENT_UNREADABLE_MESSAGE,
+    );
+    expect(assertHouseholdReadable).toHaveBeenCalledWith(principal, "hh1");
+    expect(prospectHandler).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the firm switch is off or billing blocks writes, before the household check", async () => {
+    await expect(prospectTool.run({ householdId: "hh1", name: "Smith" }, billingBlocked)).rejects.toThrow(
+      BILLING_WRITE_BLOCKED_MESSAGE,
+    );
+    firmClaudeWritesEnabled.mockResolvedValue(false);
+    await expect(prospectTool.run({ householdId: "hh1", name: "Smith" }, principal)).rejects.toThrow(
+      WRITE_DISABLED_MESSAGE,
+    );
+    expect(assertHouseholdReadable).not.toHaveBeenCalled();
+    expect(prospectHandler).not.toHaveBeenCalled();
   });
 });

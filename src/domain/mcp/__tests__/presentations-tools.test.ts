@@ -57,10 +57,18 @@ import {
 } from "../tools/presentations";
 import { NO_HOUSEHOLD_MESSAGE } from "../presentation-decks";
 import { scenarioNotFoundMessage } from "../whatif-jobs";
-import { McpUnavailableError } from "../define-tool";
+import { BILLING_WRITE_BLOCKED_MESSAGE, McpUnavailableError } from "../define-tool";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 
-const principal: McpPrincipal = { userId: "u1", orgId: "org_1", orgRole: "org:member", scopes: [], tokenSubject: "u1" };
+const principal: McpPrincipal = {
+  userId: "u1",
+  orgId: "org_1",
+  orgRole: "org:member",
+  scopes: [],
+  tokenSubject: "u1",
+  canWrite: true,
+  entitlements: ["ai_import"],
+};
 const byName = (n: string) => presentationTools.find((t) => t.name === n)!;
 const OWNED = "11111111-1111-4111-8111-111111111111";
 const FOREIGN = "99999999-9999-4999-8999-999999999999";
@@ -274,6 +282,17 @@ describe("generate_presentation", () => {
     });
     const out = (await run({ pages: [{ pageId: "cover" }] })) as { notes: string[] };
     expect(out.notes[0]).toMatch(/3 of 9 chapters/);
+  });
+
+  it("refuses when the firm's billing blocks writes", async () => {
+    await expect(
+      byName("generate_presentation").run(
+        { clientId: "c1", pages: [{ pageId: "cover" }] },
+        { ...principal, canWrite: false },
+      ),
+    ).rejects.toThrow(BILLING_WRITE_BLOCKED_MESSAGE);
+    expect(h.checkExportPdfRateLimit).not.toHaveBeenCalled();
+    expect(h.queuePresentationRun).not.toHaveBeenCalled();
   });
 
   it("reports the connector unavailable when the run can't be queued", async () => {

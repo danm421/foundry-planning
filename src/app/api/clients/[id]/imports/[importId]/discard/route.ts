@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, isNull, ne } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
-import { db } from "@/db";
-import { clientImports, clientImportFiles } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import {
   requireImportAccess,
@@ -10,8 +7,7 @@ import {
   NotFoundError,
 } from "@/lib/imports/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
-import { noSavedFactFinder } from "@/lib/imports/saved-fact-finder";
-import { recordAudit } from "@/lib/audit";
+import { discardImport } from "@/lib/fact-finder/import-lifecycle";
 
 const committedRefusal = () => NextResponse.json({ error: "cannot_discard_committed_import" }, { status: 409 });
 
@@ -44,67 +40,23 @@ export async function POST(_request: NextRequest, { params }: Params) {
     // NotFoundError → 404 from the catch block. Idempotent via 404
     // rather than 200, which is consistent with how the file delete
     // route treats hidden rows.
-    const imp = await requireImportAccess({
+    await requireImportAccess({
       importId,
       clientId,
       firmId,
       userId,
     });
 
-    if (imp.status === "committed") return committedRefusal();
-
+    // Atomic cascade: the import and its files in one transaction. A committed
+    // import — also one a save commits while this waits — is never discarded.
+    const outcome = await discardImport({ importId, clientId, firmId });
+    if (outcome === "saved") return committedRefusal();
     // Defensive — requireImportAccess already filters discardedAt,
     // but if a future change loosens that, this branch keeps the
     // endpoint idempotent rather than double-stamping the timestamp.
-    if (imp.discardedAt) {
+    if (outcome === "already") {
       return NextResponse.json({ ok: true, alreadyDiscarded: true });
     }
-
-    // Atomic cascade: flip the import + soft-delete its files in one
-    // transaction so a partial failure can't leave files orphaned on a
-    // live import (or vice-versa). The file UPDATE is also conditional
-    // on deletedAt IS NULL to avoid clobbering existing tombstones from
-    // earlier per-file deletes.
-    const fileCountSoftDeleted = await db.transaction(async (tx) => {
-      // Checked again at the write: a save or commit that lands while this UPDATE waits on the row's lock
-      // leaves the import committed (a saved fact finder closed), and it stays that way.
-      const [discarded] = await tx
-        .update(clientImports)
-        .set({ discardedAt: new Date(), status: "discarded" })
-        .where(
-          and(
-            eq(clientImports.id, importId),
-            ne(clientImports.status, "committed"),
-            isNull(clientImports.discardedAt),
-            noSavedFactFinder,
-          ),
-        )
-        .returning({ id: clientImports.id });
-      if (!discarded) return null;
-
-      const softDeleted = await tx
-        .update(clientImportFiles)
-        .set({ deletedAt: new Date() })
-        .where(
-          and(
-            eq(clientImportFiles.importId, importId),
-            isNull(clientImportFiles.deletedAt),
-          ),
-        )
-        .returning({ id: clientImportFiles.id });
-
-      return softDeleted.length;
-    });
-    if (fileCountSoftDeleted === null) return committedRefusal();
-
-    await recordAudit({
-      action: "import.discarded",
-      resourceType: "client_import",
-      resourceId: importId,
-      clientId,
-      firmId,
-      metadata: { fileCountSoftDeleted },
-    });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

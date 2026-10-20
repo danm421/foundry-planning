@@ -12,7 +12,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { accounts, beneficiaryDesignations, entities, externalBeneficiaries, familyMembers } from "@/db/schema";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccessAs, type Principal } from "@/lib/clients/authz";
 import { assertEntitiesInClient } from "@/lib/db-scoping";
 import { handleOf, inTransaction, type DbOrTx, type WriteOptions } from "@/lib/db-tx";
 import { beneficiarySetSchema, type BeneficiaryDesignationInput } from "@/lib/schemas/beneficiaries";
@@ -21,9 +21,9 @@ import { writeError, type EntityWriteResult } from "./entity-write-result";
 
 export type DesignationRow = typeof beneficiaryDesignations.$inferSelect;
 
-/** The client is the caller's and the account is the client's. */
-export async function verifyClientAndAccount(clientId: string, accountId: string, handle?: DbOrTx) {
-  const a = await verifyClientAccess(clientId);
+/** The client is the caller's (`principal`'s, when passed) and the account is the client's. */
+export async function verifyClientAndAccount(clientId: string, accountId: string, handle?: DbOrTx, principal?: Principal) {
+  const a = await verifyClientAccessAs(principal, clientId);
   if (!a.ok) return false;
   const [account] = await (handle ?? db)
     .select({ id: accounts.id })
@@ -32,9 +32,9 @@ export async function verifyClientAndAccount(clientId: string, accountId: string
   return !!account;
 }
 
-/** The client is the caller's and the entity is the client's trust. */
-export async function verifyClientAndTrust(clientId: string, entityId: string, handle?: DbOrTx) {
-  const a = await verifyClientAccess(clientId);
+/** The client is the caller's (`principal`'s, when passed) and the entity is the client's trust. */
+export async function verifyClientAndTrust(clientId: string, entityId: string, handle?: DbOrTx, principal?: Principal) {
+  const a = await verifyClientAccessAs(principal, clientId);
   if (!a.ok)
     return { ok: false as const, reason: "client" as const };
   const [entity] = await (handle ?? db)
@@ -79,7 +79,7 @@ export async function replaceAccountBeneficiariesForClient(
 ): Promise<EntityWriteResult<DesignationRow[]>> {
   const { clientId, accountId } = args;
   const handle = handleOf(args);
-  if (!(await verifyClientAndAccount(clientId, accountId, handle))) return writeError(404, "Not found");
+  if (!(await verifyClientAndAccount(clientId, accountId, handle, args.principal))) return writeError(404, "Not found");
   const parsed = beneficiarySetSchema.safeParse(args.input);
   if (!parsed.success) {
     return writeError(400, "Invalid body", { error: "Invalid body", issues: formatZodIssues(parsed.error) });
@@ -143,7 +143,7 @@ export async function replaceTrustBeneficiariesForClient(
 ): Promise<EntityWriteResult<DesignationRow[]>> {
   const { clientId, entityId } = args;
   const handle = handleOf(args);
-  const v = await verifyClientAndTrust(clientId, entityId, handle);
+  const v = await verifyClientAndTrust(clientId, entityId, handle, args.principal);
   if (!v.ok) {
     return v.reason === "not_trust" ? writeError(400, "Entity is not a trust") : writeError(404, "Not found");
   }

@@ -39,14 +39,17 @@ import {
   verifyToken,
 } from "../route";
 import {
+  BILLING_WRITE_BLOCKED_MESSAGE,
   McpInputError,
   McpRateLimitedError,
   McpUnavailableError,
+  McpWriteBlockedError,
   McpWriteDisabledError,
   WRITE_DISABLED_MESSAGE,
   type McpTool,
 } from "@/domain/mcp/define-tool";
 import { WhatIfValidationError } from "@/lib/whatif/errors";
+import { safeErrorFields } from "@/lib/redaction/secrets";
 import { McpForbiddenError, CLIENT_UNREADABLE_MESSAGE } from "@/domain/mcp/guards";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 
@@ -56,6 +59,8 @@ const principal: McpPrincipal = {
   orgRole: "org:member",
   scopes: [],
   tokenSubject: "user_1",
+  canWrite: true,
+  entitlements: ["ai_import"],
 };
 
 const fakeTool = { name: "test_tool" } as McpTool;
@@ -133,6 +138,16 @@ describe("toolFailureResult (D5, F4, F6)", () => {
   it("falls back to a generic, model-safe message for a non-Error throw", () => {
     const out = toolFailureResult("boom");
     expect(out.content[0].text).toBe("Foundry could not complete that request.");
+  });
+
+  it("logs an unexpected error's safe fields only, never what the driver pinned on it", () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    // The pool pins its client, credentials and all, onto an idle-connection error.
+    const err = Object.assign(new Error("Connection terminated unexpectedly"), { client: { password: "pw-in-the-client" } });
+    toolFailureResult(err);
+    expect(log).toHaveBeenCalledWith("MCP tool call failed with an unexpected error:", safeErrorFields(err));
+    expect(JSON.stringify(log.mock.calls)).not.toContain("pw-in-the-client");
+    log.mockRestore();
   });
 });
 
@@ -324,18 +339,35 @@ describe("toolFailureResult — part A errors", () => {
     });
   });
 
-  it("passes the write-disabled, input and unavailable messages through", () => {
+  it("passes the write-disabled, billing, input and unavailable messages through", () => {
     expect(toolFailureResult(new McpWriteDisabledError()).content[0].text).toBe(WRITE_DISABLED_MESSAGE);
+    expect(toolFailureResult(new McpWriteBlockedError()).content[0].text).toBe(BILLING_WRITE_BLOCKED_MESSAGE);
     expect(toolFailureResult(new McpInputError("Unknown page(s): x.")).content[0].text).toBe("Unknown page(s): x.");
     expect(toolFailureResult(new McpUnavailableError()).content[0].text).toBe(
       "Foundry connector is temporarily unavailable. Try again shortly.",
     );
+  });
+
+  // A fact finder fill that lost a race: the model needs the current rows to
+  // re-apply its changes, as an error, so it can't read them as a success.
+  it("appends an input error's details as JSON, sanitized like a tool result", () => {
+    const out = toolFailureResult(
+      new McpInputError("Someone else changed this step.", {
+        version: 7,
+        rows: [{ rowId: "r1", cells: { notes: "SSN 123-45-6789" } }],
+      }),
+    );
+    expect(out.isError).toBe(true);
+    const [message, json] = out.content[0].text.split("\n");
+    expect(message).toBe("Someone else changed this step.");
+    expect(JSON.parse(json)).toEqual({ version: 7, rows: [{ rowId: "r1", cells: { notes: "SSN [REDACTED-SSN]" } }] });
   });
 });
 
 describe("recordDenial — part A reasons", () => {
   it.each([
     [new McpWriteDisabledError(), "write_disabled"],
+    [new McpWriteBlockedError(), "write_blocked"],
     [new WhatIfValidationError("Change 1: x"), "invalid_change"],
     [new McpInputError("Unknown page(s): x."), "invalid_input"],
     [new McpUnavailableError(), "unavailable"],

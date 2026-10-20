@@ -8,14 +8,16 @@ import { whatifTools } from "./whatif";
 import { projectionDataTools } from "./projection-data";
 import { scenarioWriteTools } from "./scenario-writes";
 import { presentationTools } from "./presentations";
+import { householdBuildingTools } from "./household-building";
 
 /**
  * Every tool the Foundry connector exposes. Read tools are built with
  * defineTool, which hard-codes read-only annotations; the write tools with
- * defineWriteTool, which adds the firm switch and the edit-access gate.
+ * defineWriteTool, which adds the firm switch and the edit-access gate
+ * (defineHouseholdWriteTool for create_household, which has no client yet).
  * src/app/api/mcp/route.ts mounts this array on the wire.
  *
- * 2 discovery + 4 household + 6 plan + 4 analysis + 2 notes + 3 what-if + 1 projection data + 1 scenario write + 5 presentations = 28.
+ * 2 discovery + 4 household + 6 plan + 4 analysis + 2 notes + 3 what-if + 1 projection data + 1 scenario write + 5 presentations + 9 household building = 37.
  */
 export const ALL_MCP_TOOLS: McpTool[] = [
   ...discoveryTools,
@@ -27,4 +29,5 @@ export const ALL_MCP_TOOLS: McpTool[] = [
   ...projectionDataTools,
   ...scenarioWriteTools,
   ...presentationTools,
+  ...householdBuildingTools,
 ];

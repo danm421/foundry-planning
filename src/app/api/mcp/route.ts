@@ -11,11 +11,14 @@ import {
   McpInputError,
   McpRateLimitedError,
   McpUnavailableError,
+  McpWriteBlockedError,
   McpWriteDisabledError,
   type McpTool,
 } from "@/domain/mcp/define-tool";
 import { McpForbiddenError } from "@/domain/mcp/guards";
 import { recordAudit } from "@/lib/audit";
+import { safeErrorFields } from "@/lib/redaction/secrets";
+import { sanitizeRow } from "@/lib/redaction/sanitize-row";
 import { WhatIfValidationError } from "@/lib/whatif/errors";
 import { ALL_MCP_TOOLS } from "@/domain/mcp/tools";
 
@@ -61,7 +64,7 @@ type ToolCallOutcome = {
  * that reached the driver (every household-id schema is a bare
  * `z.string()`, not `.uuid()` — see the deferred whole-branch minor) — gets
  * one generic sentence, with the real error logged server-side so it isn't
- * simply lost.
+ * simply lost — its `safeErrorFields` only, as the fact finder save logs one.
  *
  * F6 (Task 12 fix round 1): this function used to also rewrite a raw
  * `ZodError` into a short sentence, and a comment here claimed
@@ -88,9 +91,15 @@ type ToolCallOutcome = {
  *
  * Part A adds `McpUnavailableError`, `McpInputError` and `WhatIfValidationError`;
  * each carries hand-written, model-safe text (define-tool.ts,
- * src/lib/whatif/errors.ts).
+ * src/lib/whatif/errors.ts). An `McpInputError`'s `details` (part B: a fact
+ * finder step's current rows after a lost race) follow the message as JSON,
+ * through the same `sanitizeRow` a successful result gets.
  */
 export function toolFailureResult(err: unknown): ToolCallOutcome {
+  if (err instanceof McpInputError && err.details) {
+    const text = `${err.message}\n${JSON.stringify(sanitizeRow(err.details))}`;
+    return { content: [{ type: "text", text }], isError: true };
+  }
   if (
     err instanceof McpRateLimitedError ||
     err instanceof McpForbiddenError ||
@@ -100,7 +109,7 @@ export function toolFailureResult(err: unknown): ToolCallOutcome {
   ) {
     return { content: [{ type: "text", text: err.message }], isError: true };
   }
-  console.error("MCP tool call failed with an unexpected error:", err);
+  console.error("MCP tool call failed with an unexpected error:", safeErrorFields(err));
   return {
     content: [{ type: "text", text: "Foundry could not complete that request." }],
     isError: true,
@@ -116,6 +125,7 @@ export function toolFailureResult(err: unknown): ToolCallOutcome {
 function denialReason(err: unknown): string {
   if (err instanceof McpRateLimitedError) return `rate_limited:${err.reason}`;
   if (err instanceof McpWriteDisabledError) return "write_disabled";
+  if (err instanceof McpWriteBlockedError) return "write_blocked";
   if (err instanceof McpForbiddenError) return "forbidden";
   if (err instanceof WhatIfValidationError) return "invalid_change";
   if (err instanceof McpInputError) return "invalid_input";

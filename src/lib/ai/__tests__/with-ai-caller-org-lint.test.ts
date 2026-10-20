@@ -18,6 +18,7 @@ const ALLOWED: Record<string, string> = {
   "src/lib/ai/resolve.ts": "defines it",
   "src/lib/presentations/queue-run.ts":
     "renders a deck for aiCallerOrgId, which generate_presentation sets from the verified token's principal.orgId",
+  "src/domain/mcp/tools/household-building.ts": "the connector's review: no Clerk session, the verified token's org",
 };
 
 const MESSAGE =
@@ -40,7 +41,7 @@ function referencingFiles(): string[] {
 describe("withAiCallerOrg callers", () => {
   it("only the allowlisted files reference withAiCallerOrg", () => {
     const found = referencingFiles();
-    // The scan's own control: it must see the two files it allows, or a wrong
+    // The scan's own control: it must see every file it allows, or a wrong
     // root would pass vacuously.
     expect(found).toEqual(expect.arrayContaining(Object.keys(ALLOWED)));
     expect(found.filter((rel) => !Object.hasOwn(ALLOWED, rel)), MESSAGE).toEqual([]);

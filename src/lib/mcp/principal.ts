@@ -23,6 +23,14 @@ export type McpPrincipal = Principal & {
   orgRole: string;
   scopes: string[];
   tokenSubject: string;
+  /**
+   * Whether the firm's billing lets it make changes. A firm can be readable but
+   * not writable (past due beyond grace, a cancellation's grace window, an
+   * ended comp): it stays connected, and every write tool refuses.
+   */
+  canWrite: boolean;
+  /** The firm's feature entitlements — the array the session reads as `org_public_metadata.entitlements`. */
+  entitlements: string[];
 };
 
 export class McpUnauthorizedError extends Error {
@@ -238,11 +246,11 @@ export async function resolveMcpPrincipal(bearerToken: string): Promise<McpPrinc
   }
 
   // F2 (Task 12 fix round 1, Rulings R84/R85): the connector must honor the
-  // same billing lockout the web enforces (src/proxy.ts). "GET", not
-  // "POST" — every MCP tool is read-only by construction (`defineTool`
-  // hard-codes `readOnlyHint: true`), and `decideAccess` only blocks
-  // mutating methods for a grace-period firm, so "POST" would wrongly
-  // 401 a firm the web still lets read.
+  // same billing lockout the web enforces (src/proxy.ts). Connecting is
+  // judged as a "GET": `decideAccess` only blocks mutating methods for a
+  // grace-period firm, so judging it as "POST" would wrongly 401 a firm the
+  // web still lets read. Writes are judged separately, as a "POST", into
+  // `canWrite` below — the write tools refuse on it.
   //
   // `isEnforced` is the rollout-flag override itself, not a copy of it — the
   // one place both this and `src/proxy.ts` read (R85). It used to be spelled
@@ -258,5 +266,13 @@ export async function resolveMcpPrincipal(bearerToken: string): Promise<McpPrinc
     );
   }
 
-  return { userId, orgId, orgRole, scopes, tokenSubject: userId };
+  // Mirrors the site's write gate, `requireActiveSubscription` (authz.ts
+  // `metaIsActive`): founder, trialing, active, active_canceling, and past_due
+  // within grace. It deliberately ignores the rollout flag, as that gate does —
+  // following the flag would let a lapsed firm write through Claude in "log"
+  // mode while the site refuses the same write with a 403.
+  const canWrite = decideAccess(billingState, "POST", "/api/mcp") === "allow";
+  const entitlements = orgMeta?.entitlements ?? [];
+
+  return { userId, orgId, orgRole, scopes, tokenSubject: userId, canWrite, entitlements };
 }

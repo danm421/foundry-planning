@@ -52,7 +52,7 @@ describe("foundryUrl", () => {
     // Exact `toBe` against the full URL, not `toContain` — `cashflow` and
     // `monteCarlo` both resolve to paths containing "/cashflow", so a
     // `toContain` check stays green even if the two were transposed. See
-    // R25. All 12 FoundryPage keys are covered, not just the 7 in the brief.
+    // R25. All 13 FoundryPage keys are covered, not just the 7 in the brief.
     const cases: Array<[FoundryPage, string]> = [
       ["overview", "overview"],
       ["balanceSheet", "assets/balance-sheet-report"],
@@ -65,6 +65,7 @@ describe("foundryUrl", () => {
       ["insurance", "details/insurance"],
       ["family", "details/family"],
       ["incomeExpenses", "details/income-expenses"],
+      ["assumptions", "details/assumptions"],
       ["presentations", "presentations"],
     ];
 

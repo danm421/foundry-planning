@@ -42,7 +42,7 @@
 import { db } from "@/db";
 import { liabilities, liabilityOwners, accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccessAs, type Principal } from "@/lib/clients/authz";
 import { handleOf, inTransaction, type WriteOptions } from "@/lib/db-tx";
 import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";
 import { recordCreate, recordUpdate, recordDelete } from "@/lib/audit";
@@ -72,7 +72,7 @@ export async function createLiabilityForClient(args: {
   // With a save's `tx` every statement below runs on it (the base case and access lookups read rows that exist before a save).
   const handle = handleOf(args);
 
-  const scenarioId = await baseCaseScenarioId(clientId, firmId);
+  const scenarioId = await baseCaseScenarioId(clientId, firmId, args.principal);
   if (!scenarioId) return writeError(404, "Client not found");
 
   const parsed = liabilityCreateSchema.safeParse(input);
@@ -197,7 +197,7 @@ export async function updateLiabilityForClient(args: {
   const { clientId, firmId, actorId, liabilityId, input, crossFirmMeta } = args;
   const handle = handleOf(args);
 
-  const a = await verifyClientAccess(clientId);
+  const a = await verifyClientAccessAs(args.principal, clientId);
   if (!a.ok || a.firmId !== firmId) {
     return writeError(404, "Client not found");
   }
@@ -335,10 +335,11 @@ export async function deleteLiabilityForClient(args: {
   actorId: string;
   liabilityId: string;
   crossFirmMeta?: Record<string, unknown>;
+  principal?: Principal;
 }): Promise<EntityWriteResult<{ id: string }>> {
   const { clientId, firmId, actorId, liabilityId, crossFirmMeta } = args;
 
-  const a = await verifyClientAccess(clientId);
+  const a = await verifyClientAccessAs(args.principal, clientId);
   if (!a.ok || a.firmId !== firmId) {
     return writeError(404, "Client not found");
   }

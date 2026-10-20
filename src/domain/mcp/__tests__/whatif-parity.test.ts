@@ -37,7 +37,15 @@ import { translateChanges } from "@/lib/whatif/translate";
 import type { McpPrincipal } from "@/lib/mcp/principal";
 import { IDS, whatIfTree } from "@/lib/whatif/__tests__/fixtures";
 
-const principal: McpPrincipal = { userId: "u1", orgId: "org_1", orgRole: "org:member", scopes: [], tokenSubject: "u1" };
+const principal: McpPrincipal = {
+  userId: "u1",
+  orgId: "org_1",
+  orgRole: "org:member",
+  scopes: [],
+  tokenSubject: "u1",
+  canWrite: true,
+  entitlements: ["ai_import"],
+};
 const CLIENT = "00000000-0000-4000-8000-000000000001";
 
 // Each of these moves this fixture's numbers on its own (asserted below), so

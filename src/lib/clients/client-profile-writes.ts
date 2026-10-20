@@ -25,7 +25,7 @@ import { eq, and, or, inArray } from "drizzle-orm";
 import { computePlanEndAge, computePlanEndYear } from "@/lib/plan-horizon";
 import { recordUpdate } from "@/lib/audit";
 import { toClientSnapshot, CLIENT_FIELD_LABELS } from "@/lib/audit/snapshots/client";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccessAs } from "@/lib/clients/authz";
 import { mirrorContactToCrm } from "@/lib/clients/mirror-contact-to-crm";
 import { syncHouseholdNameFromContacts } from "@/lib/crm/sync-household-name";
 import { handleOf, inTransaction, type DbOrTx, type WriteOptions } from "@/lib/db-tx";
@@ -47,7 +47,7 @@ export async function updateClientProfileForClient(args: {
   const { clientId, firmId, actorId, body, crossFirmMeta } = args;
   const handle = handleOf(args);
 
-  const a = await verifyClientAccess(clientId);
+  const a = await verifyClientAccessAs(args.principal, clientId);
   if (!a.ok || a.firmId !== firmId) return writeError(404, "Client not found");
   const [existing] = await handle
     .select()

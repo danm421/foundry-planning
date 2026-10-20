@@ -14,7 +14,7 @@
 import { db } from "@/db";
 import { accounts, expenseDedicatedAccounts, expenses, planSettings } from "@/db/schema";
 import { eq, and, ne, inArray } from "drizzle-orm";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccessAs, type Principal } from "@/lib/clients/authz";
 import {
   assertAccountsInClient,
   assertBusinessAccountsInClient,
@@ -141,7 +141,7 @@ export async function createExpenseForClient(args: {
 } & WriteOptions): Promise<EntityWriteResult<ExpenseRow>> {
   const { clientId, firmId, actorId, input, crossFirmMeta, actorKind } = args;
 
-  const scenarioId = await baseCaseScenarioId(clientId, firmId);
+  const scenarioId = await baseCaseScenarioId(clientId, firmId, args.principal);
   if (!scenarioId) return writeError(404, "Client not found");
 
   const parsed = expenseCreateSchema.safeParse(input);
@@ -264,7 +264,7 @@ export async function updateExpenseForClient(args: {
 } & WriteOptions): Promise<EntityWriteResult<ExpenseRow>> {
   const { clientId, firmId, actorId, expenseId, input, crossFirmMeta, actorKind } = args;
 
-  const a = await verifyClientAccess(clientId);
+  const a = await verifyClientAccessAs(args.principal, clientId);
   if (!a.ok || a.firmId !== firmId) {
     return writeError(404, "Client not found");
   }
@@ -482,10 +482,11 @@ export async function deleteExpenseForClient(args: {
   expenseId: string;
   crossFirmMeta?: Record<string, unknown>;
   actorKind?: "advisor" | "client" | "system";
+  principal?: Principal;
 }): Promise<EntityWriteResult<{ id: string }>> {
   const { clientId, firmId, actorId, expenseId, crossFirmMeta, actorKind } = args;
 
-  const a = await verifyClientAccess(clientId);
+  const a = await verifyClientAccessAs(args.principal, clientId);
   if (!a.ok || a.firmId !== firmId) {
     return writeError(404, "Client not found");
   }

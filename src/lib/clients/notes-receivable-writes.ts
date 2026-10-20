@@ -124,7 +124,7 @@ export async function createNoteReceivableForClient(args: {
   const { clientId, firmId, actorId, input, crossFirmMeta } = args;
   const handle = handleOf(args);
 
-  const scenarioId = await baseCaseScenarioId(clientId, firmId);
+  const scenarioId = await baseCaseScenarioId(clientId, firmId, args.principal);
   if (!scenarioId) return writeError(404, "Client not found");
 
   const parsed = noteReceivableCreateSchema.safeParse(input);

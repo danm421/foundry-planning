@@ -19,6 +19,7 @@ import { db } from "@/db";
 import { familyMembers } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 import { snapshotActorName } from "@/lib/audit/actor-name";
+import type { Principal } from "@/lib/clients/authz";
 import { afterCommitQueue, type DbOrTx, type Tx } from "@/lib/db-tx";
 import type { ResolvedHoldingsMap } from "@/lib/imports/commit/types";
 import { loadImportMilestones, type ImportMilestones } from "@/lib/imports/import-milestones";
@@ -47,6 +48,8 @@ export interface SaveRequest {
   actorId: string;
   /** The advisor an ops operator is acting as (`actorId` is then the operator): stamped on every audit row. */
   actingAsAdvisor?: string;
+  /** A caller with no Clerk session (the Claude connector): the cores check this principal's access instead. */
+  principal?: Principal;
   changeSetVersion: number;
   /** As the request sent them: planSave checks them against the change list. */
   ticks: unknown;
@@ -188,7 +191,7 @@ function isConflict(err: unknown): boolean {
  */
 export async function saveChangeSet(request: SaveRequest, deps: Partial<SaveDeps> = {}): Promise<SaveOutcome> {
   const { writers, resolveHoldings, now } = { writers: SAVE_WRITERS, resolveHoldings: resolveSaveHoldings, now: () => new Date(), ...deps };
-  const { scope, actorId, actingAsAdvisor, changeSetVersion } = request;
+  const { scope, actorId, actingAsAdvisor, principal, changeSetVersion } = request;
   const started = Date.now();
   const at = now();
 
@@ -227,7 +230,7 @@ export async function saveChangeSet(request: SaveRequest, deps: Partial<SaveDeps
         const stale = staleProblem(lines, locked.state, book, at);
         if (stale) throw new Refusal(refuse(409, stale.message, { lineId: stale.lineId }));
 
-        const ctx: SaveContext = { tx, clientId: scope.clientId, firmId: scope.firmId, actorId, actingAsAdvisor, afterCommit: queue.afterCommit, holdings };
+        const ctx: SaveContext = { tx, clientId: scope.clientId, firmId: scope.firmId, actorId, actingAsAdvisor, principal, afterCommit: queue.afterCommit, holdings };
         const ids = new Map<string, string>();
         const saved: FFClosed["saved"] = [];
         let household: Household | null = null;

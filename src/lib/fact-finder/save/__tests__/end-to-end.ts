@@ -22,7 +22,8 @@ import type { FactFinderState } from "../../types";
 import { saveChangeSet, type SaveDeps } from "../save";
 import { SAVE_ACTOR, type SaveSeed } from "./harness";
 
-const NOW = new Date("2026-10-15T12:00:00Z");
+/** When every review and save runs. */
+export const NOW = new Date("2026-10-15T12:00:00Z");
 
 export type Plan = RecordBook;
 

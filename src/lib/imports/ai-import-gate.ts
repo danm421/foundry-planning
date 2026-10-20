@@ -23,13 +23,24 @@ export async function refuseUnlessAiImportEntitled(args: {
 }): Promise<NextResponse | null> {
   if (hasAiImportEntitlement(args.sessionClaims)) return null;
 
+  await recordAiImportDenied(args);
+  return NextResponse.json({ error: "ai_import_not_entitled" }, { status: 403 });
+}
+
+/** The audit row a refused AI import writes. Without `actorId`, recordAudit names the session's actor. */
+export async function recordAiImportDenied(args: {
+  firmId: string;
+  clientId?: string;
+  actorId?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
   await recordAudit({
     action: "billing.access_denied",
     resourceType: "firm",
     resourceId: args.firmId,
     clientId: args.clientId,
     firmId: args.firmId,
+    actorId: args.actorId,
     metadata: { reason: "ai_import_not_entitled", ...args.metadata },
   });
-  return NextResponse.json({ error: "ai_import_not_entitled" }, { status: 403 });
 }

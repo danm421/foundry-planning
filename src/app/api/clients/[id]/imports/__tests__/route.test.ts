@@ -16,6 +16,7 @@ import { auth } from "@clerk/nextjs/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { db } from "@/db";
+import { recordAudit } from "@/lib/audit";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
 
 const params = { params: Promise.resolve({ id: "c1" }) };
@@ -101,5 +102,25 @@ describe("POST /api/clients/[id]/imports — surface handling (C1)", () => {
     const res = await POST(makeReq({ mode: "onboarding" }), params);
     expect(res.status).toBe(201);
     expect(insertedValues?.extractHoldings).toBeUndefined();
+  });
+});
+
+describe("POST /api/clients/[id]/imports — the fact finder import's audit", () => {
+  it("names the advisor, or the ops operator impersonating them — as recordAudit names a session it reads", async () => {
+    await POST(makeReq({ mode: "onboarding", surface: "fact_finder" }), params);
+    expect(recordAudit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ action: "import.created", actorId: "user_1", metadata: { mode: "onboarding", scenarioId: null } }),
+    );
+
+    vi.mocked(auth).mockResolvedValueOnce({ userId: "user_1", actor: { sub: "user_ops" } } as never);
+    await POST(makeReq({ mode: "onboarding", surface: "fact_finder" }), params);
+    expect(insertedValues).toMatchObject({ createdByUserId: "user_1" });
+    expect(recordAudit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        action: "import.created",
+        actorId: "user_ops",
+        metadata: { mode: "onboarding", scenarioId: null, actingAsAdvisor: "user_1" },
+      }),
+    );
   });
 });

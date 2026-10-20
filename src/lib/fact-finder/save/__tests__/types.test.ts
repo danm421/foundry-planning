@@ -15,6 +15,11 @@ describe("coreArgs", () => {
     expect(coreArgs(ctx)).toEqual({ clientId: "c1", firmId: "org_1", actorId: "user_ops", tx: ctx.tx, afterCommit: ctx.afterCommit });
   });
 
+  it("passes the principal a save with no session runs on", () => {
+    const principal = { userId: "user_1", orgId: "org_1", orgRole: "org:admin" };
+    expect(coreArgs({ ...ctx, principal })).toMatchObject({ actorId: "user_ops", principal });
+  });
+
   it("stamps the impersonated advisor on every core's audit row while an ops operator saves", () => {
     expect(coreArgs({ ...ctx, actingAsAdvisor: "user_1" })).toMatchObject({ actorId: "user_ops", crossFirmMeta: { actingAsAdvisor: "user_1" } });
   });
