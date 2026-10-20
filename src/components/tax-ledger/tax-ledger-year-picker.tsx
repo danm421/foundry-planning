@@ -75,7 +75,7 @@ export default function TaxLedgerYearPicker({
       {open && (
         <ul
           role="listbox"
-          className="absolute right-0 z-20 mt-1 max-h-72 w-max min-w-full overflow-y-auto rounded-md border border-hair bg-card py-1 shadow-lg"
+          className="absolute right-0 z-30 mt-1 max-h-72 w-max min-w-full overflow-y-auto rounded-md border border-hair bg-card py-1 shadow-lg"
         >
           {years.map((y) => {
             const active = y.year === selectedYear;
