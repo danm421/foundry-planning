@@ -3,9 +3,10 @@
 // Live dev database: Claude builds a household from nothing, as the connector
 // makes the calls — a principal, no Clerk session. create_household opens step
 // 0; each step is started, filled, reviewed and saved through the fact
-// finder's own cores; then one single edit, two removals, and what the plan
-// still lacks. A second firm's principal is refused at every step. Everything
-// lives under firm ids no other suite uses.
+// finder's own cores; a near-match row is refused rather than saved on a
+// guess; then one single edit, two removals, and what the plan still lacks.
+// A second firm's principal is refused at every step. Everything lives under
+// firm ids no other suite uses.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 // No session at all: every access check, and every audit row's actor, must come from the principal.
@@ -26,6 +27,7 @@ vi.mock("@/lib/rate-limit", async (importOriginal) => ({
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { accounts, auditLog, clientImports, clients, expenses, familyMembers, incomes, planSettings } from "@/db/schema";
+import { SAVE_STALE_MESSAGE } from "@/lib/fact-finder/api-types";
 import { dropSaveFirm } from "@/lib/fact-finder/save/__tests__/harness";
 import { readFactFinderState } from "@/lib/fact-finder/state";
 import { CLAUDE_FILE_ID } from "@/lib/fact-finder/types";
@@ -186,6 +188,31 @@ d("Claude builds a household end to end, on a principal with no session (live DB
     expect(held.filter((a) => a.category === "cash")).toEqual([
       expect.objectContaining({ id: seededCash!.recordId, name: "Household Cash", isDefaultChecking: true, value: "18500.00" }),
     ]);
+
+    // A row the matcher scores between the floor (0.45) and the auto-link score (0.90) against the saved IRA:
+    // the fill names it, the review refuses over it, and nothing lands on a guess.
+    const ira = held.find((a) => a.category === "retirement")!;
+    const recheck = await startStep(clientId, "balance_sheet");
+    const nearMatch = (await run("fill_fact_finder_step", {
+      clientId,
+      importId: recheck.importId,
+      baseVersion: recheck.version,
+      rows: [{ sectionId: "retirement", cells: { accountName: "Schwab Traditional IRA", currentValue: 252000, owner: "Client", custodian: "Schwab" } }],
+    })) as { version: number; needsDecision: { sectionId: string; rowId: string; label: string; candidates: { recordId: string; score: number }[] }[] };
+    const near = { sectionId: "retirement", rowId: expect.any(String), label: "Schwab Traditional IRA", candidates: [{ recordId: ira.id, label: "Schwab IRA", score: expect.any(Number) }] };
+    expect(nearMatch.needsDecision).toEqual([near]);
+    const { rowId, candidates: [{ score }] } = nearMatch.needsDecision[0];
+    expect(score).toBeGreaterThanOrEqual(0.45);
+    expect(score).toBeLessThan(0.9);
+    expect(await refusalOf(run("review_fact_finder_step", { clientId, importId: recheck.importId }))).toEqual(
+      new McpInputError("1 link needs a click first.", { needsDecision: [{ ...near, rowId }] }),
+    );
+    // No change list was built, so there is nothing a save could land.
+    expect(
+      await refusalOf(run("save_fact_finder_step", { clientId, importId: recheck.importId, changeSetVersion: nearMatch.version + 1 })),
+    ).toEqual(new McpInputError(SAVE_STALE_MESSAGE));
+    expect(await accountsOf(clientId)).toEqual(held);
+    expect((await importOf(recheck.importId)).status).toBe("draft");
 
     // The salary is Mark's, and the child is in the family.
     const salaries = await db
