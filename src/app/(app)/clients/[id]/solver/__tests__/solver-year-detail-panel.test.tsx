@@ -47,6 +47,10 @@ describe("SolverYearDetailPanel", () => {
     expect(swatchOf("Portfolio Withdrawals")).toContain("var(--data-yellow)");
     // Outflow categories have no bar on the chart, so no swatch color.
     expect(swatchOf("Living Expenses")).toBeUndefined();
+    // …but a neutral marker still sets the category row apart from its items.
+    expect(
+      screen.getByRole("rowheader", { name: /^Living Expenses/ }).querySelector(".bg-ink-4"),
+    ).not.toBeNull();
   });
 
   it("shows every category's items by default and collapses on click", () => {

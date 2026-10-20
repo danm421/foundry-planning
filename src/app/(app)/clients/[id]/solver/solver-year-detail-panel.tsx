@@ -140,7 +140,7 @@ function CategoryRows({ category, help }: { category: CashFlowCategory; help?: s
   return (
     <tbody className="border-b border-hair">
       <tr>
-        <th scope="row" className="py-2 text-left text-[15px] font-medium text-ink">
+        <th scope="row" className="py-2 text-left text-[15px] font-semibold text-ink">
           <span className="flex items-center gap-2">
             <button
               type="button"
@@ -158,9 +158,11 @@ function CategoryRows({ category, help }: { category: CashFlowCategory; help?: s
                   />
                 ) : null}
               </span>
+              {/* An outflow has no bar to match, so it gets a neutral marker —
+                  still anchoring the category row against its items. */}
               <span
                 aria-hidden="true"
-                className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
+                className={`h-2.5 w-2.5 shrink-0 rounded-[3px] ${color ? "" : "bg-ink-4"}`}
                 style={color ? { backgroundColor: `var(--data-${color})` } : undefined}
               />
               {category.label}
@@ -168,7 +170,7 @@ function CategoryRows({ category, help }: { category: CashFlowCategory; help?: s
             {help ? <FieldTooltip text={help} /> : null}
           </span>
         </th>
-        <td className="tabular py-2 text-right text-[15px] font-medium text-ink">
+        <td className="tabular py-2 text-right text-[15px] font-semibold text-ink">
           {fmt.format(category.total)}
         </td>
       </tr>
@@ -176,7 +178,7 @@ function CategoryRows({ category, help }: { category: CashFlowCategory; help?: s
         ? category.items.map((it, i) => {
             const pad = i === category.items.length - 1 ? "pb-2" : "pb-1";
             return (
-              <tr key={it.id} className="text-[14px] text-ink-2">
+              <tr key={it.id} className="text-[14px] text-ink-3">
                 {/* Indented past the chevron + swatch, under the category label. */}
                 <td className={`pl-[42px] ${pad}`}>{it.label}</td>
                 <td className={`tabular text-right ${pad}`}>{fmt.format(it.amount)}</td>
