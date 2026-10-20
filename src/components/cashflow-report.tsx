@@ -56,13 +56,11 @@ import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
 import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
 import { ExportButton } from "@/components/exports/export-button";
 import { PortfolioBarsChart } from "@/components/charts/portfolio-bars-chart";
+import { timelineMarkersPlugin } from "@/components/charts/timeline-markers-plugin";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-data";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler);
-
-// Retirement / life-expectancy markers (options.plugins.timelineMarkers) are
-// drawn by the plugin portfolio-bars-chart registers.
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -478,7 +476,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         if (year != null) scrollToYear(year);
       }
     },
-    layout: { padding: { top: 20 } },
+    layout: { padding: { top: 6 } },
     plugins: {
       legend: { display: true, labels: { color: chrome.legend, boxWidth: 12, padding: 16 } },
       tooltip: {
@@ -2230,7 +2228,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                 </div>
               ) : (
                 <div ref={cashflowChartRef} style={{ height: "100%" }}>
-                  <Chart type="bar" data={cashflowChartData} options={cashflowChartOptions} />
+                  <Chart
+                    type="bar"
+                    data={cashflowChartData}
+                    options={cashflowChartOptions}
+                    plugins={[timelineMarkersPlugin]}
+                  />
                 </div>
               )}
             </div>

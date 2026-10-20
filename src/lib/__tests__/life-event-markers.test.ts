@@ -1,13 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { lifeEventMarkers, type LifeEventsByYear } from "@/lib/life-event-markers";
+import type { ClientInfo } from "@/engine/types";
+import { buildLifeEventsByYear, lifeEventMarkers, type LifeEventsByYear } from "@/lib/life-event-markers";
+
+const annRetires = { label: "Ann retires", color: "blue", person: "client", name: "Ann", kind: "retires" } as const;
+const boRetires = { label: "Bo retires", color: "pink", person: "spouse", name: "Bo", kind: "retires" } as const;
+const annPasses = { label: "Ann passes", color: "blue", person: "client", name: "Ann", kind: "passes" } as const;
+const boPasses = { label: "Bo passes", color: "pink", person: "spouse", name: "Bo", kind: "passes" } as const;
 
 const events: LifeEventsByYear = {
-  2030: [
-    { label: "Ann retires", color: "blue" },
-    { label: "Bo retires", color: "pink" },
-  ],
-  2055: [{ label: "Ann passes", color: "blue" }],
-  2061: [{ label: "Bo passes", color: "pink" }],
+  2030: [annRetires, boRetires],
+  2055: [annPasses],
+  2061: [boPasses],
 };
 
 const yearsFrom = (first: number, last: number) =>
@@ -16,9 +19,9 @@ const yearsFrom = (first: number, last: number) =>
 describe("lifeEventMarkers", () => {
   it("indexes each event from the first charted year, keeping same-year pairs", () => {
     expect(lifeEventMarkers(events, yearsFrom(2026, 2060))).toEqual([
-      { yearIndex: 4, label: "Ann retires", color: "blue" },
-      { yearIndex: 4, label: "Bo retires", color: "pink" },
-      { yearIndex: 29, label: "Ann passes", color: "blue" },
+      { yearIndex: 4, ...annRetires },
+      { yearIndex: 4, ...boRetires },
+      { yearIndex: 29, ...annPasses },
     ]);
   });
 
@@ -32,5 +35,28 @@ describe("lifeEventMarkers", () => {
     expect(lifeEventMarkers({}, yearsFrom(2026, 2060))).toEqual([]);
     expect(lifeEventMarkers(events, yearsFrom(2031, 2054))).toEqual([]);
     expect(lifeEventMarkers(events, [])).toEqual([]);
+  });
+});
+
+describe("buildLifeEventsByYear", () => {
+  it("tags each event with its person, so the chart can give each one a row", () => {
+    const client = {
+      firstName: "Ann",
+      dateOfBirth: "1965-04-01",
+      retirementAge: 65,
+      lifeExpectancy: 90,
+      spouseName: "Bo",
+      spouseDob: "1967-09-12",
+      spouseRetirementAge: 63,
+      spouseLifeExpectancy: 94,
+    } as ClientInfo;
+    expect(buildLifeEventsByYear(client)).toEqual({
+      2030: [
+        { ...annRetires, color: expect.any(String) },
+        { ...boRetires, color: expect.any(String) },
+      ],
+      2055: [{ ...annPasses, color: expect.any(String) }],
+      2061: [{ ...boPasses, color: expect.any(String) }],
+    });
   });
 });

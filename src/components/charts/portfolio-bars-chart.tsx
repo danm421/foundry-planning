@@ -14,6 +14,7 @@ import {
 import { Bar } from "react-chartjs-2";
 import { useMemo } from "react";
 import type { ProjectionYear } from "@/engine";
+import type { LifeEventMarker } from "@/lib/life-event-markers";
 import {
   buildPortfolioDeltaSegments,
   buildPortfolioSingleSeries,
@@ -22,86 +23,12 @@ import {
 import { chartChrome, useThemeName } from "@/lib/chart-colors";
 import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import { data as brandData, dataLight as brandDataLight } from "@/brand";
+import { timelineMarkersPlugin } from "./timeline-markers-plugin";
 
 // Re-exported for existing importers (solver, monte-carlo report, etc.).
 export { liquidPortfolioTotal };
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
-
-// ── Timeline-markers plugin ──────────────────────────────────────────────────
-// Draws vertical dashed markers at specific data indices with a short label and
-// a colored cap at the top. Used to show retirement and life-expectancy events
-// for each client on the cash-flow and portfolio charts (the cash-flow report
-// relies on this registration). Enable via:
-//   options.plugins.timelineMarkers = { markers: [{ yearIndex, label, color }] }
-
-export interface PortfolioBarsTimelineMarker {
-  yearIndex: number;
-  label: string;
-  color: string;
-}
-
-const MARKER_LABEL_GAP = 10;
-
-const timelineMarkersPlugin = {
-  id: "timelineMarkers",
-  afterDatasetsDraw(chart: {
-    ctx: CanvasRenderingContext2D;
-    width: number;
-    chartArea: { top: number; bottom: number; left: number; right: number };
-    scales: { x: { getPixelForValue(v: number): number } };
-  }, _args: unknown, options: { markers?: PortfolioBarsTimelineMarker[] }) {
-    const { ctx, chartArea, scales } = chart;
-    const markers = options?.markers ?? [];
-    if (markers.length === 0) return;
-    // Same-year events (both spouses retire, or both pass) share one line, so
-    // their labels sit side by side instead of printing on top of each other.
-    const byYear = new Map<number, PortfolioBarsTimelineMarker[]>();
-    for (const m of markers) {
-      byYear.set(m.yearIndex, [...(byYear.get(m.yearIndex) ?? []), m]);
-    }
-    ctx.save();
-    ctx.font = "10px ui-sans-serif, system-ui, sans-serif";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "bottom";
-    for (const [yearIndex, group] of byYear) {
-      const x = scales.x.getPixelForValue(yearIndex);
-      if (x < chartArea.left - 1 || x > chartArea.right + 1) continue;
-      for (const m of group) {
-        ctx.strokeStyle = m.color;
-        ctx.setLineDash([4, 4]);
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(x, chartArea.top + 8);
-        ctx.lineTo(x, chartArea.bottom);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        // Cap at the top
-        ctx.fillStyle = m.color;
-        ctx.beginPath();
-        ctx.arc(x, chartArea.top + 6, 4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // Labels centered over the line as one row, kept inside the canvas — a
-      // final-year death pair would otherwise run off the right edge.
-      const widths = group.map((m) => ctx.measureText(m.label).width);
-      const rowWidth =
-        widths.reduce((sum, w) => sum + w, 0) + MARKER_LABEL_GAP * (group.length - 1);
-      let left = Math.max(0, Math.min(x - rowWidth / 2, chart.width - rowWidth));
-      group.forEach((m, i) => {
-        ctx.fillStyle = m.color;
-        ctx.fillText(m.label, left, chartArea.top - 2);
-        left += widths[i] + MARKER_LABEL_GAP;
-      });
-    }
-    ctx.restore();
-  },
-};
-
-// Guard against double-registration (chart.js registry is global).
-if (!ChartJS.registry.plugins.get("timelineMarkers")) {
-  ChartJS.register(timelineMarkersPlugin);
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -126,8 +53,8 @@ export interface PortfolioBarsChartProps {
    * When absent (or null) the chart renders a single blue bar series.
    */
   baseline?: ProjectionYear[] | null;
-  /** Timeline event markers (retirement, life expectancy, etc.). */
-  timelineMarkers?: PortfolioBarsTimelineMarker[];
+  /** Retirement / life-expectancy markers. */
+  timelineMarkers?: LifeEventMarker[];
   /** Visible year window — used to clip the x-axis to the slider selection. */
   yearRange?: { start: number; end: number };
 }
@@ -243,10 +170,9 @@ export function PortfolioBarsChart({
       responsive: true,
       maintainAspectRatio: false,
       animation,
-      // Top padding only exists to clear the timeline-marker labels drawn above
-      // the plot. With no markers that 20px is dead space — drop it so the
-      // chart sits tight under the header when pinned.
-      layout: { padding: { top: timelineMarkers.length > 0 ? 20 : 6 } },
+      // The timeline markers reserve their own rows (timeline-markers-plugin),
+      // so the chart sits tight under the header either way.
+      layout: { padding: { top: 6 } },
       // Index mode keeps the tooltip reachable on flat (0-height) underwater
       // years, where there is no bar to hover.
       interaction: { mode: "index" as const, intersect: false },
@@ -289,9 +215,7 @@ export function PortfolioBarsChart({
           filter: (ctx: { raw: unknown }) =>
             showDelta ? Number(ctx.raw) !== 0 : true,
         },
-        // Typed via `as any` to satisfy chart.js plugin options extension.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        timelineMarkers: { markers: timelineMarkers } as any,
+        timelineMarkers: { markers: timelineMarkers },
       },
       scales: {
         x: {
@@ -311,5 +235,5 @@ export function PortfolioBarsChart({
     };
   }, [theme, reducedMotion, showDelta, scenarioTotals, timelineMarkers]);
 
-  return <Bar data={chartData} options={chartOptions} />;
+  return <Bar data={chartData} options={chartOptions} plugins={[timelineMarkersPlugin]} />;
 }
