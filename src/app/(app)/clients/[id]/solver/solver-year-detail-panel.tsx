@@ -9,26 +9,37 @@ import {
   CASH_FLOW_INFLOW_COLORS,
   type CashFlowCategory,
 } from "@/lib/solver/cashflow-year-detail";
+import { yearWithdrawalRate } from "@/lib/solver/withdrawal-report";
 
 const fmt = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   maximumFractionDigits: 0,
 });
+// Two decimals, matching the Withdrawals report's Withdrawal %.
+const fmtPct = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
 const EYEBROW = "text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-3";
 
 interface Props {
   year: ProjectionYear;
+  /** The full projection — Withdrawal % measures against last year's ending portfolio. */
+  years: readonly ProjectionYear[];
   clientData: ClientData;
 }
 
-export function SolverYearDetailPanel({ year, clientData }: Props) {
+export function SolverYearDetailPanel({ year, years, clientData }: Props) {
   const detail = useMemo(
     () => buildCashFlowYearDetail(year, clientData),
     [year, clientData],
   );
   const netTone = detail.totals.net >= 0 ? "text-good" : "text-crit";
+  // Shown only in a year the portfolio is drawn on, RMDs included.
+  const withdrawalRate = yearWithdrawalRate(year, years, clientData.accounts);
 
   return (
     <div className="rounded-lg border border-hair bg-card px-5 py-4">
@@ -76,6 +87,20 @@ export function SolverYearDetailPanel({ year, clientData }: Props) {
             {fmt.format(detail.totals.net)}
           </dd>
         </div>
+        {withdrawalRate > 0 ? (
+          <div>
+            <dt className={`${EYEBROW} flex items-center justify-center gap-1.5`}>
+              Withdrawal %
+              <FieldTooltip text="Portfolio withdrawals plus RMDs, as a share of the portfolio at the start of the year." />
+            </dt>
+            <dd
+              data-testid="year-detail-withdrawal-rate"
+              className="tabular mt-1 text-[20px] font-semibold text-ink"
+            >
+              {fmtPct.format(withdrawalRate)}
+            </dd>
+          </div>
+        ) : null}
         <div>
           <dt className={EYEBROW}>Ending Portfolio</dt>
           <dd className="tabular mt-1 text-[20px] font-semibold text-ink">

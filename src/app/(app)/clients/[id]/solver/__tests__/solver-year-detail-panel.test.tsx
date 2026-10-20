@@ -23,14 +23,14 @@ function makeClientData(): ClientData {
   return {
     client: { firstName: "A", lastName: "B" },
     incomes: [ { id: "inc-ss", name: "Social Security", type: "social_security" }, { id: "inc-pen", name: "Pension", type: "deferred" } ],
-    entities: [], accounts: [ { id: "acc-ira", name: "Traditional IRA", category: "retirement", owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }] }, { id: "acc-brokerage", name: "Joint Brokerage", category: "taxable" }, { id: "acc-401k", name: "401(k)", category: "retirement" } ],
+    entities: [], accounts: [ { id: "acc-ira", name: "Traditional IRA", category: "retirement", owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }] }, { id: "acc-brokerage", name: "Joint Brokerage", category: "taxable", owners: [] }, { id: "acc-401k", name: "401(k)", category: "retirement", owners: [] } ],
     liabilities: [{ id: "liab-mortgage", name: "Home Mortgage" }], expenses: [], assetTransactions: [], stockOptionPlans: [], notesReceivable: [], medicareCoverage: [],
   } as unknown as ClientData;
 }
 
 describe("SolverYearDetailPanel", () => {
   it("renders the year/age header and both column headings", () => {
-    render(<SolverYearDetailPanel year={makeYear()} clientData={makeClientData()} />);
+    render(<SolverYearDetailPanel year={makeYear()} years={[]} clientData={makeClientData()} />);
     expect(screen.getByText("2034")).toBeInTheDocument();
     expect(screen.getByText("Age 67 / 65")).toBeInTheDocument();
     expect(screen.getByText("Inflows")).toBeInTheDocument();
@@ -38,7 +38,7 @@ describe("SolverYearDetailPanel", () => {
   });
 
   it("lists the inflows in the chart's order, each with its bar's color", () => {
-    render(<SolverYearDetailPanel year={makeYear()} clientData={makeClientData()} />);
+    render(<SolverYearDetailPanel year={makeYear()} years={[]} clientData={makeClientData()} />);
     const swatchOf = (name: string) =>
       screen.getByRole("rowheader", { name: new RegExp(`^${name}`) }).querySelector("[style]")?.getAttribute("style");
     expect(swatchOf("Social Security")).toContain("var(--data-blue)");
@@ -54,7 +54,7 @@ describe("SolverYearDetailPanel", () => {
   });
 
   it("shows every category's items by default and collapses on click", () => {
-    render(<SolverYearDetailPanel year={makeYear()} clientData={makeClientData()} />);
+    render(<SolverYearDetailPanel year={makeYear()} years={[]} clientData={makeClientData()} />);
     expect(screen.getByText("Pension")).toBeInTheDocument();
     expect(screen.getByText("Home Mortgage")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Other Inflows/ }));
@@ -63,9 +63,45 @@ describe("SolverYearDetailPanel", () => {
   });
 
   it("renders the net cash flow with a positive tone when in surplus", () => {
-    render(<SolverYearDetailPanel year={makeYear()} clientData={makeClientData()} />);
+    render(<SolverYearDetailPanel year={makeYear()} years={[]} clientData={makeClientData()} />);
     const net = screen.getByTestId("year-detail-net");
     expect(within(net).getByText(/\$14,000/)).toBeInTheDocument();
     expect(net.className).toContain("text-good");
+  });
+
+  it("shows the Withdrawal % beside net cash flow in a year that draws on the portfolio", () => {
+    const year = makeYear();
+    // 20k drawn + 15k RMD against last year's 1M ending portfolio. This year's
+    // own 800k would read 4.38%.
+    const prior = {
+      ...year,
+      year: 2033,
+      portfolioAssets: { ...year.portfolioAssets, liquidTotal: 1_000_000 },
+    } as ProjectionYear;
+    render(<SolverYearDetailPanel year={year} years={[prior, year]} clientData={makeClientData()} />);
+    expect(screen.getByTestId("year-detail-withdrawal-rate")).toHaveTextContent("3.50%");
+  });
+
+  it("shows the Withdrawal % in a year whose only draw is an RMD", () => {
+    const year = { ...makeYear(), withdrawals: { byAccount: {}, total: 0 } } as ProjectionYear;
+    const prior = {
+      ...year,
+      year: 2033,
+      portfolioAssets: { ...year.portfolioAssets, liquidTotal: 1_000_000 },
+    } as ProjectionYear;
+    render(<SolverYearDetailPanel year={year} years={[prior, year]} clientData={makeClientData()} />);
+    // The 15k RMD alone against last year's 1M.
+    expect(screen.getByTestId("year-detail-withdrawal-rate")).toHaveTextContent("1.50%");
+  });
+
+  it("leaves the Withdrawal % out when nothing is drawn from the portfolio", () => {
+    const year = {
+      ...makeYear(),
+      withdrawals: { byAccount: {}, total: 0 },
+      accountLedgers: {},
+    } as unknown as ProjectionYear;
+    render(<SolverYearDetailPanel year={year} years={[year]} clientData={makeClientData()} />);
+    expect(screen.queryByTestId("year-detail-withdrawal-rate")).not.toBeInTheDocument();
+    expect(screen.queryByText("Withdrawal %")).not.toBeInTheDocument();
   });
 });

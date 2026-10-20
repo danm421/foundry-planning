@@ -101,14 +101,7 @@ export function buildWithdrawalReportRows(
       withdrawals[bucketOf.get(accountId) ?? "taxable"] += amount;
     }
 
-    const rmds = householdRmdTotal(y, householdAccountIds);
     const portfolioBoy = liquidPortfolioBoy(y, years);
-    // RMDs belong in the numerator even though the engine tracks them on
-    // `ledger.rmdAmount` rather than inside `withdrawals.byAccount`: the column
-    // answers "how much cash came out of the portfolio this year", and leaving
-    // forced distributions out under-reports the strain on a retiree living on
-    // them. Same convention as the cash-flow report's Withdrawal %.
-    const numerator = y.withdrawals.total + rmds;
 
     return {
       year: y.year,
@@ -117,10 +110,40 @@ export function buildWithdrawalReportRows(
       withdrawals,
       withdrawalsTotal: y.withdrawals.total,
       portfolioBoy,
-      withdrawalRate: portfolioBoy > 0 ? numerator / portfolioBoy : 0,
+      withdrawalRate: withdrawalRate(y, portfolioBoy, householdAccountIds),
       totalExpenses: y.totalExpenses,
     };
   });
+}
+
+/**
+ * One year's Withdrawal % — the figure the Withdrawals report shows for that
+ * year. `years` must be the full projection, for the same reason as
+ * `liquidPortfolioBoy`.
+ */
+export function yearWithdrawalRate(
+  y: ProjectionYear,
+  years: readonly ProjectionYear[],
+  accounts: readonly Account[],
+): number {
+  const householdAccountIds = new Set(
+    accounts.filter((a) => controllingFamilyMember(a) != null).map((a) => a.id),
+  );
+  return withdrawalRate(y, liquidPortfolioBoy(y, years), householdAccountIds);
+}
+
+function withdrawalRate(
+  y: ProjectionYear,
+  portfolioBoy: number,
+  householdAccountIds: ReadonlySet<string>,
+): number {
+  // RMDs belong in the numerator even though the engine tracks them on
+  // `ledger.rmdAmount` rather than inside `withdrawals.byAccount`: the column
+  // answers "how much cash came out of the portfolio this year", and leaving
+  // forced distributions out under-reports the strain on a retiree living on
+  // them. Same convention as the cash-flow report's Withdrawal %.
+  const numerator = y.withdrawals.total + householdRmdTotal(y, householdAccountIds);
+  return portfolioBoy > 0 ? numerator / portfolioBoy : 0;
 }
 
 /**

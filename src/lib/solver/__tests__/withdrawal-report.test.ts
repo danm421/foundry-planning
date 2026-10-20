@@ -4,6 +4,7 @@ import {
   buildWithdrawalReportRows,
   activeWithdrawalSources,
   WITHDRAWAL_SOURCES,
+  yearWithdrawalRate,
 } from "../withdrawal-report";
 
 const HOUSEHOLD_OWNER = [{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }];
@@ -182,6 +183,24 @@ describe("withdrawal rate", () => {
 
     expect(rows[0].portfolioBoy).toBe(0);
     expect(rows[0].withdrawalRate).toBe(0);
+  });
+
+  it("reads the same figure for a single year as the report row does", () => {
+    const years = [
+      portfolioYear(2026, 1_000_000, 980_000),
+      portfolioYear(2027, 950_000, 1_000_000, {
+        withdrawals: { byAccount: { tax1: 20_000 }, total: 20_000 },
+        accountLedgers: {
+          tax1: { rmdAmount: 0, beginningValue: 1_000_000, endingValue: 950_000 },
+          ira1: { rmdAmount: 5_000, beginningValue: 0, endingValue: 0 },
+        },
+      }),
+    ];
+
+    expect(yearWithdrawalRate(years[1], years, ACCOUNTS)).toBe(
+      buildWithdrawalReportRows(years, ACCOUNTS)[1].withdrawalRate,
+    );
+    expect(yearWithdrawalRate(years[1], years, ACCOUNTS)).toBeCloseTo(0.025, 10);
   });
 });
 

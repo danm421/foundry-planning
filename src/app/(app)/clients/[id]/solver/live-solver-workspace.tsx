@@ -1923,7 +1923,7 @@ export function LiveSolverWorkspace({
               ? (() => {
                   const y = currentProjection.find((r) => r.year === selectedYear);
                   return y ? (
-                    <SolverYearDetailPanel year={y} clientData={workingTree} />
+                    <SolverYearDetailPanel year={y} years={currentProjection} clientData={workingTree} />
                   ) : null;
                 })()
               : null}
