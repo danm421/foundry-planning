@@ -61,8 +61,15 @@ export function SolverRowLivingExpenseScale({
   // Retirement. Same rank the Details cash-flow table sorts by, so an advisor
   // moving between the two surfaces reads the rows in one order. Safe in place:
   // `filter` already returned a fresh array.
+  //
+  // A row whose window has already closed spends nothing in the plan — the
+  // Current row of an already-retired household ends the year before
+  // retirement — so it gets no lever. Read the WORKING row's years:
+  // applyMutations re-resolves them, so moving retirement back out to a future
+  // year brings the lever straight back.
+  const workingOf = (e: Expense) => workingExpenses.find((w) => w.id === e.id) ?? e;
   const baseLiving = baseExpenses
-    .filter((e) => e.type === "living")
+    .filter((e) => e.type === "living" && workingOf(e).endYear >= currentYear)
     .sort((a, b) => livingSlotRank(a) - livingSlotRank(b));
   const hasLivingRows = baseLiving.length > 0;
 
@@ -119,8 +126,7 @@ export function SolverRowLivingExpenseScale({
           {hasLivingRows ? (
             baseLiving.map((baseExpense) => {
               const label = labelFor(baseExpense, currentYear);
-              const workingExpense =
-                workingExpenses.find((e) => e.id === baseExpense.id) ?? baseExpense;
+              const workingExpense = workingOf(baseExpense);
               return (
                 <Editable
                   key={baseExpense.id}
