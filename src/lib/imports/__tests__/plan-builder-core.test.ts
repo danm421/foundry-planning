@@ -337,6 +337,31 @@ describe("ensurePlanImport", () => {
       err.mockRestore();
     });
 
+    // Claude's import.created row says it came from Claude; the site's is byte for byte as before.
+    it("marks the import's audit row as Claude's only when a principal is passed", async () => {
+      m.createCrmHousehold.mockResolvedValue({ id: "hh1", name: "The Smiths" });
+      m.createClientForHousehold.mockResolvedValue({ clientId: "c2", scenarioId: "scn2" });
+      const args = {
+        mode: "new" as const,
+        firmId: "org1",
+        actorUserId: "u1",
+        newHousehold: {
+          householdName: "The Smiths",
+          primary: { firstName: "Jane", lastName: "Smith", dateOfBirth: "1980-01-01" },
+          filingStatus: "single" as const,
+          retirementAge: 65,
+          lifeExpectancy: 95,
+        },
+      };
+
+      await ensurePlanImport(args);
+      await ensurePlanImport({ ...args, principal });
+
+      const metadata = m.recordAudit.mock.calls.map(([a]) => a).filter((a) => a.action === "import.created").map((a) => a.metadata);
+      expect(JSON.stringify(metadata[0])).toBe('{"mode":"onboarding","scenarioId":"scn2","planBuilder":true}');
+      expect(metadata[1]).toEqual({ mode: "onboarding", scenarioId: "scn2", planBuilder: true, via: "claude" });
+    });
+
     it("forwards spouse retirement age and life expectancy to client creation", async () => {
       m.createCrmHousehold.mockResolvedValue({ id: "hh3", name: "Okonkwo Household" });
       m.createClientForHousehold.mockResolvedValue({ clientId: "c4", scenarioId: "scn4" });

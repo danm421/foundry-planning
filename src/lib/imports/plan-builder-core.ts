@@ -287,7 +287,7 @@ export async function ensurePlanImport(
     scenarioId,
     mode,
     notes: args.label,
-    audit: { planBuilder: true },
+    audit: { planBuilder: true, ...(args.principal && { via: "claude" }) },
   });
 
   return { clientId, scenarioId, importId: imp.id, ...(householdId && { householdId }) };
