@@ -655,6 +655,15 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       if (!incomesByType["business_income"]) incomesByType["business_income"] = [];
       incomesByType["business_income"].push(entity.id);
     }
+    // A business held as an ACCOUNT pays its distributions under the
+    // account's id too, and has no entity row to register it above. Without
+    // it the Business column counts the cash but its drill names nothing.
+    for (const acc of clientData.accounts) {
+      if (acc.category !== "business" || acc.id in incomeNames) continue;
+      incomeNames[acc.id] = acc.name;
+      if (!incomesByType["business_income"]) incomesByType["business_income"] = [];
+      incomesByType["business_income"].push(acc.id);
+    }
   }
 
   // liabilityNames: liability id → display name. Seeded from clientData for
