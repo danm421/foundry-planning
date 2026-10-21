@@ -103,8 +103,10 @@ import { computeRoth529Rollover } from "./education/roth-rollover";
 import { executeWithdrawals, planSupplementalWithdrawal, categorizeDraw, supplementalDrawSources, type SupplementalDraw } from "./withdrawal";
 import { computeGoalDraw, goalDrawAccountIds, isFundedGoal, is529Account } from "./goals/goal-funding";
 import { calculateRMD } from "./rmd";
+import { allocateQcds, qcdAnnualLimit, qcdEligibleFromYear, type QcdAccountState } from "./qcd";
 import {
   inheritedIraInputFor,
+  isInheritedIra,
   inheritedPayoutForYear,
   inheritedPayoutWindowFor,
   inheritedPlannedPayoutLabel,
@@ -1056,6 +1058,31 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     if (!spouseFmId) return false;
     return controllingFamilyMember(acct) === spouseFmId;
   };
+
+  /** Who gives a QCD from `acct`: its sole household-principal owner that
+   *  year. An entity, a joint owner or an heir outside the couple gives none. */
+  const qcdGiverOf = (acct: Account): "client" | "spouse" | null => {
+    const fmId = controllingFamilyMember(acct);
+    if (fmId == null) return null;
+    if (fmId === clientFmId || fmId === LEGACY_FM_CLIENT) return "client";
+    if (fmId === spouseFmId || fmId === LEGACY_FM_SPOUSE) return "spouse";
+    return null;
+  };
+  /** True from the first year the owner is 70½. Fails closed: a missing or
+   *  unparseable date of birth never qualifies. */
+  const qcdAgeReached = (dateOfBirth: string | undefined, year: number): boolean => {
+    if (!dateOfBirth) return false;
+    const fromYear = qcdEligibleFromYear(dateOfBirth);
+    return Number.isFinite(fromYear) && year >= fromYear;
+  };
+  const externalBeneficiaryById = new Map((data.externalBeneficiaries ?? []).map((eb) => [eb.id, eb]));
+  /** Only a public charity takes a QCD — not a donor-advised fund or a private foundation. */
+  const qcdCharityQualifies = (charityId: string): boolean => {
+    const charity = externalBeneficiaryById.get(charityId);
+    return charity?.kind === "charity" && charity.charityType === "public";
+  };
+  const qcdCharityName = (charityId: string): string =>
+    externalBeneficiaryById.get(charityId)?.name ?? "charity";
 
   const firstDeathYear = computeFirstDeathYear(
     client,
@@ -2390,19 +2417,31 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
-    // 4b. RMDs. Source account balance is decremented; the cash lands in the
-    // appropriate checking (household or entity) via cashDelta. Tax treatment:
+    // 4b. RMDs and QCDs. Source account balance is decremented; the cash lands in
+    // the appropriate checking (household or entity) via cashDelta. Tax treatment:
     // household → household tax; grantor entity → household tax; other entity →
     // no household tax (entity handles its own, not modeled yet).
+    //
+    // Three passes: plan each account's required distribution, allocate this
+    // year's QCDs (IRC §408(d)(8)) against those plans, then book both. A QCD is
+    // paid straight from the IRA to the charity: it counts toward the RMD, is not
+    // income, moves no after-tax basis and never touches household cash.
     let householdRmdIncome = 0;
     // Tax-free RMD cash reaching household checking (an inherited Roth's
     // payout). `householdRmdIncome` is also the TAXABLE amount, so this rides
     // separately and is folded into householdInflows / totalIncome only —
     // mirrors householdNoteCashIn.
     let householdRmdTaxFreeCashIn = 0;
+    // The reverse: the taxable slice of a QCD over the yearly cap. Taxed like
+    // the RMD it went out with, but paid to the charity, so it is folded into
+    // taxable income only — never householdInflows / totalIncome.
+    let householdQcdTaxedIncome = 0;
     let grantorRmdTaxable = 0;
     const rmdBySource: Record<string, { type: string; amount: number }> = {};
-    for (const acct of workingAccounts) {
+
+    /** This year's required distribution from `acct`, or null when it owes
+     *  none. Reads only that account's own balances; no side effects. */
+    const planRequiredDistribution = (acct: Account) => {
       let ownerBirthYear: number;
       if (isSpouseAccount(acct) && spouseBirthYear != null) {
         ownerBirthYear = spouseBirthYear;
@@ -2412,7 +2451,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // An inherited IRA follows the beneficiary schedule whatever
       // `rmdEnabled` says; the account's owner (client or spouse) is the heir.
       const inheritedInput = inheritedIraInputFor(acct, ownerBirthYear);
-      if (!acct.rmdEnabled && inheritedInput == null) continue;
+      if (!acct.rmdEnabled && inheritedInput == null) return null;
       const ownerAge = year - ownerBirthYear;
       // IRS RMD rule: divisor × prior-year-Dec-31 balance. That's BoY of this
       // year (before growth/transfers), captured on the ledger as
@@ -2478,13 +2517,128 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         rmd = Math.min(preTaxBalance, calculateRMD(rmdBasis, ownerAge, ownerBirthYear));
         rmdLedgerLabel = `RMD distribution (age ${ownerAge})`;
       }
+      if (rmd <= 0) return null;
+      return {
+        inheritedInput,
+        /** The whole payout: the required minimum plus any planned extra. */
+        total: rmd,
+        requiredMinimum: rmd - plannedExtra,
+        minimumLabel: rmdLedgerLabel,
+        plannedExtra,
+        plannedLabel: plannedLedgerLabel,
+      };
+    };
+    const rmdPlans = new Map<string, NonNullable<ReturnType<typeof planRequiredDistribution>>>();
+    for (const acct of workingAccounts) {
+      const plan = planRequiredDistribution(acct);
+      if (plan) rmdPlans.set(acct.id, plan);
+    }
+
+    // Skipped outright in a year with no QCD, so a plan without one books every
+    // RMD exactly as it always has.
+    const qcdsThisYear = (data.qcds ?? []).filter((q) => q.year === year);
+    let qcdAllocation: ReturnType<typeof allocateQcds> | null = null;
+    if (qcdsThisYear.length > 0) {
+      const qcdSourceIds = new Set(qcdsThisYear.map((q) => q.accountId));
+      const qcdAccounts = new Map<string, QcdAccountState>();
+      for (const acct of workingAccounts) {
+        const plan = rmdPlans.get(acct.id);
+        if (!plan && !qcdSourceIds.has(acct.id)) continue;
+        // §408(d)(8)(B): a SEP or SIMPLE IRA qualifies only in a year with no
+        // employer contribution into it.
+        const employerContributionYear =
+          (acct.subType === "sep_ira" || acct.subType === "simple_ira") &&
+          data.savingsRules.some(
+            (r) => r.accountId === acct.id && r.startYear <= year && year <= r.endYear,
+          );
+        qcdAccounts.set(acct.id, {
+          giver: qcdGiverOf(acct),
+          isSourceType: isTraditionalIra(acct),
+          inherited: isInheritedIra(acct),
+          qualifiesThisYear: !employerContributionYear,
+          requiredMinimum: plan?.requiredMinimum ?? 0,
+          available: Math.max(
+            0,
+            (accountBalances[acct.id] ?? 0) - (rothValueMap[acct.id] ?? 0) - (basisMap[acct.id] ?? 0),
+          ),
+        });
+      }
+      const alive = (role: "client" | "spouse") => {
+        const deathYear = deathYearForRole(role);
+        return deathYear == null || year <= deathYear;
+      };
+      qcdAllocation = allocateQcds({
+        qcds: qcdsThisYear,
+        accounts: qcdAccounts,
+        giverEligible: {
+          client: alive("client") && qcdAgeReached(client.dateOfBirth, year),
+          spouse: alive("spouse") && qcdAgeReached(client.spouseDob, year),
+        },
+        charityQualifies: qcdCharityQualifies,
+        cap: qcdAnnualLimit(year, planSettings.taxInflationRate ?? planSettings.inflationRate ?? 0),
+      });
+    }
+
+    // This year's QCD amounts over the cap: a normal taxable withdrawal and a
+    // normal cash gift, deducted in the charitable pass (charityGiftsThisYear).
+    const qcdCharityGifts: { charityId: string; amount: number }[] = [];
+    // The qualifying QCDs leave first, straight to the charity: no cash, no
+    // income and no basis (§408(d)(8)(D) takes them from pre-tax money). All of
+    // them before any RMD, so every pro-rata pool below leaves them out, as
+    // Form 8606 does.
+    for (const r of qcdAllocation?.results ?? []) {
+      if (r.taxedExcess > 0) qcdCharityGifts.push({ charityId: r.charityId, amount: r.taxedExcess });
+      if (r.qualifying <= 0) continue;
+      accountBalances[r.accountId] = (accountBalances[r.accountId] ?? 0) - r.qualifying;
+      const ledger = accountLedgers[r.accountId];
+      if (!ledger) continue;
+      ledger.qcdAmount = (ledger.qcdAmount ?? 0) + r.qualifying;
+      ledger.distributions += r.qualifying;
+      ledger.endingValue -= r.qualifying;
+      ledger.entries.push({
+        category: "qcd",
+        label: `QCD to ${qcdCharityName(r.charityId)}`,
+        amount: -r.qualifying,
+        basis: 0,
+        sourceId: r.charityId,
+      });
+    }
+
+    // In account order: the pro-rata basis below reads the IRA pool as earlier
+    // accounts left it.
+    for (const acct of workingAccounts) {
+      const plan = rmdPlans.get(acct.id);
+      const qcdOut = qcdAllocation?.qcdOutByAccount.get(acct.id);
+      if (!plan && !qcdOut) continue;
+      const inheritedInput = plan?.inheritedInput ?? null;
+      const taxedExcess = qcdOut?.taxedExcess ?? 0;
+
+      // What still reaches the owner: the plan, less the part of its required
+      // minimum the QCDs paid. With no QCD this is the plan, exactly.
+      let cashRmd = 0;
+      let plannedExtra = 0;
+      if (plan) {
+        const remaining = qcdAllocation?.rmdRemaining.get(acct.id) ?? plan.requiredMinimum;
+        cashRmd = plan.total - (plan.requiredMinimum - remaining);
+        // A QCD above an inherited IRA's minimum can leave less than its
+        // planned extra, so the payout stops at what is left.
+        if (qcdOut) {
+          cashRmd = Math.max(0, Math.min(cashRmd, (accountBalances[acct.id] ?? 0) - taxedExcess));
+        }
+        // Once QCDs have paid the whole minimum, all that is left is planned extra.
+        plannedExtra = remaining > 0 ? Math.min(plan.plannedExtra, cashRmd) : cashRmd;
+      }
+      // The taxed excess goes out with the RMD: same pro-rata basis, same tax.
+      const rmd = cashRmd + taxedExcess;
       if (rmd <= 0) continue;
+      const currentBalance = accountBalances[acct.id] ?? 0;
 
       // An RMD is a distribution, so Form 8606 pro-rata applies to it exactly
       // as it does to a voluntary withdrawal: the owner's post-tax basis comes
       // back tax-free in proportion to the pool. Computed on the PRE-
       // distribution pool (§408(d)(2) values the pool including the year's
       // distributions), so this must run before the balance is decremented.
+      // A qualifying QCD is already out of the pool, as Form 8606 leaves it out.
       const rmdPoolKey = isTraditionalIra(acct) ? iraPoolKey(acct) : null;
       const rmdBasisReturn = rmdPoolKey == null
         ? 0
@@ -2499,23 +2653,24 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
       accountBalances[acct.id] = currentBalance - rmd;
       if (accountLedgers[acct.id]) {
-        accountLedgers[acct.id].rmdAmount = rmd;
+        accountLedgers[acct.id].rmdAmount = cashRmd;
         accountLedgers[acct.id].distributions += rmd;
         accountLedgers[acct.id].endingValue -= rmd;
-        // One line for the required minimum, plus one for a payout window's
-        // planned extra. Basis splits by amount and the extra takes the
-        // remainder, so the lines sum to exactly the basisMap delta
+        // One line for the required minimum, one for a payout window's planned
+        // extra, and one per QCD for its taxed excess. Basis splits by amount and
+        // the extra takes the remainder, so the lines sum to the basisMap delta
         // removePoolBasis applies below (a pure pre-tax IRA still moves none).
-        // With no extra this is the single line it always was: minimumAmount
-        // is rmd and minimumBasis is rmdBasisMoved, exactly.
-        const minimumAmount = rmd - plannedExtra;
+        // With no extra and no QCD this is the single line it always was:
+        // minimumAmount is rmd and minimumBasis is rmdBasisMoved, exactly.
+        const minimumAmount = cashRmd - plannedExtra;
         const minimumBasis = rmdBasisMoved * (minimumAmount / rmd);
+        const excessBasis = (amount: number) => rmdBasisMoved * (amount / rmd);
         // Negated only when non-zero — `-0` renders as "-$0.00" in the ledger.
         const ledgerBasis = (moved: number) => (moved === 0 ? 0 : -moved);
         if (minimumAmount > 0) {
           accountLedgers[acct.id].entries.push({
             category: "rmd",
-            label: rmdLedgerLabel,
+            label: plan?.minimumLabel ?? "",
             basis: ledgerBasis(minimumBasis),
             amount: -minimumAmount,
           });
@@ -2523,9 +2678,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (plannedExtra > 0) {
           accountLedgers[acct.id].entries.push({
             category: "rmd",
-            label: plannedLedgerLabel,
-            basis: ledgerBasis(rmdBasisMoved - minimumBasis),
+            label: plan?.plannedLabel ?? "",
+            basis: ledgerBasis(rmdBasisMoved - minimumBasis - excessBasis(taxedExcess)),
             amount: -plannedExtra,
+          });
+        }
+        for (const r of qcdAllocation?.results ?? []) {
+          if (r.accountId !== acct.id || r.taxedExcess <= 0) continue;
+          accountLedgers[acct.id].entries.push({
+            category: "qcd",
+            label: `QCD to ${qcdCharityName(r.charityId)} (taxed: over the yearly limit)`,
+            basis: ledgerBasis(excessBasis(r.taxedExcess)),
+            amount: -r.taxedExcess,
+            sourceId: r.charityId,
           });
         }
       }
@@ -2538,7 +2703,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const rmdLabel = `RMD from ${acct.name}`;
       const householdOwner = controllingFamilyMember(acct);
       if (householdOwner != null) {
-        householdRmdIncome += rmdTaxable;
+        // The taxed excess's share of the taxable amount went to the charity,
+        // not to checking. It stays in `${id}:rmd` and the deduction pass.
+        const excessTaxable = rmdTaxable * (taxedExcess / rmd);
+        householdRmdIncome += rmdTaxable - excessTaxable;
+        householdQcdTaxedIncome += excessTaxable;
         if (inheritedInput?.isRoth) {
           householdRmdTaxFreeCashIn += rmd - rmdTaxable;
           // Its own key, not `<id>:rmd`: tax-diff's recognizedForAccount sums
@@ -2549,7 +2718,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmdTaxable };
         }
         // Cash still lands in full — only the TAXABLE slice is income.
-        creditCash(defaultChecking?.id, rmd, { category: "rmd", label: rmdLabel, sourceId: acct.id, basis: rmd });
+        creditCash(defaultChecking?.id, cashRmd, { category: "rmd", label: rmdLabel, sourceId: acct.id, basis: cashRmd });
       } else if (isFullyEntityOwned(acct)) {
         const entityOwner = acct.owners.find((o) => o.kind === "entity") as
           | { kind: "entity"; entityId: string; percent: number }
@@ -2559,11 +2728,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             `RMD-enabled retirement account ${acct.id} (${acct.name}) is fully-entity-owned but has no entity owner row`,
           );
         }
-        creditCash(entityCheckingByEntityId[entityOwner.entityId], rmd, {
+        creditCash(entityCheckingByEntityId[entityOwner.entityId], cashRmd, {
           category: "rmd",
           label: rmdLabel,
           sourceId: acct.id,
-          basis: rmd, // cash inflow into entity checking: basis == amount (1:1)
+          basis: cashRmd, // cash inflow into entity checking: basis == amount (1:1)
         });
         // §664(c): CRT-owned RMDs are exempt. (F1)
         if (!isTaxExemptTrust(entityOwner.entityId)) {
@@ -2808,6 +2977,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       income.capitalGains +
       income.trust +
       householdRmdIncome +
+      householdQcdTaxedIncome +
       annuityOrdinaryIncome +
       grantorIncome.salaries +
       grantorIncome.business +
@@ -3263,6 +3433,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Add RMDs to ordinary income
     if (householdRmdIncome > 0) {
       taxDetail.ordinaryIncome += householdRmdIncome;
+    }
+    if (householdQcdTaxedIncome > 0) {
+      taxDetail.ordinaryIncome += householdQcdTaxedIncome;
     }
     if (grantorRmdTaxable > 0) {
       taxDetail.ordinaryIncome += grantorRmdTaxable;
@@ -5024,6 +5197,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (ev.kind !== "cash" || ev.seriesId == null || ev.year !== year) continue;
       const bucket = cashCharityBucket(ev.recipientExternalBeneficiaryId);
       if (bucket) charityGiftsThisYear.push({ amount: ev.amount, bucket });
+    }
+    // A QCD over the yearly cap was taxed with the RMD (step 4b); the charity
+    // still got it, so it is deducted like any cash gift. The qualifying part
+    // never is (§408(d)(8)(E)).
+    for (const g of qcdCharityGifts) {
+      const bucket = cashCharityBucket(g.charityId);
+      if (bucket) charityGiftsThisYear.push({ amount: g.amount, bucket });
     }
 
     // Split-interest inception charitable deduction. In the funding year the
@@ -9182,6 +9362,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       charitableOutflows: cltCharitableOutflowsTotal,
       ...(cltCharitableOutflowDetail.length > 0
         ? { charitableOutflowDetail: cltCharitableOutflowDetail }
+        : {}),
+      ...(qcdAllocation && qcdAllocation.results.length > 0
+        ? { qcds: qcdAllocation.results }
         : {}),
       ...(yearTrustTerminations.length > 0
         ? { trustTerminations: yearTrustTerminations }

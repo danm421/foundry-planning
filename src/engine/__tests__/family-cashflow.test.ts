@@ -473,6 +473,42 @@ describe("computeFamilyAccountShares — invariants", () => {
     expect(c / (c + s)).toBeCloseTo(0.75, 2);
     expect(s / (c + s)).toBeCloseTo(0.25, 2);
   });
+
+  it("debits a QCD pro-rata like any outflow — unlike a cash gift, it has no grantor pass", () => {
+    // 50k/50k, then a 40k QCD and a 100k client deposit. Pro-rata: 30k/30k,
+    // then 130k/30k. Skipping it like a gift would settle to 120k/40k.
+    const year0 = makeYear(2026, {
+      acctA: {
+        beginningValue: 100_000,
+        endingValue: 160_000,
+        growth: 0,
+        entries: [
+          { category: "qcd", label: "QCD to Stanford", amount: -40_000 },
+          { category: "income", label: "Salary", amount: 100_000, sourceId: "inc-1" },
+        ] as never,
+      },
+    });
+    computeFamilyAccountShares({
+      years: [year0],
+      ...ownersFrom(new Map([
+        [
+          "acctA",
+          [
+            { familyMemberId: "fm-client", percent: 0.5 },
+            { familyMemberId: "fm-spouse", percent: 0.5 },
+          ],
+        ],
+      ])),
+      clientFamilyMemberId: "fm-client",
+      spouseFamilyMemberId: "fm-spouse",
+      incomes: [{ id: "inc-1", type: "salary", name: "Salary", annualAmount: 100_000, startYear: 2026, endYear: 2026, growthRate: 0, owner: "client" } as Income],
+      gifts: [],
+      familyMembers: [],
+    });
+
+    expect(year0.familyAccountSharesEoY!.get("fm-client")!.get("acctA")).toBeCloseTo(130_000, 6);
+    expect(year0.familyAccountSharesEoY!.get("fm-spouse")!.get("acctA")).toBeCloseTo(30_000, 6);
+  });
 });
 
 describe("computeFamilyAccountShares — cash gift attribution", () => {
