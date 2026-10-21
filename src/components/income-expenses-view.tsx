@@ -70,6 +70,7 @@ import {
 import { toSalaryOptions } from "@/lib/savings/salary-options";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import { BaseFactsNote } from "@/hooks/base-facts-edit";
+import { currentPlanningYear } from "@/lib/plan-year";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -601,7 +602,7 @@ function IncomeDialog({
   );
   const realEstateAccounts = accounts.filter((a) => a.category === "real_estate");
   const linkedProperty = realEstateAccounts.find((a) => a.id === linkedPropertyId) ?? null;
-  const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
+  const planStartYear = clientInfo?.planStartYear ?? currentPlanningYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
     editing ? isTodaysDollars(editing.inflationStartYear, editing.startYear) : true
   );
@@ -697,10 +698,15 @@ function IncomeDialog({
       owner: data.get("owner") as string,
       cashAccountId: cashAccountId || null,
       ownerAccountId: ownerAccountId ?? null,
-      // "Today's dollars" mode inflates the amount from plan start through the
+      // "Today's dollars" mode inflates the amount from this year through the
       // entry's startYear so retirement-era amounts can be entered in current
-      // purchasing power. Null means inflate only from startYear onward.
-      inflationStartYear: todaysDollars ? planStartYear : null,
+      // purchasing power. Null means inflate only from startYear onward. This
+      // planning year, not the plan start: on a plan that starts next year a
+      // row starting then would otherwise store base === start and read back
+      // as nominal (the engine reads this year's amounts as next year's).
+      // An edit keeps the row's own base: a row entered last year is still in
+      // last year's dollars after the year turns.
+      inflationStartYear: todaysDollars ? (editing?.inflationStartYear ?? currentPlanningYear()) : null,
       startYearRef,
       endYearRef,
       taxType,
@@ -1258,7 +1264,7 @@ function ExpenseDialog({
   const seed = editing ?? prefill;
   const [name, setName] = useState<string>(seed?.name ?? "");
   const hasSpouse = Boolean(clientInfo?.spouseDob);
-  const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
+  const planStartYear = clientInfo?.planStartYear ?? currentPlanningYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
     seed ? isTodaysDollars(seed.inflationStartYear, seed.startYear) : true
   );
@@ -1393,7 +1399,8 @@ function ExpenseDialog({
       growthSource,
       cashAccountId: null,
       ownerAccountId: isLiving ? null : ownerAccountId ?? null,
-      inflationStartYear: todaysDollars ? planStartYear : null,
+      // An edit keeps the row's own base — see the income dialog.
+      inflationStartYear: todaysDollars ? (editing?.inflationStartYear ?? currentPlanningYear()) : null,
       startYearRef,
       endYearRef,
       // Living expenses are never a deduction — the Tax Treatment field is hidden

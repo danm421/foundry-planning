@@ -6,7 +6,9 @@ import type { Account, AccountLedger, ProjectionYear } from "@/engine/types";
 // gift with. It must read what the engine's gift ledger reads, so a top-level
 // business is its CONSOLIDATED value — the parent plus every account under it.
 
-const ledger = (endingValue: number) => ({ endingValue }) as AccountLedger;
+/** Each account opens the year at half its closing value, so a test can tell
+ *  which of the two a read used. */
+const ledger = (endingValue: number) => ({ beginningValue: endingValue / 2, endingValue }) as AccountLedger;
 
 /** One projection row whose ledgers hold the given ending values. */
 const row = (year: number, values: Record<string, number>) =>
@@ -44,6 +46,13 @@ describe("buildAccountValueAtYear", () => {
 
   it("returns undefined when the account has no ledger that year, or the year has no row", () => {
     expect(valueAt("not-yet-active", 2028)).toBeUndefined();
-    expect(valueAt("biz", 2020)).toBeUndefined();
+    expect(valueAt("brok", 2040)).toBeUndefined();
+  });
+
+  it("values a gift dated before the first projected year at the opening balances", () => {
+    // A gift made in the skipped year of a plan that starts next year.
+    expect(valueAt("brok", 2027)).toBe(200_000);
+    expect(valueAt("biz", 2020)).toBe(60_000_000);
+    expect(valueAt("not-yet-active", 2027)).toBeUndefined();
   });
 });

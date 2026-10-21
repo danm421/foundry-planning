@@ -11,6 +11,7 @@ import type { Reinvestment } from "@/engine/types";
 import { isLiquid, type AccountCategory } from "@/lib/account-groups/liquid-filter";
 import { DEFAULT_GROUP_KEYS, DEFAULT_NAMES } from "@/lib/account-groups/resolver";
 import { expandReinvestmentTargets } from "@/lib/projection/expand-reinvestment-targets";
+import { currentPlanningYear } from "@/lib/plan-year";
 
 /**
  * Shape passed in when editing. The Techniques loader and the solver's draft
@@ -166,7 +167,7 @@ export default function AddReinvestmentForm({
   const [pickedAccountIds, setPickedAccountIds] = useState<string[]>(
     initialData?.pickedAccountIds ?? [],
   );
-  const [year, setYear] = useState(initialData?.year ?? new Date().getFullYear());
+  const [year, setYear] = useState(initialData?.year ?? milestones?.planStart ?? currentPlanningYear());
   const [yearRef, setYearRef] = useState<YearRef | null>(
     (initialData?.yearRef as YearRef | null) ?? null,
   );

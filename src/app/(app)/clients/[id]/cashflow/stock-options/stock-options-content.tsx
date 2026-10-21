@@ -46,6 +46,7 @@ export async function StockOptionsContent({ id, firmId, scenarioParam }: Props) 
     planStartYear,
     planEndYear,
     taxByYear,
+    dataYear: effectiveTree.planSettings.dataYear,
   });
 
   // `taxEngineMode` is OPTIONAL and unset means flat — projection.ts routes on

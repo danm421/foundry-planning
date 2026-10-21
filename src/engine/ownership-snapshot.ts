@@ -20,7 +20,7 @@
 // before this snapshot existed. It also carries `giftsReflectedThrough`, which
 // is how a partitioned pool says which gifts it has already had taken out.
 
-import { giftAwareOwners, type AccountOwner, type AccountWithOwners } from "./ownership";
+import { giftAwareOwners, giftInEffect, type AccountOwner, type AccountWithOwners } from "./ownership";
 import type { Account, GiftEvent } from "./types";
 
 export interface OwnershipSnapshot {
@@ -66,11 +66,11 @@ export function buildOwnershipSnapshot(
   const giftYears = new Map<string, Set<number>>();
   for (const e of giftEvents) {
     if (e.kind !== "asset") continue;
-    if (e.year < planStartYear) continue; // already in the authored baseline
-    // A gift landing past the horizon never takes effect inside it, and a read
-    // above the horizon resolves to the last projected year — so it never
-    // takes effect at all. Recording it would let one leak into such a read.
-    if (e.year > last) continue;
+    // Entered as history ⇒ already in the authored baseline. A gift landing
+    // past the horizon never takes effect inside it, and a read above the
+    // horizon resolves to the last projected year — so it never takes effect
+    // at all. Recording it would let one leak into such a read.
+    if (!giftInEffect(e, last, planStartYear)) continue;
     // A 0% gift moves nothing, and `giftAwareOwners` early-outs on a gifted
     // total of 0 by returning the authored array BY REFERENCE — which the
     // evaluation loop below reads as the canFundGifts fallback and stops on.

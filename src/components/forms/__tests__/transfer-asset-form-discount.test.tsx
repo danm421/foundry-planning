@@ -30,7 +30,6 @@ function formProps(over: Partial<FormProps> = {}): FormProps {
     clientId: "c1",
     trustGrantor: "client",
     accounts,
-    projectionStartYear: 2026,
     currentYear: 2026,
     onClose: vi.fn(),
     onSaved: vi.fn(),

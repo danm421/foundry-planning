@@ -12,6 +12,7 @@ import type { RothConversionType, RothConversion, Account } from "@/engine/types
 import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
 import type { GrowthSource } from "@/lib/investments/allocation";
 import { GrowthRateField, parseGrowthSourceSelection } from "./growth-rate-field";
+import { currentPlanningYear } from "@/lib/plan-year";
 
 const ROTH_SUBTYPES = new Set(["roth_ira"]);
 const TAX_DEFERRED_SUBTYPES = new Set(["traditional_ira", "401k", "403b", "sep_ira", "simple_ira"]);
@@ -167,7 +168,7 @@ export default function AddRothConversionForm({
     initialData?.irmaaCapTier ?? null,
   );
   const [startYear, setStartYear] = useState(
-    initialData?.startYear ?? new Date().getFullYear(),
+    initialData?.startYear ?? milestones?.planStart ?? currentPlanningYear(),
   );
   const [startYearRef, setStartYearRef] = useState<YearRef | null>(
     (initialData?.startYearRef as YearRef | null) ?? null,

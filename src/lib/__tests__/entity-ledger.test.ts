@@ -751,3 +751,57 @@ describe("getEntityLedger — a business account after its sale", () => {
     expect(sum(ledger.expenses)).toBeCloseTo(18_000, 2);
   });
 });
+
+describe("getEntityLedger — a plan that starts next year", () => {
+  it("lists a business's revenue entered this year at its entered amount in the first plan year", () => {
+    const biz = {
+      id: "biz", name: "LLC", category: "business", subType: "llc", value: 0, basis: 0,
+      growthRate: 0, rmdEnabled: false, parentAccountId: null, owners: [],
+    } as unknown as Account;
+    const ledger = getEntityLedger("biz", {
+      year: makeYear(2027),
+      planStartYear: 2027,
+      dataYear: 2026,
+      entitiesById: new Map(),
+      accountNamesById: new Map([["biz", "LLC"]]),
+      businessAccountsById: new Map([["biz", { id: "biz", name: "LLC", businessType: "llc", flowMode: "annual" }]]),
+      accounts: [biz],
+      incomes: [{
+        id: "inc", type: "business", name: "LLC Revenue", annualAmount: 100_000,
+        startYear: 2026, endYear: 2050, growthRate: 0.03, owner: "client", ownerAccountId: "biz",
+      }],
+      expenses: [{
+        id: "exp", type: "other", name: "LLC Costs", annualAmount: 30_000,
+        startYear: 2026, endYear: 2050, growthRate: 0.03, ownerAccountId: "biz",
+      }],
+      entityFlowOverrides: [],
+    });
+    expect(ledger.income[0].amount).toBeCloseTo(100_000, 2);
+    expect(ledger.expenses[0].amount).toBeCloseTo(30_000, 2);
+  });
+
+  it("lists a business entity's revenue entered this year at its entered amount in the first plan year", () => {
+    const entitiesById = new Map<string, EntityMetadata>([["ent-biz", {
+      id: "ent-biz", name: "Acme LLC", entityType: "llc", trustSubType: null, isGrantor: false,
+      initialValue: 0, initialBasis: 0, valueGrowthRate: 0, flowMode: "annual",
+    }]]);
+    const ledger = getEntityLedger("ent-biz", {
+      year: makeYear(2027),
+      planStartYear: 2027,
+      dataYear: 2026,
+      entitiesById,
+      accountNamesById: new Map(),
+      incomes: [{
+        id: "inc", type: "business", name: "Acme revenue", annualAmount: 100_000,
+        startYear: 2026, endYear: 2050, growthRate: 0.03, owner: "joint", ownerEntityId: "ent-biz",
+      }],
+      expenses: [{
+        id: "exp", type: "other", name: "Acme costs", annualAmount: 30_000,
+        startYear: 2026, endYear: 2050, growthRate: 0.03, ownerEntityId: "ent-biz",
+      }],
+      entityFlowOverrides: [],
+    });
+    expect(ledger.income.find((r) => r.sourceKind === "flow-base")?.amount).toBeCloseTo(100_000, 2);
+    expect(ledger.expenses.find((r) => r.sourceKind === "flow-base")?.amount).toBeCloseTo(30_000, 2);
+  });
+});

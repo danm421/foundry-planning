@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CurrencyInput } from "../currency-input";
 import { PercentInput } from "../percent-input";
 import { fillFlat, fillGrowth, type ScheduleEntry } from "@/lib/schedule-utils";
+import { planDataYear } from "@/lib/plan-year";
+import { inflationBaseYear, type SkipWindow } from "@/engine/skip-window";
 
 /** Exposed to parent so the dialog footer can drive the save action. */
 export interface ScheduleSaveBinding {
@@ -113,20 +115,21 @@ export interface FlowScheduleGridProps {
 
 const isBusinessType = (t: EntityType) => t !== "trust" && t !== "foundation";
 
-function baseAmountSingle(row: BaseFlow, year: number): number {
+function baseAmountSingle(row: BaseFlow, year: number, ps: SkipWindow): number {
   if (year < row.startYear || year > row.endYear) return 0;
-  const inflateFrom = row.inflationStartYear ?? row.startYear;
+  // Mirrors the engine, including a plan that starts next year (src/engine/skipped-year.ts).
+  const inflateFrom = inflationBaseYear(row, ps);
   return row.annualAmount * Math.pow(1 + row.growthRate, year - inflateFrom);
 }
 
-function baseAmount(row: BaseFlow | BaseFlow[] | null, year: number): number {
+function baseAmount(row: BaseFlow | BaseFlow[] | null, year: number, ps: SkipWindow): number {
   if (!row) return 0;
   if (Array.isArray(row)) {
     let total = 0;
-    for (const r of row) total += baseAmountSingle(r, year);
+    for (const r of row) total += baseAmountSingle(r, year, ps);
     return total;
   }
-  return baseAmountSingle(row, year);
+  return baseAmountSingle(row, year, ps);
 }
 
 type Cell = string; // "" = no override; otherwise the typed string
@@ -182,6 +185,7 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
     for (let y = props.planStartYear; y <= props.planEndYear; y++) out.push(y);
     return out;
   }, [props.planStartYear, props.planEndYear]);
+  const skipWindow: SkipWindow = { planStartYear: props.planStartYear, dataYear: planDataYear(props.planStartYear) };
 
   // State: per-year cells. Empty string = no override; otherwise the user's typed value.
   const initialIncome = useMemo(() => {
@@ -456,8 +460,8 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
         <tbody>
           {years.map((y) => {
             const age = y - props.primaryClientBirthYear;
-            const incBase = baseAmount(props.income, y);
-            const expBase = baseAmount(props.expense, y);
+            const incBase = baseAmount(props.income, y, skipWindow);
+            const expBase = baseAmount(props.expense, y, skipWindow);
             return (
               <tr key={y} className="border-b border-hair/50">
                 <td className="py-1.5 text-ink">

@@ -80,6 +80,8 @@ export interface Gift {
    * Default behavior (outright cash/asset gift) leaves this undefined.
    */
   eventKind?: GiftEventKind;
+  /** See `GiftEvent.enteredAsHistory`. */
+  enteredAsHistory?: boolean;
 }
 
 export interface WillBequestRecipient {
@@ -421,6 +423,13 @@ export type GiftEvent =
       /** Valuation discount as a fraction (0.3 = 30%). See `Gift.valuationDiscount`. */
       valuationDiscount?: number;
       eventKind?: GiftEventKind;
+      /** True when the gift was saved dated before its planning year: its
+       *  ownership move is already in the stored owners and the engine never
+       *  re-applies it. False: a gift the plan runs — one dated before the plan
+       *  start (the skipped year) is applied from the start. Undefined (legacy
+       *  fixtures, frozen snapshots): dated before the start ⇒ history. See
+       *  `giftInEffect` (ownership.ts). */
+      enteredAsHistory?: boolean;
     }
   | {
       kind: "asset";
@@ -444,6 +453,7 @@ export type GiftEvent =
        *  `parentGiftId`. */
       sourceGiftId?: string;
       eventKind?: GiftEventKind;
+      enteredAsHistory?: boolean;
     }
   | {
       kind: "liability";
@@ -456,6 +466,7 @@ export type GiftEvent =
       recipientExternalBeneficiaryId?: string;
       parentGiftId: string;
       eventKind?: GiftEventKind;
+      enteredAsHistory?: boolean;
     }
   | {
       kind: "business_interest";
@@ -475,6 +486,7 @@ export type GiftEvent =
        *  `parentGiftId`. */
       sourceGiftId?: string;
       eventKind?: GiftEventKind;
+      enteredAsHistory?: boolean;
     };
 
 /** How a QCD's yearly amount is set: a dollar figure, or the source IRA's
@@ -1786,6 +1798,11 @@ export interface PlanSettings {
   inflationRate: number;
   planStartYear: number;
   planEndYear: number;
+  /** Calendar year the entered data describes. Undefined or equal to
+   *  planStartYear: no skipped year. Below planStartYear when the plan starts
+   *  next year: the window [dataYear, planStartYear) already happened (see
+   *  src/engine/skipped-year.ts). The loader sets it; the engine never reads a clock. */
+  dataYear?: number;
   /** "flat" (default) uses flatFederalRate; "bracket" routes through the bracket engine. */
   taxEngineMode?: "flat" | "bracket";
   /** Annual rate for inflating tax brackets/thresholds beyond the last seeded year. */

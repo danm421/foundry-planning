@@ -12,6 +12,7 @@ import {
   computeSteppedUpBasis,
   distributeUnlinkedLiabilities,
   drainableShareAtDeath,
+  giftYearBalances,
   isWhollyGiftedAway,
   partitionGiftedLiabilities,
   routeAtDeath,
@@ -579,7 +580,7 @@ export function applyFinalDeath(rawInput: DeathEventInput): DeathEventResult {
   // the ledger's account list, which still holds a business sold since the gift.
   const giftTree = input.giftValuationAccounts ?? input.accounts;
   const accountValueAtYear = (accountId: string, year: number): number => {
-    const yearMap = input.yearEndAccountBalances?.get(year);
+    const yearMap = giftYearBalances(input, year);
     if (yearMap && yearMap[accountId] != null) {
       return giftValueOfAccount(accountId, giftTree, yearMap);
     }

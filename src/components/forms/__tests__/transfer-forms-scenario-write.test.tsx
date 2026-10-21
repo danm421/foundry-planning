@@ -139,7 +139,6 @@ function renderTransferAsset({ scenarioId, trustId = TRUST_ID }: RenderOpts = {}
       trustGrantor="client"
       accounts={[ASSET_ACCOUNT]}
       milestones={MILESTONES}
-      projectionStartYear={2026}
       currentYear={2026}
       onClose={vi.fn()}
       onSaved={vi.fn()}
@@ -324,7 +323,7 @@ describe("transfer forms — scenario-mode gift writes", () => {
     submitForm();
 
     await waitFor(() =>
-      expect(screen.getByText(/before the plan starts in 2026/i)).toBeInTheDocument(),
+      expect(screen.getByText(/dated \d{4}, before 2026, so it has already happened/i)).toBeInTheDocument(),
     );
     // Refused before anything was written — no change row, no base write.
     expect(fetchMock).not.toHaveBeenCalled();

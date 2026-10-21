@@ -14,6 +14,7 @@ import { giftPercentToWhole, roundGiftPercent, wholeToGiftPercent } from "@/lib/
 import type { AccountValueAtYear } from "@/lib/estate/account-value-at-year";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { QcdSourceOption } from "@/lib/gifts/qcd-sources";
+import { currentPlanningYear } from "@/lib/plan-year";
 
 export interface GiftFormRecipients {
   /** Irrevocable trusts only. */
@@ -66,6 +67,10 @@ export interface GiftFormProps {
   priorDiscounts?: Record<string, number>;
   /** Sandbox only — when present, render the exemption warning + enforce the plan-year window. */
   ledger?: GiftLedgerYear[];
+  /** The plan's first projection year — a new gift's default year when no
+   *  ledger names the window. Before it, a gift falls in a year the plan
+   *  treats as already done. */
+  planStartYear?: number;
   taxInflationRate?: number;
   /** IRAs a QCD can be paid from (`qcdSourceOptions`). Empty or absent hides the
    *  "From an IRA" funding choice. */
@@ -110,7 +115,8 @@ export default function GiftForm(props: GiftFormProps) {
   // Plan-year window — only enforced in the sandbox (ledger present).
   const planMinYear = ledger?.[0]?.year;
   const planMaxYear = ledger ? ledger[ledger.length - 1]?.year : undefined;
-  const thisYear = new Date().getFullYear();
+  const thisYear = currentPlanningYear();
+  const defaultYear = planMinYear ?? props.planStartYear ?? thisYear;
 
   const recipientOptions = useMemo<RecipientOption[]>(() => {
     const opts: RecipientOption[] = [];
@@ -140,8 +146,8 @@ export default function GiftForm(props: GiftFormProps) {
   // $0 — an invalid draft, which greys out Save with nothing on screen to
   // explain why.
   const savedYear = editing == null ? null : editing.kind === "series" ? editing.startYear : editing.year;
-  const [year, setYear] = useState(() => savedYear ?? planMinYear ?? thisYear);
-  const [startYear, setStartYear] = useState(() => savedYear ?? planMinYear ?? thisYear);
+  const [year, setYear] = useState(() => savedYear ?? defaultYear);
+  const [startYear, setStartYear] = useState(() => savedYear ?? defaultYear);
   const [endYear, setEndYear] = useState(() =>
     editing?.kind === "series"
       ? editing.endYear

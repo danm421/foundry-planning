@@ -39,6 +39,8 @@ export interface CanonicalGift {
   seriesId?: string;
   /** Non-outright gift kind (e.g. CLT remainder interest), preserved for labeling. */
   eventKind?: GiftEventKind;
+  /** Carried from the source gift — see `GiftEvent.enteredAsHistory`. */
+  enteredAsHistory?: boolean;
 }
 
 export interface CanonicalGiftContext {
@@ -146,6 +148,7 @@ export function toCanonicalGifts(
         useCrummeyPowers: g.useCrummeyPowers,
         source: "legacy",
         eventKind: g.eventKind,
+        enteredAsHistory: g.enteredAsHistory,
       },
       g.grantor,
       g.amount,
@@ -170,6 +173,7 @@ export function toCanonicalGifts(
           source: "event",
           sourcePolicyAccountId: ev.sourcePolicyAccountId,
           seriesId: ev.seriesId,
+          enteredAsHistory: ev.enteredAsHistory,
         },
         ev.grantor,
         ev.amount,
@@ -189,6 +193,7 @@ export function toCanonicalGifts(
           recipientExternalBeneficiaryId: ev.recipientExternalBeneficiaryId ?? null,
           useCrummeyPowers: false,
           source: "event",
+          enteredAsHistory: ev.enteredAsHistory,
         },
         ev.grantor,
         value,
@@ -208,6 +213,7 @@ export function toCanonicalGifts(
           recipientExternalBeneficiaryId: null,
           useCrummeyPowers: false,
           source: "event",
+          enteredAsHistory: ev.enteredAsHistory,
         },
         ev.grantor,
         value,

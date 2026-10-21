@@ -234,6 +234,29 @@ describe("FlowScheduleGrid", () => {
     expect(placeholders).toContain("$100,000");
   });
 
+  it("shows an amount entered this year at its entered size when the plan starts next year", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-21T15:00:00Z"));
+    try {
+      render(
+        <FlowScheduleGrid
+          {...baseProps}
+          planStartYear={2027}
+          income={{ annualAmount: 100_000, growthRate: 0.03, startYear: 2026, endYear: 2050, inflationStartYear: 2026 }}
+          expense={null}
+        />,
+      );
+      const placeholders = screen
+        .getAllByRole("textbox")
+        .map((el) => (el as HTMLInputElement).placeholder);
+      expect(placeholders).toContain("$100,000");
+      expect(placeholders).toContain("$103,000"); // 2028: one year of growth
+      expect(placeholders).not.toContain("$106,090"); // the pre-rebase 2028 figure
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // ── saveOverrides seam ─────────────────────────────────────────────────────
 
   it("hands an injected saveOverrides the full merged rows and never PUTs", async () => {

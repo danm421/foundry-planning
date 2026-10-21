@@ -208,6 +208,8 @@ import {
 } from "./types";
 import { computeTaxForYear, type YearTaxInput } from "./year-tax";
 import { resolveTaxAdjustmentsForYear, type IncomeTaxType } from "./tax-adjustments";
+import { applySkippedYearTransactions, rebaseSkippedYearRows } from "./skipped-year";
+import { hasSkippedYear } from "./skip-window";
 import { diffEquityTaxImpact, type EquityTaxImpact } from "./equity/tax-impact";
 import {
   buildNoteReceivableSchedules,
@@ -498,6 +500,9 @@ function foldLifeInsurancePayoutsIntoIncome(
 }
 
 export function runProjection(data: ClientData, options?: ProjectionOptions): ProjectionYear[] {
+  // Plan starts next year: amounts entered during the skipped year are the
+  // first plan year's amounts — see src/engine/skipped-year.ts.
+  data = rebaseSkippedYearRows(data);
   // Long-term care stress (scenario-only `ltc_event`): expand into ordinary
   // rows FIRST. The destructure below must see the care-adjusted client and
   // plan horizon — see src/engine/ltc-event.ts.
@@ -550,6 +555,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       assetTransactions: normalizeBusinessSales(data.assetTransactions, data.accounts),
     };
   }
+
+  // Plan starts next year: a sale, purchase or switch dated in the skipped
+  // year is already part of the starting picture — see skipped-year.ts.
+  data = applySkippedYearTransactions(data);
 
   // Stress test "Higher inflation": pin living-expense growth at the override
   // rate. Scoped to `type === "living"` on purpose — insurance/other expenses,
@@ -934,6 +943,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // accountValueAtYear callbacks can return the gift-year balance instead of
   // always the death-year balance. Populated just before years.push().
   const yearEndAccountBalances = new Map<number, Record<string, number>>();
+  // The year before the start closes at the opening balances. A gift made
+  // before the start (the skipped year of a plan that starts next year) is
+  // valued there; death events clamp any earlier gift year to it.
+  yearEndAccountBalances.set(planSettings.planStartYear - 1, { ...accountBalances });
 
   // Basis tracking for transfers and sales
   const basisMap: Record<string, number> = {};
@@ -1284,7 +1297,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // year loop. Opt-in: when `stockOptionPlans` is empty the whole equity phase
   // is a no-op, so plans without stock_options accounts are unaffected.
   const equityPlans: StockOptionPlan[] = data.stockOptionPlans ?? [];
-  const equityState = createEquityState(equityPlans, planSettings.planStartYear);
+  const equityState = createEquityState(equityPlans, planSettings.planStartYear, planSettings.dataYear);
   // Destination taxable-account id per plan, created lazily on first acquisition.
   const equityDestByPlan = new Map<string, string>();
 
@@ -2342,6 +2355,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         year,
         planSettings.planStartYear,
         year + 1,
+        planSettings.dataYear,
+        equityState,
       );
     }
 
@@ -2462,19 +2477,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // true Dec-31 snapshot, which throws off Year-1 RMDs vs the custodian's
       // letter. `priorYearEndValue`, if provided, replaces beginningValue for
       // the first projection year only — Year 2+ uses the engine's own
-      // year-end balances.
-      const isFirstProjectionYear = year === planSettings.planStartYear;
-      const grossBasis =
-        isFirstProjectionYear && acct.priorYearEndValue != null
+      // year-end balances. A plan that starts next year has no such gap: the
+      // entered `value` is already the Dec-31 balance before its first year.
+      const priorYearEnd =
+        year === planSettings.planStartYear &&
+        !hasSkippedYear(planSettings)
           ? acct.priorYearEndValue
-          : accountLedgers[acct.id]?.beginningValue ?? accountBalances[acct.id] ?? 0;
+          : undefined;
+      const grossBasis =
+        priorYearEnd ?? accountLedgers[acct.id]?.beginningValue ?? accountBalances[acct.id] ?? 0;
       // SECURE 2.0 §325 (2024+): designated Roth 401(k)/403(b) balances are
       // exempt from lifetime RMDs, so the basis is the pre-tax slice only.
       // rothValueBoY is stamped alongside beginningValue (before growth) —
       // the live rothValueMap has already grown and would over-subtract.
       const rothValueBoY = accountLedgers[acct.id]?.rothValueBoY ?? 0;
       let rmdBasis: number;
-      if (isFirstProjectionYear && acct.priorYearEndValue != null) {
+      if (priorYearEnd != null) {
         // `grossBasis` here is `priorYearEndValue` — a prior-Dec-31 custodian
         // snapshot on a different scale than the current-snapshot rothValueBoY.
         // Subtracting raw Roth dollars mixes scales (and can zero a real RMD),
@@ -10143,7 +10161,8 @@ export function runProjectionWithEvents(
   // `yearEndAccountBalances` inside runProjection is not in scope here, so read
   // the per-year ledgers off the returned rows through `buildGiftValueAtYear` —
   // the same resolver every advisor gift surface uses. A gift year before plan
-  // start, or an account not yet activated, has no ledger entry and resolves to 0.
+  // start reads the opening balances; an account not yet activated has no
+  // ledger entry and resolves to 0.
   //
   // An asset gift moves OWNERSHIP, not balance — `ownersForYear` rescales owner
   // percentages and never touches accountBalances — so `endingValue` in the gift

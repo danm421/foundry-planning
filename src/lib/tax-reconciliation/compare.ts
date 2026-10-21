@@ -1,5 +1,6 @@
 import { boundedLevenshtein } from "@/lib/imports/levenshtein";
 import { fmtUsd } from "@/lib/tax-analysis/format";
+import { inflationBaseYear } from "@/engine/skip-window";
 import type { FindingLineRef } from "@/lib/tax-analysis/types";
 import type { Delta, PlanSnapshot, ReconciliationInput } from "./types";
 
@@ -70,8 +71,10 @@ export function deflate(amount: number, rate: number, years: number): number {
 export function rowAmountInYear(
   row: { annualAmount: number; growthRate: number; startYear: number; inflationStartYear: number | null },
   year: number,
+  planSettings: { planStartYear: number; dataYear?: number },
 ): number {
-  const from = row.inflationStartYear ?? row.startYear;
+  // A plan that starts next year reads this year's amounts as next year's — see src/engine/skipped-year.ts.
+  const from = inflationBaseYear(row, planSettings);
   return row.annualAmount * Math.pow(1 + row.growthRate, year - from);
 }
 

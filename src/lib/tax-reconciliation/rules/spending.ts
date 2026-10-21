@@ -53,7 +53,7 @@ export const spendingRule: Rule = (input) => {
   // measured in the tax year and apply it to spending the advisor modelled for a different life.
   const row = plan.expenses.find((x) => x.isDefault && x.type === "living" && isActiveInYear(x, planYear) && x.startYearRef !== "client_retirement" && !/retire/i.test(x.name));
   if (!row) return { suggestions: [{ id, section: "spending", kind: "review", status: "open", headline: `The return leaves ${money(available)} to spend after tax; the plan spends and saves ${money(planSide)}.`, meaning: `About ${money(gap)} a year went somewhere the plan does not show. No current living-expense row was found to raise; adjust spending on Inflows & Outflows. ${bound}`, returnFigure, planFigure, delta: makeDelta(available, planSide), link }], checks: [] };
-  const current = rowAmountInYear(row, taxYear);
+  const current = rowAmountInYear(row, taxYear, plan.planSettings);
   const amount = Math.round(current + gap);
   return { suggestions: [{ id, section: "spending", kind: "update", status: "open",
     headline: `The return leaves ${money(available)} to spend after tax; the plan spends and saves ${money(planSide)}.`,

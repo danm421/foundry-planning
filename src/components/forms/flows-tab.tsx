@@ -372,7 +372,8 @@ function FlowEditor({
         growthSource,
         ownerEntityId: entityId,
         cashAccountId: null,
-        inflationStartYear: todaysDollars ? planStartYear : null,
+        // An edit keeps the row's own base; the January job moves the start year.
+        inflationStartYear: todaysDollars ? (existing?.inflationStartYear ?? planStartYear) : null,
       };
       const isEdit = !!existing;
       const baseUrl = `/api/clients/${clientId}/${

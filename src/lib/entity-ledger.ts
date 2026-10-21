@@ -27,6 +27,7 @@ import { resolveEntityFlows } from "@/engine/entity-flows";
 import { collectBusinessTree } from "@/engine/business/business-tree";
 import { netGrowthOf } from "@/engine/margin";
 import { survivingSaleFraction } from "@/engine/linked-income";
+import { rebaseInflationRow } from "@/engine/skip-window";
 
 export type LedgerSection = "growth" | "income" | "expenses" | "ending";
 
@@ -60,6 +61,9 @@ export interface EntityLedgerContext {
   /** Plan's first projection year — used to compute the flat-business
    *  compounding exponent (year - planStartYear). */
   planStartYear: number;
+  /** The tree's `planSettings.dataYear`: when below planStartYear, amounts
+   *  entered during the skipped year read as the first plan year's. */
+  dataYear?: number;
   entitiesById: Map<string, EntityMetadata>;
   accountNamesById: Map<string, string>;
   /** Top-level business-account metadata, keyed by account id. When the
@@ -86,8 +90,16 @@ export interface EntityLedgerContext {
 
 export function getEntityLedger(
   entityId: string,
-  ctx: EntityLedgerContext,
+  rawCtx: EntityLedgerContext,
 ): EntityLedger {
+  // A plan that starts next year reads this year's amounts as next year's.
+  // Rebase the rows once, as runProjection does at entry, so every flow below
+  // matches the engine (src/engine/skipped-year.ts).
+  const ctx: EntityLedgerContext = {
+    ...rawCtx,
+    incomes: rawCtx.incomes.map((r) => rebaseInflationRow(r, rawCtx)),
+    expenses: rawCtx.expenses.map((r) => rebaseInflationRow(r, rawCtx)),
+  };
   const entity = ctx.entitiesById.get(entityId);
   if (!entity) {
     // Account-as-asset branch: when the dropdown selection is a top-level

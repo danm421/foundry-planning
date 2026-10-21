@@ -1,6 +1,6 @@
 import type { StockOptionPlan, EquityGrant, GrantType } from "./types";
 import { resolveStrategy } from "./strategy";
-import { buildGrantTimeline, type EquityAction } from "./timeline";
+import { buildGrantTimeline, grantAtStart, type EquityAction } from "./timeline";
 import { fmvCurve, resolveStrikePrice } from "./price-model";
 import { computeSellToCover } from "./withholding";
 import { isQualifyingIsoDisposition, isLongTermHolding } from "./holding-period";
@@ -42,7 +42,10 @@ export interface EquityState {
   planStartYear: number;
   actionsByYear: Map<string, Map<number, EquityAction[]>>; // accountId → year → actions
   lots: Map<string, Lot>;        // key = `${grantId}:${lotId}` — see lotKey
+  /** Each grant as settled at the start (`grantAtStart`). */
   grantsById: Map<string, EquityGrant>;
+  /** Each grant's full timeline (grant id → actions), built once per run. */
+  timelinesByGrant: Map<string, EquityAction[]>;
 }
 
 export interface EquityYearResult {
@@ -79,22 +82,32 @@ const ROUND = (n: number) => Math.round(n * 1e6) / 1e6;
  *  `lots.set` overwrite the first and stranded the difference. */
 const lotKey = (a: { grantId: string; lotId: string }) => `${a.grantId}:${a.lotId}`;
 
-export function createEquityState(plans: StockOptionPlan[], planStartYear: number): EquityState {
+/** `dataYear` below `planStartYear`: the plan starts next year — see
+ *  `buildGrantTimeline`. */
+export function createEquityState(
+  plans: StockOptionPlan[],
+  planStartYear: number,
+  dataYear?: number,
+): EquityState {
   const actionsByYear = new Map<string, Map<number, EquityAction[]>>();
   const grantsById = new Map<string, EquityGrant>();
+  const timelinesByGrant = new Map<string, EquityAction[]>();
   for (const p of plans) {
     const acctStrategy = resolveStrategy(p.strategy, null, null);
     const fmvAt = fmvCurve(p, planStartYear);
     const byYear = new Map<number, EquityAction[]>();
     for (const g of p.grants) {
-      grantsById.set(g.id, g);
-      for (const a of buildGrantTimeline(g, acctStrategy, planStartYear, fmvAt)) {
+      const settled = grantAtStart(g, acctStrategy, planStartYear, fmvAt, dataYear);
+      grantsById.set(g.id, settled);
+      const timeline = buildGrantTimeline(settled, acctStrategy, planStartYear, fmvAt);
+      timelinesByGrant.set(g.id, timeline);
+      for (const a of timeline) {
         (byYear.get(a.year) ?? byYear.set(a.year, []).get(a.year)!).push(a);
       }
     }
     actionsByYear.set(p.accountId, byYear);
   }
-  return { planStartYear, actionsByYear, lots: new Map(), grantsById };
+  return { planStartYear, actionsByYear, lots: new Map(), grantsById, timelinesByGrant };
 }
 
 function emptyResult(): EquityYearResult {

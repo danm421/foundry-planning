@@ -110,7 +110,7 @@ export interface PlanMedicare { owner: "client" | "spouse"; priorYearMagi: numbe
 
 export interface PlanSnapshot {
   client: { filingStatus: "single" | "married_joint" | "married_separate" | "head_of_household"; dateOfBirth: string; spouseDob: string | null };
-  planSettings: { planStartYear: number; planEndYear: number; inflationRate: number; residenceState: string | null; capitalLossCarryforwardLt: number | null; capitalLossCarryforwardSt: number | null };
+  planSettings: { planStartYear: number; planEndYear: number; inflationRate: number; residenceState: string | null; capitalLossCarryforwardLt: number | null; capitalLossCarryforwardSt: number | null; dataYear?: number };
   incomes: PlanIncome[]; expenses: PlanExpense[]; savingsRules: PlanSavingsRule[]; accounts: PlanAccount[];
   entities: PlanEntity[]; deductions: PlanDeduction[]; familyMembers: PlanFamilyMember[]; medicare: PlanMedicare[];
 }

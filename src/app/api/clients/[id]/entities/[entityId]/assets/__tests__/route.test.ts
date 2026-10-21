@@ -23,7 +23,8 @@
  *  12. A second gift that overdraws what the first left → 400.
  *  13. No year on a plan that starts NEXT year → the gift lands in the plan's
  *      first projection year.
- *  14. An explicit year before the plan start year → 400; nothing written.
+ *  14. An explicit year before this year → 400; nothing written.
+ *  14b. An explicit this-year date on a plan that starts next year is accepted.
  *  15. Remove prunes the scenario changes that targeted the deleted gift rows,
  *      and audits which rows it deleted.
  */
@@ -767,7 +768,38 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
     expect(giftRows.map((g) => g.year)).toEqual([planStartYear]);
   });
 
-  it("14. An explicit year before the plan start year → 400, nothing written", async () => {
+  it("14b. An explicit this-year date on a plan that starts next year is accepted", async () => {
+    // The engine applies a gift dated in the skipped year from the plan's start.
+    const thisYear = new Date().getFullYear();
+    const { clientId, trustId, businessId } = await setup({
+      members: [{ role: "client", firstName: "Alice" }],
+      trustIrrevocable: true,
+      businessValue: "1000000",
+      businessOwners: [{ memberIdx: 0, percent: 1.0 }],
+      planStartYear: thisYear + 1,
+    });
+    const { db } = dbMod;
+    const { gifts } = schema;
+
+    const res = await POST(
+      makeReq(clientId, trustId, {
+        op: "add",
+        assetType: "entity",
+        assetId: businessId,
+        percent: 30,
+        year: thisYear,
+      }) as never,
+      { params: Promise.resolve({ id: clientId, entityId: trustId }) },
+    );
+    expect(res.status).toBe(200);
+    const giftRows = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.businessEntityId, businessId));
+    expect(giftRows.map((g) => [g.year, g.enteredAsHistory])).toEqual([[thisYear, false]]);
+  });
+
+  it("14. An explicit year before this year → 400, nothing written", async () => {
     const planStartYear = new Date().getFullYear() + 1;
     const { clientId, trustId, businessId, members } = await setup({
       members: [{ role: "client", firstName: "Alice" }],
@@ -785,12 +817,12 @@ d("POST /api/clients/[id]/entities/[entityId]/assets", () => {
         assetType: "entity",
         assetId: businessId,
         percent: 30,
-        year: planStartYear - 1,
+        year: planStartYear - 2,
       }) as never,
       { params: Promise.resolve({ id: clientId, entityId: trustId }) },
     );
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/before the plan start year/i);
+    expect((await res.json()).error).toMatch(/before this year/i);
 
     const giftRows = await db
       .select()

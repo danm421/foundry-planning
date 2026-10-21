@@ -52,7 +52,6 @@ function defaultProps(accountOverrides: Partial<AccountOption>[] = [{}]) {
     trustGrantor: "client" as const,
     accounts: accountOverrides.map((o) => makeAccount(o)),
     milestones: EMPTY_MILESTONES,
-    projectionStartYear: 2026,
     currentYear: 2026,
     onClose: vi.fn(),
     onSaved: vi.fn(),
@@ -235,7 +234,6 @@ describe("TransferAssetForm", () => {
     const props = {
       ...defaultProps([{ id: "acc-no-amount", name: "Taxable Account" }]),
       currentYear: 2026,
-      projectionStartYear: 2026,
       onSaved,
     };
     render(<TransferAssetForm {...props} />);

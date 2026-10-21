@@ -34,7 +34,7 @@ function tree(
   incomes: Income[],
   extra: Record<string, unknown> = {},
 ): ClientData {
-  return { savingsRules: rules, incomes, ...extra } as unknown as ClientData;
+  return { savingsRules: rules, incomes, planSettings: { planStartYear: 2026 }, ...extra } as unknown as ClientData;
 }
 
 const account = (id: string, familyMemberId: string) => ({
@@ -226,6 +226,15 @@ describe("deferralAccounts", () => {
       [salary(100_000, { growthRate: 0.03, startYear: 2020, inflationStartYear: 2026 })],
     );
     expect(householdSalary(t, 2026)).toBe(100_000);
+  });
+
+  it("reads a salary entered this year as next year's when the plan starts next year", () => {
+    const t = tree(
+      [rule({ accountId: "a1", annualPercent: 0.05 })],
+      [salary(200_000, { growthRate: 0.03, startYear: 2026 })],
+      { planSettings: { planStartYear: 2027, dataYear: 2026 } },
+    );
+    expect(householdSalary(t, 2027)).toBeCloseTo(200_000, 6);
   });
 });
 

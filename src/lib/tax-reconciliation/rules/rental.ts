@@ -37,7 +37,7 @@ export const rentalRules: Rule = (input) => {
   // 400s. Filtered out, the return figure falls to the "no rental property" review arm instead,
   // which sends the advisor to Net Worth where the mis-filed account can be fixed.
   const properties = plan.accounts.filter((a) => a.category === "real_estate" && a.subType === "rental_property");
-  const p = sum(rows.map((r) => rowAmountInYear(r, taxYear)));
+  const p = sum(rows.map((r) => rowAmountInYear(r, taxYear, plan.planSettings)));
   const id = "income.rental";
   const returnFigure = { label: "Rental cash flow (net + depreciation)", amount: cash, display: money(cash), lineRefs: [ref("Sched 1", "5", "Rental net", facts.income.scheduleENet), ref("Sched E", "18", "Depreciation", sE?.depreciation ?? null)] };
   const planFigure = { label: rows.length === 1 ? rows[0].name : "Rental income in the plan", amount: rows.length ? p : null, display: rows.length ? money(p) : "—", year: planYear };

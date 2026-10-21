@@ -16,6 +16,7 @@ export function snapshotFromTree(tree: ClientData, deductionRows: PlanDeduction[
       residenceState: tree.planSettings.residenceState ?? null,
       capitalLossCarryforwardLt: tree.planSettings.capitalLossCarryforwardLongTerm ?? null,
       capitalLossCarryforwardSt: tree.planSettings.capitalLossCarryforwardShortTerm ?? null,
+      dataYear: tree.planSettings.dataYear,
     },
     incomes: tree.incomes.filter((i) => i.source !== "policy").map((i) => ({
       id: i.id, type: i.type, name: i.name, annualAmount: i.annualAmount, growthRate: i.growthRate, startYear: i.startYear, endYear: i.endYear,

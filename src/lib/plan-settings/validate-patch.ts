@@ -4,6 +4,7 @@
 // and stays in the route.
 import { isUSPSStateCode } from "@/lib/usps-states";
 import { GROWTH_FIELD_LABELS } from "@/lib/scenario/growth-field-labels";
+import { currentPlanningYear } from "@/lib/plan-year";
 
 // Mirrors `dependentOverrideEnum` in the schema; the schema module is not
 // imported because this file ships in the client bundle with the autosave hook.
@@ -74,10 +75,12 @@ function finiteNumber(value: unknown): number | null {
 export function validatePlanSettingsPatch(body: Record<string, unknown>): string | null {
   const { planStartYear, residenceState } = body;
 
-  if (typeof planStartYear === "number") {
-    const currentYear = new Date().getFullYear();
-    if (planStartYear < currentYear) {
-      return `Plan start year cannot be before current year (${currentYear})`;
+  // The Assumptions switch picks this year or next year; nothing else.
+  if (planStartYear !== undefined) {
+    const thisYear = currentPlanningYear();
+    const year = finiteNumber(planStartYear);
+    if (year !== thisYear && year !== thisYear + 1) {
+      return `Plan start year must be ${thisYear} or ${thisYear + 1}`;
     }
   }
 

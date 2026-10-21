@@ -36,6 +36,7 @@ import {
   assertNotPastDatedAssetGift,
   giftScenarioAdd,
 } from "@/lib/gifts/gift-write";
+import { currentPlanningYear } from "@/lib/plan-year";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
 export type Recipient =
@@ -65,11 +66,9 @@ export interface SaveGiftOneTimeArgs {
 export async function saveGiftOneTime(
   args: SaveGiftOneTimeArgs & {
     submit: UseScenarioWriter["submit"];
-    /** True when a scenario is active, and the plan's real first projection
-     *  year — together they decide whether a past-dated asset transfer has to
-     *  be refused. See `assertNotPastDatedAssetGift`. */
+    /** True when a scenario is active — it decides whether a past-dated asset
+     *  transfer has to be refused. See `assertNotPastDatedAssetGift`. */
     scenarioActive: boolean;
-    planStartYear: number | null;
   },
 ): Promise<void> {
   const body: Record<string, unknown> = {
@@ -118,7 +117,7 @@ export async function saveGiftOneTime(
   // changes nothing at all, so refuse it by name.
   assertNotPastDatedAssetGift(draft, {
     scenarioActive: args.scenarioActive,
-    planStartYear: args.planStartYear,
+    thisYear: currentPlanningYear(),
   });
 
   // dispatchSave (dnd-context-provider.tsx) already refreshes once after this

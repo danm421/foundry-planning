@@ -51,8 +51,11 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
  *     (2026-10-19)
  * 14: a sold business stops paying its owners — income, expenses and the
  *     schedule grid scale to the unsold share from the sale year (2026-10-19)
+ * 15: a plan can start next year — amounts entered this year are the first
+ *     year's, and gifts made before the start own from the start and count
+ *     once (spec 2026-10-21-start-plan-next-year)
  */
-export const ENGINE_VERSION = 14;
+export const ENGINE_VERSION = 15;
 
 /** Round to 6 decimals so float representation noise can't cause spurious misses. */
 function round(n: number): number {

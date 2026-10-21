@@ -55,6 +55,7 @@ import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { baseCaseScenarioId } from "@/lib/clients/base-case";
 import type { EntityOwner } from "@/engine/ownership";
 import { planEntityGiftWrites } from "./gift-writes";
+import { currentPlanningYear } from "@/lib/plan-year";
 
 export const dynamic = "force-dynamic";
 
@@ -183,19 +184,18 @@ export async function POST(
             and(eq(planSettings.clientId, clientId), eq(planSettings.scenarioId, scenarioId)),
           )
       : [];
-    const currentYear = new Date().getFullYear();
+    const currentYear = currentPlanningYear();
     const planStartYear = settings?.planStartYear ?? currentYear;
 
-    // An add with no year is dated this calendar year — or the plan's first
-    // projection year when the plan starts later, since the engine reads a gift
-    // dated before that as already in the authored owners. The route owns the
-    // clock; the planner never reads it.
+    // An add with no year is dated this planning year — or the plan's first
+    // projection year when the plan starts later. The route owns the clock;
+    // the planner never reads it.
     const plan = planEntityGiftWrites({
       businessId,
       businessValue: parseFloat(business.value),
       authoredOwners,
       householdMembers,
-      planStartYear,
+      thisYear: currentYear,
       // Same reading as the projection loader's business_interest events: this
       // route is the only writer of these rows and always names a trust
       // recipient and a client/spouse grantor.

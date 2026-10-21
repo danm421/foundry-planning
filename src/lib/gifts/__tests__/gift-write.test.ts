@@ -56,8 +56,8 @@ describe("assertDraftable", () => {
 
 describe("assertNotPastDatedAssetGift", () => {
   // Mirrors the server rule exactly: `POST /gifts` dual-writes `account_owners`
-  // only for an asset (or liability) transfer TO AN ENTITY dated before the
-  // plan's start year. A scenario cannot make that write, so that one shape is
+  // only for an asset (or liability) transfer TO AN ENTITY dated before this
+  // planning year. A scenario cannot make that write, so that one shape is
   // refused and nothing else is.
   const assetGift: EstateFlowGift = {
     kind: "asset-once",
@@ -68,15 +68,18 @@ describe("assertNotPastDatedAssetGift", () => {
     grantor: "client",
     recipient: { kind: "entity", id: "22222222-2222-2222-2222-222222222222" },
   };
-  const inScenario = { scenarioActive: true, planStartYear: 2026 };
+  const inScenario = { scenarioActive: true, thisYear: 2026 };
 
   it("refuses a past-dated asset transfer to a trust, naming both years", () => {
     expect(() => assertNotPastDatedAssetGift(assetGift, inScenario)).toThrow(
-      /dated 2019, before the plan starts in 2026/i,
+      /dated 2019, before 2026/i,
     );
+    expect(() => assertNotPastDatedAssetGift({ ...assetGift, year: 2025 }, inScenario)).toThrow();
   });
 
-  it("allows the same transfer once it is dated inside the plan", () => {
+  it("allows a transfer dated this year, even when the plan starts next year", () => {
+    // The engine applies a this-year gift from the plan's start, so the
+    // scenario save does move ownership.
     expect(() =>
       assertNotPastDatedAssetGift({ ...assetGift, year: 2026 }, inScenario),
     ).not.toThrow();
@@ -86,7 +89,7 @@ describe("assertNotPastDatedAssetGift", () => {
     expect(() =>
       assertNotPastDatedAssetGift(assetGift, {
         scenarioActive: false,
-        planStartYear: 2026,
+        thisYear: 2026,
       }),
     ).not.toThrow();
   });
@@ -109,11 +112,4 @@ describe("assertNotPastDatedAssetGift", () => {
     ).not.toThrow();
   });
 
-  it("stands down when the plan start year is unknown rather than guessing", () => {
-    // A calendar-year stand-in is not the rule the server applies, and refusing
-    // a legal save on a guess is worse than the silence this guard exists for.
-    expect(() =>
-      assertNotPastDatedAssetGift(assetGift, { scenarioActive: true, planStartYear: null }),
-    ).not.toThrow();
-  });
 });

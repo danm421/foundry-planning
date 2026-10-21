@@ -431,12 +431,12 @@ function ownerLabelForFamily(
 /**
  * Ownership of an account as of a given year.
  *
- * "today" is the advisor-entered opening snapshot, before any projected
- * activity: a gift dated in or after the plan's first year has not happened
- * yet, and a gift dated before it is already baked into the authored owners
- * (that is exactly what `ownersForYear` documents about its window). So the
- * today column reads the authored owners and only the projected years apply
- * the gift overlay.
+ * "today" is the opening snapshot, before any projected activity: a gift dated
+ * in or after the plan's first year has not happened yet. A gift dated before
+ * it has — either entered as history (already in the authored owners) or made
+ * as a plan event the start year has since moved past (applied here, as the
+ * engine applies it from the start). So the today column reads the owners as
+ * of the year before the start, and the projected years apply the overlay.
  *
  * An account with no `account_owners` rows also keeps the authored (empty)
  * array rather than picking up `ownersForYearSafe`'s household fallback — the
@@ -449,9 +449,9 @@ export function ownersAsOf(
   planStartYear: number,
   asOfMode: AsOfMode,
 ): AccountOwner[] {
-  if (asOfMode === "today") return account.owners;
   if (account.owners.length === 0) return account.owners;
-  return ownersForYearSafe(account, giftEvents, year, planStartYear);
+  const asOf = asOfMode === "today" ? planStartYear - 1 : year;
+  return ownersForYearSafe(account, giftEvents, asOf, planStartYear);
 }
 
 /** The top-level business of each business CHILD account that has no owner
@@ -473,7 +473,8 @@ export function businessOfOwnerlessChild(accounts: AccountLike[]): Map<string, A
 /** `ownersAsOf` for a business entity's `entity_owners` rows. A gift of a
  *  business interest writes no owner row — the rows are the authored, pre-gift
  *  baseline — so the gifted share is re-applied here, at the report's year
- *  against the PLAN start year, exactly as `ownersAsOf` does for an account.
+ *  (the year before the start for "today") against the PLAN start year,
+ *  exactly as `ownersAsOf` does for an account.
  *  `undefined` (a legacy entity with no owner rows) stays `undefined`: callers
  *  read it as fully family-owned. */
 export function entityOwnersAsOf(
@@ -483,11 +484,11 @@ export function entityOwnersAsOf(
   planStartYear: number,
   asOfMode: AsOfMode,
 ): AccountOwner[] | undefined {
-  if (asOfMode === "today" || entity.owners == null) return entity.owners;
+  if (entity.owners == null) return entity.owners;
   return entityOwnersForYearSafe(
     { id: entity.id, owners: entity.owners },
     giftEvents,
-    year,
+    asOfMode === "today" ? planStartYear - 1 : year,
     planStartYear,
   );
 }

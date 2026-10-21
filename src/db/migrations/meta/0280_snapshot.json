@@ -1,5 +1,5 @@
 {
-  "id": "49500b4e-a4a1-4491-a044-48b81482f590",
+  "id": "f9e1408b-b3df-462c-95ea-ef66baaa0cad",
   "prevId": "5f4d4419-7413-4315-b313-f5875b0157cb",
   "version": "7",
   "dialect": "postgresql",
@@ -2734,13 +2734,6 @@
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": false
-        },
-        "other_heirs": {
-          "name": "other_heirs",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "percentage": {
           "name": "percentage",
@@ -10545,6 +10538,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'outright'"
+        },
+        "entered_as_history": {
+          "name": "entered_as_history",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "notes": {
           "name": "notes",
@@ -24933,8 +24933,7 @@
         "family_member",
         "external_beneficiary",
         "entity",
-        "spouse",
-        "other_heirs"
+        "spouse"
       ]
     },
     "public.will_residuary_tier": {

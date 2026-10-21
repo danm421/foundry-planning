@@ -16,6 +16,7 @@ import type { ClientData } from "@/engine/types";
 // the six lines instead would be worse: a hand-copy of an engine expression is
 // exactly what goes stale without a test noticing.
 import { controllingFamilyMember } from "@/engine/ownership";
+import { inflationBaseYear } from "@/engine/skip-window";
 import { activeIncomes } from "@/lib/solver/active-incomes";
 
 export interface DeferralAccount {
@@ -158,7 +159,7 @@ function salaryBases(data: ClientData, year: number): SalaryBases {
     // business or trust income. Entity-owned salary is not personal pay.
     if (inc.type !== "salary") continue;
     if (inc.ownerEntityId != null) continue;
-    const from = inc.inflationStartYear ?? inc.startYear;
+    const from = inflationBaseYear(inc, data.planSettings);
     const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - from);
     const key = inc.owner === "client" || inc.owner === "spouse" ? inc.owner : "joint";
     byOwner[key] += amount;

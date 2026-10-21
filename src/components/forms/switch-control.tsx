@@ -38,7 +38,7 @@ export function SwitchControl({
         onChange={(e) => onChange(e.target.checked)}
         className="peer sr-only"
       />
-      <span className="relative h-5 w-9 rounded-full bg-hair-2 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-ink after:shadow-sm after:transition-transform after:content-[''] peer-checked:bg-accent peer-checked:after:translate-x-4 peer-disabled:opacity-50" />
+      <span className="relative h-5 w-9 rounded-full bg-hair-2 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-ink after:shadow-sm after:transition-transform after:content-[''] peer-checked:bg-accent peer-checked:after:translate-x-4 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent peer-disabled:opacity-50" />
     </label>
   );
 }

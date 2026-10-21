@@ -75,6 +75,24 @@ describe("FlowsTab", () => {
     expect(screen.getByText(/\$100,000/)).toBeInTheDocument();
   });
 
+  it("editing a today's-dollars flow after the plan moves keeps its base year", async () => {
+    render(
+      <FlowsTab
+        {...baseProps}
+        planStartYear={2027}
+        income={{
+          id: "inc-1", name: "Acme — Income", annualAmount: 100000, startYear: 2030, endYear: 2050,
+          growthRate: 0.03, growthSource: "inflation", inflationStartYear: 2026,
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
+    // The flow editor's Save renders above the Distribution & Tax one.
+    fireEvent.click(screen.getAllByRole("button", { name: /^save$/i })[0]);
+    await waitFor(() => expect(submitMock).toHaveBeenCalled());
+    expect(submitMock.mock.calls[0][1].body).toMatchObject({ inflationStartYear: 2026 });
+  });
+
   it("renders Distribution & Tax section for business types only", () => {
     const { rerender } = render(<FlowsTab {...baseProps} entityType="llc" />);
     expect(screen.getByText(/distribution policy/i)).toBeInTheDocument();

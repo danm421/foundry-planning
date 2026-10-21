@@ -370,7 +370,7 @@ function ByokConnectForm({ providerId, label }: { providerId: ProviderId; label:
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          className="btn-ghost text-sm"
+          className="btn-ghost text-sm disabled:cursor-not-allowed disabled:opacity-50"
           onClick={handleTest}
           disabled={credentialsIncomplete || busy !== null}
         >
@@ -379,10 +379,17 @@ function ByokConnectForm({ providerId, label }: { providerId: ProviderId; label:
         {testResult === "pass" ? (
           <span className="text-sm text-good">✓ Connection verified</span>
         ) : null}
+        {testResult === "pass" && !attested ? (
+          <span className="text-sm text-ink-3">Tick the confirmation box to connect.</span>
+        ) : null}
         {testResult === "fail" ? (
           <span className="text-sm text-crit">✗ {testError}</span>
         ) : null}
-        <button type="submit" className="btn-primary text-sm" disabled={!canConnect}>
+        <button
+          type="submit"
+          className="btn-primary text-sm disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!canConnect}
+        >
           {busy === "connect" ? "Connecting…" : "Connect"}
         </button>
       </div>

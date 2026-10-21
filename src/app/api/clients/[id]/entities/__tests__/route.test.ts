@@ -499,6 +499,41 @@ describe("POST /api/clients/[id]/entities — CLT creation", () => {
     expect(remainderGift.grantor).toBe("client");
   });
 
+  it("marks a back-dated inception gift as entered history, and a current one as not", async () => {
+    const thisYear = new Date().getFullYear();
+    const giftFor = async (name: string, inceptionYear: number) => {
+      const res = await POST(
+        makePostReq({
+          name,
+          entityType: "trust",
+          trustSubType: "clt",
+          isIrrevocable: true,
+          grantor: "client",
+          splitInterest: {
+            inceptionYear,
+            inceptionValue: 1_000_000,
+            payoutType: "unitrust",
+            payoutPercent: 0.06,
+            irc7520Rate: 0.022,
+            termType: "years",
+            termYears: 10,
+            charityId,
+          },
+        }),
+        { params: Promise.resolve({ id: clientId }) },
+      );
+      expect(res.status).toBe(201);
+      const created = await res.json();
+      const [gift] = await db
+        .select()
+        .from(gifts)
+        .where(and(eq(gifts.recipientEntityId, created.id), eq(gifts.eventKind, "clt_remainder_interest")));
+      return gift;
+    };
+    expect((await giftFor("Old CLT", thisYear - 3)).enteredAsHistory).toBe(true);
+    expect((await giftFor("New CLT", thisYear)).enteredAsHistory).toBe(false);
+  });
+
   it("rejects a CLT without splitInterest payload", async () => {
     const res = await POST(
       makePostReq({

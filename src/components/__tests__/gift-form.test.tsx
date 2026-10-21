@@ -134,3 +134,19 @@ describe("GiftForm", () => {
     expect(d).toMatchObject({ kind: "asset-once", accountId: "a1", percent: 0.5, recipient: { kind: "entity", id: "t1" } });
   });
 });
+
+describe("GiftForm — a plan that starts next year", () => {
+  it("dates a new gift in the plan's first year, not this calendar year", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-21T15:00:00Z"));
+    try {
+      const onChange = vi.fn();
+      render(<GiftForm {...base({ onChange, planStartYear: 2027 })} />);
+      fireEvent.change(screen.getByTestId("recipient"), { target: { value: "family_member:m1" } });
+      fireEvent.change(screen.getByLabelText(/amount/i, { selector: "input" }), { target: { value: "1000" } });
+      expect(lastDraft(onChange)).toMatchObject({ kind: "cash-once", year: 2027 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

@@ -236,3 +236,14 @@ describe("buildFutureActivity — tax impact join", () => {
     expect(m.totals.taxImpact).toBe(5000); // present year only — 2029 not coerced to 0
   });
 });
+
+describe("buildFutureActivity — a plan that starts next year", () => {
+  it("lists no first-year exercise for an option exercised in the skipped year", () => {
+    const grant = nqso({ tranches: [{ id: "nt1", vestDate: "2026-03-01", shares: 100, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null }] });
+    const opts = { asOfYear: 2027, planStartYear: 2027, planEndYear: 2035 };
+    const today = buildFutureActivity([plan([grant], HOLD)], opts);
+    expect(today.groups.some((g) => g.year === 2027)).toBe(true);
+    const skipped = buildFutureActivity([plan([grant], HOLD)], { ...opts, dataYear: 2026 });
+    expect(skipped.groups.some((g) => g.year === 2027)).toBe(false);
+  });
+});

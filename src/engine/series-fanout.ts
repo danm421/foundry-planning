@@ -15,6 +15,11 @@ export interface GiftSeriesRow {
   /** One discount for the whole series, applied to each yearly occurrence. */
   valuationDiscount?: number;
   sourceAccountId?: string;
+  /** The planning year the series was entered in. Payments dated before it are
+   *  history (already in the prior-gifts figure); from it on they are plan
+   *  events, so a payment the start year has since moved past still counts
+   *  once. Absent (engine fixtures, frozen snapshots): the legacy reading. */
+  enteredInYear?: number;
 }
 
 export function fanOutGiftSeries(
@@ -47,6 +52,7 @@ export function fanOutGiftSeries(
       useCrummeyPowers: series.useCrummeyPowers,
       valuationDiscount: series.valuationDiscount,
       seriesId: series.id,
+      ...(series.enteredInYear != null ? { enteredAsHistory: year < series.enteredInYear } : {}),
     });
   }
   return events;

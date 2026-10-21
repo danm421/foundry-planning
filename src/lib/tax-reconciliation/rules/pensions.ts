@@ -22,7 +22,7 @@ export const pensionRules: Rule = (input) => {
   //    pays the pension TWICE from 2030 on.
   const ending = deferredRows.filter((i) => !isActiveInYear(i, planYear) && isActiveInYear(i, taxYear));
   const future = deferredRows.filter((i) => i.startYear > planYear);
-  const p = sum(rows.map((r) => rowAmountInYear(r, taxYear)));
+  const p = sum(rows.map((r) => rowAmountInYear(r, taxYear, plan.planSettings)));
   const returnFigure = { label: "Pensions and annuities", amount: gross, display: money(gross), lineRefs: [ref("1040", "5a", "Pensions and annuities", gross)] };
   const planFigure = { label: rows.length === 1 ? rows[0].name : "Pensions in the plan", amount: p, display: money(p), year: planYear };
   const id = "income.pensions";
