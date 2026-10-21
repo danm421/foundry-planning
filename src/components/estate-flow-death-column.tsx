@@ -5,6 +5,7 @@ import type { ProjectionResult } from "@/engine/projection";
 import {
   estateAtDeathOf,
   netToRecipientsOf,
+  showsNoPlan,
   type DeathSectionData,
   type MechanismBreakdown,
   type RecipientGroup,
@@ -181,7 +182,7 @@ function RecipientBox({
 }) {
   const [open, setOpen] = useState(false);
   const [showEmpty, setShowEmpty] = useState(false);
-  const isSystemDefault = group.recipientKind === "system_default";
+  const noPlan = showsNoPlan(group);
   const hue = SHARE_HUE[group.recipientKind];
 
   // Inter-vivos gifts this recipient receives during life. A pure annotation —
@@ -218,7 +219,7 @@ function RecipientBox({
         onToggle={() => setOpen((o) => !o)}
         share={share}
         hue={hue}
-        hatched={isSystemDefault}
+        hatched={noPlan}
         shareOf="the total"
         label={group.recipientLabel}
         figure={
@@ -229,7 +230,7 @@ function RecipientBox({
             <span>{fmt.format(group.netTotal)}</span>
           </>
         }
-        flag={isSystemDefault ? <NoPlanFlag /> : undefined}
+        flag={noPlan ? <NoPlanFlag /> : undefined}
       />
 
       {open && (

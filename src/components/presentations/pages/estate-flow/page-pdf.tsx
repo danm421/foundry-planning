@@ -10,6 +10,7 @@ import type {
 import {
   estateAtDeathOf,
   netToRecipientsOf,
+  showsNoPlan,
   type RecipientGroup,
 } from "@/lib/estate/transfer-report";
 import type { OwnershipGroup } from "@/lib/estate/estate-flow-ownership";
@@ -291,7 +292,7 @@ function RecipientBox({ group, share }: { group: RecipientGroup; share: number }
           </>
         }
         shareOf="the total"
-        noPlan={group.recipientKind === "system_default"}
+        noPlan={showsNoPlan(group)}
       />
       <View style={styles.boxBody}>
         {shown.map(({ asset: a, mechanismLabel }, i) => {

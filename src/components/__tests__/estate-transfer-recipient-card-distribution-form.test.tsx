@@ -78,3 +78,22 @@ describe("EstateTransferRecipientCard — distributionForm chip", () => {
     expect(screen.queryByText(/^in trust$/i)).not.toBeInTheDocument();
   });
 });
+
+describe("EstateTransferRecipientCard — No plan", () => {
+  const heirs: RecipientGroup = {
+    ...baseGroup,
+    key: "system_default|",
+    recipientKind: "system_default",
+    recipientId: null,
+    recipientLabel: "Other Heirs",
+  };
+
+  it("shows No plan on an unplanned Other Heirs card and not on a picked one", () => {
+    const { unmount } = render(<EstateTransferRecipientCard group={heirs} />);
+    expect(screen.getByText("No plan")).toBeInTheDocument();
+    unmount();
+    const { container } = render(<EstateTransferRecipientCard group={{ ...heirs, otherHeirsPicked: true }} />);
+    expect(screen.queryByText("No plan")).toBeNull();
+    expect(container.querySelector("section")!.className).not.toMatch(/amber/);
+  });
+});

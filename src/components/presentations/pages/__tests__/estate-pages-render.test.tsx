@@ -305,4 +305,23 @@ describe("estate page PDFs render", () => {
     expect(text).toContain("Income tax (IRD) $18,500");
     expect(text).not.toContain("State inheritance tax");
   });
+
+  it("omits No plan for a picked Other Heirs box", async () => {
+    const first = populatedReport.firstColumn!;
+    const picked: EstateFlowReportData = {
+      ...populatedReport,
+      firstColumn: {
+        ...first,
+        recipients: first.recipients.map((g) =>
+          g.recipientKind === "system_default" ? { ...g, otherHeirsPicked: true as const } : g,
+        ),
+      },
+    };
+    const buf = await renderToBuffer(
+      <Document>{EstateFlowReportPagePdf({ data: picked, ...framing })}</Document>,
+    );
+    const text = (await extractPdfText(Buffer.from(buf))).replace(/\s+/g, " ");
+    expect(text).toContain("Other Heirs");
+    expect(text).not.toContain("No plan");
+  });
 });

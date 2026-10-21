@@ -241,6 +241,21 @@ describe("EstateFlowDeathColumn — recipient boxes", () => {
     expect(within(toggle).getByText("No plan")).toBeDefined();
   });
 
+  it("drops the No-plan flag when an Other Heirs share was picked", () => {
+    const heirs = recipient({
+      key: "system_default|",
+      recipientKind: "system_default",
+      recipientId: null,
+      recipientLabel: "Other Heirs",
+      assets: [["Checking", 50_000]],
+      otherHeirsPicked: true,
+    });
+    renderColumn(section([heirs]));
+
+    const toggle = screen.getByRole("button", { name: /Other Heirs/ });
+    expect(within(toggle).queryByText("No plan")).toBeNull();
+  });
+
   it("strip shows gross and what recipients net, with no tax figure", () => {
     const jane = recipient({
       assets: [["Schwab Brokerage", 800_000]],

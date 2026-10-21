@@ -1,4 +1,4 @@
-import type { RecipientGroup } from "@/lib/estate/transfer-report";
+import { showsNoPlan, type RecipientGroup } from "@/lib/estate/transfer-report";
 
 const fmt = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -18,7 +18,7 @@ export function EstateTransferRecipientCard({
   group: RecipientGroup;
 }) {
   const isSpouse = group.recipientKind === "spouse";
-  const isSystemDefault = group.recipientKind === "system_default";
+  const noPlan = showsNoPlan(group);
 
   // Sum every drain kind generically so a new DrainKind can never silently
   // drop out of the displayed reductions (and break gross − reductions = net).
@@ -34,7 +34,7 @@ export function EstateTransferRecipientCard({
         "rounded-lg border px-4 py-3 " +
         (isSpouse
           ? "border-indigo-900/40 bg-indigo-950/15"
-          : isSystemDefault
+          : noPlan
             ? "border-amber-900/40 bg-amber-950/15"
             : "border-hair bg-card-2")
       }
@@ -42,7 +42,7 @@ export function EstateTransferRecipientCard({
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="flex items-baseline gap-2 text-sm font-semibold text-ink">
           <span>{group.recipientLabel}</span>
-          {isSystemDefault && (
+          {noPlan && (
             <span className="rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-200">
               No plan
             </span>
