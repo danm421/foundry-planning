@@ -135,14 +135,16 @@ describe("SolverYearDetailPanel", () => {
     expect(screen.queryByTestId("year-detail-qcd")).not.toBeInTheDocument();
     cleanup();
 
+    // 10k qualifying + 4k taxed excess: the charity got 14k out of the IRA.
     const year = {
       ...base,
       accountLedgers: { "acc-ira": { rmdAmount: 15_000, qcdAmount: 10_000 } as never },
+      qcds: [{ accountId: "acc-ira", charityId: "ch", giver: "client", qualifying: 10_000, taxedExcess: 4_000 }],
     } as ProjectionYear;
     render(<SolverYearDetailPanel year={year} years={[prior, year]} clientData={makeClientData()} />);
-    expect(screen.getByTestId("year-detail-qcd")).toHaveTextContent("$10,000");
-    // (20k draw + 15k RMD + 10k QCD) / 1M
-    expect(screen.getByTestId("year-detail-withdrawal-rate")).toHaveTextContent("4.50%");
+    expect(screen.getByTestId("year-detail-qcd")).toHaveTextContent("$14,000");
+    // (20k draw + 15k RMD + 14k QCD) / 1M
+    expect(screen.getByTestId("year-detail-withdrawal-rate")).toHaveTextContent("4.90%");
   });
 
   it("leaves the Withdrawal % out when nothing is drawn from the portfolio", () => {

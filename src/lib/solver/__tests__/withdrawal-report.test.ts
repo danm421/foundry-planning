@@ -4,6 +4,7 @@ import {
   buildWithdrawalReportRows,
   activeWithdrawalSources,
   WITHDRAWAL_SOURCES,
+  yearQcd,
   yearWithdrawalRate,
 } from "../withdrawal-report";
 
@@ -135,40 +136,46 @@ describe("withdrawal rate", () => {
     expect(rows[1].withdrawalRate).toBeCloseTo(0.025, 10);
   });
 
-  it("adds a household QCD to the numerator and the row's qcd field", () => {
-    // 20k QCD, no cash RMD: numerator is withdrawals (0) + 20k.
-    const rows = buildWithdrawalReportRows(
-      [
-        portfolioYear(2026, 1_000_000, 980_000),
-        portfolioYear(2027, 950_000, 1_000_000, {
-          accountLedgers: {
-            tax1: { rmdAmount: 0, beginningValue: 1_000_000, endingValue: 950_000 },
-            ira1: { rmdAmount: 0, qcdAmount: 20_000, beginningValue: 0, endingValue: 0 },
-          },
-        }),
-      ],
-      ACCOUNTS,
-    );
+  it("adds a household QCD to the numerator, its taxed excess included, counted once", () => {
+    // 20k qualifying (also on ledger.qcdAmount) + 5k taxed excess (on neither
+    // rmdAmount nor qcdAmount), no cash RMD: numerator is 0 + 25k.
+    const years = [
+      portfolioYear(2026, 1_000_000, 980_000),
+      portfolioYear(2027, 950_000, 1_000_000, {
+        accountLedgers: {
+          tax1: { rmdAmount: 0, beginningValue: 1_000_000, endingValue: 950_000 },
+          ira1: { rmdAmount: 0, qcdAmount: 20_000, beginningValue: 0, endingValue: 0 },
+        },
+        qcds: [
+          { accountId: "ira1", charityId: "ch", giver: "client", qualifying: 20_000, taxedExcess: 5_000 },
+        ],
+      }),
+    ];
+    const rows = buildWithdrawalReportRows(years, ACCOUNTS);
 
-    expect(rows[1].qcd).toBe(20_000);
-    expect(rows[1].withdrawalRate).toBeCloseTo(0.02, 10);
+    expect(rows[1].withdrawalRate).toBeCloseTo(0.025, 10);
+    expect(yearQcd(years[1], ACCOUNTS)).toBe(25_000);
+    // No row field: nothing renders it.
+    expect(rows[1]).not.toHaveProperty("qcd");
   });
 
   it("leaves a QCD from an entity-owned IRA out of the numerator", () => {
-    const rows = buildWithdrawalReportRows(
-      [
-        portfolioYear(2026, 1_000_000, 980_000),
-        portfolioYear(2027, 950_000, 1_000_000, {
-          accountLedgers: {
-            tax1: { rmdAmount: 0, beginningValue: 1_000_000, endingValue: 950_000 },
-            trustIra: { rmdAmount: 0, qcdAmount: 20_000, beginningValue: 0, endingValue: 0 },
-          },
-        }),
-      ],
-      [...ACCOUNTS, acct("trustIra", "retirement", "traditional_ira", ENTITY_OWNER)],
-    );
+    const accounts = [...ACCOUNTS, acct("trustIra", "retirement", "traditional_ira", ENTITY_OWNER)];
+    const years = [
+      portfolioYear(2026, 1_000_000, 980_000),
+      portfolioYear(2027, 950_000, 1_000_000, {
+        accountLedgers: {
+          tax1: { rmdAmount: 0, beginningValue: 1_000_000, endingValue: 950_000 },
+          trustIra: { rmdAmount: 0, qcdAmount: 20_000, beginningValue: 0, endingValue: 0 },
+        },
+        qcds: [
+          { accountId: "trustIra", charityId: "ch", giver: "client", qualifying: 20_000, taxedExcess: 5_000 },
+        ],
+      }),
+    ];
+    const rows = buildWithdrawalReportRows(years, accounts);
 
-    expect(rows[1].qcd).toBe(0);
+    expect(yearQcd(years[1], accounts)).toBe(0);
     expect(rows[1].withdrawalRate).toBe(0);
   });
 

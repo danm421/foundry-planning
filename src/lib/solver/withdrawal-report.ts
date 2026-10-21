@@ -44,14 +44,10 @@ export interface WithdrawalReportRow {
   /** Beginning-of-year liquid portfolio — the rate's denominator, shown beside it. */
   portfolioBoy: number;
   /** (`withdrawalsTotal` + household RMDs + QCDs) ÷ `portfolioBoy`, as a fraction. RMDs
-   *  ride in the numerator but have no column, so this deliberately exceeds
-   *  `withdrawalsTotal / portfolioBoy` in an RMD year. 0 when there is no
-   *  portfolio to draw against. */
+   *  and QCDs ride in the numerator but have no column, so this deliberately
+   *  exceeds `withdrawalsTotal / portfolioBoy` in an RMD year. 0 when there is
+   *  no portfolio to draw against. */
   withdrawalRate: number;
-  /** Qualifying QCDs paid from household IRAs this year. They ride in the
-   *  `withdrawalRate` numerator like RMDs (they satisfy the RMD but never reach
-   *  checking, so they are in neither `withdrawalsTotal` nor `rmdAmount`). */
-  qcd: number;
   totalExpenses: number;
 }
 
@@ -86,15 +82,17 @@ function householdRmdTotal(
   return total;
 }
 
-/** Qualifying QCDs paid from household IRAs. `ledger.rmdAmount` carries only
- *  the cash RMD, so this never double counts it. */
+/** Everything QCDs paid out of household IRAs: the qualifying part and the
+ *  taxed excess. `ledger.rmdAmount` carries only the cash RMD and
+ *  `ledger.qcdAmount` only the qualifying part, so the excess is in neither and
+ *  this never double counts either. */
 function householdQcdTotal(
   y: ProjectionYear,
   householdAccountIds: ReadonlySet<string>,
 ): number {
   let total = 0;
-  for (const [accountId, ledger] of Object.entries(y.accountLedgers)) {
-    if (householdAccountIds.has(accountId)) total += ledger.qcdAmount ?? 0;
+  for (const q of y.qcds ?? []) {
+    if (householdAccountIds.has(q.accountId)) total += q.qualifying + q.taxedExcess;
   }
   return total;
 }
@@ -128,7 +126,6 @@ export function buildWithdrawalReportRows(
       withdrawalsTotal: y.withdrawals.total,
       portfolioBoy,
       withdrawalRate: withdrawalRate(y, portfolioBoy, householdAccountIds),
-      qcd: householdQcdTotal(y, householdAccountIds),
       totalExpenses: y.totalExpenses,
     };
   });
@@ -150,8 +147,8 @@ export function yearWithdrawalRate(
   return withdrawalRate(y, liquidPortfolioBoy(y, years), householdAccountIds);
 }
 
-/** One year's household QCD total — the figure the Withdrawals report row
- *  carries as `qcd`. */
+/** One year's household QCD total — the QCD part of `yearWithdrawalRate`'s
+ *  numerator. */
 export function yearQcd(y: ProjectionYear, accounts: readonly Account[]): number {
   const householdAccountIds = new Set(
     accounts.filter((a) => controllingFamilyMember(a) != null).map((a) => a.id),

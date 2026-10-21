@@ -51,6 +51,7 @@ import {
 import { QuickNavDropdown } from "@/components/cashflow/quick-nav-dropdown";
 import { DrillChart } from "@/components/cashflow/charts/drill-chart";
 import { filterAllZeroColumns } from "@/components/cashflow/all-zero-columns";
+import { yearQcd } from "@/lib/solver/withdrawal-report";
 import { buildLifeEventsByYear, lifeEventMarkers } from "@/lib/life-event-markers";
 import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
 import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
@@ -1890,12 +1891,9 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               (sum, led) => sum + (led?.rmdAmount ?? 0),
               0,
             );
-            // QCDs leave the same way (they count toward the RMD but sit on
-            // ledger.qcdAmount, not rmdAmount), so they ride along too.
-            const qcdTotal = Object.values(r.accountLedgers ?? {}).reduce(
-              (sum, led) => sum + (led?.qcdAmount ?? 0),
-              0,
-            );
+            // QCDs leave the same way (they count toward the RMD but are not
+            // in rmdAmount), so they ride along too, taxed excess included.
+            const qcdTotal = yearQcd(r, clientData?.accounts ?? []);
             const numerator = r.withdrawals.total + rmdTotal + qcdTotal;
             return boy > 0 ? numerator / boy : 0;
           },
