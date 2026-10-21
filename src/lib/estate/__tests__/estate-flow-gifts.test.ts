@@ -598,8 +598,8 @@ describe("the entered-as-history flag survives the draft round trip", () => {
     } as unknown as ClientData;
     const fresh = { ...draft, id: "new", enteredInYear: undefined };
     const out = applyGiftsToClientData(data, [draft, fresh], 0);
-    expect(out.giftEvents.filter((e) => e.seriesId === "sr1").map((e) => e.enteredAsHistory)).toEqual([true, false, false]);
+    expect(out.giftEvents.filter((e) => e.kind === "cash" && e.seriesId === "sr1").map((e) => e.enteredAsHistory)).toEqual([true, false, false]);
     // A series that never was a row: nothing is history.
-    expect(out.giftEvents.filter((e) => e.seriesId === "new").map((e) => e.enteredAsHistory)).toEqual([false, false, false]);
+    expect(out.giftEvents.filter((e) => e.kind === "cash" && e.seriesId === "new").map((e) => e.enteredAsHistory)).toEqual([false, false, false]);
   });
 });

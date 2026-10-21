@@ -1062,11 +1062,11 @@ describe("loadClientData — a plan that starts next year", () => {
 
     const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
 
-    expect(data.giftEvents.filter((e) => e.seriesId != null).map((e) => [e.year, e.enteredAsHistory]))
+    expect(data.giftEvents.filter((e) => e.kind === "cash" && e.seriesId != null).map((e) => [e.year, e.enteredAsHistory]))
       .toEqual([[2025, false], [2026, false], [2027, false], [2028, false]]);
     dbState.giftSeries = [{ ...(dbState.giftSeries[0] as object), createdAt: new Date("2026-06-01T00:00:00Z") }];
     const later = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
-    expect(later.giftEvents.filter((e) => e.seriesId != null).map((e) => e.enteredAsHistory))
+    expect(later.giftEvents.filter((e) => e.kind === "cash" && e.seriesId != null).map((e) => e.enteredAsHistory))
       .toEqual([true, false, false, false]);
   });
 
