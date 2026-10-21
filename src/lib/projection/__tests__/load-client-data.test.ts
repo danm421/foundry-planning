@@ -751,6 +751,60 @@ describe("loadClientData", () => {
     expect(trust!.trustee).toBe("Linda Chen");
   });
 
+  it("maps an Other Heirs designation on an account, a trust income tier and a trust remainder tier", async () => {
+    seedValidFixture();
+    dbState.entities = [trustRow];
+    const row = (o: Record<string, unknown>) => ({
+      clientId: FIXTURE_CLIENT_ID,
+      accountId: null,
+      entityId: null,
+      familyMemberId: null,
+      externalBeneficiaryId: null,
+      entityIdRef: null,
+      householdRole: null,
+      otherHeirs: true,
+      percentage: "100.00",
+      sortOrder: 0,
+      distributionForm: null,
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+      updatedAt: new Date("2026-01-01T00:00:00Z"),
+      ...o,
+    });
+    dbState.beneficiaryDesignations = [
+      row({ id: "d-acct", targetKind: "account", accountId: accountRows[0].id, tier: "primary" }),
+      row({ id: "d-income", targetKind: "trust", entityId: trustRow.id, tier: "income" }),
+      row({ id: "d-rem", targetKind: "trust", entityId: trustRow.id, tier: "remainder", distributionForm: "in_trust" }),
+    ];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+    const acct = data.accounts.find((a) => a.id === accountRows[0].id)!;
+    const trust = data.entities?.find((e) => e.id === trustRow.id)!;
+
+    const noOtherRecipient = (ref: Record<string, unknown>) =>
+      ref.familyMemberId === undefined &&
+      ref.externalBeneficiaryId === undefined &&
+      (ref.entityIdRef ?? ref.entityId) === undefined &&
+      ref.householdRole === undefined;
+
+    expect(acct.beneficiaries).toEqual([
+      expect.objectContaining({ id: "d-acct", tier: "primary", percentage: 100, otherHeirs: true }),
+    ]);
+    expect(noOtherRecipient(acct.beneficiaries![0] as never)).toBe(true);
+    // The mock ignores WHERE, so the income and remainder selects each see both
+    // trust rows — every mapped ref must carry the marker and nothing else.
+    expect(trust.incomeBeneficiaries!.length).toBeGreaterThan(0);
+    for (const ref of trust.incomeBeneficiaries!) {
+      expect(ref).toMatchObject({ otherHeirs: true, percentage: 100 });
+      expect(noOtherRecipient(ref as never)).toBe(true);
+    }
+    expect(trust.remainderBeneficiaries!).toContainEqual(
+      expect.objectContaining({ otherHeirs: true, percentage: 100, distributionForm: "in_trust" }),
+    );
+    for (const ref of trust.remainderBeneficiaries!) {
+      expect(noOtherRecipient(ref as never)).toBe(true);
+    }
+  });
+
   it("maps a null note to undefined, matching the loader's ?? undefined convention", async () => {
     seedValidFixture();
     dbState.entities = [{ ...trustRow, notes: null }];

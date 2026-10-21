@@ -801,6 +801,7 @@ const loadClientDataCached = cache(
         externalBeneficiaryId: d.externalBeneficiaryId ?? undefined,
         entityIdRef: d.entityIdRef ?? undefined,
         householdRole: (d.householdRole as "client" | "spouse" | null) ?? undefined,
+        ...(d.otherHeirs ? { otherHeirs: true as const } : {}),
         sortOrder: d.sortOrder,
       };
       if (d.targetKind === "account" && d.accountId) {
@@ -1323,6 +1324,7 @@ const loadClientDataCached = cache(
             externalBeneficiaryId: beneficiaryDesignations.externalBeneficiaryId,
             entityIdRef: beneficiaryDesignations.entityIdRef,
             householdRole: beneficiaryDesignations.householdRole,
+            otherHeirs: beneficiaryDesignations.otherHeirs,
             percentage: beneficiaryDesignations.percentage,
           })
           .from(beneficiaryDesignations)
@@ -1346,6 +1348,7 @@ const loadClientDataCached = cache(
         externalBeneficiaryId: row.externalBeneficiaryId ?? undefined,
         entityId: row.entityIdRef ?? undefined,
         householdRole: (row.householdRole as "client" | "spouse" | null) ?? undefined,
+        ...(row.otherHeirs ? { otherHeirs: true as const } : {}),
         percentage: Number(row.percentage),
       });
       incomeByEntity.set(row.entityId, list);
@@ -1360,6 +1363,7 @@ const loadClientDataCached = cache(
             externalBeneficiaryId: beneficiaryDesignations.externalBeneficiaryId,
             entityIdRef: beneficiaryDesignations.entityIdRef,
             householdRole: beneficiaryDesignations.householdRole,
+            otherHeirs: beneficiaryDesignations.otherHeirs,
             percentage: beneficiaryDesignations.percentage,
             distributionForm: beneficiaryDesignations.distributionForm,
           })
@@ -1385,6 +1389,7 @@ const loadClientDataCached = cache(
         externalBeneficiaryId: row.externalBeneficiaryId ?? undefined,
         entityIdRef: row.entityIdRef ?? undefined,
         householdRole: (row.householdRole as "client" | "spouse" | null) ?? undefined,
+        ...(row.otherHeirs ? { otherHeirs: true as const } : {}),
         percentage: Number(row.percentage),
         distributionForm: row.distributionForm === "in_trust" ? "in_trust" : "outright",
       });
