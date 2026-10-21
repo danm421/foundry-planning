@@ -266,6 +266,24 @@ describe("updateAccountChildren", () => {
     expect(updated).toHaveLength(0);
   });
 
+  it("promotes an Other Heirs designation with otherHeirs set", async () => {
+    const { tx, inserted } = makeTx();
+    const set = {
+      beneficiaries: [{ id: "b1", tier: "primary", percentage: 100, otherHeirs: true, sortOrder: 0 }],
+    };
+    await updateAccountChildren(tx as never, "acct-1", set, makeCtx());
+    expect(rowsIn(inserted, beneficiaryDesignations)).toEqual([
+      expect.objectContaining({
+        accountId: "acct-1",
+        otherHeirs: true,
+        familyMemberId: null,
+        externalBeneficiaryId: null,
+        entityIdRef: null,
+        householdRole: null,
+      }),
+    ]);
+  });
+
   it("an edit that clears the beneficiaries deletes them and inserts nothing", async () => {
     const { tx, inserted, deleted } = makeTx();
     await updateAccountChildren(tx as never, "acct-1", { beneficiaries: [] }, makeCtx());

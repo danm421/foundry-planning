@@ -834,7 +834,7 @@ export const NET_WORTH_ACCOUNT_ENTITIES: readonly DetailEntity[] = [
         kind: "uuid",
         nullable: true,
         notes:
-          "EXACTLY ONE of familyMemberId / externalBeneficiaryId / entityIdRef / householdRole must be set on a row. Must belong to this client.",
+          "EXACTLY ONE of familyMemberId / externalBeneficiaryId / entityIdRef / householdRole / otherHeirs (true) must be set on a row. Must belong to this client.",
       },
       {
         key: "externalBeneficiaryId",
@@ -858,6 +858,13 @@ export const NET_WORTH_ACCOUNT_ENTITIES: readonly DetailEntity[] = [
         enumValues: ["client", "spouse"],
         nullable: true,
         notes: "Names the household principal directly rather than by family-member id.",
+      },
+      {
+        key: "otherHeirs",
+        label: "Beneficiary",
+        kind: "boolean",
+        nullable: true,
+        notes: "Names the built-in Other Heirs instead of a person. Set in the app; Claude can't set it yet.",
       },
       {
         key: "sortOrder",

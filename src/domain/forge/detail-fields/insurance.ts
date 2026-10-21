@@ -427,6 +427,13 @@ export const INSURANCE_ENTITIES: readonly DetailEntity[] = [
         notes: "Rendered as the household member's own name, under the Household option group.",
       },
       {
+        key: "otherHeirs",
+        label: "— select beneficiary — (Other option group)",
+        kind: "boolean",
+        nullable: true,
+        notes: "Names the built-in Other Heirs instead of a person. Set in the app; Claude can't set it yet.",
+      },
+      {
         key: "sortOrder",
         label: "Row order",
         kind: "number",

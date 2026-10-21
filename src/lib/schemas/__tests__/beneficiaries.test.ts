@@ -114,3 +114,39 @@ describe("beneficiarySetSchema", () => {
     expect(r.success).toBe(false);
   });
 });
+
+describe("Other Heirs designations", () => {
+  const fm = "11111111-1111-1111-1111-111111111111";
+
+  it("accepts an Other Heirs row", () => {
+    const r = beneficiaryDesignationSchema.safeParse({ tier: "primary", percentage: 100, otherHeirs: true });
+    expect(r.success).toBe(true);
+    expect(r.data?.otherHeirs).toBe(true);
+  });
+
+  it("accepts a family-member row that also carries otherHeirs: false", () => {
+    const r = beneficiaryDesignationSchema.safeParse({
+      tier: "primary", percentage: 100, familyMemberId: fm, otherHeirs: false,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects a row naming Other Heirs and a family member", () => {
+    const r = beneficiaryDesignationSchema.safeParse({
+      tier: "primary", percentage: 100, familyMemberId: fm, otherHeirs: true,
+    });
+    expect(r.success).toBe(false);
+    expect(r.error?.issues[0].message).toBe(
+      "Exactly one of familyMemberId, externalBeneficiaryId, entityIdRef, householdRole, or otherHeirs must be set.",
+    );
+  });
+
+  it("rejects two Other Heirs rows in one tier", () => {
+    const r = beneficiarySetSchema.safeParse([
+      { tier: "primary", percentage: 50, otherHeirs: true },
+      { tier: "primary", percentage: 50, otherHeirs: true },
+    ]);
+    expect(r.success).toBe(false);
+    expect(r.error?.issues.map((i) => i.message)).toContain("Duplicate beneficiary in primary tier.");
+  });
+});

@@ -233,10 +233,10 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
         key: "recipientKind",
         label: "Recipients",
         kind: "enum",
-        enumValues: ["family_member", "external_beneficiary", "entity", "spouse"],
+        enumValues: ["family_member", "external_beneficiary", "entity", "spouse", "other_heirs"],
         required: true,
         notes:
-          "The recipient reference is a DISCRIMINATED UNION keyed on this field, chosen implicitly by which dropdown group the advisor picks from (optgroups \"Household\" / \"Family\" / \"External\" / \"Entity\" in bequest-recipient-list.tsx) — there's no separate visible \"kind\" control. Meaning of each value: 'family_member' → recipientId is a family_members.id belonging to this client, EXCLUDING rows with role 'client' or 'spouse' (those two principals are only ever referenced via the 'spouse' kind below, never as a plain family_member). 'external_beneficiary' → recipientId is an external_beneficiaries.id for this client (e.g. a friend, charity, or other non-family payee). 'entity' → recipientId is an entities.id for this client — a business or trust used as a beneficiary. 'spouse' → recipientId MUST be null; refers to the GRANTOR'S spouse, i.e. the other household principal (client's will → the spouse; spouse's will → the client) — only offered when primary.spouseName is non-null. Every non-null recipientId is cross-referenced server-side against this client's own rows (400 if it doesn't belong to the client) — see verifyCrossRefs in src/lib/clients/wills-writes.ts.",
+          "The recipient reference is a DISCRIMINATED UNION keyed on this field, chosen implicitly by which dropdown group the advisor picks from (optgroups \"Household\" / \"Family\" / \"External\" / \"Entity\" in bequest-recipient-list.tsx) — there's no separate visible \"kind\" control. Meaning of each value: 'family_member' → recipientId is a family_members.id belonging to this client, EXCLUDING rows with role 'client' or 'spouse' (those two principals are only ever referenced via the 'spouse' kind below, never as a plain family_member). 'external_beneficiary' → recipientId is an external_beneficiaries.id for this client (e.g. a friend, charity, or other non-family payee). 'entity' → recipientId is an entities.id for this client — a business or trust used as a beneficiary. 'spouse' → recipientId MUST be null; refers to the GRANTOR'S spouse, i.e. the other household principal (client's will → the spouse; spouse's will → the client) — only offered when primary.spouseName is non-null. 'other_heirs' → recipientId MUST be null; the built-in Other Heirs (the same box the default order fills), offered under the \"Other\" option group for asset bequests only — set in the app; Claude can't set it yet. Every non-null recipientId is cross-referenced server-side against this client's own rows (400 if it doesn't belong to the client) — see verifyCrossRefs in src/lib/clients/wills-writes.ts.",
       },
       {
         key: "recipientId",
@@ -245,7 +245,7 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
         required: true,
         nullable: true,
         notes:
-          "Required and non-null for every recipientKind EXCEPT 'spouse', where it must be null (zod superRefine, not a plain .nullable() — sending a non-null id with recipientKind='spouse', or null with any other kind, is a 400). See recipientKind's notes for the full reference shape.",
+          "Required and non-null for every recipientKind EXCEPT 'spouse' and 'other_heirs', where it must be null (zod superRefine, not a plain .nullable() — sending a non-null id with recipientKind='spouse' or 'other_heirs', or null with any other kind, is a 400). See recipientKind's notes for the full reference shape.",
       },
       {
         key: "percentage",
@@ -289,10 +289,10 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
         key: "recipientKind",
         label: "Recipients",
         kind: "enum",
-        enumValues: ["family_member", "external_beneficiary", "entity", "spouse"],
+        enumValues: ["family_member", "external_beneficiary", "entity", "spouse", "other_heirs"],
         required: true,
         notes:
-          "Identical discriminated-union shape and rules as `will_bequest_recipients.recipientKind` — see that entity's notes for the full reference semantics (family_member excludes the client/spouse principal rows; spouse means the OTHER household principal and forces recipientId to null; ids are cross-referenced against this client's own rows).",
+          "Identical discriminated-union shape and rules as `will_bequest_recipients.recipientKind` — see that entity's notes for the full reference semantics (family_member excludes the client/spouse principal rows; spouse means the OTHER household principal and forces recipientId to null; other_heirs is the built-in Other Heirs and also forces recipientId to null; ids are cross-referenced against this client's own rows).",
       },
       {
         key: "recipientId",
@@ -301,7 +301,7 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
         required: true,
         nullable: true,
         notes:
-          "Required and non-null unless recipientKind='spouse', where it must be null. Same superRefine rule as will_bequest_recipients.recipientId.",
+          "Required and non-null unless recipientKind='spouse' or 'other_heirs', where it must be null. Same superRefine rule as will_bequest_recipients.recipientId.",
       },
       {
         key: "tier",

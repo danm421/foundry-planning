@@ -902,7 +902,7 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
         kind: "uuid",
         nullable: true,
         notes:
-          "Exactly one of familyMemberId / externalBeneficiaryId / entityIdRef / householdRole per row. Must belong to this client.",
+          "Exactly one of familyMemberId / externalBeneficiaryId / entityIdRef / householdRole / otherHeirs (true) per row. Must belong to this client.",
       },
       {
         key: "externalBeneficiaryId",
@@ -926,6 +926,13 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
         enumValues: ["client", "spouse"],
         nullable: true,
         notes: "Names the household principal. See familyMemberId — exactly one of the four.",
+      },
+      {
+        key: "otherHeirs",
+        label: "Beneficiary",
+        kind: "boolean",
+        nullable: true,
+        notes: "Names the built-in Other Heirs instead of a person. Set in the app; Claude can't set it yet.",
       },
       {
         key: "sortOrder",

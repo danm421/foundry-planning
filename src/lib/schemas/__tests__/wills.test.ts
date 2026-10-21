@@ -413,3 +413,34 @@ describe("residuary tier validation", () => {
     expect(r.success).toBe(false);
   });
 });
+
+describe("Other Heirs will recipients", () => {
+  const otherHeirs = { recipientKind: "other_heirs" as const, recipientId: null, percentage: 100, sortOrder: 0 };
+
+  it("accepts an Other Heirs bequest recipient with a null id", () => {
+    const r = willBequestSchema.safeParse({ ...validBequest, recipients: [otherHeirs] });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects an Other Heirs recipient with an id", () => {
+    const r = willBequestSchema.safeParse({ ...validBequest, recipients: [{ ...otherHeirs, recipientId: u("9") }] });
+    expect(r.success).toBe(false);
+    expect(r.error?.issues.map((i) => i.message)).toContain(
+      "recipientId must be null when the recipient is the co-client or Other Heirs",
+    );
+  });
+
+  it("rejects Other Heirs on a liability bequest", () => {
+    const r = willBequestSchema.safeParse({ ...validLiabilityBequest, recipients: [otherHeirs] });
+    expect(r.success).toBe(false);
+  });
+
+  it("accepts an Other Heirs residuary recipient with a null id", () => {
+    const r = willCreateSchema.safeParse({
+      grantor: "client",
+      bequests: [],
+      residuaryRecipients: [{ ...otherHeirs, tier: "primary" }],
+    });
+    expect(r.success).toBe(true);
+  });
+});

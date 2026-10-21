@@ -7,6 +7,7 @@ export type DesignationInput = {
   externalBeneficiaryId?: string;
   entityIdRef?: string | null;
   householdRole?: string | null;
+  otherHeirs?: boolean;
 };
 
 type Result = { ok: true } | { ok: false; errors: string[] };
@@ -39,7 +40,9 @@ export function validateBeneficiarySplit(ds: DesignationInput[]): Result {
             ? `entity:${d.entityIdRef}`
             : d.householdRole
               ? `role:${d.householdRole}`
-              : null;
+              : d.otherHeirs
+                ? "other_heirs"
+                : null;
       if (key === null) continue; // Zod layer enforces "exactly one" ref.
       if (seen.has(key)) {
         errors.push(`Duplicate beneficiary in ${tier} tier.`);

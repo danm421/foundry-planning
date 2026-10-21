@@ -210,6 +210,7 @@ async function insertBeneficiaryRows(
       externalBeneficiaryId: remapId(b.externalBeneficiaryId, ctx),
       entityIdRef: remapId(b.entityIdRef, ctx),
       householdRole: b.householdRole ?? null,
+      otherHeirs: b.otherHeirs === true,
       percentage: b.percentage,
       sortOrder: b.sortOrder ?? idx,
     }),

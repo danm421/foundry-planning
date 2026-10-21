@@ -11,23 +11,24 @@ export const willBequestRecipientSchema = z
       "external_beneficiary",
       "entity",
       "spouse",
+      "other_heirs",
     ]),
     recipientId: uuidSchema.nullable(),
     percentage: z.number().gt(0).lte(100),
     sortOrder: z.number().int().min(0),
   })
   .superRefine((r, ctx) => {
-    const isSpouse = r.recipientKind === "spouse";
-    if (isSpouse && r.recipientId !== null) {
+    const nullIdKind = r.recipientKind === "spouse" || r.recipientKind === "other_heirs";
+    if (nullIdKind && r.recipientId !== null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "recipientId must be null when the recipient is the co-client",
+        message: "recipientId must be null when the recipient is the co-client or Other Heirs",
       });
     }
-    if (!isSpouse && r.recipientId === null) {
+    if (!nullIdKind && r.recipientId === null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "recipientId is required unless the recipient is the co-client",
+        message: "recipientId is required unless the recipient is the co-client or Other Heirs",
       });
     }
   });
@@ -128,6 +129,7 @@ export const willResiduaryRecipientSchema = z
       "external_beneficiary",
       "entity",
       "spouse",
+      "other_heirs",
     ]),
     recipientId: uuidSchema.nullable(),
     tier: z.enum(["primary", "contingent"]).default("primary"),
@@ -135,17 +137,17 @@ export const willResiduaryRecipientSchema = z
     sortOrder: z.number().int().min(0),
   })
   .superRefine((r, ctx) => {
-    const isSpouse = r.recipientKind === "spouse";
-    if (isSpouse && r.recipientId !== null) {
+    const nullIdKind = r.recipientKind === "spouse" || r.recipientKind === "other_heirs";
+    if (nullIdKind && r.recipientId !== null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "recipientId must be null when the recipient is the co-client",
+        message: "recipientId must be null when the recipient is the co-client or Other Heirs",
       });
     }
-    if (!isSpouse && r.recipientId === null) {
+    if (!nullIdKind && r.recipientId === null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "recipientId is required unless the recipient is the co-client",
+        message: "recipientId is required unless the recipient is the co-client or Other Heirs",
       });
     }
   });

@@ -95,3 +95,29 @@ describe("PUT trust beneficiaries — entityIdRef tenancy", () => {
     expect(assertEntitiesInClient).toHaveBeenCalledWith(CLIENT, [FOREIGN_ENTITY], undefined);
   });
 });
+
+describe("PUT trust beneficiaries — Other Heirs", () => {
+  it("writes otherHeirs on an Other Heirs trust beneficiary", async () => {
+    const insertedValues: unknown[] = [];
+    const tx = {
+      delete: () => ({ where: async () => undefined }),
+      insert: () => ({
+        values: (v: unknown) => {
+          insertedValues.push(v);
+          return { returning: async () => [] };
+        },
+      }),
+    };
+    transaction.mockImplementation((fn: (t: unknown) => unknown) => fn(tx));
+
+    const res = await PUT(
+      req([{ tier: "remainder", otherHeirs: true, percentage: 100, sortOrder: 0 }]),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    expect(insertedValues).toEqual([
+      [expect.objectContaining({ otherHeirs: true, familyMemberId: null, externalBeneficiaryId: null, entityIdRef: null, householdRole: null })],
+    ]);
+  });
+});

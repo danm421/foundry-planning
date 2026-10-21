@@ -35,6 +35,8 @@ export const beneficiaryDesignationSchema = z
     externalBeneficiaryId: z.string().regex(uuidRegex, "Invalid UUID format").nullable().optional(),
     entityIdRef: z.string().uuid().nullable().optional(),
     householdRole: z.enum(["client", "spouse"]).nullable().optional(),
+    // Names the built-in Other Heirs. Only `true` counts as a recipient.
+    otherHeirs: z.boolean().nullable().optional(),
     sortOrder: z.number().int().nonnegative().optional().default(0),
     distributionForm: z.enum(["in_trust", "outright"]).optional(),
   })
@@ -42,11 +44,11 @@ export const beneficiaryDesignationSchema = z
     (d) => {
       const sources = [d.familyMemberId, d.externalBeneficiaryId, d.entityIdRef, d.householdRole];
       const nonNull = sources.filter((s) => s != null && s !== "");
-      return nonNull.length === 1;
+      return nonNull.length + (d.otherHeirs === true ? 1 : 0) === 1;
     },
     {
       message:
-        "Exactly one of familyMemberId, externalBeneficiaryId, entityIdRef, or householdRole must be set.",
+        "Exactly one of familyMemberId, externalBeneficiaryId, entityIdRef, householdRole, or otherHeirs must be set.",
     },
   )
   .transform((d) => ({
@@ -65,6 +67,7 @@ export const beneficiarySetSchema = z
       externalBeneficiaryId: d.externalBeneficiaryId ?? undefined,
       entityIdRef: d.entityIdRef,
       householdRole: d.householdRole,
+      otherHeirs: d.otherHeirs === true,
     }));
     const r = validateBeneficiarySplit(inputs);
     if (!r.ok) {
