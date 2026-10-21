@@ -420,3 +420,45 @@ describe("BequestDialog", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 });
+
+describe("BequestDialog — Other Heirs", () => {
+  it("saves a bequest to Other Heirs", async () => {
+    const onSave = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <BequestDialog
+        open
+        onOpenChange={() => {}}
+        grantor="client"
+        primary={primary}
+        accounts={[acct]}
+        familyMembers={[fm]}
+        externalBeneficiaries={[ext]}
+        entities={[ent]}
+        editing={{
+          kind: "asset",
+          name: "ignored",
+          assetMode: "specific",
+          accountId: "a1",
+          entityId: null,
+          percentage: 100,
+          condition: "always",
+          sortOrder: 0,
+          recipients: [
+            { recipientKind: "family_member", recipientId: "f1", percentage: 100, sortOrder: 0 },
+          ],
+        }}
+        onSave={onSave}
+      />,
+    );
+    await user.selectOptions(screen.getByRole("combobox", { name: /Recipient 1/i }), "other_heirs");
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toBeEnabled();
+    await user.click(save);
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipients: [expect.objectContaining({ recipientKind: "other_heirs", recipientId: null, percentage: 100 })],
+      }),
+    );
+  });
+});

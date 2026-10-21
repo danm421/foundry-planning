@@ -8,6 +8,7 @@ import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 import { useClientAccess } from "@/components/client-access-provider";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
+import { OTHER_HEIRS_LABEL } from "@/engine/other-heirs";
 import { isEditFocus, type EditorFocus } from "@/lib/scenario/change-editor-target";
 import { useFocusDelete } from "@/hooks/use-focus-delete";
 // Local copy — `BUSINESS_ENTITY_TYPES` was removed from `in-estate-weights.ts`
@@ -28,7 +29,8 @@ export type WillRecipientKind =
   | "family_member"
   | "external_beneficiary"
   | "entity"
-  | "spouse";
+  | "spouse"
+  | "other_heirs";
 
 export interface WillsPanelRecipient {
   id?: string;
@@ -188,6 +190,7 @@ function recipientLabel(
     const e = exts.find((x) => x.id === r.recipientId);
     return e ? e.name : "(external beneficiary)";
   }
+  if (r.recipientKind === "other_heirs") return OTHER_HEIRS_LABEL;
   const en = ents.find((x) => x.id === r.recipientId);
   return en ? en.name : "(entity)";
 }

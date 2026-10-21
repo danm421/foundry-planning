@@ -259,7 +259,7 @@ const matchingRecipientRows = (
   willId: string,
   willGrantor: "client" | "spouse",
   matcher: (
-    kind: "family_member" | "external_beneficiary" | "entity" | "spouse",
+    kind: WillBequest["recipients"][number]["recipientKind"],
     id: string | null,
   ) => boolean,
   accounts: Account[],
@@ -289,7 +289,7 @@ const matchingRecipientRows = (
 export function collectBequestsForRecipient(
   tree: ClientData,
   matcher: (
-    kind: "family_member" | "external_beneficiary" | "entity" | "spouse",
+    kind: WillBequest["recipients"][number]["recipientKind"],
     id: string | null,
   ) => boolean,
 ): BequestSummaryRow[] {

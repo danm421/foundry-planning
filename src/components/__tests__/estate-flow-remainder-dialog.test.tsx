@@ -157,4 +157,45 @@ describe("EstateFlowRemainderDialog", () => {
     expect(clientWill!.id).toBe("will-client");
     expect(clientWill!.residuaryRecipients).toEqual([]);
   });
+
+  it("applies a remaining estate to Other Heirs", async () => {
+    const user = userEvent.setup();
+    const onApplyWill = vi.fn();
+    const clientData = {
+      wills: [
+        {
+          id: "will-client",
+          grantor: "client",
+          bequests: [],
+          residuaryRecipients: [
+            { recipientKind: "family_member", recipientId: "fm-1", tier: "primary", percentage: 100, sortOrder: 0 },
+          ],
+        },
+      ],
+      familyMembers,
+      externalBeneficiaries: [],
+      entities: [],
+    } as unknown as ClientData;
+
+    render(
+      <EstateFlowRemainderDialog
+        clientData={clientData}
+        isMarried={false}
+        ownerNames={{ clientName: "Pat Doe", spouseName: null }}
+        onApplyWill={onApplyWill}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const select = screen.getByRole("combobox", { name: /Client primary remainder recipient/i });
+    await user.selectOptions(select, "other_heirs");
+    const apply = screen.getByRole("button", { name: "Apply" });
+    expect(apply).toBeEnabled();
+    await user.click(apply);
+
+    const wills = onApplyWill.mock.calls[0][0] as Will[];
+    expect(wills.find((w) => w.grantor === "client")!.residuaryRecipients).toEqual([
+      expect.objectContaining({ recipientKind: "other_heirs", recipientId: null, tier: "primary", percentage: 100 }),
+    ]);
+  });
 });

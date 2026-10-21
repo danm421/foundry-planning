@@ -4,6 +4,7 @@ import { useState } from "react";
 import { fieldLabelClassName } from "./input-styles";
 import { redistribute, splitEvenly } from "./auto-split-percentages";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
+import { OTHER_HEIRS_VALUE, OtherHeirsOptgroup } from "./other-heirs-option";
 import type {
   WillGrantor,
   WillsPanelEntity,
@@ -21,8 +22,8 @@ export interface BequestRecipient {
 }
 
 interface BequestRecipientListProps {
-  /** "asset" / "residuary" → all four kinds. "debt" → family + entity only
-   *  (engine drops the others as warnings). */
+  /** "asset" / "residuary" → every kind, Other Heirs included. "debt" →
+   *  family + entity only (engine drops the others as warnings). */
   mode: "asset" | "debt" | "residuary";
   /** Whose will this list belongs to. Controls which household principal
    *  appears under the "Household" optgroup — the grantor never lists
@@ -49,6 +50,7 @@ const SPOUSE_VALUE = "spouse";
 
 function rowToValue(r: BequestRecipient): string {
   if (r.recipientKind === "spouse") return SPOUSE_VALUE;
+  if (r.recipientKind === "other_heirs") return OTHER_HEIRS_VALUE;
   if (r.recipientId == null) return "";
   if (r.recipientKind === "family_member") return `fm:${r.recipientId}`;
   if (r.recipientKind === "external_beneficiary") return `ext:${r.recipientId}`;
@@ -58,6 +60,7 @@ function rowToValue(r: BequestRecipient): string {
 function valueToFields(v: string): { recipientKind: WillRecipientKind; recipientId: string | null } | null {
   if (v === "") return null;
   if (v === SPOUSE_VALUE) return { recipientKind: "spouse", recipientId: null };
+  if (v === OTHER_HEIRS_VALUE) return { recipientKind: "other_heirs", recipientId: null };
   if (v.startsWith("fm:")) return { recipientKind: "family_member", recipientId: v.slice(3) };
   if (v.startsWith("ext:")) return { recipientKind: "external_beneficiary", recipientId: v.slice(4) };
   if (v.startsWith("ent:")) return { recipientKind: "entity", recipientId: v.slice(4) };
@@ -213,6 +216,7 @@ export default function BequestRecipientList({
                   ))}
                 </optgroup>
               )}
+              {showExternal && <OtherHeirsOptgroup />}
             </select>
             <input
               type="number"

@@ -55,12 +55,12 @@ function rowsToRecipients(
 }
 
 /** A tier is valid when it is empty, or its percentages sum to 100 and every
- *  row resolves to a recipient (spouse rows carry a null id by design). */
+ *  row resolves to a recipient (spouse and Other Heirs rows carry a null id by design). */
 function tierValid(rows: WillRecipientRow[]): boolean {
   if (rows.length === 0) return true;
   const sum = rows.reduce((s, r) => s + r.percentage, 0);
   const idsOk = rows.every(
-    (r) => r.recipientKind === "spouse" || r.recipientId != null,
+    (r) => r.recipientKind === "spouse" || r.recipientKind === "other_heirs" || r.recipientId != null,
   );
   // Tolerance matches the server-side residuarySumRefiner in
   // src/lib/schemas/wills.ts (rejects when Math.abs(sum - 100) > 0.01) so the

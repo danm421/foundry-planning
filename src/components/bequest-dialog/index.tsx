@@ -173,7 +173,7 @@ export default function BequestDialog({
 
   const recipientSum = draft.recipients.reduce((s, x) => s + x.percentage, 0);
   const recipientsHaveIds = draft.recipients.every(
-    (r) => r.recipientKind === "spouse" || r.recipientId != null,
+    (r) => r.recipientKind === "spouse" || r.recipientKind === "other_heirs" || r.recipientId != null,
   );
 
   // Asset: recipients must sum exactly to 100. Debt: 0 < sum ≤ 100, remainder

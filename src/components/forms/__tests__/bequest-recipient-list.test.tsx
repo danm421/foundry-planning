@@ -49,7 +49,7 @@ describe("BequestRecipientList — asset mode", () => {
     const optgroups = Array.from(select.querySelectorAll("optgroup")).map(
       (g) => (g as HTMLOptGroupElement).label,
     );
-    expect(optgroups).toEqual(["Household", "Family", "External", "Entity"]);
+    expect(optgroups).toEqual(["Household", "Family", "External", "Entity", "Other"]);
 
     const optionLabels = Array.from(select.querySelectorAll("option")).map(
       (o) => (o as HTMLOptionElement).textContent ?? "",
@@ -300,5 +300,51 @@ describe("BequestRecipientList — sum indicator", () => {
     );
     const sumNode = screen.getByText(/sum: 100\.00%/);
     expect(sumNode.className).toMatch(/emerald/);
+  });
+});
+
+describe("BequestRecipientList — Other Heirs", () => {
+  const renderList = (mode: "asset" | "debt" | "residuary", rows: BequestRecipient[], onChange = vi.fn()) => {
+    render(
+      <BequestRecipientList
+        mode={mode}
+        grantor="client"
+        rows={rows}
+        onChange={onChange}
+        primary={primary}
+        familyMembers={familyMembers}
+        externalBeneficiaries={externals}
+        entities={entities}
+      />,
+    );
+    return screen.getByRole("combobox", { name: /Recipient 1/i }) as HTMLSelectElement;
+  };
+  const groupsOf = (select: HTMLSelectElement) =>
+    Array.from(select.querySelectorAll("optgroup")).map((g) => (g as HTMLOptGroupElement).label);
+  const spouseRow: BequestRecipient = { recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 };
+
+  it("offers Other Heirs in asset and residuary mode, not in debt mode", () => {
+    const asset = renderList("asset", [spouseRow]);
+    expect(groupsOf(asset).at(-1)).toBe("Other");
+    asset.closest("div")!.parentElement!.remove();
+    const residuary = renderList("residuary", [spouseRow]);
+    expect(groupsOf(residuary).at(-1)).toBe("Other");
+    residuary.closest("div")!.parentElement!.remove();
+    const debt = renderList("debt", [{ recipientKind: "family_member", recipientId: "f1", percentage: 100, sortOrder: 0 }]);
+    expect(groupsOf(debt)).not.toContain("Other");
+  });
+
+  it("emits other_heirs with a null id", () => {
+    const onChange = vi.fn();
+    const select = renderList("asset", [spouseRow], onChange);
+    fireEvent.change(select, { target: { value: "other_heirs" } });
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ recipientKind: "other_heirs", recipientId: null }),
+    ]);
+  });
+
+  it("shows a stored Other Heirs recipient as picked", () => {
+    const select = renderList("residuary", [{ recipientKind: "other_heirs", recipientId: null, percentage: 100, sortOrder: 0 }]);
+    expect(select.value).toBe("other_heirs");
   });
 });

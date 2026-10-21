@@ -7,11 +7,12 @@ import {
   selectBaseClassName,
 } from "@/components/forms/input-styles";
 import { redistribute, splitEvenly } from "@/components/forms/auto-split-percentages";
+import { OTHER_HEIRS_VALUE, OtherHeirsOptgroup } from "@/components/forms/other-heirs-option";
 
 /** Editable row for a will bequest's recipients (and the spouse cascade). */
 export interface WillRecipientRow {
   key: string;
-  recipientKind: "family_member" | "external_beneficiary" | "entity" | "spouse";
+  recipientKind: "family_member" | "external_beneficiary" | "entity" | "spouse" | "other_heirs";
   recipientId: string | null;
   percentage: number;
   sortOrder: number;
@@ -49,6 +50,7 @@ function clampPct(v: number): number {
 
 function rowToSelectValue(row: WillRecipientRow): string {
   if (row.recipientKind === "spouse") return "spouse";
+  if (row.recipientKind === "other_heirs") return OTHER_HEIRS_VALUE;
   if (row.recipientKind === "entity") return `ent:${row.recipientId ?? ""}`;
   if (row.recipientKind === "external_beneficiary") return `ext:${row.recipientId ?? ""}`;
   if (row.recipientKind === "family_member") return `fm:${row.recipientId ?? ""}`;
@@ -59,6 +61,7 @@ function selectValueToPatch(
   value: string,
 ): Pick<WillRecipientRow, "recipientKind" | "recipientId"> {
   if (value === "spouse") return { recipientKind: "spouse", recipientId: null };
+  if (value === OTHER_HEIRS_VALUE) return { recipientKind: "other_heirs", recipientId: null };
   if (value.startsWith("fm:")) return { recipientKind: "family_member", recipientId: value.slice(3) };
   if (value.startsWith("ext:")) return { recipientKind: "external_beneficiary", recipientId: value.slice(4) };
   if (value.startsWith("ent:")) return { recipientKind: "entity", recipientId: value.slice(4) };
@@ -199,6 +202,7 @@ export default function WillRecipientList({
                   ))}
                 </optgroup>
               )}
+              <OtherHeirsOptgroup />
             </select>
             <input
               type="number"

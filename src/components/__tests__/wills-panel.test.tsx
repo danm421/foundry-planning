@@ -389,3 +389,36 @@ describe("WillsPanel — debt bequests in the unified list", () => {
     expect(recipientSelects.length).toBeGreaterThan(0);
   });
 });
+
+describe("WillsPanel — Other Heirs", () => {
+  it('labels an Other Heirs recipient "Other Heirs"', () => {
+    render(
+      <WillsPanel
+        {...baseProps}
+        initialWills={[
+          {
+            id: u("w1"),
+            grantor: "client",
+            bequests: [
+              {
+                kind: "asset" as const,
+                id: u("b1"),
+                name: "Brokerage to Other Heirs",
+                assetMode: "specific" as const,
+                accountId: u("a1"),
+                percentage: 100,
+                condition: "always" as const,
+                sortOrder: 0,
+                recipients: [
+                  { id: u("r1"), recipientKind: "other_heirs" as const, recipientId: null, percentage: 100, sortOrder: 0 },
+                ],
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText(/Other Heirs \(100%\)/)).toBeDefined();
+    expect(screen.queryByText(/\(entity\)/)).toBeNull();
+  });
+});
