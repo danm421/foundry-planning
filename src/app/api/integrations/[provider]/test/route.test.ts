@@ -18,6 +18,7 @@ vi.mock("@/lib/rate-limit", () => ({
 import { POST } from "./route";
 import { auth } from "@clerk/nextjs/server";
 import { testAddeparConnection } from "@/lib/integrations/providers/addepar/client";
+import { CredentialsRejected } from "@/lib/integrations/errors";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockAuth = auth as any;
@@ -62,6 +63,19 @@ describe("[provider] test", () => {
     mockTestConnection.mockRejectedValueOnce(new Error("401"));
     const res = await POST(req(good), ctx);
     expect(res.status).toBe(400);
+  });
+
+  it("tells the admin to check the key and secret when Addepar rejects them", async () => {
+    mockTestConnection.mockRejectedValueOnce(new CredentialsRejected("Check the API key, secret and firm ID."));
+    const res = await POST(req(good), ctx);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false, error: "Check the API key, secret and firm ID." });
+  });
+
+  it("keeps a non-credential failure's internals out of the message", async () => {
+    mockTestConnection.mockRejectedValueOnce(new Error("Addepar /v1/groups failed: 500"));
+    const res = await POST(req(good), ctx);
+    expect((await res.json()).error).not.toMatch(/500/);
   });
 
   it("404s when the provider flag is off", async () => {

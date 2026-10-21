@@ -26,6 +26,7 @@ import { auth } from "@clerk/nextjs/server";
 import { testAddeparConnection } from "@/lib/integrations/providers/addepar/client";
 import { upsertByokConnection } from "@/lib/integrations/connections";
 import { recordAudit } from "@/lib/audit";
+import { CredentialsRejected } from "@/lib/integrations/errors";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockAuth = auth as any;
@@ -69,6 +70,19 @@ it("returns 400 when the credential test fails", async () => {
   const res = await POST(req({ ...good, attestation: true }), ctx);
   expect(res.status).toBe(400);
   expect(upsertByokConnection).not.toHaveBeenCalled();
+});
+
+it("tells the admin to check the key and secret when Addepar rejects them", async () => {
+  mockTestConnection.mockRejectedValueOnce(new CredentialsRejected("Check the API key, secret and firm ID."));
+  const res = await POST(req({ ...good, attestation: true }), ctx);
+  expect(res.status).toBe(400);
+  expect(await res.json()).toEqual({ error: "Check the API key, secret and firm ID." });
+});
+
+it("keeps a non-credential failure's internals out of the message", async () => {
+  mockTestConnection.mockRejectedValueOnce(new Error("Addepar /v1/groups failed: 500"));
+  const res = await POST(req({ ...good, attestation: true }), ctx);
+  expect((await res.json()).error).not.toMatch(/500/);
 });
 
 it("validates credentials, stores them, audits, and 200s", async () => {

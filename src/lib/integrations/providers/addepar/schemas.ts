@@ -1,24 +1,35 @@
 // src/lib/integrations/providers/addepar/schemas.ts
+//
+// Reply shapes from developers.addepar.com. Addepar speaks JSON:API; only the
+// fields Foundry reads are parsed.
 import { z } from "zod";
 
-export const addeparHouseholdSchema = z.object({ id: z.string(), name: z.string() });
-
-export const addeparAccountSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  registrationType: z.string().default(""),
-  custodian: z.string().nullish(),
-  accountNumber: z.string().nullish(),
-  value: z.number().nullish(),
-  costBasis: z.number().nullish(),
+/** A page of GET /v1/groups (Groups; Pagination). `links` is absent on some replies. */
+export const addeparGroupsPageSchema = z.object({
+  data: z.array(z.object({ id: z.string(), attributes: z.object({ name: z.string() }) })),
+  links: z.object({ next: z.string().nullable() }).optional(),
 });
 
-export const addeparPositionSchema = z.object({
-  ticker: z.string().nullish(),
-  cusip: z.string().nullish(),
-  description: z.string().nullish(),
-  units: z.number().nullish(),
-  price: z.number().nullish(),
-  marketValue: z.number().nullish(),
-  costBasis: z.number().nullish(),
+/** One row of a Portfolio Query tree: a grouping value with its column values. */
+export type PortfolioNode = {
+  entity_id?: number | null;
+  name: string;
+  grouping?: string;
+  columns?: Record<string, unknown>;
+  children?: PortfolioNode[];
+};
+
+const portfolioNodeSchema: z.ZodType<PortfolioNode> = z.lazy(() =>
+  z.object({
+    entity_id: z.number().nullish(),
+    name: z.string(),
+    grouping: z.string().optional(),
+    columns: z.record(z.string(), z.unknown()).optional(),
+    children: z.array(portfolioNodeSchema).optional(),
+  }),
+);
+
+/** POST /v1/portfolio/query reply (Portfolio → Query). */
+export const portfolioQueryReplySchema = z.object({
+  data: z.object({ attributes: z.object({ total: portfolioNodeSchema }) }),
 });

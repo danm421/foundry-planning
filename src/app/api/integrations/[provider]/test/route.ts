@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
 import { checkIntegrationOauthLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
+import { CredentialsRejected } from "@/lib/integrations/errors";
 import { testAddeparConnection } from "@/lib/integrations/providers/addepar/client";
 import { encodeAddeparSecret } from "@/lib/integrations/providers/addepar/credentials";
 import { verifyAzureConnection } from "@/lib/ai/verify-connection";
@@ -73,8 +74,9 @@ export async function POST(
       await testAddeparConnection(
         buildAddeparTestContext({ firmId, providerId: provider.id, apiBase, addeparFirmId, secretBlob }),
       );
-    } catch {
-      return NextResponse.json({ ok: false, error: "Could not reach Addepar." }, { status: 400 });
+    } catch (err) {
+      const error = err instanceof CredentialsRejected ? err.message : "Could not reach Addepar.";
+      return NextResponse.json({ ok: false, error }, { status: 400 });
     }
 
     return NextResponse.json({ ok: true });

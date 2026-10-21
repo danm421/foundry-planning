@@ -4,7 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import { requireOrgAdminOrOwner, requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { generatePkce, generateState } from "@/lib/integrations/pkce";
 import { createOauthState, upsertByokConnection } from "@/lib/integrations/connections";
-import { ProviderNotConfigured } from "@/lib/integrations/errors";
+import { CredentialsRejected, ProviderNotConfigured } from "@/lib/integrations/errors";
 import { checkIntegrationOauthLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { encodeAddeparSecret, encodeAddeparConfig } from "@/lib/integrations/providers/addepar/credentials";
 import { testAddeparConnection } from "@/lib/integrations/providers/addepar/client";
@@ -169,11 +169,10 @@ export async function POST(
       await testAddeparConnection(
         buildAddeparTestContext({ firmId, providerId: provider.id, apiBase, addeparFirmId, secretBlob }),
       );
-    } catch {
-      return NextResponse.json(
-        { error: "Could not connect to Addepar with those credentials." },
-        { status: 400 },
-      );
+    } catch (err) {
+      const error =
+        err instanceof CredentialsRejected ? err.message : "Could not connect to Addepar with those credentials.";
+      return NextResponse.json({ error }, { status: 400 });
     }
 
     await upsertByokConnection({ firmId, providerId: provider.id, secretBlob, configBlob, userId });
