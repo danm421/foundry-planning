@@ -1,4 +1,5 @@
 import type { BeneficiaryRef, EntitySummary } from "@/engine/types";
+import { OTHER_HEIRS_LABEL } from "@/engine/other-heirs";
 
 export interface TerminationDeathYears {
   client?: number;
@@ -175,6 +176,7 @@ export function distributeAtTermination(
 }
 
 function labelFor(d: BeneficiaryRef): string {
+  if (d.otherHeirs) return OTHER_HEIRS_LABEL;
   if (d.familyMemberId) return `Family member ${d.familyMemberId}`;
   if (d.externalBeneficiaryId)
     return `External beneficiary ${d.externalBeneficiaryId}`;

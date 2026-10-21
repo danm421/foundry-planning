@@ -136,6 +136,41 @@ describe("applyTrustAnnualPass", () => {
     expect(grossRouted).toBeCloseTo(90_000, 0);
   });
 
+  it("taxes DNI paid to Other Heirs like DNI paid to an outside individual", () => {
+    const run = (incomeBeneficiaries: typeof SLAT.incomeBeneficiaries) =>
+      applyTrustAnnualPass({
+        year: 2026,
+        nonGrantorTrusts: [
+          {
+            ...SLAT,
+            distributionPolicy: {
+              ...SLAT.distributionPolicy,
+              beneficiaryKind: "non_household",
+              beneficiaryFamilyMemberId: null,
+              beneficiaryExternalId: null,
+            },
+            incomeBeneficiaries,
+          },
+        ],
+        yearRealizations: [
+          { accountId: "a1", ownerEntityId: "e1", ordinary: 60_000, dividends: 20_000, taxExempt: 10_000, capGains: 0 },
+        ],
+        assetTransactionGains: [],
+        trustLiquidity: new Map([["e1", { cash: 100_000, taxableBrokerage: 500_000, retirementInRmdPhase: 0 }]]),
+        trustIncomeBrackets: trustIncome2026,
+        trustCapGainsBrackets: trustCapGains2026,
+        niitRate: 0.038,
+        niitThreshold: 16_250,
+        flatStateRate: 0,
+        outOfHouseholdRate: 0.37,
+      });
+    const toHeirs = run([{ otherHeirs: true, percentage: 100 }]);
+    const toOutsider = run([{ externalBeneficiaryId: "ext-friend", percentage: 100 }]);
+    expect(toOutsider.estimatedBeneficiaryTax).toBeCloseTo(29_600, 0);
+    expect(toHeirs.estimatedBeneficiaryTax).toBeCloseTo(toOutsider.estimatedBeneficiaryTax, 6);
+    expect(toHeirs.householdIncomeDelta).toEqual(toOutsider.householdIncomeDelta);
+  });
+
   it("propagates warnings from sub-modules", () => {
     const r = applyTrustAnnualPass({
       year: 2026,

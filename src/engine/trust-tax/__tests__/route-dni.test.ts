@@ -24,6 +24,19 @@ describe("routeDni", () => {
     expect(result.toHousehold).toBe(0);
   });
 
+  it("routes an Other Heirs income share out of the household", () => {
+    const result = routeDni(
+      [
+        { otherHeirs: true, percentage: 40 },
+        { externalBeneficiaryId: "ext-charity", percentage: 60 },
+      ],
+      1_000,
+    );
+    expect(result.toOtherHeirs).toBe(400);
+    expect(result.toHousehold).toBe(0);
+    expect(result.toExternal).toEqual({ "ext-charity": 600 });
+  });
+
   it("routes household-role income beneficiaries back to household tax pass", () => {
     const trust: EntitySummary = {
       id: "t1",

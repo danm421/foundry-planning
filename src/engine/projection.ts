@@ -764,7 +764,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         (b.familyMemberId != null && familyMemberMap.has(b.familyMemberId))
     );
     if (hasHousehold) return "household";
-    const hasExternal = list.some((b) => b.externalBeneficiaryId != null);
+    const hasExternal = list.some((b) => b.externalBeneficiaryId != null || b.otherHeirs === true);
     if (hasExternal) return "non_household";
     return null;
   };

@@ -94,7 +94,8 @@ export function applyTrustAnnualPass(
 
     const nonHouseholdTotal =
       Object.values(routing.toFamilyMember).reduce((s, v) => s + v, 0) +
-      Object.values(routing.toExternal).reduce((s, v) => s + v, 0);
+      Object.values(routing.toExternal).reduce((s, v) => s + v, 0) +
+      routing.toOtherHeirs;
     // Distributed tax-exempt interest retains its exempt character in the
     // beneficiary's hands (IRC §652(b)/§662(b)), so tax only the taxable slice
     // of the routed DNI. Routing itself stays gross (reporting needs distributed

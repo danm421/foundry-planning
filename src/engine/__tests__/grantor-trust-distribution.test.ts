@@ -208,6 +208,21 @@ describe("grantor trust distribution pass", () => {
     expect(delta).toBeCloseTo(0, 0);
   });
 
+  it("distributes a grantor trust whose only income beneficiary is Other Heirs", () => {
+    const run = (incomeBeneficiaries: EntitySummary["incomeBeneficiaries"]) =>
+      runProjection(mkData({ entity: { distributionMode: "fixed", distributionAmount: 15_000, incomeBeneficiaries } }));
+    const toHeirs = run([{ otherHeirs: true, percentage: 100 }]);
+    const toOutsider = run([{ externalBeneficiaryId: "ext-charity", percentage: 100 }]);
+
+    expect(toHeirs[0].accountLedgers["trust-checking"].endingValue).toBeCloseTo(35_000, 0);
+    for (let i = 0; i < toOutsider.length; i++) {
+      expect(toHeirs[i].accountLedgers["trust-checking"].endingValue)
+        .toBeCloseTo(toOutsider[i].accountLedgers["trust-checking"].endingValue, 6);
+      expect(toHeirs[i].accountLedgers["hh-checking"].endingValue)
+        .toBeCloseTo(toOutsider[i].accountLedgers["hh-checking"].endingValue, 6);
+    }
+  });
+
   it("pct_liquid mode: distribution proportional to trust liquid assets", () => {
     // Trust checking: 50_000 | Trust brokerage: 200_000 at year start (no growth in y0 check)
     // 5% pct_liquid → target = 0.05 * (50_000 + 200_000 * 1.06) = 0.05 * 262_000 = 13_100

@@ -124,6 +124,19 @@ describe("distributeAtTermination", () => {
     expect(sum).toBeCloseTo(result.totalDistributed, 2);
   });
 
+  it("labels an Other Heirs remainder 'Other Heirs'", () => {
+    const designations: BeneficiaryRef[] = [
+      { id: "b1", tier: "primary", percentage: 100, otherHeirs: true, sortOrder: 0 },
+    ];
+    const result = distributeAtTermination(
+      { trust, currentYear: 2031, designations },
+      100_000,
+    );
+    expect(result.toBeneficiaries).toHaveLength(1);
+    expect(result.toBeneficiaries[0].recipientLabel).toBe("Other Heirs");
+    expect(result.toBeneficiaries[0].amount).toBeCloseTo(100_000, 2);
+  });
+
   it("ignores contingent designations", () => {
     const designations: BeneficiaryRef[] = [
       { id: "b1", tier: "primary", percentage: 100, familyMemberId: "fm-c1", sortOrder: 0 },
