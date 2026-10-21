@@ -264,6 +264,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
   "planSettings": {
     "capitalLossCarryforwardLongTerm": null,
     "capitalLossCarryforwardShortTerm": null,
+    "dataYear": 2026,
     "defaultGrowthBusiness": 0.05,
     "defaultGrowthCash": 0.02,
     "defaultGrowthLifeInsurance": 0.03,

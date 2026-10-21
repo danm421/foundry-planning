@@ -360,6 +360,8 @@ describe("applyGiftsToClientData — bundled liability transfer", () => {
       recipientEntityId: "trust-1",
       parentGiftId: "g2",
       eventKind: "outright",
+      // A draft that never was a row: nothing folded it.
+      enteredAsHistory: false,
     });
   });
 
@@ -560,5 +562,29 @@ describe("addGift / updateGift / removeGift", () => {
 
   it("removeGift drops the gift with the matching id", () => {
     expect(removeGift([cashGift, assetGift], "g1")).toEqual([assetGift]);
+  });
+});
+
+// "Start the plan next year": a gift entered as history is already in the
+// stored owners. The Estate Flow page and scenario overlays rebuild gifts from
+// drafts, so the flag must ride on the draft and back onto the events.
+describe("the entered-as-history flag survives the draft round trip", () => {
+  it("carries the row's flag onto the draft", () => {
+    expect(giftRowToDraft(assetRow({ enteredAsHistory: true }))).toMatchObject({ enteredAsHistory: true });
+    expect(giftRowToDraft(cashRow({ enteredAsHistory: false }))).toMatchObject({ enteredAsHistory: false });
+  });
+
+  it("stamps it on the events a draft materializes — false for a draft that never was a row", () => {
+    const data = {
+      gifts: [], giftEvents: [], liabilities: [{ id: "l1", linkedPropertyId: "acc-1" }],
+      planSettings: { planStartYear: 2027, planEndYear: 2030, inflationRate: 0 },
+    } as unknown as ClientData;
+    const history = giftRowToDraft(assetRow({ enteredAsHistory: true }))!;
+    const fresh = { ...giftRowToDraft(cashRow({}))!, id: "new" };
+    const out = applyGiftsToClientData(data, [history, fresh], 0);
+    expect(out.giftEvents.filter((e) => e.kind === "asset" || e.kind === "liability").map((e) => e.enteredAsHistory))
+      .toEqual([true, true]);
+    expect(out.giftEvents.find((e) => e.kind === "cash")?.enteredAsHistory).toBe(false);
+    expect(out.gifts?.[0].enteredAsHistory).toBe(false);
   });
 });

@@ -41,6 +41,10 @@ export type EstateFlowGift =
       crummey: boolean;
       /** Non-outright gift kind. Always populated by mappers (DB default is "outright"). */
       eventKind?: GiftEventKind;
+      /** Carried from the row: saved dated before its planning year, so its
+       *  ownership move is already in the stored owners. Absent on a draft that
+       *  was never a row — a scenario or sandbox add, which nothing folded. */
+      enteredAsHistory?: boolean;
       /** A QCD: paid straight from this IRA to a public charity (the recipient).
        *  Present only on QCD gifts; lives in `ClientData.qcds`, never in
        *  `gifts` / `giftEvents`. Must sit immediately before valuationDiscount. */
@@ -65,6 +69,10 @@ export type EstateFlowGift =
       amountOverride?: number;
       /** Non-outright gift kind. Always populated by mappers (DB default is "outright"). */
       eventKind?: GiftEventKind;
+      /** Carried from the row: saved dated before its planning year, so its
+       *  ownership move is already in the stored owners. Absent on a draft that
+       *  was never a row — a scenario or sandbox add, which nothing folded. */
+      enteredAsHistory?: boolean;
       /** Valuation discount as a fraction (0.3 = 30%). Transfer-tax only.
        *  MUST be the last key emitted by the mappers below — the unsaved-changes
        *  diff compares gifts with JSON.stringify, which is key-order-sensitive. */
@@ -117,6 +125,8 @@ export interface GiftRow {
   /** `numeric(6,4)` as a string, or NULL. Optional so existing fixtures that
    *  build a GiftRow literal keep compiling. */
   valuationDiscount?: string | null;
+  /** Optional for the same reason. */
+  enteredAsHistory?: boolean;
   /** QCD pair — both set or both null. Optional so existing fixtures compile. */
   qcdAccountId?: string | null;
   qcdAmountMode?: QcdAmountMode | null;
@@ -177,6 +187,7 @@ export function giftRowToDraft(row: GiftRow): EstateFlowGift | null {
       amountOverride: row.amount != null ? Number(row.amount) : undefined,
       // Carry eventKind (DB default is "outright"; always present).
       eventKind: row.eventKind,
+      enteredAsHistory: row.enteredAsHistory,
       // LAST KEY — see the JSON.stringify contract in estate-flow-gift-diff.ts.
       valuationDiscount:
         row.valuationDiscount != null ? Number(row.valuationDiscount) : undefined,
@@ -193,6 +204,7 @@ export function giftRowToDraft(row: GiftRow): EstateFlowGift | null {
     crummey: row.useCrummeyPowers,
     // Carry eventKind (DB default is "outright"; always present).
     eventKind: row.eventKind,
+    enteredAsHistory: row.enteredAsHistory,
     ...(row.qcdAccountId != null && row.qcdAmountMode != null
       ? { qcd: { accountId: row.qcdAccountId, amountMode: row.qcdAmountMode } }
       : {}),
@@ -334,6 +346,7 @@ export function applyGiftsToClientData(
           g.recipient.kind === "external_beneficiary" ? g.recipient.id : undefined,
         useCrummeyPowers: g.crummey,
         valuationDiscount: g.valuationDiscount,
+        enteredAsHistory: g.enteredAsHistory ?? false,
       });
       // GiftEvent cash kind requires recipientEntityId: string (non-optional in
       // the discriminated union). For family_member / external_beneficiary
@@ -354,6 +367,7 @@ export function applyGiftsToClientData(
         valuationDiscount: g.valuationDiscount,
         eventKind: g.eventKind ?? "outright",
         sourceGiftId: g.id,
+        enteredAsHistory: g.enteredAsHistory ?? false,
       });
     } else if (g.kind === "asset-once") {
       // Use g.eventKind ?? "outright" and pass amountOverride to mirror the
@@ -372,6 +386,7 @@ export function applyGiftsToClientData(
         valuationDiscount: g.valuationDiscount,
         eventKind: g.eventKind ?? "outright",
         sourceGiftId: g.id,
+        enteredAsHistory: g.enteredAsHistory ?? false,
       });
       // If the gifted account has a linked liability (a mortgage), the gift
       // route auto-creates a bundled liability child gift row so the debt
@@ -393,6 +408,7 @@ export function applyGiftsToClientData(
           ...recipientFields(g.recipient),
           parentGiftId: g.id,
           eventKind: g.eventKind ?? "outright",
+          enteredAsHistory: g.enteredAsHistory ?? false,
         });
       }
     } else {

@@ -60,6 +60,7 @@ import {
   relocations,
 } from "@/db/schema";
 import { withEstimatedPia } from "@/lib/social-security/estimate-from-salary";
+import { planDataYear } from "@/lib/plan-year";
 import type {
   AccountFlowOverride,
   BeneficiaryRef,
@@ -1139,7 +1140,10 @@ const loadClientDataCached = cache(
     // salary and an entered PIA always wins — `estimatedPiaMonthly` owns which
     // rows qualify. It reads the WHOLE set because a PIA sums all the owner's
     // salaries, so this cannot fold into the resolve pass above.
-    const mappedIncomes = resolvedIncomes.map((inc) => withEstimatedPia(inc, resolvedIncomes, settings.planStartYear));
+    // Estimated from the salaries of the year the entered data describes: a
+    // salary ending this year still counts when the plan starts next year.
+    const dataYear = planDataYear(settings.planStartYear);
+    const mappedIncomes = resolvedIncomes.map((inc) => withEstimatedPia(inc, resolvedIncomes, dataYear));
 
     const mappedExpenses = expenseRows.map((e) =>
       resolveExpenseFromRaw(
@@ -1269,6 +1273,7 @@ const loadClientDataCached = cache(
       inflationRate: resolvedInflationRate,
       planStartYear: settings.planStartYear,
       planEndYear: settings.planEndYear,
+      dataYear,
       taxEngineMode: settings.taxEngineMode,
       taxInflationRate: settings.taxInflationRate != null ? parseFloat(settings.taxInflationRate) : null,
       lifetimeExemptionCap: settings.lifetimeExemptionCap != null ? parseFloat(settings.lifetimeExemptionCap) : null,
@@ -1702,6 +1707,7 @@ const loadClientDataCached = cache(
         useCrummeyPowers: g.useCrummeyPowers,
         valuationDiscount:
           g.valuationDiscount != null ? Number(g.valuationDiscount) : undefined,
+        enteredAsHistory: g.enteredAsHistory,
       }));
 
     // ── Build giftEvents (discriminated union) ───────────────────────────────
@@ -1729,6 +1735,7 @@ const loadClientDataCached = cache(
           g.valuationDiscount != null ? Number(g.valuationDiscount) : undefined,
         eventKind: g.eventKind,
         sourceGiftId: g.id,
+        enteredAsHistory: g.enteredAsHistory,
       }));
 
     const assetFromGifts: GiftEvent[] = giftRows
@@ -1745,6 +1752,7 @@ const loadClientDataCached = cache(
           g.valuationDiscount != null ? Number(g.valuationDiscount) : undefined,
         eventKind: g.eventKind,
         sourceGiftId: g.id,
+        enteredAsHistory: g.enteredAsHistory,
       }));
 
     const liabilityFromGifts: GiftEvent[] = giftRows
@@ -1758,6 +1766,7 @@ const loadClientDataCached = cache(
         ...giftRecipientFields(g),
         parentGiftId: g.parentGiftId!,
         eventKind: g.eventKind,
+        enteredAsHistory: g.enteredAsHistory,
       }));
 
     const businessInterestFromGifts: GiftEvent[] = giftRows
@@ -1774,6 +1783,7 @@ const loadClientDataCached = cache(
           g.valuationDiscount != null ? Number(g.valuationDiscount) : undefined,
         eventKind: g.eventKind,
         sourceGiftId: g.id,
+        enteredAsHistory: g.enteredAsHistory,
       }));
 
     // Same inputs the gift-ledger uses, so annual_exclusion series net to

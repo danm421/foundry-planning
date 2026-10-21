@@ -17,7 +17,7 @@
  * leave dbState.clients empty (or populate it only with non-matching rows).
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { getTableName } from "drizzle-orm";
 
 import {
@@ -998,5 +998,75 @@ describe("loadClientDataWithContext — scenario growth & inflation override", (
 
     expect(empty.clientData).toEqual(none.clientData);
     expect(empty.resolutionContext.resolvedInflationRate).toBe(none.resolutionContext.resolvedInflationRate);
+  });
+});
+
+// "Start the plan next year": the loader tells the engine which year the
+// entered data describes, and which gifts are already in the stored owners.
+describe("loadClientData — a plan that starts next year", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-21T15:00:00Z"));
+    seedValidFixture();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const startingIn = (planStartYear: number) => {
+    dbState.planSettings = [{ ...planSettingsRow, planStartYear }];
+  };
+
+  it("passes the data year: this year, whichever year the plan starts", async () => {
+    startingIn(2027);
+    expect((await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID)).planSettings.dataYear).toBe(2026);
+    startingIn(2026);
+    expect((await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID)).planSettings.dataYear).toBe(2026);
+  });
+
+  it("carries each gift's history flag onto its events", async () => {
+    startingIn(2027);
+    const giftRow = {
+      id: "00000000-0000-0000-0000-0000000000f2", clientId: FIXTURE_CLIENT_ID, yearRef: null,
+      grantor: "client" as const, recipientEntityId: null, recipientFamilyMemberId: FIXTURE_FAMILY_MEMBER_ID,
+      recipientExternalBeneficiaryId: null, liabilityId: null, businessEntityId: null, valuationDiscount: null,
+      parentGiftId: null, useCrummeyPowers: false, eventKind: "outright" as const, notes: null,
+      createdAt: new Date("2026-06-01T00:00:00Z"), updatedAt: new Date("2026-06-01T00:00:00Z"),
+    };
+    dbState.gifts = [
+      { ...giftRow, year: 2026, amount: null, accountId: FIXTURE_ACCOUNT_ID_1, percent: "0.3000", enteredAsHistory: false },
+      { ...giftRow, id: "00000000-0000-0000-0000-0000000000f3", year: 2025, amount: "10000.00", accountId: null, percent: null, enteredAsHistory: true },
+    ];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    expect(data.giftEvents.find((e) => e.kind === "asset")?.enteredAsHistory).toBe(false);
+    expect(data.giftEvents.find((e) => e.kind === "cash")?.enteredAsHistory).toBe(true);
+    expect(data.gifts?.[0].enteredAsHistory).toBe(true);
+  });
+
+  it("estimates Social Security from a salary that ends this year", async () => {
+    // The plan's first year is past the salary, but the entered data describes
+    // this year — the earnings record still includes it.
+    startingIn(2027);
+    dbState.incomes = [
+      { ...incomeRow, startYear: 2010, endYear: 2026 },
+      {
+        ...incomeRow,
+        id: "11111111-1111-1111-1111-111111111111",
+        type: "social_security" as unknown as typeof incomeRow.type,
+        name: "Social Security — Alice",
+        annualAmount: "0",
+        endYear: 2099,
+        claimingAge: 67 as unknown as typeof incomeRow.claimingAge,
+        claimingAgeMode: "fra" as unknown as typeof incomeRow.claimingAgeMode,
+        ssBenefitMode: "pia_at_fra" as unknown as typeof incomeRow.ssBenefitMode,
+        piaMonthly: null,
+      },
+    ];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    expect(data.incomes.find((i) => i.type === "social_security")!.piaMonthly).toBe(3843);
   });
 });
