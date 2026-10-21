@@ -13,15 +13,17 @@ const dbWrites = vi.hoisted(() => vi.fn());
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: async () => session }));
 vi.mock("@/lib/firm-settings", () => ({ firmBookSiloEnabled: async () => siloOn.value }));
-vi.mock("@/db", () => ({
-  db: {
+vi.mock("@/db", () => {
+  const db = {
     query: { crmHouseholds: { findFirst: async () => OTHERS_HOUSEHOLD } },
     update: () => {
       dbWrites();
       return { set: () => ({ where: () => ({ returning: async () => [OTHERS_HOUSEHOLD] }) }) };
     },
-  },
-}));
+    transaction: async (fn: (tx: unknown) => unknown) => fn(db),
+  };
+  return { db };
+});
 vi.mock("@/lib/audit", () => ({ recordAudit: async () => undefined }));
 vi.mock("../activity", () => ({ recordActivity: async () => undefined }));
 

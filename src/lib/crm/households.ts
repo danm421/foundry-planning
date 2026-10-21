@@ -27,6 +27,7 @@ import { toHouseholdSnapshot } from "@/lib/audit/snapshots/household";
 import { recordActivity } from "./activity";
 import { resolveContactDateOfBirth } from "./default-dob";
 import { deriveNameForHousehold } from "./sync-household-name";
+import { baseCaseResidenceState, writeResidenceStateToPlan } from "./residence-state";
 import { revokePlaidTokens } from "@/lib/plaid/revoke";
 import { purgeForgeHistory } from "@/domain/forge/purge-history";
 import type { CreateCrmHouseholdInput } from "./schemas";
@@ -274,11 +275,14 @@ export async function getCrmHousehold(id: string) {
   });
   if (!household) return undefined;
 
-  const planningAccounts = household.planningClient
-    ? await loadPlanningAccountsForClient(household.planningClient.id)
-    : [];
+  const planningClientId = household.planningClient?.id;
+  const [planningAccounts, residenceState] = await Promise.all([
+    planningClientId ? loadPlanningAccountsForClient(planningClientId) : [],
+    // With a plan, the state shown is the one its taxes run on.
+    planningClientId ? baseCaseResidenceState(db, planningClientId) : household.state,
+  ]);
 
-  return { ...household, planningAccounts };
+  return { ...household, planningAccounts, residenceState };
 }
 
 async function loadPlanningAccountsForClient(clientId: string) {
@@ -461,11 +465,18 @@ export async function updateCrmHousehold(
     resolved.name = derived ?? existing.name;
   }
 
-  const [updated] = await db
-    .update(crmHouseholds)
-    .set({ ...resolved, updatedAt: sql`now()` })
-    .where(eq(crmHouseholds.id, id))
-    .returning();
+  const { updated, plan } = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(crmHouseholds)
+      .set({ ...resolved, updatedAt: sql`now()` })
+      .where(eq(crmHouseholds.id, id))
+      .returning();
+    // The household's state is its plan's tax residence — keep the two as one.
+    const plan = patch.state !== undefined
+      ? await writeResidenceStateToPlan(tx, { householdId: id, firmId, state: patch.state })
+      : null;
+    return { updated, plan };
+  });
 
   await recordAudit({
     action: "crm.household.update",
@@ -473,6 +484,16 @@ export async function updateCrmHousehold(
     resourceId: id,
     firmId,
   });
+  if (plan) {
+    await recordAudit({
+      action: "plan_settings.update",
+      resourceType: "plan_settings",
+      resourceId: plan.planSettingsId,
+      clientId: plan.clientId,
+      firmId,
+      metadata: { fields: ["residenceState"], source: "crm_household" },
+    });
+  }
 
   if (patch.status && patch.status !== existing.status) {
     const { userId } = await auth();

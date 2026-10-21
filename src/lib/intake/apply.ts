@@ -84,6 +84,7 @@ import { recordAudit, recordCreate, recordUpdate } from "@/lib/audit";
 import { recordActivityNonFatal } from "@/lib/crm/activity";
 import { noteDateToOccurredAt } from "@/lib/crm/notes";
 import { syncHouseholdNameFromContacts } from "@/lib/crm/sync-household-name";
+import { writeResidenceStateToPlan } from "@/lib/crm/residence-state";
 import { deriveHouseholdNameFromContacts } from "@/lib/crm/household-name";
 import { upsertPrimaryAndSpouseContacts } from "@/lib/crm/upsert-household-contact";
 import { ssBenefitPatch } from "@/lib/intake/social-security";
@@ -277,10 +278,10 @@ async function applySectionsToClient(
   tx: Tx,
   clientId: string,
   scenarioId: string,
-  // firmId + actorId are part of the shared signature so the prospect path
-  // (next task) can branch on them; audits for this path are emitted post-commit
-  // by applyIntake, so they're intentionally unused here.
-  _firmId: string,
+  // actorId is part of the shared signature so the prospect path (next task)
+  // can branch on it; audits for this path are emitted post-commit by
+  // applyIntake, so it's intentionally unused here.
+  firmId: string,
   _actorId: string,
   payload: IntakePayload,
   // Which sections the form actually collected. Every block below is gated on
@@ -391,12 +392,18 @@ async function applySectionsToClient(
     // and all change the derived household label. One sync covers all three.
     await syncHouseholdNameFromContacts(tx, client.crmHouseholdId);
 
-    // Household residence state.
+    // Household residence state — on the CRM household and the plan's tax
+    // residence alike (see src/lib/crm/residence-state.ts).
     if (payload.family?.stateOfResidence) {
       await tx
         .update(crmHouseholds)
         .set({ state: payload.family.stateOfResidence, updatedAt: new Date() })
         .where(eq(crmHouseholds.id, client.crmHouseholdId));
+      await writeResidenceStateToPlan(tx, {
+        householdId: client.crmHouseholdId,
+        firmId,
+        state: payload.family.stateOfResidence,
+      });
     }
 
     // Planning client scalars owned by THIS step: filing status only. It derives

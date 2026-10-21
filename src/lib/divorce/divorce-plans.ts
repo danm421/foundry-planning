@@ -8,11 +8,11 @@ import {
   divorcePlans,
   divorcePlanAllocations,
   clients,
-  crmHouseholds,
   crmHouseholdContacts,
   familyMembers,
 } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
+import { baseCaseResidenceState } from "@/lib/crm/residence-state";
 import {
   allocationKey,
   resolveAllocations,
@@ -110,10 +110,8 @@ export async function getOrCreateDraft(args: {
     throw new DivorcePlanError("no_spouse_contact", "Household has no spouse contact");
   }
 
-  const [household] = await db
-    .select({ state: crmHouseholds.state })
-    .from(crmHouseholds)
-    .where(eq(crmHouseholds.id, eligibility.crmHouseholdId));
+  // The household's state as its plan taxes it (see src/lib/crm/residence-state.ts).
+  const householdState = await baseCaseResidenceState(db, clientId);
 
   // Race-safe create: insert and let the partial unique index
   // (divorce_plans_live_draft_uniq) absorb a concurrent create; then select
@@ -123,7 +121,7 @@ export async function getOrCreateDraft(args: {
     .values({
       clientId,
       firmId,
-      spouseState: household?.state ?? null,
+      spouseState: householdState,
       splitYear: new Date().getFullYear(),
       createdBy: userId,
     })

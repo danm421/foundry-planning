@@ -52,7 +52,8 @@ describe("snapshotClientToPayload", () => {
         advisorId: ADVISOR,
         name: "Snapshot Test HH",
         status: "active",
-        state: "CA",
+        // A stale CRM copy — the plan's base case (CA, below) is what's read.
+        state: "NV",
       })
       .returning();
     householdId = hh.id;
@@ -100,6 +101,7 @@ describe("snapshotClientToPayload", () => {
       scenarioId,
       planStartYear: 2026,
       planEndYear: 2065,
+      residenceState: "CA",
     });
 
     // 5. Seed a retirement account on the base scenario
@@ -163,7 +165,7 @@ describe("snapshotClientToPayload", () => {
     expect(payload.family!.primary.maritalStatus).toBe("married");
   });
 
-  it("returns stateOfResidence from the household", async () => {
+  it("returns stateOfResidence from the plan's base case, not the CRM copy", async () => {
     const payload = await snapshotClientToPayload(clientId, FIRM, ALL);
     expect(payload.family!.stateOfResidence).toBe("CA");
   });

@@ -7,6 +7,7 @@ import type { HouseholdRelationshipView } from "@/lib/crm/household-relationship
 import { CrmHouseholdEditForm } from "@/components/crm-household-edit-form";
 import { deriveHouseholdNameFromContacts } from "@/lib/crm/household-name";
 import { USPS_STATE_NAMES, isUSPSStateCode } from "@/lib/usps-states";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
 import {
   DetailList,
   DetailRow,
@@ -25,6 +26,15 @@ const STATUS_LABELS: Record<string, string> = {
   inactive: "Inactive",
   archived: "Archived",
 };
+
+/** The mailing address as display lines; empty when nothing is on file. */
+function addressLines(c: Household["contacts"][number] | undefined): string[] {
+  if (!c) return [];
+  const street = [c.addressLine1, c.addressLine2].filter(Boolean).join(", ");
+  const region = [c.state, c.postalCode].filter(Boolean).join(" ");
+  const locality = [c.city, region].filter(Boolean).join(", ");
+  return [street, locality, c.country ?? ""].filter(Boolean);
+}
 
 function fmtTimestamp(d: Date | string | null | undefined): string {
   if (!d) return "—";
@@ -52,6 +62,8 @@ export function OverviewTab({
   planningClientId: string | null;
 }) {
   const [editOpen, setEditOpen] = useState(false);
+  const primary = household.contacts.find((c) => c.role === "primary");
+  const address = addressLines(primary);
 
   return (
     <div className="flex flex-col gap-8">
@@ -73,8 +85,24 @@ export function OverviewTab({
               {STATUS_LABELS[household.status] ?? household.status}
             </DetailRow>
             <DetailRow label="State">
-              {isUSPSStateCode(household.state) ? (
-                USPS_STATE_NAMES[household.state]
+              <span className="inline-flex items-center gap-1.5">
+                {isUSPSStateCode(household.residenceState) ? (
+                  USPS_STATE_NAMES[household.residenceState]
+                ) : (
+                  <Missing />
+                )}
+                {planningClientId && (
+                  <FieldTooltip text="The state the plan uses for state income and estate tax. Edit it here or on the plan's Assumptions page — they stay the same." />
+                )}
+              </span>
+            </DetailRow>
+            <DetailRow label="Address">
+              {address.length > 0 ? (
+                <span className="flex flex-col">
+                  {address.map((line) => (
+                    <span key={line}>{line}</span>
+                  ))}
+                </span>
               ) : (
                 <Missing />
               )}
@@ -153,6 +181,9 @@ export function OverviewTab({
         initialNotes={household.notes}
         initialNameIsCustom={household.nameIsCustom}
         derivedName={deriveHouseholdNameFromContacts(household.contacts)}
+        initialState={household.residenceState}
+        planLinked={planningClientId != null}
+        primaryContact={primary ?? null}
       />
     </div>
   );

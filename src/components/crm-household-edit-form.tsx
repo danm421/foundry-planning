@@ -8,8 +8,11 @@ import {
   selectClassName,
   textareaClassName,
   fieldLabelClassName,
+  fieldLabelBaseClassName,
 } from "@/components/forms/input-styles";
 import { AlertCircleIcon } from "@/components/icons";
+import { StateSelect } from "@/components/state-select";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
 
 const STATUS_OPTIONS = [
   { value: "prospect", label: "Prospect" },
@@ -19,6 +22,11 @@ const STATUS_OPTIONS = [
 ];
 
 const FORM_ID = "crm-household-edit-form";
+
+// The household's mailing address is its primary contact's.
+const ADDRESS_FIELDS = ["addressLine1", "addressLine2", "city", "state", "postalCode"] as const;
+type AddressField = (typeof ADDRESS_FIELDS)[number];
+export type PrimaryContactAddress = { id: string } & Record<AddressField, string | null>;
 
 interface Props {
   open: boolean;
@@ -30,6 +38,23 @@ interface Props {
   initialNameIsCustom: boolean;
   /** Auto-name from the household's contacts; null when there's no primary. */
   derivedName: string | null;
+  /** State of residence as shown — the plan's tax state when one is linked. */
+  initialState: string | null;
+  planLinked: boolean;
+  /** Null when there's no primary contact to hold an address. */
+  primaryContact: PrimaryContactAddress | null;
+}
+
+async function patch(url: string, body: Record<string, unknown>): Promise<void> {
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(typeof j.error === "string" ? j.error : `Update failed (${res.status})`);
+  }
 }
 
 export function CrmHouseholdEditForm({
@@ -41,6 +66,9 @@ export function CrmHouseholdEditForm({
   initialNotes,
   initialNameIsCustom,
   derivedName,
+  initialState,
+  planLinked,
+  primaryContact,
 }: Props) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
@@ -50,6 +78,7 @@ export function CrmHouseholdEditForm({
   const mustBeCustom = derivedName == null;
   const [nameIsCustom, setNameIsCustom] = useState(initialNameIsCustom || mustBeCustom);
   const [name, setName] = useState(initialName);
+  const [residenceState, setResidenceState] = useState(initialState ?? "");
 
   function toggleCustom(next: boolean) {
     setNameIsCustom(next);
@@ -65,21 +94,28 @@ export function CrmHouseholdEditForm({
     const data = new FormData(e.currentTarget);
     const status = String(data.get("status") ?? "");
     const notes = String(data.get("notes") ?? "").trim();
+    // Sent only when changed: on a household with a plan it also moves the
+    // plan's tax state.
+    const stateChanged = residenceState !== "" && residenceState !== (initialState ?? "");
+    const addressPatch: Partial<Record<AddressField, string>> = {};
+    if (primaryContact) {
+      for (const key of ADDRESS_FIELDS) {
+        const value = String(data.get(`address.${key}`) ?? "").trim();
+        if (value !== (primaryContact[key] ?? "")) addressPatch[key] = value;
+      }
+    }
     try {
-      const res = await fetch(`/api/crm/households/${householdId}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          nameIsCustom,
-          status,
-          notes: notes ? notes : undefined,
-        }),
+      await patch(`/api/crm/households/${householdId}`, {
+        name: name.trim(),
+        nameIsCustom,
+        status,
+        notes: notes ? notes : undefined,
+        ...(stateChanged && { state: residenceState }),
       });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(
-          typeof j.error === "string" ? j.error : `Update failed (${res.status})`,
+      if (primaryContact && Object.keys(addressPatch).length > 0) {
+        await patch(
+          `/api/crm/households/${householdId}/contacts/${primaryContact.id}`,
+          addressPatch,
         );
       }
       onOpenChange(false);
@@ -169,6 +205,99 @@ export function CrmHouseholdEditForm({
             ))}
           </select>
         </div>
+
+        <div>
+          <label
+            className={`mb-1.5 flex items-center gap-1.5 ${fieldLabelBaseClassName}`}
+            htmlFor="edit-state"
+          >
+            <span>State of residence</span>
+            <FieldTooltip
+              text={
+                planLinked
+                  ? "The state the plan uses for state income and estate tax. Changing it here changes the plan's base case too."
+                  : "Drives state income and estate tax when this household gets a plan."
+              }
+            />
+          </label>
+          <StateSelect
+            id="edit-state"
+            name="residenceState"
+            value={residenceState}
+            onChange={setResidenceState}
+          />
+        </div>
+
+        {primaryContact && (
+          <fieldset className="space-y-3 border-t border-hair pt-4">
+            <legend className={`flex items-center gap-1.5 ${fieldLabelBaseClassName}`}>
+              <span>Mailing address</span>
+              <FieldTooltip text="Saved on the primary contact." />
+            </legend>
+            <div>
+              <label className={fieldLabelClassName} htmlFor="edit-address-addressLine1">
+                Street
+              </label>
+              <input
+                id="edit-address-addressLine1"
+                name="address.addressLine1"
+                maxLength={200}
+                defaultValue={primaryContact.addressLine1 ?? ""}
+                className={inputClassName}
+              />
+            </div>
+            <div>
+              <label className={fieldLabelClassName} htmlFor="edit-address-addressLine2">
+                Apt, suite, unit
+              </label>
+              <input
+                id="edit-address-addressLine2"
+                name="address.addressLine2"
+                maxLength={200}
+                defaultValue={primaryContact.addressLine2 ?? ""}
+                className={inputClassName}
+              />
+            </div>
+            <div className="grid grid-cols-[minmax(0,1fr)_88px_112px] gap-3">
+              <div>
+                <label className={fieldLabelClassName} htmlFor="edit-address-city">
+                  City
+                </label>
+                <input
+                  id="edit-address-city"
+                  name="address.city"
+                  maxLength={100}
+                  defaultValue={primaryContact.city ?? ""}
+                  className={inputClassName}
+                />
+              </div>
+              <div>
+                <label className={fieldLabelClassName} htmlFor="edit-address-state">
+                  State
+                </label>
+                <input
+                  id="edit-address-state"
+                  name="address.state"
+                  maxLength={50}
+                  defaultValue={primaryContact.state ?? ""}
+                  className={inputClassName}
+                />
+              </div>
+              <div>
+                <label className={fieldLabelClassName} htmlFor="edit-address-postalCode">
+                  ZIP
+                </label>
+                <input
+                  id="edit-address-postalCode"
+                  name="address.postalCode"
+                  maxLength={20}
+                  defaultValue={primaryContact.postalCode ?? ""}
+                  className={inputClassName}
+                />
+              </div>
+            </div>
+          </fieldset>
+        )}
 
         <div>
           <label className={fieldLabelClassName} htmlFor="edit-notes">

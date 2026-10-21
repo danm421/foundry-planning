@@ -667,7 +667,7 @@ export function ContactsTab({
       <CrmPromoteFamilyMemberDialog
         key={`promote-${dialogInstance}`}
         sourceHouseholdId={household.id}
-        defaultState={household.state}
+        defaultState={household.residenceState}
         initial={promoteDialog ?? EMPTY_PROMOTE_INITIAL}
         open={promoteDialog !== null}
         onClose={() => setPromoteDialog(null)}

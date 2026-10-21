@@ -12,7 +12,6 @@ import { db } from "@/db";
 import {
   accountOwners,
   clients,
-  crmHouseholds,
   crmHouseholdContacts,
   familyMembers,
   scenarios,
@@ -21,6 +20,7 @@ import {
   liabilities,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { baseCaseResidenceState } from "@/lib/crm/residence-state";
 import type { IntakePayload } from "@/lib/intake/schema";
 import { ssAnswerFromRow } from "@/lib/intake/social-security";
 import {
@@ -190,14 +190,8 @@ export async function snapshotClientToPayload(
     throw new Error(`Client ${clientId} not found in firm ${firmId}`);
   }
 
-  // ── 2. Load household state ───────────────────────────────────────────────
-  const [household] = await db
-    .select({ state: crmHouseholds.state })
-    .from(crmHouseholds)
-    .where(eq(crmHouseholds.id, client.crmHouseholdId))
-    .limit(1);
-
-  const stateOfResidence = household?.state ?? undefined;
+  // ── 2. Load household state — as the plan taxes it (src/lib/crm/residence-state.ts)
+  const stateOfResidence = (await baseCaseResidenceState(db, clientId)) ?? undefined;
 
   // ── 3. Load household contacts (primary + spouse) ─────────────────────────
   const contacts = await db
