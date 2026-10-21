@@ -21,4 +21,6 @@ ALTER TABLE "gifts" ADD CONSTRAINT "gifts_qcd_shape" CHECK ((
          AND "gifts"."account_id" IS NULL AND "gifts"."liability_id" IS NULL AND "gifts"."business_entity_id" IS NULL
          AND "gifts"."percent" IS NULL AND "gifts"."amount" IS NOT NULL
          AND "gifts"."grantor" <> 'joint')
-      ));
+      ));--> statement-breakpoint
+ALTER TABLE "gifts" DROP CONSTRAINT "gifts_amount_positive";--> statement-breakpoint
+ALTER TABLE "gifts" ADD CONSTRAINT "gifts_amount_positive" CHECK ("amount" > 0 OR ("amount" = 0 AND "qcd_amount_mode" IS NOT NULL AND "qcd_amount_mode" = 'full_rmd'));
