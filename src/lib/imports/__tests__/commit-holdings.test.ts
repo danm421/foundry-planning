@@ -56,6 +56,17 @@ describe("resolveHoldingsForCommit", () => {
     expect(map.has("ZZZZ")).toBe(false);
   });
 
+  it("never prices a cash line, whatever ticker the read gave it", async () => {
+    const getSecurityByTicker = vi.fn().mockResolvedValue({ security: { id: "sec-cash" }, weights: [] });
+    const map = await resolveHoldingsForCommit(
+      payloadWith([{ name: "B", match: { kind: "new" }, holdings: [{ name: "Cash", ticker: "Cash", shares: 100 }] }]),
+      { getSecurityByTicker, classifySecurity: vi.fn(), upsertClassifiedSecurity: vi.fn(),
+        fetchEodCloses: vi.fn().mockResolvedValue(new Map()) },
+    );
+    expect(getSecurityByTicker).not.toHaveBeenCalled();
+    expect(map.size).toBe(0);
+  });
+
   it("ignores untickered holdings and fuzzy accounts", async () => {
     const getSecurityByTicker = vi.fn().mockResolvedValue({ security: { id: "sec-x" }, weights: [] });
     const map = await resolveHoldingsForCommit(

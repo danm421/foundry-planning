@@ -53,7 +53,8 @@ export async function resolveHoldingsForCommit(
   const tickers = new Set<string>();
   for (const acct of committableAccounts(payload, rowIds)) {
     for (const h of livingHoldings(acct)) {
-      const t = h.ticker?.trim().toUpperCase();
+      // Normalized, as `holdingRow` reads it: a cash line's ticker is no ticker.
+      const t = normalizeExtractedHolding(h).ticker?.trim().toUpperCase();
       if (t) tickers.add(t);
     }
   }

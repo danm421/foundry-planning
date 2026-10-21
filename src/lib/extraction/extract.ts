@@ -32,6 +32,7 @@ import { FACT_FINDER_CLASSIFIER_VERSION } from "./prompts/fact-finder-classifier
 import { redactSsns } from "./redact-ssn";
 import { composeAccountName } from "./condense-account-name";
 import { applyMarginLoans } from "./margin-loans";
+import { reviewStatementHoldings } from "./holdings-checks";
 import { completeExtractedAccounts } from "./holdings-completion";
 import { extractWithMultiPass, type MultiPassResult } from "./multi-pass";
 import { buildPageOutline } from "./page-outline";
@@ -259,6 +260,17 @@ function placeMarginLoans(extracted: ExtractionResult["extracted"]): string[] {
     return placed.warnings;
 }
 
+/** Check every account's positions against the document they came from. */
+function checkHoldings(extracted: ExtractionResult["extracted"], text: string): string[] {
+    const warnings: string[] = [];
+    extracted.accounts = extracted.accounts.map((account) => {
+        const checked = reviewStatementHoldings(account, text);
+        warnings.push(...checked.warnings);
+        return checked.account;
+    });
+    return warnings;
+}
+
 function getFileExtension(fileName: string): string {
     return fileName.split(".").pop()?.toLowerCase() ?? "";
 }
@@ -474,7 +486,7 @@ export async function extractDocument(
         if (multi) {
             const extracted = flattenMultiPass(multi);
             extracted.accounts = composeAccountNames(extracted.accounts);
-            warnings.push(...multi.warnings, ...placeMarginLoans(extracted));
+            warnings.push(...multi.warnings, ...placeMarginLoans(extracted), ...checkHoldings(extracted, text));
             // R5: this path returns before the single-pass truncation below
             // (step 5, `MAX_DOCUMENT_TEXT_CHARS`), so redactedPages is
             // otherwise uncapped - a long fact finder could exceed the
@@ -617,6 +629,8 @@ export async function extractDocument(
         extracted.accounts = completed.accounts;
         warnings.push(...completed.warnings);
     }
+    // After the completion, so a recovered position is checked too.
+    warnings.push(...checkHoldings(extracted, text));
 
     if (
         extracted.accounts.length === 0 &&

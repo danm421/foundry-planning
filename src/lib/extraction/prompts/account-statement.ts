@@ -1,23 +1,30 @@
 export const ACCOUNT_STATEMENT_VERSION = "2026-10-21.1-margin-on-account";
-export const ACCOUNT_STATEMENT_HOLDINGS_VERSION = "2026-10-21.1-margin-on-account-holdings";
+export const ACCOUNT_STATEMENT_HOLDINGS_VERSION = "2026-10-21.3-cash-line-not-total-holdings";
 
 const HOLDINGS_FIELD = `,
       "holdings": [
         {
-          "ticker": "Ticker / symbol exactly as written (e.g. 'VTI', 'AAPL'). Omit for bonds and cash.",
+          "ticker": "Ticker / symbol exactly as written (e.g. 'VTI', 'AAPL'). Omit for bonds and cash — never put 'Cash' or a description here.",
           "name": "Position description. For a BOND, put the full description INCLUDING the CUSIP here. For cash / sweep, use 'Cash'.",
           "shares": 0,
           "price": 0,
           "marketValue": 0,   // position's dollar market value (total) as shown on the statement
-          "costBasis": 0
+          "costBasis": 0,     // the COST BASIS column (what was paid) — never the gain/loss column
+          "unrealizedGain": 0 // the UNREALIZED GAIN/(LOSS) column; negative for a loss
         }
       ]`;
 
+/** One copy for the first read and the continuation pass — they must agree. */
+const BASIS_AND_CASH_RULES = `
+  - COST BASIS vs. GAIN. Position tables usually print "Market Value", then "Cost Basis", then "Unrealized Gain/(Loss)" — three different numbers on one row. "costBasis" is ONLY the cost basis column (also labelled "Total Cost", "Adjusted Cost", "Cost"); "unrealizedGain" is ONLY the gain/(loss) column. Read each from its own column header, on every row and on every continued page. Never put the gain/(loss) figure in "costBasis". Check each row: marketValue − costBasis ≈ unrealizedGain.
+  - A figure in parentheses is negative: (1,234.56) → -1234.56. A cost basis is never negative.
+  - When a row prints "N/A", "--", a blank, or only a footnote marker (e.g. "i") in place of a cost basis, OMIT "costBasis" (and "unrealizedGain" if it is N/A too) — never write 0 and never substitute another column's number.
+  - CASH. Always include a cash, bank sweep, or free credit balance line as its own position: set "name" to "Cash", OMIT "ticker" entirely, set "price" to 1, and set BOTH "shares" and "marketValue" to the cash dollar amount. A cash table can print a "Beginning Balance" and an "Ending Balance": use the cash line's OWN ENDING balance (the statement date's figure) — never the beginning balance, and never the table's "Total Cash and Cash Investments" line, which adds in the money funds. A money-market fund that prints its own ticker (e.g. SWVXX, SPAXX) is a separate position even inside the cash table: keep its ticker; its "Beginning Balance" is not a cost basis.`;
+
 const HOLDINGS_RULES = `
 - When a position table is shown, also populate each account's "holdings" array, one entry per position. Still report the account's total in "value" — "holdings" is the per-position breakdown.
-  - If the position has a ticker/symbol: set "ticker", "shares", and "costBasis". Include "price" and/or "marketValue" if shown.
-  - If the position has NO ticker (bonds, untickered funds): omit "ticker", put the description (for a bond INCLUDING its CUSIP) in "name", set "shares", "costBasis", and "price" if shown — and ALWAYS set "marketValue" to the position's market value (dollar total) exactly as shown on the statement. For a bond, "price" is quoted per $100 of par, so shares × price is NOT the market value — capture the statement's market-value column in "marketValue".
-  - For cash / money-market sweep with no ticker: set "name" to "Cash", "price" to 1, and "shares" to the cash dollar amount.
+  - If the position has a ticker/symbol: set "ticker", "shares", "costBasis", and "unrealizedGain". Include "price" and/or "marketValue" if shown.
+  - If the position has NO ticker (bonds, untickered funds): omit "ticker", put the description (for a bond INCLUDING its CUSIP) in "name", set "shares", "costBasis", and "price" if shown — and ALWAYS set "marketValue" to the position's market value (dollar total) exactly as shown on the statement. For a bond, "price" is quoted per $100 of par, so shares × price is NOT the market value — capture the statement's market-value column in "marketValue".${BASIS_AND_CASH_RULES}
   - Only set the numeric fields you can read from the statement; omit any you can't — but a position's market value is shown on every statement, so always capture it for untickered positions.
   - On a margined account, a negative cash or margin-debit line is the margin loan, not a position: leave it out of "holdings" (it goes in "marginBalance").
 - GROUPED HOLDINGS REPORTS. A "Holdings Detail" / portfolio report lists every position in ONE table, grouped under account HEADER rows (e.g. "Inh. IRA x7254", "Taxable Account x0028") instead of giving each account its own section. On those:
@@ -164,14 +171,14 @@ Return ONLY a JSON object of this exact shape (no markdown, no explanation):
       "shares": 0,
       "price": 0,
       "marketValue": 0,
-      "costBasis": 0
+      "costBasis": 0,
+      "unrealizedGain": 0
     }
   ]
 }
 
 Rules:
 - Dollar amounts as plain numbers (no $ signs, no commas).
-- For an untickered position (bond, untickered fund), ALWAYS set "marketValue" to the position's market-value column exactly as shown — for a bond, price is quoted per $100 of par, so shares × price is NOT the market value.
-- For cash / money-market sweep with no ticker: "name" = "Cash", "price" = 1, "shares" = the cash dollar amount.
+- For an untickered position (bond, untickered fund), ALWAYS set "marketValue" to the position's market-value column exactly as shown — for a bond, price is quoted per $100 of par, so shares × price is NOT the market value.${BASIS_AND_CASH_RULES}
 - If NO positions remain, return {"holdings": []}.`;
 }

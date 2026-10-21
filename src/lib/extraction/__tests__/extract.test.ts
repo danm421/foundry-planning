@@ -43,6 +43,7 @@ import { callAIExtraction } from "../azure-client";
 import { extractPdfText, extractPdfPages } from "../pdf-parser";
 import { visionOcrPdf, visionOcrImage } from "../vision-ocr";
 import { extractDocxText } from "../docx-parser";
+import { BROKERAGE_READ_2026_10_21, BROKERAGE_TEXT } from "./fixtures/schwab-statements-2026-04";
 
 const mockedCallAI = vi.mocked(callAIExtraction);
 const mockedPdf = vi.mocked(extractPdfText);
@@ -432,6 +433,21 @@ describe("extractDocument", () => {
         expect(h[1].ticker).toBeUndefined();
         expect(h[1].name).toContain("912828ZZ9");
         expect(h[2].name).toBe("Cash");
+    });
+
+    it("checks the positions against the statement before review (the Schwab gain-as-basis read)", async () => {
+        mockedPdf.mockResolvedValueOnce(BROKERAGE_TEXT);
+        mockedCallAI.mockResolvedValueOnce(
+            JSON.stringify({ accounts: [BROKERAGE_READ_2026_10_21], liabilities: [] }),
+        );
+        const result = await extractDocument(
+            Buffer.from("x"), "schwab.pdf", "account_statement", "mini", undefined, true,
+        );
+        expect(result.warnings.some((w) => w.includes("corrected to the statement's Cost Basis column"))).toBe(true);
+        const holdings = result.extracted.accounts[0].holdings!;
+        expect(holdings.find((h) => h.ticker === "NVDA")?.costBasis).toBe(38008.19);
+        const cash = holdings.find((h) => h.name === "Cash")!;
+        expect(cash.ticker).toBeUndefined();
     });
 
     it("condenses long extracted account names", async () => {

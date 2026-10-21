@@ -8,6 +8,42 @@ import {
 } from "../prompts/account-statement";
 import { extractedPayloadSchema } from "../extraction-schema";
 
+describe("holdings prompt: cost basis vs. gain, and cash", () => {
+  const first = buildAccountStatementPrompt(true);
+  const more = buildHoldingsContinuationPrompt({ name: "Brokerage" }, []);
+
+  it("gives the gain/(loss) column its own field, on both passes", () => {
+    expect(first).toContain('"unrealizedGain"');
+    expect(more).toContain('"unrealizedGain"');
+  });
+
+  it("forbids reading the gain/(loss) column as the basis, on both passes", () => {
+    for (const p of [first, more]) {
+      expect(p).toContain('Never put the gain/(loss) figure in "costBasis"');
+      expect(p).toMatch(/marketValue − costBasis ≈ unrealizedGain/);
+    }
+  });
+
+  it("omits a basis printed N/A instead of writing 0", () => {
+    expect(first).toMatch(/"N\/A".*OMIT "costBasis".*never write 0/);
+  });
+
+  it("gives cash no ticker and its ENDING balance", () => {
+    for (const p of [first, more]) {
+      expect(p).toMatch(/OMIT "ticker" entirely/);
+      expect(p).toMatch(/use the cash line.s OWN ENDING balance/);
+    }
+  });
+
+  it("takes the cash line's own balance, never the cash table's total, and keeps a money fund separate", () => {
+    for (const p of [first, more]) {
+      expect(p).toMatch(/Always include a cash, bank sweep, or free credit balance line as its own position/);
+      expect(p).toMatch(/never the table's "Total Cash and Cash Investments" line/);
+      expect(p).toMatch(/is a separate position even inside the cash table/);
+    }
+  });
+});
+
 describe("ACCOUNT_STATEMENT_PROMPT", () => {
   it("declares the bumped version (>= 2026-04-29.2 once last4+custodian shipped)", () => {
     expect(ACCOUNT_STATEMENT_VERSION >= "2026-04-29.2").toBe(true);

@@ -97,8 +97,13 @@ export interface ExtractedHolding {
   price?: number;
   /** Total market value of the position. */
   marketValue?: number;
-  /** Cost basis of the position. */
+  /** Cost basis of the position: what was paid, from the statement's cost
+   *  basis column. Always positive; absent when the statement prints none. */
   costBasis?: number;
+  /** The statement's Unrealized Gain/(Loss) column, negative for a loss. Read
+   *  only to cross-check `costBasis` — it is never stored, because the app
+   *  recomputes the gain from the live price. */
+  unrealizedGain?: number;
   /** Stable handle within ONE account, minted by `mergeAcrossFiles`. Identity
    *  is the pair (account `__rowId`, this) — never this alone. */
   __holdingId?: string;

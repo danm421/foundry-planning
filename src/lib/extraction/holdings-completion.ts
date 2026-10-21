@@ -72,10 +72,12 @@ function pickHolding(raw: unknown): ExtractedHolding | null {
   const price = num(r.price);
   const marketValue = num(r.marketValue);
   const costBasis = num(r.costBasis);
+  const unrealizedGain = num(r.unrealizedGain);
   if (shares !== undefined) h.shares = shares;
   if (price !== undefined) h.price = price;
   if (marketValue !== undefined) h.marketValue = marketValue;
   if (costBasis !== undefined) h.costBasis = costBasis;
+  if (unrealizedGain !== undefined) h.unrealizedGain = unrealizedGain;
   return h;
 }
 
