@@ -97,6 +97,10 @@ export function giftDraftToRow(g: EstateFlowGift): Gift | null {
         accountId: g.accountId,
         percent: g.percent,
         useCrummeyPowers: false,
+        // Explicit nulls, like every column the draft represents: a promote UPDATE
+        // must clear a stale QCD pair, and `gifts_qcd_shape` forbids one beside an account.
+        qcdAccountId: null,
+        qcdAmountMode: null,
       }
     : {
         ...common,
@@ -104,6 +108,8 @@ export function giftDraftToRow(g: EstateFlowGift): Gift | null {
         accountId: null,
         percent: null,
         useCrummeyPowers: g.crummey,
+        qcdAccountId: g.qcd?.accountId ?? null,
+        qcdAmountMode: g.qcd?.amountMode ?? null,
       };
 }
 
@@ -121,6 +127,8 @@ export function giftDraftToSeriesRow(g: EstateFlowGift): GiftSeriesLite | null {
     inflationAdjust: g.inflationAdjust,
     valuationDiscount: g.valuationDiscount ?? null,
     useCrummeyPowers: g.crummey,
+    qcdAccountId: g.qcd?.accountId ?? null,
+    qcdAmountMode: g.qcd?.amountMode ?? null,
   };
 }
 
@@ -159,6 +167,8 @@ export function profileGiftRowToDraft(g: Gift): EstateFlowGift | null {
     eventKind: g.eventKind ?? "outright",
     valuationDiscount:
       g.valuationDiscount != null ? String(g.valuationDiscount) : null,
+    qcdAccountId: g.qcdAccountId ?? null,
+    qcdAmountMode: g.qcdAmountMode ?? null,
   });
 }
 
@@ -179,6 +189,8 @@ export function profileGiftSeriesRowToDraft(s: GiftSeriesLite): EstateFlowGift {
     useCrummeyPowers: s.useCrummeyPowers,
     valuationDiscount:
       s.valuationDiscount != null ? String(s.valuationDiscount) : null,
+    qcdAccountId: s.qcdAccountId ?? null,
+    qcdAmountMode: s.qcdAmountMode ?? null,
   });
 }
 

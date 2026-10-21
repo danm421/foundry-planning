@@ -90,6 +90,7 @@ describe("gift draft → row", () => {
       recipientExternalBeneficiaryId: null,
       accountId: "acct-1", percent: 0.15, valuationDiscount: null,
       useCrummeyPowers: false, notes: null, eventKind: "outright",
+      qcdAccountId: null, qcdAmountMode: null,
     });
   });
 
@@ -188,6 +189,8 @@ describe("profile row → draft", () => {
     eventKind: "outright",
     businessEntityId: null,
     liabilityId: null,
+    qcdAccountId: null,
+    qcdAmountMode: null,
     notes: null,
   };
 
@@ -246,6 +249,8 @@ describe("profile row → draft", () => {
       inflationAdjust: true,
       valuationDiscount: 0.2,
       useCrummeyPowers: true,
+      qcdAccountId: null,
+      qcdAmountMode: null,
     };
     expect(giftDraftToSeriesRow(profileGiftSeriesRowToDraft(seriesRow))).toEqual(seriesRow);
   });
@@ -404,5 +409,39 @@ describe("effective-tree entities → Profile trust rows", () => {
     const on = applyScenarioChanges(baseTree, [change], { grp: true }, groups).effectiveTree;
     expect((off.entities ?? []).map((e) => e.name)).toEqual(["Family Trust"]);
     expect((on.entities ?? []).map((e) => e.name)).toEqual(["Family Trust", "SLAT for Client"]);
+  });
+});
+
+describe("QCD columns round-trip through the Family page rows", () => {
+  const qcd = { accountId: "ira-1", amountMode: "fixed" as const };
+  const charity = { kind: "external_beneficiary" as const, id: "eb-1" };
+
+  it("maps a one-time QCD draft to its two columns, and back", () => {
+    const row = giftDraftToRow({
+      kind: "cash-once", id: "q1", year: 2030, amount: 20000, grantor: "client",
+      recipient: charity, crummey: false, qcd,
+    })!;
+    expect(row).toMatchObject({ qcdAccountId: "ira-1", qcdAmountMode: "fixed" });
+    expect(profileGiftRowToDraft(row)).toMatchObject({ qcd });
+  });
+
+  it("maps a QCD series draft to its two columns, and back", () => {
+    const row = giftDraftToSeriesRow({
+      kind: "series", id: "q2", startYear: 2030, endYear: 2035, annualAmount: 0, amountMode: "fixed",
+      inflationAdjust: false, grantor: "spouse", recipient: charity, crummey: false,
+      qcd: { accountId: "ira-2", amountMode: "full_rmd" },
+    })!;
+    expect(row).toMatchObject({ qcdAccountId: "ira-2", qcdAmountMode: "full_rmd" });
+    expect(profileGiftSeriesRowToDraft(row)).toMatchObject({ qcd: { accountId: "ira-2", amountMode: "full_rmd" } });
+  });
+
+  it("writes null for both columns on a plain cash gift (switching back clears them)", () => {
+    const row = giftDraftToRow({
+      kind: "cash-once", id: "c1", year: 2030, amount: 500, grantor: "client",
+      recipient: charity, crummey: false,
+    })!;
+    expect(row.qcdAccountId).toBeNull();
+    expect(row.qcdAmountMode).toBeNull();
+    expect(profileGiftRowToDraft(row)).not.toHaveProperty("qcd");
   });
 });

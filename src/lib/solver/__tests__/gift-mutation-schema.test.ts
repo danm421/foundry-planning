@@ -18,6 +18,30 @@ describe("SOLVER_MUTATION_SCHEMA — gift-upsert", () => {
     expect(r.success).toBe(true);
   });
 
+  it("keeps the qcd key on a series draft, immediately before valuationDiscount", () => {
+    const qcd = { accountId: "ira-1", amountMode: "fixed" as const };
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "gift-upsert", id: "g5",
+      value: { kind: "series", id: "g5", startYear: 2030, endYear: 2040, annualAmount: 20000, amountMode: "fixed", inflationAdjust: false, grantor: "client", recipient: { kind: "external_beneficiary", id: "c1" }, crummey: false, qcd, valuationDiscount: null },
+    });
+    expect(r.success).toBe(true);
+    if (!r.success || r.data.kind !== "gift-upsert" || !r.data.value) return;
+    expect((r.data.value as { qcd?: unknown }).qcd).toEqual(qcd);
+    const keys = Object.keys(r.data.value);
+    expect(keys.indexOf("qcd")).toBe(keys.indexOf("valuationDiscount") - 1);
+  });
+
+  it("keeps the qcd key on a cash-once draft", () => {
+    const qcd = { accountId: "ira-1", amountMode: "full_rmd" as const };
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "gift-upsert", id: "g6",
+      value: { kind: "cash-once", id: "g6", year: 2030, amount: 0, grantor: "client", recipient: { kind: "external_beneficiary", id: "c1" }, crummey: false, qcd },
+    });
+    expect(r.success).toBe(true);
+    if (!r.success || r.data.kind !== "gift-upsert" || !r.data.value) return;
+    expect((r.data.value as { qcd?: unknown }).qcd).toEqual(qcd);
+  });
+
   it("accepts an asset-once gift", () => {
     const r = SOLVER_MUTATION_SCHEMA.safeParse({
       kind: "gift-upsert", id: "g3",

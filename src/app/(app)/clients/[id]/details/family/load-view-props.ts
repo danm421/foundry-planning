@@ -355,6 +355,8 @@ export async function loadFamilyViewProps(
       eventKind: g.eventKind,
       businessEntityId: g.businessEntityId ?? null,
       liabilityId: g.liabilityId ?? null,
+      qcdAccountId: g.qcdAccountId ?? null,
+      qcdAmountMode: g.qcdAmountMode ?? null,
       notes: g.notes ?? null,
     }));
 
@@ -372,6 +374,8 @@ export async function loadFamilyViewProps(
     valuationDiscount:
       s.valuationDiscount != null ? parseFloat(s.valuationDiscount as string) : null,
     useCrummeyPowers: s.useCrummeyPowers,
+    qcdAccountId: s.qcdAccountId ?? null,
+    qcdAmountMode: s.qcdAmountMode ?? null,
   }));
 
   // Neither `gifts` nor a solver-saved gift lives in a scenario-scoped table the

@@ -10,6 +10,8 @@ import { resolveScenarioId } from "@/lib/scenario/resolve-scenario-param";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { parseBody } from "@/lib/schemas/common";
 import { giftSeriesUpdateSchema } from "@/lib/schemas/gift-series";
+import { QCD_NO_ANNUAL_EXCLUSION } from "@/lib/schemas/qcd-fields";
+import { checkMergedQcd } from "@/lib/gifts/qcd-source-check";
 
 export const dynamic = "force-dynamic";
 
@@ -120,6 +122,48 @@ export async function PATCH(
       }
     }
 
+    // PATCH bodies are partial, so a QCD is validated against the stored row with
+    // the patch laid over it: a grantor- or recipient-only edit could otherwise
+    // move a QCD to the other spouse's IRA or a private charity. One extra
+    // SELECT, and only when the patch touches a field a QCD rule reads.
+    const touchesQcdRule =
+      d.qcdAccountId !== undefined ||
+      d.qcdAmountMode !== undefined ||
+      d.grantor !== undefined ||
+      touchedRecipient ||
+      d.annualAmount !== undefined ||
+      d.amountMode !== undefined;
+    if (touchesQcdRule) {
+      const [existing] = await db
+        .select()
+        .from(giftSeries)
+        .where(and(eq(giftSeries.id, seriesId), eq(giftSeries.clientId, id), ...partition.scope));
+      if (existing) {
+        const merged = {
+          qcdAccountId: d.qcdAccountId !== undefined ? d.qcdAccountId : existing.qcdAccountId,
+          qcdAmountMode: d.qcdAmountMode !== undefined ? d.qcdAmountMode : existing.qcdAmountMode,
+          grantor: d.grantor ?? existing.grantor,
+          recipientExternalBeneficiaryId: touchedRecipient
+            ? (d.recipientExternalBeneficiaryId ?? null)
+            : existing.recipientExternalBeneficiaryId,
+          amount: d.annualAmount !== undefined ? d.annualAmount : Number(existing.annualAmount),
+        };
+        const qcdError = await checkMergedQcd(db, id, merged);
+        if (qcdError) return NextResponse.json({ error: qcdError }, { status: 400 });
+        if (merged.qcdAccountId != null) {
+          if ((d.amountMode ?? existing.amountMode) !== "fixed") {
+            return NextResponse.json({ error: QCD_NO_ANNUAL_EXCLUSION }, { status: 400 });
+          }
+        } else if (merged.amount <= 0) {
+          // The schema lets a patch carry 0 (a full-RMD QCD stores 0); any other series must stay positive.
+          return NextResponse.json(
+            { error: "annualAmount must be greater than zero." },
+            { status: 400 },
+          );
+        }
+      }
+    }
+
     const [updated] = await db
       .update(giftSeries)
       .set({
@@ -154,6 +198,8 @@ export async function PATCH(
           useCrummeyPowers: d.useCrummeyPowers,
         }),
         ...(d.notes !== undefined && { notes: d.notes ?? null }),
+        ...(d.qcdAccountId !== undefined && { qcdAccountId: d.qcdAccountId }),
+        ...(d.qcdAmountMode !== undefined && { qcdAmountMode: d.qcdAmountMode }),
         updatedAt: new Date(),
       })
       .where(and(eq(giftSeries.id, seriesId), eq(giftSeries.clientId, id), ...partition.scope))

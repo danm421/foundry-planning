@@ -1036,7 +1036,7 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
         nullable: true,
         range: { min: 0 },
         notes:
-          "Strictly greater than 0. REQUIRED for a cash gift; the route forces it to null whenever accountId or liabilityId is set. Stays the FULL undiscounted value — the valuation discount is never folded in.",
+          "Strictly greater than 0 (0 only for a Full RMD QCD). REQUIRED for a cash gift; the route forces it to null whenever accountId or liabilityId is set. Stays the FULL undiscounted value — the valuation discount is never folded in.",
       },
       {
         key: "grantor",
@@ -1116,6 +1116,23 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
         kind: "text",
         nullable: true,
         notes: "Accepted by both routes; the gift dialog on this tab has no control for it.",
+      },
+      {
+        key: "qcdAccountId",
+        label: "From an IRA (QCD)",
+        kind: "uuid",
+        nullable: true,
+        notes:
+          "Makes this a qualified charitable distribution paid straight from the IRA to the charity. Set together with qcdAmountMode, or both null. The IRA must be this client's traditional, SEP or SIMPLE IRA owned by the grantor; the recipient must be a PUBLIC charity (recipientExternalBeneficiaryId); the grantor cannot be 'joint'. A QCD cannot also transfer an account.",
+      },
+      {
+        key: "qcdAmountMode",
+        label: "QCD amount",
+        kind: "enum",
+        enumValues: ["fixed", "full_rmd"],
+        nullable: true,
+        notes:
+          "On screen: 'Fixed amount' vs 'Full RMD'. 'full_rmd' sends the amount as 0 (the RMD sets it); 'fixed' needs an amount above 0. Set together with qcdAccountId, or both null to switch back to a cash gift.",
       },
       {
         key: "eventKind",
@@ -1226,7 +1243,7 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
         required: true,
         range: { min: 0 },
         notes:
-          "Strictly greater than 0, and required even when amountMode is 'annual_exclusion' (the engine substitutes the exclusion at projection time).",
+          "Strictly greater than 0 (0 only for a Full RMD QCD), and required even when amountMode is 'annual_exclusion' (the engine substitutes the exclusion at projection time).",
       },
       {
         key: "amountMode",
@@ -1257,6 +1274,23 @@ export const PROFILE_ENTITIES: readonly DetailEntity[] = [
         range: { min: 0, max: 0.99995 },
         notes:
           "DECIMAL FRACTION (0.3 = 30%); the field shows whole percent. Same exclusive 0.99995 upper bound and numeric(6,4) CHECK as the one-time gift. Applied to EVERY fanned-out yearly occurrence.",
+      },
+      {
+        key: "qcdAccountId",
+        label: "From an IRA (QCD)",
+        kind: "uuid",
+        nullable: true,
+        notes:
+          "Makes this a qualified charitable distribution paid straight from the IRA to the charity. Set together with qcdAmountMode, or both null. The IRA must be this client's traditional, SEP or SIMPLE IRA owned by the grantor; the recipient must be a PUBLIC charity (recipientExternalBeneficiaryId); the grantor cannot be 'joint'. A QCD series always uses amountMode 'fixed'.",
+      },
+      {
+        key: "qcdAmountMode",
+        label: "QCD amount",
+        kind: "enum",
+        enumValues: ["fixed", "full_rmd"],
+        nullable: true,
+        notes:
+          "On screen: 'Fixed amount' vs 'Full RMD'. 'full_rmd' sends the amount as 0 (the RMD sets it); 'fixed' needs an amount above 0. Set together with qcdAccountId, or both null to switch back to a cash gift.",
       },
       {
         key: "notes",

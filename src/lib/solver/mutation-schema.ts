@@ -408,6 +408,15 @@ const GIFT_RECIPIENT = z.object({
 // emits keys in shape order, and the payload written here is later read back as
 // an EstateFlowGift draft, whose JSON.stringify diff is key-order-sensitive
 // (see the LAST KEY contract in estate-flow-gifts.ts / estate-flow-gift-diff.ts).
+// A QCD (IRA -> public charity) rides on the cash-once and series arms only. Like
+// `valuationDiscount`, a missing key here would be STRIPPED, silently turning a
+// QCD saved from the Solver back into a household-cash gift. Declared right
+// before `valuationDiscount` (the LAST KEY contract above).
+const GIFT_QCD = z.object({
+  accountId: z.string().min(1),
+  amountMode: z.enum(["fixed", "full_rmd"]),
+});
+
 const GIFT_VALUE = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("cash-once"),
@@ -419,6 +428,7 @@ const GIFT_VALUE = z.discriminatedUnion("kind", [
     crummey: z.boolean(),
     eventKind: GIFT_EVENT_KIND.optional(),
     enabled: z.boolean().optional(),
+    qcd: GIFT_QCD.optional(),
     valuationDiscount,
   }),
   z.object({
@@ -446,6 +456,7 @@ const GIFT_VALUE = z.discriminatedUnion("kind", [
     recipient: GIFT_RECIPIENT,
     crummey: z.boolean(),
     enabled: z.boolean().optional(),
+    qcd: GIFT_QCD.optional(),
     valuationDiscount,
   }),
 ]);

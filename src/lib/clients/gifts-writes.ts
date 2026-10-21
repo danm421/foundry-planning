@@ -10,6 +10,7 @@ import { handleOf, inTransaction, type WriteOptions } from "@/lib/db-tx";
 import { assertAccountsInClient, assertLiabilitiesInClient } from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
 import { giftCreateSchema, giftUpdateSchema } from "@/lib/schemas/gifts";
+import { checkQcdSource, checkMergedQcd } from "@/lib/gifts/qcd-source-check";
 import { applyOwnershipTransfer, getProjectionStartYearForScenario, OwnershipTransferError } from "@/lib/ownership";
 import { buildBundledChildValues, buildChildPatchValues } from "@/lib/clients/gift-child-values";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
@@ -90,6 +91,16 @@ export async function createGiftForClient(
   const liabCheck = await assertLiabilitiesInClient(id, [data.liabilityId], args.tx);
   if (!liabCheck.ok) return writeError(400, liabCheck.reason);
 
+  // A QCD's IRA and charity must be ones the IRS allows (the schema only checks shape).
+  if (data.qcdAccountId != null && data.recipientExternalBeneficiaryId != null) {
+    const qcdError = await checkQcdSource(handle, id, {
+      qcdAccountId: data.qcdAccountId,
+      recipientExternalBeneficiaryId: data.recipientExternalBeneficiaryId,
+      grantor: data.grantor,
+    });
+    if (qcdError) return writeError(400, qcdError);
+  }
+
   let row: GiftRow;
   try {
     row = await inTransaction(args, async (tx) => {
@@ -115,6 +126,8 @@ export async function createGiftForClient(
           parentGiftId: null,
           useCrummeyPowers: data.useCrummeyPowers ?? false,
           notes: data.notes ?? null,
+          qcdAccountId: data.qcdAccountId ?? null,
+          qcdAmountMode: data.qcdAmountMode ?? null,
         })
         .returning();
 
@@ -216,6 +229,7 @@ export async function createGiftForClient(
       grantor: row.grantor,
       accountId: row.accountId,
       liabilityId: row.liabilityId,
+      qcdAccountId: row.qcdAccountId,
       ...crossFirmMeta,
     },
     tx: args.tx,
@@ -251,6 +265,8 @@ export async function updateGiftForClient(
     recipientExternalBeneficiaryId?: string | null;
     useCrummeyPowers?: boolean;
     notes?: string | null;
+    qcdAccountId?: string | null;
+    qcdAmountMode?: "fixed" | "full_rmd" | null;
   };
 
   if (patch.recipientEntityId) {
@@ -288,6 +304,63 @@ export async function updateGiftForClient(
     if (!ext) return writeError(400, "Recipient external beneficiary not found for this client");
   }
 
+  // PATCH bodies are partial, so a QCD is validated against the stored row with
+  // the patch laid over it: a grantor- or recipient-only edit could otherwise
+  // move a QCD to the other spouse's IRA or a private charity. One extra SELECT,
+  // and only when the patch touches a field a QCD rule reads.
+  const touchesQcdRule =
+    patch.qcdAccountId !== undefined ||
+    patch.qcdAmountMode !== undefined ||
+    patch.grantor !== undefined ||
+    patch.recipientEntityId !== undefined ||
+    patch.recipientFamilyMemberId !== undefined ||
+    patch.recipientExternalBeneficiaryId !== undefined ||
+    patch.amount !== undefined;
+  if (touchesQcdRule) {
+    const [existing] = await handle
+      .select()
+      .from(gifts)
+      .where(and(eq(gifts.id, giftId), eq(gifts.clientId, id)));
+    if (existing) {
+      const touchedRecipient =
+        patch.recipientEntityId !== undefined ||
+        patch.recipientFamilyMemberId !== undefined ||
+        patch.recipientExternalBeneficiaryId !== undefined;
+      const merged = {
+        qcdAccountId:
+          patch.qcdAccountId !== undefined ? patch.qcdAccountId : existing.qcdAccountId,
+        qcdAmountMode:
+          patch.qcdAmountMode !== undefined ? patch.qcdAmountMode : existing.qcdAmountMode,
+        grantor: patch.grantor ?? existing.grantor,
+        recipientExternalBeneficiaryId: touchedRecipient
+          ? (patch.recipientExternalBeneficiaryId ?? null)
+          : existing.recipientExternalBeneficiaryId,
+        amount:
+          patch.amount !== undefined
+            ? patch.amount
+            : existing.amount != null
+              ? Number(existing.amount)
+              : null,
+        transfersAsset:
+          existing.accountId != null ||
+          existing.liabilityId != null ||
+          existing.businessEntityId != null,
+      };
+      const qcdError = await checkMergedQcd(handle, id, merged);
+      if (qcdError) return writeError(400, qcdError);
+      // The schema lets a patch carry amount 0 (a full-RMD QCD stores 0); a row
+      // that is not a QCD must still be a positive cash gift.
+      if (
+        merged.qcdAccountId == null &&
+        !merged.transfersAsset &&
+        merged.amount != null &&
+        merged.amount <= 0
+      ) {
+        return writeError(400, "amount must be greater than zero.");
+      }
+    }
+  }
+
   const row = await inTransaction(args, async (tx) => {
     const [updated] = await tx
       .update(gifts)
@@ -316,6 +389,8 @@ export async function updateGiftForClient(
           useCrummeyPowers: patch.useCrummeyPowers,
         }),
         ...(patch.notes !== undefined && { notes: patch.notes ?? null }),
+        ...(patch.qcdAccountId !== undefined && { qcdAccountId: patch.qcdAccountId }),
+        ...(patch.qcdAmountMode !== undefined && { qcdAmountMode: patch.qcdAmountMode }),
         updatedAt: new Date(),
       })
       .where(and(eq(gifts.id, giftId), eq(gifts.clientId, id)))
@@ -348,7 +423,7 @@ export async function updateGiftForClient(
     clientId: id,
     firmId,
     actorId,
-    metadata: { ...crossFirmMeta },
+    metadata: { qcdAccountId: row.qcdAccountId, ...crossFirmMeta },
     tx: args.tx,
   });
   return { ok: true, data: row, resourceId: giftId };

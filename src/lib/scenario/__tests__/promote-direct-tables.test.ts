@@ -263,6 +263,27 @@ describe("copyGiftSeriesToBase", () => {
     expect(inserted.recipientEntityId).not.toBe("e-syn");
   });
 
+  it("carries a QCD series' two columns and remaps an IRA the same promote just created", async () => {
+    const { tx, ops } = makeTx(new Map());
+    await copyGiftSeriesToBase(tx as never, CTX, {
+      upserts: [
+        {
+          id: "gs1",
+          draft: {
+            ...seriesDraft,
+            recipient: { kind: "external_beneficiary", id: "eb1" },
+            qcd: { accountId: "ira-syn", amountMode: "full_rmd" },
+          },
+        },
+      ],
+      removes: [],
+      idRemap: new Map([["ira-syn", "db-ira"]]),
+    });
+    const inserted = ops.find((o) => o.op === "insert")!.values as Record<string, unknown>;
+    expect(inserted.qcdAccountId).toBe("db-ira");
+    expect(inserted.qcdAmountMode).toBe("full_rmd");
+  });
+
   it("scopes every partition write to the promoting client AND the promoted scenario", async () => {
     // ORG SCOPING. These statements key on an id the CHANGE names, which is
     // advisor-supplied data — so an unscoped update or delete would reach a row

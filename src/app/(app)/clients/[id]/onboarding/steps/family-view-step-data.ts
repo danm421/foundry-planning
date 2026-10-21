@@ -43,6 +43,8 @@ export interface FamilyViewStepData {
     percent: number | null;
     valuationDiscount: number | null;
     useCrummeyPowers: boolean;
+    qcdAccountId: string | null;
+    qcdAmountMode: "fixed" | "full_rmd" | null;
     notes: string | null;
   }[];
 }
@@ -175,6 +177,8 @@ export async function loadFamilyViewStepData(
       valuationDiscount:
         g.valuationDiscount != null ? parseFloat(g.valuationDiscount as string) : null,
       useCrummeyPowers: g.useCrummeyPowers,
+      qcdAccountId: g.qcdAccountId ?? null,
+      qcdAmountMode: g.qcdAmountMode ?? null,
       notes: g.notes ?? null,
     }));
 

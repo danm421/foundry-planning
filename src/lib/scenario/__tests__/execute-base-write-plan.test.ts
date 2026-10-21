@@ -849,6 +849,32 @@ describe("collectClientRefs", () => {
     });
   });
 
+  it("collects the IRA a QCD gift draft names, unless this batch creates it", () => {
+    const qcdGift = (id: string, accountId: string) => ({
+      kind: "gift" as const,
+      targetId: id,
+      raw: {
+        id,
+        kind: "cash-once",
+        year: 2030,
+        amount: 0,
+        grantor: "client",
+        recipient: { kind: "external_beneficiary", id: "eb1" },
+        crummey: false,
+        qcd: { accountId, amountMode: "full_rmd" },
+      },
+    });
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        { kind: "account", targetId: "ira-syn", raw: { id: "ira-syn" } },
+        qcdGift("g1", "ira-foreign"),
+        qcdGift("g2", "ira-syn"),
+      ],
+    };
+    expect(collectClientRefs(plan).accountIds).toEqual(["ira-foreign"]);
+  });
+
   it("collects nothing from a plan with no owners or beneficiaries", () => {
     const plan: BaseWritePlan = {
       ...emptyPlan(),

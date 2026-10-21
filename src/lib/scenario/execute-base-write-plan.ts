@@ -77,6 +77,8 @@ const REF_COLUMNS = [
   "businessAccountId",
   "fundingAccountId",
   "lifePolicyAccountId",
+  // → accounts: the IRA a QCD gift is paid from (`gifts.qcd_account_id`)
+  "qcdAccountId",
   // → entities
   "ownerEntityId",
   "recipientEntityId",
@@ -446,6 +448,12 @@ export function collectClientRefs(plan: BaseWritePlan): ClientRefs {
       }
     }
     if (kind === "ltc_policy") add("accountIds", payload.lifePolicyAccountId);
+    // A QCD gift DRAFT names its source IRA nested (`qcd: {accountId}`). It lands
+    // in `gifts.qcd_account_id` / `gift_series.qcd_account_id`, a GLOBAL FK, so a
+    // crafted id must not attach another firm's account to this client's gift.
+    if (kind === "gift") {
+      add("accountIds", (payload.qcd as { accountId?: unknown } | undefined)?.accountId);
+    }
     for (const o of (payload.owners as Record<string, unknown>[] | undefined) ?? []) {
       add("familyMemberIds", o.familyMemberId);
       add("externalBeneficiaryIds", o.externalBeneficiaryId);

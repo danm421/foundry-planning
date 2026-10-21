@@ -119,6 +119,9 @@ const RECIPIENT_COLUMNS = [
   "recipientExternalBeneficiaryId",
 ];
 
+/** A series row's other remappable FK: the IRA a QCD series is paid from. */
+const SERIES_REF_COLUMNS = [...RECIPIENT_COLUMNS, "qcdAccountId"];
+
 /** Apply S's series-shaped `gift` changes to S's own partition. Removes run
  *  first, so an id that is both removed and re-added ends up PRESENT — the same
  *  answer `applyGiftOverlays` gives, which strips every targeted id and then
@@ -215,7 +218,7 @@ function remapRecipient(
   idRemap: ReadonlyMap<string, string>,
 ): Record<string, unknown> {
   const out = { ...row };
-  for (const col of RECIPIENT_COLUMNS) {
+  for (const col of SERIES_REF_COLUMNS) {
     const v = out[col];
     if (typeof v === "string" && idRemap.has(v)) out[col] = idRemap.get(v);
   }

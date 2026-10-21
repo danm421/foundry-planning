@@ -208,3 +208,113 @@ describe("giftSeriesSchema — Phase 3 extension", () => {
     ).toBe(false);
   });
 });
+
+describe("QCD gifts (From an IRA)", () => {
+  const ira = "44444444-4444-4444-4444-444444444444";
+  const charity = "55555555-5555-5555-5555-555555555555";
+  const base = {
+    year: 2027,
+    grantor: "client" as const,
+    recipientExternalBeneficiaryId: charity,
+    qcdAccountId: ira,
+  };
+
+  it("accepts a fixed QCD", () => {
+    expect(
+      giftCreateSchema.safeParse({ ...base, amount: 20_000, qcdAmountMode: "fixed" }).success,
+    ).toBe(true);
+  });
+
+  it("accepts a full-RMD QCD with amount 0", () => {
+    expect(
+      giftCreateSchema.safeParse({ ...base, amount: 0, qcdAmountMode: "full_rmd" }).success,
+    ).toBe(true);
+  });
+
+  it("rejects a full-RMD QCD with a non-zero amount", () => {
+    expect(
+      giftCreateSchema.safeParse({ ...base, amount: 5, qcdAmountMode: "full_rmd" }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a fixed QCD with amount 0", () => {
+    expect(
+      giftCreateSchema.safeParse({ ...base, amount: 0, qcdAmountMode: "fixed" }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a QCD with only one of the two fields", () => {
+    const a = giftCreateSchema.safeParse({ ...base, amount: 20_000 });
+    const b = giftCreateSchema.safeParse({
+      year: 2027,
+      grantor: "client",
+      recipientExternalBeneficiaryId: charity,
+      qcdAmountMode: "fixed",
+      amount: 20_000,
+    });
+    expect(a.success).toBe(false);
+    expect(b.success).toBe(false);
+    if (!a.success) {
+      expect(a.error.issues.map((i) => i.message)).toContain(
+        "A QCD needs both the IRA and the amount mode",
+      );
+    }
+  });
+
+  it("rejects a QCD to a family member", () => {
+    const r = giftCreateSchema.safeParse({
+      year: 2027,
+      grantor: "client",
+      recipientFamilyMemberId: UUID,
+      qcdAccountId: ira,
+      qcdAmountMode: "fixed",
+      amount: 20_000,
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues.map((i) => i.message)).toContain("A QCD must go to a charity");
+    }
+  });
+
+  it("rejects a QCD that also transfers an account", () => {
+    const r = giftCreateSchema.safeParse({
+      ...base,
+      qcdAmountMode: "fixed",
+      amount: 20_000,
+      accountId: UUID,
+      percent: 0.5,
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues.map((i) => i.message)).toContain(
+        "A QCD can't also transfer an account",
+      );
+    }
+  });
+
+  it("rejects a joint QCD", () => {
+    const r = giftCreateSchema.safeParse({
+      ...base,
+      grantor: "joint",
+      amount: 20_000,
+      qcdAmountMode: "fixed",
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues.map((i) => i.message)).toContain(
+        "A QCD has one giver — the IRA's owner",
+      );
+    }
+  });
+
+  it("still rejects a non-QCD cash gift with amount 0", () => {
+    expect(
+      giftCreateSchema.safeParse({
+        year: 2027,
+        amount: 0,
+        grantor: "client",
+        recipientExternalBeneficiaryId: charity,
+      }).success,
+    ).toBe(false);
+  });
+});

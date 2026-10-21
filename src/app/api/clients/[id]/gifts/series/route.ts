@@ -13,6 +13,7 @@ import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { loadActiveGiftChanges } from "@/lib/scenario/changes";
 import { partitionGiftChanges } from "@/lib/scenario/apply-gift-overlays";
 import { giftDraftToSeriesRow } from "@/lib/gifts/scenario-rows";
+import { checkQcdSource } from "@/lib/gifts/qcd-source-check";
 
 export const dynamic = "force-dynamic";
 
@@ -145,6 +146,16 @@ export async function POST(
       }
     }
 
+    // A QCD's IRA and charity must be ones the IRS allows (the schema only checks shape).
+    if (data.qcdAccountId != null && data.recipientExternalBeneficiaryId != null) {
+      const qcdError = await checkQcdSource(db, id, {
+        qcdAccountId: data.qcdAccountId,
+        recipientExternalBeneficiaryId: data.recipientExternalBeneficiaryId,
+        grantor: data.grantor,
+      });
+      if (qcdError) return NextResponse.json({ error: qcdError }, { status: 400 });
+    }
+
     const [row] = await db
       .insert(giftSeries)
       .values({
@@ -163,7 +174,11 @@ export async function POST(
         annualAmount: data.annualAmount.toString(),
         valuationDiscount:
           data.valuationDiscount != null ? String(data.valuationDiscount) : null,
-        amountMode: data.amountMode ?? "fixed",
+        // A QCD's `amount_mode` column is always 'fixed' (the DB CHECK requires it);
+        // its own Full RMD / Fixed choice lives in `qcd_amount_mode`.
+        amountMode: data.qcdAccountId != null ? "fixed" : (data.amountMode ?? "fixed"),
+        qcdAccountId: data.qcdAccountId ?? null,
+        qcdAmountMode: data.qcdAmountMode ?? null,
         inflationAdjust: data.inflationAdjust ?? false,
         useCrummeyPowers: data.useCrummeyPowers ?? false,
         notes: data.notes ?? null,
@@ -180,6 +195,7 @@ export async function POST(
         grantor: row.grantor,
         startYear: row.startYear,
         endYear: row.endYear,
+        qcdAccountId: row.qcdAccountId,
       }),
     });
 

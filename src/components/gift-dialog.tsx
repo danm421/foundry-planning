@@ -222,6 +222,15 @@ export default function GiftDialog(props: GiftDialogProps) {
           useCrummeyPowers: draft.crummey,
         };
         if (discountToSend !== undefined) body.valuationDiscount = discountToSend;
+        // A QCD sends both columns; a PATCH of a non-QCD sends explicit nulls so
+        // switching a saved QCD back to a cash gift clears both together.
+        if (draft.qcd) {
+          body.qcdAccountId = draft.qcd.accountId;
+          body.qcdAmountMode = draft.qcd.amountMode;
+        } else if (inPlace) {
+          body.qcdAccountId = null;
+          body.qcdAmountMode = null;
+        }
         // PATCH: send all three recipient fields (with nulls) to clear stale recipients.
         // POST: send only the matching recipient field.
         if (inPlace) {
@@ -276,6 +285,8 @@ export default function GiftDialog(props: GiftDialogProps) {
           inflationAdjust: row.inflationAdjust,
           valuationDiscount: numOrNull(row.valuationDiscount),
           useCrummeyPowers: row.useCrummeyPowers,
+          qcdAccountId: row.qcdAccountId ?? null,
+          qcdAmountMode: row.qcdAmountMode ?? null,
         });
         return;
       }
@@ -295,6 +306,14 @@ export default function GiftDialog(props: GiftDialogProps) {
       if (draft.kind === "cash-once") {
         body.amount = draft.amount;
         body.useCrummeyPowers = draft.crummey;
+        // See the series branch: a PATCH of a non-QCD clears both QCD columns.
+        if (draft.qcd) {
+          body.qcdAccountId = draft.qcd.accountId;
+          body.qcdAmountMode = draft.qcd.amountMode;
+        } else if (inPlace) {
+          body.qcdAccountId = null;
+          body.qcdAmountMode = null;
+        }
       } else {
         body.accountId = draft.accountId;
         body.percent = draft.percent;
@@ -332,6 +351,8 @@ export default function GiftDialog(props: GiftDialogProps) {
         percent: numOrNull(row.percent),
         valuationDiscount: numOrNull(row.valuationDiscount),
         useCrummeyPowers: row.useCrummeyPowers,
+        qcdAccountId: row.qcdAccountId ?? null,
+        qcdAmountMode: row.qcdAmountMode ?? null,
         notes: row.notes ?? null,
       });
     } catch (e) {

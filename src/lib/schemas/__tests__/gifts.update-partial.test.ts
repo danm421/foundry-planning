@@ -77,3 +77,28 @@ describe("giftCreateSchema keeps its defaults", () => {
     expect(result.data.eventKind).toBe("outright");
   });
 });
+
+describe("giftUpdateSchema — QCD fields", () => {
+  const IRA = "44444444-4444-4444-4444-444444444444";
+
+  it("accepts clearing both QCD fields to null (switch back to cash)", () => {
+    const r = giftUpdateSchema.safeParse({ qcdAccountId: null, qcdAmountMode: null });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data).toEqual({ qcdAccountId: null, qcdAmountMode: null });
+  });
+
+  it("accepts changing only the amount mode on an existing QCD", () => {
+    expect(giftUpdateSchema.safeParse({ qcdAmountMode: "full_rmd", amount: 0 }).success).toBe(true);
+  });
+
+  it("accepts setting both QCD fields", () => {
+    expect(
+      giftUpdateSchema.safeParse({ qcdAccountId: IRA, qcdAmountMode: "fixed" }).success,
+    ).toBe(true);
+  });
+
+  it("rejects half-cleared QCD fields (one null, one set)", () => {
+    expect(giftUpdateSchema.safeParse({ qcdAccountId: null, qcdAmountMode: "fixed" }).success).toBe(false);
+    expect(giftUpdateSchema.safeParse({ qcdAccountId: IRA, qcdAmountMode: null }).success).toBe(false);
+  });
+});

@@ -21,7 +21,7 @@ import ExternalBeneficiaryDialog, {
   saveExternalBeneficiary,
 } from "./external-beneficiary-dialog";
 import type { AccountFormInitial } from "./forms/add-account-form";
-import type { BeneficiaryRef, EntityFlowMode, GiftEventKind } from "@/engine/types";
+import type { BeneficiaryRef, EntityFlowMode, GiftEventKind, QcdAmountMode } from "@/engine/types";
 import type { ClientFormInitial } from "./forms/add-client-form";
 import type { ClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { type TrustSubType } from "@/lib/entities/trust";
@@ -138,6 +138,10 @@ export type Gift = {
   /** Set on the auto-bundled liability-transfer child of an asset gift. Same
    *  reason as `businessEntityId` — not draft-representable. */
   liabilityId?: string | null;
+  /** A QCD (paid from this IRA straight to a public charity): both set or both
+   *  null. Optional for the same reason `eventKind` is. */
+  qcdAccountId?: string | null;
+  qcdAmountMode?: QcdAmountMode | null;
   notes: string | null;
 };
 
@@ -155,6 +159,9 @@ export type GiftSeriesLite = {
   /** See `Gift.valuationDiscount`. */
   valuationDiscount: number | null;
   useCrummeyPowers: boolean;
+  /** See `Gift.qcdAccountId`. */
+  qcdAccountId?: string | null;
+  qcdAmountMode?: QcdAmountMode | null;
   /** True for a series that exists only as a scenario's `gift` change (see
    *  `overlayScenarioGiftRows`). Absent for a real `gift_series` row — a base
    *  series, or a copy in the scenario's own partition. */
