@@ -125,7 +125,7 @@ export async function factFinderCreateCheckFor(
 ): Promise<{ ok: true } | FactFinderRefusal> {
   const caller = await connectorCaller(principal, clientId, {});
   return (
-    clientRefusal(caller.access) ??
+    clientRefusal(caller.access, caller.firmId) ??
     (await entitlementRefusal(caller.aiImportEntitled, caller.deniedAudit)) ?? { ok: true }
   );
 }
@@ -154,10 +154,14 @@ async function connectorCaller(principal: McpPrincipal, clientId: string, auditM
   };
 }
 
-/** The client checks every doorway runs first: found, the caller's own firm, edit permission. */
-function clientRefusal(access: ClientAccessCheck): FactFinderRefusal | null {
+/**
+ * The client checks every doorway runs first: found, the caller's own firm, edit
+ * permission. A teammate's edit share inside the same firm passes — only a client
+ * owned by another firm is refused.
+ */
+function clientRefusal(access: ClientAccessCheck, firmId: string): FactFinderRefusal | null {
   if (!access.ok) return refuse(404, "Not found");
-  if (access.access !== "own") return refuse(403, "Cross-organization imports are not supported.");
+  if (access.firmId !== firmId) return refuse(403, "Cross-organization imports are not supported.");
   if (access.permission !== "edit") return refuse(403, "View-only access");
   return null;
 }
@@ -186,7 +190,7 @@ async function factFinderAccess(args: {
 }): Promise<FactFinderAccess> {
   const { firmId, userId, clientId, importId, op } = args;
 
-  const clientRefused = clientRefusal(args.access);
+  const clientRefused = clientRefusal(args.access, firmId);
   if (clientRefused) return clientRefused;
 
   const rl = await checkImportRateLimit(firmId, op);

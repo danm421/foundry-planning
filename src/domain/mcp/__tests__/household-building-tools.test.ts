@@ -220,11 +220,11 @@ describe("start_fact_finder_step", () => {
   });
 
   // R23: the import gate's client and entitlement refusals run before a draft exists.
-  it("refuses a shared client before creating anything", async () => {
-    h.verifyClientAccessFor.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_1", access: "shared" });
+  it("refuses a client shared from another firm before creating anything", async () => {
+    h.verifyClientAccessFor.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_2", access: "shared" });
     const err = await start.run({ clientId: "c1", step: "household" }, principal).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(McpForbiddenError);
-    expect((err as Error).message).toBe("Cross-organization imports are not supported.");
+    expect((err as Error).message).toBe("Household not found or access denied");
     expect(h.createFactFinderImport).not.toHaveBeenCalled();
     expect(h.loadRecordBook).not.toHaveBeenCalled();
   });
@@ -1170,8 +1170,8 @@ describe("update_plan_detail", () => {
   });
 
   // R23: the create check's refusals come before a draft exists, so there is nothing to discard.
-  it("refuses a shared client before creating anything", async () => {
-    h.verifyClientAccessFor.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_1", access: "shared" });
+  it("refuses a client shared from another firm before creating anything", async () => {
+    h.verifyClientAccessFor.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_2", access: "shared" });
     const err = await call({ sectionId: "retirement", recordId: "acc-ira", cells: { currentValue: 1 } }).catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(McpForbiddenError);

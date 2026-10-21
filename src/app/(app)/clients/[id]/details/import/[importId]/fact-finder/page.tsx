@@ -5,6 +5,7 @@ import { clientImports, entities, familyMembers } from "@/db/schema";
 import { FactFinderScreen } from "@/components/fact-finder/fact-finder-screen";
 import { FinishedImportNotice } from "@/components/fact-finder/finished-import-notice";
 import { requireClientPageAccess } from "@/lib/clients/page-access";
+import { getOrgId } from "@/lib/db-helpers";
 import { importScreenPath, isFactFinderImport, isFinishedInStatementChat, isSavedFactFinder } from "@/lib/imports/import-kind";
 import { listClientDocuments } from "@/lib/imports/client-documents";
 import { listLiveFiles } from "@/lib/fact-finder/persist";
@@ -24,10 +25,11 @@ interface PageProps {
  */
 export default async function FactFinderPage({ params }: PageProps) {
   const { id: clientId, importId } = await params;
-  const { access, firmId } = await requireClientPageAccess(clientId);
+  const { firmId } = await requireClientPageAccess(clientId);
   // Imports belong to the firm that owns the client (the fact finder routes
   // refuse anyone else), so a client shared from another firm has none here.
-  if (access !== "own") notFound();
+  // A teammate's share inside the same firm does.
+  if (firmId !== (await getOrgId())) notFound();
 
   const [imp] = await db
     .select({

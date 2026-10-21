@@ -157,7 +157,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     if (!access.ok) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    if (access.access !== "own") {
+    if (access.firmId !== firmId) {
       return NextResponse.json({ error: "Cross-organization imports are not supported." }, { status: 403 });
     }
     if (access.permission !== "edit") {
@@ -243,7 +243,7 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
     if (!access.ok) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    if (access.access !== "own") {
+    if (access.firmId !== firmId) {
       return NextResponse.json({ error: "Cross-organization imports are not supported." }, { status: 403 });
     }
     if (access.permission !== "edit") {

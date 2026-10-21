@@ -144,8 +144,8 @@ describe("factFinderCreateCheckFor", () => {
     expect(recordAudit).not.toHaveBeenCalled();
   });
 
-  it("refuses a shared client, view-only access and a missing client with the gate's answers", async () => {
-    vi.mocked(verifyClientAccessFor).mockResolvedValueOnce({ ok: true, permission: "edit", firmId: "org_1", access: "shared" });
+  it("refuses a client shared from another firm, view-only access and a missing client with the gate's answers", async () => {
+    vi.mocked(verifyClientAccessFor).mockResolvedValueOnce({ ok: true, permission: "edit", firmId: "org_2", access: "shared" });
     expect(await factFinderCreateCheckFor(PRINCIPAL, "c1")).toEqual({
       ok: false,
       status: 403,
@@ -156,6 +156,11 @@ describe("factFinderCreateCheckFor", () => {
     vi.mocked(verifyClientAccessFor).mockResolvedValueOnce({ ok: false });
     expect(await factFinderCreateCheckFor(PRINCIPAL, "c1")).toEqual({ ok: false, status: 404, body: { error: "Not found" } });
     expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("passes a teammate's edit share inside the same firm", async () => {
+    vi.mocked(verifyClientAccessFor).mockResolvedValueOnce({ ok: true, permission: "edit", firmId: "org_1", access: "shared" });
+    expect(await factFinderCreateCheckFor(PRINCIPAL, "c1")).toEqual({ ok: true });
   });
 
   it("403s a firm without the AI import entitlement and audits the refusal as the advisor", async () => {

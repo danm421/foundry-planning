@@ -71,17 +71,16 @@ export class PlanImportRefusal extends Error {
 }
 
 /** Same rule as POST /api/clients/[id]/imports: the caller (the principal when
- *  passed, else the session) must have own-firm edit access (book silo, Private
- *  clients, shares). */
+ *  passed, else the session) must have edit access (book silo, Private clients,
+ *  shares) to a client of their own firm — a teammate's edit share counts, a
+ *  share from another firm does not. */
 async function callerMayImportInto(
   clientId: string,
   firmId: string,
   principal?: Principal,
 ): Promise<boolean> {
   const access = await verifyClientAccessAs(principal, clientId);
-  return (
-    access.ok && access.access === "own" && access.permission === "edit" && access.firmId === firmId
-  );
+  return access.ok && access.permission === "edit" && access.firmId === firmId;
 }
 
 /**

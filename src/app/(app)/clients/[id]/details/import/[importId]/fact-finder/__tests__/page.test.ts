@@ -18,6 +18,7 @@ vi.mock("@/lib/imports/client-documents", () => ({ listClientDocuments: vi.fn() 
 vi.mock("@/components/fact-finder/fact-finder-screen", () => ({ FactFinderScreen: () => null }));
 
 import FactFinderPage from "../page";
+import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { requireClientPageAccess } from "@/lib/clients/page-access";
 import { listLiveFiles } from "@/lib/fact-finder/persist";
@@ -56,6 +57,7 @@ const run = () => FactFinderPage({ params: Promise.resolve({ id: "c1", importId:
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(db.select).mockReset(); // drops selects a redirect or the notice left unused
+  vi.mocked(auth).mockResolvedValue({ userId: "u1", orgId: "org_1" } as never);
   vi.mocked(requireClientPageAccess).mockResolvedValue({
     client: {}, firmId: "org_1", permission: "edit", access: "own",
   } as never);
@@ -143,6 +145,14 @@ describe("fact finder page", () => {
 
     selects([]);
     await expect(run()).rejects.toThrow("NEXT_NOT_FOUND");
+  });
+
+  it("opens for a teammate's edit share inside the same firm", async () => {
+    vi.mocked(requireClientPageAccess).mockResolvedValueOnce({
+      client: {}, firmId: "org_1", permission: "edit", access: "shared",
+    } as never);
+    selects([{ status: "draft", payloadJson: PAYLOAD }], [], []);
+    expect(((await run()) as ReactElement).type).toBe(FactFinderScreen);
   });
 
   it("sends a wizard import to the Review Wizard", async () => {

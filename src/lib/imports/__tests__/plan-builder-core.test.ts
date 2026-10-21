@@ -120,7 +120,7 @@ describe("ensurePlanImport", () => {
 
     it.each([
       ["cannot open the client", { ok: false }],
-      ["only holds a share on the client", { ok: true, permission: "edit", firmId: "org1", access: "shared" }],
+      ["only holds a share from another firm", { ok: true, permission: "edit", firmId: "org2", access: "shared" }],
       ["has view-only access", { ok: true, permission: "view", firmId: "org1", access: "own" }],
     ])("refuses and inserts nothing when the caller %s", async (_label, access) => {
       m.verifyClientAccess.mockResolvedValue(access);
@@ -484,9 +484,16 @@ describe("findImportTargetName", () => {
     expect(m.verifyClientAccess).toHaveBeenCalledWith("c1");
   });
 
+  it("returns the household name of a teammate's client shared with edit inside the firm", async () => {
+    m.verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "org1", access: "shared" });
+    m.where.mockResolvedValueOnce([{ name: "Jones Household" }]);
+
+    await expect(findImportTargetName("c1", "org1")).resolves.toBe("Jones Household");
+  });
+
   it.each([
     ["cannot open the client", { ok: false }],
-    ["only holds a share on the client", { ok: true, permission: "edit", firmId: "org1", access: "shared" }],
+    ["only holds a share from another firm", { ok: true, permission: "edit", firmId: "org2", access: "shared" }],
     ["has view-only access", { ok: true, permission: "view", firmId: "org1", access: "own" }],
     ["is in another firm", { ok: true, permission: "edit", firmId: "org2", access: "own" }],
   ])("returns null without reading the name when the caller %s", async (_label, access) => {

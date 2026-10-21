@@ -105,6 +105,28 @@ describe("POST /api/clients/[id]/imports — surface handling (C1)", () => {
   });
 });
 
+describe("POST /api/clients/[id]/imports — shares", () => {
+  it("lets a teammate with an edit share inside the same firm start an import", async () => {
+    vi.mocked(verifyClientAccess).mockResolvedValue({ ok: true, permission: "edit", firmId: "org_1", access: "shared" });
+    const res = await POST(makeReq({ mode: "onboarding" }), params);
+    expect(res.status).toBe(201);
+  });
+
+  it("refuses a share from another firm, and a view-only share, before creating anything", async () => {
+    vi.mocked(verifyClientAccess).mockResolvedValueOnce({ ok: true, permission: "edit", firmId: "org_2", access: "shared" });
+    const crossFirm = await POST(makeReq({ mode: "onboarding" }), params);
+    expect(crossFirm.status).toBe(403);
+    expect(await crossFirm.json()).toEqual({ error: "Cross-organization imports are not supported." });
+
+    vi.mocked(verifyClientAccess).mockResolvedValueOnce({ ok: true, permission: "view", firmId: "org_1", access: "shared" });
+    const viewOnly = await POST(makeReq({ mode: "onboarding" }), params);
+    expect(viewOnly.status).toBe(403);
+    expect(await viewOnly.json()).toEqual({ error: "View-only access" });
+
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+});
+
 describe("POST /api/clients/[id]/imports — the fact finder import's audit", () => {
   it("names the advisor, or the ops operator impersonating them — as recordAudit names a session it reads", async () => {
     await POST(makeReq({ mode: "onboarding", surface: "fact_finder" }), params);
