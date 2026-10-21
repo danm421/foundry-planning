@@ -156,6 +156,60 @@ describe("Charitable deduction — runProjection integration", () => {
     ]);
   });
 
+  it("series cash gift to a public charity is deducted like a one-time gift", () => {
+    const data = baseScenario();
+    data.gifts = [];
+    data.giftEvents = [
+      {
+        kind: "cash",
+        year: 2026,
+        amount: 800_000,
+        grantor: "client",
+        recipientExternalBeneficiaryId: PUBLIC_CHARITY_ID,
+        useCrummeyPowers: false,
+        seriesId: "s1",
+      },
+    ];
+
+    const years = runProjection(data);
+    const year2026 = years.find((y) => y.year === 2026);
+    expect(year2026!.charityCarryforward?.cashPublic).toEqual([
+      { amount: 200_000, originYear: 2026 },
+    ]);
+  });
+
+  it("a one-time gift present in both gifts and giftEvents is counted once", () => {
+    const data = baseScenario();
+    data.gifts = [
+      {
+        id: "gift-1",
+        year: 2026,
+        amount: 800_000,
+        grantor: "client",
+        recipientExternalBeneficiaryId: PUBLIC_CHARITY_ID,
+        useCrummeyPowers: false,
+      } as Gift,
+    ];
+    data.giftEvents = [
+      {
+        kind: "cash",
+        year: 2026,
+        amount: 800_000,
+        grantor: "client",
+        recipientExternalBeneficiaryId: PUBLIC_CHARITY_ID,
+        useCrummeyPowers: false,
+        sourceGiftId: "gift-1",
+      },
+    ];
+
+    const years = runProjection(data);
+    const year2026 = years.find((y) => y.year === 2026);
+    // A double count would carry forward 1,000,000 (1.6M against a 600k cap).
+    expect(year2026!.charityCarryforward?.cashPublic).toEqual([
+      { amount: 200_000, originYear: 2026 },
+    ]);
+  });
+
   it("no charitable gifts — carryforward stays empty", () => {
     const data = baseScenario();
     const years = runProjection(data);

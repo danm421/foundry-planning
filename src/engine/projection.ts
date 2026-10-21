@@ -5002,18 +5002,28 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // AGI limits + decay + FIFO carryforward consumption. Bucket cash gifts as
     // public/private; v1 simplification: gift events carry no asset-class metadata yet.
     const charityGiftsThisYear: { amount: number; bucket: CharityBucket }[] = [];
+    const cashCharityBucket = (
+      recipientExternalBeneficiaryId: string | undefined,
+    ): CharityBucket | null => {
+      if (!recipientExternalBeneficiaryId) return null;
+      const beneficiary = (data.externalBeneficiaries ?? []).find(
+        (eb) => eb.id === recipientExternalBeneficiaryId,
+      );
+      if (!beneficiary || beneficiary.kind !== "charity") return null;
+      return beneficiary.charityType === "private" ? "cashPrivate" : "cashPublic";
+    };
     for (const g of data.gifts ?? []) {
       if (g.year !== year) continue;
-      if (!g.recipientExternalBeneficiaryId) continue;
-      const beneficiary = (data.externalBeneficiaries ?? []).find(
-        (eb) => eb.id === g.recipientExternalBeneficiaryId,
-      );
-      if (!beneficiary || beneficiary.kind !== "charity") continue;
-      const isPrivate = beneficiary.charityType === "private";
-      charityGiftsThisYear.push({
-        amount: g.amount,
-        bucket: isPrivate ? "cashPrivate" : "cashPublic",
-      });
+      const bucket = cashCharityBucket(g.recipientExternalBeneficiaryId);
+      if (bucket) charityGiftsThisYear.push({ amount: g.amount, bucket });
+    }
+    // Recurring (gift_series) occurrences reach only `giftEvents`. A one-time
+    // cash gift sits in both lists — its event carries `sourceGiftId` and no
+    // `seriesId` — so reading only series events keeps it from counting twice.
+    for (const ev of data.giftEvents ?? []) {
+      if (ev.kind !== "cash" || ev.seriesId == null || ev.year !== year) continue;
+      const bucket = cashCharityBucket(ev.recipientExternalBeneficiaryId);
+      if (bucket) charityGiftsThisYear.push({ amount: ev.amount, bucket });
     }
 
     // Split-interest inception charitable deduction. In the funding year the

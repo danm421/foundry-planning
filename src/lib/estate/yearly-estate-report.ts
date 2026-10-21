@@ -5,6 +5,7 @@ import type {
   DrainAttribution,
   EstateTaxResult,
   Gift,
+  GiftEvent,
   HypotheticalEstateTax,
   HypotheticalEstateTaxOrdering,
   ProjectionYear,
@@ -245,6 +246,7 @@ function buildYearlyRow(args: RowBuilderArgs): YearlyEstateRow {
   const charity =
     cumulativeCharityGifts(
       clientData.gifts ?? [],
+      giftEvents,
       charityIds,
       yearRow.year,
       inflationRate,
@@ -368,20 +370,33 @@ function resolveInsuredRetirementYear(
 /** Sum lifetime cash gifts to charity external beneficiaries given in years
  *  ≤ N, each compounded at the plan's inflation rate from gift year to N.
  *  Asset gifts to charity are not included here — those would require
- *  account-value lookups; out of scope for the v2 charity column. */
-function cumulativeCharityGifts(
+ *  account-value lookups; out of scope for the v2 charity column.
+ *
+ *  Recurring (gift_series) occurrences live only in `giftEvents`. A one-time
+ *  cash gift sits in both lists — its event carries `sourceGiftId` and no
+ *  `seriesId` — so only series events are read from `giftEvents`. */
+export function cumulativeCharityGifts(
   gifts: Gift[],
+  giftEvents: GiftEvent[],
   charityIds: Set<string>,
   year: number,
   inflationRate: number,
 ): number {
   let total = 0;
-  for (const g of gifts) {
-    if (g.year > year) continue;
-    if (!g.recipientExternalBeneficiaryId) continue;
-    if (!charityIds.has(g.recipientExternalBeneficiaryId)) continue;
+  const add = (g: {
+    year: number;
+    amount: number;
+    recipientExternalBeneficiaryId?: string;
+  }) => {
+    if (g.year > year) return;
+    if (!g.recipientExternalBeneficiaryId) return;
+    if (!charityIds.has(g.recipientExternalBeneficiaryId)) return;
     const yearsCompounded = Math.max(0, year - g.year);
     total += g.amount * Math.pow(1 + inflationRate, yearsCompounded);
+  };
+  for (const g of gifts) add(g);
+  for (const ev of giftEvents) {
+    if (ev.kind === "cash" && ev.seriesId != null) add(ev);
   }
   return total;
 }
