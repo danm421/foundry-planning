@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildQcdEvents } from "../load-client-data";
+import { buildQcdEvents, partitionQcdRows } from "../load-client-data";
 
 const base = {
   grantor: "client" as const,
@@ -52,5 +52,21 @@ describe("buildQcdEvents", () => {
 
   it("ignores rows that are not QCDs", () => {
     expect(buildQcdEvents([gift("g", 2030, "2026-01-01", false)], [series("s", "2026-01-01", false)], 0.03)).toEqual([]);
+  });
+});
+
+describe("partitionQcdRows", () => {
+  const rows = () => ({
+    gifts: [gift("qcd-once", 2030, "2026-01-01"), gift("cash-once", 2030, "2026-01-02", false)],
+    series: [series("qcd-series", "2026-01-03"), series("cash-series", "2026-01-04", false)],
+  });
+
+  it("sends only cash rows to the gift / giftEvent path and only QCD rows to qcds", () => {
+    const { gifts, series: ser } = rows();
+    const p = partitionQcdRows(gifts, ser);
+    expect(p.plainGiftRows.map((g) => g.id)).toEqual(["cash-once"]);
+    expect(p.plainSeriesRows.map((s) => s.id)).toEqual(["cash-series"]);
+    const qcds = buildQcdEvents(p.qcdGiftRows, p.qcdSeriesRows, 0.03);
+    expect(new Set(qcds.map((e) => e.sourceGiftId ?? e.seriesId))).toEqual(new Set(["qcd-once", "qcd-series"]));
   });
 });

@@ -140,12 +140,29 @@ export class ProjectionInputError extends Error {
   }
 }
 
-/** Every QCD gift and series row, fanned out to one engine event per year.
+/** Splits gift and series rows into QCD rows and the plain rows that may feed
+ *  `gifts` / `giftEvents`. A QCD is paid from the IRA, so letting its row reach
+ *  the cash-gift path would debit household checking and take the charitable
+ *  deduction a second time. The loader builds cash gifts and series events from
+ *  the plain rows only. */
+export function partitionQcdRows<
+  G extends { qcdAccountId?: string | null },
+  S extends { qcdAccountId?: string | null },
+>(giftRows: G[], giftSeriesRows: S[]) {
+  return {
+    plainGiftRows: giftRows.filter((g) => g.qcdAccountId == null),
+    plainSeriesRows: giftSeriesRows.filter((s) => s.qcdAccountId == null),
+    qcdGiftRows: giftRows.filter((g) => g.qcdAccountId != null),
+    qcdSeriesRows: giftSeriesRows.filter((s) => s.qcdAccountId != null),
+  };
+}
+
+/** Fans QCD gift and series rows (from `partitionQcdRows`) out to one engine
+ *  event per year.
  *  Sorted by year, then by the source row's `createdAt` (one-time and series
  *  rows interleaved): the engine caps and clamps QCDs in entry order, so this
  *  is the order in which an IRA's balance and the giver's yearly cap are spent.
- *  These rows are excluded from `gifts` / `giftEvents` by the
- *  `qcdAccountId == null` filters in the loader. */
+ *  These rows are kept out of `gifts` / `giftEvents` by `partitionQcdRows`. */
 export function buildQcdEvents(
   giftRows: (GiftRow & { createdAt: Date })[],
   giftSeriesRows: (GiftSeriesDbRow & { createdAt: Date })[],
@@ -157,8 +174,8 @@ export function buildQcdEvents(
     if (!spec) return;
     for (const ev of fanOutQcd(spec, cpi)) tagged.push({ ev, createdAt: createdAt.getTime() });
   };
-  for (const g of giftRows) if (g.qcdAccountId != null) add(giftRowToDraft(g), g.createdAt);
-  for (const s of giftSeriesRows) if (s.qcdAccountId != null) add(giftSeriesRowToDraft(s), s.createdAt);
+  for (const g of giftRows) add(giftRowToDraft(g), g.createdAt);
+  for (const s of giftSeriesRows) add(giftSeriesRowToDraft(s), s.createdAt);
   // Array.sort is stable, so equal year + createdAt keeps row order.
   return tagged
     .sort((a, b) => a.ev.year - b.ev.year || a.createdAt - b.createdAt)
@@ -1666,11 +1683,12 @@ const loadClientDataCached = cache(
     // valued at projection time via T11's `accountValueAtYear × percent`.
     // Without this filter, asset rows would reach the estate-tax calc as $0
     // and silently drop from lifetime exemption consumption.
-    const mappedGifts = giftRows
+    const { plainGiftRows, plainSeriesRows, qcdGiftRows, qcdSeriesRows } =
+      partitionQcdRows(giftRows, giftSeriesRows);
+    const mappedGifts = plainGiftRows
       .filter(
         (g) =>
           g.amount != null &&
-          g.qcdAccountId == null &&
           g.accountId == null &&
           g.liabilityId == null &&
           g.businessEntityId == null,
@@ -1689,11 +1707,10 @@ const loadClientDataCached = cache(
     // ── Build giftEvents (discriminated union) ───────────────────────────────
     const cpi = resolvedInflationRate;
 
-    const cashFromGifts: GiftEvent[] = giftRows
+    const cashFromGifts: GiftEvent[] = plainGiftRows
       .filter(
         (g) =>
           g.amount != null &&
-          g.qcdAccountId == null &&
           g.accountId == null &&
           g.liabilityId == null &&
           g.businessEntityId == null,
@@ -1772,8 +1789,7 @@ const loadClientDataCached = cache(
         : resolvedInflationRate,
     );
 
-    const seriesEvents: GiftEvent[] = giftSeriesRows
-      .filter((s) => s.qcdAccountId == null)
+    const seriesEvents: GiftEvent[] = plainSeriesRows
       .flatMap((s) =>
       fanOutGiftSeries(
         {
@@ -1801,7 +1817,7 @@ const loadClientDataCached = cache(
       ...seriesEvents,
     ].sort((a, b) => a.year - b.year);
 
-    const qcds = buildQcdEvents(giftRows, giftSeriesRows, cpi);
+    const qcds = buildQcdEvents(qcdGiftRows, qcdSeriesRows, cpi);
 
     const mappedFamilyMembers = familyMemberRows.map((f) => ({
       id: f.id,
