@@ -260,6 +260,35 @@ describe("allocateQcds", () => {
     expect(r.results[1]).toMatchObject({ qualifying: 20_000, taxedExcess: 20_000 });
   });
 
+  it("a second full-RMD QCD from one IRA gets nothing once the first took the whole RMD", () => {
+    const r = run(
+      [qcd({ mode: "full_rmd" }), qcd({ mode: "full_rmd", charityId: "public-charity" })],
+      { "ira-a": ira() },
+    );
+    expect(r.results).toHaveLength(1);
+    expect(r.results[0]).toMatchObject({ qualifying: 40_000, taxedExcess: 0 });
+    expect(r.rmdRemaining.get("ira-a")).toBe(0);
+  });
+
+  it("a full-RMD QCD after a fixed one from the same IRA takes only the unpaid RMD", () => {
+    const r = run(
+      [qcd({ amount: 15_000 }), qcd({ mode: "full_rmd" })],
+      { "ira-a": ira() },
+    );
+    expect(r.results[1]).toMatchObject({ qualifying: 25_000, taxedExcess: 0 });
+    expect(r.rmdRemaining.get("ira-a")).toBe(0);
+  });
+
+  it("after a cap-limited full-RMD QCD, a second one from that IRA gets nothing", () => {
+    const r = run(
+      [qcd({ mode: "full_rmd" }), qcd({ mode: "full_rmd" })],
+      { "ira-a": ira({ requiredMinimum: 203_000 }) },
+    );
+    expect(r.results).toHaveLength(1);
+    expect(r.results[0]).toMatchObject({ qualifying: 111_000, taxedExcess: 0 });
+    expect(r.rmdRemaining.get("ira-a")).toBe(92_000);
+  });
+
   it("each spouse has their own cap", () => {
     const r = run(
       [qcd({ amount: 100_000 }), qcd({ amount: 100_000, accountId: "spouse-ira" })],

@@ -112,7 +112,10 @@ export interface QcdAllocation {
 }
 
 /** Decide this year's QCDs, in entry order, against each IRA's pre-tax balance
- *  and each giver's cap, then net them against the RMDs they satisfy. */
+ *  and each giver's cap, then net them against the RMDs they satisfy. A Full
+ *  RMD QCD asks for the part of its IRA's RMD not already paid by earlier QCDs
+ *  from that IRA this year: 0 once it is covered, and nothing more after a
+ *  cap-limited Full RMD QCD (the rest is a normal taxable RMD). */
 export function allocateQcds(input: AllocateQcdsInput): QcdAllocation {
   const { accounts, giverEligible, charityQualifies, cap } = input;
   const usedCap = { client: 0, spouse: 0 };
@@ -128,7 +131,13 @@ export function allocateQcds(input: AllocateQcdsInput): QcdAllocation {
     if (!a || !a.isSourceType || a.giver == null || !giverEligible[a.giver]) continue;
     const room = a.available - paidOut(q.accountId);
     if (room <= 0) continue;
-    const wanted = Math.min(room, q.mode === "full_rmd" ? a.requiredMinimum : q.amount);
+    // Full RMD takes only the part of this IRA's RMD that earlier QCDs from it
+    // this year left unpaid, so a second one never doubles the gift.
+    const asked =
+      q.mode === "full_rmd"
+        ? Math.max(0, a.requiredMinimum - paidOut(q.accountId))
+        : q.amount;
+    const wanted = Math.min(room, asked);
     if (wanted <= 0) continue;
     // Over the cap, to a non-qualifying charity, or from a SEP/SIMPLE in a
     // contribution year: a fixed gift still goes in full, taxed; a full-RMD
