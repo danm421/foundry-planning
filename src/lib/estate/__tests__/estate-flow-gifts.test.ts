@@ -587,4 +587,19 @@ describe("the entered-as-history flag survives the draft round trip", () => {
     expect(out.giftEvents.find((e) => e.kind === "cash")?.enteredAsHistory).toBe(false);
     expect(out.gifts?.[0].enteredAsHistory).toBe(false);
   });
+
+  it("a series row's draft keeps the year it was entered, and its payments before it are history", () => {
+    const draft = giftSeriesRowToDraft(seriesRow({ startYear: 2025, endYear: 2027, createdAt: new Date("2026-06-01T00:00:00Z") }));
+    expect(draft).toMatchObject({ enteredInYear: 2026 });
+    expect(Object.keys(draft).at(-1)).toBe("valuationDiscount");
+    const data = {
+      gifts: [], giftEvents: [], liabilities: [],
+      planSettings: { planStartYear: 2027, planEndYear: 2030, inflationRate: 0 },
+    } as unknown as ClientData;
+    const fresh = { ...draft, id: "new", enteredInYear: undefined };
+    const out = applyGiftsToClientData(data, [draft, fresh], 0);
+    expect(out.giftEvents.filter((e) => e.seriesId === "sr1").map((e) => e.enteredAsHistory)).toEqual([true, false, false]);
+    // A series that never was a row: nothing is history.
+    expect(out.giftEvents.filter((e) => e.seriesId === "new").map((e) => e.enteredAsHistory)).toEqual([false, false, false]);
+  });
 });

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { runProjection, runProjectionWithEvents } from "../projection";
 import { giftInEffect, ownersForYear, LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, type AccountOwner } from "../ownership";
+import { fanOutGiftSeries } from "../series-fanout";
 import type {
   Account, ClientData, ClientInfo, EntitySummary, FamilyMember, GiftEvent, PlanSettings,
 } from "../types";
@@ -172,5 +173,31 @@ describe("a gift dated in the skipped year", () => {
     expect(householdShare(ownersForYear(brokerage(), events, 2026, 2026))).toBeCloseTo(1, 10);
     const { giftLedger } = runProjectionWithEvents(makeData({ planSettings: thisYear, giftEvents: events }));
     expect(giftLedger[0].perGrantor.client.cumulativeTaxableGifts).toBe(0);
+  });
+});
+
+describe("a gift series across the January move", () => {
+  // $100,000 a year to the trust, entered in 2026. The January job moves the
+  // plan to 2027; the 2026 payment already happened and still used exemption.
+  const series = (startYear: number) => fanOutGiftSeries({
+    id: "gs1", grantor: "client", recipientEntityId: "trust-1", startYear, endYear: 2030,
+    annualAmount: 100_000, amountMode: "fixed", inflationAdjust: false, useCrummeyPowers: false,
+    enteredInYear: 2026,
+  }, { cpi: 0 });
+  const rolled: PlanSettings = { ...nextYear, planStartYear: 2027, dataYear: 2027 };
+  const cumulative2027 = (ps: PlanSettings, startYear: number) =>
+    runProjectionWithEvents(makeData({ planSettings: ps, giftEvents: series(startYear) }))
+      .giftLedger.find((r) => r.year === 2027)!.perGrantor.client.cumulativeTaxableGifts;
+
+  it("keeps last year's payment in exemption used after the start year moves", () => {
+    expect(cumulative2027(thisYear, 2026)).toBeCloseTo(200_000, 0);
+    expect(cumulative2027(rolled, 2026)).toBeCloseTo(200_000, 0);
+  });
+
+  it("payments dated before the year the series was entered stay history", () => {
+    expect(series(2020).map((e) => e.enteredAsHistory)).toEqual(
+      [true, true, true, true, true, true, false, false, false, false, false],
+    );
+    expect(cumulative2027(rolled, 2020)).toBeCloseTo(200_000, 0);
   });
 });

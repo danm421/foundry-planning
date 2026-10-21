@@ -11,6 +11,7 @@ import { fanOutGiftSeries } from "@/engine/series-fanout";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { selectPriorDiscounts } from "@/lib/gifts/select-prior-discounts";
 import { qcdSpecFromDraft } from "@/lib/gifts/qcd-spec";
+import { currentPlanningYear } from "@/lib/plan-year";
 
 // ── Public model ─────────────────────────────────────────────────────────────
 
@@ -92,6 +93,9 @@ export type EstateFlowGift =
       grantor: "client" | "spouse" | "joint";
       recipient: GiftRecipientRef; // recipient.kind may be entity, family_member, or external_beneficiary
       crummey: boolean;
+      /** The planning year the row was saved in (`GiftSeriesRow.enteredInYear`).
+       *  Absent on a draft that was never a row: none of its payments is history. */
+      enteredInYear?: number;
       /** A QCD: paid straight from this IRA to a public charity (the recipient).
        *  Present only on QCD gifts; lives in `ClientData.qcds`, never in
        *  `gifts` / `giftEvents`. Must sit immediately before valuationDiscount. */
@@ -153,6 +157,8 @@ export interface GiftSeriesDbRow {
   valuationDiscount?: string | null;
   qcdAccountId?: string | null;
   qcdAmountMode?: QcdAmountMode | null;
+  /** Optional so fixtures and lite list rows keep compiling. */
+  createdAt?: Date | string;
 }
 
 function recipientFromRow(r: {
@@ -227,6 +233,7 @@ export function giftSeriesRowToDraft(row: GiftSeriesDbRow): EstateFlowGift {
     grantor: row.grantor,
     recipient: recipientFromRow(row),
     crummey: row.useCrummeyPowers,
+    enteredInYear: row.createdAt != null ? currentPlanningYear(new Date(row.createdAt)) : undefined,
     ...(row.qcdAccountId != null && row.qcdAmountMode != null
       ? { qcd: { accountId: row.qcdAccountId, amountMode: row.qcdAmountMode } }
       : {}),
@@ -426,6 +433,7 @@ export function applyGiftsToClientData(
             inflationAdjust: g.inflationAdjust,
             useCrummeyPowers: g.crummey,
             valuationDiscount: g.valuationDiscount,
+            enteredInYear: g.enteredInYear ?? g.startYear,
           },
           { cpi, exclusionByYear },
         ),

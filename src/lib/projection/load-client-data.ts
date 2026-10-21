@@ -60,7 +60,7 @@ import {
   relocations,
 } from "@/db/schema";
 import { withEstimatedPia } from "@/lib/social-security/estimate-from-salary";
-import { planDataYear } from "@/lib/plan-year";
+import { currentPlanningYear, planDataYear } from "@/lib/plan-year";
 import type {
   AccountFlowOverride,
   BeneficiaryRef,
@@ -1814,6 +1814,7 @@ const loadClientDataCached = cache(
           useCrummeyPowers: s.useCrummeyPowers,
           valuationDiscount:
             s.valuationDiscount != null ? Number(s.valuationDiscount) : undefined,
+          enteredInYear: currentPlanningYear(s.createdAt),
         },
         { cpi, exclusionByYear: giftExclusionByYear },
       ),

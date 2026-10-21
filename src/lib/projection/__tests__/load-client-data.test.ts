@@ -86,6 +86,7 @@ type DbState = {
   transferSchedules: unknown[];
   assetTransactions: unknown[];
   gifts: unknown[];
+  giftSeries: unknown[];
   familyMembers: typeof familyMemberRow[];
   externalBeneficiaries: typeof externalBeneficiaryRow[];
   beneficiaryDesignations: unknown[];
@@ -134,6 +135,7 @@ const dbState: DbState = {
   transferSchedules: [],
   assetTransactions: [],
   gifts: [],
+  giftSeries: [],
   familyMembers: [],
   externalBeneficiaries: [],
   beneficiaryDesignations: [],
@@ -197,6 +199,7 @@ vi.mock("@/db", async () => {
     if (t === schema.transferSchedules || n === "transfer_schedules") return dbState.transferSchedules;
     if (t === schema.assetTransactions || n === "asset_transactions") return dbState.assetTransactions;
     if (t === schema.gifts || n === "gifts") return dbState.gifts;
+    if (t === schema.giftSeries || n === "gift_series") return dbState.giftSeries;
     if (t === schema.familyMembers || n === "family_members") return dbState.familyMembers;
     if (t === schema.externalBeneficiaries || n === "external_beneficiaries") return dbState.externalBeneficiaries;
     if (t === schema.beneficiaryDesignations || n === "beneficiary_designations") return dbState.beneficiaryDesignations;
@@ -1043,6 +1046,28 @@ describe("loadClientData — a plan that starts next year", () => {
     expect(data.giftEvents.find((e) => e.kind === "asset")?.enteredAsHistory).toBe(false);
     expect(data.giftEvents.find((e) => e.kind === "cash")?.enteredAsHistory).toBe(true);
     expect(data.gifts?.[0].enteredAsHistory).toBe(true);
+  });
+
+  it("marks a series' payments before the year it was entered as history", async () => {
+    startingIn(2027);
+    dbState.giftSeries = [{
+      id: "00000000-0000-0000-0000-0000000000f4", clientId: FIXTURE_CLIENT_ID, scenarioId: null,
+      grantor: "client", recipientEntityId: null, recipientFamilyMemberId: FIXTURE_FAMILY_MEMBER_ID,
+      recipientExternalBeneficiaryId: null, startYear: 2025, startYearRef: null, endYear: 2028, endYearRef: null,
+      annualAmount: "10000.00", valuationDiscount: null, amountMode: "fixed", inflationAdjust: false,
+      useCrummeyPowers: false, notes: null,
+      // Jan 1 03:00 UTC is still Dec 31 in US Eastern: entered in 2025.
+      createdAt: new Date("2026-01-01T03:00:00Z"), updatedAt: new Date("2026-01-01T03:00:00Z"),
+    }];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    expect(data.giftEvents.filter((e) => e.seriesId != null).map((e) => [e.year, e.enteredAsHistory]))
+      .toEqual([[2025, false], [2026, false], [2027, false], [2028, false]]);
+    dbState.giftSeries = [{ ...(dbState.giftSeries[0] as object), createdAt: new Date("2026-06-01T00:00:00Z") }];
+    const later = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+    expect(later.giftEvents.filter((e) => e.seriesId != null).map((e) => e.enteredAsHistory))
+      .toEqual([true, false, false, false]);
   });
 
   it("estimates Social Security from a salary that ends this year", async () => {
