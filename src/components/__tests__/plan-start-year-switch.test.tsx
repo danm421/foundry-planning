@@ -16,7 +16,7 @@ type Props = React.ComponentProps<typeof PlanStartYearSwitch>;
 function renderSwitch(over: Partial<Props> = {}, permission: "view" | "edit" = "edit") {
   return render(
     <ClientAccessProvider value={{ permission, access: "own" }}>
-      <PlanStartYearSwitch clientId="c1" planStartYear={2026} thisYear={2026} inScenario={false} alreadyDone={[]} {...over} />
+      <PlanStartYearSwitch clientId="c1" startsNextYear={false} thisYear={2026} inScenario={false} alreadyDone={[]} {...over} />
     </ClientAccessProvider>,
   );
 }
@@ -33,7 +33,7 @@ describe("PlanStartYearSwitch", () => {
     expect(theSwitch().checked).toBe(false);
     expect(screen.getByText("January 1, 2026")).toBeInTheDocument();
     unmount();
-    renderSwitch({ planStartYear: 2027 });
+    renderSwitch({ startsNextYear: true });
     expect(theSwitch().checked).toBe(true);
     expect(screen.getByText("January 1, 2027")).toBeInTheDocument();
   });
@@ -74,7 +74,7 @@ describe("PlanStartYearSwitch", () => {
 
   it("lists this year's items when on", () => {
     renderSwitch({
-      planStartYear: 2027,
+      startsNextYear: true,
       alreadyDone: [{ kind: "asset_sale", label: "Sell the rental", year: 2026 }],
     });
     expect(

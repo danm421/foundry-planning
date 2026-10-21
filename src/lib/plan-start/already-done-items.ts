@@ -6,6 +6,7 @@ import type { ClientData, GiftEvent } from "@/engine/types";
 import { buildGrantTimeline } from "@/engine/equity/timeline";
 import { resolveStrategy } from "@/engine/equity/strategy";
 import { fmvCurve } from "@/engine/equity/price-model";
+import { hasSkippedYear, inSkippedYear } from "@/engine/skip-window";
 
 export type AlreadyDoneItem = {
   kind: "gift" | "asset_sale" | "asset_purchase" | "transfer" | "roth_conversion" | "reinvestment" | "stock_exercise";
@@ -14,9 +15,10 @@ export type AlreadyDoneItem = {
 };
 
 export function listAlreadyDoneItems(tree: ClientData): AlreadyDoneItem[] {
-  const { planStartYear, dataYear } = tree.planSettings;
-  if (dataYear == null || dataYear >= planStartYear) return [];
-  const skipped = (year: number) => year >= dataYear && year < planStartYear;
+  const ps = tree.planSettings;
+  if (!hasSkippedYear(ps)) return [];
+  const { planStartYear, dataYear } = ps;
+  const skipped = (year: number) => inSkippedYear(year, ps);
   const items: AlreadyDoneItem[] = [];
 
   const recipientName = (e: GiftEvent): string | undefined => {
@@ -72,9 +74,8 @@ export function listAlreadyDoneItems(tree: ClientData): AlreadyDoneItem[] {
       const exercised = buildGrantTimeline(grant, strategy, dataYear, fmvAt).filter(
         (a) => a.kind === "exercise" && skipped(a.year),
       );
-      const years = [...new Set(exercised.map((a) => a.year))];
-      for (const year of years) {
-        const name = [plan.ticker, grant.grantNumber].filter(Boolean).join(" ");
+      const name = [plan.ticker, grant.grantNumber].filter(Boolean).join(" ");
+      for (const year of new Set(exercised.map((a) => a.year))) {
         items.push({ kind: "stock_exercise", label: `${name || "Stock option"} exercise`, year });
       }
     }

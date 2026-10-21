@@ -209,6 +209,7 @@ import {
 import { computeTaxForYear, type YearTaxInput } from "./year-tax";
 import { resolveTaxAdjustmentsForYear, type IncomeTaxType } from "./tax-adjustments";
 import { applySkippedYearTransactions, rebaseSkippedYearRows } from "./skipped-year";
+import { hasSkippedYear } from "./skip-window";
 import { diffEquityTaxImpact, type EquityTaxImpact } from "./equity/tax-impact";
 import {
   buildNoteReceivableSchedules,
@@ -2355,6 +2356,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         planSettings.planStartYear,
         year + 1,
         planSettings.dataYear,
+        equityState.timelinesByGrant,
       );
     }
 
@@ -2479,7 +2481,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // entered `value` is already the Dec-31 balance before its first year.
       const priorYearEnd =
         year === planSettings.planStartYear &&
-        (planSettings.dataYear ?? planSettings.planStartYear) === planSettings.planStartYear
+        !hasSkippedYear(planSettings)
           ? acct.priorYearEndValue
           : undefined;
       const grossBasis =

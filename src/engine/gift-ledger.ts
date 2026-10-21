@@ -6,6 +6,7 @@ import {
   treatCanonicalGift,
   type CanonicalGift,
 } from "@/lib/gifts/normalize-gifts";
+import { giftInEffect } from "./ownership";
 
 export interface GrantorYearState {
   /** Taxable gifts this year only (after annual exclusion + charitable). */
@@ -106,12 +107,12 @@ export function computeGiftLedger(input: GiftLedgerInput): GiftLedgerYear[] {
     : undefined;
 
   // Gifts made before the plan starts that are not entered as history — made
-  // in the skipped year of a plan that starts next year — already happened:
-  // their exemption is in the opening total, each at its own year's exclusion,
-  // and none shows as a gift in a plan year's row.
-  const madeBeforeStart = canonical.filter(
-    (cg) => cg.year < input.planStartYear && cg.enteredAsHistory === false,
-  );
+  // in the skipped year of a plan that starts next year — already happened
+  // (the same `giftInEffect` rule that moves their ownership): their exemption
+  // is in the opening total, each at its own year's exclusion, and none shows
+  // as a gift in a plan year's row.
+  const start = input.planStartYear;
+  const madeBeforeStart = canonical.filter((cg) => cg.year < start && giftInEffect(cg, start, start));
   for (const year of [...new Set(madeBeforeStart.map((cg) => cg.year))].sort((a, b) => a - b)) {
     prevClient = stepGrantor("client", year, prevClient, input, madeBeforeStart);
     if (prevSpouse) prevSpouse = stepGrantor("spouse", year, prevSpouse, input, madeBeforeStart);

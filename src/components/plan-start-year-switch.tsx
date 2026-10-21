@@ -17,15 +17,18 @@ const KIND_LABEL: Record<AlreadyDoneItem["kind"], string> = {
   stock_exercise: "Option exercise",
 };
 
-interface Props {
-  clientId: string;
-  /** The BASE plan's start year — the switch never writes a scenario. */
-  planStartYear: number;
-  /** `currentPlanningYear()`, read on the server. */
+/** What the server reads for the switch, off the BASE plan's row in every view:
+ *  the switch never writes a scenario, and every scenario follows it. */
+export interface PlanStartSwitchData {
+  /** `startsNextYear(basePlanStartYear)`. */
+  startsNextYear: boolean;
+  /** `currentPlanningYear()`. */
   thisYear: number;
-  inScenario: boolean;
+  /** Empty unless the plan starts next year. */
   alreadyDone: AlreadyDoneItem[];
 }
+
+type Props = PlanStartSwitchData & { clientId: string; inScenario: boolean };
 
 /**
  * "Start the plan next year": a view over the base plan's start year — on
@@ -33,11 +36,11 @@ interface Props {
  * (never the scenario autosave, which would write a scenario overlay), flips
  * optimistically, and reverts with the server's message when the save fails.
  */
-export function PlanStartYearSwitch({ clientId, planStartYear, thisYear, inScenario, alreadyDone }: Props) {
+export function PlanStartYearSwitch({ clientId, startsNextYear, thisYear, inScenario, alreadyDone }: Props) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
   const router = useRouter();
-  const [on, setOn] = useState(planStartYear === thisYear + 1);
+  const [on, setOn] = useState(startsNextYear);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

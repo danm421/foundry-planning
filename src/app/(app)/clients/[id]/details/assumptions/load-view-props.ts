@@ -26,19 +26,11 @@ import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 import { getLatestTaxReturn } from "@/lib/tax-returns/store";
 import { parseRowFacts } from "@/lib/tax-returns/db";
 import { currentPlanningYear, startsNextYear } from "@/lib/plan-year";
-import { listAlreadyDoneItems, type AlreadyDoneItem } from "@/lib/plan-start/already-done-items";
-
-/** The "Start the plan next year" switch. Read off the BASE plan's row in every
- *  view: the switch never writes a scenario, and every scenario follows it. */
-export interface PlanStartSwitchProps {
-  basePlanStartYear: number;
-  thisYear: number;
-  /** Only when the plan starts next year; otherwise empty. */
-  alreadyDone: AlreadyDoneItem[];
-}
+import { listAlreadyDoneItems } from "@/lib/plan-start/already-done-items";
+import type { PlanStartSwitchData } from "@/components/plan-start-year-switch";
 
 export type AssumptionsViewPropsResult =
-  | { status: "ok"; props: AssumptionsClientProps; planStart: PlanStartSwitchProps }
+  | { status: "ok"; props: AssumptionsClientProps; planStart: PlanStartSwitchData }
   | { status: "no-base-case" }
   | { status: "no-plan-settings" };
 
@@ -426,9 +418,9 @@ export async function loadAssumptionsViewProps(
       taxAdjustmentRows,
     },
     planStart: {
-      basePlanStartYear: settings.planStartYear,
+      startsNextYear: startsNextYear(settings.planStartYear),
       thisYear: currentPlanningYear(),
-      alreadyDone: startsNextYear(settings.planStartYear) ? listAlreadyDoneItems(effectiveTree) : [],
+      alreadyDone: listAlreadyDoneItems(effectiveTree),
     },
   };
 }

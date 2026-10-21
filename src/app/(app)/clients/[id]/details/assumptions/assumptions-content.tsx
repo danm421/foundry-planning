@@ -39,10 +39,8 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
 
       <PlanStartYearSwitch
         clientId={id}
-        planStartYear={result.planStart.basePlanStartYear}
-        thisYear={result.planStart.thisYear}
         inScenario={scenarioParam != null && scenarioParam !== "base"}
-        alreadyDone={result.planStart.alreadyDone}
+        {...result.planStart}
       />
 
       <AssumptionsClient {...result.props} />

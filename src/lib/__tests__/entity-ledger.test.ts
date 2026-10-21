@@ -779,4 +779,29 @@ describe("getEntityLedger — a plan that starts next year", () => {
     expect(ledger.income[0].amount).toBeCloseTo(100_000, 2);
     expect(ledger.expenses[0].amount).toBeCloseTo(30_000, 2);
   });
+
+  it("lists a business entity's revenue entered this year at its entered amount in the first plan year", () => {
+    const entitiesById = new Map<string, EntityMetadata>([["ent-biz", {
+      id: "ent-biz", name: "Acme LLC", entityType: "llc", trustSubType: null, isGrantor: false,
+      initialValue: 0, initialBasis: 0, valueGrowthRate: 0, flowMode: "annual",
+    }]]);
+    const ledger = getEntityLedger("ent-biz", {
+      year: makeYear(2027),
+      planStartYear: 2027,
+      dataYear: 2026,
+      entitiesById,
+      accountNamesById: new Map(),
+      incomes: [{
+        id: "inc", type: "business", name: "Acme revenue", annualAmount: 100_000,
+        startYear: 2026, endYear: 2050, growthRate: 0.03, owner: "joint", ownerEntityId: "ent-biz",
+      }],
+      expenses: [{
+        id: "exp", type: "other", name: "Acme costs", annualAmount: 30_000,
+        startYear: 2026, endYear: 2050, growthRate: 0.03, ownerEntityId: "ent-biz",
+      }],
+      entityFlowOverrides: [],
+    });
+    expect(ledger.income.find((r) => r.sourceKind === "flow-base")?.amount).toBeCloseTo(100_000, 2);
+    expect(ledger.expenses.find((r) => r.sourceKind === "flow-base")?.amount).toBeCloseTo(30_000, 2);
+  });
 });

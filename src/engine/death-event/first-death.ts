@@ -13,6 +13,7 @@ import {
   computeSteppedUpBasis,
   distributeFirstDeathUnlinkedLiabilities,
   drainableShareAtDeath,
+  giftYearBalances,
   giftAwareOwners,
   isWhollyGiftedAway,
   partitionGiftedLiabilities,
@@ -539,11 +540,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   // the ledger's account list, which still holds a business sold since the gift.
   const giftTree = input.giftValuationAccounts ?? input.accounts;
   const accountValueAtYear = (accountId: string, year: number): number => {
-    // A gift dated before the plan start is valued at the opening balances,
-    // which the projection records as the close of the year before the start.
-    const yearMap = input.yearEndAccountBalances?.get(
-      Math.max(year, input.planSettings.planStartYear - 1),
-    );
+    const yearMap = giftYearBalances(input, year);
     if (yearMap && yearMap[accountId] != null) {
       return giftValueOfAccount(accountId, giftTree, yearMap);
     }

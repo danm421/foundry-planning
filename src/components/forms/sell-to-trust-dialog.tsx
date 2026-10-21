@@ -115,7 +115,8 @@ export default function SellToTrustDialog({
   const [accountId, setAccountId] = useState<string>("");
   const [interestPct, setInterestPct] = useState("4.0");
   const [termMonths, setTermMonths] = useState("120");
-  const [startYear, setStartYear] = useState(String(planStartYear ?? currentPlanningYear()));
+  const defaultStartYear = String(planStartYear ?? currentPlanningYear());
+  const [startYear, setStartYear] = useState(defaultStartYear);
   const [paymentType, setPaymentType] = useState<NotePaymentType>(
     "interest_only_balloon",
   );
@@ -143,7 +144,7 @@ export default function SellToTrustDialog({
     setAccountId("");
     setInterestPct("4.0");
     setTermMonths("120");
-    setStartYear(String(planStartYear ?? currentPlanningYear()));
+    setStartYear(defaultStartYear);
     setPaymentType("interest_only_balloon");
     setError(null);
   }

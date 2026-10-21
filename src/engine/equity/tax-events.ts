@@ -43,6 +43,8 @@ export interface EquityState {
   actionsByYear: Map<string, Map<number, EquityAction[]>>; // accountId → year → actions
   lots: Map<string, Lot>;        // key = `${grantId}:${lotId}` — see lotKey
   grantsById: Map<string, EquityGrant>;
+  /** Each grant's full timeline (grant id → actions), built once per run. */
+  timelinesByGrant: Map<string, EquityAction[]>;
 }
 
 export interface EquityYearResult {
@@ -88,19 +90,22 @@ export function createEquityState(
 ): EquityState {
   const actionsByYear = new Map<string, Map<number, EquityAction[]>>();
   const grantsById = new Map<string, EquityGrant>();
+  const timelinesByGrant = new Map<string, EquityAction[]>();
   for (const p of plans) {
     const acctStrategy = resolveStrategy(p.strategy, null, null);
     const fmvAt = fmvCurve(p, planStartYear);
     const byYear = new Map<number, EquityAction[]>();
     for (const g of p.grants) {
       grantsById.set(g.id, g);
-      for (const a of buildGrantTimeline(g, acctStrategy, planStartYear, fmvAt, dataYear)) {
+      const timeline = buildGrantTimeline(g, acctStrategy, planStartYear, fmvAt, dataYear);
+      timelinesByGrant.set(g.id, timeline);
+      for (const a of timeline) {
         (byYear.get(a.year) ?? byYear.set(a.year, []).get(a.year)!).push(a);
       }
     }
     actionsByYear.set(p.accountId, byYear);
   }
-  return { planStartYear, actionsByYear, lots: new Map(), grantsById };
+  return { planStartYear, actionsByYear, lots: new Map(), grantsById, timelinesByGrant };
 }
 
 function emptyResult(): EquityYearResult {

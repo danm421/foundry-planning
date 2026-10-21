@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
 import { basePlanSettings, buildClientData } from "./fixtures";
-import { inflationBaseYear, rebaseSkippedYearRows } from "../skipped-year";
+import { rebaseSkippedYearRows } from "../skipped-year";
+import { inflationBaseYear } from "../skip-window";
 import { LEGACY_FM_CLIENT } from "../ownership";
 import type { Account, Expense, Income, Transfer } from "../types";
 
@@ -48,10 +49,11 @@ function transferRun(transfer: Transfer) {
 
 describe("inflationBaseYear", () => {
   it("rebases only a base year inside the skipped year", () => {
-    expect(inflationBaseYear(2026, on)).toBe(2027);
-    expect(inflationBaseYear(2025, on)).toBe(2025);
-    expect(inflationBaseYear(2030, on)).toBe(2030);
-    expect(inflationBaseYear(2026, { ...on, dataYear: undefined })).toBe(2026);
+    expect(inflationBaseYear({ startYear: 2026 }, on)).toBe(2027);
+    expect(inflationBaseYear({ startYear: 2020, inflationStartYear: 2026 }, on)).toBe(2027);
+    expect(inflationBaseYear({ startYear: 2026, inflationStartYear: 2025 }, on)).toBe(2025);
+    expect(inflationBaseYear({ startYear: 2030 }, on)).toBe(2030);
+    expect(inflationBaseYear({ startYear: 2026 }, { ...on, dataYear: undefined })).toBe(2026);
   });
 });
 

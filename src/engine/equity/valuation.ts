@@ -47,13 +47,15 @@ export function remainingGrantValue(
   priceYear: number = year,
   /** Below `planStartYear`: the plan starts next year — see `buildGrantTimeline`. */
   dataYear?: number,
+  /** Timelines already built for this run (`EquityState.timelinesByGrant`). */
+  timelines?: ReadonlyMap<string, EquityAction[]>,
 ): number {
   const acct = resolveStrategy(plan.strategy, null, null);
   const fmvAt = fmvCurve(plan, planStartYear);
   const fmv = fmvAt(priceYear);
   let total = 0;
   for (const grant of plan.grants) {
-    const timeline = buildGrantTimeline(grant, acct, planStartYear, fmvAt, dataYear);
+    const timeline = timelines?.get(grant.id) ?? buildGrantTimeline(grant, acct, planStartYear, fmvAt, dataYear);
     const shares = sharesStillInGrant(grant, timeline, year);
     if (shares <= 0) continue;
     if (grant.grantType === "rsu") {

@@ -27,7 +27,7 @@ import { resolveEntityFlows } from "@/engine/entity-flows";
 import { collectBusinessTree } from "@/engine/business/business-tree";
 import { netGrowthOf } from "@/engine/margin";
 import { survivingSaleFraction } from "@/engine/linked-income";
-import { inflationBaseYear } from "@/engine/skipped-year";
+import { rebaseInflationRow } from "@/engine/skip-window";
 
 export type LedgerSection = "growth" | "income" | "expenses" | "ending";
 
@@ -90,8 +90,16 @@ export interface EntityLedgerContext {
 
 export function getEntityLedger(
   entityId: string,
-  ctx: EntityLedgerContext,
+  rawCtx: EntityLedgerContext,
 ): EntityLedger {
+  // A plan that starts next year reads this year's amounts as next year's.
+  // Rebase the rows once, as runProjection does at entry, so every flow below
+  // matches the engine (src/engine/skipped-year.ts).
+  const ctx: EntityLedgerContext = {
+    ...rawCtx,
+    incomes: rawCtx.incomes.map((r) => rebaseInflationRow(r, rawCtx)),
+    expenses: rawCtx.expenses.map((r) => rebaseInflationRow(r, rawCtx)),
+  };
   const entity = ctx.entitiesById.get(entityId);
   if (!entity) {
     // Account-as-asset branch: when the dropdown selection is a top-level
@@ -348,7 +356,7 @@ function getBusinessAccountLedger(
     for (const inc of ctx.incomes) {
       if (inc.ownerAccountId !== accountId) continue;
       if (y < inc.startYear || y > inc.endYear) continue;
-      const inflateFrom = inflationBaseYear(inc.inflationStartYear ?? inc.startYear, ctx);
+      const inflateFrom = inc.inflationStartYear ?? inc.startYear;
       const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, y - inflateFrom) * owned;
       if (amount === 0) continue;
       income.push({
@@ -361,7 +369,7 @@ function getBusinessAccountLedger(
     for (const exp of ctx.expenses) {
       if (exp.ownerAccountId !== accountId) continue;
       if (y < exp.startYear || y > exp.endYear) continue;
-      const inflateFrom = inflationBaseYear(exp.inflationStartYear ?? exp.startYear, ctx);
+      const inflateFrom = exp.inflationStartYear ?? exp.startYear;
       const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, y - inflateFrom) * owned;
       if (amount === 0) continue;
       expenses.push({

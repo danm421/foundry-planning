@@ -5,7 +5,7 @@ import { CurrencyInput } from "../currency-input";
 import { PercentInput } from "../percent-input";
 import { fillFlat, fillGrowth, type ScheduleEntry } from "@/lib/schedule-utils";
 import { planDataYear } from "@/lib/plan-year";
-import { inflationBaseYear } from "@/engine/skipped-year";
+import { inflationBaseYear, type SkipWindow } from "@/engine/skip-window";
 
 /** Exposed to parent so the dialog footer can drive the save action. */
 export interface ScheduleSaveBinding {
@@ -115,12 +115,10 @@ export interface FlowScheduleGridProps {
 
 const isBusinessType = (t: EntityType) => t !== "trust" && t !== "foundation";
 
-type SkipWindow = { planStartYear: number; dataYear: number };
-
 function baseAmountSingle(row: BaseFlow, year: number, ps: SkipWindow): number {
   if (year < row.startYear || year > row.endYear) return 0;
   // Mirrors the engine, including a plan that starts next year (src/engine/skipped-year.ts).
-  const inflateFrom = inflationBaseYear(row.inflationStartYear ?? row.startYear, ps);
+  const inflateFrom = inflationBaseYear(row, ps);
   return row.annualAmount * Math.pow(1 + row.growthRate, year - inflateFrom);
 }
 
@@ -187,10 +185,7 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
     for (let y = props.planStartYear; y <= props.planEndYear; y++) out.push(y);
     return out;
   }, [props.planStartYear, props.planEndYear]);
-  const skipWindow = useMemo(
-    () => ({ planStartYear: props.planStartYear, dataYear: planDataYear(props.planStartYear) }),
-    [props.planStartYear],
-  );
+  const skipWindow: SkipWindow = { planStartYear: props.planStartYear, dataYear: planDataYear(props.planStartYear) };
 
   // State: per-year cells. Empty string = no override; otherwise the user's typed value.
   const initialIncome = useMemo(() => {

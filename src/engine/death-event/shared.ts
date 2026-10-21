@@ -386,6 +386,16 @@ export function partitionGiftedLiabilities(
   return out;
 }
 
+/** The year-end balances a gift dated `year` is valued at. A gift dated before
+ *  the plan start reads the opening balances, which the projection records as
+ *  the close of the year before the start. */
+export function giftYearBalances(
+  input: Pick<DeathEventInput, "yearEndAccountBalances" | "planSettings">,
+  year: number,
+): Record<string, number> | undefined {
+  return input.yearEndAccountBalances?.get(Math.max(year, input.planSettings.planStartYear - 1));
+}
+
 /** §1014 basis step-up at death. Returns the post-death basis for an
  *  asset that was owned (in whole or in part) by the decedent.
  *  Categories that are income-in-respect-of-a-decedent (`retirement`,

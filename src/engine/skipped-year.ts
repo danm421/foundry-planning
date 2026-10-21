@@ -7,43 +7,31 @@
 // (or `startYear` alone for rows with no inflation base), so one conversion at
 // runProjection's entry covers them all. It is not done in the loader: the
 // rebased years would leak into the edit forms and get saved.
-import type { Account, ClientData, PlanSettings } from "./types";
+import type { ClientData } from "./types";
 import { applyAssetPurchases } from "./asset-transactions";
 import { applyReinvestments } from "./reinvestments";
 import { LEGACY_FM_CLIENT } from "./ownership";
-
-type SkipWindow = Pick<PlanSettings, "planStartYear" | "dataYear">;
-
-function inSkippedYear(year: number, ps: SkipWindow): boolean {
-  return ps.dataYear != null && year >= ps.dataYear && year < ps.planStartYear;
-}
-
-/** The year a row's amount compounds from. A base year inside the skipped
- *  window moves to the plan start; any other base year is returned unchanged. */
-export function inflationBaseYear(baseYear: number, ps: SkipWindow): number {
-  return inSkippedYear(baseYear, ps) ? ps.planStartYear : baseYear;
-}
+import { scaleAccountValue } from "./margin";
+import { hasSkippedYear, inSkippedYear, rebaseInflationRow } from "./skip-window";
 
 /** `data` with every row whose growth base falls in the skipped year rebased to
  *  the plan start. Returns the same object when nothing is skipped; never
  *  mutates its input. One-time rows are untouched — they simply never run. */
 export function rebaseSkippedYearRows(data: ClientData): ClientData {
   const ps = data.planSettings;
-  if (ps.dataYear == null || ps.dataYear >= ps.planStartYear) return data;
+  if (!hasSkippedYear(ps)) return data;
   const start = ps.planStartYear;
 
-  const rebaseInflation = <T extends { startYear: number; inflationStartYear?: number }>(row: T): T =>
-    inSkippedYear(row.inflationStartYear ?? row.startYear, ps) ? { ...row, inflationStartYear: start } : row;
   // Recurring rows that compound from startYear alone.
   const rebaseStart = <T extends { startYear: number }>(row: T): T =>
     inSkippedYear(row.startYear, ps) ? { ...row, startYear: start } : row;
 
   return {
     ...data,
-    incomes: data.incomes.map(rebaseInflation),
-    expenses: data.expenses.map(rebaseInflation),
+    incomes: data.incomes.map((r) => rebaseInflationRow(r, ps)),
+    expenses: data.expenses.map((r) => rebaseInflationRow(r, ps)),
     rothConversions: data.rothConversions?.map((c) =>
-      c.conversionType === "fixed_amount" ? rebaseInflation(c) : c,
+      c.conversionType === "fixed_amount" ? rebaseInflationRow(c, ps) : c,
     ),
     taxAdjustments: data.taxAdjustments?.map(rebaseStart),
     deductions: data.deductions?.map(rebaseStart),
@@ -61,7 +49,7 @@ export function rebaseSkippedYearRows(data: ClientData): ClientData {
  *  Returns the same object when nothing is skipped. */
 export function applySkippedYearTransactions(data: ClientData): ClientData {
   const ps = data.planSettings;
-  if (ps.dataYear == null || ps.dataYear >= ps.planStartYear) return data;
+  if (!hasSkippedYear(ps)) return data;
   const inWindow = (t: { year: number; enabled?: boolean }) =>
     t.enabled !== false && inSkippedYear(t.year, ps);
   const transactions = (data.assetTransactions ?? []).filter(inWindow);
@@ -72,11 +60,6 @@ export function applySkippedYearTransactions(data: ClientData): ClientData {
   let liabilities = data.liabilities.map((l) => ({ ...l }));
   const ownerFmId =
     (data.familyMembers ?? []).find((m) => m.role === "client")?.id ?? LEGACY_FM_CLIENT;
-  const scale = (a: Account, keep: number) => {
-    a.value *= keep;
-    a.basis *= keep;
-    if (a.marginBalance != null) a.marginBalance *= keep;
-  };
 
   const years = [...new Set([...transactions, ...reinvestments].map((t) => t.year))].sort((a, b) => a - b);
   for (const year of years) {
@@ -97,7 +80,7 @@ export function applySkippedYearTransactions(data: ClientData): ClientData {
             !(sale.businessAccountId != null && l.parentAccountId === soldId),
         );
       } else {
-        for (const a of accounts) if (sold.has(a.id)) scale(a, 1 - fraction);
+        accounts = accounts.map((a) => (sold.has(a.id) ? scaleAccountValue(a, 1 - fraction) : a));
         if (sale.businessAccountId != null) {
           for (const l of liabilities) {
             if (l.parentAccountId !== soldId) continue;
