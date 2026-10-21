@@ -4,6 +4,7 @@ import type {
 import { collectBusinessTree } from "../business/business-tree";
 import { businessConsolidatedValue } from "./business-value";
 import { grossValue } from "../margin";
+import { OTHER_HEIRS_LABEL } from "../other-heirs";
 import {
   computeSteppedUpBasis,
   deceasedBusinessAccountShare,
@@ -39,6 +40,8 @@ interface ResolvedRecipient {
   /** account-owner successor for a family-member/spouse recipient; null for
    *  non-family recipients (rows removed, value exits the household). */
   successorFmId: string | null;
+  /** Set only when the will names Other Heirs. */
+  otherHeirsPicked?: true;
 }
 
 /** Resolve who receives a business interest: will entity-bequest → will
@@ -60,6 +63,11 @@ function resolveBusinessRecipient(input: {
     id: string | null,
     fraction: number,
   ): ResolvedRecipient => {
+    if (kind === "other_heirs") {
+      return { recipientKind: "system_default", recipientId: null,
+        recipientLabel: OTHER_HEIRS_LABEL, via: "will", fraction, successorFmId: null,
+        otherHeirsPicked: true };
+    }
     if (kind === "spouse") {
       return { recipientKind: "spouse", recipientId: survivorFmId,
         recipientLabel: "Co-client", via: "will", fraction, successorFmId: survivorFmId };
@@ -224,6 +232,7 @@ export function applyBusinessSuccession(input: {
           amount: transferredValue * rec.fraction,
           basis: flatValue * share * rec.fraction,
           resultingAccountId: null, resultingLiabilityId: null,
+          ...(rec.otherHeirsPicked ? { otherHeirsPicked: true as const } : {}),
         });
       }
       if (rec.successorFmId != null) {

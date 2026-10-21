@@ -217,3 +217,44 @@ describe("applyWillResiduary — final death", () => {
     expect(t!.recipientId).toBe(CHILD_A);
   });
 });
+
+describe("applyWillResiduary — Other Heirs", () => {
+  it("sends a 100% Other Heirs residuary to the Other Heirs sink, marked picked", () => {
+    const acct = soleAccount(LEGACY_FM_CLIENT, "acc-1", 400_000);
+    const will = willWithResiduary("client", [
+      { recipientKind: "other_heirs", recipientId: null, tier: "primary", percentage: 100, sortOrder: 0 },
+    ]);
+
+    const result = applyFirstDeath(
+      mkInput({ deceased: "client", survivor: "spouse", will, accounts: [acct] }),
+    );
+
+    const ts = result.transfers.filter((x) => x.sourceAccountId === "acc-1");
+    expect(ts).toHaveLength(1);
+    expect(ts[0]).toMatchObject({
+      via: "will_residuary", recipientKind: "system_default", recipientId: null,
+      recipientLabel: "Other Heirs", otherHeirsPicked: true, resultingAccountId: null,
+      amount: 400_000,
+    });
+  });
+
+  it("never treats an Other Heirs residuary recipient as lapsed", () => {
+    // Single-filer final death: no surviving spouse (survivorFmId is null) and
+    // the primary tier governs. A spouse recipient would lapse here; Other
+    // Heirs does not, so the share still goes to Other Heirs by the will.
+    const acct = soleAccount(LEGACY_FM_CLIENT, "acc-1", 400_000);
+    const will = willWithResiduary("client", [
+      { recipientKind: "other_heirs", recipientId: null, tier: "primary", percentage: 100, sortOrder: 0 },
+    ]);
+
+    const result = applyFinalDeath(
+      mkInput({ deceased: "client", survivor: "spouse", will, accounts: [acct], familyMembers: SINGLE_FMS }),
+    );
+
+    const ts = result.transfers.filter((x) => x.sourceAccountId === "acc-1");
+    expect(ts).toHaveLength(1);
+    expect(ts[0]).toMatchObject({
+      via: "will_residuary", recipientKind: "system_default", recipientLabel: "Other Heirs", otherHeirsPicked: true,
+    });
+  });
+});

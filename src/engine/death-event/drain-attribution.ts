@@ -40,7 +40,10 @@ function keyOf(
   recipientKind: DeathTransfer["recipientKind"] | WillResiduaryRecipient["recipientKind"],
   recipientId: string | null,
 ): string {
-  return `${recipientKind}|${recipientId ?? ""}`;
+  // A will naming Other Heirs routes to the system_default sink, so its
+  // residuary row keys onto that transfer.
+  const kind = recipientKind === "other_heirs" ? "system_default" : recipientKind;
+  return `${kind}|${recipientId ?? ""}`;
 }
 
 /**

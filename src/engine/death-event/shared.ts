@@ -1004,7 +1004,17 @@ function resolveRecipientLabelAndMutation(
   recipientKind: DeathTransfer["recipientKind"];
   recipientId: string | null;
   recipientLabel: string;
+  otherHeirsPicked?: true;
 } {
+  if (r.recipientKind === "other_heirs") {
+    return {
+      removed: true,
+      recipientKind: "system_default",
+      recipientId: null,
+      recipientLabel: OTHER_HEIRS_LABEL,
+      otherHeirsPicked: true,
+    };
+  }
   if (r.recipientKind === "spouse") {
     return {
       ownerMutation: survivorFmId != null
@@ -1123,13 +1133,13 @@ export function applyWillSpecificBequests(
     b.recipients.forEach((r) => {
       if (recipientHasLapsed(r, survivorFmId)) return;
       const rFrac = bFrac * (r.percentage / 100);
-      const { ownerMutation, removed, recipientKind, recipientId, recipientLabel } =
+      const { ownerMutation, removed, recipientKind, recipientId, recipientLabel, otherHeirsPicked } =
         resolveRecipientLabelAndMutation(r, survivor, survivorFmId, familyMembers, externals, entities);
       shares.push({
         fraction: rFrac,
         removed: removed || undefined,
         ownerMutation,
-        ledgerMeta: { via: "will", recipientKind, recipientId, recipientLabel },
+        ledgerMeta: { via: "will", recipientKind, recipientId, recipientLabel, ...(otherHeirsPicked ? { otherHeirsPicked } : {}) },
       });
     });
   });
@@ -1204,13 +1214,13 @@ export function applyWillAllAssetsResidual(
     b.recipients.forEach((r) => {
       if (recipientHasLapsed(r, survivorFmId)) return;
       const rFrac = clauseFraction * (r.percentage / 100);
-      const { ownerMutation, removed, recipientKind, recipientId, recipientLabel } =
+      const { ownerMutation, removed, recipientKind, recipientId, recipientLabel, otherHeirsPicked } =
         resolveRecipientLabelAndMutation(r, survivor, survivorFmId, familyMembers, externals, entities);
       shares.push({
         fraction: rFrac,
         removed: removed || undefined,
         ownerMutation,
-        ledgerMeta: { via: "will", recipientKind, recipientId, recipientLabel },
+        ledgerMeta: { via: "will", recipientKind, recipientId, recipientLabel, ...(otherHeirsPicked ? { otherHeirsPicked } : {}) },
       });
     });
   });
@@ -1282,7 +1292,7 @@ export function applyWillResiduary(
   const shares: SplitShare[] = [];
   for (const r of recipients) {
     const rFrac = undisposedFraction * (r.percentage / 100);
-    const { ownerMutation, removed, recipientKind, recipientId, recipientLabel } =
+    const { ownerMutation, removed, recipientKind, recipientId, recipientLabel, otherHeirsPicked } =
       resolveRecipientLabelAndMutation(
         r,
         survivor,
@@ -1295,7 +1305,7 @@ export function applyWillResiduary(
       fraction: rFrac,
       removed: removed || undefined,
       ownerMutation,
-      ledgerMeta: { via: "will_residuary", recipientKind, recipientId, recipientLabel },
+      ledgerMeta: { via: "will_residuary", recipientKind, recipientId, recipientLabel, ...(otherHeirsPicked ? { otherHeirsPicked } : {}) },
     });
   }
 

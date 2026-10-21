@@ -1029,6 +1029,28 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
     });
   });
 
+  it("routes a specific bequest to Other Heirs", () => {
+    const will: Will = {
+      id: "will-1", grantor: "client",
+      bequests: [{
+        id: "beq-1", name: "Brokerage to Other Heirs",
+        kind: "asset", assetMode: "specific", accountId: "acct-brok", liabilityId: null, entityId: null,
+        percentage: 100, condition: "always", sortOrder: 0,
+        recipients: [
+          { recipientKind: "other_heirs", recipientId: null, percentage: 100, sortOrder: 0 },
+        ],
+      }],
+    };
+
+    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined);
+    expect(result.consumed).toBe(true);
+    expect(result.resultingAccounts).toEqual([]);
+    expect(result.ledgerEntries).toEqual([expect.objectContaining({
+      via: "will", recipientKind: "system_default", recipientId: null,
+      recipientLabel: "Other Heirs", otherHeirsPicked: true, resultingAccountId: null, amount: 200000,
+    })]);
+  });
+
   it("splits a 100% bequest across two recipients 50/50", () => {
     const will: Will = {
       id: "will-1", grantor: "client",

@@ -538,3 +538,39 @@ describe("applyFinalDeath — a revocable trust with no grantor", () => {
     expect(trustTransfers(result)).toEqual([]);
   });
 });
+
+describe("applyFinalDeath — Other Heirs picked by the will", () => {
+  it("taxes a will share to Other Heirs exactly like the same share reaching Other Heirs by default", () => {
+    // No children, so with no will the estate falls through to Other Heirs.
+    const brokerage: Account = {
+      id: "brok",
+      name: "Brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      titlingType: "jtwros",
+      value: 30_000_000,
+      basis: 10_000_000,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const will: Will = {
+      id: "will-client",
+      grantor: "client",
+      bequests: [],
+      residuaryRecipients: [
+        { recipientKind: "other_heirs", recipientId: null, tier: "primary", percentage: 100, sortOrder: 0 },
+      ],
+    };
+    const settings = planSettings({ flatStateEstateRate: 0.1 });
+
+    const picked = applyFinalDeath(mkInput({ accounts: [brokerage], will, planSettings: settings }));
+    const fallback = applyFinalDeath(mkInput({ accounts: [brokerage], will: null, planSettings: settings }));
+
+    expect(picked.transfers.every((t) => t.via === "will_residuary" && t.recipientKind === "system_default")).toBe(true);
+    expect(fallback.transfers.every((t) => t.via === "fallback_other_heirs")).toBe(true);
+    expect(fallback.estateTax.federalEstateTax).toBeGreaterThan(0);
+    expect(picked.estateTax.federalEstateTax).toBeCloseTo(fallback.estateTax.federalEstateTax, 6);
+    expect(picked.estateTax.stateEstateTax).toBeCloseTo(fallback.estateTax.stateEstateTax, 6);
+  });
+});

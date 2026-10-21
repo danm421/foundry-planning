@@ -72,6 +72,33 @@ describe("MD dual estate + inheritance interaction — helper", () => {
     expect(result.perRecipient[1].tax).toBe(349_900);
   });
 
+  it("merges picked and fallback Other Heirs shares into one inheritance row", () => {
+    const transfers: DeathTransfer[] = [
+      mkDeathTransfer({
+        amount: 2_000_000, via: "will", otherHeirsPicked: true,
+        recipientKind: "system_default", recipientId: null, recipientLabel: "Other Heirs",
+      }),
+      mkDeathTransfer({
+        amount: 1_000_000, via: "fallback_other_heirs",
+        recipientKind: "system_default", recipientId: null, recipientLabel: "Other Heirs",
+      }),
+    ];
+
+    const result = computeInheritanceForDeathEvent({
+      state: "MD",
+      deathYear: 2026,
+      decedentAge: 70,
+      grossEstate: 3_000_000,
+      transfers,
+      accounts: [] as Account[],
+      familyMembers: [],
+      externalBeneficiaries: [],
+    });
+
+    expect(result.perRecipient).toHaveLength(1);
+    expect(result.perRecipient[0].grossShare).toBe(3_000_000);
+  });
+
   it("estate floor: gross < $50K → zero inheritance tax", () => {
     const result = computeInheritanceForDeathEvent({
       state: "MD",

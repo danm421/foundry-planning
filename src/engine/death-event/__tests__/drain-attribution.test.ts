@@ -182,6 +182,37 @@ describe("computeDrainAttributions — residuary-first", () => {
     expect(fedSpecific).toBeUndefined();
   });
 
+  it("lets an Other Heirs residuary recipient absorb drains first", () => {
+    const transfers: DeathTransfer[] = [
+      t({ via: "will_residuary", recipientKind: "system_default", recipientId: null, recipientLabel: "Other Heirs", otherHeirsPicked: true, amount: 600_000 }),
+      t({ recipientId: "fm-specific", amount: 400_000 }),
+    ];
+    const residuary: WillResiduaryRecipient[] = [
+      { recipientKind: "other_heirs", recipientId: null, percentage: 100, sortOrder: 0 },
+    ];
+    const out = computeDrainAttributions({
+      deathOrder: 2,
+      transfers,
+      drainTotals: {
+        federal_estate_tax: 100_000,
+        state_estate_tax: 0,
+        probate: 0,
+        admin_expenses: 0,
+        debts_paid: 0,
+        ird_tax: 0,
+      },
+      residuaryRecipients: residuary,
+    });
+    const fedHeirs = out.find(
+      (a) => a.recipientKind === "system_default" && a.drainKind === "federal_estate_tax",
+    );
+    const fedSpecific = out.find(
+      (a) => a.recipientId === "fm-specific" && a.drainKind === "federal_estate_tax",
+    );
+    expect(fedHeirs?.amount).toBeCloseTo(100_000);
+    expect(fedSpecific).toBeUndefined();
+  });
+
   it("overflows pro-rata when residuary share is exhausted", () => {
     // Residuary recipient receives only $50k; drain is $100k → overflow $50k
     // pro-rata across remaining non-spouse recipients.

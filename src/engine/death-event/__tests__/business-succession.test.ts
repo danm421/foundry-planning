@@ -125,6 +125,31 @@ describe("applyBusinessSuccession", () => {
     });
   });
 
+  it("passes a business bequeathed to Other Heirs to the Other Heirs sink", () => {
+    const biz = llcAccount([{ familyMemberId: "fmCooper", percent: 1 }]);
+    const will: Will = {
+      id: "w1", grantor: "client", bequests: [{
+        id: "b1", name: "LLC to Other Heirs", kind: "asset", assetMode: "specific",
+        accountId: null, entityId: "biz-1", liabilityId: null, percentage: 100,
+        condition: "always", sortOrder: 0,
+        recipients: [{ recipientKind: "other_heirs", recipientId: null, percentage: 100, sortOrder: 0 }],
+      }],
+    };
+    const r = applyBusinessSuccession({
+      deceased: "client", deceasedFmId: "fmCooper", survivorFmId: "fmSpouse",
+      deathOrder: 1, accounts: [biz], accountBalances: balances, basisMap,
+      will, familyMembers: [cooper, spouse, child], externalBeneficiaries: [], year: 2030,
+    });
+    expect(r.transfers).toHaveLength(1);
+    expect(r.transfers[0]).toMatchObject({
+      via: "will", recipientKind: "system_default", recipientId: null,
+      recipientLabel: "Other Heirs", otherHeirsPicked: true, amount: 10_000,
+    });
+    expect(r.ownerUpdates[0]).toEqual({
+      accountId: "biz-1", removeFamilyMemberId: "fmCooper", successors: [],
+    });
+  });
+
   it("zero consolidated value → no transfers, ownerUpdates, or basisUpdates", () => {
     const zeroBiz = llcAccount([{ familyMemberId: "fmCooper", percent: 1 }]);
     zeroBiz.value = 0;
