@@ -37,7 +37,6 @@ describe("save-handlers", () => {
       useCrummeyPowers: true,
       submit,
       scenarioActive: false,
-      planStartYear: 2026,
     });
 
     expect(submit).toHaveBeenCalledTimes(1);
@@ -96,7 +95,6 @@ describe("save-handlers", () => {
       useCrummeyPowers: false,
       submit,
       scenarioActive: false,
-      planStartYear: 2026,
     });
 
     const [edit, fallback] = (submit as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -148,9 +146,8 @@ describe("save-handlers", () => {
         useCrummeyPowers: false,
         submit,
         scenarioActive: true,
-        planStartYear: 2026,
       }),
-    ).rejects.toThrow(/before the plan starts in 2026/i);
+    ).rejects.toThrow(/so it has already happened/i);
     expect(submit).not.toHaveBeenCalled();
   });
 
@@ -167,7 +164,6 @@ describe("save-handlers", () => {
       useCrummeyPowers: false,
       submit,
       scenarioActive: false,
-      planStartYear: 2026,
     });
     expect(submit).toHaveBeenCalledTimes(1);
   });
@@ -301,7 +297,6 @@ describe("save-handlers", () => {
         useCrummeyPowers: false,
         submit,
         scenarioActive: false,
-        planStartYear: 2026,
       }),
     ).rejects.toThrow(/400/);
   });

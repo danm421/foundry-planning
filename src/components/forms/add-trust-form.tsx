@@ -37,6 +37,7 @@ import {
   assertDraftable,
   assertNotPastDatedAssetGift,
 } from "@/lib/gifts/gift-write";
+import { currentPlanningYear } from "@/lib/plan-year";
 import {
   giftRowToDraft,
   type EstateFlowGift,
@@ -786,7 +787,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
         for (const op of ops) {
           if (op.type === "create") {
             const draft = fundingPickCreateDraft(op.body, crypto.randomUUID());
-            assertNotPastDatedAssetGift(draft, { scenarioActive, planStartYear });
+            assertNotPastDatedAssetGift(draft, { scenarioActive, thisYear: currentPlanningYear() });
             const giftRes = await scenarioWriter.submit(
               giftScenarioAdd(draft),
               {
@@ -817,7 +818,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
                 fundingPickUpdateDraft(current, op.body),
                 "gift",
               );
-              assertNotPastDatedAssetGift(draft, { scenarioActive, planStartYear });
+              assertNotPastDatedAssetGift(draft, { scenarioActive, thisYear: currentPlanningYear() });
               giftRes = await scenarioWriter.submit(
                 giftScenarioAdd(draft),
                 { url, method: "PATCH", body: op.body, skipRefresh: true },
@@ -1337,14 +1338,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
             // Proper derivation tracked in future-work/estate.md.
             trustGrantor={(grantor as "client" | "spouse") || "client"}
             accounts={toAssetAccountOptions(accounts ?? [], editing.id)}
-            currentYear={new Date().getFullYear()}
-            // The plan's REAL first projection year, not today's date: it is
-            // the line `POST /gifts` draws between a transfer the engine will
-            // replay and a past-dated one it writes straight to
-            // `account_owners`. A scenario cannot make that second write, so
-            // the form refuses a past-dated transfer rather than accepting a
-            // save that moves no numbers.
-            projectionStartYear={planStartYear ?? null}
+            currentYear={currentPlanningYear()}
             priorDiscounts={transferPriorDiscounts}
             onClose={() => setOpenModal(null)}
             onSaved={() => {

@@ -25,6 +25,7 @@ import {
   giftScenarioAdd,
   giftScenarioRemove,
 } from "@/lib/gifts/gift-write";
+import { currentPlanningYear } from "@/lib/plan-year";
 import { buildRecipientPatchFields } from "@/lib/gifts/recipient-patch-fields";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { qcdSourceOptions, qcdSourceProblems } from "@/lib/gifts/qcd-sources";
@@ -209,7 +210,7 @@ export default function GiftDialog(props: GiftDialogProps) {
       // scenario the same save changes nothing at all, so say so.
       assertNotPastDatedAssetGift(draft, {
         scenarioActive: writer.scenarioActive,
-        planStartYear: props.planStartYear,
+        thisYear: currentPlanningYear(),
       });
       const inPlace = savesInPlace(draft);
       // The discount field is on screen exactly when the shared rule admits the

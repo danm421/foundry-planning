@@ -3,7 +3,7 @@
 // The routes keep their gates and answer `result.body ?? { error: result.error }`.
 // With a save's `tx` every statement runs on it (a trust, charity or family member
 // created earlier in the save is found); without, today's statements on module `db`.
-import { gifts, liabilities, accounts, entities, familyMembers, externalBeneficiaries } from "@/db/schema";
+import { gifts, liabilities, entities, familyMembers, externalBeneficiaries } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { handleOf, inTransaction, type WriteOptions } from "@/lib/db-tx";
@@ -11,7 +11,8 @@ import { assertAccountsInClient, assertLiabilitiesInClient } from "@/lib/db-scop
 import { recordAudit } from "@/lib/audit";
 import { giftCreateSchema, giftUpdateSchema } from "@/lib/schemas/gifts";
 import { checkQcdSource, checkMergedQcd } from "@/lib/gifts/qcd-source-check";
-import { applyOwnershipTransfer, getProjectionStartYearForScenario, OwnershipTransferError } from "@/lib/ownership";
+import { applyOwnershipTransfer, OwnershipTransferError } from "@/lib/ownership";
+import { currentPlanningYear } from "@/lib/plan-year";
 import { buildBundledChildValues, buildChildPatchValues } from "@/lib/clients/gift-child-values";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
 
@@ -101,6 +102,13 @@ export async function createGiftForClient(
     if (qcdError) return writeError(400, qcdError);
   }
 
+  // A gift dated before this planning year already happened: its ownership
+  // move is folded into the stored owners below and the engine never replays
+  // it. Compared against the calendar, not the plan's start year — a plan that
+  // starts next year applies this year's gifts from its start instead, so the
+  // stored owners stay put whichever way the Assumptions switch is set.
+  const enteredAsHistory = data.year < currentPlanningYear();
+
   let row: GiftRow;
   try {
     row = await inTransaction(args, async (tx) => {
@@ -125,6 +133,7 @@ export async function createGiftForClient(
             data.valuationDiscount != null ? String(data.valuationDiscount) : null,
           parentGiftId: null,
           useCrummeyPowers: data.useCrummeyPowers ?? false,
+          enteredAsHistory,
           notes: data.notes ?? null,
           qcdAccountId: data.qcdAccountId ?? null,
           qcdAmountMode: data.qcdAmountMode ?? null,
@@ -143,8 +152,8 @@ export async function createGiftForClient(
         });
         if (linked) {
           linkedLiabilityId = linked.id;
-          await tx.insert(gifts).values(
-            buildBundledChildValues({
+          await tx.insert(gifts).values({
+            ...buildBundledChildValues({
               clientId: id,
               year: data.year,
               yearRef: data.yearRef ?? null,
@@ -158,55 +167,33 @@ export async function createGiftForClient(
               recipientExternalBeneficiaryId:
                 data.recipientExternalBeneficiaryId ?? null,
             }),
-          );
+            enteredAsHistory,
+          });
         }
       }
 
       // ── Past-dated dual-write to junction tables ──────────────────────────
-      // For transfers where year < projectionStartYear, the engine won't replay
-      // the event at projection time, so we must persist the post-transfer
-      // ownership state in account_owners / liability_owners right now.
-      // For future-dated transfers (year >= projectionStartYear) the engine fans
-      // the event dynamically — junction tables stay untouched.
+      // A transfer entered as history never replays in the engine, so persist
+      // the post-transfer ownership in account_owners / liability_owners now.
+      // Any later-dated transfer is applied by the engine — junction tables
+      // stay untouched.
       //
       // Only fires for asset/liability transfers to a recipient entity (not cash gifts).
       if (
+        enteredAsHistory &&
         data.recipientEntityId != null &&
-        data.percent != null &&
-        (data.accountId != null || data.liabilityId != null || linkedLiabilityId != null)
+        data.percent != null
       ) {
-        // Resolve the scenario from the account or liability being transferred.
-        let scenarioId: string | null = null;
         if (data.accountId != null) {
-          const [acctRow] = await tx
-            .select({ scenarioId: accounts.scenarioId })
-            .from(accounts)
-            .where(eq(accounts.id, data.accountId));
-          scenarioId = acctRow?.scenarioId ?? null;
-        } else if (data.liabilityId != null) {
-          const [liabRow] = await tx
-            .select({ scenarioId: liabilities.scenarioId })
-            .from(liabilities)
-            .where(eq(liabilities.id, data.liabilityId));
-          scenarioId = liabRow?.scenarioId ?? null;
+          await applyOwnershipTransfer(tx, "account", data.accountId, data.percent, data.recipientEntityId);
         }
 
-        if (scenarioId != null) {
-          const projectionStartYear = await getProjectionStartYearForScenario(tx, scenarioId);
-          // If no plan_settings row exists yet, skip the dual-write entirely.
-          if (projectionStartYear != null && data.year < projectionStartYear) {
-            if (data.accountId != null) {
-              await applyOwnershipTransfer(tx, "account", data.accountId, data.percent, data.recipientEntityId);
-            }
+        if (data.liabilityId != null) {
+          await applyOwnershipTransfer(tx, "liability", data.liabilityId, data.percent, data.recipientEntityId);
+        }
 
-            if (data.liabilityId != null) {
-              await applyOwnershipTransfer(tx, "liability", data.liabilityId, data.percent, data.recipientEntityId);
-            }
-
-            if (linkedLiabilityId != null) {
-              await applyOwnershipTransfer(tx, "liability", linkedLiabilityId, data.percent, data.recipientEntityId);
-            }
-          }
+        if (linkedLiabilityId != null) {
+          await applyOwnershipTransfer(tx, "liability", linkedLiabilityId, data.percent, data.recipientEntityId);
         }
       }
       // ── end past-dated dual-write ─────────────────────────────────────────

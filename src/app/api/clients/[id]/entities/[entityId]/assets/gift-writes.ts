@@ -37,10 +37,11 @@ export interface EntityGiftWritesInput {
   householdMembers: { id: string; role: "client" | "spouse" | "child" | "other" }[];
   /** Every recorded `business_interest` gift of this business, any recipient. */
   existingGifts: ExistingBusinessGift[];
-  /** The base plan's first projection year. The engine reads a gift dated
-   *  before it as already folded into the authored owners — and a gift writes
-   *  no owner rows — so an earlier gift year is refused. */
-  planStartYear: number;
+  /** This planning year (`currentPlanningYear()`). A gift dated before it
+   *  already happened and belongs in the authored owners — and a gift writes no
+   *  owner rows — so an earlier gift year is refused. A gift dated this year on
+   *  a plan that starts next year is applied by the engine from the start. */
+  thisYear: number;
   op:
     | {
         op: "add";
@@ -160,10 +161,8 @@ function splitBp(totalBp: number, weights: number[]): number[] {
 
 /** A gift of a business interest to an irrevocable trust: gift rows only. */
 function planGift(input: EntityGiftWritesInput, op: AddOp): EntityGiftWritesPlan {
-  if (op.year < input.planStartYear) {
-    return refuse(
-      `The gift year (${op.year}) is before the plan start year (${input.planStartYear})`,
-    );
+  if (op.year < input.thisYear) {
+    return refuse(`The gift year (${op.year}) is before this year (${input.thisYear})`);
   }
   const household = householdAfterGifts(input.businessId, input.authoredOwners, input.existingGifts);
   if (household === null) {

@@ -31,6 +31,7 @@ import { formatZodIssues } from "@/lib/schemas/common";
 import { entityCreateSchema, entityUpdateSchema } from "@/lib/schemas/entities";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
+import { currentPlanningYear } from "@/lib/plan-year";
 
 type EntityRow = typeof entities.$inferSelect;
 /** The route's response: the entity row and its family-member owners. */
@@ -386,6 +387,7 @@ export async function createEntityForClient(
             grantor: data.grantor,
             recipientEntityId: entity.id,
             eventKind: "clt_remainder_interest",
+            enteredAsHistory: si.inceptionYear < currentPlanningYear(),
             notes: `Auto-emitted at CLT '${data.name}' inception. Remainder interest gift = ${interests.originalRemainderInterest}; income interest (charitable deduction) = ${interests.originalIncomeInterest}.`,
           });
         }
@@ -932,6 +934,7 @@ export async function updateEntityForClient(
             grantor,
             recipientEntityId: entityId,
             eventKind: "clt_remainder_interest",
+            enteredAsHistory: si.inceptionYear < currentPlanningYear(),
             notes: noteText,
           });
         }

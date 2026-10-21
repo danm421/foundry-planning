@@ -699,7 +699,7 @@ describe("GiftDialog — gift writes follow the active scenario", () => {
 
     await waitFor(() =>
       expect(screen.getByTestId("gift-error")).toHaveTextContent(
-        /before the plan starts in 2026/i,
+        /so it has already happened/i,
       ),
     );
     expect(fetchMock).not.toHaveBeenCalled();

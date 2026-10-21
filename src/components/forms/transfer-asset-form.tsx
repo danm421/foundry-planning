@@ -50,18 +50,8 @@ interface Props {
   trustGrantor: "client" | "spouse";
   accounts: AccountOption[];
   milestones?: ClientMilestones;
-  /**
-   * The plan's first projection year (`plan_settings.plan_start_year`).
-   *
-   * It is the line `POST /gifts` draws between a transfer the engine replays at
-   * projection time and a past-dated one, which the route instead writes
-   * straight into `account_owners`. A scenario cannot make that second write,
-   * so a past-dated transfer saved inside one changes nothing at all — this
-   * form refuses it instead. `null` when the caller genuinely does not know the
-   * year: the guard then stands down rather than refusing on a guess.
-   */
-  projectionStartYear: number | null;
-  /** Current calendar year — passed as a prop so tests can control it. */
+  /** This planning year (`currentPlanningYear()`) — passed as a prop so tests
+   *  can control it. A transfer dated before it already happened. */
   currentYear: number;
   /** Most-recent discount per source, from `selectPriorDiscounts`. Seeds the
    *  discount field only — never written back to the source gift. */
@@ -100,7 +90,6 @@ export default function TransferAssetForm({
   trustGrantor,
   accounts,
   milestones,
-  projectionStartYear,
   currentYear,
   priorDiscounts,
   onClose,
@@ -217,7 +206,7 @@ export default function TransferAssetForm({
       // number — see `assertNotPastDatedAssetGift`. Refuse it by name.
       assertNotPastDatedAssetGift(draft, {
         scenarioActive: writer.scenarioActive,
-        planStartYear: projectionStartYear,
+        thisYear: currentYear,
       });
 
       const res = await writer.submit(giftScenarioAdd(draft), {

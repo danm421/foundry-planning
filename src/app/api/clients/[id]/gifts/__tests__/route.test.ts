@@ -36,7 +36,7 @@
 import { readFileSync } from "node:fs";
 import { crmHouseholds, crmHouseholdContacts } from "@/db/schema";
 import { resolve } from "node:path";
-import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 
 // Load .env.local before anything that reads DATABASE_URL at module-init time.
 try {
@@ -1445,6 +1445,57 @@ d("POST /api/clients/[id]/gifts — T16 past-dated dual-write", () => {
     const clientRow = owners.find((o) => o.familyMemberId === clientFmId);
     expect(clientRow).toBeDefined();
     expect(Number(clientRow!.percent)).toBeCloseTo(0.5, 4);
+  });
+
+  describe("a plan that starts next year (today is 2026-10-21)", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-21T15:00:00Z"));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    async function giftOnNextYearPlan(year: number) {
+      const { clientId, scenarioId, clientFmId, entityId } = await setupClientWithPlanSettings(2027);
+      const account = await setupAccountWithOwner(clientId, scenarioId, clientFmId);
+      const res = await POST(
+        makePostReq(clientId, {
+          year,
+          grantor: "client",
+          recipientEntityId: entityId,
+          accountId: account.id,
+          percent: 0.5,
+        }) as never,
+        { params: Promise.resolve({ id: clientId }) },
+      );
+      expect(res.status).toBe(201);
+      const created = (await res.json()) as { id: string };
+      const { db } = dbMod;
+      const owners = await db
+        .select()
+        .from(schema.accountOwners)
+        .where(drizzleOrm.eq(schema.accountOwners.accountId, account.id));
+      const [row] = await db
+        .select()
+        .from(schema.gifts)
+        .where(drizzleOrm.eq(schema.gifts.id, created.id));
+      return { owners, row, entityId };
+    }
+
+    it("does not fold a this-year gift while the plan starts next year", async () => {
+      const { owners, row } = await giftOnNextYearPlan(2026);
+      expect(owners).toHaveLength(1);
+      expect(Number(owners[0].percent)).toBeCloseTo(1.0, 4);
+      expect(row.enteredAsHistory).toBe(false);
+    });
+
+    it("folds and marks a gift dated before this year", async () => {
+      const { owners, row, entityId } = await giftOnNextYearPlan(2025);
+      expect(owners).toHaveLength(2);
+      expect(Number(owners.find((o) => o.entityId === entityId)!.percent)).toBeCloseTo(0.5, 4);
+      expect(row.enteredAsHistory).toBe(true);
+    });
   });
 
   it("8. Future-dated asset transfer (year >= projectionStartYear) leaves account_owners unchanged", async () => {

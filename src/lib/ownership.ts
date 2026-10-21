@@ -11,7 +11,6 @@ import {
   entities,
   accountOwners,
   liabilityOwners,
-  planSettings,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { RETIREMENT_SUBTYPES } from "@/lib/accounts/retirement-subtypes";
@@ -249,37 +248,10 @@ export class OwnershipTransferError extends Error {
 }
 
 /**
- * Returns the projection start year for the given scenario by reading
- * plan_settings.plan_start_year inside the supplied transaction.
- *
- * Returns null when no plan_settings row exists. In production, plan_settings
- * is seeded at client creation (`POST /api/clients`) so this null path should
- * be unreachable. We log a warning when it fires so any silent skip in
- * durable junction-table writes is at least observable in runtime logs. See
- * future-work/client-data.md for the proposed flip-to-throw audit.
- */
-export async function getProjectionStartYearForScenario(
-  tx: Tx,
-  scenarioId: string,
-): Promise<number | null> {
-  const [row] = await tx
-    .select({ planStartYear: planSettings.planStartYear })
-    .from(planSettings)
-    .where(eq(planSettings.scenarioId, scenarioId));
-  if (!row) {
-    console.warn(
-      `getProjectionStartYearForScenario: no plan_settings row for scenario ${scenarioId} — past-dated dual-write skipped`,
-    );
-    return null;
-  }
-  return row.planStartYear;
-}
-
-/**
  * Applies a past-dated ownership transfer to the static junction table.
  *
- * Called only when gift.year < projectionStartYear. For future-dated transfers
- * the engine fans the event at projection time and these tables stay untouched.
+ * Called only for a gift entered as history (dated before the planning year).
+ * Every later gift is applied by the engine and these tables stay untouched.
  *
  * Algorithm (mirrors engine/ownership.ts `ownersForYear`):
  *  1. Load current owners from the DB.

@@ -1891,6 +1891,10 @@ export const gifts = pgTable(
     qcdAmountMode: qcdAmountModeEnum("qcd_amount_mode"),
     useCrummeyPowers: boolean("use_crummey_powers").notNull().default(false),
     eventKind: giftEventKindEnum("event_kind").notNull().default("outright"),
+    /** true when saved dated before the planning year; its ownership effect was
+     *  folded into the stored owners at save. The engine never re-applies it. A
+     *  false row dated before the plan start is applied from the start. */
+    enteredAsHistory: boolean("entered_as_history").notNull().default(false),
     notes: text("notes"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
