@@ -40,6 +40,7 @@ import {
   legSettles,
   useProjectionYears,
 } from "./use-asset-transaction-legs";
+import { currentPlanningYear } from "@/lib/plan-year";
 
 // ── Types (public surface — copied verbatim, unchanged) ─────────────────────────
 
@@ -150,7 +151,7 @@ export default function AddAssetTransactionForm({
   const writer = useScenarioWriter(clientId);
   const { scenarioId } = useScenarioState(clientId);
   const isEdit = !!initialData;
-  const currentYear = new Date().getFullYear();
+  const defaultYear = milestones?.planStart ?? currentPlanningYear();
 
   const projectionYears = useProjectionYears(clientId, scenarioId);
 
@@ -193,7 +194,7 @@ export default function AddAssetTransactionForm({
         ? records[0].name
         : bundleNameFromLegs(records),
   );
-  const [year, setYear] = useState(records[0]?.year ?? currentYear);
+  const [year, setYear] = useState(records[0]?.year ?? defaultYear);
   const [yearRef, setYearRef] = useState<YearRef | null>(null);
   const [legs, setLegs] = useState<LegDraft[]>(() =>
     initialLegs.length ? initialLegs : [emptySellLeg(crypto.randomUUID())],

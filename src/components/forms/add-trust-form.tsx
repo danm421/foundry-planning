@@ -80,10 +80,9 @@ interface AddTrustFormProps {
   assetFamilyMembers?: AssetsTabFamilyMember[];
   /** Schedule modal props */
   planEndYear?: number;
-  /** The plan's real first projection year (`plan_settings.plan_start_year`),
-   *  handed to the asset-transfer modal. Absent when the caller doesn't have
-   *  it, in which case the past-dated guard stands down rather than refusing a
-   *  legal save on a guess. */
+  /** The plan's first projection year (`plan_settings.plan_start_year`): the
+   *  flows grid's first row and the sale-to-trust dialog's default year.
+   *  Absent when the caller doesn't have it — this planning year stands in. */
   planStartYear?: number;
   primaryClientBirthYear?: number;
   initialFlowOverrides?: Array<{
@@ -893,7 +892,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     isGrantor, grantorStatusEndYear,
     isIrrevocable, grantor, trustee, trustEnds, showDistributionAndIncome,
     distributionAmount, distributionPercent, remainderRows,
-    originalSplitInterestFundingPicks, onAutoSaved, planStartYear,
+    originalSplitInterestFundingPicks, onAutoSaved,
   ]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -1198,7 +1197,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
               distributionPolicyPercent={null /* trusts don't use this in P1 */}
               taxTreatment={editing.taxTreatment ?? "ordinary"}
               flowMode={editing.flowMode ?? "annual"}
-              planStartYear={new Date().getFullYear()}
+              planStartYear={planStartYear ?? currentPlanningYear()}
               defaultEndYear={planEndYear ?? new Date().getFullYear() + 30}
               planEndYear={planEndYear ?? new Date().getFullYear() + 30}
               primaryClientBirthYear={primaryClientBirthYear ?? new Date().getFullYear() - 55}
@@ -1301,6 +1300,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
                 scenarioId={scenarioId}
                 trust={editing}
                 accounts={accounts ?? []}
+                planStartYear={planStartYear}
               />
               {!scenarioId && (
                 <p className="text-[12px] text-ink-3">

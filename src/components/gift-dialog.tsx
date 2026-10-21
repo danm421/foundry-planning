@@ -416,6 +416,7 @@ export default function GiftDialog(props: GiftDialogProps) {
           hasSpouse={props.hasSpouse}
           annualExclusionByYear={props.annualExclusionByYear}
           taxInflationRate={props.taxInflationRate}
+          planStartYear={props.planStartYear}
           editing={initialDraft}
           onChange={(d, reason) => { setDraft(d); setBlockedReason(reason); }}
         />

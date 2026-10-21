@@ -8,6 +8,7 @@ import MilestoneYearPicker from "@/components/milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { fieldLabelClassName, inputClassName, selectClassName } from "./input-styles";
 import { BaseFactsNote } from "@/hooks/base-facts-edit";
+import { currentPlanningYear } from "@/lib/plan-year";
 
 interface ScheduleRow {
   id: string;
@@ -95,7 +96,7 @@ export default function AddTransferForm({
     initialData?.mode ?? "one_time",
   );
   const [startYear, setStartYear] = useState(
-    initialData?.startYear ?? new Date().getFullYear(),
+    initialData?.startYear ?? milestones?.planStart ?? currentPlanningYear(),
   );
   const [startYearRef, setStartYearRef] = useState<YearRef | null>(
     (initialData?.startYearRef as YearRef | null) ?? null,
