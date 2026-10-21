@@ -451,6 +451,8 @@ export function collectClientRefs(plan: BaseWritePlan): ClientRefs {
     // A QCD gift DRAFT names its source IRA nested (`qcd: {accountId}`). It lands
     // in `gifts.qcd_account_id` / `gift_series.qcd_account_id`, a GLOBAL FK, so a
     // crafted id must not attach another firm's account to this client's gift.
+    // Series-shaped drafts never reach `plan.inserts`; they are walked below from
+    // `plan.giftSeries.upserts`.
     if (kind === "gift") {
       add("accountIds", (payload.qcd as { accountId?: unknown } | undefined)?.accountId);
     }
@@ -467,6 +469,7 @@ export function collectClientRefs(plan: BaseWritePlan): ClientRefs {
   };
   for (const ins of plan.inserts) walk(ins.kind, ins.raw);
   for (const u of plan.updates) walk(u.kind, u.set);
+  for (const s of plan.giftSeries.upserts) walk("gift", s.draft as unknown as Record<string, unknown>);
   return {
     familyMemberIds: [...found.familyMemberIds],
     externalBeneficiaryIds: [...found.externalBeneficiaryIds],

@@ -349,13 +349,9 @@ export async function updateGiftForClient(
       const qcdError = await checkMergedQcd(handle, id, merged);
       if (qcdError) return writeError(400, qcdError);
       // The schema lets a patch carry amount 0 (a full-RMD QCD stores 0); a row
-      // that is not a QCD must still be a positive cash gift.
-      if (
-        merged.qcdAccountId == null &&
-        !merged.transfersAsset &&
-        merged.amount != null &&
-        merged.amount <= 0
-      ) {
+      // that is not a QCD must still be positive (an asset gift's override
+      // included; null stays allowed).
+      if (merged.qcdAccountId == null && merged.amount != null && merged.amount <= 0) {
         return writeError(400, "amount must be greater than zero.");
       }
     }

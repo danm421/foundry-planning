@@ -96,6 +96,20 @@ describe("updateGiftForClient — switching a gift between Cash and From an IRA"
     expect(sets).toHaveLength(0);
   });
 
+  it("refuses amount 0 on an asset gift (no $0 valuation override)", async () => {
+    const { tx, sets } = fakeTx({
+      ...cashRow,
+      amount: null,
+      recipientExternalBeneficiaryId: null,
+      recipientEntityId: "e0000000-0000-0000-0000-000000000001",
+      accountId: IRA,
+      percent: "0.5",
+    });
+    const res = await updateGiftForClient({ ...base, tx, input: { amount: 0 } });
+    expect(res.ok).toBe(false);
+    expect(sets).toHaveLength(0);
+  });
+
   it("sets BOTH QCD columns when a cash gift to a charity becomes a QCD", async () => {
     const { tx, sets } = fakeTx(cashRow);
     const res = await updateGiftForClient({

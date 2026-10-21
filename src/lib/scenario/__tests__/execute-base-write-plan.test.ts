@@ -875,6 +875,31 @@ describe("collectClientRefs", () => {
     expect(collectClientRefs(plan).accountIds).toEqual(["ira-foreign"]);
   });
 
+  it("collects the IRA a QCD SERIES draft names, which lives in plan.giftSeries, not inserts", () => {
+    const series = (id: string, accountId: string) => ({
+      id,
+      draft: {
+        kind: "series" as const,
+        id,
+        startYear: 2030,
+        endYear: 2035,
+        annualAmount: 0,
+        amountMode: "fixed" as const,
+        inflationAdjust: false,
+        grantor: "client" as const,
+        recipient: { kind: "external_beneficiary" as const, id: "eb1" },
+        crummey: false,
+        qcd: { accountId, amountMode: "full_rmd" as const },
+      },
+    });
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [{ kind: "account", targetId: "ira-syn", raw: { id: "ira-syn" } }],
+      giftSeries: { upserts: [series("s1", "ira-foreign"), series("s2", "ira-syn")], removes: [] },
+    };
+    expect(collectClientRefs(plan).accountIds).toEqual(["ira-foreign"]);
+  });
+
   it("collects nothing from a plan with no owners or beneficiaries", () => {
     const plan: BaseWritePlan = {
       ...emptyPlan(),
