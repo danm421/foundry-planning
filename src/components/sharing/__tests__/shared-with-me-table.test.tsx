@@ -7,6 +7,7 @@ import { RECORD_NAME_LINK, ROW_HOVER } from "../../table-styles";
 const ROWS = [
   {
     clientId: "C1",
+    householdId: "H1",
     displayName: "Ada Lovelace",
     ownerName: "Dana Advisor",
     firmName: "Ethos Financial Group",

@@ -23,11 +23,15 @@ import { ClientsLoadMore } from "@/components/clients-load-more";
 
 export type SharedRow = {
   clientId: string;
+  /** The client's CRM household; null only when its lookup missed. */
+  householdId: string | null;
   displayName: string;
   ownerName: string;
   firmName: string;
   permission: "view" | "edit";
 };
+
+type ClientMeta = { householdId: string; householdName: string; primaryName: string | null };
 
 // ---------------------------------------------------------------------------
 // Row-building helper — pure function, exported for unit testing.
@@ -37,13 +41,14 @@ export function buildSharedRows(
   shares: ShareDetail[],
   ownerNames: Map<string, string>,
   firmNames: Map<string, string>,
-  clientMeta: Map<string, { householdName: string; primaryName: string | null }>,
+  clientMeta: Map<string, ClientMeta>,
 ): SharedRow[] {
   return shares.map((s) => {
     const meta = clientMeta.get(s.clientId);
     const displayName = meta?.primaryName ?? meta?.householdName ?? "Unknown client";
     return {
       clientId: s.clientId,
+      householdId: meta?.householdId ?? null,
       displayName,
       ownerName: ownerNames.get(s.ownerUserId) ?? "Unknown user",
       firmName: firmNames.get(s.firmId) ?? "Unknown firm",
@@ -236,11 +241,12 @@ async function resolveSharedView(userId: string | null): Promise<SharedRow[]> {
   // 4. Resolve client display names.
   //    Join clients → crmHouseholds → left join crmHouseholdContacts (primary only).
   //    NO firmId filter — cross-firm, access is already authorized by the share.
-  const clientMeta = new Map<string, { householdName: string; primaryName: string | null }>();
+  const clientMeta = new Map<string, ClientMeta>();
   if (sharedClientIds.length > 0) {
     const rows = await db
       .select({
         clientId: clients.id,
+        householdId: crmHouseholds.id,
         householdName: crmHouseholds.name,
         firstName: crmHouseholdContacts.firstName,
         lastName: crmHouseholdContacts.lastName,
@@ -258,13 +264,14 @@ async function resolveSharedView(userId: string | null): Promise<SharedRow[]> {
 
     // A client may produce multiple rows when contacts exist. Gather primary
     // contact from the contact rows; fall back to household name.
-    const gathered = new Map<
-      string,
-      { householdName: string; primaryName: string | null }
-    >();
+    const gathered = new Map<string, ClientMeta>();
     for (const r of rows) {
       if (!gathered.has(r.clientId)) {
-        gathered.set(r.clientId, { householdName: r.householdName, primaryName: null });
+        gathered.set(r.clientId, {
+          householdId: r.householdId,
+          householdName: r.householdName,
+          primaryName: null,
+        });
       }
       // leftJoin produces null firstName/lastName when no contacts exist.
       if (r.firstName && r.lastName) {

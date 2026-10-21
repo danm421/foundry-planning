@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { UnauthorizedError } from "@/lib/db-helpers";
+import { authErrorResponse } from "@/lib/authz";
 
 /**
  * Shared error mapper for `/api/crm/tasks/*` route handlers. Maps domain
  * errors thrown by `src/lib/crm-tasks/*` (queries / mutations / files /
  * members) onto the appropriate HTTP status:
  *
- * - `UnauthorizedError` (or legacy `err.message === "Unauthorized"`) → 401
+ * - `UnauthorizedError` (or legacy `err.message === "Unauthorized"`) → 401,
+ *   `ForbiddenError` (e.g. a view-only share attaching a task) → 403
  * - `ZodError` (`err.name === "ZodError"`) → 400 with the validation message
  * - `err.message` starting with `"CRM "` or matching a "not found" pattern
  *   (e.g. `"Tag not found in firm"`, `"Task not found"`, `"File not found
@@ -17,13 +18,8 @@ import { UnauthorizedError } from "@/lib/db-helpers";
  * mapper without re-implementing it per route.
  */
 export function mapCrmTaskError(err: unknown): NextResponse {
-  if (err instanceof UnauthorizedError) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  if (err instanceof Error && err.message === "Unauthorized") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denial = authErrorResponse(err);
+  if (denial) return NextResponse.json(denial.body, { status: denial.status });
 
   if (err instanceof Error && err.name === "ZodError") {
     return NextResponse.json({ error: err.message }, { status: 400 });

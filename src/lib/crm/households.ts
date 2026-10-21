@@ -12,6 +12,7 @@ import {
 import { and, desc, eq, ilike, inArray, isNull, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import { containsPattern } from "@/lib/like-pattern";
 import { requireOrgId } from "@/lib/db-helpers";
+import { ForbiddenError } from "@/lib/authz";
 import { findVisibleCrmHousehold, requireCrmHouseholdAccess, verifyCrmHouseholdAccessFor } from "./authz";
 import type { Principal } from "@/lib/clients/authz";
 import { auth } from "@clerk/nextjs/server";
@@ -441,6 +442,7 @@ export async function updateCrmHousehold(
 ) {
   const access = await findVisibleCrmHousehold(id);
   if (!access) throw new Error("Household not found");
+  if (access.permission !== "edit") throw new ForbiddenError("Edit access required");
   const { household: existing, orgId: firmId } = access;
 
   // Resolve the name server-side. The client may send a `name`, but it only

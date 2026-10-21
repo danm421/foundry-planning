@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { authErrorResponse } from "@/lib/authz";
 import { listActivity, recordActivity } from "@/lib/crm/activity";
-import { canReadVault, requireCrmHouseholdAccess } from "@/lib/crm/authz";
+import { canReadVault, requireCrmHouseholdAccess, requireCrmHouseholdEditAccess } from "@/lib/crm/authz";
 import { createCrmActivitySchema } from "@/lib/crm/schemas";
 import { hydrateRowActors } from "@/lib/activity/resolve-actors";
 import { auth } from "@clerk/nextjs/server";
@@ -28,9 +29,8 @@ export async function GET(
     );
     return NextResponse.json({ activity });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const denial = authErrorResponse(err);
+    if (denial) return NextResponse.json(denial.body, { status: denial.status });
     if (
       err instanceof Error &&
       err.message.startsWith("CRM household not found or access denied")
@@ -48,7 +48,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    await requireCrmHouseholdAccess(id);
+    await requireCrmHouseholdEditAccess(id);
     const body = await req.json();
     const parsed = createCrmActivitySchema.safeParse(body);
     if (!parsed.success) {
@@ -68,9 +68,8 @@ export async function POST(
     );
     return NextResponse.json({ ok: true }, { status: 201 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const denial = authErrorResponse(err);
+    if (denial) return NextResponse.json(denial.body, { status: denial.status });
     if (
       err instanceof Error &&
       err.message.startsWith("CRM household not found or access denied")

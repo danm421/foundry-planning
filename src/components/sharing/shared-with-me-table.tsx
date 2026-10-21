@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { SharedRow } from "@/app/(app)/clients/clients-content";
+import { ClientRowActions } from "../client-row-actions";
 import { RECORD_NAME_LINK, ROW_HOVER } from "../table-styles";
 
 // ---------------------------------------------------------------------------
@@ -75,6 +76,10 @@ export function SharedWithMeTable({ rows }: Props) {
         <thead className="bg-card-2">
           <tr>
             <th className={TH}>Client</th>
+            {/* `relative`: see the quick-links header in unified-clients-table.tsx. */}
+            <th className={`${TH} relative`}>
+              <span className="sr-only">Quick links</span>
+            </th>
             <th className={TH}>Shared by</th>
             <th className={TH}>Permission</th>
           </tr>
@@ -96,6 +101,14 @@ export function SharedWithMeTable({ rows }: Props) {
                 >
                   {row.displayName}
                 </Link>
+              </td>
+
+              {/* The same CRM / Planning buttons as the main list: a share
+                  opens both sides of the household. */}
+              <td className="whitespace-nowrap px-6 py-4">
+                {row.householdId && (
+                  <ClientRowActions householdId={row.householdId} planningClientId={row.clientId} />
+                )}
               </td>
 
               {/* Sharer badge: "Shared by {name} · {firm}" */}

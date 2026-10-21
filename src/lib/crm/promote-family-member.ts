@@ -8,7 +8,7 @@ import {
 } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
-import { requireCrmHouseholdAccess } from "./authz";
+import { requireCrmHouseholdEditAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
 import { recordActivityNonFatal } from "./activity";
 import { buildHouseholdName } from "./household-name";
@@ -46,7 +46,7 @@ export async function promoteFamilyMember(
   sourceHouseholdId: string,
   input: PromoteFamilyMemberInput,
 ): Promise<{ householdId: string; existing: boolean }> {
-  const { household: sourceHousehold, orgId } = await requireCrmHouseholdAccess(sourceHouseholdId);
+  const { household: sourceHousehold, orgId } = await requireCrmHouseholdEditAccess(sourceHouseholdId);
   const { userId } = await auth();
   const actorId = userId ?? "system";
 

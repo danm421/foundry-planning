@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { crmHouseholdAccounts } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
-import { requireCrmHouseholdAccess } from "./authz";
+import { requireCrmHouseholdEditAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
 import { recordActivity } from "./activity";
 import { buildFieldChanges } from "@/lib/audit/build-changes";
@@ -21,7 +21,7 @@ function maskAccountNumberLast4(last4: string | null | undefined): string {
 }
 
 export async function createCrmAccount(householdId: string, input: CreateCrmAccountInput) {
-  const { orgId } = await requireCrmHouseholdAccess(householdId);
+  const { orgId } = await requireCrmHouseholdEditAccess(householdId);
   const { userId } = await auth();
   const [created] = await db
     .insert(crmHouseholdAccounts)
@@ -60,7 +60,7 @@ export async function updateCrmAccount(accountId: string, patch: Partial<CreateC
     where: eq(crmHouseholdAccounts.id, accountId),
   });
   if (!existing) throw new Error("Account not found");
-  const { orgId } = await requireCrmHouseholdAccess(existing.householdId);
+  const { orgId } = await requireCrmHouseholdEditAccess(existing.householdId);
   const { userId } = await auth();
   const [updated] = await db
     .update(crmHouseholdAccounts)
@@ -102,7 +102,7 @@ export async function deleteCrmAccount(accountId: string) {
     where: eq(crmHouseholdAccounts.id, accountId),
   });
   if (!existing) return;
-  const { orgId } = await requireCrmHouseholdAccess(existing.householdId);
+  const { orgId } = await requireCrmHouseholdEditAccess(existing.householdId);
   const { userId } = await auth();
   await db.delete(crmHouseholdAccounts).where(eq(crmHouseholdAccounts.id, accountId));
   await recordAudit({

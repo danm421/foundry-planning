@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 
-import { canReadVault, requireCrmHouseholdAccess } from "@/lib/crm/authz";
+import { canReadVault, requireCrmHouseholdAccess, requireCrmHouseholdEditAccess } from "@/lib/crm/authz";
 import { requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { createCrmNoteSchema } from "@/lib/crm/schemas";
 import { createNote, listHouseholdNotes } from "@/lib/crm/notes";
@@ -31,7 +31,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { orgId } = await requireCrmHouseholdAccess(id);
+    const { orgId } = await requireCrmHouseholdEditAccess(id);
     await requireActiveSubscriptionForFirm(orgId);
     const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

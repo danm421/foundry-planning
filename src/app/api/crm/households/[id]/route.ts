@@ -22,9 +22,8 @@ export async function GET(
     }
     return NextResponse.json({ household });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const denial = authErrorResponse(err);
+    if (denial) return NextResponse.json(denial.body, { status: denial.status });
     console.error("GET /api/crm/households/[id] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -44,9 +43,8 @@ export async function PATCH(
     const updated = await updateCrmHousehold(id, parsed.data);
     return NextResponse.json({ household: updated });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const denial = authErrorResponse(err);
+    if (denial) return NextResponse.json(denial.body, { status: denial.status });
     if (err instanceof Error && err.message === "Household not found") {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }

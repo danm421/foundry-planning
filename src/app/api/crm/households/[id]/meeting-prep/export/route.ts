@@ -11,7 +11,7 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
 import { z } from "zod";
 import { currentUser } from "@clerk/nextjs/server";
-import { requireCrmHouseholdAccess } from "@/lib/crm/authz";
+import { requireCrmHouseholdEditAccess } from "@/lib/crm/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { checkExportPdfRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import {
@@ -46,7 +46,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { household, orgId } = await requireCrmHouseholdAccess(id);
+    const { household, orgId } = await requireCrmHouseholdEditAccess(id);
     await requireActiveSubscriptionForFirm(orgId);
 
     const rl = await checkExportPdfRateLimit(orgId);
@@ -123,7 +123,7 @@ export async function POST(
       },
     });
   } catch (err) {
-    // Mirrors the sibling meeting-prep/runs route: requireCrmHouseholdAccess
+    // Mirrors the sibling meeting-prep/runs route: requireCrmHouseholdEditAccess
     // throws a plain Error for a missing/inaccessible household, which
     // authErrorResponse does NOT recognize — explicit 404 branch ahead of it.
     if (

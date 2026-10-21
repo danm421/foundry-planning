@@ -7,7 +7,7 @@ vi.mock("@/lib/db-helpers", async (importOriginal) => ({
 vi.mock("@clerk/nextjs/server", () => ({
   auth: vi.fn(async () => ({ userId: "user_1", orgRole: "org:member" })),
 }));
-vi.mock("@/lib/crm/authz", () => ({ requireCrmHouseholdAccess: vi.fn() }));
+vi.mock("@/lib/crm/authz", () => ({ requireCrmHouseholdEditAccess: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn(async () => {}) }));
 vi.mock("@/lib/crm-tasks/queries", () => ({
   listTasks: vi.fn(),
@@ -37,7 +37,7 @@ import {
 } from "@/lib/crm-tasks/queries";
 import { createTask, updateTaskField, setTaskStatus, postComment, deleteTask } from "@/lib/crm-tasks/mutations";
 import { recordAudit } from "@/lib/audit";
-import { requireCrmHouseholdAccess } from "@/lib/crm/authz";
+import { requireCrmHouseholdEditAccess } from "@/lib/crm/authz";
 
 // The live caller every task read runs the CRM task rule for.
 const VIEWER = { userId: "user_1", orgRole: "org:member" };
@@ -180,14 +180,14 @@ describe("tasks_create (HITL)", () => {
   it("creates a task on a household the caller may see", async () => {
     vi.mocked(createTask).mockResolvedValue({ id: "task_10", title: "Call", householdId: "3f0d2f64-0000-4000-8000-000000000001" } as never);
     await getTool("tasks_create").invoke({ title: "Call", householdId: "3f0d2f64-0000-4000-8000-000000000001" });
-    expect(requireCrmHouseholdAccess).toHaveBeenCalledWith("3f0d2f64-0000-4000-8000-000000000001");
+    expect(requireCrmHouseholdEditAccess).toHaveBeenCalledWith("3f0d2f64-0000-4000-8000-000000000001");
     expect(createTask).toHaveBeenCalledWith("org_A", "user_1", expect.objectContaining({
       householdId: "3f0d2f64-0000-4000-8000-000000000001",
     }));
   });
 
   it("refuses a household the caller may not see, before createTask", async () => {
-    vi.mocked(requireCrmHouseholdAccess).mockRejectedValueOnce(
+    vi.mocked(requireCrmHouseholdEditAccess).mockRejectedValueOnce(
       new Error("CRM household not found or access denied: 3f0d2f64-0000-4000-8000-000000000002"),
     );
     const out = String(await getTool("tasks_create").invoke({ title: "Call", householdId: "3f0d2f64-0000-4000-8000-000000000002" }));
@@ -220,7 +220,7 @@ describe("tasks_update (Tier-A)", () => {
 
   it("refuses to move a task onto a household the caller may not see", async () => {
     vi.mocked(getTaskById).mockResolvedValue({ task: { id: "task_1" }, tags: [] } as never);
-    vi.mocked(requireCrmHouseholdAccess).mockRejectedValueOnce(
+    vi.mocked(requireCrmHouseholdEditAccess).mockRejectedValueOnce(
       new Error("CRM household not found or access denied: 3f0d2f64-0000-4000-8000-000000000002"),
     );
     const out = String(await getTool("tasks_update").invoke({

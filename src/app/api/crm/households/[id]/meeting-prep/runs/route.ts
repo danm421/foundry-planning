@@ -3,7 +3,7 @@ import { auth, currentUser } from "@clerk/nextjs/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
-import { requireCrmHouseholdAccess } from "@/lib/crm/authz";
+import { requireCrmHouseholdAccess, requireCrmHouseholdEditAccess } from "@/lib/crm/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { checkMeetingPrepRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { MeetingPrepSetupSchema } from "@/lib/crm/meeting-prep/schemas";
@@ -32,7 +32,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { orgId } = await requireCrmHouseholdAccess(id);
+    const { orgId } = await requireCrmHouseholdEditAccess(id);
     await requireActiveSubscriptionForFirm(orgId);
 
     const rl = await checkMeetingPrepRateLimit(orgId);

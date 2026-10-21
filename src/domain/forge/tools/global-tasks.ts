@@ -16,7 +16,7 @@ import { z } from "zod";
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
-import { requireCrmHouseholdAccess } from "@/lib/crm/authz";
+import { requireCrmHouseholdEditAccess } from "@/lib/crm/authz";
 import {
   listTasks, getTaskById, listTaskComments, listTaskActivity, listTaskFiles,
   type TaskViewer,
@@ -203,7 +203,7 @@ export function buildGlobalTaskTools({ ctx, conversationId }: ForgeGlobalToolCon
           householdId: args.householdId ?? null,
           assigneeUserId,
         });
-        if (input.householdId) await requireCrmHouseholdAccess(input.householdId);
+        if (input.householdId) await requireCrmHouseholdEditAccess(input.householdId);
         const task = await createTask(firmId, ctx.userId, input);
         await recordAudit({
           action: "forge.write_approved",
@@ -253,7 +253,7 @@ export function buildGlobalTaskTools({ ctx, conversationId }: ForgeGlobalToolCon
         // Enum/date/uuid values are validated by the discriminated union before
         // any read or write.
         const update = updateCrmTaskFieldSchema.parse({ field, value: resolvedValue });
-        if (update.field === "householdId" && update.value) await requireCrmHouseholdAccess(update.value);
+        if (update.field === "householdId" && update.value) await requireCrmHouseholdEditAccess(update.value);
         const task = await updateTaskField(taskId, firmId, ctx.userId, update);
         await auditTierA(firmId, taskId, "tasks_update");
         return JSON.stringify({ task });

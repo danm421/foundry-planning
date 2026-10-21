@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { authErrorResponse } from "@/lib/authz";
 import { updateCrmAccount, deleteCrmAccount } from "@/lib/crm/accounts";
 import { updateCrmAccountSchema } from "@/lib/crm/schemas";
 
@@ -18,9 +19,8 @@ export async function PATCH(
     const updated = await updateCrmAccount(accountId, parsed.data);
     return NextResponse.json({ account: updated });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const denial = authErrorResponse(err);
+    if (denial) return NextResponse.json(denial.body, { status: denial.status });
     if (err instanceof Error && err.message === "Account not found") {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -44,9 +44,8 @@ export async function DELETE(
     await deleteCrmAccount(accountId);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const denial = authErrorResponse(err);
+    if (denial) return NextResponse.json(denial.body, { status: denial.status });
     if (
       err instanceof Error &&
       err.message.startsWith("CRM household not found or access denied")

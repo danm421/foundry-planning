@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 
-import { requireCrmHouseholdAccess } from "@/lib/crm/authz";
+import { requireCrmHouseholdEditAccess } from "@/lib/crm/authz";
 import { requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { updateCrmNoteSchema } from "@/lib/crm/schemas";
 import { deleteNote, updateNote } from "@/lib/crm/notes";
@@ -15,7 +15,7 @@ export async function PATCH(
 ) {
   try {
     const { id, noteId } = await params;
-    const { orgId } = await requireCrmHouseholdAccess(id);
+    const { orgId } = await requireCrmHouseholdEditAccess(id);
     await requireActiveSubscriptionForFirm(orgId);
     const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -34,7 +34,7 @@ export async function DELETE(
 ) {
   try {
     const { id, noteId } = await params;
-    const { orgId } = await requireCrmHouseholdAccess(id);
+    const { orgId } = await requireCrmHouseholdEditAccess(id);
     await requireActiveSubscriptionForFirm(orgId);
     const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

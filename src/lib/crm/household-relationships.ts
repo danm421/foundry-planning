@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { crmHouseholds, crmHouseholdRelationships } from "@/db/schema";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
-import { requireCrmHouseholdAccess } from "./authz";
+import { requireCrmHouseholdAccess, requireCrmHouseholdEditAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
 import { recordActivityNonFatal } from "./activity";
 import {
@@ -94,11 +94,11 @@ export async function createHouseholdRelationship(
 ) {
   if (householdId === input.counterpartHouseholdId) throw new SelfLinkError();
   // Access check on BOTH ends doubles as the same-firm assert —
-  // requireCrmHouseholdAccess scopes to the caller's org. Independent checks,
+  // requireCrmHouseholdEditAccess scopes to the caller's org. Independent checks,
   // run concurrently.
   const [{ household, orgId }, { household: counterpart }] = await Promise.all([
-    requireCrmHouseholdAccess(householdId),
-    requireCrmHouseholdAccess(input.counterpartHouseholdId),
+    requireCrmHouseholdEditAccess(householdId),
+    requireCrmHouseholdEditAccess(input.counterpartHouseholdId),
   ]);
   const { userId } = await auth();
   const actorId = userId ?? "system";
@@ -162,7 +162,7 @@ export async function createHouseholdRelationship(
 }
 
 export async function deleteHouseholdRelationship(householdId: string, relationshipId: string) {
-  const { orgId } = await requireCrmHouseholdAccess(householdId);
+  const { orgId } = await requireCrmHouseholdEditAccess(householdId);
   const edge = await db.query.crmHouseholdRelationships.findFirst({
     where: and(
       eq(crmHouseholdRelationships.id, relationshipId),

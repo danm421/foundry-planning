@@ -8,20 +8,32 @@ import { hidesPrivateClient, resolveVisibleAdvisorIds, VISIBLE_ALL } from "@/lib
 import { STAFF_ROLES } from "@/lib/capabilities";
 import type { Principal } from "@/lib/clients/authz";
 import { callerMaySeeAdvisor } from "@/lib/clients/authz";
+import { resolveSharedClientAccess, type SharePermission } from "@/lib/clients/shared-access";
 import { findVisibleTask } from "@/lib/crm-tasks/queries";
 
-// The planning client's Private flag and owner, loaded with the household so
-// the household gates apply the same Private rule as the client gates.
+// The planning client's id, Private flag and owner, loaded with the household
+// so the household gates apply the same Private rule as the client gates and
+// honor a share of that client.
 const planningClientPrivacy = {
-  planningClient: { columns: { isPrivate: true, advisorId: true } },
+  planningClient: { columns: { id: true, isPrivate: true, advisorId: true } },
 } as const;
+
+/** The caller's level on a planning client shared to them, if any share reaches it. */
+async function sharedPermission(userId: string, clientId: string): Promise<SharePermission | undefined> {
+  return (await resolveSharedClientAccess(userId)).permissionByClientId.get(clientId);
+}
 
 /**
  * The CRM household with this id, if the caller may see it: in the caller's
- * firm (Clerk orgId) and in their book under the rule the clients list and the
- * planning gate use (`callerMaySeeAdvisor`), and not a colleague's Private
- * client. Null for missing and hidden alike, so existence never leaks. Throws
- * only when there is no signed-in org.
+ * firm (Clerk orgId), and either in their book under the rule the clients list
+ * and the planning gate use (`callerMaySeeAdvisor`) and not a colleague's
+ * Private client, or shared to them — a share of the household's planning
+ * client opens its CRM record at the share's level. Null for missing and
+ * hidden alike, so existence never leaks. Throws only when there is no
+ * signed-in org.
+ *
+ * Shares count only inside the caller's own firm: the CRM pages and writes
+ * downstream still key on the session's org.
  */
 export async function findVisibleCrmHousehold(householdId: string) {
   const orgId = await requireOrgId();
@@ -34,9 +46,12 @@ export async function findVisibleCrmHousehold(householdId: string) {
   const { userId, orgRole } = await auth();
   if (!userId) return null;
   const p = { userId, orgId, orgRole: orgRole ?? null };
-  if (hidesPrivateClient(p, planningClient)) return null;
-  const visible = await callerMaySeeAdvisor(p, household.advisorId, orgId);
-  return visible ? { household, orgId } : null;
+  const planningClientId = planningClient?.id ?? null;
+  if (!hidesPrivateClient(p, planningClient) && (await callerMaySeeAdvisor(p, household.advisorId, orgId))) {
+    return { household, orgId, planningClientId, permission: "edit" as SharePermission };
+  }
+  const permission = planningClientId ? await sharedPermission(userId, planningClientId) : undefined;
+  return permission ? { household, orgId, planningClientId, permission } : null;
 }
 
 /**
@@ -53,13 +68,24 @@ export async function requireCrmHouseholdAccess(householdId: string) {
 }
 
 /**
+ * `requireCrmHouseholdAccess` for a write: a household shared to the caller
+ * view-only can be read, not changed. Mirrors `requireClientEditAccess`.
+ */
+export async function requireCrmHouseholdEditAccess(householdId: string) {
+  const access = await requireCrmHouseholdAccess(householdId);
+  if (access.permission !== "edit") throw new ForbiddenError("Edit access required");
+  return access;
+}
+
+/**
  * Vault access gate. Layered on `requireCrmHouseholdAccess` (which proves the
  * household belongs to the caller's firm), then narrows to the household's
- * *current* assigned advisor OR a firm admin. Because it keys off
- * `household.advisorId`, reassigning a household moves vault access with it.
+ * *current* assigned advisor, a firm admin, mapped staff, or a caller holding
+ * an edit share of its plan. Because it keys off `household.advisorId`,
+ * reassigning a household moves vault access with it.
  */
 export async function requireVaultAccess(householdId: string) {
-  const { household, orgId } = await requireCrmHouseholdAccess(householdId);
+  const { household, orgId, planningClientId } = await requireCrmHouseholdAccess(householdId);
   const { userId, orgRole } = await auth();
   const isAdmin = orgRole === "org:admin";
   if (isAdmin) return { household, orgId };
@@ -72,6 +98,10 @@ export async function requireVaultAccess(householdId: string) {
     if (visible !== VISIBLE_ALL && visible.has(household.advisorId)) {
       return { household, orgId };
     }
+  }
+  // An edit share of the plan opens the vault too, whatever the caller's role.
+  if (userId && planningClientId && (await sharedPermission(userId, planningClientId)) === "edit") {
+    return { household, orgId };
   }
   throw new ForbiddenError("You do not have access to this household's vault");
 }
@@ -118,10 +148,10 @@ export async function requireCrmTaskAccess(taskId: string) {
  * narrowing — so it would grant notes on households whose *plans* the same
  * connector refuses to open. That is a weaker gate on more sensitive text.
  *
- * Deliberately NOT mirrored from `verifyClientAccessFor`: the fall-through to
- * `resolveSharedClientAccess`. A cross-firm share is a planning-data concept;
- * a shared client therefore has a readable plan and unreadable notes. Filed in
- * future-work/security-hardening.md rather than decided silently here.
+ * Not yet mirrored from `findVisibleCrmHousehold`: the share fall-through. The
+ * web CRM opens a shared client's household; through the connector a shared
+ * client still has a readable plan and unreadable notes. Filed in
+ * future-work/security-hardening.md.
  */
 export async function verifyCrmHouseholdAccessFor(
   p: Principal,

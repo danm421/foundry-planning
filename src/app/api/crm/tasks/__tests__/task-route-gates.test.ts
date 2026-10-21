@@ -13,7 +13,7 @@ vi.mock("@/lib/db-helpers", async (importOriginal) => ({
 }));
 vi.mock("@/lib/crm/authz", () => ({
   requireCrmTaskAccess: vi.fn(),
-  requireCrmHouseholdAccess: vi.fn(),
+  requireCrmHouseholdEditAccess: vi.fn(),
 }));
 vi.mock("@/lib/crm-tasks/mutations", () => ({
   createTask: vi.fn(async () => ({ id: "t_new" })),
@@ -26,7 +26,7 @@ vi.mock("@/lib/crm-tasks/mutations", () => ({
 }));
 vi.mock("@/lib/crm-tasks/members", () => ({ listFirmMembers: vi.fn(async () => []) }));
 
-import { requireCrmHouseholdAccess, requireCrmTaskAccess } from "@/lib/crm/authz";
+import { requireCrmHouseholdEditAccess, requireCrmTaskAccess } from "@/lib/crm/authz";
 import * as mutations from "@/lib/crm-tasks/mutations";
 import { POST as createRoute } from "../route";
 import { PATCH as patchRoute, DELETE as deleteRoute } from "../[taskId]/route";
@@ -49,7 +49,7 @@ const task = { params: Promise.resolve({ taskId: "t1" }) };
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireCrmTaskAccess).mockResolvedValue({ task: { id: "t1" }, orgId: "org_1" } as never);
-  vi.mocked(requireCrmHouseholdAccess).mockResolvedValue({ household: { id: HOUSEHOLD }, orgId: "org_1" } as never);
+  vi.mocked(requireCrmHouseholdEditAccess).mockResolvedValue({ household: { id: HOUSEHOLD }, orgId: "org_1" } as never);
 });
 
 describe("a task the caller may not see", () => {
@@ -80,7 +80,7 @@ describe("a task the caller may not see", () => {
 
 describe("a household the caller may not see", () => {
   beforeEach(() => {
-    vi.mocked(requireCrmHouseholdAccess).mockRejectedValue(
+    vi.mocked(requireCrmHouseholdEditAccess).mockRejectedValue(
       new Error(`CRM household not found or access denied: ${HOUSEHOLD}`),
     );
   });
@@ -88,26 +88,26 @@ describe("a household the caller may not see", () => {
   it("refuses to create a task on it", async () => {
     const res = await createRoute(req("POST", { title: "Call", householdId: HOUSEHOLD }));
     expect(res.status).toBe(404);
-    expect(requireCrmHouseholdAccess).toHaveBeenCalledWith(HOUSEHOLD);
+    expect(requireCrmHouseholdEditAccess).toHaveBeenCalledWith(HOUSEHOLD);
     expect(mutations.createTask).not.toHaveBeenCalled();
   });
 
   it("refuses to move a task onto it", async () => {
     const res = await patchRoute(req("PATCH", { field: "householdId", value: HOUSEHOLD }), task);
     expect(res.status).toBe(404);
-    expect(requireCrmHouseholdAccess).toHaveBeenCalledWith(HOUSEHOLD);
+    expect(requireCrmHouseholdEditAccess).toHaveBeenCalledWith(HOUSEHOLD);
     expect(mutations.updateTaskField).not.toHaveBeenCalled();
   });
 
   it("still creates a task with no household", async () => {
     const res = await createRoute(req("POST", { title: "Call" }));
     expect(res.status).toBe(201);
-    expect(requireCrmHouseholdAccess).not.toHaveBeenCalled();
+    expect(requireCrmHouseholdEditAccess).not.toHaveBeenCalled();
   });
 
   it("still detaches a task from any household", async () => {
     const res = await patchRoute(req("PATCH", { field: "householdId", value: null }), task);
     expect(res.status).toBe(200);
-    expect(requireCrmHouseholdAccess).not.toHaveBeenCalled();
+    expect(requireCrmHouseholdEditAccess).not.toHaveBeenCalled();
   });
 });

@@ -5,7 +5,7 @@ import { getTaskById } from "@/lib/crm-tasks/queries";
 import { deleteTask, updateTaskField } from "@/lib/crm-tasks/mutations";
 import { updateCrmTaskFieldSchema } from "@/lib/crm-tasks/schemas";
 import { mapCrmTaskError } from "@/lib/crm-tasks/route-errors";
-import { requireCrmHouseholdAccess, requireCrmTaskAccess } from "@/lib/crm/authz";
+import { requireCrmHouseholdEditAccess, requireCrmTaskAccess } from "@/lib/crm/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +41,7 @@ export async function PATCH(
     const { taskId } = await params;
     await requireCrmTaskAccess(taskId);
     const body = updateCrmTaskFieldSchema.parse(await req.json());
-    if (body.field === "householdId" && body.value) await requireCrmHouseholdAccess(body.value);
+    if (body.field === "householdId" && body.value) await requireCrmHouseholdEditAccess(body.value);
     const task = await updateTaskField(taskId, firmId, userId, body);
     return NextResponse.json({ task });
   } catch (err) {

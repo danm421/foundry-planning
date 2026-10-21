@@ -6,7 +6,7 @@ import { createTask } from "@/lib/crm-tasks/mutations";
 import { createCrmTaskSchema } from "@/lib/crm-tasks/schemas";
 import { normalizeQuickFilters, type TaskQuickFilter } from "@/lib/crm-tasks/filters";
 import { mapCrmTaskError } from "@/lib/crm-tasks/route-errors";
-import { requireCrmHouseholdAccess } from "@/lib/crm/authz";
+import { requireCrmHouseholdEditAccess } from "@/lib/crm/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const body = createCrmTaskSchema.parse(await req.json());
-    if (body.householdId) await requireCrmHouseholdAccess(body.householdId);
+    if (body.householdId) await requireCrmHouseholdEditAccess(body.householdId);
     const task = await createTask(firmId, userId, body);
     return NextResponse.json({ task }, { status: 201 });
   } catch (err) {

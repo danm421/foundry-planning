@@ -43,7 +43,9 @@ describe("CRM task route gates", () => {
   it.each(all.filter(([, block]) => /\b(createTask|updateTaskField)\(/.test(block)))(
     "%s checks a household before putting a task on it",
     (_name, block) => {
-      expect(block).toMatch(/requireCrmHouseholdAccess\(/);
+      // The edit gate: putting a task on a household is a write to it, which a
+      // view-only share must not make.
+      expect(block).toMatch(/requireCrmHouseholdEditAccess\(/);
     },
   );
 });

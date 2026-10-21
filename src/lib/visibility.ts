@@ -4,6 +4,7 @@ import { and, eq, inArray, isNull, ne, notInArray, or, sql, type AnyColumn, type
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { STAFF_ROLES } from "./capabilities";
 import { firmBookSiloEnabled } from "./firm-settings";
+import { resolveSharedClientAccess } from "./clients/shared-access";
 
 // Sentinel for firm-wide visibility (admin). Distinct from a Set so callers can
 // cheaply branch on `=== VISIBLE_ALL` and skip scoping entirely.
@@ -136,8 +137,10 @@ export function privateHouseholdFilter(
  * The CRM task rule, as a WHERE condition over `crm_tasks`. A task with no
  * household is firm-wide, a task assigned to the caller is always theirs, and
  * any other task follows its household: the book rule plus the Private client
- * rule. Undefined (no filter) when the caller sees every household. Uncorrelated
- * standalone builder, like `privateHouseholdFilter`, so it needs no `db`.
+ * rule, or an edit share of the household's plan (a view share shows the
+ * household's task list, not its tasks to work). Undefined (no filter) when the
+ * caller sees every household. The household conditions are uncorrelated
+ * standalone builders, like `privateHouseholdFilter`.
  */
 export async function visibleTaskCondition(
   firmId: string,
@@ -150,6 +153,8 @@ export async function visibleTaskCondition(
   );
   const privacy = privateHouseholdFilter(firmId, userId, orgRole);
   if (!scope && !privacy) return undefined;
+  const { permissionByClientId } = await resolveSharedClientAccess(userId);
+  const editShared = [...permissionByClientId].filter(([, p]) => p === "edit").map(([id]) => id);
   return or(
     isNull(crmTasks.householdId),
     eq(crmTasks.assigneeUserId, userId),
@@ -160,6 +165,15 @@ export async function visibleTaskCondition(
         .from(crmHouseholds)
         .where(and(eq(crmHouseholds.firmId, firmId), scope, privacy)),
     ),
+    editShared.length > 0
+      ? inArray(
+          crmTasks.householdId,
+          new QueryBuilder()
+            .select({ id: clients.crmHouseholdId })
+            .from(clients)
+            .where(and(eq(clients.firmId, firmId), inArray(clients.id, editShared))),
+        )
+      : undefined,
   );
 }
 

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { db } from "@/db";
 import { clientShares, clients, crmHouseholds } from "@/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
@@ -61,8 +62,14 @@ async function buildShareMap(userId: string): Promise<Map<string, ShareDetail>> 
   return map;
 }
 
-/** Gate-facing fast path: which client ids are shared to me, and at what level. */
-export async function resolveSharedClientAccess(userId: string): Promise<{
+/**
+ * Gate-facing fast path: which client ids are shared to me, and at what level.
+ * One lookup per request: a single page can run several gates (the client and
+ * CRM gates, the vault rule, the task rule) that each ask.
+ */
+export const resolveSharedClientAccess = cache(async function resolveSharedClientAccess(
+  userId: string,
+): Promise<{
   sharedClientIds: Set<string>;
   permissionByClientId: Map<string, SharePermission>;
 }> {
@@ -71,7 +78,7 @@ export async function resolveSharedClientAccess(userId: string): Promise<{
   const permissionByClientId = new Map<string, SharePermission>();
   for (const [id, d] of map) permissionByClientId.set(id, d.permission);
   return { sharedClientIds, permissionByClientId };
-}
+});
 
 /** UI-facing: full detail (owner + firm) per effective shared client. */
 export async function resolveSharesForRecipient(userId: string): Promise<ShareDetail[]> {

@@ -25,6 +25,7 @@ import type { ShareDetail } from "@/lib/clients/shared-access";
 import { buildSharedRows, type SharedRow } from "@/app/(app)/clients/clients-content";
 
 const SHARED_CLIENT_ID = "client-uuid-abc";
+const SHARED_HOUSEHOLD_ID = "household-uuid-abc";
 const OWNER_USER_ID = "user_owner_1";
 const FIRM_ID = "org_firm_1";
 
@@ -41,7 +42,10 @@ describe("buildSharedRows", () => {
     const ownerNames = new Map([[OWNER_USER_ID, "Alice Owner"]]);
     const firmNames = new Map([[FIRM_ID, "Acme Wealth"]]);
     const clientMeta = new Map([
-      [SHARED_CLIENT_ID, { householdName: "Smith HH", primaryName: "John Smith" }],
+      [
+        SHARED_CLIENT_ID,
+        { householdId: SHARED_HOUSEHOLD_ID, householdName: "Smith HH", primaryName: "John Smith" },
+      ],
     ]);
 
     const rows = buildSharedRows([SHARE_DETAIL], ownerNames, firmNames, clientMeta);
@@ -49,6 +53,7 @@ describe("buildSharedRows", () => {
     expect(rows).toHaveLength(1);
     const row = rows[0];
     expect(row.clientId).toBe(SHARED_CLIENT_ID);
+    expect(row.householdId).toBe(SHARED_HOUSEHOLD_ID);
     expect(row.displayName).toBe("John Smith");
     expect(row.ownerName).toBe("Alice Owner");
     expect(row.firmName).toBe("Acme Wealth");
@@ -59,7 +64,7 @@ describe("buildSharedRows", () => {
     const ownerNames = new Map([[OWNER_USER_ID, "Alice Owner"]]);
     const firmNames = new Map([[FIRM_ID, "Acme Wealth"]]);
     const clientMeta = new Map([
-      [SHARED_CLIENT_ID, { householdName: "Smith HH", primaryName: null }],
+      [SHARED_CLIENT_ID, { householdId: SHARED_HOUSEHOLD_ID, householdName: "Smith HH", primaryName: null }],
     ]);
 
     const rows = buildSharedRows([SHARE_DETAIL], ownerNames, firmNames, clientMeta);
@@ -71,7 +76,7 @@ describe("buildSharedRows", () => {
       [SHARE_DETAIL],
       new Map(),
       new Map(),
-      new Map([[SHARED_CLIENT_ID, { householdName: "X HH", primaryName: null }]]),
+      new Map([[SHARED_CLIENT_ID, { householdId: SHARED_HOUSEHOLD_ID, householdName: "X HH", primaryName: null }]]),
     );
     expect(rows[0].ownerName).toBe("Unknown user");
     expect(rows[0].firmName).toBe("Unknown firm");
@@ -89,6 +94,7 @@ import { SharedWithMeTable } from "@/components/sharing/shared-with-me-table";
 const SAMPLE_ROWS: SharedRow[] = [
   {
     clientId: SHARED_CLIENT_ID,
+    householdId: SHARED_HOUSEHOLD_ID,
     displayName: "John Smith",
     ownerName: "Alice Owner",
     firmName: "Acme Wealth",
@@ -102,6 +108,18 @@ describe("SharedWithMeTable", () => {
     const link = screen.getByRole("link", { name: /John Smith/i });
     expect(link).toBeDefined();
     expect(link.getAttribute("href")).toBe(`/clients/${SHARED_CLIENT_ID}/overview`);
+  });
+
+  // The reported defect: a shared client offered no way into its CRM record or
+  // plan, where every row of the main list has both buttons.
+  it("offers the same CRM and Planning buttons as the main list", () => {
+    render(<SharedWithMeTable rows={SAMPLE_ROWS} />);
+    expect(screen.getByRole("link", { name: "CRM" }).getAttribute("href")).toBe(
+      `/crm/households/${SHARED_HOUSEHOLD_ID}`,
+    );
+    expect(screen.getByRole("link", { name: "Planning" }).getAttribute("href")).toBe(
+      `/clients/${SHARED_CLIENT_ID}/details`,
+    );
   });
 
   it("renders the 'Shared by {name} · {firm}' badge", () => {

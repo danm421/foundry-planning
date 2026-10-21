@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { crmHouseholdContacts, familyMembers } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
-import { requireCrmHouseholdAccess } from "./authz";
+import { requireCrmHouseholdEditAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
 import { recordActivity } from "./activity";
 import { resolveContactDateOfBirth } from "./default-dob";
@@ -37,7 +37,7 @@ export async function createCrmContact(
   options: { syncHouseholdName?: boolean } = {},
 ) {
   const { syncHouseholdName = true } = options;
-  const { orgId } = await requireCrmHouseholdAccess(householdId);
+  const { orgId } = await requireCrmHouseholdEditAccess(householdId);
   const { userId } = await auth();
 
   if (input.familyMemberId) {
@@ -176,7 +176,7 @@ export async function updateCrmContact(contactId: string, patch: Partial<CreateC
     where: eq(crmHouseholdContacts.id, contactId),
   });
   if (!existing) throw new Error("Contact not found");
-  const { orgId } = await requireCrmHouseholdAccess(existing.householdId);
+  const { orgId } = await requireCrmHouseholdEditAccess(existing.householdId);
   const { userId } = await auth();
 
   if (patch.familyMemberId) {
@@ -239,7 +239,7 @@ export async function deleteCrmContact(contactId: string) {
     where: eq(crmHouseholdContacts.id, contactId),
   });
   if (!existing) return;
-  const { orgId } = await requireCrmHouseholdAccess(existing.householdId);
+  const { orgId } = await requireCrmHouseholdEditAccess(existing.householdId);
   const { userId } = await auth();
   await db.delete(crmHouseholdContacts).where(eq(crmHouseholdContacts.id, contactId));
 

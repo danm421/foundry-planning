@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { authErrorResponse } from "@/lib/authz";
 import { createCrmContact } from "@/lib/crm/contacts";
 import { createCrmContactSchema } from "@/lib/crm/schemas";
 
@@ -18,9 +19,8 @@ export async function POST(
     const created = await createCrmContact(householdId, parsed.data);
     return NextResponse.json({ contact: created }, { status: 201 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const denial = authErrorResponse(err);
+    if (denial) return NextResponse.json(denial.body, { status: denial.status });
     if (
       err instanceof Error &&
       err.message.startsWith("CRM household not found or access denied")
