@@ -9,6 +9,7 @@ import WillRecipientList, {
 import { buildWillUpdates, buildJointWillUpdates } from "@/lib/estate/build-will-updates";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
+import { OTHER_HEIRS_VALUE, OtherHeirsOptgroup } from "@/components/forms/other-heirs-option";
 import type {
   Account,
   BeneficiaryRef,
@@ -39,8 +40,8 @@ interface BeneficiaryRow {
   key: string;
   tier: "primary" | "contingent";
   percentage: number;
-  recipientKind: "householdRole" | "family_member" | "external_beneficiary" | "entity";
-  recipientId: string | null; // null when householdRole
+  recipientKind: "householdRole" | "family_member" | "external_beneficiary" | "entity" | "other_heirs";
+  recipientId: string | null; // null when householdRole or other_heirs
   householdRole?: "client" | "spouse";
   sortOrder: number;
 }
@@ -89,7 +90,9 @@ function refsToRows(refs: BeneficiaryRef[]): BeneficiaryRow[] {
     let recipientId: string | null = null;
     let householdRole: "client" | "spouse" | undefined = undefined;
 
-    if (ref.householdRole) {
+    if (ref.otherHeirs) {
+      recipientKind = "other_heirs";
+    } else if (ref.householdRole) {
       recipientKind = "householdRole";
       householdRole = ref.householdRole;
     } else if (ref.entityIdRef) {
@@ -130,6 +133,9 @@ function rowsToRefs(rows: BeneficiaryRow[]): BeneficiaryRef[] {
       percentage: row.percentage,
       sortOrder: i,
     };
+    if (row.recipientKind === "other_heirs") {
+      return { ...base, otherHeirs: true };
+    }
     if (row.recipientKind === "householdRole" && row.householdRole) {
       return { ...base, householdRole: row.householdRole };
     }
@@ -151,7 +157,7 @@ function rowsToRefs(rows: BeneficiaryRow[]): BeneficiaryRef[] {
  */
 function willRecipientsToRows(
   recipients: Array<{
-    recipientKind: "family_member" | "external_beneficiary" | "entity" | "spouse";
+    recipientKind: WillRecipientRow["recipientKind"];
     recipientId: string | null;
     percentage: number;
     sortOrder: number;
@@ -174,6 +180,10 @@ function rowsToWillRecipients(rows: WillRecipientRow[]): WillBequestRecipient[] 
     sortOrder: i,
   }));
 }
+
+/** A will row names someone: the co-client and Other Heirs carry no id by design. */
+const hasRecipient = (r: WillRecipientRow): boolean =>
+  r.recipientKind === "spouse" || r.recipientKind === "other_heirs" || r.recipientId != null;
 
 /** Clamp a percent value to [0, 100]. */
 function clampPct(v: number): number {
@@ -207,6 +217,7 @@ const applyToTier = (
 // ── Recipient select value helpers ────────────────────────────────────────────
 
 function benefRowToSelectValue(row: BeneficiaryRow): string {
+  if (row.recipientKind === "other_heirs") return OTHER_HEIRS_VALUE;
   if (row.recipientKind === "householdRole") return `hh:${row.householdRole ?? ""}`;
   if (row.recipientKind === "entity") return `ent:${row.recipientId ?? ""}`;
   if (row.recipientKind === "external_beneficiary") return `ext:${row.recipientId ?? ""}`;
@@ -408,9 +419,7 @@ export function useDistributionPanel({
 
   const willSum = willRecipientRows.reduce((s, r) => s + r.percentage, 0);
   const willSumOk = willRecipientRows.length === 0 || Math.abs(willSum - 100) < 0.5;
-  const willRecipientsHaveIds = willRecipientRows.every(
-    (r) => r.recipientKind === "spouse" || r.recipientId != null,
-  );
+  const willRecipientsHaveIds = willRecipientRows.every(hasRecipient);
 
   const hasSpouseRecipient = willRecipientRows.some((r) => r.recipientKind === "spouse");
 
@@ -421,7 +430,7 @@ export function useDistributionPanel({
   const cascadeOk =
     !cascadeActive ||
     (Math.abs(cascadeSum - 100) < 0.5 &&
-      cascadeRows.every((r) => r.recipientKind === "spouse" || r.recipientId != null));
+      cascadeRows.every(hasRecipient));
 
   const willValid =
     willSumOk &&
@@ -434,7 +443,7 @@ export function useDistributionPanel({
   const jointSpouseOk =
     cascadeRows.length === 0 ||
     (Math.abs(cascadeSum - 100) < 0.5 &&
-      cascadeRows.every((r) => r.recipientKind === "spouse" || r.recipientId != null));
+      cascadeRows.every(hasRecipient));
   const jointWillValid = willSumOk && willRecipientsHaveIds && jointSpouseOk;
 
   const canApply =
@@ -568,6 +577,10 @@ export function useDistributionPanel({
       patch.recipientKind = "householdRole";
       patch.recipientId = null;
       patch.householdRole = undefined;
+    } else if (value === OTHER_HEIRS_VALUE) {
+      patch.recipientKind = "other_heirs";
+      patch.recipientId = null;
+      patch.householdRole = undefined;
     } else if (value.startsWith("hh:")) {
       const role = value.slice(3) as "client" | "spouse";
       patch.recipientKind = "householdRole";
@@ -655,6 +668,7 @@ export function useDistributionPanel({
                     ))}
                   </optgroup>
                 )}
+                <OtherHeirsOptgroup />
               </select>
               <input
                 type="number"

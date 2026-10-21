@@ -85,3 +85,66 @@ describe("Estate Flow asset dialog, Beneficiary tab — household beneficiary op
     ).toBeInTheDocument();
   });
 });
+
+describe("Estate Flow asset dialog — Other Heirs", () => {
+  function renderTab(tab: "Beneficiary" | "Bequest") {
+    const data = householdData();
+    // The Bequest tab writes into an existing will.
+    data.wills = [{ id: "will-client", grantor: "client", bequests: [] }];
+    const onApplyBeneficiaries = vi.fn();
+    const onApplyWill = vi.fn();
+    render(
+      <EstateFlowAssetDialog
+        account={data.accounts[0]}
+        clientData={data}
+        ledger={[]}
+        taxInflationRate={0}
+        annualExclusionByYear={{}}
+        onApplyOwners={vi.fn()}
+        onApplyGift={vi.fn()}
+        onSeedBeneficiary={vi.fn()}
+        onApplyBeneficiaries={onApplyBeneficiaries}
+        onApplyWill={onApplyWill}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: tab }));
+    return { onApplyBeneficiaries, onApplyWill };
+  }
+
+  it("applies an Other Heirs beneficiary", () => {
+    const { onApplyBeneficiaries } = renderTab("Beneficiary");
+    fireEvent.click(screen.getByRole("button", { name: /add primary/i }));
+    fireEvent.change(screen.getByLabelText("primary beneficiary"), { target: { value: "other_heirs" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(onApplyBeneficiaries).toHaveBeenCalledWith([
+      { id: expect.any(String), tier: "primary", percentage: 100, sortOrder: 0, otherHeirs: true },
+    ]);
+  });
+
+  it("applies a will share to Other Heirs", () => {
+    const { onApplyWill } = renderTab("Bequest");
+    fireEvent.click(screen.getByRole("button", { name: /add recipient/i }));
+    fireEvent.change(screen.getByLabelText("Will recipient"), { target: { value: "other_heirs" } });
+    const apply = screen.getByRole("button", { name: "Apply" });
+    expect(apply).toBeEnabled();
+    fireEvent.click(apply);
+    const wills = onApplyWill.mock.calls[0][0] as { grantor: string; bequests: { recipients: unknown[] }[] }[];
+    const client = wills.find((w) => w.grantor === "client")!;
+    expect(client.bequests.flatMap((b) => b.recipients)).toEqual([
+      expect.objectContaining({ recipientKind: "other_heirs", recipientId: null, percentage: 100 }),
+    ]);
+  });
+
+  it("switching from Other Heirs to a child clears otherHeirs", () => {
+    const { onApplyBeneficiaries } = renderTab("Beneficiary");
+    fireEvent.click(screen.getByRole("button", { name: /add primary/i }));
+    const select = screen.getByLabelText("primary beneficiary");
+    fireEvent.change(select, { target: { value: "other_heirs" } });
+    fireEvent.change(select, { target: { value: "fm:fm-kid1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    const [ref] = onApplyBeneficiaries.mock.calls[0][0];
+    expect(ref).toMatchObject({ familyMemberId: "fm-kid1" });
+    expect("otherHeirs" in ref).toBe(false);
+  });
+});
