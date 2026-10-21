@@ -21,7 +21,7 @@ export const wageRules: Rule = (input) => {
     : "";
   const spouse = hasSpouse(plan);
   const planFig = (row: PlanIncome) => {
-    const amount = rowAmountInYear(row, taxYear);
+    const amount = rowAmountInYear(row, taxYear, plan.planSettings);
     return { label: row.name, amount, display: money(amount), year: planYear };
   };
   const createInput = (name: string, amount: number) => ({
@@ -70,7 +70,7 @@ export const wageRules: Rule = (input) => {
         checks.push({ id, label: `Wages · ${employer}`, returnDisplay: money(wages), planDisplay });
         return;
       }
-      const p = rowAmountInYear(match, taxYear);
+      const p = rowAmountInYear(match, taxYear, plan.planSettings);
       if (differs(wages, p, W2)) {
         suggestions.push({
           id, section: "income", kind: "update", status: "open",
@@ -97,7 +97,7 @@ export const wageRules: Rule = (input) => {
   });
 
   if (w2s.length > 0 && facts.income.wages != null) {
-    const planTotal = sum(rows.map((r) => rowAmountInYear(r, taxYear)));
+    const planTotal = sum(rows.map((r) => rowAmountInYear(r, taxYear, plan.planSettings)));
     if (facts.income.wages < planTotal && differs(facts.income.wages, planTotal, W2)) {
       for (const row of rows.filter((r) => !claimed.has(r.id))) {
         // The card shows the return's total against THIS row, so the delta has to be the gap between
@@ -119,7 +119,7 @@ export const wageRules: Rule = (input) => {
   if (w2s.length === 0 && facts.income.wages != null) {
     const wages = facts.income.wages;
     const deferrals = input.engineYear ? planToTaxYear(input, n(input.engineYear.deductionBreakdown?.aboveLine.retirementContributions)) : 0;
-    const gross = sum(rows.map((r) => rowAmountInYear(r, taxYear)));
+    const gross = sum(rows.map((r) => rowAmountInYear(r, taxYear, plan.planSettings)));
     // Clamped: with no active salary rows this is 0 − deferrals, and the card would print a negative
     // plan figure under a headline saying the plan has no salary at all.
     const p = Math.max(0, gross - deferrals);

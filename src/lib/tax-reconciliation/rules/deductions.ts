@@ -29,7 +29,7 @@ export const deductionRules: Rule = (input) => {
     // `client_deductions` carries no inflation start year, and the engine grows a deduction row
     // from its own `startYear` (src/lib/tax/derive-deductions.ts), so state the plan figure the
     // same way rather than from an inflation start the column does not have.
-    const p = sum(rows.map((d) => rowAmountInYear({ ...d, inflationStartYear: null }, taxYear)));
+    const p = sum(rows.map((d) => rowAmountInYear({ ...d, inflationStartYear: null }, taxYear, plan.planSettings)));
     const id = "deductions.charitable";
     const returnFigure = { label: "Charitable gifts", amount: charity, display: money(charity), lineRefs: [ref("Sched A", "11–12", "Gifts to charity", charity)] };
     const planFigure = { label: rows.length === 1 ? (rows[0].name ?? "Charitable") : "Charitable deductions in the plan", amount: rows.length ? p : null, display: rows.length ? money(p) : "—", year: planYear };

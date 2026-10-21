@@ -11,6 +11,7 @@ import type {
   EntityFlowOverride,
   Expense,
   Income,
+  PlanSettings,
   ProjectionYear,
 } from "@/engine/types";
 import HeaderControls, { type EntityOption } from "./entities-cashflow-report/header-controls";
@@ -52,6 +53,7 @@ interface ApiData {
   accountFlowOverrides?: AccountFlowOverride[];
   assetTransactions?: AssetTransaction[];
   client?: ClientInfo;
+  planSettings?: Pick<PlanSettings, "dataYear">;
 }
 
 export default function EntitiesCashFlowReportView({ clientId, entities }: Props) {
@@ -162,6 +164,7 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
     return getEntityLedger(openLedger.entityId, {
       year: yr,
       planStartYear: years[0]?.year ?? openLedger.year,
+      dataYear: apiData.planSettings?.dataYear,
       entitiesById: ledgerLookups.entitiesById,
       accountNamesById: ledgerLookups.accountNamesById,
       businessAccountsById: ledgerLookups.businessAccountsById,

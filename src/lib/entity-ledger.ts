@@ -27,6 +27,7 @@ import { resolveEntityFlows } from "@/engine/entity-flows";
 import { collectBusinessTree } from "@/engine/business/business-tree";
 import { netGrowthOf } from "@/engine/margin";
 import { survivingSaleFraction } from "@/engine/linked-income";
+import { inflationBaseYear } from "@/engine/skipped-year";
 
 export type LedgerSection = "growth" | "income" | "expenses" | "ending";
 
@@ -60,6 +61,9 @@ export interface EntityLedgerContext {
   /** Plan's first projection year — used to compute the flat-business
    *  compounding exponent (year - planStartYear). */
   planStartYear: number;
+  /** The tree's `planSettings.dataYear`: when below planStartYear, amounts
+   *  entered during the skipped year read as the first plan year's. */
+  dataYear?: number;
   entitiesById: Map<string, EntityMetadata>;
   accountNamesById: Map<string, string>;
   /** Top-level business-account metadata, keyed by account id. When the
@@ -344,7 +348,7 @@ function getBusinessAccountLedger(
     for (const inc of ctx.incomes) {
       if (inc.ownerAccountId !== accountId) continue;
       if (y < inc.startYear || y > inc.endYear) continue;
-      const inflateFrom = inc.inflationStartYear ?? inc.startYear;
+      const inflateFrom = inflationBaseYear(inc.inflationStartYear ?? inc.startYear, ctx);
       const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, y - inflateFrom) * owned;
       if (amount === 0) continue;
       income.push({
@@ -357,7 +361,7 @@ function getBusinessAccountLedger(
     for (const exp of ctx.expenses) {
       if (exp.ownerAccountId !== accountId) continue;
       if (y < exp.startYear || y > exp.endYear) continue;
-      const inflateFrom = exp.inflationStartYear ?? exp.startYear;
+      const inflateFrom = inflationBaseYear(exp.inflationStartYear ?? exp.startYear, ctx);
       const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, y - inflateFrom) * owned;
       if (amount === 0) continue;
       expenses.push({

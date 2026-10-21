@@ -66,7 +66,7 @@ export const businessRules: Rule = (input) => {
           planDisplay: row.endYear < planYear ? `${row.name} ends in ${row.endYear}, before the ${planYear} plan year` : `${row.name} starts in ${row.startYear}, after the ${planYear} plan year` });
         continue;
       }
-      const p = rowAmountInYear(row, taxYear);
+      const p = rowAmountInYear(row, taxYear, plan.planSettings);
       if (differs(it.amount, p, ROW)) {
         suggestions.push({ id: it.id, section: "business", kind: "update", status: "open",
           headline: `${it.name} shows ${money(it.amount)} on the ${taxYear} return; the plan's ${row.name} is ${money(p)}.`,

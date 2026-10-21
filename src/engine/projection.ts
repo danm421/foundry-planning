@@ -208,6 +208,7 @@ import {
 } from "./types";
 import { computeTaxForYear, type YearTaxInput } from "./year-tax";
 import { resolveTaxAdjustmentsForYear, type IncomeTaxType } from "./tax-adjustments";
+import { rebaseSkippedYearRows } from "./skipped-year";
 import { diffEquityTaxImpact, type EquityTaxImpact } from "./equity/tax-impact";
 import {
   buildNoteReceivableSchedules,
@@ -498,6 +499,9 @@ function foldLifeInsurancePayoutsIntoIncome(
 }
 
 export function runProjection(data: ClientData, options?: ProjectionOptions): ProjectionYear[] {
+  // Plan starts next year: amounts entered during the skipped year are the
+  // first plan year's amounts — see src/engine/skipped-year.ts.
+  data = rebaseSkippedYearRows(data);
   // Long-term care stress (scenario-only `ltc_event`): expand into ordinary
   // rows FIRST. The destructure below must see the care-adjusted client and
   // plan horizon — see src/engine/ltc-event.ts.

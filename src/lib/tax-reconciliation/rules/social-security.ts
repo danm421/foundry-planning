@@ -7,7 +7,7 @@ export const socialSecurityRules: Rule = (input) => {
   const suggestions: Suggestion[] = [];
   const checks: Check[] = [];
   const rows = plan.incomes.filter((i) => i.type === "social_security");
-  const paid = (r: PlanIncome): number => engineYear ? n(engineYear.income.bySource[r.id]) : (isActiveInYear(r, planYear) ? rowAmountInYear(r, planYear) : 0);
+  const paid = (r: PlanIncome): number => engineYear ? n(engineYear.income.bySource[r.id]) : (isActiveInYear(r, planYear) ? rowAmountInYear(r, planYear, plan.planSettings) : 0);
   const active = rows.filter((r) => engineYear ? paid(r) > 0 : isActiveInYear(r, planYear) && (r.annualAmount > 0 || n(r.piaMonthly) > 0));
   // Every figure on this card is stated in TAX-year dollars, and the row's own growth rate is what
   // moved it — not the plan's inflation rate, which for a 2% benefit in a 3% plan is a $400 lie.

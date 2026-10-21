@@ -45,9 +45,19 @@ describe("growth", () => {
     expect(deflate(103_000, 0.03, 1)).toBeCloseTo(100_000, 6);
     expect(deflate(100_000, 0.03, 0)).toBe(100_000);
     const row = { annualAmount: 100_000, growthRate: 0.03, startYear: 2026, inflationStartYear: 2025 };
-    expect(rowAmountInYear(row, 2025)).toBeCloseTo(100_000, 6);   // stated in 2025 dollars
-    expect(rowAmountInYear(row, 2026)).toBeCloseTo(103_000, 6);
-    expect(rowAmountInYear({ ...row, inflationStartYear: null }, 2025)).toBeCloseTo(100_000 / 1.03, 6);
+    const ps = { planStartYear: 2026 };
+    expect(rowAmountInYear(row, 2025, ps)).toBeCloseTo(100_000, 6);   // stated in 2025 dollars
+    expect(rowAmountInYear(row, 2026, ps)).toBeCloseTo(103_000, 6);
+    expect(rowAmountInYear({ ...row, inflationStartYear: null }, 2025, ps)).toBeCloseTo(100_000 / 1.03, 6);
+  });
+
+  it("reads an amount entered this year as next year's when the plan starts next year", () => {
+    const row = { annualAmount: 100_000, growthRate: 0.03, startYear: 2026, inflationStartYear: null };
+    const next = { planStartYear: 2027, dataYear: 2026 };
+    expect(rowAmountInYear(row, 2027, next)).toBeCloseTo(100_000, 6);
+    expect(rowAmountInYear(row, 2025, next)).toBeCloseTo(100_000 / 1.03 ** 2, 6);
+    // A base year before the skipped year is untouched.
+    expect(rowAmountInYear({ ...row, inflationStartYear: 2025 }, 2027, next)).toBeCloseTo(100_000 * 1.03 ** 2, 6);
   });
 });
 

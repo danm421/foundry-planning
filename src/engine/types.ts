@@ -1777,6 +1777,11 @@ export interface PlanSettings {
   inflationRate: number;
   planStartYear: number;
   planEndYear: number;
+  /** Calendar year the entered data describes. Undefined or equal to
+   *  planStartYear: no skipped year. Below planStartYear when the plan starts
+   *  next year: the window [dataYear, planStartYear) already happened (see
+   *  src/engine/skipped-year.ts). The loader sets it; the engine never reads a clock. */
+  dataYear?: number;
   /** "flat" (default) uses flatFederalRate; "bracket" routes through the bracket engine. */
   taxEngineMode?: "flat" | "bracket";
   /** Annual rate for inflating tax brackets/thresholds beyond the last seeded year. */
