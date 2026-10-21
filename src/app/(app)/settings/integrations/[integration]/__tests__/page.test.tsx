@@ -19,6 +19,7 @@ const mockAuth = vi.fn();
 const mockRequireAdmin = vi.fn();
 const mockGetConnection = vi.fn();
 const mockPlaidUsage = vi.fn();
+const mockListOpenReviews = vi.fn();
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: () => mockAuth() }));
 
@@ -46,6 +47,10 @@ vi.mock("@/lib/authz", () => ({
 
 vi.mock("@/lib/integrations/connections", () => ({
   getConnection: (...a: unknown[]) => mockGetConnection(...a),
+}));
+
+vi.mock("@/lib/integrations/reviews", () => ({
+  listOpenReviews: (...a: unknown[]) => mockListOpenReviews(...a),
 }));
 
 vi.mock("@/lib/integrations/plaid-usage", () => ({
@@ -78,6 +83,15 @@ vi.mock("@/components/IntegrationConnectionCard", () => ({
 vi.mock("@/components/IntegrationHouseholdLinkTable", () => ({
   IntegrationHouseholdLinkTable: (p: { providerId: string }) => (
     <div data-testid="household-table" data-provider={p.providerId} />
+  ),
+}));
+vi.mock("@/components/IntegrationPendingReviews", () => ({
+  IntegrationPendingReviews: (p: { label: string; reviews: { importId: string }[] }) => (
+    <div
+      data-testid="pending-reviews"
+      data-label={p.label}
+      data-import-ids={p.reviews.map((r) => r.importId).join(",")}
+    />
   ),
 }));
 vi.mock("@/components/PlaidIntegrationTile", () => ({
@@ -137,6 +151,7 @@ beforeEach(() => {
   mockRequireAdmin.mockReset().mockResolvedValue(undefined);
   mockGetConnection.mockReset().mockResolvedValue(null);
   mockPlaidUsage.mockReset().mockResolvedValue({ clientCount: 0, institutionCount: 0 });
+  mockListOpenReviews.mockReset().mockResolvedValue([]);
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -200,6 +215,21 @@ describe("Integration detail — a syncing provider", () => {
       "disconnected",
     );
     expect(container.querySelector("[data-testid='household-table']")).toBeNull();
+    expect(mockListOpenReviews).not.toHaveBeenCalled();
+  });
+
+  it("hands the firm's pending reviews to the review panel once connected", async () => {
+    mockGetConnection.mockResolvedValue({ status: "connected", lastSyncedAt: null, lastSyncError: null });
+    mockListOpenReviews.mockResolvedValue([
+      { importId: "imp-1", clientId: "c-1", householdName: "Denise McCormick", accountCount: 9 },
+    ]);
+
+    const { container } = await renderPage("addepar");
+    const panel = container.querySelector("[data-testid='pending-reviews']");
+
+    expect(mockListOpenReviews).toHaveBeenCalledWith("org_acme", "addepar");
+    expect(panel?.getAttribute("data-label")).toBe("Addepar");
+    expect(panel?.getAttribute("data-import-ids")).toBe("imp-1");
   });
 });
 

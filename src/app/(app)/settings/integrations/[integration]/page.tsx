@@ -4,12 +4,14 @@ import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { ForbiddenError, requireOrgAdminOrOwner } from "@/lib/authz";
 import { getConnection } from "@/lib/integrations/connections";
+import { listOpenReviews } from "@/lib/integrations/reviews";
 import { getProvider, isProviderId } from "@/lib/integrations/registry";
 import { INTEGRATION_INFO, PLAID_LABEL, type IntegrationSlug } from "@/lib/integrations/catalog";
 import { getPlaidUsage } from "@/lib/integrations/plaid-usage";
 import { decodeAzureConfig, type AzureConfig } from "@/lib/ai/credentials";
 import { IntegrationConnectionCard } from "@/components/IntegrationConnectionCard";
 import { IntegrationHouseholdLinkTable } from "@/components/IntegrationHouseholdLinkTable";
+import { IntegrationPendingReviews } from "@/components/IntegrationPendingReviews";
 import { PlaidIntegrationTile } from "@/components/PlaidIntegrationTile";
 import { AzureOpenAiCard } from "@/components/AzureOpenAiCard";
 import { ArrowLeftIcon } from "@/components/icons";
@@ -87,6 +89,7 @@ export default async function IntegrationDetailPage({ params }: Props): Promise<
   }
 
   const linked = !!conn && conn.status !== "disconnected";
+  const reviews = linked ? await listOpenReviews(firmId, provider.id) : [];
   return (
     <DetailShell slug={provider.id} label={provider.label}>
       <IntegrationConnectionCard
@@ -97,6 +100,7 @@ export default async function IntegrationDetailPage({ params }: Props): Promise<
         lastSyncedAt={conn?.lastSyncedAt ? conn.lastSyncedAt.toISOString() : null}
         lastSyncError={conn?.lastSyncError ?? null}
       />
+      <IntegrationPendingReviews label={provider.label} reviews={reviews} />
       {linked ? <IntegrationHouseholdLinkTable providerId={provider.id} /> : null}
     </DetailShell>
   );
