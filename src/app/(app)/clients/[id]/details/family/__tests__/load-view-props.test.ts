@@ -189,3 +189,30 @@ describe("loadFamilyViewProps — designations", () => {
     expect(props.initialDesignations).toHaveLength(3);
   });
 });
+
+describe("loadFamilyViewProps — what the gift dialog needs for a QCD", () => {
+  it("passes the plan's tax inflation rate, falling back to the general rate as the projection does", async () => {
+    mountTree(tree({ planSettings: { planStartYear: 2026, planEndYear: 2061, inflationRate: 0.025, taxInflationRate: 0.03 } }));
+    expect((await loadFamilyViewProps(CLIENT_ID, SCENARIO_ID)).props.taxInflationRate).toBe(0.03);
+
+    mountTree(tree());
+    expect((await loadFamilyViewProps(CLIENT_ID, SCENARIO_ID)).props.taxInflationRate).toBe(0.025);
+  });
+
+  it("marks an inherited IRA", async () => {
+    const ira = (over: Record<string, unknown>) => ({
+      id: "ira", name: "IRA", category: "retirement", subType: "traditional_ira", value: 1,
+      owners: [{ kind: "family_member", familyMemberId: CLIENT_FM, percent: 1 }], ...over,
+    });
+    mountTree(
+      tree({
+        accounts: [ira({ id: "own" }), ira({ id: "inh", inheritedDeathYear: 2020, inheritedOwnerBirthYear: 1945 })],
+      }),
+    );
+    const { props } = await loadFamilyViewProps(CLIENT_ID, SCENARIO_ID);
+    expect(props.initialAccounts.map((a) => [a.id, a.inherited])).toEqual([
+      ["own", false],
+      ["inh", true],
+    ]);
+  });
+});

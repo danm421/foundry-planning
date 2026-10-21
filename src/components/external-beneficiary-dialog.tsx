@@ -45,8 +45,13 @@ export async function saveExternalBeneficiary(
     throw new Error(json.error ?? `HTTP ${res.status}`);
   }
   // In scenario mode /changes returns { ok, targetId }, not a full row;
-  // synthesize the saved beneficiary from the ids and body in hand.
-  if (writer.scenarioActive) return { id: existing?.id ?? newId!, ...body };
+  // synthesize the saved beneficiary from what is in hand: the edited row with
+  // the body over it, or the public charity the add wrote. Dropping
+  // `charityType` would make the charity look non-public to the gift form
+  // until a reload.
+  if (writer.scenarioActive) {
+    return existing ? { ...existing, ...body } : { id: newId!, ...body, charityType: "public" };
+  }
   return (await res.json()) as ExternalBeneficiary;
 }
 

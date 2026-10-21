@@ -31,6 +31,7 @@ import { buildFamilyPrimary } from "./family-primary";
 import { entitySummaryToRow, overlayScenarioGiftRows } from "@/lib/gifts/scenario-rows";
 import type { BeneficiaryRef, EntitySummary } from "@/engine/types";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
+import { isInheritedIra } from "@/engine/inherited-ira";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 
 const RELATIONSHIP_ORDER: readonly string[] = familyRelationshipEnum.enumValues;
@@ -220,6 +221,7 @@ export async function loadFamilyViewProps(
     ownerFamilyMemberId: controllingFamilyMember(a) ?? null,
     ownerEntityId: controllingEntity(a) ?? null,
     beneficiaries: a.beneficiaries,
+    inherited: isInheritedIra(a),
   }));
 
   // Full asset data for the trust Assets tab
@@ -431,6 +433,9 @@ export async function loadFamilyViewProps(
       initialGifts: giftsList,
       initialGiftSeries: giftSeriesList,
       annualExclusionByYear,
+      // The rate the projection grows the QCD cap with (see projection.ts).
+      taxInflationRate:
+        effectiveTree.planSettings.taxInflationRate ?? effectiveTree.planSettings.inflationRate ?? 0,
       planStartYear,
       scenarioId: resolvedScenario.id,
       initialFullAccounts: fullAccounts,

@@ -27,7 +27,7 @@ import {
 } from "@/lib/gifts/gift-write";
 import { buildRecipientPatchFields } from "@/lib/gifts/recipient-patch-fields";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
-import { qcdSourceOptions } from "@/lib/gifts/qcd-sources";
+import { qcdSourceOptions, qcdSourceProblems } from "@/lib/gifts/qcd-sources";
 
 export interface GiftDialogProps {
   clientId: string;
@@ -45,6 +45,9 @@ export interface GiftDialogProps {
   entities: Entity[];
   accounts: AccountLite[];
   annualExclusionByYear: Record<number, number>;
+  /** The plan's tax inflation rate. Grows the yearly QCD cap past its last
+   *  published year, as the projection does. */
+  taxInflationRate?: number;
   /** The plan's real first projection year. An asset gift dated before it is
    *  refused in scenario mode — see `assertNotPastDatedAssetGift`. */
   planStartYear: number;
@@ -70,7 +73,7 @@ export default function GiftDialog(props: GiftDialogProps) {
     (e) => e.entityType === "trust" && e.isIrrevocable === true,
   );
   const irrevocableTrustIds = new Set(irrevocableTrusts.map((e) => e.id));
-  const qcdSources = qcdSourceOptions({
+  const qcdInput = {
     accounts: props.accounts,
     familyMembers: [...(props.principals ?? []), ...props.members].map((m) => ({
       id: m.id,
@@ -78,7 +81,8 @@ export default function GiftDialog(props: GiftDialogProps) {
       firstName: m.firstName,
       dateOfBirth: m.dateOfBirth,
     })),
-  });
+  };
+  const qcdSources = qcdSourceOptions(qcdInput);
   // Stable form seed. The live `draft` (below) must NOT be fed back as the seed:
   // GiftForm re-seeds every field from `editing`, so passing the in-progress
   // draft would fight the advisor's own typing.
@@ -404,8 +408,10 @@ export default function GiftDialog(props: GiftDialogProps) {
             .filter((a) => a.ownerEntityId == null)
             .map((a) => ({ id: a.id, name: a.name, value: a.value, subType: a.subType }))}
           qcdSources={qcdSources}
+          qcdSourceProblems={qcdSourceProblems(qcdInput)}
           hasSpouse={props.hasSpouse}
           annualExclusionByYear={props.annualExclusionByYear}
+          taxInflationRate={props.taxInflationRate}
           editing={initialDraft}
           onChange={(d, reason) => { setDraft(d); setBlockedReason(reason); }}
         />

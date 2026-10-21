@@ -2,7 +2,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import ExternalBeneficiaryDialog from "@/components/external-beneficiary-dialog";
+import ExternalBeneficiaryDialog, { saveExternalBeneficiary } from "@/components/external-beneficiary-dialog";
+import type { UseScenarioWriter } from "@/hooks/use-scenario-writer";
 
 // The dialog now routes writes through useScenarioWriter (→ useScenarioState),
 // which reads the app-router context. Mock next/navigation so the hook resolves
@@ -105,5 +106,31 @@ describe("ExternalBeneficiaryDialog", () => {
       expect.objectContaining({ method: "PATCH" }),
     );
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: "e1", name: "Red Cross II" }));
+  });
+});
+
+describe("saveExternalBeneficiary — inside a scenario", () => {
+  // /changes answers { ok, targetId }, so the saved row is synthesised.
+  const scenarioWriter = () =>
+    ({
+      scenarioActive: true,
+      submit: vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, targetId: "x" }) })),
+    }) as unknown as UseScenarioWriter;
+  const body = { name: "Red Cross II", kind: "charity" as const, notes: null };
+
+  it("keeps the fields an edit doesn't carry, charityType included", async () => {
+    const saved = await saveExternalBeneficiary(
+      scenarioWriter(),
+      "c1",
+      { id: "e1", name: "Red Cross", kind: "charity", charityType: "public", notes: "x" },
+      body,
+    );
+    expect(saved).toEqual({ id: "e1", name: "Red Cross II", kind: "charity", charityType: "public", notes: null });
+  });
+
+  it("returns a new charity as the public one the scenario change adds", async () => {
+    const saved = await saveExternalBeneficiary(scenarioWriter(), "c1", undefined, body);
+    expect(saved).toMatchObject({ name: "Red Cross II", kind: "charity", charityType: "public" });
+    expect(saved.id).toEqual(expect.any(String));
   });
 });

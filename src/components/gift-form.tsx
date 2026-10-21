@@ -68,6 +68,9 @@ export interface GiftFormProps {
   /** IRAs a QCD can be paid from (`qcdSourceOptions`). Empty or absent hides the
    *  "From an IRA" funding choice. */
   qcdSources?: QcdSourceOption[];
+  /** Why each household account outside `qcdSources` can't fund a QCD
+   *  (`qcdSourceProblems`) — so a saved QCD the form can't offer says why. */
+  qcdSourceProblems?: Record<string, string>;
   /** `blockedReason` is a sentence naming the field that is holding the draft
    *  back — null whenever `draft` is non-null. Callers that refuse the save
    *  should show it instead of a generic "complete the gift" message. */
@@ -203,8 +206,29 @@ export default function GiftForm(props: GiftFormProps) {
   const inKindAllowed = sourceAccount != null || props.accounts.length > 0;
   const qcdSources = props.qcdSources ?? [];
   const qcdAllowed = qcdSources.length > 0 && selected?.charityType === "public";
-  const qcdPrivateNote = qcdSources.length > 0 && selected?.charityType === "private";
-  const effectiveQcd = fromIra && qcdAllowed;
+  // A saved QCD the form can no longer offer — the charity isn't public, or its
+  // IRA is gone or can't fund one — stays a QCD, held back with the reason,
+  // until the advisor picks Cash. Falling through to a cash draft would save
+  // it as a gift from checking.
+  let savedQcdProblem: string | null = null;
+  if (savedQcd && fromIra && selected) {
+    const charityName =
+      selected.ref.kind === "external_beneficiary"
+        ? props.recipients.externals.find((x) => x.id === selected.ref.id)?.name
+        : undefined;
+    if (selected.charityType !== "public") {
+      savedQcdProblem = charityName
+        ? `${charityName} isn't marked as a public charity, so it can't take a QCD. Mark it public, or switch Funding to Cash.`
+        : "A QCD can only go to a public charity. Choose one, or switch Funding to Cash.";
+    } else if (qcdAccountId === savedQcd.accountId && !qcdSources.some((s) => s.id === qcdAccountId)) {
+      const why =
+        props.qcdSourceProblems?.[qcdAccountId] ?? "The IRA this QCD was paid from is no longer in the plan.";
+      savedQcdProblem = `${why} ${qcdSources.length > 0 ? "Pick another IRA, or switch" : "Switch"} Funding to Cash.`;
+    }
+  }
+  const qcdOffered = qcdAllowed || savedQcdProblem != null;
+  const qcdPrivateNote = qcdSources.length > 0 && selected?.charityType === "private" && savedQcdProblem == null;
+  const effectiveQcd = fromIra && qcdOffered;
   const qcdSource = effectiveQcd ? qcdSources.find((s) => s.id === qcdAccountId) : undefined;
   const effectiveInKind = !effectiveRecurring && inKindAllowed && isInKind && !effectiveQcd;
   const effectiveAccountId = sourceAccount?.id ?? selectedAccountId;
@@ -331,6 +355,10 @@ export default function GiftForm(props: GiftFormProps) {
     if (qcdYear < qcdSource.eligibleFromYear) {
       qcdWarnings.push(`${qcdSource.ownerFirstName} turns 70½ in ${qcdSource.eligibleFromYear}. QCDs before then are skipped.`);
     }
+    // An inherited IRA's RMDs are already due, whatever the owner's age.
+    if (qcdMode === "full_rmd" && !qcdSource.inherited && qcdYear < qcdSource.rmdStartYear) {
+      qcdWarnings.push(`${qcdSource.ownerFirstName}'s RMDs start in ${qcdSource.rmdStartYear}; a Full RMD QCD gives nothing before then.`);
+    }
     if (qcdMode === "fixed") {
       const limit = qcdAnnualLimit(qcdYear, props.taxInflationRate ?? 0);
       if (qcdTyped > limit) {
@@ -357,6 +385,7 @@ export default function GiftForm(props: GiftFormProps) {
       planMinYear != null && planMaxYear != null ? ` between ${planMinYear} and ${planMaxYear}` : "";
 
     if (!selected) return blocked("Choose who receives the gift.");
+    if (savedQcdProblem) return blocked(savedQcdProblem);
     if (effectiveQcd && !qcdSource) return blocked("Choose the IRA the gift comes from.");
     const qcd = effectiveQcd ? { accountId: qcdAccountId, amountMode: qcdMode } : undefined;
     const id = editing?.id ?? newGiftId;
@@ -433,7 +462,7 @@ export default function GiftForm(props: GiftFormProps) {
       valuationDiscount: discountFraction,
     };
     return ok(qcdLast(editing?.kind === "cash-once" ? { ...editing, ...base } : base, qcd));
-  }, [selected, editing, newGiftId, effectiveRecurring, effectiveInKind, effectiveAccountId, year, assetShare, assetSizeMode, assetValueAtYear, selectedAccount?.name, amount, startYear, endYear, annualAmount, amountMode, exclusionAmount, inflationAdjust, grantor, effectiveGrantor, effectiveQcd, qcdSource, qcdAccountId, qcdMode, crummey, discountFraction, recipientIsTrust, planMinYear, planMaxYear]);
+  }, [selected, editing, newGiftId, effectiveRecurring, effectiveInKind, effectiveAccountId, year, assetShare, assetSizeMode, assetValueAtYear, selectedAccount?.name, amount, startYear, endYear, annualAmount, amountMode, exclusionAmount, inflationAdjust, grantor, effectiveGrantor, effectiveQcd, savedQcdProblem, qcdSource, qcdAccountId, qcdMode, crummey, discountFraction, recipientIsTrust, planMinYear, planMaxYear]);
 
   // Fire onChange whenever the draft *content* changes (stable JSON key so a
   // new object identity for an unchanged draft does not re-fire; onChange held
@@ -563,14 +592,14 @@ export default function GiftForm(props: GiftFormProps) {
 
       {/* Funding: a specific asset is one-time only; From an IRA is a QCD to a
           public charity, one-time or recurring. */}
-      {((!effectiveRecurring && inKindAllowed) || qcdAllowed) && (
+      {((!effectiveRecurring && inKindAllowed) || qcdOffered) && (
         <Field label="Funding">
           <Segmented
             value={effectiveQcd ? "ira" : effectiveInKind ? "asset" : "cash"}
             options={[
               ["cash", "Cash"],
               ...(!effectiveRecurring && inKindAllowed ? [["asset", "Specific asset"] as [string, string]] : []),
-              ...(qcdAllowed ? [["ira", "From an IRA"] as [string, string]] : []),
+              ...(qcdOffered ? [["ira", "From an IRA"] as [string, string]] : []),
             ]}
             onChange={(v) => {
               setIsInKind(v === "asset");
@@ -589,6 +618,11 @@ export default function GiftForm(props: GiftFormProps) {
       {/* Amount controls */}
       {effectiveQcd ? (
         <div className="space-y-3" data-testid="qcd-section">
+          {savedQcdProblem && (
+            <p role="status" data-testid="qcd-unavailable" className="text-xs text-warn">
+              {savedQcdProblem}
+            </p>
+          )}
           <div>
             <Field label="IRA">
               <select

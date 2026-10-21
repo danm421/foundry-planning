@@ -191,6 +191,9 @@ export type AccountLite = {
   /** The account's designations as the effective tree carries them. The
    *  Beneficiaries editor opens on these inside a scenario. */
   beneficiaries?: BeneficiaryRef[];
+  /** `isInheritedIra(account)`: the gift form skips the "RMDs start in" note
+   *  for a Full RMD QCD from it, since its RMDs are already due. */
+  inherited?: boolean;
 };
 
 export type RevocableTrustTag = {
@@ -285,6 +288,9 @@ export interface FamilyViewProps {
   initialGifts: Gift[];
   initialGiftSeries: GiftSeriesLite[];
   annualExclusionByYear: Record<number, number>;
+  /** The plan's tax inflation rate — grows the gift form's yearly QCD cap
+   *  past its last published year, as the projection does. */
+  taxInflationRate?: number;
   /** The plan's real first projection year (`plan_settings.plan_start_year`).
    *  Not a calendar-year guess: it is the exact line the gift route draws
    *  between a future transfer (which the engine replays) and a past-dated one
@@ -522,6 +528,7 @@ export default function FamilyView({
   initialGifts,
   initialGiftSeries,
   annualExclusionByYear,
+  taxInflationRate,
   planStartYear,
   scenarioId,
   initialFullAccounts,
@@ -1014,6 +1021,7 @@ export default function FamilyView({
     gifts: giftsState,
     series: giftSeriesState,
     annualExclusionByYear,
+    taxInflationRate,
     planStartYear,
     scenarioId,
     hasSpouse: primary.spouseName != null,
@@ -1493,6 +1501,7 @@ function GiftsSection(props: {
   gifts: Gift[];
   series: GiftSeriesLite[];
   annualExclusionByYear: Record<number, number>;
+  taxInflationRate?: number;
   /** The plan's real first projection year (`plan_settings.plan_start_year`).
    *  Not a calendar-year guess: it is the exact line the gift route draws
    *  between a future transfer (which the engine replays) and a past-dated one
@@ -1577,6 +1586,7 @@ function GiftsSection(props: {
       entities={props.entities}
       accounts={props.accounts}
       annualExclusionByYear={props.annualExclusionByYear}
+      taxInflationRate={props.taxInflationRate}
       planStartYear={props.planStartYear}
       editingGift={editingGift}
       editingSeries={editingSeries}

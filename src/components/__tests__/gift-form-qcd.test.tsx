@@ -7,11 +7,11 @@ import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
 const JANE_IRA: QcdSourceOption = {
   id: "ira1", name: "Jane IRA", owner: "client", ownerFirstName: "Jane",
-  spouseFirstName: "Tom", eligibleFromYear: 2030, rmdStartYear: 2034,
+  spouseFirstName: "Tom", eligibleFromYear: 2030, rmdStartYear: 2034, inherited: false,
 };
 const TOM_IRA: QcdSourceOption = {
   id: "ira2", name: "Tom IRA", owner: "spouse", ownerFirstName: "Tom",
-  spouseFirstName: "Jane", eligibleFromYear: 2032, rmdStartYear: 2036,
+  spouseFirstName: "Jane", eligibleFromYear: 2032, rmdStartYear: 2036, inherited: false,
 };
 
 const base = (over: Partial<GiftFormProps> = {}): GiftFormProps => ({
@@ -248,5 +248,109 @@ describe("GiftForm — From an IRA", () => {
     fixedFixture({ ledger });
     fireEvent.change(screen.getByLabelText(/amount/i, { selector: "input" }), { target: { value: "90000000" } });
     expect(screen.queryByText(/remaining lifetime exemption/)).toBeNull();
+  });
+
+  // ── A Full RMD QCD before RMDs start ──────────────────────────────────────
+  const RMD_NOTE = "Jane's RMDs start in 2034; a Full RMD QCD gives nothing before then.";
+  function fullRmdAt(year: number, extra: Partial<GiftFormProps> = {}) {
+    const onChange = vi.fn();
+    render(<GiftForm {...base({ onChange, ...extra })} />);
+    pick("external_beneficiary:pub");
+    fireEvent.click(screen.getByText("From an IRA"));
+    fireEvent.change(screen.getByTestId("qcd-account"), { target: { value: "ira1" } });
+    fireEvent.click(screen.getByText("Full RMD"));
+    fireEvent.change(screen.getByLabelText("Year"), { target: { value: String(year) } });
+    return onChange;
+  }
+
+  it("warns that a Full RMD QCD gives nothing before the owner's RMDs start, without blocking it", () => {
+    // Jane is 70½ from 2030 (71 in 2031); her RMDs start in 2034.
+    const onChange = fullRmdAt(2031);
+    expect(screen.getByText(RMD_NOTE)).toBeInTheDocument();
+    expect(last(onChange)).toMatchObject({ qcd: { amountMode: "full_rmd" } });
+  });
+
+  it("drops the RMD note for a fixed amount", () => {
+    fullRmdAt(2031);
+    fireEvent.click(screen.getByText("Fixed amount"));
+    expect(screen.queryByText(RMD_NOTE)).toBeNull();
+  });
+
+  it("drops the RMD note for an inherited IRA, whose RMDs are already due", () => {
+    fullRmdAt(2031, { qcdSources: [{ ...JANE_IRA, inherited: true }] });
+    expect(screen.queryByText(/RMDs start in/)).toBeNull();
+  });
+
+  it("drops the RMD note from the RMD start year on", () => {
+    fullRmdAt(2034);
+    expect(screen.queryByText(RMD_NOTE)).toBeNull();
+    fireEvent.change(screen.getByLabelText("Year"), { target: { value: "2035" } });
+    expect(screen.queryByText(RMD_NOTE)).toBeNull();
+  });
+
+  it("reads a recurring QCD's start year", () => {
+    render(<GiftForm {...base()} />);
+    pick("external_beneficiary:pub");
+    fireEvent.click(screen.getByText("Recurring"));
+    fireEvent.click(screen.getByText("From an IRA"));
+    fireEvent.change(screen.getByTestId("qcd-account"), { target: { value: "ira1" } });
+    fireEvent.click(screen.getByText("Full RMD"));
+    fireEvent.change(screen.getByLabelText("Start year"), { target: { value: "2032" } });
+    expect(screen.getByText(RMD_NOTE)).toBeInTheDocument();
+  });
+
+  // ── A saved QCD the form can no longer offer ──────────────────────────────
+  const SAVED_QCD: EstateFlowGift = {
+    kind: "cash-once", id: "g1", year: 2035, amount: 7_000, grantor: "client",
+    recipient: { kind: "external_beneficiary", id: "pub" }, crummey: false, eventKind: "outright",
+    qcd: { accountId: "ira1", amountMode: "fixed" }, valuationDiscount: undefined,
+  };
+  /** Every non-null draft the form emitted. */
+  const drafts = (fn: ReturnType<typeof vi.fn>) =>
+    fn.mock.calls.map((c) => c[0] as EstateFlowGift | null).filter((d) => d != null);
+
+  it("keeps a saved QCD whose charity lost its public mark as a QCD, held back with the reason", () => {
+    const onChange = vi.fn();
+    const recipients = { ...base().recipients, externals: [{ id: "pub", name: "Red Cross", kindLabel: "charity" }] };
+    render(<GiftForm {...base({ onChange, editing: SAVED_QCD, recipients })} />);
+    const reason = "Red Cross isn't marked as a public charity, so it can't take a QCD. Mark it public, or switch Funding to Cash.";
+    expect(lastReason(onChange)).toBe(reason);
+    expect(screen.getByTestId("qcd-unavailable")).toHaveTextContent(reason);
+    // Never a cash draft: the form held the gift back the whole time.
+    expect(drafts(onChange)).toEqual([]);
+    // Picking Cash is the advisor's explicit choice, and only then does it become one.
+    fireEvent.click(screen.getByText("Cash"));
+    expect(last(onChange)).toMatchObject({ kind: "cash-once", amount: 7_000 });
+    expect(last(onChange)).not.toHaveProperty("qcd");
+  });
+
+  it("names why a saved QCD's IRA can't fund it any more, and lets the advisor pick another", () => {
+    const onChange = vi.fn();
+    render(
+      <GiftForm
+        {...base({
+          onChange,
+          editing: SAVED_QCD,
+          qcdSources: [TOM_IRA],
+          qcdSourceProblems: { ira1: "Jane has no date of birth on file, so Jane IRA can't fund a QCD." },
+        })}
+      />,
+    );
+    expect(lastReason(onChange)).toBe(
+      "Jane has no date of birth on file, so Jane IRA can't fund a QCD. Pick another IRA, or switch Funding to Cash.",
+    );
+    expect(drafts(onChange)).toEqual([]);
+    fireEvent.change(screen.getByTestId("qcd-account"), { target: { value: "ira2" } });
+    expect(last(onChange)).toMatchObject({ qcd: { accountId: "ira2", amountMode: "fixed" } });
+  });
+
+  it("says a saved QCD's IRA is gone when no IRA can fund one", () => {
+    const onChange = vi.fn();
+    render(<GiftForm {...base({ onChange, editing: SAVED_QCD, qcdSources: [] })} />);
+    expect(lastReason(onChange)).toBe(
+      "The IRA this QCD was paid from is no longer in the plan. Switch Funding to Cash.",
+    );
+    expect(screen.getByText("From an IRA")).toBeInTheDocument();
+    expect(drafts(onChange)).toEqual([]);
   });
 });

@@ -8,7 +8,8 @@ import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import type { ClientData } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { controllingFamilyMember } from "@/engine/ownership";
-import { qcdSourceOptions } from "@/lib/gifts/qcd-sources";
+import { isInheritedIra } from "@/engine/inherited-ira";
+import { qcdSourceOptions, qcdSourceProblems } from "@/lib/gifts/qcd-sources";
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +55,22 @@ export default function EstateFlowAddGiftDialog({
   onClose,
 }: EstateFlowAddGiftDialogProps) {
   const isEditing = editing != null;
+  const qcdInput = {
+    accounts: (clientData.accounts ?? []).map((a) => ({
+      id: a.id,
+      name: a.name,
+      category: a.category,
+      subType: a.subType,
+      ownerFamilyMemberId: controllingFamilyMember(a),
+      inherited: isInheritedIra(a),
+    })),
+    familyMembers: (clientData.familyMembers ?? []).map((m) => ({
+      id: m.id,
+      role: m.role ?? "other",
+      firstName: m.firstName,
+      dateOfBirth: m.dateOfBirth ?? null,
+    })),
+  };
 
   // Latest gift draft from the gift-fields form (null until valid).
   const [draft, setDraft] = useState<EstateFlowGift | null>(editing);
@@ -88,21 +105,8 @@ export default function EstateFlowAddGiftDialog({
         accounts={(clientData.accounts ?? []).map((a) => ({
           id: a.id, name: a.name, value: a.value, subType: a.subType,
         }))}
-        qcdSources={qcdSourceOptions({
-          accounts: (clientData.accounts ?? []).map((a) => ({
-            id: a.id,
-            name: a.name,
-            category: a.category,
-            subType: a.subType,
-            ownerFamilyMemberId: controllingFamilyMember(a),
-          })),
-          familyMembers: (clientData.familyMembers ?? []).map((m) => ({
-            id: m.id,
-            role: m.role ?? "other",
-            firstName: m.firstName,
-            dateOfBirth: m.dateOfBirth ?? null,
-          })),
-        })}
+        qcdSources={qcdSourceOptions(qcdInput)}
+        qcdSourceProblems={qcdSourceProblems(qcdInput)}
         hasSpouse={clientData.client.spouseDob != null}
         annualExclusionByYear={annualExclusionByYear}
         editing={editing}
