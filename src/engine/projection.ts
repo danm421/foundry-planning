@@ -2466,19 +2466,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // true Dec-31 snapshot, which throws off Year-1 RMDs vs the custodian's
       // letter. `priorYearEndValue`, if provided, replaces beginningValue for
       // the first projection year only — Year 2+ uses the engine's own
-      // year-end balances.
-      const isFirstProjectionYear = year === planSettings.planStartYear;
-      const grossBasis =
-        isFirstProjectionYear && acct.priorYearEndValue != null
+      // year-end balances. A plan that starts next year has no such gap: the
+      // entered `value` is already the Dec-31 balance before its first year.
+      const priorYearEnd =
+        year === planSettings.planStartYear &&
+        (planSettings.dataYear ?? planSettings.planStartYear) === planSettings.planStartYear
           ? acct.priorYearEndValue
-          : accountLedgers[acct.id]?.beginningValue ?? accountBalances[acct.id] ?? 0;
+          : undefined;
+      const grossBasis =
+        priorYearEnd ?? accountLedgers[acct.id]?.beginningValue ?? accountBalances[acct.id] ?? 0;
       // SECURE 2.0 §325 (2024+): designated Roth 401(k)/403(b) balances are
       // exempt from lifetime RMDs, so the basis is the pre-tax slice only.
       // rothValueBoY is stamped alongside beginningValue (before growth) —
       // the live rothValueMap has already grown and would over-subtract.
       const rothValueBoY = accountLedgers[acct.id]?.rothValueBoY ?? 0;
       let rmdBasis: number;
-      if (isFirstProjectionYear && acct.priorYearEndValue != null) {
+      if (priorYearEnd != null) {
         // `grossBasis` here is `priorYearEndValue` — a prior-Dec-31 custodian
         // snapshot on a different scale than the current-snapshot rothValueBoY.
         // Subtracting raw Roth dollars mixes scales (and can zero a real RMD),
