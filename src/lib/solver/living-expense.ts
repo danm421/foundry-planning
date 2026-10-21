@@ -19,6 +19,7 @@
 // synthesized duplicate instead, and the PoS solve reports "unreachable" at $0.
 
 import type { ClientData, Expense } from "@/engine/types";
+import { isAbsorbingLivingRow } from "@/engine/surplus-spend";
 import type { SolverMutation } from "./types";
 
 /**
@@ -52,6 +53,22 @@ export function isRetirementLivingExpense(
     e.startYearRef === "client_retirement" ||
     e.startYearRef === "spouse_retirement";
   return startsAtRetirement && e.endYear >= planStartYear;
+}
+
+/**
+ * Whether `e` spends the household's leftover during the WORKING years: an
+ * absorbing, household-paid living row that is not the retirement row. An
+ * entity- or business-owned row never absorbs (the engine skips it in
+ * `absorbingLivingRow`), and an absorbing retirement row never touches the
+ * pre-retirement surplus — which is all the working-years readers ask about.
+ */
+export function isAbsorbingCurrentLivingRow(e: Expense, planStartYear: number): boolean {
+  return (
+    isAbsorbingLivingRow(e) &&
+    e.ownerEntityId == null &&
+    e.ownerAccountId == null &&
+    !isRetirementLivingExpense(e, planStartYear)
+  );
 }
 
 /** Round a dollar amount to the nearest $5,000. */

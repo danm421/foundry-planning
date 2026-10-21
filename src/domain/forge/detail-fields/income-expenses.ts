@@ -405,7 +405,7 @@ export const INCOME_EXPENSE_ENTITIES: readonly DetailEntity[] = [
         required: false,
         defaultValue: false,
         notes:
-          "Only offered when type=\"living\" AND the row is not shaped like the seeded retirement living-expense row (isRetirementLivingExpense check against the plan's start year). Write core also enforces at most one absorbing row per (client, scenario) and 400s a retirement-shaped row even if the client bypasses the UI. When on, annualAmount's label becomes \"Minimum annual spend ($)\" (a floor, not the answer).",
+          "Only offered when type=\"living\" — on the Current and the Retirement living rows alike. Write core also enforces at most one absorbing row per (client, scenario) in any given year (400s a second absorbing row whose start/end years overlap an existing one), so Current and Retirement may both carry it. When on, annualAmount's label becomes \"Minimum annual spend ($)\" (a floor, not the answer).",
       },
       {
         key: "institutionState",

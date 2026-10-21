@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { expenses, planSettings, scenarios } from "@/db/schema";
 import { sweepLeakedAuditRows } from "@/lib/audit/test-helpers";
 import { createExpenseForClient, updateExpenseForClient } from "../expenses-writes";
+import { hasAbsorbingCurrentLivingRow } from "../expenses-reads";
 
 // Same mock as expenses-writes.test.ts: org:admin is not a STAFF_ROLE, so the
 // staff-scope check short-circuits and access reduces to DB firm membership.
@@ -62,8 +63,7 @@ d("expenses-writes — absorbsRemainingCashFlow", () => {
         type: "living",
         name: "Absorb test living",
         annualAmount: 0,
-        // CURRENT living row: anchored at plan start. A startYear AFTER plan
-        // start would make this a RETIREMENT row, which may not absorb.
+        // CURRENT living row: anchored at plan start.
         startYear: planStart,
         endYear: planStart + 10,
         ...over,
@@ -120,52 +120,73 @@ d("expenses-writes — absorbsRemainingCashFlow", () => {
     expect(second.error).toContain("Absorb test first");
   });
 
-  // --- Retirement living rows may NOT absorb -------------------------------
-  // The solver's `living-expense-scale` / `living-expense-amount` lever targets
-  // retirement living rows and has no absorb guard: scaling a row that already
-  // spends everything left moves only its FLOOR, so the bisect search is flat
-  // and the retirement solve reports nonsense. Absorption is a working-years
-  // lifestyle assumption; the current row is the only one that may carry it.
+  // --- Retirement living rows may absorb too ---------------------------------
+  // The rule is one absorbing row per YEAR, not per plan: Current ends the year
+  // before Retirement starts, so the two may both spend what is left.
 
-  it("rejects the flag on a RETIREMENT living row (starts after plan start)", async () => {
+  it("accepts the flag on a RETIREMENT living row (starts after plan start)", async () => {
     const res = await makeLiving({
+      name: "Absorb test retirement",
+      startYear: planStart + 5,
+      endYear: planStart + 30,
+      startYearRef: "client_retirement",
+      absorbsRemainingCashFlow: true,
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.absorbsRemainingCashFlow).toBe(true);
+  });
+
+  it("lets Current and Retirement BOTH absorb when their years don't overlap", async () => {
+    const current = await makeLiving({
+      name: "Absorb test current",
+      startYear: planStart,
+      endYear: planStart + 4,
+      absorbsRemainingCashFlow: true,
+    });
+    expect(current.ok).toBe(true);
+
+    const retirement = await makeLiving({
       name: "Absorb test retirement",
       startYear: planStart + 5,
       endYear: planStart + 30,
       absorbsRemainingCashFlow: true,
     });
-    if (res.ok) createdIds.push(res.data.id);
-    expect(res.ok).toBe(false);
-    if (res.ok) return;
-    expect(res.status).toBe(400);
-    expect(res.error).toBe(
-      "Only the current living expenses row can spend the remaining cash flow.",
-    );
+    expect(retirement.ok).toBe(true);
   });
 
-  it("rejects the flag on an ALREADY-RETIRED client's retirement row (past startYear, retirement anchor)", async () => {
-    // The predicate's second arm. A row anchored to client_retirement whose
-    // startYear has already passed is still the retirement row — without this
-    // arm the guard misses every already-retired household.
-    const res = await makeLiving({
-      name: "Absorb test retired anchor",
-      startYear: planStart - 1,
-      endYear: planStart + 20,
-      startYearRef: "client_retirement",
-      absorbsRemainingCashFlow: true,
-    });
-    if (res.ok) createdIds.push(res.data.id);
-    expect(res.ok).toBe(false);
-    if (res.ok) return;
-    expect(res.status).toBe(400);
-    expect(res.error).toBe(
-      "Only the current living expenses row can spend the remaining cash flow.",
-    );
-  });
-
-  it("rejects turning an EXISTING retirement row into an absorbing one", async () => {
+  it("rejects turning a row absorbing when another absorber covers any of its years", async () => {
     // The update path merges the patch onto the stored row: the patch carries
     // only the flag, so the years must come from the row already in the DB.
+    const current = await makeLiving({
+      name: "Absorb test long current",
+      startYear: planStart,
+      endYear: planStart + 10,
+      absorbsRemainingCashFlow: true,
+    });
+    expect(current.ok).toBe(true);
+    const retirement = await makeLiving({
+      name: "Absorb test retirement update",
+      startYear: planStart + 5,
+      endYear: planStart + 30,
+    });
+    expect(retirement.ok).toBe(true);
+    if (!retirement.ok) return;
+
+    const res = await updateExpenseForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      expenseId: retirement.data.id,
+      input: { absorbsRemainingCashFlow: true },
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.status).toBe(400);
+    expect(res.error).toContain("Absorb test long current");
+  });
+
+  it("turns an EXISTING retirement row into an absorbing one", async () => {
     const created = await makeLiving({
       name: "Absorb test retirement update",
       startYear: planStart + 5,
@@ -181,12 +202,9 @@ d("expenses-writes — absorbsRemainingCashFlow", () => {
       expenseId: created.data.id,
       input: { absorbsRemainingCashFlow: true },
     });
-    expect(res.ok).toBe(false);
-    if (res.ok) return;
-    expect(res.status).toBe(400);
-    expect(res.error).toBe(
-      "Only the current living expenses row can spend the remaining cash flow.",
-    );
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.absorbsRemainingCashFlow).toBe(true);
   });
 
   it("lets the absorbing row re-save itself", async () => {
@@ -207,5 +225,32 @@ d("expenses-writes — absorbsRemainingCashFlow", () => {
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data.absorbsRemainingCashFlow).toBe(true);
+  });
+
+  it("counts only a CURRENT absorbing row as absorbing working-years surplus", async () => {
+    // The read behind the presentation's flat-ladder warning: an absorbing
+    // RETIREMENT row never touches the working years that chart is about.
+    const [sc] = await db
+      .select({ id: scenarios.id })
+      .from(scenarios)
+      .where(and(eq(scenarios.clientId, COOPER_CLIENT_ID), eq(scenarios.isBaseCase, true)));
+    const retirement = await makeLiving({
+      name: "Absorb test retirement read",
+      startYear: planStart + 5,
+      endYear: planStart + 30,
+      startYearRef: "client_retirement",
+      absorbsRemainingCashFlow: true,
+    });
+    expect(retirement.ok).toBe(true);
+    expect(await hasAbsorbingCurrentLivingRow(COOPER_CLIENT_ID, sc.id)).toBe(false);
+
+    const current = await makeLiving({
+      name: "Absorb test current read",
+      startYear: planStart,
+      endYear: planStart + 4,
+      absorbsRemainingCashFlow: true,
+    });
+    expect(current.ok).toBe(true);
+    expect(await hasAbsorbingCurrentLivingRow(COOPER_CLIENT_ID, sc.id)).toBe(true);
   });
 });

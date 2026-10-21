@@ -16,7 +16,7 @@
 // compliance control, it is a "check this before you present it" note. Reads
 // storage ONLY — no projection — so an export is never slower for it.
 import { baseCaseScenarioId } from "@/lib/clients/base-case";
-import { hasAbsorbingLivingRow } from "@/lib/clients/expenses-reads";
+import { hasAbsorbingCurrentLivingRow } from "@/lib/clients/expenses-reads";
 import { EARLY_YEARS_LADDER_PAGE_ID } from "@/lib/presentations/pages/early-years-ladder/view-model";
 import type { PresentationPageDescriptor } from "@/lib/presentations/types";
 
@@ -25,7 +25,7 @@ import type { PresentationPageDescriptor } from "@/lib/presentations/types";
  *  find both. */
 export const FLAT_LADDER_WARNING =
   "“What Saving More Is Worth” will read nearly flat for this plan: " +
-  "no living expense is set to spend whatever’s left each year, so raising " +
+  "the current living expenses aren’t set to spend whatever’s left each year, so raising " +
   "the savings rate only moves dollars the plan already invests.";
 
 /**
@@ -50,7 +50,7 @@ export async function flatLadderWarning(
   const scenarioId = await baseCaseScenarioId(clientId, firmId);
   if (scenarioId == null) return null;
 
-  return (await hasAbsorbingLivingRow(clientId, scenarioId))
+  return (await hasAbsorbingCurrentLivingRow(clientId, scenarioId))
     ? null
     : FLAT_LADDER_WARNING;
 }

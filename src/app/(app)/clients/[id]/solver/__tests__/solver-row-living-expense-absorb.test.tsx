@@ -1,11 +1,9 @@
 // @vitest-environment jsdom
 /**
- * The "spend whatever's left" option, offered on the solver's CURRENT living
- * expense lever so an advisor can test it as a what-if without leaving the
- * solver. Mirrors the Details cash-flow dialog — see
- * `src/components/__tests__/income-expenses-view-absorb-row.test.tsx` — and the
- * same rule applies here: the RETIREMENT row may not absorb, because the
- * `living-expense-scale` solve lever has no absorb guard.
+ * The "spend whatever's left" option, offered on the solver's living expense
+ * levers — Current and Retirement — so an advisor can test it as a what-if
+ * without leaving the solver. Mirrors the Details cash-flow dialog — see
+ * `src/components/__tests__/income-expenses-view-absorb-row.test.tsx`.
  */
 
 import { describe, it, expect, vi } from "vitest";
@@ -71,9 +69,15 @@ describe("SolverRowLivingExpenseScale — spend whatever's left", () => {
     expect(screen.getByRole("checkbox", { name: toggleName })).toBeInTheDocument();
   });
 
-  it("does NOT offer it on the RETIREMENT lever", () => {
-    renderLevers([RETIREMENT_SLOT]);
-    expect(screen.queryByRole("checkbox", { name: toggleName })).toBeNull();
+  it("offers it on the RETIREMENT lever too", () => {
+    const onChange = vi.fn();
+    renderLevers([RETIREMENT_SLOT], onChange);
+    fireEvent.click(screen.getByRole("checkbox", { name: toggleName }));
+    expect(onChange).toHaveBeenCalledWith({
+      kind: "expense-absorbs-remaining",
+      expenseId: "slot-retirement",
+      value: true,
+    });
   });
 
   it("emits an expense-absorbs-remaining mutation for that row when ticked", () => {
@@ -116,7 +120,7 @@ describe("SolverRowLivingExpenseScale — spend whatever's left", () => {
   });
 
   it("turns any OTHER absorbing living row off in the same edit", () => {
-    // The write layer permits at most one absorbing row per plan, and
+    // The write layer permits at most one absorbing row per year, and
     // save-to-base does NOT go through it — so the invariant is kept here.
     const groceries = livingExpense({ id: "exp-groceries", name: "Groceries" });
     const onChange = vi.fn();
@@ -136,6 +140,25 @@ describe("SolverRowLivingExpenseScale — spend whatever's left", () => {
     expect(onChange).toHaveBeenCalledWith({
       kind: "expense-absorbs-remaining",
       expenseId: "slot-current",
+      value: true,
+    });
+  });
+
+  it("leaves an absorber whose years don't overlap alone — Current and Retirement may both absorb", () => {
+    // The seeded shape: Current ends the year before Retirement starts.
+    const current = { ...CURRENT_SLOT, endYear: 2034 };
+    const onChange = vi.fn();
+    renderLevers(
+      [current, RETIREMENT_SLOT],
+      onChange,
+      [{ ...current, absorbsRemainingCashFlow: true }, RETIREMENT_SLOT],
+    );
+    // Order is Current, then Retirement.
+    fireEvent.click(screen.getAllByRole("checkbox", { name: toggleName })[1]);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith({
+      kind: "expense-absorbs-remaining",
+      expenseId: "slot-retirement",
       value: true,
     });
   });

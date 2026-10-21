@@ -3308,7 +3308,8 @@ export const expenses = pgTable("expenses", {
   // When true on a living row, the row spends the household's entire remaining
   // cash flow for each year it is active, and `annual_amount` acts as a floor
   // rather than the answer. Consumed by the engine's surplus-allocation phase.
-  // Valid only on type = 'living'; at most one per (client, scenario).
+  // Valid only on type = 'living'; at most one per (client, scenario) in any
+  // given year — Current and Retirement may both carry it.
   absorbsRemainingCashFlow: boolean("absorbs_remaining_cash_flow")
     .notNull()
     .default(false),

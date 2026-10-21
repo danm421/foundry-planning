@@ -109,8 +109,8 @@ export function describeSolverMutation(m: SolverMutation, names: MutationNames):
       return `${named("Expense", m.expenseId)} → ${money(m.annualAmount)}/yr`;
     case "expense-absorbs-remaining":
       return m.value
-        ? "Current living expenses spend whatever's left"
-        : "Current living expenses use a fixed amount";
+        ? `${named("Expense", m.expenseId)} spends whatever's left`
+        : `${named("Expense", m.expenseId)} uses a fixed amount`;
     case "income-annual-amount":
       return `${named("Income", m.incomeId)} → ${money(m.annualAmount)}/yr`;
     case "income-growth-rate":

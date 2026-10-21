@@ -8,14 +8,14 @@ import type { PresentationPageDescriptor } from "@/lib/presentations/types";
 
 const m = vi.hoisted(() => ({
   baseCaseScenarioId: vi.fn(),
-  hasAbsorbingLivingRow: vi.fn(),
+  hasAbsorbingCurrentLivingRow: vi.fn(),
 }));
 
 vi.mock("@/lib/clients/base-case", () => ({
   baseCaseScenarioId: m.baseCaseScenarioId,
 }));
 vi.mock("@/lib/clients/expenses-reads", () => ({
-  hasAbsorbingLivingRow: m.hasAbsorbingLivingRow,
+  hasAbsorbingCurrentLivingRow: m.hasAbsorbingCurrentLivingRow,
 }));
 
 import { flatLadderWarning, FLAT_LADDER_WARNING } from "../flat-ladder-gate";
@@ -30,7 +30,7 @@ const LADDER_DECK = [page("cover"), page("earlyYearsStanding"), page("earlyYears
 describe("flatLadderWarning", () => {
   beforeEach(() => {
     m.baseCaseScenarioId.mockReset().mockResolvedValue(SCENARIO);
-    m.hasAbsorbingLivingRow.mockReset().mockResolvedValue(false);
+    m.hasAbsorbingCurrentLivingRow.mockReset().mockResolvedValue(false);
   });
 
   it("warns when no living row spends the household's leftover cash", async () => {
@@ -38,7 +38,7 @@ describe("flatLadderWarning", () => {
   });
 
   it("says nothing when the household already absorbs its surplus", async () => {
-    m.hasAbsorbingLivingRow.mockResolvedValue(true);
+    m.hasAbsorbingCurrentLivingRow.mockResolvedValue(true);
     expect(await flatLadderWarning(CLIENT, FIRM, LADDER_DECK)).toBeNull();
   });
 
@@ -49,7 +49,7 @@ describe("flatLadderWarning", () => {
     const result = await flatLadderWarning(CLIENT, FIRM, [page("cover"), page("cashFlow")]);
     expect(result).toBeNull();
     expect(m.baseCaseScenarioId).not.toHaveBeenCalled();
-    expect(m.hasAbsorbingLivingRow).not.toHaveBeenCalled();
+    expect(m.hasAbsorbingCurrentLivingRow).not.toHaveBeenCalled();
   });
 
   // A client with no base case cannot render this page at all — the render's
@@ -58,7 +58,7 @@ describe("flatLadderWarning", () => {
   it("says nothing when the client has no base case", async () => {
     m.baseCaseScenarioId.mockResolvedValue(null);
     expect(await flatLadderWarning(CLIENT, FIRM, LADDER_DECK)).toBeNull();
-    expect(m.hasAbsorbingLivingRow).not.toHaveBeenCalled();
+    expect(m.hasAbsorbingCurrentLivingRow).not.toHaveBeenCalled();
   });
 
   // The chart is pinned to Base Case (`requiredScenarioRefs: () => ["base"]`),
@@ -66,6 +66,6 @@ describe("flatLadderWarning", () => {
   // the deck is built on.
   it("asks about the base-case scenario's rows", async () => {
     await flatLadderWarning(CLIENT, FIRM, LADDER_DECK);
-    expect(m.hasAbsorbingLivingRow).toHaveBeenCalledWith(CLIENT, SCENARIO);
+    expect(m.hasAbsorbingCurrentLivingRow).toHaveBeenCalledWith(CLIENT, SCENARIO);
   });
 });

@@ -39,7 +39,8 @@ export function isAbsorbingLivingRow(e: Expense): boolean {
  * Mirrors the filter `computeExpenses` is called with in projection.ts: an
  * entity- or business-owned row is not paid from household cash, so it must
  * never absorb household leftover. The write layer permits at most one
- * absorbing row per (client, scenario); if older data yields several, take the
+ * absorbing row per year (Current and Retirement may both absorb — their years
+ * don't meet); if data still yields several in one year, take the
  * earliest-starting one deterministically rather than double-spending.
  */
 export function absorbingLivingRow(

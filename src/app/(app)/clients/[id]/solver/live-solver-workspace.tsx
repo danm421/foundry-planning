@@ -8,7 +8,6 @@ import type { ClientData, ProjectionYear, SavingsRule } from "@/engine";
 import type { StressTest, StressTestKind } from "@/engine/types";
 import type { ChangesPanelChange } from "@/components/scenario/changes-panel";
 import { controllingFamilyMember } from "@/engine/ownership";
-import { isAbsorbingLivingRow } from "@/engine/surplus-spend";
 import { resolveLtcEvent } from "@/engine/ltc-event";
 import type { QuickAddType } from "@/lib/solver/quick-add-account";
 import { buildAdditionalSavingsAccount } from "@/lib/solver/quick-add-account";
@@ -21,7 +20,7 @@ import { partitionBaseSavableMutations } from "@/lib/solver/mutations-to-base-up
 import { staleStressDraftKeys } from "@/lib/solver/stress-test-mutations";
 import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "@/lib/solver/solve-types";
 import { buildLeverMutation } from "@/lib/solver/lever-search-config";
-import { livingExpenseSolveMutations } from "@/lib/solver/living-expense";
+import { isAbsorbingCurrentLivingRow, livingExpenseSolveMutations } from "@/lib/solver/living-expense";
 import { useSolverSolve } from "./use-solver-solve";
 import { useSolverMc } from "./use-solver-mc";
 import { useSolverDraft, mutationMapFromDraft, type SolverDraft } from "./use-solver-draft";
@@ -722,8 +721,11 @@ export function LiveSolverWorkspace({
 
   // "Lock in a fixed budget" lowers the working-years living rows. Against a row
   // that spends whatever is left, the cut frees money the row instantly
-  // re-absorbs — so the button is disabled rather than left to do nothing.
-  const lockInCutUnavailableReason = workingTree.expenses.some(isAbsorbingLivingRow)
+  // re-absorbs — so the button is disabled rather than left to do nothing. An
+  // absorbing RETIREMENT row is no obstacle: the cut never touches it.
+  const lockInCutUnavailableReason = workingTree.expenses.some((e) =>
+    isAbsorbingCurrentLivingRow(e, workingTree.planSettings.planStartYear),
+  )
     ? "Current living expenses are set to spend whatever is left, so there is nothing to cut."
     : null;
 

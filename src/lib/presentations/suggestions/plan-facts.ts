@@ -12,6 +12,7 @@ import { ageOnDate } from "@/lib/age-year";
 import { DEFAULT_MEDICARE_ENROLLMENT_AGE } from "@/lib/medicare/constants";
 import { resolveLtcEvent } from "@/engine/ltc-event";
 import { largestMovableDeferral } from "@/lib/presentations/pages/early-years-shared";
+import { isAbsorbingCurrentLivingRow } from "@/lib/solver/living-expense";
 import { eligibleLoans } from "@/lib/presentations/pages/early-years-debt-or-invest/target-loan";
 import {
   buildCapGainsEvents,
@@ -372,8 +373,8 @@ export function buildPlanFacts(input: {
       (i) => i.annualAmount,
     ),
     annualSavings: sumBy(tree.savingsRules.filter((r) => activeIn(r, year)), (r) => r.annualAmount),
-    absorbsSurplus: tree.expenses.some(
-      (e) => e.type === "living" && e.absorbsRemainingCashFlow && !e.ownerEntityId && !e.ownerAccountId,
+    absorbsSurplus: tree.expenses.some((e) =>
+      isAbsorbingCurrentLivingRow(e, tree.planSettings.planStartYear),
     ),
     bracketMode: tree.planSettings.taxEngineMode === "bracket",
     hasMovableDeferral: largestMovableDeferral(tree, year) != null,

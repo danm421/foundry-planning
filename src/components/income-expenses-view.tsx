@@ -67,7 +67,6 @@ import {
   selectBaseClassName,
   selectClassName,
 } from "@/components/forms/input-styles";
-import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
 import { toSalaryOptions } from "@/lib/savings/salary-options";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import { BaseFactsNote } from "@/hooks/base-facts-edit";
@@ -1305,26 +1304,18 @@ function ExpenseDialog({
     return resolved ?? currentYear + 20;
   });
 
-  // Only the CURRENT living row may spend the remaining cash flow; the write
-  // layer rejects the flag on a retirement row (ABSORB_RETIREMENT_ERROR in
-  // expenses-writes.ts) because the solver's retirement living-expense lever
-  // has no absorb guard. Derived from live dialog state, not from `editing`, so
-  // moving the start year onto retirement hides the checkbox immediately
-  // instead of letting the save come back 400.
-  const absorbEligible =
-    type === "living" &&
-    !isRetirementLivingExpense({ type, startYear, endYear, startYearRef }, planStartYear);
-  // One definition for "this row is actually absorbing": the checkbox, the
-  // amount label and the submitted payload must never disagree. A legacy row
-  // that stored the flag while retirement-shaped reads as NOT absorbing, so
-  // editing it clears the flag rather than re-submitting an unsaveable value.
-  const absorbActive = absorbEligible && absorbsRemaining;
+  // Any living row — Current or Retirement — may spend the remaining cash flow.
+  // Derived from live dialog state, not from `editing`, so switching the type
+  // away from living hides the checkbox immediately. One definition for "this
+  // row is actually absorbing": the checkbox, the amount label and the
+  // submitted payload must never disagree.
+  const isLiving = type === "living";
+  const absorbActive = isLiving && absorbsRemaining;
 
   // A living expense neither ends at Medicare nor belongs to a business, so
   // neither control shows for one. A legacy living row already carrying a
   // Medicare end keeps that control, so the advisor can see and clear it
   // rather than have it ride along invisibly.
-  const isLiving = type === "living";
   const showMedicareEnd = !isLiving || editing?.endsAtMedicareEligibilityOwner != null;
 
   // Eligible education funding = household accounts (client/spouse) plus any
@@ -1554,7 +1545,7 @@ function ExpenseDialog({
               </label>
               {type === "education" && <FieldTooltip text="Education expenses are always goals." side="bottom" />}
             </span>
-            {absorbEligible && (
+            {isLiving && (
               <span className="flex items-center gap-1.5">
                 <label className="flex items-center gap-2 text-sm text-ink-2">
                   <input

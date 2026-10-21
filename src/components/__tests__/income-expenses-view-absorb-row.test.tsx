@@ -123,7 +123,7 @@ describe("IncomeExpensesView — a living row that spends whatever's left", () =
     ).toBeInTheDocument();
   });
 
-  // --- the absorb toggle is offered on the CURRENT row only ------------------
+  // --- the absorb toggle is offered on every living row -----------------------
 
   it("offers the absorb toggle when editing the CURRENT living row", () => {
     renderView([currentSlot({})]);
@@ -131,14 +131,15 @@ describe("IncomeExpensesView — a living row that spends whatever's left", () =
     expect(screen.getByText(/Spend whatever/)).toBeInTheDocument();
   });
 
-  it("hides the absorb toggle when editing the RETIREMENT living row", () => {
-    // The solver's retirement living-expense lever has no absorb guard, so a
-    // retirement row that spent every leftover dollar would make the retirement
-    // solve flat and its answer meaningless. The write layer rejects it too —
-    // this is the affordance that stops the advisor reaching that 400 at all.
+  it("offers the absorb toggle when editing the RETIREMENT living row", () => {
     renderView([retirementSlot()]);
     fireEvent.click(screen.getByRole("button", { name: "Edit Retirement Living Expenses" }));
-    expect(screen.queryByText(/Spend whatever/)).toBeNull();
+    expect(screen.getByText(/Spend whatever/)).toBeInTheDocument();
+  });
+
+  it("shows an absorbing RETIREMENT row as spending whatever's left", () => {
+    renderView([currentSlot({}), retirementSlot({ absorbsRemainingCashFlow: true })]);
+    expect(screen.getByText("Whatever’s left")).toBeInTheDocument();
   });
 });
 

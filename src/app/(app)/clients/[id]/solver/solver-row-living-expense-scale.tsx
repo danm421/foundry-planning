@@ -85,18 +85,20 @@ export function SolverRowLivingExpenseScale({
     isRetirementLivingExpense(e, currentYear),
   )?.id;
 
-  // A plan carries at most ONE absorbing row. The expense write layer enforces
-  // that, but `save-to-base` writes expenses directly and bypasses it — so
-  // turning one row on hands every other absorber its own off-mutation rather
-  // than promoting two rows that both claim the leftover.
-  function toggleAbsorb(expenseId: string, next: boolean) {
+  // A plan carries at most ONE absorbing row per year — Current and Retirement
+  // may both absorb, since their years don't meet. The expense write layer
+  // enforces that, but `save-to-base` writes expenses directly and bypasses it
+  // — so turning one row on hands every absorber whose years overlap its own
+  // off-mutation rather than promoting two rows that both claim the leftover.
+  function toggleAbsorb(expense: Expense, next: boolean) {
     if (next) {
       for (const other of workingExpenses) {
-        if (other.id === expenseId || !isAbsorbingLivingRow(other)) continue;
+        if (other.id === expense.id || !isAbsorbingLivingRow(other)) continue;
+        if (other.startYear > expense.endYear || other.endYear < expense.startYear) continue;
         onChange({ kind: "expense-absorbs-remaining", expenseId: other.id, value: false });
       }
     }
-    onChange({ kind: "expense-absorbs-remaining", expenseId, value: next });
+    onChange({ kind: "expense-absorbs-remaining", expenseId: expense.id, value: next });
   }
 
   return (
@@ -140,19 +142,10 @@ export function SolverRowLivingExpenseScale({
                       annualAmount: n,
                     })
                   }
-                  absorb={
-                    // Retirement rows are excluded for the same reason the
-                    // Details dialog hides the toggle: the `living-expense-scale`
-                    // solve lever has no absorb guard, so scaling a row that
-                    // already spends every leftover dollar moves only its floor
-                    // and the bisect goes flat.
-                    isRetirementLivingExpense(baseExpense, currentYear)
-                      ? undefined
-                      : {
-                          checked: isAbsorbingLivingRow(workingExpense),
-                          onToggle: (next) => toggleAbsorb(baseExpense.id, next),
-                        }
-                  }
+                  absorb={{
+                    checked: isAbsorbingLivingRow(workingExpense),
+                    onToggle: (next) => toggleAbsorb(workingExpense, next),
+                  }}
                   onResetField={onResetField}
                   solve={
                     baseExpense.id === retirementId
@@ -253,14 +246,13 @@ function Editable({
   onCommit: (n: number) => void;
   onResetField?: (keys: SolverMutationKey[]) => void;
   solve?: LivingExpenseSolve;
-  /** Omitted on rows that may not spend whatever is left. */
-  absorb?: { checked: boolean; onToggle: (next: boolean) => void };
+  absorb: { checked: boolean; onToggle: (next: boolean) => void };
 }) {
   const inputId = `e-${expense.id}`;
   const rows = livingExpenseDetailRows(expense);
   // While absorbing, the typed figure is a floor rather than the spend — say so
   // in the field's own name so the number is never read as the annual amount.
-  const amountLabel = absorb?.checked ? `${label} (minimum)` : label;
+  const amountLabel = absorb.checked ? `${label} (minimum)` : label;
   return (
     <div>
       <div className="mb-1.5 flex min-w-0 items-center gap-1.5">
@@ -279,18 +271,16 @@ function Editable({
         prefix="$"
         onCommit={onCommit}
       />
-      {absorb ? (
-        <label className="mt-1.5 flex items-center gap-2 text-[12px] text-ink-2">
-          <input
-            type="checkbox"
-            checked={absorb.checked}
-            onChange={(e) => absorb.onToggle(e.target.checked)}
-            className="accent-accent"
-          />
-          Spend whatever&rsquo;s left each year
-          <FieldTooltip text="The plan spends this household's entire remaining cash flow — after tax, debt payments, other expenses and savings — on living costs. The amount above becomes a minimum; leave it at $0 if they have no spending floor." />
-        </label>
-      ) : null}
+      <label className="mt-1.5 flex items-center gap-2 text-[12px] text-ink-2">
+        <input
+          type="checkbox"
+          checked={absorb.checked}
+          onChange={(e) => absorb.onToggle(e.target.checked)}
+          className="accent-accent"
+        />
+        Spend whatever&rsquo;s left each year
+        <FieldTooltip text="The plan spends this household's entire remaining cash flow — after tax, debt payments, other expenses and savings — on living costs. The amount above becomes a minimum; leave it at $0 if they have no spending floor." />
+      </label>
       <SolverFieldActions>
         {solve ? <LivingExpenseSolveButton {...solve} /> : null}
         <SolverBaseHint

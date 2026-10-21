@@ -12,8 +12,8 @@
 // requireOrgId()/auth()), and NextResponse.json(...) becomes writeError(...) /
 // {ok:true,...}.
 import { db } from "@/db";
-import { accounts, expenseDedicatedAccounts, expenses, planSettings } from "@/db/schema";
-import { eq, and, ne, inArray } from "drizzle-orm";
+import { accounts, expenseDedicatedAccounts, expenses } from "@/db/schema";
+import { eq, and, ne, inArray, lte, gte } from "drizzle-orm";
 import { verifyClientAccessAs, type Principal } from "@/lib/clients/authz";
 import {
   assertAccountsInClient,
@@ -26,7 +26,6 @@ import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { summarizeZodIssues } from "@/lib/schemas/common";
 import { expenseCreateSchema, expenseUpdateSchema } from "@/lib/schemas/expenses";
 import { goalFundingError, defaultPayShortfallOutOfPocket } from "@/lib/goals";
-import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
 import { hasLivingItems, withLivingItemsTotal } from "@/lib/living-expense-items";
 import { baseCaseScenarioId } from "./base-case";
 import { replaceDedicatedAccounts } from "./dedicated-accounts";
@@ -52,47 +51,23 @@ function dedupeDedicatedIds(ids: string[] | undefined): string[] | undefined {
 // rather than as two copies that can drift apart.
 const ABSORB_NON_LIVING_ERROR =
   "Only living expenses can spend the remaining cash flow.";
-// Retirement living rows are excluded on purpose. The solver's
-// `living-expense-scale` / `living-expense-amount` lever targets exactly those
-// rows and has no absorb guard of its own: on a row that already spends every
-// leftover dollar, scaling `annualAmount` moves only the FLOOR, so the server's
-// bisect search is flat across most of its range and the retirement solve comes
-// back "unreachable" or simply wrong. Absorption is a working-years lifestyle
-// assumption (see surplus-spend.ts), so the current row is the only one that
-// may carry it.
-const ABSORB_RETIREMENT_ERROR =
-  "Only the current living expenses row can spend the remaining cash flow.";
 
 // Items only mean anything on a living row: they set its annualAmount. The
 // screens offer them on the Current row alone; the server's rule is the
 // looser "living" so it never has to resolve which slot a row is.
 const LIVING_ITEMS_NON_LIVING_ERROR = "Only living expenses can be itemized.";
 
-/** The base case's plan start year for a (client, scenario), or null when the
- *  scenario has no settings row. Only read on the absorb path, so the ordinary
- *  expense write still costs exactly the queries it did before. */
-async function planStartYearFor(
-  clientId: string,
-  scenarioId: string,
-  handle?: DbOrTx,
-): Promise<number | null> {
-  const [row] = await (handle ?? db)
-    .select({ y: planSettings.planStartYear })
-    .from(planSettings)
-    .where(
-      and(eq(planSettings.clientId, clientId), eq(planSettings.scenarioId, scenarioId)),
-    );
-  return row?.y ?? null;
-}
-
 /**
- * The at-most-one-absorbing-row-per-(client, scenario) rule. Pass
- * `excludeExpenseId` on update: without it, re-saving the absorbing row would
- * find itself and block the save forever.
+ * The at-most-one-absorbing-row-per-YEAR rule: a (client, scenario) may hold
+ * several absorbing rows — typically Current and Retirement — as long as their
+ * year windows don't overlap, so no year has two rows claiming the leftover.
+ * Pass `excludeExpenseId` on update: without it, re-saving the absorbing row
+ * would find itself and block the save forever.
  */
 async function absorbingRowConflict(
   clientId: string,
   scenarioId: string,
+  years: { startYear: number; endYear: number },
   excludeExpenseId?: string,
   handle?: DbOrTx,
 ): Promise<{ ok: false; status: number; error: string } | null> {
@@ -104,13 +79,15 @@ async function absorbingRowConflict(
         eq(expenses.clientId, clientId),
         eq(expenses.scenarioId, scenarioId),
         eq(expenses.absorbsRemainingCashFlow, true),
+        lte(expenses.startYear, years.endYear),
+        gte(expenses.endYear, years.startYear),
         ...(excludeExpenseId ? [ne(expenses.id, excludeExpenseId)] : []),
       ),
     );
   return other
     ? writeError(
         400,
-        `Another living expense ("${other.name}") already spends the remaining cash flow.`,
+        `Another living expense ("${other.name}") already spends the remaining cash flow in those years.`,
       )
     : null;
 }
@@ -177,22 +154,13 @@ export async function createExpenseForClient(args: {
   // ignores it elsewhere, but a stored-but-inert flag is a lie the UI renders.
   if (p.absorbsRemainingCashFlow) {
     if (p.type !== "living") return writeError(400, ABSORB_NON_LIVING_ERROR);
-    const planStart = await planStartYearFor(clientId, scenarioId, args.tx);
-    if (
-      planStart != null &&
-      isRetirementLivingExpense(
-        {
-          type: p.type,
-          startYear: p.startYear,
-          endYear: p.endYear,
-          startYearRef: (p.startYearRef ?? null) as string | null,
-        },
-        planStart,
-      )
-    ) {
-      return writeError(400, ABSORB_RETIREMENT_ERROR);
-    }
-    const conflict = await absorbingRowConflict(clientId, scenarioId, undefined, args.tx);
+    const conflict = await absorbingRowConflict(
+      clientId,
+      scenarioId,
+      { startYear: p.startYear, endYear: p.endYear },
+      undefined,
+      args.tx,
+    );
     if (conflict) return conflict;
   }
 
@@ -289,7 +257,6 @@ export async function updateExpenseForClient(args: {
         scenarioId: string;
         startYear: number;
         endYear: number;
-        startYearRef: ExpenseRow["startYearRef"];
         livingItems: ExpenseRow["livingItems"];
       }
     | undefined;
@@ -307,7 +274,6 @@ export async function updateExpenseForClient(args: {
         // only flips the flag carries no years — so they come from the stored row.
         startYear: expenses.startYear,
         endYear: expenses.endYear,
-        startYearRef: expenses.startYearRef,
         livingItems: expenses.livingItems,
       })
       .from(expenses)
@@ -329,26 +295,16 @@ export async function updateExpenseForClient(args: {
       return writeError(400, ABSORB_NON_LIVING_ERROR);
     }
     if (target) {
-      const planStart = await planStartYearFor(clientId, target.scenarioId, args.tx);
-      if (
-        planStart != null &&
-        isRetirementLivingExpense(
-          {
-            type: p.type ?? target.type,
-            startYear: p.startYear ?? target.startYear,
-            endYear: p.endYear ?? target.endYear,
-            // `??` would treat an explicit null (the caller CLEARING the ref) as
-            // "absent" and resurrect the stored anchor, so test for undefined.
-            startYearRef: (p.startYearRef !== undefined
-              ? p.startYearRef
-              : target.startYearRef) as string | null,
-          },
-          planStart,
-        )
-      ) {
-        return writeError(400, ABSORB_RETIREMENT_ERROR);
-      }
-      const conflict = await absorbingRowConflict(clientId, target.scenarioId, expenseId, args.tx);
+      const conflict = await absorbingRowConflict(
+        clientId,
+        target.scenarioId,
+        {
+          startYear: p.startYear ?? target.startYear,
+          endYear: p.endYear ?? target.endYear,
+        },
+        expenseId,
+        args.tx,
+      );
       if (conflict) return conflict;
     }
   }

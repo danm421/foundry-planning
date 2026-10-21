@@ -249,6 +249,16 @@ describe("buildPlanFacts — setup facts", () => {
     expect(buildPlanFacts({ tree, projection: null, extras: EXTRAS, today: TODAY }).goalCount).toBe(before + 2);
   });
 
+  it("counts only a CURRENT living row spending what's left as absorbing the surplus", () => {
+    const base = buildClientData();
+    const facts = (expenses: typeof base.expenses) =>
+      buildPlanFacts({ tree: buildClientData({ expenses }), projection: null, extras: EXTRAS, today: TODAY });
+    const current = { ...base.expenses[0], id: "cur", type: "living" as const, startYear: 2026, endYear: 2034 };
+    const retirement = { ...current, id: "ret", startYear: 2035, endYear: 2060, startYearRef: "client_retirement" };
+    expect(facts([current, { ...retirement, absorbsRemainingCashFlow: true }]).absorbsSurplus).toBe(false);
+    expect(facts([{ ...current, absorbsRemainingCashFlow: true }, retirement]).absorbsSurplus).toBe(true);
+  });
+
   it("names the stress tests the plan runs under, as the Assumptions page does", () => {
     const tree = buildClientData({
       planSettings: {
