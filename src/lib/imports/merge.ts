@@ -26,7 +26,7 @@ type RowWithMaybeProvenance = {
  * non-empty value across files; conflicts are recorded in warnings.
  *
  * Accounts are the one section this cleans before copying, via
- * `accountRowsFor` — four passes that are all scoped to a SINGLE document
+ * `accountRowsFor` — five passes that are all scoped to a SINGLE document
  * (read its comment for the order and why). Across files this is still a
  * concat that joins nothing: two statements for one account arrive as two
  * rows, and resolving that is `mergeAcrossFiles`/`mergeSection`'s job, which
@@ -73,9 +73,10 @@ export function mergeExtractionResults(
       endYearRef: coerceYearRef(row.endYearRef),
     });
 
-    // `accountRowsFor`, not `result.extracted.accounts` — the four per-file
+    // `accountRowsFor`, not `result.extracted.accounts` — the per-file
     // cleanup passes (ghost rows, a debt filed as an asset, a fabricated or
-    // plan or page-footer number, one account read twice in one document) were
+    // plan or page-footer number, one account read twice in one document, a
+    // margin loan's net value) were
     // shipped on `mergeAcrossFiles` only, which left them off the `/match`
     // route this merge backs: Details→Import→Extract, the onboarding drawer
     // and Forge mode "updating". Same documents, same defects, three surfaces.

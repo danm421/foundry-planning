@@ -2701,69 +2701,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             </div>
             )}
 
-            {category === "taxable" && (
-              <fieldset className="col-span-2 grid grid-cols-3 gap-4 rounded-md border border-hair p-3">
-                <legend className="px-1 text-sm font-medium text-ink-2">Margin loan</legend>
-                <div>
-                  <label className={fieldLabelClassName} htmlFor="margin-balance">Margin loan balance ($)</label>
-                  <CurrencyInput id="margin-balance" name="marginBalance" value={marginBalance}
-                    onChange={(raw) => setMarginBalance(raw)} className={inputClassName} />
-                </div>
-                <div>
-                  <label className={fieldLabelClassName} htmlFor="margin-interest-rate">Margin interest rate (%)</label>
-                  <PercentInput id="margin-interest-rate" name="marginInterestRate" value={marginInterestRate}
-                    onChange={(raw) => setMarginInterestRate(raw)} className={inputClassName} />
-                </div>
-                <div>
-                  <label className={fieldLabelClassName} htmlFor="margin-call-pct">
-                    Margin call level (%) <FieldTooltip text="We flag any year the account's net value falls below this share of its securities. Brokerages typically require 25–30%." />
-                  </label>
-                  <PercentInput id="margin-call-pct" name="marginCallPct" value={marginCallPct}
-                    onChange={(raw) => setMarginCallPct(raw)} className={inputClassName} />
-                </div>
-                <div className="col-span-3 space-y-2">
-                  {canBorrowOnMargin ? (
-                    <label className="flex items-center gap-2 text-sm text-ink-2">
-                      <input type="checkbox" aria-label="Borrow to cover spending" checked={marginBorrowEnabled}
-                        onChange={(e) => setMarginBorrowEnabled(e.target.checked)} />
-                      <span>Borrow to cover spending</span>
-                      <FieldTooltip text="When spending runs short, the plan borrows against these securities instead of selling them: after cash, before any sale, up to half the securities' value." />
-                    </label>
-                  ) : (
-                    <p className="text-xs text-ink-3">Borrowing to cover spending is available when the household owns the whole account.</p>
-                  )}
-                  {canBorrowOnMargin && marginBorrowEnabled && milestones && (
-                    <div className="max-w-xs">
-                      <MilestoneYearPicker id="marginBorrowStartYear" name="marginBorrowStartYear" label="Borrow from"
-                        value={marginBorrowStartYear ?? milestones.planStart} yearRef={marginBorrowStartYearRef}
-                        milestones={milestones} clientFirstName={clientFirstName} spouseFirstName={spouseFirstName}
-                        position="start"
-                        onChange={(y, ref) => { setMarginBorrowStartYear(y); setMarginBorrowStartYearRef(ref); }} />
-                    </div>
-                  )}
-                  {milestones && (
-                    <label className="flex items-center gap-2 text-sm text-ink-2">
-                      <input type="checkbox" aria-label="Repay the loan in a chosen year" checked={marginRepayEnabled}
-                        onChange={(e) => setMarginRepayEnabled(e.target.checked)} />
-                      <span>Repay the loan in a chosen year</span>
-                    </label>
-                  )}
-                  {marginRepayEnabled && milestones && (
-                    <div className="max-w-xs">
-                      <MilestoneYearPicker id="marginRepayYear" name="marginRepayYear" label="Repay in"
-                        value={marginRepayYear ?? defaultMarginRepayYear} yearRef={marginRepayYearRef}
-                        milestones={milestones} clientFirstName={clientFirstName} spouseFirstName={spouseFirstName}
-                        position="start"
-                        onChange={(y, ref) => { setMarginRepayYear(y); setMarginRepayYearRef(ref); }} />
-                      <p className="mt-1 text-[11px] text-ink-4">That year the plan sells enough securities to clear the loan.</p>
-                    </div>
-                  )}
-                  {marginRepayError && <p role="alert" className="text-xs text-crit">{marginRepayError}</p>}
-                </div>
-                <p className="col-span-3 text-xs text-ink-3">Interest is added to the loan each year, as brokerages do.</p>
-              </fieldset>
-            )}
-
             {category !== "stock_options" && <div className={`col-span-2 grid gap-4 ${category === "real_estate" ? "grid-cols-3" : "grid-cols-2"}`}>
               {usesGrowthDropdown ? (
                 <GrowthRateField
@@ -2860,6 +2797,69 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 </>
               )}
             </div>}
+
+            {category === "taxable" && (
+              <fieldset className="col-span-2 grid grid-cols-3 gap-4 rounded-md border border-hair p-3">
+                <legend className="px-1 text-sm font-medium text-ink-2">Margin loan</legend>
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="margin-balance">Margin loan balance ($)</label>
+                  <CurrencyInput id="margin-balance" name="marginBalance" value={marginBalance}
+                    onChange={(raw) => setMarginBalance(raw)} className={inputClassName} />
+                </div>
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="margin-interest-rate">Margin interest rate (%)</label>
+                  <PercentInput id="margin-interest-rate" name="marginInterestRate" value={marginInterestRate}
+                    onChange={(raw) => setMarginInterestRate(raw)} className={inputClassName} />
+                </div>
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="margin-call-pct">
+                    Margin call level (%) <FieldTooltip text="We flag any year the account's net value falls below this share of its securities. Brokerages typically require 25–30%." />
+                  </label>
+                  <PercentInput id="margin-call-pct" name="marginCallPct" value={marginCallPct}
+                    onChange={(raw) => setMarginCallPct(raw)} className={inputClassName} />
+                </div>
+                <div className="col-span-3 space-y-2">
+                  {canBorrowOnMargin ? (
+                    <label className="flex items-center gap-2 text-sm text-ink-2">
+                      <input type="checkbox" aria-label="Borrow to cover spending" checked={marginBorrowEnabled}
+                        onChange={(e) => setMarginBorrowEnabled(e.target.checked)} />
+                      <span>Borrow to cover spending</span>
+                      <FieldTooltip text="When spending runs short, the plan borrows against these securities instead of selling them: after cash, before any sale, up to half the securities' value." />
+                    </label>
+                  ) : (
+                    <p className="text-xs text-ink-3">Borrowing to cover spending is available when the household owns the whole account.</p>
+                  )}
+                  {canBorrowOnMargin && marginBorrowEnabled && milestones && (
+                    <div className="max-w-xs">
+                      <MilestoneYearPicker id="marginBorrowStartYear" name="marginBorrowStartYear" label="Borrow from"
+                        value={marginBorrowStartYear ?? milestones.planStart} yearRef={marginBorrowStartYearRef}
+                        milestones={milestones} clientFirstName={clientFirstName} spouseFirstName={spouseFirstName}
+                        position="start"
+                        onChange={(y, ref) => { setMarginBorrowStartYear(y); setMarginBorrowStartYearRef(ref); }} />
+                    </div>
+                  )}
+                  {milestones && (
+                    <label className="flex items-center gap-2 text-sm text-ink-2">
+                      <input type="checkbox" aria-label="Repay the loan in a chosen year" checked={marginRepayEnabled}
+                        onChange={(e) => setMarginRepayEnabled(e.target.checked)} />
+                      <span>Repay the loan in a chosen year</span>
+                    </label>
+                  )}
+                  {marginRepayEnabled && milestones && (
+                    <div className="max-w-xs">
+                      <MilestoneYearPicker id="marginRepayYear" name="marginRepayYear" label="Repay in"
+                        value={marginRepayYear ?? defaultMarginRepayYear} yearRef={marginRepayYearRef}
+                        milestones={milestones} clientFirstName={clientFirstName} spouseFirstName={spouseFirstName}
+                        position="start"
+                        onChange={(y, ref) => { setMarginRepayYear(y); setMarginRepayYearRef(ref); }} />
+                      <p className="mt-1 text-[11px] text-ink-4">That year the plan sells enough securities to clear the loan.</p>
+                    </div>
+                  )}
+                  {marginRepayError && <p role="alert" className="text-xs text-crit">{marginRepayError}</p>}
+                </div>
+                <p className="col-span-3 text-xs text-ink-3">Interest is added to the loan each year, as brokerages do.</p>
+              </fieldset>
+            )}
 
             {/* Roth rollover (SECURE 2.0) */}
             {category === "education_savings" && (

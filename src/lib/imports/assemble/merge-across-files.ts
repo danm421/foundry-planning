@@ -12,6 +12,7 @@ import type {
 } from "@/lib/extraction/types";
 import { accountLast4, documentVouchesForLast4 } from "@/lib/extraction/account-number";
 import { stripLast4Suffix } from "@/lib/extraction/condense-account-name";
+import { grossUpMarginLoans } from "@/lib/extraction/margin-loans";
 import { holdingKey } from "@/lib/extraction/normalize-holdings";
 import {
   emptyImportPayload,
@@ -1685,9 +1686,9 @@ function stampHoldingIds(accounts: Annotated<ExtractedAccount>[]): void {
  * file for exactly this reason.
  */
 /**
- * ONE file's account rows, cleaned, in the order the four passes have to run.
+ * ONE file's account rows, cleaned, in the order the five passes have to run.
  *
- * They are a pipeline rather than four nested calls because the ORDER is the
+ * They are a pipeline rather than five nested calls because the ORDER is the
  * part worth stating, and nesting states it inside-out:
  *
  * 1. `dropEmptyRows` first. A row asserting nothing cannot be judged for a
@@ -1700,8 +1701,9 @@ function stampHoldingIds(accounts: Annotated<ExtractedAccount>[]): void {
  * 3. `clearUntrustedNumbers` before the collapse, because the collapse buckets
  *    on the account number, and a plan number left in place buckets two
  *    unrelated accounts together.
- * 4. `collapseDuplicateReadings` last — it is the only pass that JOINS rows,
- *    and it should join the cleaned ones.
+ * 4. `collapseDuplicateReadings` — it is the only pass that JOINS rows, and
+ *    it should join the cleaned ones.
+ * 5. `grossUpMarginLoans` last: it changes the balance the collapse matches on.
  *
  * Everything here is scoped to one document. The cross-file judgement arrives
  * as `untrusted`, and the two number judgements are unioned rather than
@@ -1721,7 +1723,10 @@ export function accountRowsFor(
   let rows = dropEmptyRows(result.extracted.accounts, sourceName, warnings);
   rows = dropDebtsFiledAsAssets(rows, result.extracted.liabilities, sourceName, warnings);
   rows = clearUntrustedNumbers(rows, untrustedHere, sourceName, warnings);
-  return collapseDuplicateReadings(rows, sourceName, warnings);
+  rows = collapseDuplicateReadings(rows, sourceName, warnings);
+  // After the collapse, which matches readings on the balance as printed —
+  // NET of a margin loan. See `applyMarginLoans`.
+  return grossUpMarginLoans(rows);
 }
 
 export function mergeAcrossFiles(

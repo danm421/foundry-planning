@@ -550,6 +550,8 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
         grantor: a.grantorFamilyMemberId ? member(a.grantorFamilyMemberId) : a.grantorName,
         propertyAddress: a.propertyAddress,
         annualPropertyTax: Number(a.annualPropertyTax),
+        marginBalance: Number(a.marginBalance),
+        marginInterestRate: Number(a.marginInterestRate),
       },
       facts: accountFacts(a),
     })),

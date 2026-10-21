@@ -268,3 +268,29 @@ describe("one document read twice is one account on /match", () => {
     expect(accounts).toHaveLength(2);
   });
 });
+
+describe("a margin loan on /match", () => {
+  function onPages(pageRange: [number, number], row: Partial<ExtractedAccount> & { name: string }) {
+    return { ...row, __provenance: { section: "accounts", pageRange } } as ExtractedAccount;
+  }
+
+  // Both readings print the NET balance; only one carries the loan. They must
+  // still match as one account, and only then does the value become gross.
+  it("collapses two readings at the printed balance, then adds the loan back", () => {
+    const { accounts } = merged("schwab-q3.pdf", {
+      accounts: [
+        onPages([1, 1], { name: "Joint Brokerage", category: "taxable", value: 500_000 }),
+        onPages([3, 5], {
+          name: "Joint Brokerage x4321",
+          category: "taxable",
+          accountNumberLast4: "4321",
+          value: 500_000,
+          marginBalance: 40_000,
+        }),
+      ],
+    });
+
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({ value: 540_000, marginBalance: 40_000 });
+  });
+});

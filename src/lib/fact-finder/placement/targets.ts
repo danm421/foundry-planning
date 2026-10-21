@@ -171,6 +171,10 @@ export const TARGETS: Readonly<Record<TargetKind, TargetSpec>> = {
       grantor: field("Grantor", "personOrName"),
       propertyAddress: field("Address", "text", AI),
       annualPropertyTax: field("Annual property tax", "money", AI),
+      // Not AI-proposable: the leftovers step offers a field on every account,
+      // and only a taxable one can carry a loan. Statements fill these.
+      marginBalance: field("Margin loan", "money"),
+      marginInterestRate: field("Margin rate", "rate"),
     },
   },
   business_account: {

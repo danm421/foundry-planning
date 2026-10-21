@@ -133,6 +133,16 @@ export interface ExtractedAccount {
   /** Individual positions, present only when holdings extraction was enabled. */
   holdings?: ExtractedHolding[];
   /**
+   * ── taxable only ──────────────────────────────────────────────────────────
+   * The account's margin loan, a positive dollar amount, and its annual rate as
+   * a decimal. `value` is the securities' full value and the loan sits beside
+   * it, as on the accounts table. The model reports the account's NET value,
+   * and a stored extraction keeps it; `grossUpMarginLoans` adds the loan back
+   * in the merge (see `applyMarginLoans`).
+   */
+  marginBalance?: number;
+  marginInterestRate?: number;
+  /**
    * ── 529 / education_savings only ──────────────────────────────────────────
    * A 529 is attributed to its designated BENEFICIARY, not to household
    * owners: `owners[]` is ignored for these rows and no account_owners rows

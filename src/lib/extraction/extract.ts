@@ -31,6 +31,7 @@ import { TAX_RETURN_PROMPT, TAX_RETURN_VERSION } from "./prompts/tax-return";
 import { FACT_FINDER_CLASSIFIER_VERSION } from "./prompts/fact-finder-classifier";
 import { redactSsns } from "./redact-ssn";
 import { composeAccountName } from "./condense-account-name";
+import { applyMarginLoans } from "./margin-loans";
 import { completeExtractedAccounts } from "./holdings-completion";
 import { extractWithMultiPass, type MultiPassResult } from "./multi-pass";
 import { buildPageOutline } from "./page-outline";
@@ -250,6 +251,14 @@ function composeAccountNames(
     );
 }
 
+/** `applyMarginLoans`, written back onto the document's lists. Returns its warnings. */
+function placeMarginLoans(extracted: ExtractionResult["extracted"]): string[] {
+    const placed = applyMarginLoans(extracted);
+    extracted.accounts = placed.accounts;
+    extracted.liabilities = placed.liabilities;
+    return placed.warnings;
+}
+
 function getFileExtension(fileName: string): string {
     return fileName.split(".").pop()?.toLowerCase() ?? "";
 }
@@ -465,7 +474,7 @@ export async function extractDocument(
         if (multi) {
             const extracted = flattenMultiPass(multi);
             extracted.accounts = composeAccountNames(extracted.accounts);
-            warnings.push(...multi.warnings);
+            warnings.push(...multi.warnings, ...placeMarginLoans(extracted));
             // R5: this path returns before the single-pass truncation below
             // (step 5, `MAX_DOCUMENT_TEXT_CHARS`), so redactedPages is
             // otherwise uncapped - a long fact finder could exceed the
@@ -597,6 +606,9 @@ export async function extractDocument(
     };
 
     extracted.accounts = composeAccountNames(extracted.accounts);
+    // Before the holdings completion below, so a margin loan's negative cash
+    // line isn't counted as a position that undershoots the stated value.
+    warnings.push(...placeMarginLoans(extracted));
 
     // Complete any holdings table the model truncated. Only fires per-account
     // when holdings materially undershoot the stated value (continuation passes).

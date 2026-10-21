@@ -75,7 +75,7 @@ const SAMPLE = stateWith({
   taxable: [
     rowOf("tax1", {
       accountName: "Schwab Brokerage", currentValue: 250000, costBasis: 180000, last4: "5678", owner: "Joint", jointTitling: "JTWROS",
-      custodian: "Schwab", accountType: "Brokerage",
+      custodian: "Schwab", accountType: "Brokerage", marginLoan: 20000, marginRate: 8.5,
     }),
     rowOf("tax2", { accountName: "Trust Brokerage", currentValue: 90000, owner: "Trust / entity", ownerEntity: "Hendricks Family Trust" }),
   ],

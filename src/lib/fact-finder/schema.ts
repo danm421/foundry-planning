@@ -277,6 +277,9 @@ export const FACT_FINDER_SECTIONS: readonly FFSection[] = [
       c("custodian", "Custodian", "text", 7),
       c("accountType", "Account type", "choice", 8, TAXABLE_TYPE),
       ownerEntity,
+      // Screen-only: a statement reads them; the printed form has no room.
+      c("marginLoan", "Margin loan", "money", undefined),
+      c("marginRate", "Margin rate %", "percent", undefined),
     ],
   },
   {

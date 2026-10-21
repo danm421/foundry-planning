@@ -55,11 +55,11 @@ describe("placements", () => {
     expect(Object.keys(map.placements)).toEqual(findSection(map.sectionId)!.columns.map((c) => c.id));
   });
 
-  it("Interest rate % is the only percent column of the four sections", () => {
+  it("Interest rate % and Margin rate % are the only percent columns of the four sections", () => {
     const percents = ["cash", "taxable", "retirement", "edu"].flatMap((id) =>
       findSection(id)!.columns.filter((c) => c.kind === "percent").map((c) => `${id}.${c.id}`),
     );
-    expect(percents).toEqual(["cash.interestRate"]);
+    expect(percents).toEqual(["cash.interestRate", "taxable.marginRate"]);
   });
 });
 
@@ -207,6 +207,12 @@ describe("TAXABLE_MAP", () => {
       { key: "basis", value: 180000, from: [c("costBasis")] },
     ]);
     expect(draft.warnings).toEqual(["Joint titling applies only to a joint account."]);
+  });
+
+  it("a margin loan is the account's own loan, its rate a fraction", () => {
+    const row = rowOf("tax-1", { accountName: "Schwab Brokerage", currentValue: 540000, marginLoan: 40000, marginRate: 8.5 });
+    const [draft] = place(TAXABLE_MAP, [row]).drafts;
+    expect(values(draft)).toMatchObject({ value: 540000, marginBalance: 40000, marginInterestRate: 0.085 });
   });
 
   describe("a trust-owned account", () => {

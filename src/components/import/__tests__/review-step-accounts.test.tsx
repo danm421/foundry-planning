@@ -261,3 +261,35 @@ describe("ReviewStepAccounts link picker", () => {
     ]);
   });
 });
+
+describe("ReviewStepAccounts — margin loan", () => {
+  it("shows the loan, its rate and the net value on a taxable row that has one", () => {
+    render(
+      <ReviewStepAccounts
+        accounts={[{ name: "Joint Brokerage", category: "taxable", value: 540_000, marginBalance: 40_000, marginInterestRate: 0.085 }]}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.getByText("Margin loan")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("8.50")).toBeInTheDocument();
+    expect(screen.getByText("$500,000")).toBeInTheDocument();
+  });
+
+  it("stays out of a row with no loan", () => {
+    render(<ReviewStepAccounts accounts={[{ name: "Joint Brokerage", category: "taxable", value: 540_000 }]} onChange={() => {}} />);
+    expect(screen.queryByText("Margin loan")).not.toBeInTheDocument();
+  });
+
+  it("clearing the loan keeps the fields, at 0", () => {
+    const onChange = vi.fn();
+    render(
+      <ReviewStepAccounts
+        accounts={[{ name: "Joint Brokerage", category: "taxable", value: 540_000, marginBalance: 40_000 }]}
+        onChange={onChange}
+      />,
+    );
+    const loan = screen.getByText("Margin loan").parentElement!.querySelector("input")!;
+    fireEvent.change(loan, { target: { value: "" } });
+    expect(onChange).toHaveBeenLastCalledWith([expect.objectContaining({ marginBalance: 0 })]);
+  });
+});

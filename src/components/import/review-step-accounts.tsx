@@ -7,7 +7,9 @@ import type { MatchAnnotation } from "@/lib/imports/types";
 import type { FieldMap } from "@/lib/imports/merge-strategies";
 import { candidatesForRow } from "@/lib/imports/candidates-for-row";
 import { rankAccountCandidates } from "@/lib/imports/rank-account-candidates";
+import { resolveAccountCategory } from "@/lib/imports/commit/account-category";
 import { CurrencyInput } from "@/components/currency-input";
+import { PercentInput } from "@/components/percent-input";
 import { GrowthRateField, parseGrowthSourceSelection } from "@/components/forms/growth-rate-field";
 import { inputClassName, selectClassName, fieldLabelClassName } from "@/components/forms/input-styles";
 import { OwnershipEditor } from "@/components/forms/ownership-editor";
@@ -53,6 +55,8 @@ const ACCOUNT_FIELD_MAP: FieldMap<ExtractedAccount> = {
   modelPortfolioId: "replace",
   tickerPortfolioId: "replace",
   rmdEnabled: "replace-if-non-null",
+  marginBalance: "replace-if-non-null",
+  marginInterestRate: "replace-if-non-null",
 };
 
 const ACCOUNT_FIELD_LABELS: Partial<Record<keyof ExtractedAccount, string>> = {
@@ -67,6 +71,8 @@ const ACCOUNT_FIELD_LABELS: Partial<Record<keyof ExtractedAccount, string>> = {
   modelPortfolioId: "Model portfolio",
   tickerPortfolioId: "Fund portfolio",
   rmdEnabled: "RMD",
+  marginBalance: "Margin loan",
+  marginInterestRate: "Margin rate",
 };
 
 interface ReviewStepAccountsProps {
@@ -497,6 +503,38 @@ export default function ReviewStepAccounts({
                     }
                   />
                 </div>
+                {/* Only when the document showed a loan. Clearing it writes 0,
+                    not undefined, so the fields don't vanish mid-edit; the
+                    commit writes no loan for a 0. */}
+                {account.marginBalance !== undefined && resolveAccountCategory(account) === "taxable" && (
+                  <>
+                    <div className="col-span-4">
+                      <label className={fieldLabelClassName}>Margin loan</label>
+                      <CurrencyInput
+                        value={String(account.marginBalance)}
+                        onChange={(raw) => updateField(i, "marginBalance", raw === "" ? 0 : Number(raw))}
+                        className={TABULAR}
+                      />
+                    </div>
+                    <div className="col-span-4">
+                      <label className={fieldLabelClassName}>Margin rate</label>
+                      <PercentInput
+                        value={account.marginInterestRate != null ? (account.marginInterestRate * 100).toFixed(2) : ""}
+                        onChange={(raw) =>
+                          updateField(i, "marginInterestRate", raw === "" ? undefined : Number(raw) / 100)
+                        }
+                        className={TABULAR}
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="col-span-4">
+                      <label className={fieldLabelClassName}>Net of loan</label>
+                      <div className={`${TABULAR} flex h-9 items-center text-[13px] text-ink-2`}>
+                        ${Math.round((account.value ?? 0) - account.marginBalance).toLocaleString()}
+                      </div>
+                    </div>
+                  </>
+                )}
                 {/* ── Provenance: where did it come from, how is it handled? ── */}
                 <div className="col-span-3">
                   <label className={fieldLabelClassName}>Acct ####</label>

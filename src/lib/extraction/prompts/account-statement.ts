@@ -1,5 +1,5 @@
-export const ACCOUNT_STATEMENT_VERSION = "2026-09-17.1-liabilities";
-export const ACCOUNT_STATEMENT_HOLDINGS_VERSION = "2026-08-04.1-grouped-holdings-report";
+export const ACCOUNT_STATEMENT_VERSION = "2026-10-21.1-margin-on-account";
+export const ACCOUNT_STATEMENT_HOLDINGS_VERSION = "2026-10-21.1-margin-on-account-holdings";
 
 const HOLDINGS_FIELD = `,
       "holdings": [
@@ -19,6 +19,7 @@ const HOLDINGS_RULES = `
   - If the position has NO ticker (bonds, untickered funds): omit "ticker", put the description (for a bond INCLUDING its CUSIP) in "name", set "shares", "costBasis", and "price" if shown — and ALWAYS set "marketValue" to the position's market value (dollar total) exactly as shown on the statement. For a bond, "price" is quoted per $100 of par, so shares × price is NOT the market value — capture the statement's market-value column in "marketValue".
   - For cash / money-market sweep with no ticker: set "name" to "Cash", "price" to 1, and "shares" to the cash dollar amount.
   - Only set the numeric fields you can read from the statement; omit any you can't — but a position's market value is shown on every statement, so always capture it for untickered positions.
+  - On a margined account, a negative cash or margin-debit line is the margin loan, not a position: leave it out of "holdings" (it goes in "marginBalance").
 - GROUPED HOLDINGS REPORTS. A "Holdings Detail" / portfolio report lists every position in ONE table, grouped under account HEADER rows (e.g. "Inh. IRA x7254", "Taxable Account x0028") instead of giving each account its own section. On those:
   - Every position belongs to the nearest account header ABOVE it. That header keeps applying when its table continues onto the next page WITHOUT repeating the header — do not re-attach a continued account's positions to a different account, and do not start a new account at a page break.
   - Two accounts often share the same type name and differ only by account number (two rows both titled "Taxable Account"). Keep them as SEPARATE accounts whose "accountNumberLast4" differ — never merge two accounts just because their names match, and never move positions between them.
@@ -43,6 +44,8 @@ Return a JSON object with this exact structure:
       "accountNumberLast4": "Last 4 characters of the account number, digits or alphanumeric",
       "custodian": "Custodian / institution name (e.g. 'Fidelity', 'Charles Schwab')",
       "statementDate": "The statement's period-end or 'as of' date, ISO YYYY-MM-DD. Omit entirely if no date is legible for this account — never guess it.",
+      "marginBalance": "Brokerage accounts ONLY. The margin loan owed on this account, as a POSITIVE number. Omit when there is no margin loan.",
+      "marginInterestRate": "Brokerage accounts ONLY. The margin loan's annual interest rate, as a decimal. Omit if not printed.",
       "beneficiaryNameHint": "529 / education accounts ONLY. The designated beneficiary / student, copied verbatim. Omit on every other account.",
       "grantorNameHint": "529 / education accounts ONLY. The account owner / participant / custodian-of-record, copied verbatim. Omit on every other account."${withHoldings ? HOLDINGS_FIELD : ""}
     }
@@ -61,7 +64,7 @@ Return a JSON object with this exact structure:
   ],
   "liabilities": [
     {
-      "name": "SHORT description of the debt (e.g. 'Mortgage', 'HELOC', 'Auto Loan', 'Margin Balance'). Do NOT include the lender or the address — both have their own fields.",
+      "name": "SHORT description of the debt (e.g. 'Mortgage', 'HELOC', 'Auto Loan'). Do NOT include the lender or the address — both have their own fields.",
       "balance": 0,
       "interestRate": 0,
       "monthlyPayment": 0,
@@ -92,9 +95,13 @@ Extraction rules:
   - A 529 has no required minimum distributions, so never claim one.
   - When the statement only names one person, fill the field it actually labels and omit the other — do not guess the second name.
 - Life-insurance policies (whole, universal, variable, or term) go ONLY in the "lifePolicies" array, NOT in "accounts". Capture the death benefit as "faceValue" and the cash / surrender value as "cashValue" when both appear. Example: "Brighthouse ($3mm Face to Maggie) $588,000" -> faceValue 3000000, cashValue 588000, insuredPerson "spouse". Set policyType to "whole", "universal", or "variable" for cash-value policies (default "universal" if unspecified) and "term" only when clearly a term policy.
-- Use the total market value for "value", not individual position values
+- Use the total market value for "value", not individual position values (on a margined account, the net value — see MARGIN LOANS)
 - Extract cost basis if shown as the "basis" field
-- DEBTS vs. ASSETS. A mortgage, HELOC, home-equity loan, auto loan, student loan, personal loan, margin balance or credit-card balance is a DEBT. Every one of them goes in "liabilities" and NEVER in "accounts".
+- MARGIN LOANS. A brokerage account can carry a margin loan, printed as "margin balance", "margin loan", "margin debit", "debit balance", or a NEGATIVE cash balance. It belongs to that ACCOUNT:
+  - Put the amount owed in the account's "marginBalance" as a POSITIVE number, and the margin rate in "marginInterestRate" if printed.
+  - On a margined account, "value" is the account's NET value after the loan — the statement's "Net Account Value" / "Total Account Value" — not the gross value of its securities.
+  - Report the loan ONCE. Only when this text lists it apart from its account (e.g. a liabilities page that shows no account) put it in "liabilities" instead, named "Margin Loan".
+- DEBTS vs. ASSETS. A mortgage, HELOC, home-equity loan, auto loan, student loan, personal loan or credit-card balance is a DEBT. Every one of them goes in "liabilities" and NEVER in "accounts". (A margin loan is the exception: see MARGIN LOANS above.)
   - A mortgage statement is a statement ABOUT a property, but the money it reports is owed, not owned. Read it as both: the property is an asset, the loan against it is a liability, and one statement can state both. Put the property in "accounts" (category "real_estate") ONLY if the document states what the property is WORTH. If it states only the debt, emit the liability alone and no account.
   - The one exception is a note RECEIVABLE — money owed TO the household (e.g. "Note Receivable - Smith Family Trust", a seller-financed note). That is an asset: category "notes_receivable" in "accounts", never a liability.
 - LIABILITY PAYMENT FIELDS. Mortgage statements print a payment breakdown. "monthlyPayment" is the PRINCIPAL AND INTEREST portion only. "totalPayment" is the full scheduled payment including escrow (taxes and insurance). When the breakdown is shown, capture BOTH. When only one payment figure is printed and it is not broken down, put it in "totalPayment" and omit "monthlyPayment".

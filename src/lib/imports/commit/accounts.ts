@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { accountOwners, accounts, lifeInsurancePolicies, sourceEnum } from "@/db/schema";
 import { isRmdEligibleSubType } from "@/engine/rmd";
 import { is529Account } from "@/lib/accounts/is-529";
+import { MAX_MARGIN_INTEREST_RATE } from "@/lib/accounts/margin-validation";
 import type { ExtractedAccount } from "@/lib/extraction/types";
 import {
   RETIREMENT_SUBTYPES,
@@ -118,6 +119,8 @@ export function education529Columns(
  *   category, subType: replace
  *   value, basis, accountNumberLast4, custodian: replace
  *   growthRate, rmdEnabled: replace-if-non-null
+ *   marginBalance, marginInterestRate: replace-if-non-null, taxable only
+ *     (see `importedMarginColumns`)
  *   accountOwners: keep-existing
  *
  * A row listed in `ctx.overrideRowIds` — the advisor ticked "Override every
@@ -180,13 +183,16 @@ export async function commitAccounts(
       // the guard returns the column defaults (deriveFromHoldings=true, note=null),
       // and there is no existing `notes` to preserve.
       const guard = accountHoldingsGuardrail(row);
+      const category = resolveAccountCategory(row);
+      const margin = importedMarginColumns(row, category);
+      result.warnings.push(...margin.warnings);
       const [inserted] = await tx
         .insert(accounts)
         .values({
           clientId: ctx.clientId,
           scenarioId: ctx.scenarioId,
           name: row.name,
-          category: resolveAccountCategory(row),
+          category,
           subType,
           value: row.value != null ? String(row.value) : "0",
           basis: row.basis != null ? String(row.basis) : "0",
@@ -217,6 +223,7 @@ export async function commitAccounts(
           ...(row.annualPropertyTax != null
             ? { annualPropertyTax: String(row.annualPropertyTax) }
             : {}),
+          ...margin.columns,
         })
         .returning({ id: accounts.id });
 
@@ -280,10 +287,13 @@ export async function commitAccounts(
     // margin loans R8): writing the row's category would trip the CHECK and
     // roll back the whole import. Keep the stored type — category, sub-type,
     // RMD flag, and no 529 conversion — and say so. The loan is never touched.
+    // Read at most once per row, and only by a row that asks below.
+    let stored: ReturnType<typeof loadStoredMargin> | undefined;
+    const storedMargin = () => (stored ??= loadStoredMargin(tx, existingId, ctx));
     let keptTaxable = false;
     if (row.category !== undefined || is529Account(row)) {
       const category = resolveAccountCategory(row);
-      if (category !== "taxable" && (await carriesMarginLoan(tx, existingId, ctx))) {
+      if (category !== "taxable" && carriesMarginLoan(await storedMargin())) {
         keptTaxable = true;
         result.warnings.push(`${row.name}: Kept as Taxable because it carries a margin loan.`);
       } else {
@@ -292,6 +302,16 @@ export async function commitAccounts(
     }
     if (row.subType !== undefined && !keptTaxable) updates.subType = row.subType;
     if (row.value !== undefined) updates.value = String(row.value);
+    // The statement's loan replaces the stored one; a statement that shows none
+    // leaves it alone, like every other replace-if-non-null field. The category
+    // the row will END with decides — its own, else the stored one (taxable
+    // whenever it was kept so). After `value`, which this may net down.
+    if (Number(row.marginBalance) > 0) {
+      const category = (updates.category as string | undefined) ?? (await storedMargin())?.category;
+      const margin = importedMarginColumns(row, category);
+      Object.assign(updates, margin.columns);
+      result.warnings.push(...margin.warnings);
+    }
     if (row.basis !== undefined) updates.basis = String(row.basis);
     if (row.accountNumberLast4 !== undefined) updates.accountNumberLast4 = row.accountNumberLast4;
     if (row.custodian !== undefined) updates.custodian = row.custodian;
@@ -438,11 +458,48 @@ export async function commitAccounts(
   return result;
 }
 
-/** Does the matched account carry a margin loan or borrow on margin? Scoped like the UPDATE, so an
- *  id that isn't this client's reads as no loan (the UPDATE then skips it). */
-async function carriesMarginLoan(tx: Tx, accountId: string, ctx: CommitContext): Promise<boolean> {
+/**
+ * The margin-loan columns an imported row writes — with its value, because the
+ * two are one decision: the payload's `value` is the securities' value, so an
+ * account that cannot carry the loan (`accounts_margin_taxable_only`; writing
+ * it would roll back the whole import) is saved at its value net of the loan.
+ * A loan at or above the value is kept, as an underwater account (spec R7).
+ */
+export function importedMarginColumns(
+  row: Pick<ExtractedAccount, "name" | "value" | "marginBalance" | "marginInterestRate">,
+  category: string | undefined,
+): { columns: { value?: string; marginBalance?: string; marginInterestRate?: string }; warnings: string[] } {
+  const columns: { value?: string; marginBalance?: string; marginInterestRate?: string } = {};
+  const warnings: string[] = [];
+  const loan = Number(row.marginBalance);
+  if (!(loan > 0)) return { columns, warnings };
+  if (category !== "taxable") {
+    if (row.value != null) columns.value = String(Math.round((row.value - loan) * 100) / 100);
+    warnings.push(
+      `${row.name}: margin loan not saved — only a taxable brokerage account can carry one. Saved at its value net of the loan.`,
+    );
+    return { columns, warnings };
+  }
+  columns.marginBalance = String(loan);
+  const rate = row.marginInterestRate;
+  if (rate == null) return { columns, warnings };
+  if (Number.isFinite(rate) && rate >= 0 && rate <= MAX_MARGIN_INTEREST_RATE) {
+    columns.marginInterestRate = String(rate);
+  } else {
+    warnings.push(`${row.name}: margin interest rate not saved — it must be between 0% and 25%.`);
+  }
+  return { columns, warnings };
+}
+
+/** The matched account's category and margin state. Scoped like the UPDATE, so an id that isn't
+ *  this client's reads as undefined (the UPDATE then skips it). */
+async function loadStoredMargin(tx: Tx, accountId: string, ctx: CommitContext) {
   const [held] = await tx
-    .select({ marginBalance: accounts.marginBalance, marginBorrowEnabled: accounts.marginBorrowEnabled })
+    .select({
+      category: accounts.category,
+      marginBalance: accounts.marginBalance,
+      marginBorrowEnabled: accounts.marginBorrowEnabled,
+    })
     .from(accounts)
     .where(
       and(
@@ -451,6 +508,11 @@ async function carriesMarginLoan(tx: Tx, accountId: string, ctx: CommitContext):
         eq(accounts.scenarioId, ctx.scenarioId),
       ),
     );
+  return held;
+}
+
+/** Does the stored account carry a margin loan or borrow on margin? */
+function carriesMarginLoan(held: Awaited<ReturnType<typeof loadStoredMargin>>): boolean {
   return Number(held?.marginBalance ?? 0) > 0 || held?.marginBorrowEnabled === true;
 }
 

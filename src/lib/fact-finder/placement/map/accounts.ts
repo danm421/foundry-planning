@@ -131,6 +131,8 @@ export const TAXABLE_MAP: SectionMap = {
     custodian: { to: "account.custodian" },
     accountType: { to: "account.subType" },
     ownerEntity: { to: "account.owners" },
+    marginLoan: { to: "account.marginBalance" },
+    marginRate: { to: "account.marginInterestRate" },
   },
   place(rows, ctx) {
     return rows.map((row): TargetDraft => {
@@ -139,6 +141,8 @@ export const TAXABLE_MAP: SectionMap = {
       putTypeAndOwners(b, row, ctx, record, TAXABLE_TYPE_MAP);
       putTitling(b, row, record);
       b.put("basis", num(row, "costBasis"), ["costBasis"]);
+      b.put("marginBalance", num(row, "marginLoan"), ["marginLoan"]);
+      b.put("marginInterestRate", rate(row, "marginRate"), ["marginRate"]);
       putHoldings(b, row, record);
       return b.build();
     });

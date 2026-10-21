@@ -29,7 +29,7 @@ describe("ACCOUNT_STATEMENT_PROMPT", () => {
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("annuity");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("lifePolicies");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("cashValue");
-    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-09-17.1-liabilities");
+    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-10-21.1-margin-on-account");
   });
 
   it("instructs a short account-TYPE name with no custodian, not the registration header", () => {
@@ -231,9 +231,21 @@ describe("debt routing", () => {
     expect(ACCOUNT_STATEMENT_PROMPT).toMatch(
       /NEVER in "accounts"|never in "accounts"/,
     );
-    for (const word of ["mortgage", "HELOC", "auto loan", "student loan", "margin"]) {
+    for (const word of ["mortgage", "HELOC", "auto loan", "student loan"]) {
       expect(ACCOUNT_STATEMENT_PROMPT.toLowerCase()).toContain(word.toLowerCase());
     }
+  });
+
+  // A margin loan is the one debt that belongs to an ACCOUNT: the app stores it
+  // on the taxable account, beside the securities it borrows against.
+  it("puts a margin loan on its brokerage account", () => {
+    expect(ACCOUNT_STATEMENT_PROMPT).toContain('"marginBalance"');
+    expect(ACCOUNT_STATEMENT_PROMPT).toContain('"marginInterestRate"');
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/Report the loan ONCE/);
+    // A liabilities-only page (a fact finder's multi-pass read) has no account
+    // to put it on; dropping it there would lose the loan.
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/put it in "liabilities" instead, named "Margin Loan"/);
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/NET value after the loan/);
   });
 
   it("states the property/loan pair so the real-estate rule cannot swallow a mortgage", () => {

@@ -54,8 +54,13 @@ describe("readingFromAccount", () => {
     const cash = readingFromAccount(acct({ category: "cash", subType: "money_market" as never, growthRate: 0.045 }), FAMILY)!;
     expect(cash.cells.accountType.value).toBe("Money market");
     expect(cash.cells.interestRate.value).toBe(4.5);
-    const taxable = readingFromAccount(acct({ category: "taxable", subType: "brokerage", basis: 190000 }), FAMILY)!;
+    const taxable = readingFromAccount(
+      acct({ category: "taxable", subType: "brokerage", basis: 190000, marginBalance: 40000, marginInterestRate: 0.085 }),
+      FAMILY,
+    )!;
     expect(taxable.cells.costBasis.value).toBe(190000);
+    expect(taxable.cells.marginLoan.value).toBe(40000);
+    expect(taxable.cells.marginRate.value).toBe(8.5);
     const edu = readingFromAccount(acct({ category: "education_savings", beneficiaryNameHint: "Emma", grantorName: "Mark" }), FAMILY)!;
     expect(edu.cells.beneficiary.value).toBe("Emma");
     expect(edu.cells.grantor.value).toBe("Mark");

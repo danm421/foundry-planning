@@ -122,6 +122,8 @@ export function readingFromAccount(
       return reading("taxable", {
         accountName: cell(row.name), currentValue: cell(row.value), costBasis: cell(row.basis), last4: cell(last4),
         owner: owner(), custodian: cell(row.custodian), accountType: cell(labelFor(TAXABLE_TYPE_MAP, subType)),
+        marginLoan: cell(row.marginBalance),
+        marginRate: cell(typeof row.marginInterestRate === "number" ? round(row.marginInterestRate * 100, 4) : undefined),
       });
     case "retirement":
       // `basis` on a retirement statement is position cost basis, not the IRA's
