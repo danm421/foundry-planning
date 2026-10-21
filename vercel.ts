@@ -34,6 +34,11 @@ export const config: VercelConfig = {
       schedule: "0 4 * * *",
     },
     {
+      // 00:10 US Eastern in winter; daily so a missed Jan 1 heals.
+      path: "/api/cron/roll-plan-start-year",
+      schedule: "10 5 * * *",
+    },
+    {
       path: "/api/cron/purge-expired-firms",
       schedule: "0 6 * * *",
     },

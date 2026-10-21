@@ -109,6 +109,7 @@ export type AuditAction =
   | "withdrawal_strategy.delete"
   // Plan structure
   | "plan_settings.update"
+  | "plan_settings.start_year_roll"
   | "entity.create"
   | "entity.update"
   | "entity.delete"
