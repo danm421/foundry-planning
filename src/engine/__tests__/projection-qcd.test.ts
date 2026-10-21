@@ -175,6 +175,31 @@ describe("projection — QCDs in the RMD step", () => {
     const charitable = y26.deductionBreakdown!.belowLine.charitable;
     expect(charitable).toBeGreaterThan(0);
     expect(charitable).toBeLessThanOrEqual(39_000);
+
+    // Taxed: the excess is ordinary income beside the RMD the QCD left unpaid.
+    expect(y26.taxDetail!.ordinaryIncome).toBeCloseTo(rmd - 150_000 + 39_000, 2);
+    // Never household cash: checking, Total Income and Net Cash Flow see only
+    // the RMD the QCD left unpaid.
+    const checking = y26.accountLedgers[CHECKING];
+    expect(checking.entries.find((e) => e.category === "rmd")?.amount).toBeCloseTo(rmd - 150_000, 2);
+    expect(y26.totalIncome).toBeCloseTo(rmd - 150_000, 2);
+    expect(y26.netCashFlow).toBeCloseTo(checking.endingValue - checking.beginningValue, 2);
+  });
+
+  it("the taxed excess is income on top of the RMD it pays — bracket and flat mode", () => {
+    // $1M IRA: the ≈40,650 RMD is covered either way, so a 150,000 QCD adds
+    // exactly its 39,000 over-cap excess to income against a 111,000 one.
+    const run = (amount: number, taxEngineMode: "bracket" | "flat") => {
+      const data = baseData();
+      data.planSettings = { ...data.planSettings, taxEngineMode, flatFederalRate: 0.2 };
+      data.qcds = [fixedQcd(2026, amount)];
+      return yearOf(runProjection(data), 2026);
+    };
+    const ordinary = (y: ProjectionYear) => y.taxDetail!.ordinaryIncome;
+    expect(ordinary(run(150_000, "bracket")) - ordinary(run(111_000, "bracket"))).toBeCloseTo(39_000, 2);
+    // Flat mode reads the `taxableIncome` scalar, not taxDetail.
+    const taxable = (y: ProjectionYear) => y.taxResult!.flow.taxableIncome;
+    expect(taxable(run(150_000, "flat")) - taxable(run(111_000, "flat"))).toBeCloseTo(39_000, 2);
   });
 
   it("a plan without QCDs has no qcd fields", () => {
