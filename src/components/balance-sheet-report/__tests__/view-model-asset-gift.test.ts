@@ -102,6 +102,22 @@ describe("balance sheet after a percentage gift of an asset", () => {
     expect(businessTotal(model)).toBeCloseTo(100_000_000, 2);
   });
 
+  it("shows a gift made before the plan's first year in the Today snapshot", () => {
+    // The plan starts 2027; the gift was made in 2026 as a plan event (not
+    // entered as history), so the stored owners never took it in.
+    const model = vm({
+      projectionYears: [year(2027), year(2028)], selectedYear: 2027, asOfMode: "today",
+      giftEvents: [{ ...GIFT, enteredAsHistory: false }],
+    });
+    expect(businessTotal(model)).toBeCloseTo(85_000_000, 2);
+    // Entered as history: already in the stored owners, never applied again.
+    const history = vm({
+      projectionYears: [year(2027), year(2028)], selectedYear: 2027, asOfMode: "today",
+      giftEvents: [{ ...GIFT, enteredAsHistory: true }],
+    });
+    expect(businessTotal(history)).toBeCloseTo(100_000_000, 2);
+  });
+
   it("shows the full value when there is no gift", () => {
     expect(businessTotal(vm({ giftEvents: [] }))).toBeCloseTo(100_000_000, 2);
   });

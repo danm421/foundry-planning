@@ -84,4 +84,14 @@ describe("balance sheet after a gift of an interest in a business entity", () =>
     // "Today" is the plan's opening balance sheet; the gift lands during it.
     expect(householdColumns([GIFT], "today")?.client).toBeCloseTo(1_000_000, 2);
   });
+
+  it("applies a gift made before the plan's first year to the Today snapshot", () => {
+    const model = buildHouseholdColumns({
+      accounts: [], liabilities: [], entities, notesReceivable: [], familyMembers,
+      projectionYears: [year(2027), year(2028)], selectedYear: 2027, asOfMode: "today",
+      giftEvents: [{ ...GIFT, enteredAsHistory: false }],
+    });
+    const row = model.assetCategories.flatMap((c) => c.rows).find((r) => r.key === "flat:llc-1");
+    expect(row?.client).toBeCloseTo(700_000, 2);
+  });
 });
