@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { applyTrustAnnualPass } from "../index";
 import type { BracketTier } from "@/lib/tax/types";
+import type { EntitySummary } from "@/engine/types";
 
 const trustIncome2026: BracketTier[] = [
   { from: 0,     to: 3300,  rate: 0.10 },
@@ -137,7 +138,7 @@ describe("applyTrustAnnualPass", () => {
   });
 
   it("taxes DNI paid to Other Heirs like DNI paid to an outside individual", () => {
-    const run = (incomeBeneficiaries: typeof SLAT.incomeBeneficiaries) =>
+    const run = (incomeBeneficiaries: NonNullable<EntitySummary["incomeBeneficiaries"]>) =>
       applyTrustAnnualPass({
         year: 2026,
         nonGrantorTrusts: [
