@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { validatePlanSettingsPatch, GROWTH_SOURCE_VALUES, INFLATION_SOURCE_VALUES } from "../validate-patch";
 import { growthSourceEnum, inflationRateSourceEnum } from "@/db/schema";
 
@@ -51,8 +51,27 @@ describe("validatePlanSettingsPatch", () => {
     );
   });
 
-  it("refuses a plan start year before this year", () => {
-    expect(validatePlanSettingsPatch({ planStartYear: 1999 })).toMatch(/Plan start year/);
+  describe("plan start year", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("accepts only this year or next year", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-10-21T15:00:00Z"));
+      expect(validatePlanSettingsPatch({ planStartYear: 2026 })).toBeNull();
+      expect(validatePlanSettingsPatch({ planStartYear: 2027 })).toBeNull();
+      expect(validatePlanSettingsPatch({ planStartYear: "2027" })).toBeNull();
+      for (const bad of [2025, 2028, "2020", "abc", 1999]) {
+        expect(validatePlanSettingsPatch({ planStartYear: bad })).toBe("Plan start year must be 2026 or 2027");
+      }
+    });
+
+    it("rejects last year once the year has turned", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2027-01-01T06:00:00Z"));
+      expect(validatePlanSettingsPatch({ planStartYear: 2026 })).toBe("Plan start year must be 2027 or 2028");
+    });
   });
 
   describe("growth & inflation columns", () => {

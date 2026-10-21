@@ -17,7 +17,6 @@ type EditableNumberKey =
   | "flatFederalRate"
   | "flatStateRate"
   | "inflationRate"
-  | "planStartYear"
   | "estateAdminExpenses"
   | "flatStateEstateRate"
   | "irdTaxRate"
@@ -28,7 +27,7 @@ type EditableNumberKey =
 interface FieldDef {
   key: EditableNumberKey;
   label: string;
-  format: "pct" | "currency" | "year";
+  format: "pct" | "currency";
   optional?: boolean;
 }
 
@@ -40,7 +39,6 @@ const FIELDS: FieldDef[] = [
   { key: "flatFederalRate", label: "Federal tax rate", format: "pct" },
   { key: "flatStateRate", label: "State tax rate", format: "pct" },
   { key: "inflationRate", label: "Inflation rate", format: "pct" },
-  { key: "planStartYear", label: "Plan start year", format: "year" },
   { key: "estateAdminExpenses", label: "Estate admin expenses", format: "currency", optional: true },
   { key: "flatStateEstateRate", label: "State estate tax rate", format: "pct", optional: true },
   { key: "irdTaxRate", label: "IRD tax rate", format: "pct", optional: true },
@@ -58,7 +56,6 @@ function planSettingsToForm(p: PlanSettings): FormState {
     flatFederalRate: String(p.flatFederalRate ?? ""),
     flatStateRate: String(p.flatStateRate ?? ""),
     inflationRate: String(p.inflationRate ?? ""),
-    planStartYear: String(p.planStartYear ?? ""),
     estateAdminExpenses: p.estateAdminExpenses != null ? String(p.estateAdminExpenses) : "",
     flatStateEstateRate: p.flatStateEstateRate != null ? String(p.flatStateEstateRate) : "",
     irdTaxRate: p.irdTaxRate != null ? String(p.irdTaxRate) : "",

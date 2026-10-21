@@ -64,16 +64,25 @@ describe("AssumptionsModal", () => {
     expect(body.flatFederalRate).toBeCloseTo(0.24);
     // The plan end year follows the life expectancies — never posted from here.
     expect(body).not.toHaveProperty("planEndYear");
+    // The start year is the Assumptions switch's alone — never posted from here.
+    expect(body).not.toHaveProperty("planStartYear");
     expect(body.taxEngineMode).toBe("flat");
 
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     expect(refreshMock).toHaveBeenCalledTimes(1);
   });
 
+  it("has no free-form plan start year field", () => {
+    render(
+      <AssumptionsModal open clientId="c1" planSettings={FIXTURE} onClose={vi.fn()} />,
+    );
+    expect(screen.queryByLabelText("Plan start year")).toBeNull();
+  });
+
   it("Surfaces backend error message on non-OK response", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ error: "Plan start year cannot be before current year (2026)" }), {
+      new Response(JSON.stringify({ error: "Inflation rate must be between -1000% and 1000%" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       }),
@@ -88,7 +97,7 @@ describe("AssumptionsModal", () => {
     await user.click(screen.getByRole("button", { name: /^save$/i }));
 
     await waitFor(() =>
-      expect(screen.getByRole("alert")).toHaveTextContent(/cannot be before current year/i),
+      expect(screen.getByRole("alert")).toHaveTextContent(/must be between -1000% and 1000%/i),
     );
     expect(onClose).not.toHaveBeenCalled();
     expect(refreshMock).not.toHaveBeenCalled();
