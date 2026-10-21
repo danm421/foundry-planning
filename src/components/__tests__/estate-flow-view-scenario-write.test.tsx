@@ -125,9 +125,6 @@ const SERIES_GIFT: EstateFlowGift = {
   amountMode: "fixed",
   inflationAdjust: false,
   grantor: "client",
-  // An entity recipient: the series REST body maps `recipient.id` straight
-  // onto `recipientEntityId` regardless of kind (pre-existing), so a
-  // family-member series would bake that quirk into this assertion.
   recipient: { kind: "entity", id: "ent-trust" },
   crummey: false,
 };
@@ -139,6 +136,8 @@ const NEW_SERIES: EstateFlowGift = { ...SERIES_GIFT, id: "gs-new", annualAmount:
 const SERIES_REST_BODY = {
   grantor: "client",
   recipientEntityId: "ent-trust",
+  recipientFamilyMemberId: null,
+  recipientExternalBeneficiaryId: null,
   startYear: 2027,
   startYearRef: null,
   endYear: 2031,
@@ -258,7 +257,8 @@ describe("EstateFlowView — gift saves follow the active scenario", () => {
     expect(call.url).toBe(`/api/clients/${CLIENT_ID}/gifts/gift-1`);
     expect(call.method).toBe("PATCH");
     expect(call.url).not.toContain("/scenarios/");
-    // The flat REST body, unchanged — `accountId` is omitted on PATCH.
+    // The flat REST body — `accountId` is omitted on PATCH, and a non-QCD
+    // PATCH clears both QCD columns.
     expect(call.body).toEqual({
       year: 2027,
       yearRef: null,
@@ -270,6 +270,8 @@ describe("EstateFlowView — gift saves follow the active scenario", () => {
       valuationDiscount: null,
       amount: 25_000,
       useCrummeyPowers: false,
+      qcdAccountId: null,
+      qcdAmountMode: null,
     });
   });
 

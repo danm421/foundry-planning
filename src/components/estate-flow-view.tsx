@@ -19,6 +19,7 @@ import {
 import { diffGifts, type GiftChange } from "@/lib/estate/estate-flow-gift-diff";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { giftScenarioAdd, giftScenarioRemove } from "@/lib/gifts/gift-write";
+import { buildRecipientPatchFields } from "@/lib/gifts/recipient-patch-fields";
 import {
   useScenarioWriter,
   type ScenarioEdit,
@@ -26,7 +27,7 @@ import {
 } from "@/hooks/use-scenario-writer";
 import { useClientAccess } from "@/components/client-access-provider";
 import { useSetOnboardingDirty } from "@/components/onboarding-dirty-context";
-import type { ClientData } from "@/engine/types";
+import type { ClientData, QcdAmountMode } from "@/engine/types";
 import { DeathOrderToggle } from "@/components/report-controls/death-order-toggle";
 import DialogTabs from "@/components/dialog-tabs";
 import dynamic from "next/dynamic";
@@ -139,6 +140,9 @@ function seriesUrl(base: string, target: SeriesRouteTarget): string {
  * On PATCH, the immutable `accountId` is omitted (the gift routes reject it).
  * `eventKind` is omitted entirely: the POST route rejects any non-"outright"
  * value, and the PATCH route ignores the field — sandbox gifts are outright.
+ * Every body carries all three recipient columns, the unused two as null.
+ * A QCD carries both QCD columns; a PATCH of a non-QCD carries both as null,
+ * so a QCD switched back to Cash clears them together.
  */
 async function persistGiftChange(
   clientId: string,
@@ -174,9 +178,9 @@ async function persistGiftChange(
         method: "DELETE",
       });
     }
-    const body = {
+    const body: Record<string, unknown> = {
       grantor: gift.grantor,
-      recipientEntityId: gift.recipient.id,
+      ...buildRecipientPatchFields(gift.recipient),
       startYear: gift.startYear,
       startYearRef: null,
       endYear: gift.endYear,
@@ -187,6 +191,7 @@ async function persistGiftChange(
       useCrummeyPowers: gift.crummey,
       valuationDiscount: gift.valuationDiscount ?? null,
       notes: null,
+      ...qcdFields(gift.qcd, op),
     };
     return series.request({
       url: seriesUrl(
@@ -210,26 +215,20 @@ async function persistGiftChange(
 
   // Common one-time fields. accountId is included only on POST (it is immutable
   // and rejected by the PATCH schema).
-  const recipientFields = {
-    recipientEntityId:
-      gift.recipient.kind === "entity" ? gift.recipient.id : null,
-    recipientFamilyMemberId:
-      gift.recipient.kind === "family_member" ? gift.recipient.id : null,
-    recipientExternalBeneficiaryId:
-      gift.recipient.kind === "external_beneficiary" ? gift.recipient.id : null,
-  };
   const oneTimeBody: Record<string, unknown> = {
     year: gift.year,
     yearRef: null,
     grantor: gift.grantor,
-    ...recipientFields,
+    ...buildRecipientPatchFields(gift.recipient),
     notes: null,
     valuationDiscount: gift.valuationDiscount ?? null,
   };
   if (gift.kind === "cash-once") {
+    // A Full RMD QCD's draft amount is 0, which is what the routes require.
     oneTimeBody.amount = gift.amount;
     oneTimeBody.useCrummeyPowers = gift.crummey;
     if (op === "add") oneTimeBody.accountId = null;
+    Object.assign(oneTimeBody, qcdFields(gift.qcd, op));
   } else {
     // asset-once: percent transfer of a source account. Asset gifts have no
     // Crummey concept — the DROP form sends useCrummeyPowers: false.
@@ -246,6 +245,17 @@ async function persistGiftChange(
     method: op === "add" ? "POST" : "PATCH",
     body: oneTimeBody,
   });
+}
+
+/** The two QCD columns for a gift body: both set for a QCD, both null on a
+ *  PATCH of a non-QCD (the route checks the merged row, so they move
+ *  together), and absent on a POST of a non-QCD. */
+function qcdFields(
+  qcd: { accountId: string; amountMode: QcdAmountMode } | undefined,
+  op: GiftChange["op"],
+): Record<string, string | null> {
+  if (qcd) return { qcdAccountId: qcd.accountId, qcdAmountMode: qcd.amountMode };
+  return op === "add" ? {} : { qcdAccountId: null, qcdAmountMode: null };
 }
 
 // ── EstateFlowView ───────────────────────────────────────────────────────────
