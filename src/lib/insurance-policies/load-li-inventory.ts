@@ -11,6 +11,7 @@ import {
 } from "@/db/schema";
 import { and, eq, inArray, asc } from "drizzle-orm";
 import { individualOwnerLabel } from "@/lib/owner-labels";
+import { OTHER_HEIRS_LABEL } from "@/engine/other-heirs";
 
 // ── Public shapes ─────────────────────────────────────────────────────────────
 export interface LiBeneficiaryRow {
@@ -68,6 +69,7 @@ export interface RawLiInventory {
       externalBeneficiaryId: string | null;
       entityIdRef: string | null;
       householdRole: "client" | "spouse" | null;
+      otherHeirs?: boolean;
     }>
   >;
   familyMemberNames: Record<string, string>;
@@ -90,7 +92,8 @@ export function shapeLiInventory(raw: RawLiInventory): LifeInsuranceInventory {
     const beneficiaries: LiBeneficiaryRow[] = (raw.beneficiaries[acct.id] ?? []).map(
       (b) => {
         let name = "—";
-        if (b.householdRole) name = individualOwnerLabel(b.householdRole, { clientName: raw.clientName, spouseName: raw.spouseName });
+        if (b.otherHeirs) name = OTHER_HEIRS_LABEL;
+        else if (b.householdRole) name = individualOwnerLabel(b.householdRole, { clientName: raw.clientName, spouseName: raw.spouseName });
         else if (b.familyMemberId) name = raw.familyMemberNames[b.familyMemberId] ?? "—";
         else if (b.externalBeneficiaryId) name = raw.externalNames[b.externalBeneficiaryId] ?? "—";
         else if (b.entityIdRef) name = raw.entityNames[b.entityIdRef] ?? "—";
@@ -244,6 +247,7 @@ export async function loadLifeInsuranceInventory(
       externalBeneficiaryId: b.externalBeneficiaryId ?? null,
       entityIdRef: b.entityIdRef ?? null,
       householdRole: (b.householdRole as "client" | "spouse" | null) ?? null,
+      otherHeirs: b.otherHeirs,
     });
     beneficiaries[b.accountId] = arr;
   }

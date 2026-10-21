@@ -115,3 +115,29 @@ describe("buildTrustDetails", () => {
     expect(buildTrustDetails({} as ClientData, labels)).toEqual([]);
   });
 });
+
+describe("buildTrustDetails — Other Heirs", () => {
+  it('names an Other Heirs trust beneficiary "Other Heirs"', () => {
+    const out = buildTrustDetails(
+      {
+        entities: [
+          {
+            id: "t",
+            entityType: "trust",
+            includeInPortfolio: false,
+            isGrantor: false,
+            beneficiaries: [{ id: "b", tier: "primary", percentage: 100, otherHeirs: true, sortOrder: 0 }],
+            incomeBeneficiaries: [{ otherHeirs: true, percentage: 100 }],
+            remainderBeneficiaries: [{ otherHeirs: true, percentage: 100, distributionForm: "outright" }],
+          },
+        ],
+      } as unknown as ClientData,
+      labels,
+    );
+    expect(out[0].beneficiaries).toEqual([
+      { group: "Primary", name: "Other Heirs", percentage: 100 },
+      { group: "Income", name: "Other Heirs", percentage: 100 },
+      { group: "Remainder", name: "Other Heirs", percentage: 100 },
+    ]);
+  });
+});

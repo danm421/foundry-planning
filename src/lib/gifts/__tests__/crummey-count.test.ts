@@ -24,6 +24,14 @@ describe("crummeyBeneficiaryCount", () => {
     expect(crummeyBeneficiaryCount({ beneficiaries: bens })).toBe(1);
   });
 
+  it("does not count Other Heirs as a Crummey beneficiary", () => {
+    const bens: BeneficiaryRef[] = [
+      b({ familyMemberId: "fm1" }),
+      b({ tier: "contingent", otherHeirs: true }),
+    ];
+    expect(crummeyBeneficiaryCount({ beneficiaries: bens })).toBe(1);
+  });
+
   it("returns 0 when beneficiaries is undefined", () => {
     expect(crummeyBeneficiaryCount({})).toBe(0);
   });

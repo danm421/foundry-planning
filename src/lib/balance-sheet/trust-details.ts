@@ -1,6 +1,7 @@
 // src/lib/balance-sheet/trust-details.ts
 import type { ClientData, EntitySummary, TrustSubType } from "@/engine/types";
 import { individualOwnerLabel } from "@/lib/owner-labels";
+import { OTHER_HEIRS_LABEL } from "@/engine/other-heirs";
 
 /** One resolved beneficiary line on the trust-details card. */
 export interface TrustBeneficiaryLine {
@@ -63,9 +64,11 @@ interface BeneficiaryRefLike {
   /** incomeBeneficiaries name their entity ref `entityId` instead of `entityIdRef`. */
   entityId?: string;
   householdRole?: "client" | "spouse";
+  otherHeirs?: boolean;
 }
 
 function resolveName(ref: BeneficiaryRefLike, tree: ClientData, labels: HouseholdLabels): string {
+  if (ref.otherHeirs) return OTHER_HEIRS_LABEL;
   if (ref.householdRole) {
     return individualOwnerLabel(ref.householdRole, {
       clientName: labels.clientLabel,

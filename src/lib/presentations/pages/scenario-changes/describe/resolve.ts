@@ -1,4 +1,6 @@
-export type RecipientKind = "family_member" | "external_beneficiary" | "entity" | "spouse";
+import { OTHER_HEIRS_LABEL } from "@/engine/other-heirs";
+
+export type RecipientKind = "family_member" | "external_beneficiary" | "entity" | "spouse" | "other_heirs";
 
 export interface AccountInfo { name: string; category: string; subType?: string }
 export interface ModelPortfolioInfo { name: string; rate: number }
@@ -66,6 +68,7 @@ export function buildResolveContext(d: ResolveContextData): ResolveContext {
     accountInfo: (id) => (id && d.accountsById[id]) || null,
     recipientName: (kind, id) => {
       if (kind === "spouse") return d.spouseName ?? "spouse";
+      if (kind === "other_heirs") return OTHER_HEIRS_LABEL;
       return (id && d.recipientsById[`${kind}:${id}`]) || "a recipient";
     },
     entityName: (id) => (id && d.entitiesById[id]) || "an entity",

@@ -34,3 +34,22 @@ describe("will describer", () => {
     expect(row.detail.some((l) => /added/i.test(l))).toBe(true); // b2 is new
   });
 });
+
+describe("will describer — Other Heirs", () => {
+  it("describes a will share to Other Heirs", () => {
+    const row = describeChange({
+      id: "c", scenarioId: "s", opType: "edit", targetKind: "will", targetId: "w1",
+      toggleGroupId: null, orderIndex: 0,
+      payload: { bequests: {
+        from: [],
+        to: [
+          { id: "b1", kind: "asset", assetMode: "specific", accountId: "roth", percentage: 1, condition: "always",
+            recipients: [{ recipientKind: "other_heirs", recipientId: null, percentage: 1 }] },
+        ],
+      } },
+    }, ctx);
+    const joined = row.detail.join(" | ");
+    expect(joined).toContain("Other Heirs");
+    expect(joined).not.toContain("a recipient");
+  });
+});

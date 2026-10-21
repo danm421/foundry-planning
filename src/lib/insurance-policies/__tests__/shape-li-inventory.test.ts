@@ -49,3 +49,19 @@ describe("shapeLiInventory", () => {
     expect(p2.termExpiryYear).toBeNull();
   });
 });
+
+describe("shapeLiInventory — Other Heirs", () => {
+  it('names an Other Heirs policy beneficiary "Other Heirs"', () => {
+    const inv = shapeLiInventory({
+      ...raw,
+      beneficiaries: {
+        p1: [
+          { tier: "primary", percentage: 100, familyMemberId: null, externalBeneficiaryId: null, entityIdRef: null, householdRole: null, otherHeirs: true },
+        ],
+      },
+    });
+    expect(inv.policies[0].beneficiaries).toEqual([
+      { tier: "primary", name: "Other Heirs", percentage: 100 },
+    ]);
+  });
+});
