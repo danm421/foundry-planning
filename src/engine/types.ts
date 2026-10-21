@@ -474,6 +474,43 @@ export type GiftEvent =
       eventKind?: GiftEventKind;
     };
 
+/** How a QCD's yearly amount is set: a dollar figure, or the source IRA's
+ *  whole required minimum for the year. */
+export type QcdAmountMode = "fixed" | "full_rmd";
+
+/** One year's qualified charitable distribution (IRC §408(d)(8)): a gift paid
+ *  straight from an IRA to a charity. Fanned out from gift / gift_series rows
+ *  by `fanOutQcd`; `allocateQcds` decides how much of it qualifies. */
+export interface QcdEvent {
+  year: number;
+  /** Source IRA. The QCD follows it, and its owner that year is the giver. */
+  accountId: string;
+  /** External beneficiary id. */
+  charityId: string;
+  mode: QcdAmountMode;
+  /** fixed: this year's dollars (already inflated). full_rmd: 0. */
+  amount: number;
+  /** One-time gift row id. */
+  sourceGiftId?: string;
+  /** gift_series row id. */
+  seriesId?: string;
+}
+
+/** What a QCD actually paid in a year. */
+export interface QcdYearResult {
+  accountId: string;
+  charityId: string;
+  giver: "client" | "spouse";
+  sourceGiftId?: string;
+  seriesId?: string;
+  /** Not income, no deduction, counts toward the RMD. */
+  qualifying: number;
+  /** Paid to the charity but over the cap (or not a qualifying charity or
+   *  year): taxed as a distribution and deducted as a normal gift. Always 0
+   *  for full_rmd. */
+  taxedExcess: number;
+}
+
 export interface ExternalBeneficiary {
   id: string;
   name: string;
@@ -526,6 +563,9 @@ export interface ClientData {
   /** Structured gift events (cash / asset / liability) fanned out from DB rows + gift_series.
    *  Populated by the T5 loader. Engine gift-tax module consumes these. */
   giftEvents: GiftEvent[];
+  /** Qualified charitable distributions, one per year per gift. Absent when
+   *  the plan has none. */
+  qcds?: QcdEvent[];
   /** Wills per grantor — spec 4a data-only. Engine consumption arrives in spec 4b. */
   wills?: Will[];
   /** Family members (children, grandchildren, parents, siblings). Consumed by the
@@ -2325,6 +2365,8 @@ export interface ProjectionYear {
     amount: number;
     payoutType: "unitrust" | "annuity";
   }>;
+  /** QCDs paid this year, in entry order. Present only when non-empty. */
+  qcds?: QcdYearResult[];
   /** End-of-term trust termination distributions. One entry per CLT whose
    * lead term ended in the prior year (distributions fire the year after
    * the last lead payment). Populated only in the termination year. */
@@ -2358,6 +2400,9 @@ export interface AccountLedger {
   internalContributions: number;
   internalDistributions: number;
   rmdAmount: number;
+  /** The qualifying QCD paid from this account this year (the taxed excess
+   *  goes out with the RMD). Present only when > 0. */
+  qcdAmount?: number;
   fees: number;
   endingValue: number;
   /** Cost basis at the start of the year (post-prior-year mutations,
@@ -2425,6 +2470,7 @@ export interface AccountLedgerEntry {
     | "withdrawal"
     | "withdrawal_tax"
     | "gift"
+    | "qcd"
     | "entity_distribution"
     | "discretionary"
     | "surplus_transfer"
