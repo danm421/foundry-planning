@@ -270,3 +270,30 @@ describe("BeneficiaryRowList", () => {
     ]);
   });
 });
+
+describe("BeneficiaryRowList — Other Heirs", () => {
+  it("offers Other Heirs as the last option and emits an other_heirs source", () => {
+    const rows: BeneficiaryRow[] = [{ id: "r1", source: { kind: "empty" }, percentage: 100, distributionForm: "outright" }];
+    const onChange = vi.fn();
+    render(
+      <BeneficiaryRowList
+        tier="remainder"
+        allowEntities
+        rows={rows}
+        onChange={onChange}
+        members={members}
+        externals={externals}
+        entities={entities}
+        household={householdProps}
+      />
+    );
+    const select = screen.getByRole("combobox", { name: "Beneficiary 1" });
+    const options = Array.from(select.querySelectorAll("option"));
+    expect(options[options.length - 1].textContent).toBe("Other Heirs");
+    expect(options[options.length - 1].closest("optgroup")?.getAttribute("label")).toBe("Other");
+    fireEvent.change(select, { target: { value: "other_heirs" } });
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "r1", source: { kind: "other_heirs" } }),
+    ]);
+  });
+});

@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { FamilyMember, ExternalBeneficiary } from "../family-view";
 import { fieldLabelClassName } from "./input-styles";
 import { redistribute, splitEvenly } from "./auto-split-percentages";
+import { OTHER_HEIRS_VALUE, OtherHeirsOptgroup } from "./other-heirs-option";
 
 // Visual styling for inline-row fields — same look as inputClassName/selectClassName
 // but without `w-full` so flex-1 / explicit widths can take over.
@@ -21,6 +22,7 @@ export interface BeneficiaryRow {
     | { kind: "family"; familyMemberId: string }
     | { kind: "external"; externalBeneficiaryId: string }
     | { kind: "entity"; entityId: string }
+    | { kind: "other_heirs" }
     | { kind: "empty" };
   percentage: number;
   // 'in_trust' | 'outright' — only set/used for the remainder tier.
@@ -47,12 +49,14 @@ function rowSourceToValue(s: BeneficiaryRow["source"]): string {
     case "family": return `fm:${s.familyMemberId}`;
     case "external": return `ext:${s.externalBeneficiaryId}`;
     case "entity": return `ent:${s.entityId}`;
+    case "other_heirs": return OTHER_HEIRS_VALUE;
     case "empty": return "";
   }
 }
 
 function valueToRowSource(v: string): BeneficiaryRow["source"] {
   if (v === "") return { kind: "empty" };
+  if (v === OTHER_HEIRS_VALUE) return { kind: "other_heirs" };
   if (v === "hh:client" || v === "hh:spouse") return { kind: "household", role: v.slice(3) as "client" | "spouse" };
   if (v.startsWith("fm:")) return { kind: "family", familyMemberId: v.slice(3) };
   if (v.startsWith("ext:")) return { kind: "external", externalBeneficiaryId: v.slice(4) };
@@ -178,6 +182,7 @@ export default function BeneficiaryRowList({
                   ))}
                 </optgroup>
               )}
+              <OtherHeirsOptgroup />
             </select>
             <input
               type="number"

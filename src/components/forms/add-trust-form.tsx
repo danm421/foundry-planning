@@ -1744,6 +1744,7 @@ export function designationsToRows(d: Designation[], tier: "income" | "remainder
 }
 
 function designationToSource(d: Designation): BeneficiaryRow["source"] {
+  if (d.otherHeirs) return { kind: "other_heirs" };
   if (d.familyMemberId) return { kind: "family", familyMemberId: d.familyMemberId };
   if (d.externalBeneficiaryId) return { kind: "external", externalBeneficiaryId: d.externalBeneficiaryId };
   if (d.entityIdRef) return { kind: "entity", entityId: d.entityIdRef };
@@ -1768,6 +1769,7 @@ export function rowsToDesignationPayload(rows: BeneficiaryRow[], tier: "income" 
         case "family": return { ...base, familyMemberId: r.source.familyMemberId };
         case "external": return { ...base, externalBeneficiaryId: r.source.externalBeneficiaryId };
         case "entity": return { ...base, entityIdRef: r.source.entityId };
+        case "other_heirs": return { ...base, otherHeirs: true };
         default: return base;
       }
     });

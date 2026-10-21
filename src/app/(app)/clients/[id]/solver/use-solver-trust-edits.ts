@@ -91,6 +91,7 @@ function sharedRef(r: BeneficiaryRow) {
     familyMemberId: s.kind === "family" ? s.familyMemberId : undefined,
     externalBeneficiaryId: s.kind === "external" ? s.externalBeneficiaryId : undefined,
     householdRole: s.kind === "household" ? s.role : undefined,
+    ...(s.kind === "other_heirs" ? { otherHeirs: true as const } : {}),
     percentage: r.percentage,
   };
 }
@@ -118,7 +119,9 @@ function refToRowSource(b: {
   entityId?: string;
   entityIdRef?: string;
   householdRole?: "client" | "spouse";
+  otherHeirs?: true;
 }): BeneficiaryRow["source"] {
+  if (b.otherHeirs) return { kind: "other_heirs" };
   if (b.householdRole) return { kind: "household", role: b.householdRole };
   if (b.familyMemberId) return { kind: "family", familyMemberId: b.familyMemberId };
   if (b.externalBeneficiaryId)

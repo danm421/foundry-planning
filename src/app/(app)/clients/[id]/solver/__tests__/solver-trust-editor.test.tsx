@@ -285,6 +285,29 @@ describe("SolverTrustEditor — Details tab", () => {
 
 // ── Details tab: split-interest placeholder ───────────────────────────────────
 
+describe("SolverTrustEditor — Other Heirs remainder", () => {
+  it("saves a remainder of Other Heirs as otherHeirs: true", async () => {
+    const withRemainder: EntitySummary = {
+      ...ilit,
+      remainderBeneficiaries: [{ householdRole: "spouse", percentage: 100, distributionForm: "outright" }],
+    };
+    const { onChange } = renderEditor({ entity: withRemainder, clientData: tree({ entities: [withRemainder, business] }) });
+
+    const select = screen
+      .getAllByRole("combobox", { name: "Beneficiary 1" })
+      .find((el) => (el as HTMLSelectElement).value === "hh:spouse")!;
+    await userEvent.selectOptions(select, "other_heirs");
+
+    await waitFor(() => {
+      const last = lastOf(onChange, "entity-upsert");
+      expect(last?.value?.remainderBeneficiaries).toEqual([
+        { otherHeirs: true, percentage: 100, distributionForm: "outright" },
+      ]);
+      expect(last?.value?.remainderBeneficiaries?.[0]).not.toHaveProperty("householdRole", "spouse");
+    });
+  });
+});
+
 describe("SolverTrustEditor — CLT/CRT terms", () => {
   it("points at the Estate Planning page instead of telling the advisor to delete the trust", () => {
     renderEditor({

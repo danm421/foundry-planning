@@ -687,6 +687,21 @@ describe("designationsToRows + rowsToDesignationPayload round-trip", () => {
     expect(payload[0]).toMatchObject({ tier: "remainder", distributionForm: "outright" });
   });
 
+  it("round-trips an Other Heirs remainder with its distribution form", () => {
+    const designations: Designation[] = [
+      makeDesignation({ id: "d9", tier: "remainder", otherHeirs: true, distributionForm: "in_trust" }),
+    ];
+
+    const rows = designationsToRows(designations, "remainder");
+    expect(rows[0].source).toEqual({ kind: "other_heirs" });
+    expect(rows[0].distributionForm).toBe("in_trust");
+
+    const payload = rowsToDesignationPayload(rows, "remainder");
+    expect(payload).toEqual([
+      { tier: "remainder", percentage: rows[0].percentage, sortOrder: 0, distributionForm: "in_trust", otherHeirs: true },
+    ]);
+  });
+
   it("does NOT include distributionForm for income tier", () => {
     const designations: Designation[] = [
       makeDesignation({ id: "d4", tier: "income", familyMemberId: "fm-4", distributionForm: "in_trust" }),
