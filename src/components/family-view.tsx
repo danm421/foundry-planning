@@ -214,6 +214,8 @@ export type Designation = {
   externalBeneficiaryId: string | null;
   entityIdRef: string | null;
   householdRole: "client" | "spouse" | null;
+  /** Names the built-in Other Heirs. */
+  otherHeirs?: boolean;
   percentage: number;
   sortOrder: number;
   distributionForm?: "in_trust" | "outright" | null;

@@ -309,6 +309,7 @@ export async function loadFamilyViewProps(
     externalBeneficiaryId: r.externalBeneficiaryId ?? null,
     entityIdRef: r.entityIdRef ?? null,
     householdRole: r.householdRole ?? null,
+    otherHeirs: r.otherHeirs === true,
     percentage: r.percentage,
     sortOrder: r.sortOrder,
   });
@@ -329,6 +330,7 @@ export async function loadFamilyViewProps(
         externalBeneficiaryId: r.externalBeneficiaryId ?? null,
         entityIdRef: r.entityId ?? null,
         householdRole: r.householdRole ?? null,
+        otherHeirs: r.otherHeirs === true,
         percentage: r.percentage,
         sortOrder: i,
       }),
@@ -342,6 +344,7 @@ export async function loadFamilyViewProps(
         externalBeneficiaryId: r.externalBeneficiaryId ?? null,
         entityIdRef: r.entityIdRef ?? null,
         householdRole: r.householdRole ?? null,
+        otherHeirs: r.otherHeirs === true,
         distributionForm: r.distributionForm ?? null,
         percentage: r.percentage,
         sortOrder: i,

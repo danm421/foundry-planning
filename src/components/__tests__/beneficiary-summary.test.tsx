@@ -327,3 +327,11 @@ describe("BeneficiarySummary", () => {
     expect(onEditEntity).toHaveBeenCalledWith(trustEntity.id);
   });
 });
+
+describe("BeneficiarySummary — Other Heirs", () => {
+  it('names an Other Heirs designation "Other Heirs"', () => {
+    const otherHeirsDesignation: Designation = { ...spouseHouseholdDesignation, id: u("d9"), householdRole: null, otherHeirs: true };
+    render(<BeneficiarySummary {...baseProps} designations={[otherHeirsDesignation]} />);
+    expect(screen.getByText(/Other Heirs — 100%/)).toBeDefined();
+  });
+});

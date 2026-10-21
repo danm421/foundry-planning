@@ -190,6 +190,34 @@ describe("loadFamilyViewProps — designations", () => {
   });
 });
 
+describe("loadFamilyViewProps — Other Heirs designations", () => {
+  it("carries an Other Heirs trust remainder through to the Family page designations", async () => {
+    mountTree(
+      tree({
+        accounts: [
+          {
+            id: "acct-1", name: "Brokerage", category: "taxable", value: 1, subType: "brokerage",
+            owners: [], beneficiaries: [{ id: "d1", tier: "primary", percentage: 100, otherHeirs: true, sortOrder: 0 }],
+          },
+        ],
+        entities: [
+          {
+            id: "ent-1", name: "ILIT", entityType: "trust", includeInPortfolio: false, isGrantor: false,
+            incomeBeneficiaries: [{ otherHeirs: true, percentage: 100 }],
+            remainderBeneficiaries: [{ otherHeirs: true, percentage: 100, distributionForm: "outright" }],
+          },
+        ],
+      }),
+    );
+    const { props } = await loadFamilyViewProps(CLIENT_ID, SCENARIO_ID);
+    expect(props.initialDesignations).toEqual([
+      expect.objectContaining({ id: "d1", tier: "primary", otherHeirs: true, familyMemberId: null, householdRole: null }),
+      expect.objectContaining({ entityId: "ent-1", tier: "income", otherHeirs: true, familyMemberId: null }),
+      expect.objectContaining({ entityId: "ent-1", tier: "remainder", otherHeirs: true, familyMemberId: null, distributionForm: "outright" }),
+    ]);
+  });
+});
+
 describe("loadFamilyViewProps — what the gift dialog needs for a QCD", () => {
   it("passes the plan's tax inflation rate, falling back to the general rate as the projection does", async () => {
     mountTree(tree({ planSettings: { planStartYear: 2026, planEndYear: 2061, inflationRate: 0.025, taxInflationRate: 0.03 } }));

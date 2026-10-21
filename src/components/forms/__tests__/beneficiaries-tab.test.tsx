@@ -154,4 +154,63 @@ describe("BeneficiariesTab", () => {
     expect(householdIdx).toBeGreaterThanOrEqual(0);
     expect(householdIdx).toBeLessThan(familyIdx);
   });
+
+  describe("Other Heirs", () => {
+    const kid = { id: "fm-kid", firstName: "Kid", lastName: "Smith", relationship: "child", role: "child" };
+    /** Opened from tree data (no loads), one primary row added. */
+    async function openWithRow(members: unknown[] = []) {
+      mockFetch.mockReset();
+      render(
+        <BeneficiariesTab
+          clientId="c1"
+          accountId="a1"
+          active
+          scenarioBeneficiaries={[]}
+          pickLists={{ members: members as never, externals: [], entities: [] }}
+        />,
+      );
+      await screen.findByRole("heading", { name: /primary/i, level: 4 });
+      fireEvent.click(screen.getByRole("button", { name: /add primary/i }));
+      return screen.getByRole("combobox") as HTMLSelectElement;
+    }
+    const savedBody = () => (submitMock.mock.calls[0][1] as { body: Record<string, unknown>[] }).body;
+    const noOtherRecipient = (row: Record<string, unknown>) =>
+      ["familyMemberId", "externalBeneficiaryId", "entityIdRef", "householdRole"].every((k) => (row[k] ?? null) === null);
+
+    it("offers Other Heirs even with no family or externals", async () => {
+      const select = await openWithRow();
+      const groups = select.querySelectorAll("optgroup");
+      const last = groups[groups.length - 1];
+      expect(last.getAttribute("label")).toBe("Other");
+      expect(Array.from(last.querySelectorAll("option")).map((o) => o.textContent)).toEqual(["Other Heirs"]);
+    });
+
+    it("saves an Other Heirs pick in base mode", async () => {
+      scenarioActive = false;
+      const select = await openWithRow();
+      fireEvent.change(select, { target: { value: "other_heirs" } });
+      fireEvent.click(screen.getByRole("button", { name: /save beneficiaries/i }));
+      await waitFor(() => expect(submitMock).toHaveBeenCalled());
+      const [row] = savedBody();
+      expect(row).toMatchObject({ tier: "primary", percentage: 100, otherHeirs: true });
+      expect(noOtherRecipient(row)).toBe(true);
+      const [edit] = submitMock.mock.calls[0];
+      expect(edit.desiredFields.beneficiaries).toEqual([
+        expect.objectContaining({ tier: "primary", percentage: 100, otherHeirs: true }),
+      ]);
+    });
+
+    it("switching a row from Other Heirs to a family member clears otherHeirs", async () => {
+      scenarioActive = false;
+      const select = await openWithRow([kid]);
+      fireEvent.change(select, { target: { value: "other_heirs" } });
+      fireEvent.change(select, { target: { value: "fm:fm-kid" } });
+      fireEvent.click(screen.getByRole("button", { name: /save beneficiaries/i }));
+      await waitFor(() => expect(submitMock).toHaveBeenCalled());
+      const [row] = savedBody();
+      expect(row).toMatchObject({ familyMemberId: "fm-kid", otherHeirs: false });
+      const [edit] = submitMock.mock.calls[0];
+      expect("otherHeirs" in edit.desiredFields.beneficiaries[0]).toBe(false);
+    });
+  });
 });

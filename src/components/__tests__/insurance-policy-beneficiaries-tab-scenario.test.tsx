@@ -7,7 +7,7 @@
  */
 import { createRef } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import InsurancePolicyBeneficiariesTab, {
   type InsurancePolicyBeneficiariesAutoSaveHandle,
 } from "@/components/insurance-policy-beneficiaries-tab";
@@ -93,6 +93,20 @@ describe("InsurancePolicyBeneficiariesTab inside a scenario", () => {
     const [seed] = JSON.parse(calls()[0][1]!.body as string).desiredFields.beneficiaries;
     expect(seed).toMatchObject({ tier: "primary", percentage: 100, entityIdRef: "ilit-1" });
     expect(seed.id).toMatch(/^[0-9a-f-]{36}$/);
+  });
+});
+
+describe("InsurancePolicyBeneficiariesTab — Other Heirs", () => {
+  it("saves an Other Heirs pick into the scenario", async () => {
+    const ref = createRef<InsurancePolicyBeneficiariesAutoSaveHandle>();
+    mount(ref);
+    await waitFor(() => expect(document.body.textContent).toContain("sum: 100.00%"));
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "other_heirs" } });
+
+    const result = await ref.current!.saveAsync();
+    expect(result.ok).toBe(true);
+    const [saved] = JSON.parse(calls()[0][1]!.body as string).desiredFields.beneficiaries;
+    expect(saved).toEqual({ id: "ref-1", tier: "primary", percentage: 100, sortOrder: 0, otherHeirs: true });
   });
 });
 

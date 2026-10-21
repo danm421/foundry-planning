@@ -24,6 +24,7 @@ import type { SaveResult } from "@/lib/use-tab-auto-save";
 import type { BeneficiaryRef } from "@/engine/types";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { refsToDesignations } from "./forms/beneficiary-designations";
+import { OTHER_HEIRS_VALUE, OtherHeirsOptgroup } from "./forms/other-heirs-option";
 import { describeApiError, type ApiErrorBody } from "@/lib/api-error-message";
 
 /** Imperative handle the dialog uses to trigger a save on tab switch / submit. */
@@ -65,6 +66,7 @@ const BENEFICIARY_FIELD_LABELS: Record<string, string> = {
   externalBeneficiaryId: "Beneficiary",
   entityIdRef: "Beneficiary",
   householdRole: "Beneficiary",
+  otherHeirs: "Beneficiary",
 };
 
 // DB rows ship `percentage` as a decimal string. `Designation` wants a number,
@@ -87,7 +89,7 @@ const isPlaceholderId = (id: string) => id.startsWith("tmp-") || id.startsWith("
 
 function rowHasSelection(r: Designation): boolean {
   return Boolean(
-    r.familyMemberId || r.externalBeneficiaryId || r.entityIdRef || r.householdRole,
+    r.familyMemberId || r.externalBeneficiaryId || r.entityIdRef || r.householdRole || r.otherHeirs,
   );
 }
 
@@ -181,6 +183,7 @@ const AccountBeneficiaryEditor = forwardRef<
             externalBeneficiaryId: r.externalBeneficiaryId ?? undefined,
             entityIdRef: r.entityIdRef ?? undefined,
             householdRole: r.householdRole ?? undefined,
+            ...(r.otherHeirs ? { otherHeirs: true as const } : {}),
             sortOrder: r.sortOrder,
           }));
         const res = await submit(
@@ -215,6 +218,7 @@ const AccountBeneficiaryEditor = forwardRef<
         externalBeneficiaryId: r.externalBeneficiaryId ?? undefined,
         entityIdRef: r.entityIdRef ?? undefined,
         householdRole: r.householdRole ?? undefined,
+        otherHeirs: r.otherHeirs === true,
         sortOrder: r.sortOrder,
       }));
       const res = await fetch(url, {
@@ -264,6 +268,7 @@ const AccountBeneficiaryEditor = forwardRef<
         externalBeneficiaryId: null,
         entityIdRef: null,
         householdRole: null,
+        otherHeirs: false,
         percentage: 0,
         sortOrder: r.length,
       };
@@ -327,6 +332,7 @@ const AccountBeneficiaryEditor = forwardRef<
       externalBeneficiaryId: null,
       entityIdRef: null,
       householdRole: null,
+      otherHeirs: false,
       percentage: pcts[i],
       sortOrder: i,
     }));
@@ -358,15 +364,17 @@ const AccountBeneficiaryEditor = forwardRef<
             <li key={r.id} className="flex items-center gap-2">
               <select
                 value={
-                  r.householdRole
-                    ? `hh:${r.householdRole}`
-                    : r.familyMemberId
-                      ? `fm:${r.familyMemberId}`
-                      : r.externalBeneficiaryId
-                        ? `ext:${r.externalBeneficiaryId}`
-                        : r.entityIdRef
-                          ? `ent:${r.entityIdRef}`
-                          : ""
+                  r.otherHeirs
+                    ? OTHER_HEIRS_VALUE
+                    : r.householdRole
+                      ? `hh:${r.householdRole}`
+                      : r.familyMemberId
+                        ? `fm:${r.familyMemberId}`
+                        : r.externalBeneficiaryId
+                          ? `ext:${r.externalBeneficiaryId}`
+                          : r.entityIdRef
+                            ? `ent:${r.entityIdRef}`
+                            : ""
                 }
                 onChange={(e) => {
                   const v = e.target.value;
@@ -375,8 +383,11 @@ const AccountBeneficiaryEditor = forwardRef<
                     externalBeneficiaryId: null,
                     entityIdRef: null,
                     householdRole: null,
+                    otherHeirs: false,
                   };
-                  if (v.startsWith("hh:")) {
+                  if (v === OTHER_HEIRS_VALUE) {
+                    updateRow(r.id, { ...clear, otherHeirs: true });
+                  } else if (v.startsWith("hh:")) {
                     const role = v.slice(3) as "client" | "spouse";
                     updateRow(r.id, { ...clear, householdRole: role });
                   } else if (v.startsWith("fm:")) {
@@ -421,6 +432,7 @@ const AccountBeneficiaryEditor = forwardRef<
                     </option>
                   ))}
                 </optgroup>
+                <OtherHeirsOptgroup />
               </select>
               <input
                 type="number"
@@ -575,6 +587,7 @@ const InsurancePolicyBeneficiariesTab = forwardRef<
         externalBeneficiaryId: null,
         entityIdRef: trustOwnerId,
         householdRole: null,
+        otherHeirs: false,
         percentage: 100,
         sortOrder: 0,
       },

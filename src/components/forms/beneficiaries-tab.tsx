@@ -13,6 +13,7 @@ import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { BeneficiaryRef } from "@/engine/types";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import { inputBaseClassName, selectBaseClassName } from "./input-styles";
+import { OTHER_HEIRS_VALUE, OtherHeirsOptgroup } from "./other-heirs-option";
 
 /** The lists the editor offers beneficiaries from. */
 export interface BeneficiaryPickLists {
@@ -104,6 +105,7 @@ function AccountBeneficiaryEditor({
         externalBeneficiaryId: r.externalBeneficiaryId ?? undefined,
         entityIdRef: r.entityIdRef ?? undefined,
         householdRole: r.householdRole ?? undefined,
+        otherHeirs: r.otherHeirs === true,
         sortOrder: r.sortOrder,
       }));
       // Scenario-overlay shape: a full BeneficiaryRef[] fat-field on the account.
@@ -118,6 +120,7 @@ function AccountBeneficiaryEditor({
           externalBeneficiaryId: r.externalBeneficiaryId ?? undefined,
           entityIdRef: r.entityIdRef ?? undefined,
           householdRole: r.householdRole ?? undefined,
+          ...(r.otherHeirs ? { otherHeirs: true as const } : {}),
           sortOrder: r.sortOrder,
         }));
       const res = await writer.submit(
@@ -162,6 +165,7 @@ function AccountBeneficiaryEditor({
         externalBeneficiaryId: null,
         entityIdRef: null,
         householdRole: null,
+        otherHeirs: false,
         percentage: 0,
         sortOrder: r.length,
       };
@@ -222,6 +226,7 @@ function AccountBeneficiaryEditor({
       externalBeneficiaryId: null,
       entityIdRef: null,
       householdRole: null,
+      otherHeirs: false,
       percentage: pcts[i],
       sortOrder: i,
     }));
@@ -254,20 +259,23 @@ function AccountBeneficiaryEditor({
             <li key={r.id} className="flex items-center gap-2">
               <select
                 value={
-                  r.familyMemberId
-                    ? `fm:${r.familyMemberId}`
-                    : r.externalBeneficiaryId
-                      ? `ext:${r.externalBeneficiaryId}`
-                      : r.entityIdRef
-                        ? `ent:${r.entityIdRef}`
-                        : r.householdRole
-                          ? `hh:${r.householdRole}`
-                          : ""
+                  r.otherHeirs
+                    ? OTHER_HEIRS_VALUE
+                    : r.familyMemberId
+                      ? `fm:${r.familyMemberId}`
+                      : r.externalBeneficiaryId
+                        ? `ext:${r.externalBeneficiaryId}`
+                        : r.entityIdRef
+                          ? `ent:${r.entityIdRef}`
+                          : r.householdRole
+                            ? `hh:${r.householdRole}`
+                            : ""
                 }
                 onChange={(e) => {
                   const v = e.target.value;
-                  const clear = { familyMemberId: null, externalBeneficiaryId: null, entityIdRef: null, householdRole: null };
-                  if (v.startsWith("fm:")) updateRow(r.id, { ...clear, familyMemberId: v.slice(3) });
+                  const clear = { familyMemberId: null, externalBeneficiaryId: null, entityIdRef: null, householdRole: null, otherHeirs: false };
+                  if (v === OTHER_HEIRS_VALUE) updateRow(r.id, { ...clear, otherHeirs: true });
+                  else if (v.startsWith("fm:")) updateRow(r.id, { ...clear, familyMemberId: v.slice(3) });
                   else if (v.startsWith("ext:")) updateRow(r.id, { ...clear, externalBeneficiaryId: v.slice(4) });
                   else if (v.startsWith("ent:")) updateRow(r.id, { ...clear, entityIdRef: v.slice(4) });
                   else if (v.startsWith("hh:")) updateRow(r.id, { ...clear, householdRole: v.slice(3) as "client" | "spouse" });
@@ -307,6 +315,7 @@ function AccountBeneficiaryEditor({
                     </option>
                   ))}
                 </optgroup>
+                <OtherHeirsOptgroup />
               </select>
               <input
                 type="number"

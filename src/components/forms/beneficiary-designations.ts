@@ -13,6 +13,7 @@ export function refsToDesignations(refs: BeneficiaryRef[], accountId: string): D
     externalBeneficiaryId: r.externalBeneficiaryId ?? null,
     entityIdRef: r.entityIdRef ?? null,
     householdRole: r.householdRole ?? null,
+    otherHeirs: r.otherHeirs === true,
     percentage: r.percentage,
     sortOrder: r.sortOrder,
   }));

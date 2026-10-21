@@ -9,6 +9,7 @@ import type {
   Tier,
 } from "./family-view";
 import { formatAccountCategory } from "@/lib/accounts/category-labels";
+import { OTHER_HEIRS_LABEL } from "@/engine/other-heirs";
 
 interface BeneficiarySummaryProps {
   accounts: AccountLite[];
@@ -34,6 +35,7 @@ interface NameContext {
 }
 
 function beneficiaryName(d: Designation, ctx: NameContext): string {
+  if (d.otherHeirs) return OTHER_HEIRS_LABEL;
   if (d.householdRole === "client") return ctx.clientName;
   if (d.householdRole === "spouse") return ctx.spouseName ?? "(spouse)";
   if (d.familyMemberId) {
