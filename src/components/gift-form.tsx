@@ -19,6 +19,8 @@ export interface GiftFormRecipients {
   /** Irrevocable trusts only. */
   trusts: { id: string; name: string }[];
   familyMembers: { id: string; firstName: string; lastName?: string | null }[];
+  /** `charityType` is set for charities only — every external row carries one,
+   *  people included (the column defaults to public), and it gates "From an IRA". */
   externals: { id: string; name: string; kindLabel?: string; charityType?: "public" | "private" }[];
 }
 
@@ -38,7 +40,7 @@ export function giftFormRecipientsFromClientData(clientData: ClientData): GiftFo
       id: x.id,
       name: x.name,
       kindLabel: x.kind,
-      charityType: x.charityType,
+      charityType: x.kind === "charity" ? x.charityType : undefined,
     })),
   };
 }

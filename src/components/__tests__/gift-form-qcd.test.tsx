@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import GiftForm, { type GiftFormProps } from "@/components/gift-form";
+import GiftForm, { giftFormRecipientsFromClientData, type GiftFormProps } from "@/components/gift-form";
+import { buildClientData } from "@/engine/__tests__/fixtures";
 import type { QcdSourceOption } from "@/lib/gifts/qcd-sources";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
@@ -43,6 +44,22 @@ describe("GiftForm — From an IRA", () => {
     render(<GiftForm {...base()} />);
     expect(fundingOptions()).toBeNull();
     pick("family_member:m1");
+    expect(fundingOptions()).toBeNull();
+    pick("external_beneficiary:pub");
+    expect(fundingOptions()).toBeInTheDocument();
+  });
+
+  it("never offers it for a person from the plan, though every person's row carries charity type public", () => {
+    const recipients = giftFormRecipientsFromClientData(
+      buildClientData({
+        externalBeneficiaries: [
+          { id: "ind", name: "Clara Reyes", kind: "individual", charityType: "public" },
+          { id: "pub", name: "Red Cross", kind: "charity", charityType: "public" },
+        ],
+      }),
+    );
+    render(<GiftForm {...base({ recipients })} />);
+    pick("external_beneficiary:ind");
     expect(fundingOptions()).toBeNull();
     pick("external_beneficiary:pub");
     expect(fundingOptions()).toBeInTheDocument();

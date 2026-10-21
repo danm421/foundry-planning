@@ -39,6 +39,15 @@ describe("GiftDialog — From an IRA", () => {
     expect(opts).toContain("Jane IRA (Jane)");
   });
 
+  it("never offers it for a person, though every person's row carries charity type public", () => {
+    const clara = { id: "ind", name: "Clara Reyes", kind: "individual", charityType: "public", notes: null } as ExternalBeneficiary;
+    render(<GiftDialog {...props({ externals: [clara, ...props().externals] })} />);
+    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "external_beneficiary:ind" } });
+    expect(screen.queryByText("From an IRA")).toBeNull();
+    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "external_beneficiary:pub" } });
+    expect(screen.getByText("From an IRA")).toBeInTheDocument();
+  });
+
   it("says private charities can't take a QCD", () => {
     render(<GiftDialog {...props()} />);
     fireEvent.change(screen.getByTestId("recipient"), { target: { value: "external_beneficiary:priv" } });

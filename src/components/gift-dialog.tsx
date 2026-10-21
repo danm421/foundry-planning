@@ -402,7 +402,10 @@ export default function GiftDialog(props: GiftDialogProps) {
               firstName: m.firstName,
               lastName: m.lastName,
             })),
-            externals: props.externals.map((x) => ({ id: x.id, name: x.name, kindLabel: x.kind, charityType: x.charityType })),
+            externals: props.externals.map((x) => ({
+              id: x.id, name: x.name, kindLabel: x.kind,
+              charityType: x.kind === "charity" ? x.charityType : undefined,
+            })),
           }}
           accounts={props.accounts
             .filter((a) => a.ownerEntityId == null)
