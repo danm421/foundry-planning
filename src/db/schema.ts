@@ -1821,6 +1821,8 @@ export const beneficiaryDesignations = pgTable(
     // When the named beneficiary is the household principal — 'client' or
     // 'spouse'. Mutually exclusive with the other named-beneficiary FKs.
     householdRole: householdRoleEnum("household_role"),
+    // Names the built-in Other Heirs. Mutually exclusive with the other named-beneficiary fields.
+    otherHeirs: boolean("other_heirs").notNull().default(false),
     percentage: decimal("percentage", { precision: 5, scale: 2 }).notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
     // How a remainder beneficiary receives their share: held in a continuing
@@ -4352,6 +4354,7 @@ export const willRecipientKindEnum = pgEnum("will_recipient_kind", [
   "external_beneficiary",
   "entity",
   "spouse",
+  "other_heirs",
 ]);
 
 export const willBequestKindEnum = pgEnum("will_bequest_kind", [

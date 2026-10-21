@@ -1961,6 +1961,13 @@
       "when": 1792601492112,
       "tag": "0279_qcd_gifts",
       "breakpoints": true
+    },
+    {
+      "idx": 280,
+      "version": "7",
+      "when": 1792620119582,
+      "tag": "0280_other_heirs_recipient",
+      "breakpoints": true
     }
   ]
 }
