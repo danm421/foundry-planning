@@ -704,7 +704,9 @@ function IncomeDialog({
       // planning year, not the plan start: on a plan that starts next year a
       // row starting then would otherwise store base === start and read back
       // as nominal (the engine reads this year's amounts as next year's).
-      inflationStartYear: todaysDollars ? currentPlanningYear() : null,
+      // An edit keeps the row's own base: a row entered last year is still in
+      // last year's dollars after the year turns.
+      inflationStartYear: todaysDollars ? (editing?.inflationStartYear ?? currentPlanningYear()) : null,
       startYearRef,
       endYearRef,
       taxType,
@@ -1397,7 +1399,8 @@ function ExpenseDialog({
       growthSource,
       cashAccountId: null,
       ownerAccountId: isLiving ? null : ownerAccountId ?? null,
-      inflationStartYear: todaysDollars ? currentPlanningYear() : null,
+      // An edit keeps the row's own base — see the income dialog.
+      inflationStartYear: todaysDollars ? (editing?.inflationStartYear ?? currentPlanningYear()) : null,
       startYearRef,
       endYearRef,
       // Living expenses are never a deduction — the Tax Treatment field is hidden
