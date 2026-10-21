@@ -31,6 +31,7 @@ type SetRow = {
   familyMemberId?: string | null;
   externalBeneficiaryId?: string | null;
   entityIdRef?: string | null;
+  otherHeirs?: boolean;
   distributionForm?: string | null;
   [key: string]: unknown;
 };
@@ -65,6 +66,10 @@ async function withKeptTiers(ctx: SaveContext, targetKind: "account" | "trust", 
       ),
     )
     .orderBy(asc(beneficiaryDesignations.sortOrder));
+  // The record book leaves Other Heirs out, so replacing its tier would drop it.
+  if (onRecord.some((r) => r.otherHeirs && tiers.has(r.tier))) {
+    throw new SaveLineError("These beneficiaries include Other Heirs, which can only be changed in the app.");
+  }
   // A row names the client or co-client by household role or by family member: the same person either way.
   const principals = await ctx.tx
     .select({ id: familyMembers.id, role: familyMembers.role })
@@ -72,7 +77,7 @@ async function withKeptTiers(ctx: SaveContext, targetKind: "account" | "trust", 
     .where(and(eq(familyMembers.clientId, ctx.clientId), inArray(familyMembers.role, ["client", "spouse"])));
   const roleOf = new Map(principals.map((p) => [p.id, p.role]));
   const tierAndWho = (r: SetRow) =>
-    [r.tier, r.householdRole ?? roleOf.get(r.familyMemberId ?? "") ?? r.familyMemberId, r.externalBeneficiaryId, r.entityIdRef].map((v) => v ?? "").join("|");
+    [r.tier, r.householdRole ?? roleOf.get(r.familyMemberId ?? "") ?? r.familyMemberId, r.externalBeneficiaryId, r.entityIdRef, r.otherHeirs ? "other_heirs" : null].map((v) => v ?? "").join("|");
   const formOf = new Map(onRecord.flatMap((r) => (r.distributionForm ? [[tierAndWho(r), r.distributionForm] as const] : [])));
   return [
     ...named.map((r) => (formOf.has(tierAndWho(r)) ? { ...r, distributionForm: formOf.get(tierAndWho(r)) } : r)),
@@ -85,6 +90,7 @@ async function withKeptTiers(ctx: SaveContext, targetKind: "account" | "trust", 
         externalBeneficiaryId: r.externalBeneficiaryId,
         entityIdRef: r.entityIdRef,
         householdRole: r.householdRole,
+        otherHeirs: r.otherHeirs,
         sortOrder: r.sortOrder,
         ...(r.distributionForm ? { distributionForm: r.distributionForm } : {}),
       })),

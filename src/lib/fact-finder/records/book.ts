@@ -225,6 +225,8 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
   /** The family member, trust or charity a row names — an owner, a designee, a gift's recipient; null for none. */
   const whoOf = (familyMemberId: string | null, entityId: string | null, externalId: string | null | undefined): RecordRef | null =>
     familyMemberId ? member(familyMemberId) : entityId ? record("entity", entityId) : externalId ? record("external_beneficiary", externalId) : null;
+  // An Other Heirs row names no one the fact finder can refer to, so it is left
+  // out on purpose; the writers refuse to replace a tier that holds one.
   const beneficiariesOf = (rows: Designation[]) =>
     rows.flatMap((d) => {
       const who = d.householdRole ? person(d.householdRole) : whoOf(d.familyMemberId, d.entityIdRef, d.externalBeneficiaryId);
@@ -484,7 +486,7 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
           liabilityId: b.liabilityId ? record("liability", b.liabilityId) : null,
           percentage: Number(b.percentage),
           recipients: bequestRecipients
-            .filter((r) => r.bequestId === b.id)
+            .filter((r) => r.bequestId === b.id && r.recipientKind !== "other_heirs")
             .map((r) => ({ who: recipient(r.recipientKind, r.recipientId, grantor), percentage: Number(r.percentage) })),
           condition: b.condition,
         },
@@ -507,7 +509,7 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
       label: `${willLabel(names[w.grantor], w.grantor)} — remaining estate`,
       values: {
         recipients: residuary
-          .filter((r) => r.willId === w.id)
+          .filter((r) => r.willId === w.id && r.recipientKind !== "other_heirs")
           .map((r) => ({ who: recipient(r.recipientKind, r.recipientId, w.grantor), percentage: Number(r.percentage) })),
       },
     })),

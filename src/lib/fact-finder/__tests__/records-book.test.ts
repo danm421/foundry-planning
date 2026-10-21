@@ -764,6 +764,33 @@ describe.skipIf(!HAS_DB)("loadRecordBook (live DB)", () => {
     ]);
   });
 
+  it("leaves Other Heirs out of a will's recipients", async () => {
+    const [bequestRow] = await db
+      .insert(willBequestRecipients)
+      .values({ bequestId: ids.businessBequest, recipientKind: "other_heirs", recipientId: null, percentage: "10", sortOrder: 9 })
+      .returning({ id: willBequestRecipients.id });
+    const [restRow] = await db
+      .insert(willResiduaryRecipients)
+      .values({ willId: ids.markWill, recipientKind: "other_heirs", recipientId: null, tier: "primary", percentage: "10", sortOrder: 9 })
+      .returning({ id: willResiduaryRecipients.id });
+    try {
+      const withHeirs = await loadRecordBook(clientId, FIRM, scenarioId);
+      const refs = [...withHeirs.records.will_bequest, ...withHeirs.records.will_residuary_recipient].flatMap(
+        (r) => (r.values.recipients as { who: { id?: string } }[]).map((x) => x.who),
+      );
+      expect(refs.some((who) => who.id === "null")).toBe(false);
+      expect(byId(withHeirs.records.will_bequest, ids.businessBequest)?.values.recipients).toEqual(
+        byId(book.records.will_bequest, ids.businessBequest)?.values.recipients,
+      );
+      expect(byId(withHeirs.records.will_residuary_recipient, ids.markWill)?.values.recipients).toEqual(
+        byId(book.records.will_residuary_recipient, ids.markWill)?.values.recipients,
+      );
+    } finally {
+      await db.delete(willBequestRecipients).where(eq(willBequestRecipients.id, bequestRow.id));
+      await db.delete(willResiduaryRecipients).where(eq(willResiduaryRecipients.id, restRow.id));
+    }
+  });
+
   it("prior gifts (parent rows only) and the client's observations", () => {
     expect(byLabel(book.records.gift)).toEqual([
       {

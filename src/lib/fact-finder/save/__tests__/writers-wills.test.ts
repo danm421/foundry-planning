@@ -203,6 +203,51 @@ d("wills writers (Plan 4, Task 13)", () => {
     expect(audits.map((a) => (a.metadata as { bequestCount: number }).bequestCount).sort()).toEqual([3, 3, 4, 4]);
   });
 
+  describe("Other Heirs on record", () => {
+    /** A will on record whose provision and remaining estate both leave a share to Other Heirs. */
+    async function willWithOtherHeirs() {
+      const seed = await seedSaveClient(FIRM, { coClient: true });
+      const { clientId, scenarioId } = seed;
+      const [schwab] = await db.insert(accounts).values({ clientId, scenarioId, name: "Schwab Brokerage", category: "taxable", subType: "brokerage" }).returning();
+      const [emma] = await db.insert(familyMembers).values({ clientId, firstName: "Emma", lastName: "Hendricks", role: "child", relationship: "child" }).returning();
+      const [will] = await db.insert(wills).values({ clientId, grantor: "client" }).returning();
+      const [bequest] = await db
+        .insert(willBequests)
+        .values({ willId: will.id, name: "Schwab Brokerage", kind: "asset", assetMode: "specific", accountId: schwab.id, percentage: "100", condition: "always", sortOrder: 0 })
+        .returning();
+      await db.insert(willBequestRecipients).values({ bequestId: bequest.id, recipientKind: "other_heirs", recipientId: null, percentage: "100", sortOrder: 0 });
+      await db.insert(willResiduaryRecipients).values({ willId: will.id, recipientKind: "other_heirs", recipientId: null, tier: "primary", percentage: "100", sortOrder: 0 });
+      return { seed, will: will.id, bequest: bequest.id, emma: emma.id };
+    }
+
+    it("refuses to replace a remaining estate that names Other Heirs", async () => {
+      const { seed, will, emma } = await willWithOtherHeirs();
+      const onRecord = record("will", will);
+      await expect(
+        inSave({ clientId: seed.clientId, firmId: FIRM }, (ctx) =>
+          WILL_WRITERS.will_residuary_recipient.update(
+            ctx,
+            inputOf(changeLine("will_residuary_recipient", { recipients: [{ who: record("family_member", emma), percentage: 100 }] }, { recordId: will, parent: onRecord })),
+          ),
+        ),
+      ).rejects.toThrow("This will leaves a share to Other Heirs, which can only be changed in the app.");
+      expect(await residuaryOf(will)).toMatchObject([{ recipientKind: "other_heirs", recipientId: null, tier: "primary" }]);
+    });
+
+    it("refuses to change a provision that leaves a share to Other Heirs", async () => {
+      const { seed, will, bequest, emma } = await willWithOtherHeirs();
+      await expect(
+        inSave({ clientId: seed.clientId, firmId: FIRM }, (ctx) =>
+          WILL_WRITERS.will_bequest.update(
+            ctx,
+            inputOf(provisionLine(record("will", will), { recipients: [{ who: record("family_member", emma), percentage: 100 }] }, { recordId: bequest })),
+          ),
+        ),
+      ).rejects.toThrow("This will leaves a share to Other Heirs, which can only be changed in the app.");
+      expect(await recipientsOf(bequest)).toMatchObject([{ recipientKind: "other_heirs", recipientId: null }]);
+    });
+  });
+
   it("provisions added in one save keep the import's order: a new will's from 0, a will on record's after its own three", async () => {
     const seed = await seedSaveClient(FIRM, { coClient: true });
     const { clientId, scenarioId } = seed;

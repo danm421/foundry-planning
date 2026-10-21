@@ -8,6 +8,8 @@
  * import changes only what hangs off it. Every write runs on the save's
  * transaction.
  */
+import { and, eq } from "drizzle-orm";
+import { willBequestRecipients, willResiduaryRecipients } from "@/db/schema";
 import type { EntityWriteResult } from "@/lib/clients/entity-write-result";
 import {
   addWillBequestForClient,
@@ -15,7 +17,7 @@ import {
   replaceWillResiduaryForClient,
   updateWillBequestForClient,
 } from "@/lib/clients/wills-writes";
-import { coreArgs, SaveLineError, unwrap, type SaveInput, type SaveWriter } from "../types";
+import { coreArgs, SaveLineError, unwrap, type SaveContext, type SaveInput, type SaveWriter } from "../types";
 
 /** The wills routes' refusal codes, as the advisor reads them. */
 const PLAIN: Record<string, string> = {
@@ -37,6 +39,33 @@ function willOf(input: SaveInput): string {
   throw new SaveLineError(input.line.target === "will_residuary_recipient" ? "This remaining estate names no will." : "This provision names no will.");
 }
 
+/** The record book leaves Other Heirs out of a will's recipients, so a write that replaces them would drop it. */
+const OTHER_HEIRS_ON_RECORD = "This will leaves a share to Other Heirs, which can only be changed in the app.";
+
+async function refuseOtherHeirsBequest(ctx: SaveContext, bequestId: string): Promise<void> {
+  const [row] = await ctx.tx
+    .select({ id: willBequestRecipients.id })
+    .from(willBequestRecipients)
+    .where(and(eq(willBequestRecipients.bequestId, bequestId), eq(willBequestRecipients.recipientKind, "other_heirs")))
+    .limit(1);
+  if (row) throw new SaveLineError(OTHER_HEIRS_ON_RECORD);
+}
+
+async function refuseOtherHeirsResiduary(ctx: SaveContext, willId: string): Promise<void> {
+  const [row] = await ctx.tx
+    .select({ id: willResiduaryRecipients.id })
+    .from(willResiduaryRecipients)
+    .where(
+      and(
+        eq(willResiduaryRecipients.willId, willId),
+        eq(willResiduaryRecipients.tier, "primary"),
+        eq(willResiduaryRecipients.recipientKind, "other_heirs"),
+      ),
+    )
+    .limit(1);
+  if (row) throw new SaveLineError(OTHER_HEIRS_ON_RECORD);
+}
+
 /** The remaining estate as the wills routes take it. */
 const residuaryOf = (input: SaveInput) => ({ residuaryRecipients: input.body.recipients });
 
@@ -51,14 +80,21 @@ export const WILL_WRITERS: { will: SaveWriter; will_bequest: SaveWriter; will_re
     create: async (ctx, input) => idOf(await addWillBequestForClient({ ...coreArgs(ctx), willId: willOf(input), input: input.body })),
     update: async (ctx, input) => {
       if (input.recordId === null) throw new SaveLineError("This provision isn't on the plan.");
+      await refuseOtherHeirsBequest(ctx, input.recordId);
       idOf(await updateWillBequestForClient({ ...coreArgs(ctx), willId: willOf(input), bequestId: input.recordId, input: input.body }));
     },
   },
   // A set: its id is its will's.
   will_residuary_recipient: {
-    create: async (ctx, input) => idOf(await replaceWillResiduaryForClient({ ...coreArgs(ctx), willId: willOf(input), input: residuaryOf(input) })),
+    create: async (ctx, input) => {
+      const willId = willOf(input);
+      await refuseOtherHeirsResiduary(ctx, willId);
+      return idOf(await replaceWillResiduaryForClient({ ...coreArgs(ctx), willId, input: residuaryOf(input) }));
+    },
     update: async (ctx, input) => {
-      idOf(await replaceWillResiduaryForClient({ ...coreArgs(ctx), willId: willOf(input), input: residuaryOf(input) }));
+      const willId = willOf(input);
+      await refuseOtherHeirsResiduary(ctx, willId);
+      idOf(await replaceWillResiduaryForClient({ ...coreArgs(ctx), willId, input: residuaryOf(input) }));
     },
   },
 };

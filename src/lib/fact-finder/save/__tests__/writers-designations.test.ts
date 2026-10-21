@@ -57,7 +57,7 @@ async function setOf(parent: { accountId: string } | { entityId: string }, handl
     .from(beneficiaryDesignations)
     .where("accountId" in parent ? eq(beneficiaryDesignations.accountId, parent.accountId) : eq(beneficiaryDesignations.entityId, parent.entityId));
   return rows
-    .map((r) => [r.tier, r.householdRole ?? r.familyMemberId ?? r.externalBeneficiaryId ?? r.entityIdRef, r.percentage, r.distributionForm].filter(Boolean).join(" "))
+    .map((r) => [r.tier, r.householdRole ?? r.familyMemberId ?? r.externalBeneficiaryId ?? r.entityIdRef ?? (r.otherHeirs ? "other_heirs" : null), r.percentage, r.distributionForm].filter(Boolean).join(" "))
     .sort();
 }
 
@@ -245,6 +245,39 @@ d("DESIGNATION_WRITERS", () => {
       inSave(at(), (ctx) => accountSet.update(ctx, inputOf(changeLine("account_beneficiary_designation", { beneficiaries: named(["primary", LAURA, 100]) }, { recordId: foreign.id })))),
     ).rejects.toThrow("Not found");
     expect(await setOf({ accountId: foreign.id })).toEqual([]);
+  });
+
+  describe("Other Heirs on record", () => {
+    /** An IRA on the plan with the given rows, each naming Laura or Other Heirs. */
+    async function iraWith(rows: { tier: "primary" | "contingent"; otherHeirs?: boolean }[]) {
+      const { clientId, scenarioId } = seed;
+      const [ira] = await db.insert(accounts).values({ clientId, scenarioId, name: "Mark's Legacy IRA", category: "retirement", subType: "traditional_ira" }).returning();
+      await db.insert(beneficiaryDesignations).values(
+        rows.map((r) => ({
+          clientId, targetKind: "account" as const, accountId: ira.id, tier: r.tier, percentage: "100.00",
+          ...(r.otherHeirs ? { otherHeirs: true } : { householdRole: "spouse" as const }),
+        })),
+      );
+      return ira.id;
+    }
+
+    it("keeps an Other Heirs row in a tier it does not touch", async () => {
+      const ira = await iraWith([{ tier: "primary" }, { tier: "contingent", otherHeirs: true }]);
+      await inSave(at(), (ctx) =>
+        accountSet.update(ctx, inputOf(changeLine("account_beneficiary_designation", { beneficiaries: named(["primary", record("family_member", emma), 100]) }, { recordId: ira }))),
+      );
+      expect(await setOf({ accountId: ira })).toEqual(sorted("contingent other_heirs 100.00", `primary ${emma} 100.00`));
+    });
+
+    it("refuses to replace a tier that holds Other Heirs", async () => {
+      const ira = await iraWith([{ tier: "primary", otherHeirs: true }]);
+      await expect(
+        inSave(at(), (ctx) =>
+          accountSet.update(ctx, inputOf(changeLine("account_beneficiary_designation", { beneficiaries: named(["primary", record("family_member", emma), 100]) }, { recordId: ira }))),
+        ),
+      ).rejects.toThrow("These beneficiaries include Other Heirs, which can only be changed in the app.");
+      expect(await setOf({ accountId: ira })).toEqual(["primary other_heirs 100.00"]);
+    });
   });
 
   describe("an Update line built against the record book, as the review builds it", () => {
