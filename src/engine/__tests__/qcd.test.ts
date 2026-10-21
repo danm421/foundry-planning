@@ -289,6 +289,21 @@ describe("allocateQcds", () => {
     expect(r.rmdRemaining.get("ira-a")).toBe(92_000);
   });
 
+  it("a NaN amount or balance is skipped, and never leaks NaN into the cap, RMD or balances", () => {
+    const r = run(
+      [qcd({ amount: NaN }), qcd({ amount: 15_000, accountId: "nan-balance" }), qcd({ amount: 20_000 })],
+      { "ira-a": ira(), "nan-balance": ira({ available: NaN }) },
+      { cap: 30_000 },
+    );
+    // Only the valid gift lands, and it still sees the whole cap.
+    expect(r.results).toHaveLength(1);
+    expect(r.results[0]).toMatchObject({ accountId: "ira-a", qualifying: 20_000, taxedExcess: 0 });
+    expect(r.qcdOutByAccount.get("ira-a")).toEqual({ qualifying: 20_000, taxedExcess: 0 });
+    expect(r.qcdOutByAccount.has("nan-balance")).toBe(false);
+    expect(r.rmdRemaining.get("ira-a")).toBe(20_000);
+    expect(r.rmdRemaining.get("nan-balance")).toBe(40_000);
+  });
+
   it("each spouse has their own cap", () => {
     const r = run(
       [qcd({ amount: 100_000 }), qcd({ amount: 100_000, accountId: "spouse-ira" })],

@@ -2687,7 +2687,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           if (r.accountId !== acct.id || r.taxedExcess <= 0) continue;
           accountLedgers[acct.id].entries.push({
             category: "qcd",
-            label: `QCD to ${qcdCharityName(r.charityId)} (taxed: over the yearly limit)`,
+            label: `QCD to ${qcdCharityName(r.charityId)} (taxed, not a qualifying QCD)`,
             basis: ledgerBasis(excessBasis(r.taxedExcess)),
             amount: -r.taxedExcess,
             sourceId: r.charityId,

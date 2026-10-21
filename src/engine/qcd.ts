@@ -130,7 +130,7 @@ export function allocateQcds(input: AllocateQcdsInput): QcdAllocation {
     const a = accounts.get(q.accountId);
     if (!a || !a.isSourceType || a.giver == null || !giverEligible[a.giver]) continue;
     const room = a.available - paidOut(q.accountId);
-    if (room <= 0) continue;
+    if (!(room > 0)) continue; // a NaN fails safe
     // Full RMD takes only the part of this IRA's RMD that earlier QCDs from it
     // this year left unpaid, so a second one never doubles the gift.
     const asked =
@@ -138,7 +138,7 @@ export function allocateQcds(input: AllocateQcdsInput): QcdAllocation {
         ? Math.max(0, a.requiredMinimum - paidOut(q.accountId))
         : q.amount;
     const wanted = Math.min(room, asked);
-    if (wanted <= 0) continue;
+    if (!(wanted > 0)) continue;
     // Over the cap, to a non-qualifying charity, or from a SEP/SIMPLE in a
     // contribution year: a fixed gift still goes in full, taxed; a full-RMD
     // gift stops, and the rest of the RMD is paid to the household as usual.
@@ -148,7 +148,7 @@ export function allocateQcds(input: AllocateQcdsInput): QcdAllocation {
         : 0;
     const qualifying = Math.min(wanted, capRoom);
     const taxedExcess = q.mode === "full_rmd" ? 0 : wanted - qualifying;
-    if (qualifying + taxedExcess <= 0) continue;
+    if (!(qualifying + taxedExcess > 0)) continue;
 
     usedCap[a.giver] += qualifying;
     const out = qcdOutByAccount.get(q.accountId);

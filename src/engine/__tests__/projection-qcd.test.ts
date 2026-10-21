@@ -167,7 +167,7 @@ describe("projection — QCDs in the RMD step", () => {
     expect(ledger.rmdAmount).toBeCloseTo(rmd - 150_000, 2);
     expect(ledger.endingValue).toBeCloseTo(5_000_000 - rmd, 2);
     const taxedLine = ledger.entries.find(
-      (e) => e.label === "QCD to Stanford (taxed: over the yearly limit)",
+      (e) => e.label === "QCD to Stanford (taxed, not a qualifying QCD)",
     );
     expect(taxedLine?.category).toBe("qcd");
     expect(taxedLine?.amount).toBe(-39_000);
