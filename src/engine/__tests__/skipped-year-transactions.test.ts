@@ -143,4 +143,13 @@ describe("an option exercise dated in the skipped year", () => {
     expect(actions.filter((a) => a.kind === "sell")).toEqual([]);
     expect(actions.filter((a) => a.kind === "seed_held").map((a) => a.shares)).toEqual([600]);
   });
+
+  it("options exercised and sold this year leave nothing in the option account", () => {
+    const years = run(skipped, { accounts: [checking, soAccount], stockOptionPlans: [equityPlan(nso({ year: 2026, shares: 400 }))] });
+    expect(years.map((y) => y.accountLedgers["so"]?.endingValue ?? 0)).toEqual(years.map(() => 0));
+
+    const sellAtVest = { ...equityPlan(nso()), strategy: { ...equityPlan(nso()).strategy, sellTiming: "immediately" as const } };
+    const sold = run(skipped, { accounts: [checking, soAccount], stockOptionPlans: [sellAtVest] });
+    expect(sold.map((y) => y.accountLedgers["so"]?.endingValue ?? 0)).toEqual(sold.map(() => 0));
+  });
 });

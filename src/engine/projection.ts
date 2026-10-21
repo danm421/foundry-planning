@@ -2356,7 +2356,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         planSettings.planStartYear,
         year + 1,
         planSettings.dataYear,
-        equityState.timelinesByGrant,
+        equityState,
       );
     }
 

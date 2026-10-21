@@ -1,6 +1,6 @@
 import type { StockOptionPlan, EquityGrant, GrantType } from "./types";
 import { resolveStrategy } from "./strategy";
-import { buildGrantTimeline, type EquityAction } from "./timeline";
+import { buildGrantTimeline, grantAtStart, type EquityAction } from "./timeline";
 import { fmvCurve, resolveStrikePrice } from "./price-model";
 import { computeSellToCover } from "./withholding";
 import { isQualifyingIsoDisposition, isLongTermHolding } from "./holding-period";
@@ -42,6 +42,7 @@ export interface EquityState {
   planStartYear: number;
   actionsByYear: Map<string, Map<number, EquityAction[]>>; // accountId → year → actions
   lots: Map<string, Lot>;        // key = `${grantId}:${lotId}` — see lotKey
+  /** Each grant as settled at the start (`grantAtStart`). */
   grantsById: Map<string, EquityGrant>;
   /** Each grant's full timeline (grant id → actions), built once per run. */
   timelinesByGrant: Map<string, EquityAction[]>;
@@ -96,8 +97,9 @@ export function createEquityState(
     const fmvAt = fmvCurve(p, planStartYear);
     const byYear = new Map<number, EquityAction[]>();
     for (const g of p.grants) {
-      grantsById.set(g.id, g);
-      const timeline = buildGrantTimeline(g, acctStrategy, planStartYear, fmvAt, dataYear);
+      const settled = grantAtStart(g, acctStrategy, planStartYear, fmvAt, dataYear);
+      grantsById.set(g.id, settled);
+      const timeline = buildGrantTimeline(settled, acctStrategy, planStartYear, fmvAt);
       timelinesByGrant.set(g.id, timeline);
       for (const a of timeline) {
         (byYear.get(a.year) ?? byYear.set(a.year, []).get(a.year)!).push(a);

@@ -1,5 +1,6 @@
 import type { StockOptionPlan, EquityGrant } from "./types";
-import { buildGrantTimeline, type EquityAction } from "./timeline";
+import { buildGrantTimeline, grantAtStart, type EquityAction } from "./timeline";
+import type { EquityState } from "./tax-events";
 import { resolveStrategy } from "./strategy";
 import { fmvCurve, resolveStrikePrice } from "./price-model";
 
@@ -47,15 +48,16 @@ export function remainingGrantValue(
   priceYear: number = year,
   /** Below `planStartYear`: the plan starts next year — see `buildGrantTimeline`. */
   dataYear?: number,
-  /** Timelines already built for this run (`EquityState.timelinesByGrant`). */
-  timelines?: ReadonlyMap<string, EquityAction[]>,
+  /** This run's settled grants and timelines, built once. */
+  equity?: Pick<EquityState, "grantsById" | "timelinesByGrant">,
 ): number {
   const acct = resolveStrategy(plan.strategy, null, null);
   const fmvAt = fmvCurve(plan, planStartYear);
   const fmv = fmvAt(priceYear);
   let total = 0;
-  for (const grant of plan.grants) {
-    const timeline = timelines?.get(grant.id) ?? buildGrantTimeline(grant, acct, planStartYear, fmvAt, dataYear);
+  for (const stored of plan.grants) {
+    const grant = equity?.grantsById.get(stored.id) ?? grantAtStart(stored, acct, planStartYear, fmvAt, dataYear);
+    const timeline = equity?.timelinesByGrant.get(grant.id) ?? buildGrantTimeline(grant, acct, planStartYear, fmvAt);
     const shares = sharesStillInGrant(grant, timeline, year);
     if (shares <= 0) continue;
     if (grant.grantType === "rsu") {

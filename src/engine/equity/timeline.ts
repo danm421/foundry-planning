@@ -224,6 +224,22 @@ function settleSkippedYear(
   return { ...grant, tranches, plannedEvents: grant.plannedEvents.filter((p) => p.year >= planStartYear) };
 }
 
+/** The grant as the projection holds it at the start: settled through the
+ *  skipped year when the plan starts next year, otherwise unchanged. Value and
+ *  book shares against THIS grant, never the stored one — the stored rows do
+ *  not know about a sale the skipped year already made. */
+export function grantAtStart(
+  grant: EquityGrant,
+  acct: ResolvedStrategy,
+  planStartYear: number,
+  fmvAt: (year: number) => number,
+  dataYear?: number,
+): EquityGrant {
+  return dataYear != null && dataYear < planStartYear
+    ? settleSkippedYear(grant, acct, dataYear, planStartYear, fmvAt)
+    : grant;
+}
+
 /** Build the full action timeline for one grant.
  *
  *  `fmvAt` supplies the projected share price for a given year, so an option
@@ -243,9 +259,7 @@ export function buildGrantTimeline(
   const acct = "exerciseTiming" in accountStrategy && accountStrategy.exerciseTiming
     ? (accountStrategy as ResolvedStrategy)
     : resolveStrategy(accountStrategy as import("./types").EquityStrategy, null, null);
-  if (dataYear != null && dataYear < planStartYear) {
-    grant = settleSkippedYear(grant, acct, dataYear, planStartYear, fmvAt);
-  }
+  grant = grantAtStart(grant, acct, planStartYear, fmvAt, dataYear);
   const out: EquityAction[] = [];
   const isOption = grant.grantType !== "rsu";
 
