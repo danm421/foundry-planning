@@ -19,6 +19,7 @@ import type {
   WillsPanelPrimary,
   WillRecipientKind,
 } from "@/components/wills-panel";
+import { takesNoRecipientId } from "@/engine/other-heirs";
 
 interface BequestRecipientDraft {
   recipientKind: WillRecipientKind;
@@ -173,7 +174,7 @@ export default function BequestDialog({
 
   const recipientSum = draft.recipients.reduce((s, x) => s + x.percentage, 0);
   const recipientsHaveIds = draft.recipients.every(
-    (r) => r.recipientKind === "spouse" || r.recipientKind === "other_heirs" || r.recipientId != null,
+    (r) => takesNoRecipientId(r.recipientKind) || r.recipientId != null,
   );
 
   // Asset: recipients must sum exactly to 100. Debt: 0 < sum ≤ 100, remainder

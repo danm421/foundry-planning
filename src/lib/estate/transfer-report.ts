@@ -915,9 +915,7 @@ function recipientKey(
       return `ext:${id ?? "?"}`;
     case "entity":
       return `ent:${id ?? "?"}`;
-    case "other_heirs":
-      // A will naming Other Heirs reaches the system_default sink.
-      return "sys:?";
+    // system_default, and a will naming Other Heirs (always a null id): the sink.
     default:
       return `sys:${id ?? "?"}`;
   }

@@ -4,7 +4,7 @@ import type {
 import { collectBusinessTree } from "../business/business-tree";
 import { businessConsolidatedValue } from "./business-value";
 import { grossValue } from "../margin";
-import { OTHER_HEIRS_LABEL } from "../other-heirs";
+import { OTHER_HEIRS_SINK } from "../other-heirs";
 import {
   computeSteppedUpBasis,
   deceasedBusinessAccountShare,
@@ -64,9 +64,7 @@ function resolveBusinessRecipient(input: {
     fraction: number,
   ): ResolvedRecipient => {
     if (kind === "other_heirs") {
-      return { recipientKind: "system_default", recipientId: null,
-        recipientLabel: OTHER_HEIRS_LABEL, via: "will", fraction, successorFmId: null,
-        otherHeirsPicked: true };
+      return { ...OTHER_HEIRS_SINK, via: "will", fraction, successorFmId: null, otherHeirsPicked: true };
     }
     if (kind === "spouse") {
       return { recipientKind: "spouse", recipientId: survivorFmId,

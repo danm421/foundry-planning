@@ -30,7 +30,7 @@ import {
 } from "@/lib/estate/insurance-in-force";
 import { consolidatedBusinessValue } from "@/engine/business/business-tree";
 import { netSeedValue } from "@/engine/margin";
-import { OTHER_HEIRS_LABEL } from "@/engine/other-heirs";
+import { OTHER_HEIRS_LABEL, OTHER_HEIRS_SINK } from "@/engine/other-heirs";
 
 // Account subTypes that the estate-flow Overview treats as already
 // out-of-estate for the household (assets earmarked for heirs that bypass
@@ -875,7 +875,7 @@ function trustLabel(entityId: string, clientData: ClientData): string {
   return e?.name ?? entityId;
 }
 
-function keyForGroup(g: RecipientGroup): string {
+function keyForGroup(g: Pick<RecipientGroup, "recipientId" | "recipientKind" | "recipientLabel">): string {
   return g.recipientId ?? `${g.recipientKind}:${g.recipientLabel}`;
 }
 
@@ -982,9 +982,9 @@ function resolveTrustBeneficiaries(
       key = b.externalBeneficiaryId;
       label = externalBeneficiaryLabel(b.externalBeneficiaryId, clientData);
     } else if (b.otherHeirs) {
-      // The same key keyForGroup gives the system_default sink group, so the
-      // trust's share merges into the one Other Heirs box.
-      key = `system_default:${OTHER_HEIRS_LABEL}`;
+      // The sink group's own key, so the trust's share merges into the one
+      // Other Heirs box.
+      key = keyForGroup(OTHER_HEIRS_SINK);
       label = OTHER_HEIRS_LABEL;
     } else {
       // entityIdRef / entityId — nested-trust attribution is out of scope here.

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { takesNoRecipientId } from "@/engine/other-heirs";
 
 const uuidRegex =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -18,7 +19,7 @@ export const willBequestRecipientSchema = z
     sortOrder: z.number().int().min(0),
   })
   .superRefine((r, ctx) => {
-    const nullIdKind = r.recipientKind === "spouse" || r.recipientKind === "other_heirs";
+    const nullIdKind = takesNoRecipientId(r.recipientKind);
     if (nullIdKind && r.recipientId !== null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -137,7 +138,7 @@ export const willResiduaryRecipientSchema = z
     sortOrder: z.number().int().min(0),
   })
   .superRefine((r, ctx) => {
-    const nullIdKind = r.recipientKind === "spouse" || r.recipientKind === "other_heirs";
+    const nullIdKind = takesNoRecipientId(r.recipientKind);
     if (nullIdKind && r.recipientId !== null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

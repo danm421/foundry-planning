@@ -246,6 +246,16 @@ d("wills writers (Plan 4, Task 13)", () => {
       ).rejects.toThrow("This will leaves a share to Other Heirs, which can only be changed in the app.");
       expect(await recipientsOf(bequest)).toMatchObject([{ recipientKind: "other_heirs", recipientId: null }]);
     });
+
+    it("still changes a provision's share when it leaves its Other Heirs recipients alone", async () => {
+      const { seed, will, bequest } = await willWithOtherHeirs();
+      await inSave({ clientId: seed.clientId, firmId: FIRM }, (ctx) =>
+        WILL_WRITERS.will_bequest.update(ctx, inputOf(provisionLine(record("will", will), { percentage: 60 }, { recordId: bequest }))),
+      );
+      const [after] = await bequestsOf(will);
+      expect(after.percentage).toBe("60.00");
+      expect(await recipientsOf(bequest)).toMatchObject([{ recipientKind: "other_heirs", recipientId: null }]);
+    });
   });
 
   it("provisions added in one save keep the import's order: a new will's from 0, a will on record's after its own three", async () => {

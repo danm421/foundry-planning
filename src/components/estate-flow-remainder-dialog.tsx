@@ -6,6 +6,7 @@ import WillRecipientList, {
   type WillRecipientRow,
 } from "@/components/estate-flow-will-recipient-list";
 import type { ClientData, Will, WillResiduaryRecipient } from "@/engine/types";
+import { takesNoRecipientId } from "@/engine/other-heirs";
 
 interface Props {
   clientData: ClientData;
@@ -60,7 +61,7 @@ function tierValid(rows: WillRecipientRow[]): boolean {
   if (rows.length === 0) return true;
   const sum = rows.reduce((s, r) => s + r.percentage, 0);
   const idsOk = rows.every(
-    (r) => r.recipientKind === "spouse" || r.recipientKind === "other_heirs" || r.recipientId != null,
+    (r) => takesNoRecipientId(r.recipientKind) || r.recipientId != null,
   );
   // Tolerance matches the server-side residuarySumRefiner in
   // src/lib/schemas/wills.ts (rejects when Math.abs(sum - 100) > 0.01) so the

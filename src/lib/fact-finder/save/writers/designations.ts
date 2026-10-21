@@ -77,7 +77,7 @@ async function withKeptTiers(ctx: SaveContext, targetKind: "account" | "trust", 
     .where(and(eq(familyMembers.clientId, ctx.clientId), inArray(familyMembers.role, ["client", "spouse"])));
   const roleOf = new Map(principals.map((p) => [p.id, p.role]));
   const tierAndWho = (r: SetRow) =>
-    [r.tier, r.householdRole ?? roleOf.get(r.familyMemberId ?? "") ?? r.familyMemberId, r.externalBeneficiaryId, r.entityIdRef, r.otherHeirs ? "other_heirs" : null].map((v) => v ?? "").join("|");
+    [r.tier, r.householdRole ?? roleOf.get(r.familyMemberId ?? "") ?? r.familyMemberId, r.externalBeneficiaryId, r.entityIdRef].map((v) => v ?? "").join("|");
   const formOf = new Map(onRecord.flatMap((r) => (r.distributionForm ? [[tierAndWho(r), r.distributionForm] as const] : [])));
   return [
     ...named.map((r) => (formOf.has(tierAndWho(r)) ? { ...r, distributionForm: formOf.get(tierAndWho(r)) } : r)),

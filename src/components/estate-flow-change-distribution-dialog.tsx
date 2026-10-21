@@ -18,6 +18,7 @@ import type {
   WillBequest,
   WillBequestRecipient,
 } from "@/engine/types";
+import { takesNoRecipientId } from "@/engine/other-heirs";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -183,7 +184,7 @@ function rowsToWillRecipients(rows: WillRecipientRow[]): WillBequestRecipient[] 
 
 /** A will row names someone: the co-client and Other Heirs carry no id by design. */
 const hasRecipient = (r: WillRecipientRow): boolean =>
-  r.recipientKind === "spouse" || r.recipientKind === "other_heirs" || r.recipientId != null;
+  takesNoRecipientId(r.recipientKind) || r.recipientId != null;
 
 /** Clamp a percent value to [0, 100]. */
 function clampPct(v: number): number {

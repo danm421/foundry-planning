@@ -69,6 +69,13 @@ async function refuseOtherHeirsResiduary(ctx: SaveContext, willId: string): Prom
 /** The remaining estate as the wills routes take it. */
 const residuaryOf = (input: SaveInput) => ({ residuaryRecipients: input.body.recipients });
 
+/** Replace the will's remaining estate (its primary tier); the set's id is its will's. */
+async function writeResiduary(ctx: SaveContext, input: SaveInput): Promise<string> {
+  const willId = willOf(input);
+  await refuseOtherHeirsResiduary(ctx, willId);
+  return idOf(await replaceWillResiduaryForClient({ ...coreArgs(ctx), willId, input: residuaryOf(input) }));
+}
+
 export const WILL_WRITERS: { will: SaveWriter; will_bequest: SaveWriter; will_residuary_recipient: SaveWriter } = {
   will: {
     create: async (ctx, input) => idOf(await createWillForClient({ ...coreArgs(ctx), input: input.body })),
@@ -80,21 +87,16 @@ export const WILL_WRITERS: { will: SaveWriter; will_bequest: SaveWriter; will_re
     create: async (ctx, input) => idOf(await addWillBequestForClient({ ...coreArgs(ctx), willId: willOf(input), input: input.body })),
     update: async (ctx, input) => {
       if (input.recordId === null) throw new SaveLineError("This provision isn't on the plan.");
-      await refuseOtherHeirsBequest(ctx, input.recordId);
+      // Only a line that sends recipients replaces them; any other change keeps Other Heirs.
+      if ("recipients" in input.body) await refuseOtherHeirsBequest(ctx, input.recordId);
       idOf(await updateWillBequestForClient({ ...coreArgs(ctx), willId: willOf(input), bequestId: input.recordId, input: input.body }));
     },
   },
   // A set: its id is its will's.
   will_residuary_recipient: {
-    create: async (ctx, input) => {
-      const willId = willOf(input);
-      await refuseOtherHeirsResiduary(ctx, willId);
-      return idOf(await replaceWillResiduaryForClient({ ...coreArgs(ctx), willId, input: residuaryOf(input) }));
-    },
+    create: writeResiduary,
     update: async (ctx, input) => {
-      const willId = willOf(input);
-      await refuseOtherHeirsResiduary(ctx, willId);
-      idOf(await replaceWillResiduaryForClient({ ...coreArgs(ctx), willId, input: residuaryOf(input) }));
+      await writeResiduary(ctx, input);
     },
   },
 };
