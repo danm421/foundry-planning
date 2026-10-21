@@ -38,6 +38,29 @@ function giftAlreadyReflected(account: { giftsReflectedThrough?: number }, year:
   return account.giftsReflectedThrough != null && year <= account.giftsReflectedThrough;
 }
 
+/**
+ * Whether a gift's ownership move has happened by `year`.
+ *
+ * - Entered as history (saved dated before its planning year): already folded
+ *   into the stored owners at save, so never applied again — whatever the plan
+ *   start, which the Assumptions switch and the January roll-forward both move.
+ * - Dated before the start and NOT entered as history (made in the skipped year
+ *   of a plan that starts next year, or a gift whose year the roll-forward left
+ *   behind): it already happened, so `e.year <= year` holds from the start.
+ * - Legacy (flag absent: engine fixtures, frozen snapshots) dated before the
+ *   start: assumed already in the authored owners, as before the flag existed.
+ * - Otherwise: in effect from its own year.
+ */
+export function giftInEffect(
+  e: { year: number; enteredAsHistory?: boolean },
+  year: number,
+  projectionStartYear: number,
+): boolean {
+  if (e.enteredAsHistory === true) return false;
+  if (e.enteredAsHistory === undefined && e.year < projectionStartYear) return false;
+  return e.year <= year;
+}
+
 export interface OwnedThing {
   owners: AccountOwner[];
 }
@@ -256,10 +279,10 @@ function composeOwnersForYear(
 
 /**
  * Compose static account_owners + asset-transfer gift events into the ownership
- * snapshot at a given projection year. Events with year < projectionStartYear are
- * historical and assumed to be already reflected in the static owners — and so
- * are events at or before `account.giftsReflectedThrough`, for a family pool a
- * death partition rebuilt.
+ * snapshot at a given projection year. `giftInEffect` decides which events have
+ * happened by then (a gift entered as history is already in the static owners);
+ * events at or before `account.giftsReflectedThrough`, for a family pool a death
+ * partition rebuilt, are reflected too.
  */
 export function ownersForYear(
   account: AccountWithOwners,
@@ -271,8 +294,7 @@ export function ownersForYear(
     (e) =>
       e.kind === "asset" &&
       e.accountId === account.id &&
-      e.year >= projectionStartYear &&
-      e.year <= year &&
+      giftInEffect(e, year, projectionStartYear) &&
       !giftAlreadyReflected(account, e.year),
   ) as Array<Extract<GiftEvent, { kind: "asset" }>>;
   return composeOwnersForYear(
@@ -300,8 +322,7 @@ export function entityOwnersForYear(
     (e) =>
       e.kind === "business_interest" &&
       e.entityId === entity.id &&
-      e.year >= projectionStartYear &&
-      e.year <= year,
+      giftInEffect(e, year, projectionStartYear),
   ) as Array<Extract<GiftEvent, { kind: "business_interest" }>>;
   const authoredTotal = entity.owners.reduce((s, o) => s + o.percent, 0);
   return composeOwnersForYear(
@@ -391,8 +412,7 @@ export function liabilityOwnersForYear(
     (e) =>
       e.kind === "liability" &&
       e.liabilityId === liability.id &&
-      e.year >= projectionStartYear &&
-      e.year <= year &&
+      giftInEffect(e, year, projectionStartYear) &&
       !giftAlreadyReflected(liability, e.year),
   ) as Array<Extract<GiftEvent, { kind: "liability" }>>;
   return composeOwnersForYear(
@@ -501,7 +521,7 @@ export function giftAwareOwners(
   for (const e of giftEvents) {
     if (e.kind !== "asset") continue;
     if (e.accountId !== account.id) continue;
-    if (e.year < planStartYear || e.year > deathYear) continue;
+    if (!giftInEffect(e, deathYear, planStartYear)) continue;
     if (giftAlreadyReflected(account, e.year)) continue;
     giftedPercent += e.percent;
   }
@@ -540,7 +560,7 @@ export function giftAwareLiabilityOwners(
   for (const e of giftEvents) {
     if (e.kind !== "liability") continue;
     if (e.liabilityId !== liability.id) continue;
-    if (e.year < planStartYear || e.year > year) continue;
+    if (!giftInEffect(e, year, planStartYear)) continue;
     if (giftAlreadyReflected(liability, e.year)) continue;
     giftedPercent += e.percent;
   }

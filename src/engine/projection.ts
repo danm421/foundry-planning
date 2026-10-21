@@ -938,6 +938,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // accountValueAtYear callbacks can return the gift-year balance instead of
   // always the death-year balance. Populated just before years.push().
   const yearEndAccountBalances = new Map<number, Record<string, number>>();
+  // The year before the start closes at the opening balances. A gift made
+  // before the start (the skipped year of a plan that starts next year) is
+  // valued there; death events clamp any earlier gift year to it.
+  yearEndAccountBalances.set(planSettings.planStartYear - 1, { ...accountBalances });
 
   // Basis tracking for transfers and sales
   const basisMap: Record<string, number> = {};
@@ -10150,7 +10154,8 @@ export function runProjectionWithEvents(
   // `yearEndAccountBalances` inside runProjection is not in scope here, so read
   // the per-year ledgers off the returned rows through `buildGiftValueAtYear` —
   // the same resolver every advisor gift surface uses. A gift year before plan
-  // start, or an account not yet activated, has no ledger entry and resolves to 0.
+  // start reads the opening balances; an account not yet activated has no
+  // ledger entry and resolves to 0.
   //
   // An asset gift moves OWNERSHIP, not balance — `ownersForYear` rescales owner
   // percentages and never touches accountBalances — so `endingValue` in the gift

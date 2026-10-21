@@ -106,7 +106,15 @@ export function buildEntityValueAtYear(
   years: ProjectionYear[],
 ): (entityId: string, year: number) => number {
   const yearByYear = new Map(years.map((y) => [y.year, y]));
+  const first = years[0];
   return (entityId, year) => {
+    // A gift dated before the first projected year (the skipped year of a plan
+    // that starts next year) is valued at the opening value.
+    if (first != null && year < first.year) {
+      const row = first.entityCashFlow.get(entityId);
+      if (!row) return 0;
+      return row.kind === "business" ? row.beginningTotalValue : row.beginningBalance;
+    }
     const row = yearByYear.get(year)?.entityCashFlow.get(entityId);
     if (!row) return 0;
     return row.kind === "business" ? row.endingTotalValue : row.endingBalance;

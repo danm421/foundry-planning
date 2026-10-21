@@ -1757,7 +1757,7 @@ describe("buildEntityValueAtYear", () => {
   // trust row has no `endingTotalValue` so the kind branch is load-bearing.
   const years = [
     { year: 2026, entityCashFlow: new Map([
-      ["biz-1", { kind: "business", endingTotalValue: 1_000_000 }],
+      ["biz-1", { kind: "business", beginningTotalValue: 900_000, endingTotalValue: 1_000_000 }],
     ]) },
     { year: 2027, entityCashFlow: new Map([
       ["biz-1", { kind: "business", endingTotalValue: 1_250_000 }],
@@ -1779,5 +1779,11 @@ describe("buildEntityValueAtYear", () => {
     expect(valueAt("nope", 2027)).toBe(0);
     expect(valueAt("trust-1", 2026)).toBe(0);
     expect(valueAt("biz-1", 2030)).toBe(0);
+  });
+
+  it("values a gift dated before the first projected year at the opening value", () => {
+    // A gift made in the skipped year of a plan that starts next year.
+    expect(valueAt("biz-1", 2025)).toBe(900_000);
+    expect(valueAt("trust-1", 2025)).toBe(0);
   });
 });

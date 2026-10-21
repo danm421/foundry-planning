@@ -79,7 +79,9 @@ export function giftValueOfAccount<T extends TreeNode & { category: string }>(
 /**
  * Build the resolver an asset gift is valued with: the gift year's closing
  * balances (`accountLedgers[*].endingValue`) through `giftValueOfAccount`, so
- * a top-level business is its consolidated value.
+ * a top-level business is its consolidated value. A gift dated before the first
+ * projected year (made in the skipped year of a plan that starts next year) is
+ * valued at the opening balances: that first year's `beginningValue`s.
  *
  * The one definition for the engine's gift ledger (`runProjectionWithEvents`)
  * and every advisor surface that previews, reports on, or sizes an asset gift
@@ -96,11 +98,15 @@ export function buildGiftValueAtYear<T extends TreeNode & { category: string }>(
   accounts: T[],
 ): (accountId: string, year: number) => number | undefined {
   const yearByYear = new Map(years.map((y) => [y.year, y]));
+  const first = years[0];
   return (accountId, year) => {
-    const ledgers = yearByYear.get(year)?.accountLedgers;
+    const opening = first != null && year < first.year;
+    const ledgers = (opening ? first : yearByYear.get(year))?.accountLedgers;
     if (ledgers?.[accountId] == null) return undefined;
     const balances: Record<string, number> = {};
-    for (const [id, ledger] of Object.entries(ledgers)) balances[id] = ledger.endingValue;
+    for (const [id, ledger] of Object.entries(ledgers)) {
+      balances[id] = opening ? ledger.beginningValue : ledger.endingValue;
+    }
     return giftValueOfAccount(accountId, accounts, balances);
   };
 }
