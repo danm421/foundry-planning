@@ -201,6 +201,68 @@ describe("planSupplementalWithdrawal — margined account (spec 2026-10-13)", ()
   });
 });
 
+describe("planSupplementalWithdrawal — a margined account sells only down to its call level", () => {
+  // $8M net + $2M loan, $9M basis, 30% call level. Selling $5M/0.7 ≈ $7.14M
+  // leaves net at 30% of the securities; the $857K below that line is drawn
+  // only once every other source is empty.
+  const m = acct("m", { category: "taxable", subType: "brokerage", value: 10_000_000, basis: 9_000_000, marginCallPct: 0.3 });
+  const t = acct("t", { category: "taxable", subType: "brokerage", value: 5_000_000, basis: 5_000_000 });
+  const input = {
+    strategy: [
+      { accountId: "m", priorityOrder: 1, startYear: 2026, endYear: 2060 },
+      { accountId: "t", priorityOrder: 2, startYear: 2026, endYear: 2060 },
+    ] as WithdrawalPriority[],
+    accounts: [m, t],
+    householdBalances: { m: 8_000_000, t: 5_000_000 },
+    grossBalances: { m: 10_000_000 },
+    marginLoans: { m: 2_000_000 },
+    basisMap: { m: 9_000_000, t: 5_000_000 },
+    ages: { client: 65, spouse: null }, isSpouseAccount: () => false, year: 2026,
+  };
+  const FREE = 5_000_000 / 0.7;
+
+  it("stops at the call level and moves on to the next source", () => {
+    const plan = planSupplementalWithdrawal({ ...input, shortfall: 9_000_000 });
+    expect(plan.byAccount.m).toBeCloseTo(FREE, 2);
+    expect(plan.byAccount.t).toBeCloseTo(9_000_000 - FREE, 2);
+    expect(plan.recognizedIncome.capitalGains).toBeCloseTo(FREE * 0.1, 2); // securities ratio 1 − 9/10
+  });
+
+  it("draws the equity below the call level last, after every other source", () => {
+    const plan = planSupplementalWithdrawal({ ...input, shortfall: 12_500_000 });
+    expect(plan.byAccount).toEqual({ m: expect.closeTo(7_500_000, 2), t: expect.closeTo(5_000_000, 2) });
+    expect(plan.draws.filter((d) => d.accountId === "m")).toHaveLength(1);
+    expect(plan.recognizedIncome.capitalGains).toBeCloseTo(750_000, 2);
+  });
+
+  it("never draws past net value, even as the last resort", () => {
+    const plan = planSupplementalWithdrawal({ ...input, shortfall: 20_000_000 });
+    expect(plan.byAccount).toEqual({ m: expect.closeTo(8_000_000, 2), t: expect.closeTo(5_000_000, 2) });
+  });
+
+  it("a borrow on the same account counts toward the call level", () => {
+    // Borrowing $50K takes net to $500K against a $500K loan: the sale stops at
+    // (500K − 0.3 × 1M) / 0.7 and the second account covers the rest.
+    const tax = acct("a-tax", { category: "taxable", subType: "brokerage", value: 1_000_000, basis: 400_000 });
+    const tax2 = acct("a-tax2", { category: "taxable", subType: "brokerage", value: 1_000_000, basis: 1_000_000 });
+    const plan = planSupplementalWithdrawal({
+      shortfall: 1_000_000, accounts: [tax, tax2],
+      strategy: [
+        { accountId: "a-tax", priorityOrder: 1, startYear: 2020, endYear: 2099 },
+        { accountId: "a-tax2", priorityOrder: 2, startYear: 2020, endYear: 2099 },
+      ],
+      householdBalances: { "a-tax": 550_000, "a-tax2": 1_000_000 },
+      grossBalances: { "a-tax": 1_000_000 }, marginLoans: { "a-tax": 450_000 },
+      marginBorrowSources: [{ accountId: "a-tax", headroom: 50_000, rate: 0.08 }],
+      basisMap: { "a-tax": 400_000, "a-tax2": 1_000_000 },
+      ages: { client: 60, spouse: null }, isSpouseAccount: () => false, year: 2026,
+    });
+    expect(plan.borrowedByAccount).toEqual({ "a-tax": 50_000 });
+    expect(plan.byAccount["a-tax"]).toBeCloseTo(200_000 / 0.7, 2);
+    expect(plan.byAccount["a-tax2"]).toBeCloseTo(950_000 - 200_000 / 0.7, 2);
+  });
+});
+
 describe("borrowing on margin (spec 2026-10-14)", () => {
   const base = {
     basisMap: { "a-tax": 400_000 }, ages: { client: 60, spouse: null }, isSpouseAccount: () => false, year: 2026,

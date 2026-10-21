@@ -60,6 +60,26 @@ describe("forced sale on a margin call (spec 2026-10-14)", () => {
   });
 });
 
+describe("spending sells a margined account only down to its call level (2026-10-21)", () => {
+  // The bigger account comes first in the default order. Before this rule the
+  // plan spent its equity to $0 and the next year's call sold every security
+  // to clear the loan — a one-year tax spike (McCormick, prod 2040).
+  const margined = acct({ value: 10_000_000, basis: 10_000_000, marginBalance: 2_000_000 });
+  const other = acct({ id: "t", name: "Other Brokerage", value: 5_000_000, basis: 5_000_000, marginBalance: 0 });
+  const [y1, y2, y3] = runBorrow([margined, other], { years: 3, spend: 4_000_000 });
+
+  it("stops at the call level, moves on, and never trips a margin call", () => {
+    // Year 2 sells $4M down to net = 30% of the securities; the other account covers the rest.
+    expect(y2.accountLedgers.m.endingValue).toBeCloseTo(0.3 * 2_000_000 / 0.7, 2);
+    for (const y of [y1, y2, y3]) {
+      expect(y.marginCallWarnings).toBeUndefined();
+      expect(y.marginSales).toBeUndefined();
+      expect(y.accountLedgers.m.marginEoY).toBeCloseTo(2_000_000, 2);
+    }
+    expect(y3.accountLedgers.t.endingValue).toBeCloseTo(13_000_000 - 12_000_000 - 0.3 * 2_000_000 / 0.7, 2);
+  });
+});
+
 describe("the repay year (spec 2026-10-14)", () => {
   it("example E: sells the loan's worth of securities and clears the loan", () => {
     const [y1, y2] = runMargin([acct({ value: 1_200_000, basis: 500_000, marginBalance: 300_000, marginRepayYear: 2026 })], 2, ZERO_TAX);

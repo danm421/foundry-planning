@@ -41,7 +41,7 @@ import {
 import { computeBusinessYearFlow } from "./business/year-flow";
 import { buildGiftValueAtYear } from "./business/business-tree";
 import { accrueLockedEntityShare } from "./locked-shares";
-import { type MarginMap, type MarginShareMap, netSeedValue, seedMarginLoan, grossValue, grossBalancesFor, chargeMarginInterest, marginCallWarnings, marginBorrowSourcesFor, borrowOnMargin, marginCallSaleAmount, sellSecuritiesToRepayLoan, loansOfSharedAccounts, settleSharesAfterRepayments, settleShareAfterRepayment, DEFAULT_MARGIN_CALL_PCT } from "./margin";
+import { type MarginMap, type MarginShareMap, netSeedValue, seedMarginLoan, grossValue, grossBalancesFor, chargeMarginInterest, marginCallWarnings, marginBorrowSourcesFor, borrowOnMargin, marginCallSaleAmount, sellSecuritiesToRepayLoan, loansOfSharedAccounts, settleSharesAfterRepayments, settleShareAfterRepayment, equityPinnedByLoan, DEFAULT_MARGIN_CALL_PCT } from "./margin";
 import { buildOwnershipSnapshot } from "./ownership-snapshot";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
@@ -7623,6 +7623,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           strategy: effectiveWithdrawalStrategy,
           householdBalances: reservedBalances,
           grossBalances,
+          marginLoans: marginMap,
           basisMap,
           freshBasisMap,
           rothValueMap,
@@ -7818,6 +7819,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             strategy: effectiveWithdrawalStrategy,
             householdBalances: householdWithdrawBalances,
             grossBalances,
+            marginLoans: marginMap,
             basisMap,
             freshBasisMap,
             rothValueMap,
@@ -8496,13 +8498,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // entity's own checking (target, not source) and untappable categories
       // (categoryWithdrawalPriority returns null for real-estate, business,
       // life-insurance — they can't be liquidated cleanly at year boundaries).
+      // The equity a margin loan pins (`entityPinned`) is the last resort.
       const entityBalances: Record<string, number> = {};
+      const entityAboveCall: Record<string, number> = {};
+      const entityPinned: Record<string, number> = {};
       const liquidatableAcctById = new Map<string, Account>();
       for (const acct of workingAccounts) {
         if (controllingEntity(acct) !== entityId) continue;
         if (acct.id === checkingId) continue;
         if (categoryWithdrawalPriority(acct) == null) continue;
-        entityBalances[acct.id] = accountBalances[acct.id] ?? 0;
+        const net = accountBalances[acct.id] ?? 0;
+        entityBalances[acct.id] = net;
+        entityPinned[acct.id] = Math.min(Math.max(0, net), equityPinnedByLoan(acct, marginMap[acct.id] ?? 0));
+        entityAboveCall[acct.id] = net - entityPinned[acct.id];
         liquidatableAcctById.set(acct.id, acct);
       }
 
@@ -8514,8 +8522,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const liquidations = executeWithdrawals(
         shortfall,
         entityStrategy,
-        entityBalances,
+        entityAboveCall,
         year,
+        entityPinned,
       );
 
       for (const [acctId, amount] of Object.entries(liquidations.byAccount)) {

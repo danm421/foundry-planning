@@ -2,7 +2,7 @@ import { splitAnnuityDistribution } from "./annuity/tax";
 import { computeTradIraPool, iraPoolKey, isTraditionalIra, proRataBasisReturn, type TradIraPool } from "./ira-basis";
 import { isInheritedIra } from "./inherited-ira";
 import type { WithdrawalPriority, Account } from "./types";
-import type { MarginBorrowSource } from "./margin";
+import { type MarginBorrowSource, type MarginMap, equityPinnedByLoan } from "./margin";
 
 interface WithdrawalResult {
   byAccount: Record<string, number>;
@@ -262,6 +262,8 @@ export interface PlanSupplementalWithdrawalInput {
    *  `grossBalancesFor` — the gain-ratio denominator. Draws are still capped
    *  at `householdBalances` (net). */
   grossBalances?: Record<string, number>;
+  /** The live loan per margined account (`equityPinnedByLoan`). */
+  marginLoans?: MarginMap;
   basisMap: Record<string, number>;
   /** Per-account unspent fresh-basis pool (current-year basisIncrease that
    *  hasn't been consumed by an earlier in-year withdrawal/transfer).
@@ -286,13 +288,31 @@ export interface PlanSupplementalWithdrawalInput {
 }
 
 export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInput): SupplementalWithdrawalPlan {
-  const { shortfall, strategy, householdBalances, grossBalances, basisMap, freshBasisMap, rothValueMap, annuityBasisMap, accounts, ages, isSpouseAccount, year, marginBorrowSources } = input;
+  const first = layOutDraws(input, {});
+  if (first.remaining <= 0 || Object.keys(first.belowCallLevel).length === 0) return first.plan;
+  // Every other source is spent: release the equity the margin loans pin and
+  // lay the plan out again, so each account is still drawn (and taxed) once.
+  const released = executeWithdrawals(first.remaining, input.strategy, first.belowCallLevel, input.year).byAccount;
+  return layOutDraws(input, released).plan;
+}
+
+interface LaidOutDraws {
+  plan: SupplementalWithdrawalPlan;
+  /** The part of the shortfall the plan left uncovered. */
+  remaining: number;
+  /** The equity each margin loan pins, beyond what this walk could sell. */
+  belowCallLevel: Record<string, number>;
+}
+
+/** One walk of the year's withdrawal order; `released` frees pinned equity. */
+function layOutDraws(input: PlanSupplementalWithdrawalInput, released: Record<string, number>): LaidOutDraws {
+  const { shortfall, strategy, householdBalances, grossBalances, marginLoans, basisMap, freshBasisMap, rothValueMap, annuityBasisMap, accounts, ages, isSpouseAccount, year, marginBorrowSources } = input;
 
   const empty: SupplementalWithdrawalPlan = {
     byAccount: {}, total: 0, draws: [],
     recognizedIncome: { ordinaryIncome: 0, capitalGains: 0, earlyWithdrawalPenalty: 0 },
   };
-  if (shortfall <= 0) return empty;
+  if (shortfall <= 0) return { plan: empty, remaining: 0, belowCallLevel: {} };
 
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   const sorted = [...strategy]
@@ -326,6 +346,7 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
 
   const draws: SupplementalDraw[] = [];
   const byAccount: Record<string, number> = {};
+  const belowCallLevel: Record<string, number> = {};
   let remaining = shortfall;
   let totalOrdinary = 0;
   let totalCapGains = 0;
@@ -359,17 +380,29 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
     // Borrowing took `borrowedHere` out of net; the securities are untouched,
     // so a sale's gain ratio still divides by the pre-borrow securities value.
     const borrowedHere = borrowedFrom[entry.accountId] ?? 0;
+    const securities = grossBalances?.[account.id] ?? (borrowedHere > 0 ? householdBalances[entry.accountId] : undefined);
     const available = (householdBalances[entry.accountId] ?? 0) - borrowedHere;
     if (available <= 0) continue;
 
     const ownerAge = isSpouseAccount(account) && ages.spouse != null ? ages.spouse : ages.client;
     if (isHsaWithdrawalLocked(account, ownerAge)) continue;   // pre-65 HSA is locked
 
-    const drawAmount = Math.min(remaining, available);
+    // A margined account (a borrow in this plan counts) sells only down to the
+    // equity its loan pins; `released` frees that last.
+    const loan = (marginLoans?.[account.id] ?? 0) + borrowedHere;
+    let drawable = available;
+    if (loan > 0) {
+      const free = Math.min(available, Math.max(0, (securities ?? 0) - loan - equityPinnedByLoan(account, loan)));
+      if (free < available) belowCallLevel[account.id] = available - free;
+      drawable = free + (released[account.id] ?? 0);
+      if (drawable <= 0) continue;
+    }
+
+    const drawAmount = Math.min(remaining, drawable);
     const tradIraPool = tradIraPoolFor(account);
     const draw = categorizeDraw({
       account, amount: drawAmount, balance: available,
-      grossBalance: grossBalances?.[account.id] ?? (borrowedHere > 0 ? householdBalances[entry.accountId] : undefined),
+      grossBalance: securities,
       basisMap, rothValueMap, ownerAge,
       freshBasisRemaining: localFresh[account.id] ?? 0,
       annuityRemainingBasis: localAnnuityBasis[account.id],
@@ -403,7 +436,7 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
   if (!borrowStepDone) borrowStep();
 
   const total = draws.reduce((sum, d) => sum + d.amount, 0);
-  return {
+  const plan: SupplementalWithdrawalPlan = {
     byAccount, total, draws,
     ...(Object.keys(borrowedFrom).length > 0 ? { borrowedByAccount: borrowedFrom } : {}),
     recognizedIncome: {
@@ -412,13 +445,16 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
       earlyWithdrawalPenalty: totalPenalty,
     },
   };
+  return { plan, remaining, belowCallLevel };
 }
 
 export function executeWithdrawals(
   deficit: number,
   strategy: WithdrawalPriority[],
   accountBalances: Record<string, number>,
-  year: number
+  year: number,
+  /** Drawn in the same order once `accountBalances` is spent. */
+  lastResort?: Record<string, number>,
 ): WithdrawalResult {
   const byAccount: Record<string, number> = {};
   let remaining = Math.max(0, deficit);
@@ -429,15 +465,17 @@ export function executeWithdrawals(
     .filter((s) => year >= s.startYear && year <= s.endYear)
     .sort((a, b) => a.priorityOrder - b.priorityOrder);
 
-  for (const entry of sorted) {
-    if (remaining <= 0) break;
+  for (const balances of lastResort ? [accountBalances, lastResort] : [accountBalances]) {
+    for (const entry of sorted) {
+      if (remaining <= 0) break;
 
-    const available = accountBalances[entry.accountId] ?? 0;
-    if (available <= 0) continue;
+      const available = balances[entry.accountId] ?? 0;
+      if (available <= 0) continue;
 
-    const withdrawal = Math.min(remaining, available);
-    byAccount[entry.accountId] = withdrawal;
-    remaining -= withdrawal;
+      const withdrawal = Math.min(remaining, available);
+      byAccount[entry.accountId] = (byAccount[entry.accountId] ?? 0) + withdrawal;
+      remaining -= withdrawal;
+    }
   }
 
   const total = Object.values(byAccount).reduce((sum, v) => sum + v, 0);

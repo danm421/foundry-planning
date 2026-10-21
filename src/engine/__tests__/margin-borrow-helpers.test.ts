@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   shareAfterBorrow, shareAfterRepayment, settleShareAfterRepayment, marginBorrowHeadroom,
   canBorrowOnMargin, marginBorrowSourcesFor, borrowOnMargin, marginCallSaleAmount,
-  sellSecuritiesToRepayLoan, marginCallWarnings, chargeMarginInterest, type MarginShareMap,
+  sellSecuritiesToRepayLoan, marginCallWarnings, chargeMarginInterest, equityPinnedByLoan, type MarginShareMap,
 } from "../margin";
 import type { Account, AccountLedger } from "../types";
 
@@ -77,6 +77,20 @@ describe("borrowing headroom and eligibility", () => {
     });
     expect(src.map((s) => s.accountId)).toEqual(["z", "y", "x"]);
     expect(src[0].headroom).toBeCloseTo(450_000, 6);
+  });
+});
+
+describe("equityPinnedByLoan — spending sells only down to the call level", () => {
+  it("is the net value at which net ÷ securities sits at the call level", () => {
+    const pinned = equityPinnedByLoan({ marginCallPct: 0.3 }, 2_000_000);
+    expect(pinned).toBeCloseTo(0.3 * 2_000_000 / 0.7, 6);
+    expect(pinned / (pinned + 2_000_000)).toBeCloseTo(0.3, 12);
+  });
+  it("uses the default 30% call level when the account sets none", () => {
+    expect(equityPinnedByLoan({}, 700_000)).toBeCloseTo(300_000, 6);
+  });
+  it("pins nothing without a loan", () => {
+    expect(equityPinnedByLoan({ marginCallPct: 0.3 }, 0)).toBe(0);
   });
 });
 

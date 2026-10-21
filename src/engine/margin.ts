@@ -299,6 +299,15 @@ export function borrowOnMargin(input: {
   }
 }
 
+/** The net value a margin loan pins at the call level, callPct × loan ÷
+ *  (1 − callPct): spending sells a margined account only down to it and moves
+ *  on, drawing it last, once every other source is spent (2026-10-21). */
+export function equityPinnedByLoan(acct: Pick<Account, "marginCallPct">, loan: number): number {
+  if (loan <= 0) return 0;
+  const callPct = acct.marginCallPct ?? DEFAULT_MARGIN_CALL_PCT;
+  return callPct >= 1 ? Infinity : (callPct * loan) / (1 - callPct);
+}
+
 /** Securities, or a sale, worth less than a cent count as none: selling every
  *  security leaves float residue (~1e-12) that must not book a "sold $0"
  *  margin call the next year (final review I2). */

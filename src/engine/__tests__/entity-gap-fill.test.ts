@@ -317,6 +317,34 @@ describe("Entity gap-fill (step 12c)", () => {
     expect(liquidation!.basis).toBeCloseTo(-60_000, 2);
   });
 
+  describe("Case 2c: a margined taxable sells only down to its call level (2026-10-21)", () => {
+    // Net $500k + $500k loan, 30% call level: it sells (500k − 300k) / 0.7 and
+    // the trust's second brokerage covers the rest. The bigger account is first.
+    const margined = { ...trustTaxable(1_000_000, 1_000_000), marginBalance: 500_000, marginCallPct: 0.3 };
+    const second = { ...trustTaxable(400_000, 400_000), id: "trust-taxable-2", name: "Trust Brokerage 2" };
+    const run = (expense: number) => runProjection(buildData({
+      accounts: [trustChecking(100_000), margined, second],
+      expenses: [trustExpense(expense)],
+      entities: [nonGrantorTrust()],
+    }))[0];
+
+    it("stops at the call level and moves on to the next account", () => {
+      const year0 = run(500_000);
+      expect(year0.accountLedgers["trust-taxable"].endingValue).toBeCloseTo(500_000 - 200_000 / 0.7, 2);
+      expect(year0.accountLedgers["trust-taxable-2"].endingValue).toBeCloseTo(200_000 / 0.7, 2);
+      expect(year0.accountLedgers["trust-checking"].endingValue).toBeCloseTo(0, 2);
+    });
+
+    it("draws the equity below the call level only after every other account", () => {
+      const year0 = run(900_000);
+      const liquidations = year0.accountLedgers["trust-taxable"].entries.filter((e) => e.label === "Entity gap-fill");
+      expect(liquidations.reduce((t, e) => t + e.amount, 0)).toBeCloseTo(-400_000, 2);
+      expect(year0.accountLedgers["trust-taxable"].endingValue).toBeCloseTo(100_000, 2);
+      expect(year0.accountLedgers["trust-taxable-2"].endingValue).toBeCloseTo(0, 2);
+      expect(year0.accountLedgers["trust-checking"].endingValue).toBeCloseTo(0, 2);
+    });
+  });
+
   it("Case 3: expense within cash — no liquidation, taxable untouched", () => {
     // Cash $100k, taxable $200k, expense $80k. Cash covers it; gap-fill is a no-op.
     const data = buildData({
