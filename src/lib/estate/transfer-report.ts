@@ -16,6 +16,7 @@ import {
   resolveOwnerRetirementYears,
 } from "./insurance-in-force";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
+import { OTHER_HEIRS_LABEL } from "@/engine/other-heirs";
 
 // ── CLT termination surfacing ───────────────────────────────────────────────
 
@@ -182,6 +183,15 @@ export interface RecipientGroup {
    *  At second death this matches the engine's raw `t.amount` sum (transfers are
    *  post-drain there); at first death it equals `total` minus chain-allocated drain. */
   netTotal: number;
+  /** Set when at least one asset share in this group was picked as Other Heirs
+   *  on purpose (not reached by the default order). */
+  otherHeirsPicked?: true;
+}
+
+/** The Other Heirs box warns "No plan" only when none of its money was picked
+ *  on purpose — every share arrived by the default order or an empty trust. */
+export function showsNoPlan(group: Pick<RecipientGroup, "recipientKind" | "otherHeirsPicked">): boolean {
+  return group.recipientKind === "system_default" && group.otherHeirsPicked !== true;
 }
 
 export interface MechanismBreakdown {
@@ -426,6 +436,7 @@ function buildDeathSection(
       if (t.recipientKind === "external_beneficiary")
         return r.externalBeneficiaryId === t.recipientId;
       if (t.recipientKind === "entity") return r.entityIdRef === t.recipientId;
+      if (t.recipientKind === "system_default") return r.otherHeirs === true;
       return false;
     });
     return match?.distributionForm;
@@ -555,6 +566,7 @@ function buildDeathSection(
     const displayAmount = resolveDisplayAmount(t, idx);
 
     group.total += displayAmount;
+    if (t.otherHeirsPicked && t.amount > 0) group.otherHeirsPicked = true;
 
     let mech = group.byMechanism.find((m) => m.mechanism === t.via);
     if (!mech) {
@@ -887,7 +899,7 @@ function joinNames(names: string[]): string {
  * titling / beneficiary transfer recorded against that same person.
  */
 function recipientKey(
-  kind: DeathTransfer["recipientKind"],
+  kind: DeathTransfer["recipientKind"] | "other_heirs",
   id: string | null,
   clientData: ClientData,
 ): string {
@@ -903,6 +915,9 @@ function recipientKey(
       return `ext:${id ?? "?"}`;
     case "entity":
       return `ent:${id ?? "?"}`;
+    case "other_heirs":
+      // A will naming Other Heirs reaches the system_default sink.
+      return "sys:?";
     default:
       return `sys:${id ?? "?"}`;
   }
@@ -961,6 +976,7 @@ function describeRecipients(
       }
       return CO_CLIENT_LABEL;
     }
+    if (r.recipientKind === "other_heirs") return OTHER_HEIRS_LABEL;
     return "(recipient)";
   });
   return names.join(", ");

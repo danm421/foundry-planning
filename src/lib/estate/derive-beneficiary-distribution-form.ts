@@ -19,6 +19,7 @@
  */
 import type { ClientData, RemainderBeneficiaryRef } from "@/engine/types";
 import type { RecipientTotal } from "./transfer-report";
+import { OTHER_HEIRS_LABEL } from "@/engine/other-heirs";
 
 export interface BeneficiaryDistributionTotal {
   /** `family_member|<id>` or `external_beneficiary|<id>`. */
@@ -75,7 +76,9 @@ export function deriveBeneficiaryDistributionForm(
           ? `family_member|${b.familyMemberId}`
           : b.externalBeneficiaryId
             ? `external_beneficiary|${b.externalBeneficiaryId}`
-            : null;
+            : b.otherHeirs
+              ? "system_default|"
+              : null;
         // Unresolved share, or a remainder bene that is itself a trust — dropped.
         if (!personKey) continue;
         const share = r.total * (b.percentage / 100);
@@ -101,6 +104,7 @@ function resolvePersonLabel(
   b: RemainderBeneficiaryRef,
   tree: ClientData,
 ): string {
+  if (b.otherHeirs) return OTHER_HEIRS_LABEL;
   if (b.familyMemberId) {
     const fm = (tree.familyMembers ?? []).find((f) => f.id === b.familyMemberId);
     if (fm) return `${fm.firstName}${fm.lastName ? ` ${fm.lastName}` : ""}`;

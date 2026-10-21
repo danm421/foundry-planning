@@ -3,6 +3,7 @@ import {
   buildEstateTransferReportData,
   detectConflicts,
   netToRecipientsOf,
+  showsNoPlan,
   type DeathSectionData,
   type EstateTransferReportInput,
 } from "../transfer-report";
@@ -1443,5 +1444,74 @@ describe("drain attribution and re-grossing", () => {
     // Reconciliation still holds (gross == assetEstateValue).
     expect(second.assetEstateValue).toBeCloseTo(sumGross, 0);
     expect(second.reconciliation.reconciles).toBe(true);
+  });
+});
+
+describe("Other Heirs groups", () => {
+  const run = (transfers: DeathTransfer[], clientData: ClientData = tree()) => {
+    const ht: HypotheticalEstateTax = {
+      year: 2030,
+      primaryFirst: ordering({
+        firstDecedent: "client",
+        firstDeath: emptyEstateTaxResult("client", 2030),
+        firstDeathTransfers: transfers,
+      }),
+    };
+    return buildEstateTransferReportData({
+      projection: projection([{ year: 2030, ht }]),
+      asOf: { kind: "today" },
+      ordering: "primaryFirst",
+      clientData,
+      ownerNames: { clientName: "Pat", spouseName: "Sam" },
+    });
+  };
+  const heirs = (partial: Partial<DeathTransfer>) =>
+    transfer({ recipientKind: "system_default", recipientId: null, recipientLabel: "Other Heirs", ...partial });
+
+  it("puts picked and fallback Other Heirs shares in one group marked picked", () => {
+    const out = run([
+      heirs({ sourceAccountId: "acc-a", via: "will", otherHeirsPicked: true, amount: 300_000 }),
+      heirs({ sourceAccountId: "acc-b", via: "fallback_other_heirs", amount: 200_000 }),
+    ]);
+    const groups = out.firstDeath!.recipients.filter((r) => r.recipientKind === "system_default");
+    expect(groups).toHaveLength(1);
+    expect(groups[0].otherHeirsPicked).toBe(true);
+    expect(groups[0].total).toBe(500_000);
+    expect(groups[0].byMechanism.map((m) => m.mechanism).sort()).toEqual(["fallback_other_heirs", "will"]);
+  });
+
+  it("showsNoPlan is true only for an Other Heirs group with nothing picked", () => {
+    const fallbackOnly = run([heirs({ via: "fallback_other_heirs" })]).firstDeath!.recipients[0];
+    const picked = run([heirs({ via: "will", otherHeirsPicked: true })]).firstDeath!.recipients[0];
+    const family = run([
+      transfer({ via: "will", recipientKind: "family_member", recipientId: "fm-child-1", recipientLabel: "Alex" }),
+    ]).firstDeath!.recipients[0];
+    expect("otherHeirsPicked" in fallbackOnly).toBe(false);
+    expect(showsNoPlan(fallbackOnly)).toBe(true);
+    expect(showsNoPlan(picked)).toBe(false);
+    expect(showsNoPlan(family)).toBe(false);
+  });
+
+  it("reads the distribution form of a pour-out to a picked Other Heirs remainder", () => {
+    const clientData = {
+      ...tree(),
+      entities: [
+        {
+          id: "trust-1",
+          name: "Family Trust",
+          entityType: "trust",
+          remainderBeneficiaries: [{ otherHeirs: true, percentage: 100, distributionForm: "in_trust" }],
+        },
+      ],
+      accounts: [
+        { id: "acc-trust", name: "Trust Brokerage", owners: [{ kind: "entity", entityId: "trust-1", percent: 1 }] },
+      ],
+    } as unknown as ClientData;
+    const out = run(
+      [heirs({ sourceAccountId: "acc-trust", sourceAccountName: "Trust Brokerage", via: "trust_pour_out", otherHeirsPicked: true })],
+      clientData,
+    );
+    const row = out.firstDeath!.recipients[0].byMechanism[0].assets[0];
+    expect(row.distributionForm).toBe("in_trust");
   });
 });

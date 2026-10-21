@@ -996,6 +996,63 @@ describe("buildEstateFlowSummary — heir composition rule 2: bequest to trust",
   });
 });
 
+describe("buildEstateFlowSummary — a trust remainder named Other Heirs", () => {
+  it("puts a trust remainder named Other Heirs into the Other Heirs heir box", () => {
+    const clientData = emptyClientData();
+    clientData.familyMembers = [
+      { id: "fm-client", role: "client", firstName: "Cooper", lastName: "Sample" },
+      { id: "fm-kevin", role: "child", firstName: "Kevin", lastName: "Sample" },
+    ] as ClientData["familyMembers"];
+    clientData.entities = [
+      {
+        id: "ft",
+        entityType: "trust",
+        isIrrevocable: true,
+        name: "Family Trust",
+        remainderBeneficiaries: [
+          { familyMemberId: "fm-kevin", percentage: 50, distributionForm: "in_trust" },
+          { otherHeirs: true, percentage: 50, distributionForm: "in_trust" },
+        ],
+      },
+    ] as ClientData["entities"];
+
+    const firstDeath = deathSection({
+      decedent: "client",
+      decedentName: "Cooper",
+      year: 2028,
+      recipients: [
+        group({
+          key: "ft",
+          kind: "entity",
+          recipientId: "ft",
+          label: "Family Trust",
+          byMechanism: [mech("will", [asset("Cash", 100_000)])],
+        }),
+        group({
+          key: "system_default|",
+          kind: "system_default",
+          label: "Other Heirs",
+          byMechanism: [mech("fallback_other_heirs", [asset("Checking", 20_000)])],
+        }),
+      ],
+      reductions: [],
+    });
+
+    const summary = buildEstateFlowSummary({
+      ...baseInput({ firstDeath }),
+      clientData,
+    })!;
+
+    const heirBoxes = summary.heirBoxes.filter((h) => h.recipientLabel === "Other Heirs");
+    expect(heirBoxes).toHaveLength(1);
+    expect(heirBoxes[0].recipientKey).toBe("system_default:Other Heirs");
+    expect(heirBoxes[0].inTrust).toBe(50_000);
+    expect(heirBoxes[0].total).toBe(70_000);
+    const kevin = summary.heirBoxes.find((h) => h.recipientLabel.includes("Kevin"))!;
+    expect(kevin.inTrust).toBe(50_000);
+  });
+});
+
 describe("buildEstateFlowSummary — heir composition rule 3: OOE attribution", () => {
   it("attributes a 529 plan to its primary account beneficiary as Outright", () => {
     const clientData = emptyClientData();

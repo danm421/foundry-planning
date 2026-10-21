@@ -185,3 +185,28 @@ describe("deriveBeneficiaryDistributionForm", () => {
     expect(deriveBeneficiaryDistributionForm([], tree({}))).toEqual([]);
   });
 });
+
+describe("deriveBeneficiaryDistributionForm — Other Heirs remainder", () => {
+  it("lists an Other Heirs remainder share with its distribution form", () => {
+    const result = deriveBeneficiaryDistributionForm(
+      [rt({ key: "entity|trust1", recipientKind: "entity", recipientLabel: "Family Trust", total: 1000 })],
+      tree({
+        familyMembers: [{ id: "fm1", firstName: "Alice", lastName: "Smith" }],
+        entities: [
+          {
+            id: "trust1",
+            name: "Family Trust",
+            remainderBeneficiaries: [
+              { familyMemberId: "fm1", percentage: 75, distributionForm: "outright" },
+              { otherHeirs: true, percentage: 25, distributionForm: "in_trust" },
+            ],
+          },
+        ],
+      } as unknown as Partial<ClientData>),
+    );
+    expect(result).toEqual([
+      { key: "family_member|fm1", label: "Alice Smith", outright: 750, inTrust: 0, total: 750 },
+      { key: "system_default|", label: "Other Heirs", outright: 0, inTrust: 250, total: 250 },
+    ]);
+  });
+});

@@ -30,6 +30,7 @@ import {
 } from "@/lib/estate/insurance-in-force";
 import { consolidatedBusinessValue } from "@/engine/business/business-tree";
 import { netSeedValue } from "@/engine/margin";
+import { OTHER_HEIRS_LABEL } from "@/engine/other-heirs";
 
 // Account subTypes that the estate-flow Overview treats as already
 // out-of-estate for the household (assets earmarked for heirs that bypass
@@ -951,6 +952,7 @@ function resolveTrustBeneficiaries(
     externalBeneficiaryId?: string;
     entityId?: string;
     householdRole?: "client" | "spouse";
+    otherHeirs?: true;
     percentage: number;
   };
 
@@ -979,6 +981,11 @@ function resolveTrustBeneficiaries(
     } else if (b.externalBeneficiaryId) {
       key = b.externalBeneficiaryId;
       label = externalBeneficiaryLabel(b.externalBeneficiaryId, clientData);
+    } else if (b.otherHeirs) {
+      // The same key keyForGroup gives the system_default sink group, so the
+      // trust's share merges into the one Other Heirs box.
+      key = `system_default:${OTHER_HEIRS_LABEL}`;
+      label = OTHER_HEIRS_LABEL;
     } else {
       // entityIdRef / entityId — nested-trust attribution is out of scope here.
       continue;
