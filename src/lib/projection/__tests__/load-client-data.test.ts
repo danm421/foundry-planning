@@ -778,7 +778,7 @@ describe("loadClientData", () => {
 
     const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
     const acct = data.accounts.find((a) => a.id === accountRows[0].id)!;
-    const trust = data.entities?.find((e) => e.id === trustRow.id)!;
+    const trust = (data.entities ?? []).find((e) => e.id === trustRow.id)!;
 
     const noOtherRecipient = (ref: Record<string, unknown>) =>
       ref.familyMemberId === undefined &&
