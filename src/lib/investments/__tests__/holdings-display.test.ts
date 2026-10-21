@@ -49,6 +49,17 @@ describe("summarizeHoldings", () => {
     ]);
   });
 
+  it("rounds value and basis to cents, so the account dialog never shows float noise", () => {
+    // 0.1 + 0.2 sums to 0.30000000000000004 in floating point.
+    const rows = [
+      row({ id: "h1", marketValue: "0.10", costBasis: "0.10" }),
+      row({ id: "h2", marketValue: "0.20", costBasis: "0.20" }),
+    ];
+    const s = summarizeHoldings(rows, ASSET_CLASSES);
+    expect(s.value).toBe(0.3);
+    expect(s.basis).toBe(0.3);
+  });
+
   it("reports residual (unclassified) weight", () => {
     const rows = [row({ shares: "1", price: "100", securityWeights: [{ slug: "us_large_cap", weight: 0.5 }] })];
     const s = summarizeHoldings(rows, ASSET_CLASSES);

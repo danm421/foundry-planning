@@ -2614,7 +2614,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 <CurrencyInput
                   id="value"
                   name="value"
-                  value={drivenByHoldings ? holdingsTotals!.value : accountValue}
+                  value={drivenByHoldings ? holdingsTotals!.value.toFixed(2) : accountValue}
                   disabled={drivenByHoldings}
                   onChange={(raw) => {
                     setAccountValue(raw);
@@ -2668,7 +2668,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     // Retirement is the exception to holdings-driven: the
                     // positions' cost basis is not this account's post-tax
                     // basis, so the advisor keeps entering it by hand.
-                    value={drivenByHoldings && category !== "retirement" ? holdingsTotals!.basis : accountBasis}
+                    value={drivenByHoldings && category !== "retirement" ? holdingsTotals!.basis.toFixed(2) : accountBasis}
                     disabled={drivenByHoldings && category !== "retirement"}
                     onChange={(raw) => {
                       setAccountBasis(raw);

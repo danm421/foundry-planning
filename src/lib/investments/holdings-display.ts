@@ -51,7 +51,10 @@ export function summarizeHoldings(
     weight: a.weight,
   }));
   const total = blend.reduce((s, b) => s + b.weight, 0);
-  return { value: r.value, basis: r.basis, blend, residual: Math.max(0, 1 - total) };
+  // Summing cents in floating point leaves noise (648030.0400000001) that the
+  // account dialog's derived Value/Basis fields print verbatim and then save.
+  const cents = (n: number) => Math.round(n * 100) / 100;
+  return { value: cents(r.value), basis: cents(r.basis), blend, residual: Math.max(0, 1 - total) };
 }
 
 export type RowChip =
