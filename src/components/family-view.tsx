@@ -172,6 +172,8 @@ export type ExternalBeneficiary = {
   id: string;
   name: string;
   kind: "charity" | "individual";
+  /** Only the Family page's loader fills it. A QCD can go to a public charity only. */
+  charityType?: "public" | "private";
   notes: string | null;
 };
 
@@ -271,6 +273,10 @@ export interface FamilyViewProps {
   clientId: string;
   primary: PrimaryInfo;
   initialMembers: FamilyMember[];
+  /** The client's and spouse's own family-member rows (`initialMembers` leaves
+   *  them out). The gift dialog needs their ids and birth dates to find the
+   *  IRAs a QCD can come from. */
+  initialPrincipals?: FamilyMember[];
   initialEntities: Entity[];
   initialExternalBeneficiaries: ExternalBeneficiary[];
   initialAccounts: AccountLite[];
@@ -507,6 +513,7 @@ export default function FamilyView({
   clientId,
   primary,
   initialMembers,
+  initialPrincipals,
   initialEntities,
   initialExternalBeneficiaries,
   initialAccounts,
@@ -999,6 +1006,7 @@ export default function FamilyView({
   const giftsSectionProps = {
     clientId,
     members,
+    principals: initialPrincipals,
     externals,
     entities,
     accounts,
@@ -1477,6 +1485,7 @@ function removeSeries(
 function GiftsSection(props: {
   clientId: string;
   members: FamilyMember[];
+  principals?: FamilyMember[];
   externals: ExternalBeneficiary[];
   entities: Entity[];
   accounts: AccountLite[];
@@ -1560,6 +1569,7 @@ function GiftsSection(props: {
       scenarioId={props.scenarioId}
       hasSpouse={props.hasSpouse}
       members={props.members}
+      principals={props.principals}
       externals={props.externals}
       entities={props.entities}
       accounts={props.accounts}

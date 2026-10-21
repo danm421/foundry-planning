@@ -178,6 +178,20 @@ export async function loadFamilyViewProps(
         a.firstName.localeCompare(b.firstName),
     );
 
+  // The two principals, left out of `members` above. The gift dialog needs their
+  // ids and birth dates to find the IRAs a QCD can be paid from.
+  const principals: FamilyMember[] = treeMembers
+    .filter((m) => m.role === "client" || m.role === "spouse")
+    .map((m) => ({
+      id: m.id,
+      firstName: m.firstName,
+      lastName: m.lastName ?? null,
+      relationship: m.relationship,
+      role: m.role,
+      dateOfBirth: m.dateOfBirth ?? null,
+      notes: null,
+    }));
+
   // Sourced from the effective tree, not the `entities` table: that table has
   // no scenario column, so a trust added in the solver and saved to a scenario
   // would otherwise never appear here. The tree already carries the scenario's
@@ -192,6 +206,7 @@ export async function loadFamilyViewProps(
       id: e.id,
       name: e.name,
       kind: e.kind,
+      charityType: e.charityType,
       notes: (e as { notes?: string | null }).notes ?? baseExternalNotes.get(e.id) ?? null,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -408,6 +423,7 @@ export async function loadFamilyViewProps(
       clientId: id,
       primary,
       initialMembers: members,
+      initialPrincipals: principals,
       initialEntities: ents,
       initialExternalBeneficiaries: externals,
       initialAccounts: accts,

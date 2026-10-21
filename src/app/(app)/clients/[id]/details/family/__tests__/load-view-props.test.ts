@@ -146,8 +146,8 @@ describe("loadFamilyViewProps — members and charities", () => {
     );
     const { props } = await loadFamilyViewProps(CLIENT_ID, SCENARIO_ID);
     expect(props.initialExternalBeneficiaries).toEqual([
-      { id: "scn-ext", name: "Library", kind: "charity", notes: "new" },
-      { id: "ext-1", name: "Red Cross", kind: "charity", notes: "base charity note" },
+      { id: "scn-ext", name: "Library", kind: "charity", charityType: "public", notes: "new" },
+      { id: "ext-1", name: "Red Cross", kind: "charity", charityType: "public", notes: "base charity note" },
     ]);
   });
 

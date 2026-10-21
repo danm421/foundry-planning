@@ -7,6 +7,8 @@ import type { AccountValueAtYear } from "@/lib/estate/account-value-at-year";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import type { ClientData } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import { controllingFamilyMember } from "@/engine/ownership";
+import { qcdSourceOptions } from "@/lib/gifts/qcd-sources";
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -86,6 +88,21 @@ export default function EstateFlowAddGiftDialog({
         accounts={(clientData.accounts ?? []).map((a) => ({
           id: a.id, name: a.name, value: a.value, subType: a.subType,
         }))}
+        qcdSources={qcdSourceOptions({
+          accounts: (clientData.accounts ?? []).map((a) => ({
+            id: a.id,
+            name: a.name,
+            category: a.category,
+            subType: a.subType,
+            ownerFamilyMemberId: controllingFamilyMember(a),
+          })),
+          familyMembers: (clientData.familyMembers ?? []).map((m) => ({
+            id: m.id,
+            role: m.role ?? "other",
+            firstName: m.firstName,
+            dateOfBirth: m.dateOfBirth ?? null,
+          })),
+        })}
         hasSpouse={clientData.client.spouseDob != null}
         annualExclusionByYear={annualExclusionByYear}
         editing={editing}

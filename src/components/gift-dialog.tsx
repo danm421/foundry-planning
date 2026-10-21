@@ -27,6 +27,7 @@ import {
 } from "@/lib/gifts/gift-write";
 import { buildRecipientPatchFields } from "@/lib/gifts/recipient-patch-fields";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { qcdSourceOptions } from "@/lib/gifts/qcd-sources";
 
 export interface GiftDialogProps {
   clientId: string;
@@ -37,6 +38,9 @@ export interface GiftDialogProps {
   scenarioId: string;
   hasSpouse: boolean;
   members: FamilyMember[];
+  /** The client and spouse rows, which `members` leaves out. With their ids and
+   *  birth dates the form can offer the IRAs a QCD can come from. */
+  principals?: FamilyMember[];
   externals: ExternalBeneficiary[];
   entities: Entity[];
   accounts: AccountLite[];
@@ -66,6 +70,15 @@ export default function GiftDialog(props: GiftDialogProps) {
     (e) => e.entityType === "trust" && e.isIrrevocable === true,
   );
   const irrevocableTrustIds = new Set(irrevocableTrusts.map((e) => e.id));
+  const qcdSources = qcdSourceOptions({
+    accounts: props.accounts,
+    familyMembers: [...(props.principals ?? []), ...props.members].map((m) => ({
+      id: m.id,
+      role: m.role ?? "other",
+      firstName: m.firstName,
+      dateOfBirth: m.dateOfBirth,
+    })),
+  });
   // Stable form seed. The live `draft` (below) must NOT be fed back as the seed:
   // GiftForm re-seeds every field from `editing`, so passing the in-progress
   // draft would fight the advisor's own typing.
@@ -385,11 +398,12 @@ export default function GiftDialog(props: GiftDialogProps) {
               firstName: m.firstName,
               lastName: m.lastName,
             })),
-            externals: props.externals.map((x) => ({ id: x.id, name: x.name, kindLabel: x.kind })),
+            externals: props.externals.map((x) => ({ id: x.id, name: x.name, kindLabel: x.kind, charityType: x.charityType })),
           }}
           accounts={props.accounts
             .filter((a) => a.ownerEntityId == null)
             .map((a) => ({ id: a.id, name: a.name, value: a.value, subType: a.subType }))}
+          qcdSources={qcdSources}
           hasSpouse={props.hasSpouse}
           annualExclusionByYear={props.annualExclusionByYear}
           editing={initialDraft}

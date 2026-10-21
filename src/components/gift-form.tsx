@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Field, MoneyInput, NumberInput, Segmented, selectCls } from "@/components/gift-dialog-controls";
 import { GiftWarningAlert, type GiftWarningBreach } from "@/components/gift-warning-alert";
 import { checkExemptionImpact } from "@/engine/gift-exemption-warning";
-import type { ClientData } from "@/engine/types";
+import type { ClientData, QcdAmountMode } from "@/engine/types";
+import { qcdAnnualLimit } from "@/engine/qcd";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import type { EstateFlowGift, GiftGrantor, GiftRecipientRef } from "@/lib/estate/estate-flow-gifts";
 import { discountedGiftValue, MAX_DISCOUNT_PCT } from "@/lib/gifts/apply-valuation-discount";
@@ -12,12 +13,13 @@ import { discountAppliesToShape } from "@/lib/gifts/discount-applicability";
 import { giftPercentToWhole, roundGiftPercent, wholeToGiftPercent } from "@/lib/gifts/gift-percent";
 import type { AccountValueAtYear } from "@/lib/estate/account-value-at-year";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
+import type { QcdSourceOption } from "@/lib/gifts/qcd-sources";
 
 export interface GiftFormRecipients {
   /** Irrevocable trusts only. */
   trusts: { id: string; name: string }[];
   familyMembers: { id: string; firstName: string; lastName?: string | null }[];
-  externals: { id: string; name: string; kindLabel?: string }[];
+  externals: { id: string; name: string; kindLabel?: string; charityType?: "public" | "private" }[];
 }
 
 /** Map a `ClientData` slice to the `GiftForm` recipients shape (shared by the
@@ -36,6 +38,7 @@ export function giftFormRecipientsFromClientData(clientData: ClientData): GiftFo
       id: x.id,
       name: x.name,
       kindLabel: x.kind,
+      charityType: x.charityType,
     })),
   };
 }
@@ -62,13 +65,19 @@ export interface GiftFormProps {
   /** Sandbox only — when present, render the exemption warning + enforce the plan-year window. */
   ledger?: GiftLedgerYear[];
   taxInflationRate?: number;
+  /** IRAs a QCD can be paid from (`qcdSourceOptions`). Empty or absent hides the
+   *  "From an IRA" funding choice. */
+  qcdSources?: QcdSourceOption[];
   /** `blockedReason` is a sentence naming the field that is holding the draft
    *  back — null whenever `draft` is non-null. Callers that refuse the save
    *  should show it instead of a generic "complete the gift" message. */
   onChange: (draft: EstateFlowGift | null, blockedReason: string | null) => void;
 }
 
-type RecipientOption = { value: string; label: string; ref: GiftRecipientRef; isTrust: boolean };
+type RecipientOption = {
+  value: string; label: string; ref: GiftRecipientRef; isTrust: boolean;
+  charityType?: "public" | "private";
+};
 const recipientKey = (r: GiftRecipientRef) => `${r.kind}:${r.id}`;
 
 /** Account subtypes whose holdings are readily marketable, so a lack-of-
@@ -78,6 +87,17 @@ const recipientKey = (r: GiftRecipientRef) => `${r.kind}:${r.id}`;
 const MARKETABLE_SUBTYPES = new Set([
   "brokerage", "savings", "checking", "money_market", "cd", "hsa",
 ]);
+
+/** Puts `qcd` (or nothing) immediately before `valuationDiscount`, whatever
+ *  order a spread over the saved gift left the keys in. The unsaved-changes
+ *  diff compares drafts with JSON.stringify, so the order is part of the contract. */
+function qcdLast(d: EstateFlowGift, qcd: { accountId: string; amountMode: QcdAmountMode } | undefined): EstateFlowGift {
+  const rest: Record<string, unknown> = { ...d };
+  const valuationDiscount = rest.valuationDiscount;
+  delete rest.qcd;
+  delete rest.valuationDiscount;
+  return { ...rest, ...(qcd ? { qcd } : {}), valuationDiscount } as unknown as EstateFlowGift;
+}
 
 export default function GiftForm(props: GiftFormProps) {
   const { editing, sourceAccount, ledger, annualExclusionByYear } = props;
@@ -96,7 +116,7 @@ export default function GiftForm(props: GiftFormProps) {
       opts.push({ value: `family_member:${m.id}`, label: name, ref: { kind: "family_member", id: m.id }, isTrust: false });
     }
     for (const x of props.recipients.externals)
-      opts.push({ value: `external_beneficiary:${x.id}`, label: x.kindLabel ? `${x.name} (${x.kindLabel})` : x.name, ref: { kind: "external_beneficiary", id: x.id }, isTrust: false });
+      opts.push({ value: `external_beneficiary:${x.id}`, label: x.kindLabel ? `${x.name} (${x.kindLabel})` : x.name, ref: { kind: "external_beneficiary", id: x.id }, isTrust: false, charityType: x.charityType });
     return opts;
   }, [props.recipients]);
 
@@ -150,6 +170,14 @@ export default function GiftForm(props: GiftFormProps) {
   const [grantor, setGrantor] = useState<GiftGrantor>(() => editing?.grantor ?? "client");
   const [crummey, setCrummey] = useState(() => (editing && editing.kind !== "asset-once" ? editing.crummey : false));
 
+  // ── QCD (paid from an IRA straight to a public charity) ───────────────────
+  const savedQcd = editing != null && editing.kind !== "asset-once" ? editing.qcd : undefined;
+  const [fromIra, setFromIra] = useState(() => savedQcd != null);
+  const [qcdAccountId, setQcdAccountId] = useState(() => savedQcd?.accountId ?? "");
+  const [qcdMode, setQcdMode] = useState<QcdAmountMode>(() => savedQcd?.amountMode ?? "full_rmd");
+  // Once the advisor types a start year, picking an IRA or a mode stops moving it.
+  const startYearTouched = useRef(editing != null);
+
   // ── Valuation discount ────────────────────────────────────────────────────
   // Held as WHOLE PERCENT for the input; stored on the draft as a fraction.
   // Clamped to the SAME bound the input and the save guard use: storage accepts
@@ -173,9 +201,26 @@ export default function GiftForm(props: GiftFormProps) {
   const recipientIsTrust = selected?.isTrust ?? false;
   const effectiveRecurring = isRecurring;
   const inKindAllowed = sourceAccount != null || props.accounts.length > 0;
-  const effectiveInKind = !effectiveRecurring && inKindAllowed && isInKind;
+  const qcdSources = props.qcdSources ?? [];
+  const qcdAllowed = qcdSources.length > 0 && selected?.charityType === "public";
+  const qcdPrivateNote = qcdSources.length > 0 && selected?.charityType === "private";
+  const effectiveQcd = fromIra && qcdAllowed;
+  const qcdSource = effectiveQcd ? qcdSources.find((s) => s.id === qcdAccountId) : undefined;
+  const effectiveInKind = !effectiveRecurring && inKindAllowed && isInKind && !effectiveQcd;
   const effectiveAccountId = sourceAccount?.id ?? selectedAccountId;
-  const grantorCount = grantor === "joint" ? 2 : 1;
+  // A QCD is the IRA owner's own gift, so the grantor follows the account.
+  const effectiveGrantor: GiftGrantor = qcdSource ? qcdSource.owner : grantor;
+  const grantorCount = effectiveGrantor === "joint" ? 2 : 1;
+
+  /** A new recurring QCD starts when QCDs can: the first year the owner is
+   *  70½ for a fixed amount, the first RMD year for Full RMD. */
+  function defaultQcdStart(sourceId: string, mode: QcdAmountMode) {
+    const src = qcdSources.find((s) => s.id === sourceId);
+    if (!src || editing != null || !effectiveRecurring || startYearTouched.current) return;
+    const start = Math.max(planMinYear ?? thisYear, mode === "fixed" ? src.eligibleFromYear : src.rmdStartYear);
+    setStartYear(start);
+    setEndYear((e) => Math.max(e, start));
+  }
 
   // Max-exclusion preview value for the relevant year.
   const exclYear = effectiveRecurring ? startYear : year;
@@ -191,11 +236,13 @@ export default function GiftForm(props: GiftFormProps) {
     setDiscountPct(prior != null ? Math.round(prior * 10_000) / 100 : 0);
   }, [effectiveAccountId, discountTouched, priorDiscounts]);
 
-  const discountApplicable = discountAppliesToShape({
-    recurring: effectiveRecurring,
-    inKind: effectiveInKind,
-    recipientIsIrrevocableTrust: recipientIsTrust,
-  });
+  const discountApplicable =
+    !effectiveQcd &&
+    discountAppliesToShape({
+      recurring: effectiveRecurring,
+      inKind: effectiveInKind,
+      recipientIsIrrevocableTrust: recipientIsTrust,
+    });
   // `discountPct` is clamped on input, so the upper test is belt-and-braces —
   // it keeps a $0 gift unreachable if that clamp is ever loosened.
   const discountFraction =
@@ -275,6 +322,27 @@ export default function GiftForm(props: GiftFormProps) {
       (selectedAccount?.subType != null &&
         MARKETABLE_SUBTYPES.has(selectedAccount.subType)));
 
+  // Non-blocking notes on a QCD. They read the year and amount on screen, so
+  // they move as the advisor types.
+  const qcdWarnings: string[] = [];
+  if (qcdSource) {
+    const qcdYear = effectiveRecurring ? startYear : year;
+    const qcdTyped = effectiveRecurring ? annualAmount : amount;
+    if (qcdYear < qcdSource.eligibleFromYear) {
+      qcdWarnings.push(`${qcdSource.ownerFirstName} turns 70½ in ${qcdSource.eligibleFromYear}. QCDs before then are skipped.`);
+    }
+    if (qcdMode === "fixed") {
+      const limit = qcdAnnualLimit(qcdYear, props.taxInflationRate ?? 0);
+      if (qcdTyped > limit) {
+        qcdWarnings.push(`Above the ${qcdYear} QCD limit of $${limit.toLocaleString()}. The extra is taxed, then deducted as a normal gift.`);
+      }
+      const projected = props.accountValueAtYear?.(qcdSource.id, qcdYear);
+      if (projected != null && qcdTyped > projected) {
+        qcdWarnings.push(`More than ${qcdSource.name}'s projected balance in ${qcdYear}. The gift stops at the balance.`);
+      }
+    }
+  }
+
   // Returned together so every `null` draft carries the sentence that explains
   // it: a save that refuses with "please complete the gift" and no field named
   // is indistinguishable from a dead button — which is exactly how a $0 source
@@ -289,6 +357,8 @@ export default function GiftForm(props: GiftFormProps) {
       planMinYear != null && planMaxYear != null ? ` between ${planMinYear} and ${planMaxYear}` : "";
 
     if (!selected) return blocked("Choose who receives the gift.");
+    if (effectiveQcd && !qcdSource) return blocked("Choose the IRA the gift comes from.");
+    const qcd = effectiveQcd ? { accountId: qcdAccountId, amountMode: qcdMode } : undefined;
     const id = editing?.id ?? newGiftId;
     const recipient = selected.ref;
     const inWindow = (y: number) =>
@@ -300,18 +370,23 @@ export default function GiftForm(props: GiftFormProps) {
         !inWindow(startYear) || !inWindow(endYear)
       ) return blocked(`Enter a start and end year${yearWindow}.`);
       if (endYear < startYear) return blocked("The end year cannot come before the start year.");
-      const annual = amountMode === "annual_exclusion" ? exclusionAmount : annualAmount;
-      if (!(annual > 0)) return blocked("Enter an amount to give each year.");
+      // A Full RMD QCD is sized by the RMD step, so it carries 0; the server
+      // requires that, and requires a QCD series to use the "fixed" mode.
+      const fullRmd = qcd?.amountMode === "full_rmd";
+      const seriesMode = qcd ? "fixed" : amountMode;
+      const annual = fullRmd ? 0 : amountMode === "annual_exclusion" && !qcd ? exclusionAmount : annualAmount;
+      if (!fullRmd && !(annual > 0)) return blocked("Enter an amount to give each year.");
       // Key order MUST match giftSeriesRowToDraft.
       const base: EstateFlowGift = {
         kind: "series", id, startYear, endYear, annualAmount: annual,
-        amountMode, inflationAdjust: amountMode === "annual_exclusion" ? false : inflationAdjust,
-        grantor, recipient, crummey: recipientIsTrust ? crummey : false,
+        amountMode: seriesMode,
+        inflationAdjust: seriesMode === "annual_exclusion" || fullRmd ? false : inflationAdjust,
+        grantor: effectiveGrantor, recipient, crummey: recipientIsTrust && !qcd ? crummey : false,
         // LAST KEY — must match giftSeriesRowToDraft, or the unsaved-changes
         // diff (JSON.stringify, key-order-sensitive) reports a phantom edit.
         valuationDiscount: discountFraction,
       };
-      return ok(editing?.kind === "series" ? { ...editing, ...base } : base);
+      return ok(qcdLast(editing?.kind === "series" ? { ...editing, ...base } : base, qcd));
     }
 
     if (effectiveInKind) {
@@ -347,17 +422,18 @@ export default function GiftForm(props: GiftFormProps) {
 
     // cash-once
     if (!Number.isFinite(year) || !inWindow(year)) return blocked(`Enter a gift year${yearWindow}.`);
-    const amt = amountMode === "annual_exclusion" ? exclusionAmount : amount;
-    if (!(amt > 0)) return blocked("Enter an amount to give.");
+    const fullRmd = qcd?.amountMode === "full_rmd";
+    const amt = fullRmd ? 0 : amountMode === "annual_exclusion" && !qcd ? exclusionAmount : amount;
+    if (!fullRmd && !(amt > 0)) return blocked("Enter an amount to give.");
     const base: EstateFlowGift = {
-      kind: "cash-once", id, year, amount: amt, grantor, recipient,
-      crummey: recipientIsTrust ? crummey : false,
+      kind: "cash-once", id, year, amount: amt, grantor: effectiveGrantor, recipient,
+      crummey: recipientIsTrust && !qcd ? crummey : false,
       eventKind: editing?.kind === "cash-once" ? editing.eventKind : undefined,
       // LAST KEY — must match giftRowToDraft's cash branch.
       valuationDiscount: discountFraction,
     };
-    return ok(editing?.kind === "cash-once" ? { ...editing, ...base } : base);
-  }, [selected, editing, newGiftId, effectiveRecurring, effectiveInKind, effectiveAccountId, year, assetShare, assetSizeMode, assetValueAtYear, selectedAccount?.name, amount, startYear, endYear, annualAmount, amountMode, exclusionAmount, inflationAdjust, grantor, crummey, discountFraction, recipientIsTrust, planMinYear, planMaxYear]);
+    return ok(qcdLast(editing?.kind === "cash-once" ? { ...editing, ...base } : base, qcd));
+  }, [selected, editing, newGiftId, effectiveRecurring, effectiveInKind, effectiveAccountId, year, assetShare, assetSizeMode, assetValueAtYear, selectedAccount?.name, amount, startYear, endYear, annualAmount, amountMode, exclusionAmount, inflationAdjust, grantor, effectiveGrantor, effectiveQcd, qcdSource, qcdAccountId, qcdMode, crummey, discountFraction, recipientIsTrust, planMinYear, planMaxYear]);
 
   // Fire onChange whenever the draft *content* changes (stable JSON key so a
   // new object identity for an unchanged draft does not re-fire; onChange held
@@ -375,7 +451,9 @@ export default function GiftForm(props: GiftFormProps) {
 
   // ── Exemption warning preview (sandbox only) ──────────────────────────────
   const breaches = useMemo<GiftWarningBreach[]>(() => {
+    // A QCD is paid from the IRA, not from the giver's exemption.
     if (!ledger || !draft) return [];
+    if (draft.kind !== "asset-once" && draft.qcd) return [];
 
     // taxableContribution: cash → amount, asset → gift-year account value × pct,
     // series → per-year annualAmount (preview the start year). Each is net of
@@ -446,7 +524,12 @@ export default function GiftForm(props: GiftFormProps) {
       {effectiveRecurring ? (
         <div className="grid grid-cols-2 gap-3">
           <Field label="Start year">
-            <NumberInput value={startYear} onChange={setStartYear} min={planMinYear} max={planMaxYear} />
+            <NumberInput
+              value={startYear}
+              onChange={(n) => { startYearTouched.current = true; setStartYear(n); }}
+              min={planMinYear}
+              max={planMaxYear}
+            />
           </Field>
           <Field label="End year">
             <NumberInput value={endYear} onChange={setEndYear} min={planMinYear} max={planMaxYear} />
@@ -462,34 +545,111 @@ export default function GiftForm(props: GiftFormProps) {
       <Field label="Grantor">
         <select
           data-testid="grantor"
-          value={grantor}
+          value={effectiveGrantor}
           onChange={(e) => setGrantor(e.target.value as GiftGrantor)}
+          disabled={effectiveQcd}
           className={selectCls}
         >
           <option value="client">Client</option>
           {props.hasSpouse && <option value="spouse">{CO_CLIENT_LABEL}</option>}
           {props.hasSpouse && <option value="joint">Both (split gift)</option>}
         </select>
-        {grantor === "joint" && (
+        {effectiveGrantor === "joint" && (
           <p className="mt-1 text-xs text-ink-3">
             Treated as half from each Co-client — uses both annual exclusions / Crummey powers.
           </p>
         )}
       </Field>
 
-      {/* Funding (one-time only, and only when in-kind funding is allowed) */}
-      {!effectiveRecurring && inKindAllowed && (
+      {/* Funding: a specific asset is one-time only; From an IRA is a QCD to a
+          public charity, one-time or recurring. */}
+      {((!effectiveRecurring && inKindAllowed) || qcdAllowed) && (
         <Field label="Funding">
           <Segmented
-            value={effectiveInKind ? "asset" : "cash"}
-            options={[["cash", "Cash"], ["asset", "Specific asset"]]}
-            onChange={(v) => setIsInKind(v === "asset")}
+            value={effectiveQcd ? "ira" : effectiveInKind ? "asset" : "cash"}
+            options={[
+              ["cash", "Cash"],
+              ...(!effectiveRecurring && inKindAllowed ? [["asset", "Specific asset"] as [string, string]] : []),
+              ...(qcdAllowed ? [["ira", "From an IRA"] as [string, string]] : []),
+            ]}
+            onChange={(v) => {
+              setIsInKind(v === "asset");
+              setFromIra(v === "ira");
+              if (v === "ira") defaultQcdStart(qcdAccountId, qcdMode);
+            }}
           />
         </Field>
       )}
+      {qcdPrivateNote && (
+        <p className="text-xs text-ink-3" data-testid="qcd-private-note">
+          QCDs can only go to public charities.
+        </p>
+      )}
 
       {/* Amount controls */}
-      {effectiveInKind ? (
+      {effectiveQcd ? (
+        <div className="space-y-3" data-testid="qcd-section">
+          <div>
+            <Field label="IRA">
+              <select
+                data-testid="qcd-account"
+                value={qcdAccountId}
+                onChange={(e) => {
+                  setQcdAccountId(e.target.value);
+                  defaultQcdStart(e.target.value, qcdMode);
+                }}
+                className={selectCls}
+              >
+                <option value="">— select —</option>
+                {qcdSources.map((src) => (
+                  <option key={src.id} value={src.id}>{src.name} ({src.ownerFirstName})</option>
+                ))}
+              </select>
+            </Field>
+            <p className="mt-1.5 text-xs text-ink-3">
+              Paid straight from the IRA to the charity. Counts toward the RMD and isn&apos;t taxed. Not for donor-advised funds.
+            </p>
+            {qcdSource?.spouseFirstName && (
+              <p className="mt-1 text-xs text-ink-3">
+                If {qcdSource.ownerFirstName} dies first and the IRA passes to {qcdSource.spouseFirstName}, these gifts continue from {qcdSource.spouseFirstName}.
+              </p>
+            )}
+          </div>
+          <Field label="Amount">
+            <div data-testid="qcd-mode">
+              <Segmented
+                value={qcdMode}
+                options={[["full_rmd", "Full RMD"], ["fixed", "Fixed amount"]]}
+                onChange={(v) => {
+                  setQcdMode(v as QcdAmountMode);
+                  defaultQcdStart(qcdAccountId, v as QcdAmountMode);
+                }}
+              />
+            </div>
+            {qcdMode === "fixed" &&
+              (effectiveRecurring ? (
+                <MoneyInput key="qcd-annual" className="mt-2" value={annualAmount} onChange={setAnnualAmount} />
+              ) : (
+                <MoneyInput key="qcd-once" className="mt-2" value={amount} onChange={setAmount} />
+              ))}
+            {effectiveRecurring && qcdMode === "fixed" && (
+              <label className="mt-2 flex items-center gap-2 text-xs text-ink-2">
+                <input type="checkbox" checked={inflationAdjust} onChange={(e) => setInflationAdjust(e.target.checked)} />
+                Inflation-adjust each year
+              </label>
+            )}
+          </Field>
+          {qcdWarnings.length > 0 && (
+            <div
+              role="status"
+              data-testid="qcd-warnings"
+              className="space-y-1 rounded border border-amber-400/40 bg-amber-400/10 px-2 py-1.5 text-[11px] text-amber-200"
+            >
+              {qcdWarnings.map((w) => <p key={w}>{w}</p>)}
+            </div>
+          )}
+        </div>
+      ) : effectiveInKind ? (
         <div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Asset">
