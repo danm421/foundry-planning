@@ -422,6 +422,12 @@ describe("list_plan_details", () => {
   // Reading the enum off the REAL tool, not a copy of the literal list here,
   // means adding a kind without adding its kindCases row now fails THIS
   // assertion first.
+  it("explains that a Full RMD qcd row's amount of 0 is resolved by the projection", () => {
+    const description = byName("list_plan_details").description;
+    expect(description).toContain("mode 'full_rmd' carries amount: 0");
+    expect(description).toContain("required minimum distribution, resolved by the projection");
+  });
+
   it("kindCases covers every kind the tool's own schema actually accepts", () => {
     const kindSchema = byName("list_plan_details").inputSchema.shape.kind as unknown as {
       options: readonly string[];

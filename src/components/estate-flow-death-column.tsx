@@ -14,6 +14,7 @@ import { EstateTransferConflictsCallout } from "@/components/estate-transfer-con
 import { EstateFlowDeathTaxBox } from "@/components/estate-flow-death-tax-box";
 import { ShareBandButton } from "@/components/estate-flow-share-band";
 import { AlertCircleIcon, GiftIcon } from "@/components/icons";
+import { qcdGiftLabel } from "@/lib/gifts/qcd-label";
 import {
   summarizeDeathWarnings,
   type DeathWarningNote,
@@ -125,8 +126,21 @@ function giftMatchesGroup(gift: EstateFlowGift, group: RecipientGroup): boolean 
  *  - series     → "$19,000 a year, 2026–2035"
  *  - asset-once → "15% of {account name} in 2030" (falls back to "an asset"
  *                 when the account id is not resolvable)
+ *  - a QCD      → `qcdGiftLabel` + its year(s), so a Full RMD QCD (stored at
+ *                 $0) reads "QCD from {IRA} · Full RMD, 2034–2040"
  */
 function giftText(gift: EstateFlowGift, accountNameById: Map<string, string>): string {
+  if (gift.kind !== "asset-once" && gift.qcd) {
+    const label = qcdGiftLabel({
+      accountName: accountNameById.get(gift.qcd.accountId) ?? "IRA",
+      amountMode: gift.qcd.amountMode,
+      amount: gift.kind === "series" ? gift.annualAmount : gift.amount,
+      recurring: gift.kind === "series",
+    });
+    return gift.kind === "series"
+      ? `${label}, ${gift.startYear}–${gift.endYear}`
+      : `${label} in ${gift.year}`;
+  }
   if (gift.kind === "cash-once") {
     return `${fmt.format(gift.amount)} in ${gift.year}`;
   }

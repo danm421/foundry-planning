@@ -101,14 +101,19 @@ function section(recipients: RecipientGroup[], tax: EstateTaxResult = estateTax(
   };
 }
 
-function renderColumn(s: DeathSectionData, isMarried = true, gifts: EstateFlowGift[] = []) {
+function renderColumn(
+  s: DeathSectionData,
+  isMarried = true,
+  gifts: EstateFlowGift[] = [],
+  accountNameById = new Map<string, string>(),
+) {
   return render(
     <EstateFlowDeathColumn
       section={s}
       deathOrder={1}
       projection={{ years: [] } as unknown as ProjectionResult}
       gifts={gifts}
-      accountNameById={new Map()}
+      accountNameById={accountNameById}
       isMarried={isMarried}
     />,
   );
@@ -192,6 +197,33 @@ describe("EstateFlowDeathColumn — recipient boxes", () => {
     fireEvent.click(screen.getByRole("button", { name: /Jane Sample/ }));
 
     expect(screen.getByText("Lifetime gift: $50,000 in 2026")).toBeDefined();
+  });
+
+  it("lists a QCD as one, so a Full RMD QCD never reads as $0 a year", () => {
+    const charity = recipient({
+      key: "external_beneficiary|ch",
+      recipientKind: "external_beneficiary",
+      recipientId: "ch",
+      recipientLabel: "Red Cross",
+      assets: [["IRA", 100_000]],
+    });
+    const series = {
+      kind: "series", id: "gs-1", startYear: 2034, endYear: 2040, annualAmount: 0,
+      amountMode: "fixed", inflationAdjust: false, grantor: "client",
+      recipient: { kind: "external_beneficiary", id: "ch" }, crummey: false,
+      qcd: { accountId: "ira1", amountMode: "full_rmd" },
+    } as EstateFlowGift;
+    const once = {
+      kind: "cash-once", id: "g-1", year: 2035, amount: 20_000, grantor: "client",
+      recipient: { kind: "external_beneficiary", id: "ch" }, crummey: false,
+      qcd: { accountId: "ira1", amountMode: "fixed" },
+    } as EstateFlowGift;
+    renderColumn(section([charity]), true, [series, once], new Map([["ira1", "Jane IRA"]]));
+    fireEvent.click(screen.getByRole("button", { name: /Red Cross/ }));
+
+    expect(screen.getByText("Lifetime gift: QCD from Jane IRA · Full RMD, 2034–2040")).toBeDefined();
+    expect(screen.getByText("Lifetime gift: QCD from Jane IRA · $20,000 in 2035")).toBeDefined();
+    expect(screen.queryByText(/\$0 a year/)).toBeNull();
   });
 
   it("keeps the No-plan flag on a collapsed default-order box", () => {

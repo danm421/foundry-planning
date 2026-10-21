@@ -162,7 +162,9 @@ const listPlanDetails = defineTool({
     "family_member rows carry a birthYear instead of an exact date of birth. This can be large; " +
     "use limit and offset. Kind 'roth_conversion' lists existing Roth conversions, for removing or replacing one in " +
     "a what-if. Kind 'asset_transaction' lists planned asset sales and purchases, for removing one in a what-if. " +
-    "Kind 'qcd' lists the qualified charitable distributions (gifts paid straight from an IRA to charity), one row per year; read-only.",
+    "Kind 'qcd' lists the qualified charitable distributions (gifts paid straight from an IRA to charity), one row per year; read-only. " +
+    "A row with mode 'full_rmd' carries amount: 0 because its amount each year is that IRA's required minimum " +
+    "distribution, resolved by the projection.",
   inputSchema: z.object({
     clientId: z
       .string()
