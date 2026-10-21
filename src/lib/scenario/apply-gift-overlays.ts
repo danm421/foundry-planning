@@ -56,13 +56,15 @@ export function applyGiftOverlays(
   const keptEvents = (tree.giftEvents ?? []).filter(
     (e) => !giftEventBelongsTo(e, targeted),
   );
+  const keptQcds = (tree.qcds ?? []).filter((e) => !giftEventBelongsTo(e, targeted));
   const derived = applyGiftsToClientData(
-    { ...tree, gifts: [], giftEvents: [] },
+    { ...tree, gifts: [], giftEvents: [], qcds: [] },
     addDrafts,
     cpi,
   );
   return {
     ...tree,
+    qcds: [...keptQcds, ...(derived.qcds ?? [])].sort((a, b) => a.year - b.year),
     gifts: [...keptGifts, ...(derived.gifts ?? [])],
     giftEvents: [...keptEvents, ...derived.giftEvents].sort(
       (a, b) => a.year - b.year,

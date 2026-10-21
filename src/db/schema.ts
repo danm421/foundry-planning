@@ -230,6 +230,10 @@ export const giftAmountModeEnum = pgEnum("gift_amount_mode", [
   "annual_exclusion",
 ]);
 
+/** How a QCD (gift paid straight from an IRA to a charity) sizes itself:
+ *  a fixed amount, or whatever the year's RMD is. */
+export const qcdAmountModeEnum = pgEnum("qcd_amount_mode", ["fixed", "full_rmd"]);
+
 export const titlingTypeEnum = pgEnum("titling_type", [
   "jtwros",
   "community_property",
@@ -1878,6 +1882,13 @@ export const gifts = pgTable(
      *  into either, and never reaches the recipient's balance sheet. */
     valuationDiscount: decimal("valuation_discount", { precision: 6, scale: 4 }),
     parentGiftId: uuid("parent_gift_id"),
+    /** Set together with `qcdAmountMode` when the gift is a QCD paid from this
+     *  IRA. Cascade, not set-null: set-null would quietly turn a QCD into a
+     *  household cash gift. Full-RMD rows store `amount` = 0. */
+    qcdAccountId: uuid("qcd_account_id").references(() => accounts.id, {
+      onDelete: "cascade",
+    }),
+    qcdAmountMode: qcdAmountModeEnum("qcd_amount_mode"),
     useCrummeyPowers: boolean("use_crummey_powers").notNull().default(false),
     eventKind: giftEventKindEnum("event_kind").notNull().default("outright"),
     notes: text("notes"),
@@ -1912,6 +1923,18 @@ export const gifts = pgTable(
          AND ${t.businessEntityId} IS NULL)
         OR
         (${t.businessEntityId} IS NOT NULL AND ${t.percent} IS NOT NULL AND ${t.accountId} IS NULL AND ${t.liabilityId} IS NULL AND ${t.recipientEntityId} IS NOT NULL)
+      )`,
+    ),
+    check(
+      "gifts_qcd_shape",
+      sql`(
+        (${t.qcdAccountId} IS NULL AND ${t.qcdAmountMode} IS NULL)
+        OR
+        (${t.qcdAccountId} IS NOT NULL AND ${t.qcdAmountMode} IS NOT NULL
+         AND ${t.recipientExternalBeneficiaryId} IS NOT NULL
+         AND ${t.accountId} IS NULL AND ${t.liabilityId} IS NULL AND ${t.businessEntityId} IS NULL
+         AND ${t.percent} IS NULL AND ${t.amount} IS NOT NULL
+         AND ${t.grantor} <> 'joint')
       )`,
     ),
     check(
@@ -4255,6 +4278,11 @@ export const giftSeries = pgTable(
     valuationDiscount: decimal("valuation_discount", { precision: 6, scale: 4 }),
     amountMode: giftAmountModeEnum("amount_mode").notNull().default("fixed"),
     inflationAdjust: boolean("inflation_adjust").notNull().default(false),
+    /** QCD pair — see `gifts.qcdAccountId`. Full-RMD rows store annualAmount = 0. */
+    qcdAccountId: uuid("qcd_account_id").references(() => accounts.id, {
+      onDelete: "cascade",
+    }),
+    qcdAmountMode: qcdAmountModeEnum("qcd_amount_mode"),
     useCrummeyPowers: boolean("use_crummey_powers").notNull().default(false),
     notes: text("notes"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -4271,6 +4299,17 @@ export const giftSeries = pgTable(
         (${t.recipientFamilyMemberId} IS NOT NULL)::int +
         (${t.recipientExternalBeneficiaryId} IS NOT NULL)::int
       ) = 1`,
+    ),
+    check(
+      "gift_series_qcd_shape",
+      sql`(
+        (${t.qcdAccountId} IS NULL AND ${t.qcdAmountMode} IS NULL)
+        OR
+        (${t.qcdAccountId} IS NOT NULL AND ${t.qcdAmountMode} IS NOT NULL
+         AND ${t.recipientExternalBeneficiaryId} IS NOT NULL
+         AND ${t.grantor} <> 'joint'
+         AND ${t.amountMode} = 'fixed')
+      )`,
     ),
     check(
       "gift_series_valuation_discount_range",

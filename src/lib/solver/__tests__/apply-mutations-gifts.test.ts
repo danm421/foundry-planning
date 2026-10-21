@@ -41,3 +41,17 @@ it("is identity when there are no gift mutations", () => {
   expect(out.giftEvents).toHaveLength(1);
   expect(out.gifts).toHaveLength(1);
 });
+
+it("a QCD upsert replaces the base QCD's events in qcds and never becomes a cash gift", () => {
+  const t = baseTree();
+  t.qcds = [{ year: 2030, accountId: "ira", charityId: "c1", mode: "fixed", amount: 5000, sourceGiftId: "base-q" }];
+  const value = {
+    kind: "cash-once", id: "base-q", year: 2031, amount: 7000, grantor: "client",
+    recipient: { kind: "external_beneficiary", id: "c1" }, crummey: false,
+    qcd: { accountId: "ira", amountMode: "fixed" },
+  } as const;
+  const out = applyMutations(t, [{ kind: "gift-upsert", id: "base-q", value }] as SolverMutation[]);
+  expect(out.qcds!.map((q) => [q.year, q.amount])).toEqual([[2031, 7000]]);
+  expect(out.gifts).toHaveLength(1);
+  expect(out.giftEvents).toHaveLength(1);
+});

@@ -1,7 +1,16 @@
-import type { ClientData, Gift, GiftEvent, GiftEventKind } from "@/engine/types";
+import type {
+  ClientData,
+  Gift,
+  GiftEvent,
+  GiftEventKind,
+  QcdAmountMode,
+  QcdEvent,
+} from "@/engine/types";
+import { fanOutQcd } from "@/engine/qcd";
 import { fanOutGiftSeries } from "@/engine/series-fanout";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { selectPriorDiscounts } from "@/lib/gifts/select-prior-discounts";
+import { qcdSpecFromDraft } from "@/lib/gifts/qcd-spec";
 
 // ── Public model ─────────────────────────────────────────────────────────────
 
@@ -32,6 +41,10 @@ export type EstateFlowGift =
       crummey: boolean;
       /** Non-outright gift kind. Always populated by mappers (DB default is "outright"). */
       eventKind?: GiftEventKind;
+      /** A QCD: paid straight from this IRA to a public charity (the recipient).
+       *  Present only on QCD gifts; lives in `ClientData.qcds`, never in
+       *  `gifts` / `giftEvents`. Must sit immediately before valuationDiscount. */
+      qcd?: { accountId: string; amountMode: QcdAmountMode };
       /** Valuation discount as a fraction (0.3 = 30%). Transfer-tax only.
        *  MUST be the last key emitted by the mappers below — the unsaved-changes
        *  diff compares gifts with JSON.stringify, which is key-order-sensitive. */
@@ -71,6 +84,10 @@ export type EstateFlowGift =
       grantor: "client" | "spouse" | "joint";
       recipient: GiftRecipientRef; // recipient.kind may be entity, family_member, or external_beneficiary
       crummey: boolean;
+      /** A QCD: paid straight from this IRA to a public charity (the recipient).
+       *  Present only on QCD gifts; lives in `ClientData.qcds`, never in
+       *  `gifts` / `giftEvents`. Must sit immediately before valuationDiscount. */
+      qcd?: { accountId: string; amountMode: QcdAmountMode };
       /** Valuation discount as a fraction (0.3 = 30%). Transfer-tax only.
        *  MUST be the last key emitted by the mappers below — the unsaved-changes
        *  diff compares gifts with JSON.stringify, which is key-order-sensitive. */
@@ -100,6 +117,9 @@ export interface GiftRow {
   /** `numeric(6,4)` as a string, or NULL. Optional so existing fixtures that
    *  build a GiftRow literal keep compiling. */
   valuationDiscount?: string | null;
+  /** QCD pair — both set or both null. Optional so existing fixtures compile. */
+  qcdAccountId?: string | null;
+  qcdAmountMode?: QcdAmountMode | null;
 }
 
 /** Shape of a `gift_series` table row as returned by a plain `select()`.
@@ -121,6 +141,8 @@ export interface GiftSeriesDbRow {
   useCrummeyPowers: boolean;
   /** `numeric(6,4)` as a string, or NULL. */
   valuationDiscount?: string | null;
+  qcdAccountId?: string | null;
+  qcdAmountMode?: QcdAmountMode | null;
 }
 
 function recipientFromRow(r: {
@@ -171,6 +193,9 @@ export function giftRowToDraft(row: GiftRow): EstateFlowGift | null {
     crummey: row.useCrummeyPowers,
     // Carry eventKind (DB default is "outright"; always present).
     eventKind: row.eventKind,
+    ...(row.qcdAccountId != null && row.qcdAmountMode != null
+      ? { qcd: { accountId: row.qcdAccountId, amountMode: row.qcdAmountMode } }
+      : {}),
     // LAST KEY — see the JSON.stringify contract in estate-flow-gift-diff.ts.
     valuationDiscount:
       row.valuationDiscount != null ? Number(row.valuationDiscount) : undefined,
@@ -190,6 +215,9 @@ export function giftSeriesRowToDraft(row: GiftSeriesDbRow): EstateFlowGift {
     grantor: row.grantor,
     recipient: recipientFromRow(row),
     crummey: row.useCrummeyPowers,
+    ...(row.qcdAccountId != null && row.qcdAmountMode != null
+      ? { qcd: { accountId: row.qcdAccountId, amountMode: row.qcdAmountMode } }
+      : {}),
     // LAST KEY — see the JSON.stringify contract in estate-flow-gift-diff.ts.
     valuationDiscount:
       row.valuationDiscount != null ? Number(row.valuationDiscount) : undefined,
@@ -262,6 +290,7 @@ export function applyGiftsToClientData(
 
   const cashGifts: Gift[] = [];
   const giftEvents: GiftEvent[] = [];
+  const qcds: QcdEvent[] = [];
 
   // §2503(b) annual-exclusion map across the plan horizon — drives
   // annual_exclusion series fan-out (mirrors load-client-data.ts).
@@ -277,6 +306,14 @@ export function applyGiftsToClientData(
 
   for (const g of gifts) {
     if (g.enabled === false) continue;
+    // A QCD is paid from the IRA to the charity, not from household cash: it
+    // feeds `qcds` only, never `gifts` / `giftEvents` (that would debit
+    // checking and deduct it a second time).
+    if ((g.kind === "cash-once" || g.kind === "series") && g.qcd) {
+      const spec = qcdSpecFromDraft(g);
+      if (spec) qcds.push(...fanOutQcd(spec, cpi));
+      continue;
+    }
     if (g.kind === "cash-once") {
       // The loader's mappedGifts omits eventKind from Gift[] entries
       // (the field is optional on Gift and the loader never sets it there).
@@ -381,8 +418,10 @@ export function applyGiftsToClientData(
   }
 
   giftEvents.sort((a, b) => a.year - b.year);
+  // Stable: the engine caps QCDs in entry order, so ties keep draft order.
+  qcds.sort((a, b) => a.year - b.year);
 
-  return { ...data, gifts: cashGifts, giftEvents };
+  return { ...data, gifts: cashGifts, giftEvents, qcds };
 }
 
 /** True when a giftEvent was produced by one of the gift ids in `ids`. Covers

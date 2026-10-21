@@ -66,12 +66,22 @@ import type {
   ClientData,
   EntityFlowOverride,
   GiftEvent,
+  QcdEvent,
   Reinvestment,
   Will,
   WillBequest,
   WillResiduaryRecipient,
 } from "@/engine/types";
 import { fanOutGiftSeries } from "@/engine/series-fanout";
+import { fanOutQcd } from "@/engine/qcd";
+import { qcdSpecFromDraft } from "@/lib/gifts/qcd-spec";
+import {
+  giftRowToDraft,
+  giftSeriesRowToDraft,
+  type EstateFlowGift,
+  type GiftRow,
+  type GiftSeriesDbRow,
+} from "@/lib/estate/estate-flow-gifts";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { discountedGiftValue } from "@/lib/gifts/apply-valuation-discount";
 import type { AccountOwner, EntityOwner } from "@/engine/ownership";
@@ -128,6 +138,31 @@ export class ProjectionInputError extends Error {
     super(message);
     this.name = "ProjectionInputError";
   }
+}
+
+/** Every QCD gift and series row, fanned out to one engine event per year.
+ *  Sorted by year, then by the source row's `createdAt` (one-time and series
+ *  rows interleaved): the engine caps and clamps QCDs in entry order, so this
+ *  is the order in which an IRA's balance and the giver's yearly cap are spent.
+ *  These rows are excluded from `gifts` / `giftEvents` by the
+ *  `qcdAccountId == null` filters in the loader. */
+export function buildQcdEvents(
+  giftRows: (GiftRow & { createdAt: Date })[],
+  giftSeriesRows: (GiftSeriesDbRow & { createdAt: Date })[],
+  cpi: number,
+): QcdEvent[] {
+  const tagged: { ev: QcdEvent; createdAt: number }[] = [];
+  const add = (draft: EstateFlowGift | null, createdAt: Date) => {
+    const spec = draft ? qcdSpecFromDraft(draft) : null;
+    if (!spec) return;
+    for (const ev of fanOutQcd(spec, cpi)) tagged.push({ ev, createdAt: createdAt.getTime() });
+  };
+  for (const g of giftRows) if (g.qcdAccountId != null) add(giftRowToDraft(g), g.createdAt);
+  for (const s of giftSeriesRows) if (s.qcdAccountId != null) add(giftSeriesRowToDraft(s), s.createdAt);
+  // Array.sort is stable, so equal year + createdAt keeps row order.
+  return tagged
+    .sort((a, b) => a.ev.year - b.ev.year || a.createdAt - b.createdAt)
+    .map((x) => x.ev);
 }
 
 /** The recipient half of a gift, straight off a `gifts` or `gift_series` row.
@@ -1635,6 +1670,7 @@ const loadClientDataCached = cache(
       .filter(
         (g) =>
           g.amount != null &&
+          g.qcdAccountId == null &&
           g.accountId == null &&
           g.liabilityId == null &&
           g.businessEntityId == null,
@@ -1657,6 +1693,7 @@ const loadClientDataCached = cache(
       .filter(
         (g) =>
           g.amount != null &&
+          g.qcdAccountId == null &&
           g.accountId == null &&
           g.liabilityId == null &&
           g.businessEntityId == null,
@@ -1735,7 +1772,9 @@ const loadClientDataCached = cache(
         : resolvedInflationRate,
     );
 
-    const seriesEvents: GiftEvent[] = giftSeriesRows.flatMap((s) =>
+    const seriesEvents: GiftEvent[] = giftSeriesRows
+      .filter((s) => s.qcdAccountId == null)
+      .flatMap((s) =>
       fanOutGiftSeries(
         {
           id: s.id,
@@ -1761,6 +1800,8 @@ const loadClientDataCached = cache(
       ...businessInterestFromGifts,
       ...seriesEvents,
     ].sort((a, b) => a.year - b.year);
+
+    const qcds = buildQcdEvents(giftRows, giftSeriesRows, cpi);
 
     const mappedFamilyMembers = familyMemberRows.map((f) => ({
       id: f.id,
@@ -1905,6 +1946,8 @@ const loadClientDataCached = cache(
       stockOptionPlans,
       gifts: mappedGifts,
       giftEvents,
+      // Present only when a plan has QCDs, so a plan without one loads unchanged.
+      ...(qcds.length > 0 ? { qcds } : {}),
       wills: engineWills,
       familyMembers: mappedFamilyMembers,
       notesReceivable: await loadNotesReceivable(id, scenario.id),

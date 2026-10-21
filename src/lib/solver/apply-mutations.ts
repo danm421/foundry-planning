@@ -459,10 +459,16 @@ export function applyMutations(
     result.giftEvents = (result.giftEvents ?? []).filter(
       (e) => !giftEventBelongsTo(e, targeted),
     );
+    const keptQcds = (result.qcds ?? []).filter(
+      (e) => !giftEventBelongsTo(e, targeted),
+    );
     const derived = applyGiftsToClientData(
-      { ...result, gifts: [], giftEvents: [] },
+      { ...result, gifts: [], giftEvents: [], qcds: [] },
       drafts,
       cpi,
+    );
+    result.qcds = [...keptQcds, ...(derived.qcds ?? [])].sort(
+      (a, b) => a.year - b.year,
     );
     result.gifts = [...result.gifts, ...(derived.gifts ?? [])];
     result.giftEvents = [...result.giftEvents, ...derived.giftEvents].sort(
