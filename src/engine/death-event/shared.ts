@@ -4,6 +4,7 @@ import { grossValue, scaleAccountValue } from "../margin";
 import type { FilingStatus } from "../../lib/tax/types";
 import type { AccountOwner } from "../ownership";
 import { controllingEntity, controllingFamilyMember, giftAwareLiabilityOwners, giftAwareOwners, isFullyEntityOwned, ownedByHousehold } from "../ownership";
+import { OTHER_HEIRS_LABEL } from "../other-heirs";
 
 /** Compute the year of the first-death event. Returns null when there is no
  *  spouse, when no lifeExpectancy is set, or when the earliest death falls
@@ -128,6 +129,7 @@ export type SplitShare = {
     recipientKind: DeathTransfer["recipientKind"];
     recipientId: string | null;
     recipientLabel: string;
+    otherHeirsPicked?: true;
   };
 };
 
@@ -459,6 +461,7 @@ export function splitAccount(
   for (const share of shares) {
     const amount = source.value * share.fraction;
     const basisShare = source.basis * share.fraction;
+    const picked = share.ledgerMeta.otherHeirsPicked ? { otherHeirsPicked: true as const } : {};
 
     const liabBalanceShare = linkedLiability
       ? linkedLiability.balance * share.fraction
@@ -474,6 +477,7 @@ export function splitAccount(
         recipientKind: share.ledgerMeta.recipientKind,
         recipientId: share.ledgerMeta.recipientId,
         recipientLabel: share.ledgerMeta.recipientLabel,
+        ...picked,
         amount,
         basis: basisShare,
         resultingAccountId: null,
@@ -494,6 +498,7 @@ export function splitAccount(
           recipientKind: share.ledgerMeta.recipientKind,
           recipientId: share.ledgerMeta.recipientId,
           recipientLabel: share.ledgerMeta.recipientLabel,
+          ...picked,
           amount: -liabBalanceShare,
           basis: 0,
           resultingAccountId: null,
@@ -579,6 +584,7 @@ export function splitAccount(
       recipientKind: share.ledgerMeta.recipientKind,
       recipientId: share.ledgerMeta.recipientId,
       recipientLabel: share.ledgerMeta.recipientLabel,
+      ...picked,
       amount,
       basis: basisShare,
       resultingAccountId: newAccount.id,
@@ -599,6 +605,7 @@ export function splitAccount(
         recipientKind: share.ledgerMeta.recipientKind,
         recipientId: share.ledgerMeta.recipientId,
         recipientLabel: share.ledgerMeta.recipientLabel,
+        ...picked,
         amount: -liabBalanceShare,
         basis: 0,
         resultingAccountId: null,
@@ -802,6 +809,7 @@ export function applyBeneficiaryDesignations(
     let recipientId: string | null;
     let recipientLabel: string;
     let removed = false;
+    let otherHeirsPicked = false;
 
     if (b.familyMemberId) {
       // Bug #5: a designation naming the surviving spouse by explicit FM id must
@@ -860,6 +868,14 @@ export function applyBeneficiaryDesignations(
       recipientId = b.entityIdRef;
       const ent = entities.find((e) => e.id === b.entityIdRef);
       recipientLabel = ent?.name ?? "Trust";
+    } else if (b.otherHeirs) {
+      // The built-in Other Heirs: the same sink the fallback uses. Never a
+      // household principal, so it never lapses and never carries forward.
+      removed = true;
+      recipientKind = "system_default";
+      recipientId = null;
+      recipientLabel = OTHER_HEIRS_LABEL;
+      otherHeirsPicked = true;
     } else {
       // Defensive — shouldn't happen if API validation is intact.
       removed = true;
@@ -885,6 +901,7 @@ export function applyBeneficiaryDesignations(
         recipientKind,
         recipientId,
         recipientLabel,
+        ...(otherHeirsPicked ? { otherHeirsPicked: true as const } : {}),
       },
     };
   });
@@ -1970,7 +1987,7 @@ export function runPourOut(input: RunPourOutInput): RunPourOutResult {
       for (const b of bens) {
         const share = (b.percentage / 100) * balance;
         const shareBasis = (b.percentage / 100) * steppedBasis;
-        const { recipientKind, recipientId, label } = resolveTrustBeneRecipient(
+        const { recipientKind, recipientId, label, otherHeirsPicked } = resolveTrustBeneRecipient(
           b, input.familyMembers, input.externalBeneficiaries,
         );
         transfers.push(makePourOutTransfer({
@@ -1984,6 +2001,7 @@ export function runPourOut(input: RunPourOutInput): RunPourOutResult {
           recipientLabel: label,
           amount: share,
           basis: shareBasis,
+          otherHeirsPicked,
         }));
       }
     }
@@ -2011,6 +2029,7 @@ function makePourOutTransfer(input: {
   recipientLabel: string;
   amount: number;
   basis: number;
+  otherHeirsPicked?: true;
 }): DeathTransfer {
   return {
     year: input.year,
@@ -2028,6 +2047,7 @@ function makePourOutTransfer(input: {
     basis: input.basis,
     resultingAccountId: null,
     resultingLiabilityId: null,
+    ...(input.otherHeirsPicked ? { otherHeirsPicked: true as const } : {}),
   };
 }
 
@@ -2035,7 +2055,15 @@ function resolveTrustBeneRecipient(
   b: BeneficiaryRef,
   familyMembers: FamilyMember[],
   externals: ExternalBeneficiarySummary[],
-): { recipientKind: DeathTransfer["recipientKind"]; recipientId: string | null; label: string } {
+): {
+  recipientKind: DeathTransfer["recipientKind"];
+  recipientId: string | null;
+  label: string;
+  otherHeirsPicked?: true;
+} {
+  if (b.otherHeirs) {
+    return { recipientKind: "system_default", recipientId: null, label: OTHER_HEIRS_LABEL, otherHeirsPicked: true };
+  }
   if (b.familyMemberId) {
     const fm = familyMembers.find((m) => m.id === b.familyMemberId);
     return {

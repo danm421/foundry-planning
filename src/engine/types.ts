@@ -83,7 +83,8 @@ export interface Gift {
 }
 
 export interface WillBequestRecipient {
-  recipientKind: "family_member" | "external_beneficiary" | "entity" | "spouse";
+  /** "spouse" and "other_heirs" carry a null recipientId. */
+  recipientKind: "family_member" | "external_beneficiary" | "entity" | "spouse" | "other_heirs";
   recipientId: string | null;
   percentage: number;
   sortOrder: number;
@@ -113,7 +114,7 @@ export interface WillBequest {
 }
 
 export interface WillResiduaryRecipient {
-  recipientKind: "family_member" | "external_beneficiary" | "entity" | "spouse";
+  recipientKind: "family_member" | "external_beneficiary" | "entity" | "spouse" | "other_heirs";
   recipientId: string | null;
   /** Which tier governs. Omitted = "primary" (back-compat for older rows). */
   tier?: "primary" | "contingent";
@@ -179,6 +180,8 @@ export interface DeathTransfer {
    *  transfers. */
   resultingLiabilityId: string | null;
   postPayoutGrowthRate?: number;
+  /** Set only when the advisor picked Other Heirs; the fallback never sets it. */
+  otherHeirsPicked?: true;
 }
 
 export type DrainKind =
@@ -678,6 +681,8 @@ export interface EntitySummary {
     externalBeneficiaryId?: string;
     entityId?: string;
     householdRole?: "client" | "spouse";
+    /** Names the built-in Other Heirs. */
+    otherHeirs?: true;
     percentage: number;
   }>;
   /** Trust remainder-tier beneficiaries. Data-only — populated by the loader
@@ -792,6 +797,8 @@ export interface BeneficiaryRef {
   entityIdRef?: string;
   /** Beneficiary is a household principal. */
   householdRole?: "client" | "spouse";
+  /** Beneficiary is the built-in Other Heirs. */
+  otherHeirs?: true;
   sortOrder: number;
 }
 
@@ -805,6 +812,8 @@ export interface RemainderBeneficiaryRef {
   /** Remainder beneficiary is itself a trust entity (references `entities[].id`). */
   entityIdRef?: string;
   householdRole?: "client" | "spouse";
+  /** Remainder beneficiary is the built-in Other Heirs. */
+  otherHeirs?: true;
   percentage: number;
   /** How this beneficiary receives their remainder share. Defaults to
    *  "outright" at the schema layer. */

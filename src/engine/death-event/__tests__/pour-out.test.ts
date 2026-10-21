@@ -145,3 +145,32 @@ describe("runPourOut", () => {
     expect(res.transfers.reduce((s, t) => s + t.amount, 0)).toBeCloseTo(1_000_000, 2);
   });
 });
+
+describe("runPourOut — Other Heirs", () => {
+  const a = acct("acc-1", [{ kind: "entity", entityId: "trust-1", percent: 1 }]);
+  const pour = (trustBeneficiaries: BeneficiaryRef[]) =>
+    runPourOut({
+      ...BASE,
+      queue: [{ entityId: "trust-1", trustBeneficiaries }],
+      accounts: [a],
+      accountBalances: { "acc-1": 1_000_000 },
+      basisMap: { "acc-1": 500_000 },
+    });
+
+  it("pours a trust's picked Other Heirs share out, marked as picked", () => {
+    const r = pour([{ id: "t1", tier: "primary", percentage: 100, otherHeirs: true, sortOrder: 0 }]);
+    expect(r.transfers).toHaveLength(1);
+    expect(r.transfers[0]).toMatchObject({
+      via: "trust_pour_out", recipientKind: "system_default", recipientId: null,
+      recipientLabel: "Other Heirs", otherHeirsPicked: true, amount: 1_000_000,
+    });
+    expect(r.warnings.some((w) => w.startsWith("trust_pour_out_fallback_fired"))).toBe(false);
+  });
+
+  it("leaves the no-beneficiary fallback pour-out unmarked", () => {
+    const r = pour([]);
+    expect(r.transfers).toHaveLength(1);
+    expect("otherHeirsPicked" in r.transfers[0]).toBe(false);
+    expect(r.warnings.some((w) => w.startsWith("trust_pour_out_fallback_fired"))).toBe(true);
+  });
+});

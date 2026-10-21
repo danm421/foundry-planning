@@ -929,6 +929,66 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
       recipientId: "child-a",
     });
   });
+
+  describe("Other Heirs designations", () => {
+    const child = { id: "child-a", role: "child" as const, relationship: "child" as const, firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01" };
+    const spouse = { id: "fm-spouse", role: "spouse" as const, relationship: "other" as const, firstName: "Jane", lastName: "Smith", dateOfBirth: "1972-01-01" };
+
+    it("routes a primary Other Heirs designation to the Other Heirs sink", () => {
+      const acct: Account = {
+        ...ira,
+        beneficiaries: [{ id: "b1", tier: "primary", percentage: 100, otherHeirs: true, sortOrder: 0 }],
+      };
+      const r = applyBeneficiaryDesignations(acct, 1, [child], [], [], undefined);
+      expect(r.fractionClaimed).toBe(1);
+      expect(r.consumed).toBe(true);
+      expect(r.resultingAccounts).toEqual([]);
+      expect(r.ledgerEntries).toEqual([expect.objectContaining({
+        via: "beneficiary_designation", recipientKind: "system_default", recipientId: null,
+        recipientLabel: "Other Heirs", otherHeirsPicked: true, resultingAccountId: null,
+        amount: 500000,
+      })]);
+    });
+
+    it("splits 50/50 between a child and Other Heirs", () => {
+      const acct: Account = {
+        ...ira,
+        beneficiaries: [
+          { id: "b1", tier: "primary", percentage: 50, familyMemberId: "child-a", sortOrder: 0 },
+          { id: "b2", tier: "primary", percentage: 50, otherHeirs: true, sortOrder: 1 },
+        ],
+      };
+      const r = applyBeneficiaryDesignations(acct, 1, [child], [], [], undefined);
+      expect(r.consumed).toBe(true);
+      expect(r.resultingAccounts).toHaveLength(1);
+      expect(r.resultingAccounts[0].value).toBeCloseTo(250000, 6);
+      expect(r.resultingAccounts[0].owners).toEqual([{ kind: "family_member", familyMemberId: "child-a", percent: 1 }]);
+      const childEntry = r.ledgerEntries.find((e) => e.recipientKind === "family_member");
+      const heirsEntry = r.ledgerEntries.find((e) => e.recipientKind === "system_default");
+      expect(childEntry).toMatchObject({ recipientId: "child-a", amount: 250000 });
+      expect("otherHeirsPicked" in childEntry!).toBe(false);
+      expect(heirsEntry).toMatchObject({ recipientId: null, recipientLabel: "Other Heirs", otherHeirsPicked: true, amount: 250000, resultingAccountId: null });
+    });
+
+    it("never lapses an Other Heirs designation at first death and never carries the contingent tier to it", () => {
+      const acct: Account = {
+        ...ira,
+        beneficiaries: [
+          { id: "b1", tier: "primary", percentage: 100, otherHeirs: true, sortOrder: 0 },
+          { id: "b2", tier: "contingent", percentage: 100, familyMemberId: "child-a", sortOrder: 0 },
+        ],
+      };
+      const r = applyBeneficiaryDesignations(
+        acct, 1, [child, spouse], [], [], undefined,
+        /* deceasedFmId */ LEGACY_FM_CLIENT,
+        /* survivorFmId */ "fm-spouse",
+      );
+      expect(r.consumed).toBe(true);
+      expect(r.ledgerEntries).toHaveLength(1);
+      expect(r.ledgerEntries[0]).toMatchObject({ recipientKind: "system_default", recipientLabel: "Other Heirs", otherHeirsPicked: true });
+      expect(r.resultingAccounts.filter((a) => a.beneficiaries != null)).toEqual([]);
+    });
+  });
 });
 
 describe("applyWillSpecificBequests (Step 3a)", () => {
