@@ -12,6 +12,17 @@ export class ReconnectRequired extends Error {
 }
 
 /**
+ * A BYOK provider answered 401 to the firm's API key and secret. A static key
+ * can't fix itself on a retry, so the message tells the admin what to check.
+ */
+export class CredentialsRejected extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CredentialsRejected";
+  }
+}
+
+/**
  * Thrown by a provider whose transport is not yet implemented (Schwab, pending
  * partner credentials). Distinct from ReconnectRequired: this is a build-state
  * problem, not a user-fixable auth problem, so the UI must not offer "Reconnect".

@@ -32,7 +32,6 @@ export function buildAddeparTestContext(input: {
   return {
     firmId: input.firmId,
     providerId: input.providerId,
-    baseUrl: input.apiBase,
     config: { apiBase: input.apiBase, addeparFirmId: input.addeparFirmId },
     getToken: async () => input.secretBlob,
     fetchImpl: undefined,

@@ -217,6 +217,7 @@ function CredentialField({
   onChange,
   placeholder,
   tooltip,
+  hint,
 }: {
   id: string;
   label: string;
@@ -225,6 +226,8 @@ function CredentialField({
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   placeholder?: string;
   tooltip?: string;
+  /** Where to find the value — shown under the input. */
+  hint?: React.ReactNode;
 }) {
   return (
     <div>
@@ -242,8 +245,14 @@ function CredentialField({
         placeholder={placeholder}
         value={value}
         onChange={onChange}
+        aria-describedby={hint ? `${id}-hint` : undefined}
         required
       />
+      {hint ? (
+        <p id={`${id}-hint`} className="mt-1.5 text-xs text-ink-3">
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -257,7 +266,7 @@ function CredentialField({
 function ByokConnectForm({ providerId, label }: { providerId: ProviderId; label: string }) {
   const router = useRouter();
   const { showToast } = useToast();
-  const [apiBase, setApiBase] = useState("https://api.addepar.com");
+  const [apiBase, setApiBase] = useState("");
   const [addeparFirmId, setAddeparFirmId] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
@@ -316,13 +325,19 @@ function ByokConnectForm({ providerId, label }: { providerId: ProviderId; label:
           type="url"
           value={apiBase}
           onChange={onCredentialChange(setApiBase)}
-          placeholder="https://api.addepar.com"
+          placeholder="https://yourfirm.addepar.com"
         />
         <CredentialField
           id={`${providerId}-firm-id`}
           label="Addepar firm ID"
           value={addeparFirmId}
           onChange={onCredentialChange(setAddeparFirmId)}
+          hint={
+            <>
+              In Addepar&rsquo;s Analysis tool, choose Export &rarr; Generate API URL. It&rsquo;s the
+              number after <span className="font-mono">addepar_firm=</span>
+            </>
+          }
         />
         <CredentialField
           id={`${providerId}-api-key`}
@@ -330,7 +345,7 @@ function ByokConnectForm({ providerId, label }: { providerId: ProviderId; label:
           type="password"
           value={apiKey}
           onChange={onCredentialChange(setApiKey)}
-          tooltip="Generate an API key and secret in Addepar's admin console under API credentials. Foundry stores them encrypted for this firm only."
+          tooltip="Create them in Addepar under Firm Administration → Firm Settings → API Access Key. Foundry stores them encrypted for this firm only."
         />
         <CredentialField
           id={`${providerId}-api-secret`}

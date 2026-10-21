@@ -33,7 +33,6 @@ describe("makeCallContext for BYOK", () => {
     const token = await ctx.getToken({ forceRefresh: true });
 
     expect(JSON.parse(token)).toEqual(secret);
-    expect(ctx.baseUrl).toBe("https://api.addepar.com");
-    expect(ctx.config?.addeparFirmId).toBe("42");
+    expect(ctx.config).toEqual({ apiBase: "https://api.addepar.com", addeparFirmId: "42" });
   });
 });

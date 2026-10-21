@@ -71,7 +71,6 @@ export async function makeCallContext(
     return {
       firmId,
       providerId,
-      baseUrl: config.apiBase,
       config,
       getToken: async () => token, // static; ignores forceRefresh
       fetchImpl: overrides?.fetchImpl,

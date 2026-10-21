@@ -15,6 +15,20 @@ describe("IntegrationConnectionCard BYOK", () => {
     expect(screen.queryByRole("link", { name: /connect addepar/i })).toBeNull();
   });
 
+  it("starts the address empty, showing a firm's own Addepar address as the example", () => {
+    render(<IntegrationConnectionCard providerId="addepar" label="Addepar" authKind="byok" status="disconnected" lastSyncedAt={null} lastSyncError={null} />);
+    const address = screen.getByLabelText(/api base url/i);
+    expect(address).toHaveValue("");
+    expect(address).toHaveAttribute("placeholder", "https://yourfirm.addepar.com");
+  });
+
+  it("tells the admin where Addepar shows the firm ID", () => {
+    render(<IntegrationConnectionCard providerId="addepar" label="Addepar" authKind="byok" status="disconnected" lastSyncedAt={null} lastSyncError={null} />);
+    expect(screen.getByLabelText(/addepar firm id/i)).toHaveAccessibleDescription(
+      /Analysis.*Export.*Generate API URL.*addepar_firm=/,
+    );
+  });
+
   it("blocks Connect until attestation is checked", () => {
     render(<IntegrationConnectionCard providerId="addepar" label="Addepar" authKind="byok" status="disconnected" lastSyncedAt={null} lastSyncError={null} />);
     expect(screen.getByRole("button", { name: /^connect$/i })).toBeDisabled();
