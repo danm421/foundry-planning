@@ -10,11 +10,13 @@ export interface LifeEvent {
   /** The person's first name (the row heading on charts). */
   name: string;
   kind: "retires" | "passes";
+  /** The person's age at the event (retirement age or life expectancy). */
+  age: number;
 }
 
 export type LifeEventsByYear = Record<number, LifeEvent[]>;
 
-export type LifeEventMarker = LifeEvent & { yearIndex: number };
+export type LifeEventMarker = LifeEvent & { yearIndex: number; year: number };
 
 const DEFAULT_LIFE_EXPECTANCY = 95;
 const CLIENT_COLOR = colors.cat.portfolio; // #60a5fa dark, resolved at module init
@@ -22,37 +24,28 @@ const SPOUSE_COLOR = colors.cat.insurance; // #e879f9 dark
 
 export function buildLifeEventsByYear(client: ClientInfo): LifeEventsByYear {
   const events: LifeEventsByYear = {};
-  const push = (year: number, person: LifeEvent["person"], name: string, kind: LifeEvent["kind"]) => {
-    (events[year] ??= []).push({
+  const push = (birthYear: number, age: number, person: LifeEvent["person"], name: string, kind: LifeEvent["kind"]) => {
+    (events[birthYear + age] ??= []).push({
       label: `${name} ${kind}`,
       color: person === "client" ? CLIENT_COLOR : SPOUSE_COLOR,
       person,
       name,
       kind,
+      age,
     });
   };
 
   const clientBirth = parseInt(client.dateOfBirth.slice(0, 4), 10);
-  push(clientBirth + client.retirementAge, "client", client.firstName, "retires");
-  push(
-    clientBirth + (client.lifeExpectancy ?? DEFAULT_LIFE_EXPECTANCY),
-    "client",
-    client.firstName,
-    "passes",
-  );
+  push(clientBirth, client.retirementAge, "client", client.firstName, "retires");
+  push(clientBirth, client.lifeExpectancy ?? DEFAULT_LIFE_EXPECTANCY, "client", client.firstName, "passes");
 
   if (client.spouseDob) {
     const spouseBirth = parseInt(client.spouseDob.slice(0, 4), 10);
     const spouseFirst = personLabel("spouse", { clientName: client.firstName, spouseName: client.spouseName ?? null });
     if (client.spouseRetirementAge != null) {
-      push(spouseBirth + client.spouseRetirementAge, "spouse", spouseFirst, "retires");
+      push(spouseBirth, client.spouseRetirementAge, "spouse", spouseFirst, "retires");
     }
-    push(
-      spouseBirth + (client.spouseLifeExpectancy ?? DEFAULT_LIFE_EXPECTANCY),
-      "spouse",
-      spouseFirst,
-      "passes",
-    );
+    push(spouseBirth, client.spouseLifeExpectancy ?? DEFAULT_LIFE_EXPECTANCY, "spouse", spouseFirst, "passes");
   }
 
   return events;
@@ -71,7 +64,7 @@ export function lifeEventMarkers(
   for (const [yearStr, yearEvents] of Object.entries(events)) {
     const year = Number(yearStr);
     if (year < firstYear || year > lastYear) continue;
-    for (const ev of yearEvents) markers.push({ yearIndex: year - firstYear, ...ev });
+    for (const ev of yearEvents) markers.push({ yearIndex: year - firstYear, year, ...ev });
   }
   return markers;
 }

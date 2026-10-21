@@ -2,10 +2,10 @@ import { describe, it, expect } from "vitest";
 import type { ClientInfo } from "@/engine/types";
 import { buildLifeEventsByYear, lifeEventMarkers, type LifeEventsByYear } from "@/lib/life-event-markers";
 
-const annRetires = { label: "Ann retires", color: "blue", person: "client", name: "Ann", kind: "retires" } as const;
-const boRetires = { label: "Bo retires", color: "pink", person: "spouse", name: "Bo", kind: "retires" } as const;
-const annPasses = { label: "Ann passes", color: "blue", person: "client", name: "Ann", kind: "passes" } as const;
-const boPasses = { label: "Bo passes", color: "pink", person: "spouse", name: "Bo", kind: "passes" } as const;
+const annRetires = { label: "Ann retires", color: "blue", person: "client", name: "Ann", kind: "retires", age: 65 } as const;
+const boRetires = { label: "Bo retires", color: "pink", person: "spouse", name: "Bo", kind: "retires", age: 63 } as const;
+const annPasses = { label: "Ann passes", color: "blue", person: "client", name: "Ann", kind: "passes", age: 90 } as const;
+const boPasses = { label: "Bo passes", color: "pink", person: "spouse", name: "Bo", kind: "passes", age: 94 } as const;
 
 const events: LifeEventsByYear = {
   2030: [annRetires, boRetires],
@@ -19,9 +19,9 @@ const yearsFrom = (first: number, last: number) =>
 describe("lifeEventMarkers", () => {
   it("indexes each event from the first charted year, keeping same-year pairs", () => {
     expect(lifeEventMarkers(events, yearsFrom(2026, 2060))).toEqual([
-      { yearIndex: 4, ...annRetires },
-      { yearIndex: 4, ...boRetires },
-      { yearIndex: 29, ...annPasses },
+      { yearIndex: 4, year: 2030, ...annRetires },
+      { yearIndex: 4, year: 2030, ...boRetires },
+      { yearIndex: 29, year: 2055, ...annPasses },
     ]);
   });
 
