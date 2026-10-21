@@ -208,7 +208,7 @@ import {
 } from "./types";
 import { computeTaxForYear, type YearTaxInput } from "./year-tax";
 import { resolveTaxAdjustmentsForYear, type IncomeTaxType } from "./tax-adjustments";
-import { rebaseSkippedYearRows } from "./skipped-year";
+import { applySkippedYearTransactions, rebaseSkippedYearRows } from "./skipped-year";
 import { diffEquityTaxImpact, type EquityTaxImpact } from "./equity/tax-impact";
 import {
   buildNoteReceivableSchedules,
@@ -554,6 +554,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       assetTransactions: normalizeBusinessSales(data.assetTransactions, data.accounts),
     };
   }
+
+  // Plan starts next year: a sale, purchase or switch dated in the skipped
+  // year is already part of the starting picture — see skipped-year.ts.
+  data = applySkippedYearTransactions(data);
 
   // Stress test "Higher inflation": pin living-expense growth at the override
   // rate. Scoped to `type === "living"` on purpose — insurance/other expenses,
@@ -1292,7 +1296,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // year loop. Opt-in: when `stockOptionPlans` is empty the whole equity phase
   // is a no-op, so plans without stock_options accounts are unaffected.
   const equityPlans: StockOptionPlan[] = data.stockOptionPlans ?? [];
-  const equityState = createEquityState(equityPlans, planSettings.planStartYear);
+  const equityState = createEquityState(equityPlans, planSettings.planStartYear, planSettings.dataYear);
   // Destination taxable-account id per plan, created lazily on first acquisition.
   const equityDestByPlan = new Map<string, string>();
 
@@ -2350,6 +2354,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         year,
         planSettings.planStartYear,
         year + 1,
+        planSettings.dataYear,
       );
     }
 

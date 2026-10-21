@@ -79,7 +79,13 @@ const ROUND = (n: number) => Math.round(n * 1e6) / 1e6;
  *  `lots.set` overwrite the first and stranded the difference. */
 const lotKey = (a: { grantId: string; lotId: string }) => `${a.grantId}:${a.lotId}`;
 
-export function createEquityState(plans: StockOptionPlan[], planStartYear: number): EquityState {
+/** `dataYear` below `planStartYear`: the plan starts next year — see
+ *  `buildGrantTimeline`. */
+export function createEquityState(
+  plans: StockOptionPlan[],
+  planStartYear: number,
+  dataYear?: number,
+): EquityState {
   const actionsByYear = new Map<string, Map<number, EquityAction[]>>();
   const grantsById = new Map<string, EquityGrant>();
   for (const p of plans) {
@@ -88,7 +94,7 @@ export function createEquityState(plans: StockOptionPlan[], planStartYear: numbe
     const byYear = new Map<number, EquityAction[]>();
     for (const g of p.grants) {
       grantsById.set(g.id, g);
-      for (const a of buildGrantTimeline(g, acctStrategy, planStartYear, fmvAt)) {
+      for (const a of buildGrantTimeline(g, acctStrategy, planStartYear, fmvAt, dataYear)) {
         (byYear.get(a.year) ?? byYear.set(a.year, []).get(a.year)!).push(a);
       }
     }

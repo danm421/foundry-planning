@@ -67,6 +67,9 @@ export interface BuildFutureActivityOptions {
   asOfYear: number;             // lower bound; = planStartYear
   planStartYear: number;        // FMV projection base year
   planEndYear: number;          // upper bound — caps the tail
+  /** The tree's `planSettings.dataYear` — below planStartYear when the plan
+   *  starts next year, so what the strategy does before the start is done. */
+  dataYear?: number;
   // Per-year additional tax from the Tax Impact report (equityTaxImpact.totalTax).
   // Joins onto year subtotals + grand total only — the counterfactual is a joint
   // per-year figure and can't be split per grant, so per-grant rows stay null.
@@ -79,14 +82,14 @@ export function buildFutureActivity(
   plans: StockOptionPlan[],
   opts: BuildFutureActivityOptions,
 ): FutureActivityModel {
-  const { asOfYear, planStartYear, planEndYear, taxByYear } = opts;
+  const { asOfYear, planStartYear, planEndYear, taxByYear, dataYear } = opts;
 
   // grantId → { plan, grant } for identity lookup.
   const idInfo = new Map<string, { plan: StockOptionPlan; grant: EquityGrant }>();
   for (const plan of plans) for (const grant of plan.grants) idInfo.set(grant.id, { plan, grant });
 
   // Run the cash-flow engine over the horizon; the lot state advances year over year.
-  const state = createEquityState(plans, planStartYear);
+  const state = createEquityState(plans, planStartYear, dataYear);
   const rowByKey = new Map<string, FutureActivityGrantYearRow>();
 
   for (let year = planStartYear; year <= planEndYear; year++) {

@@ -191,21 +191,61 @@ function drawPlannedSells(
   return out;
 }
 
+/** The grant as it stands at the plan start when the plan starts next year and
+ *  the skipped year [dataYear, planStartYear) already happened. Every exercise
+ *  and sale the plan would make by then is folded into the rows' recorded
+ *  actuals — as if the advisor had entered them — so the timeline seeds those
+ *  shares as held (or gone) at the start and books no income or sale for them.
+ *  The planned events it consumed are spent. */
+function settleSkippedYear(
+  grant: EquityGrant,
+  acct: ResolvedStrategy,
+  dataYear: number,
+  planStartYear: number,
+  fmvAt: (year: number) => number,
+): EquityGrant {
+  const done = buildGrantTimeline(grant, acct, dataYear, fmvAt).filter((a) => a.year < planStartYear);
+  const tranches = grant.tranches.map((t) => {
+    const row = { ...t };
+    for (const a of done) {
+      if (a.trancheId !== t.id) continue;
+      if (a.kind === "exercise") {
+        row.sharesExercised = ROUND(row.sharesExercised + a.shares);
+        if (row.acquiredOn == null) {
+          row.acquiredOn = a.date;
+          row.priceAtAcquisition = fmvAt(a.year);
+        }
+      } else if (a.kind === "sell") {
+        row.sharesSold = ROUND(row.sharesSold + a.shares);
+      }
+    }
+    return row;
+  });
+  return { ...grant, tranches, plannedEvents: grant.plannedEvents.filter((p) => p.year >= planStartYear) };
+}
+
 /** Build the full action timeline for one grant.
  *
  *  `fmvAt` supplies the projected share price for a given year, so an option
  *  that is out of the money is not exercised. The moneyness decision has to
  *  live HERE: the balance sheet and the tax ledger both read this timeline, so
- *  an exercise skipped in one and kept in the other would lose the shares. */
+ *  an exercise skipped in one and kept in the other would lose the shares.
+ *
+ *  `dataYear` below `planStartYear` means the plan starts next year: what the
+ *  strategy does before the start already happened (see `settleSkippedYear`). */
 export function buildGrantTimeline(
   grant: EquityGrant,
   accountStrategy: ResolvedStrategy | import("./types").EquityStrategy,
   planStartYear: number,
   fmvAt: (year: number) => number,
+  dataYear?: number,
 ): EquityAction[] {
   const acct = "exerciseTiming" in accountStrategy && accountStrategy.exerciseTiming
     ? (accountStrategy as ResolvedStrategy)
     : resolveStrategy(accountStrategy as import("./types").EquityStrategy, null, null);
+  if (dataYear != null && dataYear < planStartYear) {
+    grant = settleSkippedYear(grant, acct, dataYear, planStartYear, fmvAt);
+  }
   const out: EquityAction[] = [];
   const isOption = grant.grantType !== "rsu";
 
