@@ -1,5 +1,6 @@
 import AssumptionsClient from "./assumptions-client";
 import { loadAssumptionsViewProps } from "./load-view-props";
+import { PlanStartYearSwitch } from "@/components/plan-start-year-switch";
 
 interface AssumptionsContentProps {
   clientId: string;
@@ -35,6 +36,14 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
           Plan horizon, tax rates, growth assumptions, and withdrawal order.
         </p>
       </div>
+
+      <PlanStartYearSwitch
+        clientId={id}
+        planStartYear={result.planStart.basePlanStartYear}
+        thisYear={result.planStart.thisYear}
+        inScenario={scenarioParam != null && scenarioParam !== "base"}
+        alreadyDone={result.planStart.alreadyDone}
+      />
 
       <AssumptionsClient {...result.props} />
     </div>

@@ -25,9 +25,20 @@ import { planSettingsEngineToFormProps } from "@/lib/scenario/view-adapters";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 import { getLatestTaxReturn } from "@/lib/tax-returns/store";
 import { parseRowFacts } from "@/lib/tax-returns/db";
+import { currentPlanningYear, startsNextYear } from "@/lib/plan-year";
+import { listAlreadyDoneItems, type AlreadyDoneItem } from "@/lib/plan-start/already-done-items";
+
+/** The "Start the plan next year" switch. Read off the BASE plan's row in every
+ *  view: the switch never writes a scenario, and every scenario follows it. */
+export interface PlanStartSwitchProps {
+  basePlanStartYear: number;
+  thisYear: number;
+  /** Only when the plan starts next year; otherwise empty. */
+  alreadyDone: AlreadyDoneItem[];
+}
 
 export type AssumptionsViewPropsResult =
-  | { status: "ok"; props: AssumptionsClientProps }
+  | { status: "ok"; props: AssumptionsClientProps; planStart: PlanStartSwitchProps }
   | { status: "no-base-case" }
   | { status: "no-plan-settings" };
 
@@ -413,6 +424,11 @@ export async function loadAssumptionsViewProps(
         saltCap,
       },
       taxAdjustmentRows,
+    },
+    planStart: {
+      basePlanStartYear: settings.planStartYear,
+      thisYear: currentPlanningYear(),
+      alreadyDone: startsNextYear(settings.planStartYear) ? listAlreadyDoneItems(effectiveTree) : [],
     },
   };
 }
