@@ -254,7 +254,9 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     const rows = designationsToRows(scopedDesignations, "remainder");
     if (rows.length > 0 || !isCreate) return rows;
     // Create-mode default: split remainder evenly across children if any exist.
-    const children = members.filter((m) => m.relationship === "child");
+    const children = members.filter(
+      (m) => m.relationship === "child" && m.role !== "client" && m.role !== "spouse",
+    );
     if (children.length === 0) return rows;
     const pcts = splitEvenly(children.length);
     return children.map((child, i) => ({

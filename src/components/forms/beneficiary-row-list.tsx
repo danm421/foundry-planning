@@ -115,9 +115,13 @@ export default function BeneficiaryRowList({
     onChange(redistribute([...rows, newRow], lockedKeys, getRowKey, setRowPercentage));
   }
 
+  // Household principals are stored as family_members rows (legacy ones with
+  // the default relationship "child"); they have their own Household group.
+  const familyMembers = members.filter((m) => m.role !== "client" && m.role !== "spouse");
+
   // #8: replace the list with one row per child family member, evenly split.
   // Resets the locked-set since this is a fresh auto allocation.
-  const children = members.filter((m) => m.relationship === "child");
+  const children = familyMembers.filter((m) => m.relationship === "child");
   function splitAmongChildren() {
     if (children.length === 0) return;
     const pcts = splitEvenly(children.length);
@@ -154,7 +158,7 @@ export default function BeneficiaryRowList({
                 {household.spouse && <option value="hh:spouse">{household.spouse.firstName}</option>}
               </optgroup>
               <optgroup label="Family">
-                {members.map((m) => (
+                {familyMembers.map((m) => (
                   <option key={m.id} value={`fm:${m.id}`}>
                     {m.firstName} {m.lastName ?? ""} ({m.relationship})
                   </option>

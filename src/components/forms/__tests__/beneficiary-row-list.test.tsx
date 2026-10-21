@@ -85,6 +85,37 @@ describe("BeneficiaryRowList", () => {
     expect(next.every((r) => r.source.kind === "family")).toBe(true);
   });
 
+  it("keeps the household principals' family rows out of Family and the children split", () => {
+    // Principals are stored as family_members rows; legacy rows carry the
+    // schema-default relationship "child".
+    const withPrincipals = [
+      { id: "fc", firstName: "John", lastName: "Doe", relationship: "child" as const, role: "client" as const, dateOfBirth: null, notes: null },
+      { id: "fs", firstName: "Jane", lastName: "Doe", relationship: "other" as const, role: "spouse" as const, dateOfBirth: null, notes: null },
+      { id: "c1", firstName: "Sophia", lastName: "Doe", relationship: "child" as const, role: "child" as const, dateOfBirth: null, notes: null },
+    ];
+    const onChange = vi.fn();
+    render(
+      <BeneficiaryRowList
+        tier="remainder"
+        allowEntities={false}
+        rows={[{ id: "r1", source: { kind: "empty" }, percentage: 100 }]}
+        onChange={onChange}
+        members={withPrincipals}
+        externals={externals}
+        entities={[]}
+        household={householdProps}
+      />
+    );
+    const familyValues = Array.from(
+      screen.getByRole("combobox", { name: /beneficiary 1/i }).querySelectorAll('optgroup[label="Family"] option'),
+    ).map((o) => (o as HTMLOptionElement).value);
+    expect(familyValues).toEqual(["fm:c1"]);
+
+    fireEvent.click(screen.getByRole("button", { name: /split among children/i }));
+    const next = onChange.mock.calls[0][0] as BeneficiaryRow[];
+    expect(next.map((r) => r.source)).toEqual([{ kind: "family", familyMemberId: "c1" }]);
+  });
+
   it("Split among children button is hidden when there are no children", () => {
     const noChildMembers = [
       { id: "p1", firstName: "Mom", lastName: null, relationship: "parent" as const, dateOfBirth: null, notes: null },
