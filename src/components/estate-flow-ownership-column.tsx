@@ -7,6 +7,7 @@ import {
   giftRecipientKindLabel,
   type EstateFlowGift,
 } from "@/lib/estate/estate-flow-gifts";
+import { qcdGiftLabel } from "@/lib/gifts/qcd-label";
 import { EstateFlowYearScrubber } from "@/components/estate-flow-year-scrubber";
 
 // ── Currency formatter (matches estate-transfer-recipient-card.tsx) ───────────
@@ -52,6 +53,18 @@ function giftSummary(
   const recipient =
     recipientLabelById.get(gift.recipient.id) ??
     giftRecipientKindLabel(gift.recipient.kind);
+  if ((gift.kind === "cash-once" || gift.kind === "series") && gift.qcd) {
+    const label = qcdGiftLabel({
+      accountName: accountNameById.get(gift.qcd.accountId) ?? "IRA",
+      amountMode: gift.qcd.amountMode,
+      amount: gift.kind === "series" ? gift.annualAmount : gift.amount,
+      recurring: gift.kind === "series",
+    });
+    return {
+      what: `${label} to ${recipient}`,
+      when: gift.kind === "series" ? `${gift.startYear}–${gift.endYear}` : `${gift.year}`,
+    };
+  }
   if (gift.kind === "cash-once") {
     return { what: `${fmt.format(gift.amount)} to ${recipient}`, when: `${gift.year}` };
   }

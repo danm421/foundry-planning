@@ -3,10 +3,20 @@
 import { useState } from "react";
 import type { Account } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import { qcdGiftLabel } from "@/lib/gifts/qcd-label";
 import { SolverTechniqueRow } from "./solver-technique-row";
 
 /** One-line label for a planned gift in the list. */
-function giftSummary(g: EstateFlowGift): string {
+function giftSummary(g: EstateFlowGift, accountNameById?: ReadonlyMap<string, string>): string {
+  if ((g.kind === "series" || g.kind === "cash-once") && g.qcd) {
+    const label = qcdGiftLabel({
+      accountName: accountNameById?.get(g.qcd.accountId) ?? "IRA",
+      amountMode: g.qcd.amountMode,
+      amount: g.kind === "series" ? g.annualAmount : g.amount,
+      recurring: g.kind === "series",
+    });
+    return g.kind === "series" ? `${label} (${g.startYear}–${g.endYear})` : `${label} (${g.year})`;
+  }
   if (g.kind === "series")
     return `Series ${g.startYear}–${g.endYear}: $${g.annualAmount.toLocaleString()}/yr`;
   if (g.kind === "asset-once")
@@ -123,12 +133,15 @@ export function EstateGiftsList({
   onToggle,
   onEdit,
   onRemove,
+  accountNameById,
 }: {
   gifts: EstateFlowGift[];
   baseGiftIds: Set<string>;
   onToggle: (g: EstateFlowGift) => void;
   onEdit: (g: EstateFlowGift) => void;
   onRemove: (id: string) => void;
+  /** Names a QCD gift's source IRA. */
+  accountNameById?: ReadonlyMap<string, string>;
 }) {
   if (gifts.length === 0) {
     return <div className="col-span-2 text-[12px] text-ink-4">No planned gifts</div>;
@@ -139,7 +152,7 @@ export function EstateGiftsList({
         <SolverTechniqueRow
           key={g.id}
           name={giftTitle(g)}
-          summary={giftSummary(g)}
+          summary={giftSummary(g, accountNameById)}
           enabled={g.enabled !== false}
           onToggle={() => onToggle(g)}
           badge={baseGiftIds.has(g.id) ? "Base plan" : "Added"}
@@ -159,10 +172,13 @@ export function EstateGiftsToggleList({
   gifts,
   baseGiftIds,
   onToggle,
+  accountNameById,
 }: {
   gifts: EstateFlowGift[];
   baseGiftIds: Set<string>;
   onToggle: (g: EstateFlowGift) => void;
+  /** Names a QCD gift's source IRA. */
+  accountNameById?: ReadonlyMap<string, string>;
 }) {
   if (gifts.length === 0) return null;
   return (
@@ -171,7 +187,7 @@ export function EstateGiftsToggleList({
         <SolverTechniqueRow
           key={g.id}
           name={giftTitle(g)}
-          summary={giftSummary(g)}
+          summary={giftSummary(g, accountNameById)}
           enabled={g.enabled !== false}
           onToggle={() => onToggle(g)}
           badge={baseGiftIds.has(g.id) ? "Base plan" : "Added"}

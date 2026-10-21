@@ -31,7 +31,10 @@ export const engineFlowRules: Rule = (input) => {
     // because the engine books them separately, and an annuity can be qualified too.
     const draws = sum(Object.entries(engineYear.withdrawals.byAccount).filter(([id]) => cat(id) === "retirement" || cat(id) === "annuity").map(([, v]) => v));
     const rmds = sum(Object.entries(engineYear.accountLedgers).filter(([id]) => cat(id) === "retirement").map(([, l]) => l.rmdAmount));
-    const p = planToTaxYear(input, draws + rmds);
+    // A QCD is reported on line 4a in full, with the excluded part left off 4b: the qualifying part
+    // and any taxed excess both count here. `rmdAmount` is the cash RMD only, so neither is in `rmds`.
+    const qcds = sum((engineYear.qcds ?? []).filter((q) => cat(q.accountId) === "retirement").map((q) => q.qualifying + q.taxedExcess));
+    const p = planToTaxYear(input, draws + rmds + qcds);
     const id = "income.iraDistributions";
     const fig = { returnFigure: { label: "IRA distributions", amount: ira, display: money(ira), lineRefs: [ref("1040", "4a", "IRA distributions", ira)] }, planFigure: { label: "Retirement withdrawals + RMDs in the plan", amount: p, display: money(p), year: planYear } };
     if (p < IRA_DISTRIBUTIONS.planShareOfReturn * ira) suggestions.push({ id, section: "income", kind: "review", status: "open",

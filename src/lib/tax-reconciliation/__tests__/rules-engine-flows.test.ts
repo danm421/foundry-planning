@@ -58,6 +58,19 @@ describe("engineFlowRules — IRA distributions (4a > $1,000; plan < 50%)", () =
     expect(r.checks).toEqual([]);
   });
 
+  it("counts QCD dollars (qualifying and taxed excess) toward line 4a", () => {
+    const f = emptyTaxReturnFacts(2025); f.income.iraDistributionsGross = 41_000;
+    const qcds = [{ accountId: "ira", charityId: "ch", giver: "client" as const, qualifying: 20_000, taxedExcess: 10_900 }];
+    const withQcd = engineYearFixture({ accountLedgers: { ira: ledger({ qcdAmount: 20_000 }) }, qcds });
+    const r = engineFlowRules(inputFixture({ facts: f, plan: plan(), engineYear: withQcd }));
+    // (20,000 + 10,900) / 1.03 = 30,000 clears the 50% bar, so the card goes quiet.
+    expect(r.suggestions.find((x) => x.id === "income.iraDistributions")).toBeUndefined();
+    expect(r.checks.find((c) => c.id === "income.iraDistributions")).toMatchObject({ planDisplay: "$30,000" });
+    // The same year without the QCD would have been flagged.
+    const without = engineFlowRules(inputFixture({ facts: f, plan: plan(), engineYear: engineYearFixture() }));
+    expect(without.suggestions.find((x) => x.id === "income.iraDistributions")).toBeDefined();
+  });
+
   it("counts an annuity draw but only a retirement account's RMD", () => {
     const f = emptyTaxReturnFacts(2025); f.income.iraDistributionsGross = 41_000;
     // The category filters are what decide WHICH accounts stand behind the plan figure. Drop the

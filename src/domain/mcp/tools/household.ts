@@ -57,6 +57,7 @@ const DETAIL_KINDS = {
   external_beneficiary: (t: ClientData) => t.externalBeneficiaries ?? [],
   roth_conversion: (t: ClientData) => t.rothConversions ?? [],
   asset_transaction: (t: ClientData) => t.assetTransactions ?? [],
+  qcd: (t: ClientData) => t.qcds ?? [],
 } satisfies Record<string, (t: ClientData) => unknown[]>;
 
 const getClientSummary = defineTool({
@@ -160,7 +161,8 @@ const listPlanDetails = defineTool({
     "redacted, and an accountNumber field, where present, is masked to the last four digits. " +
     "family_member rows carry a birthYear instead of an exact date of birth. This can be large; " +
     "use limit and offset. Kind 'roth_conversion' lists existing Roth conversions, for removing or replacing one in " +
-    "a what-if. Kind 'asset_transaction' lists planned asset sales and purchases, for removing one in a what-if.",
+    "a what-if. Kind 'asset_transaction' lists planned asset sales and purchases, for removing one in a what-if. " +
+    "Kind 'qcd' lists the qualified charitable distributions (gifts paid straight from an IRA to charity), one row per year; read-only.",
   inputSchema: z.object({
     clientId: z
       .string()
@@ -172,7 +174,7 @@ const listPlanDetails = defineTool({
       .enum([
         "account", "income", "expense", "liability",
         "entity", "gift", "family_member", "external_beneficiary",
-        "roth_conversion", "asset_transaction",
+        "roth_conversion", "asset_transaction", "qcd",
       ])
       .describe("Which kind of detail row to return."),
     scenarioId: z.string().optional().describe("Scenario id, or omit for the base case."),

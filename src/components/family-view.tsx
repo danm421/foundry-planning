@@ -21,6 +21,7 @@ import ExternalBeneficiaryDialog, {
   saveExternalBeneficiary,
 } from "./external-beneficiary-dialog";
 import type { AccountFormInitial } from "./forms/add-account-form";
+import { qcdGiftLabel } from "@/lib/gifts/qcd-label";
 import type { BeneficiaryRef, EntityFlowMode, GiftEventKind, QcdAmountMode } from "@/engine/types";
 import type { ClientFormInitial } from "./forms/add-client-form";
 import type { ClientWithContacts } from "@/lib/clients/get-client-with-contacts";
@@ -1538,6 +1539,8 @@ function GiftsSection(props: {
   const accountName = (id: string | null) =>
     id ? props.accounts.find((a) => a.id === id)?.name ?? "asset" : "asset";
 
+  const qcdAccountName = (id: string) => props.accounts.find((a) => a.id === id)?.name ?? "IRA";
+
   // Inside a scenario the delete is a `remove` change, matching where the save
   // landed: the base `gifts` row is stripped from this scenario's overlay while
   // the base plan keeps it, and a gift that exists only as an `add` has no base
@@ -1638,7 +1641,9 @@ function GiftsSection(props: {
                 <td className="px-2 py-1">{g.year}</td>
                 <td className="px-2 py-1 capitalize">{g.grantor === "joint" ? "Both (split)" : g.grantor}</td>
                 <td className="px-2 py-1 text-right">
-                  {g.amount != null
+                  {g.qcdAccountId != null && g.qcdAmountMode != null
+                    ? qcdGiftLabel({ accountName: qcdAccountName(g.qcdAccountId), amountMode: g.qcdAmountMode, amount: g.amount ?? 0, recurring: false })
+                    : g.amount != null
                     ? `$${g.amount.toLocaleString()}`
                     : `${((g.percent ?? 0) * 100).toFixed(0)}% of ${accountName(g.accountId)}`}
                 </td>
@@ -1661,7 +1666,9 @@ function GiftsSection(props: {
                 <td className="px-2 py-1">{s.startYear}–{s.endYear}/yr</td>
                 <td className="px-2 py-1 capitalize">{s.grantor === "joint" ? "Both (split)" : s.grantor}</td>
                 <td className="px-2 py-1 text-right">
-                  {s.amountMode === "annual_exclusion" ? "Max exclusion" : `$${s.annualAmount.toLocaleString()}/yr`}
+                  {s.qcdAccountId != null && s.qcdAmountMode != null
+                    ? qcdGiftLabel({ accountName: qcdAccountName(s.qcdAccountId), amountMode: s.qcdAmountMode, amount: s.annualAmount, recurring: true })
+                    : s.amountMode === "annual_exclusion" ? "Max exclusion" : `$${s.annualAmount.toLocaleString()}/yr`}
                 </td>
                 <td className="px-2 py-1">{recipientLabel({ entity: s.recipientEntityId, family: s.recipientFamilyMemberId, external: s.recipientExternalBeneficiaryId })}</td>
                 <td className="px-2 py-1">{s.useCrummeyPowers ? "✓" : ""}</td>

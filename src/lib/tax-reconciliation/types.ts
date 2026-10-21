@@ -115,7 +115,7 @@ export interface PlanSnapshot {
   entities: PlanEntity[]; deductions: PlanDeduction[]; familyMembers: PlanFamilyMember[]; medicare: PlanMedicare[];
 }
 
-export type EngineYear = Pick<ProjectionYear, "year" | "income" | "taxDetail" | "taxResult" | "deductionBreakdown" | "withdrawals" | "expenses" | "savings" | "accountLedgers">;
+export type EngineYear = Pick<ProjectionYear, "year" | "income" | "taxDetail" | "taxResult" | "deductionBreakdown" | "withdrawals" | "expenses" | "savings" | "accountLedgers" | "qcds">;
 
 export interface ReconciliationInput {
   clientId: string;           // only for review links

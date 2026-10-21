@@ -1890,7 +1890,13 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               (sum, led) => sum + (led?.rmdAmount ?? 0),
               0,
             );
-            const numerator = r.withdrawals.total + rmdTotal;
+            // QCDs leave the same way (they count toward the RMD but sit on
+            // ledger.qcdAmount, not rmdAmount), so they ride along too.
+            const qcdTotal = Object.values(r.accountLedgers ?? {}).reduce(
+              (sum, led) => sum + (led?.qcdAmount ?? 0),
+              0,
+            );
+            const numerator = r.withdrawals.total + rmdTotal + qcdTotal;
             return boy > 0 ? numerator / boy : 0;
           },
           (info) => {

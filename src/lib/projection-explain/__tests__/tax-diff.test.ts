@@ -112,6 +112,40 @@ describe("diffTaxYears", () => {
     expect(wp.residualNote).toBeUndefined(); // balances within 1%
   });
 
+  it("keeps a QCD's taxed excess out of recognized and surfaces it on the row", () => {
+    // 2062 RMD is $70k: $60k reaches the household, $10k is a QCD over the
+    // yearly cap, taxed but paid to the charity. The engine books all $70k in
+    // `spouse401k:rmd` and only the $60k in totalIncome.
+    const { prev, ctx } = cooperFundingFixture();
+    const next = makeYear({
+      year: 2062,
+      withdrawals: { byAccount: { spouse401k: 400_000 }, total: 400_000 },
+      accountLedgers: {
+        client401k: makeLedger({ beginningValue: 0, endingValue: 0 }),
+        spouse401k: makeLedger({ beginningValue: 1_450_000, rmdAmount: 60_000, endingValue: 920_000 }),
+      },
+      qcds: [{ accountId: "spouse401k", charityId: "ch", giver: "spouse", qualifying: 0, taxedExcess: 10_000 }],
+      taxDetail: makeTaxDetail({
+        "withdrawal:spouse401k": { type: "ordinary", amount: 400_000 },
+        "spouse401k:rmd": { type: "ordinary", amount: 70_000 },
+      }),
+      totalIncome: 160_000,
+      totalExpenses: 560_000,
+    });
+    const row = diffTaxYears(prev, next, ctx).withdrawalPicture.byAccount.find((r) => r.accountId === "spouse401k")!;
+    expect(row.cashOut).toBe(460_000);
+    expect(row.recognized).toBe(460_000); // not 470,000
+    expect(row.ratio).toBe(1);
+    expect(row.qcdTaxedExcess).toBe(10_000);
+    expect(diffTaxYears(prev, next, ctx).withdrawalPicture.residualNote).toBeUndefined();
+  });
+
+  it("adds no qcdTaxedExcess key on a plan without a QCD", () => {
+    const { prev, next, ctx } = cooperFundingFixture();
+    const rows = diffTaxYears(prev, next, ctx).withdrawalPicture.byAccount;
+    expect(rows.every((r) => !("qcdTaxedExcess" in r))).toBe(true);
+  });
+
   it("flags a prior-year funder that ran dry as depleted, retaining its row with prior-year context", () => {
     // New (funding) semantics: a row is depleted when the account FUNDED the prior
     // year (cashOut > 0) and ended it below DEPLETED_EPS — a prior funder that ran

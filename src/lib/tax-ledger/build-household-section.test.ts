@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ProjectionYear } from "@/engine/types";
 import type { CellDrillContext } from "@/lib/tax/cell-drill/types";
 import { buildHouseholdSection } from "./build-household-section";
+import { subtotalByCharacter } from "./_shared";
 
 const ctx = {
   accountNames: { ira: "Traditional IRA", brk: "Joint Brokerage" },
@@ -144,5 +145,38 @@ describe("buildHouseholdSection", () => {
     expect(s.rows.some((r) => r.type === "Withdrawal")).toBe(false);
     // And it changes no total — a $0 row cannot move a subtotal.
     expect(s.taxableSubtotal).toBe(130_700);
+  });
+
+  it("lists a QCD as a non-taxable row that stays out of every taxable character", () => {
+    const year = fixtureYear();
+    year.qcds = [
+      { accountId: "ira", charityId: "ch", giver: "client", qualifying: 30_000, taxedExcess: 5_000 },
+      { accountId: "ira", charityId: "ch2", giver: "client", qualifying: 0, taxedExcess: 4_000 },
+    ];
+    const s = buildHouseholdSection(year, ctx, "Household");
+
+    const qcdRows = s.rows.filter((r) => r.type === "QCD");
+    expect(qcdRows).toHaveLength(1);
+    expect(qcdRows[0]).toMatchObject({
+      description: "Qualified charitable distribution (not taxed)",
+      character: "non_taxable",
+      account: "Traditional IRA",
+      amount: 30_000,
+      taxable: false,
+    });
+    const sub = subtotalByCharacter(s.rows);
+    // 4,500 non-taxable SS + 30,000 QCD; ordinary stays the RMD alone.
+    expect(sub.non_taxable).toBe(34_500);
+    expect(sub.ordinary).toBe(52_000);
+    expect(s.taxableSubtotal).toBe(130_700);
+    expect(s.unreconciled).toBe(true); // the pre-existing LTCG gap only
+    expect(s.rows.filter((r) => r.type === "Unattributed")).toHaveLength(1);
+    // A QCD is not income the household received.
+    expect(s.grossSubtotal).toBe(135_200);
+  });
+
+  it("adds no QCD row when the year has none", () => {
+    const s = buildHouseholdSection(fixtureYear(), ctx, "Household");
+    expect(s.rows.some((r) => r.type === "QCD")).toBe(false);
   });
 });

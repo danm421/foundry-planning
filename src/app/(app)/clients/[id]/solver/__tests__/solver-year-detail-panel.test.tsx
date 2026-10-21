@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, within, cleanup } from "@testing-library/react";
 import { SolverYearDetailPanel, type YearDetailEditing } from "../solver-year-detail-panel";
 import type { InventoryItem } from "@/lib/scenario/plan-inventory";
 import type { DetailTypeKey } from "@/lib/scenario/plan-detail-catalog";
@@ -122,6 +122,27 @@ describe("SolverYearDetailPanel", () => {
     render(<SolverYearDetailPanel year={year} years={[prior, year]} clientData={makeClientData()} />);
     // The 15k RMD alone against last year's 1M.
     expect(screen.getByTestId("year-detail-withdrawal-rate")).toHaveTextContent("1.50%");
+  });
+
+  it("shows a QCDs figure and counts it in the Withdrawal % only in a year with a QCD", () => {
+    const base = makeYear();
+    const prior = {
+      ...base,
+      year: 2033,
+      portfolioAssets: { ...base.portfolioAssets, liquidTotal: 1_000_000 },
+    } as ProjectionYear;
+    render(<SolverYearDetailPanel year={base} years={[prior, base]} clientData={makeClientData()} />);
+    expect(screen.queryByTestId("year-detail-qcd")).not.toBeInTheDocument();
+    cleanup();
+
+    const year = {
+      ...base,
+      accountLedgers: { "acc-ira": { rmdAmount: 15_000, qcdAmount: 10_000 } as never },
+    } as ProjectionYear;
+    render(<SolverYearDetailPanel year={year} years={[prior, year]} clientData={makeClientData()} />);
+    expect(screen.getByTestId("year-detail-qcd")).toHaveTextContent("$10,000");
+    // (20k draw + 15k RMD + 10k QCD) / 1M
+    expect(screen.getByTestId("year-detail-withdrawal-rate")).toHaveTextContent("4.50%");
   });
 
   it("leaves the Withdrawal % out when nothing is drawn from the portfolio", () => {

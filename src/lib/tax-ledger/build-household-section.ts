@@ -94,6 +94,24 @@ export function buildHouseholdSection(
     rows.push({ type: "Itemized / Deduction", description: v.label, character: "deduction", account: null, amount: -Math.abs(v.amount), taxable: false });
   }
 
+  // 3b. QCDs: shown for visibility, never taxed. Appended here rather than
+  //     routed through taxDetail.bySource, which would leak into the
+  //     "Tax-Free Retirement Distributions" income drill (its rows must add up
+  //     to its cell). `non_taxable` is outside RECONCILED, so no drift row.
+  let qcdPaid = 0;
+  for (const q of year.qcds ?? []) {
+    if (q.qualifying <= 0) continue;
+    qcdPaid += q.qualifying;
+    rows.push({
+      type: "QCD",
+      description: "Qualified charitable distribution (not taxed)",
+      character: "non_taxable",
+      account: ctx.accountNames[q.accountId] ?? q.accountId,
+      amount: q.qualifying,
+      taxable: false,
+    });
+  }
+
   // 4. Reconciliation: add an Unattributed row per character where bySource
   //    doesn't sum to the taxDetail bucket (e.g. portfolio LTCG has no key).
   let unreconciled = false;
@@ -114,13 +132,14 @@ export function buildHouseholdSection(
   rows.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
   const characterSubtotals = subtotalByCharacter(rows);
   const characterEntries = Object.entries(characterSubtotals) as [TaxCharacter, number][];
-  const subtotal = characterEntries.reduce((s, [, v]) => s + v, 0);
+  // A QCD goes to charity, not to the household, so it is not income received.
+  const subtotal = characterEntries.reduce((s, [, v]) => s + v, 0) - qcdPaid;
   const taxableSubtotal = characterEntries
     .filter(([c]) => isTaxableCharacter(c))
     .reduce((s, [, v]) => s + v, 0);
   const grossSubtotal = characterEntries
     .filter(([c]) => c !== "deduction")
-    .reduce((s, [, v]) => s + v, 0);
+    .reduce((s, [, v]) => s + v, 0) - qcdPaid;
 
   return { id: "household", label: householdLabel, kind: "household", passThrough: false, rows, characterSubtotals, subtotal, taxableSubtotal, grossSubtotal, unreconciled };
 }

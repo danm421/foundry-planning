@@ -411,6 +411,7 @@ describe("list_plan_details", () => {
     },
     { kind: "roth_conversion", property: "rothConversions", row: { id: "rc1" }, expectedRow: { id: "rc1" } },
     { kind: "asset_transaction", property: "assetTransactions", row: { id: "at1" }, expectedRow: { id: "at1" } },
+    { kind: "qcd", property: "qcds", row: { accountId: "a1", year: 2027 }, expectedRow: { accountId: "a1", year: 2027 } },
   ];
 
   // F4: `kindCases` is hand-maintained, so a 9th `kind` added to the tool's

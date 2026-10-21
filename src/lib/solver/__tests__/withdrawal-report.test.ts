@@ -135,6 +135,43 @@ describe("withdrawal rate", () => {
     expect(rows[1].withdrawalRate).toBeCloseTo(0.025, 10);
   });
 
+  it("adds a household QCD to the numerator and the row's qcd field", () => {
+    // 20k QCD, no cash RMD: numerator is withdrawals (0) + 20k.
+    const rows = buildWithdrawalReportRows(
+      [
+        portfolioYear(2026, 1_000_000, 980_000),
+        portfolioYear(2027, 950_000, 1_000_000, {
+          accountLedgers: {
+            tax1: { rmdAmount: 0, beginningValue: 1_000_000, endingValue: 950_000 },
+            ira1: { rmdAmount: 0, qcdAmount: 20_000, beginningValue: 0, endingValue: 0 },
+          },
+        }),
+      ],
+      ACCOUNTS,
+    );
+
+    expect(rows[1].qcd).toBe(20_000);
+    expect(rows[1].withdrawalRate).toBeCloseTo(0.02, 10);
+  });
+
+  it("leaves a QCD from an entity-owned IRA out of the numerator", () => {
+    const rows = buildWithdrawalReportRows(
+      [
+        portfolioYear(2026, 1_000_000, 980_000),
+        portfolioYear(2027, 950_000, 1_000_000, {
+          accountLedgers: {
+            tax1: { rmdAmount: 0, beginningValue: 1_000_000, endingValue: 950_000 },
+            trustIra: { rmdAmount: 0, qcdAmount: 20_000, beginningValue: 0, endingValue: 0 },
+          },
+        }),
+      ],
+      [...ACCOUNTS, acct("trustIra", "retirement", "traditional_ira", ENTITY_OWNER)],
+    );
+
+    expect(rows[1].qcd).toBe(0);
+    expect(rows[1].withdrawalRate).toBe(0);
+  });
+
   it("leaves an entity-owned RMD out of the numerator", () => {
     const rows = buildWithdrawalReportRows(
       [

@@ -10,7 +10,7 @@ import {
   type CashFlowCategory,
 } from "@/lib/solver/cashflow-year-detail";
 import { yearDetailEditResolver } from "@/lib/solver/year-detail-edit-target";
-import { yearWithdrawalRate } from "@/lib/solver/withdrawal-report";
+import { yearQcd, yearWithdrawalRate } from "@/lib/solver/withdrawal-report";
 import { detailEditorTarget } from "@/lib/scenario/plan-detail-catalog";
 import type { InventoryItem } from "@/lib/scenario/plan-inventory";
 import type { ScenarioWriteEvent } from "@/hooks/scenario-write-listener";
@@ -65,6 +65,8 @@ export function SolverYearDetailPanel({ year, years, clientData, editing }: Prop
   const netTone = detail.totals.net >= 0 ? "text-good" : "text-crit";
   // Shown only in a year the portfolio is drawn on, RMDs included.
   const withdrawalRate = yearWithdrawalRate(year, years, clientData.accounts);
+  // Paid straight from an IRA to charity, so it has no inflow row of its own.
+  const qcd = yearQcd(year, clientData.accounts);
 
   // `seq` remounts the editor on every click, so each open starts a fresh load.
   const [open, setOpen] = useState<{ item: InventoryItem; seq: number } | null>(null);
@@ -139,6 +141,20 @@ export function SolverYearDetailPanel({ year, years, clientData, editing }: Prop
             {fmt.format(detail.totals.net)}
           </dd>
         </div>
+        {qcd > 0 ? (
+          <div>
+            <dt className={`${EYEBROW} flex items-center justify-center gap-1.5`}>
+              QCDs
+              <FieldTooltip text="Qualified charitable distributions paid straight from an IRA to charity. They count toward the RMD and aren't taxed." />
+            </dt>
+            <dd
+              data-testid="year-detail-qcd"
+              className="tabular mt-1 text-[20px] font-semibold text-ink"
+            >
+              {fmt.format(qcd)}
+            </dd>
+          </div>
+        ) : null}
         {withdrawalRate > 0 ? (
           <div>
             <dt className={`${EYEBROW} flex items-center justify-center gap-1.5`}>

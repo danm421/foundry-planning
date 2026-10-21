@@ -1,5 +1,6 @@
 import type { ProjectionResult } from "@/engine";
 import type {
+  QcdYearResult,
   Account,
   ClientData,
   DrainAttribution,
@@ -94,6 +95,7 @@ export function buildYearlyEstateReport(
   const inflationRate = clientData.planSettings.inflationRate ?? 0;
   const charityIds = collectCharityExternalBeneficiaryIds(clientData);
   const giftEvents = clientData.giftEvents ?? [];
+  const qcdByYear = qcdTotalsByYear(projection.years);
 
   const clientRetirementYear =
     clientBirthYear != null
@@ -116,6 +118,7 @@ export function buildYearlyEstateReport(
         resolvedOrdering,
         clientData,
         giftEvents,
+        qcdByYear,
         projectionStartYear,
         inflationRate,
         charityIds,
@@ -164,6 +167,7 @@ interface RowBuilderArgs {
   resolvedOrdering: Ordering;
   clientData: ClientData;
   giftEvents: NonNullable<ClientData["giftEvents"]>;
+  qcdByYear: ReadonlyMap<number, number>;
   projectionStartYear: number;
   inflationRate: number;
   charityIds: Set<string>;
@@ -182,6 +186,7 @@ function buildYearlyRow(args: RowBuilderArgs): YearlyEstateRow {
     resolvedOrdering,
     clientData,
     giftEvents,
+    qcdByYear,
     projectionStartYear,
     inflationRate,
     charityIds,
@@ -250,6 +255,7 @@ function buildYearlyRow(args: RowBuilderArgs): YearlyEstateRow {
       charityIds,
       yearRow.year,
       inflationRate,
+      qcdByYear,
     ) + charitableBequests;
 
   const deaths: YearlyEstateDeathRow[] = [
@@ -367,6 +373,20 @@ function resolveInsuredRetirementYear(
   }
 }
 
+/** Each year's QCD dollars paid to charity: the tax-free part plus any taxed
+ *  excess (both reached the charity). Years without a QCD are absent. */
+function qcdTotalsByYear(
+  years: readonly { year: number; qcds?: QcdYearResult[] }[],
+): Map<number, number> {
+  const out = new Map<number, number>();
+  for (const y of years) {
+    if (!y.qcds) continue;
+    const paid = y.qcds.reduce((s, q) => s + q.qualifying + q.taxedExcess, 0);
+    if (paid > 0) out.set(y.year, paid);
+  }
+  return out;
+}
+
 /** Sum lifetime cash gifts to charity external beneficiaries given in years
  *  ≤ N, each compounded at the plan's inflation rate from gift year to N.
  *  Asset gifts to charity are not included here — those would require
@@ -374,13 +394,17 @@ function resolveInsuredRetirementYear(
  *
  *  Recurring (gift_series) occurrences live only in `giftEvents`. A one-time
  *  cash gift sits in both lists — its event carries `sourceGiftId` and no
- *  `seriesId` — so only series events are read from `giftEvents`. */
+ *  `seriesId` — so only series events are read from `giftEvents`.
+ *
+ *  QCDs (`qcdByYear`, charity dollars per year) are not in either list; they
+ *  compound at inflation like the cash gifts. */
 export function cumulativeCharityGifts(
   gifts: Gift[],
   giftEvents: GiftEvent[],
   charityIds: Set<string>,
   year: number,
   inflationRate: number,
+  qcdByYear: ReadonlyMap<number, number>,
 ): number {
   let total = 0;
   const add = (g: {
@@ -397,6 +421,10 @@ export function cumulativeCharityGifts(
   for (const g of gifts) add(g);
   for (const ev of giftEvents) {
     if (ev.kind === "cash" && ev.seriesId != null) add(ev);
+  }
+  for (const [qcdYear, amount] of qcdByYear) {
+    if (qcdYear > year) continue;
+    total += amount * Math.pow(1 + inflationRate, Math.max(0, year - qcdYear));
   }
   return total;
 }

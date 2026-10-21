@@ -46,6 +46,10 @@ export interface FundingRow {
   recognized: number;
   /** recognized / cashOut, guarded (0 when nothing came out). */
   ratio: number;
+  /** Taxable dollars the engine recognized on a QCD's taxed excess — paid to
+   *  the charity, so they are in the tax return but not in `cashOut`, and are
+   *  left out of `recognized` and `ratio`. Present only when > 0. */
+  qcdTaxedExcess?: number;
   priorYearEndingBalance: number;
   /** True when the account FUNDED the prior year (prior cashOut > 0) yet ended it
    *  below DEPLETED_EPS — a prior-year funder that ran dry. Because ledgers are
@@ -111,16 +115,34 @@ export interface TaxChangeUnavailable {
   availableYears?: { first: number; last: number };
 }
 
+/** The slice of `<id>:rmd` that is a QCD's taxed excess. The engine books the
+ *  excess in that key (same pro-rata basis, same tax as the RMD) but pays it to
+ *  the charity, so no cash reaches the household for it. Split back out by the
+ *  excess's share of the distribution (cash RMD + excess). 0 with no QCD. */
+function qcdTaxedExcessRecognized(y: ProjectionYear, id: string): number {
+  const excess = (y.qcds ?? []).reduce((s, q) => (q.accountId === id ? s + q.taxedExcess : s), 0);
+  if (excess <= 0) return 0;
+  const distribution = (y.accountLedgers[id]?.rmdAmount ?? 0) + excess;
+  const rmdTaxable = y.taxDetail?.bySource?.[`${id}:rmd`]?.amount ?? 0;
+  return (rmdTaxable * excess) / distribution;
+}
+
 /** Recognized (taxable) dollars for one account, summed from ONLY the named
  *  taxable bySource keys the engine emits for it: `withdrawal:<id>` (supplemental
- *  draw) and `<id>:rmd` (required distribution). A future
+ *  draw) and `<id>:rmd` (required distribution). A QCD's taxed excess is taxable
+ *  but goes to charity, so it is left out here to stay on `cashOutForAccount`'s
+ *  basis (see `qcdTaxedExcessRecognized`). A future
  *  `withdrawal_tax_free:<id>` key (from the unmerged tax-ledger branch) is
  *  intentionally NOT summed here, so tax-free draws correctly lower the ratio. Do
  *  NOT switch to "any key containing the id". Exported: Task 4's recognition-ratio
  *  detector imports this rather than re-deriving it. */
 export function recognizedForAccount(y: ProjectionYear, id: string): number {
   const bs = y.taxDetail?.bySource ?? {};
-  return (bs[`withdrawal:${id}`]?.amount ?? 0) + (bs[`${id}:rmd`]?.amount ?? 0);
+  return (
+    (bs[`withdrawal:${id}`]?.amount ?? 0) +
+    (bs[`${id}:rmd`]?.amount ?? 0) -
+    qcdTaxedExcessRecognized(y, id)
+  );
 }
 
 /** Total cash leaving an account this year: supplemental draw + RMD. RMDs live in
@@ -219,6 +241,7 @@ export function diffTaxYears(
       // actively funding (final review, Finding 2).
       const depleted = priorCashOut > 0 && priorEnd < DEPLETED_EPS && cashOut === 0;
       const priorRecognized = depleted ? recognizedForAccount(prev, id) : 0;
+      const excessRecognized = qcdTaxedExcessRecognized(next, id);
       return {
         account: ctx.accountNames[id] ?? id,
         accountId: id,
@@ -227,6 +250,7 @@ export function diffTaxYears(
         supplemental: Math.round(cashOut - rmd),
         recognized: Math.round(recognized),
         ratio: cashOut > 0 ? recognized / cashOut : 0,
+        ...(excessRecognized > 0 ? { qcdTaxedExcess: Math.round(excessRecognized) } : {}),
         priorYearEndingBalance: Math.round(priorEnd),
         depleted,
         ...(depleted

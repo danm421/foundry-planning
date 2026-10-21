@@ -58,6 +58,10 @@ function summaryText(s: EstateSummary): string {
   return parts.join(" · ");
 }
 
+function accountNameById(accounts: readonly { id: string; name: string }[]) {
+  return new Map(accounts.map((a) => [a.id, a.name]));
+}
+
 function PaneHeading({ title }: { title: string }) {
   return (
     <h3 className="border-b border-hair px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-3">
@@ -99,6 +103,7 @@ function EstateDetailPane({
             onToggle={editor.toggleGift}
             onEdit={editor.setEditing}
             onRemove={editor.deleteGift}
+            accountNameById={accountNameById(editor.clientData.accounts)}
           />
         </div>
       </div>
@@ -249,6 +254,7 @@ export function SolverEstateTechnique({
             gifts={editor.gifts}
             baseGiftIds={editor.baseGiftIds}
             onToggle={editor.toggleGift}
+            accountNameById={accountNameById(editor.clientData.accounts)}
           />
         </div>
       )}

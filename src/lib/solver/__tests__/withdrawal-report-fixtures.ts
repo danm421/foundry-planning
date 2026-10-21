@@ -17,6 +17,7 @@ export function withdrawalRow(
     withdrawalsTotal: 0,
     portfolioBoy: 0,
     withdrawalRate: 0,
+    qcd: 0,
     totalExpenses: 0,
     ...over,
   };
