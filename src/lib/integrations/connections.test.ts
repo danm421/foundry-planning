@@ -147,6 +147,22 @@ describe("integration connections", () => {
     expect(raw.connectedBy).toBe("u1");
   });
 
+  it("a refresh finishing after Disconnect does not bring the tokens back", async () => {
+    const firmId = freshFirmId();
+    const id = await upsertOauthConnection({
+      firmId, providerId: "orion", ownerUserId: "u1", accessToken: "AT", refreshToken: "RT",
+    });
+    await disconnectConnectionById(id);
+
+    await storeRefreshedTokens(id, {
+      accessToken: "LATE", refreshToken: "RT_LATE", expiresAt: new Date(Date.now() + 3_600_000), scope: "read",
+    });
+
+    expect(await loadConnection(id)).toMatchObject({
+      status: "disconnected", accessToken: null, refreshToken: null, tokenExpiresAt: null,
+    });
+  });
+
   it("OAuth reconnect updates the same row", async () => {
     const firmId = freshFirmId();
     const first = await upsertOauthConnection({ firmId, providerId: "orion", ownerUserId: "u1", accessToken: "AT1" });

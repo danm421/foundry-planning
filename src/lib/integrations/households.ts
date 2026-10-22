@@ -125,6 +125,10 @@ export async function linkHouseholdOnConnection(i: {
           externalFirmId,
           // "Linked by" names whoever performed THIS link.
           linkedByUserId: i.userId,
+          // The last pull belongs to the household it came from: a different
+          // household starts clean, the same one keeps its snapshot.
+          lastPullAccounts: sql`CASE WHEN ${integrationHouseholdLinks.externalHouseholdId} = excluded.external_household_id THEN ${integrationHouseholdLinks.lastPullAccounts} ELSE NULL END`,
+          lastPulledAt: sql`CASE WHEN ${integrationHouseholdLinks.externalHouseholdId} = excluded.external_household_id THEN ${integrationHouseholdLinks.lastPulledAt} ELSE NULL END`,
           // DB clock, not the app's: `updated_at` defaults to now() on insert,
           // so stamping the update from Node made the column go BACKWARDS
           // whenever Postgres ran ahead of this process (measured: 60ms on Neon).

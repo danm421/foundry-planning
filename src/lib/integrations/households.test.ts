@@ -1,9 +1,9 @@
 // src/lib/integrations/households.test.ts
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomBytes, randomUUID } from "node:crypto";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, clients, crmHouseholds, integrationConnections } from "@/db/schema";
+import { accounts, clients, crmHouseholds, integrationConnections, integrationHouseholdLinks } from "@/db/schema";
 import { createTestClientWithScenario } from "@/test/factories";
 import type { ExtractedAccount } from "@/lib/extraction/types";
 import { encodeAddeparConfig } from "./providers/addepar/credentials";
@@ -15,6 +15,7 @@ import {
 } from "./connections";
 import {
   getHouseholdLinkForClient,
+  recordLastPull,
   linkHouseholdOnConnection,
   listFirmLinksOutside,
   unlinkHousehold,
@@ -178,6 +179,36 @@ describe("linkHouseholdOnConnection", () => {
     });
     // Both writes stamp updated_at from the DB clock (a smoke check, not a guard).
     expect(after!.updatedAt.getTime()).toBeGreaterThan(before!.updatedAt.getTime());
+  });
+
+  it("re-linking to a different household clears the last pull; the same household keeps it", async () => {
+    const firmId = freshFirmId();
+    const { clientId } = await createTestClientWithScenario(firmId);
+    const conn = await orionConnection(firmId, "advisorA");
+    const link = { connection: conn, clientId, userId: "advisorA" };
+    const snapshot = async () => {
+      const [row] = await db
+        .select({ accounts: integrationHouseholdLinks.lastPullAccounts, at: integrationHouseholdLinks.lastPulledAt })
+        .from(integrationHouseholdLinks)
+        .where(eq(integrationHouseholdLinks.clientId, clientId));
+      return row;
+    };
+
+    await linkHouseholdOnConnection({ ...link, externalHouseholdId: "hhA" });
+    const [{ id: linkId }] = await db
+      .select({ id: integrationHouseholdLinks.id })
+      .from(integrationHouseholdLinks)
+      .where(eq(integrationHouseholdLinks.clientId, clientId));
+    await recordLastPull(linkId, [{ name: "A1", externalId: "a1" }], new Date());
+
+    // The same household again: the snapshot stays.
+    await linkHouseholdOnConnection({ ...link, externalHouseholdId: "hhA" });
+    expect(await snapshot()).toMatchObject({ accounts: [{ externalId: "a1" }] });
+    expect((await snapshot()).at).not.toBeNull();
+
+    // A different household: the previous family's accounts must not linger.
+    await linkHouseholdOnConnection({ ...link, externalHouseholdId: "hhB" });
+    expect(await snapshot()).toEqual({ accounts: null, at: null });
   });
 
   it("a household held by another client on the same connection is refused, naming its linker", async () => {

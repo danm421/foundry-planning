@@ -191,7 +191,8 @@ export async function storeRefreshedTokens(
       scope: t.scope,
       ...statusFields("connected"),
     })
-    .where(eq(integrationConnections.id, connectionId));
+    // A refresh that finishes after Disconnect must not bring the tokens back.
+    .where(and(eq(integrationConnections.id, connectionId), ne(integrationConnections.status, "disconnected")));
 }
 
 /**
