@@ -25,6 +25,10 @@ interface Props {
 
 const CLAIM_FORM_ID = "integration-claim-form";
 
+// Matches the Net Worth page's Refresh prices button, which this row sits beside.
+const BUTTON_CLASS =
+  "inline-flex items-center gap-1.5 rounded-md border border-hair bg-card px-3 py-1.5 text-sm font-medium text-ink hover:bg-card-hover disabled:opacity-50";
+
 function SyncIcon() {
   return (
     <svg
@@ -139,7 +143,7 @@ export function IntegrationClientStatus({
 
   return (
     <>
-      <span className="inline-flex items-center gap-2 text-xs">
+      <span className="inline-flex items-center gap-2 text-sm">
         <span className="inline-flex items-center gap-1.5 text-ink-2">
           <span
             className={`h-1.5 w-1.5 rounded-full ${linked ? "bg-good" : "bg-ink-4"}`}
@@ -164,7 +168,7 @@ export function IntegrationClientStatus({
             <>
               <button
                 type="button"
-                className="btn-ghost inline-flex items-center gap-1 text-xs"
+                className={BUTTON_CLASS}
                 onClick={handleSync}
                 disabled={busy}
               >
@@ -177,7 +181,7 @@ export function IntegrationClientStatus({
         ) : canEdit ? (
           <button
             type="button"
-            className="btn-ghost text-xs"
+            className={BUTTON_CLASS}
             onClick={() => {
               setClaimError(null);
               setHouseholdId("");

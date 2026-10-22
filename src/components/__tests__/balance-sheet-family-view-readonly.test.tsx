@@ -250,6 +250,17 @@ describe("BalanceSheetView read-only gating", () => {
     expect(screen.queryByRole("button", { name: "Edit Brokerage Account" })).toBeNull();
   });
 
+  it("still renders footer actions under permission='view', where Refresh prices is hidden", () => {
+    render(
+      <ClientAccessProvider value={{ permission: "view", access: "shared" }}>
+        <BalanceSheetView {...BS_BASE_PROPS} footerActions={<span>Addepar status</span>} />
+      </ClientAccessProvider>,
+    );
+
+    expect(screen.queryByRole("button", { name: /refresh prices/i })).toBeNull();
+    expect(screen.getByText("Addepar status")).toBeTruthy();
+  });
+
   it("shows Edit toggle, Add Asset, and Refresh prices under permission='edit'", () => {
     render(
       <ClientAccessProvider value={{ permission: "edit", access: "own" }}>

@@ -1,8 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import type { ReactElement } from "react";
 import { db } from "@/db";
-import { crmHouseholds, crmHouseholdContacts, scenarios as scenariosTable, accounts } from "@/db/schema";
-import { eq, desc, asc, and, isNotNull } from "drizzle-orm";
+import { crmHouseholds, crmHouseholdContacts, scenarios as scenariosTable } from "@/db/schema";
+import { eq, desc, asc } from "drizzle-orm";
 import { requireClientPageAccess } from "@/lib/clients/page-access";
 import ClientHeader from "@/components/client-header";
 import HeaderSubtabs from "@/components/header-subtabs";
@@ -16,10 +16,6 @@ import { ForgeMount } from "@/components/forge/forge-mount";
 import { isForgeEnabled } from "@/domain/forge/flag";
 import CrmHouseholdLink from "@/components/crm-household-link";
 import { ClientAccessProvider } from "@/components/client-access-provider";
-import { getHouseholdLinkForClient } from "@/lib/integrations/households";
-import { getConnectedSyncingProviderId } from "@/lib/integrations/connections";
-import { getProvider } from "@/lib/integrations/registry";
-import { IntegrationClientStatus } from "@/components/IntegrationClientStatus";
 
 interface Props {
   children: React.ReactNode;
@@ -46,7 +42,7 @@ export default async function ClientLayout({ children, params }: Props): Promise
   // chip row — can run in parallel rather than back-to-back. Neither depends
   // on the other; serializing them just doubled the round-trips before the
   // shell could render.
-  const [contactRows, scenarioRows, link, connectedProviderId] = await Promise.all([
+  const [contactRows, scenarioRows] = await Promise.all([
     db
       .select()
       .from(crmHouseholdContacts)
@@ -63,36 +59,7 @@ export default async function ClientLayout({ children, params }: Props): Promise
       .from(scenariosTable)
       .where(eq(scenariosTable.clientId, id))
       .orderBy(desc(scenariosTable.isBaseCase), asc(scenariosTable.name)),
-    // Integration household link has no dependency on the other two — fetch
-    // it in the same round-trip rather than serially after.
-    getHouseholdLinkForClient(id),
-    // Firm's connected syncing provider, for offering the link affordance on
-    // a client that has no household link yet — no extra round trip in series.
-    getConnectedSyncingProviderId(access.firmId),
   ]);
-  // Own-firm callers only: `permission === "edit"` alone also covers an
-  // edit-level SHARE, and every integration route 403s anything that isn't
-  // `access === "own"` — so gating on permission would hand the unlinked
-  // affordance to a caller whose click always fails. The linked path is
-  // unaffected: it already renders for a shared caller off `link` alone, and
-  // stays that way here.
-  const canEdit = access.access === "own";
-  const provider = link
-    ? getProvider(link.provider)
-    : canEdit && connectedProviderId
-      ? getProvider(connectedProviderId)
-      : null;
-
-  let lastSyncedAt: Date | null = null;
-  if (link) {
-    const [recent] = await db
-      .select({ last: accounts.lastSyncedAt })
-      .from(accounts)
-      .where(and(eq(accounts.clientId, id), eq(accounts.externalProvider, link.provider), isNotNull(accounts.lastSyncedAt)))
-      .orderBy(desc(accounts.lastSyncedAt))
-      .limit(1);
-    lastSyncedAt = recent?.last ?? null;
-  }
 
   const primary = contactRows.find((c) => c.role === "primary");
   const spouse = contactRows.find((c) => c.role === "spouse");
@@ -136,16 +103,6 @@ export default async function ClientLayout({ children, params }: Props): Promise
             <>
               <ScenarioChipRow clientId={id} scenarios={scenarioRows} />
               <CrmHouseholdLink crmHouseholdId={clientRow.crmHouseholdId} />
-              {provider && provider.syncs ? (
-                <IntegrationClientStatus
-                  providerId={provider.id}
-                  providerLabel={provider.label}
-                  clientId={id}
-                  canEdit={canEdit}
-                  linked={!!link}
-                  lastSyncedAt={lastSyncedAt ? lastSyncedAt.toISOString() : null}
-                />
-              ) : null}
             </>
           }
         />

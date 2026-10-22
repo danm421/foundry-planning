@@ -100,6 +100,13 @@ function BalanceSheetViewMock() {
   return null;
 }
 vi.mock("@/components/balance-sheet-view", () => ({ default: BalanceSheetViewMock }));
+// The integration sync row is a separate concern from the props under test.
+vi.mock("@/lib/clients/page-access", () => ({
+  requireClientPageAccess: vi.fn(async () => ({ firmId: FIRM_ID, access: "own" })),
+}));
+vi.mock("@/lib/integrations/client-status", () => ({
+  loadClientIntegrationStatus: vi.fn(async () => null),
+}));
 
 import { NetWorthContent } from "../net-worth-content";
 import { loadEffectiveTree } from "@/lib/scenario/loader";

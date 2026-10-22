@@ -291,6 +291,9 @@ export interface BalanceSheetViewProps {
    *   scenario-aware path yet (a note receivable's create).
    */
   onFocusClose?: (outcome?: FocusCloseOutcome) => void;
+  /** Extra page-level utilities for the footer row beside Refresh prices —
+   *  the Details page puts the integration sync control here. */
+  footerActions?: React.ReactNode;
 }
 
 const CATEGORY_LABELS: Record<AccountCategory, string> = {
@@ -739,6 +742,7 @@ export default function BalanceSheetView({
   primaryClientBirthYear,
   focus,
   onFocusClose,
+  footerActions,
 }: BalanceSheetViewProps) {
   const isWizard = embed === "wizard";
   const showAssetsCol = !isWizard || section === "accounts";
@@ -964,6 +968,7 @@ export default function BalanceSheetView({
   // Reads the MERGED rows so an in-flight inline edit shows immediately — and
   // so the KPI totals derived from these lists move with it.
   const nonNoteAccounts = pendingAccounts.rows.filter((a) => a.category !== "notes_receivable");
+  const showRefreshPrices = canEdit && nonNoteAccounts.length > 0;
 
   const inEstate = nonNoteAccounts.filter((a) => accountInEstate(a) && isVisibleInNetWorth(a));
   // 529s render as their own category group in the Assets card — that's where
@@ -1926,20 +1931,25 @@ export default function BalanceSheetView({
        *  sits at the foot of the page below every balance-sheet section. Hidden
        *  in the guided walkthrough: the wizard is for entering accounts, and a
        *  market-data pull there is a distraction from the step's one job. */}
-      {!isWizard && canEdit && nonNoteAccounts.length > 0 && (
-        // The tooltip is a SIBLING of the button, never a child: a nested button
-        // would append its "Show help" label to this one's accessible name and
-        // break `getByRole("button", /refresh prices/)`.
-        <div className="flex items-center gap-1.5 border-t border-hair pt-4">
-          <button
-            type="button"
-            onClick={handleRefreshPrices}
-            disabled={refreshingPrices}
-            className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm font-medium text-ink hover:bg-card-hover disabled:opacity-50"
-          >
-            {refreshingPrices ? "Refreshing…" : "Refresh prices"}
-          </button>
-          <FieldTooltip text="Looks up the latest closing price for every holding with a ticker symbol on this client's accounts, then re-values any account that tracks its holdings. Prices also refresh on their own each night — use this to pull them in now." />
+      {!isWizard && (showRefreshPrices || footerActions) && (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-hair pt-4">
+          {showRefreshPrices && (
+            // The tooltip is a SIBLING of the button, never a child: a nested button
+            // would append its "Show help" label to this one's accessible name and
+            // break `getByRole("button", /refresh prices/)`.
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleRefreshPrices}
+                disabled={refreshingPrices}
+                className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm font-medium text-ink hover:bg-card-hover disabled:opacity-50"
+              >
+                {refreshingPrices ? "Refreshing…" : "Refresh prices"}
+              </button>
+              <FieldTooltip text="Looks up the latest closing price for every holding with a ticker symbol on this client's accounts, then re-values any account that tracks its holdings. Prices also refresh on their own each night — use this to pull them in now." />
+            </div>
+          )}
+          {footerActions}
         </div>
       )}
 

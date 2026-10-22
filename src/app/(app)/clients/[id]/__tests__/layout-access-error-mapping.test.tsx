@@ -30,24 +30,18 @@ vi.mock("@/db/schema", () => ({
   crmHouseholds: {},
   crmHouseholdContacts: {},
   scenarios: {},
-  accounts: {},
 }));
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn(),
   desc: vi.fn(),
   asc: vi.fn(),
-  and: vi.fn(),
-  isNotNull: vi.fn(),
 }));
-vi.mock("@/lib/integrations/households", () => ({ getHouseholdLinkForClient: vi.fn() }));
-vi.mock("@/lib/integrations/registry", () => ({ getProvider: vi.fn() }));
 vi.mock("@/domain/forge/flag", () => ({ isForgeEnabled: () => false }));
 vi.mock("@/components/client-header", () => ({ default: () => null }));
 vi.mock("@/components/header-subtabs", () => ({ default: () => null }));
 vi.mock("@/components/report-section-label", () => ({ default: () => null }));
 vi.mock("@/components/crm-household-link", () => ({ default: () => null }));
 vi.mock("@/components/client-access-provider", () => ({ ClientAccessProvider: () => null }));
-vi.mock("@/components/IntegrationClientStatus", () => ({ IntegrationClientStatus: () => null }));
 vi.mock("@/components/scenario/scenario-mode-wrapper", () => ({ ScenarioModeWrapper: () => null }));
 vi.mock("@/components/scenario/scenario-chip-row", () => ({ ScenarioChipRow: () => null }));
 vi.mock("@/components/scenario/scenario-mode-banner", () => ({ ScenarioModeBanner: () => null }));
