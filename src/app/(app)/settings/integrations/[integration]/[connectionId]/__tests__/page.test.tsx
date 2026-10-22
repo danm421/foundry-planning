@@ -130,7 +130,9 @@ describe("Connection page", () => {
     expect(container.querySelector("[data-testid='card']")?.getAttribute("data-name")).toBe("Addepar");
   });
 
-  it("keeps the table while a broken connection waits to be reconnected, drops it once disconnected", async () => {
+  it("keeps the table for a broken connection and drops it once disconnected, but lists open reviews either way", async () => {
+    const review = { importId: "imp-9", clientId: "c-9", householdName: "Pat Doe", accountCount: 3 };
+    mockListOpenReviews.mockResolvedValue([review]);
     mockGetOwned.mockResolvedValue(connection({ status: "error", lastSyncError: "401" }));
     expect((await renderPage()).container.querySelector("[data-testid='table']")).toBeTruthy();
 
@@ -139,7 +141,8 @@ describe("Connection page", () => {
 
     expect(container.querySelector("[data-testid='table']")).toBeNull();
     expect(container.querySelector("[data-testid='card']")?.getAttribute("data-status")).toBe("disconnected");
-    expect(mockListOpenReviews).toHaveBeenCalledTimes(1);
+    expect(mockListOpenReviews).toHaveBeenCalledTimes(2);
+    expect(container.querySelector("[data-testid='reviews']")?.getAttribute("data-import-ids")).toBe("imp-9");
   });
 
   it("shows the forbidden page with no active organization, before any read", async () => {
