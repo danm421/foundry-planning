@@ -126,7 +126,7 @@ describe("IntegrationConnectionCard BYOK", () => {
 
   it("reconnects through the connection's credentials route, keeping its name", async () => {
     const user = userEvent.setup();
-    const fetchFn = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const fetchFn = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
     global.fetch = fetchFn as unknown as typeof fetch;
     render(<IntegrationConnectionCard connectionId="c1" name="Ethos" providerId="addepar" label="Addepar" authKind="byok" status="error" lastSyncedAt={null} lastSyncError="401" />);
     expect(screen.getByLabelText(/^name$/i)).toHaveValue("Ethos");
@@ -168,8 +168,8 @@ describe("ByokConnectForm (adding a connection)", () => {
 
   it("connects through the connect route and opens the new connection's page", async () => {
     const user = userEvent.setup();
-    const fetchFn = vi.fn(async (url: string) =>
-      new Response(JSON.stringify(url.endsWith("/connect") ? { ok: true, connectionId: "new-1" } : { ok: true }), { status: 200 }),
+    const fetchFn = vi.fn<typeof fetch>(async (url) =>
+      new Response(JSON.stringify(String(url).endsWith("/connect") ? { ok: true, connectionId: "new-1" } : { ok: true }), { status: 200 }),
     );
     global.fetch = fetchFn as unknown as typeof fetch;
     render(<ByokConnectForm providerId="addepar" label="Addepar" />);
