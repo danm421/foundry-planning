@@ -45,6 +45,8 @@ vi.mock("@/lib/rate-limit", () => ({
 vi.mock("@/lib/ai/verify-connection", () => ({ verifyAzureConnection: (...a: unknown[]) => mockVerify(...a) }));
 vi.mock("@/lib/integrations/connections", () => ({
   upsertByokConnection: (...a: unknown[]) => mockUpsert(...a),
+  // connect's Addepar branch; no test here reaches it.
+  createByokConnection: async () => "unused",
   disconnectConnection: (...a: unknown[]) => mockDisconnect(...a),
   createOauthState: async () => {},
   // recheck's two: it reads the stored row and writes the outcome back.
@@ -341,14 +343,38 @@ describe("POST disconnect", () => {
     );
   });
 
-  it("does not clear the cache when disconnecting a non-azure provider", async () => {
-    // addepar's own kill-switch, so resolveProvider doesn't return null.
+  it("disconnects the firm's Azure connection, and only Azure's", async () => {
+    await disconnectPost(req({}), { params });
+
+    expect(mockDisconnect).toHaveBeenCalledWith("org_acme", "azure_openai");
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "integration.disconnect", metadata: { provider: "azure_openai" } }),
+    );
+  });
+
+  it("404 for addepar", async () => {
+    // Addepar connections are each advisor's own; they disconnect one at a
+    // time through …/connections/<id>/disconnect. A provider-level disconnect
+    // would reach every Addepar row in the firm.
     vi.stubEnv("ADDEPAR_ENABLED", "true");
     const addeparParams = Promise.resolve({ provider: "addepar" });
 
     const res = await disconnectPost(req({}), { params: addeparParams });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(404);
+    expect(mockDisconnect).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+    expect(mockClearCache).not.toHaveBeenCalled();
+  });
+
+  it("refuses a caller who is not an org admin or owner, and disconnects nothing", async () => {
+    mockRequireAdmin.mockRejectedValue(new Error("Forbidden"));
+    mockAuthErrorResponse.mockReturnValue({ status: 403, body: { error: "Forbidden" } });
+
+    const res = await disconnectPost(req({}), { params });
+
+    expect(res.status).toBe(403);
+    expect(mockDisconnect).not.toHaveBeenCalled();
     expect(mockClearCache).not.toHaveBeenCalled();
   });
 });

@@ -173,23 +173,29 @@ describe("integration connections", () => {
     });
   });
 
-  it("deleting a connection removes its links", async () => {
+  it("deleting a connection removes its links and says how many", async () => {
     const firmId = freshFirmId();
     const id = await addepar(firmId, "owner");
-    const { clientId } = await createTestClientWithScenario(firmId);
-    await db.insert(integrationHouseholdLinks).values({
-      firmId, provider: "addepar", clientId, connectionId: id,
-      externalHouseholdId: "hh1", externalFirmId: "42", linkedByUserId: "owner",
-    });
+    const other = await addepar(firmId, "owner", "Other");
+    const clientIds: string[] = [];
+    for (const [connectionId, hh] of [[id, "hh1"], [id, "hh2"], [other, "hh3"]]) {
+      const { clientId } = await createTestClientWithScenario(firmId);
+      clientIds.push(clientId);
+      await db.insert(integrationHouseholdLinks).values({
+        firmId, provider: "addepar", clientId, connectionId,
+        externalHouseholdId: hh, externalFirmId: "42", linkedByUserId: "owner",
+      });
+    }
 
-    await deleteConnectionById(id);
+    expect(await deleteConnectionById(id)).toBe(2);
 
     expect(await loadConnection(id)).toBeNull();
     const links = await db
-      .select()
+      .select({ externalHouseholdId: integrationHouseholdLinks.externalHouseholdId })
       .from(integrationHouseholdLinks)
-      .where(eq(integrationHouseholdLinks.clientId, clientId));
-    expect(links).toEqual([]);
+      .where(inArray(integrationHouseholdLinks.clientId, clientIds));
+    // The other connection's link stays.
+    expect(links).toEqual([{ externalHouseholdId: "hh3" }]);
   });
 
   it("listConnectedSyncingConnections skips disconnected and azure rows", async () => {

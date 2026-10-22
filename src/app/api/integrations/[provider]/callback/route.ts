@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { consumeOauthState, upsertConnection } from "@/lib/integrations/connections";
+import { consumeOauthState, upsertOauthConnection } from "@/lib/integrations/connections";
 import { recordAudit } from "@/lib/audit";
 import { resolveProvider } from "../_provider";
 
@@ -12,7 +12,8 @@ export async function GET(
 ): Promise<Response> {
   const provider = await resolveProvider(params);
   if (!provider) return new Response("Not found", { status: 404 });
-  if (provider.authKind !== "oauth" || !provider.oauth) {
+  // Orion and Schwab are the OAuth providers; naming them narrows the id.
+  if ((provider.id !== "orion" && provider.id !== "schwab") || !provider.oauth) {
     return new Response("Method Not Allowed", { status: 405 });
   }
 
@@ -42,21 +43,23 @@ export async function GET(
 
   try {
     const tokens = await provider.oauth.exchangeCodeForTokens({ code, codeVerifier: stateRow.codeVerifier });
-    await upsertConnection({
+    // The advisor's own connection (one per provider), so a reconnect
+    // updates the same row.
+    const connectionId = await upsertOauthConnection({
       firmId: stateRow.firmId,
       providerId: provider.id,
+      ownerUserId: userId ?? stateRow.userId,
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       expiresAt: tokens.expiresInSec ? new Date(Date.now() + tokens.expiresInSec * 1000) : null,
       scope: tokens.scope,
-      userId: userId ?? stateRow.userId,
     });
     await recordAudit({
       action: "integration.connect",
       resourceType: "integration_connection",
-      resourceId: stateRow.firmId,
+      resourceId: connectionId,
       firmId: stateRow.firmId,
-      metadata: { provider: provider.id },
+      metadata: { provider: provider.id, connectionId },
     });
     return NextResponse.redirect(new URL(`${SETTINGS_PATH}/${provider.id}?connected=${provider.id}`, req.url));
   } catch (err) {

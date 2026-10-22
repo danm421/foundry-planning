@@ -264,9 +264,17 @@ export async function disconnectConnectionById(connectionId: string): Promise<vo
     .where(eq(integrationConnections.id, connectionId));
 }
 
-/** Removes the connection; its household links cascade. Plan accounts are untouched. */
-export async function deleteConnectionById(connectionId: string): Promise<void> {
+/**
+ * Removes the connection; its household links cascade. Plan accounts are
+ * untouched. Returns how many links went with it, for the audit row.
+ */
+export async function deleteConnectionById(connectionId: string): Promise<number> {
+  const [{ links }] = await db
+    .select({ links: count() })
+    .from(integrationHouseholdLinks)
+    .where(eq(integrationHouseholdLinks.connectionId, connectionId));
   await db.delete(integrationConnections).where(eq(integrationConnections.id, connectionId));
+  return links;
 }
 
 /** Every connected syncing connection (never Azure) — the cron's work list. */
@@ -294,39 +302,10 @@ export async function listConnectedSyncingConnections(): Promise<
   }));
 }
 
-export async function upsertConnection(input: {
-  firmId: string;
-  providerId: ProviderId;
-  accessToken: string;
-  refreshToken?: string | null;
-  expiresAt?: Date | null;
-  scope?: string | null;
-  userId: string;
-}): Promise<void> {
-  const values = {
-    firmId: input.firmId,
-    provider: input.providerId,
-    accessTokenEnc: encryptSecret(input.accessToken),
-    refreshTokenEnc: input.refreshToken ? encryptSecret(input.refreshToken) : null,
-    tokenExpiresAt: input.expiresAt ?? null,
-    scope: input.scope ?? null,
-    status: "connected" as const,
-    lastSyncError: null,
-    connectedByUserId: input.userId,
-    updatedAt: new Date(),
-  };
-  await db
-    .insert(integrationConnections)
-    .values(values)
-    .onConflictDoUpdate({
-      target: [integrationConnections.firmId, integrationConnections.provider],
-      set: values,
-    });
-}
-
-/** Stores BYOK credentials (Addepar): the encoded secret blob is encrypted into
- * `accessTokenEnc`; the encoded config blob (apiBase/addeparFirmId) is stored
- * plaintext in `scope`, mirroring how OAuth providers stash their token scope. */
+/** Stores the firm's one Azure OpenAI BYOK connection (Addepar connections are
+ * each advisor's own: `createByokConnection` / `updateByokCredentials`). The
+ * encoded secret blob is encrypted into `accessTokenEnc`; the encoded config
+ * blob is stored plaintext in `scope`. */
 export async function upsertByokConnection(input: {
   firmId: string;
   providerId: ProviderId;
