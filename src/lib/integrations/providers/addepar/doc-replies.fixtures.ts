@@ -132,6 +132,54 @@ export const GROUPS_CHILD_GROUPS = {
 export const PAGINATION_NEXT = "/v1/groups?page[limit]=2000&page[after]=101";
 
 /**
+ * Attributes → "Get All Attributes" (GET /v1/attributes), verbatim but for
+ * each attribute's `relationships` and `links`, which Foundry doesn't read.
+ * It lists no ticker or share-count attribute.
+ */
+export const ATTRIBUTES_GET_ALL = {
+  data: [
+    {
+      id: "time_weighted_return",
+      type: "attributes",
+      attributes: {
+        output_type: "Percent",
+        usage: ["groupings", "columns", "filters"],
+        display_name: "TWR",
+        category: "Performance Metrics",
+        created_at: "2023-07-28T02:24:30Z",
+        modified_at: "2023-07-30T10:43:21Z",
+      },
+    },
+    {
+      id: "value",
+      type: "attributes",
+      attributes: {
+        output_type: "Number",
+        usage: ["groupings", "columns", "filters"],
+        display_name: "Value",
+        category: "Holding Details",
+        created_at: "2023-07-28T02:24:30Z",
+        modified_at: "2023-07-30T10:43:21Z",
+      },
+    },
+    {
+      id: "_custom_boolean_custom_1_419",
+      type: "attributes",
+      attributes: {
+        output_type: "Boolean",
+        usage: ["entity_custom_attributes", "groupings", "columns", "position_custom_attributes", "filters"],
+        display_name: "Boolean Custom 1",
+        category: "Custom",
+        created_at: "2023-07-28T02:24:30Z",
+        modified_at: "2023-07-30T10:43:21Z",
+      },
+    },
+  ],
+  included: [],
+  links: { next: null },
+};
+
+/**
  * Portfolio → Query, "Filter Object" example (POST /v1/portfolio/query,
  * GROUP 9559, grouped by holding_account, cost_basis column), verbatim.
  * Accounts nest: "Adam Smith IRA" holds a Pershing account plus its own

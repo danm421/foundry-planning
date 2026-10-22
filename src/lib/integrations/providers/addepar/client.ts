@@ -21,7 +21,12 @@ import type {
   ProviderPosition,
 } from "../../types";
 import { decodeAddeparSecret } from "./credentials";
-import { addeparGroupsPageSchema, portfolioQueryReplySchema, type PortfolioNode } from "./schemas";
+import {
+  addeparAttributesPageSchema,
+  addeparGroupsPageSchema,
+  portfolioQueryReplySchema,
+  type PortfolioNode,
+} from "./schemas";
 
 function addeparConfig(ctx: ProviderCallContext): { apiBase: string; addeparFirmId: string } {
   if (!ctx.config) throw new Error("Addepar call is missing the firm's Addepar address and firm ID");
@@ -120,7 +125,56 @@ async function getGroups(ctx: ProviderCallContext): Promise<ProviderHousehold[]>
   return households;
 }
 
-async function portfolioQuery(ctx: ProviderCallContext, householdId: string): Promise<PortfolioNode> {
+/** This firm's column keys for a holding's ticker and share count. */
+type PositionColumns = { ticker: string; units: string };
+
+/**
+ * Reads the ticker and share-count column keys off the firm's own attribute
+ * list, or null when it offers no share count. Addepar's docs name a
+ * security's ticker `ticker_symbol` (Entity Types) but pin no share-count
+ * column, and a query naming a column the firm lacks fails whole, so the keys
+ * are looked up rather than guessed. A ticker is only asked for alongside a
+ * share count: Foundry values a tickered holding as shares × the live price.
+ */
+async function findPositionColumns(ctx: ProviderCallContext): Promise<PositionColumns | null> {
+  const idByName = new Map<string, string>();
+  let next: string | null | undefined = "/v1/attributes?filter[usage]=columns&page[limit]=2000";
+  while (next) {
+    const page = addeparAttributesPageSchema.parse(await request(ctx, next));
+    for (const a of page.data) {
+      // A custom attribute is the firm's own field, whatever it's called.
+      if (a.id.startsWith("_custom_")) continue;
+      for (const name of [a.id.replace(/_/g, " "), a.attributes.display_name ?? ""]) {
+        const key = name.trim().toLowerCase();
+        if (!idByName.has(key)) idByName.set(key, a.id);
+      }
+    }
+    next = page.links?.next;
+  }
+  const pick = (names: string[]) => names.map((n) => idByName.get(n)).find((id) => id !== undefined);
+  const ticker = pick(["ticker symbol", "ticker"]);
+  const units = pick(["shares", "units", "quantity"]);
+  return ticker && units ? { ticker, units } : null;
+}
+
+// One attribute lookup per sync: every household's query in the caller's call
+// context shares it.
+const positionColumnsByCtx = new WeakMap<ProviderCallContext, Promise<PositionColumns | null>>();
+
+function positionColumns(ctx: ProviderCallContext): Promise<PositionColumns | null> {
+  let cols = positionColumnsByCtx.get(ctx);
+  if (!cols) {
+    cols = findPositionColumns(ctx);
+    positionColumnsByCtx.set(ctx, cols);
+  }
+  return cols;
+}
+
+async function portfolioQuery(
+  ctx: ProviderCallContext,
+  householdId: string,
+  cols: PositionColumns | null,
+): Promise<PortfolioNode> {
   const portfolioId = Number(householdId);
   if (!Number.isSafeInteger(portfolioId)) throw new Error(`Addepar group id must be a number, got "${householdId}"`);
   // Addepar values are end-of-day; yesterday (UTC) is the latest day that has always closed.
@@ -129,10 +183,14 @@ async function portfolioQuery(ctx: ProviderCallContext, householdId: string): Pr
     data: {
       type: "portfolio_query",
       attributes: {
-        // VERIFY with a live key: a holding's ticker, CUSIP and share count, and
-        // an account's number, custodian and tax registration, need column keys
-        // the docs don't pin. List them with GET /v1/attributes?filter[usage]=columns.
-        columns: [{ key: "value" }, { key: "cost_basis" }],
+        // VERIFY with a live key: an account's number, custodian and tax
+        // registration need column keys the docs don't pin. List them with
+        // GET /v1/attributes?filter[usage]=columns.
+        columns: [
+          { key: "value" },
+          { key: "cost_basis" },
+          ...(cols ? [{ key: cols.ticker }, { key: cols.units }] : []),
+        ],
         groupings: [{ key: "holding_account" }, { key: "position" }],
         portfolio_type: "GROUP",
         portfolio_id: portfolioId,
@@ -149,7 +207,30 @@ const num = (node: PortfolioNode, key: string): number | null => {
   const v = node.columns?.[key];
   return typeof v === "number" ? v : null;
 };
+const text = (node: PortfolioNode, key: string): string | null => {
+  const v = node.columns?.[key];
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+};
 const minus = (a?: number | null, b?: number | null): number | null => (a == null ? null : a - (b ?? 0));
+
+/**
+ * One holding. A ticker comes with its share count or not at all: a ticker
+ * with no shares would value at $0. The price is the holding's value over its
+ * shares, because Addepar's price columns are market data its API can
+ * withhold without a separate license.
+ */
+function positionOf(node: PortfolioNode, cols: PositionColumns | null): ProviderPosition {
+  const marketValue = num(node, "value");
+  const position: ProviderPosition = { description: node.name, marketValue, costBasis: num(node, "cost_basis") };
+  const ticker = cols && text(node, cols.ticker);
+  const units = cols && num(node, cols.units);
+  if (ticker && units) {
+    position.ticker = ticker;
+    position.units = units;
+    position.price = marketValue == null ? null : marketValue / units;
+  }
+  return position;
+}
 
 type AccountHoldings = { account: ProviderAccount; positions: ProviderPosition[] };
 
@@ -161,15 +242,11 @@ type AccountHoldings = { account: ProviderAccount; positions: ProviderPosition[]
  * so each child is taken out of its parent. Positions held outside any
  * account have nowhere to land and are skipped.
  */
-function accountsIn(total: PortfolioNode): AccountHoldings[] {
+function accountsIn(total: PortfolioNode, cols: PositionColumns | null): AccountHoldings[] {
   const found: AccountHoldings[] = [];
   const visit = (node: PortfolioNode, owner: AccountHoldings | undefined) => {
     if (node.grouping === "position") {
-      owner?.positions.push({
-        description: node.name,
-        marketValue: num(node, "value"),
-        costBasis: num(node, "cost_basis"),
-      });
+      owner?.positions.push(positionOf(node, cols));
       return;
     }
     let holder = owner;
@@ -205,7 +282,8 @@ const holdingsByCtx = new WeakMap<ProviderCallContext, Map<string, ProviderPosit
 export const addeparClient: ProviderClient = {
   getHouseholds: getGroups,
   async getAccounts(ctx, householdId) {
-    const found = accountsIn(await portfolioQuery(ctx, householdId));
+    const cols = await positionColumns(ctx);
+    const found = accountsIn(await portfolioQuery(ctx, householdId, cols), cols);
     const holdings = holdingsByCtx.get(ctx) ?? new Map<string, ProviderPosition[]>();
     holdingsByCtx.set(ctx, holdings);
     for (const { account, positions } of found) holdings.set(account.id, positions);

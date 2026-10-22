@@ -10,6 +10,12 @@ export const addeparGroupsPageSchema = z.object({
   links: z.object({ next: z.string().nullable() }).optional(),
 });
 
+/** A page of GET /v1/attributes (Attributes). */
+export const addeparAttributesPageSchema = z.object({
+  data: z.array(z.object({ id: z.string(), attributes: z.object({ display_name: z.string().nullish() }) })),
+  links: z.object({ next: z.string().nullable() }).optional(),
+});
+
 /** One row of a Portfolio Query tree: a grouping value with its column values. */
 export type PortfolioNode = {
   entity_id?: number | null;
