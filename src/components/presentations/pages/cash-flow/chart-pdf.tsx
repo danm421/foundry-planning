@@ -21,6 +21,13 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
   // Every line overlay is drawn through the same bar centres.
   const barCentres = spec.xAxis.domain.map((xv) => (x(xv) ?? 0) + barWidth / 2);
 
+  // The highlighted year's outline covers the rects its bar is drawn from, and
+  // always the zero line, so a $0 year still gets a box.
+  const hi = spec.highlightX == null ? -1 : spec.xAxis.domain.indexOf(spec.highlightX);
+  const hiRects = hi < 0 ? [] : stackRects((v) => y(v), spec.stacks.map((s) => s.values[hi] ?? 0));
+  const hiTop = Math.min(y(0), ...hiRects.map((r) => r.y));
+  const hiFoot = Math.max(y(0), ...hiRects.map((r) => r.y + r.height));
+
   // The legend starts at the left margin, so the room it has is the plot's own
   // width — never the canvas's.
   const legend = legendLayout(spec.legend.items.length, innerW);
@@ -84,6 +91,18 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
               />
             ));
           })}
+
+          {hi >= 0 && (
+            <Rect
+              x={(x(spec.xAxis.domain[hi]) ?? 0) - 1.5}
+              y={hiTop - 1.5}
+              width={barWidth + 3}
+              height={hiFoot - hiTop + 3}
+              fill="none"
+              stroke={PRESENTATION_THEME.ink}
+              strokeWidth={1}
+            />
+          )}
 
           {/* Zero baseline for diverging charts */}
           {spec.yAxis.domain[0] < 0 && (
