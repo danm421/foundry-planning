@@ -34,8 +34,7 @@ describe("provider registry auth kinds", () => {
       const p = getProvider(id);
       expect(p.authKind).toBe("oauth");
       expect(p.oauth).toBeDefined();
-      if (!p.syncs) throw new Error(`expected ${id} to sync`);
-      expect(p.autoCommitExact).toBe(true);
+      expect(p.syncs).toBe(true);
     }
   });
 
@@ -45,12 +44,11 @@ describe("provider registry auth kinds", () => {
     }
   });
 
-  it("addepar is a byok provider, flag-gated, no oauth, review-before-commit", () => {
+  it("addepar is a byok provider, flag-gated, no oauth", () => {
     const p = getProvider("addepar");
     expect(p.authKind).toBe("byok");
     expect(p.oauth).toBeUndefined();
-    if (!p.syncs) throw new Error("expected addepar to sync");
-    expect(p.autoCommitExact).toBe(false);
+    expect(p.syncs).toBe(true);
     const prev = process.env.ADDEPAR_ENABLED;
     process.env.ADDEPAR_ENABLED = "true";
     expect(p.isEnabled()).toBe(true);

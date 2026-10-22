@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { accounts, clientImports, integrationSyncRuns, scenarios } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
+import { discardImport } from "@/lib/fact-finder/import-lifecycle";
 import { resolveHoldingsForCommit } from "@/lib/imports/commit/holdings";
 import { commitTabs } from "@/lib/imports/commit/orchestrator";
 import { emptyImportPayload, type ImportPayload } from "@/lib/imports/types";
@@ -24,7 +25,8 @@ import type { ProviderClient, ProviderId } from "./types";
  *
  * Per the product decision, accounts split into two buckets after reconciliation:
  *  - EXACT (already imported, matched by externalId): auto-commit / update in
- *    place via `commitTabs(['accounts'])`.
+ *    place via `commitTabs(['accounts'])`. An account is reviewed once, when
+ *    it is first linked; after that the feed is trusted.
  *  - NEW (never-seen): land in a single open `clientImports` review row
  *    (`origin:<syncing providerId>`, `status:'review'`) for the advisor to
  *    review — the provider's category/subType is GUESSED from
@@ -129,22 +131,18 @@ export async function syncFirm(
 
         const { exact, new: fresh } = reconcile({ mapped: mapped.accounts, existing });
 
-        // Review-mode providers (autoCommitExact: false, e.g. Addepar) must
-        // not auto-commit ANYTHING — every account, exact or new, folds into
-        // the single open review import so the advisor confirms before any
-        // write. OAuth providers (autoCommitExact: true) keep the original
-        // exact-auto-commit / new-review split unchanged.
-        const autoCommit = provider.autoCommitExact;
-        const exactWithMatch = exact.map((e) => ({
-          ...e.account,
-          match: { kind: "exact", existingId: e.existingId } as const,
-        }));
-
         // EXACT bucket → auto-commit / update in place via the commit path.
-        if (autoCommit && exact.length > 0) {
+        if (exact.length > 0) {
           const exactPayload: ImportPayload = {
             ...emptyImportPayload(),
-            accounts: exactWithMatch,
+            // The type was settled when the account was reviewed; the feed's
+            // is only a guess from its registration, so it never overwrites it.
+            accounts: exact.map((e) => ({
+              ...e.account,
+              category: undefined,
+              subType: undefined,
+              match: { kind: "exact", existingId: e.existingId } as const,
+            })),
           };
           const [vehicle] = await db
             .insert(clientImports)
@@ -194,31 +192,28 @@ export async function syncFirm(
           committed += exact.length;
         }
 
-        // Review bucket → upsert ONE open review import per client (do NOT
-        // commit). For OAuth providers this is just the NEW accounts; for
-        // review-mode providers (autoCommit false) it's exact + new together.
-        const reviewAccounts = [
-          ...(autoCommit ? [] : exactWithMatch),
-          ...fresh.map((a) => ({ ...a, match: { kind: "new" } as const })),
-        ];
+        // NEW bucket → upsert ONE open review import per client (do NOT commit).
+        const reviewAccounts = fresh.map((a) => ({ ...a, match: { kind: "new" } as const }));
+        const [openReview] = await db
+          .select({ id: clientImports.id })
+          .from(clientImports)
+          .where(
+            and(
+              eq(clientImports.clientId, link.clientId),
+              eq(clientImports.origin, providerId),
+              eq(clientImports.status, "review"),
+            ),
+          )
+          .limit(1);
 
-        if (reviewAccounts.length > 0) {
+        if (reviewAccounts.length === 0 && openReview) {
+          // Every account it held is linked now, so nothing is left to review.
+          await discardImport({ importId: openReview.id, clientId: link.clientId, firmId }, userId);
+        } else if (reviewAccounts.length > 0) {
           const reviewPayload: ImportPayload = {
             ...emptyImportPayload(),
             accounts: reviewAccounts,
           };
-
-          const [openReview] = await db
-            .select({ id: clientImports.id })
-            .from(clientImports)
-            .where(
-              and(
-                eq(clientImports.clientId, link.clientId),
-                eq(clientImports.origin, providerId),
-                eq(clientImports.status, "review"),
-              ),
-            )
-            .limit(1);
 
           if (openReview) {
             await db
