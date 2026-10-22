@@ -116,16 +116,61 @@ describe("IntegrationHouseholdLinkTable", () => {
   });
 
   it("a 409 on link names who holds the client", async () => {
-    mockFetch({ linkResponse: { ok: false, status: 409, body: { error: "x", linkedByName: "Sarah Kim" } } });
+    mockFetch({ linkResponse: { ok: false, status: 409, body: { error: "This client is already linked through another connection.", linkedByName: "Sarah Kim" } } });
     const user = userEvent.setup();
     renderTable();
     await screen.findByText("Open Family");
     await user.selectOptions(screen.getByRole("combobox"), "c4");
     await user.click(screen.getByRole("button", { name: "Link" }));
     await waitFor(() =>
-      expect(showToast).toHaveBeenCalledWith({ message: "That client is already linked by Sarah Kim." }),
+      expect(showToast).toHaveBeenCalledWith({
+        message: "This client is already linked through another connection. Linked by Sarah Kim.",
+      }),
     );
     expect(screen.getByRole("button", { name: "Link" })).toBeTruthy();
+  });
+
+  it("a household taken since the page loaded says so, and the row refreshes", async () => {
+    const fetchFn = mockFetch({
+      linkResponse: {
+        ok: false,
+        status: 409,
+        body: { error: "This household is already linked to another client.", linkedByName: null },
+      },
+    });
+    const user = userEvent.setup();
+    renderTable();
+    await screen.findByText("Open Family");
+    const before = fetchFn.mock.calls.filter((c) => c[0] === BASE).length;
+    await user.selectOptions(screen.getByRole("combobox"), "c4");
+    await user.click(screen.getByRole("button", { name: "Link" }));
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith({
+        message: "This household is already linked to another client. Linked by another advisor.",
+      }),
+    );
+    await waitFor(() => expect(fetchFn.mock.calls.filter((c) => c[0] === BASE).length).toBe(before + 1));
+  });
+
+  it("a failed refresh after a change keeps the rows and toasts", async () => {
+    let hhCalls = 0;
+    const fn = vi.fn(async (url: string) => {
+      if (url === "/api/clients") return { ok: true, status: 200, json: async () => CLIENTS };
+      if (url.endsWith("/households/link")) return { ok: true, status: 200, json: async () => ({ ok: true }) };
+      hhCalls += 1;
+      if (hhCalls > 1) return { ok: false, status: 500, json: async () => ({}) };
+      return { ok: true, status: 200, json: async () => ({ households: HOUSEHOLDS, takenClients: {} }) };
+    });
+    global.fetch = fn as unknown as typeof fetch;
+    const user = userEvent.setup();
+    renderTable();
+    await user.click(await screen.findByRole("button", { name: "Manage 9 accounts for Zed Family" }));
+    await user.click(screen.getByText("close panel"));
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith({ message: "Couldn't refresh the households. Please reload the page." }),
+    );
+    expect(screen.getByText("Zed Family")).toBeTruthy();
+    expect(screen.queryByText("Couldn't load households")).toBeNull();
   });
 
   it("says to reconnect when the connection can't list households", async () => {

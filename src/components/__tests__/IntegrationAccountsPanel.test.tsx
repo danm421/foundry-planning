@@ -83,6 +83,7 @@ describe("IntegrationAccountsPanel", () => {
     const options = within(select).getAllByRole("option").map((o) => o.textContent ?? "");
     const ira = options.findIndex((t) => t.includes("Rollover IRA"));
     const brokerage = options.findIndex((t) => t.includes("Taxable Account"));
+    expect(options[ira]).toBe("Rollover IRA · Retirement · $118,000");
     expect(ira).toBeGreaterThan(0);
     expect(ira).toBeLessThan(brokerage);
   });

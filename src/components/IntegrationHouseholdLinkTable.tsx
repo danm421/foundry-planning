@@ -46,13 +46,23 @@ export function IntegrationHouseholdLinkTable({ providerId, connectionId, label 
   const [panelLinkId, setPanelLinkId] = useState<string | null>(null);
 
   /** Reads the table from the server, in the server's order. */
-  const load = useCallback(async (): Promise<boolean> => {
+  const load = useCallback(async (first = false): Promise<boolean> => {
+    // Only the first load may replace the table with an error; after that a
+    // failed refresh keeps the rows on screen and says so in a toast.
+    const fail = () => {
+      if (first) setLoadError("failed");
+      else showToast({ message: "Couldn't refresh the households. Please reload the page." });
+      return false;
+    };
     try {
       const [hhRes, clientsRes] = await Promise.all([fetch(base), fetch("/api/clients")]);
       if (hhRes.status === 409) {
         const j = (await hhRes.json().catch(() => null)) as { error?: string } | null;
-        setLoadError(j?.error === "reconnect_required" ? "reconnect" : "failed");
-        return false;
+        if (j?.error === "reconnect_required") {
+          setLoadError("reconnect");
+          return false;
+        }
+        return fail();
       }
       if (!hhRes.ok || !clientsRes.ok) throw new Error("load failed");
       const hhJson = (await hhRes.json()) as {
@@ -66,14 +76,13 @@ export function IntegrationHouseholdLinkTable({ providerId, connectionId, label 
       setLoadError(null);
       return true;
     } catch {
-      setLoadError("failed");
-      return false;
+      return fail();
     }
-  }, [base]);
+  }, [base, showToast]);
 
   useEffect(() => {
     let cancelled = false;
-    load().finally(() => {
+    load(true).finally(() => {
       if (!cancelled) setLoading(false);
     });
     return () => {
@@ -103,8 +112,15 @@ export function IntegrationHouseholdLinkTable({ providerId, connectionId, label 
           return;
         }
         if (res.status === 409) {
-          const j = (await res.json().catch(() => null)) as { linkedByName?: string | null } | null;
-          showToast({ message: `That client is already linked by ${j?.linkedByName ?? "another advisor"}.` });
+          const j = (await res.json().catch(() => null)) as {
+            error?: string;
+            linkedByName?: string | null;
+          } | null;
+          showToast({
+            message: `${j?.error ?? "That link is already taken."} Linked by ${j?.linkedByName ?? "another advisor"}.`,
+          });
+          // The page is out of date: show who holds it now.
+          await load();
           return;
         }
         throw new Error("link failed");

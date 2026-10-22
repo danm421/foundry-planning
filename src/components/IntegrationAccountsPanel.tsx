@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import DialogShell from "@/components/dialog-shell";
 import { useToast } from "@/components/toast";
+import { accountPickerOption } from "@/components/import/account-picker-option";
 import { selectBaseClassName } from "@/components/forms/input-styles";
 import { CATEGORY_OPTIONS, SUB_TYPE_OPTIONS } from "@/lib/accounts/category-labels";
 import { rankAccountCandidates } from "@/lib/imports/rank-account-candidates";
@@ -220,11 +221,14 @@ function AccountRowView({
               onChange={(e) => setDraft({ kind: "connect", planAccountId: e.target.value })}
             >
               <option value="">Choose an account…</option>
-              {ranked.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} · {usd.format(c.value)}
-                </option>
-              ))}
+              {ranked.map((c) => {
+                const o = accountPickerOption({ ...c, custodian: null, accountNumberLast4: null });
+                return (
+                  <option key={c.id} value={c.id}>
+                    {[o.name, o.subtitle, o.amount].filter(Boolean).join(" · ")}
+                  </option>
+                );
+              })}
             </select>
             <button
               type="button"
