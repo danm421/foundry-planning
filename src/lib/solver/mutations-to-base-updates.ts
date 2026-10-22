@@ -331,6 +331,8 @@ export function mutationsToBaseUpdates(
 
   for (const m of mutations) {
     switch (m.kind) {
+      case "held-change":
+        break;
       // ── Client singleton ──────────────────────────────────────────────
       case "retirement-age": {
         if (m.person === "client") {

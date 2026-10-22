@@ -99,6 +99,9 @@ export function describeSolverMutation(m: SolverMutation, names: MutationNames):
   const removed = (noun: string, id: string) => `Removed ${named(noun, id)}`;
 
   switch (m.kind) {
+    // Task 12 replaces this with the held-change line.
+    case "held-change":
+      return "";
     case "retirement-age":
       return `Retirement age (${who(m.person)}) → ${m.age}${m.month ? ` (month ${m.month})` : ""}`;
     case "living-expense-scale":

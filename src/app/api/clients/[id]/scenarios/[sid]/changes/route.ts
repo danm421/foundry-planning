@@ -18,7 +18,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
 import { db } from "@/db";
 import { scenarioToggleGroups } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
@@ -27,16 +26,13 @@ import { requireOrgAndUser } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import {
-  TARGET_KIND_TO_FIELD,
-  SINGLETON_KIND_TO_FIELD,
-} from "@/engine/scenario/applyChanges";
-import {
   applyEntityAdd,
   applyEntityEdit,
   applyEntityRemove,
   revertChange,
   ScenarioChangeRejectedError,
 } from "@/lib/scenario/changes-writer";
+import { CHANGE_REQUEST_SCHEMA, WRITABLE_TARGET_KINDS } from "@/lib/scenario/change-request-schema";
 import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
 import {
   withDefaultBeneficiariesFollowingOwner,
@@ -45,43 +41,7 @@ import {
 import { WHOLE_ENTITY_SCHEMAS } from "@/lib/scenario/whole-entity-kinds";
 import type { OpType, TargetKind } from "@/engine/scenario/types";
 
-// All writable TargetKind values, derived from the runtime lookup maps so the
-// route enum stays in sync with applyChanges automatically. Unknown strings are
-// rejected here with a 400 before they ever reach the writer (which would
-// otherwise throw and surface as a 500).
-const WRITABLE_TARGET_KINDS = [
-  ...Object.keys(TARGET_KIND_TO_FIELD),
-  ...Object.keys(SINGLETON_KIND_TO_FIELD),
-].filter((v, i, a) => a.indexOf(v) === i) as [TargetKind, ...TargetKind[]];
-
 export const dynamic = "force-dynamic";
-
-const POST_BODY = z.discriminatedUnion("op", [
-  z.object({
-    op: z.literal("edit"),
-    targetKind: z.enum(WRITABLE_TARGET_KINDS),
-    targetId: z.string().uuid(),
-    desiredFields: z.record(z.string(), z.unknown()),
-    toggleGroupId: z.string().uuid().nullable().optional(),
-  }),
-  z.object({
-    op: z.literal("add"),
-    targetKind: z.enum(WRITABLE_TARGET_KINDS),
-    // entity must carry an `id` (the writer treats it as the targetId).
-    entity: z
-      .record(z.string(), z.unknown())
-      .refine((e) => typeof e.id === "string" && e.id.length > 0, {
-        message: "entity.id is required",
-      }),
-    toggleGroupId: z.string().uuid().nullable().optional(),
-  }),
-  z.object({
-    op: z.literal("remove"),
-    targetKind: z.enum(WRITABLE_TARGET_KINDS),
-    targetId: z.string().uuid(),
-    toggleGroupId: z.string().uuid().nullable().optional(),
-  }),
-]);
 
 const OP_TYPES = ["add", "edit", "remove"] as const;
 
@@ -97,7 +57,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const scope = await assertScenarioRouteScope(clientId, scenarioId, firmId);
     if (scope.kind === "miss") return scope.response;
 
-    const parsed = POST_BODY.safeParse(await req.json());
+    const parsed = CHANGE_REQUEST_SCHEMA.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json(
         { error: parsed.error.flatten() },

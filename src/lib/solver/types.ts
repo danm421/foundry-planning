@@ -25,6 +25,7 @@ import type { ProjectionResult } from "@/engine";
 import type { IncomeTaxType } from "@/engine/tax-adjustments";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import type { DebtPaydownRow } from "./debt-paydown";
+import type { OpType, TargetKind } from "@/engine/scenario/types";
 
 export type SolverPerson = "client" | "spouse";
 
@@ -38,7 +39,20 @@ export type SavingsGrowthSource = "custom" | "inflation";
  *  what `tax_exempt` meant. One definition, in `@/engine/tax-adjustments`. */
 export type { IncomeTaxType };
 
+/** One item's add / edit / remove from a Details editor in the Solver — scenario-change form. */
+export interface HeldChangeMutation {
+  kind: "held-change";
+  op: OpType;
+  targetKind: TargetKind;
+  targetId: string;
+  /** add: the whole item · edit: { field: { from, to } } vs the starting plan · remove: null */
+  payload: unknown;
+  /** The dialog save that produced it; one save's entries share a switch. */
+  saveId: string;
+}
+
 export type SolverMutation =
+  | HeldChangeMutation
   | { kind: "retirement-age"; person: SolverPerson; age: number; month?: number }
   | { kind: "living-expense-scale"; multiplier: number }
   | { kind: "living-expense-amount"; amount: number }
@@ -258,6 +272,7 @@ export type SolverMutationKey =
   | `will-upsert:${string}`
   | `entity-flow-override-upsert:${string}:${number}`
   | `note-receivable-upsert:${string}`
+  | `held-change:${string}`
   | "stress-inflation"
   | "stress-ss-haircut"
   | "stress-disability"
@@ -367,6 +382,8 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `entity-flow-override-upsert:${m.entityId}:${m.year}`;
     case "note-receivable-upsert":
       return `note-receivable-upsert:${m.id}`;
+    case "held-change":
+      return `held-change:${m.targetKind}:${m.targetId}`;
     case "stress-inflation":
       return "stress-inflation";
     case "stress-ss-haircut":

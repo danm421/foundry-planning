@@ -31,6 +31,8 @@ export function applyMutations(
   const giftDrafts = new Map<string, EstateFlowGift | null>();
   for (const m of mutations) {
     switch (m.kind) {
+      case "held-change":
+        break;
       case "retirement-age": {
         if (m.person === "client") {
           result.client.retirementAge = m.age;

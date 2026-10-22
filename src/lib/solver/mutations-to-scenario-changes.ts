@@ -136,6 +136,8 @@ export function mutationsToScenarioChanges(
 
   for (const m of mutations) {
     switch (m.kind) {
+      case "held-change":
+        break;
       case "retirement-age": {
         if (m.person === "client") {
           maybeDiff(clientFieldDiff, "retirementAge", source.client.retirementAge, m.age);

@@ -8,6 +8,7 @@
 // the bar chart stops updating.
 
 import { z } from "zod";
+import { WRITABLE_TARGET_KINDS } from "@/lib/scenario/change-request-schema";
 import { valuationDiscount } from "@/lib/schemas/valuation-discount";
 import { isUSPSStateCode } from "@/lib/usps-states";
 import { MAX_RATE_STRESS_POINTS } from "@/lib/tax/rate-stress";
@@ -850,6 +851,30 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     // so omitting this line silently drops the pairing on the wire.
     sourceAccountId: z.string().min(1).optional(),
   }),
+  z
+    .object({
+      kind: z.literal("held-change"),
+      op: z.enum(["add", "edit", "remove"]),
+      targetKind: z.enum(WRITABLE_TARGET_KINDS),
+      targetId: z.string().uuid(),
+      payload: z.unknown(),
+      saveId: z.string().uuid(),
+    })
+    .superRefine((m, ctx) => {
+      const p = m.payload;
+      const isRecord = typeof p === "object" && p !== null && !Array.isArray(p);
+      const ok =
+        m.op === "add"
+          ? isRecord && (p as { id?: unknown }).id === m.targetId
+          : m.op === "edit"
+            ? isRecord &&
+              Object.keys(p as object).length > 0 &&
+              Object.values(p as object).every(
+                (f) => typeof f === "object" && f !== null && "to" in f,
+              )
+            : p === null;
+      if (!ok) ctx.addIssue({ code: "custom", message: `invalid ${m.op} payload`, path: ["payload"] });
+    }),
   z.object({
     kind: z.literal("stress-inflation"),
     rate: RATE,

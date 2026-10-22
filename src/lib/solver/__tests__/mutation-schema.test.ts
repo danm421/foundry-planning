@@ -550,3 +550,22 @@ describe("SOLVER_MUTATION_SCHEMA — asset-transaction-upsert sell source refine
     expect(r.success).toBe(true);
   });
 });
+
+describe("SOLVER_MUTATION_SCHEMA — held-change", () => {
+  const ID = "00000000-0000-4000-8000-0000000000a1";
+  const SAVE = "00000000-0000-4000-8000-0000000000b1";
+  const parse = (m: unknown) => SOLVER_MUTATION_SCHEMA.safeParse(m).success;
+
+  it("held-change: accepts add/edit/remove shapes, rejects an add whose payload id differs, an edit with no \"to\", a remove with a payload, and an unknown targetKind", () => {
+    const base = { kind: "held-change", targetKind: "expense", targetId: ID, saveId: SAVE };
+    expect(parse({ ...base, op: "add", payload: { id: ID, name: "x" } })).toBe(true);
+    expect(parse({ ...base, op: "edit", payload: { annualAmount: { from: 1, to: 2 } } })).toBe(true);
+    expect(parse({ ...base, op: "remove", payload: null })).toBe(true);
+
+    expect(parse({ ...base, op: "add", payload: { id: "other" } })).toBe(false);
+    expect(parse({ ...base, op: "edit", payload: { annualAmount: { from: 1 } } })).toBe(false);
+    expect(parse({ ...base, op: "edit", payload: {} })).toBe(false);
+    expect(parse({ ...base, op: "remove", payload: { id: ID } })).toBe(false);
+    expect(parse({ ...base, targetKind: "not_a_kind", op: "remove", payload: null })).toBe(false);
+  });
+});
