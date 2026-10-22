@@ -223,7 +223,8 @@ export async function loadHouseholdAccounts(i: PanelInput): Promise<HouseholdAcc
  * value, margin loan, cost basis and holdings, and the tie. The plan account
  * keeps its type, sub-type, name, custodian, account number and owners,
  * because the provider's type is only a guess (from the account's name, for
- * Addepar).
+ * Addepar). A retirement account also keeps its basis: `commitAccounts` never
+ * writes a feed's cost basis as post-tax basis.
  */
 export async function connectHouseholdAccount(
   i: PanelInput & { externalId: string; planAccountId: string; userId: string },

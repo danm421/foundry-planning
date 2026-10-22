@@ -260,7 +260,9 @@ describe("connectHouseholdAccount", () => {
     expect(after.lastSyncedAt).not.toBeNull();
     const holdings = await db.select().from(accountHoldings).where(eq(accountHoldings.accountId, ira));
     expect(holdings).toHaveLength(1);
-    expect(after.basis).toBe("42000.00");
+    // Addepar's $42,000 cost basis is what the positions cost; on an IRA the
+    // basis is post-tax basis, paid out untaxed, so the IRA keeps its own.
+    expect(after.basis).toBe("1500.00");
     // No second account appeared.
     const all = await db.select({ id: accounts.id }).from(accounts).where(eq(accounts.clientId, h.clientId));
     expect(all).toEqual([{ id: ira }]);
@@ -364,6 +366,7 @@ describe("connectHouseholdAccount", () => {
       subType: "traditional_ira",
       custodian: "Schwab",
       name: "Denise IRA",
+      basis: "1500.00",
     });
     const all = await db.select({ externalId: accounts.externalId }).from(accounts).where(eq(accounts.clientId, h.clientId));
     expect(all.map((a) => a.externalId).sort()).toEqual([EXTERNAL_ID, SECOND_ID]);
@@ -400,6 +403,8 @@ describe("addHouseholdAccount", () => {
       externalId: EXTERNAL_ID,
       source: "addepar",
     });
+    // A feed's cost basis never becomes a Roth's post-tax basis.
+    expect(row.basis).toBe("0.00");
     expect(await ownersOf(created)).toEqual([{ familyMemberId: h.deniseId, percent: "1.0000" }]);
   });
 
@@ -448,7 +453,7 @@ describe("disconnectPlanAccount", () => {
       category: "retirement",
       subType: "traditional_ira",
       value: "50000.00",
-      basis: "42000.00",
+      basis: "1500.00",
     });
     expect(await ownersOf(ira)).toEqual([{ familyMemberId: h.deniseId, percent: "1.0000" }]);
   });
