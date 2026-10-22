@@ -23,10 +23,10 @@ import {
   TARGET_KIND_TO_FIELD,
 } from "@/engine/scenario/applyChanges";
 import type { OpType, TargetKind } from "@/engine/scenario/types";
-import type { LivingExpenseItem, PlanSettings } from "@/engine/types";
+import type { LivingExpenseItem } from "@/engine/types";
 import { ForbiddenError } from "@/lib/authz";
-import { stableStringify } from "@/lib/compute-cache/hash";
 import { findClientInFirm } from "@/lib/db-scoping";
+import { buildFieldDiff, editableSingletonFields, priorToValues } from "./field-diff";
 import { loadEffectiveTree } from "./loader";
 import { businessCashRidersOf } from "./business-cash-rider";
 import { WHOLE_ENTITY_SCHEMAS } from "./whole-entity-kinds";
@@ -49,6 +49,8 @@ interface BaseEntity {
 }
 
 /** A change the writer refuses on its merits. Routes map it to a 400. */
+export { buildFieldDiff, priorToValues };
+
 export class ScenarioChangeRejectedError extends Error {}
 
 /**
@@ -188,83 +190,6 @@ async function lookupBaseEntity(
 }
 
 /**
- * Build a field-level diff map, comparing desiredFields against baseEntity.
- * Skips fields whose desired value already matches the base. Numeric strings
- * (Drizzle decimals) are normalized to numbers before comparison so the diff
- * doesn't mis-fire on `"250000.00"` vs `250000`.
- */
-export function buildFieldDiff(
-  desiredFields: Record<string, unknown>,
-  baseEntity: BaseEntity | undefined,
-): Record<string, { from: unknown; to: unknown }> {
-  const diff: Record<string, { from: unknown; to: unknown }> = {};
-  for (const [k, desired] of Object.entries(desiredFields)) {
-    const fromValue = baseEntity ? baseEntity[k] : undefined;
-    if (!valuesEqual(fromValue, desired)) {
-      diff[k] = { from: fromValue, to: desired };
-    }
-  }
-  return diff;
-}
-
-/**
- * The `to` side of a stored edit payload — what earlier saves set. Used to
- * merge a prior edit's fields into a new one's `desiredFields` before
- * diffing against base, so a second partial save doesn't wipe the first's.
- * An entry with no `to` key (JSON drops an `undefined` `to`, leaving
- * `{from: X}`) carries no prior value and is skipped; `to: null` and `to: 0`
- * are real values and are kept.
- */
-export function priorToValues(payload: unknown): Record<string, unknown> {
-  if (typeof payload !== "object" || payload === null) return {};
-  return Object.fromEntries(
-    Object.entries(payload as Record<string, unknown>)
-      .filter(([, v]) => typeof v === "object" && v !== null && "to" in v)
-      .map(([k, v]) => [k, (v as { to: unknown }).to]),
-  );
-}
-
-/**
- * Robust equality for diff: normalizes numeric strings (Drizzle decimals come
- * back as strings like `"250000.00"`) to numbers before comparing. Nested
- * structures compare canonically (`stableStringify`: key order ignored, array
- * order kept, nested numbers to 6 decimals) — an editor and the loader build
- * the same object in different key orders (the life-policy dialog's
- * `lifeInsurance` vs `loadPolicies`), and a key-order-sensitive compare stored
- * an edit on every unchanged save.
- */
-function valuesEqual(a: unknown, b: unknown): boolean {
-  // null and undefined both mean "no value" to a diff — a base `null` and a
-  // merged-away `undefined` (an absent field in `priorToValues`/`desiredFields`)
-  // must compare equal, or an unset field would diff in as a change instead of
-  // just not appearing in the merge.
-  if (a == null && b == null) return true;
-  if (a === b) return true;
-  // Numeric normalization: "250000.00" === 250000
-  const aNum = typeof a === "string" ? Number(a) : a;
-  const bNum = typeof b === "string" ? Number(b) : b;
-  if (
-    typeof aNum === "number" &&
-    typeof bNum === "number" &&
-    !Number.isNaN(aNum) &&
-    !Number.isNaN(bNum) &&
-    aNum === bNum
-  ) {
-    return true;
-  }
-  // Structural fallback for objects/arrays. Only objects go through
-  // `stableStringify`: it also rounds numbers to 6 decimals, which a top-level
-  // rate must not inherit.
-  try {
-    return typeof a === "object" && typeof b === "object"
-      ? stableStringify(a) === stableStringify(b)
-      : JSON.stringify(a) === JSON.stringify(b);
-  } catch {
-    return false;
-  }
-}
-
-/**
  * The `toggleGroupId` column for an upsert's conflict (re-save) branch:
  * undefined = the caller didn't say, so the existing row keeps its group;
  * null = unlink; a string = link there. A brand-new row's INSERT defaults an
@@ -277,24 +202,6 @@ function keepGroupUnlessSaid(
 ): { toggleGroupId?: string | null } {
   return toggleGroupId === undefined ? {} : { toggleGroupId };
 }
-
-/**
- * Overlayable singleton keys the base singleton does not carry, so `k in
- * baseEntity` can't vouch for them. For `plan_settings` these are the optional
- * Stress-test keys on the engine's `PlanSettings` (`src/engine/types.ts`) —
- * `loadClientData` never sets them, and the Solver writes them into a
- * scenario's plan_settings edit. Without this list, the next save of any other
- * plan_settings field (e.g. `planEndYear`) would drop them from the merge.
- */
-const OPTIONAL_SINGLETON_KEYS: Partial<Record<TargetKind, readonly string[]>> = {
-  plan_settings: [
-    "marketShock",
-    "ssBenefitHaircut",
-    "disabilityEvent",
-    "taxRateStress",
-    "livingExpenseInflationOverride",
-  ] satisfies readonly (keyof PlanSettings)[],
-};
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -338,24 +245,6 @@ export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> 
 
   const { clientId } = await assertScenarioInFirm(scenarioId, firmId);
   const baseEntity = await lookupBaseEntity(clientId, firmId, targetKind, targetId);
-
-  // Singleton edits: the shared client form posts contact-info fields
-  // (email/address/spouse*) that aren't on the engine's `ClientInfo` singleton
-  // and so aren't scenario-overlayable. Drop any field that is neither on the
-  // base singleton nor in `OPTIONAL_SINGLETON_KEYS` — otherwise they diff as
-  // `from: undefined`, bloat the change payload, and block the idempotent
-  // revert below. Applied to the MERGED map in `runEdit` (prior row + this
-  // save), so such a key stored on an older edit row is dropped too rather
-  // than persisting forever.
-  const optionalKeys: readonly string[] = OPTIONAL_SINGLETON_KEYS[targetKind] ?? [];
-  const keepEditable = (fields: Record<string, unknown>) =>
-    SINGLETON_KIND_TO_FIELD[targetKind] != null && baseEntity != null
-      ? Object.fromEntries(
-          Object.entries(fields).filter(
-            ([k]) => k in baseEntity || optionalKeys.includes(k),
-          ),
-        )
-      : fields;
 
   // The load + delete/upsert sequence below reads the base tree and then
   // either deletes a stale edit row (if desired matches base) or upserts a
@@ -447,7 +336,10 @@ export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> 
       | null
       | undefined;
     const desiredFields = normalizeExpenseLivingItems(targetKind, args.desiredFields, currentItems ?? null);
-    const diff = buildFieldDiff(keepEditable({ ...prior, ...desiredFields }), baseEntity);
+    const diff = buildFieldDiff(
+      editableSingletonFields(targetKind, baseEntity, { ...prior, ...desiredFields }),
+      baseEntity,
+    );
 
     // Idempotent revert: if every desired value matches base, drop any
     // existing edit row for this target.

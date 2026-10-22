@@ -57,27 +57,9 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
  */
 export const ENGINE_VERSION = 15;
 
-/** Round to 6 decimals so float representation noise can't cause spurious misses. */
-function round(n: number): number {
-  return Number.isFinite(n) ? Math.round(n * 1e6) / 1e6 : n;
-}
+import { stableStringify } from "@/lib/scenario/field-diff";
 
-/** Deterministic serialization: sorted keys + rounded numbers. */
-function canonicalize(value: unknown): unknown {
-  if (typeof value === "number") return round(value);
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (value && typeof value === "object") {
-    const src = value as Record<string, unknown>;
-    const out: Record<string, unknown> = {};
-    for (const key of Object.keys(src).sort()) out[key] = canonicalize(src[key]);
-    return out;
-  }
-  return value;
-}
-
-export function stableStringify(value: unknown): string {
-  return JSON.stringify(canonicalize(value));
-}
+export { stableStringify };
 
 export function hashMonteCarloInputs(input: {
   tree: ClientData;
