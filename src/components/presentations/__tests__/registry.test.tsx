@@ -98,6 +98,7 @@ describe("registry — Cash Flow page", () => {
         "rothConversion",
         "scenarioChanges",
         "scenarioComparison",
+        "solverCashFlow",
         "taxComparison",
         "taxSummary",
         "toc",

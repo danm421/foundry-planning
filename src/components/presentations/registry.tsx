@@ -96,6 +96,19 @@ import { buildPortfolioGrowthDrillData } from "@/lib/presentations/pages/cash-fl
 import { buildPortfolioActivityDrillData } from "@/lib/presentations/pages/cash-flow-activity/view-model";
 import { buildPortfolioAssetsDrillData } from "@/lib/presentations/pages/cash-flow-assets/view-model";
 import { buildWithdrawalsDrillData } from "@/lib/presentations/pages/cash-flow-withdrawals/view-model";
+import {
+  buildSolverCashFlowData,
+  SOLVER_CASH_FLOW_TITLE,
+  type SolverCashFlowPageData,
+} from "@/lib/presentations/pages/solver-cash-flow/view-model";
+import {
+  SOLVER_CASH_FLOW_OPTIONS_DEFAULT,
+  solverCashFlowOptionsSchema,
+  summarizeSolverCashFlowOptions,
+  type SolverCashFlowOptions,
+} from "@/lib/presentations/pages/solver-cash-flow/options-schema";
+import { SolverCashFlowOptionsControl } from "./pages/solver-cash-flow/options-control";
+import { SolverCashFlowPagePdf } from "./pages/solver-cash-flow/page-pdf";
 import { buildMonthlyCashFlowPageData } from "@/lib/presentations/pages/cash-flow-monthly/view-model";
 import {
   MONTHLY_CASH_FLOW_OPTIONS_DEFAULT,
@@ -1979,6 +1992,34 @@ export const cashFlowWithdrawalsPage: PresentationPage<DrillPageData, DrillPageO
   renderPdf: (input) => <DrillPagePdf {...input} />,
 };
 
+export const solverCashFlowPage: PresentationPage<SolverCashFlowPageData, SolverCashFlowOptions> = {
+  id: "solverCashFlow",
+  title: SOLVER_CASH_FLOW_TITLE,
+  // Names what sets it apart from the Cash Flow sheet, which prints every year
+  // as a table.
+  description:
+    "The Solver's Cash Flow tab for one year: every inflow and outflow, net cash flow, withdrawal %, and ending portfolio.",
+  category: "Cash Flow",
+  defaultOptions: SOLVER_CASH_FLOW_OPTIONS_DEFAULT,
+  optionsSchema: solverCashFlowOptionsSchema,
+  summarizeOptions: summarizeSolverCashFlowOptions,
+  // The view model drops the chart, then the line items, before the breakdown
+  // outgrows one sheet.
+  estimatePageCount: () => 1,
+  OptionsControl: SolverCashFlowOptionsControl,
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) =>
+    buildSolverCashFlowData({
+      years: ctx.years,
+      clientData: ctx.clientData,
+      options,
+      scenarioLabel: ctx.scenarioLabel,
+      clientName: ctx.clientName,
+      spouseName: ctx.spouseName,
+    }),
+  renderPdf: (input) => <SolverCashFlowPagePdf {...input} />,
+};
+
 export const cashFlowMonthlyPage: PresentationPage<
   MonthlyCashFlowPageData,
   MonthlyCashFlowPageOptions
@@ -2027,6 +2068,7 @@ export const PRESENTATION_PAGES = {
   cashFlowAssets: cashFlowAssetsPage,
   cashFlowWithdrawals: cashFlowWithdrawalsPage,
   cashFlowMonthly: cashFlowMonthlyPage,
+  solverCashFlow: solverCashFlowPage,
   entityCashFlow: entityCashFlowPage,
   taxSummary: taxSummaryPage,
   taxComparison: taxComparisonPage,

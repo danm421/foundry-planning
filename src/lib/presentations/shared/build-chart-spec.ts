@@ -38,6 +38,8 @@ export interface BuildDrillChartSpecInput {
   /** Canvas size and margins, for a chart that shares its sheet with other
    *  panels. Omitted → the full-width drill chart. */
   frame?: Pick<ChartSpec, "width" | "height" | "margin">;
+  /** Outline this year's bar. */
+  highlightYear?: number;
 }
 
 const DRILL_FRAME: Pick<ChartSpec, "width" | "height" | "margin"> = {
@@ -142,6 +144,7 @@ export function buildDrillChartSpec(
     },
     stacks: specStacks,
     lines: specLines,
+    highlightX: input.highlightYear,
     markers: specMarkers,
     legend: { position: "bottom", items: legendItems },
   };
