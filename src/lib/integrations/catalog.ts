@@ -59,6 +59,18 @@ export function providerState(
   return "available";
 }
 
+/** A syncing provider's list state, from its kill-switch and the caller's own
+ *  connections to it (there can be several). */
+export function providerStateFromConnections(
+  enabled: boolean,
+  conns: Array<Pick<IntegrationConnectionRow, "status">>,
+): IntegrationState {
+  if (!enabled) return "coming_soon";
+  if (conns.some((c) => c.status === "error")) return "attention";
+  if (conns.some((c) => c.status === "connected")) return "connected";
+  return "available";
+}
+
 /** In use first (broken before healthy), then available, then coming soon;
  *  alphabetical within each. */
 export function sortIntegrations<T extends { state: IntegrationState; label: string }>(

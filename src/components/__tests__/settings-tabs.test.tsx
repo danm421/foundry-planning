@@ -94,23 +94,28 @@ describe("SettingsTabs — Branding tab", () => {
       const labels = Array.from(container.querySelectorAll("a")).map((a) =>
         a.textContent?.trim(),
       );
-      expect(labels).toEqual(["Team", "Sharing", "Branding", "Voice"]);
+      expect(labels).toEqual(["Team", "Sharing", "Branding", "Voice", "Integrations"]);
     },
   );
 });
 
 describe("SettingsTabs — admin-only tabs", () => {
   it.each([null, undefined, "org:member", "org:planner", "org:advisor"])(
-    "hides Firm and Integrations from role %s",
+    "hides Firm from role %s",
     (role) => {
       const { container } = render(<SettingsTabs {...BASE_PROPS} role={role} />);
       const labels = Array.from(container.querySelectorAll("a")).map((a) =>
         a.textContent?.trim(),
       );
       expect(labels).not.toContain("Firm");
-      expect(labels).not.toContain("Integrations");
     },
   );
+
+  it("a member sees the Integrations tab", () => {
+    const { container } = render(<SettingsTabs {...BASE_PROPS} role="org:member" />);
+    const labels = Array.from(container.querySelectorAll("a")).map((a) => a.textContent?.trim());
+    expect(labels).toContain("Integrations");
+  });
 
   it("shows Firm and Integrations to org:admin", () => {
     const { container } = render(<SettingsTabs {...BASE_PROPS} role="org:admin" />);

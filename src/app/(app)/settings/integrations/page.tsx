@@ -1,13 +1,13 @@
 import type { ReactElement } from "react";
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
-import { ForbiddenError, requireOrgAdminOrOwner } from "@/lib/authz";
-import { getConnection } from "@/lib/integrations/connections";
+import { getConnection, listOwnedConnections } from "@/lib/integrations/connections";
 import { listProviders } from "@/lib/integrations/registry";
 import {
   INTEGRATION_INFO,
   PLAID_LABEL,
   providerState,
+  providerStateFromConnections,
   sortIntegrations,
   type IntegrationSlug,
   type IntegrationState,
@@ -30,50 +30,65 @@ function formatDate(d: Date): string {
 }
 
 export default async function IntegrationsPage(): Promise<ReactElement> {
-  try {
-    await requireOrgAdminOrOwner();
-  } catch (err) {
-    if (err instanceof ForbiddenError) return <Forbidden requiredRole="admin or owner" />;
-    throw err;
-  }
+  // Any firm member gets in: the syncing integrations are each advisor's own.
+  const { orgId: firmId, userId, orgRole } = await auth();
+  if (!firmId || !userId) return <Forbidden requiredRole="firm member" />;
+  const isAdmin = orgRole === "org:admin";
 
-  const { orgId: firmId } = await auth();
-  if (!firmId) return <Forbidden requiredRole="admin or owner" />;
-
-  // Azure OpenAI's kill-switch hides it entirely — no row, and no connection
-  // read either: a row built from a fetched-anyway connection is a kill-switch
+  // Azure OpenAI and Plaid are firm-wide, so only an admin or owner sees them.
+  // Azure's kill-switch hides it entirely — no row, and no connection read
+  // either: a row built from a fetched-anyway connection is a kill-switch
   // that only hides the UI.
   const providers = listProviders().filter(
-    (p) => p.id !== "azure_openai" || isAzureOpenAiEnabled(),
+    (p) => p.id !== "azure_openai" || (isAdmin && isAzureOpenAiEnabled()),
   );
-  const [providerRows, plaid] = await Promise.all([
+  const [owned, providerRows, plaid] = await Promise.all([
+    listOwnedConnections({ firmId, userId }),
     Promise.all(
-      providers.map(async (p): Promise<Row> => {
-        const conn = await getConnection(firmId, p.id);
-        const state = providerState(p.isEnabled(), conn);
-        const synced = p.syncs && state === "connected" && conn?.lastSyncedAt;
-        return {
-          slug: p.id,
-          label: p.label,
-          state,
-          detail: synced ? { label: "Last synced", value: formatDate(synced) } : null,
-        };
-      }),
+      providers
+        .filter((p) => !p.syncs)
+        .map(async (p): Promise<Row> => {
+          const conn = await getConnection(firmId, p.id);
+          return { slug: p.id, label: p.label, state: providerState(p.isEnabled(), conn), detail: null };
+        }),
     ),
-    getPlaidUsage(firmId),
+    isAdmin ? getPlaidUsage(firmId) : null,
   ]);
+
+  const syncingRows = providers
+    .filter((p) => p.syncs)
+    .map((p): Row => {
+      const mine = owned.filter((c) => c.providerId === p.id);
+      const state = providerStateFromConnections(p.isEnabled(), mine);
+      const lastSynced = mine
+        .map((c) => c.lastSyncedAt)
+        .filter((d): d is Date => !!d)
+        .sort((a, b) => b.getTime() - a.getTime())[0];
+      const detail =
+        mine.length >= 2
+          ? { label: "", value: `${mine.length} connections` }
+          : state === "connected" && lastSynced
+            ? { label: "Last synced", value: formatDate(lastSynced) }
+            : null;
+      return { slug: p.id, label: p.label, state, detail };
+    });
 
   const rows = sortIntegrations<Row>([
     ...providerRows,
-    {
-      slug: "plaid",
-      label: PLAID_LABEL,
-      state: plaid.clientCount > 0 ? "connected" : "available",
-      detail:
-        plaid.clientCount > 0
-          ? { label: "Clients linked", value: String(plaid.clientCount) }
-          : null,
-    },
+    ...syncingRows,
+    ...(plaid
+      ? [
+          {
+            slug: "plaid" as const,
+            label: PLAID_LABEL,
+            state: plaid.clientCount > 0 ? ("connected" as const) : ("available" as const),
+            detail:
+              plaid.clientCount > 0
+                ? { label: "Clients linked", value: String(plaid.clientCount) }
+                : null,
+          },
+        ]
+      : []),
   ]);
 
   const groups: { title: string; rows: Row[] }[] = [
@@ -147,7 +162,8 @@ function IntegrationRow({ row }: { row: Row }): ReactElement {
           </span>
           {row.detail ? (
             <span className="text-xs text-ink-3">
-              {row.detail.label} <span className="tabular">{row.detail.value}</span>
+              {row.detail.label ? `${row.detail.label} ` : null}
+              <span className="tabular">{row.detail.value}</span>
             </span>
           ) : null}
         </div>

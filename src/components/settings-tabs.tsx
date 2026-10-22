@@ -27,7 +27,9 @@ const TABS: {
   // has one of their own. The admin-only part is the "save it for the whole
   // firm" checkbox inside the panel, gated there and re-checked by both routes.
   { label: "Voice", href: "/settings/voice" },
-  { label: "Integrations", href: "/settings/integrations", adminOnly: true },
+  // No `adminOnly`: every advisor connects their own Addepar/Orion/Schwab
+  // account. Azure OpenAI and Plaid stay admin-only inside the pages.
+  { label: "Integrations", href: "/settings/integrations" },
   { label: "Billing", href: "/settings/billing", billingContact: true },
 ];
 

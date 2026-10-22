@@ -8,7 +8,8 @@ import {
   createColumnHelper,
 } from "@tanstack/react-table";
 import { useToast } from "@/components/toast";
-import type { ProviderId } from "@/lib/integrations/types";
+import type { HouseholdTableRow } from "@/lib/integrations/household-table";
+import type { SyncingProviderId } from "@/lib/integrations/types";
 
 interface Household {
   id: string;
@@ -24,7 +25,9 @@ interface ClientOption {
 }
 
 interface Props {
-  providerId: ProviderId;
+  providerId: SyncingProviderId;
+  connectionId: string;
+  label: string;
 }
 
 function clientLabel(c: ClientOption): string {
@@ -34,11 +37,20 @@ function clientLabel(c: ClientOption): string {
 
 const col = createColumnHelper<Household>();
 
-export function IntegrationHouseholdLinkTable({ providerId }: Props) {
+/** The connection's households as the table shows them: the client it links to,
+ *  and who holds it when a colleague already links it through another connection. */
+function toHousehold(r: HouseholdTableRow): Household {
+  return { id: r.id, name: r.name, linkedClientId: r.link?.clientId ?? null, linkedByName: r.lockedBy };
+}
+
+export function IntegrationHouseholdLinkTable({ providerId, connectionId, label }: Props) {
+  const base = `/api/integrations/${providerId}/connections/${connectionId}/households`;
   const { showToast } = useToast();
   const [households, setHouseholds] = useState<Household[]>([]);
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [loading, setLoading] = useState(true);
+  // Clients already linked through a colleague's connection, by client id.
+  const [takenClients, setTakenClients] = useState<Record<string, string>>({});
   const [loadError, setLoadError] = useState(false);
   // Pending client selection per household (before the row is linked).
   const [picks, setPicks] = useState<Record<string, string>>({});
@@ -48,14 +60,18 @@ export function IntegrationHouseholdLinkTable({ providerId }: Props) {
     (async () => {
       try {
         const [hhRes, clientsRes] = await Promise.all([
-          fetch(`/api/integrations/${providerId}/households`),
+          fetch(base),
           fetch("/api/clients"),
         ]);
         if (!hhRes.ok || !clientsRes.ok) throw new Error("load failed");
-        const hhJson = (await hhRes.json()) as { households: Household[] };
+        const hhJson = (await hhRes.json()) as {
+          households: HouseholdTableRow[];
+          takenClients: Record<string, string>;
+        };
         const clientsJson = (await clientsRes.json()) as ClientOption[];
         if (cancelled) return;
-        setHouseholds(hhJson.households);
+        setHouseholds(hhJson.households.map(toHousehold));
+        setTakenClients(hhJson.takenClients);
         setClients(clientsJson);
       } catch {
         if (!cancelled) setLoadError(true);
@@ -66,7 +82,7 @@ export function IntegrationHouseholdLinkTable({ providerId }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [providerId]);
+  }, [base]);
 
   const clientName = useCallback(
     (clientId: string): string => {
@@ -83,7 +99,7 @@ export function IntegrationHouseholdLinkTable({ providerId }: Props) {
         prev.map((h) => (h.id === householdId ? { ...h, linkedClientId: clientId } : h)),
       );
       try {
-        const res = await fetch(`/api/integrations/${providerId}/households/link`, {
+        const res = await fetch(`${base}/link`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ clientId, externalHouseholdId: householdId }),
@@ -96,7 +112,7 @@ export function IntegrationHouseholdLinkTable({ providerId }: Props) {
         showToast({ message: "Couldn't update the link. Please try again." });
       }
     },
-    [providerId, showToast],
+    [base, showToast],
   );
 
   const unlink = useCallback(
@@ -114,7 +130,7 @@ export function IntegrationHouseholdLinkTable({ providerId }: Props) {
         }),
       );
       try {
-        const res = await fetch(`/api/integrations/${providerId}/households/link`, {
+        const res = await fetch(`${base}/link`, {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ clientId }),
@@ -131,7 +147,7 @@ export function IntegrationHouseholdLinkTable({ providerId }: Props) {
         showToast({ message: "Couldn't update the link. Please try again." });
       }
     },
-    [providerId, showToast],
+    [base, showToast],
   );
 
   const columns = useMemo(
@@ -166,6 +182,9 @@ export function IntegrationHouseholdLinkTable({ providerId }: Props) {
               </div>
             );
           }
+          if (h.linkedByName) {
+            return <span className="text-sm text-ink-3">Linked by {h.linkedByName}</span>;
+          }
           const picked = picks[h.id] ?? "";
           return (
             <div className="flex items-center gap-3">
@@ -178,11 +197,13 @@ export function IntegrationHouseholdLinkTable({ providerId }: Props) {
                 className="rounded border border-hair bg-paper px-2 py-1 text-sm text-ink"
               >
                 <option value="">Select a client…</option>
-                {clients.map((cl) => (
-                  <option key={cl.id} value={cl.id}>
-                    {clientLabel(cl)}
-                  </option>
-                ))}
+                {clients
+                  .filter((cl) => !takenClients[cl.id])
+                  .map((cl) => (
+                    <option key={cl.id} value={cl.id}>
+                      {clientLabel(cl)}
+                    </option>
+                  ))}
               </select>
               <button
                 type="button"
@@ -203,7 +224,7 @@ export function IntegrationHouseholdLinkTable({ providerId }: Props) {
         ),
       }),
     ],
-    [clients, picks, clientName, link, unlink],
+    [clients, takenClients, picks, clientName, link, unlink],
   );
 
   const table = useReactTable({
@@ -223,7 +244,7 @@ export function IntegrationHouseholdLinkTable({ providerId }: Props) {
     <section className="flex flex-col gap-3">
       <h3 className="text-sm font-medium text-ink">Household links</h3>
       <p className="text-sm text-ink-3">
-        Link each household to a Foundry client so sync knows where its accounts land.
+        Link each {label} household to a Foundry client so sync knows where its accounts land.
       </p>
       <div className="overflow-hidden rounded border border-hair">
         <table className="w-full text-sm">

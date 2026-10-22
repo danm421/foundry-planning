@@ -16,10 +16,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render } from "@testing-library/react";
 
 const mockAuth = vi.fn();
-const mockRequireAdmin = vi.fn();
 const mockGetConnection = vi.fn();
+const mockListOwned = vi.fn();
 const mockPlaidUsage = vi.fn();
-const mockListOpenReviews = vi.fn();
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: () => mockAuth() }));
 
@@ -29,28 +28,9 @@ vi.mock("next/navigation", () => ({
   },
 }));
 
-// ForbiddenError is declared INSIDE the factory rather than imported from the
-// real module: the page does `err instanceof ForbiddenError`, and both sides of
-// that check resolve through this same mock, so the identity holds. Importing
-// the real authz.ts would drag in clerkClient, billing and the DB for a gate
-// this file only needs to be able to make refuse.
-// `vi.hoisted` because vi.mock's factory is hoisted above every top-level
-// binding: a plain `class MockForbiddenError` here is still in its temporal dead
-// zone when the factory runs.
-const { MockForbiddenError } = vi.hoisted(() => ({
-  MockForbiddenError: class MockForbiddenError extends Error {},
-}));
-vi.mock("@/lib/authz", () => ({
-  ForbiddenError: MockForbiddenError,
-  requireOrgAdminOrOwner: () => mockRequireAdmin(),
-}));
-
 vi.mock("@/lib/integrations/connections", () => ({
   getConnection: (...a: unknown[]) => mockGetConnection(...a),
-}));
-
-vi.mock("@/lib/integrations/reviews", () => ({
-  listOpenReviews: (...a: unknown[]) => mockListOpenReviews(...a),
+  listOwnedConnections: (...a: unknown[]) => mockListOwned(...a),
 }));
 
 vi.mock("@/lib/integrations/plaid-usage", () => ({
@@ -75,22 +55,20 @@ vi.mock("@/components/AzureOpenAiCard", () => ({
     />
   ),
 }));
-vi.mock("@/components/IntegrationConnectionCard", () => ({
-  IntegrationConnectionCard: (p: { providerId: string; status: string }) => (
-    <div data-testid="sync-card" data-provider={p.providerId} data-status={p.status} />
-  ),
-}));
-vi.mock("@/components/IntegrationHouseholdLinkTable", () => ({
-  IntegrationHouseholdLinkTable: (p: { providerId: string }) => (
-    <div data-testid="household-table" data-provider={p.providerId} />
-  ),
-}));
-vi.mock("@/components/IntegrationPendingReviews", () => ({
-  IntegrationPendingReviews: (p: { label: string; reviews: { importId: string }[] }) => (
+vi.mock("@/components/IntegrationConnectionList", () => ({
+  IntegrationConnectionList: (p: {
+    providerId: string;
+    label: string;
+    authKind: string;
+    connections: { id: string; name: string }[];
+  }) => (
     <div
-      data-testid="pending-reviews"
+      data-testid="connection-list"
+      data-provider={p.providerId}
       data-label={p.label}
-      data-import-ids={p.reviews.map((r) => r.importId).join(",")}
+      data-auth-kind={p.authKind}
+      data-names={p.connections.map((c) => c.name).join(",")}
+      data-ids={p.connections.map((c) => c.id).join(",")}
     />
   ),
 }));
@@ -147,11 +125,12 @@ beforeEach(() => {
   vi.stubEnv("AZURE_BYOK_ENABLED", "true");
   vi.stubEnv("ADDEPAR_ENABLED", "true");
   vi.stubEnv("ORION_ENABLED", "false");
-  mockAuth.mockReset().mockResolvedValue({ orgId: "org_acme" });
-  mockRequireAdmin.mockReset().mockResolvedValue(undefined);
+  mockAuth
+    .mockReset()
+    .mockResolvedValue({ orgId: "org_acme", userId: "user_dan", orgRole: "org:admin" });
   mockGetConnection.mockReset().mockResolvedValue(null);
+  mockListOwned.mockReset().mockResolvedValue([]);
   mockPlaidUsage.mockReset().mockResolvedValue({ clientCount: 0, institutionCount: 0 });
-  mockListOpenReviews.mockReset().mockResolvedValue([]);
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -188,48 +167,35 @@ describe("Integration detail — which pages exist", () => {
 });
 
 describe("Integration detail — a syncing provider", () => {
-  it("shows the household links once connected", async () => {
-    mockGetConnection.mockResolvedValue({ status: "connected", lastSyncedAt: null, lastSyncError: null });
-
-    const { container } = await renderPage("addepar");
-
-    expect(mockGetConnection).toHaveBeenCalledWith("org_acme", "addepar");
-    expect(container.querySelector("[data-testid='sync-card']")?.getAttribute("data-status")).toBe(
-      "connected",
-    );
-    expect(container.querySelector("[data-testid='household-table']")).toBeTruthy();
-  });
-
-  it("keeps the household links while a broken connection waits to be reconnected", async () => {
-    mockGetConnection.mockResolvedValue({ status: "error", lastSyncedAt: null, lastSyncError: "401" });
-
-    const { container } = await renderPage("addepar");
-
-    expect(container.querySelector("[data-testid='household-table']")).toBeTruthy();
-  });
-
-  it("shows only the connect card before the firm has connected", async () => {
-    const { container } = await renderPage("addepar");
-
-    expect(container.querySelector("[data-testid='sync-card']")?.getAttribute("data-status")).toBe(
-      "disconnected",
-    );
-    expect(container.querySelector("[data-testid='household-table']")).toBeNull();
-    expect(mockListOpenReviews).not.toHaveBeenCalled();
-  });
-
-  it("hands the firm's pending reviews to the review panel once connected", async () => {
-    mockGetConnection.mockResolvedValue({ status: "connected", lastSyncedAt: null, lastSyncError: null });
-    mockListOpenReviews.mockResolvedValue([
-      { importId: "imp-1", clientId: "c-1", householdName: "Denise McCormick", accountCount: 9 },
+  it("lists the caller's connections", async () => {
+    mockListOwned.mockResolvedValue([
+      { id: "c-1", providerId: "addepar", name: "Ethos", status: "connected", lastSyncedAt: null, lastSyncError: null, linkedHouseholds: 2 },
+      { id: "c-2", providerId: "addepar", name: null, status: "error", lastSyncedAt: null, lastSyncError: "401", linkedHouseholds: 0 },
     ]);
 
     const { container } = await renderPage("addepar");
-    const panel = container.querySelector("[data-testid='pending-reviews']");
+    const list = container.querySelector("[data-testid='connection-list']");
 
-    expect(mockListOpenReviews).toHaveBeenCalledWith("org_acme", "addepar");
-    expect(panel?.getAttribute("data-label")).toBe("Addepar");
-    expect(panel?.getAttribute("data-import-ids")).toBe("imp-1");
+    expect(mockListOwned).toHaveBeenCalledWith({
+      firmId: "org_acme",
+      userId: "user_dan",
+      providerId: "addepar",
+    });
+    expect(list?.getAttribute("data-provider")).toBe("addepar");
+    expect(list?.getAttribute("data-auth-kind")).toBe("byok");
+    // A connection with no name shows the provider label.
+    expect(list?.getAttribute("data-names")).toBe("Ethos,Addepar");
+    expect(list?.getAttribute("data-ids")).toBe("c-1,c-2");
+  });
+
+  it("is open to a member and never reads the firm-level connection", async () => {
+    mockAuth.mockResolvedValue({ orgId: "org_acme", userId: "user_ana", orgRole: "org:member" });
+
+    const { container } = await renderPage("addepar");
+
+    expect(container.querySelector("[data-testid='connection-list']")).toBeTruthy();
+    expect(mockListOwned).toHaveBeenCalledWith(expect.objectContaining({ userId: "user_ana" }));
+    expect(mockGetConnection).not.toHaveBeenCalled();
   });
 });
 
@@ -244,6 +210,15 @@ describe("Integration detail — Plaid", () => {
     expect(tile?.getAttribute("data-clients")).toBe("3");
     expect(tile?.getAttribute("data-institutions")).toBe("5");
     expect(mockGetConnection).not.toHaveBeenCalled();
+  });
+
+  it("Plaid page is still admin-only", async () => {
+    mockAuth.mockResolvedValue({ orgId: "org_acme", userId: "user_ana", orgRole: "org:member" });
+
+    const { container } = await renderPage("plaid");
+
+    expect(container.textContent ?? "").toContain("Not available for your role");
+    expect(mockPlaidUsage).not.toHaveBeenCalled();
   });
 });
 
@@ -345,40 +320,30 @@ describe("Integration detail — what the Azure card is told", () => {
     expect(container.innerHTML).not.toContain("sk-firm-secret");
   });
 
-  it("gives azure_openai no sync card and no household table, even fully connected", async () => {
+  it("gives azure_openai no connection list, even fully connected", async () => {
     // `syncs: false` on the provider definition is what keeps it off that path.
     mockGetConnection.mockResolvedValue(azureRow());
 
     const { container } = await renderPage();
 
-    expect(container.querySelector("[data-testid='sync-card']")).toBeNull();
-    expect(container.querySelector("[data-testid='household-table']")).toBeNull();
+    expect(container.querySelector("[data-testid='connection-list']")).toBeNull();
     expect(azureCard(container)).toBeTruthy();
   });
 });
 
 describe("Integration detail — the role gate", () => {
-  it("shows the forbidden page instead of any connection state to a non-admin", async () => {
-    mockRequireAdmin.mockRejectedValue(new MockForbiddenError("Organization admin role required"));
+  it("shows the forbidden page instead of Azure's connection state to a member, before any read", async () => {
+    mockAuth.mockResolvedValue({ orgId: "org_acme", userId: "user_ana", orgRole: "org:member" });
 
     const { container } = await renderPage();
 
     expect(azureCard(container)).toBeNull();
-    // The refusal must land before the reads, not merely hide their output.
     expect(mockGetConnection).not.toHaveBeenCalled();
     expect(container.textContent ?? "").toContain("Not available for your role");
   });
 
-  it("rethrows a failure that is NOT a role refusal rather than rendering forbidden", async () => {
-    // Swallowing everything here would turn a database outage into a page that
-    // calmly tells an admin they lack a role they have.
-    mockRequireAdmin.mockRejectedValue(new Error("connection terminated unexpectedly"));
-
-    await expect(renderPage()).rejects.toThrow("connection terminated unexpectedly");
-  });
-
   it("shows the forbidden page when there is no active organization", async () => {
-    mockAuth.mockResolvedValue({ orgId: null });
+    mockAuth.mockResolvedValue({ orgId: null, userId: "user_dan", orgRole: null });
 
     const { container } = await renderPage();
 

@@ -8,24 +8,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, within } from "@testing-library/react";
 
 const mockAuth = vi.fn();
-const mockRequireAdmin = vi.fn();
 const mockGetConnection = vi.fn();
+const mockListOwned = vi.fn();
 const mockPlaidUsage = vi.fn();
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: () => mockAuth() }));
 
-// See [integration]/__tests__/page.test.tsx for why the error class lives
-// inside a hoisted factory.
-const { MockForbiddenError } = vi.hoisted(() => ({
-  MockForbiddenError: class MockForbiddenError extends Error {},
-}));
-vi.mock("@/lib/authz", () => ({
-  ForbiddenError: MockForbiddenError,
-  requireOrgAdminOrOwner: () => mockRequireAdmin(),
-}));
-
 vi.mock("@/lib/integrations/connections", () => ({
   getConnection: (...a: unknown[]) => mockGetConnection(...a),
+  listOwnedConnections: (...a: unknown[]) => mockListOwned(...a),
 }));
 
 vi.mock("@/lib/integrations/plaid-usage", () => ({
@@ -34,10 +25,26 @@ vi.mock("@/lib/integrations/plaid-usage", () => ({
 
 import IntegrationsPage from "../page";
 
-/** getConnection answers per provider id; anything not listed reads as never connected. */
+/** getConnection (Azure only) answers per provider id; anything not listed reads as never connected. */
 function connections(byProvider: Record<string, unknown>) {
   mockGetConnection.mockImplementation(
     async (_firmId: string, providerId: string) => byProvider[providerId] ?? null,
+  );
+}
+
+/** The caller's own syncing connections. */
+function owned(...rows: Array<Record<string, unknown>>) {
+  mockListOwned.mockResolvedValue(
+    rows.map((r, i) => ({
+      id: `conn-${i}`,
+      providerId: "addepar",
+      name: "Ethos",
+      status: "connected",
+      lastSyncedAt: null,
+      lastSyncError: null,
+      linkedHouseholds: 0,
+      ...r,
+    })),
   );
 }
 
@@ -60,9 +67,11 @@ beforeEach(() => {
   vi.stubEnv("ADDEPAR_ENABLED", "true");
   vi.stubEnv("ORION_ENABLED", "false");
   vi.stubEnv("SCHWAB_ENABLED", "false");
-  mockAuth.mockReset().mockResolvedValue({ orgId: "org_acme" });
-  mockRequireAdmin.mockReset().mockResolvedValue(undefined);
+  mockAuth
+    .mockReset()
+    .mockResolvedValue({ orgId: "org_acme", userId: "user_dan", orgRole: "org:admin" });
   mockGetConnection.mockReset().mockResolvedValue(null);
+  mockListOwned.mockReset().mockResolvedValue([]);
   mockPlaidUsage.mockReset().mockResolvedValue({ clientCount: 0, institutionCount: 0 });
 });
 
@@ -70,10 +79,8 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe("IntegrationsPage — order", () => {
   it("puts what the firm uses first, a broken connection above a healthy one", async () => {
-    connections({
-      addepar: { status: "connected", lastSyncedAt: new Date("2026-10-01T15:00:00Z") },
-      azure_openai: { status: "error" },
-    });
+    connections({ azure_openai: { status: "error" } });
+    owned({ lastSyncedAt: new Date("2026-10-01T15:00:00Z") });
     mockPlaidUsage.mockResolvedValue({ clientCount: 3, institutionCount: 4 });
 
     const { container } = await renderPage();
@@ -94,10 +101,8 @@ describe("IntegrationsPage — order", () => {
   });
 
   it("states each in-use row's status in words, not only as a coloured dot", async () => {
-    connections({
-      addepar: { status: "connected", lastSyncedAt: new Date("2026-10-01T15:00:00Z") },
-      azure_openai: { status: "error" },
-    });
+    connections({ azure_openai: { status: "error" } });
+    owned({ lastSyncedAt: new Date("2026-10-01T15:00:00Z") });
     mockPlaidUsage.mockResolvedValue({ clientCount: 3, institutionCount: 4 });
 
     const { getByRole } = await renderPage();
@@ -146,29 +151,62 @@ describe("IntegrationsPage — the Azure OpenAI kill-switch", () => {
   });
 });
 
-describe("IntegrationsPage — the role gate", () => {
-  it("shows the forbidden page, before any read, to a non-admin", async () => {
-    mockRequireAdmin.mockRejectedValue(new MockForbiddenError("Organization admin role required"));
+describe("IntegrationsPage — a firm member", () => {
+  beforeEach(() => {
+    mockAuth.mockResolvedValue({ orgId: "org_acme", userId: "user_ana", orgRole: "org:member" });
+  });
 
+  it("a member sees only their own Addepar connections", async () => {
+    owned({ name: "Ethos" });
+
+    const { getByRole } = await renderPage();
+
+    expect(mockListOwned).toHaveBeenCalledWith({ firmId: "org_acme", userId: "user_ana" });
+    expect(within(getByRole("link", { name: /Addepar/ })).getByText("Connected")).toBeTruthy();
+  });
+
+  it("a member never sees the Azure row and Azure's connection is never read", async () => {
     const { container } = await renderPage();
 
-    expect(container.textContent ?? "").toContain("Not available for your role");
+    expect(container.textContent).not.toContain("Azure OpenAI");
     expect(mockGetConnection).not.toHaveBeenCalled();
+  });
+
+  it("a member never sees Plaid and Plaid usage is never read", async () => {
+    const { container } = await renderPage();
+
+    expect(container.textContent).not.toContain("Plaid");
     expect(mockPlaidUsage).not.toHaveBeenCalled();
   });
+});
 
-  it("rethrows a failure that is NOT a role refusal", async () => {
-    mockRequireAdmin.mockRejectedValue(new Error("connection terminated unexpectedly"));
+describe("IntegrationsPage — several connections", () => {
+  it("Addepar with two connections reads '2 connections'", async () => {
+    owned({ name: "Ethos" }, { name: "Other", status: "disconnected" });
 
-    await expect(IntegrationsPage()).rejects.toThrow("connection terminated unexpectedly");
+    const { getByRole } = await renderPage();
+
+    expect(getByRole("link", { name: /Addepar/ }).textContent).toContain("2 connections");
   });
 
-  it("shows the forbidden page when there is no active organization", async () => {
-    mockAuth.mockResolvedValue({ orgId: null });
+  it("one broken connection among healthy ones reads 'Reconnect needed'", async () => {
+    owned({ name: "Ethos" }, { name: "Other", status: "error" });
+
+    const { getByRole } = await renderPage();
+
+    expect(within(getByRole("link", { name: /Addepar/ })).getByText("Reconnect needed")).toBeTruthy();
+  });
+});
+
+describe("IntegrationsPage — signed-out or org-less", () => {
+  it("shows the forbidden page, before any read, when there is no active organization", async () => {
+    mockAuth.mockResolvedValue({ orgId: null, userId: "user_dan", orgRole: null });
 
     const { container } = await renderPage();
 
     expect(container.textContent ?? "").toContain("Not available for your role");
     expect(mockGetConnection).not.toHaveBeenCalled();
+    expect(mockListOwned).not.toHaveBeenCalled();
+    expect(mockPlaidUsage).not.toHaveBeenCalled();
   });
 });

@@ -2,16 +2,12 @@ import type { ReactElement, ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
-import { ForbiddenError, requireOrgAdminOrOwner } from "@/lib/authz";
-import { getConnection } from "@/lib/integrations/connections";
-import { listOpenReviews } from "@/lib/integrations/reviews";
+import { getConnection, listOwnedConnections } from "@/lib/integrations/connections";
 import { getProvider, isProviderId } from "@/lib/integrations/registry";
 import { INTEGRATION_INFO, PLAID_LABEL, type IntegrationSlug } from "@/lib/integrations/catalog";
 import { getPlaidUsage } from "@/lib/integrations/plaid-usage";
 import { decodeAzureConfig, type AzureConfig } from "@/lib/ai/credentials";
-import { IntegrationConnectionCard } from "@/components/IntegrationConnectionCard";
-import { IntegrationHouseholdLinkTable } from "@/components/IntegrationHouseholdLinkTable";
-import { IntegrationPendingReviews } from "@/components/IntegrationPendingReviews";
+import { IntegrationConnectionList } from "@/components/IntegrationConnectionList";
 import { PlaidIntegrationTile } from "@/components/PlaidIntegrationTile";
 import { AzureOpenAiCard } from "@/components/AzureOpenAiCard";
 import { ArrowLeftIcon } from "@/components/icons";
@@ -22,19 +18,16 @@ interface Props {
 }
 
 export default async function IntegrationDetailPage({ params }: Props): Promise<ReactElement> {
-  try {
-    await requireOrgAdminOrOwner();
-  } catch (err) {
-    if (err instanceof ForbiddenError) return <Forbidden requiredRole="admin or owner" />;
-    throw err;
-  }
-
-  const { orgId: firmId } = await auth();
-  if (!firmId) return <Forbidden requiredRole="admin or owner" />;
+  const { orgId: firmId, userId, orgRole } = await auth();
+  if (!firmId || !userId) return <Forbidden requiredRole="firm member" />;
+  const isAdmin = orgRole === "org:admin";
 
   const { integration: slug } = await params;
 
+  // Plaid and Azure OpenAI are firm-wide: admins and owners only, checked
+  // before any read. Addepar, Orion and Schwab are each advisor's own.
   if (slug === "plaid") {
+    if (!isAdmin) return <Forbidden requiredRole="admin or owner" />;
     const { clientCount, institutionCount } = await getPlaidUsage(firmId);
     return (
       <DetailShell slug="plaid" label={PLAID_LABEL}>
@@ -50,11 +43,11 @@ export default async function IntegrationDetailPage({ params }: Props): Promise<
   const provider = getProvider(slug);
   if (!provider.isEnabled()) notFound();
 
-  const conn = await getConnection(firmId, provider.id);
-
-  // Azure OpenAI is credentials-only — its own card, never the sync card or
-  // the household table the custodial providers share.
+  // Azure OpenAI is credentials-only and one per firm — its own card, never the
+  // connection list or household table the custodial providers share.
   if (!provider.syncs) {
+    if (!isAdmin) return <Forbidden requiredRole="admin or owner" />;
+    const conn = await getConnection(firmId, provider.id);
     // The whole decoded config, not a two-field slice: the connected card names
     // every deployment the firm's AI runs on plus the pinned API version,
     // because that card is what a firm shows its auditor.
@@ -88,20 +81,21 @@ export default async function IntegrationDetailPage({ params }: Props): Promise<
     );
   }
 
-  const linked = !!conn && conn.status !== "disconnected";
-  const reviews = linked ? await listOpenReviews(firmId, provider.id) : [];
+  const connections = await listOwnedConnections({ firmId, userId, providerId: provider.id });
   return (
     <DetailShell slug={provider.id} label={provider.label}>
-      <IntegrationConnectionCard
+      <IntegrationConnectionList
         providerId={provider.id}
         label={provider.label}
         authKind={provider.authKind}
-        status={conn?.status ?? "disconnected"}
-        lastSyncedAt={conn?.lastSyncedAt ? conn.lastSyncedAt.toISOString() : null}
-        lastSyncError={conn?.lastSyncError ?? null}
+        connections={connections.map((c) => ({
+          id: c.id,
+          name: c.name ?? provider.label,
+          status: c.status,
+          lastSyncedAt: c.lastSyncedAt ? c.lastSyncedAt.toISOString() : null,
+          linkedHouseholds: c.linkedHouseholds,
+        }))}
       />
-      <IntegrationPendingReviews label={provider.label} reviews={reviews} />
-      {linked ? <IntegrationHouseholdLinkTable providerId={provider.id} /> : null}
     </DetailShell>
   );
 }
