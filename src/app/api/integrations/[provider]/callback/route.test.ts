@@ -97,12 +97,14 @@ describe("[provider] callback", () => {
     });
   });
 
-  it("owns the connection by the advisor who started the flow when the session has no user", async () => {
+  it("refuses, and writes nothing, when another advisor finishes the flow", async () => {
     mockConsume.mockResolvedValue({ firmId: "firm_1", providerId: "orion", userId: "u_started", codeVerifier: "v" });
-    mockAuth.mockResolvedValue({ orgId: "firm_1", userId: null });
-    mockUpsert.mockResolvedValue("conn-1");
-    await GET(req("code=c&state=s"), ctx());
-    expect(upsertOauthConnection).toHaveBeenCalledWith(expect.objectContaining({ ownerUserId: "u_started" }));
+    mockAuth.mockResolvedValue({ orgId: "firm_1", userId: "u_other" });
+    const res = await GET(req("code=c&state=s"), ctx());
+    expect(res.status).toBe(403);
+    expect(orionOAuth.exchangeCodeForTokens).not.toHaveBeenCalled();
+    expect(upsertOauthConnection).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 
   it("redirects with error marker when token exchange fails", async () => {

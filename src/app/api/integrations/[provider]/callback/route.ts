@@ -40,6 +40,10 @@ export async function GET(
   if (!orgId || orgId !== stateRow.firmId) {
     return NextResponse.json({ error: "Firm mismatch" }, { status: 403 });
   }
+  // Only the advisor who started the flow may finish it.
+  if (userId !== stateRow.userId) {
+    return NextResponse.json({ error: "User mismatch" }, { status: 403 });
+  }
 
   try {
     const tokens = await provider.oauth.exchangeCodeForTokens({ code, codeVerifier: stateRow.codeVerifier });
@@ -48,7 +52,7 @@ export async function GET(
     const connectionId = await upsertOauthConnection({
       firmId: stateRow.firmId,
       providerId: provider.id,
-      ownerUserId: userId ?? stateRow.userId,
+      ownerUserId: stateRow.userId,
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       expiresAt: tokens.expiresInSec ? new Date(Date.now() + tokens.expiresInSec * 1000) : null,
