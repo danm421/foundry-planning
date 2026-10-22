@@ -38,7 +38,7 @@ export async function GET(
     const [households, links, outside] = await Promise.all([
       connectionCallContext(connection.id).then((ctx) => provider.client.getHouseholds(ctx)),
       getLinksForConnection(connection.id),
-      listFirmLinksOutside({ firmId, providerId: provider.id, connectionId: connection.id }),
+      listFirmLinksOutside({ firmId, connectionId: connection.id }),
     ]);
     const [counts, names] = await Promise.all([
       countConnectedAccounts({ providerId: provider.id, links }),
@@ -47,12 +47,13 @@ export async function GET(
     const linkerName = (id: string | null) => (id ? names.get(id)?.name : undefined) ?? "another advisor";
 
     const linkByHousehold = new Map(links.map((l) => [l.externalHouseholdId, l]));
-    // A household is held elsewhere only under the same Addepar firm: the
-    // household unique index treats two Addepar firms' group ids as distinct.
+    // A household is held elsewhere only on the same provider and under the
+    // same Addepar firm: the household unique index treats two providers', or
+    // two Addepar firms', ids as distinct.
     const ownFirm = externalFirmIdOf(connection) ?? "";
     const lockedByHousehold = new Map(
       outside
-        .filter((l) => (l.externalFirmId ?? "") === ownFirm)
+        .filter((l) => l.providerId === provider.id && (l.externalFirmId ?? "") === ownFirm)
         .map((l) => [l.externalHouseholdId, linkerName(l.linkedByUserId)]),
     );
 
@@ -67,7 +68,7 @@ export async function GET(
       };
     });
     // A client has one link, so any client linked through another connection
-    // can't be linked here, whatever Addepar firm that connection reaches.
+    // can't be linked here, whatever its provider or Addepar firm.
     const takenClients = Object.fromEntries(outside.map((l) => [l.clientId, linkerName(l.linkedByUserId)]));
 
     return NextResponse.json({ households: sortHouseholdRows(rows), takenClients });

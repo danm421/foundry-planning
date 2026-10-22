@@ -203,7 +203,7 @@ describe("linkHouseholdOnConnection", () => {
 });
 
 describe("listFirmLinksOutside", () => {
-  it("returns the firm's links for the provider held through any other connection", async () => {
+  it("returns the firm's links held through any other connection, of every provider", async () => {
     const firmId = freshFirmId();
     const otherFirmId = freshFirmId();
     const a = await createTestClientWithScenario(firmId);
@@ -220,10 +220,28 @@ describe("listFirmLinksOutside", () => {
     await linkHouseholdOnConnection({ connection: orion, clientId: c.clientId, externalHouseholdId: "hh3", userId: "advisorB" });
     await linkHouseholdOnConnection({ connection: elsewhere, clientId: d.clientId, externalHouseholdId: "g4", userId: "advisorZ" });
 
-    const rows = await listFirmLinksOutside({ firmId, providerId: "addepar", connectionId: mine.id });
-    expect(rows).toEqual([
-      { clientId: b.clientId, externalFirmId: "2000", externalHouseholdId: "g2", linkedByUserId: "advisorB" },
-    ]);
+    const rows = await listFirmLinksOutside({ firmId, connectionId: mine.id });
+    // Not this connection's own link, and not another firm's.
+    expect(rows).toHaveLength(2);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        {
+          clientId: b.clientId,
+          providerId: "addepar",
+          externalFirmId: "2000",
+          externalHouseholdId: "g2",
+          linkedByUserId: "advisorB",
+        },
+        // A client linked through another provider's connection is taken too.
+        {
+          clientId: c.clientId,
+          providerId: "orion",
+          externalFirmId: null,
+          externalHouseholdId: "hh3",
+          linkedByUserId: "advisorB",
+        },
+      ]),
+    );
   });
 });
 

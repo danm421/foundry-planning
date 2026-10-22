@@ -134,11 +134,19 @@ describe("GET …/connections/[connectionId]/households", () => {
 
   it("takenClients names the linker", async () => {
     (listFirmLinksOutside as any).mockResolvedValue([
-      { clientId: "c8", externalFirmId: "1069", externalHouseholdId: "g7", linkedByUserId: "user_sarah" },
-      { clientId: "c9", externalFirmId: "2000", externalHouseholdId: "g8", linkedByUserId: "user_sarah" },
-      { clientId: "c10", externalFirmId: "1069", externalHouseholdId: "g9", linkedByUserId: null },
+      { clientId: "c8", providerId: "addepar", externalFirmId: "1069", externalHouseholdId: "g7", linkedByUserId: "user_sarah" },
+      { clientId: "c9", providerId: "addepar", externalFirmId: "2000", externalHouseholdId: "g8", linkedByUserId: "user_sarah" },
+      { clientId: "c10", providerId: "addepar", externalFirmId: "1069", externalHouseholdId: "g9", linkedByUserId: null },
+      // Linked through another provider's connection: a client has one link,
+      // so it's taken here too.
+      { clientId: "c11", providerId: "orion", externalFirmId: null, externalHouseholdId: "hh1", linkedByUserId: "user_lee" },
     ]);
-    (resolveActors as any).mockResolvedValue(new Map([["user_sarah", { name: "Sarah Kim", isSystem: false }]]));
+    (resolveActors as any).mockResolvedValue(
+      new Map([
+        ["user_sarah", { name: "Sarah Kim", isSystem: false }],
+        ["user_lee", { name: "Lee Park", isSystem: false }],
+      ]),
+    );
 
     const body = await (await GET(req(), ctx())).json();
 
@@ -146,10 +154,11 @@ describe("GET …/connections/[connectionId]/households", () => {
       c8: "Sarah Kim",
       c9: "Sarah Kim",
       c10: "another advisor",
+      c11: "Lee Park",
     });
-    expect(listFirmLinksOutside).toHaveBeenCalledWith({ firmId: "firm_1", providerId: "addepar", connectionId: CONN });
+    expect(listFirmLinksOutside).toHaveBeenCalledWith({ firmId: "firm_1", connectionId: CONN });
     // One Clerk lookup, each linker once.
-    expect(resolveActors).toHaveBeenCalledWith(["user_sarah"]);
+    expect(resolveActors).toHaveBeenCalledWith(["user_sarah", "user_lee"]);
   });
 
   it("lockedBy names the linker only for a household held under the same Addepar firm", async () => {
@@ -158,8 +167,8 @@ describe("GET …/connections/[connectionId]/households", () => {
       { id: "g8", name: "Same id, other firm" },
     ]);
     (listFirmLinksOutside as any).mockResolvedValue([
-      { clientId: "c8", externalFirmId: "1069", externalHouseholdId: "g7", linkedByUserId: "user_sarah" },
-      { clientId: "c9", externalFirmId: "2000", externalHouseholdId: "g8", linkedByUserId: "user_sarah" },
+      { clientId: "c8", providerId: "addepar", externalFirmId: "1069", externalHouseholdId: "g7", linkedByUserId: "user_sarah" },
+      { clientId: "c9", providerId: "addepar", externalFirmId: "2000", externalHouseholdId: "g8", linkedByUserId: "user_sarah" },
     ]);
     (resolveActors as any).mockResolvedValue(new Map([["user_sarah", { name: "Sarah Kim", isSystem: false }]]));
 
@@ -167,6 +176,28 @@ describe("GET …/connections/[connectionId]/households", () => {
     const byId = Object.fromEntries(body.households.map((h: any) => [h.id, h.lockedBy]));
 
     expect(byId).toEqual({ g7: "Sarah Kim", g8: null });
+  });
+
+  it("lockedBy ignores the same household id held through another provider", async () => {
+    // An Orion connection: no Addepar firm, so only the provider tells a
+    // Schwab household id apart from an Orion one.
+    (getOwnedConnection as any).mockResolvedValue({ ...connection, providerId: "orion", scope: null });
+    getHouseholds.mockResolvedValue([
+      { id: "hh1", name: "Held on Orion" },
+      { id: "hh2", name: "Same id on Schwab" },
+    ]);
+    (listFirmLinksOutside as any).mockResolvedValue([
+      { clientId: "c8", providerId: "orion", externalFirmId: null, externalHouseholdId: "hh1", linkedByUserId: "user_sarah" },
+      { clientId: "c9", providerId: "schwab", externalFirmId: null, externalHouseholdId: "hh2", linkedByUserId: "user_sarah" },
+    ]);
+    (resolveActors as any).mockResolvedValue(new Map([["user_sarah", { name: "Sarah Kim", isSystem: false }]]));
+
+    const body = await (await GET(req(), ctx("orion"))).json();
+    const byId = Object.fromEntries(body.households.map((h: any) => [h.id, h.lockedBy]));
+
+    expect(byId).toEqual({ hh1: "Sarah Kim", hh2: null });
+    // Both clients are still taken: one link per client, whatever the provider.
+    expect(body.takenClients).toEqual({ c8: "Sarah Kim", c9: "Sarah Kim" });
   });
 
   it("does not reach the provider when rate limited", async () => {
