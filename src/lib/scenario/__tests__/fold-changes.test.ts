@@ -40,6 +40,15 @@ describe("foldChanges", () => {
     });
   });
 
+  it("an edit folded into a saved add takes the edit's toggle group", () => {
+    const saved = [ch("add", "expense", "e1", { id: "e1", annualAmount: 100 })];
+    const out = foldChanges(saved, [
+      ch("edit", "expense", "e1", { annualAmount: { from: 100, to: 150 } }, { toggleGroupId: "g2" }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ opType: "add", toggleGroupId: "g2", payload: { annualAmount: 150 } });
+  });
+
   it("two edits merge field by field, later wins", () => {
     const saved = [ch("edit", "income", "i1", { a: { from: 1, to: 2 }, b: { from: 1, to: 5 } })];
     const out = foldChanges(saved, [ch("edit", "income", "i1", { a: { from: 1, to: 3 } })]);

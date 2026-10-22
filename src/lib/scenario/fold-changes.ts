@@ -48,7 +48,11 @@ function foldOne(rows: ScenarioChange[], extra: ScenarioChange): ScenarioChange[
       // A legacy edit row alongside the add is dropped, as the writer does.
       return rows
         .filter((r) => !(sameTarget(r, extra) && r.opType === "edit"))
-        .map((r) => (r === existingAdd ? { ...r, payload: merged } : r));
+        .map((r) =>
+          r === existingAdd
+            ? { ...r, payload: merged, toggleGroupId: extra.toggleGroupId ?? r.toggleGroupId }
+            : r,
+        );
     }
     if (existingEdit) {
       const merged = {
