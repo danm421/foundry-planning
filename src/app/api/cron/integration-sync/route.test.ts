@@ -1,15 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-vi.mock("@/lib/integrations/connections", () => ({ listConnectedFirms: vi.fn() }));
-vi.mock("@/lib/integrations/sync", () => ({ syncFirm: vi.fn() }));
+vi.mock("@/lib/integrations/connections", () => ({ listConnectedSyncingConnections: vi.fn() }));
+vi.mock("@/lib/integrations/sync", () => ({ syncConnection: vi.fn() }));
 // Registry is intentionally NOT mocked — getProvider(...).isEnabled() must run
 // for real so the flag-skip path is actually exercised.
-import { listConnectedFirms } from "@/lib/integrations/connections";
-import { syncFirm } from "@/lib/integrations/sync";
+import { listConnectedSyncingConnections } from "@/lib/integrations/connections";
+import { syncConnection } from "@/lib/integrations/sync";
 import { GET } from "./route";
 
 const ORIGINAL_SCHWAB_ENABLED = process.env.SCHWAB_ENABLED;
 const ORIGINAL_ORION_ENABLED = process.env.ORION_ENABLED;
-const ORIGINAL_AZURE_BYOK_ENABLED = process.env.AZURE_BYOK_ENABLED;
 
 beforeEach(() => {
   process.env.CRON_SECRET = "s3cr3t";
@@ -28,11 +27,6 @@ afterEach(() => {
   } else {
     process.env.ORION_ENABLED = ORIGINAL_ORION_ENABLED;
   }
-  if (ORIGINAL_AZURE_BYOK_ENABLED === undefined) {
-    delete process.env.AZURE_BYOK_ENABLED;
-  } else {
-    process.env.AZURE_BYOK_ENABLED = ORIGINAL_AZURE_BYOK_ENABLED;
-  }
 });
 
 function req(auth?: string) {
@@ -45,48 +39,41 @@ describe("integration-sync cron", () => {
   it("401s without the cron bearer", async () => {
     const res = await GET(req());
     expect(res.status).toBe(401);
+    expect(listConnectedSyncingConnections).not.toHaveBeenCalled();
   });
 
-  it("syncs every connected (firm, provider) pair and isolates failures", async () => {
-    vi.mocked(listConnectedFirms).mockResolvedValue([
-      { firmId: "firm_1", providerId: "orion" },
-      { firmId: "firm_2", providerId: "orion" },
+  it("syncs each connected connection once and isolates a failure", async () => {
+    // Two connections in ONE firm: the run is per connection, not per firm.
+    vi.mocked(listConnectedSyncingConnections).mockResolvedValue([
+      { id: "conn_1", firmId: "firm_1", providerId: "orion" },
+      { id: "conn_2", firmId: "firm_1", providerId: "orion" },
     ]);
-    vi.mocked(syncFirm)
-      .mockRejectedValueOnce(new Error("boom")) // firm_1 fails
+    vi.mocked(syncConnection)
+      .mockRejectedValueOnce(new Error("boom")) // conn_1 fails
       .mockResolvedValueOnce({ committed: 1, queued: 0 });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const res = await GET(req("Bearer s3cr3t"));
 
     expect(res.status).toBe(200);
-    expect(syncFirm).toHaveBeenCalledTimes(2); // firm_2 still ran
-    const body = await res.json();
-    expect(body.firms).toBe(2);
-    expect(body.failed).toBe(1);
+    expect(syncConnection).toHaveBeenCalledTimes(2); // conn_2 still ran
+    expect(syncConnection).toHaveBeenNthCalledWith(1, "conn_1", { trigger: "cron" });
+    expect(syncConnection).toHaveBeenNthCalledWith(2, "conn_2", { trigger: "cron" });
+    expect(await res.json()).toEqual({ connections: 2, failed: 1 });
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    consoleError.mockRestore();
   });
 
   it("skips providers whose flag is off", async () => {
     delete process.env.SCHWAB_ENABLED;
-    vi.mocked(listConnectedFirms).mockResolvedValue([{ firmId: "firm_1", providerId: "schwab" }]);
+    vi.mocked(listConnectedSyncingConnections).mockResolvedValue([
+      { id: "conn_1", firmId: "firm_1", providerId: "schwab" },
+    ]);
 
     const res = await GET(req("Bearer s3cr3t"));
 
     expect(res.status).toBe(200);
-    expect(syncFirm).not.toHaveBeenCalled();
-  });
-
-  it("skips a connected azure_openai pair — credentials-only, nothing to sync — without counting it as failed", async () => {
-    // Enabled (unlike the flag-off case above) so this proves the `syncs`
-    // filter itself, not just that the provider is off.
-    process.env.AZURE_BYOK_ENABLED = "true";
-    vi.mocked(listConnectedFirms).mockResolvedValue([{ firmId: "firm_1", providerId: "azure_openai" }]);
-
-    const res = await GET(req("Bearer s3cr3t"));
-
-    expect(res.status).toBe(200);
-    expect(syncFirm).not.toHaveBeenCalled();
-    const body = await res.json();
-    expect(body.firms).toBe(1);
-    expect(body.failed).toBe(0);
+    expect(syncConnection).not.toHaveBeenCalled();
+    expect(await res.json()).toEqual({ connections: 1, failed: 0 });
   });
 });

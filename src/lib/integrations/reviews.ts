@@ -13,13 +13,13 @@ export type OpenReview = {
 
 /**
  * The firm's synced accounts still waiting for an advisor — one row per client,
- * since syncFirm folds every pull into a single open `review` import per
+ * since a sync folds every pull into a single open `review` import per
  * client. The integration page lists these so the advisor can reach the review
  * without knowing it lives under the client's Details → Import.
  */
 export async function listOpenReviews(firmId: string, providerId: ProviderId): Promise<OpenReview[]> {
   // Credentials-only — never writes an import. Checking the id (not
-  // `provider.syncs`) narrows it to import_origin's enum, as in syncFirm.
+  // `provider.syncs`) narrows it to import_origin's enum, as in syncConnection.
   if (providerId === "azure_openai") return [];
 
   return db

@@ -1,21 +1,29 @@
 // src/lib/integrations/sync-review-mode.test.ts
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { randomBytes } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { randomBytes, randomUUID } from "node:crypto";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, clientImports, clients, crmHouseholds, integrationConnections } from "@/db/schema";
+import {
+  accounts,
+  auditLog,
+  clientImports,
+  clients,
+  crmHouseholds,
+  integrationConnections,
+  integrationHouseholdLinks,
+  integrationSyncRuns,
+} from "@/db/schema";
 import { createTestClientWithScenario } from "@/test/factories";
 import type { ImportPayload } from "@/lib/imports/types";
 import type { ProviderClient } from "./types";
-import { upsertByokConnection } from "./connections";
+import { createByokConnection } from "./connections";
 import { encodeAddeparSecret, encodeAddeparConfig } from "./providers/addepar/credentials";
-import { linkHousehold } from "./households";
-import { syncFirm } from "./sync";
+import { syncConnection } from "./sync";
 
 // Track every firmId we touch so afterAll can clean up deterministically.
 const firmIds: string[] = [];
 function freshFirmId(): string {
-  const id = `test_firm_${randomBytes(4).toString("hex")}`;
+  const id = `org_test_${randomUUID()}`;
   firmIds.push(id);
   return id;
 }
@@ -25,16 +33,14 @@ beforeAll(() => {
 });
 
 afterAll(async () => {
-  for (const firmId of firmIds) {
-    // clientImports has no cascade from clients (clientId cascade DOES exist),
-    // but delete clients first → cascades integrationHouseholdLinks + accounts + clientImports.
-    const clientRows = await db.select({ id: clients.id }).from(clients).where(eq(clients.firmId, firmId));
-    for (const c of clientRows) {
-      await db.delete(clients).where(eq(clients.id, c.id));
-    }
-    await db.delete(crmHouseholds).where(eq(crmHouseholds.firmId, firmId));
-    await db.delete(integrationConnections).where(eq(integrationConnections.firmId, firmId));
-  }
+  if (firmIds.length === 0) return;
+  await db.delete(integrationSyncRuns).where(inArray(integrationSyncRuns.firmId, firmIds));
+  // Connections next: their household links cascade with them.
+  await db.delete(integrationConnections).where(inArray(integrationConnections.firmId, firmIds));
+  // Clients cascade their accounts and imports.
+  await db.delete(clients).where(inArray(clients.firmId, firmIds));
+  await db.delete(crmHouseholds).where(inArray(crmHouseholds.firmId, firmIds));
+  await db.delete(auditLog).where(inArray(auditLog.firmId, firmIds));
 });
 
 /**
@@ -54,17 +60,17 @@ function fakeAddeparClient(): ProviderClient {
   };
 }
 
-describe("syncFirm — review-mode provider (autoCommitExact: false)", () => {
+describe("syncConnection — review-mode provider (autoCommitExact: false)", () => {
   it("Addepar queues exact+new into ONE review import and auto-commits nothing", async () => {
     const firmId = freshFirmId();
     const { clientId, scenarioId } = await createTestClientWithScenario(firmId);
 
-    await upsertByokConnection({
+    const connectionId = await createByokConnection({
       firmId,
-      providerId: "addepar",
+      ownerUserId: "owner",
+      name: "Addepar",
       secretBlob: encodeAddeparSecret({ apiKey: "k", apiSecret: "s" }),
       configBlob: encodeAddeparConfig({ apiBase: "https://api.addepar.com", addeparFirmId: "42" }),
-      userId: "u1",
     });
 
     // Pre-existing Addepar account (same externalId → exact match).
@@ -81,11 +87,19 @@ describe("syncFirm — review-mode provider (autoCommitExact: false)", () => {
       deriveFromHoldings: true,
     });
 
-    await linkHousehold({ firmId, providerId: "addepar", clientId, externalHouseholdId: "hh1", userId: "u1" });
+    await db.insert(integrationHouseholdLinks).values({
+      firmId,
+      provider: "addepar",
+      connectionId,
+      clientId,
+      externalHouseholdId: "hh1",
+      externalFirmId: "42",
+      linkedByUserId: "owner",
+    });
 
     const client = fakeAddeparClient();
 
-    const res = await syncFirm(firmId, "addepar", { trigger: "manual", clientId, client, userId: "u1" });
+    const res = await syncConnection(connectionId, { trigger: "manual", clientId, client, userId: "u1" });
 
     expect(res.committed).toBe(0);
     expect(res.queued).toBe(2);
@@ -106,9 +120,14 @@ describe("syncFirm — review-mode provider (autoCommitExact: false)", () => {
     expect(seeded).toHaveLength(1);
     expect(seeded[0].value).toBe("500.00");
 
-    // Exactly ONE open review import, carrying BOTH accounts with the right match kinds.
+    // Exactly ONE open review import, carrying BOTH accounts with the right
+    // match kinds, held by the connection's owner rather than whoever synced.
     const reviews = await db
-      .select({ id: clientImports.id, payloadJson: clientImports.payloadJson })
+      .select({
+        id: clientImports.id,
+        createdByUserId: clientImports.createdByUserId,
+        payloadJson: clientImports.payloadJson,
+      })
       .from(clientImports)
       .where(
         and(
@@ -118,6 +137,7 @@ describe("syncFirm — review-mode provider (autoCommitExact: false)", () => {
         ),
       );
     expect(reviews).toHaveLength(1);
+    expect(reviews[0].createdByUserId).toBe("owner");
     const payload = (reviews[0].payloadJson as { payload?: ImportPayload }).payload;
     expect(payload?.accounts).toHaveLength(2);
 

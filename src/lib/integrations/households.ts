@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { integrationConnections, integrationHouseholdLinks } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/crm/household-relationships";
+import type { ExtractedAccount } from "@/lib/extraction/types";
 import { decodeAddeparConfig } from "./providers/addepar/credentials";
 import type { ProviderId } from "./types";
 
@@ -44,6 +45,30 @@ export function getHouseholdLinks(firmId: string, providerId: ProviderId) {
         eq(integrationHouseholdLinks.provider, providerId),
       ),
     );
+}
+
+/** Every household linked through one connection — what a sync of it walks. */
+export function getLinksForConnection(connectionId: string) {
+  return db
+    .select()
+    .from(integrationHouseholdLinks)
+    .where(eq(integrationHouseholdLinks.connectionId, connectionId));
+}
+
+/**
+ * Stores a household's accounts from a pull (the mapped import rows) on its
+ * link, so the household table can count them and the account panel can work
+ * from them without calling the provider again.
+ */
+export async function recordLastPull(
+  linkId: string,
+  accounts: ExtractedAccount[],
+  pulledAt: Date,
+): Promise<void> {
+  await db
+    .update(integrationHouseholdLinks)
+    .set({ lastPullAccounts: accounts, lastPulledAt: pulledAt })
+    .where(eq(integrationHouseholdLinks.id, linkId));
 }
 
 export async function linkHousehold(input: {
