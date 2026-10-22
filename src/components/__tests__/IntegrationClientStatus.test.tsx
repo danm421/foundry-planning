@@ -16,6 +16,7 @@ const base = {
   providerLabel: "Addepar",
   clientId: "c1",
   lastSyncedAt: null,
+  connections: [{ id: "conn-a", providerId: "addepar" as const, providerLabel: "Addepar", name: "My Addepar" }],
 };
 
 beforeEach(() => {
@@ -67,6 +68,7 @@ describe("IntegrationClientStatus", () => {
       expect(JSON.parse(calls[0][1].body)).toEqual({
         clientId: "c1",
         externalHouseholdId: "1234567",
+        connectionId: "conn-a",
       });
       expect(calls[1][0]).toBe("/api/integrations/addepar/sync");
     });
@@ -150,6 +152,7 @@ describe("IntegrationClientStatus", () => {
       expect(JSON.parse(calls[0][1].body)).toEqual({
         clientId: "c1",
         externalHouseholdId: "1234567",
+        connectionId: "conn-a",
       });
     });
   });
@@ -161,5 +164,57 @@ describe("IntegrationClientStatus", () => {
       target: { value: "   " },
     });
     expect(screen.getByRole("button", { name: /^link$/i })).toBeDisabled();
+  });
+
+  it("with two connections the claim dialog asks which and posts its id", async () => {
+    const connections = [
+      { id: "conn-a", providerId: "addepar" as const, providerLabel: "Addepar", name: "Office key" },
+      { id: "conn-b", providerId: "addepar" as const, providerLabel: "Addepar", name: "Personal key" },
+    ];
+    render(<IntegrationClientStatus {...base} connections={connections} linked={false} canEdit />);
+    fireEvent.click(screen.getByRole("button", { name: /link to addepar/i }));
+    const select = screen.getByLabelText(/^connection$/i) as HTMLSelectElement;
+    expect(screen.getByRole("option", { name: "Addepar · Personal key" })).toBeTruthy();
+    fireEvent.change(select, { target: { value: "conn-b" } });
+    fireEvent.change(screen.getByLabelText(/household id/i), { target: { value: "42" } });
+    fireEvent.click(screen.getByRole("button", { name: /^link$/i }));
+
+    await waitFor(() => {
+      const calls = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls;
+      expect(calls[0][0]).toBe("/api/integrations/addepar/households/claim");
+      expect(JSON.parse(calls[0][1].body)).toEqual({
+        clientId: "c1",
+        externalHouseholdId: "42",
+        connectionId: "conn-b",
+      });
+    });
+  });
+
+  it("with one connection it posts that id without asking", async () => {
+    render(<IntegrationClientStatus {...base} linked={false} canEdit />);
+    fireEvent.click(screen.getByRole("button", { name: /link to addepar/i }));
+    expect(screen.queryByLabelText(/^connection$/i)).toBeNull();
+    fireEvent.change(screen.getByLabelText(/household id/i), { target: { value: "42" } });
+    fireEvent.click(screen.getByRole("button", { name: /^link$/i }));
+    await waitFor(() => {
+      const calls = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls;
+      expect(JSON.parse(calls[0][1].body).connectionId).toBe("conn-a");
+    });
+  });
+
+  it("posts to the chosen connection's provider and says 'a data source' when providers differ", async () => {
+    const connections = [
+      { id: "conn-a", providerId: "addepar" as const, providerLabel: "Addepar", name: "Office key" },
+      { id: "conn-o", providerId: "orion" as const, providerLabel: "Orion Advisor Tech", name: "Orion" },
+    ];
+    render(<IntegrationClientStatus {...base} connections={connections} linked={false} canEdit />);
+    fireEvent.click(screen.getByRole("button", { name: /link to a data source/i }));
+    fireEvent.change(screen.getByLabelText(/^connection$/i), { target: { value: "conn-o" } });
+    fireEvent.change(screen.getByLabelText(/household id/i), { target: { value: "7" } });
+    fireEvent.click(screen.getByRole("button", { name: /^link$/i }));
+    await waitFor(() => {
+      const calls = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls;
+      expect(calls[0][0]).toBe("/api/integrations/orion/households/claim");
+    });
   });
 });

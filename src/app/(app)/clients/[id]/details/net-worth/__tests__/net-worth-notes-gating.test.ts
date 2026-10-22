@@ -104,6 +104,7 @@ vi.mock("@/components/balance-sheet-view", () => ({ default: BalanceSheetViewMoc
 vi.mock("@/lib/clients/page-access", () => ({
   requireClientPageAccess: vi.fn(async () => ({ firmId: FIRM_ID, access: "own" })),
 }));
+vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn(async () => ({ userId: "user_1" })) }));
 vi.mock("@/lib/integrations/client-status", () => ({
   loadClientIntegrationStatus: vi.fn(async () => null),
 }));

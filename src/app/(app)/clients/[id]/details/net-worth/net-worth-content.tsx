@@ -1,3 +1,4 @@
+import { auth } from "@clerk/nextjs/server";
 import BalanceSheetView from "@/components/balance-sheet-view";
 import { DefaultGrowthBanner } from "@/components/default-growth-banner";
 import { IntegrationClientStatus } from "@/components/IntegrationClientStatus";
@@ -13,7 +14,9 @@ interface NetWorthContentProps {
 export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthContentProps) {
   const [result, integration] = await Promise.all([
     loadNetWorthViewProps(id, scenarioParam),
-    requireClientPageAccess(id).then((access) => loadClientIntegrationStatus(id, access)),
+    Promise.all([requireClientPageAccess(id), auth()]).then(([access, { userId }]) =>
+      userId ? loadClientIntegrationStatus(id, userId, access) : null,
+    ),
   ]);
 
   if (result.status === "no-base-case") {

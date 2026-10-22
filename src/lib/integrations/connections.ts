@@ -7,7 +7,6 @@ import {
   integrationOauthStates,
 } from "@/db/schema";
 import { encryptSecret, decryptSecret } from "@/lib/crypto/secrets";
-import { getProvider } from "./registry";
 import type { ProviderId, SyncingProviderId } from "./types";
 
 type ConnectionStatus = "connected" | "disconnected" | "error";
@@ -445,31 +444,4 @@ export async function consumeOauthState(state: string): Promise<{
     userId: row.userId,
     codeVerifier: row.codeVerifier,
   };
-}
-
-/**
- * The firm's connected provider that actually pulls households, if any.
- *
- * Used by the client page to decide whether to offer "Link to Addepar" on a
- * client with no link yet — at that point there is no `link.provider` to read.
- * Filters exactly as the cron does: enabled kill-switch AND `syncs: true`, so a
- * credentials-only provider (azure_openai) never surfaces a link button.
- */
-export async function getConnectedSyncingProviderId(
-  firmId: string,
-): Promise<ProviderId | null> {
-  const rows = await db
-    .select({ provider: integrationConnections.provider })
-    .from(integrationConnections)
-    .where(
-      and(
-        eq(integrationConnections.firmId, firmId),
-        eq(integrationConnections.status, "connected"),
-      ),
-    );
-  for (const row of rows) {
-    const def = getProvider(row.provider);
-    if (def.isEnabled() && def.syncs) return row.provider;
-  }
-  return null;
 }
