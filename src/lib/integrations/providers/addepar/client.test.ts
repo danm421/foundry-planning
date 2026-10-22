@@ -8,6 +8,7 @@ vi.mock("@/lib/rate-limit", () => ({
   checkIntegrationApiLimit: vi.fn().mockResolvedValue({ allowed: true }),
 }));
 
+import { checkIntegrationApiLimit } from "@/lib/rate-limit";
 import { CredentialsRejected } from "../../errors";
 import type { ProviderCallContext } from "../../types";
 import { addeparClient, testAddeparConnection } from "./client";
@@ -113,6 +114,24 @@ describe("addepar client — headers", () => {
     expect(calls[1].init.method).toBe("POST");
     expect(header(calls[1], "addepar-firm")).toBe("42");
     expect(header(calls[1], "content-type")).toBe("application/vnd.api+json");
+  });
+});
+
+describe("addepar client — rate limit", () => {
+  it("counts calls per connection, so one advisor's syncing can't use up a colleague's", async () => {
+    const { fetchImpl } = fakeFetch(json(GROUPS_CHILD_GROUPS));
+
+    await addeparClient.getHouseholds({ ...ctxWith(fetchImpl), connectionId: "conn_1" });
+
+    expect(vi.mocked(checkIntegrationApiLimit)).toHaveBeenLastCalledWith("addepar:conn_1");
+  });
+
+  it("falls back to the firm when the context names no connection", async () => {
+    const { fetchImpl } = fakeFetch(json(GROUPS_CHILD_GROUPS));
+
+    await addeparClient.getHouseholds(ctxWith(fetchImpl));
+
+    expect(vi.mocked(checkIntegrationApiLimit)).toHaveBeenLastCalledWith("addepar:firm_1");
   });
 });
 

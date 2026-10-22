@@ -45,3 +45,20 @@ export function decodeAddeparConfig(raw: string | null): AddeparConfig {
   if (!raw) throw new Error("addepar config missing");
   return configSchema.parse(JSON.parse(raw));
 }
+
+/**
+ * A connection's suggested name, from the first label of its host:
+ * https://ethos.addepar.com → "Ethos". The shared api.addepar.com host, or
+ * anything that isn't a URL, gives "Addepar". Matches how the
+ * per-advisor-integrations migration named existing connections.
+ */
+export function defaultConnectionName(apiBase: string): string {
+  let label: string;
+  try {
+    label = new URL(apiBase).hostname.split(".")[0];
+  } catch {
+    return "Addepar";
+  }
+  if (!label || label === "api") return "Addepar";
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}

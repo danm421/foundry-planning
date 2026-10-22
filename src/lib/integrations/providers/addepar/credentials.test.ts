@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   encodeAddeparSecret, decodeAddeparSecret,
   encodeAddeparConfig, decodeAddeparConfig,
+  defaultConnectionName,
 } from "./credentials";
 
 describe("addepar credential codec", () => {
@@ -39,6 +40,16 @@ describe("addepar credential codec", () => {
     ])("accepts %s", (apiBase) => {
       const c = { apiBase, addeparFirmId: "999" };
       expect(decodeAddeparConfig(encodeAddeparConfig(c))).toEqual(c);
+    });
+  });
+
+  describe("defaultConnectionName", () => {
+    it.each([
+      ["https://ethos.addepar.com", "Ethos"],
+      ["https://api.addepar.com", "Addepar"],
+      ["not a url", "Addepar"],
+    ])("names %s %s", (apiBase, name) => {
+      expect(defaultConnectionName(apiBase)).toBe(name);
     });
   });
 });

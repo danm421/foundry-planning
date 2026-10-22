@@ -58,7 +58,8 @@ async function request(
   body?: unknown,
   attempt = 0,
 ): Promise<unknown> {
-  const rl = await checkIntegrationApiLimit(`${ctx.providerId}:${ctx.firmId}`);
+  // Per connection, so one advisor's syncing can't use up a colleague's budget.
+  const rl = await checkIntegrationApiLimit(`${ctx.providerId}:${ctx.connectionId ?? ctx.firmId}`);
   if (!rl.allowed) throw new Error("Addepar rate limit exceeded");
 
   const { apiBase, addeparFirmId } = addeparConfig(ctx);
