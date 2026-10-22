@@ -40,14 +40,14 @@ export type ProviderPosition = {
 };
 
 /**
- * Passed to every client read. Carries the connection (or, on the legacy
- * firm-level path, the firm) the rate limit is keyed on, and a bound token
- * getter. Threading the getter through here — rather than having
+ * Passed to every client read. Carries the connection (or, for a credentials
+ * test before any connection exists, the firm) the rate limit is keyed on,
+ * and a bound token getter. Threading the getter through here — rather than having
  * the client import auth.ts — is what keeps auth.ts -> oauth and client -> ctx
  * acyclic while preserving the 401-refresh-and-retry behavior.
  */
 export type ProviderCallContext = {
-  /** Set by `connectionCallContext`; absent on the legacy firm-level path. */
+  /** Set by `connectionCallContext`; absent on a credentials test, which has no connection yet. */
   connectionId?: string;
   firmId: string;
   providerId: ProviderId;
@@ -95,6 +95,7 @@ type ProviderBase = {
  * cannot silently supply an empty client and look like it works.
  */
 export type SyncingProviderDefinition = ProviderBase & {
+  id: SyncingProviderId;
   syncs: true;
   client: ProviderClient;
   registrationTable: RegistrationTable;

@@ -1,130 +1,298 @@
 // src/lib/integrations/households.test.ts
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import { inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, crmHouseholds } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { accounts, clients, crmHouseholds, integrationConnections } from "@/db/schema";
 import { createTestClientWithScenario } from "@/test/factories";
+import type { ExtractedAccount } from "@/lib/extraction/types";
+import { encodeAddeparConfig } from "./providers/addepar/credentials";
 import {
-  getHouseholdLinks,
-  linkHousehold,
-  unlinkHousehold,
+  createByokConnection,
+  loadConnection,
+  upsertOauthConnection,
+  type IntegrationConnectionRow,
+} from "./connections";
+import {
   getHouseholdLinkForClient,
+  linkHouseholdOnConnection,
+  listFirmLinksOutside,
+  unlinkHousehold,
 } from "./households";
+import { countConnectedAccounts } from "./household-table";
 
-const firmId = `test_firm_${randomBytes(4).toString("hex")}`;
+const firmIds: string[] = [];
+function freshFirmId(): string {
+  const id = `org_test_${randomUUID()}`;
+  firmIds.push(id);
+  return id;
+}
 
 beforeAll(() => {
   process.env.CREDENTIAL_ENCRYPTION_KEY = randomBytes(32).toString("base64");
 });
 
 afterAll(async () => {
-  // Delete clients by firmId — cascades to integrationHouseholdLinks and crmHouseholds
-  const clientRows = await db.select({ id: clients.id }).from(clients).where(eq(clients.firmId, firmId));
-  for (const c of clientRows) {
-    await db.delete(clients).where(eq(clients.id, c.id));
-  }
-  await db.delete(crmHouseholds).where(eq(crmHouseholds.firmId, firmId));
+  if (firmIds.length === 0) return;
+  // Connections first: their household links cascade with them.
+  await db.delete(integrationConnections).where(inArray(integrationConnections.firmId, firmIds));
+  // Clients cascade their scenarios and accounts.
+  await db.delete(clients).where(inArray(clients.firmId, firmIds));
+  await db.delete(crmHouseholds).where(inArray(crmHouseholds.firmId, firmIds));
 });
 
-describe("integration household links", () => {
-  it("linkHousehold inserts a row; getHouseholdLinks returns it", async () => {
-    const { clientId } = await createTestClientWithScenario(firmId);
-    await linkHousehold({ firmId, providerId: "orion", clientId, externalHouseholdId: "hhA", userId: "user1" });
+async function orionConnection(firmId: string, ownerUserId: string): Promise<IntegrationConnectionRow> {
+  const id = await upsertOauthConnection({ firmId, providerId: "orion", ownerUserId, accessToken: "fake" });
+  return (await loadConnection(id))!;
+}
 
-    const rows = await getHouseholdLinks(firmId, "orion");
-    const row = rows.find((r) => r.clientId === clientId);
-    expect(row).toBeDefined();
-    expect(row?.externalHouseholdId).toBe("hhA");
-    expect(row?.linkedByUserId).toBe("user1");
+async function addeparConnection(
+  firmId: string,
+  ownerUserId: string,
+  addeparFirmId: string,
+): Promise<IntegrationConnectionRow> {
+  const id = await createByokConnection({
+    firmId,
+    ownerUserId,
+    name: `Addepar ${addeparFirmId}`,
+    secretBlob: JSON.stringify({ apiKey: "k", apiSecret: "s" }),
+    configBlob: encodeAddeparConfig({ apiBase: "https://ethos.addepar.com", addeparFirmId }),
+  });
+  return (await loadConnection(id))!;
+}
+
+describe("linkHouseholdOnConnection", () => {
+  it("refuses to link a client already linked through a colleague's connection", async () => {
+    const firmId = freshFirmId();
+    const { clientId } = await createTestClientWithScenario(firmId);
+    const mine = await orionConnection(firmId, "advisorA");
+    const colleagues = await orionConnection(firmId, "advisorB");
+
+    expect(
+      await linkHouseholdOnConnection({ connection: mine, clientId, externalHouseholdId: "hhA", userId: "advisorA" }),
+    ).toEqual({ ok: true });
+    const before = await getHouseholdLinkForClient(clientId);
+
+    const outcome = await linkHouseholdOnConnection({
+      connection: colleagues,
+      clientId,
+      externalHouseholdId: "hhB",
+      userId: "advisorB",
+    });
+
+    expect(outcome).toEqual({ ok: false, reason: "client_linked_elsewhere", linkedByUserId: "advisorA" });
+    // Nothing replaced: same connection, household, linker and edit stamp.
+    expect(await getHouseholdLinkForClient(clientId)).toEqual(before);
+    expect(before).toMatchObject({
+      connectionId: mine.id,
+      externalHouseholdId: "hhA",
+      externalFirmId: null,
+      linkedByUserId: "advisorA",
+    });
   });
 
-  it("linkHousehold with same clientId updates in place (onConflict)", async () => {
+  it("refuses a household already held through another connection to the same Addepar firm", async () => {
+    const firmId = freshFirmId();
+    const first = await createTestClientWithScenario(firmId);
+    const second = await createTestClientWithScenario(firmId);
+    const mine = await addeparConnection(firmId, "advisorA", "1069");
+    const colleagues = await addeparConnection(firmId, "advisorB", "1069");
+
+    await linkHouseholdOnConnection({
+      connection: mine,
+      clientId: first.clientId,
+      externalHouseholdId: "g1",
+      userId: "advisorA",
+    });
+    const outcome = await linkHouseholdOnConnection({
+      connection: colleagues,
+      clientId: second.clientId,
+      externalHouseholdId: "g1",
+      userId: "advisorB",
+    });
+
+    expect(outcome).toEqual({ ok: false, reason: "household_linked_elsewhere", linkedByUserId: "advisorA" });
+    expect(await getHouseholdLinkForClient(second.clientId)).toBeNull();
+  });
+
+  it("allows the same group id under two different Addepar firms", async () => {
+    const firmId = freshFirmId();
+    const first = await createTestClientWithScenario(firmId);
+    const second = await createTestClientWithScenario(firmId);
+    const ethos = await addeparConnection(firmId, "advisorA", "1069");
+    const other = await addeparConnection(firmId, "advisorB", "2000");
+
+    expect(
+      await linkHouseholdOnConnection({
+        connection: ethos,
+        clientId: first.clientId,
+        externalHouseholdId: "g1",
+        userId: "advisorA",
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      await linkHouseholdOnConnection({
+        connection: other,
+        clientId: second.clientId,
+        externalHouseholdId: "g1",
+        userId: "advisorB",
+      }),
+    ).toEqual({ ok: true });
+
+    // Each link carries its connection's Addepar firm id.
+    expect(await getHouseholdLinkForClient(first.clientId)).toMatchObject({
+      connectionId: ethos.id,
+      externalFirmId: "1069",
+    });
+    expect(await getHouseholdLinkForClient(second.clientId)).toMatchObject({
+      connectionId: other.id,
+      externalFirmId: "2000",
+    });
+  });
+
+  it("re-linking a client on the same connection replaces its household", async () => {
+    const firmId = freshFirmId();
     const { clientId } = await createTestClientWithScenario(firmId);
+    const conn = await orionConnection(firmId, "advisorA");
 
-    await linkHousehold({ firmId, providerId: "orion", clientId, externalHouseholdId: "hhB", userId: "user1" });
-    const beforeRows = await getHouseholdLinks(firmId, "orion");
-    const before = beforeRows.find((r) => r.clientId === clientId);
-    expect(before?.externalHouseholdId).toBe("hhB");
-    const beforeUpdatedAt = before?.updatedAt;
-
-    // Small delay so updatedAt advances
+    await linkHouseholdOnConnection({ connection: conn, clientId, externalHouseholdId: "hhA", userId: "advisorA" });
+    const before = await getHouseholdLinkForClient(clientId);
+    // Small delay so updated_at can advance.
     await new Promise((resolve) => setTimeout(resolve, 10));
 
-    await linkHousehold({
-      firmId,
-      providerId: "orion",
+    const outcome = await linkHouseholdOnConnection({
+      connection: conn,
       clientId,
-      externalHouseholdId: "hhB_updated",
-      userId: "user1",
+      externalHouseholdId: "hhB",
+      userId: "assistant",
     });
-    const afterRows = await getHouseholdLinks(firmId, "orion");
-    const matching = afterRows.filter((r) => r.clientId === clientId);
-    expect(matching).toHaveLength(1);
-    expect(matching[0].externalHouseholdId).toBe("hhB_updated");
-    // Strictly greater, not >=: both writes stamp updated_at from the DB clock,
-    // so the 10ms delay above must show up.
-    //
-    // This assertion is a smoke check, NOT a guard. It only catches the
-    // mixed-clock bug when Postgres happens to be running more than 10ms ahead
-    // of this process; a mutation check (reinstating `new Date()`) still passed
-    // on a run where the skew was small. The real guarantee is in the source:
-    // both the insert default and the conflict update read now() server-side.
-    expect(matching[0].updatedAt.getTime()).toBeGreaterThan(beforeUpdatedAt!.getTime());
+
+    expect(outcome).toEqual({ ok: true });
+    const after = await getHouseholdLinkForClient(clientId);
+    expect(after).toMatchObject({
+      id: before!.id,
+      connectionId: conn.id,
+      externalHouseholdId: "hhB",
+      // "Linked by" names whoever performed THIS link.
+      linkedByUserId: "assistant",
+    });
+    // Both writes stamp updated_at from the DB clock (a smoke check, not a guard).
+    expect(after!.updatedAt.getTime()).toBeGreaterThan(before!.updatedAt.getTime());
   });
 
-  it("linkHousehold re-attributes linkedByUserId to the re-linking user", async () => {
-    const { clientId } = await createTestClientWithScenario(firmId);
+  it("a household held by another client on the same connection is refused, naming its linker", async () => {
+    const firmId = freshFirmId();
+    const first = await createTestClientWithScenario(firmId);
+    const second = await createTestClientWithScenario(firmId);
+    const conn = await orionConnection(firmId, "advisorA");
 
-    await linkHousehold({ firmId, providerId: "orion", clientId, externalHouseholdId: "hhD", userId: "user1" });
-    await linkHousehold({
-      firmId,
-      providerId: "orion",
+    await linkHouseholdOnConnection({ connection: conn, clientId: first.clientId, externalHouseholdId: "hhA", userId: "advisorA" });
+    await linkHouseholdOnConnection({ connection: conn, clientId: second.clientId, externalHouseholdId: "hhB", userId: "advisorA" });
+
+    // Moving the second client onto the first's household trips the household
+    // index on the UPDATE path, not just the insert.
+    const outcome = await linkHouseholdOnConnection({
+      connection: conn,
+      clientId: second.clientId,
+      externalHouseholdId: "hhA",
+      userId: "advisorA",
+    });
+    expect(outcome).toEqual({ ok: false, reason: "household_linked_elsewhere", linkedByUserId: "advisorA" });
+    expect(await getHouseholdLinkForClient(second.clientId)).toMatchObject({ externalHouseholdId: "hhB" });
+  });
+});
+
+describe("listFirmLinksOutside", () => {
+  it("returns the firm's links for the provider held through any other connection", async () => {
+    const firmId = freshFirmId();
+    const otherFirmId = freshFirmId();
+    const a = await createTestClientWithScenario(firmId);
+    const b = await createTestClientWithScenario(firmId);
+    const c = await createTestClientWithScenario(firmId);
+    const d = await createTestClientWithScenario(otherFirmId);
+    const mine = await addeparConnection(firmId, "advisorA", "1069");
+    const colleagues = await addeparConnection(firmId, "advisorB", "2000");
+    const orion = await orionConnection(firmId, "advisorB");
+    const elsewhere = await addeparConnection(otherFirmId, "advisorZ", "1069");
+
+    await linkHouseholdOnConnection({ connection: mine, clientId: a.clientId, externalHouseholdId: "g1", userId: "advisorA" });
+    await linkHouseholdOnConnection({ connection: colleagues, clientId: b.clientId, externalHouseholdId: "g2", userId: "advisorB" });
+    await linkHouseholdOnConnection({ connection: orion, clientId: c.clientId, externalHouseholdId: "hh3", userId: "advisorB" });
+    await linkHouseholdOnConnection({ connection: elsewhere, clientId: d.clientId, externalHouseholdId: "g4", userId: "advisorZ" });
+
+    const rows = await listFirmLinksOutside({ firmId, providerId: "addepar", connectionId: mine.id });
+    expect(rows).toEqual([
+      { clientId: b.clientId, externalFirmId: "2000", externalHouseholdId: "g2", linkedByUserId: "advisorB" },
+    ]);
+  });
+});
+
+describe("unlinkHousehold", () => {
+  it("deletes the client's link on that connection only", async () => {
+    const firmId = freshFirmId();
+    const { clientId } = await createTestClientWithScenario(firmId);
+    const mine = await orionConnection(firmId, "advisorA");
+    const colleagues = await orionConnection(firmId, "advisorB");
+    await linkHouseholdOnConnection({ connection: mine, clientId, externalHouseholdId: "hhC", userId: "advisorA" });
+
+    await unlinkHousehold(colleagues.id, clientId);
+    expect(await getHouseholdLinkForClient(clientId)).not.toBeNull();
+
+    await unlinkHousehold(mine.id, clientId);
+    expect(await getHouseholdLinkForClient(clientId)).toBeNull();
+  });
+});
+
+describe("countConnectedAccounts", () => {
+  it("countConnectedAccounts counts base-case accounts whose external id is in the last pull", async () => {
+    const firmId = freshFirmId();
+    const { clientId, scenarioId } = await createTestClientWithScenario(firmId);
+    // No what-if account here: a trigger only lets base-case rows into
+    // accounts, so the base-case join can't be exercised with a real row.
+    // A second client tied to the same ids: its accounts never count for this link.
+    const neighbour = await createTestClientWithScenario(firmId);
+    const plan = (over: { clientId?: string; scenarioId?: string; externalProvider: string; externalId: string }) => ({
       clientId,
-      externalHouseholdId: "hhD_other",
-      userId: "user2",
+      scenarioId,
+      name: over.externalId,
+      category: "taxable" as const,
+      subType: "brokerage" as const,
+      value: "100",
+      ...over,
+    });
+    await db.insert(accounts).values([
+      plan({ externalProvider: "addepar", externalId: "a1" }),
+      plan({ externalProvider: "addepar", externalId: "a2" }),
+      // Tied to Addepar, but not in this household's last pull.
+      plan({ externalProvider: "addepar", externalId: "zz" }),
+      // Same id from another provider: not this provider's tie.
+      plan({ externalProvider: "orion", externalId: "a3" }),
+      plan({
+        clientId: neighbour.clientId,
+        scenarioId: neighbour.scenarioId,
+        externalProvider: "addepar",
+        externalId: "a3",
+      }),
+    ]);
+    const pulled = (externalId: string): ExtractedAccount => ({ name: externalId, externalId });
+
+    const counts = await countConnectedAccounts({
+      providerId: "addepar",
+      links: [
+        { id: "link-pulled", clientId, lastPullAccounts: [pulled("a1"), pulled("a2"), pulled("a3")] },
+        { id: "link-never-pulled", clientId, lastPullAccounts: null },
+      ],
     });
 
-    const link = await getHouseholdLinkForClient(clientId);
-    expect(link?.linkedByUserId).toBe("user2");
+    expect(counts.get("link-pulled")).toEqual({ connected: 2, total: 3 });
+    expect(counts.has("link-never-pulled")).toBe(false);
   });
 
-  it("unlinkHousehold deletes the row; getHouseholdLinks no longer returns it", async () => {
-    const { clientId } = await createTestClientWithScenario(firmId);
-    await linkHousehold({ firmId, providerId: "orion", clientId, externalHouseholdId: "hhC", userId: "user2" });
-
-    // Confirm it exists
-    const before = await getHouseholdLinks(firmId, "orion");
-    expect(before.some((r) => r.clientId === clientId)).toBe(true);
-
-    await unlinkHousehold(firmId, clientId);
-
-    const after = await getHouseholdLinks(firmId, "orion");
-    expect(after.some((r) => r.clientId === clientId)).toBe(false);
-  });
-
-  it("re-links a client to a different provider rather than duplicating", async () => {
-    const { clientId } = await createTestClientWithScenario(firmId);
-
-    await linkHousehold({
-      firmId: "firm_1",
-      providerId: "orion",
-      clientId,
-      externalHouseholdId: "hh-orion",
-      userId: "u1",
+  it("returns an empty map without querying when no link has been pulled", async () => {
+    const counts = await countConnectedAccounts({
+      providerId: "addepar",
+      links: [{ id: "l", clientId: randomUUID(), lastPullAccounts: null }],
     });
-    await linkHousehold({
-      firmId: "firm_1",
-      providerId: "schwab",
-      clientId,
-      externalHouseholdId: "hh-schwab",
-      userId: "u1",
-    });
-
-    // The client_id unique constraint means the second link REPLACES the first —
-    // one source of truth per client, never two providers feeding one plan.
-    const link = await getHouseholdLinkForClient(clientId);
-    expect(link).toMatchObject({ provider: "schwab", externalHouseholdId: "hh-schwab" });
-    expect(await getHouseholdLinks("firm_1", "orion")).toHaveLength(0);
+    expect(counts.size).toBe(0);
   });
 });

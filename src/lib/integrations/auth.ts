@@ -1,6 +1,5 @@
 // src/lib/integrations/auth.ts
 import {
-  getConnection,
   loadConnection,
   setConnectionStatusById,
   storeRefreshedTokens,
@@ -101,46 +100,6 @@ export async function connectionCallContext(
     firmId,
     providerId,
     getToken: (opts) => getConnectionAccessToken(connectionId, opts),
-    fetchImpl: overrides?.fetchImpl,
-    baseUrl: overrides?.baseUrl,
-  };
-}
-
-/** Firm-level path, kept until its callers move to `getConnectionAccessToken`. */
-export async function getValidAccessToken(
-  firmId: string,
-  providerId: ProviderId,
-  opts?: { forceRefresh?: boolean },
-): Promise<string> {
-  const conn = await getConnection(firmId, providerId);
-  if (!conn) throw new ReconnectRequired(firmId, providerId);
-  return accessTokenFor(conn, opts);
-}
-
-/** Builds the context every provider client read takes. Firm-level path, kept until its callers move to `connectionCallContext`. */
-export async function makeCallContext(
-  firmId: string,
-  providerId: ProviderId,
-  overrides?: { fetchImpl?: typeof fetch; baseUrl?: string },
-): Promise<ProviderCallContext> {
-  const provider = getProvider(providerId);
-  if (provider.authKind === "byok") {
-    const conn = await getConnection(firmId, providerId);
-    if (!conn || !conn.accessToken) throw new ReconnectRequired(firmId, providerId);
-    const token = conn.accessToken; // narrowed to string by the guard above
-    const config = decodeAddeparConfig(conn.scope);
-    return {
-      firmId,
-      providerId,
-      config,
-      getToken: async () => token, // static; ignores forceRefresh
-      fetchImpl: overrides?.fetchImpl,
-    };
-  }
-  return {
-    firmId,
-    providerId,
-    getToken: (opts) => getValidAccessToken(firmId, providerId, opts),
     fetchImpl: overrides?.fetchImpl,
     baseUrl: overrides?.baseUrl,
   };

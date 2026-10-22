@@ -1,50 +1,31 @@
 // src/lib/integrations/households.ts
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { integrationConnections, integrationHouseholdLinks } from "@/db/schema";
+import { integrationHouseholdLinks } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/crm/household-relationships";
 import type { ExtractedAccount } from "@/lib/extraction/types";
+import type { IntegrationConnectionRow } from "./connections";
 import { decodeAddeparConfig } from "./providers/addepar/credentials";
-import type { ProviderId } from "./types";
+import type { SyncingProviderId } from "./types";
 
-/**
- * STOPGAP until Task 4 links through a chosen connection: the firm-level link
- * path below predates per-advisor connections, and it has at most one
- * connection per (firm, provider), so resolve that one. Throws when there is
- * none rather than inventing a connection.
- */
-async function firmConnectionForLink(
-  firmId: string,
-  providerId: ProviderId,
-): Promise<{ connectionId: string; externalFirmId: string | null }> {
-  const [conn] = await db
-    .select({ id: integrationConnections.id, scope: integrationConnections.scope })
-    .from(integrationConnections)
-    .where(
-      and(
-        eq(integrationConnections.firmId, firmId),
-        eq(integrationConnections.provider, providerId),
-      ),
-    )
-    .limit(1);
-  if (!conn) throw new Error(`No ${providerId} connection for this firm`);
-  return {
-    connectionId: conn.id,
-    externalFirmId:
-      providerId === "addepar" ? decodeAddeparConfig(conn.scope).addeparFirmId : null,
-  };
-}
+/** The parts of a connection a link is made from. */
+type LinkConnection = Pick<IntegrationConnectionRow, "id" | "firmId" | "providerId" | "scope">;
 
-export function getHouseholdLinks(firmId: string, providerId: ProviderId) {
-  return db
-    .select()
-    .from(integrationHouseholdLinks)
-    .where(
-      and(
-        eq(integrationHouseholdLinks.firmId, firmId),
-        eq(integrationHouseholdLinks.provider, providerId),
-      ),
-    );
+export type LinkOutcome =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "client_linked_elsewhere" | "household_linked_elsewhere";
+      linkedByUserId: string | null;
+    };
+
+/** The Addepar firm a connection reaches, which scopes its group ids; null for Orion and Schwab. */
+export function externalFirmIdOf(
+  connection: Pick<IntegrationConnectionRow, "providerId" | "scope">,
+): string | null {
+  return connection.providerId === "addepar"
+    ? decodeAddeparConfig(connection.scope).addeparFirmId
+    : null;
 }
 
 /** Every household linked through one connection — what a sync of it walks. */
@@ -53,6 +34,35 @@ export function getLinksForConnection(connectionId: string) {
     .select()
     .from(integrationHouseholdLinks)
     .where(eq(integrationHouseholdLinks.connectionId, connectionId));
+}
+
+/**
+ * The firm's links for a provider held through any connection but this one:
+ * what the household table needs to show which clients and households a
+ * colleague already holds.
+ */
+export function listFirmLinksOutside(i: {
+  firmId: string;
+  providerId: SyncingProviderId;
+  connectionId: string;
+}): Promise<
+  Array<{
+    clientId: string;
+    externalFirmId: string | null;
+    externalHouseholdId: string;
+    linkedByUserId: string | null;
+  }>
+> {
+  const l = integrationHouseholdLinks;
+  return db
+    .select({
+      clientId: l.clientId,
+      externalFirmId: l.externalFirmId,
+      externalHouseholdId: l.externalHouseholdId,
+      linkedByUserId: l.linkedByUserId,
+    })
+    .from(l)
+    .where(and(eq(l.firmId, i.firmId), eq(l.provider, i.providerId), ne(l.connectionId, i.connectionId)));
 }
 
 /**
@@ -71,43 +81,79 @@ export async function recordLastPull(
     .where(eq(integrationHouseholdLinks.id, linkId));
 }
 
-export async function linkHousehold(input: {
-  firmId: string;
-  providerId: ProviderId;
+/**
+ * Links a client to an external household through one connection. A client
+ * has one link, so re-linking it on the SAME connection replaces its
+ * household. A link held through any other connection is never replaced: the
+ * caller gets a refusal naming who holds it. The same goes for a household
+ * already feeding another client in the firm (the household unique index).
+ */
+export async function linkHouseholdOnConnection(i: {
+  connection: LinkConnection;
   clientId: string;
   externalHouseholdId: string;
   userId: string;
-}): Promise<void> {
-  const connection = await firmConnectionForLink(input.firmId, input.providerId);
-  await db
-    .insert(integrationHouseholdLinks)
-    .values({
-      firmId: input.firmId,
-      provider: input.providerId,
-      ...connection,
-      clientId: input.clientId,
-      externalHouseholdId: input.externalHouseholdId,
-      linkedByUserId: input.userId,
-    })
-    .onConflictDoUpdate({
-      // Conflict target is client_id alone: re-linking a client REPLACES its
-      // provider binding rather than adding a second one.
-      target: integrationHouseholdLinks.clientId,
-      set: {
-        provider: input.providerId,
-        ...connection,
-        externalHouseholdId: input.externalHouseholdId,
-        // firmId is deliberately NOT updated: org-scoping is immutable per
-        // link row, matching the shipped Orion behavior. linkedByUserId DOES
-        // update: the "Linked by" column must name whoever performed THIS
-        // link, not whoever created the row originally.
-        linkedByUserId: input.userId,
-        // DB clock, not the app's: `updated_at` defaults to now() on insert, so
-        // stamping the update from Node made the column go BACKWARDS whenever
-        // Postgres ran ahead of this process (measured: 60ms on Neon).
-        updatedAt: sql`now()`,
-      },
-    });
+}): Promise<LinkOutcome> {
+  const { connection } = i;
+  const externalFirmId = externalFirmIdOf(connection);
+  let written: Array<{ id: string }>;
+  try {
+    written = await db
+      .insert(integrationHouseholdLinks)
+      .values({
+        firmId: connection.firmId,
+        provider: connection.providerId,
+        connectionId: connection.id,
+        clientId: i.clientId,
+        externalHouseholdId: i.externalHouseholdId,
+        externalFirmId,
+        linkedByUserId: i.userId,
+      })
+      .onConflictDoUpdate({
+        // One link per client. firmId, provider and connectionId are never
+        // updated: the guard below only lets the update through on the link's
+        // own connection, so a colleague's link stays exactly as it was.
+        target: integrationHouseholdLinks.clientId,
+        set: {
+          externalHouseholdId: i.externalHouseholdId,
+          externalFirmId,
+          // "Linked by" names whoever performed THIS link.
+          linkedByUserId: i.userId,
+          // DB clock, not the app's: `updated_at` defaults to now() on insert,
+          // so stamping the update from Node made the column go BACKWARDS
+          // whenever Postgres ran ahead of this process (measured: 60ms on Neon).
+          updatedAt: sql`now()`,
+        },
+        setWhere: eq(integrationHouseholdLinks.connectionId, connection.id),
+      })
+      .returning({ id: integrationHouseholdLinks.id });
+  } catch (err) {
+    // client_id is the conflict target, so the only unique index left to trip
+    // is the household one: another client already has this household.
+    if (!isUniqueViolation(err)) throw err;
+    const [holder] = await db
+      .select({ linkedByUserId: integrationHouseholdLinks.linkedByUserId })
+      .from(integrationHouseholdLinks)
+      .where(
+        and(
+          eq(integrationHouseholdLinks.firmId, connection.firmId),
+          eq(integrationHouseholdLinks.provider, connection.providerId),
+          sql`coalesce(${integrationHouseholdLinks.externalFirmId}, '') = ${externalFirmId ?? ""}`,
+          eq(integrationHouseholdLinks.externalHouseholdId, i.externalHouseholdId),
+        ),
+      )
+      .limit(1);
+    return {
+      ok: false,
+      reason: "household_linked_elsewhere",
+      linkedByUserId: holder?.linkedByUserId ?? null,
+    };
+  }
+  if (written.length > 0) return { ok: true };
+
+  // The guarded update wrote nothing: the client is linked through another connection.
+  const holder = await getHouseholdLinkForClient(i.clientId);
+  return { ok: false, reason: "client_linked_elsewhere", linkedByUserId: holder?.linkedByUserId ?? null };
 }
 
 export async function getHouseholdLinkForClient(clientId: string) {
@@ -119,12 +165,13 @@ export async function getHouseholdLinkForClient(clientId: string) {
   return row ?? null;
 }
 
-export async function unlinkHousehold(firmId: string, clientId: string): Promise<void> {
+/** Removes a client's link, only when it's held through this connection. */
+export async function unlinkHousehold(connectionId: string, clientId: string): Promise<void> {
   await db
     .delete(integrationHouseholdLinks)
     .where(
       and(
-        eq(integrationHouseholdLinks.firmId, firmId),
+        eq(integrationHouseholdLinks.connectionId, connectionId),
         eq(integrationHouseholdLinks.clientId, clientId),
       ),
     );
@@ -144,11 +191,12 @@ export type ClaimResult =
  * the claim endpoint becomes the enumeration tool it exists to replace.
  *
  * Both failure reasons are returned rather than thrown because the caller must
- * render them identically — see the route's OPAQUE constant.
+ * render them identically — see the route's OPAQUE constant. That's why every
+ * refusal from `linkHouseholdOnConnection` (a household another client holds,
+ * or a client linked through another connection) becomes `already_linked`.
  */
 export async function claimHousehold(input: {
-  firmId: string;
-  providerId: ProviderId;
+  connection: LinkConnection;
   clientId: string;
   externalHouseholdId: string;
   userId: string;
@@ -158,38 +206,12 @@ export async function claimHousehold(input: {
   const match = households.find((h) => h.id === input.externalHouseholdId);
   if (!match) return { ok: false, reason: "unknown_household" };
 
-  const connection = await firmConnectionForLink(input.firmId, input.providerId);
-  try {
-    await db
-      .insert(integrationHouseholdLinks)
-      .values({
-        firmId: input.firmId,
-        provider: input.providerId,
-        ...connection,
-        clientId: input.clientId,
-        externalHouseholdId: input.externalHouseholdId,
-        linkedByUserId: input.userId,
-      })
-      .onConflictDoUpdate({
-        // Same target as linkHousehold: re-claiming for a client REPLACES its
-        // binding. A household already held by a DIFFERENT client trips the
-        // (firm, provider, household) unique index instead, caught below.
-        target: integrationHouseholdLinks.clientId,
-        set: {
-          provider: input.providerId,
-          ...connection,
-          externalHouseholdId: input.externalHouseholdId,
-          // Re-sets linkedByUserId, same as linkHousehold: attribution is the
-          // point of both paths (the audit trail must name who acted last),
-          // so a re-claim re-attributes to the claiming advisor.
-          linkedByUserId: input.userId,
-          updatedAt: new Date(),
-        },
-      });
-  } catch (err) {
-    if (isUniqueViolation(err)) return { ok: false, reason: "already_linked" };
-    throw err;
-  }
-
+  const outcome = await linkHouseholdOnConnection({
+    connection: input.connection,
+    clientId: input.clientId,
+    externalHouseholdId: input.externalHouseholdId,
+    userId: input.userId,
+  });
+  if (!outcome.ok) return { ok: false, reason: "already_linked" };
   return { ok: true, name: match.name };
 }
