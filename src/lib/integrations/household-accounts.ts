@@ -5,7 +5,6 @@ import { z } from "zod";
 import { db } from "@/db";
 import {
   accounts,
-  clientImports,
   clients,
   crmHouseholds,
   familyMembers,
@@ -14,8 +13,9 @@ import {
   scenarios,
 } from "@/db/schema";
 import type { AccountCategory, AccountSubType, ExtractedAccount } from "@/lib/extraction/types";
+import { discardImport } from "@/lib/fact-finder/import-lifecycle";
 
-import { buildReviewAccounts, commitProviderAccounts, upsertOpenReview } from "./commit";
+import { buildReviewAccounts, commitProviderAccounts, findOpenReviewId, upsertOpenReview } from "./commit";
 import { getProvider } from "./registry";
 import type { SyncingProviderId } from "./types";
 
@@ -139,25 +139,17 @@ function untiedPulledAccount(ctx: PanelContext, providerId: SyncingProviderId, e
 
 /**
  * Keeps the client's open review from this provider in step with the panel.
- * Its rows are rebuilt from the last pull and the CURRENT ties, the same
- * inputs `syncConnection` uses, so a connected account is `exact` to its plan
- * account and an untied one is `new`. Committing the review then updates in
- * place and never adds a second copy. The panel action wins over row edits
- * made on the review screen. No open review means nothing to do.
+ * The review holds only the pulled accounts no plan account is tied to (the
+ * same rule, and inputs, `syncConnection` uses), so a connected or added
+ * account leaves it and a disconnected one comes back as `new`. Committing
+ * the review can then never add a second copy, nor put the provider's
+ * guessed type on a connected account. The panel action wins over row edits
+ * made on the review screen. A review left with nothing in it is discarded;
+ * with no open review there is nothing to do.
  */
-async function rebuildOpenReview(ctx: PanelContext, providerId: SyncingProviderId): Promise<void> {
-  const [open] = await db
-    .select({ id: clientImports.id })
-    .from(clientImports)
-    .where(
-      and(
-        eq(clientImports.clientId, ctx.clientId),
-        eq(clientImports.origin, providerId),
-        eq(clientImports.status, "review"),
-      ),
-    )
-    .limit(1);
-  if (!open) return;
+async function rebuildOpenReview(ctx: PanelContext, providerId: SyncingProviderId, actorId: string): Promise<void> {
+  const openReviewId = await findOpenReviewId(ctx.clientId, providerId);
+  if (!openReviewId) return;
 
   const ties = await db
     .select({ id: accounts.id, externalId: accounts.externalId })
@@ -169,18 +161,18 @@ async function rebuildOpenReview(ctx: PanelContext, providerId: SyncingProviderI
         eq(accounts.scenarioId, ctx.scenarioId),
       ),
     );
-  const provider = getProvider(providerId);
+  const rows = buildReviewAccounts({ pulled: ctx.pulled, ties });
+  if (rows.length === 0) {
+    await discardImport({ importId: openReviewId, clientId: ctx.clientId, firmId: ctx.firmId }, actorId);
+    return;
+  }
   await upsertOpenReview({
     clientId: ctx.clientId,
     firmId: ctx.firmId,
     scenarioId: ctx.scenarioId,
     providerId,
     ownerUserId: ctx.ownerUserId,
-    accounts: buildReviewAccounts({
-      pulled: ctx.pulled,
-      ties,
-      autoCommitExact: provider.syncs && provider.autoCommitExact,
-    }),
+    accounts: rows,
   });
 }
 
@@ -228,9 +220,10 @@ export async function loadHouseholdAccounts(i: PanelInput): Promise<HouseholdAcc
 
 /**
  * Feeds an existing plan account from one account in the last pull: Addepar's
- * value, cost basis and holdings, and the tie. The plan account keeps its
- * type, sub-type, name, custodian, account number and owners, because the
- * provider's type is only a guess (from the account's name, for Addepar).
+ * value, margin loan, cost basis and holdings, and the tie. The plan account
+ * keeps its type, sub-type, name, custodian, account number and owners,
+ * because the provider's type is only a guess (from the account's name, for
+ * Addepar).
  */
 export async function connectHouseholdAccount(
   i: PanelInput & { externalId: string; planAccountId: string; userId: string },
@@ -252,12 +245,14 @@ export async function connectHouseholdAccount(
     // The exact branch of `commitAccounts` writes only the fields a row
     // carries (and never owners, nor the name without an override), so
     // leaving category, sub-type, custodian, account number and owner out of
-    // this row is what keeps the plan's identity.
+    // this row is what keeps the plan's identity. The margin loan rides with
+    // the value: the mapper grosses the value up by it.
     accounts: [
       {
         name: pulled.name,
         value: pulled.value,
         basis: pulled.basis,
+        marginBalance: pulled.marginBalance,
         holdings: pulled.holdings,
         externalProvider: i.providerId,
         externalId: i.externalId,
@@ -265,7 +260,7 @@ export async function connectHouseholdAccount(
       },
     ],
   });
-  await rebuildOpenReview(ctx, i.providerId);
+  await rebuildOpenReview(ctx, i.providerId, i.userId);
 }
 
 /**
@@ -307,7 +302,7 @@ export async function addHouseholdAccount(
       ),
     )
     .limit(1);
-  await rebuildOpenReview(ctx, i.providerId);
+  await rebuildOpenReview(ctx, i.providerId, i.userId);
   return created.id;
 }
 
@@ -339,6 +334,6 @@ export async function disconnectPlanAccount(
   // Someone disconnected it between the read and this write.
   if (untied.length === 0) throw notConnected();
 
-  await rebuildOpenReview(ctx, i.providerId);
+  await rebuildOpenReview(ctx, i.providerId, i.userId);
   return target.externalId;
 }

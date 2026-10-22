@@ -17,7 +17,7 @@ import {
 import { createTestClientWithScenario } from "@/test/factories";
 import { resolveHoldingsForCommit } from "@/lib/imports/commit/holdings";
 import { commitTabs } from "@/lib/imports/commit/orchestrator";
-import type { ImportPayload } from "@/lib/imports/types";
+import { emptyImportPayload, type ImportPayload } from "@/lib/imports/types";
 import { buildReviewAccounts, upsertOpenReview } from "./commit";
 import { createByokConnection } from "./connections";
 import {
@@ -34,6 +34,7 @@ import { ADDEPAR_REGISTRATIONS } from "./providers/addepar/registrations";
 const OWNER = "advisor_owner";
 const PULLED_AT = new Date("2026-10-20T14:00:00Z");
 const EXTERNAL_ID = "addepar-1234";
+const SECOND_ID = "addepar-5678";
 
 const firmIds: string[] = [];
 function freshFirmId(): string {
@@ -57,11 +58,13 @@ afterAll(async () => {
 
 /**
  * A client (primary member Denise) on an Addepar connection, linked to a
- * household whose last pull holds ONE account: "Fidelity 1234", whose name the
+ * household whose last pull holds "Fidelity 1234", whose name the
  * registration table doesn't recognise, so it is guessed taxable / brokerage.
  * Its one position is untickered, so committing it needs no price lookups.
+ * `second` adds "Schwab 5678" to the pull; `marginDebit` gives Fidelity a
+ * margin debit, which the mapper turns into a margin loan.
  */
-async function household() {
+async function household(opts: { second?: boolean; marginDebit?: number } = {}) {
   const firmId = freshFirmId();
   const { clientId, scenarioId } = await createTestClientWithScenario(firmId);
   const [denise] = await db
@@ -91,8 +94,20 @@ async function household() {
         value: 50000,
         costBasis: 42000,
       },
+      ...(opts.second
+        ? [{ id: SECOND_ID, name: "Schwab 5678", registrationType: "Schwab 5678", value: 8000, costBasis: 8000 }]
+        : []),
     ],
-    new Map([[EXTERNAL_ID, [{ description: "Cash", units: 50000, price: 1, marketValue: 50000 }]]]),
+    new Map([
+      [
+        EXTERNAL_ID,
+        [
+          { description: "Cash", units: 50000, price: 1, marketValue: 50000 },
+          ...(opts.marginDebit ? [{ description: "Margin", marketValue: -opts.marginDebit, costBasis: -opts.marginDebit }] : []),
+        ],
+      ],
+      [SECOND_ID, [{ description: "Cash", units: 8000, price: 1, marketValue: 8000 }]],
+    ]),
   );
   expect(pulled[0]).toMatchObject({ category: "taxable", subType: "brokerage" });
 
@@ -117,7 +132,7 @@ async function household() {
 
 type Household = Awaited<ReturnType<typeof household>>;
 
-/** Denise's Traditional IRA, owned by her alone, kept by hand (no feed). */
+/** Denise's Traditional IRA, owned by her alone, kept by hand (no feed), with $1,500 of post-tax basis. */
 async function deniseIra(h: Household, extra: Partial<typeof accounts.$inferInsert> = {}) {
   const [ira] = await db
     .insert(accounts)
@@ -130,7 +145,7 @@ async function deniseIra(h: Household, extra: Partial<typeof accounts.$inferInse
       custodian: "Schwab",
       accountNumberLast4: "9999",
       value: "31000",
-      basis: "0",
+      basis: "1500",
       ...extra,
     })
     .returning({ id: accounts.id });
@@ -150,13 +165,35 @@ async function ownersOf(accountId: string) {
     .where(eq(accountOwners.accountId, accountId));
 }
 
-async function reviewPayload(importId: string): Promise<ImportPayload> {
+/** The client's open Addepar review: its id and rows, or null. */
+async function openReview(clientId: string) {
   const [row] = await db
-    .select({ payloadJson: clientImports.payloadJson })
+    .select({ id: clientImports.id, payloadJson: clientImports.payloadJson })
     .from(clientImports)
-    .where(eq(clientImports.id, importId));
-  return (row.payloadJson as { payload: ImportPayload }).payload;
+    .where(
+      and(
+        eq(clientImports.clientId, clientId),
+        eq(clientImports.origin, "addepar"),
+        eq(clientImports.status, "review"),
+      ),
+    );
+  return row ? { id: row.id, accounts: (row.payloadJson as { payload: ImportPayload }).payload.accounts } : null;
 }
+
+/** An open review holding every pulled account as `new`, as a sync before any linking files it. */
+function startReview(h: Household) {
+  return upsertOpenReview({
+    clientId: h.clientId,
+    firmId: h.firmId,
+    scenarioId: h.scenarioId,
+    providerId: "addepar",
+    ownerUserId: OWNER,
+    accounts: buildReviewAccounts({ pulled: h.pulled, ties: [] }),
+  });
+}
+
+const reviewRows = (review: Awaited<ReturnType<typeof openReview>>) =>
+  review?.accounts.map((a) => [a.externalId, a.match]) ?? null;
 
 describe("loadHouseholdAccounts", () => {
   it("lists the last pull with each account's plan tie, and the untied plan accounts", async () => {
@@ -217,16 +254,34 @@ describe("connectHouseholdAccount", () => {
       accountNumberLast4: "9999",
     });
     expect(await ownersOf(ira)).toEqual([{ familyMemberId: h.deniseId, percent: "1.0000" }]);
-    // Addepar's figures and holdings arrive, and the tie is stamped.
+    // Addepar's value and holdings arrive, and the tie is stamped.
     expect(after.value).toBe("50000.00");
-    expect(after.basis).toBe("42000.00");
     expect(after).toMatchObject({ externalProvider: "addepar", externalId: EXTERNAL_ID, source: "addepar" });
     expect(after.lastSyncedAt).not.toBeNull();
     const holdings = await db.select().from(accountHoldings).where(eq(accountHoldings.accountId, ira));
     expect(holdings).toHaveLength(1);
+    expect(after.basis).toBe("42000.00");
     // No second account appeared.
     const all = await db.select({ id: accounts.id }).from(accounts).where(eq(accounts.clientId, h.clientId));
     expect(all).toEqual([{ id: ira }]);
+  });
+
+  it("carries the feed's margin loan onto a taxable account", async () => {
+    const h = await household({ marginDebit: 10000 });
+    const [brokerage] = await db
+      .insert(accounts)
+      .values({ clientId: h.clientId, scenarioId: h.scenarioId, name: "Joint Brokerage", category: "taxable", subType: "brokerage" })
+      .returning({ id: accounts.id });
+    await db.insert(accountOwners).values({ accountId: brokerage.id, familyMemberId: h.deniseId, percent: "1.0000" });
+
+    await connectHouseholdAccount({ ...h.ids, externalId: EXTERNAL_ID, planAccountId: brokerage.id, userId: OWNER });
+
+    // The mapper grosses the value and basis up by the loan, and the loan sits beside them.
+    expect(await loadAccount(brokerage.id)).toMatchObject({
+      value: "60000.00",
+      basis: "52000.00",
+      marginBalance: "10000.00",
+    });
   });
 
   it("refuses a plan account already tied to Addepar", async () => {
@@ -269,30 +324,25 @@ describe("connectHouseholdAccount", () => {
   });
 
   it("rebuilds the open review so committing it doesn't add a second copy", async () => {
-    const h = await household();
+    const h = await household({ second: true });
     const ira = await deniseIra(h);
-    const reviewId = await upsertOpenReview({
-      clientId: h.clientId,
-      firmId: h.firmId,
-      scenarioId: h.scenarioId,
-      providerId: "addepar",
-      ownerUserId: OWNER,
-      accounts: buildReviewAccounts({ pulled: h.pulled, ties: [], autoCommitExact: false }),
-    });
-    expect((await reviewPayload(reviewId)).accounts.map((a) => a.match)).toEqual([{ kind: "new" }]);
+    await startReview(h);
+    expect(reviewRows(await openReview(h.clientId))).toEqual([
+      [EXTERNAL_ID, { kind: "new" }],
+      [SECOND_ID, { kind: "new" }],
+    ]);
 
     await connectHouseholdAccount({ ...h.ids, externalId: EXTERNAL_ID, planAccountId: ira, userId: OWNER });
 
-    const payload = await reviewPayload(reviewId);
-    expect(payload.accounts).toHaveLength(1);
-    expect(payload.accounts[0]).toMatchObject({
-      externalId: EXTERNAL_ID,
-      match: { kind: "exact", existingId: ira },
-    });
+    // The connected account leaves the review; only the untied one is left.
+    const review = await openReview(h.clientId);
+    expect(reviewRows(review)).toEqual([[SECOND_ID, { kind: "new" }]]);
 
-    // Committing the review now updates the connected account in place.
+    // Committing the review adds the untied account and leaves the connected
+    // IRA exactly as Connect left it: no second copy, no guessed type.
+    const payload = { ...emptyImportPayload(), accounts: review!.accounts };
     await commitTabs({
-      importId: reviewId,
+      importId: review!.id,
       payload,
       tabs: ["accounts"],
       ctx: {
@@ -304,19 +354,26 @@ describe("connectHouseholdAccount", () => {
         holdingsAccountIds: [],
       },
     });
-    const all = await db.select({ id: accounts.id }).from(accounts).where(eq(accounts.clientId, h.clientId));
-    expect(all).toEqual([{ id: ira }]);
+    const tiedToFidelity = await db
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(and(eq(accounts.clientId, h.clientId), eq(accounts.externalId, EXTERNAL_ID)));
+    expect(tiedToFidelity).toEqual([{ id: ira }]);
+    expect(await loadAccount(ira)).toMatchObject({
+      category: "retirement",
+      subType: "traditional_ira",
+      custodian: "Schwab",
+      name: "Denise IRA",
+    });
+    const all = await db.select({ externalId: accounts.externalId }).from(accounts).where(eq(accounts.clientId, h.clientId));
+    expect(all.map((a) => a.externalId).sort()).toEqual([EXTERNAL_ID, SECOND_ID]);
   });
 
   it("leaves a client with no open review without one", async () => {
     const h = await household();
     const ira = await deniseIra(h);
     await connectHouseholdAccount({ ...h.ids, externalId: EXTERNAL_ID, planAccountId: ira, userId: OWNER });
-    const reviews = await db
-      .select({ id: clientImports.id })
-      .from(clientImports)
-      .where(and(eq(clientImports.clientId, h.clientId), eq(clientImports.status, "review")));
-    expect(reviews).toEqual([]);
+    expect(await openReview(h.clientId)).toBeNull();
   });
 });
 
@@ -345,6 +402,32 @@ describe("addHouseholdAccount", () => {
     });
     expect(await ownersOf(created)).toEqual([{ familyMemberId: h.deniseId, percent: "1.0000" }]);
   });
+
+  it("takes the added account out of the open review, and discards a review left empty", async () => {
+    const h = await household({ second: true });
+    const reviewId = await startReview(h);
+    const add = (externalId: string) =>
+      addHouseholdAccount({
+        ...h.ids,
+        externalId,
+        category: "taxable",
+        subType: "brokerage",
+        owner: "client",
+        userId: OWNER,
+      });
+
+    await add(EXTERNAL_ID);
+    expect(reviewRows(await openReview(h.clientId))).toEqual([[SECOND_ID, { kind: "new" }]]);
+
+    await add(SECOND_ID);
+    expect(await openReview(h.clientId)).toBeNull();
+    const [discarded] = await db
+      .select({ status: clientImports.status, discardedAt: clientImports.discardedAt })
+      .from(clientImports)
+      .where(eq(clientImports.id, reviewId));
+    expect(discarded.status).toBe("discarded");
+    expect(discarded.discardedAt).not.toBeNull();
+  });
 });
 
 describe("disconnectPlanAccount", () => {
@@ -368,6 +451,21 @@ describe("disconnectPlanAccount", () => {
       basis: "42000.00",
     });
     expect(await ownersOf(ira)).toEqual([{ familyMemberId: h.deniseId, percent: "1.0000" }]);
+  });
+
+  it("puts a disconnected account back in the open review as new", async () => {
+    const h = await household({ second: true });
+    const ira = await deniseIra(h);
+    await startReview(h);
+    await connectHouseholdAccount({ ...h.ids, externalId: EXTERNAL_ID, planAccountId: ira, userId: OWNER });
+    expect(reviewRows(await openReview(h.clientId))).toEqual([[SECOND_ID, { kind: "new" }]]);
+
+    await disconnectPlanAccount({ ...h.ids, planAccountId: ira, userId: OWNER });
+
+    expect(reviewRows(await openReview(h.clientId))).toEqual([
+      [EXTERNAL_ID, { kind: "new" }],
+      [SECOND_ID, { kind: "new" }],
+    ]);
   });
 
   it("refuses a plan account that isn't connected to this provider", async () => {

@@ -3,7 +3,9 @@ import { and, eq, sql } from "drizzle-orm";
 import { accountOwners, accounts, lifeInsurancePolicies, sourceEnum } from "@/db/schema";
 import { isRmdEligibleSubType } from "@/engine/rmd";
 import { is529Account } from "@/lib/accounts/is-529";
+import { businessCashChild } from "@/lib/accounts/business-cash-child";
 import { MAX_MARGIN_INTEREST_RATE } from "@/lib/accounts/margin-validation";
+import { mapSubTypeToBusinessType } from "@/lib/schemas/accounts-business";
 import type { ExtractedAccount } from "@/lib/extraction/types";
 import {
   RETIREMENT_SUBTYPES,
@@ -223,6 +225,12 @@ export async function commitAccounts(
           ...(row.annualPropertyTax != null
             ? { annualPropertyTax: String(row.annualPropertyTax) }
             : {}),
+          // What createAccountForClient gives a business added by hand (with
+          // its "— Cash" account, below): the engine reads the type for
+          // pass-through and treats a null tax treatment as ordinary income.
+          ...(category === "business"
+            ? { businessType: mapSubTypeToBusinessType(row.subType), businessTaxTreatment: "qbi" as const }
+            : {}),
           ...margin.columns,
         })
         .returning({ id: accounts.id });
@@ -236,6 +244,11 @@ export async function commitAccounts(
       // balance back into the household estate the beneficiary took it out of.
       if (!is529) {
         await writeImportedOwners(tx, inserted.id, row, ctx.clientId, family, isRetirement);
+      }
+      if (category === "business") {
+        await tx.insert(accounts).values(
+          businessCashChild({ clientId: ctx.clientId, scenarioId: ctx.scenarioId, businessName: row.name, businessId: inserted.id }),
+        );
       }
       await writeAccountHoldings(
         tx,

@@ -74,31 +74,35 @@ export async function commitProviderAccounts(i: {
 }
 
 /**
- * The rows of a client's open review, from a pull and the plan accounts it is
- * tied to (by external id). A tied account is `exact` to its plan account; the
- * rest are `new`.
- *
- * Review-mode providers (autoCommitExact: false, e.g. Addepar) must not
- * auto-commit ANYTHING — every account, exact or new, folds into the single
- * open review import so the advisor confirms before any write. OAuth
- * providers (autoCommitExact: true) auto-commit the exact ones, so only the
- * new ones are reviewed.
+ * The rows of a client's open review: the pulled accounts no plan account is
+ * tied to (by external id), each `new`. A tied account is reviewed once, when
+ * it is first linked; after that the feed updates it, so it never comes back
+ * to the review.
  */
 export function buildReviewAccounts(i: {
   pulled: ExtractedAccount[];
   ties: Array<{ id: string; externalId: string | null }>;
-  autoCommitExact: boolean;
 }): ImportPayload["accounts"] {
-  const { exact, new: fresh } = reconcile({ mapped: i.pulled, existing: i.ties });
-  return [
-    ...(i.autoCommitExact
-      ? []
-      : exact.map((e) => ({
-          ...e.account,
-          match: { kind: "exact", existingId: e.existingId } as const,
-        }))),
-    ...fresh.map((a) => ({ ...a, match: { kind: "new" } as const })),
-  ];
+  return reconcile({ mapped: i.pulled, existing: i.ties }).new.map((a) => ({
+    ...a,
+    match: { kind: "new" } as const,
+  }));
+}
+
+/** The client's one open review import from this provider, if it has one. */
+export async function findOpenReviewId(clientId: string, providerId: SyncingProviderId): Promise<string | null> {
+  const [openReview] = await db
+    .select({ id: clientImports.id })
+    .from(clientImports)
+    .where(
+      and(
+        eq(clientImports.clientId, clientId),
+        eq(clientImports.origin, providerId),
+        eq(clientImports.status, "review"),
+      ),
+    )
+    .limit(1);
+  return openReview?.id ?? null;
 }
 
 /**
@@ -118,24 +122,13 @@ export async function upsertOpenReview(i: {
 }): Promise<string> {
   const payloadJson = { payload: { ...emptyImportPayload(), accounts: i.accounts } };
 
-  const [openReview] = await db
-    .select({ id: clientImports.id })
-    .from(clientImports)
-    .where(
-      and(
-        eq(clientImports.clientId, i.clientId),
-        eq(clientImports.origin, i.providerId),
-        eq(clientImports.status, "review"),
-      ),
-    )
-    .limit(1);
-
-  if (openReview) {
+  const openReviewId = await findOpenReviewId(i.clientId, i.providerId);
+  if (openReviewId) {
     await db
       .update(clientImports)
       .set({ payloadJson, createdByUserId: i.ownerUserId, updatedAt: new Date() })
-      .where(eq(clientImports.id, openReview.id));
-    return openReview.id;
+      .where(eq(clientImports.id, openReviewId));
+    return openReviewId;
   }
 
   const [created] = await db

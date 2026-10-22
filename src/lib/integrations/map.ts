@@ -56,6 +56,13 @@ export function mapProviderPosition(p: ProviderPosition): ExtractedHolding {
   };
 }
 
+/** A custodian's margin debit, which a feed reports as a negative "Margin" position. */
+function isMarginDebit(p: ProviderPosition): boolean {
+  return /\bmargin\b/i.test(p.description ?? "") && (p.marketValue ?? 0) < 0;
+}
+
+const cents = (n: number) => Math.round(n * 100) / 100;
+
 export type IntegrationImportPayload = {
   origin: ProviderId;
   externalHouseholdId: string;
@@ -75,7 +82,19 @@ export function mapToImportPayload(
     const reg = mapRegistrationType(a.registrationType, table);
     if (reg.warning) warnings.push(reg.warning);
     const acct = mapProviderAccount(a, providerId, table);
-    acct.holdings = (positionsByAccount.get(a.id) ?? []).map(mapProviderPosition);
+    const positions = positionsByAccount.get(a.id) ?? [];
+    acct.holdings = positions.filter((p) => !isMarginDebit(p)).map(mapProviderPosition);
+    const debits = positions.filter(isMarginDebit);
+    if (debits.length > 0) {
+      // The debit becomes the account's margin loan. The feed's account value
+      // and cost basis already have it subtracted, and an account with a loan
+      // is saved at its securities' value with the loan beside it.
+      const loan = -debits.reduce((sum, p) => sum + (p.marketValue ?? 0), 0);
+      const loanBasis = -debits.reduce((sum, p) => sum + (p.costBasis ?? 0), 0);
+      acct.marginBalance = cents(loan);
+      if (acct.value != null) acct.value = cents(acct.value + loan);
+      if (acct.basis != null) acct.basis = cents(acct.basis + loanBasis);
+    }
     return acct;
   });
   return {

@@ -148,3 +148,52 @@ describe("commitAccounts", () => {
     expect(updated[0]).not.toHaveProperty("annualPropertyTax");
   });
 });
+
+describe("commitAccounts — a new business", () => {
+  const business = (subType: ImportPayload["accounts"][number]["subType"]) =>
+    payloadWith([
+      {
+        name: "Hoboken Improvement Co, LP",
+        category: "business",
+        subType,
+        value: 1_418_000,
+        __rowId: "account:hoboken#f1:0",
+        match: { kind: "new" },
+      },
+    ]);
+
+  it("takes its business type from its sub-type and the pass-through tax treatment a business added by hand gets", async () => {
+    for (const [subType, businessType] of [
+      ["partnership", "partnership"],
+      ["sole_proprietorship", "sole_prop"],
+      ["llc", "llc"],
+      [undefined, "other"],
+    ] as const) {
+      const { tx, inserted } = fakeTx();
+      await commitAccounts(tx, business(subType), CTX);
+      expect([inserted[0].businessType, inserted[0].businessTaxTreatment]).toEqual([businessType, "qbi"]);
+    }
+  });
+
+  it("gets its own \"— Cash\" account, as a business added by hand does", async () => {
+    const { tx, inserted } = fakeTx();
+    await commitAccounts(tx, business("partnership"), CTX);
+    expect(inserted.filter((r) => r.isDefaultChecking)).toEqual([
+      expect.objectContaining({
+        name: "Hoboken Improvement Co, LP — Cash",
+        category: "cash",
+        subType: "checking",
+        parentAccountId: "account-1",
+        scenarioId: "scenario-1",
+      }),
+    ]);
+  });
+
+  it("leaves all three off every other category", async () => {
+    const { tx, inserted } = fakeTx();
+    await commitAccounts(tx, payloadWith([{ name: "Brokerage", category: "taxable", match: { kind: "new" } }]), CTX);
+    expect(inserted[0]).not.toHaveProperty("businessType");
+    expect(inserted[0]).not.toHaveProperty("businessTaxTreatment");
+    expect(inserted.filter((r) => r.isDefaultChecking)).toEqual([]);
+  });
+});

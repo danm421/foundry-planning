@@ -24,7 +24,7 @@ export function IntegrationPendingReviews({ label, reviews }: Props) {
           Waiting for your review
         </h3>
         <p className="text-sm text-ink-3">
-          Accounts from {label} reach a plan only after you review them.
+          New accounts from {label} reach a plan only after you review them. Once linked, they update on every sync.
         </p>
       </div>
       <ul className="flex flex-col divide-y divide-hair">

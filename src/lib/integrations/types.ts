@@ -99,12 +99,6 @@ export type SyncingProviderDefinition = ProviderBase & {
   syncs: true;
   client: ProviderClient;
   registrationTable: RegistrationTable;
-  /**
-   * When true (OAuth providers), sync auto-commits externalId-matched accounts.
-   * When false (Addepar), matched + new accounts both route to a review import;
-   * nothing writes until the advisor commits.
-   */
-  autoCommitExact: boolean;
 };
 
 /** A provider that only holds firm credentials — no households, accounts or positions. */

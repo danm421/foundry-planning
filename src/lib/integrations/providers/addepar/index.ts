@@ -13,5 +13,4 @@ export const addeparProvider: ProviderDefinition = {
   syncs: true,
   client: addeparClient,
   registrationTable: ADDEPAR_REGISTRATIONS,
-  autoCommitExact: false,
 };

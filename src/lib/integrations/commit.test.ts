@@ -22,26 +22,14 @@ const ties = [
 ];
 
 describe("buildReviewAccounts", () => {
-  it("buildReviewAccounts in review mode folds tied accounts as exact and the rest as new", () => {
-    const rows = buildReviewAccounts({
-      pulled: [pulled("a1"), pulled("a2")],
-      ties,
-      autoCommitExact: false,
-    });
-    expect(rows.map((r) => [r.externalId, r.match])).toEqual([
-      ["a1", { kind: "exact", existingId: "plan-1" }],
-      ["a2", { kind: "new" }],
-    ]);
+  it("lists only the accounts no plan account is tied to, each as new", () => {
+    const rows = buildReviewAccounts({ pulled: [pulled("a1"), pulled("a2")], ties });
+    expect(rows.map((r) => [r.externalId, r.match])).toEqual([["a2", { kind: "new" }]]);
     // The pulled figures ride along untouched.
-    expect(rows[0]).toMatchObject({ name: "Account a1", category: "taxable", subType: "brokerage" });
+    expect(rows[0]).toMatchObject({ name: "Account a2", category: "taxable", subType: "brokerage" });
   });
 
-  it("buildReviewAccounts in auto mode returns only the new ones", () => {
-    const rows = buildReviewAccounts({
-      pulled: [pulled("a1"), pulled("a2")],
-      ties,
-      autoCommitExact: true,
-    });
-    expect(rows.map((r) => [r.externalId, r.match])).toEqual([["a2", { kind: "new" }]]);
+  it("is empty once every pulled account is tied", () => {
+    expect(buildReviewAccounts({ pulled: [pulled("a1")], ties })).toEqual([]);
   });
 });

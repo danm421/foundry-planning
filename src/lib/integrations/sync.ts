@@ -4,9 +4,10 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { accounts, integrationSyncRuns, scenarios } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
+import { discardImport } from "@/lib/fact-finder/import-lifecycle";
 
 import { connectionCallContext } from "./auth";
-import { buildReviewAccounts, commitProviderAccounts, upsertOpenReview } from "./commit";
+import { buildReviewAccounts, commitProviderAccounts, findOpenReviewId, upsertOpenReview } from "./commit";
 import { loadConnection, setConnectionStatusById } from "./connections";
 import { getLinksForConnection, recordLastPull } from "./households";
 import { mapToImportPayload } from "./map";
@@ -21,13 +22,15 @@ import type { ProviderClient } from "./types";
  * Per the product decision, accounts split into two buckets after reconciliation:
  *  - EXACT (already imported, matched by externalId): auto-commit / update in
  *    place via `commitProviderAccounts` (the document-import commit path).
+ *    An account is reviewed once, when it is first linked; after that the
+ *    feed is trusted.
  *  - NEW (never-seen): land in a single open `clientImports` review row
  *    (`origin:<syncing providerId>`, `status:'review'`) for the advisor to
  *    review — the provider's category/subType is GUESSED from
  *    registrationType, so it must not hit the plan unreviewed. Re-syncing
- *    DEDUPES into one open review import per client.
- * Review-mode providers (autoCommitExact: false, e.g. Addepar) send both
- * buckets to the review. The review always belongs to the connection's owner.
+ *    DEDUPES into one open review import per client, and a review left with
+ *    nothing new is discarded. The review always belongs to the connection's
+ *    owner.
  */
 export async function syncConnection(
   connectionId: string,
@@ -134,33 +137,30 @@ export async function syncConnection(
             ),
           );
 
+        const { exact } = reconcile({ mapped: mapped.accounts, existing });
+
         // EXACT bucket → auto-commit / update in place via the commit path.
-        if (provider.autoCommitExact) {
-          const { exact } = reconcile({ mapped: mapped.accounts, existing });
-          if (exact.length > 0) {
-            await commitProviderAccounts({
-              clientId: link.clientId,
-              scenarioId: scn.id,
-              firmId,
-              userId,
-              providerId,
-              accounts: exact.map((e) => ({
-                ...e.account,
-                match: { kind: "exact", existingId: e.existingId } as const,
-              })),
-            });
-            committed += exact.length;
-          }
+        if (exact.length > 0) {
+          await commitProviderAccounts({
+            clientId: link.clientId,
+            scenarioId: scn.id,
+            firmId,
+            userId,
+            providerId,
+            // The type was settled when the account was reviewed; the feed's
+            // is only a guess from its registration, so it never overwrites it.
+            accounts: exact.map((e) => ({
+              ...e.account,
+              category: undefined,
+              subType: undefined,
+              match: { kind: "exact", existingId: e.existingId } as const,
+            })),
+          });
+          committed += exact.length;
         }
 
-        // Review bucket → upsert ONE open review import per client (do NOT
-        // commit). For OAuth providers this is just the NEW accounts; for
-        // review-mode providers it's exact + new together.
-        const reviewAccounts = buildReviewAccounts({
-          pulled: mapped.accounts,
-          ties: existing,
-          autoCommitExact: provider.autoCommitExact,
-        });
+        // NEW bucket → upsert ONE open review import per client (do NOT commit).
+        const reviewAccounts = buildReviewAccounts({ pulled: mapped.accounts, ties: existing });
         if (reviewAccounts.length > 0) {
           importId = await upsertOpenReview({
             clientId: link.clientId,
@@ -171,6 +171,12 @@ export async function syncConnection(
             accounts: reviewAccounts,
           });
           queued += reviewAccounts.length;
+        } else {
+          const openReviewId = await findOpenReviewId(link.clientId, providerId);
+          // Every account it held is linked now, so nothing is left to review.
+          if (openReviewId) {
+            await discardImport({ importId: openReviewId, clientId: link.clientId, firmId }, userId);
+          }
         }
 
         households += 1;

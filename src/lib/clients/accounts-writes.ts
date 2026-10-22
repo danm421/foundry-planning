@@ -81,6 +81,7 @@ import {
 } from "@/lib/ownership";
 import { accountCreateSchema } from "@/lib/schemas/accounts";
 import { validateInheritedIraFields } from "@/lib/accounts/inherited-ira";
+import { businessCashChild } from "@/lib/accounts/business-cash-child";
 import { AddBusinessInputSchema, mapBusinessTypeToSubType } from "@/lib/schemas/accounts-business";
 import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
 import { handleOf, inTransaction, runAfterCommit, type DbOrTx, type WriteOptions } from "@/lib/db-tx";
@@ -396,33 +397,11 @@ export async function createAccountForClient(args: {
     }
 
     // Auto-provision a child default-checking cash account on every new top-level
-    // business. The Phase-3 engine looks for this exact row to route business
-    // income/expense and retained earnings. Children inherit ownership via
-    // parentAccountId — no account_owners rows. isDefaultChecking=true brings the
-    // PUT/DELETE guards along (category / sub-type / parent / ownership / deletion
-    // are all locked). (Port of POST ~328-350.)
+    // business (Port of POST ~328-350).
     if (category === "business" && p.parentAccountId == null) {
-      await tx.insert(accounts).values({
-        clientId,
-        scenarioId,
-        name: `${p.name} — Cash`,
-        category: "cash",
-        subType: "checking",
-        value: "0",
-        basis: "0",
-        rothValue: "0",
-        growthRate: null,
-        rmdEnabled: false,
-        growthSource: "default",
-        turnoverPct: "0",
-        annualPropertyTax: "0",
-        propertyTaxGrowthRate: "0.03",
-        propertyTaxGrowthSource: "custom",
-        titlingType: "jtwros",
-        flowMode: "annual",
-        parentAccountId: account.id,
-        isDefaultChecking: true,
-      });
+      await tx
+        .insert(accounts)
+        .values(businessCashChild({ clientId, scenarioId, businessName: p.name, businessId: account.id }));
     }
   });
 

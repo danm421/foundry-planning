@@ -35,6 +35,7 @@ import { applyMarginLoans } from "./margin-loans";
 import { reviewStatementHoldings } from "./holdings-checks";
 import { completeExtractedAccounts } from "./holdings-completion";
 import { extractWithMultiPass, type MultiPassResult } from "./multi-pass";
+import { foldBusinessEntities } from "./business-entities";
 import { buildPageOutline } from "./page-outline";
 import { visionOcrPdf, visionOcrImage } from "./vision-ocr";
 
@@ -486,6 +487,7 @@ export async function extractDocument(
         if (multi) {
             const extracted = flattenMultiPass(multi);
             extracted.accounts = composeAccountNames(extracted.accounts);
+            Object.assign(extracted, foldBusinessEntities(extracted));
             warnings.push(...multi.warnings, ...placeMarginLoans(extracted), ...checkHoldings(extracted, text));
             // R5: this path returns before the single-pass truncation below
             // (step 5, `MAX_DOCUMENT_TEXT_CHARS`), so redactedPages is
@@ -618,6 +620,7 @@ export async function extractDocument(
     };
 
     extracted.accounts = composeAccountNames(extracted.accounts);
+    Object.assign(extracted, foldBusinessEntities(extracted));
     // Before the holdings completion below, so a margin loan's negative cash
     // line isn't counted as a position that undershoots the stated value.
     warnings.push(...placeMarginLoans(extracted));

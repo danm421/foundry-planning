@@ -15,5 +15,4 @@ export const schwabProvider: ProviderDefinition = {
   syncs: true,
   client: schwabClient,
   registrationTable: SCHWAB_REGISTRATIONS,
-  autoCommitExact: true,
 };

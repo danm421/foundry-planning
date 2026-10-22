@@ -15,5 +15,4 @@ export const orionProvider: ProviderDefinition = {
   syncs: true,
   client: orionClient,
   registrationTable: ORION_REGISTRATIONS,
-  autoCommitExact: true,
 };
