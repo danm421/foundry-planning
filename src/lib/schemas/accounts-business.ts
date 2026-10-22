@@ -83,3 +83,20 @@ export function mapBusinessTypeToSubType(
       return "other";
   }
 }
+
+/** The inverse, for a business row that arrives with only a sub-type (an AI import). Anything else is `other`. */
+export function mapSubTypeToBusinessType(
+  subType: string | null | undefined,
+): "sole_prop" | "partnership" | "s_corp" | "c_corp" | "llc" | "other" {
+  switch (subType) {
+    case "sole_proprietorship":
+      return "sole_prop";
+    case "partnership":
+    case "s_corp":
+    case "c_corp":
+    case "llc":
+      return subType;
+    default:
+      return "other";
+  }
+}

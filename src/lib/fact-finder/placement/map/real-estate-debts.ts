@@ -12,7 +12,7 @@ import {
   BUSINESS_TAX_MAP, BUSINESS_TYPE_MAP, LIABILITY_TYPE_MAP, PROPERTY_TYPE_MAP, SECTION_ACCOUNT_CATEGORY, TITLING_MAP, valueFor,
 } from "../../enums";
 import type { FFRow } from "../../types";
-import { findLiability, findProperty, rowRecordRef } from "../refs";
+import { findLiability, findProperty, hasCoClient, householdPerson, rowRecordRef } from "../refs";
 import { monthsBetween, termMonthsFromYears, toFraction } from "../translate";
 import { stringOf } from "../text";
 import type { TargetDraft } from "../types";
@@ -151,7 +151,9 @@ export const BUSINESS_MAP: SectionMap = {
         if (!shares.ok) b.block(shares.reason, "ownersAndPercent");
         else b.put("owners", shares.shares.map((s) => ({ who: s.who, percent: toFraction(s.percent) })), ["ownersAndPercent"]);
       } else if (recordId === null) {
-        b.block('Name the owners and their shares, like "Mark 60%, Laura 40%".', "ownersAndPercent");
+        // A blank on a new business is the client's alone when there's no co-client to share it — ownersOf's rule.
+        if (hasCoClient(ctx.refs)) b.block('Name the owners and their shares, like "Mark 60%, Laura 40%".', "ownersAndPercent");
+        else b.put("owners", [{ who: householdPerson("client"), percent: 1 }], ["ownersAndPercent"]);
       }
       b.put("businessTaxTreatment", valueFor(BUSINESS_TAX_MAP, text(row, "taxTreatment")), ["taxTreatment"])
         .put("distributionPolicyPercent", rate(row, "distributionPercent"), ["distributionPercent"]);

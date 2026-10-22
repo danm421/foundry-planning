@@ -1,4 +1,4 @@
-export const ACCOUNT_STATEMENT_VERSION = "2026-10-21.1-margin-on-account";
+export const ACCOUNT_STATEMENT_VERSION = "2026-10-22.1-business-interests";
 export const ACCOUNT_STATEMENT_HOLDINGS_VERSION = "2026-10-21.3-cash-line-not-total-holdings";
 
 const HOLDINGS_FIELD = `,
@@ -41,9 +41,9 @@ Return a JSON object with this exact structure:
 {
   "accounts": [
     {
-      "name": "SHORT display name: the ACCOUNT TYPE only, Title Case, max ~40 chars. e.g. 'Rollover IRA', 'Joint Brokerage', 'Checking'. Do NOT include the custodian/institution, account numbers, or the registration/owner names.",
+      "name": "SHORT display name: the ACCOUNT TYPE only, Title Case, max ~40 chars. e.g. 'Rollover IRA', 'Joint Brokerage', 'Checking'. Do NOT include the custodian/institution, account numbers, or the registration/owner names. A BUSINESS is the one exception: use the business's own name as printed.",
       "category": "one of: taxable, cash, retirement, annuity, real_estate, business, notes_receivable, education_savings",
-      "subType": "one of: brokerage, savings, checking, traditional_ira, roth_ira, 401k, 403b, 529, trust, primary_residence, rental_property, commercial_property, other",
+      "subType": "one of: brokerage, savings, checking, traditional_ira, roth_ira, 401k, 403b, 529, trust, primary_residence, rental_property, commercial_property, sole_proprietorship, partnership, s_corp, c_corp, llc, other",
       "owner": "one of: client, spouse, joint (infer from account title or registration)",
       "ownerNameHint": "The exact account registration / title as written, e.g. 'John A. Smith & Jane B. Smith JTWROS'. Copy verbatim; do not normalize.",
       "value": 0,
@@ -95,6 +95,8 @@ Extraction rules:
   - Annuities (e.g. "Prudential Annuity", or anything under an "Annuities" section) -> category "annuity", subType "other"
   - 529 plans, Coverdell ESAs, and any account described as a college / education savings account -> category "education_savings", subType "529"
   - Real estate (homes, condos, land, or anything under a "Real Estate" / "Real Estate Assets" section) -> category "real_estate". Use subType "primary_residence" for a home/condo the household lives in, "rental_property" for rentals, "commercial_property" for commercial real estate; default to "primary_residence" if unclear. When the document is a MORTGAGE statement rather than a property valuation, the debt belongs in "liabilities" (see the DEBTS vs. ASSETS rule below) — do not create a real_estate account from a loan balance.
+  - Business interests — a company or practice the household owns (a name ending in LLC, LP, LLP, Inc., Corp., Co., "& Affiliates", "Partners", a "business interest", "closely held" stock) -> category "business", with its stated value in "value". Read it under ANY heading: "Business Interests", "Closely Held", "Other Assets", and also "Personal Assets" / "Personal Property" — planning-software balance sheets often list a business there. subType from its legal form: LLC -> "llc"; LP, LLP or partnership -> "partnership"; S-corp -> "s_corp"; Inc., Corp. or C-corp -> "c_corp"; sole proprietorship -> "sole_proprietorship"; "other" when the document doesn't say.
+  - Personal property — vehicles, motorcycles, boats, RVs, jewelry, art, collectibles, furniture — is NOT an account and NOT real estate. Skip it entirely. Never skip a business that is listed beside it.
 - 529 / EDUCATION STATEMENTS. These name TWO people and the distinction matters — never collapse them into one:
   - The DESIGNATED BENEFICIARY (also printed as "Beneficiary", "Student", or "Designated Beneficiary") is who the money is for. Put that name in "beneficiaryNameHint", verbatim.
   - The ACCOUNT OWNER (also printed as "Participant", "Account Owner", or "Custodian") is who funds and controls it — often a parent, sometimes a grandparent. Put that name in "grantorNameHint", verbatim.
@@ -121,7 +123,7 @@ Extraction rules:
   document also prints the actual date; do not convert a label into a date on
   your own. If no date is legible for an account, OMIT "statementDate" entirely.
   Never guess it from the file name.
-- "name" must be SHORT and descriptive — the account type, nothing else. Do NOT put the custodian in "name" even when the document names one: it has its own "custodian" field. Never copy the statement's registration header into "name". The account number belongs in "accountNumberLast4" and the registration line belongs in "ownerNameHint", so "name" needs neither. Good: "Rollover IRA", "Joint Brokerage". Bad: "Fidelity Rollover IRA", "JOHN A SMITH & JANE B SMITH JTWROS ROLLOVER IRA XXXX-1234".
+- "name" must be SHORT and descriptive — the account type, nothing else (a business keeps its own name). Do NOT put the custodian in "name" even when the document names one: it has its own "custodian" field. Never copy the statement's registration header into "name". The account number belongs in "accountNumberLast4" and the registration line belongs in "ownerNameHint", so "name" needs neither. Good: "Rollover IRA", "Joint Brokerage". Bad: "Fidelity Rollover IRA", "JOHN A SMITH & JANE B SMITH JTWROS ROLLOVER IRA XXXX-1234".
 - "ownerNameHint": copy the registration/title line verbatim (all names + any 'JTWROS'/'Joint'/'TOD' wording). Still also fill the coarse "owner" enum.${withHoldings ? HOLDINGS_RULES : ""}
 
 Return ONLY valid JSON. No explanation, no markdown.`;

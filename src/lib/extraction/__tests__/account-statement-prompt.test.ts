@@ -65,7 +65,7 @@ describe("ACCOUNT_STATEMENT_PROMPT", () => {
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("annuity");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("lifePolicies");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("cashValue");
-    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-10-21.1-margin-on-account");
+    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-10-22.1-business-interests");
   });
 
   it("instructs a short account-TYPE name with no custodian, not the registration header", () => {
@@ -343,5 +343,19 @@ describe("classification structure the debt rules depend on", () => {
     expect(educationBlock).toBeGreaterThan(-1);
     expect(realEstate).toBeGreaterThan(classifyList);
     expect(realEstate).toBeLessThan(educationBlock);
+  });
+});
+
+describe("business interests", () => {
+  it("files a business as a business account under any heading, Personal Assets included, with its legal form", () => {
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/Business interests .* -> category "business"/);
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/"Personal Assets" \/ "Personal Property"/);
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/LP, LLP or partnership -> "partnership"/);
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/"subType": "one of: [^"]*sole_proprietorship, partnership, s_corp, c_corp, llc/);
+  });
+
+  it("keeps a business's own name and skips personal property", () => {
+    expect(ACCOUNT_STATEMENT_PROMPT).toContain("A BUSINESS is the one exception: use the business's own name as printed.");
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/Personal property — vehicles, motorcycles.*Skip it entirely/);
   });
 });

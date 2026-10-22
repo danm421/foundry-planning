@@ -291,7 +291,7 @@ describe("BUSINESS_MAP", () => {
     expect(drafts.map((d) => d.target)).toEqual(["business_account"]);
   });
 
-  it("a new business with no owners blocks; one on record keeps its owners", () => {
+  it("a new business with no owners blocks when there's a co-client; one on record keeps its owners", () => {
     const [fresh] = place(BUSINESS_MAP, [rowOf("b1", { businessName: "Acme LLC", currentValue: 900000 })]);
     expect(fresh.blocked).toEqual({
       reason: 'Name the owners and their shares, like "Mark 60%, Laura 40%".',
@@ -302,6 +302,13 @@ describe("BUSINESS_MAP", () => {
       book: hendricksBook({ business_account: [acme] }),
     });
     expect([onRecord.recordId, onRecord.label, keys(onRecord), onRecord.blocked]).toEqual(["b-acme", "Acme LLC", ["value"], undefined]);
+  });
+
+  it("a new business with no owners is the client's alone on a household with no co-client", () => {
+    const book = bookWith({}, { people: { client: "fm-client", spouse: null } });
+    const [draft] = place(BUSINESS_MAP, [rowOf("b1", { businessName: "Hoboken Improvement Co, LP", currentValue: 1418000 })], { book });
+    expect([draft.blocked, fieldOf(draft, "owners")?.value]).toEqual([undefined, [{ who: client, percent: 1 }]]);
+    expect(fieldOf(draft, "owners")?.from).toEqual([at("business", "b1", "ownersAndPercent")]);
   });
 
   it("owners who can't be found, or shares that don't add up, block on the cell", () => {
