@@ -215,6 +215,7 @@ describe("IntegrationClientStatus", () => {
     await waitFor(() => {
       const calls = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls;
       expect(calls[0][0]).toBe("/api/integrations/orion/households/claim");
+      expect(calls[1][0]).toBe("/api/integrations/orion/sync");
     });
   });
 });

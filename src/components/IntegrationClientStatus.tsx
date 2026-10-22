@@ -87,10 +87,10 @@ export function IntegrationClientStatus({
   const sameProvider = connections.every((c) => c.providerId === connections[0]?.providerId);
   const linkLabel = sameProvider ? providerLabel : "a data source";
 
-  async function handleSync() {
+  async function handleSync(syncProvider: ProviderId = providerId) {
     setBusy(true);
     try {
-      const res = await fetch(`/api/integrations/${providerId}/sync`, {
+      const res = await fetch(`/api/integrations/${syncProvider}/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientId }),
@@ -150,7 +150,7 @@ export function IntegrationClientStatus({
       router.refresh();
       // Claim only creates the link — pull the accounts as a separate
       // request so one click never holds an accounts+positions fetch open.
-      await handleSync();
+      await handleSync(chosen.providerId);
     } catch {
       setClaimError("Couldn't link that household.");
     } finally {
@@ -186,7 +186,7 @@ export function IntegrationClientStatus({
               <button
                 type="button"
                 className={BUTTON_CLASS}
-                onClick={handleSync}
+                onClick={() => handleSync()}
                 disabled={busy}
               >
                 <SyncIcon />
