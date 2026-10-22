@@ -96,6 +96,10 @@ import { buildPortfolioGrowthDrillData } from "@/lib/presentations/pages/cash-fl
 import { buildPortfolioActivityDrillData } from "@/lib/presentations/pages/cash-flow-activity/view-model";
 import { buildPortfolioAssetsDrillData } from "@/lib/presentations/pages/cash-flow-assets/view-model";
 import { buildWithdrawalsDrillData } from "@/lib/presentations/pages/cash-flow-withdrawals/view-model";
+import {
+  buildSolverCashFlowData,
+  SOLVER_CASH_FLOW_TITLE,
+} from "@/lib/presentations/pages/solver-cash-flow/view-model";
 import { buildMonthlyCashFlowPageData } from "@/lib/presentations/pages/cash-flow-monthly/view-model";
 import {
   MONTHLY_CASH_FLOW_OPTIONS_DEFAULT,
@@ -1979,6 +1983,32 @@ export const cashFlowWithdrawalsPage: PresentationPage<DrillPageData, DrillPageO
   renderPdf: (input) => <DrillPagePdf {...input} />,
 };
 
+export const solverCashFlowPage: PresentationPage<DrillPageData, DrillPageOptions> = {
+  id: "solverCashFlow",
+  title: SOLVER_CASH_FLOW_TITLE,
+  // Names what sets it apart from the Cash Flow sheet, which prints the same
+  // years with different columns.
+  description:
+    "The Solver's Cash Flow table: what came in, what went out, and the surplus or shortfall each year.",
+  category: "Cash Flow",
+  defaultOptions: DRILL_PAGE_OPTIONS_DEFAULT,
+  optionsSchema: drillOptionsSchema,
+  summarizeOptions: summarizeDrillOptions,
+  estimatePageCount: estimateDrillPageCount,
+  OptionsControl: DrillOptionsControl,
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) =>
+    buildSolverCashFlowData({
+      years: ctx.years,
+      clientData: ctx.clientData,
+      options,
+      scenarioLabel: ctx.scenarioLabel,
+      clientName: ctx.clientName,
+      spouseName: ctx.spouseName,
+    }),
+  renderPdf: (input) => <DrillPagePdf {...input} />,
+};
+
 export const cashFlowMonthlyPage: PresentationPage<
   MonthlyCashFlowPageData,
   MonthlyCashFlowPageOptions
@@ -2027,6 +2057,7 @@ export const PRESENTATION_PAGES = {
   cashFlowAssets: cashFlowAssetsPage,
   cashFlowWithdrawals: cashFlowWithdrawalsPage,
   cashFlowMonthly: cashFlowMonthlyPage,
+  solverCashFlow: solverCashFlowPage,
   entityCashFlow: entityCashFlowPage,
   taxSummary: taxSummaryPage,
   taxComparison: taxComparisonPage,

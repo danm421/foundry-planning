@@ -165,6 +165,7 @@ function DrillDataRow({
           styles.tdRight,
         ];
         if (c.signColor) style.push(v < 0 ? styles.tdNeg : styles.tdPos);
+        else if (c.critWhenNegative && v < 0) style.push(styles.tdNeg);
         const text =
           c.format === "percent" ? `${(v * 100).toFixed(2)}%` : compactCurrency(v);
         return (
