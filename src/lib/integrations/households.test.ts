@@ -227,6 +227,9 @@ describe("listFirmLinksOutside", () => {
       expect.arrayContaining([
         {
           clientId: b.clientId,
+          // The client's own advisor and Private flag (the factory's defaults).
+          advisorId: "test_advisor",
+          isPrivate: false,
           providerId: "addepar",
           externalFirmId: "2000",
           externalHouseholdId: "g2",
@@ -235,6 +238,8 @@ describe("listFirmLinksOutside", () => {
         // A client linked through another provider's connection is taken too.
         {
           clientId: c.clientId,
+          advisorId: "test_advisor",
+          isPrivate: false,
           providerId: "orion",
           externalFirmId: null,
           externalHouseholdId: "hh3",

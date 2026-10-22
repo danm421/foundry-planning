@@ -1,7 +1,7 @@
 // src/lib/integrations/households.ts
 import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { integrationHouseholdLinks } from "@/db/schema";
+import { clients, integrationHouseholdLinks } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/crm/household-relationships";
 import type { ExtractedAccount } from "@/lib/extraction/types";
 import type { IntegrationConnectionRow } from "./connections";
@@ -40,11 +40,15 @@ export function getLinksForConnection(connectionId: string) {
  * The firm's links held through any connection but this one, of every
  * provider: what the household table needs to show which clients and
  * households a colleague already holds. A client has one link whatever its
- * provider, so the caller narrows by provider only for households.
+ * provider, so the caller narrows by provider only for households. Each row
+ * carries its client's advisor and Private flag, so the caller can leave out
+ * clients it may not see.
  */
 export function listFirmLinksOutside(i: { firmId: string; connectionId: string }): Promise<
   Array<{
     clientId: string;
+    advisorId: string;
+    isPrivate: boolean;
     providerId: ProviderId;
     externalFirmId: string | null;
     externalHouseholdId: string;
@@ -55,12 +59,15 @@ export function listFirmLinksOutside(i: { firmId: string; connectionId: string }
   return db
     .select({
       clientId: l.clientId,
+      advisorId: clients.advisorId,
+      isPrivate: clients.isPrivate,
       providerId: l.provider,
       externalFirmId: l.externalFirmId,
       externalHouseholdId: l.externalHouseholdId,
       linkedByUserId: l.linkedByUserId,
     })
     .from(l)
+    .innerJoin(clients, eq(clients.id, l.clientId))
     .where(and(eq(l.firmId, i.firmId), ne(l.connectionId, i.connectionId)));
 }
 

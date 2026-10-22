@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { checkIntegrationApiLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { connectionCallContext } from "@/lib/integrations/auth";
 import {
@@ -12,6 +13,7 @@ import {
   type HouseholdTableRow,
 } from "@/lib/integrations/household-table";
 import { resolveActors } from "@/lib/activity/resolve-actors";
+import { VISIBLE_ALL, hidesPrivateClient, resolveVisibleAdvisorIds } from "@/lib/visibility";
 import { ProviderNotConfigured } from "@/lib/integrations/errors";
 import { resolveOwnedConnection } from "../_owned";
 
@@ -27,7 +29,8 @@ export async function GET(
   try {
     const owned = await resolveOwnedConnection(params);
     if (!owned) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const { provider, connection, firmId } = owned;
+    const { provider, connection, firmId, userId } = owned;
+    const { orgRole } = await auth();
 
     // Per connection, so one advisor's browsing can't 429 a colleague.
     const rl = await checkIntegrationApiLimit(`${provider.id}:${connection.id}`);
@@ -35,10 +38,11 @@ export async function GET(
       return rateLimitErrorResponse(rl, `Too many ${provider.label} requests. Please try again shortly.`);
     }
 
-    const [households, links, outside] = await Promise.all([
+    const [households, links, outside, visible] = await Promise.all([
       connectionCallContext(connection.id).then((ctx) => provider.client.getHouseholds(ctx)),
       getLinksForConnection(connection.id),
       listFirmLinksOutside({ firmId, connectionId: connection.id }),
+      resolveVisibleAdvisorIds(userId, orgRole, firmId),
     ]);
     const [counts, names] = await Promise.all([
       countConnectedAccounts({ providerId: provider.id, links }),
@@ -68,8 +72,14 @@ export async function GET(
       };
     });
     // A client has one link, so any client linked through another connection
-    // can't be linked here, whatever its provider or Addepar firm.
-    const takenClients = Object.fromEntries(outside.map((l) => [l.clientId, linkerName(l.linkedByUserId)]));
+    // can't be linked here, whatever its provider or Addepar firm. Only the
+    // clients the caller may see are named (the book and Private client
+    // rules); the picker lists no others, so any more would only leak them.
+    const maySee = (l: (typeof outside)[number]) =>
+      (visible === VISIBLE_ALL || visible.has(l.advisorId)) && !hidesPrivateClient({ userId, orgRole }, l);
+    const takenClients = Object.fromEntries(
+      outside.filter(maySee).map((l) => [l.clientId, linkerName(l.linkedByUserId)]),
+    );
 
     return NextResponse.json({ households: sortHouseholdRows(rows), takenClients });
   } catch (err) {
