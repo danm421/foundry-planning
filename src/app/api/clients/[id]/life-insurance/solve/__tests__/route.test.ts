@@ -198,7 +198,7 @@ describe("POST /api/clients/[id]/life-insurance/solve", () => {
     );
     expect(res.status).toBe(200);
     // The edited plan's scenario id drives the tree load — NOT "base".
-    expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, SCENARIO_ID, {});
+    expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, SCENARIO_ID, {}, []);
     // Live mutations are applied before solving.
     expect(applyMutations).toHaveBeenCalled();
   });
@@ -206,7 +206,7 @@ describe("POST /api/clients/[id]/life-insurance/solve", () => {
   it("defaults source to base when omitted (back-compat)", async () => {
     const res = await POST(makeRequest({ assumptions: ASSUMPTIONS }), ctx as never);
     expect(res.status).toBe(200);
-    expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, "base", {});
+    expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, "base", {}, []);
   });
 
   it("returns 500 when the solver throws", async () => {

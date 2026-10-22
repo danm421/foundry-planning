@@ -107,6 +107,31 @@ describe("POST /api/clients/[id]/solver/project", () => {
     expect(runProjection).toHaveBeenCalled();
   });
 
+  it("passes held changes to loadEffectiveTree", async () => {
+    const heldMutation = {
+      kind: "held-change",
+      op: "edit",
+      targetKind: "expense",
+      targetId: "00000000-0000-4000-8000-0000000000aa",
+      payload: { annualAmount: { from: 1, to: 2 } },
+      saveId: "00000000-0000-4000-8000-0000000000bb",
+    };
+    const res = await POST(
+      makeRequest({ source: "base", mutations: [heldMutation] }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    const fifth = vi.mocked(loadEffectiveTree).mock.calls.at(-1)![4];
+    expect(fifth).toEqual([
+      expect.objectContaining({
+        opType: "edit",
+        targetKind: "expense",
+        targetId: "00000000-0000-4000-8000-0000000000aa",
+        payload: { annualAmount: { from: 1, to: 2 } },
+      }),
+    ]);
+  });
+
   it("returns 404 when the client is not in the caller's firm", async () => {
     vi.mocked(findClientInFirm).mockResolvedValue(null as never);
     const res = await POST(

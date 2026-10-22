@@ -9,6 +9,7 @@ import { db } from "@/db";
 import { solverMcCache } from "@/db/schema";
 import { and, eq, lt } from "drizzle-orm";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { heldScenarioChanges } from "@/lib/solver/held-changes";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { resolveTechniqueMutations } from "@/lib/solver/resolve-technique-mutations";
@@ -44,7 +45,13 @@ async function loadEditedInputs(args: {
   extraAccountMixes?: ReadonlyArray<{ accountId: string; mix: AccountAssetMix[] }>;
 }): Promise<EditedInputs> {
   const { clientId, firmId, source, mutations, extraAccountMixes } = args;
-  const { effectiveTree, resolutionContext } = await loadEffectiveTree(clientId, firmId, source, {});
+  const { effectiveTree, resolutionContext } = await loadEffectiveTree(
+    clientId,
+    firmId,
+    source,
+    {},
+    heldScenarioChanges(mutations),
+  );
   let mutated = applyMutations(effectiveTree, mutations);
   if (resolutionContext) {
     mutated = resolveTechniqueMutations(mutated, mutations, resolutionContext);

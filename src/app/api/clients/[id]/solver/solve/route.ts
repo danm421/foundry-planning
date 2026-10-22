@@ -20,6 +20,7 @@ import {
 } from "@/lib/rate-limit";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { heldScenarioChanges } from "@/lib/solver/held-changes";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { resolveTechniqueMutations } from "@/lib/solver/resolve-technique-mutations";
@@ -87,7 +88,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         controller.enqueue(encoder.encode(sseChunk(event, payload)));
       };
       try {
-        const { effectiveTree, resolutionContext } = await loadEffectiveTree(clientId, access.firmId, source, {});
+        const { effectiveTree, resolutionContext } = await loadEffectiveTree(
+          clientId,
+          access.firmId,
+          source,
+          {},
+          heldScenarioChanges(mutations as SolverMutation[]),
+        );
         let result: SolveResultEvent;
         if (target.kind === "ss-claim-age") {
           // Deterministic argmax over claim ages 62–70 on the straight-line

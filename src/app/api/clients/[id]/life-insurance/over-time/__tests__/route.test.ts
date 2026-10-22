@@ -162,7 +162,7 @@ describe("POST /api/clients/[id]/life-insurance/over-time — honors edited scen
     await drain(res);
 
     // The edited plan's scenario id drives the tree load — NOT "base".
-    expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, SCENARIO_ID, {});
+    expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, SCENARIO_ID, {}, []);
     // Live mutations are applied to the loaded tree before solving.
     expect(applyMutations).toHaveBeenCalled();
     // The need curve is computed against the mutated working tree.
@@ -176,7 +176,7 @@ describe("POST /api/clients/[id]/life-insurance/over-time — honors edited scen
     );
     expect(res.status).toBe(200);
     await drain(res);
-    expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, "base", {});
+    expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, "base", {}, []);
   });
 });
 

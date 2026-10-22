@@ -15,6 +15,7 @@ import { resolveTechniqueMutations } from "@/lib/solver/resolve-technique-mutati
 import type { SolverMutation } from "@/lib/solver/types";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { heldScenarioChanges } from "@/lib/solver/held-changes";
 import { getOrComputeSolverMcReport } from "@/lib/compute-cache/solver-mc";
 import { getOrComputeMaxSpending } from "@/lib/compute-cache/max-spending";
 import { solveMaxSpending } from "@/lib/solver/solve-max-spending";
@@ -73,7 +74,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     // ── Load both trees in parallel (independent DB reads) ──
     const [{ effectiveTree: baseTree }, { effectiveTree, resolutionContext }] = await Promise.all([
       loadEffectiveTree(clientId, firmId, "base", {}),
-      loadEffectiveTree(clientId, firmId, source, {}),
+      loadEffectiveTree(clientId, firmId, source, {}, heldScenarioChanges(mutations as SolverMutation[])),
     ]);
 
     // ── Base Case ──

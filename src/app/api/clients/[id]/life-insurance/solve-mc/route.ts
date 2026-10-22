@@ -21,6 +21,7 @@ import {
 } from "@/lib/rate-limit";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { heldScenarioChanges } from "@/lib/solver/held-changes";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { resolveTechniqueMutations } from "@/lib/solver/resolve-technique-mutations";
 import type { SolverMutation } from "@/lib/solver/types";
@@ -112,7 +113,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       };
       try {
         const [{ effectiveTree, resolutionContext }, proceeds] = await Promise.all([
-          loadEffectiveTree(clientId, access.firmId, source, {}),
+          loadEffectiveTree(clientId, access.firmId, source, {}, heldScenarioChanges(mutations as SolverMutation[])),
           loadLiProceedsGrowth(
             access.firmId,
             assumptions.modelPortfolioId,

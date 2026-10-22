@@ -14,6 +14,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { checkProjectionRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { heldScenarioChanges } from "@/lib/solver/held-changes";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { resolveTechniqueMutations } from "@/lib/solver/resolve-technique-mutations";
 import type { SolverMutation } from "@/lib/solver/types";
@@ -76,6 +77,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       firmId,
       source,
       {},
+      heldScenarioChanges(mutations as SolverMutation[]),
     );
     let workingTree = applyMutations(effectiveTree, mutations as SolverMutation[]);
     if (resolutionContext) {

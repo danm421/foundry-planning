@@ -36,6 +36,7 @@ import { applyLifeExpectancyHorizon } from "@/lib/plan-horizon";
 import { applyGiftOverlays } from "./apply-gift-overlays";
 import { withReinvestmentTargets } from "./reinvestment-picks";
 import { reResolveEditedAccountGrowth } from "./account-growth-edits";
+import { foldChanges } from "./fold-changes";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "./changes";
 import {
   growthSettingsOverride,
@@ -283,6 +284,7 @@ export const loadEffectiveTree = cache(
     firmId: string,
     scenarioId: string | "base",
     toggleState: ToggleState,
+    extraChanges: ScenarioChange[] = [],
   ): Promise<LoadEffectiveTreeResult> => {
     const { clientData: baseTree, resolutionContext: baseContext } =
       await loadClientDataWithContext(clientId, firmId);
@@ -316,7 +318,11 @@ export const loadEffectiveTree = cache(
     // non-null toggleGroupId would fail `effective[gid] === true` and be
     // dropped. We can achieve the same result without loading groups by
     // simply dropping every note whose toggleGroupId is non-null.
-    if (resolvedScenario.isBaseCase && Object.keys(toggleState).length === 0) {
+    if (
+      resolvedScenario.isBaseCase &&
+      Object.keys(toggleState).length === 0 &&
+      extraChanges.length === 0
+    ) {
       const filteredBase = baseTree.notesReceivable
         ? {
             ...baseTree,
@@ -349,7 +355,7 @@ export const loadEffectiveTree = cache(
       baseTree.accounts
         ?.filter((a) => a.category === "business" && a.parentAccountId == null)
         .map((a) => a.id) ?? [];
-    const [changes, groups, scenarioFlowOverrideRows, scenarioAccountFlowOverrideRows] = await Promise.all([
+    const [savedChanges, groups, scenarioFlowOverrideRows, scenarioAccountFlowOverrideRows] = await Promise.all([
       loadScenarioChanges(resolvedScenario.id),
       loadScenarioToggleGroups(resolvedScenario.id),
       // Per-entity scenario flow overrides. Empty entity list → skip the
@@ -391,6 +397,10 @@ export const loadEffectiveTree = cache(
               ),
             ),
     ]);
+
+    // Unsaved (held) Solver changes fold over the saved ones, so every use of
+    // the changes below sees them. Same array back when there are none.
+    const changes = foldChanges(savedChanges, extraChanges);
 
     // Growth & inflation settings are resolved at load time, so an overlay
     // edit of them would come too late. When this scenario's ACTIVE

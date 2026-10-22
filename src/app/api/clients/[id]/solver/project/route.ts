@@ -19,6 +19,7 @@ import {
 } from "@/lib/rate-limit";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { heldScenarioChanges } from "@/lib/solver/held-changes";
 import { resolveTechniqueMutations } from "@/lib/solver/resolve-technique-mutations";
 
 export const dynamic = "force-dynamic";
@@ -65,6 +66,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       access.firmId,
       source,
       {},
+      heldScenarioChanges(mutations as SolverMutation[]),
     );
     let mutated = applyMutations(effectiveTree, mutations as SolverMutation[]);
     if (resolutionContext) {
