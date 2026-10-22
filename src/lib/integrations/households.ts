@@ -1,9 +1,38 @@
 // src/lib/integrations/households.ts
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { integrationHouseholdLinks } from "@/db/schema";
+import { integrationConnections, integrationHouseholdLinks } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/crm/household-relationships";
+import { decodeAddeparConfig } from "./providers/addepar/credentials";
 import type { ProviderId } from "./types";
+
+/**
+ * STOPGAP until Task 4 links through a chosen connection: the firm-level link
+ * path below predates per-advisor connections, and it has at most one
+ * connection per (firm, provider), so resolve that one. Throws when there is
+ * none rather than inventing a connection.
+ */
+async function firmConnectionForLink(
+  firmId: string,
+  providerId: ProviderId,
+): Promise<{ connectionId: string; externalFirmId: string | null }> {
+  const [conn] = await db
+    .select({ id: integrationConnections.id, scope: integrationConnections.scope })
+    .from(integrationConnections)
+    .where(
+      and(
+        eq(integrationConnections.firmId, firmId),
+        eq(integrationConnections.provider, providerId),
+      ),
+    )
+    .limit(1);
+  if (!conn) throw new Error(`No ${providerId} connection for this firm`);
+  return {
+    connectionId: conn.id,
+    externalFirmId:
+      providerId === "addepar" ? decodeAddeparConfig(conn.scope).addeparFirmId : null,
+  };
+}
 
 export function getHouseholdLinks(firmId: string, providerId: ProviderId) {
   return db
@@ -24,11 +53,13 @@ export async function linkHousehold(input: {
   externalHouseholdId: string;
   userId: string;
 }): Promise<void> {
+  const connection = await firmConnectionForLink(input.firmId, input.providerId);
   await db
     .insert(integrationHouseholdLinks)
     .values({
       firmId: input.firmId,
       provider: input.providerId,
+      ...connection,
       clientId: input.clientId,
       externalHouseholdId: input.externalHouseholdId,
       linkedByUserId: input.userId,
@@ -39,6 +70,7 @@ export async function linkHousehold(input: {
       target: integrationHouseholdLinks.clientId,
       set: {
         provider: input.providerId,
+        ...connection,
         externalHouseholdId: input.externalHouseholdId,
         // firmId is deliberately NOT updated: org-scoping is immutable per
         // link row, matching the shipped Orion behavior. linkedByUserId DOES
@@ -101,12 +133,14 @@ export async function claimHousehold(input: {
   const match = households.find((h) => h.id === input.externalHouseholdId);
   if (!match) return { ok: false, reason: "unknown_household" };
 
+  const connection = await firmConnectionForLink(input.firmId, input.providerId);
   try {
     await db
       .insert(integrationHouseholdLinks)
       .values({
         firmId: input.firmId,
         provider: input.providerId,
+        ...connection,
         clientId: input.clientId,
         externalHouseholdId: input.externalHouseholdId,
         linkedByUserId: input.userId,
@@ -118,6 +152,7 @@ export async function claimHousehold(input: {
         target: integrationHouseholdLinks.clientId,
         set: {
           provider: input.providerId,
+          ...connection,
           externalHouseholdId: input.externalHouseholdId,
           // Re-sets linkedByUserId, same as linkHousehold: attribution is the
           // point of both paths (the audit trail must name who acted last),

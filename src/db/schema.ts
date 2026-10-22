@@ -28,6 +28,7 @@ import type { BracketTier, SaversCreditTier } from "@/lib/tax/types";
 import type { IrmaaTier, LivingExpenseItem } from "@/engine/types";
 import type { TrustSubType } from "@/lib/entities/trust";
 import type { IntakePayload } from "@/lib/intake/schema";
+import type { ExtractedAccount } from "@/lib/extraction/types";
 import type { IntakeSectionKey } from "@/lib/intake/sections";
 import type { ReportLayoutEntry } from "@/lib/solver/report-layout";
 import type {
@@ -6423,12 +6424,26 @@ export const integrationConnections = pgTable(
     status: integrationConnectionStatusEnum("status").notNull().default("connected"),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
     lastSyncError: text("last_sync_error"),
+    // "Who last connected": a token refresh rewrites it to `system:<provider>-refresh`.
     connectedByUserId: text("connected_by_user_id"),
+    // The advisor who owns the connection. Never rewritten by a refresh.
+    // Null only for azure_openai (one per firm).
+    ownerUserId: text("owner_user_id"),
+    // Shown in the UI; null falls back to the provider label.
+    name: text("name"),
     connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    firmProviderUnique: uniqueIndex("integration_conn_firm_provider_uq").on(t.firmId, t.provider),
+    // Azure OpenAI stays one per firm.
+    firmAzureUnique: uniqueIndex("integration_conn_firm_azure_uq")
+      .on(t.firmId, t.provider)
+      .where(sql`${t.provider} = 'azure_openai'`),
+    // OAuth providers stay one per advisor. Addepar has no uniqueness beyond
+    // the primary key, so an advisor can hold several.
+    ownerOauthUnique: uniqueIndex("integration_conn_owner_oauth_uq")
+      .on(t.firmId, t.ownerUserId, t.provider)
+      .where(sql`${t.provider} IN ('orion','schwab')`),
   }),
 );
 
@@ -6445,15 +6460,28 @@ export const integrationHouseholdLinks = pgTable(
       .notNull()
       .references(() => clients.id, { onDelete: "cascade" })
       .unique(),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: "cascade" }),
     externalHouseholdId: text("external_household_id").notNull(),
+    // The Addepar firm ID copied from the connection at link time; null for
+    // Orion and Schwab.
+    externalFirmId: text("external_firm_id"),
+    // The household's mapped accounts from the most recent successful pull.
+    lastPullAccounts: jsonb("last_pull_accounts").$type<ExtractedAccount[]>(),
+    lastPulledAt: timestamp("last_pulled_at", { withTimezone: true }),
     linkedByUserId: text("linked_by_user_id"),
     linkedAt: timestamp("linked_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    firmHouseholdUnique: uniqueIndex("integration_hh_firm_provider_hh_uq").on(
+    // One external household feeds one client per Foundry firm, even when two
+    // connections reach the same Addepar firm. Two different Addepar firms
+    // may reuse a group id.
+    firmHouseholdUnique: uniqueIndex("integration_hh_firm_provider_extfirm_hh_uq").on(
       t.firmId,
       t.provider,
+      sql`coalesce(${t.externalFirmId}, '')`,
       t.externalHouseholdId,
     ),
   }),
@@ -6474,6 +6502,9 @@ export const integrationSyncRuns = pgTable("integration_sync_runs", {
   id: uuid("id").primaryKey().defaultRandom(),
   firmId: text("firm_id").notNull(),
   provider: integrationProviderEnum("provider").notNull(),
+  connectionId: uuid("connection_id").references(() => integrationConnections.id, {
+    onDelete: "set null",
+  }),
   trigger: integrationSyncTriggerEnum("trigger").notNull(),
   status: text("status").notNull(),
   householdsSynced: integer("households_synced").notNull().default(0),
