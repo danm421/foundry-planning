@@ -8,15 +8,9 @@ import {
   createColumnHelper,
 } from "@tanstack/react-table";
 import { useToast } from "@/components/toast";
+import { IntegrationAccountsPanel } from "@/components/IntegrationAccountsPanel";
 import type { HouseholdTableRow } from "@/lib/integrations/household-table";
 import type { SyncingProviderId } from "@/lib/integrations/types";
-
-interface Household {
-  id: string;
-  name: string | null;
-  linkedClientId: string | null;
-  linkedByName: string | null;
-}
 
 interface ClientOption {
   id: string;
@@ -35,54 +29,57 @@ function clientLabel(c: ClientOption): string {
   return name || c.id;
 }
 
-const col = createColumnHelper<Household>();
-
-/** The connection's households as the table shows them: the client it links to,
- *  and who holds it when a colleague already links it through another connection. */
-function toHousehold(r: HouseholdTableRow): Household {
-  return { id: r.id, name: r.name, linkedClientId: r.link?.clientId ?? null, linkedByName: r.lockedBy };
-}
+const col = createColumnHelper<HouseholdTableRow>();
 
 export function IntegrationHouseholdLinkTable({ providerId, connectionId, label }: Props) {
   const base = `/api/integrations/${providerId}/connections/${connectionId}/households`;
   const { showToast } = useToast();
-  const [households, setHouseholds] = useState<Household[]>([]);
+  const [households, setHouseholds] = useState<HouseholdTableRow[]>([]);
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [loading, setLoading] = useState(true);
   // Clients already linked through a colleague's connection, by client id.
   const [takenClients, setTakenClients] = useState<Record<string, string>>({});
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<"reconnect" | "failed" | null>(null);
   // Pending client selection per household (before the row is linked).
   const [picks, setPicks] = useState<Record<string, string>>({});
+  // The link whose accounts panel is open.
+  const [panelLinkId, setPanelLinkId] = useState<string | null>(null);
+
+  /** Reads the table from the server, in the server's order. */
+  const load = useCallback(async (): Promise<boolean> => {
+    try {
+      const [hhRes, clientsRes] = await Promise.all([fetch(base), fetch("/api/clients")]);
+      if (hhRes.status === 409) {
+        const j = (await hhRes.json().catch(() => null)) as { error?: string } | null;
+        setLoadError(j?.error === "reconnect_required" ? "reconnect" : "failed");
+        return false;
+      }
+      if (!hhRes.ok || !clientsRes.ok) throw new Error("load failed");
+      const hhJson = (await hhRes.json()) as {
+        households: HouseholdTableRow[];
+        takenClients: Record<string, string>;
+      };
+      const clientsJson = (await clientsRes.json()) as ClientOption[];
+      setHouseholds(hhJson.households);
+      setTakenClients(hhJson.takenClients);
+      setClients(clientsJson);
+      setLoadError(null);
+      return true;
+    } catch {
+      setLoadError("failed");
+      return false;
+    }
+  }, [base]);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const [hhRes, clientsRes] = await Promise.all([
-          fetch(base),
-          fetch("/api/clients"),
-        ]);
-        if (!hhRes.ok || !clientsRes.ok) throw new Error("load failed");
-        const hhJson = (await hhRes.json()) as {
-          households: HouseholdTableRow[];
-          takenClients: Record<string, string>;
-        };
-        const clientsJson = (await clientsRes.json()) as ClientOption[];
-        if (cancelled) return;
-        setHouseholds(hhJson.households.map(toHousehold));
-        setTakenClients(hhJson.takenClients);
-        setClients(clientsJson);
-      } catch {
-        if (!cancelled) setLoadError(true);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+    load().finally(() => {
+      if (!cancelled) setLoading(false);
+    });
     return () => {
       cancelled = true;
     };
-  }, [base]);
+  }, [load]);
 
   const clientName = useCallback(
     (clientId: string): string => {
@@ -94,41 +91,32 @@ export function IntegrationHouseholdLinkTable({ providerId, connectionId, label 
 
   const link = useCallback(
     async (householdId: string, clientId: string) => {
-      // Optimistic: set the link immediately, revert on failure.
-      setHouseholds((prev) =>
-        prev.map((h) => (h.id === householdId ? { ...h, linkedClientId: clientId } : h)),
-      );
       try {
         const res = await fetch(`${base}/link`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ clientId, externalHouseholdId: householdId }),
         });
-        if (!res.ok) throw new Error("link failed");
+        if (res.ok) {
+          setPicks((prev) => ({ ...prev, [householdId]: "" }));
+          await load();
+          return;
+        }
+        if (res.status === 409) {
+          const j = (await res.json().catch(() => null)) as { linkedByName?: string | null } | null;
+          showToast({ message: `That client is already linked by ${j?.linkedByName ?? "another advisor"}.` });
+          return;
+        }
+        throw new Error("link failed");
       } catch {
-        setHouseholds((prev) =>
-          prev.map((h) => (h.id === householdId ? { ...h, linkedClientId: null } : h)),
-        );
         showToast({ message: "Couldn't update the link. Please try again." });
       }
     },
-    [base, showToast],
+    [base, load, showToast],
   );
 
   const unlink = useCallback(
-    async (householdId: string, clientId: string) => {
-      // Optimistic: clear the link (and its attribution) immediately, restore
-      // both on failure. `priorLinkedByName` is captured from the mapper
-      // itself rather than a closed-over `households` — that keeps this
-      // callback's identity stable across household updates.
-      let priorLinkedByName: string | null = null;
-      setHouseholds((prev) =>
-        prev.map((h) => {
-          if (h.id !== householdId) return h;
-          priorLinkedByName = h.linkedByName;
-          return { ...h, linkedClientId: null, linkedByName: null };
-        }),
-      );
+    async (clientId: string) => {
       try {
         const res = await fetch(`${base}/link`, {
           method: "DELETE",
@@ -136,18 +124,12 @@ export function IntegrationHouseholdLinkTable({ providerId, connectionId, label 
           body: JSON.stringify({ clientId }),
         });
         if (!res.ok) throw new Error("unlink failed");
+        await load();
       } catch {
-        setHouseholds((prev) =>
-          prev.map((h) =>
-            h.id === householdId
-              ? { ...h, linkedClientId: clientId, linkedByName: priorLinkedByName }
-              : h,
-          ),
-        );
         showToast({ message: "Couldn't update the link. Please try again." });
       }
     },
-    [base, showToast],
+    [base, load, showToast],
   );
 
   const columns = useMemo(
@@ -168,22 +150,19 @@ export function IntegrationHouseholdLinkTable({ providerId, connectionId, label 
         header: "Linked client",
         cell: (c) => {
           const h = c.row.original;
-          if (h.linkedClientId) {
+          if (h.link) {
+            const clientId = h.link.clientId;
             return (
               <div className="flex items-center gap-3">
-                <span className="text-ink">{clientName(h.linkedClientId)}</span>
-                <button
-                  type="button"
-                  className="btn-ghost px-2 py-1 text-xs"
-                  onClick={() => unlink(h.id, h.linkedClientId!)}
-                >
+                <span className="text-ink">{clientName(clientId)}</span>
+                <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={() => unlink(clientId)}>
                   Unlink
                 </button>
               </div>
             );
           }
-          if (h.linkedByName) {
-            return <span className="text-sm text-ink-3">Linked by {h.linkedByName}</span>;
+          if (h.lockedBy) {
+            return <span className="text-sm text-ink-3">Linked by {h.lockedBy}</span>;
           }
           const picked = picks[h.id] ?? "";
           return (
@@ -191,19 +170,18 @@ export function IntegrationHouseholdLinkTable({ providerId, connectionId, label 
               <select
                 aria-label="Choose a client to link"
                 value={picked}
-                onChange={(e) =>
-                  setPicks((prev) => ({ ...prev, [h.id]: e.target.value }))
-                }
+                onChange={(e) => setPicks((prev) => ({ ...prev, [h.id]: e.target.value }))}
                 className="rounded border border-hair bg-paper px-2 py-1 text-sm text-ink"
               >
                 <option value="">Select a client…</option>
-                {clients
-                  .filter((cl) => !takenClients[cl.id])
-                  .map((cl) => (
-                    <option key={cl.id} value={cl.id}>
-                      {clientLabel(cl)}
+                {clients.map((cl) => {
+                  const taker = takenClients[cl.id];
+                  return (
+                    <option key={cl.id} value={cl.id} disabled={!!taker}>
+                      {taker ? `${clientLabel(cl)} · linked by ${taker}` : clientLabel(cl)}
                     </option>
-                  ))}
+                  );
+                })}
               </select>
               <button
                 type="button"
@@ -217,11 +195,25 @@ export function IntegrationHouseholdLinkTable({ providerId, connectionId, label 
           );
         },
       }),
-      col.accessor("linkedByName", {
-        header: "Linked by",
-        cell: (c) => (
-          <span className="text-sm text-ink-3">{c.getValue() ?? "—"}</span>
-        ),
+      col.display({
+        id: "accounts",
+        header: "Accounts",
+        cell: (c) => {
+          const h = c.row.original;
+          if (!h.link) return null;
+          if (!h.accounts) return <span className="text-sm text-ink-3">Not synced yet</span>;
+          const linkId = h.link.linkId;
+          return (
+            <button
+              type="button"
+              className="btn-ghost tabular px-2 py-1 text-xs"
+              aria-label={`Manage ${h.accounts.total} accounts for ${h.name ?? h.id}`}
+              onClick={() => setPanelLinkId(linkId)}
+            >
+              {h.accounts.connected} of {h.accounts.total}
+            </button>
+          );
+        },
       }),
     ],
     [clients, takenClients, picks, clientName, link, unlink],
@@ -236,8 +228,11 @@ export function IntegrationHouseholdLinkTable({ providerId, connectionId, label 
   if (loading) {
     return <p className="text-sm text-ink-3">Loading…</p>;
   }
+  if (loadError === "reconnect") {
+    return <p className="text-sm text-ink-3">Reconnect {label} above to see its households.</p>;
+  }
   if (loadError) {
-    return <p className="text-sm text-ink-3">Couldn&apos;t load households.</p>;
+    return <p className="text-sm text-ink-3">Couldn&apos;t load households</p>;
   }
 
   return (
@@ -279,6 +274,18 @@ export function IntegrationHouseholdLinkTable({ providerId, connectionId, label 
           </tbody>
         </table>
       </div>
+      {panelLinkId && (
+        <IntegrationAccountsPanel
+          providerId={providerId}
+          connectionId={connectionId}
+          linkId={panelLinkId}
+          open
+          onClose={() => {
+            setPanelLinkId(null);
+            void load();
+          }}
+        />
+      )}
     </section>
   );
 }

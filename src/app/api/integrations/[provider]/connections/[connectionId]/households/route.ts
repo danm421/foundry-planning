@@ -14,7 +14,7 @@ import {
 } from "@/lib/integrations/household-table";
 import { resolveActors } from "@/lib/activity/resolve-actors";
 import { VISIBLE_ALL, hidesPrivateClient, resolveVisibleAdvisorIds } from "@/lib/visibility";
-import { ProviderNotConfigured } from "@/lib/integrations/errors";
+import { ProviderNotConfigured, ReconnectRequired } from "@/lib/integrations/errors";
 import { resolveOwnedConnection } from "../_owned";
 
 /**
@@ -85,6 +85,9 @@ export async function GET(
   } catch (err) {
     if (err instanceof ProviderNotConfigured) {
       return NextResponse.json({ error: `${err.providerId} is not yet configured` }, { status: 503 });
+    }
+    if (err instanceof ReconnectRequired) {
+      return NextResponse.json({ error: "reconnect_required" }, { status: 409 });
     }
     console.error("GET /api/integrations/[provider]/connections/[connectionId]/households error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

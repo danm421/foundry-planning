@@ -45,6 +45,7 @@ import { countConnectedAccounts } from "@/lib/integrations/household-table";
 import { resolveActors } from "@/lib/activity/resolve-actors";
 import { encodeAddeparConfig } from "@/lib/integrations/providers/addepar/credentials";
 import { VISIBLE_ALL, resolveVisibleAdvisorIds } from "@/lib/visibility";
+import { ReconnectRequired } from "@/lib/integrations/errors";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -276,6 +277,13 @@ describe("GET …/connections/[connectionId]/households", () => {
     const body = await (await GET(req(), ctx())).json();
 
     expect(body.takenClients).toEqual({ "c-private-hers": "Sarah Kim" });
+  });
+
+  it("409 reconnect_required when the connection can no longer list households", async () => {
+    getHouseholds.mockRejectedValue(new ReconnectRequired("firm_1", "addepar"));
+    const res = await GET(req(), ctx());
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "reconnect_required" });
   });
 
   it("does not reach the provider when rate limited", async () => {
