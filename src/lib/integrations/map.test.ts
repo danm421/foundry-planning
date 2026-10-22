@@ -1,6 +1,11 @@
 // src/lib/integrations/map.test.ts
 import { describe, it, expect } from "vitest";
-import { mapRegistrationType, mapProviderAccount, mapProviderPosition } from "./map";
+import {
+  mapRegistrationType,
+  mapProviderAccount,
+  mapProviderPosition,
+  mapToImportPayload,
+} from "./map";
 import { ORION_REGISTRATIONS } from "./providers/orion/registrations";
 
 describe("provider mapping", () => {
@@ -73,5 +78,50 @@ describe("provider mapping", () => {
     const r = mapRegistrationType("Donor Advised Fund", ORION_REGISTRATIONS);
     expect(r).toMatchObject({ category: "taxable", subType: "brokerage" });
     expect(r.warning).toContain("Donor Advised Fund");
+  });
+});
+
+describe("a margin debit becomes the account's margin loan", () => {
+  // Addepar's Peter Trust Main, as its sync returns it: the custodian's margin
+  // debit is a negative "Margin" position, and the account's value and cost
+  // basis both already have it subtracted.
+  const mainAccount = {
+    id: "146120320",
+    name: "Peter Trust - Schwab - Main (70044348)",
+    registrationType: "Trust",
+    value: 6684564.63,
+    costBasis: 932110.05,
+  };
+  const mainPositions = [
+    { description: "SPDR S&P 500 ETF", ticker: "SPY", units: 8396, price: 773.09, marketValue: 6490863.64, costBasis: 1483526.25 },
+    { description: "Margin", ticker: "$CASH", units: -948125, price: 1, marketValue: -948125, costBasis: -948125 },
+  ];
+  const map = (positions: typeof mainPositions) =>
+    mapToImportPayload(
+      "addepar",
+      ORION_REGISTRATIONS,
+      { id: "h1", name: "" },
+      [mainAccount],
+      new Map([[mainAccount.id, positions]]),
+    ).accounts[0];
+
+  it("lifts the debit off the positions and onto the account as its loan", () => {
+    const acct = map(mainPositions);
+    expect(acct.marginBalance).toBe(948125);
+    expect(acct.holdings?.map((h) => h.name)).toEqual(["SPDR S&P 500 ETF"]);
+  });
+
+  it("states the value and cost basis before the loan, as an account with a margin loan is saved", () => {
+    const acct = map(mainPositions);
+    expect(acct.value).toBe(7632689.63);
+    expect(acct.basis).toBe(1880235.05);
+  });
+
+  it("leaves a margin CREDIT balance as a cash position", () => {
+    const credit = { description: "Margin", ticker: "$CASH", units: 8887.29, price: 1, marketValue: 8887.29, costBasis: 8887.29 };
+    const acct = map([mainPositions[0], credit]);
+    expect(acct.marginBalance).toBeUndefined();
+    expect(acct.value).toBe(6684564.63);
+    expect(acct.holdings).toHaveLength(2);
   });
 });
