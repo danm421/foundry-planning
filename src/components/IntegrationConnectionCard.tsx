@@ -22,6 +22,9 @@ interface Props {
   /** ISO string (serialized across the server boundary) or null. */
   lastSyncedAt: string | null;
   lastSyncError: string | null;
+  /** Addepar only: the saved (non-secret) address and firm ID, to prefill a reconnect. */
+  apiBase?: string;
+  addeparFirmId?: string;
 }
 
 /** Refresh / sync arrows — minimal outline, inherits text color. */
@@ -86,6 +89,8 @@ export function IntegrationConnectionCard({
   status,
   lastSyncedAt,
   lastSyncError,
+  apiBase,
+  addeparFirmId,
 }: Props) {
   const router = useRouter();
   const { showToast } = useToast();
@@ -167,7 +172,7 @@ export function IntegrationConnectionCard({
     </div>
   );
 
-  const reconnect = { connectionId, name };
+  const reconnect = { connectionId, name, apiBase, addeparFirmId };
 
   return (
     <section className="flex flex-col gap-4 rounded border border-hair bg-card p-4">
@@ -307,12 +312,12 @@ export function ByokConnectForm({
 }: {
   providerId: SyncingProviderId;
   label: string;
-  reconnect?: { connectionId: string; name: string };
+  reconnect?: { connectionId: string; name: string; apiBase?: string; addeparFirmId?: string };
 }) {
   const router = useRouter();
   const { showToast } = useToast();
-  const [apiBase, setApiBase] = useState("");
-  const [addeparFirmId, setAddeparFirmId] = useState("");
+  const [apiBase, setApiBase] = useState(reconnect?.apiBase ?? "");
+  const [addeparFirmId, setAddeparFirmId] = useState(reconnect?.addeparFirmId ?? "");
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
   // Until the advisor types a name, it follows the address (https://ethos.addepar.com

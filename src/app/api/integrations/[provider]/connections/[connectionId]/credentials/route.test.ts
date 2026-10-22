@@ -24,6 +24,7 @@ import { updateByokCredentials } from "@/lib/integrations/connections";
 import { testAddeparConnection } from "@/lib/integrations/providers/addepar/client";
 import {
   decodeAddeparConfig,
+  encodeAddeparConfig,
   decodeAddeparSecret,
 } from "@/lib/integrations/providers/addepar/credentials";
 import { CredentialsRejected } from "@/lib/integrations/errors";
@@ -34,7 +35,14 @@ import { requireActiveSubscriptionForFirm } from "@/lib/authz";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const CONN = "11111111-1111-4111-8111-111111111111";
-const connection = { id: CONN, firmId: "firm_1", providerId: "addepar", ownerUserId: "u1", status: "error" };
+const connection = {
+  id: CONN,
+  firmId: "firm_1",
+  providerId: "addepar",
+  ownerUserId: "u1",
+  status: "error",
+  scope: encodeAddeparConfig({ apiBase: "https://ethos.addepar.com", addeparFirmId: "1069" }),
+};
 const good = {
   apiBase: "https://ethos.addepar.com",
   addeparFirmId: "1069",
@@ -91,6 +99,27 @@ describe("POST …/connections/[connectionId]/credentials", () => {
       resourceId: CONN,
       firmId: "firm_1",
       metadata: { provider: "addepar", connectionId: CONN, reconnect: true },
+    });
+  });
+
+  it("400 and nothing stored when the key reaches a different Addepar firm", async () => {
+    const res = await POST(post({ ...good, addeparFirmId: "2222" }), ctx());
+
+    expect(res.status).toBe(400);
+    const { error } = await res.json();
+    expect(error).toContain("1069");
+    expect(updateByokCredentials).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("allows a changed API base for the same Addepar firm", async () => {
+    const res = await POST(post({ ...good, apiBase: "https://ethos-new.addepar.com" }), ctx());
+
+    expect(res.status).toBe(200);
+    const arg = (updateByokCredentials as any).mock.calls[0][0];
+    expect(decodeAddeparConfig(arg.configBlob)).toEqual({
+      apiBase: "https://ethos-new.addepar.com",
+      addeparFirmId: "1069",
     });
   });
 

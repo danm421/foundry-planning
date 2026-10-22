@@ -1,10 +1,20 @@
 import { NextResponse } from "next/server";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { checkIntegrationOauthLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
+import { decodeAddeparConfig } from "@/lib/integrations/providers/addepar/credentials";
 import { updateByokCredentials } from "@/lib/integrations/connections";
 import { recordAudit } from "@/lib/audit";
 import { readTestedAddeparCredentials } from "../../../_addepar";
 import { resolveOwnedConnection } from "../_owned";
+
+/** The Addepar firm id stored on a connection, or null when its config can't be read. */
+function storedAddeparFirmId(scope: string | null): string | null {
+  try {
+    return decodeAddeparConfig(scope).addeparFirmId;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * POST — reconnect an Addepar connection with a fresh key: the same body as
@@ -33,6 +43,18 @@ export async function POST(
 
     const tested = await readTestedAddeparCredentials(req, firmId);
     if ("error" in tested) return NextResponse.json({ error: tested.error }, { status: 400 });
+
+    // A reconnect keeps the household links, which only mean something at the
+    // same Addepar firm. A changed API base for the same firm is fine.
+    const storedFirmId = storedAddeparFirmId(connection.scope);
+    if (storedFirmId && storedFirmId !== decodeAddeparConfig(tested.configBlob).addeparFirmId) {
+      return NextResponse.json(
+        {
+          error: `This connection reaches Addepar firm ${storedFirmId}. Add a new connection for another Addepar firm.`,
+        },
+        { status: 400 },
+      );
+    }
 
     await updateByokCredentials({ connectionId: connection.id, userId, ...tested });
     await recordAudit({
