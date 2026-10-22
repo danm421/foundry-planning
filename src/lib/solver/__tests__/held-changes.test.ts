@@ -76,6 +76,15 @@ describe("held-changes", () => {
     expect(idsCreatedBy({ kind: "living-expense-scale", multiplier: 1 }, tree)).toEqual([]);
   });
 
+  it("idsCreatedBy: entity-upsert / external-beneficiary-upsert on a plan with no such lists", () => {
+    const tree = buildClientData();
+    expect(tree.entities).toBeUndefined();
+    expect(tree.externalBeneficiaries).toBeUndefined();
+    const entity = { id: NEW_ID } as never;
+    expect(idsCreatedBy({ kind: "entity-upsert", id: NEW_ID, value: entity }, tree)).toEqual([NEW_ID]);
+    expect(idsCreatedBy({ kind: "external-beneficiary-upsert", id: NEW_ID, value: entity }, tree)).toEqual([NEW_ID]);
+  });
+
   it("entriesNaming finds a savings-rule-upsert whose rule names the account", () => {
     const tree = buildClientData();
     const rule = { ...tree.savingsRules[0], id: "rule-1", accountId: NEW_ID };

@@ -47,7 +47,7 @@ export function idsCreatedBy(m: SolverMutation, source: ClientData): string[] {
   const upsert = m as Extract<SolverMutation, { kind: keyof typeof UPSERT_TARGET }>;
   if (upsert.value == null) return [];
   const field = TARGET_KIND_TO_FIELD[UPSERT_TARGET[upsert.kind]];
-  const list = (field ? (source[field] as unknown) : []) as { id: string }[];
+  const list: readonly { id: string }[] = (field && (source[field] as { id: string }[] | undefined)) || [];
   return list.some((r) => r.id === upsert.id) ? [] : [upsert.id];
 }
 
