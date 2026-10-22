@@ -135,11 +135,13 @@ function heldChange(list: WorkingList, e: PreparedEdit, op: OpType, payload: unk
   return { kind: "held-change", op, targetKind: e.targetKind, targetId: e.targetId, payload, saveId: list.saveId };
 }
 
-function upsert(list: WorkingList, e: PreparedEdit, op: OpType, payload: unknown): void {
+function upsert(list: WorkingList, e: PreparedEdit, op: OpType, payload: unknown): HeldChangeMutation {
   const key = heldKey(e);
-  list.entries.set(key, heldChange(list, e, op, payload));
+  const m = heldChange(list, e, op, payload);
+  list.entries.set(key, m);
   list.touched.delete(key);
   list.touched.add(key);
+  return m;
 }
 
 function drop(list: WorkingList, key: SolverMutationKey): void {
@@ -154,16 +156,31 @@ function heldEntry(list: WorkingList, e: PreparedEdit): HeldChangeMutation | und
   return m && isHeldChange(m) && isOn(list, key) ? m : undefined;
 }
 
-/** Switched-on controls, each with its single-control footprint against `tree`. */
-function controlFootprints(list: WorkingList, tree: ClientData) {
+/** Switched-on controls, each with its single-control footprint on every tree in `trees`, unioned. */
+function controlFootprints(list: WorkingList, trees: readonly ClientData[]) {
   return [...list.entries]
     .filter(([key, m]) => !isHeldChange(m) && isOn(list, key))
-    .map(([key, m]) => ({ key, drafts: mutationsToScenarioChanges(tree, list.clientId, [m]) }));
+    .map(([key, m]) => ({
+      key,
+      drafts: trees.flatMap((tree) => mutationsToScenarioChanges(tree, list.clientId, [m])),
+    }));
+}
+
+/** Drop every switched-on control whose footprint has a draft on this item that `hits`. */
+function dropControlsOn(
+  list: WorkingList,
+  e: PreparedEdit,
+  trees: readonly ClientData[],
+  hits: (d: SolverScenarioChangeDraft) => boolean = () => true,
+): void {
+  for (const { key, drafts } of controlFootprints(list, trees)) {
+    if (drafts.some((d) => isTarget(d, e) && hits(d))) drop(list, key);
+  }
 }
 
 /** The switched-on control whose footprint adds this item, with that add's payload. */
 function creatingControl(list: WorkingList, e: PreparedEdit) {
-  for (const { key, drafts } of controlFootprints(list, list.source)) {
+  for (const { key, drafts } of controlFootprints(list, [list.source])) {
     const add = drafts.find((d) => d.opType === "add" && isTarget(d, e));
     if (add) return { key, payload: add.payload };
   }
@@ -179,6 +196,15 @@ function startingItem(source: ClientData, e: PreparedEdit): Item | undefined {
   return list?.find((r) => r.id === e.targetId);
 }
 
+/**
+ * An add drops every control on its item: the dialog opened on held values plus
+ * controls, so it already carries their values (a base gift saves as an add).
+ */
+function holdAdd(list: WorkingList, e: PreparedEdit): void {
+  const added = upsert(list, e, "add", e.entity);
+  dropControlsOn(list, e, [list.source, applyHeldChanges(list.source, [added])]);
+}
+
 function holdEdit(list: WorkingList, e: PreparedEdit): void {
   const desired = e.desiredFields ?? {};
   const prior = heldEntry(list, e);
@@ -186,34 +212,36 @@ function holdEdit(list: WorkingList, e: PreparedEdit): void {
   // The item's add as it stood before this save: a held add, or a control's.
   const startingAdd = prior?.op === "add" ? prior.payload : creator?.payload;
 
+  let result: HeldChangeMutation | undefined;
   if (startingAdd !== undefined) {
     if (creator) drop(list, creator.key);
-    upsert(list, e, "add", { ...(startingAdd as Record<string, unknown>), ...desired });
+    result = upsert(list, e, "add", { ...(startingAdd as Record<string, unknown>), ...desired });
   } else {
     const starting = startingItem(list.source, e);
     const merged = { ...priorToValues(prior?.payload), ...desired };
     const diff = buildFieldDiff(editableSingletonFields(e.targetKind, starting, merged), starting);
     if (Object.keys(diff).length === 0) drop(list, heldKey(e));
-    else upsert(list, e, "edit", diff);
+    else result = upsert(list, e, "edit", diff);
   }
 
   // A control on a field this save sets is folded in: the dialog opened on its
   // value. Only this save's fields — a control on a field it doesn't send wins.
-  // An added item isn't in the starting plan, so its controls are read against
-  // the plan plus that add.
-  const tree =
+  // A footprint is read before this save (an added item isn't in the starting
+  // plan, so the plan plus that add) and after it, so a control parked at the
+  // starting value still shows the field it sets.
+  const before =
     startingAdd === undefined
       ? list.source
       : applyHeldChanges(list.source, [heldChange(list, e, "add", startingAdd)]);
-  for (const { key, drafts } of controlFootprints(list, tree)) {
-    const setsAField = drafts.some(
-      (d) =>
-        d.opType === "edit" &&
-        isTarget(d, e) &&
-        Object.keys(d.payload as Record<string, unknown>).some((f) => Object.hasOwn(desired, f)),
-    );
-    if (setsAField) drop(list, key);
-  }
+  const trees = result ? [before, applyHeldChanges(list.source, [result])] : [before];
+  dropControlsOn(
+    list,
+    e,
+    trees,
+    (d) =>
+      d.opType === "edit" &&
+      Object.keys(d.payload as Record<string, unknown>).some((f) => Object.hasOwn(desired, f)),
+  );
 }
 
 function holdRemove(list: WorkingList, e: PreparedEdit): void {
@@ -234,9 +262,7 @@ function holdRemove(list: WorkingList, e: PreparedEdit): void {
   }
 
   upsert(list, e, "remove", null);
-  for (const { key, drafts } of controlFootprints(list, list.source)) {
-    if (drafts.some((d) => isTarget(d, e))) drop(list, key);
-  }
+  dropControlsOn(list, e, [list.source]);
 }
 
 /**
@@ -264,7 +290,7 @@ export function holdEdits(args: {
     saveId: args.saveId,
   };
   for (const e of args.edits) {
-    if (e.op === "add") upsert(list, e, "add", e.entity);
+    if (e.op === "add") holdAdd(list, e);
     else if (e.op === "edit") holdEdit(list, e);
     else holdRemove(list, e);
   }

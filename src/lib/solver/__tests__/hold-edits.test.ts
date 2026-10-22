@@ -35,7 +35,10 @@ const groceries: Expense = {
   endYear: 2055,
   growthRate: 0.02,
 };
-const source = buildClientData({ expenses: [...sampleExpenses, groceries] });
+const source = buildClientData({
+  expenses: [...sampleExpenses, groceries],
+  gifts: [{ id: GIFT, year: 2030, amount: 50_000, grantor: "client", useCrummeyPowers: false }],
+});
 
 const boat: Expense = {
   id: BOAT,
@@ -47,6 +50,17 @@ const boat: Expense = {
   growthRate: 0,
 };
 const newAccount: Account = { ...sampleAccounts[2], id: A, name: "New brokerage" };
+
+/** A base gift, as the gift dialog and the Solver's gift control carry it. */
+const gift: EstateFlowGift = {
+  kind: "cash-once",
+  id: GIFT,
+  year: 2030,
+  amount: 50_000,
+  grantor: "client",
+  recipient: { kind: "external_beneficiary", id: "c1" },
+  crummey: false,
+};
 
 function held(
   op: OpType,
@@ -200,16 +214,27 @@ describe("holdEdits", () => {
     expect(r.dropKeys).toEqual([mutationKey(control)]);
   });
 
+  it("a control parked at the starting value is folded into a dialog change", () => {
+    const control = groceriesControl(12000);
+    const r = hold([control], [editG({ annualAmount: 13000 })]);
+    expect(r.upserts).toEqual([
+      held("edit", "expense", G, { annualAmount: { from: 12000, to: 13000 } }, SAVE),
+    ]);
+    expect(r.dropKeys).toEqual([mutationKey(control)]);
+  });
+
+  it("a base gift saved from its dialog (an add) drops the gift control on it", () => {
+    const control: SolverMutation = { kind: "gift-upsert", id: GIFT, value: { ...gift, amount: 75_000 } };
+    const elsewhere = groceriesControl(13000);
+    const r = hold(
+      [control, elsewhere],
+      [{ op: "add", targetKind: "gift", targetId: GIFT, entity: { ...gift, amount: 60_000 } }],
+    );
+    expect(r.upserts).toEqual([held("add", "gift", GIFT, { ...gift, amount: 60_000 }, SAVE)]);
+    expect(r.dropKeys).toEqual([mutationKey(control)]);
+  });
+
   it("gift remove is a remove marker", () => {
-    const gift: EstateFlowGift = {
-      kind: "cash-once",
-      id: GIFT,
-      year: 2030,
-      amount: 50_000,
-      grantor: "client",
-      recipient: { kind: "external_beneficiary", id: "c1" },
-      crummey: false,
-    };
     // A held add on a gift id is a base gift's edit as often as a new gift.
     const add = held("add", "gift", GIFT, gift);
     const control: SolverMutation = { kind: "gift-upsert", id: GIFT, value: { ...gift, amount: 75_000 } };
