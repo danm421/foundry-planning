@@ -307,9 +307,9 @@ export async function listConnectedSyncingConnections(): Promise<
  * blob is stored plaintext in `scope`. */
 export async function upsertByokConnection(input: {
   firmId: string;
-  providerId: ProviderId;
-  secretBlob: string;   // JSON {apiKey, apiSecret}
-  configBlob: string;   // JSON {apiBase, addeparFirmId}
+  providerId: "azure_openai";
+  secretBlob: string;   // JSON of the Azure OpenAI key
+  configBlob: string;   // JSON of the Azure OpenAI endpoint config
   userId: string;
 }): Promise<void> {
   const values = {
@@ -338,7 +338,7 @@ export async function upsertByokConnection(input: {
 
 export async function getConnection(
   firmId: string,
-  providerId: ProviderId,
+  providerId: "azure_openai",
 ): Promise<IntegrationConnectionRow | null> {
   const [row] = await db
     .select()
@@ -355,7 +355,7 @@ export async function getConnection(
 
 export async function setConnectionStatus(
   firmId: string,
-  providerId: ProviderId,
+  providerId: "azure_openai",
   status: ConnectionStatus,
   error?: string | null,
   extra?: { lastSyncedAt?: Date },
@@ -373,7 +373,7 @@ export async function setConnectionStatus(
 
 export async function disconnectConnection(
   firmId: string,
-  providerId: ProviderId,
+  providerId: "azure_openai",
 ): Promise<void> {
   await db
     .update(integrationConnections)
@@ -384,20 +384,6 @@ export async function disconnectConnection(
         eq(integrationConnections.provider, providerId),
       ),
     );
-}
-
-/** Every connected (firm, provider) pair — the cron's work list. */
-export async function listConnectedFirms(): Promise<
-  Array<{ firmId: string; providerId: ProviderId }>
-> {
-  const rows = await db
-    .select({
-      firmId: integrationConnections.firmId,
-      provider: integrationConnections.provider,
-    })
-    .from(integrationConnections)
-    .where(eq(integrationConnections.status, "connected"));
-  return rows.map((r) => ({ firmId: r.firmId, providerId: r.provider }));
 }
 
 export async function createOauthState(input: {

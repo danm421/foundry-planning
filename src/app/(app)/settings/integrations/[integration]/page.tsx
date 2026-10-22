@@ -47,6 +47,7 @@ export default async function IntegrationDetailPage({ params }: Props): Promise<
   // connection list or household table the custodial providers share.
   if (!provider.syncs) {
     if (!isAdmin) return <Forbidden requiredRole="admin or owner" />;
+    if (provider.id !== "azure_openai") notFound();
     const conn = await getConnection(firmId, provider.id);
     // The whole decoded config, not a two-field slice: the connected card names
     // every deployment the firm's AI runs on plus the pinned API version,

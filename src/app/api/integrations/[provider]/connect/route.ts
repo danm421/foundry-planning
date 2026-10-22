@@ -128,7 +128,7 @@ export async function POST(
 
       await upsertByokConnection({
         firmId,
-        providerId: provider.id,
+        providerId: "azure_openai",
         secretBlob: encodeAzureSecret({ apiKey: creds.apiKey }),
         configBlob: encodeAzureConfig({
           endpoint: creds.endpoint,

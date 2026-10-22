@@ -48,7 +48,7 @@ export default async function IntegrationsPage(): Promise<ReactElement> {
       providers
         .filter((p) => !p.syncs)
         .map(async (p): Promise<Row> => {
-          const conn = await getConnection(firmId, p.id);
+          const conn = p.id === "azure_openai" ? await getConnection(firmId, p.id) : null;
           return { slug: p.id, label: p.label, state: providerState(p.isEnabled(), conn), detail: null };
         }),
     ),
