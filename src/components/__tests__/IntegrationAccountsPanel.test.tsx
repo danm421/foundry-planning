@@ -69,7 +69,7 @@ describe("IntegrationAccountsPanel", () => {
     mockFetch();
     renderPanel();
     expect(await screen.findByText("Doe Family")).toBeTruthy();
-    expect(screen.getByText(/Values from last sync · Oct 20, 2026/)).toBeTruthy();
+    expect(screen.getByText(/Addepar · Values from last sync · Oct 20, 2026/)).toBeTruthy();
     expect(screen.getByText("Joint Brokerage")).toBeTruthy();
     expect(screen.getByText("Not connected")).toBeTruthy();
   });

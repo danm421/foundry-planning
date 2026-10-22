@@ -132,7 +132,9 @@ export function IntegrationAccountsPanel({ providerId, connectionId, linkId, ope
         <p className="text-sm text-ink-3">Loading…</p>
       ) : (
         <div className="flex flex-col gap-4">
-          <p className="text-sm text-ink-3">{formatPulledAt(panel.pulledAt)}</p>
+          <p className="text-sm text-ink-3">
+            {panel.connectionName} · {formatPulledAt(panel.pulledAt)}
+          </p>
           <div className="overflow-hidden rounded border border-hair">
             <table className="w-full text-sm">
               <thead className="bg-card text-left text-xs uppercase tracking-wide text-ink-3">

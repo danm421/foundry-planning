@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { clientImports, clients, crmHouseholds, integrationHouseholdLinks } from "@/db/schema";
+import { clientImports, clients, crmHouseholds, integrationConnections, integrationHouseholdLinks } from "@/db/schema";
 import { createByokConnection } from "./connections";
 import { encodeAddeparConfig, encodeAddeparSecret } from "./providers/addepar/credentials";
 import { createTestClientWithScenario } from "@/test/factories";
@@ -18,6 +18,8 @@ beforeAll(() => {
 
 afterAll(async () => {
   for (const f of [firmId, otherFirmId]) {
+    // Connections first: their household links cascade with them.
+    await db.delete(integrationConnections).where(eq(integrationConnections.firmId, f));
     // Deleting the client cascades to its imports.
     await db.delete(clients).where(eq(clients.firmId, f));
     await db.delete(crmHouseholds).where(eq(crmHouseholds.firmId, f));

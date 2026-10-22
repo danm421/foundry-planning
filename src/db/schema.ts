@@ -6424,7 +6424,7 @@ export const integrationConnections = pgTable(
     status: integrationConnectionStatusEnum("status").notNull().default("connected"),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
     lastSyncError: text("last_sync_error"),
-    // "Who last connected": a token refresh rewrites it to `system:<provider>-refresh`.
+    // "Who last connected": set on connect and reconnect. A token refresh does not rewrite it.
     connectedByUserId: text("connected_by_user_id"),
     // The advisor who owns the connection. Never rewritten by a refresh.
     // Null only for azure_openai (one per firm).
