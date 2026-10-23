@@ -1629,3 +1629,127 @@ describe("save-scenario — a sale to trust saves as one toggleable unit", () =>
     expect(editCallFor(SALE_ACCOUNT_1)?.toggleGroupId).toBe("sale-gid");
   });
 });
+
+// ── Held editor changes ─────────────────────────────────────────────────────
+//
+// A Details editor's save inside the Solver is held as a `held-change` entry
+// until a save button is pressed. Both verbs write it through the scenario
+// writer; its db behaviour is pinned in src/lib/solver/__tests__/save-scenario-held.test.ts.
+describe("save-scenario — held editor changes", () => {
+  const EXPENSE_ID = "77777777-7777-4777-8777-777777777777";
+  const SAVE_ID = "88888888-8888-4888-8888-888888888888";
+  const heldEdit = (payload: unknown) => ({
+    kind: "held-change",
+    op: "edit",
+    targetKind: "expense",
+    targetId: EXPENSE_ID,
+    payload,
+    saveId: SAVE_ID,
+  });
+
+  it("PUT rejects a malformed held-change with 400", async () => {
+    const res = await PUT(
+      makeUpdateRequest({ scenarioId: SCENARIO_ID, mutations: [heldEdit({ annualAmount: 12100 })] }),
+      ctx,
+    );
+
+    expect(res.status).toBe(400);
+    expect(applyEntityEdit).not.toHaveBeenCalled();
+  });
+
+  it("PUT writes a held edit through the writer, with no group, before the controls", async () => {
+    const res = await PUT(
+      makeUpdateRequest({
+        scenarioId: SCENARIO_ID,
+        mutations: [
+          { kind: "retirement-age", person: "client", age: 67 },
+          heldEdit({ annualAmount: { from: 12000, to: 12100 } }),
+        ],
+      }),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    const calls = vi.mocked(applyEntityEdit).mock.calls.map((c) => c[0]);
+    expect(calls.map((c) => c.targetKind)).toEqual(["expense", "client"]);
+    expect(calls[0]).toMatchObject({ targetId: EXPENSE_ID, desiredFields: { annualAmount: 12100 } });
+    // Omitted, so an edit folded into an `add` row keeps the add's group.
+    expect(calls[0]).not.toHaveProperty("toggleGroupId");
+  });
+
+  it("POST writes a control aimed at a held item through the writer, after it and in the control's group", async () => {
+    const account = (id: string, name: string) => ({
+      id, category: "cash" as const, revocableTrustName: null, owners: [], name, subType: "checking",
+      value: 50000, basis: 0, growthRate: 0.02, rmdEnabled: false, titlingType: "jtwros" as const,
+    });
+    const ACCOUNT_ID = "99999999-9999-4999-8999-999999999999";
+    const checking = account(ACCOUNT_ID, "Checking");
+    const savings = account("acct-2", "Savings");
+    treeWith({ accounts: [checking, savings] });
+
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        name: "Fund the trust",
+        mutations: [
+          {
+            kind: "held-change",
+            op: "edit",
+            targetKind: "account",
+            targetId: ACCOUNT_ID,
+            payload: { value: { from: 50000, to: 60000 } },
+            saveId: SAVE_ID,
+          },
+          { kind: "account-upsert", id: ACCOUNT_ID, value: { ...checking, revocableTrustName: "Family Trust" } },
+          { kind: "account-upsert", id: "acct-2", value: { ...savings, revocableTrustName: "Family Trust" } },
+        ],
+      }),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    expect(insertedGroups).toHaveLength(1);
+    const groupId = (insertedGroups[0] as { id: string }).id;
+    const edits = vi.mocked(applyEntityEdit).mock.calls.map((c) => c[0]);
+    expect(edits).toHaveLength(2);
+    // The held edit first, with no group; then the retitle control merged over it.
+    expect(edits[0]).toMatchObject({ targetId: ACCOUNT_ID, desiredFields: { value: 60000 } });
+    expect(edits[0]).not.toHaveProperty("toggleGroupId");
+    expect(edits[1]).toMatchObject({
+      targetId: ACCOUNT_ID,
+      desiredFields: { revocableTrustName: "Family Trust" },
+      toggleGroupId: groupId,
+    });
+    // The other account's control is inserted directly, in the same group.
+    expect(insertedChanges).toEqual([
+      expect.objectContaining({ targetId: "acct-2", toggleGroupId: groupId }),
+    ]);
+  });
+
+  it("POST answers 400 when the writer refuses a held change", async () => {
+    vi.mocked(applyEntityAdd).mockRejectedValueOnce(
+      new ScenarioChangeRejectedError("Invalid living-expense items"),
+    );
+
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        name: "With a held add",
+        mutations: [
+          {
+            kind: "held-change",
+            op: "add",
+            targetKind: "expense",
+            targetId: EXPENSE_ID,
+            payload: { id: EXPENSE_ID, name: "Boat" },
+            saveId: SAVE_ID,
+          },
+        ],
+      }),
+      ctx,
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Invalid living-expense items" });
+  });
+});

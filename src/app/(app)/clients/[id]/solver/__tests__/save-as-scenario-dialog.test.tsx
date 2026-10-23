@@ -14,6 +14,7 @@ const baseProps = {
   ] as never,
   sourceTree: tree,
   workingTree: tree,
+  heldBackCount: 0,
   onClose: vi.fn(),
   onSubmit: vi.fn(),
 };
@@ -22,6 +23,9 @@ beforeEach(() => {
   baseProps.onClose.mockReset();
   baseProps.onSubmit.mockReset();
 });
+
+const SCENARIO_ONLY_LINE =
+  "Changes to items only this scenario has aren't part of a new scenario. They stay pending.";
 
 describe("<SaveAsScenarioDialog />", () => {
   it("renders a human-readable line per mutation", () => {
@@ -93,5 +97,20 @@ describe("<SaveAsScenarioDialog />", () => {
     expect(screen.getByText(/Foundation: Smith Family Foundation/)).toBeInTheDocument();
     expect(screen.getByText(/Business: Smith Holdings LLC/)).toBeInTheDocument();
     expect(screen.getByText(/Trust: Smith Family ILIT/)).toBeInTheDocument();
+  });
+
+  it("shows the scenario-only line when heldBackCount > 0", () => {
+    const { rerender } = render(<SaveAsScenarioDialog {...baseProps} />);
+    expect(screen.queryByText(SCENARIO_ONLY_LINE)).toBeNull();
+
+    rerender(<SaveAsScenarioDialog {...baseProps} heldBackCount={2} />);
+    expect(screen.getByText(SCENARIO_ONLY_LINE)).toBeInTheDocument();
+  });
+
+  // Every switched-on entry is held back: an empty save is not a scenario.
+  it("disables Save when nothing is left to save", () => {
+    render(<SaveAsScenarioDialog {...baseProps} mutations={[]} heldBackCount={1} />);
+    fireEvent.change(screen.getByLabelText(/Name/i), { target: { value: "Empty" } });
+    expect(screen.getByRole("button", { name: /save scenario/i })).toBeDisabled();
   });
 });

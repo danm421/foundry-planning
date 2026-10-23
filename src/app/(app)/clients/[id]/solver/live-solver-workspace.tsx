@@ -333,6 +333,12 @@ export function LiveSolverWorkspace({
     () => partitionBaseSavableMutations(mutations, scenarioOnlyIds),
     [mutations, scenarioOnlyIds],
   );
+  // Save as new: a new scenario has none of the selected scenario's own items,
+  // so held changes to them stay pending (Update scenario keeps them).
+  const newScenarioMutations = useMemo(() => {
+    const heldBack = new Set(baseSavable.heldScenarioOnly);
+    return mutations.filter((m) => !heldBack.has(mutationKey(m)));
+  }, [mutations, baseSavable]);
 
   const [activeTab, setActiveTab] = useState<InputTab>(initialTab);
   // Reads the change list, so a switched-off saved event still counts.
@@ -1190,7 +1196,7 @@ export function LiveSolverWorkspace({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           source: initialSource,
-          mutations,
+          mutations: newScenarioMutations,
           name: args.name,
           // Pass the seed from the canonical solve so the saved scenario's
           // report can reproduce the exact same PoS via getOrComputeMonteCarlo.
@@ -2150,9 +2156,10 @@ export function LiveSolverWorkspace({
 
       <SaveAsScenarioDialog
         open={saveOpen}
-        mutations={mutations}
+        mutations={newScenarioMutations}
         sourceTree={initialSourceClientData}
         workingTree={workingTree}
+        heldBackCount={baseSavable.heldScenarioOnly.length}
         onClose={() => (saving ? null : setSaveOpen(false))}
         onSubmit={handleSaveSubmit}
       />

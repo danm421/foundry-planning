@@ -129,6 +129,8 @@ export async function assertGiftRecipientAccepted(
  * if either lookup fails — never leak the existence of cross-firm scenarios.
  *
  * Returns `clientId` so callers can reuse it without a second roundtrip.
+ * Reads the scenario through `executor`, so a scenario the caller inserted in
+ * its still-open transaction (the Solver's Save as scenario) is found.
  *
  * Replaces the prior `getScenarioClientId` helper, which trusted the caller's
  * firmId silently and let any authenticated user write changes against any
@@ -140,8 +142,9 @@ export async function assertGiftRecipientAccepted(
 async function assertScenarioInFirm(
   scenarioId: string,
   firmId: string,
+  executor: Tx | typeof db = db,
 ): Promise<{ clientId: string }> {
-  const [row] = await db
+  const [row] = await executor
     .select({ clientId: scenarios.clientId })
     .from(scenarios)
     .where(eq(scenarios.id, scenarioId));
@@ -243,7 +246,7 @@ export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> 
   const { scenarioId, firmId, targetKind, targetId } = args;
   const toggleGroupId = args.toggleGroupId ?? null;
 
-  const { clientId } = await assertScenarioInFirm(scenarioId, firmId);
+  const { clientId } = await assertScenarioInFirm(scenarioId, firmId, args.tx ?? db);
   const baseEntity = await lookupBaseEntity(clientId, firmId, targetKind, targetId);
 
   // The load + delete/upsert sequence below reads the base tree and then
@@ -410,8 +413,8 @@ export async function applyEntityAdd(
   let { entity } = args;
   // A whole-entity kind has no Details form to shape it, so it is validated
   // here, where the changes route, Forge and the Solver's "update this
-  // scenario" land. (The Solver's "save as new scenario" inserts its rows
-  // directly; those payloads come from schema-validated mutations.) The parsed
+  // scenario" land. (The Solver's "save as new scenario" inserts its control
+  // rows directly; those payloads come from schema-validated mutations.) The parsed
   // copy is stored, which drops any unknown key.
   const wholeSchema = WHOLE_ENTITY_SCHEMAS[targetKind];
   if (wholeSchema) {
@@ -424,7 +427,7 @@ export async function applyEntityAdd(
   entity = normalizeExpenseLivingItems(targetKind, entity) as typeof entity;
   const toggleGroupId = args.toggleGroupId ?? null;
 
-  const { clientId } = await assertScenarioInFirm(scenarioId, firmId);
+  const { clientId } = await assertScenarioInFirm(scenarioId, firmId, args.tx ?? db);
   if (targetKind === "gift") {
     await assertGiftRecipientAccepted(args.tx ?? db, scenarioId, clientId, entity);
   }
@@ -486,7 +489,7 @@ export async function applyEntityRemove(args: ApplyEntityRemoveArgs): Promise<vo
   const { scenarioId, firmId, targetKind, targetId } = args;
   const toggleGroupId = args.toggleGroupId ?? null;
 
-  await assertScenarioInFirm(scenarioId, firmId);
+  await assertScenarioInFirm(scenarioId, firmId, args.tx ?? db);
 
   // Sanity check.
   if (TARGET_KIND_TO_FIELD[targetKind] == null) {

@@ -12,6 +12,8 @@ interface Props {
    *  together they name every row a change touches, removed ones included. */
   sourceTree: ClientData;
   workingTree: ClientData;
+  /** Held changes to items only the selected scenario has: not saved here. */
+  heldBackCount: number;
   onClose(): void;
   onSubmit(args: { name: string }): void;
 }
@@ -21,6 +23,7 @@ export function SaveAsScenarioDialog({
   mutations,
   sourceTree,
   workingTree,
+  heldBackCount,
   onClose,
   onSubmit,
 }: Props) {
@@ -65,6 +68,11 @@ export function SaveAsScenarioDialog({
             </li>
           ))}
         </ul>
+        {heldBackCount > 0 ? (
+          <p className="mt-2 text-[12px] text-ink-3">
+            Changes to items only this scenario has aren&apos;t part of a new scenario. They stay pending.
+          </p>
+        ) : null}
 
         <div className="mt-6 flex justify-end gap-2">
           <button
@@ -76,7 +84,7 @@ export function SaveAsScenarioDialog({
           </button>
           <button
             type="button"
-            disabled={name.trim().length === 0}
+            disabled={name.trim().length === 0 || mutations.length === 0}
             onClick={() => onSubmit({ name: name.trim() })}
             className="h-9 rounded-md bg-accent px-4 text-[13px] font-semibold text-accent-on hover:bg-accent-ink disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
           >

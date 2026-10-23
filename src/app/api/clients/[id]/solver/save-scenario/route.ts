@@ -18,6 +18,10 @@
 // changes-writer never sees them and a save that skipped them would lose the
 // advisor's recurring gifts, trust flow grids and IDGT notes.
 //
+// Held Details-editor changes (`held-change`) are written through the
+// changes-writer by both verbs, before the controls. A refusal 400s and
+// nothing is saved.
+//
 // The save itself — and the helpers PUT reuses — live in
 // src/lib/solver/save-scenario.ts, shared with the Claude connector's
 // save_what_if_as_scenario.
@@ -37,7 +41,9 @@ import {
   planNoteWrites,
   resolveToggleGroups,
   saveSolverScenario,
+  writeThroughWriter,
 } from "@/lib/solver/save-scenario";
+import { heldScenarioChanges } from "@/lib/solver/held-changes";
 import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
@@ -133,6 +139,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     if (authResp) {
       return NextResponse.json(authResp.body, { status: authResp.status });
     }
+    if (err instanceof ScenarioChangeRejectedError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     console.error("POST /api/clients/[id]/solver/save-scenario error:", err);
     return NextResponse.json(
       { error: "Internal server error" },
@@ -211,10 +220,12 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
     }
 
     // The solver source IS this scenario, so its mutations are deltas on the
-    // scenario's current effective tree. Convert them to draft changes (which
-    // coalesce per-target) and compute the working tree once so per-field
-    // values can be read back when rewriting edit rows.
-    const { effectiveTree } = await loadEffectiveTree(clientId, firmId, scenarioId, {});
+    // scenario's current effective tree with the held editor changes over it,
+    // as on the Solver's screen. Convert the controls to draft changes (which
+    // coalesce per-target; held entries are skipped) and compute the working
+    // tree once so per-field values can be read back when rewriting edit rows.
+    const held = heldScenarioChanges(mutations as SolverMutation[]);
+    const { effectiveTree } = await loadEffectiveTree(clientId, firmId, scenarioId, {}, held);
     const workingTree = applyMutations(effectiveTree, mutations as SolverMutation[]);
     const drafts = mutationsToScenarioChanges(
       effectiveTree,
@@ -286,6 +297,10 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
         // kept for parity with the scenarioChanges insert below.
         await tx.insert(scenarioToggleGroups).values(newGroupRows).returning();
       }
+      // Held changes first, as the editor's own save would have written them.
+      // The controls below merge into the rows these leave (the writer folds
+      // each save over the row's prior fields), so a control wins.
+      for (const change of held) await writeThroughWriter(tx, { scenarioId, firmId }, change);
       for (const d of drafts) {
         const targetKind = d.targetKind as TargetKind;
         const gid = groupIdByTarget.get(d.targetId);

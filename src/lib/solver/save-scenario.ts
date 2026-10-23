@@ -8,6 +8,8 @@
 // and the Claude connector's save_what_if_as_scenario both call it, so a
 // scenario saved from Claude is indistinguishable from one saved on the Solver
 // screen. The route's PUT (fold into an existing scenario) reuses the helpers.
+// Held Details-editor changes (`held-change`) are written through the scenario
+// writer by both, as the editor's own save would have written them.
 //
 // Callers own authorization (edit access to the client, in this firm) and the
 // audit row; nothing here reads a session.
@@ -29,8 +31,11 @@ import {
 } from "@/lib/solver/revocable-trust-funding-group";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { mutationsToScenarioChanges } from "@/lib/solver/mutations-to-scenario-changes";
+import { heldScenarioChanges } from "@/lib/solver/held-changes";
 import type { SolverMutation, SolverScenarioChangeDraft } from "@/lib/solver/types";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { applyEntityAdd, applyEntityEdit, applyEntityRemove } from "@/lib/scenario/changes-writer";
+import { priorToValues } from "@/lib/scenario/field-diff";
 import {
   cloneEntityFlowOverridesIntoScenario,
   cloneGiftSeriesIntoScenario,
@@ -38,6 +43,7 @@ import {
 } from "@/lib/scenario/create-with-clone";
 import type { ClientData } from "@/engine/types";
 import type { AccountOwner } from "@/engine/ownership";
+import type { OpType, TargetKind } from "@/engine/scenario/types";
 
 /** Loosely-typed tx handle — same derivation as create-with-clone's, because
  *  Drizzle does not export its tx callback param as a named type here. */
@@ -61,6 +67,31 @@ interface NoteWrite {
 
 const isNoteMutation = (m: SolverMutation): m is NoteMutation =>
   m.kind === "note-receivable-upsert";
+
+const targetKey = (c: { targetKind: string; targetId: string }) => `${c.targetKind}:${c.targetId}`;
+
+/**
+ * Write one change through the scenario writer, on `tx`: a held editor change,
+ * as the editor's own save would have written it, or a control aimed at an
+ * item one touches, which the writer then merges into that item's row. With no
+ * `toggleGroupId` an existing row keeps its group, so an edit folded into an
+ * `add` keeps the add's.
+ */
+export async function writeThroughWriter(
+  tx: SaveTx,
+  scope: { scenarioId: string; firmId: string },
+  change: { opType: OpType; targetKind: TargetKind; targetId: string; payload: unknown },
+  toggleGroupId?: string,
+): Promise<void> {
+  const args = { ...scope, targetKind: change.targetKind, tx, ...(toggleGroupId ? { toggleGroupId } : {}) };
+  if (change.opType === "add") {
+    await applyEntityAdd({ ...args, entity: change.payload as { id: string } & Record<string, unknown> });
+  } else if (change.opType === "edit") {
+    await applyEntityEdit({ ...args, targetId: change.targetId, desiredFields: priorToValues(change.payload) });
+  } else {
+    await applyEntityRemove({ ...args, targetId: change.targetId });
+  }
+}
 
 /**
  * The note mutations of a save, collapsed to the LAST one per note id.
@@ -470,7 +501,9 @@ export type SaveSolverScenarioResult =
  * Materialize solver mutations as a NEW scenario of this client, starting from
  * `source` ("base" or a scenario id the caller has already checked is this
  * client's). `{ ok: false }` names notes receivable this save cannot express;
- * nothing has been written. Throws on invalid mutation state (applyMutations).
+ * nothing has been written. Throws on invalid mutation state (applyMutations),
+ * and with nothing written when the scenario writer refuses a held change
+ * (`ScenarioChangeRejectedError`).
  */
 export async function saveSolverScenario(args: {
   clientId: string;
@@ -482,7 +515,10 @@ export async function saveSolverScenario(args: {
 }): Promise<SaveSolverScenarioResult> {
   const { clientId, firmId, source, name, mutations, seed } = args;
 
-  const { effectiveTree } = await loadEffectiveTree(clientId, firmId, source, {});
+  // The held editor changes, over the starting plan as on the Solver's screen,
+  // so the controls' drafts (which skip held entries) diff against that.
+  const held = heldScenarioChanges(mutations);
+  const { effectiveTree } = await loadEffectiveTree(clientId, firmId, source, {}, held);
   const drafts = mutationsToScenarioChanges(effectiveTree, clientId, mutations);
 
   // Throws on invalid mutation state, and the result is what the two
@@ -567,11 +603,27 @@ export async function saveSolverScenario(args: {
       await tx.insert(scenarioToggleGroups).values(newGroupRows).returning();
     }
 
-    if (drafts.length > 0) {
+    // Held changes go through the writer. A control aimed at an item one
+    // touches follows it through the writer, which merges it into that item's
+    // row (a second insert would collide on the unique index), so the control
+    // wins as it does on screen, and keeps the group its target got above.
+    const scope = { scenarioId: row.id as string, firmId };
+    for (const change of held) await writeThroughWriter(tx, scope, change);
+    const heldTargets = new Set(held.map(targetKey));
+    const direct: SolverScenarioChangeDraft[] = [];
+    for (const d of drafts) {
+      if (heldTargets.has(targetKey(d))) {
+        await writeThroughWriter(tx, scope, d, groupIdByTarget.get(d.targetId));
+      } else {
+        direct.push(d);
+      }
+    }
+
+    if (direct.length > 0) {
       await tx
         .insert(scenarioChanges)
         .values(
-          drafts.map((d) => ({
+          direct.map((d) => ({
             scenarioId: row.id,
             opType: d.opType,
             targetKind: d.targetKind,

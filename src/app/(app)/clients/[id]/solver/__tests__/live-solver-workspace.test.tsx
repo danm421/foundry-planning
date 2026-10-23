@@ -2002,4 +2002,70 @@ describe("LiveSolverWorkspace — held changes and switches", () => {
     await waitFor(() => expect(tabProps.current!.unsaved!.entries).toEqual([held("e1", SAVE_A)]));
     expect(tabProps.current!.unsaved!.offGroups.has(`save:${SAVE_A}`)).toBe(true);
   });
+
+  it("Save as scenario posts no switched-off entry and no scenario-only held entry", async () => {
+    const SCENARIO_EXPENSE = "00000000-0000-4000-8000-0000000000e9";
+    const SAVE_C = "cccccccc-0000-4000-8000-000000000003";
+    const scenarioOnlyEdit: SolverMutation = {
+      kind: "held-change",
+      op: "edit",
+      targetKind: "expense",
+      targetId: SCENARIO_EXPENSE,
+      payload: { annualAmount: { from: 5000, to: 6000 } },
+      saveId: SAVE_C,
+    };
+    fetchMock.mockImplementation((url: string) =>
+      String(url).endsWith("/solver/project")
+        ? okProject()
+        : Promise.resolve({ ok: true, json: async () => ({ scenarioId: "scn-new" }) }),
+    );
+    render(
+      <LiveSolverWorkspace
+        {...baseProps}
+        initialSource="scn-1"
+        initialTab="changes"
+        changesPanel={
+          {
+            scenarioId: "scn-1",
+            scenarioName: "Retire at 62",
+            changes: [
+              {
+                id: "chg-boat", scenarioId: "scn-1", opType: "add", targetKind: "expense",
+                targetId: SCENARIO_EXPENSE, payload: { id: SCENARIO_EXPENSE, name: "Boat" },
+                toggleGroupId: null, orderIndex: 0, updatedAt: new Date("2026-01-01T00:00:00Z"),
+                enabled: true, label: "Boat",
+              },
+            ],
+            toggleGroups: [],
+            cascadeWarnings: [],
+            targetNames: {},
+          } as never
+        }
+      />,
+    );
+    await holdFrom([held("e1", SAVE_A)]);
+    await holdFrom([held("e2", SAVE_B)]);
+    await holdFrom([scenarioOnlyEdit]);
+    act(() => tabProps.current!.unsaved!.setGroupOn(`save:${SAVE_A}`, false));
+
+    // On a scenario, Save as scenario reads "Save as new…".
+    fireEvent.click(screen.getByRole("button", { name: /Save as new/i }));
+    // The dialog names exactly what is saved, and says what stays behind.
+    expect(await screen.findByText("Includes 1 change")).toBeInTheDocument();
+    expect(
+      screen.getByText("Changes to items only this scenario has aren't part of a new scenario. They stay pending."),
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Without the boat" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Save scenario$/ }));
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith("/solver/save-scenario"))).toBe(true),
+    );
+    const call = fetchMock.mock.calls.find((c) => String(c[0]).endsWith("/solver/save-scenario"))!;
+    expect(call[1].method).toBe("POST");
+    expect(JSON.parse(call[1].body as string).mutations).toEqual([held("e2", SAVE_B)]);
+    // A new scenario leaves the unsaved list as it was.
+    await waitFor(() => expect(screen.queryByLabelText("Name")).toBeNull());
+    expect(tabProps.current!.unsaved!.entries).toHaveLength(3);
+  });
 });
