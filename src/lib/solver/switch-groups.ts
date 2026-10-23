@@ -1,6 +1,6 @@
 // On/off switches for the Solver's unsaved changes. Pure and client-safe.
 import type { ClientData } from "@/engine/types";
-import { entriesNaming, idsCreatedBy, isHeldChange } from "./held-changes";
+import { dependencyClosure, idsCreatedBy, isHeldChange } from "./held-changes";
 import { mutationKey, type SolverMutation, type SolverMutationKey } from "./types";
 
 const ESTATE_KINDS: ReadonlySet<SolverMutation["kind"]> = new Set([
@@ -43,21 +43,9 @@ export function offEntryKeys(
   offGroups: ReadonlySet<string>,
   source: ClientData,
 ): Set<SolverMutationKey> {
-  const off = new Set<SolverMutationKey>();
-  if (offGroups.size === 0) return off;
-  const queue = all.filter((m) => offGroups.has(switchGroupOf(m, all, source)));
-  for (const m of queue) off.add(mutationKey(m));
-  const byKey = new Map(all.map((m) => [mutationKey(m), m]));
-  for (let i = 0; i < queue.length; i++) {
-    const ids = new Set(idsCreatedBy(queue[i], source));
-    if (ids.size === 0) continue;
-    for (const key of entriesNaming(all, ids)) {
-      if (off.has(key)) continue;
-      off.add(key);
-      queue.push(byKey.get(key) as SolverMutation);
-    }
-  }
-  return off;
+  if (offGroups.size === 0) return new Set();
+  const switchedOff = all.filter((m) => offGroups.has(switchGroupOf(m, all, source)));
+  return new Set(dependencyClosure(all, switchedOff, source));
 }
 
 /** The unsaved list every projection and save reads: `all` minus the switched-off entries. */
@@ -71,7 +59,8 @@ export function effectiveMutations(
   return all.filter((m) => !off.has(mutationKey(m)));
 }
 
-/** An entry's key, then the keys of the entries that name what it creates. */
+/** An entry's key, then the keys of every entry that depends on what it
+ *  creates, however indirectly (the same closure switching it off takes). */
 export function removeWithDependants(
   all: readonly SolverMutation[],
   key: SolverMutationKey,
@@ -79,5 +68,5 @@ export function removeWithDependants(
 ): SolverMutationKey[] {
   const entry = all.find((m) => mutationKey(m) === key);
   if (!entry) return [key];
-  return [key, ...entriesNaming(all, new Set(idsCreatedBy(entry, source)), key)];
+  return dependencyClosure(all, [entry], source);
 }

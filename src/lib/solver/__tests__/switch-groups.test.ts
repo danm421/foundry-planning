@@ -132,4 +132,37 @@ describe("switch-groups", () => {
     expect(removeWithDependants(all, mutationKey(other), source)).toEqual([mutationKey(other)]);
     expect(removeWithDependants(all, "missing:key" as never, source)).toEqual(["missing:key"]);
   });
+
+  // X → Y → Z: a family member added in one save, an account owned by it added
+  // in another, a savings rule on that account. Z names Y's id, never X's.
+  describe("a second hop", () => {
+    const F = "00000000-0000-4000-8000-0000000000f1";
+    const heldMember: HeldChangeMutation = {
+      kind: "held-change",
+      op: "add",
+      targetKind: "family_member",
+      targetId: F,
+      payload: { id: F, firstName: "Kim", relationship: "child" },
+      saveId: "00000000-0000-4000-8000-0000000000b3",
+    };
+    const ownedAccount: HeldChangeMutation = {
+      ...heldAccount,
+      payload: { ...newAccount, owners: [{ kind: "family_member", familyMemberId: F, percent: 1 }] },
+    };
+    const all = [heldMember, ownedAccount, rule, heldExpense(BOAT, OTHER_SAVE)];
+
+    it("switching off X turns off Y and Z", () => {
+      expect(offEntryKeys(all, new Set([`save:${heldMember.saveId}`]), source)).toEqual(
+        new Set([mutationKey(heldMember), mutationKey(ownedAccount), mutationKey(rule)]),
+      );
+    });
+
+    it("discarding X takes Y and Z", () => {
+      expect(removeWithDependants(all, mutationKey(heldMember), source)).toEqual([
+        mutationKey(heldMember),
+        mutationKey(ownedAccount),
+        mutationKey(rule),
+      ]);
+    });
+  });
 });

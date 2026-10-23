@@ -193,6 +193,25 @@ describe("holdEdits", () => {
     expect([...r.dropKeys].sort()).toEqual([mutationKey(add), mutationKey(rule)].sort());
   });
 
+  it("remove of a held add drops the entries that name what its dependants add", () => {
+    const F = "00000000-0000-4000-8000-0000000000f2";
+    const member = held("add", "family_member", F, { id: F, firstName: "Kim", relationship: "child" });
+    const account = held("add", "account", A, {
+      ...newAccount,
+      owners: [{ kind: "family_member", familyMemberId: F, percent: 1 }],
+    });
+    // Names the account, never the family member.
+    const rule: SolverMutation = {
+      kind: "savings-rule-upsert",
+      id: RULE,
+      value: { ...sampleSavingsRules[0], id: RULE, accountId: A },
+    };
+    const other = groceriesControl(13000);
+    const r = hold([member, account, rule, other], [{ op: "remove", targetKind: "family_member", targetId: F }]);
+    expect(r.upserts).toEqual([]);
+    expect([...r.dropKeys].sort()).toEqual([mutationKey(member), mutationKey(account), mutationKey(rule)].sort());
+  });
+
   it("remove of a control-created account drops the control and every entry naming it", () => {
     const control: SolverMutation = { kind: "account-upsert", id: A, value: newAccount };
     const rule: SolverMutation = {

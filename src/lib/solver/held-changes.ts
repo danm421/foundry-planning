@@ -100,6 +100,31 @@ export function entriesNaming(
   return out;
 }
 
+/**
+ * `seeds`' keys, then every entry naming an id one of them creates, then every
+ * entry naming an id one of those creates, and so on: everything that can't
+ * stay once the seeds go. Breadth-first, in that order.
+ */
+export function dependencyClosure(
+  all: readonly SolverMutation[],
+  seeds: readonly SolverMutation[],
+  source: ClientData,
+): SolverMutationKey[] {
+  const out = new Set(seeds.map(mutationKey));
+  const queue = [...seeds];
+  const byKey = new Map(all.map((m) => [mutationKey(m), m]));
+  for (let i = 0; i < queue.length; i++) {
+    const ids = new Set(idsCreatedBy(queue[i], source));
+    if (ids.size === 0) continue;
+    for (const key of entriesNaming(all, ids)) {
+      if (out.has(key)) continue;
+      out.add(key);
+      queue.push(byKey.get(key) as SolverMutation);
+    }
+  }
+  return [...out];
+}
+
 // ---------------------------------------------------------------------------
 // Holding rules: one dialog save's edits → upserts / drops on the unsaved list
 // ---------------------------------------------------------------------------
@@ -272,8 +297,9 @@ function holdRemove(list: WorkingList, e: PreparedEdit): void {
         : creatingControl(list, e)?.key;
 
   if (creatorKey) {
-    drop(list, creatorKey);
-    for (const key of entriesNaming([...list.entries.values()], new Set([e.targetId]))) drop(list, key);
+    const all = [...list.entries.values()];
+    const creator = list.entries.get(creatorKey) as SolverMutation;
+    for (const key of dependencyClosure(all, [creator], list.source)) drop(list, key);
     return;
   }
 
