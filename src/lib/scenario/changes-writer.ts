@@ -84,7 +84,7 @@ export function normalizeExpenseLivingItems(
  * add, else the base row). One found in neither passes: a batch may write a
  * gift before the trust it names.
  */
-async function assertGiftRecipientAccepted(
+export async function assertGiftRecipientAccepted(
   executor: Tx | typeof db,
   scenarioId: string,
   clientId: string,
