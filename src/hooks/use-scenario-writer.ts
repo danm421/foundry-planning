@@ -33,7 +33,7 @@ import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioState } from "@/hooks/use-scenario-state";
 import { useScenarioWriteListener, type ScenarioWriteEvent } from "@/hooks/scenario-write-listener";
-import { BASE_FACTS_SAVE_DECLINED, useBaseFactsEdit } from "@/hooks/base-facts-edit";
+import { useHeldEdits } from "@/hooks/held-edits";
 import type { TargetKind } from "@/engine/scenario/types";
 
 export interface ScenarioEdit {
@@ -101,20 +101,21 @@ export interface UseScenarioWriter {
   scenarioActive: boolean;
 }
 
+const HOLD_MODE_DIRECT_REFUSAL =
+  "This part can't be changed in the Solver. Edit it on the Details page.";
+
 export function useScenarioWriter(clientId: string): UseScenarioWriter {
   const { scenarioId } = useScenarioState(clientId);
   const router = useRouter();
   const onWrite = useScenarioWriteListener();
-  const baseFacts = useBaseFactsEdit();
+  const held = useHeldEdits();
 
   const submitDirect = useCallback(
     async (request: BaseFallback, target?: ScenarioWriteEvent): Promise<Response> => {
-      // Opened from the Solver on the base case: this write changes the base
-      // facts, so the advisor confirms first. A "no" answers like a refused
-      // write, which keeps the editor open with its edits.
-      if (baseFacts && !baseFacts.confirmSave()) {
-        return Response.json({ error: BASE_FACTS_SAVE_DECLINED }, { status: 409 });
-      }
+      // A Solver-hosted editor never writes. The tables this path serves
+      // aren't held as changes, so it answers like a refused write and the
+      // editor stays open.
+      if (held) return Response.json({ error: HOLD_MODE_DIRECT_REFUSAL }, { status: 409 });
       const init: RequestInit = { method: request.method };
       if (request.body !== undefined) {
         init.headers = { "Content-Type": "application/json" };
@@ -125,7 +126,7 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
       if (res.ok && target) onWrite?.(target);
       return res;
     },
-    [router, onWrite, baseFacts],
+    [router, onWrite, held],
   );
 
   const submit = useCallback(
@@ -134,6 +135,10 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
       baseFallback: BaseFallback,
     ): Promise<Response> => {
       const edits = Array.isArray(edit) ? edit : [edit];
+
+      // Hold mode: the Solver keeps the batch as unsaved changes. No fetch, no
+      // refresh, no write announcement.
+      if (held) return held.hold(edits);
 
       // Base mode: pass through to the per-entity legacy route. ONE call even
       // for a batch — see the header note on `baseFallback`. Once it lands,
@@ -181,10 +186,10 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
       // caller's `res.ok` read honest without widening the return to nullable.
       return last ?? new Response(null, { status: 204 });
     },
-    [scenarioId, clientId, router, submitDirect, onWrite],
+    [scenarioId, clientId, router, submitDirect, onWrite, held],
   );
 
-  return { submit, submitDirect, scenarioActive: scenarioId != null };
+  return { submit, submitDirect, scenarioActive: held !== null || scenarioId != null };
 }
 
 /** What a landed edit tells the write listener. */

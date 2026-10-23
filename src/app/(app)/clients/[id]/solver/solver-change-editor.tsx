@@ -19,22 +19,12 @@
 //   partition) → unmount the view, explain, and link nowhere: the Details page
 //   has the same bug.
 //
-// With no scenario selected the view writes the base facts, as on the Details
-// page. The host then says so (`BaseFactsEditProvider`: a line atop the dialog,
-// and a confirm before the first save), except for a delete the Changes tab
-// has already confirmed. A few base-only sub-tabs (a Schedule override, the
-// Medicare tab, a debt's extra payments) save on their own, past the writer —
-// unconfirmed, and without refreshing the route — and a trust's beneficiaries
-// land after its own refresh, so the host re-reads the plan whenever a base
-// editor closes, even when a save just did.
-//
 // The views are loaded with next/dynamic so five large Details views stay out
 // of the Solver's initial bundle.
 
 import { createContext, startTransition, useContext, useEffect, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   focusRowId,
   type ChangeEditorTarget,
@@ -44,7 +34,6 @@ import {
 import type { FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 import { ScenarioWriteListener, type ScenarioWriteEvent } from "@/hooks/scenario-write-listener";
 import { useScenarioState } from "@/hooks/use-scenario-state";
-import { BASE_FACTS_SAVE_CONFIRM, BaseFactsEditProvider, type BaseFactsEdit } from "@/hooks/base-facts-edit";
 import { loadChangeEditorProps, type ChangeEditorViewProps } from "./change-editor-actions";
 
 // While a delete runs the host shows its own "Removing {label}…" strip, in every
@@ -118,7 +107,6 @@ export function SolverChangeEditor({
 }: Props) {
   const { page, focus } = target;
   const focusId = focusRowId(focus);
-  const router = useRouter();
   // The views write wherever the URL's `?scenario=` points. Told "base case"
   // while the URL names a scenario (the base case's own id, typed by hand), the
   // editor would say "base facts" and write a scenario change: open nothing.
@@ -127,10 +115,6 @@ export function SolverChangeEditor({
   const writesElsewhere = scenarioId === null && urlScenarioId !== null;
   const [state, setState] = useState<HostState>({ status: "loading" });
   const deleting = focus.intent === "delete";
-  // One per mount: the host is mounted fresh for every click.
-  const [baseFacts] = useState<BaseFactsEdit | null>(() =>
-    scenarioId === null ? askOnce(deleting) : null,
-  );
   // Bumped by "Try again" to re-run the load.
   const [attempt, setAttempt] = useState(0);
 
@@ -157,7 +141,6 @@ export function SolverChangeEditor({
   }, [clientId, scenarioId, page, focusId, attempt, writesElsewhere]);
 
   function onFocusClose(outcome?: FocusCloseOutcome) {
-    if (baseFacts && (outcome === undefined || outcome === "failed")) router.refresh();
     if (outcome === undefined) {
       onDone();
       return;
@@ -233,22 +216,15 @@ export function SolverChangeEditor({
         return (
           <>
             {deleting && <HostStrip role="status">Removing {label}…</HostStrip>}
-            <BaseFactsEditProvider value={baseFacts}>
-              <ScenarioWriteListener value={onWrite ?? null}>
-                {renderView(state.loaded, focus, onFocusClose)}
-              </ScenarioWriteListener>
-            </BaseFactsEditProvider>
+            <ScenarioWriteListener value={onWrite ?? null}>
+              {renderView(state.loaded, focus, onFocusClose)}
+            </ScenarioWriteListener>
           </>
         );
     }
   }
 
   return <RemovingCtx.Provider value={deleting}>{stateView()}</RemovingCtx.Provider>;
-}
-
-/** Asks before the editor's first base write and remembers a yes; `confirmed` skips the question. */
-function askOnce(confirmed: boolean): BaseFactsEdit {
-  return { confirmSave: () => (confirmed ||= window.confirm(BASE_FACTS_SAVE_CONFIRM)) };
 }
 
 /** Ruling F-I2: no link — the Details page's editor has the same bug. */

@@ -69,7 +69,6 @@ import {
 } from "@/components/forms/input-styles";
 import { toSalaryOptions } from "@/lib/savings/salary-options";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
-import { BaseFactsNote } from "@/hooks/base-facts-edit";
 import { currentPlanningYear } from "@/lib/plan-year";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -799,8 +798,6 @@ function IncomeDialog({
           </button>
         </div>
 
-        <BaseFactsNote className="mx-6 mb-3 shrink-0" />
-
         <div className="mx-6 flex shrink-0 border-b border-hair">
           <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-accent text-accent" : "border-transparent text-ink-3 hover:text-ink-2"}`}>Details</button>
           <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-accent text-accent" : "border-transparent text-ink-3 hover:text-ink-2"}`}>Schedule</button>
@@ -1482,8 +1479,6 @@ function ExpenseDialog({
             </svg>
           </button>
         </div>
-
-        <BaseFactsNote className="mx-6 mb-3 shrink-0" />
 
         <div className="mx-6 flex shrink-0 border-b border-hair">
           <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-accent text-accent" : "border-transparent text-ink-3 hover:text-ink-2"}`}>Details</button>

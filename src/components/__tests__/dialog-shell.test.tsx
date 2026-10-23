@@ -2,7 +2,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import DialogShell, { surfaceHeightStyle } from "../dialog-shell";
-import { BaseFactsEditProvider } from "@/hooks/base-facts-edit";
 
 describe("DialogShell", () => {
   it("renders nothing when open=false", () => {
@@ -347,32 +346,5 @@ describe("DialogShell Esc with a dialog opened from inside another", () => {
 
     expect(outer).toHaveBeenCalledTimes(1);
     expect(inner).not.toHaveBeenCalled();
-  });
-});
-
-describe("DialogShell — editing the base facts from the Solver", () => {
-  const BANNER = "No scenario selected. Saving changes the client's base facts.";
-  const baseFacts = { confirmSave: () => true };
-
-  it("says so at the top of the dialog, once, even with a dialog opened inside it", () => {
-    render(
-      <BaseFactsEditProvider value={baseFacts}>
-        <DialogShell open onOpenChange={() => {}} title="Edit Expense">
-          <DialogShell open onOpenChange={() => {}} title="Asset classes">
-            inner
-          </DialogShell>
-        </DialogShell>
-      </BaseFactsEditProvider>,
-    );
-    expect(screen.getAllByText(BANNER)).toHaveLength(1);
-  });
-
-  it("says nothing anywhere else", () => {
-    render(
-      <DialogShell open onOpenChange={() => {}} title="Edit Expense">
-        body
-      </DialogShell>,
-    );
-    expect(screen.queryByText(BANNER)).toBeNull();
   });
 });

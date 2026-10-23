@@ -11,7 +11,6 @@ import type { InventoryItem } from "@/lib/scenario/plan-inventory";
 import type { ClientData } from "@/engine/types";
 import { buildClientData } from "@/engine/__tests__/fixtures";
 import { useScenarioWriteListener } from "@/hooks/scenario-write-listener";
-import { useBaseFactsEdit, BASE_FACTS_SAVE_CONFIRM } from "@/hooks/base-facts-edit";
 
 const { routerPushMock, routerRefreshMock, nav, clientScenarios } = vi.hoisted(() => ({
   routerPushMock: vi.fn(),
@@ -48,17 +47,12 @@ const { loadChangeEditorPropsMock, makeStubView, openCreateMock, notYetReady } =
       marker?: string;
     }) {
       const onWrite = useScenarioWriteListener();
-      const baseFacts = useBaseFactsEdit();
       return (
         <div
           data-testid={`view-${page}`}
           data-focus={JSON.stringify(focus)}
           data-marker={marker}
-          data-base-facts={baseFacts ? "yes" : "no"}
         >
-          <button type="button" onClick={(e) => { e.currentTarget.dataset.answer = String(baseFacts?.confirmSave()); }}>
-            stub base save
-          </button>
           <button
             type="button"
             onClick={() => onWrite?.({ targetKind: "income", targetId: TARGET_ID_FOR_STUB, op: "remove" })}
@@ -983,50 +977,6 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
       expect(onTargetsWritten.mock.calls[0][1]).toBe("Salary");
     });
 
-    it("an edit's base saves ask once, then go through", async () => {
-      loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
-      const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
-      renderBase();
-      fireEvent.click(screen.getByRole("button", { name: "+ Add" }));
-      fireEvent.click(screen.getByRole("button", { name: "Expense" }));
-      const view = await screen.findByTestId("view-income-expenses");
-      expect(view.dataset.baseFacts).toBe("yes");
-      const save = screen.getByRole("button", { name: "stub base save" });
-      fireEvent.click(save);
-      fireEvent.click(save);
-      expect(confirmSpy).toHaveBeenCalledTimes(1);
-      expect(confirmSpy).toHaveBeenCalledWith(BASE_FACTS_SAVE_CONFIRM);
-      expect(save.dataset.answer).toBe("true");
-      confirmSpy.mockRestore();
-    });
-
-    it("a declined save asks again on the next try", async () => {
-      loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
-      const confirmSpy = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
-      renderBase();
-      fireEvent.click(screen.getByRole("button", { name: "+ Add" }));
-      fireEvent.click(screen.getByRole("button", { name: "Expense" }));
-      await screen.findByTestId("view-income-expenses");
-      const save = screen.getByRole("button", { name: "stub base save" });
-      fireEvent.click(save);
-      expect(save.dataset.answer).toBe("false");
-      fireEvent.click(save);
-      expect(save.dataset.answer).toBe("true");
-      expect(confirmSpy).toHaveBeenCalledTimes(2);
-      confirmSpy.mockRestore();
-    });
-
-    it("re-reads the plan when the editor closes, for the sub-tab saves that don't", async () => {
-      loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
-      renderBase();
-      fireEvent.click(screen.getByRole("button", { name: "+ Add" }));
-      fireEvent.click(screen.getByRole("button", { name: "Expense" }));
-      await screen.findByTestId("view-income-expenses");
-      expect(routerRefreshMock).not.toHaveBeenCalled();
-      fireEvent.click(screen.getByRole("button", { name: "stub close" }));
-      expect(routerRefreshMock).toHaveBeenCalledTimes(1);
-    });
-
     it("opens nothing when the URL still names a scenario the editors would write into", () => {
       nav.search = "scenario=s-base-row";
       renderBase();
@@ -1035,20 +985,6 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
       expect(screen.getByRole("alert")).toHaveTextContent("Couldn't open this editor.");
       expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
       expect(loadChangeEditorPropsMock).not.toHaveBeenCalled();
-    });
-
-    it("a confirmed delete doesn't ask a second time", async () => {
-      loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
-      const confirmSpy = vi.spyOn(window, "confirm");
-      renderBase();
-      pickFromCategory("Remove", "Income", /Side income/);
-      fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
-      await screen.findByTestId("view-income-expenses");
-      const save = screen.getByRole("button", { name: "stub base save" });
-      fireEvent.click(save);
-      expect(save.dataset.answer).toBe("true");
-      expect(confirmSpy).not.toHaveBeenCalled();
-      confirmSpy.mockRestore();
     });
 
     it("Delete asks with base wording, then mounts a delete focus with no scenario", async () => {
@@ -1067,11 +1003,11 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
     });
   });
 
-  it("inside a scenario the editor is not told it edits the base facts, and closing re-reads nothing", async () => {
+  it("closing a scenario's editor re-reads nothing", async () => {
     loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
     renderTab([makeChange()], { inventory: INVENTORY });
     fireEvent.click(screen.getByRole("button", { name: "Edit Side income" }));
-    expect((await screen.findByTestId("view-income-expenses")).dataset.baseFacts).toBe("no");
+    await screen.findByTestId("view-income-expenses");
     fireEvent.click(screen.getByRole("button", { name: "stub close" }));
     expect(routerRefreshMock).not.toHaveBeenCalled();
   });

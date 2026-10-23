@@ -12,7 +12,7 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useScenarioWriter } from "../use-scenario-writer";
 import { ScenarioWriteListener, type ScenarioWriteEvent } from "../scenario-write-listener";
-import { BaseFactsEditProvider, BASE_FACTS_SAVE_DECLINED } from "../base-facts-edit";
+import { HeldEditsProvider, type HeldEdits } from "../held-edits";
 
 const CLIENT_ID = "client-123";
 const SCENARIO_ID = "scen-456";
@@ -518,42 +518,63 @@ describe("useScenarioWriter — write listener", () => {
   });
 });
 
-describe("useScenarioWriter — editing the base facts from the Solver", () => {
+describe("useScenarioWriter — hold mode (Solver-hosted editor)", () => {
   const edit = { op: "edit" as const, targetKind: "expense" as const, targetId: "e1", desiredFields: {} };
   const fallback = { url: "/api/clients/client-123/expenses/e1", method: "PUT" as const, body: { amount: 1 } };
 
-  function writerWith(confirmSave: () => boolean) {
+  function writerWith(hold: HeldEdits["hold"], listener?: (e: ScenarioWriteEvent) => void) {
     return renderHook(() => useScenarioWriter(CLIENT_ID), {
       wrapper: ({ children }: { children: ReactNode }) => (
-        <BaseFactsEditProvider value={{ confirmSave }}>{children}</BaseFactsEditProvider>
+        <ScenarioWriteListener value={listener ?? null}>
+          <HeldEditsProvider value={{ hold }}>{children}</HeldEditsProvider>
+        </ScenarioWriteListener>
       ),
     });
   }
 
-  it("asks before a base write, and writes once the advisor says yes", async () => {
-    const confirmSave = vi.fn(() => true);
-    const { result } = writerWith(confirmSave);
-    const res = await result.current.submit(edit, fallback);
-    expect(confirmSave).toHaveBeenCalledTimes(1);
-    expect(res.ok).toBe(true);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it("a declined base write sends nothing and answers not-ok, so the editor stays open", async () => {
-    const { result } = writerWith(() => false);
-    const res = await result.current.submit(edit, fallback);
+  it("hold mode hands a batch to hold() in one call and never fetches", async () => {
+    const answer = new Response(null, { status: 204 });
+    const hold = vi.fn(async () => answer);
+    const listener = vi.fn();
+    const { result } = writerWith(hold, listener);
+    const second = { ...edit, targetId: "e2" };
+    const res = await result.current.submit([edit, second], fallback);
+    expect(hold).toHaveBeenCalledTimes(1);
+    expect(hold).toHaveBeenCalledWith([edit, second]);
+    expect(res).toBe(answer);
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(refreshSpy).not.toHaveBeenCalled();
-    expect(res.ok).toBe(false);
-    expect(await res.json()).toEqual({ error: BASE_FACTS_SAVE_DECLINED });
+    expect(listener).not.toHaveBeenCalled();
   });
 
-  it("submitDirect asks too", async () => {
-    const confirmSave = vi.fn(() => false);
-    const { result } = writerWith(confirmSave);
-    const res = await result.current.submitDirect({ url: "/api/clients/client-123/gifts/series/g1", method: "DELETE" });
-    expect(confirmSave).toHaveBeenCalledTimes(1);
-    expect(res.ok).toBe(false);
+  it("hold mode wraps a single edit in an array", async () => {
+    const hold = vi.fn(async () => new Response(null, { status: 204 }));
+    const { result } = writerWith(hold);
+    await result.current.submit(edit, fallback);
+    expect(hold).toHaveBeenCalledWith([edit]);
+  });
+
+  it("hold mode submitDirect answers 409 with the Details-page message", async () => {
+    const hold = vi.fn();
+    const { result } = writerWith(hold);
+    const res = await result.current.submitDirect({ url: "/g", method: "DELETE" });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: "This part can't be changed in the Solver. Edit it on the Details page.",
+    });
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(hold).not.toHaveBeenCalled();
+  });
+
+  it("hold mode reports scenarioActive true on the base case", () => {
+    setUrl("");
+    const { result } = writerWith(vi.fn());
+    expect(result.current.scenarioActive).toBe(true);
+  });
+
+  it("outside hold mode, base mode still reports scenarioActive false", () => {
+    setUrl("");
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID));
+    expect(result.current.scenarioActive).toBe(false);
   });
 });
