@@ -122,6 +122,28 @@ const RECIPIENT_COLUMNS = [
 /** A series row's other remappable FK: the IRA a QCD series is paid from. */
 const SERIES_REF_COLUMNS = [...RECIPIENT_COLUMNS, "qcdAccountId"];
 
+/** One row of a scenario's `gift_series` partition. The id comes from a change,
+ *  so the client scope is load-bearing. */
+function seriesRowIn(ctx: { clientId: string; scenarioId: string }, id: string) {
+  return and(
+    eq(giftSeries.id, id),
+    eq(giftSeries.clientId, ctx.clientId),
+    eq(giftSeries.scenarioId, ctx.scenarioId),
+  );
+}
+
+/** Delete these ids from one scenario's `gift_series` partition. A one-time
+ *  gift's id names no row there and matches nothing. */
+export async function removeGiftSeriesRows(
+  tx: PromoteTx,
+  ctx: { clientId: string; scenarioId: string },
+  ids: readonly string[],
+): Promise<void> {
+  for (const id of ids) {
+    await tx.delete(giftSeries).where(seriesRowIn(ctx, id));
+  }
+}
+
 /** Apply S's series-shaped `gift` changes to S's own partition. Removes run
  *  first, so an id that is both removed and re-added ends up PRESENT — the same
  *  answer `applyGiftOverlays` gives, which strips every targeted id and then
@@ -131,16 +153,9 @@ async function applySeriesChangesToPartition(
   ctx: CopyCtx,
   series: GiftSeriesStep,
 ): Promise<void> {
-  const scoped = (id: string) =>
-    and(
-      eq(giftSeries.id, id),
-      eq(giftSeries.clientId, ctx.clientId),
-      eq(giftSeries.scenarioId, ctx.scenarioId),
-    );
+  const scoped = (id: string) => seriesRowIn(ctx, id);
 
-  for (const id of series.removes) {
-    await tx.delete(giftSeries).where(scoped(id));
-  }
+  await removeGiftSeriesRows(tx, ctx, series.removes);
 
   for (const { id, draft } of series.upserts) {
     const row = giftDraftToSeriesRow(draft);

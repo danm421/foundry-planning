@@ -800,6 +800,101 @@ describe("LiveSolverWorkspace — save to base facts", () => {
       `account-upsert:${UNRELATED_ACCOUNT.id}`,
     ]);
   });
+
+  // ── Held editor changes the base save can't write ─────────────────────────
+  const SAVE_ID = "00000000-0000-4000-8000-0000000000b1";
+  const SCENARIO_EXPENSE = "00000000-0000-4000-8000-0000000000e9";
+  const SERIES_GIFT = "00000000-0000-4000-8000-0000000000d9";
+
+  /** Save to base with this draft, and read back what the confirm said and what was posted. */
+  async function saveToBaseWith(
+    mutations: unknown[],
+    props: Partial<Parameters<typeof LiveSolverWorkspace>[0]> = {},
+  ) {
+    const confirmMessages: string[] = [];
+    vi.stubGlobal("confirm", (msg?: string) => {
+      confirmMessages.push(String(msg ?? ""));
+      return true;
+    });
+    mockSaveToBaseOk();
+    const source = props.initialSource ?? "base";
+    localStorage.setItem(
+      solverDraftKey(baseProps.clientId, baseProps.userId, source),
+      JSON.stringify({ v: 2, draft: { mutations, offGroups: [], solvedSeed: null, savingsAccountMixes: [] } }),
+    );
+    render(<LiveSolverWorkspace {...baseProps} {...props} />);
+    const saveToBaseBtn = screen.getAllByRole("button", { name: /Save to base facts/i })[0];
+    await waitFor(() => expect(saveToBaseBtn).not.toBeDisabled());
+    fireEvent.click(saveToBaseBtn);
+    await waitFor(() => expect(routerRefresh).toHaveBeenCalledTimes(1));
+    const call = fetchMock.mock.calls.find(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("/save-to-base"),
+    );
+    const posted: string[] = JSON.parse(call![1].body as string).mutations.map(
+      (m: { kind: string; id?: string; targetId?: string }) => `${m.kind}:${m.id ?? m.targetId ?? ""}`,
+    );
+    return { confirm: confirmMessages.join("\n"), posted };
+  }
+
+  it("keeps a held recurring gift pending and says so", async () => {
+    const { confirm, posted } = await saveToBaseWith([
+      { kind: "account-upsert", id: UNRELATED_ACCOUNT.id, value: UNRELATED_ACCOUNT },
+      {
+        kind: "held-change",
+        op: "add",
+        targetKind: "gift",
+        targetId: SERIES_GIFT,
+        payload: {
+          id: SERIES_GIFT, kind: "series", startYear: 2027, endYear: 2031, annualAmount: 19_000,
+          amountMode: "fixed", inflationAdjust: false, grantor: "client",
+          recipient: { kind: "family_member", id: "fm-1" }, crummey: false,
+        },
+        saveId: SAVE_ID,
+      },
+    ]);
+    expect(posted).toEqual([`account-upsert:${UNRELATED_ACCOUNT.id}`]);
+    expect(confirm).toContain(
+      "A recurring gift can't be saved to base facts from the Solver, so it stays pending. Save as a scenario to keep it.",
+    );
+  });
+
+  it("keeps a held edit of an item only the scenario has pending and says so", async () => {
+    const { confirm, posted } = await saveToBaseWith(
+      [
+        { kind: "account-upsert", id: UNRELATED_ACCOUNT.id, value: UNRELATED_ACCOUNT },
+        {
+          kind: "held-change",
+          op: "edit",
+          targetKind: "expense",
+          targetId: SCENARIO_EXPENSE,
+          payload: { annualAmount: { from: 5000, to: 6000 } },
+          saveId: SAVE_ID,
+        },
+      ],
+      {
+        initialSource: "scn-1",
+        changesPanel: {
+          scenarioId: "scn-1",
+          scenarioName: "Retire at 62",
+          changes: [
+            {
+              id: "chg-boat", scenarioId: "scn-1", opType: "add", targetKind: "expense",
+              targetId: SCENARIO_EXPENSE, payload: { id: SCENARIO_EXPENSE, name: "Boat" },
+              toggleGroupId: null, orderIndex: 0, updatedAt: new Date("2026-01-01T00:00:00Z"),
+              enabled: true, label: "Boat",
+            },
+          ],
+          toggleGroups: [],
+          cascadeWarnings: [],
+          targetNames: {},
+        } as never,
+      },
+    );
+    expect(posted).toEqual([`account-upsert:${UNRELATED_ACCOUNT.id}`]);
+    expect(confirm).toContain(
+      "Changes to items only this scenario has can't be saved to base facts, so they stay pending. Use Update scenario to keep them.",
+    );
+  });
 });
 
 describe("LiveSolverWorkspace — editing-surface tabs", () => {

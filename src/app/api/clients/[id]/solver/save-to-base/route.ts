@@ -29,6 +29,16 @@
 //     accountId is verified to belong to this client (assertAccountsInClient)
 //     before it is written, mirroring the accounts route's parent-account guard.
 // The whole batch runs in one transaction.
+//
+// Held editor changes (`held-change`: a Details editor's save inside the Solver)
+// are written through the scenario→base promote machinery
+// (`scenarioChangesToBaseWrites` → `executeBaseWritePlan`), FIRST in the same
+// transaction, so a control moved after a dialog save wins. Controls aimed at a
+// held add are folded into its insert (`foldControlsIntoHeldAdds`). The body is
+// the only source of these rows, so promote's tenant guards run on them plus the
+// rows' own FK columns (`collectDirectRefs`). Refused before any write: a
+// recurring gift (no `gift_series` write here), and a held change naming a row a
+// control creates (that row only exists once the control writes run).
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
@@ -40,6 +50,21 @@ import { DEFAULT_MARGIN_CALL_PCT } from "@/engine/margin";
 import type { SolverMutation } from "@/lib/solver/types";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import { mutationsToBaseUpdates } from "@/lib/solver/mutations-to-base-updates";
+import { entriesNaming, heldScenarioChanges, idsCreatedBy, isHeldChange } from "@/lib/solver/held-changes";
+import { foldControlsIntoHeldAdds } from "@/lib/solver/held-save";
+import {
+  collectExternalDedicatedAccountIds,
+  collectExternalSalaryIncomeIds,
+  scenarioChangesToBaseWrites,
+} from "@/lib/scenario/scenario-changes-to-base-writes";
+import {
+  assertRefsInClient,
+  collectClientRefs,
+  collectDirectRefs,
+  executeBaseWritePlan,
+} from "@/lib/scenario/execute-base-write-plan";
+import { removeGiftSeriesRows } from "@/lib/scenario/promote-direct-tables";
+import type { BaseWritePlan } from "@/lib/scenario/promote-to-base-types";
 import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
@@ -47,6 +72,7 @@ import {
   assertEntitiesInClient,
   assertExternalBeneficiariesInClient,
   assertFamilyMembersInClient,
+  assertIncomesInClient,
 } from "@/lib/db-scoping";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
@@ -256,7 +282,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         { status: 400 },
       );
     }
-    const { source, mutations } = parsed.data;
+    const { source } = parsed.data;
+    // The schema's held-change arm types `targetKind` wider than `SolverMutation`.
+    const mutations = parsed.data.mutations as SolverMutation[];
 
     // An upsert is classified insert-vs-update by `id` but written by
     // `value.id`, so the two must name the same row.
@@ -278,19 +306,25 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
     // Load the source tree to classify insert-vs-update, and fetch the base
     // scenario id to scope every write. Base-facts writes always target the
-    // base case regardless of which tree the solver worked against.
-    const [{ effectiveTree: sourceTree }, baseScenarioRows, baseTreeLoad] = await Promise.all([
-      loadEffectiveTree(clientId, firmId, source, {}),
+    // base case regardless of which tree the solver worked against. The source
+    // tree carries the held changes, as the Solver's screen does.
+    const heldChanges = heldScenarioChanges(mutations);
+    const [sourceLoad, baseScenarioRows, separateBaseLoad] = await Promise.all([
+      loadEffectiveTree(clientId, firmId, source, {}, heldChanges),
       db
         .select({ id: scenarios.id })
         .from(scenarios)
         .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true))),
       // Base tree for insert-vs-update classification (see the baseMembership
-      // block below). Loaded alongside the source tree so a non-base save pays one
-      // parallel round-trip, not a second serial one. Null when source IS base —
-      // the source tree already reflects base membership.
-      source === "base" ? null : loadEffectiveTree(clientId, firmId, "base", {}),
+      // block below) and the held changes' base-write diff, so it never carries
+      // held changes. Loaded alongside the source tree so a non-base save pays one
+      // parallel round-trip, not a second serial one. Null only when the source
+      // load already IS plain base.
+      source === "base" && heldChanges.length === 0
+        ? null
+        : loadEffectiveTree(clientId, firmId, "base", {}),
     ]);
+    const sourceTree = sourceLoad.effectiveTree;
 
     const baseScenarioId = baseScenarioRows[0]?.id;
     if (!baseScenarioId) {
@@ -303,16 +337,64 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     // Classify insert-vs-update against what actually lives in the BASE scenario,
     // not the (possibly overlay) source tree. An account/rule added only in an
     // overlay is absent from base, so a source-classified UPDATE would be scoped
-    // to base and touch 0 rows — a silent no-op reported as success. When source
-    // IS base the source tree already reflects base, so reuse it (baseTreeLoad is
-    // null in that case; see the Promise.all above).
-    const baseTree = source === "base" ? sourceTree : baseTreeLoad!.effectiveTree;
+    // to base and touch 0 rows — a silent no-op reported as success. When the
+    // source load is plain base, reuse it (see the Promise.all above).
+    const baseLoad = separateBaseLoad ?? sourceLoad;
+    const baseTree = baseLoad.effectiveTree;
     const baseMembership = {
       accountIds: new Set((baseTree.accounts ?? []).map((a) => a.id)),
       expenseIds: new Set((baseTree.expenses ?? []).map((e) => e.id)),
       incomeIds: new Set((baseTree.incomes ?? []).map((i) => i.id)),
       ruleIds: new Set((baseTree.savingsRules ?? []).map((r) => r.id)),
     };
+
+    // Held changes are written before the controls, so one that names a row a
+    // control creates (a rule on a quick-added account) would point at nothing.
+    const controlCreatedIds = new Set(
+      mutations.flatMap((m) => (isHeldChange(m) ? [] : idsCreatedBy(m, sourceTree))),
+    );
+    if (entriesNaming(mutations.filter(isHeldChange), controlCreatedIds).length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "An editor change uses something a Solver control adds, so it can't be saved to base facts yet. Save as a scenario instead.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const { held, controls } = foldControlsIntoHeldAdds(sourceTree, clientId, mutations);
+    const plan: BaseWritePlan =
+      held.length > 0
+        ? scenarioChangesToBaseWrites(
+            baseTree,
+            held,
+            [],
+            {},
+            baseLoad.resolutionContext?.accountGroupMembersById,
+          )
+        : { inserts: [], updates: [], singletonUpdates: [], removes: [], giftSeries: { upserts: [], removes: [] } };
+    if (plan.giftSeries.upserts.length > 0) {
+      return NextResponse.json(
+        { error: "A recurring gift can't be saved to base facts from the Solver. Save as a scenario instead." },
+        { status: 400 },
+      );
+    }
+
+    // Promote's tenant guards, in its order, plus the held rows' own FK columns:
+    // held changes come straight from this body. Ids the plan inserts are
+    // remapped inside the transaction, so the collectors leave them out.
+    for (const check of [
+      () => assertAccountsInClient(clientId, collectExternalDedicatedAccountIds(plan)),
+      () => assertIncomesInClient(clientId, collectExternalSalaryIncomeIds(plan)),
+      () => assertRefsInClient(clientId, collectClientRefs(plan)),
+      () => assertRefsInClient(clientId, collectDirectRefs(plan)),
+    ]) {
+      const result = await check();
+      if (!result.ok) {
+        return NextResponse.json({ error: result.reason }, { status: 400 });
+      }
+    }
 
     const {
       accountInserts,
@@ -332,12 +414,16 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       expenseInserts,
       expenseFullUpdates,
       expenseRemoves,
-    } = mutationsToBaseUpdates(sourceTree, mutations as SolverMutation[], baseMembership);
+    } = mutationsToBaseUpdates(sourceTree, controls, baseMembership);
 
     // Validate any savings-rule accountId that is NOT satisfied by an account
-    // inserted in this same batch — it must already belong to this client.
-    // (In-batch inserts are remapped to their generated uuid inside the txn.)
-    const insertedSyntheticIds = new Set(accountInserts.map((a) => a.id));
+    // inserted in this same batch (by a control or a held add) — it must already
+    // belong to this client. (In-batch inserts are remapped to their generated
+    // uuid inside the txn.)
+    const insertedSyntheticIds = new Set([
+      ...accountInserts.map((a) => a.id),
+      ...plan.inserts.filter((i) => i.kind === "account").map((i) => i.targetId),
+    ]);
     const externalAccountIds = [...savingsInserts, ...savingsUpdates]
       .map((r) => r.accountId)
       .filter((aid) => !insertedSyntheticIds.has(aid));
@@ -453,10 +539,19 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       return NextResponse.json({ error: ebCheck.reason }, { status: 400 });
     }
 
+    let heldCounts: Record<string, number> = {};
     await db.transaction(async (tx) => {
+      // Held editor changes first, so a control moved after a dialog save wins.
+      const executed = await executeBaseWritePlan(tx, plan, { clientId, baseScenarioId });
+      heldCounts = executed.counts;
+      // A gift remove also retires a recurring gift under that id from base's
+      // gift_series partition; a one-time gift's id matches nothing there.
+      await removeGiftSeriesRows(tx, { clientId, scenarioId: baseScenarioId }, plan.giftSeries.removes);
+
       // Maps a solver-supplied (synthetic) account id → the canonical DB uuid
       // generated on insert, so paired savings rules attach to the real row.
-      const idRemap = new Map<string, string>();
+      // Seeded with the held adds', so a control can name a held-added account.
+      const idRemap = new Map<string, string>(executed.idRemap);
 
       for (const a of accountInserts) {
         const [inserted] = await tx
@@ -818,6 +913,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         expenseInserts: expenseInserts.length,
         expenseFullUpdates: expenseFullUpdates.length,
         expenseRemoves: expenseRemoves.length,
+        heldCounts,
       }),
     });
 
@@ -839,6 +935,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       expenseInserts: expenseInserts.length,
       expenseFullUpdates: expenseFullUpdates.length,
       expenseRemoves: expenseRemoves.length,
+      heldCounts,
     });
   } catch (err) {
     const authResp = authErrorResponse(err);

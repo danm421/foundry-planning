@@ -20,7 +20,7 @@ import {
   beneficiaryDesignations,
   lifeInsurancePolicies,
 } from "@/db/schema";
-import { executeBaseWritePlan, collectClientRefs } from "../execute-base-write-plan";
+import { executeBaseWritePlan, collectClientRefs, collectDirectRefs } from "../execute-base-write-plan";
 import type { BaseWritePlan } from "../promote-to-base-types";
 
 // Minimal fake tx capturing operations. The real drizzle tables are passed
@@ -1068,5 +1068,50 @@ describe("executeBaseWritePlan — ltc_policy", () => {
       updates: [{ kind: "ltc_policy", id: "ltc-1", set: { lifePolicyAccountId: "acct-edit" } }],
     };
     expect(collectClientRefs(plan).accountIds).toEqual(["acct-foreign", "acct-edit"]);
+  });
+});
+
+// The Solver's base save writes held changes straight from the request body, so
+// the foreign keys a planned row carries itself (not only its child rows) are
+// checked too.
+describe("collectDirectRefs", () => {
+  it("collects each row's own FK columns, skipping ids this batch inserts", () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        { kind: "account", targetId: "acc-new", raw: { id: "acc-new", name: "New" } },
+        { kind: "savings_rule", targetId: "r-1", raw: { id: "r-1", accountId: "acc-foreign" } },
+        { kind: "savings_rule", targetId: "r-2", raw: { id: "r-2", accountId: "acc-new" } },
+        {
+          kind: "gift",
+          targetId: "g-1",
+          raw: {
+            id: "g-1", kind: "cash-once", year: 2030, amount: 1000, grantor: "client",
+            recipient: { kind: "entity", id: "ent-x" }, crummey: false,
+          },
+        },
+      ],
+      updates: [
+        { kind: "income", id: "inc-1", set: { cashAccountId: "acc-cash" } },
+        { kind: "transfer", id: "t-1", set: { sourceAccountId: "acc-src", targetAccountId: "acc-new" } },
+        { kind: "liability", id: "l-1", set: { linkedPropertyId: "acc-house" } },
+      ],
+      // A singleton's set is written without a remap, so a same-batch id is checked too.
+      singletonUpdates: [{ kind: "plan_settings", set: { surplusSaveAccountId: "acc-new" } }],
+    };
+    expect(collectDirectRefs(plan)).toEqual({
+      familyMemberIds: [],
+      externalBeneficiaryIds: [],
+      entityIds: ["ent-x"],
+      accountIds: ["acc-foreign", "acc-cash", "acc-src", "acc-house", "acc-new"],
+      liabilityIds: [],
+    });
+  });
+
+  it("collects nothing from rows with no FK columns", () => {
+    const plan: BaseWritePlan = { ...emptyPlan(), updates: [{ kind: "expense", id: "e-1", set: { annualAmount: 5 } }] };
+    expect(collectDirectRefs(plan)).toEqual({
+      familyMemberIds: [], externalBeneficiaryIds: [], entityIds: [], accountIds: [], liabilityIds: [],
+    });
   });
 });

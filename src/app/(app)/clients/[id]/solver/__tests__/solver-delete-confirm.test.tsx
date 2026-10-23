@@ -6,8 +6,8 @@
  * equity plan loses the brokerage it delivered into). Only the first kind counts
  * toward "will also remove N linked items".
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { SolverDeleteConfirm } from "../solver-delete-confirm";
 import type { ClientData } from "@/engine/types";
 import type { InventoryItem } from "@/lib/scenario/plan-inventory";
@@ -25,6 +25,8 @@ const tree = (over: Record<string, unknown>) =>
 function renderConfirm(planTree: ClientData, target: InventoryItem, inventory: InventoryItem[]) {
   render(
     <SolverDeleteConfirm
+      clientId="c-1"
+      source="scn-1"
       tree={planTree}
       inventory={inventory}
       item={target}
@@ -83,7 +85,15 @@ describe("SolverDeleteConfirm — held remove", () => {
     const target = item({ typeKey: "expense", id: "e-1", label: "Groceries" });
     const onConfirm = vi.fn();
     render(
-      <SolverDeleteConfirm tree={tree({})} inventory={[target]} item={target} onConfirm={onConfirm} onCancel={vi.fn()} />,
+      <SolverDeleteConfirm
+        clientId="c-1"
+        source="base"
+        tree={tree({})}
+        inventory={[target]}
+        item={target}
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+      />,
     );
     expect(screen.getByRole("dialog", { name: "Remove Expense" })).toBeInTheDocument();
     expect(
@@ -93,5 +103,79 @@ describe("SolverDeleteConfirm — held remove", () => {
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+});
+
+// On the base case, Save to base facts runs the database delete, which takes
+// more with it than the plan shows: rows in other scenarios too. The confirm
+// lists those from the same read-only GET the Net Worth page's delete uses.
+describe("SolverDeleteConfirm — what the base delete takes with it", () => {
+  const fetchMock = vi.fn();
+  afterEach(() => {
+    fetchMock.mockReset();
+    vi.unstubAllGlobals();
+  });
+
+  function renderOn(source: string, target: InventoryItem, planTree: ClientData) {
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <SolverDeleteConfirm
+        clientId="c-1"
+        source={source}
+        tree={planTree}
+        inventory={[target]}
+        item={target}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+  }
+
+  const brokerage = item({ typeKey: "account", id: "brk", label: "Joint brokerage" });
+  const planTree = tree({
+    accounts: [{ id: "brk", name: "Joint brokerage" }],
+    transfers: [{ id: "t-1", name: "Owner draw", sourceAccountId: "brk", targetAccountId: "joint" }],
+  });
+
+  it("lists the database's dependents below the held-remove body, fetched with a GET only", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        transfers: [
+          { id: "t-1", name: "Owner draw" },
+          { id: "t-2", name: "Scenario sweep" },
+        ],
+        rothConversions: [{ id: "rc-1", name: "Ladder" }],
+      }),
+    });
+    renderOn("base", brokerage, planTree);
+
+    expect(
+      screen.getByText(
+        'Remove Joint brokerage? Nothing is saved until you press a save button. You can switch it back on under "Not saved yet".',
+      ),
+    ).toBeInTheDocument();
+    expect(await screen.findByText(/Saving this to base facts will also permanently delete 2 linked items:/)).toBeInTheDocument();
+    expect(screen.getByText("Scenario sweep")).toBeInTheDocument();
+    expect(screen.getByText("Ladder")).toBeInTheDocument();
+    // Already listed from the plan; not listed twice.
+    expect(screen.getByText("Transfer · Owner draw")).toBeInTheDocument();
+    expect(screen.queryByText("Owner draw")).not.toBeInTheDocument();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/clients/c-1/accounts/brk/dependents");
+    expect((init as RequestInit | undefined)?.method ?? "GET").toBe("GET");
+  });
+
+  it("asks the database nothing on a scenario", async () => {
+    renderOn("scn-1", brokerage, planTree);
+    expect(screen.getByText("Transfer · Owner draw")).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock).not.toHaveBeenCalled());
+  });
+
+  it("asks the database nothing for an item that isn't an account", async () => {
+    renderOn("base", item({ typeKey: "expense", id: "e-1", label: "Groceries" }), planTree);
+    await waitFor(() => expect(fetchMock).not.toHaveBeenCalled());
   });
 });

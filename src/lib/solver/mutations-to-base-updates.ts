@@ -25,7 +25,7 @@
 import type { ClientData, Account, Income, SavingsRule, Expense } from "@/engine/types";
 import { planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
 import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
-import type { SolverMutation, SolverPerson } from "./types";
+import { mutationKey, type HeldChangeMutation, type SolverMutation, type SolverMutationKey, type SolverPerson } from "./types";
 
 /** A pre-coerced partial column update for one row. */
 export type ColumnPatch = Record<string, string | number | boolean | null>;
@@ -113,6 +113,11 @@ export interface BaseSavablePartition {
    *  the charity delete never is. Reported separately so the advisor is told
    *  WHICH removal stayed behind. */
   heldRemovedCharityIds: string[];
+  /** Held editor changes to an item only the selected scenario has. Base has no
+   *  row to write them to; Update scenario keeps them. */
+  heldScenarioOnly: SolverMutationKey[];
+  /** Held recurring-gift adds: the base save writes no `gift_series` rows. */
+  heldGiftSeries: SolverMutationKey[];
 }
 
 /**
@@ -152,9 +157,20 @@ export interface BaseSavablePartition {
  * So the whole removal is held together, again on a DECLARED pairing
  * (`removedRefId`) and never on an inferred one: a retitle out of a trust, and a
  * cleared designation, are byte-identical to any other edit of the same shape.
+ *
+ * A held editor change can carry either action's half too. Opening the sold (or
+ * retitled) account in its dialog folds that control into the dialog's held edit
+ * and drops the control, pairing and all. So a held edit joins the sale when it
+ * targets the note's declared account, and joins a removal when it targets one of
+ * the removal's declared rows or names the trust or charity being removed (its
+ * `from` side does once the retitle is folded in).
+ *
+ * `scenarioOnlyIds` are the items only the selected scenario has (empty on
+ * base). A held edit or remove of one has no base row to write, so it stays.
  */
 export function partitionBaseSavableMutations(
   mutations: readonly SolverMutation[],
+  scenarioOnlyIds: ReadonlySet<string> = new Set(),
 ): BaseSavablePartition {
   // Accounts whose sale note is being held back. A note that IS base-savable
   // (no kind is today, but the set is data) holds nothing — it saves alongside.
@@ -176,29 +192,72 @@ export function partitionBaseSavableMutations(
     if (m.value !== null || isBaseSavableMutation(m)) continue;
     (m.kind === "entity-upsert" ? dissolvedEntityIds : removedCharityIds).add(m.id);
   }
+  // The trust or charity each declared removal row belongs to, so a held edit
+  // of that row joins the removal.
+  const removalOfRow = new Map<string, string>();
+  for (const m of mutations) {
+    const ref = declaredRemovalTarget(m);
+    if (ref != null && "id" in m) removalOfRow.set(m.id, ref);
+  }
+  const removedRefs = [...dissolvedEntityIds, ...removedCharityIds];
+  const heldRemovalRef = (m: HeldChangeMutation): string | null => {
+    const declared = removalOfRow.get(m.targetId);
+    if (declared != null) return declared;
+    const text = JSON.stringify(m.payload);
+    return removedRefs.find((id) => text.includes(id)) ?? null;
+  };
 
   const savable: SolverMutation[] = [];
   const held: SolverMutation[] = [];
   const heldSaleAccountIds: string[] = [];
   const heldDissolveEntityIds: string[] = [];
   const heldRemovedCharityIds: string[] = [];
+  const heldScenarioOnly: SolverMutationKey[] = [];
+  const heldGiftSeries: SolverMutationKey[] = [];
   const note = (list: string[], id: string) => {
     if (!list.includes(id)) list.push(id);
   };
   for (const m of mutations) {
-    const heldBySale = m.kind === "account-upsert" && pairedAccountIds.has(m.id);
-    if (heldBySale) heldSaleAccountIds.push(m.id);
+    const saleAccountId =
+      m.kind === "account-upsert" ? m.id : isHeldAccount(m) ? m.targetId : null;
+    const heldBySale = saleAccountId != null && pairedAccountIds.has(saleAccountId);
+    if (heldBySale) note(heldSaleAccountIds, saleAccountId);
 
-    const ref = declaredRemovalTarget(m);
+    const ref = m.kind === "held-change" ? heldRemovalRef(m) : declaredRemovalTarget(m);
     const heldByTrustRemoval = ref != null && dissolvedEntityIds.has(ref);
     const heldByCharityRemoval = ref != null && removedCharityIds.has(ref);
     if (heldByTrustRemoval) note(heldDissolveEntityIds, ref);
     if (heldByCharityRemoval) note(heldRemovedCharityIds, ref);
 
+    const scenarioOnly = m.kind === "held-change" && m.op !== "add" && scenarioOnlyIds.has(m.targetId);
+    if (scenarioOnly) heldScenarioOnly.push(mutationKey(m));
+    const series = m.kind === "held-change" && isHeldSeriesAdd(m);
+    if (series) heldGiftSeries.push(mutationKey(m));
+
     const heldByPair = heldBySale || heldByTrustRemoval || heldByCharityRemoval;
-    (isBaseSavableMutation(m) && !heldByPair ? savable : held).push(m);
+    (isBaseSavableMutation(m) && !heldByPair && !scenarioOnly && !series ? savable : held).push(m);
   }
-  return { savable, held, heldSaleAccountIds, heldDissolveEntityIds, heldRemovedCharityIds };
+  return {
+    savable,
+    held,
+    heldSaleAccountIds,
+    heldDissolveEntityIds,
+    heldRemovedCharityIds,
+    heldScenarioOnly,
+    heldGiftSeries,
+  };
+}
+
+const isHeldAccount = (m: SolverMutation): m is HeldChangeMutation =>
+  m.kind === "held-change" && m.targetKind === "account";
+
+/** A held recurring-gift add. A gift's add is also how a base gift is edited. */
+function isHeldSeriesAdd(m: HeldChangeMutation): boolean {
+  return (
+    m.op === "add" &&
+    m.targetKind === "gift" &&
+    (m.payload as { kind?: unknown } | null)?.kind === "series"
+  );
 }
 
 /** The trust or charity whose removal declared this mutation, or null. Only the

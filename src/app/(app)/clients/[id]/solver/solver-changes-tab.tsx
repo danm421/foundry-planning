@@ -167,6 +167,8 @@ export function SolverChangesTab({
       )}
       {confirming && (
         <SolverDeleteConfirm
+          clientId={clientId}
+          source={held.source}
           tree={planTree}
           inventory={inventory}
           item={confirming}

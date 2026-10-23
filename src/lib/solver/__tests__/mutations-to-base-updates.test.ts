@@ -13,7 +13,7 @@ import type {
   SavingsRule,
   NoteReceivable,
 } from "@/engine/types";
-import type { SolverMutation } from "../types";
+import { mutationKey, type SolverMutation } from "../types";
 
 const ACCT: Account = {
   id: "new", name: "John — Taxable", category: "taxable", subType: "brokerage",
@@ -687,5 +687,104 @@ describe("partitionBaseSavableMutations — a charity removal is one indivisible
     expect(p.savable).toEqual([]);
     expect(p.heldDissolveEntityIds).toEqual(["trust-9"]);
     expect(p.heldRemovedCharityIds).toEqual([CHARITY_ID]);
+  });
+});
+
+// ── Held editor changes (Task 13) ─────────────────────────────────────────────
+//
+// A held entry is base-savable by kind, so these are the pairings and items
+// that keep one back: an item only the selected scenario has, a recurring gift,
+// and the two indivisible actions above when an editor folded one of their
+// retitles into a held account edit.
+describe("partitionBaseSavableMutations — held editor changes", () => {
+  const SAVE = "00000000-0000-4000-8000-0000000000b1";
+  const held = (
+    op: "add" | "edit" | "remove",
+    targetKind: "expense" | "account" | "gift",
+    targetId: string,
+    payload: unknown,
+  ): SolverMutation => ({ kind: "held-change", op, targetKind, targetId, payload, saveId: SAVE });
+  const control: SolverMutation = { kind: "retirement-age", person: "client", age: 67 };
+  const keys = (ms: readonly SolverMutation[]) => ms.map(mutationKey);
+
+  it("held edit of a scenario-only item is held back", () => {
+    const edit = held("edit", "expense", "scn-exp", { annualAmount: { from: 1, to: 2 } });
+    const p = partitionBaseSavableMutations([edit, control], new Set(["scn-exp"]));
+    expect(keys(p.savable)).toEqual([mutationKey(control)]);
+    expect(keys(p.held)).toEqual([mutationKey(edit)]);
+    expect(p.heldScenarioOnly).toEqual([mutationKey(edit)]);
+  });
+
+  it("held add is never scenario-only", () => {
+    const add = held("add", "expense", "scn-exp", { id: "scn-exp", name: "Boat" });
+    const p = partitionBaseSavableMutations([add], new Set(["scn-exp"]));
+    expect(keys(p.savable)).toEqual([mutationKey(add)]);
+    expect(p.heldScenarioOnly).toEqual([]);
+  });
+
+  it("recurring gift held back", () => {
+    const series = held("add", "gift", "g-series", { id: "g-series", kind: "series", startYear: 2027 });
+    const oneTime = held("add", "gift", "g-once", { id: "g-once", kind: "cash-once", year: 2027 });
+    const p = partitionBaseSavableMutations([series, oneTime]);
+    expect(keys(p.savable)).toEqual([mutationKey(oneTime)]);
+    expect(p.heldGiftSeries).toEqual([mutationKey(series)]);
+    expect(p.heldScenarioOnly).toEqual([]);
+  });
+
+  it("a held remove of a scenario's recurring gift is held back as scenario-only", () => {
+    // The scenario's series rows live in its own gift_series partition under fresh ids.
+    const remove = held("remove", "gift", "scn-series", null);
+    const p = partitionBaseSavableMutations([remove], new Set(["scn-series"]));
+    expect(p.savable).toEqual([]);
+    expect(p.heldScenarioOnly).toEqual([mutationKey(remove)]);
+  });
+
+  it("a held edit of a sale's account is held back with the sale", () => {
+    // The account dialog folded the sale's owner flip into its own held edit.
+    const sold = held("edit", "account", "sale-acct", {
+      owners: { from: [{ kind: "family_member", familyMemberId: "fm-1", percent: 1 }], to: [{ kind: "entity", entityId: "trust-1", percent: 1 }] },
+    });
+    const note: SolverMutation = {
+      kind: "note-receivable-upsert", id: "note-1", value: null, sourceAccountId: "sale-acct",
+    };
+    const p = partitionBaseSavableMutations([sold, note, control]);
+    expect(keys(p.savable)).toEqual([mutationKey(control)]);
+    expect(keys(p.held)).toEqual([mutationKey(sold), mutationKey(note)]);
+    expect(p.heldSaleAccountIds).toEqual(["sale-acct"]);
+  });
+
+  it("a held account edit inside a trust removal is held back with the removal", () => {
+    const entityDelete: SolverMutation = { kind: "entity-upsert", id: "trust-9", value: null };
+    // Folded: the removal's retitle of this account now lives only in the held edit.
+    const folded = held("edit", "account", "trust-acct", {
+      owners: { from: [{ kind: "entity", entityId: "trust-9", percent: 1 }], to: [{ kind: "family_member", familyMemberId: "fm-1", percent: 1 }] },
+    });
+    // Declared: the removal's retitle is still its own entry, and the dialog edited another field.
+    const retitle: SolverMutation = {
+      kind: "account-upsert", id: "other-acct", value: { ...ACCT, id: "other-acct" }, removedRefId: "trust-9",
+    };
+    const renamed = held("edit", "account", "other-acct", { name: { from: "Old", to: "New" } });
+    const p = partitionBaseSavableMutations([folded, retitle, renamed, entityDelete, control]);
+    expect(keys(p.savable)).toEqual([mutationKey(control)]);
+    expect(keys(p.held)).toEqual([mutationKey(folded), mutationKey(retitle), mutationKey(renamed), mutationKey(entityDelete)]);
+    expect(p.heldDissolveEntityIds).toEqual(["trust-9"]);
+  });
+
+  it("a held account edit inside a charity removal is held back with the removal", () => {
+    const charityDelete: SolverMutation = { kind: "external-beneficiary-upsert", id: "eb-1", value: null };
+    const cleared = held("edit", "account", "policy-acct", {
+      beneficiaries: { from: [{ id: "b-1", externalBeneficiaryId: "eb-1", percentage: 100, tier: "primary" }], to: [] },
+    });
+    const p = partitionBaseSavableMutations([cleared, charityDelete]);
+    expect(p.savable).toEqual([]);
+    expect(p.heldRemovedCharityIds).toEqual(["eb-1"]);
+  });
+
+  it("a held edit naming no pending removal or sale stays savable", () => {
+    const edit = held("edit", "account", "plain-acct", { name: { from: "A", to: "B" } });
+    const entityDelete: SolverMutation = { kind: "entity-upsert", id: "trust-9", value: null };
+    const p = partitionBaseSavableMutations([edit, entityDelete]);
+    expect(keys(p.savable)).toEqual([mutationKey(edit)]);
+    expect(p.heldDissolveEntityIds).toEqual([]);
   });
 });

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import DialogShell from "./dialog-shell";
-import type { AccountCascadeDependents } from "@/lib/accounts/cascade-dependents";
+import { AccountCascadeList, useAccountCascadeDependents } from "./account-cascade-dependents";
 
 interface AccountDeleteDialogProps {
   clientId: string;
@@ -27,32 +27,7 @@ export default function AccountDeleteDialog({
   onConfirm,
 }: AccountDeleteDialogProps) {
   const [loading, setLoading] = useState(false);
-  const [deps, setDeps] = useState<AccountCascadeDependents | null>(null);
-  const [depsLoading, setDepsLoading] = useState(false);
-
-  useEffect(() => {
-    if (!account) {
-      setDeps(null);
-      return;
-    }
-    let cancelled = false;
-    setDepsLoading(true);
-    setDeps(null);
-    fetch(`/api/clients/${clientId}/accounts/${account.id}/dependents`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: AccountCascadeDependents | null) => {
-        if (!cancelled) setDeps(data);
-      })
-      .catch(() => {
-        if (!cancelled) setDeps(null);
-      })
-      .finally(() => {
-        if (!cancelled) setDepsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [clientId, account]);
+  const { deps, loading: depsLoading } = useAccountCascadeDependents(clientId, account?.id ?? null);
 
   if (!account) return null;
 
@@ -64,11 +39,6 @@ export default function AccountDeleteDialog({
       setLoading(false);
     }
   }
-
-  const cascades = [
-    ...(deps?.transfers ?? []).map((t) => ({ kind: "Transfer", name: t.name })),
-    ...(deps?.rothConversions ?? []).map((r) => ({ kind: "Roth conversion", name: r.name })),
-  ];
 
   return (
     <DialogShell
@@ -85,25 +55,7 @@ export default function AccountDeleteDialog({
         or withdrawal strategies linked to it.
       </p>
 
-      {depsLoading && (
-        <p className="mt-3 text-[13px] text-ink-3">Checking for linked transfers and Roth conversions…</p>
-      )}
-
-      {!depsLoading && cascades.length > 0 && (
-        <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
-          <p className="text-[13px] font-medium text-amber-300">
-            Deleting this account will also permanently delete{" "}
-            {cascades.length} linked {cascades.length === 1 ? "item" : "items"}:
-          </p>
-          <ul className="mt-2 list-disc space-y-0.5 pl-5 text-[13px] text-ink-2">
-            {cascades.map((c, i) => (
-              <li key={i}>
-                <span className="text-ink-3">{c.kind}:</span> {c.name}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <AccountCascadeList deps={deps} loading={depsLoading} action="Deleting this account" />
     </DialogShell>
   );
 }

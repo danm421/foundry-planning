@@ -315,7 +315,23 @@ export function LiveSolverWorkspace({
   // the post-save retain, and the button's enabled state. They used to call the
   // per-kind predicate independently, which is how a sale's owner flip could be
   // posted to the client's real record AND kept on screen as pending.
-  const baseSavable = useMemo(() => partitionBaseSavableMutations(mutations), [mutations]);
+  // Items only the selected scenario has, which base has no row for: its adds
+  // (a gift add can be a base gift's edit, so gifts are left out), and its
+  // recurring gifts, which live in its own gift_series partition under fresh ids
+  // (`baseGifts` reads that partition; the tree carries base's series). Empty on base.
+  const scenarioOnlyIds = useMemo(() => {
+    if (initialSource === "base") return new Set<string>();
+    return new Set([
+      ...(changesPanel?.changes ?? [])
+        .filter((c) => c.opType === "add" && c.targetKind !== "gift")
+        .map((c) => c.targetId),
+      ...baseGifts.filter((g) => g.kind === "series").map((g) => g.id),
+    ]);
+  }, [initialSource, changesPanel, baseGifts]);
+  const baseSavable = useMemo(
+    () => partitionBaseSavableMutations(mutations, scenarioOnlyIds),
+    [mutations, scenarioOnlyIds],
+  );
 
   const [activeTab, setActiveTab] = useState<InputTab>(initialTab);
   // Reads the change list, so a switched-off saved event still counts.
@@ -1103,12 +1119,22 @@ export function LiveSolverWorkspace({
       baseSavable.heldRemovedCharityIds.length > 0
         ? "\n\nRemoving a charity can't be saved to base facts, so it stays pending — the cleared beneficiary designations, will and gifts are kept with it. Save as a scenario to keep the removal."
         : "";
+    const scenarioOnlyHeldBack =
+      baseSavable.heldScenarioOnly.length > 0
+        ? "\n\nChanges to items only this scenario has can't be saved to base facts, so they stay pending. Use Update scenario to keep them."
+        : "";
+    const giftSeriesHeldBack =
+      baseSavable.heldGiftSeries.length > 0
+        ? "\n\nA recurring gift can't be saved to base facts from the Solver, so it stays pending. Save as a scenario to keep it."
+        : "";
     if (
       !confirm(
         "Save these changes to base facts? This will update the client's real data and cannot be undone." +
           saleHeldBack +
           removalHeldBack +
-          charityHeldBack,
+          charityHeldBack +
+          scenarioOnlyHeldBack +
+          giftSeriesHeldBack,
       )
     )
       return;

@@ -15,9 +15,15 @@
 // Nothing is written: the remove is held in the Solver as an unsaved change, so
 // there is one confirm for the base case and a scenario alike. `tree` is the
 // Solver's tree with held changes applied, so a held add and its dependants show.
+//
+// On the base case, Save to base facts later runs the database delete, whose
+// cascades also reach rows outside this plan (another scenario's transfer). So
+// an account there also lists the Net Worth page's own read-only `/dependents`
+// answer, less what the plan's list already names. A GET writes nothing.
 
 import { useMemo } from "react";
 import DialogShell from "@/components/dialog-shell";
+import { AccountCascadeList, useAccountCascadeDependents } from "@/components/account-cascade-dependents";
 import type { ClientData } from "@/engine/types";
 import { resolveCascades } from "@/engine/scenario/cascadeResolution";
 import type { CascadeWarning } from "@/engine/scenario/types";
@@ -25,6 +31,9 @@ import type { InventoryItem } from "@/lib/scenario/plan-inventory";
 import { detailType } from "@/lib/scenario/plan-detail-catalog";
 
 export interface SolverDeleteConfirmProps {
+  clientId: string;
+  /** "base", or the scenario the Solver works on. */
+  source: "base" | string;
   /** The Solver's tree with held changes applied (never the working tree with unsaved levers). */
   tree: ClientData;
   /** Names the dropped rows the way the pickers do (a savings rule has no name of its own). */
@@ -42,14 +51,17 @@ const ACCOUNT_BACKED = new Set<InventoryItem["typeKey"]>(["account", "business",
 const KEPT_KINDS = new Set<CascadeWarning["kind"]>(["equity_destination_cleared", "parent_account_cleared"]);
 
 export function SolverDeleteConfirm({
+  clientId,
+  source,
   tree,
   inventory,
   item,
   onConfirm,
   onCancel,
 }: SolverDeleteConfirmProps) {
-  const { dropped, kept } = useMemo(() => {
-    const warnings = ACCOUNT_BACKED.has(item.typeKey)
+  const accountBacked = ACCOUNT_BACKED.has(item.typeKey);
+  const { dropped, droppedIds, kept } = useMemo(() => {
+    const warnings = accountBacked
       ? resolveCascades(structuredClone(tree), [{ kind: "account", id: item.id, causedByChangeId: item.id }])
       : [];
     const label = (w: CascadeWarning) => {
@@ -57,11 +69,19 @@ export function SolverDeleteConfirm({
       // "Savings rule · <id>" -> "Savings rule · 401(k) — Pat" when we know the name.
       return named ? `${w.affectedEntityLabel.split(" · ")[0]} · ${named.label}` : w.affectedEntityLabel;
     };
+    const removed = warnings.filter((w) => !KEPT_KINDS.has(w.kind));
     return {
-      dropped: warnings.filter((w) => !KEPT_KINDS.has(w.kind)).map(label),
+      dropped: removed.map(label),
+      droppedIds: new Set(removed.map((w) => w.affectedEntityId)),
       kept: warnings.filter((w) => KEPT_KINDS.has(w.kind)).map(label),
     };
-  }, [tree, inventory, item]);
+  }, [tree, inventory, item, accountBacked]);
+
+  const baseDelete = useAccountCascadeDependents(clientId, source === "base" && accountBacked ? item.id : null);
+  const baseDeleteOnly = baseDelete.deps && {
+    transfers: baseDelete.deps.transfers.filter((t) => !droppedIds.has(t.id)),
+    rothConversions: baseDelete.deps.rothConversions.filter((r) => !droppedIds.has(r.id)),
+  };
 
   return (
     <DialogShell
@@ -102,6 +122,8 @@ export function SolverDeleteConfirm({
           </ul>
         </div>
       )}
+
+      <AccountCascadeList deps={baseDeleteOnly} loading={baseDelete.loading} action="Saving this to base facts" />
     </DialogShell>
   );
 }

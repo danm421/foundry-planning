@@ -60,39 +60,39 @@ interface ExecCtx {
  * `surplusSaveAccountId` is pre-existing and lives on `plan_settings`, which is
  * a singleton the executor updates without remapping — left alone rather than
  * removed, since nothing here made it dead.
+ *
+ * Each column maps to the `ClientRefs` bucket of the table it points at, which
+ * `collectDirectRefs` reads to tenant-check the same columns.
  */
-const REF_COLUMNS = [
-  // → accounts
-  "accountId",
-  "sourceAccountId",
-  "targetAccountId",
-  "destinationAccountId",
-  "proceedsAccountId",
-  "parentAccountId",
-  "surplusSaveAccountId",
-  "cashAccountId",
-  "ownerAccountId",
-  "linkedPropertyId",
-  "sourcePolicyAccountId",
-  "businessAccountId",
-  "fundingAccountId",
-  "lifePolicyAccountId",
-  // → accounts: the IRA a QCD gift is paid from (`gifts.qcd_account_id`)
-  "qcdAccountId",
-  // → entities
-  "ownerEntityId",
-  "recipientEntityId",
-  "businessEntityId",
-  // → family_members
-  "grantorFamilyMemberId",
-  "beneficiaryFamilyMemberId",
-  "forFamilyMemberId",
-  "recipientFamilyMemberId",
-  // → external_beneficiaries
-  "recipientExternalBeneficiaryId",
-  // → liabilities
-  "liabilityId",
-];
+const REF_COLUMN_TARGETS: Record<string, keyof ClientRefs> = {
+  accountId: "accountIds",
+  sourceAccountId: "accountIds",
+  targetAccountId: "accountIds",
+  destinationAccountId: "accountIds",
+  proceedsAccountId: "accountIds",
+  parentAccountId: "accountIds",
+  surplusSaveAccountId: "accountIds",
+  cashAccountId: "accountIds",
+  ownerAccountId: "accountIds",
+  linkedPropertyId: "accountIds",
+  sourcePolicyAccountId: "accountIds",
+  businessAccountId: "accountIds",
+  fundingAccountId: "accountIds",
+  lifePolicyAccountId: "accountIds",
+  // the IRA a QCD gift is paid from (`gifts.qcd_account_id`)
+  qcdAccountId: "accountIds",
+  ownerEntityId: "entityIds",
+  recipientEntityId: "entityIds",
+  businessEntityId: "entityIds",
+  grantorFamilyMemberId: "familyMemberIds",
+  beneficiaryFamilyMemberId: "familyMemberIds",
+  forFamilyMemberId: "familyMemberIds",
+  recipientFamilyMemberId: "familyMemberIds",
+  recipientExternalBeneficiaryId: "externalBeneficiaryIds",
+  liabilityId: "liabilityIds",
+};
+
+const REF_COLUMNS = Object.keys(REF_COLUMN_TARGETS);
 
 /**
  * FK-safe insert order, derived from the same FK graph as `REF_COLUMNS`: a kind
@@ -493,4 +493,60 @@ export async function assertRefsInClient(
     assertLiabilitiesInClient(clientId, refs.liabilityIds),
   ]);
   return checks.find((c) => !c.ok) ?? { ok: true };
+}
+
+/**
+ * PURE. Every id the plan's own rows carry in a foreign-key column
+ * (`REF_COLUMN_TARGETS`: a savings rule's account, a transfer's accounts, an
+ * income's cash account, a debt's property, a gift's recipient), read as the
+ * executor will write it — after a kind's `translate`, so a gift draft's
+ * nested recipient counts. `collectClientRefs` covers child rows; promote does
+ * not run this one. The Solver's base save does, because its held changes come
+ * straight from the request body.
+ *
+ * Ids a same-batch insert of the matching kind satisfies are left out of insert
+ * and update rows, whose columns `remapRefs` rewrites. A singleton's set is
+ * written without a remap, so nothing is left out there.
+ */
+export function collectDirectRefs(plan: BaseWritePlan): ClientRefs {
+  const inBatch = (kind: string) =>
+    new Set(plan.inserts.filter((i) => i.kind === kind).map((i) => i.targetId));
+  const skip: Record<keyof ClientRefs, Set<string>> = {
+    familyMemberIds: inBatch("family_member"),
+    externalBeneficiaryIds: inBatch("external_beneficiary"),
+    entityIds: inBatch("entity"),
+    accountIds: inBatch("account"),
+    liabilityIds: inBatch("liability"),
+  };
+  const found: Record<keyof ClientRefs, Set<string>> = {
+    familyMemberIds: new Set(),
+    externalBeneficiaryIds: new Set(),
+    entityIds: new Set(),
+    accountIds: new Set(),
+    liabilityIds: new Set(),
+  };
+  const walk = (row: Record<string, unknown>, remapped: boolean) => {
+    for (const [column, bucket] of Object.entries(REF_COLUMN_TARGETS)) {
+      const id = row[column];
+      if (typeof id !== "string" || id.length === 0) continue;
+      if (remapped && skip[bucket].has(id)) continue;
+      found[bucket].add(id);
+    }
+  };
+  for (const ins of plan.inserts) {
+    const translate = PROMOTE_TABLE_REGISTRY[ins.kind]?.translate;
+    walk(translate ? translate(ins.raw) : ins.raw, true);
+  }
+  for (const u of plan.updates) {
+    const translateSet = PROMOTE_TABLE_REGISTRY[u.kind]?.translateSet;
+    walk(translateSet ? translateSet(u.set) : u.set, true);
+  }
+  for (const s of plan.singletonUpdates) walk(s.set, false);
+  return {
+    familyMemberIds: [...found.familyMemberIds],
+    externalBeneficiaryIds: [...found.externalBeneficiaryIds],
+    entityIds: [...found.entityIds],
+    accountIds: [...found.accountIds],
+    liabilityIds: [...found.liabilityIds],
+  };
 }

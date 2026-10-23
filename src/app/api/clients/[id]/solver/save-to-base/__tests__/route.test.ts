@@ -10,6 +10,8 @@ vi.mock("@/lib/db-scoping", () => ({
   assertEntitiesInClient: vi.fn(),
   assertFamilyMembersInClient: vi.fn(),
   assertExternalBeneficiariesInClient: vi.fn(),
+  assertIncomesInClient: vi.fn(),
+  assertLiabilitiesInClient: vi.fn(),
 }));
 vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
@@ -38,8 +40,8 @@ vi.mock("@/lib/clients/authz", () => ({
 // An UPDATE's `.returning()` reports `updateMatched` — set it to [] to model a
 // client-scoped WHERE that matched no row.
 type Insert = { table: unknown; values: unknown };
-type Update = { table: unknown; set: unknown };
-type Delete = { table: unknown };
+type Update = { table: unknown; set: unknown; where?: unknown };
+type Delete = { table: unknown; where?: unknown };
 const inserts: Insert[] = [];
 const updates: Update[] = [];
 const deletes: Delete[] = [];
@@ -63,15 +65,19 @@ vi.mock("@/db", () => {
           }),
           update: (table: unknown) => ({
             set: (set: unknown) => ({
-              where: () => {
-                updates.push({ table, set });
+              where: (where: unknown) => {
+                updates.push({ table, set, where });
                 return Object.assign(Promise.resolve(), {
                   returning: async () => updateMatched,
                 });
               },
             }),
           }),
-          delete: (table: unknown) => ({ where: async () => { deletes.push({ table }); } }),
+          delete: (table: unknown) => ({
+            where: async (where: unknown) => {
+              deletes.push({ table, where });
+            },
+          }),
         };
         return await fn(tx);
       }),
@@ -79,8 +85,23 @@ vi.mock("@/db", () => {
   };
 });
 
+import { and, eq } from "drizzle-orm";
 import { POST } from "../route";
-import { accountOwners, expenseDedicatedAccounts } from "@/db/schema";
+import { db } from "@/db";
+import {
+  accountOwners,
+  accounts,
+  clients,
+  expenseDedicatedAccounts,
+  expenses,
+  gifts,
+  giftSeries,
+  savingsRules,
+} from "@/db/schema";
+import { applyScenarioChanges } from "@/engine/scenario/applyChanges";
+import type { ScenarioChange } from "@/engine/scenario/types";
+import { buildClientData } from "@/engine/__tests__/fixtures";
+import type { ClientData } from "@/engine/types";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
   findClientInFirm,
@@ -88,6 +109,8 @@ import {
   assertEntitiesInClient,
   assertFamilyMembersInClient,
   assertExternalBeneficiariesInClient,
+  assertIncomesInClient,
+  assertLiabilitiesInClient,
 } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { recordAudit } from "@/lib/audit";
@@ -134,6 +157,8 @@ beforeEach(() => {
   vi.mocked(assertEntitiesInClient).mockResolvedValue({ ok: true } as never);
   vi.mocked(assertFamilyMembersInClient).mockResolvedValue({ ok: true } as never);
   vi.mocked(assertExternalBeneficiariesInClient).mockResolvedValue({ ok: true } as never);
+  vi.mocked(assertIncomesInClient).mockResolvedValue({ ok: true } as never);
+  vi.mocked(assertLiabilitiesInClient).mockResolvedValue({ ok: true } as never);
   vi.mocked(loadEffectiveTree).mockResolvedValue({
     effectiveTree: { accounts: [], savingsRules: [] },
     warnings: [],
@@ -980,5 +1005,234 @@ describe("save-to-base — an upsert writes only the client's own base row", () 
     const res = await save({ kind: "expense-upsert", id: "base-exp", value: BASE_EXP });
     expect(res.status).toBe(200);
     expect(writesTo(expenseDedicatedAccounts)).toEqual({ deleted: 0, inserted: 0 });
+  });
+});
+
+/**
+ * Held editor changes (the Details editors' saves inside the Solver) are
+ * written through the scenario→base promote machinery, in the same transaction
+ * as the controls and BEFORE them, so a control moved after a dialog save wins.
+ */
+describe("save-to-base — held editor changes", () => {
+  const SAVE_ID = "00000000-0000-4000-8000-0000000000b1";
+  const HELD_ACCT = "00000000-0000-4000-8000-0000000000a1";
+  const HELD_EXP = "00000000-0000-4000-8000-0000000000e1";
+  const NEW_RULE = "00000000-0000-4000-8000-0000000000c1";
+  const GIFT = "00000000-0000-4000-8000-0000000000d1";
+  const FOREIGN = "00000000-0000-4000-8000-0000000000f1";
+  const BASE_EXP = "00000000-0000-4000-8000-0000000000e2";
+  /** The fixture plan with one uuid-keyed expense a held entry can target. */
+  const baseWith = (expense: Record<string, unknown>) =>
+    buildClientData({
+      expenses: [
+        { id: BASE_EXP, type: "insurance", name: "Life Insurance", annualAmount: 5000, startYear: 2026, endYear: 2045, growthRate: 0.02, ...expense },
+      ] as ClientData["expenses"],
+    });
+  const BASE_SCOPE = (table: typeof expenses, id: string) =>
+    and(eq(table.id, id), eq(table.clientId, CLIENT_ID), eq(table.scenarioId, "base-scenario-id"));
+
+  const held = (op: "add" | "edit" | "remove", targetKind: string, targetId: string, payload: unknown) => ({
+    kind: "held-change",
+    op,
+    targetKind,
+    targetId,
+    payload,
+    saveId: SAVE_ID,
+  });
+  const save = (mutations: unknown[]) => POST(makeRequest({ source: "base", mutations }), ctx as never);
+
+  /** Base is `base`; the source load (the one carrying held changes) applies
+   *  them, as `loadEffectiveTree` does. */
+  function trees(base: ClientData) {
+    vi.mocked(loadEffectiveTree).mockImplementation((async (
+      _c: string,
+      _f: string,
+      _s: string,
+      _t: unknown,
+      extra: ScenarioChange[] = [],
+    ) => ({
+      effectiveTree: extra.length > 0 ? applyScenarioChanges(base, extra, {}, []).effectiveTree : base,
+      warnings: [],
+    })) as never);
+  }
+
+  const NEW_ACCOUNT = {
+    id: HELD_ACCT,
+    name: "New brokerage",
+    category: "taxable",
+    subType: "brokerage",
+    value: 1000,
+    basis: 1000,
+    growthRate: 0.05,
+    rmdEnabled: false,
+    titlingType: "jtwros",
+    owners: [{ kind: "family_member", familyMemberId: "fm-1", percent: 1 }],
+  };
+
+  beforeEach(() => {
+    vi.mocked(db.transaction).mockClear();
+    vi.mocked(loadEffectiveTree).mockClear();
+    vi.mocked(assertAccountsInClient).mockClear();
+    vi.mocked(recordAudit).mockClear();
+    trees(buildClientData());
+  });
+
+  it("writes held entries through executeBaseWritePlan before control writes, in one transaction", async () => {
+    trees(baseWith({}));
+    const res = await save([
+      { kind: "retirement-age", person: "client", age: 67 },
+      held("edit", "expense", BASE_EXP, { annualAmount: { from: 5000, to: 6500 } }),
+    ]);
+    expect(res.status).toBe(200);
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    const heldWrite = updates.findIndex((u) => u.table === expenses);
+    const controlWrite = updates.findIndex((u) => u.table === clients);
+    expect(updates[heldWrite]).toMatchObject({ set: { annualAmount: "6500" }, where: BASE_SCOPE(expenses, BASE_EXP) });
+    expect(updates[controlWrite].set).toMatchObject({ retirementAge: 67 });
+    expect(heldWrite).toBeLessThan(controlWrite);
+  });
+
+  it("refuses a held recurring gift", async () => {
+    const res = await save([
+      held("add", "gift", GIFT, {
+        id: GIFT, kind: "series", startYear: 2027, endYear: 2031, annualAmount: 19_000,
+        amountMode: "fixed", inflationAdjust: false, grantor: "client",
+        recipient: { kind: "family_member", id: "fm-1" }, crummey: false,
+      }),
+    ]);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe(
+      "A recurring gift can't be saved to base facts from the Solver. Save as a scenario instead.",
+    );
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("saves a held one-time gift add without the recurring-gift refusal", async () => {
+    const res = await save([
+      held("add", "gift", GIFT, {
+        id: GIFT, kind: "cash-once", year: 2030, amount: 50_000, grantor: "client",
+        recipient: { kind: "family_member", id: "fm-1" }, crummey: false,
+      }),
+    ]);
+    expect(res.status).toBe(200);
+    // A gift's add writes the gift under its own id (an edit of a base gift is an add).
+    expect(updates.find((u) => u.table === gifts)?.where).toEqual(and(eq(gifts.id, GIFT), eq(gifts.clientId, CLIENT_ID)));
+  });
+
+  it("a held gift remove deletes that id from base's gift_series partition", async () => {
+    const res = await save([held("remove", "gift", GIFT, null)]);
+    expect(res.status).toBe(200);
+    expect(deletes.filter((d) => d.table === giftSeries).map((d) => d.where)).toEqual([
+      and(eq(giftSeries.id, GIFT), eq(giftSeries.clientId, CLIENT_ID), eq(giftSeries.scenarioId, "base-scenario-id")),
+    ]);
+  });
+
+  it("a held add's new id reaches a control savings rule through idRemap", async () => {
+    const res = await save([
+      held("add", "account", HELD_ACCT, NEW_ACCOUNT),
+      {
+        kind: "savings-rule-upsert",
+        id: NEW_RULE,
+        value: {
+          id: NEW_RULE, accountId: HELD_ACCT, annualAmount: 6000, startYear: 2026, endYear: 2035,
+          isDeductible: false, applyContributionLimit: true, contributeMax: false,
+        },
+      },
+    ]);
+    expect(res.status).toBe(200);
+    expect(inserts.find((i) => i.table === accounts)?.values).toMatchObject({ name: "New brokerage" });
+    expect(inserts.find((i) => i.table === savingsRules)?.values).toMatchObject({ accountId: "generated-account-id" });
+    // The held account is this batch's own insert, not a foreign id.
+    for (const [, ids] of vi.mocked(assertAccountsInClient).mock.calls) expect(ids).not.toContain(HELD_ACCT);
+  });
+
+  it("audit carries heldCounts", async () => {
+    const res = await save([held("add", "account", HELD_ACCT, NEW_ACCOUNT)]);
+    expect(res.status).toBe(200);
+    expect((await res.json()).heldCounts).toEqual({ account: 1 });
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ heldCounts: { account: 1 } }) }),
+    );
+  });
+
+  it("rejects a malformed held-change with 400 before any query", async () => {
+    // An add's payload must carry its own target id.
+    const res = await save([held("add", "account", HELD_ACCT, { ...NEW_ACCOUNT, id: FOREIGN })]);
+    expect(res.status).toBe(400);
+    expect(loadEffectiveTree).not.toHaveBeenCalled();
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("a scale lever over a held living expense and a base one writes each amount once", async () => {
+    trees(baseWith({ type: "living", name: "Retirement", annualAmount: 100_000, startYear: 2035, endYear: 2055 }));
+    const res = await save([
+      held("add", "expense", HELD_EXP, {
+        id: HELD_EXP, type: "living", name: "Travel", annualAmount: 5000, startYear: 2035, endYear: 2045, growthRate: 0,
+      }),
+      { kind: "living-expense-scale", multiplier: 1.1 },
+    ]);
+    expect(res.status).toBe(200);
+    const inserted = inserts.find((i) => i.table === expenses)?.values as { annualAmount: string };
+    expect(Number(inserted.annualAmount)).toBeCloseTo(5500);
+    expect(updates).toContainEqual(
+      expect.objectContaining({
+        table: expenses,
+        where: BASE_SCOPE(expenses, BASE_EXP),
+        set: expect.objectContaining({ annualAmount: String(100_000 * 1.1) }),
+      }),
+    );
+    // The lever's write on the held add is keyed by its synthetic id, which the
+    // insert does not keep (the DB mints the id), and sets the same absolute
+    // amount the insert carries: nothing compounds either way.
+    expect(inserted).not.toHaveProperty("id");
+    expect(updates).toContainEqual(
+      expect.objectContaining({
+        table: expenses,
+        where: BASE_SCOPE(expenses, HELD_EXP),
+        set: expect.objectContaining({ annualAmount: String(5000 * 1.1) }),
+      }),
+    );
+    expect(Number(inserted.annualAmount)).toBe(5000 * 1.1);
+  });
+
+  it("refuses a held entry naming an item a Solver control adds", async () => {
+    const res = await save([
+      { kind: "account-upsert", id: HELD_ACCT, value: NEW_ACCOUNT },
+      held("add", "savings_rule", NEW_RULE, {
+        id: NEW_RULE, accountId: HELD_ACCT, annualAmount: 6000, startYear: 2026, endYear: 2035,
+      }),
+    ]);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe(
+      "An editor change uses something a Solver control adds, so it can't be saved to base facts yet. Save as a scenario instead.",
+    );
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses a held savings rule on another client's account", async () => {
+    vi.mocked(assertAccountsInClient).mockImplementation((async (_c: string, ids: string[]) =>
+      ids.includes(FOREIGN) ? { ok: false, reason: `Account ${FOREIGN} not owned by this client` } : { ok: true }) as never);
+    const res = await save([
+      held("add", "savings_rule", NEW_RULE, {
+        id: NEW_RULE, accountId: FOREIGN, annualAmount: 6000, startYear: 2026, endYear: 2035,
+      }),
+    ]);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe(`Account ${FOREIGN} not owned by this client`);
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("stores a held expense edit's living items and total as held", async () => {
+    // The total was set from these items when the edit was held; base must not recompute it.
+    trees(baseWith({ type: "living", name: "Living", annualAmount: 80_000 }));
+    const items = [{ id: "i-1", name: "Housing", amount: 3000, frequency: "monthly" }];
+    const res = await save([
+      held("edit", "expense", BASE_EXP, {
+        livingItems: { from: null, to: items },
+        annualAmount: { from: 80_000, to: "36000" },
+      }),
+    ]);
+    expect(res.status).toBe(200);
+    expect(updates.find((u) => u.table === expenses)?.set).toMatchObject({ livingItems: items, annualAmount: "36000" });
   });
 });
