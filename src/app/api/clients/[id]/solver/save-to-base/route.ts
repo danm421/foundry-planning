@@ -33,7 +33,10 @@
 // Held editor changes (`held-change`: a Details editor's save inside the Solver)
 // are written through the scenario→base promote machinery
 // (`scenarioChangesToBaseWrites` → `executeBaseWritePlan`), FIRST in the same
-// transaction, so a control moved after a dialog save wins. Controls aimed at a
+// transaction, so a control moved after a dialog save wins. A held add is
+// inserted under its own id (never an upsert: a taken id fails the save), so
+// entries this save leaves behind still name it. A held family member removal
+// also runs its DELETE route's clean-up. Controls aimed at a
 // held add are folded into its insert (`foldControlsIntoHeldAdds`). The body is
 // the only source of these rows, so promote's tenant guards run on them plus the
 // rows' own FK columns (`collectDirectRefs`). Refused before any write: a
@@ -68,6 +71,7 @@ import {
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { inheritedIraRowFields } from "@/lib/accounts/inherited-ira";
+import { deleteFamilyMemberInTx } from "@/lib/clients/family-members-writes";
 import { recordAudit } from "@/lib/audit";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { goalFundingError } from "@/lib/goals";
@@ -521,15 +525,30 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     let heldCounts: Record<string, number> = {};
     await db.transaction(async (tx) => {
       // Held editor changes first, so a control moved after a dialog save wins.
-      const executed = await executeBaseWritePlan(tx, plan, { clientId, baseScenarioId });
+      // A family member's removal goes through its DELETE route's own helper
+      // after the rest of the plan, which also clears the will recipients and
+      // scenario changes naming it (by bare id, so only once the scoped delete
+      // matched this client's row).
+      const memberRemoves = plan.removes.filter((r) => r.kind === "family_member");
+      const executed = await executeBaseWritePlan(
+        tx,
+        { ...plan, removes: plan.removes.filter((r) => r.kind !== "family_member") },
+        { clientId, baseScenarioId, keepAddIds: true },
+      );
       heldCounts = executed.counts;
+      for (const r of memberRemoves) {
+        if (await deleteFamilyMemberInTx(tx, clientId, r.id)) {
+          heldCounts["family_member.remove"] = (heldCounts["family_member.remove"] ?? 0) + 1;
+        }
+      }
       // A gift remove also retires a recurring gift under that id from base's
       // gift_series partition; a one-time gift's id matches nothing there.
       await removeGiftSeriesRows(tx, { clientId, scenarioId: baseScenarioId }, plan.giftSeries.removes);
 
       // Maps a solver-supplied (synthetic) account id → the canonical DB uuid
       // generated on insert, so paired savings rules attach to the real row.
-      // Seeded with the held adds', so a control can name a held-added account.
+      // Seeded with the held adds' (each its own id), so a control can name a
+      // held-added account.
       const idRemap = new Map<string, string>(executed.idRemap);
 
       for (const a of accountInserts) {

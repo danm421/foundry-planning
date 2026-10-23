@@ -9,13 +9,13 @@ import { mutationKey, type SolverMutation } from "./types";
 
 /**
  * Controls aimed at an item a held entry ADDS are folded into that add, so a
- * base insert (new uuid) and a scenario add carry the control's value.
+ * base insert and a scenario add carry the control's value.
  *
  * A control's drafts on held-added items fold in; the control stays in
  * `controls` unless every one of its drafts folded (a scale lever over a held
  * living expense and a base one still writes the base row). Its leftover write
- * on a held-added id is harmless: the base insert takes a fresh uuid, so an
- * update keyed by the synthetic id matches nothing.
+ * on a held-added id is harmless: the base insert keeps the held add's id, and
+ * the leftover sets the same absolute value the fold already put there.
  */
 export function foldControlsIntoHeldAdds(
   treeWithHeld: ClientData,

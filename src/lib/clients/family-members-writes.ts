@@ -4,12 +4,15 @@
 // and the Forge's add_family_member tool so route and agent can never drift;
 // update, moved from PUT /api/clients/[id]/family-members/[memberId] (the only
 // writer of claimedAsDependent). With a caller's transaction (the fact finder
-// save) the write and its audit run on it.
+// save) the write and its audit run on it. Delete, shared by
+// DELETE /api/clients/[id]/family-members/[memberId] and the Solver's base save.
 import { familyMembers, dependentOverrideEnum } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
 import { verifyClientAccessAs } from "@/lib/clients/authz";
-import { handleOf, type WriteOptions } from "@/lib/db-tx";
+import { handleOf, type Tx, type WriteOptions } from "@/lib/db-tx";
+import { cleanupWillRecipientReferences } from "@/lib/estate/cleanup-will-recipients";
+import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { summarizeZodIssues } from "@/lib/schemas/common";
 import { familyMemberCreateSchema } from "@/lib/schemas/family-members";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
@@ -131,4 +134,27 @@ export async function updateFamilyMemberForClient(args: {
   });
 
   return { ok: true, data: updated, resourceId: memberId };
+}
+
+/**
+ * Delete one of this client's family members on the caller's transaction, with
+ * what names it by bare id: the will bequest and residuary recipients
+ * (`recipient_id` has no FK, so a plain delete leaves wrong estate projections,
+ * audit F13) and the scenario changes targeting it. The clean-up runs only
+ * after the client-scoped delete matched, so an id that isn't this client's
+ * touches nothing. True when a row was deleted.
+ */
+export async function deleteFamilyMemberInTx(
+  tx: Tx,
+  clientId: string,
+  memberId: string,
+): Promise<boolean> {
+  const deleted = await tx
+    .delete(familyMembers)
+    .where(and(eq(familyMembers.id, memberId), eq(familyMembers.clientId, clientId)))
+    .returning({ id: familyMembers.id });
+  if (deleted.length === 0) return false;
+  await cleanupWillRecipientReferences(tx, "family_member", memberId);
+  await pruneOrphanScenarioChanges(tx, memberId, clientId);
+  return true;
 }

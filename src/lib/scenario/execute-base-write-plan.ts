@@ -30,6 +30,11 @@ import { coerceForTable } from "./promote-coerce";
 interface ExecCtx {
   clientId: string;
   baseScenarioId: string;
+  /** Insert each add under its own `targetId` (a plain INSERT) instead of
+   *  letting the DB mint one. The Solver's base save sets it: entries it leaves
+   *  behind name a held add by that id. An id already taken fails the insert,
+   *  and with it the transaction. Promote leaves it off. */
+  keepAddIds?: boolean;
 }
 
 /**
@@ -228,7 +233,9 @@ export async function executeBaseWritePlan(
     };
     const newId = entry.preserveId
       ? await upsertPreservingId(tx, entry.table, cols, ins.targetId, values, ctx)
-      : await insertWithGeneratedId(tx, entry.table, cols, values);
+      : ctx.keepAddIds
+        ? await insertWithId(tx, entry.table, cols, ins.targetId, values)
+        : await insertWithGeneratedId(tx, entry.table, cols, values);
     idRemap.set(ins.targetId, newId);
     if (entry.childWriter) await entry.childWriter(tx, newId, ins.raw, childCtx);
     bump(ins.kind);
@@ -310,6 +317,23 @@ async function insertWithGeneratedId(
   const [row] = await tx
     .insert(table)
     .values(insertValues as never)
+    .returning({ id: cols.id });
+  return (row as { id: string }).id;
+}
+
+/** Insert an add row under the id its change names (`ExecCtx.keepAddIds`).
+ *  Never an update: a taken id — a stale retry, or another client's row —
+ *  fails on the primary key rather than being overwritten. */
+async function insertWithId(
+  tx: PromoteTx,
+  table: PgTable,
+  cols: Cols,
+  targetId: string,
+  values: Record<string, unknown>,
+): Promise<string> {
+  const [row] = await tx
+    .insert(table)
+    .values({ ...values, id: targetId } as never)
     .returning({ id: cols.id });
   return (row as { id: string }).id;
 }
@@ -437,7 +461,8 @@ function newRefCollector(plan: BaseWritePlan) {
  * (the account, liability, reinvestment, Roth conversion and will child writers
  * do, and `remapRefs` does for a rider's `lifePolicyAccountId`). A consumer that
  * writes the raw id lets a crafted add whose targetId is another firm's real
- * row smuggle that id past this guard.
+ * row smuggle that id past this guard. (Under `keepAddIds` the raw id IS the
+ * row's id: a crafted one fails the insert on the primary key first.)
  */
 export function collectClientRefs(plan: BaseWritePlan): ClientRefs {
   const { skip, found, result } = newRefCollector(plan);

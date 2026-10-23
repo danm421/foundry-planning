@@ -700,7 +700,7 @@ describe("partitionBaseSavableMutations — held editor changes", () => {
   const SAVE = "00000000-0000-4000-8000-0000000000b1";
   const held = (
     op: "add" | "edit" | "remove",
-    targetKind: "expense" | "account" | "gift",
+    targetKind: "expense" | "account" | "gift" | "entity" | "external_beneficiary" | "family_member",
     targetId: string,
     payload: unknown,
   ): SolverMutation => ({ kind: "held-change", op, targetKind, targetId, payload, saveId: SAVE });
@@ -795,6 +795,35 @@ describe("partitionBaseSavableMutations — held editor changes", () => {
     const p = partitionBaseSavableMutations([cleared, charityDelete]);
     expect(p.savable).toEqual([]);
     expect(p.heldRemovedCharityIds).toEqual(["eb-1"]);
+  });
+
+  // The base save runs none of a trust's or charity's delete clean-ups, so a
+  // held removal stays pending as the Solver's removal controls do, with every
+  // held entry that names it.
+  it("a held trust removal is held back, with a held edit naming the trust", () => {
+    const remove = held("remove", "entity", "trust-9", null);
+    const retitled = held("edit", "account", "trust-acct", {
+      owners: { from: [{ kind: "entity", entityId: "trust-9", percent: 1 }], to: [{ kind: "family_member", familyMemberId: "fm-1", percent: 1 }] },
+    });
+    const p = partitionBaseSavableMutations([remove, retitled, control]);
+    expect(keys(p.savable)).toEqual([mutationKey(control)]);
+    expect(keys(p.held)).toEqual([mutationKey(remove), mutationKey(retitled)]);
+    expect(p.heldDissolveEntityIds).toEqual(["trust-9"]);
+    expect(p.heldRemovedCharityIds).toEqual([]);
+  });
+
+  it("a held charity removal is held back", () => {
+    const remove = held("remove", "external_beneficiary", "eb-1", null);
+    const p = partitionBaseSavableMutations([remove, control]);
+    expect(keys(p.savable)).toEqual([mutationKey(control)]);
+    expect(p.heldRemovedCharityIds).toEqual(["eb-1"]);
+    expect(p.heldDissolveEntityIds).toEqual([]);
+  });
+
+  it("a held family member removal stays savable", () => {
+    const remove = held("remove", "family_member", "fm-9", null);
+    const p = partitionBaseSavableMutations([remove]);
+    expect(keys(p.savable)).toEqual([mutationKey(remove)]);
   });
 
   it("a held edit naming no pending removal or sale stays savable", () => {

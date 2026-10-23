@@ -60,7 +60,9 @@ vi.mock("@/db", () => {
           insert: (table: unknown) => ({
             values: (values: unknown) => {
               inserts.push({ table, values });
-              return { returning: async () => [{ id: "generated-account-id" }] };
+              // A row inserted under its own id comes back with it, as in Postgres.
+              const id = (values as { id?: string }).id ?? "generated-account-id";
+              return { returning: async () => [{ id }] };
             },
           }),
           update: (table: unknown) => ({
@@ -94,6 +96,7 @@ import {
   clients,
   expenseDedicatedAccounts,
   expenses,
+  familyMembers,
   gifts,
   giftSeries,
   savingsRules,
@@ -115,6 +118,8 @@ import {
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { recordAudit } from "@/lib/audit";
 import { GOAL_FUNDING_529_ERROR } from "@/lib/goals";
+import { partitionBaseSavableMutations } from "@/lib/solver/mutations-to-base-updates";
+import type { SolverMutation } from "@/lib/solver/types";
 
 const CLIENT_ID = "00000000-0000-4000-8000-000000000001";
 const FIRM_ID = "00000000-0000-4000-8000-000000000099";
@@ -1127,6 +1132,69 @@ describe("save-to-base — held editor changes", () => {
     ]);
   });
 
+  // Entries left behind (held back, switched off) name a held add by its id;
+  // the base row keeps that id so they still resolve after the save.
+  it("a held add is written under its own id, which a held-back gift to it still names", async () => {
+    const KIM = "00000000-0000-4000-8000-0000000000a7";
+    const kim = held("add", "family_member", KIM, { id: KIM, firstName: "Kim", relationship: "child" });
+    const giftToKim = held("add", "gift", GIFT, {
+      id: GIFT, kind: "series", startYear: 2027, endYear: 2031, annualAmount: 19_000,
+      amountMode: "fixed", inflationAdjust: false, grantor: "client",
+      recipient: { kind: "family_member", id: KIM }, crummey: false,
+    });
+    const { savable, held: kept } = partitionBaseSavableMutations([kim, giftToKim] as SolverMutation[]);
+    expect(kept).toEqual([giftToKim]);
+
+    const res = await save(savable);
+    expect(res.status).toBe(200);
+    const inserted = inserts.find((i) => i.table === familyMembers)?.values as { id?: string };
+    expect(inserted.id).toBe(KIM);
+    expect(updates.filter((u) => u.table === familyMembers)).toEqual([]);
+  });
+
+  it("a held account keeps its id, so a switched-off savings rule on it still names it", async () => {
+    // The rule is off, so it is not posted; it stays in the list naming HELD_ACCT.
+    const res = await save([held("add", "account", HELD_ACCT, NEW_ACCOUNT)]);
+    expect(res.status).toBe(200);
+    expect((inserts.find((i) => i.table === accounts)?.values as { id?: string }).id).toBe(HELD_ACCT);
+  });
+
+  it("a control 529's Roth rollover to a held-added account names the row the held add wrote", async () => {
+    const CONTROL_529 = "00000000-0000-4000-8000-0000000000a8";
+    const res = await save([
+      held("add", "account", HELD_ACCT, { ...NEW_ACCOUNT, category: "retirement", subType: "roth_ira" }),
+      {
+        kind: "account-upsert",
+        id: CONTROL_529,
+        value: {
+          ...ACCT,
+          id: CONTROL_529,
+          name: "Kim's 529",
+          category: "education_savings",
+          subType: "529",
+          education529: { beneficiaryFamilyMemberId: "fm-1", rothRolloverEnabled: true, rothRolloverAccountId: HELD_ACCT },
+        },
+      },
+    ]);
+    expect(res.status).toBe(200);
+    const accountRows = inserts.filter((i) => i.table === accounts).map((i) => i.values as Record<string, unknown>);
+    expect(accountRows[0].id).toBe(HELD_ACCT);
+    expect(accountRows[1]).toMatchObject({ name: "Kim's 529", rothRolloverAccountId: HELD_ACCT });
+  });
+
+  it("a held add whose id is already taken fails the whole save", async () => {
+    vi.mocked(db.transaction).mockImplementationOnce((async (fn: (tx: unknown) => Promise<unknown>) => {
+      const taken = Object.assign(new Error("duplicate key value violates unique constraint"), { code: "23505" });
+      const tx = {
+        insert: () => ({ values: () => ({ returning: async () => { throw taken; } }) }),
+      };
+      return fn(tx);
+    }) as never);
+    const res = await save([held("add", "account", HELD_ACCT, NEW_ACCOUNT)]);
+    expect(res.ok).toBe(false);
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
   it("a held add's new id reaches a control savings rule through idRemap", async () => {
     const res = await save([
       held("add", "account", HELD_ACCT, NEW_ACCOUNT),
@@ -1141,7 +1209,7 @@ describe("save-to-base — held editor changes", () => {
     ]);
     expect(res.status).toBe(200);
     expect(inserts.find((i) => i.table === accounts)?.values).toMatchObject({ name: "New brokerage" });
-    expect(inserts.find((i) => i.table === savingsRules)?.values).toMatchObject({ accountId: "generated-account-id" });
+    expect(inserts.find((i) => i.table === savingsRules)?.values).toMatchObject({ accountId: HELD_ACCT });
     // The held account is this batch's own insert, not a foreign id.
     for (const [, ids] of vi.mocked(assertAccountsInClient).mock.calls) expect(ids).not.toContain(HELD_ACCT);
   });
@@ -1181,10 +1249,10 @@ describe("save-to-base — held editor changes", () => {
         set: expect.objectContaining({ annualAmount: String(100_000 * 1.1) }),
       }),
     );
-    // The lever's write on the held add is keyed by its synthetic id, which the
-    // insert does not keep (the DB mints the id), and sets the same absolute
-    // amount the insert carries: nothing compounds either way.
-    expect(inserted).not.toHaveProperty("id");
+    // The lever's leftover write on the held add hits the row the insert wrote
+    // under that id, and sets the same absolute amount the insert carries:
+    // nothing compounds.
+    expect(inserted).toHaveProperty("id", HELD_EXP);
     expect(updates).toContainEqual(
       expect.objectContaining({
         table: expenses,

@@ -163,7 +163,10 @@ export interface BaseSavablePartition {
  * and drops the control, pairing and all. So a held edit joins the sale when it
  * targets the note's declared account, and joins a removal when it targets one of
  * the removal's declared rows or names the trust or charity being removed (its
- * `from` side does once the retitle is folded in).
+ * `from` side does once the retitle is folded in). A held removal of a trust or
+ * charity (the Changes tab's Remove) is a removal in its own right: the base
+ * save runs none of its delete's clean-ups (will recipients, a trust's checking
+ * account), so it stays pending with everything naming it.
  *
  * `scenarioOnlyIds` are the items only the selected scenario has (empty on
  * base). A held edit or remove of one has no base row to write, so it stays. A
@@ -189,6 +192,11 @@ export function partitionBaseSavableMutations(
   const dissolvedEntityIds = new Set<string>();
   const removedCharityIds = new Set<string>();
   for (const m of mutations) {
+    // A Details editor's removal of a trust or charity is the same removal.
+    if (isHeldRemoval(m)) {
+      (m.targetKind === "entity" ? dissolvedEntityIds : removedCharityIds).add(m.targetId);
+      continue;
+    }
     if (m.kind !== "entity-upsert" && m.kind !== "external-beneficiary-upsert") continue;
     if (m.value !== null || isBaseSavableMutation(m)) continue;
     (m.kind === "entity-upsert" ? dissolvedEntityIds : removedCharityIds).add(m.id);
@@ -202,6 +210,7 @@ export function partitionBaseSavableMutations(
   }
   const removedRefs = [...dissolvedEntityIds, ...removedCharityIds];
   const heldRemovalRef = (m: HeldChangeMutation): string | null => {
+    if (isHeldRemoval(m)) return m.targetId;
     const declared = removalOfRow.get(m.targetId);
     if (declared != null) return declared;
     const text = JSON.stringify(m.payload);
@@ -254,6 +263,14 @@ export function partitionBaseSavableMutations(
 
 const isHeldAccount = (m: SolverMutation): m is HeldChangeMutation =>
   m.kind === "held-change" && m.targetKind === "account";
+
+/** A held removal of a trust (or any entity) or a charity. Its base delete has
+ *  clean-ups the base save doesn't run, so it stays pending like the Solver's
+ *  own removal controls. */
+const isHeldRemoval = (m: SolverMutation): m is HeldChangeMutation =>
+  m.kind === "held-change" &&
+  m.op === "remove" &&
+  (m.targetKind === "entity" || m.targetKind === "external_beneficiary");
 
 /** A held recurring-gift add. A gift's add is also how a base gift is edited. */
 function isHeldSeriesAdd(m: HeldChangeMutation): boolean {

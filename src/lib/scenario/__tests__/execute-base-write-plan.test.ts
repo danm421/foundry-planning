@@ -98,6 +98,39 @@ describe("executeBaseWritePlan", () => {
     expect(counts.income).toBe(1);
   });
 
+  // The Solver's base save: entries left behind (held back, switched off) name
+  // a held add by its id, so the base row must carry that id. A plain insert —
+  // an id already taken fails the save instead of overwriting the row.
+  it("keepAddIds inserts an add under its own id, never as an update", async () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        { kind: "family_member", targetId: "fm-held", raw: { id: "fm-held", firstName: "Kim" } },
+        {
+          kind: "account",
+          targetId: "acct-held",
+          raw: {
+            id: "acct-held",
+            name: "Kim's 529",
+            category: "taxable",
+            owners: [{ kind: "family_member", familyMemberId: "fm-held", percent: 1 }],
+          },
+        },
+      ],
+    };
+    const { tx, ops } = makeTx();
+    const { idRemap } = await executeBaseWritePlan(tx as never, plan, {
+      clientId: "c1",
+      baseScenarioId: "base1",
+      keepAddIds: true,
+    });
+    const rowInserts = ops.filter((o) => o.op === "insert" && (o.table === familyMembers || o.table === accounts));
+    expect(rowInserts.map((o) => (o.arg as { id?: string }).id)).toEqual(["fm-held", "acct-held"]);
+    expect(ops.filter((o) => o.op === "update")).toEqual([]);
+    // Each add maps to the id it was written under (the fake tx mints db-N).
+    expect([...idRemap.keys()]).toEqual(["fm-held", "acct-held"]);
+  });
+
   it("inserts a client_tax_adjustment row with withheldMode and withheldValue preserved", async () => {
     // client_tax_adjustment is the mirror image of client_deduction, but with
     // withheldMode/withheldValue columns a deduction doesn't have. Asserting

@@ -896,6 +896,40 @@ describe("LiveSolverWorkspace — save to base facts", () => {
     );
   });
 
+  // A trust's or charity's delete in base has clean-ups (its will recipients, a
+  // trust's checking account) the base save doesn't run, so these stay pending
+  // under the lines the Solver's own removal controls use.
+  const heldRemove = (targetKind: string, targetId: string) => ({
+    kind: "held-change", op: "remove", targetKind, targetId, payload: null, saveId: SAVE_ID,
+  });
+
+  it("keeps a held trust removal pending and says so", async () => {
+    const TRUST = "00000000-0000-4000-8000-0000000000c5";
+    const { confirm, posted } = await saveToBaseWith([
+      { kind: "account-upsert", id: UNRELATED_ACCOUNT.id, value: UNRELATED_ACCOUNT },
+      heldRemove("entity", TRUST),
+    ]);
+    expect(posted).toEqual([`account-upsert:${UNRELATED_ACCOUNT.id}`]);
+    expect(confirm).toMatch(/Removing a trust can't be saved to base facts, so it stays pending/);
+  });
+
+  it("keeps a held charity removal pending and says so", async () => {
+    const CHARITY = "00000000-0000-4000-8000-0000000000c6";
+    const { confirm, posted } = await saveToBaseWith([
+      { kind: "account-upsert", id: UNRELATED_ACCOUNT.id, value: UNRELATED_ACCOUNT },
+      heldRemove("external_beneficiary", CHARITY),
+    ]);
+    expect(posted).toEqual([`account-upsert:${UNRELATED_ACCOUNT.id}`]);
+    expect(confirm).toMatch(/Removing a charity can't be saved to base facts, so it stays pending/);
+  });
+
+  it("saves a held family member removal to base", async () => {
+    const MEMBER = "00000000-0000-4000-8000-0000000000c7";
+    const { confirm, posted } = await saveToBaseWith([heldRemove("family_member", MEMBER)]);
+    expect(posted).toEqual([`held-change:${MEMBER}`]);
+    expect(confirm).not.toMatch(/stays pending/);
+  });
+
   it("keeps the scenario's own gifts pending and still saves an edit of a base gift", async () => {
     const BASE_GIFT = "00000000-0000-4000-8000-0000000000d1";
     const SCENARIO_GIFT = "00000000-0000-4000-8000-0000000000d2";
