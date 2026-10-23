@@ -715,7 +715,7 @@ describe("partitionBaseSavableMutations — held editor changes", () => {
     expect(p.heldScenarioOnly).toEqual([mutationKey(edit)]);
   });
 
-  it("held add is never scenario-only", () => {
+  it("a held add of anything but a gift is never scenario-only", () => {
     const add = held("add", "expense", "scn-exp", { id: "scn-exp", name: "Boat" });
     const p = partitionBaseSavableMutations([add], new Set(["scn-exp"]));
     expect(keys(p.savable)).toEqual([mutationKey(add)]);
@@ -728,6 +728,23 @@ describe("partitionBaseSavableMutations — held editor changes", () => {
     const p = partitionBaseSavableMutations([series, oneTime]);
     expect(keys(p.savable)).toEqual([mutationKey(oneTime)]);
     expect(p.heldGiftSeries).toEqual([mutationKey(series)]);
+    expect(p.heldScenarioOnly).toEqual([]);
+  });
+
+  // A gift has no `edit` op: editing one saves an add on its own id.
+  it("a held edit (an add) and a held remove of a scenario-only one-time gift are held back", () => {
+    const edit = held("add", "gift", "scn-gift", { id: "scn-gift", kind: "cash-once", year: 2030, amount: 2 });
+    const remove = held("remove", "gift", "scn-gift-2", null);
+    const p = partitionBaseSavableMutations([edit, remove, control], new Set(["scn-gift", "scn-gift-2"]));
+    expect(keys(p.savable)).toEqual([mutationKey(control)]);
+    expect(p.heldScenarioOnly).toEqual([mutationKey(edit), mutationKey(remove)]);
+  });
+
+  it("a held add of a brand-new gift, and a held edit of a base gift, stay savable", () => {
+    const fresh = held("add", "gift", "new-gift", { id: "new-gift", kind: "cash-once", year: 2030, amount: 1 });
+    const baseEdit = held("add", "gift", "base-gift", { id: "base-gift", kind: "cash-once", year: 2031, amount: 9 });
+    const p = partitionBaseSavableMutations([fresh, baseEdit], new Set(["scn-gift"]));
+    expect(keys(p.savable)).toEqual([mutationKey(fresh), mutationKey(baseEdit)]);
     expect(p.heldScenarioOnly).toEqual([]);
   });
 

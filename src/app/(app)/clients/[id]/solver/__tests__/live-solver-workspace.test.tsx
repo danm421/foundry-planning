@@ -895,6 +895,53 @@ describe("LiveSolverWorkspace — save to base facts", () => {
       "Changes to items only this scenario has can't be saved to base facts, so they stay pending. Use Update scenario to keep them.",
     );
   });
+
+  it("keeps the scenario's own gifts pending and still saves an edit of a base gift", async () => {
+    const BASE_GIFT = "00000000-0000-4000-8000-0000000000d1";
+    const SCENARIO_GIFT = "00000000-0000-4000-8000-0000000000d2";
+    const SCENARIO_SERIES = "00000000-0000-4000-8000-0000000000d3";
+    const cash = (id: string) => ({ id, year: 2030, amount: 10_000, grantor: "client", useCrummeyPowers: false });
+    const heldGift = (op: "add" | "remove", id: string) => ({
+      kind: "held-change",
+      op,
+      targetKind: "gift",
+      targetId: id,
+      payload:
+        op === "add"
+          ? { id, kind: "cash-once", year: 2030, amount: 12_000, grantor: "client", recipient: { kind: "family_member", id: "fm-1" }, crummey: false }
+          : null,
+      saveId: SAVE_ID,
+    });
+    const { confirm, posted } = await saveToBaseWith(
+      [
+        { kind: "account-upsert", id: UNRELATED_ACCOUNT.id, value: UNRELATED_ACCOUNT },
+        heldGift("add", BASE_GIFT), // a gift's edit is an add on its own id
+        heldGift("remove", SCENARIO_GIFT),
+        heldGift("remove", SCENARIO_SERIES),
+      ],
+      {
+        initialSource: "scn-1",
+        baseClientData: { ...(baseProps.baseClientData as object), gifts: [cash(BASE_GIFT)] } as never,
+        initialSourceClientData: {
+          ...(baseProps.initialSourceClientData as object),
+          gifts: [cash(BASE_GIFT), cash(SCENARIO_GIFT)],
+        } as never,
+        // The editors read the scenario's own gift_series partition (fresh ids).
+        baseGifts: [
+          {
+            id: SCENARIO_SERIES, kind: "series", startYear: 2027, endYear: 2031, annualAmount: 19_000,
+            amountMode: "fixed", inflationAdjust: false, grantor: "client",
+            recipient: { kind: "family_member", id: "fm-1" }, crummey: false,
+          },
+        ] as never,
+        changesPanel: { scenarioId: "scn-1", scenarioName: "Retire at 62", changes: [], toggleGroups: [], cascadeWarnings: [], targetNames: {} } as never,
+      },
+    );
+    expect(posted).toEqual([`account-upsert:${UNRELATED_ACCOUNT.id}`, `held-change:${BASE_GIFT}`]);
+    expect(confirm).toContain(
+      "Changes to items only this scenario has can't be saved to base facts, so they stay pending. Use Update scenario to keep them.",
+    );
+  });
 });
 
 describe("LiveSolverWorkspace — editing-surface tabs", () => {

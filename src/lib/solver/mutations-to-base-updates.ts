@@ -166,7 +166,8 @@ export interface BaseSavablePartition {
  * `from` side does once the retitle is folded in).
  *
  * `scenarioOnlyIds` are the items only the selected scenario has (empty on
- * base). A held edit or remove of one has no base row to write, so it stays.
+ * base). A held edit or remove of one has no base row to write, so it stays. A
+ * held add is new, except a gift's: a gift has no `edit` op, so its edit is an add.
  */
 export function partitionBaseSavableMutations(
   mutations: readonly SolverMutation[],
@@ -229,7 +230,10 @@ export function partitionBaseSavableMutations(
     if (heldByTrustRemoval) note(heldDissolveEntityIds, ref);
     if (heldByCharityRemoval) note(heldRemovedCharityIds, ref);
 
-    const scenarioOnly = m.kind === "held-change" && m.op !== "add" && scenarioOnlyIds.has(m.targetId);
+    const scenarioOnly =
+      m.kind === "held-change" &&
+      (m.op !== "add" || m.targetKind === "gift") &&
+      scenarioOnlyIds.has(m.targetId);
     if (scenarioOnly) heldScenarioOnly.push(mutationKey(m));
     const series = m.kind === "held-change" && isHeldSeriesAdd(m);
     if (series) heldGiftSeries.push(mutationKey(m));

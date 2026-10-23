@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildClientData } from "@/engine/__tests__/fixtures";
 import type { ClientData, Expense } from "@/engine/types";
 import { applyHeldChanges } from "../held-changes";
-import { foldControlsIntoHeldAdds } from "../held-save";
+import { foldControlsIntoHeldAdds, scenarioOnlyItemIds } from "../held-save";
 import type { HeldChangeMutation, SolverMutation } from "../types";
 
 const CLIENT = "00000000-0000-4000-8000-0000000000c1";
@@ -70,5 +70,32 @@ describe("foldControlsIntoHeldAdds", () => {
     const { held, controls } = foldControlsIntoHeldAdds({} as ClientData, CLIENT, [edit, control]);
     expect(held.map((c) => c.opType)).toEqual(["edit"]);
     expect(controls).toEqual([control]);
+  });
+});
+
+describe("scenarioOnlyItemIds", () => {
+  it("names the scenario's non-gift adds and the gifts base doesn't carry", () => {
+    const base = buildClientData({
+      gifts: [{ id: "g-cash", year: 2030, amount: 1, grantor: "client", useCrummeyPowers: false }],
+      // An asset gift lives in base only as events; a series and a QCD by their own ids.
+      giftEvents: [
+        { kind: "asset", year: 2030, accountId: "a", percent: 0.1, grantor: "client", sourceGiftId: "g-asset" },
+        { kind: "cash", year: 2030, amount: 1, grantor: "client", useCrummeyPowers: false, seriesId: "s-base" },
+      ],
+      qcds: [{ year: 2030, accountId: "ira", charityId: "eb", mode: "fixed", amount: 1, sourceGiftId: "g-qcd" }],
+    } as Partial<ClientData>);
+    const source = { ...base, gifts: [...(base.gifts ?? []), { id: "g-scn", year: 2031, amount: 2, grantor: "client", useCrummeyPowers: false }] } as ClientData;
+    const ids = scenarioOnlyItemIds({
+      changes: [
+        { opType: "add", targetKind: "expense", targetId: "e-scn" },
+        { opType: "add", targetKind: "gift", targetId: "g-cash" },
+        { opType: "edit", targetKind: "expense", targetId: "exp-living" },
+      ],
+      sourceTree: source,
+      // The editors' drafts: base's one-time gifts plus the scenario's own series partition.
+      sourceGifts: [{ id: "g-cash" }, { id: "g-asset" }, { id: "g-qcd" }, { id: "s-scn" }],
+      baseTree: base,
+    });
+    expect([...ids].sort()).toEqual(["e-scn", "g-scn", "s-scn"]);
   });
 });

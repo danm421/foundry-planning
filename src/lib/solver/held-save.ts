@@ -44,3 +44,39 @@ export function foldControlsIntoHeldAdds(
   }
   return { held, controls: kept };
 }
+
+/** Every gift id a plan carries: a cash gift in `gifts`; an asset, business or
+ *  recurring gift only through its events (`sourceGiftId` / `seriesId`); a QCD
+ *  through `qcds`. */
+function planGiftIds(tree: ClientData): Set<string> {
+  const ids = new Set((tree.gifts ?? []).map((g) => g.id));
+  for (const e of [...(tree.giftEvents ?? []), ...(tree.qcds ?? [])]) {
+    const ref = e as { sourceGiftId?: string; seriesId?: string };
+    if (ref.sourceGiftId) ids.add(ref.sourceGiftId);
+    if (ref.seriesId) ids.add(ref.seriesId);
+  }
+  return ids;
+}
+
+/**
+ * Items only the selected scenario has, which base has no row for: its adds,
+ * and its gifts that base doesn't carry. A gift's add is also how a base gift
+ * is edited, so gifts are matched by id against both plans instead. The
+ * scenario's gifts are its tree's plus the editors' drafts (`sourceGifts`),
+ * which read the scenario's own gift_series partition, whose rows have fresh ids.
+ */
+export function scenarioOnlyItemIds(args: {
+  changes: readonly { opType: string; targetKind: string; targetId: string }[];
+  sourceTree: ClientData;
+  sourceGifts: readonly { id: string }[];
+  baseTree: ClientData;
+}): Set<string> {
+  const inBase = planGiftIds(args.baseTree);
+  const scenarioGifts = [...(args.sourceTree.gifts ?? []), ...args.sourceGifts].map((g) => g.id);
+  return new Set([
+    ...args.changes
+      .filter((c) => c.opType === "add" && c.targetKind !== "gift")
+      .map((c) => c.targetId),
+    ...scenarioGifts.filter((id) => !inBase.has(id)),
+  ]);
+}

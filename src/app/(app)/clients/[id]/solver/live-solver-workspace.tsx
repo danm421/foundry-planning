@@ -13,6 +13,7 @@ import type { QuickAddType } from "@/lib/solver/quick-add-account";
 import { buildAdditionalSavingsAccount } from "@/lib/solver/quick-add-account";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { applyHeldChanges } from "@/lib/solver/held-changes";
+import { scenarioOnlyItemIds } from "@/lib/solver/held-save";
 import { effectiveMutations, removeWithDependants, switchGroupOf } from "@/lib/solver/switch-groups";
 import { resolveEffectiveToggleState } from "@/engine/scenario/applyChanges";
 import { focusRowId, resolveChangeEditor } from "@/lib/scenario/change-editor-target";
@@ -315,19 +316,19 @@ export function LiveSolverWorkspace({
   // the post-save retain, and the button's enabled state. They used to call the
   // per-kind predicate independently, which is how a sale's owner flip could be
   // posted to the client's real record AND kept on screen as pending.
-  // Items only the selected scenario has, which base has no row for: its adds
-  // (a gift add can be a base gift's edit, so gifts are left out), and its
-  // recurring gifts, which live in its own gift_series partition under fresh ids
-  // (`baseGifts` reads that partition; the tree carries base's series). Empty on base.
-  const scenarioOnlyIds = useMemo(() => {
-    if (initialSource === "base") return new Set<string>();
-    return new Set([
-      ...(changesPanel?.changes ?? [])
-        .filter((c) => c.opType === "add" && c.targetKind !== "gift")
-        .map((c) => c.targetId),
-      ...baseGifts.filter((g) => g.kind === "series").map((g) => g.id),
-    ]);
-  }, [initialSource, changesPanel, baseGifts]);
+  // Items only the selected scenario has, which base has no row for. Empty on base.
+  const scenarioOnlyIds = useMemo(
+    () =>
+      initialSource === "base"
+        ? new Set<string>()
+        : scenarioOnlyItemIds({
+            changes: changesPanel?.changes ?? [],
+            sourceTree: initialSourceClientData,
+            sourceGifts: baseGifts,
+            baseTree: baseClientData,
+          }),
+    [initialSource, changesPanel, initialSourceClientData, baseGifts, baseClientData],
+  );
   const baseSavable = useMemo(
     () => partitionBaseSavableMutations(mutations, scenarioOnlyIds),
     [mutations, scenarioOnlyIds],
