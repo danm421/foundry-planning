@@ -106,7 +106,6 @@ const UNSAVED_CONTROL: UnsavedChanges = {
   entries: [{ kind: "retirement-age", person: "client", age: 62 }],
   offGroups: new Set(),
   sourceTree: buildClientData(),
-  heldTree: buildClientData(),
   workingTree: buildClientData(),
   setGroupOn: vi.fn(),
   discard: vi.fn(),

@@ -25,20 +25,13 @@ export interface MutationNames {
 export function mutationNames(source: ClientData, working: ClientData): MutationNames {
   const rows = new Map<string, string>();
   for (const t of [source, working]) {
-    for (const r of [
-      ...t.accounts,
-      ...t.incomes,
-      ...t.expenses,
-      ...t.liabilities,
-      ...(t.entities ?? []),
-      ...(t.rothConversions ?? []),
-      ...(t.assetTransactions ?? []),
-      ...(t.reinvestments ?? []),
-      ...(t.relocations ?? []),
-      ...(t.externalBeneficiaries ?? []),
-      ...(t.notesReceivable ?? []),
-    ]) {
-      if (r.name) rows.set(r.id, r.name);
+    for (const [kind, field] of Object.entries(TARGET_KIND_TO_FIELD)) {
+      if (!field || kind === "savings_rule") continue;
+      const list = t[field] as { id: string; name?: string }[] | undefined;
+      if (!Array.isArray(list)) continue;
+      for (const r of list) {
+        if (r.name) rows.set(r.id, r.name);
+      }
     }
   }
   for (const r of [...source.savingsRules, ...working.savingsRules]) {
@@ -48,16 +41,9 @@ export function mutationNames(source: ClientData, working: ClientData): Mutation
   return { client: working.client, rows };
 }
 
-/** The name `tree` holds for a held entry's target, or undefined. */
-export function heldNameOf(m: HeldChangeMutation, tree: ClientData): string | undefined {
-  const field = TARGET_KIND_TO_FIELD[m.targetKind];
-  const rows = (field && (tree[field] as { id: string; name?: string }[] | undefined)) || [];
-  return rows.find((r) => r.id === m.targetId)?.name;
-}
-
-/** The one line a held change reads as, on the Changes tab and in the save dialog.
- *  `name` is what the plan calls the target; a switched-off add falls back to its own payload. */
-export function heldChangeLine(m: HeldChangeMutation, name: string | undefined): string {
+/** What a held entry's target is called: the plan's name for it, then (a switched-off
+ *  add is in no tree) the add payload's own name, then the generic label. */
+export function heldLabel(m: HeldChangeMutation, rows: ReadonlyMap<string, string>): string {
   const change: ScenarioChange = {
     id: "held",
     scenarioId: "held",
@@ -68,7 +54,12 @@ export function heldChangeLine(m: HeldChangeMutation, name: string | undefined):
     toggleGroupId: null,
     orderIndex: 0,
   };
-  const label = labelFor(change, name, null);
+  return labelFor(change, rows.get(m.targetId), null);
+}
+
+/** The one line a held change reads as, on the Changes tab and in the save dialog. */
+export function heldChangeLine(m: HeldChangeMutation, rows: ReadonlyMap<string, string>): string {
+  const label = heldLabel(m, rows);
   if (m.op === "add") return `Add · ${label}`;
   if (m.op === "remove") return `Remove · ${label}`;
   return `${label} · ${describeEditFields(m.targetKind, m.payload)}`;
@@ -130,7 +121,7 @@ export function describeSolverMutation(m: SolverMutation, names: MutationNames):
 
   switch (m.kind) {
     case "held-change":
-      return heldChangeLine(m, names.rows.get(m.targetId));
+      return heldChangeLine(m, names.rows);
     case "retirement-age":
       return `Retirement age (${who(m.person)}) → ${m.age}${m.month ? ` (month ${m.month})` : ""}`;
     case "living-expense-scale":

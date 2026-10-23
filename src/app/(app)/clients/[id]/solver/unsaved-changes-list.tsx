@@ -11,7 +11,7 @@ import { resolveChangeEditor } from "@/lib/scenario/change-editor-target";
 import { isHeldChange } from "@/lib/solver/held-changes";
 import { isEstateMutation, offEntryKeys, switchGroupOf } from "@/lib/solver/switch-groups";
 import { mutationKey, type SolverMutation, type SolverMutationKey } from "@/lib/solver/types";
-import { describeSolverMutation, heldChangeLine, heldNameOf, mutationNames } from "./describe-solver-mutation";
+import { describeSolverMutation, heldChangeLine, heldLabel, mutationNames } from "./describe-solver-mutation";
 import type { EditorHostTarget } from "./solver-change-editor";
 import type { InputTab } from "./report-tab-link";
 
@@ -21,9 +21,7 @@ export interface UnsavedChangesListProps {
   offGroups: ReadonlySet<string>;
   /** Names for edits and removes. */
   sourceTree: ClientData;
-  /** Names for held adds. */
-  heldTree: ClientData;
-  /** For mutationNames. */
+  /** For mutationNames: the working copy's names win. */
   workingTree: ClientData;
   canEdit: boolean;
   onSetGroupOn: (groupId: string, on: boolean) => void;
@@ -59,7 +57,6 @@ export function UnsavedChangesList({
   all,
   offGroups,
   sourceTree,
-  heldTree,
   workingTree,
   canEdit,
   onSetGroupOn,
@@ -80,8 +77,8 @@ export function UnsavedChangesList({
   }, [all, sourceTree]);
 
   function heldItem(m: Extract<SolverMutation, { kind: "held-change" }>): Item {
-    const name = heldNameOf(m, m.op === "add" ? heldTree : sourceTree);
-    const title = heldChangeLine(m, name);
+    const name = heldLabel(m, names.rows);
+    const title = heldChangeLine(m, names.rows);
     let open: (() => void) | null = null;
     if (canEdit && m.op !== "remove") {
       const target = resolveChangeEditor({
@@ -91,18 +88,18 @@ export function UnsavedChangesList({
         payload: m.payload,
         enabled: true,
       });
-      if (target?.surface === "details") open = () => onOpenHeld(target, name ?? title);
+      if (target?.surface === "details") open = () => onOpenHeld(target, name);
       else if (target?.surface === "solver-tab") open = () => onOpenSolverTab(target.tab);
     }
     return { entry: m, title, open };
   }
 
-  function row(item: Item, switchTitle: string, on: boolean, groupId: string, discardKeys: SolverMutationKey[], testId: string, sub = false) {
+  function row(item: Item, switchTitle: string, on: boolean, dimmed: boolean, groupId: string, discardKeys: SolverMutationKey[], testId: string, sub = false) {
     return (
       <div
         key={testId}
         data-testid={testId}
-        className={`flex items-start gap-2 py-2 pr-4 ${sub ? "pl-10" : "pl-4"} ${on ? "" : "opacity-60"}`}
+        className={`flex items-start gap-2 py-2 pr-4 ${sub ? "pl-10" : "pl-4"} ${dimmed ? "opacity-60" : ""}`}
       >
         {!sub && (
           <ToggleSwitch on={on} onChange={(next) => onSetGroupOn(groupId, next)} label={`Include ${switchTitle}`} />
@@ -128,16 +125,19 @@ export function UnsavedChangesList({
   return (
     <div className="mb-4 divide-y divide-hair rounded-lg border border-hair bg-card">
       {groups.map(([groupId, entries]) => {
-        const on = !entries.every((m) => off.has(mutationKey(m)));
+        // The switch shows this row's own group; dimming shows the effective state,
+        // which also covers entries that name something a switched-off item creates.
+        const on = !offGroups.has(groupId);
+        const dimmed = entries.every((m) => off.has(mutationKey(m)));
         const first = entries[0];
 
         if (isHeldChange(first)) {
           const items = entries.filter(isHeldChange).map(heldItem);
           if (items.length === 1) {
-            return row(items[0], items[0].title, on, groupId, [mutationKey(first)], `unsaved-row-${groupId}`);
+            return row(items[0], items[0].title, on, dimmed, groupId, [mutationKey(first)], `unsaved-row-${groupId}`);
           }
           return (
-            <div key={groupId} data-testid={`unsaved-row-${groupId}`} className={on ? "" : "opacity-60"}>
+            <div key={groupId} data-testid={`unsaved-row-${groupId}`} className={dimmed ? "opacity-60" : ""}>
               <div className="flex items-start gap-2 px-4 py-2">
                 <ToggleSwitch
                   on={on}
@@ -148,7 +148,7 @@ export function UnsavedChangesList({
               </div>
               {items.map((item) => {
                 const key = mutationKey(item.entry);
-                return row(item, item.title, on, groupId, [key], `unsaved-item-${key}`, true);
+                return row(item, item.title, on, dimmed, groupId, [key], `unsaved-item-${key}`, true);
               })}
             </div>
           );
@@ -161,7 +161,7 @@ export function UnsavedChangesList({
           title,
           open: canEdit ? () => onOpenSolverTab(solverTabOf(first, all)) : null,
         };
-        return row(item, title, on, groupId, entries.map(mutationKey), `unsaved-row-${groupId}`);
+        return row(item, title, on, dimmed, groupId, entries.map(mutationKey), `unsaved-row-${groupId}`);
       })}
     </div>
   );

@@ -54,8 +54,6 @@ export interface UnsavedChanges {
   offGroups: ReadonlySet<string>;
   /** Names for edits and removes: the plan the Solver started from. */
   sourceTree: ClientData;
-  /** Names for held adds: the source plan with the switched-on held changes applied. */
-  heldTree: ClientData;
   /** The held tree with the Solver's controls applied. */
   workingTree: ClientData;
   setGroupOn: (groupId: string, on: boolean) => void;
@@ -208,7 +206,6 @@ export function SolverChangesTab({
               all={[...unsaved.entries]}
               offGroups={unsaved.offGroups}
               sourceTree={unsaved.sourceTree}
-              heldTree={unsaved.heldTree}
               workingTree={unsaved.workingTree}
               canEdit={canEdit}
               onSetGroupOn={unsaved.setGroupOn}

@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { buildClientData } from "@/engine/__tests__/fixtures";
 import type { ClientData } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
+import { describeSolverMutation, mutationNames } from "../describe-solver-mutation";
 import { UnsavedChangesList, type UnsavedChangesListProps } from "../unsaved-changes-list";
 
 const base = buildClientData();
@@ -44,7 +45,6 @@ function setup(all: SolverMutation[], over: Partial<UnsavedChangesListProps> = {
     all,
     offGroups: new Set(),
     sourceTree: source,
-    heldTree,
     workingTree: heldTree,
     canEdit: true,
     onSetGroupOn: vi.fn(),
@@ -73,7 +73,7 @@ describe("UnsavedChangesList", () => {
   });
 
   it("names a switched-off held add from its own payload", () => {
-    setup([heldAdd], { heldTree: source, offGroups: new Set(["save:s2"]) });
+    setup([heldAdd], { workingTree: source, offGroups: new Set(["save:s2"]) });
     expect(screen.getByText("Add · Roth IRA")).toBeInTheDocument();
   });
 
@@ -123,5 +123,43 @@ describe("UnsavedChangesList", () => {
   it("a view-only advisor cannot reopen titles", () => {
     setup([heldEdit], { canEdit: false });
     expect(screen.queryByRole("button", { name: /^Groceries ·/ })).not.toBeInTheDocument();
+  });
+
+  it("a dependant of a switched-off add reads on but dimmed, and its own switch turns it off", () => {
+    const rule: SolverMutation = {
+      kind: "savings-rule-upsert",
+      id: "rule-new",
+      value: { ...base.savingsRules[0], id: "rule-new", accountId: "acct-new-roth" },
+    };
+    const props = setup([heldAdd, rule], { workingTree: source, offGroups: new Set(["save:s2"]) });
+    const ruleRow = screen.getByText(/^Savings/).closest("[data-testid]")!;
+    expect(ruleRow.className).toContain("opacity-60");
+    const sw = ruleRow.querySelector("button[aria-pressed]")!;
+    expect(sw.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(sw);
+    expect(props.onSetGroupOn).toHaveBeenCalledWith("key:savings-rule-upsert:rule-new", false);
+  });
+
+  it("names held rows exactly as the save dialog does (savings rule, renamed item)", () => {
+    const rule = base.savingsRules[0];
+    const ruleEdit: SolverMutation = {
+      kind: "held-change",
+      op: "edit",
+      targetKind: "savings_rule",
+      targetId: rule.id,
+      payload: { annualAmount: { from: 1000, to: 2000 } },
+      saveId: "s4",
+    };
+    const renamed: ClientData = {
+      ...source,
+      expenses: source.expenses.map((e) => (e.id === "exp-groceries" ? { ...e, name: "Groceries Plus" } : e)),
+    };
+    const all = [ruleEdit, heldEdit];
+    setup(all, { workingTree: renamed });
+    const names = mutationNames(source, renamed);
+    for (const m of all) {
+      expect(screen.getByText(describeSolverMutation(m, names))).toBeInTheDocument();
+    }
+    expect(screen.getByText(/^Groceries Plus · /)).toBeInTheDocument();
   });
 });

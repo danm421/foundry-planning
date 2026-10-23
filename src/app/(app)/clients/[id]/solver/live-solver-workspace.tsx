@@ -1907,7 +1907,6 @@ export function LiveSolverWorkspace({
                 entries: allMutations,
                 offGroups,
                 sourceTree: initialSourceClientData,
-                heldTree,
                 workingTree,
                 setGroupOn,
                 discard,
