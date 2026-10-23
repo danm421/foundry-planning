@@ -21,7 +21,8 @@ const DEBOUNCE_MS = 600;
  * settings can never clobber each other's columns, and a half-typed value can
  * be withheld by passing `undefined` rather than writing a NaN.
  *
- * Inside a scenario (`?scenario=`) the same patch is validated here, translated
+ * Inside a scenario (`?scenario=`), or in a Solver editor that holds its edits
+ * (`scenarioActive`), the same patch is validated here, translated
  * to engine keys, and written as scenario changes instead — the PUT route only
  * ever writes the base case. `current` supplies the prior-gift pair the
  * translation needs because the form sends one side at a time.

@@ -37,8 +37,9 @@
 // held add are folded into its insert (`foldControlsIntoHeldAdds`). The body is
 // the only source of these rows, so promote's tenant guards run on them plus the
 // rows' own FK columns (`collectDirectRefs`). Refused before any write: a
-// recurring gift (no `gift_series` write here), and a held change naming a row a
-// control creates (that row only exists once the control writes run).
+// recurring-gift upsert (no `gift_series` write here; a gift remove is fine),
+// and a held change naming a row a control creates (that row only exists once
+// the control writes run).
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";

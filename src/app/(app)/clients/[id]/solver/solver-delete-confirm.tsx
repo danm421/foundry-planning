@@ -1,14 +1,14 @@
 "use client";
 
-// Asks before the Changes tab removes a plan detail from the scenario. The
+// Asks before the Changes tab removes a plan detail from the Solver's plan. The
 // Details view skips its own delete dialog in focus mode, so for an account
 // (and the business and life-insurance policy that are accounts too) this is
-// the only place the cascade warning appears. What a scenario remove drops is
+// the only place the cascade warning appears. What a remove drops is
 // what the engine's `resolveCascades` drops — transfers, Roth conversions whose
 // destination or every source is gone, savings rules, stock-option plans — so
-// the list is computed from that on a COPY of the scenario's persisted plan.
-// The base-table `/dependents` route would miss a scenario-added account and a
-// scenario-added transfer, and it keys Roth conversions by destination only.
+// the list is computed from that on a COPY of the Solver's plan (its held
+// changes included). The base-table `/dependents` route would miss an added account and an
+// added transfer, and it keys Roth conversions by destination only.
 // Some cascades keep the linked row and clear only its link (`KEPT_KINDS`);
 // those are listed apart and never counted as removed.
 //

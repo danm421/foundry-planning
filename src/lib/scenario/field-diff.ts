@@ -32,7 +32,6 @@ export function stableStringify(value: unknown): string {
   return JSON.stringify(canonicalize(value));
 }
 
-
 /**
  * Build a field-level diff map, comparing desiredFields against baseEntity.
  * Skips fields whose desired value already matches the base. Numeric strings

@@ -287,6 +287,8 @@ describe("GrowthInflationForm — inside a scenario", () => {
 });
 
 describe("GrowthInflationForm — hold mode", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   it("growth reset hidden", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
@@ -299,6 +301,5 @@ describe("GrowthInflationForm — hold mode", () => {
     );
     expect(screen.queryByRole("button", { name: /reset all accounts/i })).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
-    vi.unstubAllGlobals();
   });
 });

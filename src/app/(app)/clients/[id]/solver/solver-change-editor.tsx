@@ -128,7 +128,7 @@ export function SolverChangeEditor({
   // labels. Told "base" while the URL names a scenario (the base case's own id,
   // typed by hand), they would label it wrongly: open nothing.
   const urlScenarioId = useScenarioState(clientId).scenarioId;
-  const writesElsewhere = source === "base" && urlScenarioId !== null;
+  const urlScenarioMismatch = source === "base" && urlScenarioId !== null;
   const switchedOff = focusId !== null && host.switchedOffIds.has(focusId);
   const [state, setState] = useState<HostState>({ status: "loading" });
   const deleting = focus.intent === "delete";
@@ -136,7 +136,7 @@ export function SolverChangeEditor({
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (writesElsewhere || switchedOff) return;
+    if (urlScenarioMismatch || switchedOff) return;
     let cancelled = false;
     startTransition(async () => {
       try {
@@ -155,7 +155,7 @@ export function SolverChangeEditor({
     return () => {
       cancelled = true;
     };
-  }, [clientId, source, mutations, page, focusId, attempt, writesElsewhere, switchedOff]);
+  }, [clientId, source, mutations, page, focusId, attempt, urlScenarioMismatch, switchedOff]);
 
   function onFocusClose(outcome?: FocusCloseOutcome) {
     if (outcome === undefined) {
@@ -181,7 +181,7 @@ export function SolverChangeEditor({
         </HostStrip>
       );
     }
-    if (writesElsewhere) {
+    if (urlScenarioMismatch) {
       return (
         <HostStrip role="alert" onDismiss={onDone}>
           <span className="text-crit">Couldn&apos;t open this editor.</span>

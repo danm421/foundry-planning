@@ -1,7 +1,7 @@
 "use client";
 
 // `useScenarioWriter` is the one hook every editable form on the client detail
-// page calls. It papers over the two write modes:
+// page calls. It papers over the write modes (plus a hold mode, below):
 //
 //   1. Base mode (no `?scenario=` in URL) — the legacy per-entity routes
 //      (`POST /api/clients/[id]/incomes`, `PATCH /...`/income/[iid]`, etc.) get
@@ -15,9 +15,13 @@
 //      `targetId|entity|desiredFields`). The route's writers store a
 //      scenario_change row instead of mutating base data.
 //
+// Hold mode — inside the Solver, an editor host provides `useHeldEdits`; then
+// `submit` hands the edits to the host to hold as unsaved changes and nothing
+// is written until a Solver save button is pressed.
+//
 // `submitDirect` is the third path, for tables that are scenario-PARTITIONED
 // rather than overlaid (`gift_series` today): the per-entity route is the
-// scenario-correct write in BOTH modes, so there is no change row at all.
+// scenario-correct write in BOTH write modes, so there is no change row at all.
 //
 // `submit` takes ONE edit or an ORDERED BATCH. A batch exists because a
 // scenario_change row targets exactly one `targetKind`, so a single logical
@@ -79,7 +83,8 @@ export interface UseScenarioWriter {
     baseFallback: BaseFallback,
   ) => Promise<Response>;
   /**
-   * Issue the per-entity request in BOTH modes, with no `scenario_changes` row.
+   * Issue the per-entity request in BOTH write modes, with no `scenario_changes`
+   * row. In hold mode it is refused (409) — those tables can't be held.
    *
    * For the tables that are scenario-PARTITIONED rather than overlaid.
    * `gift_series` is the one today: the row carries a real `scenario_id`, its
@@ -93,10 +98,9 @@ export interface UseScenarioWriter {
    * surface that moves onto it keeps its base-mode behaviour unchanged.
    */
   submitDirect: (request: BaseFallback) => Promise<Response>;
-  /** True when `?scenario=<sid>` is set, i.e. submits go through the unified route. */
+  /** True when `?scenario=<sid>` is set or edits are held (hold mode), i.e. submits don't hit the per-entity routes. */
   scenarioActive: boolean;
 }
-
 
 export function useScenarioWriter(clientId: string): UseScenarioWriter {
   const { scenarioId } = useScenarioState(clientId);

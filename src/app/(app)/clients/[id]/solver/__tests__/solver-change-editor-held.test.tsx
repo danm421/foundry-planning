@@ -4,7 +4,7 @@
  * with the host's source and switched-on list, hands saves to `host.hold`, and
  * never touches the network.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { SolverMutation } from "@/lib/solver/types";
 
@@ -79,6 +79,8 @@ beforeEach(() => {
 });
 
 describe("SolverChangeEditor — hold mode", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   it("loads the view with the host's source and mutations", async () => {
     renderHost(host());
     await screen.findByRole("button", { name: "Save held" });
@@ -105,7 +107,6 @@ describe("SolverChangeEditor — hold mode", () => {
       { targetKind: "expense", op: "edit", targetId: "e1", desiredFields: { annualAmount: 12100 } },
     ]);
     expect(fetchMock).not.toHaveBeenCalled();
-    vi.unstubAllGlobals();
   });
 
   it("an item in a switched-off saved group shows the message and loads nothing", async () => {

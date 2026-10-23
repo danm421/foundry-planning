@@ -55,7 +55,7 @@ describe("switch-groups", () => {
 
   it("ss claim age and its mode share a group", () => {
     const age: SolverMutation = { kind: "ss-claim-age", person: "client", age: 70 };
-    const mode: SolverMutation = { kind: "ss-claim-age-mode", person: "client", mode: "years" } as SolverMutation;
+    const mode: SolverMutation = { kind: "ss-claim-age-mode", person: "client", mode: "years" };
     const spouse: SolverMutation = { kind: "ss-claim-age", person: "spouse", age: 68 };
     expect(switchGroupOf(age, [age, mode, spouse], source)).toBe("ss-claim:client");
     expect(switchGroupOf(mode, [age, mode, spouse], source)).toBe("ss-claim:client");

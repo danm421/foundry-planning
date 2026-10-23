@@ -164,7 +164,6 @@ describe("BusinessFlowsTab", () => {
     });
   });
 
-
   it("business flow grid is read-only in hold mode", async () => {
     const ref: { current: ScheduleSaveBinding | null } = { current: null };
     render(
