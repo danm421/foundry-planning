@@ -12,13 +12,12 @@
 // Some cascades keep the linked row and clear only its link (`KEPT_KINDS`);
 // those are listed apart and never counted as removed.
 //
-// On the base case the delete removes the base row itself, so an account asks
-// with the Net Worth page's own confirm (`AccountDeleteDialog`), which lists the
-// rows the database delete takes with it; anything else gets a plain one.
+// Nothing is written: the remove is held in the Solver as an unsaved change, so
+// there is one confirm for the base case and a scenario alike. `tree` is the
+// Solver's tree with held changes applied, so a held add and its dependants show.
 
 import { useMemo } from "react";
 import DialogShell from "@/components/dialog-shell";
-import AccountDeleteDialog from "@/components/account-delete-dialog";
 import type { ClientData } from "@/engine/types";
 import { resolveCascades } from "@/engine/scenario/cascadeResolution";
 import type { CascadeWarning } from "@/engine/scenario/types";
@@ -27,13 +26,11 @@ import { detailType } from "@/lib/scenario/plan-detail-catalog";
 
 export interface SolverDeleteConfirmProps {
   clientId: string;
-  /** The scenario's persisted plan (never the working tree with unsaved levers). */
+  /** The Solver's tree with held changes applied (never the working tree with unsaved levers). */
   tree: ClientData;
   /** Names the dropped rows the way the pickers do (a savings rule has no name of its own). */
   inventory: InventoryItem[];
   item: InventoryItem;
-  /** The scenario the remove lands in, or null on the base case. */
-  scenarioName: string | null;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -45,45 +42,13 @@ const ACCOUNT_BACKED = new Set<InventoryItem["typeKey"]>(["account", "business",
  *  account or debt moves to the top level. */
 const KEPT_KINDS = new Set<CascadeWarning["kind"]>(["equity_destination_cleared", "parent_account_cleared"]);
 
-export function SolverDeleteConfirm({ scenarioName, ...props }: SolverDeleteConfirmProps) {
-  return scenarioName === null ? (
-    <BaseDeleteConfirm {...props} />
-  ) : (
-    <ScenarioDeleteConfirm {...props} scenarioName={scenarioName} />
-  );
-}
-
-function BaseDeleteConfirm({ clientId, item, onConfirm, onCancel }: Omit<SolverDeleteConfirmProps, "scenarioName">) {
-  // Stable across re-renders: the dialog fetches the account's dependents whenever it changes.
-  const account = useMemo(() => ({ id: item.id, name: item.label }), [item.id, item.label]);
-  if (ACCOUNT_BACKED.has(item.typeKey)) {
-    return <AccountDeleteDialog clientId={clientId} account={account} onCancel={onCancel} onConfirm={onConfirm} />;
-  }
-  return (
-    <DialogShell
-      open
-      onOpenChange={(o) => {
-        if (!o) onCancel();
-      }}
-      title={`Delete ${detailType(item.typeKey).label}`}
-      size="sm"
-      destructiveAction={{ label: "Delete", onClick: onConfirm }}
-    >
-      <p className="text-[14px] text-ink-2">
-        {`Delete ${item.label} from the base facts? This changes the client's real plan and can't be undone.`}
-      </p>
-    </DialogShell>
-  );
-}
-
-function ScenarioDeleteConfirm({
+export function SolverDeleteConfirm({
   tree,
   inventory,
   item,
-  scenarioName,
   onConfirm,
   onCancel,
-}: Omit<SolverDeleteConfirmProps, "scenarioName"> & { scenarioName: string }) {
+}: SolverDeleteConfirmProps) {
   const { dropped, kept } = useMemo(() => {
     const warnings = ACCOUNT_BACKED.has(item.typeKey)
       ? resolveCascades(structuredClone(tree), [{ kind: "account", id: item.id, causedByChangeId: item.id }])
@@ -110,7 +75,7 @@ function ScenarioDeleteConfirm({
       destructiveAction={{ label: "Remove", onClick: onConfirm }}
     >
       <p className="text-[14px] text-ink-2">
-        {`Remove ${item.label} from ${scenarioName}? You can switch it back on in the list below.`}
+        {`Remove ${item.label}? Nothing is saved until you press a save button. You can switch it back on under "Not saved yet".`}
       </p>
 
       {dropped.length > 0 && (

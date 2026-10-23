@@ -7,7 +7,7 @@
  * toward "will also remove N linked items".
  */
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { SolverDeleteConfirm } from "../solver-delete-confirm";
 import type { ClientData } from "@/engine/types";
 import type { InventoryItem } from "@/lib/scenario/plan-inventory";
@@ -29,7 +29,6 @@ function renderConfirm(planTree: ClientData, target: InventoryItem, inventory: I
       tree={planTree}
       inventory={inventory}
       item={target}
-      scenarioName="Sell the business"
       onConfirm={vi.fn()}
       onCancel={vi.fn()}
     />,
@@ -80,45 +79,20 @@ describe("SolverDeleteConfirm — removed vs kept linked rows", () => {
   });
 });
 
-describe("SolverDeleteConfirm — the base case", () => {
-  function renderBase(target: InventoryItem) {
+describe("SolverDeleteConfirm — held remove", () => {
+  it("says nothing is saved until a save button, in base and scenario", () => {
+    const target = item({ typeKey: "expense", id: "e-1", label: "Groceries" });
     const onConfirm = vi.fn();
     render(
-      <SolverDeleteConfirm
-        clientId="c1"
-        tree={tree({})}
-        inventory={[target]}
-        item={target}
-        scenarioName={null}
-        onConfirm={onConfirm}
-        onCancel={vi.fn()}
-      />,
+      <SolverDeleteConfirm clientId="c1" tree={tree({})} inventory={[target]} item={target} onConfirm={onConfirm} onCancel={vi.fn()} />,
     );
-    return onConfirm;
-  }
-
-  it("an account asks with the Net Worth page's confirm, which lists the database cascade", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ transfers: [{ id: "t-1", name: "Owner draw" }], rothConversions: [] }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const onConfirm = renderBase(item({ typeKey: "account", id: "a-1", label: "Joint brokerage" }));
-
-    expect(screen.getByRole("dialog", { name: "Delete Account" })).toBeInTheDocument();
-    expect(await screen.findByText("Owner draw")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith("/api/clients/c1/accounts/a-1/dependents");
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
-    vi.unstubAllGlobals();
-  });
-
-  it("anything else says it deletes from the base facts", () => {
-    const onConfirm = renderBase(item({ typeKey: "expense", id: "e-1", label: "Groceries" }));
+    expect(screen.getByRole("dialog", { name: "Remove Expense" })).toBeInTheDocument();
     expect(
-      screen.getByText("Delete Groceries from the base facts? This changes the client's real plan and can't be undone."),
+      screen.getByText(
+        'Remove Groceries? Nothing is saved until you press a save button. You can switch it back on under "Not saved yet".',
+      ),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 });

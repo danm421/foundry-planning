@@ -16,8 +16,15 @@ vi.mock("next/navigation", () => ({
 const { loadMock } = vi.hoisted(() => ({ loadMock: vi.fn() }));
 vi.mock("../change-editor-actions", () => ({ loadChangeEditorProps: loadMock }));
 
-import { SolverChangeEditor } from "../solver-change-editor";
+import { SolverChangeEditor, type HeldEditorHost } from "../solver-change-editor";
 import { ClientAccessProvider } from "@/components/client-access-provider";
+
+const HOST: HeldEditorHost = {
+  source: "scn-1",
+  mutations: [],
+  hold: vi.fn(),
+  switchedOffIds: new Set<string>(),
+};
 
 const CLIENT: ClientInfo = {
   firstName: "Cooper",
@@ -56,7 +63,7 @@ describe("SolverChangeEditor — disability focus", () => {
       <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
         <SolverChangeEditor
           clientId="c1"
-          scenarioId="scn-1"
+          host={HOST}
           label="Disability policy"
           onDone={vi.fn()}
           target={{
@@ -79,7 +86,7 @@ describe("SolverChangeEditor — disability focus", () => {
       <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
         <SolverChangeEditor
           clientId="c1"
-          scenarioId="scn-1"
+          host={HOST}
           label="Disability policy"
           onDone={vi.fn()}
           target={{

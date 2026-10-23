@@ -1,15 +1,15 @@
 "use client";
 
-// Opens one scenario change's Details-page editor inside the Solver's Changes
-// tab. Loads the page's view props through the `loadChangeEditorProps` server
+// Opens one Details-page editor inside the Solver, in hold mode: the view is
+// wrapped in `HeldEditsProvider`, so a save or remove goes to `host.hold` as an
+// unsaved change and nothing is written. Loads the page's view props through the `loadChangeEditorProps` server
 // action, then mounts that Details view in focus mode — which renders only the
 // row's own dialog, as a fixed overlay. Mounted fresh for every click (the
 // Changes tab keys it), so each instance loads exactly one target.
 //
 // Outcomes the view reports through `onFocusClose`:
 // - no argument → the editor closed (cancel, save, delete…) → `onDone()`
-//   unmounts everything. The view's own save already refreshed the route, and
-//   the Solver re-derives from the fresh scenario tree.
+//   unmounts everything. A save was already handed to `host.hold`.
 // - "failed" → the editor opened and the save or delete did not land → unmount
 //   the view and say so, instead of closing as if the change had been made.
 // - "unavailable" → the Details page itself wouldn't open this row here
@@ -18,6 +18,9 @@
 //   scenario (Ruling F-I2; e.g. a recurring gift in the scenario's own series
 //   partition) → unmount the view, explain, and link nowhere: the Details page
 //   has the same bug.
+//
+// An item whose saved change is in a switched-off group opens nothing: the host
+// says to switch it on first.
 //
 // The views are loaded with next/dynamic so five large Details views stay out
 // of the Solver's initial bundle.
@@ -32,7 +35,9 @@ import {
   type EditorFocus,
 } from "@/lib/scenario/change-editor-target";
 import type { FocusCloseOutcome } from "@/hooks/use-focus-close-once";
-import { ScenarioWriteListener, type ScenarioWriteEvent } from "@/hooks/scenario-write-listener";
+import { HeldEditsProvider } from "@/hooks/held-edits";
+import type { ScenarioEdit } from "@/hooks/use-scenario-writer";
+import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import { useScenarioState } from "@/hooks/use-scenario-state";
 import { loadChangeEditorProps, type ChangeEditorViewProps } from "./change-editor-actions";
 
@@ -75,18 +80,26 @@ export type DetailsEditorTarget = Extract<ChangeEditorTarget, { surface: "detail
 /** A change the host opens: a Details editor. */
 export type EditorHostTarget = DetailsEditorTarget;
 
+/** What the Solver gives every editor it hosts: where to load from, and where saves go. */
+export interface HeldEditorHost {
+  /** "base" or the source scenario's id. */
+  source: SolverSource;
+  /** The switched-on list the editor opens on. */
+  mutations: SolverMutation[];
+  /** Every save lands here, as unsaved changes; nothing is written. */
+  hold: (edits: ScenarioEdit[]) => Promise<Response>;
+  /** Items whose SAVED change is in a switched-off group. */
+  switchedOffIds: ReadonlySet<string>;
+}
+
 interface Props {
   clientId: string;
-  /** The scenario a save writes into, or null for the base case: the view then
-   *  writes the base facts, as it does on the Details page. */
-  scenarioId: string | null;
+  host: HeldEditorHost;
   target: EditorHostTarget;
   /** What the editor is about, in the advisor's words: "Removing {label}…". */
   label: string;
   /** The editor closed normally, or the advisor dismissed a message. */
   onDone: () => void;
-  /** Every scenario write the mounted view reports. */
-  onWrite?: (event: ScenarioWriteEvent) => void;
 }
 
 type HostState =
@@ -99,36 +112,37 @@ type HostState =
 
 export function SolverChangeEditor({
   clientId,
-  scenarioId,
+  host,
   target,
   label,
   onDone,
-  onWrite,
 }: Props) {
   const { page, focus } = target;
   const focusId = focusRowId(focus);
-  // The views write wherever the URL's `?scenario=` points. Told "base case"
-  // while the URL names a scenario (the base case's own id, typed by hand), the
-  // editor would say "base facts" and write a scenario change: open nothing.
-  // (Two sources of truth; the deeper fix is one the writer and host share.)
+  const { source, mutations } = host;
+  const scenarioId = source === "base" ? null : source;
+  // Held edits never write, but the views still read `?scenario=` for their own
+  // labels. Told "base" while the URL names a scenario (the base case's own id,
+  // typed by hand), they would label it wrongly: open nothing.
   const urlScenarioId = useScenarioState(clientId).scenarioId;
-  const writesElsewhere = scenarioId === null && urlScenarioId !== null;
+  const writesElsewhere = source === "base" && urlScenarioId !== null;
+  const switchedOff = focusId !== null && host.switchedOffIds.has(focusId);
   const [state, setState] = useState<HostState>({ status: "loading" });
   const deleting = focus.intent === "delete";
   // Bumped by "Try again" to re-run the load.
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (writesElsewhere) return;
+    if (writesElsewhere || switchedOff) return;
     let cancelled = false;
     startTransition(async () => {
       try {
-        let loaded = await loadChangeEditorProps(clientId, scenarioId ?? "base", page);
+        let loaded = await loadChangeEditorProps(clientId, source, page, mutations);
         // A life policy is an `account` change, so the resolver sends it to Net
         // Worth, whose editor won't open it. Its editor is Insurance: reload
         // the page that owns it.
         if (isLifePolicyOnNetWorth(loaded, focusId)) {
-          loaded = await loadChangeEditorProps(clientId, scenarioId ?? "base", "insurance");
+          loaded = await loadChangeEditorProps(clientId, source, "insurance", mutations);
         }
         if (!cancelled) setState({ status: "open", loaded });
       } catch {
@@ -138,7 +152,7 @@ export function SolverChangeEditor({
     return () => {
       cancelled = true;
     };
-  }, [clientId, scenarioId, page, focusId, attempt, writesElsewhere]);
+  }, [clientId, source, mutations, page, focusId, attempt, writesElsewhere, switchedOff]);
 
   function onFocusClose(outcome?: FocusCloseOutcome) {
     if (outcome === undefined) {
@@ -157,6 +171,13 @@ export function SolverChangeEditor({
   }
 
   function stateView(): ReactNode {
+    if (switchedOff) {
+      return (
+        <HostStrip role="status" onDismiss={onDone}>
+          <span>This item has a saved change that&apos;s switched off. Switch it on to edit it here.</span>
+        </HostStrip>
+      );
+    }
     if (writesElsewhere) {
       return (
         <HostStrip role="alert" onDismiss={onDone}>
@@ -216,9 +237,9 @@ export function SolverChangeEditor({
         return (
           <>
             {deleting && <HostStrip role="status">Removing {label}…</HostStrip>}
-            <ScenarioWriteListener value={onWrite ?? null}>
+            <HeldEditsProvider value={{ hold: host.hold }}>
               {renderView(state.loaded, focus, onFocusClose)}
-            </ScenarioWriteListener>
+            </HeldEditsProvider>
           </>
         );
     }
