@@ -2,6 +2,8 @@
 
 interface Props {
   hasMutations: boolean;
+  /** Reset is usable whenever anything is unsaved, switched on or off. Defaults to `hasMutations`. */
+  canReset?: boolean;
   /** Whether any working mutation is persistable to base facts. Technique
    *  upserts (roth / asset-transaction / reinvestment) aren't base-writable, so
    *  gating on this prevents a save that silently writes nothing. */
@@ -40,6 +42,7 @@ interface Props {
 
 export function SolverActionBar({
   hasMutations,
+  canReset = hasMutations,
   canSaveToBase,
   holdsSaleToTrust,
   holdsTrustRemoval,
@@ -77,7 +80,7 @@ export function SolverActionBar({
       <button
         type="button"
         onClick={onReset}
-        disabled={solveActive || !hasMutations}
+        disabled={solveActive || !canReset}
         className="h-8 px-3 text-[13px] font-medium whitespace-nowrap rounded-md border border-hair-2 text-ink-2 bg-card hover:bg-card-hover hover:text-ink hover:border-hair-2 disabled:opacity-40 disabled:hover:bg-card disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
       >
         Reset

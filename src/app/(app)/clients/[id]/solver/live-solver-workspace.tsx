@@ -2074,6 +2074,7 @@ export function LiveSolverWorkspace({
       <ClientHeaderActions>
         <SolverActionBar
           hasMutations={mutations.length > 0}
+          canReset={allMutations.length > 0 || offGroups.size > 0}
           canSaveToBase={baseSavable.savable.length > 0}
           holdsSaleToTrust={baseSavable.heldSaleAccountIds.length > 0}
           holdsTrustRemoval={baseSavable.heldDissolveEntityIds.length > 0}

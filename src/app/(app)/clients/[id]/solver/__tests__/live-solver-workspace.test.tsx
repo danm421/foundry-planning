@@ -1769,6 +1769,23 @@ describe("LiveSolverWorkspace — held changes and switches", () => {
     expect(localStorage.getItem(solverDraftKey("client-id", "user-id", "base"))).toBeNull();
   });
 
+  it("Reset works when every unsaved change is switched off", async () => {
+    render(<LiveSolverWorkspace {...baseProps} initialTab="changes" />);
+    await holdFrom([held("e1", SAVE_A)]);
+    act(() => tabProps.current!.unsaved!.setGroupOn(`save:${SAVE_A}`, false));
+    expect(draftOf()!.offGroups).toEqual([`save:${SAVE_A}`]);
+    // Nothing is switched on, so the saves are off, but Reset is not.
+    expect(screen.getByRole("button", { name: "Reset" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Save to base facts" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    expect(tabProps.current!.unsaved!.entries).toEqual([]);
+    expect(tabProps.current!.unsaved!.offGroups.size).toBe(0);
+    expect(localStorage.getItem(solverDraftKey("client-id", "user-id", "base"))).toBeNull();
+    expect(screen.getByRole("button", { name: "Reset" })).toBeDisabled();
+  });
+
   it("Update scenario posts only switched-on entries and keeps the off ones", async () => {
     vi.stubGlobal("confirm", () => true);
     fetchMock.mockImplementation((url: string, init?: { method?: string }) =>
