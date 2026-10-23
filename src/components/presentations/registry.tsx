@@ -98,6 +98,7 @@ import { buildPortfolioAssetsDrillData } from "@/lib/presentations/pages/cash-fl
 import { buildWithdrawalsDrillData } from "@/lib/presentations/pages/cash-flow-withdrawals/view-model";
 import {
   buildSolverCashFlowData,
+  solverCashFlowSheets,
   SOLVER_CASH_FLOW_TITLE,
   type SolverCashFlowPageData,
 } from "@/lib/presentations/pages/solver-cash-flow/view-model";
@@ -2003,9 +2004,8 @@ export const solverCashFlowPage: PresentationPage<SolverCashFlowPageData, Solver
   defaultOptions: SOLVER_CASH_FLOW_OPTIONS_DEFAULT,
   optionsSchema: solverCashFlowOptionsSchema,
   summarizeOptions: summarizeSolverCashFlowOptions,
-  // The view model drops the chart, then the line items, before the breakdown
-  // outgrows one sheet.
-  estimatePageCount: () => 1,
+  // One sheet per page of breakdown the view model laid out under the chart.
+  estimatePageCount: (data) => (data && solverCashFlowSheets(data).length) || 1,
   OptionsControl: SolverCashFlowOptionsControl,
   supportsScenarioOverride: true,
   buildData: (ctx, options) =>

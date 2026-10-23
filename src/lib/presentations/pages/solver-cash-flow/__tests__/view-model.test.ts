@@ -1,112 +1,25 @@
 import { describe, it, expect } from "vitest";
-import type { ClientData, ProjectionYear } from "@/engine/types";
 import { dataLight } from "@/brand";
 import { yearWithdrawalRate } from "@/lib/solver/withdrawal-report";
-import { buildSolverCashFlowData, resolveSolverCashFlowYear } from "../view-model";
+import {
+  resolveSolverCashFlowYear,
+  solverCashFlowSheets,
+  type BreakdownRow,
+  type SolverCashFlowPageData,
+} from "../view-model";
 import { solverCashFlowOptionsSchema } from "../options-schema";
-import { makeClientData } from "@/lib/presentations/pages/cash-flow/__tests__/fixtures";
+import { build, clientData, withLiabilities, YEARS } from "./fixtures";
 
-interface YearSpec {
-  year: number;
-  socialSecurity?: number;
-  rentals?: number;
-  withdrawals?: Record<string, number>;
-  living?: number;
-  mortgages?: Record<string, number>;
-  taxes?: number;
-  liquid?: number;
+/** The Liabilities line items each sheet prints, in order. */
+function liabilityItems(data: SolverCashFlowPageData): string[][] {
+  return solverCashFlowSheets(data).map((sheet) =>
+    sheet.outflows.flatMap((r) =>
+      r.kind === "category" && r.category.key === "liabilities" ? r.category.items.map((i) => i.label) : [],
+    ),
+  );
 }
 
-/** Only what the year breakdown, the chart and Withdrawal % read. */
-function makeYear(spec: YearSpec): ProjectionYear {
-  const socialSecurity = spec.socialSecurity ?? 0;
-  const rentals = spec.rentals ?? 0;
-  const withdrawals = spec.withdrawals ?? {};
-  const mortgages = spec.mortgages ?? {};
-  const living = spec.living ?? 0;
-  const taxes = spec.taxes ?? 0;
-  const liabilities = Object.values(mortgages).reduce((s, v) => s + v, 0);
-  const totalIncome = socialSecurity + rentals;
-  const totalExpenses = living + liabilities + taxes;
-  const bySource: Record<string, number> = {};
-  if (socialSecurity) bySource["inc-ss"] = socialSecurity;
-  if (rentals) bySource["inc-rent"] = rentals;
-  return {
-    year: spec.year,
-    ages: { client: spec.year - 1967, spouse: spec.year - 1964 },
-    income: {
-      salaries: 0, socialSecurity, business: 0, trust: 0, deferred: 0,
-      capitalGains: 0, other: rentals, total: totalIncome, bySource,
-    },
-    withdrawals: {
-      byAccount: withdrawals,
-      total: Object.values(withdrawals).reduce((s, v) => s + v, 0),
-    },
-    expenses: {
-      living, taxes, liabilities, other: 0, insurance: 0, realEstate: 0,
-      cashGifts: 0, discretionary: 0, total: totalExpenses,
-      bySource: living ? { "exp-living": living } : {},
-      byLiability: mortgages, interestByLiability: {},
-    },
-    savings: { byAccount: {}, total: 0, employerTotal: 0 },
-    totalIncome,
-    totalExpenses,
-    netCashFlow: totalIncome - totalExpenses,
-    accountLedgers: {},
-    portfolioAssets: { taxableTotal: spec.liquid ?? 0, cashTotal: 0, retirementTotal: 0, liquidTotal: spec.liquid ?? 0 },
-  } as unknown as ProjectionYear;
-}
-
-function clientData(liabilityCount = 1): ClientData {
-  const base = makeClientData();
-  const owners = [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }];
-  return {
-    ...base,
-    accounts: [
-      { id: "acc-schwab", name: "Schwab HY", category: "taxable", owners },
-      { id: "acc-cash", name: "Cash", category: "cash", owners },
-    ],
-    incomes: [
-      { id: "inc-ss", name: "Social Security — David", type: "social_security" },
-      { id: "inc-rent", name: "Rentals", type: "other" },
-    ],
-    expenses: [{ id: "exp-living", name: "Living Expenses", type: "living" }],
-    liabilities: Array.from({ length: liabilityCount }, (_, i) => ({
-      id: `liab-${i}`,
-      name: `Mortgage ${i}`,
-    })),
-  } as unknown as ClientData;
-}
-
-function mortgages(count: number): Record<string, number> {
-  return Object.fromEntries(Array.from({ length: count }, (_, i) => [`liab-${i}`, 1_000]));
-}
-
-/** 2026 draws on the portfolio; 2027 doesn't. */
-const YEARS = [
-  makeYear({
-    year: 2026,
-    socialSecurity: 22_742,
-    rentals: 66_300,
-    withdrawals: { "acc-schwab": 9_952, "acc-cash": 17_306 },
-    living: 64_000,
-    mortgages: { "liab-0": 10_466 },
-    taxes: 34_800,
-    liquid: 1_627_541,
-  }),
-  makeYear({ year: 2027, socialSecurity: 50_000, rentals: 66_300, living: 64_000, taxes: 30_000, liquid: 1_650_000 }),
-];
-
-function build(year: number | null = null, data = clientData(), years = YEARS) {
-  return buildSolverCashFlowData({
-    years,
-    clientData: data,
-    options: { year },
-    scenarioLabel: "Base Case",
-    clientName: "Jennifer",
-    spouseName: "David",
-  });
-}
+const labelOf = (r: BreakdownRow) => (r.kind === "total" ? r.label : r.category.label);
 
 describe("resolveSolverCashFlowYear", () => {
   it("opens on the first plan year, like the Solver, and clamps a stale year into the plan", () => {
@@ -174,27 +87,55 @@ describe("buildSolverCashFlowData", () => {
     expect(chartSpec!.lines.map((l) => l.label)).toEqual(["Total Out"]);
   });
 
-  it("drops the chart, then the line items, before the breakdown outgrows the sheet", () => {
-    const withLiabilities = (count: number) =>
-      build(2026, clientData(count), [makeYear({ year: 2026, living: 64_000, mortgages: mortgages(count) })]);
+  it("keeps the chart on top however long the breakdown runs", () => {
+    for (const count of [1, 25, 80]) {
+      expect(withLiabilities(count).chartSpec).not.toBeNull();
+    }
+  });
 
-    const fitsUnderChart = withLiabilities(10);
-    expect(fitsUnderChart.chartSpec).not.toBeNull();
-    expect(fitsUnderChart.outflows[1].items).toHaveLength(10);
+  it("prints a breakdown that fits under the chart on one sheet, in column order", () => {
+    const sheets = solverCashFlowSheets(build(2026));
+    expect(sheets).toHaveLength(1);
+    expect(sheets[0].inflows.map(labelOf)).toEqual([
+      "Social Security",
+      "Other Inflows",
+      "Total Inflows",
+      "Portfolio Withdrawals",
+    ]);
+    expect(sheets[0].outflows.map(labelOf)).toEqual([
+      "Living Expenses",
+      "Liabilities",
+      "Taxes",
+      "Total Outflows",
+    ]);
+  });
 
-    const ownSheet = withLiabilities(25);
-    expect(ownSheet.chartSpec).toBeNull();
-    expect(ownSheet.outflows[1].items).toHaveLength(25);
+  it("carries a breakdown too long for one sheet onto the next, every line item kept", () => {
+    const data = withLiabilities(25);
+    const sheets = solverCashFlowSheets(data);
+    expect(sheets).toHaveLength(2);
+    const [first, second] = liabilityItems(data);
+    expect([...first, ...second]).toEqual(Array.from({ length: 25 }, (_, i) => `Mortgage ${i}`));
+    // The category splits between its line items; the rest picks up under a
+    // "continued" heading, and the column's total closes the last sheet.
+    expect(first.length).toBeGreaterThan(0);
+    expect(second.length).toBeGreaterThan(0);
+    expect(sheets[1].outflows[0]).toMatchObject({ kind: "category", continued: true });
+    expect(sheets[1].outflows.at(-1)).toEqual({ kind: "total", label: "Total Outflows", total: 89_000 });
+    // The short column printed in full on the first sheet.
+    expect(sheets[1].inflows).toEqual([]);
+  });
 
-    const totalsOnly = withLiabilities(45);
-    expect(totalsOnly.chartSpec).toBeNull();
-    expect(totalsOnly.outflows[1].items).toEqual([]);
-    expect(totalsOnly.outflows[1].total).toBe(45_000);
+  it("runs onto as many sheets as the breakdown needs", () => {
+    const data = withLiabilities(80);
+    expect(solverCashFlowSheets(data)).toHaveLength(3);
+    expect(liabilityItems(data).flat()).toEqual(Array.from({ length: 80 }, (_, i) => `Mortgage ${i}`));
   });
 
   it("says so when the projection has no years", () => {
     const data = build(null, clientData(), []);
     expect(data.year).toBeNull();
     expect(data.chartSpec).toBeNull();
+    expect(solverCashFlowSheets(data)).toEqual([]);
   });
 });

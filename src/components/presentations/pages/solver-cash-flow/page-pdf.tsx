@@ -1,6 +1,7 @@
 // The Solver's Cash Flow tab on paper: the income stack against Total Out, then
 // one year's Inflows / Outflows breakdown and its bottom line — the year panel
-// as it reads on screen.
+// as it reads on screen. A breakdown too long for the sheet under the chart
+// carries on over the sheets `solverCashFlowSheets` lays out.
 
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PageFrame } from "@/components/presentations/shared/page-frame";
@@ -9,9 +10,10 @@ import { CashflowChartPdf } from "@/components/presentations/pages/cash-flow/cha
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import { exactCurrency as fmt } from "@/lib/presentations/format";
 import type { RenderPdfInput } from "@/components/presentations/registry";
-import type {
-  BreakdownCategory,
-  SolverCashFlowPageData,
+import {
+  solverCashFlowSheets,
+  type BreakdownRow,
+  type SolverCashFlowPageData,
 } from "@/lib/presentations/pages/solver-cash-flow/view-model";
 
 const MARKER_W = 14;
@@ -49,7 +51,7 @@ const S = StyleSheet.create({
   },
   totalName: { fontSize: 9, fontWeight: 600, color: T.ink },
   totalVal: { fontSize: 9, fontFamily: "JetBrains Mono", fontWeight: 600, color: T.ink },
-  withdrawals: { marginTop: 10 },
+  gap: { marginTop: 10 },
   kpis: {
     flexDirection: "row",
     justifyContent: "center",
@@ -74,15 +76,29 @@ function Marker({ color }: { color: string | null }) {
   );
 }
 
-function Category({ c }: { c: BreakdownCategory }) {
+function Row({ row, totalMarker }: { row: BreakdownRow; totalMarker?: boolean }) {
+  if (row.kind === "total") {
+    return (
+      <View style={S.totalRow}>
+        <View style={S.catLabel}>
+          {/* The chart draws Total Out as an ink line over the bars. */}
+          <View style={S.marker}>{totalMarker ? <View style={S.totalLine} /> : null}</View>
+          <Text style={S.totalName}>{row.label}</Text>
+        </View>
+        <Text style={S.totalVal}>{fmt(row.total)}</Text>
+      </View>
+    );
+  }
+  const c = row.category;
   return (
-    <View style={S.category} wrap={false}>
+    <View style={[S.category, row.gap ? S.gap : {}]} wrap={false}>
       <View style={S.catRow}>
         <View style={S.catLabel}>
           <Marker color={c.color} />
-          <Text style={S.catName}>{c.label}</Text>
+          <Text style={S.catName}>{row.continued ? `${c.label} (continued)` : c.label}</Text>
         </View>
-        <Text style={S.catVal}>{fmt(c.total)}</Text>
+        {/* The total already printed with the category's first rows. */}
+        {!row.continued && <Text style={S.catVal}>{fmt(c.total)}</Text>}
       </View>
       {c.items.map((it) => (
         <View key={it.id} style={S.itemRow}>
@@ -96,34 +112,28 @@ function Category({ c }: { c: BreakdownCategory }) {
 
 function Breakdown({
   heading,
-  categories,
-  totalLabel,
-  total,
+  rows,
   totalMarker,
 }: {
   heading: string;
-  categories: BreakdownCategory[];
-  totalLabel: string;
-  total: number;
+  rows: BreakdownRow[];
   totalMarker?: boolean;
 }) {
+  // A column that finished on an earlier sheet leaves its half blank.
+  if (rows.length === 0) return <View style={S.col} />;
   return (
-    <View>
+    <View style={S.col}>
       <View style={S.colHead}>
         <Text style={S.eyebrow}>{heading}</Text>
         <Text style={S.eyebrow}>Amount</Text>
       </View>
-      {categories.map((c) => (
-        <Category key={c.key} c={c} />
+      {rows.map((row) => (
+        <Row
+          key={row.kind === "total" ? "total" : row.category.key}
+          row={row}
+          totalMarker={totalMarker}
+        />
       ))}
-      <View style={S.totalRow}>
-        <View style={S.catLabel}>
-          {/* The chart draws Total Out as an ink line over the bars. */}
-          <View style={S.marker}>{totalMarker ? <View style={S.totalLine} /> : null}</View>
-          <Text style={S.totalName}>{totalLabel}</Text>
-        </View>
-        <Text style={S.totalVal}>{fmt(total)}</Text>
-      </View>
     </View>
   );
 }
@@ -137,6 +147,27 @@ function Kpi({ label, value, color }: { label: string; value: string; color?: st
   );
 }
 
+function BottomLine({ data }: { data: SolverCashFlowPageData }) {
+  return (
+    <>
+      <View style={S.kpis} wrap={false}>
+        <Kpi
+          label="Net Cash Flow"
+          value={fmt(data.totals.net)}
+          color={data.totals.net >= 0 ? T.good : T.crit}
+        />
+        {data.qcd > 0 && <Kpi label="QCDs" value={fmt(data.qcd)} />}
+        {data.withdrawalRate > 0 && (
+          <Kpi label="Withdrawal %" value={`${(data.withdrawalRate * 100).toFixed(2)}%`} />
+        )}
+        <Kpi label="Ending Portfolio" value={fmt(data.totals.endingPortfolio)} />
+      </View>
+
+      <Text style={S.footnote}>{data.footnote}</Text>
+    </>
+  );
+}
+
 export function SolverCashFlowPagePdf({
   data,
   firmName,
@@ -146,20 +177,26 @@ export function SolverCashFlowPagePdf({
   totalPages,
   accent,
 }: RenderPdfInput<SolverCashFlowPageData>) {
-  return (
-    <PageFrame
-      firmName={firmName}
-      clientName={clientName}
-      reportDate={reportDate}
-      pageIndex={pageIndex}
-      totalPages={totalPages}
-    >
-      <SectionHead title={data.title} subtitle={data.subtitle} accent={accent} />
-      {data.year == null ? (
+  const frame = { firmName, clientName, reportDate, totalPages };
+  if (data.year == null) {
+    return (
+      <PageFrame {...frame} pageIndex={pageIndex}>
+        <SectionHead title={data.title} subtitle={data.subtitle} accent={accent} />
         <Text style={S.empty}>No projection years to show.</Text>
-      ) : (
-        <>
-          {data.chartSpec && <CashflowChartPdf spec={data.chartSpec} />}
+      </PageFrame>
+    );
+  }
+  const sheets = solverCashFlowSheets(data);
+  return (
+    <>
+      {sheets.map((sheet, i) => (
+        <PageFrame key={i} {...frame} pageIndex={pageIndex + i}>
+          <SectionHead
+            title={data.title}
+            subtitle={i === 0 ? data.subtitle : `${data.subtitle} · continued`}
+            accent={accent}
+          />
+          {i === 0 && data.chartSpec && <CashflowChartPdf spec={data.chartSpec} />}
 
           <View style={S.yearRow}>
             <Text style={S.year}>{String(data.year)}</Text>
@@ -167,46 +204,13 @@ export function SolverCashFlowPagePdf({
           </View>
 
           <View style={S.cols}>
-            <View style={S.col}>
-              <Breakdown
-                heading="Inflows"
-                categories={data.inflows}
-                totalLabel="Total Inflows"
-                total={data.totals.inflows}
-              />
-              {data.withdrawals && (
-                <View style={S.withdrawals}>
-                  <Category c={data.withdrawals} />
-                </View>
-              )}
-            </View>
-            <View style={S.col}>
-              <Breakdown
-                heading="Outflows"
-                categories={data.outflows}
-                totalLabel="Total Outflows"
-                total={data.totals.outflows}
-                totalMarker
-              />
-            </View>
+            <Breakdown heading="Inflows" rows={sheet.inflows} />
+            <Breakdown heading="Outflows" rows={sheet.outflows} totalMarker />
           </View>
 
-          <View style={S.kpis} wrap={false}>
-            <Kpi
-              label="Net Cash Flow"
-              value={fmt(data.totals.net)}
-              color={data.totals.net >= 0 ? T.good : T.crit}
-            />
-            {data.qcd > 0 && <Kpi label="QCDs" value={fmt(data.qcd)} />}
-            {data.withdrawalRate > 0 && (
-              <Kpi label="Withdrawal %" value={`${(data.withdrawalRate * 100).toFixed(2)}%`} />
-            )}
-            <Kpi label="Ending Portfolio" value={fmt(data.totals.endingPortfolio)} />
-          </View>
-
-          <Text style={S.footnote}>{data.footnote}</Text>
-        </>
-      )}
-    </PageFrame>
+          {i === sheets.length - 1 && <BottomLine data={data} />}
+        </PageFrame>
+      ))}
+    </>
   );
 }

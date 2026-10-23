@@ -35,12 +35,12 @@ const PT = { head: 17, category: 17.7, item: 11.4, total: 17, gap: 10 };
 
 const CHART_FRAME = { width: 526, height: 210, margin: { top: 20, right: 12, bottom: 50, left: 60 } };
 
-/** Points the taller column may take on a sheet of its own — the sheet less
- *  the head, year row, bottom line, footnote and 10pt to spare — and under the
- *  chart. Past the first the line items give way and each category prints as
- *  its one total row; past the second the chart does. A breakdown that grew
- *  past the sheet would not break onto the next: react-pdf squeezes it over the
- *  footer (see PageFrame's `flow`). */
+/** Points a column may take on a continuation sheet — the sheet less the head,
+ *  year row, bottom line, footnote and 10pt to spare — and on the first, under
+ *  the chart. Every sheet keeps room for the bottom line, so a sheet that ends
+ *  mid-breakdown is never left holding only that. The page splits the columns
+ *  itself because a sheet does not break on its own: react-pdf squeezes the
+ *  overflow over the footer (see PageFrame's `flow`). */
 const PT_ON_OWN_SHEET = 486;
 const PT_UNDER_CHART = PT_ON_OWN_SHEET - CHART_FRAME.height;
 
@@ -62,6 +62,24 @@ export interface BreakdownCategory {
   items: CashFlowLineItem[];
   /** The inflow's bar color; null for an outflow, which has no bar. */
   color: string | null;
+}
+
+/** One row of a breakdown column, as a sheet prints it. */
+export type BreakdownRow =
+  | {
+      kind: "category";
+      category: BreakdownCategory;
+      /** Set apart from the row above — the withdrawals under Total Inflows. */
+      gap?: boolean;
+      /** The rest of a category the sheet before ran out of room for. */
+      continued?: boolean;
+    }
+  | { kind: "total"; label: string; total: number };
+
+/** What one printed sheet holds of each column. */
+export interface BreakdownSheet {
+  inflows: BreakdownRow[];
+  outflows: BreakdownRow[];
 }
 
 export interface SolverCashFlowPageData {
@@ -101,19 +119,76 @@ export function resolveSolverCashFlowYear(
   return year == null ? first : Math.min(Math.max(year, first), years[years.length - 1].year);
 }
 
-function toBreakdown(c: CashFlowCategory, keepItems: boolean): BreakdownCategory {
+function toBreakdown(c: CashFlowCategory): BreakdownCategory {
   const colorKey = CASH_FLOW_INFLOW_COLORS[c.key as keyof typeof CASH_FLOW_INFLOW_COLORS];
   return {
     key: c.key,
     label: c.label,
     total: c.total,
-    items: keepItems ? c.items : [],
+    items: c.items,
     color: colorKey ? dataLight[colorKey] : null,
   };
 }
 
-function blocksHeight(categories: CashFlowCategory[]): number {
-  return categories.reduce((pt, c) => pt + PT.category + c.items.length * PT.item, 0);
+function rowHeight(row: BreakdownRow): number {
+  if (row.kind === "total") return PT.total;
+  return (row.gap ? PT.gap : 0) + PT.category + row.category.items.length * PT.item;
+}
+
+/** The rows from the top of a column that fit `room` points under its heading,
+ *  and the rest. A category that runs past the bottom splits between its line
+ *  items, at least two on each side, and carries on as "continued"; one too
+ *  short to split moves to the next sheet whole. Each sheet takes at least a
+ *  row from every column it has left: a fresh sheet holds a short category
+ *  whole and twenty-odd lines of a long one. */
+function fillColumn(rows: BreakdownRow[], room: number): [BreakdownRow[], BreakdownRow[]] {
+  let pt = PT.head;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (pt + rowHeight(row) <= room) {
+      pt += rowHeight(row);
+      continue;
+    }
+    if (row.kind === "total") return [rows.slice(0, i), rows.slice(i)];
+    const { items } = row.category;
+    const fit = Math.floor((room - pt - (rowHeight(row) - items.length * PT.item)) / PT.item);
+    const take = Math.min(fit, items.length - 2);
+    if (take < 2) return [rows.slice(0, i), rows.slice(i)];
+    return [
+      [...rows.slice(0, i), { ...row, category: { ...row.category, items: items.slice(0, take) } }],
+      [
+        { kind: "category", category: { ...row.category, items: items.slice(take) }, continued: true },
+        ...rows.slice(i + 1),
+      ],
+    ];
+  }
+  return [rows, []];
+}
+
+/** The breakdown laid out on sheets: the first under the chart, the rest
+ *  continuing it. None when there is no year to show. */
+export function solverCashFlowSheets(data: SolverCashFlowPageData): BreakdownSheet[] {
+  if (data.year == null) return [];
+  const sheets: BreakdownSheet[] = [];
+  let rest: BreakdownSheet = {
+    inflows: [
+      ...data.inflows.map((category) => ({ kind: "category" as const, category })),
+      { kind: "total", label: "Total Inflows", total: data.totals.inflows },
+      ...(data.withdrawals ? [{ kind: "category" as const, category: data.withdrawals, gap: true }] : []),
+    ],
+    outflows: [
+      ...data.outflows.map((category) => ({ kind: "category" as const, category })),
+      { kind: "total", label: "Total Outflows", total: data.totals.outflows },
+    ],
+  };
+  do {
+    const room = sheets.length === 0 ? PT_UNDER_CHART : PT_ON_OWN_SHEET;
+    const [inHere, inNext] = fillColumn(rest.inflows, room);
+    const [outHere, outNext] = fillColumn(rest.outflows, room);
+    sheets.push({ inflows: inHere, outflows: outHere });
+    rest = { inflows: inNext, outflows: outNext };
+  } while (rest.inflows.length > 0 || rest.outflows.length > 0);
+  return sheets;
 }
 
 export function buildSolverCashFlowData(input: BuildSolverCashFlowInput): SolverCashFlowPageData {
@@ -138,52 +213,39 @@ export function buildSolverCashFlowData(input: BuildSolverCashFlowInput): Solver
   if (!py) return empty;
 
   const detail = buildCashFlowYearDetail(py, clientData);
-  // The taller of the two breakdown columns, with every line item printed.
-  const height =
-    PT.head +
-    PT.total +
-    Math.max(
-      blocksHeight(detail.inflows) +
-        (detail.withdrawals ? PT.gap + blocksHeight([detail.withdrawals]) : 0),
-      blocksHeight(detail.outflows),
-    );
-  const keepItems = height <= PT_ON_OWN_SHEET;
-
-  const flows = height <= PT_UNDER_CHART ? years.map((y) => yearCashFlow(y, clientData)) : null;
-  const chartSpec = flows
-    ? buildDrillChartSpec({
-        years: years.map((y) => y.year),
-        // A bar that is $0 in every year has no legend entry, like the screen.
-        stacks: CHART_STACKS.filter((s) => flows.some((cf) => Math.round(s.value(cf)) !== 0)).map(
-          (s) => ({
-            seriesId: `cf:${s.key}`,
-            label: s.label,
-            color: dataLight[CASH_FLOW_INFLOW_COLORS[s.key]],
-            values: flows.map((cf) => Math.round(s.value(cf))),
-          }),
-        ),
-        lines: [
-          {
-            seriesId: "totalOut",
-            label: "Total Out",
-            color: PRESENTATION_THEME.chartLine,
-            values: flows.map((cf) => Math.round(cf.totalOut)),
-          },
-        ],
-        markers: buildMarkers(clientData, years, clientName, spouseName),
-        highlightYear: py.year,
-        frame: CHART_FRAME,
-      })
-    : null;
+  const flows = years.map((y) => yearCashFlow(y, clientData));
+  const chartSpec = buildDrillChartSpec({
+    years: years.map((y) => y.year),
+    // A bar that is $0 in every year has no legend entry, like the screen.
+    stacks: CHART_STACKS.filter((s) => flows.some((cf) => Math.round(s.value(cf)) !== 0)).map(
+      (s) => ({
+        seriesId: `cf:${s.key}`,
+        label: s.label,
+        color: dataLight[CASH_FLOW_INFLOW_COLORS[s.key]],
+        values: flows.map((cf) => Math.round(s.value(cf))),
+      }),
+    ),
+    lines: [
+      {
+        seriesId: "totalOut",
+        label: "Total Out",
+        color: PRESENTATION_THEME.chartLine,
+        values: flows.map((cf) => Math.round(cf.totalOut)),
+      },
+    ],
+    markers: buildMarkers(clientData, years, clientName, spouseName),
+    highlightYear: py.year,
+    frame: CHART_FRAME,
+  });
 
   return {
     ...empty,
     year: py.year,
     ageLabel: detail.ageLabel,
     chartSpec,
-    inflows: detail.inflows.map((c) => toBreakdown(c, keepItems)),
-    withdrawals: detail.withdrawals ? toBreakdown(detail.withdrawals, keepItems) : null,
-    outflows: detail.outflows.map((c) => toBreakdown(c, keepItems)),
+    inflows: detail.inflows.map(toBreakdown),
+    withdrawals: detail.withdrawals ? toBreakdown(detail.withdrawals) : null,
+    outflows: detail.outflows.map(toBreakdown),
     totals: detail.totals,
     withdrawalRate: yearWithdrawalRate(py, years, clientData.accounts),
     qcd: yearQcd(py, clientData.accounts),
