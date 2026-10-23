@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useScenarioState } from "@/hooks/use-scenario-state";
 import { useScenarioWriter, type ScenarioEdit } from "@/hooks/use-scenario-writer";
 import { formPatchToScenarioFields } from "@/lib/scenario/plan-settings-fields";
 import { validatePlanSettingsPatch } from "@/lib/plan-settings/validate-patch";
@@ -32,8 +31,8 @@ export function usePlanSettingsAutosave(
   opts?: { current?: { priorTaxableGifts: { client: number; spouse: number } } },
 ) {
   const router = useRouter();
-  const { scenarioId } = useScenarioState(clientId);
-  const { submit, submitDirect } = useScenarioWriter(clientId);
+  // `scenarioActive` (not the URL) so a Solver-hosted editor holds its edits too.
+  const { submit, submitDirect, scenarioActive } = useScenarioWriter(clientId);
   const giftsClient = opts?.current?.priorTaxableGifts.client ?? 0;
   const giftsSpouse = opts?.current?.priorTaxableGifts.spouse ?? 0;
   const [state, setState] = useState<AutosaveState>("idle");
@@ -50,7 +49,7 @@ export function usePlanSettingsAutosave(
     setError(null);
     try {
       let res: Response;
-      if (scenarioId) {
+      if (scenarioActive) {
         const invalid = validatePlanSettingsPatch(body);
         if (invalid) throw new Error(invalid);
         const fields = formPatchToScenarioFields(body, {
@@ -64,8 +63,7 @@ export function usePlanSettingsAutosave(
           edits.push({ targetKind: "client", op: "edit", targetId: clientId, desiredFields: fields.client });
         }
         // The writer refreshes the page itself once the batch lands.
-        // The base fallback is unreachable: `scenarioId` here and the writer's
-        // both come from the same `useScenarioState`, so the writer is in scenario mode.
+        // The base fallback is unreachable: the writer is in scenario mode.
         res = await submit(edits, { url: "", method: "PUT" });
         if (res.ok) {
           setState("saved");
@@ -96,7 +94,7 @@ export function usePlanSettingsAutosave(
       setError(err instanceof Error ? err.message : "Unknown error");
       setState("error");
     }
-  }, [clientId, router, scenarioId, submit, submitDirect, giftsClient, giftsSpouse]);
+  }, [clientId, router, scenarioActive, submit, submitDirect, giftsClient, giftsSpouse]);
 
   // Held in a ref so `save` and the unmount flush stay stable — a changing
   // `flush` identity in a dep array would fire the cleanup mid-edit.

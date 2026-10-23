@@ -50,6 +50,7 @@ vi.mock("@/components/milestone-year-picker", () => ({
   ),
 }));
 
+import { HeldEditsProvider } from "@/hooks/held-edits";
 import AddTrustForm, {
   fundingPickCreateDraft,
   fundingPickUpdateDraft,
@@ -574,9 +575,26 @@ describe("AddTrustForm — gift reads and writes follow the active scenario", ()
     // The form's own F4 gate refuses split-interest edits inside a scenario, so
     // the ops loop is never reached. What matters here is the negative: the
     // funding change must not leak to the base gift routes.
-    expect(await screen.findByText(/split-interest details can't be edited inside a scenario/i))
+    expect(await screen.findByText(/Edit this on the Details page\./i))
       .toBeInTheDocument();
     expect(giftWrites(fetchMock)).toHaveLength(0);
+  });
+
+  it("trust form makes no series delete in hold mode", async () => {
+    const fetchMock = installFetch([], [SERIES_ROW]);
+
+    render(
+      <HeldEditsProvider value={{ hold: vi.fn() }}>
+        <AddTrustForm {...props("transfers", trust())} />
+      </HeldEditsProvider>,
+    );
+    fireEvent.click(await screen.findByLabelText("Delete series"));
+
+    expect(
+      await screen.findByText(/This part can't be changed in the Solver\. Edit it on the Details page\./),
+    ).toBeInTheDocument();
+    expect(giftWrites(fetchMock)).toHaveLength(0);
+    expect(screen.getByLabelText("Delete series")).toBeInTheDocument();
   });
 });
 

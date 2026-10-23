@@ -33,7 +33,7 @@ import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioState } from "@/hooks/use-scenario-state";
 import { useScenarioWriteListener, type ScenarioWriteEvent } from "@/hooks/scenario-write-listener";
-import { useHeldEdits } from "@/hooks/held-edits";
+import { useHeldEdits, HOLD_MODE_DIRECT_REFUSAL } from "@/hooks/held-edits";
 import type { TargetKind } from "@/engine/scenario/types";
 
 export interface ScenarioEdit {
@@ -101,8 +101,6 @@ export interface UseScenarioWriter {
   scenarioActive: boolean;
 }
 
-const HOLD_MODE_DIRECT_REFUSAL =
-  "This part can't be changed in the Solver. Edit it on the Details page.";
 
 export function useScenarioWriter(clientId: string): UseScenarioWriter {
   const { scenarioId } = useScenarioState(clientId);

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useHoldMode } from "@/hooks/held-edits";
 import { useScenarioState } from "@/hooks/use-scenario-state";
 import type { EntityFlowMode } from "@/engine/types";
 import { CurrencyInput } from "../currency-input";
@@ -92,6 +93,8 @@ export default function FlowsTab(props: FlowsTabProps) {
   const internalWriter = useScenarioWriter(props.clientId);
   const writer = props.writer ?? internalWriter;
   const { scenarioId } = useScenarioState(props.clientId);
+  // Solver-hosted: nothing may write, not even the self-heal below.
+  const holdMode = useHoldMode();
   const [mode, setMode] = useState<EntityFlowMode>(props.flowMode);
   const [modeError, setModeError] = useState<string | null>(null);
 
@@ -100,7 +103,7 @@ export default function FlowsTab(props: FlowsTabProps) {
   // Fire-and-forget — backfill script is the source of truth, so silent
   // failure here is acceptable.
   useEffect(() => {
-    if (props.skipEnsureCash) return;
+    if (props.skipEnsureCash || holdMode) return;
     // `?scenario=` lets the route recognise a trust that exists only in the
     // open scenario (nothing to heal) instead of 404ing on it.
     const qs = scenarioId ? `?scenario=${encodeURIComponent(scenarioId)}` : "";
@@ -108,7 +111,7 @@ export default function FlowsTab(props: FlowsTabProps) {
       `/api/clients/${props.clientId}/entities/${props.entityId}/ensure-cash${qs}`,
       { method: "POST" },
     ).catch(() => {});
-  }, [props.clientId, props.entityId, props.skipEnsureCash, scenarioId]);
+  }, [props.clientId, props.entityId, props.skipEnsureCash, scenarioId, holdMode]);
 
   async function handleModeChange(next: EntityFlowMode) {
     if (next === mode) return;

@@ -13,6 +13,10 @@ export interface HeldEdits {
   hold: (edits: ScenarioEdit[]) => Promise<Response>;
 }
 
+/** What a write that has no held form says in the Solver. */
+export const HOLD_MODE_DIRECT_REFUSAL =
+  "This part can't be changed in the Solver. Edit it on the Details page.";
+
 const Ctx = createContext<HeldEdits | null>(null);
 
 export const HeldEditsProvider = Ctx.Provider;

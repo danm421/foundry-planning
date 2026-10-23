@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import GrowthInflationForm from "../growth-inflation-form";
 import { ClientAccessProvider } from "@/components/client-access-provider";
+import { HeldEditsProvider } from "@/hooks/held-edits";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -282,5 +283,22 @@ describe("GrowthInflationForm — inside a scenario", () => {
 
     await waitFor(() => expect(screen.getByText(/Default growth — taxable must be between/i)).toBeInTheDocument());
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("GrowthInflationForm — hold mode", () => {
+  it("growth reset hidden", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <HeldEditsProvider value={{ hold: vi.fn() }}>
+        <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+          <GrowthInflationForm {...BASE_PROPS} />
+        </ClientAccessProvider>
+      </HeldEditsProvider>,
+    );
+    expect(screen.queryByRole("button", { name: /reset all accounts/i })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });

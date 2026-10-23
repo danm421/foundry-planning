@@ -10,6 +10,7 @@ import { usePlanSettingsAutosave } from "@/components/forms/use-plan-settings-au
 import { selectClassName } from "@/components/forms/input-styles";
 import { useClientAccess } from "@/components/client-access-provider";
 import { useScenarioState } from "@/hooks/use-scenario-state";
+import { useHoldMode } from "@/hooks/held-edits";
 import { RISK_LEVEL_LABELS, type RiskLevel } from "@/lib/risk-levels";
 
 interface ModelPortfolioOption {
@@ -110,6 +111,9 @@ export default function GrowthInflationForm({ clientId, riskLevel, modelPortfoli
   const canEdit = permission === "edit";
   const router = useRouter();
   const { scenarioId } = useScenarioState(clientId);
+  // The reset writes base accounts directly: off in a scenario and in the Solver.
+  const holdMode = useHoldMode();
+  const baseOnly = scenarioId != null || holdMode;
   const { save, state, error, retry } = usePlanSettingsAutosave(clientId);
   const [resetting, setResetting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
@@ -486,13 +490,13 @@ export default function GrowthInflationForm({ clientId, riskLevel, modelPortfoli
         </p>
       )}
 
-      {canEdit && scenarioId && (
+      {canEdit && baseOnly && (
         <p className="flex gap-1.5 pt-2 text-xs text-ink-3">
           <span className="font-medium text-ink-2">Reset all accounts to defaults:</span>
           <span>Available on the base plan.</span>
         </p>
       )}
-      {canEdit && !scenarioId && (
+      {canEdit && !baseOnly && (
         <div className="flex justify-start pt-2">
           <button
             type="button"

@@ -6,6 +6,7 @@ import { PercentInput } from "../percent-input";
 import { fillFlat, fillGrowth, type ScheduleEntry } from "@/lib/schedule-utils";
 import { planDataYear } from "@/lib/plan-year";
 import { inflationBaseYear, type SkipWindow } from "@/engine/skip-window";
+import { useHoldMode, HOLD_MODE_DIRECT_REFUSAL } from "@/hooks/held-edits";
 
 /** Exposed to parent so the dialog footer can drive the save action. */
 export interface ScheduleSaveBinding {
@@ -286,7 +287,11 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
     applyEntries(setDist, fillFlat(props.planStartYear, props.planEndYear, percent), String);
   }
 
+  // Solver-hosted with no held-save handler of its own: nothing may write.
+  const readOnly = useHoldMode() && !props.saveOverrides;
+
   async function handleSave(): Promise<{ ok: true } | { ok: false; error: string }> {
+    if (readOnly) return { ok: false, error: HOLD_MODE_DIRECT_REFUSAL };
     setSaving(true);
     setError(null);
     const overrides: FlowScheduleGridOverride[] = [];
@@ -359,6 +364,12 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
 
   return (
     <section className="space-y-2 rounded-md border border-hair bg-card-2 p-4">
+      {readOnly && (
+        <p className="rounded-md border border-hair bg-card px-3 py-2 text-sm text-ink-3">
+          Edit this on the Details page.
+        </p>
+      )}
+      <fieldset disabled={readOnly} className="m-0 min-w-0 space-y-2 border-0 p-0">
       <p className="text-xs text-ink-3">
         Override individual years. Blank cells resolve to $0 in schedule mode.
         {savedAt && !saving && (
@@ -495,6 +506,7 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
           })}
         </tbody>
       </table>
+      </fieldset>
     </section>
   );
 }

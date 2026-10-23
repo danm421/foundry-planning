@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioState } from "@/hooks/use-scenario-state";
+import { useHoldMode } from "@/hooks/held-edits";
 import type { SaveResult } from "@/lib/use-tab-auto-save";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { resolveMilestone } from "@/lib/milestones";
@@ -108,7 +109,8 @@ const AddNoteReceivableForm = forwardRef<
 ) {
   const router = useRouter();
   const { scenarioId } = useScenarioState(clientId);
-  const scenarioBlocked = scenarioId != null;
+  const holdMode = useHoldMode();
+  const scenarioBlocked = scenarioId != null || holdMode;
   const isEdit = mode === "edit" && !!initial;
   const currentYear = new Date().getFullYear();
 

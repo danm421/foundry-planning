@@ -3,6 +3,8 @@ import { act, render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import BusinessFlowsTab from "../business-flows-tab";
 import type { BusinessFlowRow } from "../business-flows-tab";
+import { HeldEditsProvider } from "@/hooks/held-edits";
+import type { ScheduleSaveBinding } from "@/components/forms/flow-schedule-grid";
 
 const submitMock = vi.fn();
 
@@ -162,4 +164,24 @@ describe("BusinessFlowsTab", () => {
     });
   });
 
+
+  it("business flow grid is read-only in hold mode", async () => {
+    const ref: { current: ScheduleSaveBinding | null } = { current: null };
+    render(
+      <HeldEditsProvider value={{ hold: vi.fn() }}>
+        <BusinessFlowsTab
+          {...baseProps}
+          flowMode="schedule"
+          onScheduleSaveBindingChange={(bind) => {
+            ref.current = bind;
+          }}
+        />
+      </HeldEditsProvider>,
+    );
+    expect(screen.getByText("Edit this on the Details page.")).toBeInTheDocument();
+    await act(async () => {
+      await ref.current?.save();
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
 });

@@ -6,6 +6,7 @@ import FlowScheduleGrid, {
   type ScheduleSaveInput,
   type ScheduleTarget,
 } from "../flow-schedule-grid";
+import { HeldEditsProvider } from "@/hooks/held-edits";
 
 /**
  * Renders the grid and exposes a `save()` helper. The grid no longer owns its
@@ -358,5 +359,24 @@ describe("FlowScheduleGrid", () => {
     expect(
       screen.getByText("entity is not in the working tree"),
     ).toBeInTheDocument();
+  });
+});
+
+describe("FlowScheduleGrid — hold mode", () => {
+  it("flow grid read-only", async () => {
+    const ref: { current: ScheduleSaveBinding | null } = { current: null };
+    render(
+      <HeldEditsProvider value={{ hold: vi.fn() }}>
+        <FlowScheduleGrid {...baseProps} onSaveBindingChange={(b) => { ref.current = b; }} />
+      </HeldEditsProvider>,
+    );
+    expect(screen.getByText("Edit this on the Details page.")).toBeInTheDocument();
+    expect(document.querySelector("fieldset[disabled]")).not.toBeNull();
+    let result: Awaited<ReturnType<ScheduleSaveBinding["save"]>> | undefined;
+    await act(async () => {
+      result = await ref.current!.save();
+    });
+    expect(result!.ok).toBe(false);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });

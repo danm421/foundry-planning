@@ -2,6 +2,7 @@
 import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import FlowsTab, { type ScheduleSaveBinding, type ScheduleSaveInput } from "../flows-tab";
+import { HeldEditsProvider } from "@/hooks/held-edits";
 
 const submitMock = vi.fn();
 let mockScenarioId: string | null = null;
@@ -234,6 +235,16 @@ describe("FlowsTab", () => {
       2038, 2039, 2040, 2041, 2042, 2043, 2044, 2045, 2046, 2047, 2048, 2049,
       2050,
     ]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("flows tab makes no ensure-cash call in hold mode", async () => {
+    render(
+      <HeldEditsProvider value={{ hold: vi.fn() }}>
+        <FlowsTab {...baseProps} />
+      </HeldEditsProvider>,
+    );
+    await act(async () => {});
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

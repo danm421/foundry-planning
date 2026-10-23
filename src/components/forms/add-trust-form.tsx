@@ -3,6 +3,7 @@
 import { forwardRef, useImperativeHandle, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useHoldMode, HOLD_MODE_DIRECT_REFUSAL } from "@/hooks/held-edits";
 import { deriveIsIrrevocable, type TrustSubType } from "@/lib/entities/trust";
 import { defaultIsGrantorFor } from "@/lib/trust-defaults";
 import type { Designation, Entity, ExternalBeneficiary, FamilyMember } from "../family-view";
@@ -177,6 +178,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   const router = useRouter();
   const scenarioWriter = useScenarioWriter(clientId);
   const { scenarioId } = useScenarioState(clientId);
+  const holdMode = useHoldMode();
 
   // Form state — create-mode defaults follow the most-common shape:
   //   * irrevocable trust (revocable trusts are typically already wired to the
@@ -528,7 +530,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
       // edits are scenario-scoped (split-brain).
       if (scenarioWriter.scenarioActive) {
         setError(
-          "Assigning a business interest to this trust isn't supported inside a scenario yet — open the base plan to record it.",
+          "Edit this on the Details page.",
         );
         return;
       }
@@ -668,7 +670,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
         ok: false,
         error: editTargetId == null
           ? "Creating a new trust isn't supported inside a scenario yet — create it in the base plan, then adjust it here."
-          : "CLT/CRT split-interest details can't be edited inside a scenario yet — edit them in the base plan.",
+          : "Edit this on the Details page.",
       };
     }
 
@@ -1247,12 +1249,15 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
                     const isOverlaySeries = isSeries && "overlay" in item && item.overlay === true;
                     const res =
                       isSeries && !isOverlaySeries
-                        ? await fetch(
-                            `/api/clients/${clientId}/gifts/series/${item.id}${
-                              scenarioId ? `?scenario=${encodeURIComponent(scenarioId)}` : ""
-                            }`,
-                            { method: "DELETE" },
-                          )
+                        ? holdMode
+                          // The Solver never writes: refuse before any request.
+                          ? Response.json({ error: HOLD_MODE_DIRECT_REFUSAL }, { status: 409 })
+                          : await fetch(
+                              `/api/clients/${clientId}/gifts/series/${item.id}${
+                                scenarioId ? `?scenario=${encodeURIComponent(scenarioId)}` : ""
+                              }`,
+                              { method: "DELETE" },
+                            )
                         : await scenarioWriter.submit(giftScenarioRemove(item.id), {
                             url: isSeries
                               ? `/api/clients/${clientId}/gifts/series/${item.id}`
