@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildClientData } from "@/engine/__tests__/fixtures";
 import type { Expense } from "@/engine/types";
 import { applyMutations } from "../apply-mutations";
+import { buildDissolveTrustMutations } from "../trust-levers";
 import {
   applyHeldChanges,
   entriesNaming,
@@ -93,6 +94,39 @@ describe("held-changes", () => {
     const keys = entriesNaming([ruleM, other], new Set([NEW_ID]));
     expect(keys).toEqual([mutationKey(ruleM)]);
     expect(entriesNaming([ruleM, other], new Set([NEW_ID]), mutationKey(ruleM))).toEqual([]);
+  });
+});
+
+// The server applies held gift changes through the loader's gift overlay
+// (applyGiftOverlays): a gift draft becomes the row and events the engine and
+// the Solver's own gift sweeps read.
+describe("held gifts in the held tree", () => {
+  const TRUST = "00000000-0000-4000-8000-0000000000c4";
+  const GIFT = "00000000-0000-4000-8000-0000000000d4";
+
+  it("a held gift to a trust lands as the loader lands it, so a trust removal clears it", () => {
+    const tree = {
+      ...buildClientData(),
+      entities: [{ id: TRUST, name: "Family trust", entityType: "trust", isIrrevocable: true }],
+    } as never;
+    const giftAdd: HeldChangeMutation = {
+      kind: "held-change",
+      op: "add",
+      targetKind: "gift",
+      targetId: GIFT,
+      payload: {
+        id: GIFT, kind: "cash-once", year: 2030, amount: 50_000, grantor: "client",
+        recipient: { kind: "entity", id: TRUST }, crummey: false,
+      },
+      saveId: SAVE,
+    };
+    const out = applyHeldChanges(tree, [giftAdd]);
+    expect(out.gifts).toContainEqual(expect.objectContaining({ id: GIFT, recipientEntityId: TRUST, amount: 50_000 }));
+    expect(buildDissolveTrustMutations(out, { id: TRUST, name: "Family trust" } as never)).toContainEqual({
+      kind: "gift-upsert",
+      id: GIFT,
+      value: null,
+    });
   });
 });
 

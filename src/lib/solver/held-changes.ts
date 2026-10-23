@@ -7,6 +7,7 @@ import {
   TARGET_KIND_TO_FIELD,
   applyScenarioChanges,
 } from "@/engine/scenario/applyChanges";
+import { applyGiftOverlays } from "@/lib/scenario/apply-gift-overlays";
 import { buildFieldDiff, editableSingletonFields, priorToValues } from "@/lib/scenario/field-diff";
 import { foldChanges } from "@/lib/scenario/fold-changes";
 import { mutationsToScenarioChanges } from "./mutations-to-scenario-changes";
@@ -39,11 +40,18 @@ export function heldScenarioChanges(mutations: readonly SolverMutation[]): Scena
   }));
 }
 
-/** Display only: no resolution context. */
+/** Display only: no resolution context. Gift changes take the loader's gift
+ *  overlay (`applyScenarioChangesWithRefs`), as on the server, so a held gift
+ *  reads as a gift row and its events, not as its editor draft. */
 export function applyHeldChanges(tree: ClientData, mutations: readonly SolverMutation[]): ClientData {
   const held = heldScenarioChanges(mutations);
   if (held.length === 0) return tree;
-  return applyScenarioChanges(tree, foldChanges([], held), {}, []).effectiveTree;
+  const gifts = held.filter((c) => c.targetKind === "gift");
+  const rest = held.filter((c) => c.targetKind !== "gift");
+  const applied =
+    rest.length === 0 ? tree : applyScenarioChanges(tree, foldChanges([], rest), {}, []).effectiveTree;
+  const cpi = applied.planSettings.taxInflationRate ?? applied.planSettings.inflationRate ?? 0;
+  return applyGiftOverlays(applied, foldChanges([], gifts), cpi);
 }
 
 const UPSERT_TARGET = {
