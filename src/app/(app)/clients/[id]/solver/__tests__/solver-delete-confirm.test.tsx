@@ -25,7 +25,6 @@ const tree = (over: Record<string, unknown>) =>
 function renderConfirm(planTree: ClientData, target: InventoryItem, inventory: InventoryItem[]) {
   render(
     <SolverDeleteConfirm
-      clientId="c1"
       tree={planTree}
       inventory={inventory}
       item={target}
@@ -84,7 +83,7 @@ describe("SolverDeleteConfirm — held remove", () => {
     const target = item({ typeKey: "expense", id: "e-1", label: "Groceries" });
     const onConfirm = vi.fn();
     render(
-      <SolverDeleteConfirm clientId="c1" tree={tree({})} inventory={[target]} item={target} onConfirm={onConfirm} onCancel={vi.fn()} />,
+      <SolverDeleteConfirm tree={tree({})} inventory={[target]} item={target} onConfirm={onConfirm} onCancel={vi.fn()} />,
     );
     expect(screen.getByRole("dialog", { name: "Remove Expense" })).toBeInTheDocument();
     expect(

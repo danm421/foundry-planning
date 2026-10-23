@@ -119,7 +119,10 @@ export function SolverChangeEditor({
 }: Props) {
   const { page, focus } = target;
   const focusId = focusRowId(focus);
-  const { source, mutations } = host;
+  // Pinned at mount: each editor loads its one target exactly once. A save calls
+  // `host.hold`, which rebuilds the Solver's list before this editor closes; a
+  // reload then would swap the view under the open dialog.
+  const [{ source, mutations }] = useState(() => ({ source: host.source, mutations: host.mutations }));
   const scenarioId = source === "base" ? null : source;
   // Held edits never write, but the views still read `?scenario=` for their own
   // labels. Told "base" while the URL names a scenario (the base case's own id,

@@ -25,7 +25,6 @@ import type { InventoryItem } from "@/lib/scenario/plan-inventory";
 import { detailType } from "@/lib/scenario/plan-detail-catalog";
 
 export interface SolverDeleteConfirmProps {
-  clientId: string;
   /** The Solver's tree with held changes applied (never the working tree with unsaved levers). */
   tree: ClientData;
   /** Names the dropped rows the way the pickers do (a savings rule has no name of its own). */

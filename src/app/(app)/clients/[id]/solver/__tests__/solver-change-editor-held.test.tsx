@@ -55,8 +55,8 @@ function host(over: Partial<HeldEditorHost> = {}): HeldEditorHost {
   };
 }
 
-function renderHost(h: HeldEditorHost, id = "e1") {
-  return render(
+function editor(h: HeldEditorHost, id = "e1") {
+  return (
     <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
       <SolverChangeEditor
         clientId="c1"
@@ -65,8 +65,12 @@ function renderHost(h: HeldEditorHost, id = "e1") {
         onDone={vi.fn()}
         target={{ surface: "details", page: "income-expenses", focus: { intent: "edit", kind: "expense", id } }}
       />
-    </ClientAccessProvider>,
+    </ClientAccessProvider>
   );
+}
+
+function renderHost(h: HeldEditorHost, id = "e1") {
+  return render(editor(h, id));
 }
 
 beforeEach(() => {
@@ -79,6 +83,15 @@ describe("SolverChangeEditor — hold mode", () => {
     renderHost(host());
     await screen.findByRole("button", { name: "Save held" });
     expect(loadMock).toHaveBeenCalledWith("c1", "scn-1", "income-expenses", MUTATIONS);
+  });
+
+  it("a rebuilt host list loads nothing again and keeps the view mounted", async () => {
+    const { rerender } = renderHost(host());
+    await screen.findByRole("button", { name: "Save held" });
+    rerender(editor(host({ mutations: [...MUTATIONS], hold: vi.fn() })));
+    await Promise.resolve();
+    expect(loadMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Save held" })).toBeInTheDocument();
   });
 
   it("a dialog save calls host.hold and never fetches", async () => {
