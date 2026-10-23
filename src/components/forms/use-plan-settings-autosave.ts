@@ -70,12 +70,14 @@ export function usePlanSettingsAutosave(
           return;
         }
       } else {
-        // Through the writer so the Solver's editor host hears it (and confirms
-        // a base write); refreshed below, once the save is known to have landed.
-        res = await submitDirect(
-          { url: `/api/clients/${clientId}/plan-settings`, method: "PUT", body, skipRefresh: true },
-          { targetKind: "plan_settings", targetId: clientId, op: "edit" },
-        );
+        // Through the writer (a Solver-hosted editor refuses it); refreshed
+        // below, once the save is known to have landed.
+        res = await submitDirect({
+          url: `/api/clients/${clientId}/plan-settings`,
+          method: "PUT",
+          body,
+          skipRefresh: true,
+        });
       }
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));

@@ -7,7 +7,7 @@ import { mutationKey, type SolverMutation, type SolverMutationKey } from "@/lib/
  * stale draft, so the advisor falls back to a clean source instead of crashing
  * on a mutation shape the current engine no longer understands.
  */
-const DRAFT_VERSION = 1;
+const DRAFT_VERSION = 2;
 const KEY_PREFIX = "foundry.solverDraft";
 
 export interface SolverAccountMix {
@@ -22,7 +22,10 @@ export interface SolverAccountMix {
  * stored: `mutations` is the single source of truth.
  */
 export interface SolverDraft {
+  /** Every unsaved entry, switched on or off. */
   mutations: SolverMutation[];
+  /** Ids of the switched-off groups. */
+  offGroups: string[];
   /** Canonical solve seed, so a later Save-as-scenario reproduces the same PoS. */
   solvedSeed: number | null;
   /** MC asset mixes for synthetic min-savings accounts, as [accountId, mix]
@@ -56,6 +59,7 @@ function readDraft(key: string): SolverDraft | null {
     if (!Array.isArray(d.mutations) || d.mutations.length === 0) return null;
     return {
       mutations: d.mutations,
+      offGroups: Array.isArray(d.offGroups) ? d.offGroups.filter((g): g is string => typeof g === "string") : [],
       solvedSeed: typeof d.solvedSeed === "number" ? d.solvedSeed : null,
       savingsAccountMixes: Array.isArray(d.savingsAccountMixes) ? d.savingsAccountMixes : [],
     };
@@ -89,7 +93,9 @@ export interface UseSolverDraftArgs {
    *  persistence but never blocks the caller's initial Monte Carlo run. */
   userId: string;
   source: string;
+  /** Every unsaved entry, switched on or off. */
   mutations: SolverMutation[];
+  offGroups: ReadonlySet<string>;
   solvedSeed: number | null;
   savingsAccountMixes: Map<string, SolverAccountMix[]>;
   onRestore: (draft: SolverDraft) => void;
@@ -119,6 +125,7 @@ export function useSolverDraft({
   userId,
   source,
   mutations,
+  offGroups,
   solvedSeed,
   savingsAccountMixes,
   onRestore,
@@ -156,6 +163,7 @@ export function useSolverDraft({
         v: DRAFT_VERSION,
         draft: {
           mutations,
+          offGroups: Array.from(offGroups),
           solvedSeed,
           savingsAccountMixes: Array.from(savingsAccountMixes.entries()),
         },
@@ -164,5 +172,5 @@ export function useSolverDraft({
     } catch {
       // Quota exceeded / blocked storage — the draft just won't survive nav.
     }
-  }, [key, mutations, solvedSeed, savingsAccountMixes]);
+  }, [key, mutations, offGroups, solvedSeed, savingsAccountMixes]);
 }

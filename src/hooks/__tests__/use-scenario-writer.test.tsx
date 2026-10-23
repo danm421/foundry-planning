@@ -11,7 +11,6 @@ vi.mock("next/navigation", () => ({
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useScenarioWriter } from "../use-scenario-writer";
-import { ScenarioWriteListener, type ScenarioWriteEvent } from "../scenario-write-listener";
 import { HeldEditsProvider, type HeldEdits } from "../held-edits";
 
 const CLIENT_ID = "client-123";
@@ -420,114 +419,14 @@ describe("useScenarioWriter — scenarioActive flag", () => {
   });
 });
 
-describe("useScenarioWriter — write listener", () => {
-  const edit = {
-    op: "edit" as const,
-    targetKind: "income" as const,
-    targetId: "i1",
-    desiredFields: {},
-  };
-  const fallback = { url: "/x", method: "PATCH" as const };
-
-  function wrapperFor(listener: (e: ScenarioWriteEvent) => void) {
-    return function Wrapper({ children }: { children: ReactNode }) {
-      return <ScenarioWriteListener value={listener}>{children}</ScenarioWriteListener>;
-    };
-  }
-
-  it("notifies the listener after a successful scenario write", async () => {
-    setUrl(`scenario=${SCENARIO_ID}`);
-    const listener = vi.fn();
-    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID), {
-      wrapper: wrapperFor(listener),
-    });
-    await result.current.submit(edit, fallback);
-    expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenCalledWith({ targetKind: "income", targetId: "i1", op: "edit" });
-  });
-
-  // A partly-landed batch must still reconcile the edits that landed.
-  it("notifies per edit as each lands: edit 1 ok, edit 2 fails → listener called once, for edit 1", async () => {
-    setUrl(`scenario=${SCENARIO_ID}`);
-    fetchSpy
-      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
-      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) });
-    const listener = vi.fn();
-    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID), {
-      wrapper: wrapperFor(listener),
-    });
-    const second = { ...edit, targetKind: "plan_settings" as const, targetId: "ps1" };
-    const res = await result.current.submit([edit, second], fallback);
-    expect(res.ok).toBe(false);
-    expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenCalledWith({ targetKind: "income", targetId: "i1", op: "edit" });
-  });
-
-  it("does not notify when the write fails", async () => {
-    setUrl(`scenario=${SCENARIO_ID}`);
-    fetchSpy.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
-    const listener = vi.fn();
-    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID), {
-      wrapper: wrapperFor(listener),
-    });
-    await result.current.submit(edit, fallback);
-    expect(listener).not.toHaveBeenCalled();
-  });
-
-  // The Solver's editor host opens these editors on the base case too; a base
-  // write replaces the same unsaved levers a scenario write does.
-  it("notifies after a successful base write — every edit the one fallback stood for", async () => {
-    setUrl("");
-    const listener = vi.fn();
-    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID), {
-      wrapper: wrapperFor(listener),
-    });
-    const second = { ...edit, targetKind: "plan_settings" as const, targetId: "ps1" };
-    await result.current.submit([edit, second], fallback);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(listener.mock.calls).toEqual([
-      [{ targetKind: "income", targetId: "i1", op: "edit" }],
-      [{ targetKind: "plan_settings", targetId: "ps1", op: "edit" }],
-    ]);
-  });
-
-  it("does not notify when the base write fails", async () => {
-    setUrl("");
-    fetchSpy.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
-    const listener = vi.fn();
-    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID), {
-      wrapper: wrapperFor(listener),
-    });
-    await result.current.submit(edit, fallback);
-    expect(listener).not.toHaveBeenCalled();
-  });
-
-  it("notifies for submitDirect only when given a target", async () => {
-    setUrl(`scenario=${SCENARIO_ID}`);
-    const listener = vi.fn();
-    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID), {
-      wrapper: wrapperFor(listener),
-    });
-    await result.current.submitDirect({ url: "/g", method: "DELETE" });
-    expect(listener).not.toHaveBeenCalled();
-    await result.current.submitDirect(
-      { url: "/g", method: "DELETE" },
-      { targetKind: "gift", targetId: "g1", op: "remove" },
-    );
-    expect(listener).toHaveBeenCalledWith({ targetKind: "gift", targetId: "g1", op: "remove" });
-  });
-});
-
 describe("useScenarioWriter — hold mode (Solver-hosted editor)", () => {
   const edit = { op: "edit" as const, targetKind: "expense" as const, targetId: "e1", desiredFields: {} };
   const fallback = { url: "/api/clients/client-123/expenses/e1", method: "PUT" as const, body: { amount: 1 } };
 
-  function writerWith(hold: HeldEdits["hold"], listener?: (e: ScenarioWriteEvent) => void) {
+  function writerWith(hold: HeldEdits["hold"]) {
     return renderHook(() => useScenarioWriter(CLIENT_ID), {
       wrapper: ({ children }: { children: ReactNode }) => (
-        <ScenarioWriteListener value={listener ?? null}>
-          <HeldEditsProvider value={{ hold }}>{children}</HeldEditsProvider>
-        </ScenarioWriteListener>
+        <HeldEditsProvider value={{ hold }}>{children}</HeldEditsProvider>
       ),
     });
   }
@@ -535,8 +434,7 @@ describe("useScenarioWriter — hold mode (Solver-hosted editor)", () => {
   it("hold mode hands a batch to hold() in one call and never fetches", async () => {
     const answer = new Response(null, { status: 204 });
     const hold = vi.fn(async () => answer);
-    const listener = vi.fn();
-    const { result } = writerWith(hold, listener);
+    const { result } = writerWith(hold);
     const second = { ...edit, targetId: "e2" };
     const res = await result.current.submit([edit, second], fallback);
     expect(hold).toHaveBeenCalledTimes(1);
@@ -544,7 +442,6 @@ describe("useScenarioWriter — hold mode (Solver-hosted editor)", () => {
     expect(res).toBe(answer);
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(refreshSpy).not.toHaveBeenCalled();
-    expect(listener).not.toHaveBeenCalled();
   });
 
   it("hold mode wraps a single edit in an array", async () => {

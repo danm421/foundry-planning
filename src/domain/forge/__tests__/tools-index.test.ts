@@ -13,7 +13,10 @@ vi.mock("@/engine", () => ({ runProjection: vi.fn(), runProjectionWithEvents: vi
 vi.mock("@/lib/solver/solve-target", () => ({ solveTarget: vi.fn() }));
 vi.mock("@/lib/solver/solve-max-spending", () => ({ solveMaxSpending: vi.fn() }));
 vi.mock("@/lib/solver/solve-ss-portfolio", () => ({ solveSsClaimAgeByPortfolio: vi.fn() }));
-vi.mock("@/engine/scenario/applyChanges", () => ({ applyScenarioChanges: vi.fn() }));
+vi.mock("@/engine/scenario/applyChanges", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/engine/scenario/applyChanges")>()),
+  applyScenarioChanges: vi.fn(),
+}));
 vi.mock("@/engine/what-if/life-insurance-need", () => ({
   runLifeInsuranceWhatIf: vi.fn(),
   survivorEndingPortfolio: vi.fn(),

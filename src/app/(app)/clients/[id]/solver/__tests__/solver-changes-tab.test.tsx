@@ -10,7 +10,8 @@ import type { ToggleGroup } from "@/engine/scenario/types";
 import type { InventoryItem } from "@/lib/scenario/plan-inventory";
 import type { ClientData } from "@/engine/types";
 import { buildClientData } from "@/engine/__tests__/fixtures";
-import { useScenarioWriteListener } from "@/hooks/scenario-write-listener";
+import type { SolverMutation } from "@/lib/solver/types";
+import type { HeldEditorHost } from "../solver-change-editor";
 
 const { routerPushMock, routerRefreshMock, nav, clientScenarios } = vi.hoisted(() => ({
   routerPushMock: vi.fn(),
@@ -27,7 +28,6 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/clients/c1/solver",
 }));
 
-const TARGET_ID_FOR_STUB = "11111111-2222-3333-4444-555555555555";
 const { loadChangeEditorPropsMock, makeStubView, openCreateMock, notYetReady } = vi.hoisted(() => ({
   openCreateMock: vi.fn(),
   // Mutable so a test can open a type the catalog still holds back.
@@ -46,31 +46,12 @@ const { loadChangeEditorPropsMock, makeStubView, openCreateMock, notYetReady } =
       onFocusClose?: (outcome?: "unavailable" | "unsupported" | "failed") => void;
       marker?: string;
     }) {
-      const onWrite = useScenarioWriteListener();
       return (
         <div
           data-testid={`view-${page}`}
           data-focus={JSON.stringify(focus)}
           data-marker={marker}
         >
-          <button
-            type="button"
-            onClick={() => onWrite?.({ targetKind: "income", targetId: TARGET_ID_FOR_STUB, op: "remove" })}
-          >
-            stub write
-          </button>
-          <button
-            type="button"
-            onClick={() => onWrite?.({ targetKind: "plan_settings", targetId: "client-uuid", op: "edit" })}
-          >
-            stub write settings
-          </button>
-          <button
-            type="button"
-            onClick={() => onWrite?.({ targetKind: "client", targetId: "client-uuid", op: "edit" })}
-          >
-            stub write client
-          </button>
           <button type="button" onClick={() => onFocusClose?.("failed")}>
             stub failed
           </button>
@@ -113,6 +94,13 @@ const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
 
 const CLIENT_ID = "c1";
+const HELD_MUTATIONS: SolverMutation[] = [{ kind: "retirement-age", person: "client", age: 62 }];
+const hostFor = (source: string): HeldEditorHost => ({
+  source,
+  mutations: HELD_MUTATIONS,
+  hold: vi.fn(),
+  switchedOffIds: new Set(),
+});
 const UNSUPPORTED_MESSAGE =
   "This change can't be edited inside a scenario yet. You can still switch it off or delete it here.";
 const SCENARIO_ID = "s-1";
@@ -173,7 +161,6 @@ function renderTab(
   } = {},
 ) {
   const onOpenSolverTab = vi.fn();
-  const onTargetsWritten = vi.fn();
   render(
     <ClientAccessProvider value={{ permission, access: "own" }}>
       <SolverChangesTab
@@ -183,11 +170,11 @@ function renderTab(
         planTree={planTree}
         willGrantors={["client", "spouse"]}
         onOpenSolverTab={onOpenSolverTab}
-        onTargetsWritten={onTargetsWritten}
+        held={hostFor(SCENARIO_ID)}
       />
     </ClientAccessProvider>,
   );
-  return { onOpenSolverTab, onTargetsWritten };
+  return { onOpenSolverTab };
 }
 
 function makeGroup(overrides: Partial<ToggleGroup> = {}): ToggleGroup {
@@ -254,7 +241,7 @@ describe("SolverChangesTab", () => {
         planTree={emptyTree()}
         willGrantors={[]}
         onOpenSolverTab={vi.fn()}
-        onTargetsWritten={vi.fn()}
+        held={hostFor("base")}
       />,
     );
     expect(screen.getByText("Pick a scenario to see its changes.")).toBeInTheDocument();
@@ -280,7 +267,7 @@ describe("SolverChangesTab — scenario picker", () => {
           planTree={emptyTree()}
           willGrantors={[]}
           onOpenSolverTab={vi.fn()}
-          onTargetsWritten={vi.fn()}
+          held={hostFor("base")}
         />
       </ClientAccessProvider>,
     );
@@ -491,7 +478,7 @@ describe("SolverChangesTab — opening a Details editor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit Side income" }));
 
-    expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, "income-expenses");
+    expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, "income-expenses", HELD_MUTATIONS);
     expect(await screen.findByText("Opening the editor…")).toBeInTheDocument();
 
     load.resolve({ page: "income-expenses", props: { clientId: CLIENT_ID, marker: "ie-props" } });
@@ -513,7 +500,7 @@ describe("SolverChangesTab — opening a Details editor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^Edit / }));
 
-    expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, page);
+    expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, page, HELD_MUTATIONS);
     const view = await screen.findByTestId(`view-${page}`);
     expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ kind: targetKind, id: TARGET_ID });
   });
@@ -562,6 +549,8 @@ describe("SolverChangesTab — opening a Details editor", () => {
     const view = await screen.findByTestId("view-insurance");
     expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ kind: "account", id: TARGET_ID });
     expect(loadChangeEditorPropsMock.mock.calls.map((c) => c[2])).toEqual(["net-worth", "insurance"]);
+    // Both loads open on the Solver's switched-on list, the reload included.
+    expect(loadChangeEditorPropsMock.mock.calls.map((c) => c[3])).toEqual([HELD_MUTATIONS, HELD_MUTATIONS]);
     expect(screen.queryByTestId("view-net-worth")).not.toBeInTheDocument();
   });
 
@@ -640,7 +629,7 @@ describe("SolverChangesTab — opening a Details editor", () => {
 
       const view = await screen.findByTestId("view-assumptions");
       expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ kind: targetKind, id: TARGET_ID });
-      expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, "assumptions");
+      expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, "assumptions", HELD_MUTATIONS);
     },
   );
 
@@ -720,7 +709,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Expense" }));
     const view = await screen.findByTestId("view-income-expenses");
     expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ intent: "create", kind: "expense" });
-    expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, "income-expenses");
+    expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, "income-expenses", HELD_MUTATIONS);
   });
 
   it("Add → Account → Retirement carries the variant", async () => {
@@ -756,7 +745,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
     renderTab([], { inventory: INVENTORY, panelOverrides: { scenarioName: "Retire early" } });
     pickFromCategory("Remove", "Income", /Side income/);
     expect(
-      screen.getByText("Remove Side income from Retire early? You can switch it back on in the list below."),
+      screen.getByText(`Remove Side income? Nothing is saved until you press a save button. You can switch it back on under "Not saved yet".`),
     ).toBeInTheDocument();
     expect(loadChangeEditorPropsMock).not.toHaveBeenCalled();
     fireEvent.click(confirmRemove());
@@ -853,36 +842,6 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
     expect(screen.queryByText("Opening the editor…")).not.toBeInTheDocument();
   });
 
-  it("an Assumptions write is re-addressed to the tab the editor opened on", async () => {
-    loadChangeEditorPropsMock.mockResolvedValue({ page: "assumptions", props: { clientId: CLIENT_ID } });
-    const { onTargetsWritten } = renderTab([], {
-      inventory: [item({ typeKey: "savings_withdrawals", id: "withdrawal", label: "Savings & withdrawals" })],
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.click(screen.getByRole("button", { name: /Savings & withdrawals/ }));
-    await screen.findByTestId("view-assumptions");
-    fireEvent.click(screen.getByRole("button", { name: "stub write settings" }));
-    expect(onTargetsWritten).toHaveBeenCalledWith(
-      [{ targetKind: "plan_settings", targetId: "withdrawal", op: "edit" }],
-      "Savings & withdrawals",
-    );
-  });
-
-  it("a workplace-coverage client write from the Tax Rates dialog is addressed to that tab", async () => {
-    loadChangeEditorPropsMock.mockResolvedValue({ page: "assumptions", props: { clientId: CLIENT_ID } });
-    const { onTargetsWritten } = renderTab([], {
-      inventory: [item({ typeKey: "tax_rates", id: "tax-rates", label: "Tax rates" })],
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.click(screen.getByRole("button", { name: /Tax rates/ }));
-    await screen.findByTestId("view-assumptions");
-    fireEvent.click(screen.getByRole("button", { name: "stub write client" }));
-    expect(onTargetsWritten).toHaveBeenCalledWith(
-      [{ targetKind: "plan_settings", targetId: "tax-rates", op: "edit" }],
-      "Tax rates",
-    );
-  });
-
   it("a delete shows a status strip while the view runs", async () => {
     loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
     renderTab([], { inventory: INVENTORY });
@@ -908,18 +867,6 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("reports a write the view announces, with the editor's label", async () => {
-    loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
-    const { onTargetsWritten } = renderTab([], { inventory: INVENTORY });
-    pickFromCategory("Edit", "Income", /Side income/);
-    await screen.findByTestId("view-income-expenses");
-    fireEvent.click(screen.getByRole("button", { name: "stub write" }));
-    expect(onTargetsWritten).toHaveBeenCalledWith(
-      [{ targetKind: "income", targetId: TARGET_ID, op: "remove" }],
-      "Side income",
-    );
-  });
-
   it("editing a trust opens the family view with an edit focus", async () => {
     loadChangeEditorPropsMock.mockResolvedValue({ page: "family", props: { clientId: CLIENT_ID } });
     renderTab([], { inventory: [item({ typeKey: "trust", id: "t1", label: "Family Trust" })] });
@@ -936,7 +883,6 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
 
   describe("the base case", () => {
     function renderBase() {
-      const onTargetsWritten = vi.fn();
       render(
         <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
           <SolverChangesTab
@@ -946,11 +892,10 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
             planTree={emptyTree()}
             willGrantors={[]}
             onOpenSolverTab={vi.fn()}
-            onTargetsWritten={onTargetsWritten}
+            held={hostFor("base")}
           />
         </ClientAccessProvider>,
       );
-      return { onTargetsWritten };
     }
 
     it("keeps the toolbar on, says it writes the base facts, and offers Create scenario", () => {
@@ -964,17 +909,15 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
       expect(openCreateMock).toHaveBeenCalledTimes(1);
     });
 
-    it("Edit opens the editor with no scenario and reports its writes", async () => {
+    it("Edit opens the editor with no scenario", async () => {
       loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
-      const { onTargetsWritten } = renderBase();
+      renderBase();
       fireEvent.click(screen.getByRole("button", { name: "Edit" }));
       fireEvent.change(screen.getByRole("searchbox"), { target: { value: "salary" } });
       fireEvent.click(screen.getByRole("button", { name: /Salary/ }));
       const view = await screen.findByTestId("view-income-expenses");
       expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ intent: "edit", kind: "income", id: "i-salary" });
-      expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, "base", "income-expenses");
-      fireEvent.click(screen.getByRole("button", { name: "stub write" }));
-      expect(onTargetsWritten.mock.calls[0][1]).toBe("Salary");
+      expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, "base", "income-expenses", HELD_MUTATIONS);
     });
 
     it("opens nothing when the URL still names a scenario the editors would write into", () => {
@@ -987,19 +930,19 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
       expect(loadChangeEditorPropsMock).not.toHaveBeenCalled();
     });
 
-    it("Delete asks with base wording, then mounts a delete focus with no scenario", async () => {
+    it("Delete asks with the held wording, then mounts a delete focus with no scenario", async () => {
       loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
       renderBase();
       pickFromCategory("Remove", "Income", /Side income/);
       expect(
         screen.getByText(
-          "Delete Side income from the base facts? This changes the client's real plan and can't be undone.",
+          `Remove Side income? Nothing is saved until you press a save button. You can switch it back on under "Not saved yet".`,
         ),
       ).toBeInTheDocument();
-      fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+      fireEvent.click(confirmRemove());
       const view = await screen.findByTestId("view-income-expenses");
       expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ intent: "delete", kind: "income", id: TARGET_ID });
-      expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, "base", "income-expenses");
+      expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, "base", "income-expenses", HELD_MUTATIONS);
     });
   });
 
@@ -1010,16 +953,6 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
     await screen.findByTestId("view-income-expenses");
     fireEvent.click(screen.getByRole("button", { name: "stub close" }));
     expect(routerRefreshMock).not.toHaveBeenCalled();
-  });
-
-  it("clicking a change to edit it reports writes with that change's name", async () => {
-    loadChangeEditorPropsMock.mockResolvedValue({ page: "income-expenses", props: { clientId: CLIENT_ID } });
-    const { onTargetsWritten } = renderTab([makeChange()], { inventory: INVENTORY });
-    fireEvent.click(screen.getByRole("button", { name: "Edit Side income" }));
-    await screen.findByTestId("view-income-expenses");
-    fireEvent.click(screen.getByRole("button", { name: "stub write" }));
-    expect(onTargetsWritten).toHaveBeenCalledTimes(1);
-    expect(onTargetsWritten.mock.calls[0][1]).toBe("Side income");
   });
 });
 
@@ -1051,7 +984,7 @@ describe("SolverChangesTab — LTC event", () => {
           planTree={buildClientData()}
           willGrantors={[]}
           onOpenSolverTab={vi.fn()}
-          onTargetsWritten={vi.fn()}
+          held={hostFor("base")}
           initialOpenChangeId={initialOpenChangeId}
           onInitialOpenConsumed={onInitialOpenConsumed}
         />

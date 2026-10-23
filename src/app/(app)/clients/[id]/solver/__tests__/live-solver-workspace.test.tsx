@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
+import type { ComponentProps } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 import { LiveSolverWorkspace } from "../live-solver-workspace";
 import { resolveReportLayout } from "@/lib/solver/report-layout";
 import { solverDraftKey } from "../use-solver-draft";
 import { resolveInputTab, resolveReportParam } from "../report-tab-link";
+import { mutationKey, type SolverMutation } from "@/lib/solver/types";
 
 // jsdom implements no scrollIntoView — the "View report" buttons scroll the
 // report pane into view (which matters on the sub-lg stacked layout).
@@ -122,8 +124,29 @@ vi.mock("@/components/charts/solver-withdrawal-chart", () => ({
   SolverWithdrawalChart: () => <div data-testid="chart-withdrawal" />,
 }));
 
+// Held changes: a Details editor opened from the Changes tab saves through
+// `held.hold`, which asks the server action to prepare the entries. Mocked here;
+// the real tab is wrapped only to capture the props the workspace hands it.
+const { prepareHeldEditsMock, tabProps } = vi.hoisted(() => ({
+  prepareHeldEditsMock: vi.fn(),
+  tabProps: { current: null as null | ComponentProps<typeof import("../solver-changes-tab").SolverChangesTab> },
+}));
+vi.mock("../held-edit-actions", () => ({ prepareHeldEdits: prepareHeldEditsMock }));
+vi.mock("../solver-changes-tab", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../solver-changes-tab")>();
+  return {
+    ...orig,
+    SolverChangesTab: (props: ComponentProps<typeof orig.SolverChangesTab>) => {
+      tabProps.current = props;
+      return <orig.SolverChangesTab {...props} />;
+    },
+  };
+});
+
 const fetchMock = vi.fn();
 beforeEach(() => {
+  prepareHeldEditsMock.mockReset();
+  tabProps.current = null;
   // Clear the working-state draft so a mutation persisted by one test can't be
   // restored into the next (the workspace now autosaves mutations to localStorage).
   localStorage.clear();
@@ -506,7 +529,7 @@ describe("LiveSolverWorkspace — save to base facts", () => {
   function seedDraft(mutations: unknown[]) {
     localStorage.setItem(
       solverDraftKey(baseProps.clientId, baseProps.userId, "base"),
-      JSON.stringify({ v: 1, draft: { mutations, solvedSeed: null, savingsAccountMixes: [] } }),
+      JSON.stringify({ v: 2, draft: { mutations, offGroups: [], solvedSeed: null, savingsAccountMixes: [] } }),
     );
   }
 
@@ -1501,7 +1524,7 @@ describe("LiveSolverWorkspace — long-term care draft vs a saved event", () => 
     localStorage.setItem(
       draftKey(),
       JSON.stringify({
-        v: 1,
+        v: 2,
         draft: { mutations: [{ kind: "stress-ltc", value: ltcEvent(startAge) }], solvedSeed: null, savingsAccountMixes: [] },
       }),
     );
@@ -1578,5 +1601,194 @@ describe("LiveSolverWorkspace — left tabs open at their top", () => {
     fireEvent.click(within(tabs).getByRole("tab", { name: "Retirement" }));
 
     expect(pane.scrollTop).toBe(640);
+  });
+});
+
+
+describe("LiveSolverWorkspace — held changes and switches", () => {
+  const held = (id: string, saveId: string, amount = 1000): SolverMutation => ({
+    kind: "held-change",
+    op: "add",
+    targetKind: "expense",
+    targetId: id,
+    payload: { id, name: `Item ${id}`, annualAmount: amount, startYear: 2026, endYear: 2040, growthRate: 0 },
+    saveId,
+  });
+  const EDIT = [{ op: "add" as const, targetKind: "expense" as const, entity: { id: "x" } }];
+  const SAVE_A = "aaaaaaaa-0000-4000-8000-000000000001";
+  const SAVE_B = "bbbbbbbb-0000-4000-8000-000000000002";
+
+  const okProject = () =>
+    Promise.resolve({
+      ok: true,
+      json: async () => ({ projection: [] }),
+      text: async () => JSON.stringify({ projection: [{ year: 2026, portfolioAssets: { total: 900_000 } }] }),
+    });
+  const projectBodies = () =>
+    fetchMock.mock.calls
+      .filter((c) => String(c[0]).endsWith("/solver/project"))
+      .map((c) => JSON.parse(c[1].body as string) as { source: string; mutations: SolverMutation[] });
+  const draftOf = () =>
+    JSON.parse(localStorage.getItem(solverDraftKey("client-id", "user-id", "base")) ?? "null")?.draft as
+      | { mutations: SolverMutation[]; offGroups: string[] }
+      | undefined;
+  const leftTab = (name: string) =>
+    within(screen.getByRole("tablist", { name: "Solver editing surface" })).getByRole("tab", { name });
+  const holdFrom = async (mutations: SolverMutation[]) => {
+    prepareHeldEditsMock.mockResolvedValueOnce({ ok: true, upserts: mutations, dropKeys: [], reply: { ok: true } });
+    let res!: Response;
+    await act(async () => {
+      res = await tabProps.current!.held.hold(EDIT);
+    });
+    return res;
+  };
+
+  beforeEach(() => {
+    fetchMock.mockImplementation((url: string) =>
+      String(url).endsWith("/solver/project") ? okProject() : Promise.resolve({ ok: true, json: async () => ({}) }),
+    );
+  });
+
+  it("a held edit reaches the project request as a held-change mutation", async () => {
+    render(<LiveSolverWorkspace {...baseProps} initialTab="changes" />);
+    const res = await holdFrom([held("e1", SAVE_A)]);
+
+    expect(await res.json()).toEqual({ ok: true });
+    expect(prepareHeldEditsMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: "client-id",
+        source: "base",
+        mutations: [],
+        offGroups: [],
+        edits: EDIT,
+        saveId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      }),
+    );
+    await waitFor(() => expect(projectBodies().length).toBeGreaterThan(0), { timeout: 2000 });
+    expect(projectBodies().at(-1)!.mutations).toEqual([held("e1", SAVE_A)]);
+    // Nothing was written.
+    expect(fetchMock.mock.calls.every((c) => !String(c[0]).includes("/changes"))).toBe(true);
+  });
+
+  it("a refused hold answers with the server's error and changes nothing", async () => {
+    render(<LiveSolverWorkspace {...baseProps} initialTab="changes" />);
+    prepareHeldEditsMock.mockResolvedValueOnce({ ok: false, status: 400, error: "Nope" });
+    let res!: Response;
+    await act(async () => {
+      res = await tabProps.current!.held.hold(EDIT);
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Nope" });
+    expect(tabProps.current!.unsaved!.entries).toEqual([]);
+  });
+
+  it("applies dropKeys before upserts, so an upsert can reuse a dropped key", async () => {
+    render(<LiveSolverWorkspace {...baseProps} initialTab="changes" />);
+    await holdFrom([held("e1", SAVE_A, 1000)]);
+    prepareHeldEditsMock.mockResolvedValueOnce({
+      ok: true,
+      upserts: [held("e1", SAVE_B, 2000)],
+      dropKeys: [mutationKey(held("e1", SAVE_A))],
+      reply: { ok: true },
+    });
+    await act(async () => {
+      await tabProps.current!.held.hold(EDIT);
+    });
+    expect(tabProps.current!.unsaved!.entries).toEqual([held("e1", SAVE_B, 2000)]);
+  });
+
+  it("switching a group off removes its entries from the next project request but keeps them in the draft", async () => {
+    render(<LiveSolverWorkspace {...baseProps} initialTab="changes" />);
+    await holdFrom([held("e1", SAVE_A)]);
+    await holdFrom([held("e2", SAVE_B)]);
+    await waitFor(() => expect(projectBodies().at(-1)?.mutations).toHaveLength(2), { timeout: 2000 });
+
+    fetchMock.mockClear();
+    act(() => tabProps.current!.unsaved!.setGroupOn(`save:${SAVE_A}`, false));
+
+    await waitFor(() => expect(projectBodies().length).toBeGreaterThan(0), { timeout: 2000 });
+    expect(projectBodies().at(-1)!.mutations).toEqual([held("e2", SAVE_B)]);
+    expect(tabProps.current!.unsaved!.entries).toHaveLength(2);
+    expect(draftOf()!.mutations).toHaveLength(2);
+    expect(draftOf()!.offGroups).toEqual([`save:${SAVE_A}`]);
+    // The editor host opens on the switched-on list only.
+    expect(tabProps.current!.held.mutations).toEqual([held("e2", SAVE_B)]);
+  });
+
+  it("moving a control re-enables its group", async () => {
+    render(<LiveSolverWorkspace {...baseProps} initialTab="changes" />);
+    fireEvent.click(leftTab("Retirement"));
+    setCooperRetirementAge(66);
+    // Visit the Changes tab to reach the switches, switch the control's group off.
+    fireEvent.click(leftTab("Scenario changes"));
+    act(() => tabProps.current!.unsaved!.setGroupOn("key:retirement-age:client", false));
+    expect(draftOf()!.offGroups).toEqual(["key:retirement-age:client"]);
+
+    fireEvent.click(leftTab("Retirement"));
+    fetchMock.mockClear();
+    setCooperRetirementAge(66);
+    await waitFor(() => expect(projectBodies().length).toBeGreaterThan(0), { timeout: 2000 });
+    expect(projectBodies().at(-1)!.mutations).toEqual([{ kind: "retirement-age", person: "client", age: 66 }]);
+    expect(draftOf()!.offGroups).toEqual([]);
+  });
+
+  it("discarding a held add discards the rule on it", async () => {
+    render(<LiveSolverWorkspace {...baseProps} initialTab="changes" />);
+    const account: SolverMutation = {
+      kind: "held-change",
+      op: "add",
+      targetKind: "account",
+      targetId: "acct-new",
+      payload: { id: "acct-new", name: "New brokerage", category: "taxable", value: 0, owners: [] },
+      saveId: SAVE_A,
+    };
+    const rule = {
+      kind: "savings-rule-upsert",
+      id: "rule-1",
+      value: { id: "rule-1", accountId: "acct-new", annualAmount: 5000, startYear: 2026, endYear: 2030 },
+    } as unknown as SolverMutation;
+    await holdFrom([account, held("e9", SAVE_B), rule]);
+    expect(tabProps.current!.unsaved!.entries).toHaveLength(3);
+
+    act(() => tabProps.current!.unsaved!.discard(mutationKey(account)));
+
+    expect(tabProps.current!.unsaved!.entries).toEqual([held("e9", SAVE_B)]);
+  });
+
+  it("Reset clears entries and switches", async () => {
+    render(<LiveSolverWorkspace {...baseProps} initialTab="changes" />);
+    await holdFrom([held("e1", SAVE_A)]);
+    await holdFrom([held("e2", SAVE_B)]);
+    act(() => tabProps.current!.unsaved!.setGroupOn(`save:${SAVE_A}`, false));
+    expect(tabProps.current!.unsaved!.offGroups.size).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    expect(tabProps.current!.unsaved!.entries).toEqual([]);
+    expect(tabProps.current!.unsaved!.offGroups.size).toBe(0);
+    expect(localStorage.getItem(solverDraftKey("client-id", "user-id", "base"))).toBeNull();
+  });
+
+  it("Update scenario posts only switched-on entries and keeps the off ones", async () => {
+    vi.stubGlobal("confirm", () => true);
+    fetchMock.mockImplementation((url: string, init?: { method?: string }) =>
+      String(url).endsWith("/solver/project")
+        ? okProject()
+        : Promise.resolve({ ok: true, json: async () => ({}), init }),
+    );
+    render(<LiveSolverWorkspace {...baseProps} initialSource="scn-1" initialTab="changes" />);
+    await holdFrom([held("e1", SAVE_A)]);
+    await holdFrom([held("e2", SAVE_B)]);
+    act(() => tabProps.current!.unsaved!.setGroupOn(`save:${SAVE_A}`, false));
+
+    fireEvent.click(screen.getByRole("button", { name: /^Update scenario/ }));
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith("/solver/save-scenario"))).toBe(true),
+    );
+    const call = fetchMock.mock.calls.find((c) => String(c[0]).endsWith("/solver/save-scenario"))!;
+    expect(JSON.parse(call[1].body as string).mutations).toEqual([held("e2", SAVE_B)]);
+    await waitFor(() => expect(tabProps.current!.unsaved!.entries).toEqual([held("e1", SAVE_A)]));
+    expect(tabProps.current!.unsaved!.offGroups.has(`save:${SAVE_A}`)).toBe(true);
   });
 });

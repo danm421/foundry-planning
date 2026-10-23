@@ -1,34 +1,30 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within, cleanup } from "@testing-library/react";
 import { SolverYearDetailPanel, type YearDetailEditing } from "../solver-year-detail-panel";
 import type { InventoryItem } from "@/lib/scenario/plan-inventory";
+import type { HeldEditorHost } from "../solver-change-editor";
 import type { DetailTypeKey } from "@/lib/scenario/plan-detail-catalog";
 
 // Reuse the same minimal factories as the helper test.
 import type { ClientData, ProjectionYear } from "@/engine";
 
 // Stand-in for the Changes tab's editor host: shows what it was asked to open
-// and exposes its two callbacks. The host itself is covered by the Changes tab tests.
+// and exposes its close callback. The host itself is covered by the Changes tab tests.
 vi.mock("../solver-change-editor", () => ({
   SolverChangeEditor: ({
-    scenarioId,
+    host,
     target,
     label,
     onDone,
-    onWrite,
   }: {
-    scenarioId: string | null;
+    host: { source: string };
     target: { page: string; focus: unknown };
     label: string;
     onDone: () => void;
-    onWrite?: (e: { targetKind: string; targetId: string; op: string }) => void;
   }) => (
-    <div data-testid="editor" data-scenario={scenarioId ?? "base"} data-page={target.page} data-focus={JSON.stringify(target.focus)}>
+    <div data-testid="editor" data-source={host.source} data-page={target.page} data-focus={JSON.stringify(target.focus)}>
       {label}
-      <button type="button" onClick={() => onWrite?.({ targetKind: "income", targetId: "inc-pen", op: "edit" })}>
-        stub write
-      </button>
       <button type="button" onClick={onDone}>
         stub close
       </button>
@@ -168,36 +164,22 @@ describe("SolverYearDetailPanel", () => {
       item("liability", "liab-mortgage", "Home Mortgage"),
       item("account", "acc-brokerage", "Joint Brokerage"),
     ];
-    const onTargetsWritten = vi.fn();
-    const editing = (scenarioId: string | null): YearDetailEditing => ({
-      clientId: "c1", scenarioId, inventory, onTargetsWritten,
+    const held = (source: string): HeldEditorHost => ({
+      source, mutations: [], hold: vi.fn(), switchedOffIds: new Set(),
     });
+    const editing = (source: string): YearDetailEditing => ({ clientId: "c1", inventory, held: held(source) });
 
-    beforeEach(() => {
-      onTargetsWritten.mockReset();
-    });
-
-    it("opens a clicked item's editor in the scenario and closes it when done", () => {
+    it("opens the editor with the held host, and closes it when done", () => {
       render(<SolverYearDetailPanel year={makeYear()} years={[]} clientData={makeClientData()} editing={editing("s1")} />);
       fireEvent.click(screen.getByRole("button", { name: "Edit Home Mortgage" }));
       const editor = screen.getByTestId("editor");
-      expect(editor.dataset.scenario).toBe("s1");
+      expect(editor.dataset.source).toBe("s1");
       expect(editor.dataset.page).toBe("net-worth");
       expect(JSON.parse(editor.dataset.focus!)).toEqual({ intent: "edit", kind: "liability", id: "liab-mortgage" });
       expect(editor).toHaveTextContent("Home Mortgage");
 
       fireEvent.click(screen.getByRole("button", { name: "stub close" }));
       expect(screen.queryByTestId("editor")).not.toBeInTheDocument();
-    });
-
-    it("reports the editor's writes so replaced Solver levers drop", () => {
-      render(<SolverYearDetailPanel year={makeYear()} years={[]} clientData={makeClientData()} editing={editing("s1")} />);
-      fireEvent.click(screen.getByRole("button", { name: "Edit Pension" }));
-      fireEvent.click(screen.getByRole("button", { name: "stub write" }));
-      expect(onTargetsWritten).toHaveBeenCalledWith(
-        [{ targetKind: "income", targetId: "inc-pen", op: "edit" }],
-        "Pension",
-      );
     });
 
     it("lets a category with no item rows open the one item it stands for", () => {
@@ -216,18 +198,12 @@ describe("SolverYearDetailPanel", () => {
       expect(screen.getByText("401(k)").closest("button")).toBeNull();
     });
 
-    it("on the base case, opens the same editor with no scenario, and reports its writes", () => {
-      render(<SolverYearDetailPanel year={makeYear()} years={[]} clientData={makeClientData()} editing={editing(null)} />);
+    it("on the base case, opens the same editor on the base source", () => {
+      render(<SolverYearDetailPanel year={makeYear()} years={[]} clientData={makeClientData()} editing={editing("base")} />);
       fireEvent.click(screen.getByRole("button", { name: "Edit Pension" }));
       const editor = screen.getByTestId("editor");
-      expect(editor.dataset.scenario).toBe("base");
+      expect(editor.dataset.source).toBe("base");
       expect(JSON.parse(editor.dataset.focus!)).toEqual({ intent: "edit", kind: "income", id: "inc-pen" });
-
-      fireEvent.click(screen.getByRole("button", { name: "stub write" }));
-      expect(onTargetsWritten).toHaveBeenCalledWith(
-        [{ targetKind: "income", targetId: "inc-pen", op: "edit" }],
-        "Pension",
-      );
     });
 
     it("leaves every name plain for an advisor who can't edit", () => {

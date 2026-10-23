@@ -32,7 +32,6 @@
 import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioState } from "@/hooks/use-scenario-state";
-import { useScenarioWriteListener, type ScenarioWriteEvent } from "@/hooks/scenario-write-listener";
 import { useHeldEdits, HOLD_MODE_DIRECT_REFUSAL } from "@/hooks/held-edits";
 import type { TargetKind } from "@/engine/scenario/types";
 
@@ -92,11 +91,8 @@ export interface UseScenarioWriter {
    *
    * Identical to what `submit` does in base mode, refresh included, so a
    * surface that moves onto it keeps its base-mode behaviour unchanged.
-   *
-   * `target`, when given, is announced to the write listener after a
-   * successful request — a direct write has no edit to derive it from.
    */
-  submitDirect: (request: BaseFallback, target?: ScenarioWriteEvent) => Promise<Response>;
+  submitDirect: (request: BaseFallback) => Promise<Response>;
   /** True when `?scenario=<sid>` is set, i.e. submits go through the unified route. */
   scenarioActive: boolean;
 }
@@ -105,11 +101,10 @@ export interface UseScenarioWriter {
 export function useScenarioWriter(clientId: string): UseScenarioWriter {
   const { scenarioId } = useScenarioState(clientId);
   const router = useRouter();
-  const onWrite = useScenarioWriteListener();
   const held = useHeldEdits();
 
   const submitDirect = useCallback(
-    async (request: BaseFallback, target?: ScenarioWriteEvent): Promise<Response> => {
+    async (request: BaseFallback): Promise<Response> => {
       // A Solver-hosted editor never writes. The tables this path serves
       // aren't held as changes, so it answers like a refused write and the
       // editor stays open.
@@ -121,10 +116,9 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
       }
       const res = await fetch(request.url, init);
       if (res.ok && !request.skipRefresh) router.refresh();
-      if (res.ok && target) onWrite?.(target);
       return res;
     },
-    [router, onWrite, held],
+    [router, held],
   );
 
   const submit = useCallback(
@@ -135,18 +129,12 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
       const edits = Array.isArray(edit) ? edit : [edit];
 
       // Hold mode: the Solver keeps the batch as unsaved changes. No fetch, no
-      // refresh, no write announcement.
+      // refresh.
       if (held) return held.hold(edits);
 
       // Base mode: pass through to the per-entity legacy route. ONE call even
-      // for a batch — see the header note on `baseFallback`. Once it lands,
-      // every edit it stood for is announced, as in scenario mode: the Solver
-      // opens these editors on the base case too.
-      if (!scenarioId) {
-        const res = await submitDirect(baseFallback);
-        if (res.ok) for (const e of edits) onWrite?.(writeEventOf(e));
-        return res;
-      }
+      // for a batch — see the header note on `baseFallback`.
+      if (!scenarioId) return submitDirect(baseFallback);
 
       // Scenario mode: one POST per edit, in order, stopping at the first
       // failure. Refreshing per-edit instead would re-render the page against a
@@ -174,9 +162,6 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
           return res;
         }
         last = res;
-        // Announced per edit, as it lands: a batch that stops partway still
-        // reconciles the edits that did.
-        onWrite?.(writeEventOf(e));
       }
       if (last && !baseFallback.skipRefresh) router.refresh();
       // Only reachable for an empty batch, which no caller passes. "Nothing to
@@ -184,17 +169,8 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
       // caller's `res.ok` read honest without widening the return to nullable.
       return last ?? new Response(null, { status: 204 });
     },
-    [scenarioId, clientId, router, submitDirect, onWrite, held],
+    [scenarioId, clientId, router, submitDirect, held],
   );
 
   return { submit, submitDirect, scenarioActive: held !== null || scenarioId != null };
-}
-
-/** What a landed edit tells the write listener. */
-function writeEventOf(e: ScenarioEdit): ScenarioWriteEvent {
-  return {
-    targetKind: e.targetKind,
-    targetId: e.targetId ?? (typeof e.entity?.id === "string" ? e.entity.id : null),
-    op: e.op,
-  };
 }

@@ -9,11 +9,8 @@
 // The toolbar above the list adds, edits and deletes any plan detail, not only
 // the ones the scenario already changed: Add and Edit open the Details page's
 // own editor in place, Delete asks first (SolverDeleteConfirm) and then opens
-// the same host, which runs the view's delete and reports back. Every write the
-// view makes is reported up through `onTargetsWritten` so the Solver can drop
-// the draft levers that write replaced. On the base case the same toolbar
-// writes the base facts, as the Details page does, under a line saying so and
-// a way to create a scenario instead.
+// the same host, which runs the view's delete and reports back. Nothing the
+// editors do is written: every save goes to `held.hold` as unsaved Solver changes.
 //
 // Clicking a change's title opens where it's edited (resolveChangeEditor):
 // a Solver tab (Stress, Retirement) switches the left pane; a Details page
@@ -35,17 +32,26 @@ import { labelFor } from "@/components/scenario/changes-panel-leaf-row";
 import type { ClientData, LtcEvent, ProjectionYear } from "@/engine/types";
 import { useClientAccess } from "@/components/client-access-provider";
 import { resolveEffectiveToggleState } from "@/engine/scenario/applyChanges";
-import { focusRowId, resolveChangeEditor, type CreateVariant } from "@/lib/scenario/change-editor-target";
+import { resolveChangeEditor, type CreateVariant } from "@/lib/scenario/change-editor-target";
 import { detailEditorTarget, detailType, type DetailTypeKey } from "@/lib/scenario/plan-detail-catalog";
 import type { InventoryItem, WillGrantor } from "@/lib/scenario/plan-inventory";
-import type { ScenarioWriteEvent } from "@/hooks/scenario-write-listener";
+import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
 import type { PanelData } from "@/lib/scenario/load-panel-data";
-import { SolverChangeEditor, type EditorHostTarget } from "./solver-change-editor";
+import { SolverChangeEditor, type EditorHostTarget, type HeldEditorHost } from "./solver-change-editor";
 import { LtcEventDialog } from "./ltc-event-dialog";
 import { SolverDetailActions } from "./solver-detail-actions";
 import { SolverDeleteConfirm } from "./solver-delete-confirm";
 import { SolverScenarioSelect } from "./solver-scenario-select";
 import type { InputTab } from "./report-tab-link";
+
+export interface UnsavedChanges {
+  /** Every unsaved entry, switched on or off. */
+  entries: readonly SolverMutation[];
+  /** Ids of the switched-off groups. */
+  offGroups: ReadonlySet<string>;
+  setGroupOn: (groupId: string, on: boolean) => void;
+  discard: (key: SolverMutationKey) => void;
+}
 
 interface Props {
   clientId: string;
@@ -58,8 +64,10 @@ interface Props {
   planTree: ClientData;
   /** Grantors with no will in the persisted plan: who "Will" may be added for. */
   willGrantors: readonly WillGrantor[];
-  /** Every scenario write the editor makes, with the name of what was edited. */
-  onTargetsWritten: (events: ScenarioWriteEvent[], label: string) => void;
+  /** Where the editors load from and where their saves go (as unsaved Solver changes). */
+  held: HeldEditorHost;
+  /** The Solver's unsaved list and what the "Not saved yet" section does with it. */
+  unsaved?: UnsavedChanges;
   /** Switches the Solver's left pane to the tab that edits a change. */
   onOpenSolverTab: (tab: InputTab) => void;
   /** The current projection, for the LTC dialog's home-sale preview. */
@@ -76,7 +84,7 @@ export function SolverChangesTab({
   inventory,
   planTree,
   willGrantors,
-  onTargetsWritten,
+  held,
   onOpenSolverTab,
   projectionYears,
   initialOpenChangeId,
@@ -91,7 +99,7 @@ export function SolverChangesTab({
   ) : null;
   // `seq` remounts the editor on every click, so re-opening the same change
   // (or replacing a message) always starts a fresh load. `label` names what the
-  // editor is about, for its own messages and for the draft-reconciliation notice.
+  // editor is about, for its own messages.
   const [editing, setEditing] = useState<{ target: EditorHostTarget; seq: number; label: string } | null>(null);
   // A delete waits here for the advisor's confirmation before it reaches the host.
   const [confirming, setConfirming] = useState<InventoryItem | null>(null);
@@ -163,11 +171,9 @@ export function SolverChangesTab({
       )}
       {confirming && (
         <SolverDeleteConfirm
-          clientId={clientId}
           tree={planTree}
           inventory={inventory}
           item={confirming}
-          scenarioName={panel?.scenarioName ?? null}
           onCancel={() => setConfirming(null)}
           onConfirm={() => {
             openEditor(detailEditorTarget(confirming.typeKey, { intent: "delete", id: confirming.id }), confirming.label);
@@ -190,11 +196,10 @@ export function SolverChangesTab({
         <SolverChangeEditor
           key={editing.seq}
           clientId={clientId}
-          scenarioId={panel?.scenarioId ?? null}
+          host={held}
           target={editing.target}
           label={editing.label}
           onDone={() => setEditing(null)}
-          onWrite={(event) => onTargetsWritten([hostEvent(event, editing.target)], editing.label)}
         />
       )}
       {panel ? (
@@ -219,18 +224,4 @@ export function SolverChangesTab({
       )}
     </>
   );
-}
-
-/**
- * A plan_settings write carries the client id, but the draft levers it replaces
- * are keyed on the Assumptions tab the editor was opened on, so the event is
- * re-addressed to that focus id. The Tax Rates tab also writes the client's
- * workplace-coverage fields as a `client` edit; that is part of the same
- * settings save, so it is re-addressed too rather than superseding the
- * retirement-age and life-expectancy levers a `client` write would.
- */
-function hostEvent(event: ScenarioWriteEvent, target: EditorHostTarget): ScenarioWriteEvent {
-  if (target.surface !== "details" || target.focus.kind !== "plan_settings") return event;
-  if (event.targetKind !== "plan_settings" && event.targetKind !== "client") return event;
-  return { ...event, targetKind: "plan_settings", targetId: focusRowId(target.focus) ?? event.targetId };
 }

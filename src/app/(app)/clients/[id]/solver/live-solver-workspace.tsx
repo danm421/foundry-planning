@@ -12,6 +12,11 @@ import { resolveLtcEvent } from "@/engine/ltc-event";
 import type { QuickAddType } from "@/lib/solver/quick-add-account";
 import { buildAdditionalSavingsAccount } from "@/lib/solver/quick-add-account";
 import { applyMutations } from "@/lib/solver/apply-mutations";
+import { applyHeldChanges } from "@/lib/solver/held-changes";
+import { effectiveMutations, removeWithDependants, switchGroupOf } from "@/lib/solver/switch-groups";
+import { resolveEffectiveToggleState } from "@/engine/scenario/applyChanges";
+import { focusRowId, resolveChangeEditor } from "@/lib/scenario/change-editor-target";
+import type { ScenarioEdit } from "@/hooks/use-scenario-writer";
 import type { DefaultGrowthAtInflation } from "@/lib/investments/default-growth-at-inflation";
 import { DefaultGrowthBanner } from "@/components/default-growth-banner";
 import { parseProjectionResponse } from "@/lib/solver/projection-wire";
@@ -85,8 +90,8 @@ import {
   ChangesIcon,
 } from "./solver-tab-icons";
 import { SolverChangesTab } from "./solver-changes-tab";
-import { useDraftReconciliation } from "./use-draft-reconciliation";
-import { DraftReconciliationNotice } from "./draft-reconciliation-notice";
+import { prepareHeldEdits } from "./held-edit-actions";
+import type { HeldEditorHost } from "./solver-change-editor";
 import { buildPlanInventory, grantorsWithoutWill } from "@/lib/scenario/plan-inventory";
 import type { PanelData } from "@/lib/scenario/load-panel-data";
 
@@ -283,7 +288,16 @@ export function LiveSolverWorkspace({
   const [mutationMap, setMutationMap] = useState<Map<SolverMutationKey, SolverMutation>>(
     () => new Map(),
   );
-  const mutations = useMemo(() => Array.from(mutationMap.values()), [mutationMap]);
+  // Groups the advisor has switched off. Their entries stay in `mutationMap`
+  // (and the draft) but out of `mutations`.
+  const [offGroups, setOffGroups] = useState<ReadonlySet<string>>(() => new Set());
+  // EVERY unsaved entry, on or off. `mutations` is the switched-on slice: it is
+  // what the projection, solve, Monte Carlo and the saves read.
+  const allMutations = useMemo(() => Array.from(mutationMap.values()), [mutationMap]);
+  const mutations = useMemo(
+    () => effectiveMutations(allMutations, offGroups, initialSourceClientData),
+    [allMutations, offGroups, initialSourceClientData],
+  );
   // ONE Save-to-base split, read by all three call sites below: the POST body,
   // the post-save retain, and the button's enabled state. They used to call the
   // per-kind predicate independently, which is how a sale's owner flip could be
@@ -692,10 +706,13 @@ export function LiveSolverWorkspace({
     },
   });
 
-  const workingTree = useMemo(
-    () => applyMutations(initialSourceClientData, mutations),
+  // The source plan with the held (dialog-saved) changes applied; the Solver's
+  // levers then apply on top of it.
+  const heldTree = useMemo(
+    () => applyHeldChanges(initialSourceClientData, mutations),
     [initialSourceClientData, mutations],
   );
+  const workingTree = useMemo(() => applyMutations(heldTree, mutations), [heldTree, mutations]);
 
   // The rate a newly added income/expense grows at by default. Reads the WORKING
   // tree first so a stress-inflation lever moves it — same chain SolverRowIncomes
@@ -951,6 +968,7 @@ export function LiveSolverWorkspace({
   // synthetic-account mixes), keying the map by lever exactly like pushMutation.
   const handleRestoreDraft = useCallback((draft: SolverDraft) => {
     setMutationMap(mutationMapFromDraft(draft.mutations));
+    setOffGroups(new Set(draft.offGroups));
     if (draft.solvedSeed != null) setSolvedSeed(draft.solvedSeed);
     if (draft.savingsAccountMixes.length > 0) {
       setSavingsAccountMixes(new Map(draft.savingsAccountMixes));
@@ -967,7 +985,8 @@ export function LiveSolverWorkspace({
     clientId,
     userId,
     source: initialSource,
-    mutations,
+    mutations: allMutations,
+    offGroups,
     solvedSeed,
     savingsAccountMixes,
     onRestore: handleRestoreDraft,
@@ -976,6 +995,7 @@ export function LiveSolverWorkspace({
 
   const handleReset = useCallback(() => {
     setMutationMap(new Map());
+    setOffGroups(new Set());
     setComputeStatus("fresh");
     setCurrentProjection(initialSourceProjection);
     setSolvedPoS(null);
@@ -1005,6 +1025,7 @@ export function LiveSolverWorkspace({
       )
     )
       return;
+    const posted = mutations;
     setUpdatingScenario(true);
     setUpdateScenarioError(null);
     try {
@@ -1013,7 +1034,8 @@ export function LiveSolverWorkspace({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           scenarioId: initialSource,
-          mutations,
+          // Only the switched-on entries are saved; the off ones stay unsaved.
+          mutations: posted,
           // Persist the canonical solve's seed so the scenario's report
           // reproduces the same PoS, mirroring the save-as-new path.
           ...(solvedSeed !== null ? { seed: solvedSeed } : {}),
@@ -1023,10 +1045,15 @@ export function LiveSolverWorkspace({
         const body = await res.json().catch(() => ({}));
         throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
       }
-      // The scenario now carries these changes. Drop the working mutations and
-      // refresh server components so the workspace reloads the scenario's new
-      // effective tree as its baseline (no lingering "unsaved" state).
-      setMutationMap(new Map());
+      // The scenario now carries exactly the entries posted. Drop those (the
+      // switched-off ones stay) and refresh server components so the workspace
+      // reloads the scenario's new effective tree as its baseline.
+      const postedKeys = new Set(posted.map(mutationKey));
+      setMutationMap((prev) => {
+        const next = new Map(prev);
+        for (const k of postedKeys) next.delete(k);
+        return next;
+      });
       setSolvedPoS(null);
       setSolvedSeed(null);
       setComputeStatus("fresh");
@@ -1144,18 +1171,100 @@ export function LiveSolverWorkspace({
     }
   }
 
+  // Every change to the unsaved list moves numbers, so each one invalidates the
+  // prior solve's canonical PoS and seed and marks the Scenario PoS outdated.
+  function markEdited() {
+    setComputeStatus("stale");
+    setSolvedPoS(null);
+    setSolvedSeed(null);
+    setEditNonce((n) => n + 1);
+  }
+
   function pushMutation(m: SolverMutation) {
     setMutationMap((prev) => {
       const next = new Map(prev);
       next.set(mutationKey(m), m);
       return next;
     });
-    setComputeStatus("stale");
-    // Any manual edit invalidates the prior solve's canonical PoS and seed.
-    setSolvedPoS(null);
-    setSolvedSeed(null);
-    setEditNonce((n) => n + 1); // marks the Scenario PoS outdated
+    // Moving a control switches its group back on.
+    const group = switchGroupOf(m, allMutations, initialSourceClientData);
+    setOffGroups((prev) => {
+      if (!prev.has(group)) return prev;
+      const next = new Set(prev);
+      next.delete(group);
+      return next;
+    });
+    markEdited();
   }
+
+  // A Details editor opened from the Solver saves here: the edits become held
+  // changes in the unsaved list. Nothing is written. Drops go before upserts —
+  // an upsert may reuse a key a drop frees.
+  async function hold(edits: ScenarioEdit[]): Promise<Response> {
+    const result = await prepareHeldEdits({
+      clientId,
+      source: initialSource,
+      mutations: allMutations,
+      offGroups: [...offGroups],
+      edits,
+      saveId: crypto.randomUUID(),
+    });
+    if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
+    setMutationMap((prev) => {
+      const next = new Map(prev);
+      for (const k of result.dropKeys) next.delete(k);
+      for (const m of result.upserts) next.set(mutationKey(m), m);
+      return next;
+    });
+    markEdited();
+    return Response.json(result.reply);
+  }
+
+  function setGroupOn(groupId: string, on: boolean) {
+    setOffGroups((prev) => {
+      if (on === !prev.has(groupId)) return prev;
+      const next = new Set(prev);
+      if (on) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+    markEdited();
+  }
+
+  // Drops an entry and the entries that name what it creates (one level).
+  function discard(key: SolverMutationKey) {
+    const keys = removeWithDependants(allMutations, key, initialSourceClientData);
+    setMutationMap((prev) => {
+      const next = new Map(prev);
+      for (const k of keys) next.delete(k);
+      return next;
+    });
+    markEdited();
+  }
+
+  // Items whose SAVED change is in a switched-off group. The editor host
+  // refuses to open them ("switch it on first"), comparing against the id the
+  // editor's focus carries — which is the change's targetId, except where the
+  // resolver re-addresses it (an Assumptions tab id for plan_settings, and for
+  // the client fields the Tax Rates tab writes). Both ids go in.
+  const switchedOffIds = useMemo(() => {
+    const ids = new Set<string>();
+    const panel = changesPanel;
+    if (!panel) return ids;
+    const groupOn = resolveEffectiveToggleState({}, panel.toggleGroups);
+    for (const c of panel.changes) {
+      if (c.toggleGroupId == null || groupOn[c.toggleGroupId] !== false) continue;
+      ids.add(c.targetId);
+      const target = resolveChangeEditor({ ...c, enabled: true, opType: c.opType === "remove" ? "edit" : c.opType });
+      if (target?.surface === "details") {
+        const id = focusRowId(target.focus);
+        if (id) ids.add(id);
+      }
+    }
+    return ids;
+  }, [changesPanel]);
+
+  const heldHost: HeldEditorHost = { source: initialSource, mutations, hold, switchedOffIds };
 
   // Per-field reset: drop the given mutation keys from the map, mirroring
   // pushMutation's staleness side-effects (a reset is an edit). Clearing one or
@@ -1173,25 +1282,14 @@ export function LiveSolverWorkspace({
     setEditNonce((n) => n + 1); // a per-field reset is an edit → Scenario stale
   }, []);
 
-  // The Changes tab's Add / Edit / Delete list the PERSISTED scenario plan (never
-  // the working tree, which carries unsaved levers) and, once a write lands,
-  // drop the draft levers it replaced.
+  // The Changes tab's Add / Edit / Delete list the plan as the editors will open
+  // it: the persisted scenario plan with the held changes applied, but never the
+  // Solver's levers (`workingTree`).
   const inventory = useMemo(
-    () =>
-      buildPlanInventory(
-        initialSourceClientData,
-        baseGifts,
-        clientId,
-        new Set(overlayGiftSeriesIds),
-      ),
-    [initialSourceClientData, baseGifts, overlayGiftSeriesIds, clientId],
+    () => buildPlanInventory(heldTree, baseGifts, clientId, new Set(overlayGiftSeriesIds)),
+    [heldTree, baseGifts, overlayGiftSeriesIds, clientId],
   );
-  const willGrantors = useMemo(() => grantorsWithoutWill(initialSourceClientData), [initialSourceClientData]);
-  const { notice: draftNotice, dismissNotice: dismissDraftNotice, onTargetsWritten } = useDraftReconciliation({
-    inventory,
-    mutations,
-    clearMutations,
-  });
+  const willGrantors = useMemo(() => grantorsWithoutWill(heldTree), [heldTree]);
 
   // Stale-draft rule: once a scenario holds a saved LTC event (on or off) it is
   // the truth. A leftover `stress-ltc` draft (restored from browser storage) would
@@ -1776,14 +1874,14 @@ export function LiveSolverWorkspace({
 
         {activeTab === "changes" && (
           <>
-            <DraftReconciliationNotice notice={draftNotice} onDismiss={dismissDraftNotice} />
             <SolverChangesTab
               clientId={clientId}
               panel={changesPanel ?? null}
               inventory={inventory}
-              planTree={initialSourceClientData}
+              planTree={heldTree}
               willGrantors={willGrantors}
-              onTargetsWritten={onTargetsWritten}
+              held={heldHost}
+              unsaved={{ entries: allMutations, offGroups, setGroupOn, discard }}
               onOpenSolverTab={selectLeftTab}
               projectionYears={currentProjection}
               initialOpenChangeId={pendingOpenChangeId}
@@ -1926,7 +2024,6 @@ export function LiveSolverWorkspace({
                   const y = currentProjection.find((r) => r.year === selectedYear);
                   return y ? (
                     <>
-                      <DraftReconciliationNotice notice={draftNotice} onDismiss={dismissDraftNotice} />
                       <SolverYearDetailPanel
                         year={y}
                         years={currentProjection}
@@ -1934,12 +2031,7 @@ export function LiveSolverWorkspace({
                         // Clicking a name opens the same editor the Changes tab does.
                         editing={
                           canEdit
-                            ? {
-                                clientId,
-                                scenarioId: changesPanel?.scenarioId ?? null,
-                                inventory,
-                                onTargetsWritten,
-                              }
+                            ? { clientId, inventory, held: heldHost }
                             : undefined
                         }
                       />

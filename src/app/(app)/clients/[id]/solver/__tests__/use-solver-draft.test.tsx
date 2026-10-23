@@ -23,6 +23,7 @@ function useHarness(
   initial: SolverMutation[] = [],
 ) {
   const [mutations, setMutations] = useState<SolverMutation[]>(initial);
+  const [offGroups, setOffGroups] = useState<Set<string>>(() => new Set());
   const [solvedSeed, setSolvedSeed] = useState<number | null>(null);
   const [mixes, setMixes] = useState<Map<string, SolverAccountMix[]>>(() => new Map());
   const [ready, setReady] = useState(false);
@@ -31,16 +32,18 @@ function useHarness(
     userId,
     source,
     mutations,
+    offGroups,
     solvedSeed,
     savingsAccountMixes: mixes,
     onRestore: (draft: SolverDraft) => {
       setMutations(draft.mutations);
+      setOffGroups(new Set(draft.offGroups));
       if (draft.solvedSeed != null) setSolvedSeed(draft.solvedSeed);
       if (draft.savingsAccountMixes.length > 0) setMixes(new Map(draft.savingsAccountMixes));
     },
     onReady: () => setReady(true),
   });
-  return { mutations, setMutations, solvedSeed, mixes, ready };
+  return { mutations, setMutations, offGroups, setOffGroups, solvedSeed, mixes, ready };
 }
 
 beforeEach(() => {
@@ -48,13 +51,57 @@ beforeEach(() => {
 });
 
 describe("useSolverDraft", () => {
+  it("v2 round-trips mutations and offGroups", () => {
+    const first = renderHook(() => useHarness());
+    act(() => {
+      first.result.current.setMutations([RET_AGE]);
+      first.result.current.setOffGroups(new Set(["save:abc", "estate"]));
+    });
+    const raw = JSON.parse(localStorage.getItem(solverDraftKey("client-1", "user-1", "base"))!);
+    expect(raw.draft.offGroups).toEqual(["save:abc", "estate"]);
+    first.unmount();
+    const second = renderHook(() => useHarness());
+    expect(second.result.current.mutations).toEqual([RET_AGE]);
+    expect([...second.result.current.offGroups]).toEqual(["save:abc", "estate"]);
+  });
+
+  it("a v1 draft is discarded", () => {
+    localStorage.setItem(
+      solverDraftKey("client-1", "user-1", "base"),
+      JSON.stringify({ v: 1, draft: { mutations: [RET_AGE], solvedSeed: null, savingsAccountMixes: [] } }),
+    );
+    const { result } = renderHook(() => useHarness());
+    expect(result.current.mutations).toHaveLength(0);
+    expect(result.current.ready).toBe(true);
+  });
+
+  it("a draft with only switched-off entries is still kept", () => {
+    const key = solverDraftKey("client-1", "user-1", "base");
+    const { result } = renderHook(() => useHarness());
+    // The workspace persists the FULL list, so switched-off entries keep the draft alive.
+    act(() => {
+      result.current.setMutations([SCALE]);
+      result.current.setOffGroups(new Set([`key:living-expense-scale`]));
+    });
+    expect(localStorage.getItem(key)).toBeTruthy();
+  });
+
+  it("readDraft keeps only string offGroups entries", () => {
+    localStorage.setItem(
+      solverDraftKey("client-1", "user-1", "base"),
+      JSON.stringify({ v: 2, draft: { mutations: [RET_AGE], offGroups: ["a", 3, null, "b"], solvedSeed: null, savingsAccountMixes: [] } }),
+    );
+    const { result } = renderHook(() => useHarness());
+    expect([...result.current.offGroups]).toEqual(["a", "b"]);
+  });
+
   it("persists mutations to localStorage under a client+user+source-scoped key", () => {
     const { result } = renderHook(() => useHarness());
     act(() => result.current.setMutations([RET_AGE]));
     const raw = localStorage.getItem(solverDraftKey("client-1", "user-1", "base"));
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.v).toBe(1);
+    expect(parsed.v).toBe(2);
     expect(parsed.draft.mutations).toHaveLength(1);
     expect(parsed.draft.mutations[0].kind).toBe("retirement-age");
   });
@@ -63,7 +110,7 @@ describe("useSolverDraft", () => {
     localStorage.setItem(
       solverDraftKey("client-1", "user-1", "base"),
       JSON.stringify({
-        v: 1,
+        v: 2,
         draft: {
           mutations: [RET_AGE, SCALE],
           solvedSeed: 12345,
@@ -102,7 +149,7 @@ describe("useSolverDraft", () => {
   it("does not restore a draft saved under a different source (base vs scenario)", () => {
     localStorage.setItem(
       solverDraftKey("client-1", "user-1", "scenario-X"),
-      JSON.stringify({ v: 1, draft: { mutations: [RET_AGE], solvedSeed: null, savingsAccountMixes: [] } }),
+      JSON.stringify({ v: 2, draft: { mutations: [RET_AGE], solvedSeed: null, savingsAccountMixes: [] } }),
     );
     // Mount against the base source — the scenario-X draft must not leak in.
     const { result } = renderHook(() => useHarness("client-1", "user-1", "base"));
@@ -112,7 +159,7 @@ describe("useSolverDraft", () => {
   it("does not restore a draft saved under a different client", () => {
     localStorage.setItem(
       solverDraftKey("other-client", "user-1", "base"),
-      JSON.stringify({ v: 1, draft: { mutations: [RET_AGE], solvedSeed: null, savingsAccountMixes: [] } }),
+      JSON.stringify({ v: 2, draft: { mutations: [RET_AGE], solvedSeed: null, savingsAccountMixes: [] } }),
     );
     const { result } = renderHook(() => useHarness("client-1", "user-1", "base"));
     expect(result.current.mutations).toHaveLength(0);
@@ -121,7 +168,7 @@ describe("useSolverDraft", () => {
   it("treats an empty stored mutation set as no draft", () => {
     localStorage.setItem(
       solverDraftKey("client-1", "user-1", "base"),
-      JSON.stringify({ v: 1, draft: { mutations: [], solvedSeed: 7, savingsAccountMixes: [] } }),
+      JSON.stringify({ v: 2, draft: { mutations: [], solvedSeed: 7, savingsAccountMixes: [] } }),
     );
     const { result } = renderHook(() => useHarness());
     expect(result.current.mutations).toHaveLength(0);

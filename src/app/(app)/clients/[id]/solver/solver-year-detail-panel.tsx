@@ -13,8 +13,7 @@ import { yearDetailEditResolver } from "@/lib/solver/year-detail-edit-target";
 import { yearQcd, yearWithdrawalRate } from "@/lib/solver/withdrawal-report";
 import { detailEditorTarget } from "@/lib/scenario/plan-detail-catalog";
 import type { InventoryItem } from "@/lib/scenario/plan-inventory";
-import type { ScenarioWriteEvent } from "@/hooks/scenario-write-listener";
-import { SolverChangeEditor } from "./solver-change-editor";
+import { SolverChangeEditor, type HeldEditorHost } from "./solver-change-editor";
 
 const fmt = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -37,12 +36,10 @@ const EDIT_NAME =
 /** What clicking a name needs to open the Changes tab's editor for it. */
 export interface YearDetailEditing {
   clientId: string;
-  /** The scenario a save writes into; null on the base case, where it writes the base facts. */
-  scenarioId: string | null;
   /** The persisted plan's items, as the Changes tab lists them. */
   inventory: InventoryItem[];
-  /** Every scenario write the editor makes, with the name of what was edited. */
-  onTargetsWritten: (events: ScenarioWriteEvent[], label: string) => void;
+  /** Where the editor loads from and where its saves go (as unsaved Solver changes). */
+  held: HeldEditorHost;
 }
 
 /** A row's handler that opens its item's editor, or null when its name stays plain text. */
@@ -91,11 +88,10 @@ export function SolverYearDetailPanel({ year, years, clientData, editing }: Prop
         <SolverChangeEditor
           key={open.seq}
           clientId={editing.clientId}
-          scenarioId={editing.scenarioId}
+          host={editing.held}
           target={detailEditorTarget(open.item.typeKey, { intent: "edit", id: open.item.id })}
           label={open.item.label}
           onDone={() => setOpen(null)}
-          onWrite={(event) => editing.onTargetsWritten([event], open.item.label)}
         />
       ) : null}
 

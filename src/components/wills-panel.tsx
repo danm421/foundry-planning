@@ -424,7 +424,6 @@ export default function WillsPanel(props: WillsPanelProps) {
             body: { grantor: g, bequests: nextBequests, residuaryRecipients: nextResiduary },
             skipRefresh: true,
           },
-          { targetKind: "will", targetId: null, op: "add" },
         );
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -440,7 +439,6 @@ export default function WillsPanel(props: WillsPanelProps) {
             body: { bequests: nextBequests, residuaryRecipients: nextResiduary },
             skipRefresh: true,
           },
-          { targetKind: "will", targetId: existing.id, op: "edit" },
         );
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -490,7 +488,6 @@ export default function WillsPanel(props: WillsPanelProps) {
       } else {
         const res = await writer.submitDirect(
           { url: `/api/clients/${props.clientId}/wills/${willId}`, method: "DELETE", skipRefresh: true },
-          { targetKind: "will", targetId: willId, op: "remove" },
         );
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
