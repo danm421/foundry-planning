@@ -33,11 +33,12 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/db-helpers", () => ({ getOrgId: vi.fn(async () => FIRM_ID) }));
 vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree: vi.fn() }));
-vi.mock("@/lib/scenario/changes", () => ({ loadActiveGiftChanges: vi.fn(async () => []) }));
+vi.mock("@/lib/scenario/changes", () => ({ loadActiveChangesOfKind: vi.fn(async () => []) }));
 vi.mock("@/lib/clients/get-client-with-contacts", () => ({ getClientWithContacts: vi.fn(async () => null) }));
 
 import { loadFamilyViewProps } from "../load-view-props";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { loadActiveChangesOfKind } from "@/lib/scenario/changes";
 
 const member = (over: Record<string, unknown>) => ({
   id: "fm", role: "child", relationship: "child", firstName: "Kid", lastName: null,
@@ -242,5 +243,25 @@ describe("loadFamilyViewProps — what the gift dialog needs for a QCD", () => {
       ["own", false],
       ["inh", true],
     ]);
+  });
+});
+
+describe("loadFamilyViewProps — the Solver's unsaved gift changes", () => {
+  it("overlays held gift changes on the gift rows", async () => {
+    mountTree(tree());
+    const held = {
+      id: "held:1", scenarioId: "held", opType: "add" as const, targetKind: "gift" as const,
+      targetId: "held-g", toggleGroupId: null, orderIndex: 0,
+      payload: {
+        kind: "asset-once", id: "held-g", year: 2026, accountId: "acct-1",
+        percent: 0.15, grantor: "client", recipient: { kind: "entity", id: "slat-1" },
+      },
+    };
+    vi.mocked(loadActiveChangesOfKind).mockResolvedValueOnce([held]);
+
+    const { props } = await loadFamilyViewProps(CLIENT_ID, SCENARIO_ID, [held]);
+
+    expect(loadActiveChangesOfKind).toHaveBeenCalledWith(SCENARIO_ID, "gift", [held]);
+    expect(props.initialGifts.map((g) => g.id)).toContain("held-g");
   });
 });

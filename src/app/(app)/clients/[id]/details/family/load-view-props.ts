@@ -27,7 +27,7 @@ import type {
 } from "@/components/family-view";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import type { ScenarioChange } from "@/engine/scenario/types";
-import { loadActiveGiftChanges } from "@/lib/scenario/changes";
+import { loadActiveChangesOfKind } from "@/lib/scenario/changes";
 import { buildFamilyPrimary } from "./family-primary";
 import { entitySummaryToRow, overlayScenarioGiftRows } from "@/lib/gifts/scenario-rows";
 import type { BeneficiaryRef, EntitySummary } from "@/engine/types";
@@ -123,7 +123,7 @@ export async function loadFamilyViewProps(
       .select({ year: taxYearParameters.year, giftAnnualExclusion: taxYearParameters.giftAnnualExclusion })
       .from(taxYearParameters)
       .orderBy(asc(taxYearParameters.year)),
-    loadActiveGiftChanges(resolvedScenario.id),
+    loadActiveChangesOfKind(resolvedScenario.id, "gift", extraChanges),
   ]);
 
   // The three `entities` columns the engine's EntitySummary doesn't carry.
