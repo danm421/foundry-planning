@@ -33,6 +33,10 @@ export function mutationNames(source: ClientData, working: ClientData): Mutation
         if (r.name) rows.set(r.id, r.name);
       }
     }
+    // Not a scenario target kind, but the Solver's sale-to-trust note is a row.
+    for (const n of t.notesReceivable ?? []) {
+      if (n.name) rows.set(n.id, n.name);
+    }
   }
   for (const r of [...source.savingsRules, ...working.savingsRules]) {
     const account = rows.get(r.accountId);

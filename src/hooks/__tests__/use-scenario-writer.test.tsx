@@ -463,6 +463,25 @@ describe("useScenarioWriter — hold mode (Solver-hosted editor)", () => {
     expect(hold).not.toHaveBeenCalled();
   });
 
+  // Anti-goal: a Solver-hosted editor on a scenario writes nothing to it either.
+  it("hold mode with a scenario selected holds, and never fetches the scenario's changes", async () => {
+    setUrl(`scenario=${SCENARIO_ID}`);
+    const answer = new Response(null, { status: 204 });
+    const hold = vi.fn(async () => answer);
+    const { result } = writerWith(hold);
+    expect(result.current.scenarioActive).toBe(true);
+
+    expect(await result.current.submit(edit, fallback)).toBe(answer);
+    expect(hold).toHaveBeenCalledWith([edit]);
+    const direct = await result.current.submitDirect({
+      url: `/api/clients/${CLIENT_ID}/gifts/series?scenario=${SCENARIO_ID}`,
+      method: "DELETE",
+    });
+    expect(direct.status).toBe(409);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(refreshSpy).not.toHaveBeenCalled();
+  });
+
   it("hold mode reports scenarioActive true on the base case", () => {
     setUrl("");
     const { result } = writerWith(vi.fn());

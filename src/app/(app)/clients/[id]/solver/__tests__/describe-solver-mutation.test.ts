@@ -40,6 +40,14 @@ describe("describeSolverMutation", () => {
     ).toBe("Removed a savings contribution: John 401(k)");
   });
 
+  it("still names a promissory note the working copy has removed", () => {
+    const withNote = { ...source, notesReceivable: [{ id: "note-1", name: "Note from the IDGT" }] } as never;
+    const removedNames = mutationNames(withNote, { ...source, notesReceivable: [] });
+    expect(
+      describeSolverMutation({ kind: "note-receivable-upsert", id: "note-1", value: null }, removedNames),
+    ).toBe("Removed a promissory note: Note from the IDGT");
+  });
+
   it("titles a stress test the way the saved scenario's Changes tab does", () => {
     expect(line({ kind: "stress-market-crash", year: 2030, drawdownPct: 0.3 })).toBe(
       "Market crash — 30% in 2030",

@@ -301,5 +301,8 @@ describe("GrowthInflationForm — hold mode", () => {
     );
     expect(screen.queryByRole("button", { name: /reset all accounts/i })).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
+    // The Solver points to the Details page, as its other read-only parts do.
+    expect(screen.getByText("Edit this on the Details page.")).toBeInTheDocument();
+    expect(screen.queryByText("Available on the base plan.")).toBeNull();
   });
 });

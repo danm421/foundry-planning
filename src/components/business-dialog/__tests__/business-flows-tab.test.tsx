@@ -3,7 +3,7 @@ import { act, render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import BusinessFlowsTab from "../business-flows-tab";
 import type { BusinessFlowRow } from "../business-flows-tab";
-import { HeldEditsProvider } from "@/hooks/held-edits";
+import { HeldEditsProvider, HOLD_MODE_DIRECT_REFUSAL } from "@/hooks/held-edits";
 import type { ScheduleSaveBinding } from "@/components/forms/flow-schedule-grid";
 
 const submitMock = vi.fn();
@@ -178,9 +178,14 @@ describe("BusinessFlowsTab", () => {
       </HeldEditsProvider>,
     );
     expect(screen.getByText("Edit this on the Details page.")).toBeInTheDocument();
+    // The dialog's Save reaches the grid through this binding: it must run, and refuse.
+    const binding = ref.current;
+    expect(binding).not.toBeNull();
+    let result: Awaited<ReturnType<ScheduleSaveBinding["save"]>> | undefined;
     await act(async () => {
-      await ref.current?.save();
+      result = await binding!.save();
     });
+    expect(result).toEqual({ ok: false, error: HOLD_MODE_DIRECT_REFUSAL });
     expect(global.fetch).not.toHaveBeenCalled();
   });
 });

@@ -493,7 +493,7 @@ export default function GrowthInflationForm({ clientId, riskLevel, modelPortfoli
       {canEdit && baseOnly && (
         <p className="flex gap-1.5 pt-2 text-xs text-ink-3">
           <span className="font-medium text-ink-2">Reset all accounts to defaults:</span>
-          <span>Available on the base plan.</span>
+          <span>{holdMode ? "Edit this on the Details page." : "Available on the base plan."}</span>
         </p>
       )}
       {canEdit && !baseOnly && (

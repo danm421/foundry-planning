@@ -193,7 +193,7 @@ export function partitionBaseSavableMutations(
   const removedCharityIds = new Set<string>();
   for (const m of mutations) {
     // A Details editor's removal of a trust or charity is the same removal.
-    if (isHeldRemoval(m)) {
+    if (m.kind === "held-change" && isHeldRemoval(m)) {
       (m.targetKind === "entity" ? dissolvedEntityIds : removedCharityIds).add(m.targetId);
       continue;
     }
@@ -267,10 +267,8 @@ const isHeldAccount = (m: SolverMutation): m is HeldChangeMutation =>
 /** A held removal of a trust (or any entity) or a charity. Its base delete has
  *  clean-ups the base save doesn't run, so it stays pending like the Solver's
  *  own removal controls. */
-const isHeldRemoval = (m: SolverMutation): m is HeldChangeMutation =>
-  m.kind === "held-change" &&
-  m.op === "remove" &&
-  (m.targetKind === "entity" || m.targetKind === "external_beneficiary");
+const isHeldRemoval = (m: HeldChangeMutation): boolean =>
+  m.op === "remove" && (m.targetKind === "entity" || m.targetKind === "external_beneficiary");
 
 /** A held recurring-gift add. A gift's add is also how a base gift is edited. */
 function isHeldSeriesAdd(m: HeldChangeMutation): boolean {
