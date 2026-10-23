@@ -111,7 +111,7 @@ describe("buildPlanInventory", () => {
 
   it("lists Social Security as one edit-only item per person", () => {
     const ss = byType("social_security");
-    expect(ss.map((i) => i.draftRef?.person).sort()).toEqual(["client", "spouse"]);
+    expect(ss).toHaveLength(2);
     for (const i of ss) expect(i).toMatchObject({ canEdit: true, canDelete: false });
     expect(ids("income")).toEqual(["i-sal"]);
   });
@@ -154,11 +154,10 @@ describe("buildPlanInventory", () => {
     expect(ids("family_member")).toEqual(["f-k"]);
   });
 
-  it("lists savings rules with the account in draftRef", () => {
+  it("lists savings rules", () => {
     expect(byType("savings_rule")[0]).toMatchObject({
       id: "r1",
       label: "Brokerage · $6k/yr",
-      draftRef: { accountId: "a-tax" },
     });
   });
 
@@ -216,11 +215,6 @@ describe("buildPlanInventory", () => {
     // With only the family owner row the entity is fully family-owned and the sub is listed.
     const full = { ...t, entities: [{ ...t.entities![0], owners: [{ kind: "family_member", familyMemberId: "f-c", percent: 1 }] }] } as unknown as ClientData;
     expect(buildPlanInventory(full, [], "c").map((i) => i.id)).toContain("m-sub");
-  });
-
-  it("marks retirement living expenses for the living-expense levers", () => {
-    expect(byType("expense").find((i) => i.id === "x-ret")?.draftRef).toEqual({ livingExpense: true });
-    expect(byType("expense").find((i) => i.id === "x-trip")?.draftRef).toBeUndefined();
   });
 
   it("lists every deduction row, each by its own id", () => {

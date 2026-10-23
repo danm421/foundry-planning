@@ -19,7 +19,6 @@ import type { ClientData } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { controllingEntity } from "@/engine/ownership";
 import { isSyntheticEntityChecking } from "@/lib/entities/entity-checking";
-import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
 import { DEDUCTION_TYPE_LABELS } from "@/lib/tax/deduction-type-labels";
 import { groupAssetTransactionBundles } from "@/lib/solver/asset-transaction-bundles";
 import { describeChangeTarget } from "./describe-change-target";
@@ -40,9 +39,6 @@ export interface InventoryItem {
   sublabel?: string;
   canEdit: boolean;
   canDelete: boolean;
-  /** For draft reconciliation: the savings rule's account, the SS row's person,
-   *  or a living expense the `living-expense-*` levers modify. */
-  draftRef?: { accountId?: string; person?: "client" | "spouse"; livingExpense?: boolean };
 }
 
 export type WillGrantor = "client" | "spouse";
@@ -77,7 +73,7 @@ export function buildPlanInventory(
     typeKey: DetailTypeKey,
     id: string,
     label: string,
-    extra: Partial<Pick<InventoryItem, "sublabel" | "draftRef" | "canDelete">> = {},
+    extra: Partial<Pick<InventoryItem, "sublabel" | "canDelete">> = {},
   ) => {
     const t = detailType(typeKey);
     out.push({
@@ -121,22 +117,15 @@ export function buildPlanInventory(
   for (const inc of tree.incomes) {
     if (inc.source === "policy") continue;
     if (inc.type === "social_security") {
-      const person = inc.owner === "spouse" ? "spouse" : "client";
-      add("social_security", inc.id, inc.name, { draftRef: { person } });
+      add("social_security", inc.id, inc.name);
     } else if (hasPagePencil(inc)) {
       add("income", inc.id, inc.name);
     }
   }
 
-  const planStartYear = tree.planSettings?.planStartYear;
   for (const e of tree.expenses) {
     if (e.source === "policy" || !hasPagePencil(e)) continue;
-    // The rows the `living-expense-scale` / `living-expense-amount` levers rewrite.
-    const livingExpense = planStartYear !== undefined && isRetirementLivingExpense(e, planStartYear);
-    add("expense", e.id, e.name, {
-      canDelete: !e.isDefault,
-      draftRef: livingExpense ? { livingExpense } : undefined,
-    });
+    add("expense", e.id, e.name, { canDelete: !e.isDefault });
   }
 
   for (const a of tree.accounts) {
@@ -155,9 +144,7 @@ export function buildPlanInventory(
   for (const n of tree.notesReceivable ?? []) add("note_receivable", n.id, n.name);
 
   for (const r of tree.savingsRules) {
-    add("savings_rule", r.id, describeChangeTarget("savings_rule", r, accountsById) ?? "Savings rule", {
-      draftRef: { accountId: r.accountId },
-    });
+    add("savings_rule", r.id, describeChangeTarget("savings_rule", r, accountsById) ?? "Savings rule");
   }
 
   for (const l of tree.liabilities) {

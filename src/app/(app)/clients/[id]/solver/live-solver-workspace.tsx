@@ -294,6 +294,19 @@ export function LiveSolverWorkspace({
   // EVERY unsaved entry, on or off. `mutations` is the switched-on slice: it is
   // what the projection, solve, Monte Carlo and the saves read.
   const allMutations = useMemo(() => Array.from(mutationMap.values()), [mutationMap]);
+  const allMutationsRef = useRef(allMutations);
+  allMutationsRef.current = allMutations;
+  // A switch only means something while an entry belongs to its group. Once the
+  // last entry goes (discard, a per-field reset, Reset…), the switch goes too, so
+  // a leftover "off" can't swallow a later entry for the same control.
+  useEffect(() => {
+    setOffGroups((prev) => {
+      if (prev.size === 0) return prev;
+      const live = new Set(allMutations.map((m) => switchGroupOf(m, allMutations, initialSourceClientData)));
+      const next = new Set([...prev].filter((g) => live.has(g)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [allMutations, initialSourceClientData]);
   const mutations = useMemo(
     () => effectiveMutations(allMutations, offGroups, initialSourceClientData),
     [allMutations, offGroups, initialSourceClientData],
@@ -623,6 +636,7 @@ export function LiveSolverWorkspace({
           next.set(mutationKey(ageMutation), ageMutation);
           return next;
         });
+        switchOn([modeMutation, ageMutation]);
         setCurrentProjection(e.finalProjection);
         setSolvedPoS(null);
         setSolvedSeed(null);
@@ -666,6 +680,7 @@ export function LiveSolverWorkspace({
         for (const m of solvedMutations) next.set(mutationKey(m), m);
         return next;
       });
+      switchOn(solvedMutations);
       if (isMinSavings && ms) {
         // Build the panel's outcome summary from the converged year-0 row:
         // updated living + the savings waterfall split (cash flow vs. expense
@@ -1186,15 +1201,22 @@ export function LiveSolverWorkspace({
       next.set(mutationKey(m), m);
       return next;
     });
-    // Moving a control switches its group back on.
-    const group = switchGroupOf(m, allMutations, initialSourceClientData);
+    switchOn([m]);
+    markEdited();
+  }
+
+  // Moving a control — by hand or by a Solver result — switches its group back
+  // on. Reads the latest list through a ref: the solve callbacks that call this
+  // may hold an older render's closure.
+  function switchOn(moved: SolverMutation[]) {
+    const all = [...allMutationsRef.current, ...moved];
+    const groups = moved.map((m) => switchGroupOf(m, all, initialSourceClientData));
     setOffGroups((prev) => {
-      if (!prev.has(group)) return prev;
+      if (!groups.some((g) => prev.has(g))) return prev;
       const next = new Set(prev);
-      next.delete(group);
+      for (const g of groups) next.delete(g);
       return next;
     });
-    markEdited();
   }
 
   // A Details editor opened from the Solver saves here: the edits become held

@@ -1769,6 +1769,58 @@ describe("LiveSolverWorkspace — held changes and switches", () => {
     expect(localStorage.getItem(solverDraftKey("client-id", "user-id", "base"))).toBeNull();
   });
 
+  it("a Solver result lands switched on even if its control's group was off", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).endsWith("/solver/solve")) {
+        return Promise.resolve(
+          makeSseStream([
+            {
+              event: "result",
+              data: {
+                status: "converged",
+                solvedValue: 67,
+                achievedPoS: 0.85,
+                canonicalPoS: 0.83,
+                iterations: 1,
+                finalProjection: [{ year: 2026, portfolioAssets: { total: 1_200_000 } }],
+              },
+            },
+          ]),
+        );
+      }
+      return String(url).endsWith("/solver/project") ? okProject() : Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+    render(<LiveSolverWorkspace {...baseProps} initialTab="changes" />);
+    fireEvent.click(leftTab("Retirement"));
+    setCooperRetirementAge(66);
+    fireEvent.click(leftTab("Scenario changes"));
+    act(() => tabProps.current!.unsaved!.setGroupOn("key:retirement-age:client", false));
+    expect(draftOf()!.offGroups).toEqual(["key:retirement-age:client"]);
+
+    fireEvent.click(leftTab("Retirement"));
+    fetchMock.mockClear();
+    fireEvent.click(await screen.findByLabelText(/Solve .* Retirement Age/i));
+    fireEvent.click(await screen.findByRole("button", { name: /^Solve$/ }));
+
+    await waitFor(() => expect(draftOf()!.mutations).toEqual([{ kind: "retirement-age", person: "client", age: 67 }]));
+    expect(draftOf()!.offGroups).toEqual([]);
+    await waitFor(() => expect(projectBodies().length).toBeGreaterThan(0), { timeout: 2000 });
+    expect(projectBodies().at(-1)!.mutations).toEqual([{ kind: "retirement-age", person: "client", age: 67 }]);
+  });
+
+  it("a switch goes once nothing belongs to its group (discard)", async () => {
+    render(<LiveSolverWorkspace {...baseProps} initialTab="changes" />);
+    const m = held("e1", SAVE_A);
+    await holdFrom([m]);
+    act(() => tabProps.current!.unsaved!.setGroupOn(`save:${SAVE_A}`, false));
+    expect(tabProps.current!.unsaved!.offGroups.size).toBe(1);
+
+    act(() => tabProps.current!.unsaved!.discard(mutationKey(m)));
+
+    expect(tabProps.current!.unsaved!.entries).toEqual([]);
+    expect(tabProps.current!.unsaved!.offGroups.size).toBe(0);
+  });
+
   it("Reset works when every unsaved change is switched off", async () => {
     render(<LiveSolverWorkspace {...baseProps} initialTab="changes" />);
     await holdFrom([held("e1", SAVE_A)]);
