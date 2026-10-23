@@ -224,8 +224,17 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
     // as on the Solver's screen. Convert the controls to draft changes (which
     // coalesce per-target; held entries are skipped) and compute the working
     // tree once so per-field values can be read back when rewriting edit rows.
+    // The load gets its own copies of the held changes: its cascades rewrite
+    // what they reach (a will's bequests to a removed trust), and `held` is
+    // what the writer saves.
     const held = heldScenarioChanges(mutations as SolverMutation[]);
-    const { effectiveTree } = await loadEffectiveTree(clientId, firmId, scenarioId, {}, held);
+    const { effectiveTree } = await loadEffectiveTree(
+      clientId,
+      firmId,
+      scenarioId,
+      {},
+      heldScenarioChanges(mutations as SolverMutation[]),
+    );
     const workingTree = applyMutations(effectiveTree, mutations as SolverMutation[]);
     const drafts = mutationsToScenarioChanges(
       effectiveTree,

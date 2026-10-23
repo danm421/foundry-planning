@@ -514,9 +514,17 @@ export async function saveSolverScenario(args: {
   const { clientId, firmId, source, name, mutations, seed } = args;
 
   // The held editor changes, over the starting plan as on the Solver's screen,
-  // so the controls' drafts (which skip held entries) diff against that.
+  // so the controls' drafts (which skip held entries) diff against that. The
+  // load gets its own copies: its cascades rewrite what they reach (a will's
+  // bequests to a removed trust), and `held` is what the writer saves.
   const held = heldScenarioChanges(mutations);
-  const { effectiveTree } = await loadEffectiveTree(clientId, firmId, source, {}, held);
+  const { effectiveTree } = await loadEffectiveTree(
+    clientId,
+    firmId,
+    source,
+    {},
+    heldScenarioChanges(mutations),
+  );
   const drafts = mutationsToScenarioChanges(effectiveTree, clientId, mutations);
 
   // Throws on invalid mutation state, and the result is what the two

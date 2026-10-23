@@ -95,3 +95,74 @@ describe("held-changes", () => {
     expect(entriesNaming([ruleM, other], new Set([NEW_ID]), mutationKey(ruleM))).toEqual([]);
   });
 });
+
+// A removal's cascades rewrite the will they reach (bequests, residuary). The
+// held entry's payload must never be what they rewrite: the same entry is the
+// browser draft, the next projection's input and what a save writes.
+describe("held payloads survive a held trust or charity removal", () => {
+  const TRUST = "00000000-0000-4000-8000-0000000000c1";
+  const CHARITY = "00000000-0000-4000-8000-0000000000c2";
+  const WILL = "00000000-0000-4000-8000-0000000000c3";
+  const tree = () =>
+    ({
+      ...buildClientData(),
+      entities: [{ id: TRUST, name: "Trust T" }],
+      externalBeneficiaries: [{ id: CHARITY, name: "Charity" }],
+      wills: [],
+    }) as never;
+  const removeOf = (targetKind: "entity" | "external_beneficiary", targetId: string): HeldChangeMutation => ({
+    kind: "held-change",
+    op: "remove",
+    targetKind,
+    targetId,
+    payload: null,
+    saveId: "00000000-0000-4000-8000-0000000000b2",
+  });
+  const bequests = () => [
+    { id: "b1", name: "To trust", recipients: [{ recipientKind: "entity", recipientId: TRUST, percentage: 100 }] },
+  ];
+
+  it("a held will add keeps its bequests and residuary recipients", () => {
+    const willAdd: HeldChangeMutation = {
+      kind: "held-change",
+      op: "add",
+      targetKind: "will",
+      targetId: WILL,
+      payload: {
+        id: WILL,
+        grantor: "client",
+        bequests: bequests(),
+        residuaryRecipients: [{ recipientKind: "external_beneficiary", recipientId: CHARITY, percentage: 100 }],
+      },
+      saveId: SAVE,
+    };
+    const before = JSON.stringify(willAdd);
+    applyHeldChanges(tree(), [willAdd, removeOf("entity", TRUST), removeOf("external_beneficiary", CHARITY)]);
+    expect(JSON.stringify(willAdd)).toBe(before);
+    // With both removals switched off, the will names the trust and the charity again.
+    const off = applyHeldChanges(tree(), [willAdd]) as unknown as {
+      wills: { bequests: { recipients: unknown[] }[]; residuaryRecipients: unknown[] }[];
+    };
+    expect(off.wills[0].bequests[0].recipients).toHaveLength(1);
+    expect(off.wills[0].residuaryRecipients).toHaveLength(1);
+  });
+
+  it("a held will edit keeps its bequest's recipients", () => {
+    const base = { ...(tree() as object), wills: [{ id: WILL, grantor: "client", bequests: [], residuaryRecipients: [] }] };
+    const willEdit: HeldChangeMutation = {
+      kind: "held-change",
+      op: "edit",
+      targetKind: "will",
+      targetId: WILL,
+      payload: { bequests: { from: [], to: bequests() } },
+      saveId: SAVE,
+    };
+    const before = JSON.stringify(willEdit);
+    applyHeldChanges(base as never, [willEdit, removeOf("entity", TRUST)]);
+    expect(JSON.stringify(willEdit)).toBe(before);
+    const off = applyHeldChanges(base as never, [willEdit]) as unknown as {
+      wills: { bequests: { recipients: unknown[] }[] }[];
+    };
+    expect(off.wills[0].bequests[0].recipients).toHaveLength(1);
+  });
+});

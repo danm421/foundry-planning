@@ -23,6 +23,9 @@ export function isHeldChange(m: SolverMutation): m is HeldChangeMutation {
   return m.kind === "held-change";
 }
 
+/** The held entries as scenario changes. Each payload is a copy: applying a
+ *  change can put its payload into the tree, where a removal's cascades rewrite
+ *  it (a will's bequests), and the entry itself must stay as held. */
 export function heldScenarioChanges(mutations: readonly SolverMutation[]): ScenarioChange[] {
   return mutations.filter(isHeldChange).map((m, i) => ({
     id: "held:" + mutationKey(m),
@@ -30,7 +33,7 @@ export function heldScenarioChanges(mutations: readonly SolverMutation[]): Scena
     opType: m.op,
     targetKind: m.targetKind,
     targetId: m.targetId,
-    payload: m.payload,
+    payload: structuredClone(m.payload),
     toggleGroupId: null,
     orderIndex: i,
   }));
@@ -64,7 +67,8 @@ export function idsCreatedBy(m: SolverMutation, source: ClientData): string[] {
   return list.some((r) => r.id === upsert.id) ? [] : [upsert.id];
 }
 
-/** Entries are never mutated in place, so each one is serialized once. */
+/** Entries are never mutated in place (every apply works on copies of their
+ *  payloads, see `heldScenarioChanges`), so each one is serialized once. */
 const serialized = new WeakMap<SolverMutation, string>();
 function textOf(m: SolverMutation): string {
   let text = serialized.get(m);

@@ -1,11 +1,11 @@
 // Live-DB: the two scenario saves write held Details-editor changes through
 // the scenario writer. Runs against the shared test household
 // (TEST_FIRM_ID / TEST_CLIENT_ID) and deletes every scenario it creates.
-import { describe, it, expect, vi, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from "vitest";
 import { randomUUID } from "node:crypto";
 import { and, eq, like } from "drizzle-orm";
 import { db } from "@/db";
-import { scenarioChanges, scenarios } from "@/db/schema";
+import { entities, scenarioChanges, scenarios } from "@/db/schema";
 import type { Expense, LivingExpenseItem } from "@/engine/types";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { ScenarioChangeRejectedError } from "@/lib/scenario/changes-writer";
@@ -239,5 +239,90 @@ describe.skipIf(!TEST_FIRM_ID || !TEST_CLIENT_ID)("scenario saves write held cha
     expect(payload.endYear.to).toBe(g.endYear + 1);
     // The control is written after the held entry, so its total stands.
     expect(payload.annualAmount.to).toBe(13000);
+  });
+
+  // The load applies a held trust removal, whose cascade strips the trust from
+  // a will it reaches. The writer must save the will as held, not as the load
+  // left it, or switching the removal off later can't bring the bequest back.
+  describe("a held will beside a held trust removal", () => {
+    let trustId: string;
+    const willId = randomUUID();
+
+    beforeAll(async () => {
+      const [trust] = await db
+        .insert(entities)
+        .values({ clientId, name: `${PREFIX} trust`, entityType: "trust", isIrrevocable: true })
+        .returning();
+      trustId = trust.id;
+    });
+
+    afterAll(async () => {
+      await db.delete(entities).where(and(eq(entities.clientId, clientId), like(entities.name, `${PREFIX}%`)));
+    });
+
+    const willAndRemoval = (): SolverMutation[] => [
+      {
+        kind: "held-change",
+        op: "add",
+        targetKind: "will",
+        targetId: willId,
+        payload: {
+          id: willId,
+          grantor: "client",
+          bequests: [
+            {
+              id: "b1",
+              name: "To the trust",
+              kind: "asset",
+              assetMode: "all_assets",
+              accountId: null,
+              entityId: null,
+              liabilityId: null,
+              percentage: 100,
+              condition: "always",
+              sortOrder: 0,
+              recipients: [{ recipientKind: "entity", recipientId: trustId, percentage: 100, sortOrder: 0 }],
+            },
+          ],
+          residuaryRecipients: [{ recipientKind: "entity", recipientId: trustId, percentage: 100, sortOrder: 0 }],
+        },
+        saveId: SAVE_ID,
+      },
+      { kind: "held-change", op: "remove", targetKind: "entity", targetId: trustId, payload: null, saveId: randomUUID() },
+    ];
+
+    function expectNamesTrust(payload: unknown) {
+      const will = payload as {
+        bequests: { recipients: { recipientId: string }[] }[];
+        residuaryRecipients: { recipientId: string }[];
+      };
+      expect(will.bequests[0]?.recipients.map((r) => r.recipientId)).toEqual([trustId]);
+      expect(will.residuaryRecipients.map((r) => r.recipientId)).toEqual([trustId]);
+    }
+
+    it("POST writes the will as held", async () => {
+      const scenarioId = await savedId(await post("will", willAndRemoval()));
+      const [willRow] = await changesOf(scenarioId, willId);
+      expectNamesTrust(willRow.payload);
+      expect((await changesOf(scenarioId, trustId)).map((r) => r.opType)).toEqual(["remove"]);
+    });
+
+    it("PUT writes the will as held", async () => {
+      const [scn] = await db
+        .insert(scenarios)
+        .values({ clientId, name: `${PREFIX} put-will`, isBaseCase: false })
+        .returning();
+      const res = await PUT(
+        new Request(`http://localhost/api/clients/${clientId}/solver/save-scenario`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ scenarioId: scn.id, mutations: willAndRemoval() }),
+        }) as never,
+        { params: Promise.resolve({ id: clientId }) },
+      );
+      expect(res.status).toBe(200);
+      const [willRow] = await changesOf(scn.id, willId);
+      expectNamesTrust(willRow.payload);
+    });
   });
 });
