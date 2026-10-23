@@ -93,7 +93,8 @@ describe("GoalsBoard", () => {
 
     render(<GoalsBoard {...baseProps({ goals: [clientGoal, spouseGoal] })} />);
 
-    const clientRow = screen.getByTestId(`goal-row-${clientGoal.id}`);
+    // The year row's first child is the three-cell grid: left · year · right.
+    const clientRow = screen.getByTestId("goal-year-2030").children[0];
     expect(clientRow.children).toHaveLength(3);
     expect(
       within(clientRow.children[0] as HTMLElement).getByText("Alex retires"),
@@ -102,10 +103,71 @@ describe("GoalsBoard", () => {
     // leak to the wrong side of the spine.
     expect(clientRow.children[2].textContent).toBe("");
 
-    const spouseRow = screen.getByTestId(`goal-row-${spouseGoal.id}`);
+    const spouseRow = screen.getByTestId("goal-year-2032").children[0];
     expect(spouseRow.children[0].textContent).toBe("");
     expect(
       within(spouseRow.children[2] as HTMLElement).getByText("Jordan retires"),
+    ).toBeInTheDocument();
+  });
+
+  // The ask that grouped the board: two spouses retiring the same year read as
+  // one event on the timeline, not two lines each repeating "2026".
+  it("puts a client and a spouse goal in the same year on ONE row, facing each other", () => {
+    const clientGoal = goal({ id: "g-client", side: "client", year: 2026, title: "Alex retires" });
+    const spouseGoal = goal({ id: "g-spouse", side: "spouse", year: 2026, title: "Jordan retires" });
+
+    render(<GoalsBoard {...baseProps({ goals: [clientGoal, spouseGoal] })} />);
+
+    const year = screen.getByTestId("goal-year-2026");
+    expect(within(year).getAllByText("2026")).toHaveLength(1);
+    const grid = year.children[0];
+    expect(within(grid.children[0] as HTMLElement).getByText("Alex retires")).toBeInTheDocument();
+    expect(within(grid.children[2] as HTMLElement).getByText("Jordan retires")).toBeInTheDocument();
+  });
+
+  it("stacks two same-side goals in one year under a single year label", () => {
+    const goals = [
+      goal({ id: "g-a", side: "client", year: 2031, title: "Alex retires" }),
+      goal({ id: "g-b", side: "client", year: 2031, title: "Alex claims SS" }),
+    ];
+    render(<GoalsBoard {...baseProps({ goals })} />);
+
+    const year = screen.getByTestId("goal-year-2031");
+    expect(within(year).getAllByText("2031")).toHaveLength(1);
+    const left = year.children[0].children[0] as HTMLElement;
+    expect(within(left).getByText("Alex retires")).toBeInTheDocument();
+    expect(within(left).getByText("Alex claims SS")).toBeInTheDocument();
+  });
+
+  it("puts several joint goals in one year side by side in ONE band, not a line each", () => {
+    const goals = [
+      goal({ id: "g-travel", side: "joint", year: 2027, title: "Travel" }),
+      goal({ id: "g-kitchen", side: "joint", year: 2027, title: "Kitchen" }),
+      goal({ id: "g-wedding", side: "joint", year: 2027, title: "Casey wedding" }),
+    ];
+    render(<GoalsBoard {...baseProps({ goals })} />);
+
+    expect(within(screen.getByTestId("goal-year-2027")).getAllByText("2027")).toHaveLength(1);
+    const band = screen.getByTestId("goal-joint-band-2027");
+    expect(Array.from(band.children).map((c) => c.getAttribute("data-testid"))).toEqual([
+      "goal-card-joint-g-travel",
+      "goal-card-joint-g-kitchen",
+      "goal-card-joint-g-wedding",
+    ]);
+  });
+
+  it("a year with side AND joint goals still prints its year once", () => {
+    const goals = [
+      goal({ id: "g-client", side: "client", year: 2029, title: "Alex retires" }),
+      goal({ id: "g-joint", side: "joint", year: 2029, title: "New roof" }),
+    ];
+    render(<GoalsBoard {...baseProps({ goals })} />);
+
+    const year = screen.getByTestId("goal-year-2029");
+    expect(within(year).getAllByText("2029")).toHaveLength(1);
+    expect(within(year).getByText("Alex retires")).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("goal-joint-band-2029")).getByText("New roof"),
     ).toBeInTheDocument();
   });
 
@@ -114,10 +176,10 @@ describe("GoalsBoard", () => {
 
     render(<GoalsBoard {...baseProps({ goals: [jointGoal] })} />);
 
-    const row = screen.getByTestId(`goal-row-${jointGoal.id}`);
+    const row = screen.getByTestId("goal-year-2028");
     // A joint goal must NOT fall into the client/spouse two-cell grid row —
     // that layout has no cell for "joint" and would silently drop the card.
-    expect(row.className).not.toContain("grid-cols-[1fr_88px_1fr]");
+    expect(row.querySelector("[class*='grid-cols-[1fr_88px_1fr]']")).toBeNull();
     expect(within(row).getByText("New roof")).toBeInTheDocument();
     expect(within(row).getByTestId(`goal-card-joint-${jointGoal.id}`)).toBeInTheDocument();
   });
@@ -144,13 +206,13 @@ describe("GoalsBoard", () => {
 
     // 2026 - 1961 = 65, 2026 - 1963 = 63.
     expect(
-      within(screen.getByTestId(`goal-row-${earlyGoal.id}`)).getByText("65 / 63"),
+      within(screen.getByTestId("goal-year-2026")).getByText("65 / 63"),
     ).toBeInTheDocument();
     // 2030 - 1961 = 69, 2030 - 1963 = 67 — a different row, a different year,
     // a different pair of ages. A component reading `new Date()` instead of
     // the row's own `year` would render the same ages on both rows.
     expect(
-      within(screen.getByTestId(`goal-row-${laterGoal.id}`)).getByText("69 / 67"),
+      within(screen.getByTestId("goal-year-2030")).getByText("69 / 67"),
     ).toBeInTheDocument();
   });
 
@@ -166,7 +228,7 @@ describe("GoalsBoard", () => {
       />,
     );
 
-    const row = screen.getByTestId(`goal-row-${g.id}`);
+    const row = screen.getByTestId("goal-year-2026");
     expect(within(row).getByText("65")).toBeInTheDocument();
     expect(within(row).queryByText(/\//)).not.toBeInTheDocument();
   });
@@ -204,9 +266,9 @@ describe("GoalsBoard", () => {
     render(<GoalsBoard {...baseProps({ goals })} />);
 
     expect(
-      within(screen.getByTestId("goal-row-g-kelly")).getByText("for Kelly"),
+      within(screen.getByTestId("goal-card-left-g-kelly")).getByText("for Kelly"),
     ).toBeInTheDocument();
-    expect(within(screen.getByTestId("goal-row-g-sam")).getByText("for Sam")).toBeInTheDocument();
+    expect(within(screen.getByTestId("goal-card-left-g-sam")).getByText("for Sam")).toBeInTheDocument();
   });
 
   // Same writability test the Cash Flow board applies via `isItemEditable`:
@@ -835,7 +897,7 @@ describe("GoalsBoard — adding a goal", () => {
     render(<GoalsBoard {...baseProps({ goals })} onAddGoal={vi.fn()} />);
 
     const addButton = screen.getByRole("button", { name: "Add goal" });
-    const firstRow = screen.getByTestId("goal-row-g1");
+    const firstRow = screen.getByTestId("goal-year-2030");
 
     expect(addButton.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,

@@ -21,7 +21,7 @@ describe("board prop types", () => {
       expenseRows: {},
     };
     const { getByTestId } = render(<GoalsBoard {...props} />);
-    expect(getByTestId("goal-row-expense:e1")).toBeTruthy();
+    expect(getByTestId("goal-card-joint-expense:e1")).toBeTruthy();
   });
 
   it("renders CashFlowBoard from the narrow prop set alone", () => {

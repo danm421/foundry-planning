@@ -1,6 +1,6 @@
 // src/lib/household-map/__tests__/goals.test.ts
 import { describe, it, expect } from "vitest";
-import { ASSUMED_LIFE_EXPECTANCY, buildMapGoals } from "../goals";
+import { ASSUMED_LIFE_EXPECTANCY, buildMapGoals, groupGoalsByYear } from "../goals";
 import type { BuildMapGoalsInput } from "../goals";
 import type { ClientInfo, Income } from "@/engine/types";
 
@@ -511,5 +511,24 @@ describe("buildMapGoals", () => {
 
     expect(goals.map((g) => g.id)).toContain("milestone:spouse_life_expectancy");
     expect(goals.find((g) => g.id === "milestone:spouse_life_expectancy")?.year).toBe(2064);
+  });
+});
+
+describe("groupGoalsByYear", () => {
+  it("buckets each year's goals by side, keeping year and input order", () => {
+    const groups = groupGoalsByYear([
+      { id: "a", year: 2026, side: "client" as const },
+      { id: "b", year: 2026, side: "spouse" as const },
+      { id: "c", year: 2027, side: "joint" as const },
+      { id: "d", year: 2027, side: "joint" as const },
+      { id: "e", year: 2027, side: "client" as const },
+    ]);
+
+    expect(groups.map((g) => g.year)).toEqual([2026, 2027]);
+    expect(groups[0].client.map((g) => g.id)).toEqual(["a"]);
+    expect(groups[0].spouse.map((g) => g.id)).toEqual(["b"]);
+    expect(groups[0].joint).toEqual([]);
+    expect(groups[1].joint.map((g) => g.id)).toEqual(["c", "d"]);
+    expect(groups[1].client.map((g) => g.id)).toEqual(["e"]);
   });
 });

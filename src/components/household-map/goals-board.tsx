@@ -7,7 +7,7 @@ import { ageForYear } from "@/lib/age-year";
 // with, so the editable line and the static one it replaces cannot render the
 // same figure two ways.
 import { formatCurrency } from "@/lib/cell-drill/format";
-import { claimAgeModeHint } from "@/lib/household-map/goals";
+import { claimAgeModeHint, groupGoalsByYear } from "@/lib/household-map/goals";
 import type {
   GoalKind,
   GoalLifeExpectancy,
@@ -129,11 +129,11 @@ function GoalYearLabel({ year, ages }: { year: number; ages: string }) {
 }
 
 /**
- * The Goals board: a dashed vertical year "spine" with one row per goal.
- * `side === "client"` places the card left of the spine, `"spouse"` right,
- * and `"joint"` renders its own full-width row with the card centred so it
- * visibly straddles the spine (a joint goal has no side to hang off of and
- * must not be silently dropped).
+ * The Goals board: a dashed vertical year "spine" with one row per YEAR.
+ * `side === "client"` places a card left of the spine, `"spouse"` right, and
+ * `"joint"` cards sit in a centred band under that year's label so they visibly
+ * straddle the spine (a joint goal has no side to hang off of and must not be
+ * silently dropped).
  */
 export default function GoalsBoard({
   people,
@@ -341,47 +341,51 @@ export default function GoalsBoard({
       )}
       <div className="relative py-1">
         <div className="absolute inset-y-0 left-1/2 border-l border-dashed border-hair" />
-        {goals.map((g) => {
-          if (g.side === "joint") {
-            return (
-              <div
-                key={g.id}
-                data-testid={`goal-row-${g.id}`}
-                className="mb-1.5 flex flex-col items-center gap-0.5"
-              >
-                <GoalYearLabel year={g.year} ages={agesAt(g.year)} />
-                <div className="w-full max-w-[60%]">
-                  <GoalCard
-                    goal={g}
-                    side="joint"
-                    onClick={clickHandlerFor(g)}
-                    detailSlot={detailSlotFor(g)}
-                  />
-                </div>
-              </div>
-            );
-          }
-          // Exactly one side renders the card — `joint` returned above, so `g.side`
-          // is client-or-spouse here. Built once rather than twice so the two
-          // branches cannot drift, and so `clickHandlerFor`/`detailSlotFor` run
-          // once per row instead of once per grid cell.
-          const card = (
+        {groupGoalsByYear(goals).map((group) => {
+          const yearLabel = <GoalYearLabel year={group.year} ages={agesAt(group.year)} />;
+          const cardFor = (g: MapGoal, side: GoalCardSide) => (
             <GoalCard
+              key={g.id}
               goal={g}
-              side={g.side === "client" ? "left" : "right"}
+              side={side}
               onClick={clickHandlerFor(g)}
               detailSlot={detailSlotFor(g)}
             />
           );
+          const hasSides = group.client.length > 0 || group.spouse.length > 0;
           return (
             <div
-              key={g.id}
-              data-testid={`goal-row-${g.id}`}
-              className="mb-1.5 grid grid-cols-[1fr_88px_1fr] items-center"
+              key={group.year}
+              data-testid={`goal-year-${group.year}`}
+              className="mb-3 flex flex-col items-center gap-1.5"
             >
-              {g.side === "client" ? card : <div />}
-              <GoalYearLabel year={g.year} ages={agesAt(g.year)} />
-              {g.side === "spouse" ? card : <div />}
+              {/* One year label per year. Same-side cards stack in their
+                  column; a year with only joint goals has no side row, so the
+                  label sits above the joint band on its own. */}
+              {hasSides ? (
+                <div className="grid w-full grid-cols-[1fr_88px_1fr] items-center">
+                  <div className="flex flex-col gap-1.5">
+                    {group.client.map((g) => cardFor(g, "left"))}
+                  </div>
+                  {yearLabel}
+                  <div className="flex flex-col gap-1.5">
+                    {group.spouse.map((g) => cardFor(g, "right"))}
+                  </div>
+                </div>
+              ) : (
+                yearLabel
+              )}
+              {/* Joint goals belong to neither side, so they straddle the spine
+                  in a centred band. Several in one year split the band side by
+                  side (wrapping when narrow) rather than each spanning it. */}
+              {group.joint.length > 0 && (
+                <div
+                  data-testid={`goal-joint-band-${group.year}`}
+                  className="grid w-full max-w-[60%] grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-2"
+                >
+                  {group.joint.map((g) => cardFor(g, "joint"))}
+                </div>
+              )}
             </div>
           );
         })}
