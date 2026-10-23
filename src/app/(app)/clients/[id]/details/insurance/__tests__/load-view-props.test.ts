@@ -120,7 +120,7 @@ describe("loadInsuranceViewProps", () => {
   it("loads the effective tree for the scenario asked for", async () => {
     mountTree(tree());
     await ok("scn-9");
-    expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, "scn-9", {});
+    expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, "scn-9", {}, []);
   });
 
   it("lists a policy the scenario added, though no base row exists for it", async () => {
@@ -246,7 +246,7 @@ describe("loadInsuranceViewProps in base mode", () => {
       { p1: policy({ postPayoutGrowthRate: 0.07, postPayoutModelPortfolioId: MP }) },
     );
     const { props } = await ok(undefined);
-    expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, "base", {});
+    expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, "base", {}, []);
     expect(props.resolvedInflationRate).toBe(0.04);
     expect(props.policies.p1.postPayoutGrowthRate).toBe(0.07);
   });

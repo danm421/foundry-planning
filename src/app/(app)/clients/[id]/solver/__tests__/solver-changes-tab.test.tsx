@@ -978,7 +978,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
       fireEvent.click(screen.getByRole("button", { name: /Salary/ }));
       const view = await screen.findByTestId("view-income-expenses");
       expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ intent: "edit", kind: "income", id: "i-salary" });
-      expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, null, "income-expenses");
+      expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, "base", "income-expenses");
       fireEvent.click(screen.getByRole("button", { name: "stub write" }));
       expect(onTargetsWritten.mock.calls[0][1]).toBe("Salary");
     });
@@ -1063,7 +1063,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
       fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
       const view = await screen.findByTestId("view-income-expenses");
       expect(JSON.parse(view.getAttribute("data-focus")!)).toEqual({ intent: "delete", kind: "income", id: TARGET_ID });
-      expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, null, "income-expenses");
+      expect(loadChangeEditorPropsMock).toHaveBeenCalledWith(CLIENT_ID, "base", "income-expenses");
     });
   });
 

@@ -27,6 +27,7 @@ import type { LtcPanelProps } from "@/components/ltc-panel";
 import { resolveCoveredEarnings } from "@/engine/disability-benefits";
 import type { DisabilityPolicy } from "@/engine/types";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import type { ScenarioChange } from "@/engine/scenario/types";
 import { loadActiveChangesOfKind } from "@/lib/scenario/changes";
 import { ownerRefFromOwners } from "@/lib/insurance-policies/owner-ref";
 import { treeMilestones } from "@/lib/milestones";
@@ -43,6 +44,7 @@ export type InsuranceViewPropsResult =
 export async function loadInsuranceViewProps(
   clientId: string,
   scenarioParam: string | undefined,
+  extraChanges: ScenarioChange[] = [],
 ): Promise<InsuranceViewPropsResult> {
   // The body below moved here verbatim from `InsuranceContent`, which named it `id`.
   const id = clientId;
@@ -81,7 +83,7 @@ export async function loadInsuranceViewProps(
       .select()
       .from(planSettings)
       .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
-    loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
+    loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}, extraChanges),
   ]);
 
   const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
@@ -111,7 +113,7 @@ export async function loadInsuranceViewProps(
   }
   // In a scenario the inflation rate is the SCENARIO's: its growth edits are
   // folded onto the tree, not onto the base settings row.
-  const inScenario = !!scenarioParam && scenarioParam !== "base";
+  const inScenario = (!!scenarioParam && scenarioParam !== "base") || extraChanges.length > 0;
   const resolvedInflationRate =
     inScenario && resolutionContext
       ? resolutionContext.resolvedInflationRate
@@ -138,7 +140,7 @@ export async function loadInsuranceViewProps(
   const baseRawPolicies = await loadPoliciesByAccountIds(lifeAccountIds);
   const scenarioRawRate = new Map<string, number>();
   if (inScenario) {
-    const changes = [...(await loadActiveChangesOfKind(scenarioParam, "account"))].sort(
+    const changes = [...(await loadActiveChangesOfKind(scenarioParam && scenarioParam !== "base" ? scenarioParam : null, "account", extraChanges))].sort(
       (x, y) => x.orderIndex - y.orderIndex,
     );
     for (const c of changes) {

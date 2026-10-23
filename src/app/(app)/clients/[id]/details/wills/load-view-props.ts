@@ -21,6 +21,7 @@ import type {
   WillsPanelProps,
 } from "@/components/wills-panel";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import type { ScenarioChange } from "@/engine/scenario/types";
 import { controllingEntity } from "@/engine/ownership";
 
 export type WillsViewPropsResult =
@@ -36,6 +37,7 @@ export type WillsViewPropsResult =
 export async function loadWillsViewProps(
   clientId: string,
   scenarioParam: string | undefined,
+  extraChanges: ScenarioChange[] = [],
 ): Promise<WillsViewPropsResult> {
   // The body below moved here verbatim from `WillsContent`, which named it `id`.
   const id = clientId;
@@ -69,7 +71,7 @@ export async function loadWillsViewProps(
   // here when the user has a `?scenario=` selected). Read them from
   // `effectiveTree.wills` instead of querying the base tables directly —
   // `loadEffectiveTree` already merges scenario_changes for us.
-  const { effectiveTree } = await loadEffectiveTree(id, firmId, scenarioParam ?? "base", {});
+  const { effectiveTree } = await loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}, extraChanges);
 
   const accountRows = [...effectiveTree.accounts].sort((a, b) => a.name.localeCompare(b.name));
   const liabilityRows = [...effectiveTree.liabilities].sort((a, b) => a.name.localeCompare(b.name));

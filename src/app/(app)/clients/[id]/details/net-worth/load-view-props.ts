@@ -21,6 +21,7 @@ import type { AccountRow, BalanceSheetViewProps, LiabilityRow } from "@/componen
 import { treeMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import type { ScenarioChange } from "@/engine/scenario/types";
 import { loadOverlaidAccountMeta } from "@/lib/scenario/account-meta";
 import { loadFundPortfolioOptions } from "@/lib/investments/load-fund-portfolio-options";
 import type { GrowthContext } from "@/lib/investments/growth-context";
@@ -53,6 +54,7 @@ export type NetWorthViewPropsResult =
 export async function loadNetWorthViewProps(
   clientId: string,
   scenarioParam: string | undefined,
+  extraChanges: ScenarioChange[] = [],
 ): Promise<NetWorthViewPropsResult> {
   // The body below moved here verbatim from `NetWorthContent`, which named it `id`.
   const id = clientId;
@@ -132,14 +134,14 @@ export async function loadNetWorthViewProps(
     db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
     db.select().from(modelPortfolioAllocations),
     db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
-    loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
+    loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}, extraChanges),
     loadFundPortfolioOptions(firmId),
   ]);
 
   // F11: the meta query above is scoped to the base-case scenario; overlay the
   // scenario's account add/edit changes so scenario-edited accounts show their
   // edited metadata and scenario-added accounts don't fall to defaults.
-  const accountMetaById = await loadOverlaidAccountMeta(id, accountMetaRows, scenarioParam);
+  const accountMetaById = await loadOverlaidAccountMeta(id, accountMetaRows, scenarioParam, extraChanges);
   const liabilityMetaById = new Map(liabilityMetaRows.map((r) => [r.id, r]));
 
   // Linked-account indicator: an account fed by Plaid or a firm integration
@@ -200,11 +202,11 @@ export async function loadNetWorthViewProps(
   // rate they quote. Stock-option defaults stay the base row's: no form edits
   // them.
   const scenarioGrowth =
-    scenarioParam && settings
+    (scenarioParam || extraChanges.length > 0) && settings
       ? planSettingsEngineToFormProps(effectiveTree.planSettings, effectiveTree.client)
       : null;
   const resolvedInflationRate =
-    scenarioParam && resolutionContext
+    (scenarioParam || extraChanges.length > 0) && resolutionContext
       ? resolutionContext.resolvedInflationRate
       : resolveInflationRate(
           {

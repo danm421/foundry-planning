@@ -20,6 +20,7 @@ import { treeMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { amortizeLiability } from "@/engine/liabilities";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import type { ScenarioChange } from "@/engine/scenario/types";
 import { storedInflationRate } from "@/lib/scenario/growth-settings-override";
 import { planSettingsEngineToFormProps } from "@/lib/scenario/view-adapters";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
@@ -43,6 +44,7 @@ export type AssumptionsViewPropsResult =
 export async function loadAssumptionsViewProps(
   clientId: string,
   scenarioParam: string | undefined,
+  extraChanges: ScenarioChange[] = [],
 ): Promise<AssumptionsViewPropsResult> {
   // The body below moved here verbatim from `AssumptionsContent`, which named it `id`.
   const id = clientId;
@@ -96,7 +98,7 @@ export async function loadAssumptionsViewProps(
       .select({ compositeLevel: clientRiskProfiles.compositeLevel })
       .from(clientRiskProfiles)
       .where(and(eq(clientRiskProfiles.clientId, id), eq(clientRiskProfiles.firmId, firmId))),
-    loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
+    loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}, extraChanges),
   ]);
 
   const riskLevel = riskProfileRows[0]?.compositeLevel ?? clientRow.riskTolerance;
@@ -133,7 +135,7 @@ export async function loadAssumptionsViewProps(
   // page; it just means no autofill hint is shown. Runs concurrently with the
   // firmInflationAc lookup below (independent queries).
   // In a scenario the stored value is the scenario's, read off the tree.
-  const scenarioSettings = scenarioParam
+  const scenarioSettings = scenarioParam || extraChanges.length > 0
     ? planSettingsEngineToFormProps(
         effectiveTree.planSettings,
         effectiveTree.client,
@@ -192,7 +194,7 @@ export async function loadAssumptionsViewProps(
   // In a scenario the rate the projection runs on is the override load's, which
   // `resolutionContext` carries.
   const resolvedInflationRate =
-    scenarioParam && resolutionContext
+    (scenarioParam || extraChanges.length > 0) && resolutionContext
       ? resolutionContext.resolvedInflationRate
       : resolveInflationRate(
           { inflationRateSource: settings.inflationRateSource, inflationRate: settings.inflationRate },

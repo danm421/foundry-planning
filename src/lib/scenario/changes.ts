@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { scenarioChanges, scenarioToggleGroups } from "@/db/schema";
 import { resolveEffectiveToggleState } from "@/engine/scenario/applyChanges";
 import { withRidersFollowingTheirBusiness } from "./business-cash-rider";
+import { foldChanges } from "./fold-changes";
 import type {
   ScenarioChange,
   TargetKind,
@@ -74,19 +75,20 @@ export const loadScenarioToggleGroups = cache(async function loadScenarioToggleG
  * it.
  */
 export async function loadActiveChangesOfKind(
-  scenarioId: string,
+  scenarioId: string | null,
   targetKind: TargetKind,
+  extraChanges: ScenarioChange[] = [],
 ): Promise<ScenarioChange[]> {
-  const [changes, groups] = await Promise.all([
-    loadScenarioChanges(scenarioId),
-    loadScenarioToggleGroups(scenarioId),
-  ]);
+  // A null scenario has no saved changes; only `extraChanges` (the Solver's
+  // unsaved ones) apply.
+  const [changes, groups] = scenarioId
+    ? await Promise.all([loadScenarioChanges(scenarioId), loadScenarioToggleGroups(scenarioId)])
+    : [[], []];
   const effective = resolveEffectiveToggleState({}, groups);
-  return changes.filter(
-    (c) =>
-      c.targetKind === targetKind &&
-      (c.toggleGroupId == null || effective[c.toggleGroupId] === true),
+  const saved = changes.filter(
+    (c) => c.toggleGroupId == null || effective[c.toggleGroupId] === true,
   );
+  return foldChanges(saved, extraChanges).filter((c) => c.targetKind === targetKind);
 }
 
 /** The scenario's `gift` changes a projection would honour — this is the exact

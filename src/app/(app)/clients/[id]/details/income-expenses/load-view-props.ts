@@ -16,6 +16,7 @@ import { getOrgId } from "@/lib/db-helpers";
 import type { IncomeExpensesViewProps } from "@/components/income-expenses-view";
 import { treeMilestones } from "@/lib/milestones";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import type { ScenarioChange } from "@/engine/scenario/types";
 import { buildFlowScenarioFields } from "@/lib/inline-edit/flow-write";
 import { controllingEntity } from "@/engine/ownership";
 import {
@@ -37,6 +38,7 @@ export type IncomeExpensesViewPropsResult =
 export async function loadIncomeExpensesViewProps(
   clientId: string,
   scenarioParam: string | undefined,
+  extraChanges: ScenarioChange[] = [],
 ): Promise<IncomeExpensesViewPropsResult> {
   const firmId = await getOrgId();
 
@@ -65,7 +67,7 @@ export async function loadIncomeExpensesViewProps(
     spouseDob: spouseContact?.dateOfBirth ?? null,
   };
 
-  const { effectiveTree } = await loadEffectiveTree(clientId, firmId, scenarioParam ?? "base", {});
+  const { effectiveTree } = await loadEffectiveTree(clientId, firmId, scenarioParam ?? "base", {}, extraChanges);
 
   const [scenario] = await db
     .select()

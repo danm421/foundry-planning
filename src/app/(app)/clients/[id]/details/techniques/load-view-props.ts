@@ -13,6 +13,7 @@ import type { TechniquesViewProps } from "@/components/techniques-view";
 import { buildBusinessSaleOptions } from "@/lib/techniques/sell-source-options";
 import { treeMilestones } from "@/lib/milestones";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import type { ScenarioChange } from "@/engine/scenario/types";
 import { controllingFamilyMember } from "@/engine/ownership";
 
 export type TechniquesViewPropsResult =
@@ -28,6 +29,7 @@ export type TechniquesViewPropsResult =
 export async function loadTechniquesViewProps(
   clientId: string,
   scenarioParam: string | undefined,
+  extraChanges: ScenarioChange[] = [],
 ): Promise<TechniquesViewPropsResult> {
   // The body below moved here verbatim from `TechniquesContent`, which named it `id`.
   const id = clientId;
@@ -58,7 +60,7 @@ export async function loadTechniquesViewProps(
   }
 
   const [loadedTree, modelPortfolioRows, familyMemberRows] = await Promise.all([
-    loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
+    loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}, extraChanges),
     db
       .select({ id: modelPortfolios.id, name: modelPortfolios.name })
       .from(modelPortfolios)

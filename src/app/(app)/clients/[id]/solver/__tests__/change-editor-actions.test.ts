@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 
 vi.mock("@/lib/clients/authz", () => ({ requireClientEditAccess: vi.fn() }));
 vi.mock("@/lib/scenario/route-scope", () => ({ assertScenarioRouteScope: vi.fn() }));
+vi.mock("@/lib/solver/editor-extra-changes", () => ({ editorExtraChanges: vi.fn() }));
 vi.mock("@/app/(app)/clients/[id]/details/income-expenses/load-view-props", () => ({
   loadIncomeExpensesViewProps: vi.fn(),
 }));
@@ -35,6 +36,7 @@ vi.mock("@/app/(app)/clients/[id]/details/insurance/load-view-props", () => ({
 import { loadChangeEditorProps } from "../change-editor-actions";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
+import { editorExtraChanges } from "@/lib/solver/editor-extra-changes";
 import { loadIncomeExpensesViewProps } from "@/app/(app)/clients/[id]/details/income-expenses/load-view-props";
 import { loadNetWorthViewProps } from "@/app/(app)/clients/[id]/details/net-worth/load-view-props";
 import { loadTechniquesViewProps } from "@/app/(app)/clients/[id]/details/techniques/load-view-props";
@@ -70,6 +72,7 @@ beforeEach(() => {
     access: "own",
   } as never);
   vi.mocked(assertScenarioRouteScope).mockResolvedValue(okScope() as never);
+  vi.mocked(editorExtraChanges).mockResolvedValue([]);
 });
 
 function expectNoLoaderCalled() {
@@ -116,7 +119,7 @@ describe("loadChangeEditorProps — refusals", () => {
   });
 
   it("rejects a malformed scenario id, before any access check", async () => {
-    await expect(loadChangeEditorProps(CLIENT_ID, "base", "wills")).rejects.toThrow();
+    await expect(loadChangeEditorProps(CLIENT_ID, "not-a-uuid", "wills")).rejects.toThrow();
     expect(requireClientEditAccess).not.toHaveBeenCalled();
     expectNoLoaderCalled();
   });
@@ -128,11 +131,11 @@ describe("loadChangeEditorProps — refusals", () => {
   });
 });
 
-describe("loadChangeEditorProps — the base case (no scenario id)", () => {
+describe("loadChangeEditorProps — the base case (source \"base\")", () => {
   it("still requires edit access, before any loader", async () => {
     vi.mocked(requireClientEditAccess).mockRejectedValue(new Error("Edit access required"));
 
-    await expect(loadChangeEditorProps(CLIENT_ID, null, "income-expenses")).rejects.toThrow(
+    await expect(loadChangeEditorProps(CLIENT_ID, "base", "income-expenses")).rejects.toThrow(
       "Edit access required",
     );
     expect(requireClientEditAccess).toHaveBeenCalledWith(CLIENT_ID);
@@ -143,12 +146,12 @@ describe("loadChangeEditorProps — the base case (no scenario id)", () => {
     const props = { clientId: CLIENT_ID, marker: "base" };
     vi.mocked(loadIncomeExpensesViewProps).mockResolvedValue({ status: "ok", props } as never);
 
-    const result = await loadChangeEditorProps(CLIENT_ID, null, "income-expenses");
+    const result = await loadChangeEditorProps(CLIENT_ID, "base", "income-expenses");
 
     expect(result).toEqual({ page: "income-expenses", props });
     expect(requireClientEditAccess).toHaveBeenCalledWith(CLIENT_ID);
     expect(assertScenarioRouteScope).not.toHaveBeenCalled();
-    expect(loadIncomeExpensesViewProps).toHaveBeenCalledWith(CLIENT_ID, undefined);
+    expect(loadIncomeExpensesViewProps).toHaveBeenCalledWith(CLIENT_ID, undefined, []);
   });
 
   it("insurance loads the base plan's panels", async () => {
@@ -162,10 +165,10 @@ describe("loadChangeEditorProps — the base case (no scenario id)", () => {
       ltcProps,
     } as never);
 
-    const result = await loadChangeEditorProps(CLIENT_ID, null, "insurance");
+    const result = await loadChangeEditorProps(CLIENT_ID, "base", "insurance");
 
     expect(result).toEqual({ page: "insurance", props, disabilityProps, ltcProps });
-    expect(loadInsuranceViewProps).toHaveBeenCalledWith(CLIENT_ID, undefined);
+    expect(loadInsuranceViewProps).toHaveBeenCalledWith(CLIENT_ID, undefined, []);
   });
 });
 
@@ -177,7 +180,7 @@ describe("loadChangeEditorProps — assumptions and insurance", () => {
     const result = await loadChangeEditorProps(CLIENT_ID, SCENARIO_ID, "assumptions");
 
     expect(result).toEqual({ page: "assumptions", props });
-    expect(loadAssumptionsViewProps).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID);
+    expect(loadAssumptionsViewProps).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, []);
   });
 
   it("assumptions rejects when the loader finds no plan settings", async () => {
@@ -198,7 +201,7 @@ describe("loadChangeEditorProps — assumptions and insurance", () => {
 
     expect(result).toEqual({ page: "insurance", props, disabilityProps });
     expect(requireClientEditAccess).toHaveBeenCalledWith(CLIENT_ID);
-    expect(loadInsuranceViewProps).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID);
+    expect(loadInsuranceViewProps).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, []);
   });
 
   it("insurance rejects when the plan has no base case", async () => {
@@ -227,7 +230,7 @@ describe("loadChangeEditorProps — happy path returns only the view props", () 
     const result = await loadChangeEditorProps(CLIENT_ID, SCENARIO_ID, page);
 
     expect(result).toEqual({ page, props });
-    expect(loader).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID);
+    expect(loader).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, []);
     for (const other of loaders) if (other !== loader) expect(other).not.toHaveBeenCalled();
   });
 
@@ -242,7 +245,7 @@ describe("loadChangeEditorProps — happy path returns only the view props", () 
     const result = await loadChangeEditorProps(CLIENT_ID, SCENARIO_ID, "net-worth");
 
     expect(result).toEqual({ page: "net-worth", props });
-    expect(loadNetWorthViewProps).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID);
+    expect(loadNetWorthViewProps).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, []);
   });
 
   it("family drops the loader's firmId", async () => {
@@ -252,6 +255,39 @@ describe("loadChangeEditorProps — happy path returns only the view props", () 
     const result = await loadChangeEditorProps(CLIENT_ID, SCENARIO_ID, "family");
 
     expect(result).toEqual({ page: "family", props });
-    expect(loadFamilyViewProps).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID);
+    expect(loadFamilyViewProps).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, []);
+  });
+});
+
+describe("loadChangeEditorProps — the Solver's unsaved changes", () => {
+  it("passes the held + control changes to the page loader", async () => {
+    const extra = [{ id: "held:1", scenarioId: "held", opType: "edit", targetKind: "expense", targetId: "e1", payload: {}, toggleGroupId: null, orderIndex: 0 }];
+    vi.mocked(editorExtraChanges).mockResolvedValue(extra as never);
+    const props = { clientId: CLIENT_ID };
+    vi.mocked(loadIncomeExpensesViewProps).mockResolvedValue({ status: "ok", props } as never);
+    const mutations = [{ kind: "living-expense-scale", multiplier: 1.1 }] as never;
+
+    await loadChangeEditorProps(CLIENT_ID, SCENARIO_ID, "income-expenses", mutations);
+
+    expect(editorExtraChanges).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, SCENARIO_ID, mutations);
+    expect(loadIncomeExpensesViewProps).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, extra);
+  });
+
+  it("rejects a malformed mutation list before any query", async () => {
+    await expect(
+      loadChangeEditorProps(CLIENT_ID, "base", "income-expenses", [{ kind: "nonsense" }] as never),
+    ).rejects.toThrow();
+    expect(requireClientEditAccess).not.toHaveBeenCalled();
+    expect(editorExtraChanges).not.toHaveBeenCalled();
+    expectNoLoaderCalled();
+  });
+
+  it("still refuses a caller without edit access", async () => {
+    vi.mocked(requireClientEditAccess).mockRejectedValue(new Error("Edit access required"));
+    await expect(
+      loadChangeEditorProps(CLIENT_ID, "base", "wills", [{ kind: "living-expense-scale", multiplier: 1.1 }] as never),
+    ).rejects.toThrow("Edit access required");
+    expect(editorExtraChanges).not.toHaveBeenCalled();
+    expectNoLoaderCalled();
   });
 });

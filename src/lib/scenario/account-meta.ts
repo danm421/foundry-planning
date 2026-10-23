@@ -19,6 +19,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { scenarios } from "@/db/schema";
+import type { ScenarioChange } from "@/engine/scenario/types";
 import { loadScenarioChanges } from "./changes";
 
 /** The view-only metadata columns the balance-sheet/net-worth forms read. */
@@ -152,29 +153,28 @@ export function overlayAccountMeta(
  * Build the per-account metadata map for the scenario the page is displaying.
  *
  * `baseRows` are the base-scenario account metadata rows the page already
- * fetched. When `scenarioParam` is undefined / "base" / the base-case id, the
- * base map is returned unchanged (fast path — no extra query). Otherwise the
- * scenario's enabled account changes are loaded and overlaid via
- * `overlayAccountMeta`.
+ * fetched. When `scenarioParam` is undefined / "base" / the base-case id and
+ * there are no `extraChanges`, the base map is returned unchanged (fast path —
+ * no extra query). Otherwise the scenario's enabled account changes, then the
+ * Solver's unsaved `extraChanges`, are overlaid via `overlayAccountMeta`.
  */
 export async function loadOverlaidAccountMeta(
   clientId: string,
   baseRows: AccountMeta[],
   scenarioParam: string | undefined,
+  extraChanges: ScenarioChange[] = [],
 ): Promise<Map<string, AccountMeta>> {
-  if (!scenarioParam || scenarioParam === "base") {
-    return new Map(baseRows.map((r) => [r.id, r]));
+  let saved: ScenarioChange[] = [];
+  if (scenarioParam && scenarioParam !== "base") {
+    const [scenario] = await db
+      .select({ id: scenarios.id, isBaseCase: scenarios.isBaseCase })
+      .from(scenarios)
+      .where(and(eq(scenarios.id, scenarioParam), eq(scenarios.clientId, clientId)));
+    // Unknown id, or the base case selected by id → no saved changes to overlay.
+    if (scenario && !scenario.isBaseCase) saved = await loadScenarioChanges(scenario.id);
   }
-
-  const [scenario] = await db
-    .select({ id: scenarios.id, isBaseCase: scenarios.isBaseCase })
-    .from(scenarios)
-    .where(and(eq(scenarios.id, scenarioParam), eq(scenarios.clientId, clientId)));
-  // Unknown id, or the base case selected by id → nothing to overlay.
-  if (!scenario || scenario.isBaseCase) {
-    return new Map(baseRows.map((r) => [r.id, r]));
-  }
-
-  const changes = await loadScenarioChanges(scenario.id);
+  // The Solver's unsaved changes overlay last, as they do on the tree.
+  const changes = [...saved, ...extraChanges];
+  if (changes.length === 0) return new Map(baseRows.map((r) => [r.id, r]));
   return overlayAccountMeta(baseRows, changes);
 }

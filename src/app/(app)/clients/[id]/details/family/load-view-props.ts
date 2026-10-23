@@ -26,6 +26,7 @@ import type {
   Designation,
 } from "@/components/family-view";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import type { ScenarioChange } from "@/engine/scenario/types";
 import { loadActiveGiftChanges } from "@/lib/scenario/changes";
 import { buildFamilyPrimary } from "./family-primary";
 import { entitySummaryToRow, overlayScenarioGiftRows } from "@/lib/gifts/scenario-rows";
@@ -51,6 +52,7 @@ export interface FamilyViewPropsResult {
 export async function loadFamilyViewProps(
   clientId: string,
   scenarioParam: string | undefined,
+  extraChanges: ScenarioChange[] = [],
 ): Promise<FamilyViewPropsResult> {
   // The body below moved here verbatim from `FamilyContent`, which named it `id`.
   const id = clientId;
@@ -89,7 +91,7 @@ export async function loadFamilyViewProps(
         .from(gifts)
         .where(eq(gifts.clientId, id))
         .orderBy(asc(gifts.year), asc(gifts.createdAt)),
-      loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
+      loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}, extraChanges),
       getClientWithContacts(id, firmId),
       db
         .select({

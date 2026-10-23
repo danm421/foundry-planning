@@ -139,12 +139,12 @@ export function SolverChangeEditor({
     let cancelled = false;
     startTransition(async () => {
       try {
-        let loaded = await loadChangeEditorProps(clientId, scenarioId, page);
+        let loaded = await loadChangeEditorProps(clientId, scenarioId ?? "base", page);
         // A life policy is an `account` change, so the resolver sends it to Net
         // Worth, whose editor won't open it. Its editor is Insurance: reload
         // the page that owns it.
         if (isLifePolicyOnNetWorth(loaded, focusId)) {
-          loaded = await loadChangeEditorProps(clientId, scenarioId, "insurance");
+          loaded = await loadChangeEditorProps(clientId, scenarioId ?? "base", "insurance");
         }
         if (!cancelled) setState({ status: "open", loaded });
       } catch {
