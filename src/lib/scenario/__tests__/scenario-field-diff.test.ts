@@ -3,7 +3,7 @@
 // row (idempotent revert), so a phantom difference here is a phantom change in
 // the Changes list. No DB — the writer's live-DB suite lives beside this file.
 import { describe, it, expect } from "vitest";
-import { buildFieldDiff } from "../changes-writer";
+import { buildFieldDiff } from "../field-diff";
 import { scenarioAccountEditFields } from "@/lib/accounts/scenario-account-fields";
 import { withoutRestatedInflationStart } from "@/lib/todays-dollars";
 

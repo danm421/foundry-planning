@@ -71,7 +71,9 @@ export function UnsavedChangesList({
     const byGroup = new Map<string, SolverMutation[]>();
     for (const m of all) {
       const id = switchGroupOf(m, all, sourceTree);
-      byGroup.set(id, [...(byGroup.get(id) ?? []), m]);
+      const members = byGroup.get(id);
+      if (members) members.push(m);
+      else byGroup.set(id, [m]);
     }
     return [...byGroup];
   }, [all, sourceTree]);

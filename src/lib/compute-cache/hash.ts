@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import type { ClientData } from "@/engine/types";
 import type { MonteCarloPayload } from "@/lib/projection/load-monte-carlo-data";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
+import { stableStringify } from "@/lib/stable-stringify";
+
+export { stableStringify };
 
 /**
  * Bump when MC/LI engine logic or the cached payload shape changes. Folded into
@@ -57,9 +60,6 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
  */
 export const ENGINE_VERSION = 15;
 
-import { stableStringify } from "@/lib/scenario/field-diff";
-
-export { stableStringify };
 
 export function hashMonteCarloInputs(input: {
   tree: ClientData;

@@ -2,6 +2,7 @@
 import type { ClientData } from "@/engine/types";
 import type { ScenarioChange } from "@/engine/scenario/types";
 import { foldChanges } from "@/lib/scenario/fold-changes";
+import { targetKeyOf } from "@/lib/scenario/field-diff";
 import { heldScenarioChanges, isHeldChange } from "./held-changes";
 import { mutationsToScenarioChanges } from "./mutations-to-scenario-changes";
 import { mutationKey, type SolverMutation } from "./types";
@@ -23,14 +24,13 @@ export function foldControlsIntoHeldAdds(
 ): { held: ScenarioChange[]; controls: SolverMutation[] } {
   let held = heldScenarioChanges(mutations);
   const controls = mutations.filter((m) => !isHeldChange(m));
-  const target = (c: { targetKind: string; targetId: string }) => `${c.targetKind}:${c.targetId}`;
-  const added = new Set(held.filter((c) => c.opType === "add").map(target));
+  const added = new Set(held.filter((c) => c.opType === "add").map(targetKeyOf));
   if (added.size === 0) return { held, controls };
 
   const kept: SolverMutation[] = [];
   for (const control of controls) {
     const drafts = mutationsToScenarioChanges(treeWithHeld, clientId, [control]);
-    const onAdds = drafts.filter((d) => added.has(target(d)));
+    const onAdds = drafts.filter((d) => added.has(targetKeyOf(d)));
     held = foldChanges(
       held,
       onAdds.map((d, i) => ({

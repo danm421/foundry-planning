@@ -233,11 +233,11 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
       mutations as SolverMutation[],
     );
 
-    // The changes-writer rewrites an entire edit row's payload, so a partial
-    // re-edit must carry the scenario's already-edited fields too — otherwise
-    // they'd be dropped. Collect the field set of each existing edit row and
-    // union it with the new draft's fields, reading every value off the
-    // working tree (the writer then diffs each against base).
+    // The writer merges a new edit over the row's prior fields, so a partial
+    // re-edit keeps what was already edited. Still collect the field set of
+    // each existing edit row and union it with the new draft's fields, so every
+    // value is read off the working tree (the writer then diffs each against
+    // base).
     const existing = await loadScenarioChanges(scenarioId);
     const existingEdits = new Map<string, Record<string, { to: unknown }>>();
     for (const c of existing) {

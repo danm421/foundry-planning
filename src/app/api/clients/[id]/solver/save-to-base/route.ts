@@ -53,17 +53,8 @@ import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import { mutationsToBaseUpdates } from "@/lib/solver/mutations-to-base-updates";
 import { entriesNaming, heldScenarioChanges, idsCreatedBy, isHeldChange } from "@/lib/solver/held-changes";
 import { foldControlsIntoHeldAdds } from "@/lib/solver/held-save";
-import {
-  collectExternalDedicatedAccountIds,
-  collectExternalSalaryIncomeIds,
-  scenarioChangesToBaseWrites,
-} from "@/lib/scenario/scenario-changes-to-base-writes";
-import {
-  assertRefsInClient,
-  collectClientRefs,
-  collectDirectRefs,
-  executeBaseWritePlan,
-} from "@/lib/scenario/execute-base-write-plan";
+import { scenarioChangesToBaseWrites } from "@/lib/scenario/scenario-changes-to-base-writes";
+import { assertPlanTenantGuards, executeBaseWritePlan } from "@/lib/scenario/execute-base-write-plan";
 import { removeGiftSeriesRows } from "@/lib/scenario/promote-direct-tables";
 import type { BaseWritePlan } from "@/lib/scenario/promote-to-base-types";
 import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
@@ -73,7 +64,6 @@ import {
   assertEntitiesInClient,
   assertExternalBeneficiariesInClient,
   assertFamilyMembersInClient,
-  assertIncomesInClient,
 } from "@/lib/db-scoping";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
@@ -365,16 +355,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     }
 
     const { held, controls } = foldControlsIntoHeldAdds(sourceTree, clientId, mutations);
-    const plan: BaseWritePlan =
-      held.length > 0
-        ? scenarioChangesToBaseWrites(
-            baseTree,
-            held,
-            [],
-            {},
-            baseLoad.resolutionContext?.accountGroupMembersById,
-          )
-        : { inserts: [], updates: [], singletonUpdates: [], removes: [], giftSeries: { upserts: [], removes: [] } };
+    const plan: BaseWritePlan = scenarioChangesToBaseWrites(
+      baseTree,
+      held,
+      [],
+      {},
+      baseLoad.resolutionContext?.accountGroupMembersById,
+    );
     if (plan.giftSeries.upserts.length > 0) {
       return NextResponse.json(
         { error: "A recurring gift can't be saved to base facts from the Solver. Save as a scenario instead." },
@@ -385,17 +372,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     // Promote's tenant guards, in its order, plus the held rows' own FK columns:
     // held changes come straight from this body. Ids the plan inserts are
     // remapped inside the transaction, so the collectors leave them out.
-    for (const check of [
-      () => assertAccountsInClient(clientId, collectExternalDedicatedAccountIds(plan)),
-      () => assertIncomesInClient(clientId, collectExternalSalaryIncomeIds(plan)),
-      () => assertRefsInClient(clientId, collectClientRefs(plan)),
-      () => assertRefsInClient(clientId, collectDirectRefs(plan)),
-    ]) {
-      const result = await check();
-      if (!result.ok) {
-        return NextResponse.json({ error: result.reason }, { status: 400 });
-      }
-    }
+    const guard = await assertPlanTenantGuards(clientId, plan, { direct: true });
+    if (!guard.ok) return NextResponse.json({ error: guard.reason }, { status: 400 });
 
     const {
       accountInserts,

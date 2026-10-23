@@ -49,8 +49,6 @@ interface BaseEntity {
 }
 
 /** A change the writer refuses on its merits. Routes map it to a 400. */
-export { buildFieldDiff, priorToValues };
-
 export class ScenarioChangeRejectedError extends Error {}
 
 /**

@@ -9,11 +9,11 @@ import {
   applyEntityAdd,
   applyEntityRemove,
   normalizeExpenseLivingItems,
-  priorToValues,
   ScenarioChangeRejectedError,
   revertChange,
   type ApplyEntityEditArgs,
 } from "../changes-writer";
+import { priorToValues } from "../field-diff";
 
 const COOPER_CLIENT_ID = "877a9532-f8ea-49b0-9db7-aadd64fab82a";
 const COOPER_FIRM_ID = "org_3CitTEIe8PJa1BVYw7LnEjkiP9r";

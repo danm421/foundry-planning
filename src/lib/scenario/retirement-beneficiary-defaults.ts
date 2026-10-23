@@ -16,7 +16,7 @@ import {
   defaultRetirementBeneficiaries,
   isDefaultDesignationSet,
 } from "@/lib/beneficiaries/default-retirement-beneficiaries";
-import { priorToValues } from "./changes-writer";
+import { priorToValues } from "./field-diff";
 import { loadEffectiveTree } from "./loader";
 
 type Fields = Record<string, unknown>;

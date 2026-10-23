@@ -17,10 +17,12 @@ import {
   assertEntitiesInClient,
   assertExternalBeneficiariesInClient,
   assertFamilyMembersInClient,
+  assertIncomesInClient,
   assertLiabilitiesInClient,
   type FkCheck,
 } from "@/lib/db-scoping";
 import type { BaseWritePlan } from "./promote-to-base-types";
+import { collectExternalDedicatedAccountIds, collectExternalSalaryIncomeIds } from "./scenario-changes-to-base-writes";
 import { PROMOTE_TABLE_REGISTRY, type PromoteTx } from "./promote-table-registry";
 import { reinvestmentPicksKey } from "./promote-child-writers";
 import { coerceForTable } from "./promote-coerce";
@@ -384,6 +386,35 @@ export interface ClientRefs {
   liabilityIds: string[];
 }
 
+/** The shared setup of the two ref collectors: per bucket, the ids a same-batch
+ *  insert satisfies (`skip`), the ids found so far, and the result lists. */
+function newRefCollector(plan: BaseWritePlan) {
+  const inBatch = (kind: string) =>
+    new Set(plan.inserts.filter((i) => i.kind === kind).map((i) => i.targetId));
+  const skip: Record<keyof ClientRefs, Set<string>> = {
+    familyMemberIds: inBatch("family_member"),
+    externalBeneficiaryIds: inBatch("external_beneficiary"),
+    entityIds: inBatch("entity"),
+    accountIds: inBatch("account"),
+    liabilityIds: inBatch("liability"),
+  };
+  const found: Record<keyof ClientRefs, Set<string>> = {
+    familyMemberIds: new Set(),
+    externalBeneficiaryIds: new Set(),
+    entityIds: new Set(),
+    accountIds: new Set(),
+    liabilityIds: new Set(),
+  };
+  const result = (): ClientRefs => ({
+    familyMemberIds: [...found.familyMemberIds],
+    externalBeneficiaryIds: [...found.externalBeneficiaryIds],
+    entityIds: [...found.entityIds],
+    accountIds: [...found.accountIds],
+    liabilityIds: [...found.liabilityIds],
+  });
+  return { skip, found, result };
+}
+
 /**
  * PURE. Every family member, external beneficiary and entity named by an
  * `owners` or `beneficiaries` array in the plan's inserts and updates, every
@@ -409,22 +440,7 @@ export interface ClientRefs {
  * row smuggle that id past this guard.
  */
 export function collectClientRefs(plan: BaseWritePlan): ClientRefs {
-  const inBatch = (kind: string) =>
-    new Set(plan.inserts.filter((i) => i.kind === kind).map((i) => i.targetId));
-  const skip = {
-    familyMemberIds: inBatch("family_member"),
-    externalBeneficiaryIds: inBatch("external_beneficiary"),
-    entityIds: inBatch("entity"),
-    accountIds: inBatch("account"),
-    liabilityIds: inBatch("liability"),
-  };
-  const found = {
-    familyMemberIds: new Set<string>(),
-    externalBeneficiaryIds: new Set<string>(),
-    entityIds: new Set<string>(),
-    accountIds: new Set<string>(),
-    liabilityIds: new Set<string>(),
-  };
+  const { skip, found, result } = newRefCollector(plan);
   const add = (bucket: keyof ClientRefs, id: unknown) => {
     if (typeof id === "string" && id.length > 0 && !skip[bucket].has(id)) found[bucket].add(id);
   };
@@ -470,13 +486,7 @@ export function collectClientRefs(plan: BaseWritePlan): ClientRefs {
   for (const ins of plan.inserts) walk(ins.kind, ins.raw);
   for (const u of plan.updates) walk(u.kind, u.set);
   for (const s of plan.giftSeries.upserts) walk("gift", s.draft as unknown as Record<string, unknown>);
-  return {
-    familyMemberIds: [...found.familyMemberIds],
-    externalBeneficiaryIds: [...found.externalBeneficiaryIds],
-    entityIds: [...found.entityIds],
-    accountIds: [...found.accountIds],
-    liabilityIds: [...found.liabilityIds],
-  };
+  return result();
 }
 
 /** The tenant guard: one scoped read per table (skipped when its list is
@@ -509,22 +519,7 @@ export async function assertRefsInClient(
  * written without a remap, so nothing is left out there.
  */
 export function collectDirectRefs(plan: BaseWritePlan): ClientRefs {
-  const inBatch = (kind: string) =>
-    new Set(plan.inserts.filter((i) => i.kind === kind).map((i) => i.targetId));
-  const skip: Record<keyof ClientRefs, Set<string>> = {
-    familyMemberIds: inBatch("family_member"),
-    externalBeneficiaryIds: inBatch("external_beneficiary"),
-    entityIds: inBatch("entity"),
-    accountIds: inBatch("account"),
-    liabilityIds: inBatch("liability"),
-  };
-  const found: Record<keyof ClientRefs, Set<string>> = {
-    familyMemberIds: new Set(),
-    externalBeneficiaryIds: new Set(),
-    entityIds: new Set(),
-    accountIds: new Set(),
-    liabilityIds: new Set(),
-  };
+  const { skip, found, result } = newRefCollector(plan);
   const walk = (row: Record<string, unknown>, remapped: boolean) => {
     for (const [column, bucket] of Object.entries(REF_COLUMN_TARGETS)) {
       const id = row[column];
@@ -542,11 +537,31 @@ export function collectDirectRefs(plan: BaseWritePlan): ClientRefs {
     walk(translateSet ? translateSet(u.set) : u.set, true);
   }
   for (const s of plan.singletonUpdates) walk(s.set, false);
-  return {
-    familyMemberIds: [...found.familyMemberIds],
-    externalBeneficiaryIds: [...found.externalBeneficiaryIds],
-    entityIds: [...found.entityIds],
-    accountIds: [...found.accountIds],
-    liabilityIds: [...found.liabilityIds],
-  };
+  return result();
+}
+
+/**
+ * Every tenant guard a base write plan needs, run BEFORE the transaction in
+ * one fixed order (the first failure wins): dedicated accounts, salary incomes
+ * (both GLOBAL FKs the executor can't check inside the transaction), then the
+ * child-row refs (`collectClientRefs`). `direct` adds the plan's own FK
+ * columns (`collectDirectRefs`) — for plans built from a request body rather
+ * than stored scenario changes.
+ */
+export async function assertPlanTenantGuards(
+  clientId: string,
+  plan: BaseWritePlan,
+  opts: { direct: boolean },
+): Promise<FkCheck> {
+  const checks: Array<() => Promise<FkCheck>> = [
+    () => assertAccountsInClient(clientId, collectExternalDedicatedAccountIds(plan)),
+    () => assertIncomesInClient(clientId, collectExternalSalaryIncomeIds(plan)),
+    () => assertRefsInClient(clientId, collectClientRefs(plan)),
+  ];
+  if (opts.direct) checks.push(() => assertRefsInClient(clientId, collectDirectRefs(plan)));
+  for (const check of checks) {
+    const result = await check();
+    if (!result.ok) return result;
+  }
+  return { ok: true };
 }

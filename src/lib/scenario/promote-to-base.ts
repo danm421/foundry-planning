@@ -34,15 +34,11 @@ import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/ch
 import { createSnapshot } from "@/lib/scenario/snapshot";
 import { recordAudit } from "@/lib/audit";
 import type { ToggleState } from "@/engine/scenario/types";
-import { assertAccountsInClient, assertIncomesInClient } from "@/lib/db-scoping";
 import {
   scenarioChangesToBaseWrites,
-  collectExternalDedicatedAccountIds,
-  collectExternalSalaryIncomeIds,
 } from "./scenario-changes-to-base-writes";
 import {
-  assertRefsInClient,
-  collectClientRefs,
+  assertPlanTenantGuards,
   executeBaseWritePlan,
 } from "./execute-base-write-plan";
 import {
@@ -121,39 +117,14 @@ export async function promoteScenarioToBase(args: PromoteArgs): Promise<PromoteR
       resolutionContext?.accountGroupMembersById,
     );
 
-    // Tenant guard: expense_dedicated_accounts.account_id is a GLOBAL FK (no
-    // tenant column), so every dedicated-account id not satisfied by an
-    // in-batch account insert must already belong to this client — otherwise
-    // a crafted id could link another firm's account (or FK-crash the txn).
-    // Mirrors save-to-base's pre-transaction guard.
-    const dedicatedCheck = await assertAccountsInClient(
-      clientId,
-      collectExternalDedicatedAccountIds(plan),
-    );
-    if (!dedicatedCheck.ok) throw new PromoteError("invalid_ref", dedicatedCheck.reason);
-
-    // Same guard for savings_rule_salary_incomes.income_id, also a GLOBAL FK.
-    // Deliberately checked HERE and not inside the child writer: the writer
-    // runs inside the transaction below and assertIncomesInClient reads through
-    // the module `db`, which cannot see this transaction's uncommitted rows —
-    // so a promotion that adds a salary AND a rule that uses it would be
-    // rejected. The collector excludes exactly those in-batch ids.
-    const salaryCheck = await assertIncomesInClient(
-      clientId,
-      collectExternalSalaryIncomeIds(plan),
-    );
-    if (!salaryCheck.ok) throw new PromoteError("invalid_ref", salaryCheck.reason);
-
-    // Same guard for the people, trusts, accounts and liabilities that child
-    // rows name: owners and beneficiary designations (account_owners,
-    // liability_owners, beneficiary_designations), reinvestment picks
-    // (reinvestment_accounts), Roth conversion sources (roth_conversion_sources),
-    // will bequests (will_bequests) and an LTC rider's life policy
-    // (ltc_policies.life_policy_account_id) — all GLOBAL FKs — excluding ids this
-    // batch creates. See `collectClientRefs`. Also outside the transaction, for
-    // the same reason as above.
-    const refCheck = await assertRefsInClient(clientId, collectClientRefs(plan));
-    if (!refCheck.ok) throw new PromoteError("invalid_ref", refCheck.reason);
+    // Tenant guards, outside the transaction (a read through the module `db`
+    // can't see this transaction's uncommitted rows, so a promotion that adds
+    // a salary AND a rule that uses it would otherwise be rejected). They cover
+    // expense_dedicated_accounts.account_id, savings_rule_salary_incomes.income_id
+    // and the people, trusts, accounts and liabilities that child rows name — all
+    // GLOBAL FKs — excluding ids this batch creates. See `assertPlanTenantGuards`.
+    const guard = await assertPlanTenantGuards(clientId, plan, { direct: false });
+    if (!guard.ok) throw new PromoteError("invalid_ref", guard.reason);
 
     await db.transaction(async (tx) => {
       const executed = await executeBaseWritePlan(tx, plan, { clientId, baseScenarioId });

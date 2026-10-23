@@ -12,7 +12,7 @@ import { resolveLtcEvent } from "@/engine/ltc-event";
 import type { QuickAddType } from "@/lib/solver/quick-add-account";
 import { buildAdditionalSavingsAccount } from "@/lib/solver/quick-add-account";
 import { applyMutations } from "@/lib/solver/apply-mutations";
-import { applyHeldChanges } from "@/lib/solver/held-changes";
+import { applyHeldChanges, isHeldChange } from "@/lib/solver/held-changes";
 import { scenarioOnlyItemIds } from "@/lib/solver/held-save";
 import { effectiveMutations, removeWithDependants, switchGroupOf } from "@/lib/solver/switch-groups";
 import { resolveEffectiveToggleState } from "@/engine/scenario/applyChanges";
@@ -312,10 +312,6 @@ export function LiveSolverWorkspace({
     () => effectiveMutations(allMutations, offGroups, initialSourceClientData),
     [allMutations, offGroups, initialSourceClientData],
   );
-  // ONE Save-to-base split, read by all three call sites below: the POST body,
-  // the post-save retain, and the button's enabled state. They used to call the
-  // per-kind predicate independently, which is how a sale's owner flip could be
-  // posted to the client's real record AND kept on screen as pending.
   // Items only the selected scenario has, which base has no row for. Empty on base.
   const scenarioOnlyIds = useMemo(
     () =>
@@ -329,6 +325,10 @@ export function LiveSolverWorkspace({
           }),
     [initialSource, changesPanel, initialSourceClientData, baseGifts, baseClientData],
   );
+  // ONE Save-to-base split, read by all three call sites below: the POST body,
+  // the post-save retain, and the button's enabled state. They used to call the
+  // per-kind predicate independently, which is how a sale's owner flip could be
+  // posted to the client's real record AND kept on screen as pending.
   const baseSavable = useMemo(
     () => partitionBaseSavableMutations(mutations, scenarioOnlyIds),
     [mutations, scenarioOnlyIds],
@@ -746,9 +746,20 @@ export function LiveSolverWorkspace({
 
   // The source plan with the held (dialog-saved) changes applied; the Solver's
   // levers then apply on top of it.
+  // Keyed on the held entries alone, and kept identical while they are the same
+  // objects, so a slider tick (a new `mutations` array) doesn't rebuild it.
+  const heldSliceRef = useRef<SolverMutation[]>([]);
+  const heldSlice = useMemo(() => {
+    const next = mutations.filter(isHeldChange);
+    const prev = heldSliceRef.current;
+    return next.length === prev.length && next.every((m, i) => m === prev[i]) ? prev : next;
+  }, [mutations]);
+  useEffect(() => {
+    heldSliceRef.current = heldSlice;
+  }, [heldSlice]);
   const heldTree = useMemo(
-    () => applyHeldChanges(initialSourceClientData, mutations),
-    [initialSourceClientData, mutations],
+    () => applyHeldChanges(initialSourceClientData, heldSlice),
+    [initialSourceClientData, heldSlice],
   );
   const workingTree = useMemo(() => applyMutations(heldTree, mutations), [heldTree, mutations]);
 
@@ -1063,7 +1074,6 @@ export function LiveSolverWorkspace({
       )
     )
       return;
-    const posted = mutations;
     setUpdatingScenario(true);
     setUpdateScenarioError(null);
     try {
@@ -1073,7 +1083,7 @@ export function LiveSolverWorkspace({
         body: JSON.stringify({
           scenarioId: initialSource,
           // Only the switched-on entries are saved; the off ones stay unsaved.
-          mutations: posted,
+          mutations,
           // Persist the canonical solve's seed so the scenario's report
           // reproduces the same PoS, mirroring the save-as-new path.
           ...(solvedSeed !== null ? { seed: solvedSeed } : {}),
@@ -1086,10 +1096,9 @@ export function LiveSolverWorkspace({
       // The scenario now carries exactly the entries posted. Drop those (the
       // switched-off ones stay) and refresh server components so the workspace
       // reloads the scenario's new effective tree as its baseline.
-      const postedKeys = new Set(posted.map(mutationKey));
       setMutationMap((prev) => {
         const next = new Map(prev);
-        for (const k of postedKeys) next.delete(k);
+        for (const m of mutations) next.delete(mutationKey(m));
         return next;
       });
       setSolvedPoS(null);
@@ -1221,12 +1230,12 @@ export function LiveSolverWorkspace({
 
   // Every change to the unsaved list moves numbers, so each one invalidates the
   // prior solve's canonical PoS and seed and marks the Scenario PoS outdated.
-  function markEdited() {
+  const markEdited = useCallback(() => {
     setComputeStatus("stale");
     setSolvedPoS(null);
     setSolvedSeed(null);
     setEditNonce((n) => n + 1);
-  }
+  }, []);
 
   function pushMutation(m: SolverMutation) {
     setMutationMap((prev) => {
@@ -1331,11 +1340,8 @@ export function LiveSolverWorkspace({
       for (const k of keys) next.delete(k);
       return next;
     });
-    setComputeStatus("stale");
-    setSolvedPoS(null);
-    setSolvedSeed(null);
-    setEditNonce((n) => n + 1); // a per-field reset is an edit → Scenario stale
-  }, []);
+    markEdited(); // a per-field reset is an edit → Scenario stale
+  }, [markEdited]);
 
   // The Changes tab's Add / Edit / Delete list the plan as the editors will open
   // it: the persisted scenario plan with the held changes applied, but never the

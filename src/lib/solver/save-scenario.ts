@@ -35,7 +35,7 @@ import { heldScenarioChanges } from "@/lib/solver/held-changes";
 import type { SolverMutation, SolverScenarioChangeDraft } from "@/lib/solver/types";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { applyEntityAdd, applyEntityEdit, applyEntityRemove } from "@/lib/scenario/changes-writer";
-import { priorToValues } from "@/lib/scenario/field-diff";
+import { priorToValues, targetKeyOf } from "@/lib/scenario/field-diff";
 import {
   cloneEntityFlowOverridesIntoScenario,
   cloneGiftSeriesIntoScenario,
@@ -67,8 +67,6 @@ interface NoteWrite {
 
 const isNoteMutation = (m: SolverMutation): m is NoteMutation =>
   m.kind === "note-receivable-upsert";
-
-const targetKey = (c: { targetKind: string; targetId: string }) => `${c.targetKind}:${c.targetId}`;
 
 /**
  * Write one change through the scenario writer, on `tx`: a held editor change,
@@ -609,10 +607,10 @@ export async function saveSolverScenario(args: {
     // wins as it does on screen, and keeps the group its target got above.
     const scope = { scenarioId: row.id as string, firmId };
     for (const change of held) await writeThroughWriter(tx, scope, change);
-    const heldTargets = new Set(held.map(targetKey));
+    const heldTargets = new Set(held.map(targetKeyOf));
     const direct: SolverScenarioChangeDraft[] = [];
     for (const d of drafts) {
-      if (heldTargets.has(targetKey(d))) {
+      if (heldTargets.has(targetKeyOf(d))) {
         await writeThroughWriter(tx, scope, d, groupIdByTarget.get(d.targetId));
       } else {
         direct.push(d);

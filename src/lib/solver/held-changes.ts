@@ -11,6 +11,7 @@ import { buildFieldDiff, editableSingletonFields, priorToValues } from "@/lib/sc
 import { foldChanges } from "@/lib/scenario/fold-changes";
 import { mutationsToScenarioChanges } from "./mutations-to-scenario-changes";
 import {
+  heldChangeKey,
   mutationKey,
   type HeldChangeMutation,
   type SolverMutation,
@@ -63,6 +64,17 @@ export function idsCreatedBy(m: SolverMutation, source: ClientData): string[] {
   return list.some((r) => r.id === upsert.id) ? [] : [upsert.id];
 }
 
+/** Entries are never mutated in place, so each one is serialized once. */
+const serialized = new WeakMap<SolverMutation, string>();
+function textOf(m: SolverMutation): string {
+  let text = serialized.get(m);
+  if (text === undefined) {
+    text = JSON.stringify(m);
+    serialized.set(m, text);
+  }
+  return text;
+}
+
 /** Keys of entries whose serialized form mentions any of `ids`. */
 export function entriesNaming(
   all: readonly SolverMutation[],
@@ -73,7 +85,7 @@ export function entriesNaming(
   for (const m of all) {
     const key = mutationKey(m);
     if (key === except) continue;
-    const text = JSON.stringify(m);
+    const text = textOf(m);
     for (const id of ids) {
       if (text.includes(id)) {
         out.push(key);
@@ -122,7 +134,7 @@ interface WorkingList {
   saveId: string;
 }
 
-const heldKey = (e: PreparedEdit): SolverMutationKey => `held-change:${e.targetKind}:${e.targetId}`;
+const heldKey = (e: PreparedEdit): SolverMutationKey => heldChangeKey(e.targetKind, e.targetId);
 
 const isTarget = (d: SolverScenarioChangeDraft, e: PreparedEdit) =>
   d.targetKind === e.targetKind && d.targetId === e.targetId;

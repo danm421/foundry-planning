@@ -282,6 +282,10 @@ export type SolverMutationKey =
   | "stress-ltc"
   | "surplus-allocation";
 
+/** The key of a held editor change: one entry per target. */
+export const heldChangeKey = (targetKind: string, targetId: string): SolverMutationKey =>
+  `held-change:${targetKind}:${targetId}`;
+
 export function mutationKey(m: SolverMutation): SolverMutationKey {
   switch (m.kind) {
     case "retirement-age":
@@ -383,7 +387,7 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
     case "note-receivable-upsert":
       return `note-receivable-upsert:${m.id}`;
     case "held-change":
-      return `held-change:${m.targetKind}:${m.targetId}`;
+      return heldChangeKey(m.targetKind, m.targetId);
     case "stress-inflation":
       return "stress-inflation";
     case "stress-ss-haircut":
