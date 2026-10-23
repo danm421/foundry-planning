@@ -4,6 +4,9 @@ import {
   clients,
   crmHouseholdContacts,
   scenarios,
+  incomes as incomesTable,
+  expenses as expensesTable,
+  savingsRules as savingsRulesTable,
   incomeScheduleOverrides,
   expenseScheduleOverrides,
   savingsScheduleOverrides,
@@ -11,7 +14,7 @@ import {
   entities,
   familyMembers,
 } from "@/db/schema";
-import { eq, and, asc, inArray } from "drizzle-orm";
+import { eq, and, asc, inArray, getTableColumns } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import type { IncomeExpensesViewProps } from "@/components/income-expenses-view";
 import { treeMilestones } from "@/lib/milestones";
@@ -103,15 +106,32 @@ export async function loadIncomeExpensesViewProps(
   const expenseIds = expenses.map((e) => e.id);
   const savingsRuleIds = savingsRulesView.map((s) => s.id);
 
+  // The ids come from the effective tree, which can carry the Solver's held adds
+  // (any id a request names), so each read is scoped through its parent row to
+  // this client.
   const [incOverrides, expOverrides, savOverrides, planSettingsRows, entityRows, familyMemberRows] = await Promise.all([
     incomeIds.length > 0
-      ? db.select().from(incomeScheduleOverrides).where(inArray(incomeScheduleOverrides.incomeId, incomeIds))
+      ? db
+          .select(getTableColumns(incomeScheduleOverrides))
+          .from(incomeScheduleOverrides)
+          .innerJoin(incomesTable, eq(incomesTable.id, incomeScheduleOverrides.incomeId))
+          .where(and(inArray(incomeScheduleOverrides.incomeId, incomeIds), eq(incomesTable.clientId, clientId)))
       : Promise.resolve([]),
     expenseIds.length > 0
-      ? db.select().from(expenseScheduleOverrides).where(inArray(expenseScheduleOverrides.expenseId, expenseIds))
+      ? db
+          .select(getTableColumns(expenseScheduleOverrides))
+          .from(expenseScheduleOverrides)
+          .innerJoin(expensesTable, eq(expensesTable.id, expenseScheduleOverrides.expenseId))
+          .where(and(inArray(expenseScheduleOverrides.expenseId, expenseIds), eq(expensesTable.clientId, clientId)))
       : Promise.resolve([]),
     savingsRuleIds.length > 0
-      ? db.select().from(savingsScheduleOverrides).where(inArray(savingsScheduleOverrides.savingsRuleId, savingsRuleIds))
+      ? db
+          .select(getTableColumns(savingsScheduleOverrides))
+          .from(savingsScheduleOverrides)
+          .innerJoin(savingsRulesTable, eq(savingsRulesTable.id, savingsScheduleOverrides.savingsRuleId))
+          .where(
+            and(inArray(savingsScheduleOverrides.savingsRuleId, savingsRuleIds), eq(savingsRulesTable.clientId, clientId)),
+          )
       : Promise.resolve([]),
     db.select().from(planSettings).where(and(eq(planSettings.clientId, clientId), eq(planSettings.scenarioId, scenario.id))),
     db.select().from(entities).where(eq(entities.clientId, clientId)).orderBy(asc(entities.name)),

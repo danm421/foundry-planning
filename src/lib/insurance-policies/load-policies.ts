@@ -1,9 +1,10 @@
 import { db } from "@/db";
 import {
+  accounts,
   lifeInsurancePolicies,
   lifeInsuranceCashValueSchedule,
 } from "@/db/schema";
-import { inArray } from "drizzle-orm";
+import { and, eq, getTableColumns, inArray } from "drizzle-orm";
 import type { LifeInsurancePolicy } from "@/engine/types";
 
 /**
@@ -13,22 +14,29 @@ import type { LifeInsurancePolicy } from "@/engine/types";
  *
  * Non-policy account IDs are silently ignored — the caller typically
  * pre-filters to `category === "life_insurance"` but this function is
- * defensive against being handed a mixed list.
+ * defensive against being handed a mixed list. So is an account that isn't
+ * `clientId`'s: the ids can come from a tree carrying the Solver's held adds,
+ * which name any id a request does.
  */
 export async function loadPoliciesByAccountIds(
   accountIds: string[],
+  clientId: string,
 ): Promise<Record<string, LifeInsurancePolicy>> {
   if (accountIds.length === 0) return {};
 
+  const ownAccount = (accountIdColumn: typeof lifeInsurancePolicies.accountId | typeof lifeInsuranceCashValueSchedule.policyId) =>
+    and(inArray(accountIdColumn, accountIds), eq(accounts.clientId, clientId));
   const [policyRows, scheduleRows] = await Promise.all([
     db
-      .select()
+      .select(getTableColumns(lifeInsurancePolicies))
       .from(lifeInsurancePolicies)
-      .where(inArray(lifeInsurancePolicies.accountId, accountIds)),
+      .innerJoin(accounts, eq(accounts.id, lifeInsurancePolicies.accountId))
+      .where(ownAccount(lifeInsurancePolicies.accountId)),
     db
-      .select()
+      .select(getTableColumns(lifeInsuranceCashValueSchedule))
       .from(lifeInsuranceCashValueSchedule)
-      .where(inArray(lifeInsuranceCashValueSchedule.policyId, accountIds)),
+      .innerJoin(accounts, eq(accounts.id, lifeInsuranceCashValueSchedule.policyId))
+      .where(ownAccount(lifeInsuranceCashValueSchedule.policyId)),
   ]);
 
   const scheduleByPolicy = new Map<

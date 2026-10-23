@@ -102,7 +102,7 @@ export default async function InsuranceStep({ clientId, firmId }: InsuranceStepP
   const lifeAccountIds = accountRows
     .filter((a) => a.category === "life_insurance")
     .map((a) => a.id);
-  const policies = await loadPoliciesByAccountIds(lifeAccountIds);
+  const policies = await loadPoliciesByAccountIds(lifeAccountIds, clientId);
 
   const clientFmId =
     (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;

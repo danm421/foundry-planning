@@ -912,7 +912,7 @@ const loadClientDataCached = cache(
     const lifeInsuranceAccountIds = accountRows
       .filter((a) => a.category === "life_insurance")
       .map((a) => a.id);
-    const policiesByAccount = await loadPoliciesByAccountIds(lifeInsuranceAccountIds);
+    const policiesByAccount = await loadPoliciesByAccountIds(lifeInsuranceAccountIds, id);
 
     // ── Annuity contracts ──────────────────────────────────────────────────
     // The stored income start year can legally be NULL when a milestone ref

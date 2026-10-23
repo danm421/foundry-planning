@@ -46,7 +46,7 @@ export async function GET(
         ),
       );
 
-    const policyMap = await loadPoliciesByAccountIds(accountRows.map((a) => a.id));
+    const policyMap = await loadPoliciesByAccountIds(accountRows.map((a) => a.id), id);
 
     const shaped = accountRows.map((account) => ({
       account,

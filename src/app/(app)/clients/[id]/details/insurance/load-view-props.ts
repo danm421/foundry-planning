@@ -137,7 +137,7 @@ export async function loadInsuranceViewProps(
   // portfolio's rate. The raw custom rate is what the policy was saved with: the
   // latest scenario change that set one (adds are resolved only at load, edits
   // are stored as sent), else the base row.
-  const baseRawPolicies = await loadPoliciesByAccountIds(lifeAccountIds);
+  const baseRawPolicies = await loadPoliciesByAccountIds(lifeAccountIds, id);
   const scenarioRawRate = new Map<string, number>();
   if (inScenario) {
     const changes = [...(await loadActiveChangesOfKind(scenarioParam && scenarioParam !== "base" ? scenarioParam : null, "account", extraChanges))].sort(
