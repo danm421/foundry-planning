@@ -239,8 +239,8 @@ const changesUrl = `/api/clients/${CLIENT_ID}/scenarios/${SCENARIO_ID}/changes`;
  *  picker to seed from the fetched gifts, then edits a real pick. Everything
  *  in the CLT gift-ops loop sits behind `isSplitInterest && origin === "new"`,
  *  so a plain irrevocable trust would never reach it. */
-async function renderCltAndOpenPicker(fetchMock: FetchMock) {
-  const { container } = render(<AddTrustForm {...props("details", trust({ trustSubType: "clt" }))} />);
+async function renderCltAndOpenPicker(fetchMock: FetchMock, wrapper?: React.ComponentType<{ children: React.ReactNode }>) {
+  const { container } = render(<AddTrustForm {...props("details", trust({ trustSubType: "clt" }))} />, { wrapper });
   await waitFor(() => expect(urlsOf(fetchMock).some((u) => u.includes("/gifts"))).toBe(true));
   // The picker trigger's summary flips from "Select assets…" to "1 row · $200K"
   // once the fetched asset gift has seeded a funding pick — proof the ops loop's
@@ -575,8 +575,22 @@ describe("AddTrustForm — gift reads and writes follow the active scenario", ()
     // The form's own F4 gate refuses split-interest edits inside a scenario, so
     // the ops loop is never reached. What matters here is the negative: the
     // funding change must not leak to the base gift routes.
-    expect(await screen.findByText(/Edit this on the Details page\./i))
+    expect(await screen.findByText(/split-interest details can't be edited inside a scenario/i))
       .toBeInTheDocument();
+    expect(giftWrites(fetchMock)).toHaveLength(0);
+  });
+
+  it("hold mode: a CLT edit shows the Details-page note, not the base-plan copy", async () => {
+    const fetchMock = installFetch([giftRow()]);
+    const { container } = await renderCltAndOpenPicker(fetchMock, ({ children }) => (
+      <HeldEditsProvider value={{ hold: vi.fn() }}>{children}</HeldEditsProvider>
+    ));
+
+    fireEvent.change(screen.getByLabelText("Percent of Family LP"), { target: { value: "40" } });
+    submitForm(container);
+
+    expect(await screen.findByText("Edit this on the Details page.")).toBeInTheDocument();
+    expect(screen.queryByText(/edit them in the base plan/i)).toBeNull();
     expect(giftWrites(fetchMock)).toHaveLength(0);
   });
 

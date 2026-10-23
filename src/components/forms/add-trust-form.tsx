@@ -530,7 +530,9 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
       // edits are scenario-scoped (split-brain).
       if (scenarioWriter.scenarioActive) {
         setError(
-          "Edit this on the Details page.",
+          holdMode
+            ? "Edit this on the Details page."
+            : "Assigning a business interest to this trust isn't supported inside a scenario yet — open the base plan to record it.",
         );
         return;
       }
@@ -626,7 +628,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     } catch {
       setError("Failed to update asset ownership");
     }
-  }, [editing, accounts, liabilities, assetFamilyMembers, clientId, scenarioWriter, router]);
+  }, [editing, accounts, liabilities, assetFamilyMembers, clientId, scenarioWriter, holdMode, router]);
 
   // Pure save: validates, persists entity + CLT gift ops + designations, then
   // resets the dirty baseline. Shared between the explicit-submit path and the
@@ -670,7 +672,9 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
         ok: false,
         error: editTargetId == null
           ? "Creating a new trust isn't supported inside a scenario yet — create it in the base plan, then adjust it here."
-          : "Edit this on the Details page.",
+          : holdMode
+            ? "Edit this on the Details page."
+            : "CLT/CRT split-interest details can't be edited inside a scenario yet — edit them in the base plan.",
       };
     }
 
@@ -894,7 +898,7 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
     isGrantor, grantorStatusEndYear,
     isIrrevocable, grantor, trustee, trustEnds, showDistributionAndIncome,
     distributionAmount, distributionPercent, remainderRows,
-    originalSplitInterestFundingPicks, onAutoSaved,
+    originalSplitInterestFundingPicks, onAutoSaved, holdMode,
   ]);
 
   async function handleSubmit(e: React.FormEvent) {
