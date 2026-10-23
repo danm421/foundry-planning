@@ -1,6 +1,7 @@
 "use client";
 
 import { FanMark } from "@/components/fan-mark";
+import { KPI_DELTA, KPI_LABEL, KPI_VALUE } from "./solver-ending-assets-kpi";
 
 interface Props {
   state: "idle" | "computing" | "ready" | "stale" | "error";
@@ -51,11 +52,9 @@ export function SolverPosGauge({ state, successPct, onRegenerate, solveActive, b
   return (
     <div className="relative">
       <div className={contentDim}>
-        <div className="whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-ink-3">
-          {label}
-        </div>
+        <div className={KPI_LABEL}>{label}</div>
         <div
-          className={`mt-0.5 flex h-5 items-center text-[20px] font-semibold leading-none tabular tracking-tight ${valueTone}`}
+          className={`${KPI_VALUE} flex h-6 items-center justify-center ${valueTone}`}
         >
           {state === "computing" ? (
             <span role="status" aria-label={`Calculating ${label.toLowerCase()}`}>
@@ -68,7 +67,7 @@ export function SolverPosGauge({ state, successPct, onRegenerate, solveActive, b
           )}
         </div>
         {(state === "ready" || state === "stale") && successPct != null && baselineSuccessPct != null && baselineSuccessPct !== successPct ? (
-          <div className="text-[10px] text-ink-4">
+          <div className={`${KPI_DELTA} ${successPct > baselineSuccessPct ? "text-good" : "text-crit"}`}>
             {successPct > baselineSuccessPct ? "↑" : "↓"} from {Math.round(baselineSuccessPct * 100)}%
           </div>
         ) : null}
