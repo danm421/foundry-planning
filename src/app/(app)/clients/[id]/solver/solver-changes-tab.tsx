@@ -10,7 +10,9 @@
 // the ones the scenario already changed: Add and Edit open the Details page's
 // own editor in place, Delete asks first (SolverDeleteConfirm) and then opens
 // the same host, which runs the view's delete and reports back. Nothing the
-// editors do is written: every save goes to `held.hold` as unsaved Solver changes.
+// editors do is written: every save goes to `held.hold` as unsaved Solver
+// changes, listed under "Not saved yet" with a switch each. (The long-term care
+// dialog below still writes on its own.)
 //
 // Clicking a change's title opens where it's edited (resolveChangeEditor):
 // a Solver tab (Stress, Retirement) switches the left pane; a Details page
@@ -25,7 +27,7 @@
 // to pick, so the advisor can switch without leaving it.
 
 import { useEffect, useState } from "react";
-import { useClientScenarios, useScenarioModeUI } from "@/components/scenario/scenario-mode-wrapper";
+import { useClientScenarios } from "@/components/scenario/scenario-mode-wrapper";
 import { withoutTestOrphans } from "@/lib/scenario/test-orphans";
 import { ChangesPanel, type ChangesPanelChange } from "@/components/scenario/changes-panel";
 import { labelFor } from "@/components/scenario/changes-panel-leaf-row";
@@ -42,6 +44,7 @@ import { LtcEventDialog } from "./ltc-event-dialog";
 import { SolverDetailActions } from "./solver-detail-actions";
 import { SolverDeleteConfirm } from "./solver-delete-confirm";
 import { SolverScenarioSelect } from "./solver-scenario-select";
+import { UnsavedChangesList } from "./unsaved-changes-list";
 import type { InputTab } from "./report-tab-link";
 
 export interface UnsavedChanges {
@@ -49,6 +52,12 @@ export interface UnsavedChanges {
   entries: readonly SolverMutation[];
   /** Ids of the switched-off groups. */
   offGroups: ReadonlySet<string>;
+  /** Names for edits and removes: the plan the Solver started from. */
+  sourceTree: ClientData;
+  /** Names for held adds: the source plan with the switched-on held changes applied. */
+  heldTree: ClientData;
+  /** The held tree with the Solver's controls applied. */
+  workingTree: ClientData;
   setGroupOn: (groupId: string, on: boolean) => void;
   discard: (key: SolverMutationKey) => void;
 }
@@ -85,14 +94,15 @@ export function SolverChangesTab({
   planTree,
   willGrantors,
   held,
+  unsaved,
   onOpenSolverTab,
   projectionYears,
   initialOpenChangeId,
   onInitialOpenConsumed,
 }: Props) {
   const { permission } = useClientAccess();
-  const { openCreate } = useScenarioModeUI();
   const canEdit = permission === "edit";
+  const hasUnsaved = (unsaved?.entries.length ?? 0) > 0;
   const scenarios = withoutTestOrphans(useClientScenarios());
   const scenarioPicker = scenarios.some((s) => !s.isBaseCase) ? (
     <SolverScenarioSelect clientId={clientId} scenarios={scenarios} />
@@ -157,18 +167,6 @@ export function SolverChangesTab({
           onDelete={setConfirming}
         />
       )}
-      {canEdit && !panel && (
-        <div className="mb-3 flex items-center gap-3 text-[12px] text-ink-3">
-          <span>No scenario selected. Add, Edit and Remove change the client&apos;s base facts.</span>
-          <button
-            type="button"
-            onClick={openCreate}
-            className="h-7 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[12px] text-ink-2 hover:border-hair focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-          >
-            Create scenario
-          </button>
-        </div>
-      )}
       {confirming && (
         <SolverDeleteConfirm
           tree={planTree}
@@ -202,6 +200,29 @@ export function SolverChangesTab({
           onDone={() => setEditing(null)}
         />
       )}
+      {(panel || hasUnsaved) && (
+        <>
+          <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink-3">Not saved yet</h3>
+          {hasUnsaved && unsaved ? (
+            <UnsavedChangesList
+              all={[...unsaved.entries]}
+              offGroups={unsaved.offGroups}
+              sourceTree={unsaved.sourceTree}
+              heldTree={unsaved.heldTree}
+              workingTree={unsaved.workingTree}
+              canEdit={canEdit}
+              onSetGroupOn={unsaved.setGroupOn}
+              onDiscard={unsaved.discard}
+              onOpenHeld={openEditor}
+              onOpenSolverTab={onOpenSolverTab}
+            />
+          ) : (
+            <div className="mb-4 rounded-lg border border-hair bg-card p-4 text-center text-[12px] text-ink-3">
+              No unsaved changes.
+            </div>
+          )}
+        </>
+      )}
       {panel ? (
         <ChangesPanel
           variant="embedded"
@@ -218,9 +239,11 @@ export function SolverChangesTab({
           openVerbFor={(c) => (resolveChangeEditor(c)?.surface === "solver-tab" ? "Open" : "Edit")}
         />
       ) : (
-        <div className="rounded-lg border border-hair bg-card p-6 text-center text-[12px] text-ink-3">
-          Pick a scenario to see its changes.
-        </div>
+        !hasUnsaved && (
+          <div className="rounded-lg border border-hair bg-card p-6 text-center text-[12px] text-ink-3">
+            Pick a scenario to see its changes.
+          </div>
+        )
       )}
     </>
   );

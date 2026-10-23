@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
-import { SolverChangesTab } from "../solver-changes-tab";
+import { SolverChangesTab, type UnsavedChanges } from "../solver-changes-tab";
 import { ClientAccessProvider } from "@/components/client-access-provider";
 import type { PanelData } from "@/lib/scenario/load-panel-data";
 import type { ChangesPanelChange } from "@/components/scenario/changes-panel";
@@ -28,8 +28,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/clients/c1/solver",
 }));
 
-const { loadChangeEditorPropsMock, makeStubView, openCreateMock, notYetReady } = vi.hoisted(() => ({
-  openCreateMock: vi.fn(),
+const { loadChangeEditorPropsMock, makeStubView, notYetReady } = vi.hoisted(() => ({
   // Mutable so a test can open a type the catalog still holds back.
   notYetReady: new Set<string>(),
   loadChangeEditorPropsMock: vi.fn(),
@@ -86,7 +85,6 @@ vi.mock("@/app/(app)/clients/[id]/details/assumptions/assumptions-client", () =>
   default: makeStubView("assumptions"),
 }));
 vi.mock("@/components/scenario/scenario-mode-wrapper", () => ({
-  useScenarioModeUI: () => ({ openCreate: openCreateMock }),
   useClientScenarios: () => clientScenarios,
   ScenarioModeWrapper: ({ children }: { children: unknown }) => children,
 }));
@@ -104,6 +102,15 @@ const hostFor = (source: string): HeldEditorHost => ({
 const UNSUPPORTED_MESSAGE =
   "This change can't be edited inside a scenario yet. You can still switch it off or delete it here.";
 const SCENARIO_ID = "s-1";
+const UNSAVED_CONTROL: UnsavedChanges = {
+  entries: [{ kind: "retirement-age", person: "client", age: 62 }],
+  offGroups: new Set(),
+  sourceTree: buildClientData(),
+  heldTree: buildClientData(),
+  workingTree: buildClientData(),
+  setGroupOn: vi.fn(),
+  discard: vi.fn(),
+};
 const TARGET_ID = "11111111-2222-3333-4444-555555555555";
 
 function makeChange(overrides: Partial<ChangesPanelChange> = {}): ChangesPanelChange {
@@ -212,7 +219,6 @@ function pickFromCategory(verb: "Edit" | "Remove", category: string, name: RegEx
 
 beforeEach(() => {
   loadChangeEditorPropsMock.mockReset();
-  openCreateMock.mockReset();
   routerPushMock.mockReset();
   routerRefreshMock.mockReset();
   nav.search = "";
@@ -230,6 +236,13 @@ describe("SolverChangesTab", () => {
     const aside = document.querySelector("aside");
     expect(aside?.className).toContain("w-full");
     expect(aside?.className).not.toContain("w-[360px]");
+  });
+
+  it("scenario shows Not saved yet + No unsaved changes + saved changes", () => {
+    renderTab([makeChange()]);
+    expect(screen.getByText("Not saved yet")).toBeInTheDocument();
+    expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
+    expect(screen.getByTestId("leaf-row-c-1")).toBeInTheDocument();
   });
 
   it("shows a quiet empty state on the base case (panel === null)", () => {
@@ -882,7 +895,7 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
   });
 
   describe("the base case", () => {
-    function renderBase() {
+    function renderBase(unsaved?: UnsavedChanges) {
       render(
         <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
           <SolverChangesTab
@@ -893,20 +906,32 @@ describe("SolverChangesTab — Add, Edit and Delete toolbar", () => {
             willGrantors={[]}
             onOpenSolverTab={vi.fn()}
             held={hostFor("base")}
+            unsaved={unsaved}
           />
         </ClientAccessProvider>,
       );
     }
 
-    it("keeps the toolbar on, says it writes the base facts, and offers Create scenario", () => {
+    it("keeps the toolbar on and has no base-facts line", () => {
       renderBase();
       for (const name of ["+ Add", "Edit", "Remove"]) {
         expect(screen.getByRole("button", { name })).toBeEnabled();
       }
-      expect(screen.getByText("No scenario selected. Add, Edit and Remove change the client's base facts.")).toBeInTheDocument();
+      expect(screen.queryByText(/No scenario selected/)).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Create scenario" })).not.toBeInTheDocument();
+    });
+
+    it("base with nothing unsaved shows Pick a scenario", () => {
+      renderBase();
       expect(screen.getByText("Pick a scenario to see its changes.")).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "Create scenario" }));
-      expect(openCreateMock).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText("Not saved yet")).not.toBeInTheDocument();
+    });
+
+    it("base with unsaved shows the list, not Pick a scenario", () => {
+      renderBase(UNSAVED_CONTROL);
+      expect(screen.getByText("Not saved yet")).toBeInTheDocument();
+      expect(screen.getByText(/Retirement age/)).toBeInTheDocument();
+      expect(screen.queryByText("Pick a scenario to see its changes.")).not.toBeInTheDocument();
     });
 
     it("Edit opens the editor with no scenario", async () => {

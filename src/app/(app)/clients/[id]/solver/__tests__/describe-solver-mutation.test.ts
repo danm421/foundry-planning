@@ -65,4 +65,20 @@ describe("describeSolverMutation", () => {
       line({ kind: "income-end-year", incomeId: "not-a-row", year: 2040 }),
     ).toBe("Income ends 2040");
   });
+
+  it("held-change describes like the list", () => {
+    const edit: SolverMutation = {
+      kind: "held-change",
+      op: "edit",
+      targetKind: "expense",
+      targetId: "exp-living",
+      payload: { annualAmount: { from: 100000, to: 125000 } },
+      saveId: "s1",
+    };
+    expect(line(edit)).toBe("Living Expenses · Annual amount: $100,000 → $125,000");
+    expect(line({ ...edit, op: "remove", payload: null })).toBe("Remove · Living Expenses");
+    expect(
+      line({ ...edit, op: "add", targetId: "exp-new", payload: { name: "Boat" } }),
+    ).toBe("Add · Boat");
+  });
 });

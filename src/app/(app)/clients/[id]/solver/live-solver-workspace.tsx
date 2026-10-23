@@ -1903,7 +1903,15 @@ export function LiveSolverWorkspace({
               planTree={heldTree}
               willGrantors={willGrantors}
               held={heldHost}
-              unsaved={{ entries: allMutations, offGroups, setGroupOn, discard }}
+              unsaved={{
+                entries: allMutations,
+                offGroups,
+                sourceTree: initialSourceClientData,
+                heldTree,
+                workingTree,
+                setGroupOn,
+                discard,
+              }}
               onOpenSolverTab={selectLeftTab}
               projectionYears={currentProjection}
               initialOpenChangeId={pendingOpenChangeId}

@@ -197,7 +197,7 @@ export function ChangesPanelLeafRow({
   );
 }
 
-function ToggleSwitch({
+export function ToggleSwitch({
   on,
   onChange,
   label,

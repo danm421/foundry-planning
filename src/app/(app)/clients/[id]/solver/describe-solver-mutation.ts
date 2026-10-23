@@ -1,5 +1,9 @@
 import type { ClientData, ClientInfo, EntitySummary } from "@/engine/types";
-import type { SavingsGrowthSource, SolverMutation, SolverPerson } from "@/lib/solver/types";
+import type { ScenarioChange } from "@/engine/scenario/types";
+import { TARGET_KIND_TO_FIELD } from "@/engine/scenario/applyChanges";
+import { labelFor } from "@/components/scenario/changes-panel-leaf-row";
+import { describeEditFields } from "@/lib/scenario/scenario-change-describe";
+import type { HeldChangeMutation, SavingsGrowthSource, SolverMutation, SolverPerson } from "@/lib/solver/types";
 import type { DebtPaydownRow } from "@/lib/solver/debt-paydown";
 import { stressParamsFromMutation } from "@/lib/solver/stress-test-mutations";
 import { usd as money } from "@/lib/solver/technique-summaries";
@@ -42,6 +46,32 @@ export function mutationNames(source: ClientData, working: ClientData): Mutation
     if (account) rows.set(r.id, account);
   }
   return { client: working.client, rows };
+}
+
+/** The name `tree` holds for a held entry's target, or undefined. */
+export function heldNameOf(m: HeldChangeMutation, tree: ClientData): string | undefined {
+  const field = TARGET_KIND_TO_FIELD[m.targetKind];
+  const rows = (field && (tree[field] as { id: string; name?: string }[] | undefined)) || [];
+  return rows.find((r) => r.id === m.targetId)?.name;
+}
+
+/** The one line a held change reads as, on the Changes tab and in the save dialog.
+ *  `name` is what the plan calls the target; a switched-off add falls back to its own payload. */
+export function heldChangeLine(m: HeldChangeMutation, name: string | undefined): string {
+  const change: ScenarioChange = {
+    id: "held",
+    scenarioId: "held",
+    opType: m.op,
+    targetKind: m.targetKind,
+    targetId: m.targetId,
+    payload: m.payload,
+    toggleGroupId: null,
+    orderIndex: 0,
+  };
+  const label = labelFor(change, name, null);
+  if (m.op === "add") return `Add · ${label}`;
+  if (m.op === "remove") return `Remove · ${label}`;
+  return `${label} · ${describeEditFields(m.targetKind, m.payload)}`;
 }
 
 /** decimal → "23%" / "3.5%" — at most two decimals. */
@@ -99,9 +129,8 @@ export function describeSolverMutation(m: SolverMutation, names: MutationNames):
   const removed = (noun: string, id: string) => `Removed ${named(noun, id)}`;
 
   switch (m.kind) {
-    // Task 12 replaces this with the held-change line.
     case "held-change":
-      return "";
+      return heldChangeLine(m, names.rows.get(m.targetId));
     case "retirement-age":
       return `Retirement age (${who(m.person)}) → ${m.age}${m.month ? ` (month ${m.month})` : ""}`;
     case "living-expense-scale":
