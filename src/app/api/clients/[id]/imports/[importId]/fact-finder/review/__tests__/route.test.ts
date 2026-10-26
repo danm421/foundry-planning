@@ -42,6 +42,7 @@ import { POST } from "../route";
 import { recordAudit } from "@/lib/audit";
 import { factFinderGate } from "@/lib/fact-finder/gate";
 import { writeFactFinder } from "@/lib/fact-finder/persist";
+import { readFactFinderState } from "@/lib/fact-finder/state";
 import { hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "@/lib/fact-finder/placement/__tests__/fixtures";
 import { loadRecordBook } from "@/lib/fact-finder/records/book";
 import { loadExistingRecords, resolveBaseCaseScenarioId } from "@/lib/fact-finder/records/load";
@@ -76,6 +77,9 @@ const stored = (sections: Record<string, FFRow[]>, more: Partial<FactFinderState
   version: 3,
   ...more,
 });
+
+/** The fact finder as the gate hands it over: the stored slice, with its worksheet derived from staging. */
+const asRead = (factFinder: FactFinderState) => readFactFinderState({ factFinder });
 
 const facts = (category: string) => ({ category, subType: null, parentAccountId: null, isDefaultChecking: false });
 const BOOK = hendricksBook({
@@ -162,7 +166,7 @@ describe("POST /fact-finder/review — the change list", () => {
       ["r1/account", "create", true, false],
       ["final_notes:Notes/plan_observation/0", "create", false, true],
     ]);
-    expect(writeFactFinder).toHaveBeenCalledExactlyOnceWith(SCOPE, 3, { ...FULL, changeSet }, { keepChangeSet: true });
+    expect(writeFactFinder).toHaveBeenCalledExactlyOnceWith(SCOPE, 3, { ...asRead(FULL), changeSet }, { keepChangeSet: true });
     expect(recordAudit).toHaveBeenCalledExactlyOnceWith({
       action: "import.fact_finder_reviewed",
       resourceType: "client_import",
@@ -199,12 +203,12 @@ describe("POST /fact-finder/review — the change list", () => {
     store.fresh = { ...FULL, version: 4 };
     const res = await POST(review(), params);
     expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: REVIEW_STALE_MESSAGE, factFinder: { ...FULL, version: 4 } });
+    expect(await res.json()).toEqual({ error: REVIEW_STALE_MESSAGE, factFinder: asRead({ ...FULL, version: 4 }) });
     expect(recordAudit).not.toHaveBeenCalled();
 
     // Dropping a vanished link loses the same way, and a write that didn't land isn't audited.
     vi.mocked(factFinderGate).mockResolvedValueOnce(gateWith(stored({ cash: [{ ...JOINT, link: linkedTo("a-deleted") }] })));
-    expect(await (await POST(review(), params)).json()).toEqual({ error: REVIEW_STALE_MESSAGE, factFinder: { ...FULL, version: 4 } });
+    expect(await (await POST(review(), params)).json()).toEqual({ error: REVIEW_STALE_MESSAGE, factFinder: asRead({ ...FULL, version: 4 }) });
     expect(recordAudit).not.toHaveBeenCalled();
   });
 
