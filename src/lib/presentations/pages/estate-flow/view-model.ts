@@ -5,6 +5,7 @@ import type { OwnershipColumnData } from "@/lib/estate/estate-flow-ownership";
 import { inheritanceTaxOf, irdTaxOf } from "@/lib/estate/death-taxes";
 import { prepEstate } from "@/lib/presentations/shared/estate-context";
 import { pickDeathColumns } from "@/lib/estate/estate-flow-death-columns";
+import { hasSpouseForEstate } from "@/lib/estate/spousal-household";
 import type { AsOfValue } from "@/components/report-controls/as-of-dropdown";
 
 /** One death's projected tax, as the column's tax box lists it. */
@@ -28,6 +29,9 @@ export interface EstateFlowReportData {
   subtitle: string;
   ownership: OwnershipColumnData;
   asOfYear: number;
+  /** False for a single client: the page prints one death column, which may
+   *  arrive in either slot — the engine files a lone death as the final one. */
+  isMarried: boolean;
   firstColumn: EstateFlowDeathColumnData | null;
   secondColumn: EstateFlowDeathColumnData | null;
   showHeirDetail: boolean;
@@ -68,6 +72,7 @@ export function buildEstateFlowReportData(
     subtitle: `${ctx.scenarioLabel} · As of ${asOfYear}`,
     ownership,
     asOfYear,
+    isMarried: hasSpouseForEstate(ctx.clientData.client.spouseDob),
     firstColumn: toDeathColumn(firstColumn),
     secondColumn: toDeathColumn(secondColumn),
     showHeirDetail: options.showHeirDetail,

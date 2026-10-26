@@ -13,6 +13,7 @@ const ctx = {
   scenarioLabel: "Base Case",
   clientName: "Cooper Sample",
   spouseName: "Susan Sample",
+  clientData: { client: { spouseDob: "1962-03-01" } },
 } as unknown as BuildDataContext;
 
 // Shared base options (no ordering → defaults to "primaryFirst" in the schema)
@@ -98,6 +99,18 @@ describe("buildEstateFlowReportData", () => {
     expect(data.ownership.grandTotal).toBe(100);
     expect(data.firstColumn?.decedentName).toBe("Cooper");
     expect(data.secondColumn).toBeNull();
+    expect(data.isMarried).toBe(true);
+  });
+
+  it("marks a household with no spouse as single", () => {
+    mockPrepEstate.mockReturnValue(singleDeathPrep);
+    const single = {
+      ...ctx,
+      spouseName: null,
+      clientData: { client: { spouseDob: null } },
+    } as unknown as BuildDataContext;
+    const data = buildEstateFlowReportData(single, { ...baseOptions, ordering: "primaryFirst" });
+    expect(data.isMarried).toBe(false);
   });
 
   it("F11: default ordering (primaryFirst) keeps primary as first column", () => {

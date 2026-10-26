@@ -363,13 +363,17 @@ function DeathColumn({
   ordinal,
 }: {
   section: EstateFlowDeathColumnData | null;
-  ordinal: "First" | "Second";
+  /** Null for a single client, whose one death has no order. */
+  ordinal: "First" | "Second" | null;
 }) {
+  const label = ordinal ? `${ordinal} to die` : "At death";
   if (!section) {
     return (
       <View style={styles.column}>
-        <Text style={styles.colHead}>{ordinal} to die</Text>
-        <Text style={styles.empty}>No {ordinal.toLowerCase()} death projected.</Text>
+        <Text style={styles.colHead}>{label}</Text>
+        <Text style={styles.empty}>
+          No {ordinal ? `${ordinal.toLowerCase()} ` : ""}death projected.
+        </Text>
       </View>
     );
   }
@@ -383,7 +387,7 @@ function DeathColumn({
     <View style={styles.column}>
       <View style={styles.colHeadRow}>
         <Text style={styles.colHead}>
-          {section.decedentName} — {ordinal} to die
+          {section.decedentName} — {label}
         </Text>
         <Text style={styles.colYear}>{section.year}</Text>
       </View>
@@ -435,8 +439,14 @@ export function EstateFlowReportPagePdf({
       <Text style={styles.subtitle}>{data.subtitle}</Text>
       <View style={styles.columns}>
         <OwnershipColumn data={data} />
-        <DeathColumn section={data.firstColumn} ordinal="First" />
-        <DeathColumn section={data.secondColumn} ordinal="Second" />
+        {data.isMarried ? (
+          <>
+            <DeathColumn section={data.firstColumn} ordinal="First" />
+            <DeathColumn section={data.secondColumn} ordinal="Second" />
+          </>
+        ) : (
+          <DeathColumn section={data.firstColumn ?? data.secondColumn} ordinal={null} />
+        )}
       </View>
     </PageFrame>
   );

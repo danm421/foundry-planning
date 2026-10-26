@@ -31,6 +31,7 @@ const emptyReport: EstateFlowReportData = {
   subtitle: "Base Case",
   ownership: { groups: [], grandTotal: 0 },
   asOfYear: 2026,
+  isMarried: true,
   firstColumn: null,
   secondColumn: null,
   showHeirDetail: true,
@@ -111,6 +112,7 @@ const populatedReport: EstateFlowReportData = {
   title: "Estate Flow",
   subtitle: "Base Case",
   asOfYear: 2026,
+  isMarried: true,
   showHeirDetail: true,
   ownership: {
     grandTotal: 350_000,
@@ -323,5 +325,24 @@ describe("estate page PDFs render", () => {
     const text = (await extractPdfText(Buffer.from(buf))).replace(/\s+/g, " ");
     expect(text).toContain("Other Heirs");
     expect(text).not.toContain("No plan");
+  });
+
+  it("prints a single client's one death without a first or second column", async () => {
+    // The engine files a lone death as the final one, so it arrives second.
+    const single: EstateFlowReportData = {
+      ...populatedReport,
+      isMarried: false,
+      firstColumn: null,
+      secondColumn: populatedReport.firstColumn,
+    };
+    const buf = await renderToBuffer(
+      <Document>{EstateFlowReportPagePdf({ data: single, ...framing })}</Document>,
+    );
+    // Column heads are letter-spaced, which the text extraction splits apart.
+    const text = (await extractPdfText(Buffer.from(buf))).replace(/\s+/g, "").toUpperCase();
+    expect(text).toContain("TOM—ATDEATH2030");
+    expect(text).toContain("PROJECTEDTAX");
+    expect(text).not.toContain("TODIE");
+    expect(text).not.toContain("DEATHPROJECTED");
   });
 });
