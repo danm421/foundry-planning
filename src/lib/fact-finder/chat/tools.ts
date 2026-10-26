@@ -56,6 +56,16 @@ const rowIdParam: Param = { type: "string", description: "The row's id, as the f
 const columnIdParam: Param = { type: "string", description: "The column's id, as the fact finder or read_section shows it." };
 const holdingIdParam: Param = { type: "string", description: "The holding's id, as read_section shows it." };
 
+/** A new holding's values as a tool takes them (add_holding, the worksheet's stage_rows). */
+export const HOLDING_INPUT_PARAMS: Record<string, Param> = {
+  ticker: { type: "string", description: "The ticker, if it has one." },
+  name: { type: "string", description: "The security's name." },
+  shares: { type: "number", description: "How many shares." },
+  price: { type: "number", description: "The price per share, in dollars." },
+  marketValue: { type: "number", description: "The market value, in dollars." },
+  costBasis: { type: "number", description: "The cost basis, in dollars." },
+};
+
 /** The tools that edit or read staging, shared with the worksheet chat (`worksheet/tools.ts`). */
 export const STAGING_TOOL_DEFS = [
   fn(
@@ -150,12 +160,7 @@ export const STAGING_TOOL_DEFS = [
       "know: a ticker or a name, and any of shares, price, market value and cost basis. Returns the new holding's id.",
     {
       rowId: { type: "string", description: "The account row to add it to." },
-      ticker: { type: "string", description: "The ticker, if it has one." },
-      name: { type: "string", description: "The security's name." },
-      shares: { type: "number", description: "How many shares." },
-      price: { type: "number", description: "The price per share, in dollars." },
-      marketValue: { type: "number", description: "The market value, in dollars." },
-      costBasis: { type: "number", description: "The cost basis, in dollars." },
+      ...HOLDING_INPUT_PARAMS,
     },
     ["rowId"],
   ),
@@ -193,6 +198,18 @@ export const TOOL_DEFS = [
 
 const id = z.string().min(1).max(100);
 const value = z.union([z.string(), z.number(), z.boolean()]);
+const amount = z.union([z.string(), z.number()]).nullish();
+
+/** HOLDING_INPUT_PARAMS' zod shape; refine the object with `hasTickerOrName`. */
+export const HOLDING_INPUT_FIELDS = {
+  ticker: z.string().max(100).nullish(),
+  name: z.string().max(300).nullish(),
+  shares: amount,
+  price: amount,
+  marketValue: amount,
+  costBasis: amount,
+};
+export const hasTickerOrName = (h: { ticker?: string | null; name?: string | null }) => !!h.ticker?.trim() || !!h.name?.trim();
 const ARGS = {
   set_cell: z.object({ rowId: id, columnId: id, value }),
   clear_cell: z.object({ rowId: id, columnId: id }),
@@ -204,17 +221,7 @@ const ARGS = {
   set_holding: z.object({ holdingId: id, field: z.enum(HOLDING_FIELDS), value: z.union([z.string(), z.number()]) }),
   remove_holding: z.object({ holdingId: id }),
   move_holding: z.object({ holdingId: id, toRowId: id }),
-  add_holding: z
-    .object({
-      rowId: id,
-      ticker: z.string().max(100).nullish(),
-      name: z.string().max(300).nullish(),
-      shares: z.union([z.string(), z.number()]).nullish(),
-      price: z.union([z.string(), z.number()]).nullish(),
-      marketValue: z.union([z.string(), z.number()]).nullish(),
-      costBasis: z.union([z.string(), z.number()]).nullish(),
-    })
-    .refine((a) => !!a.ticker?.trim() || !!a.name?.trim(), "give a ticker or a name"),
+  add_holding: z.object({ rowId: id, ...HOLDING_INPUT_FIELDS }).refine(hasTickerOrName, "give a ticker or a name"),
   read_section: z.object({ sectionId: z.enum(SECTION_IDS) }),
   reread_document: z.object({ fileName: z.string().min(1), question: z.string().min(1).max(500) }),
   explain: z.object({ rowId: id }),

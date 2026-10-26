@@ -120,6 +120,20 @@ describe("visionOcrPdf", () => {
     expect(callAIVisionTranscription).toHaveBeenCalledWith(expect.any(Array), "full");
   });
 
+  it("batchSize 1 with keepEmptySegments gives one segment per rendered page, empty pages included", async () => {
+    // The fact finder's page text must be indexed by real page, so a blank scanned page stays as "".
+    getDocumentProxy.mockResolvedValue({ numPages: 3 });
+    callAIVisionTranscription
+      .mockResolvedValueOnce("PAGE-1")
+      .mockResolvedValueOnce("  ")
+      .mockResolvedValueOnce("PAGE-3");
+
+    const res = await visionOcrPdf(Buffer.from("pdf"), { maxPages: 30, model: "mini", batchSize: 1, keepEmptySegments: true });
+
+    expect(res.segments).toEqual(["PAGE-1", "", "PAGE-3"]);
+    expect(callAIVisionTranscription).toHaveBeenCalledTimes(3);
+  });
+
   it("does NOT require Foundry Planning's own key — a firm runs in its own tenant", async () => {
     // The old guard here refused whenever OUR AZURE_API_KEY was absent, which
     // has nothing to do with whether the caller's tenant works. Whose tenant

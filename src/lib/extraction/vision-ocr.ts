@@ -14,12 +14,10 @@ export interface VisionOcrResult {
    * The same transcripts `text` is joined from, unjoined — one entry per
    * TRANSCRIBED BATCH (up to `batchSize` rendered pages each), not per page.
    *
-   * Callers that need an ordered array of text chunks rather than one blob —
-   * the fact finder's section reader (`fact-finder/readers/route-file.ts`),
-   * whose region classifier targets ranges over whatever array it is given —
-   * use these. Because the classifier builds its outline
-   * from the same array it later slices, the coarser granularity stays
-   * internally consistent: a "page" range simply addresses a batch.
+   * Callers that need an ordered array of text chunks rather than one blob
+   * use these. The fact finder's page text (`fact-finder/readers/route-file.ts`)
+   * passes `batchSize: 1` and `keepEmptySegments`, so each entry is one real
+   * page and its page numbers match the PDF's.
    */
   segments: string[];
   pageCount: number;
@@ -37,6 +35,11 @@ export interface VisionOcrOptions {
   pages?: number[];
   model: "mini" | "full";
   batchSize?: number;
+  /**
+   * Keep a blank transcript as "" in `segments` instead of dropping it. With
+   * `batchSize: 1` that makes `segments[i]` the i-th rendered page.
+   */
+  keepEmptySegments?: boolean;
   concurrency?: number;
 }
 
@@ -136,10 +139,10 @@ export async function visionOcrPdf(
   // `transcripts` is index-assigned per batch; every slot is filled by the time
   // the in-flight window drains, but normalise anyway so a caller never sees a
   // hole as `undefined`.
-  const segments = Array.from(
-    { length: batchIndex },
-    (_, i) => transcripts[i] ?? "",
-  ).filter((segment) => segment.trim().length > 0);
+  const transcribed = Array.from({ length: batchIndex }, (_, i) => transcripts[i] ?? "");
+  const segments = opts.keepEmptySegments
+    ? transcribed.map((segment) => (segment.trim().length > 0 ? segment : ""))
+    : transcribed.filter((segment) => segment.trim().length > 0);
 
   return {
     text: transcripts.join("\n\n"),

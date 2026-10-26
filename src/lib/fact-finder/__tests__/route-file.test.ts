@@ -68,6 +68,14 @@ describe("routeFile", () => {
     expect(await routeFile(pdf())).toEqual({ reader: "statement" });
   });
 
+  it("OCRs a scanned PDF one page at a time, so its pages line up 1:1 with the real pages", async () => {
+    vi.mocked(extractPdfPages).mockResolvedValue(["", "", ""]);
+    vi.mocked(visionOcrPdf).mockResolvedValue({ text: "", segments: ["Page 1 text", "", "Page 3 text"], pageCount: 3, pagesProcessed: 3, truncated: false });
+    vi.mocked(classifyDocument).mockReturnValueOnce("insurance");
+    expect(await routeFile(pdf())).toMatchObject({ reader: "section", pages: ["Page 1 text", "", "Page 3 text"] });
+    expect(visionOcrPdf).toHaveBeenCalledWith(buffer, expect.objectContaining({ batchSize: 1, keepEmptySegments: true }));
+  });
+
   it("reads images with OCR and Word files as text", async () => {
     vi.mocked(visionOcrImage).mockResolvedValue("Social Security statement");
     vi.mocked(classifyDocument).mockReturnValue("insurance");

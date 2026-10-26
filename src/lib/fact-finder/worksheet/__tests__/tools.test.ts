@@ -95,7 +95,7 @@ describe("WS_TOOL_DEFS", () => {
       set_cells: { args: ["table", "row", "cells"], required: ["table", "row", "cells"] },
       remove_rows: { args: ["table", "rows", "reason"], required: ["table", "rows", "reason"] },
       read_table: { args: ["table", "fromRow"], required: ["table"] },
-      read_document: { args: ["document", "fromPage", "toPage"], required: ["document"] },
+      read_document: { args: ["document", "fromPage", "fromChar", "toPage"], required: ["document"] },
       look_at_pages: { args: ["document", "pages"], required: ["document", "pages"] },
       read_plan: { args: [], required: [] },
       stage_rows: { args: ["table", "rows"], required: ["table", "rows"] },
@@ -229,7 +229,7 @@ describe("runWorksheetTool", () => {
   });
 
   it("read_document fences page text and cuts at REREAD_MAX_CHARS", async () => {
-    const pages = ["Page one, SSN 123-45-6789", "x".repeat(REREAD_MAX_CHARS), "page three"];
+    const pages = ["Page one, SSN 123-45-6789", "z".repeat(REREAD_MAX_CHARS), "page three"];
     const ctx = context({ documentPages: vi.fn(async () => pages) });
     const out = await runWorksheetTool("read_document", { document: "Schwab.pdf" }, fixture(), ctx);
     expect(ctx.documentPages).toHaveBeenCalledWith("f1");
@@ -238,12 +238,17 @@ describe("runWorksheetTool", () => {
     expect(out.result).toContain("[page 1]\nPage one");
     expect(out.result).not.toContain("123-45-6789");
     expect(out.result).not.toContain("page three");
-    expect(out.result).toContain("fromPage: 2");
     expect(out.result.length).toBeLessThanOrEqual(REREAD_MAX_CHARS + FENCE_OPEN.length + FENCE_CLOSE.length + 200);
 
-    const rest = await runWorksheetTool("read_document", { document: "schwab.pdf", fromPage: 3 }, fixture(), ctx);
+    // The cut names the page and the character to go on from, so a page longer than the limit (a Word file) reads to its end.
+    const goOn = out.result.match(/fromPage: (\d+), fromChar: (\d+)/);
+    expect(goOn?.[1]).toBe("2");
+    const rest = await runWorksheetTool("read_document", { document: "schwab.pdf", fromPage: 2, fromChar: Number(goOn?.[2]) }, fixture(), ctx);
+    const zs = (text: string) => text.split("z").length - 1;
+    expect(zs(out.result) + zs(rest.result)).toBe(REREAD_MAX_CHARS);
     expect(rest.result).toContain("[page 3]\npage three");
     expect(rest.result).not.toContain("[page 1]");
+    expect(rest.result).not.toContain("fromChar");
   });
 
   it("look_at_pages refuses more than 4 pages", async () => {
@@ -296,6 +301,61 @@ describe("runWorksheetTool", () => {
       { layer: "staging", op: { op: "setCell", sectionId: "retirement", rowId: "r1", columnId: "owner", value: "Client" } },
       { layer: "staging", op: { op: "setCell", sectionId: "retirement", rowId: "r1", columnId: "last4", value: "4821" } },
     ]);
+  });
+
+  it("accepts the long row ids fill_from_staging makes from UUIDs", async () => {
+    const uuid = (n: number) => `${String(n).repeat(8)}-1111-4111-8111-${String(n).repeat(12)}`;
+    const [tableId, accountId, holdingId] = [uuid(1), uuid(2), uuid(3)];
+    let state = fixture();
+    state.sections.taxable = [
+      { id: accountId, sourceFileIds: ["f1"], cells: { accountName: doc("Joint Brokerage") }, holdings: [{ ...ira.holdings![0], id: holdingId }] },
+    ];
+    state.worksheet.tables.push({ ...structuredClone(holdings), id: tableId, rows: [] });
+    const filled = await runWorksheetTool("fill_from_staging", { table: tableId, sections: ["taxable"], holdings: true }, state, context());
+    state = apply(state, filled);
+    const rowId = `${tableId}/${accountId}/${holdingId}`;
+    expect(rowId.length).toBeGreaterThan(100);
+    expect(state.worksheet.tables[2].rows.map((r) => r.id)).toEqual([rowId]);
+
+    const set = await runWorksheetTool("set_cells", { table: tableId, row: rowId, cells: { Shares: "11" } }, state, context());
+    expect(set.ops).toHaveLength(1);
+    expect((await runWorksheetTool("propose_plan_update", { rows: [rowId] }, state, context())).propose).toEqual([accountId]);
+    expect((await runWorksheetTool("remove_rows", { table: tableId, rows: [rowId], reason: "Sold" }, state, context())).ops).toHaveLength(2);
+  });
+
+  it("set_columns keeps the text and bindings of columns it re-lists, renames by id, and adds new ones", async () => {
+    const state = fixture();
+    const out = await runWorksheetTool(
+      "set_columns",
+      {
+        table: "t-accounts",
+        columns: [{ header: "account" }, { header: "Type", bind: "none" }, { id: "Value", header: "Balance" }, { header: "Note" }, { header: "Beneficiary" }],
+      },
+      state,
+      context(),
+    );
+    expect(out.ops).toEqual([
+      {
+        layer: "ws",
+        op: {
+          op: "setColumns",
+          tableId: "t-accounts",
+          columns: [
+            { id: "c-name", header: "account", bind: { kind: "cell", columnId: "accountName" } },
+            { id: "c-type", header: "Type" },
+            { id: "c-value", header: "Balance", bind: { kind: "cell", columnId: "currentValue" } },
+            { id: "c-note", header: "Note" },
+            { id: "id-1", header: "Beneficiary" },
+          ],
+        },
+      },
+    ]);
+    const table = apply(state, out).worksheet.tables[0];
+    expect(table.rows[1].cells).toEqual({ "c-name": "Old 529", "c-note": "from the fact finder" });
+    expect(cellText(apply(state, out), table.rows[0], table.columns[2]).text).toBe("$431,050");
+    await expect(
+      runWorksheetTool("set_columns", { table: "t-accounts", columns: [{ id: "Nope", header: "X" }] }, state, context()),
+    ).rejects.toThrow('Accounts has no column "Nope" to rename.');
   });
 
   it("propose_plan_update maps holding rows to their account and refuses unstaged rows", async () => {

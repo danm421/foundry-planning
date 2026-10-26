@@ -2,7 +2,18 @@
 import { z } from "zod";
 import { redactSsns } from "@/lib/extraction/redact-ssn";
 import { fenceUntrusted } from "../chat/fence";
-import { REREAD_MAX_CHARS, STAGING_TOOL_DEFS, findDocument, fn, parseArgs, runTool, type Param } from "../chat/tools";
+import {
+  HOLDING_INPUT_FIELDS,
+  HOLDING_INPUT_PARAMS,
+  REREAD_MAX_CHARS,
+  STAGING_TOOL_DEFS,
+  findDocument,
+  fn,
+  hasTickerOrName,
+  parseArgs,
+  runTool,
+  type Param,
+} from "../chat/tools";
 import { quote } from "../chat/view";
 import type { ClientOp } from "../ops";
 import { FACT_FINDER_SECTIONS, findSection, isListLike } from "../schema";
@@ -67,7 +78,6 @@ const bindParam: Param = {
     'Optional. "cell:<staging column id>" (e.g. cell:currentValue), "holding:<field>" ' +
     `(${HOLDING_FIELDS.join(", ")}) or "section". Leave it out for a column of your own text.`,
 };
-const dollars: Param = { type: "number", description: "In dollars." };
 
 const WORKSHEET_TOOL_DEFS = [
   fn(
@@ -191,10 +201,11 @@ const WORKSHEET_TOOL_DEFS = [
   fn(
     "read_document",
     `Read an uploaded document's text, page by page (pages count from 1). Returns up to ${REREAD_MAX_CHARS.toLocaleString("en-US")} ` +
-      "characters; when it's cut, it says which page to go on from.",
+      "characters; when it's cut, it says the fromPage and fromChar to go on from.",
     {
       document: documentParam,
       fromPage: { type: "integer", description: "Optional. The first page to read." },
+      fromChar: { type: "integer", description: "Optional. Where to start in fromPage, in characters from 0 — as a cut says." },
       toPage: { type: "integer", description: "Optional. The last page to read." },
     },
     ["document"],
@@ -243,12 +254,7 @@ const WORKSHEET_TOOL_DEFS = [
                 description: "One holding: a ticker or a name, and what else you know.",
                 properties: {
                   row: { type: "string", description: "Optional. The worksheet row that shows this holding." },
-                  ticker: { type: "string", description: "The ticker." },
-                  name: { type: "string", description: "The security's name." },
-                  shares: { type: "number", description: "How many shares." },
-                  price: dollars,
-                  marketValue: dollars,
-                  costBasis: dollars,
+                  ...HOLDING_INPUT_PARAMS,
                 },
               },
             },
@@ -276,12 +282,13 @@ const WORKSHEET_TOOL_DEFS = [
 export const WS_TOOL_DEFS = [...WORKSHEET_TOOL_DEFS, ...STAGING_TOOL_DEFS];
 
 const id = z.string().min(1).max(100);
+/** A worksheet row id: fill_from_staging's holding rows join three ids (`table/row/holding`). */
+const rowId = z.string().min(1).max(400);
 const cellInput = z.union([z.string().max(2000), z.number()]).transform((v) => String(v).trim());
 const cells = z.record(z.string(), cellInput);
 const header = z.string().trim().min(1).max(200);
 const page = z.number().int().min(1);
 const stagingValue = z.union([z.string(), z.number(), z.boolean()]);
-const holdingAmount = z.union([z.string(), z.number()]).nullish();
 
 const ARGS = {
   create_table: z.object({
@@ -304,12 +311,17 @@ const ARGS = {
   }),
   set_cells: z.object({
     table: id,
-    row: id,
+    row: rowId,
     cells: cells.refine((c) => Object.keys(c).length > 0, "give at least one cell"),
   }),
-  remove_rows: z.object({ table: id, rows: z.array(id).min(1), reason: z.string().trim().min(1).max(500) }),
+  remove_rows: z.object({ table: id, rows: z.array(rowId).min(1), reason: z.string().trim().min(1).max(500) }),
   read_table: z.object({ table: id, fromRow: z.number().int().min(0).optional() }),
-  read_document: z.object({ document: z.string().min(1), fromPage: page.optional(), toPage: page.optional() }),
+  read_document: z.object({
+    document: z.string().min(1),
+    fromPage: page.optional(),
+    fromChar: z.number().int().min(0).optional(),
+    toPage: page.optional(),
+  }),
   look_at_pages: z.object({
     document: z.string().min(1),
     pages: z.array(page).min(1).max(MAX_LOOK_PAGES, `look at ${MAX_LOOK_PAGES} pages or fewer at a time`),
@@ -320,23 +332,11 @@ const ARGS = {
     rows: z
       .array(
         z.object({
-          row: id,
+          row: rowId,
           section: z.enum(SECTION_IDS),
           cells: z.record(z.string(), stagingValue),
           holdings: z
-            .array(
-              z
-                .object({
-                  row: id.optional(),
-                  ticker: z.string().max(100).nullish(),
-                  name: z.string().max(300).nullish(),
-                  shares: holdingAmount,
-                  price: holdingAmount,
-                  marketValue: holdingAmount,
-                  costBasis: holdingAmount,
-                })
-                .refine((h) => !!h.ticker?.trim() || !!h.name?.trim(), "give each holding a ticker or a name"),
-            )
+            .array(z.object({ row: rowId.optional(), ...HOLDING_INPUT_FIELDS }).refine(hasTickerOrName, "give each holding a ticker or a name"))
             .optional(),
         }),
       )
@@ -344,7 +344,7 @@ const ARGS = {
       .max(100),
   }),
   propose_plan_update: z
-    .object({ rows: z.array(id).min(1).optional(), table: id.optional() })
+    .object({ rows: z.array(rowId).min(1).optional(), table: id.optional() })
     .refine((a) => a.rows !== undefined || a.table !== undefined, "name the rows or a table"),
 };
 type WsToolName = keyof typeof ARGS;
@@ -511,20 +511,22 @@ async function readDocument(a: z.infer<typeof ARGS.read_document>, ctx: WsToolCo
   if (to < from) throw new Error("toPage comes before fromPage.");
   const header = `From ${quote(file.name)}, pages ${from}–${to} of ${pages.length}:\n`;
   let body = "";
-  let cutAt: number | null = null;
+  let cut: { page: number; char: number } | null = null;
+  // fromChar counts into the first page's trimmed text, the same text a cut counts in.
   for (let p = from; p <= to; p++) {
-    const text = pages[p - 1].trim();
+    const start = p === from ? (a.fromChar ?? 0) : 0;
+    const text = pages[p - 1].trim().slice(start);
     if (!text) continue;
-    const block = `${body ? "\n\n" : ""}[page ${p}]\n${text}`;
-    const room = REREAD_MAX_CHARS - header.length - body.length;
-    if (block.length > room) {
-      body += block.slice(0, Math.max(0, room));
-      cutAt = p;
+    const label = `${body ? "\n\n" : ""}[page ${p}${start > 0 ? `, from character ${start}` : ""}]\n`;
+    const room = REREAD_MAX_CHARS - header.length - body.length - label.length;
+    if (text.length > room) {
+      if (room > 0) body += label + text.slice(0, room);
+      cut = { page: p, char: start + Math.max(0, room) };
       break;
     }
-    body += block;
+    body += label + text;
   }
-  const more = cutAt === null ? "" : `\n\n[cut here, at the length limit — read_document with fromPage: ${cutAt} goes on]`;
+  const more = cut ? `\n\n[cut here, at the length limit — read_document with fromPage: ${cut.page}, fromChar: ${cut.char} goes on]` : "";
   return {
     ops: [],
     summary: `Read ${quote(file.name)}`,
