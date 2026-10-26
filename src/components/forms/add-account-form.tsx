@@ -49,12 +49,15 @@ import SalaryBasisFields, {
   type SalaryBasisValue,
   type SalaryOption,
 } from "./salary-basis-fields";
-import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
+import { inputClassName, selectClassName, fieldLabelClassName, checkboxClassName } from "./input-styles";
 import { GrowthRateField, parseGrowthSourceSelection, ASSET_MIX_CATEGORIES } from "./growth-rate-field";
 import { growthDefaultCategory } from "@/lib/projection/resolve-growth-source";
 import { growthEditModeFor } from "@/lib/inline-edit/growth-options";
 import type { FundPortfolioOption } from "@/lib/investments/load-fund-portfolio-options";
 import { OwnershipEditor } from "./ownership-editor";
+import { ChoiceChip } from "./choice-chip";
+import { GrowthSourceSelect } from "./growth-source-select";
+import { SwitchControl } from "./switch-control";
 import type { AccountOwner } from "@/engine/ownership";
 import type { BeneficiaryRef } from "@/engine/types";
 import { isRmdEligibleSubType } from "@/engine/rmd";
@@ -296,9 +299,17 @@ const SUB_TYPE_LABELS: Record<string, string> = {
   whole_life: "Whole Life",
   universal_life: "Universal Life",
   variable_life: "Variable Life",
-  non_qualified: "Non-qualified (after-tax money)",
-  qualified: "Qualified (IRA or plan money)",
-  tax_free: "Tax-free (Roth money)",
+  // Short enough for the quarter-width Account Type box; the after-tax / IRA /
+  // Roth explanation lives in that label's tooltip.
+  non_qualified: "Non-qualified",
+  qualified: "Qualified",
+  tax_free: "Tax-free (Roth)",
+};
+
+// A category whose Account Type needs explaining gets a tooltip on that label.
+const SUB_TYPE_HELP: Partial<Record<AccountCategory, string>> = {
+  annuity:
+    "Non-qualified: bought with after-tax money. Qualified: bought with IRA or retirement-plan money. Tax-free: bought with Roth money.",
 };
 
 const CATEGORY_LABELS: Record<AccountCategory, string> = {
@@ -341,6 +352,42 @@ const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
   stock_options: "Stock Options",
   education_savings: "529 Plan",
 };
+
+/** A percent typed as 0–100 → the decimal string the API stores, or null when blank. */
+function pctToDecimal(v: string): string | null {
+  return v !== "" && v != null ? String(Number(v) / 100) : null;
+}
+
+/** Real estate's growth and property-tax growth: a custom rate or plan inflation. */
+function CustomOrInflationField({
+  id, label, inputId, inputLabel, source, onSourceChange, pct, onPctChange, inflationRate,
+}: {
+  id: string;
+  label: string;
+  inputId: string;
+  inputLabel: string;
+  source: "custom" | "inflation";
+  onSourceChange: (next: "custom" | "inflation") => void;
+  pct: string;
+  onPctChange: (raw: string) => void;
+  inflationRate: number;
+}) {
+  return (
+    <div>
+      <label className={fieldLabelClassName} htmlFor={id}>{label}</label>
+      <GrowthSourceSelect
+        id={id}
+        value={source}
+        options={[
+          { value: "custom", name: "Custom %", pct: null },
+          { value: "inflation", name: "Inflation rate", pct: inflationRate * 100 },
+        ]}
+        onChange={(raw) => onSourceChange(raw as "custom" | "inflation")}
+        customInput={<PercentInput id={inputId} aria-label={inputLabel} value={pct} onChange={onPctChange} />}
+      />
+    </div>
+  );
+}
 
 function uniqueAccountName(base: string, existing: string[]): string {
   const taken = new Set(existing.map((n) => n.trim().toLowerCase()));
@@ -690,6 +737,15 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const [marginCallPct, setMarginCallPct] = useState<string>(
     initial?.marginCallPct ? (Number(initial.marginCallPct) * 100).toFixed(2) : "30",
   );
+  // The Margin loan switch. Starts on when the account already carries any
+  // margin setting, so opening an account never hides (and then zeroes) one.
+  const [marginEnabled, setMarginEnabled] = useState<boolean>(
+    Number(initial?.marginBalance ?? 0) > 0 ||
+      Number(initial?.marginInterestRate ?? 0) > 0 ||
+      initial?.marginBorrowEnabled === true ||
+      initial?.marginRepayYear != null ||
+      initial?.marginRepayYearRef != null,
+  );
   // Borrowing on margin (spec 2026-10-14).
   const [marginBorrowEnabled, setMarginBorrowEnabled] = useState<boolean>(initial?.marginBorrowEnabled ?? false);
   const [marginBorrowStartYear, setMarginBorrowStartYear] = useState<number | null>(initial?.marginBorrowStartYear ?? null);
@@ -703,28 +759,35 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // does not check ownership).
   const canBorrowOnMargin =
     parentBusinessId == null && owners.length > 0 && owners.every((o) => o.kind === "family_member");
-  const borrowOnMargin = category === "taxable" && canBorrowOnMargin && marginBorrowEnabled;
+  const marginOn = category === "taxable" && marginEnabled;
+  const borrowOnMargin = marginOn && canBorrowOnMargin && marginBorrowEnabled;
   // Never at or before plan start: an already-retired client's retirement year
   // is in the past, and a repay year there does nothing (final review M2).
   const defaultMarginRepayYear = milestones
     ? Math.max(milestones.clientRetirement, milestones.planStart + 1)
     : new Date().getFullYear() + 5;
-  const marginBorrowFields = useMemo(() => ({
+  // Every margin field both save paths send. With the switch off (or a
+  // non-taxable account) the loan is gone: no balance, rate, borrowing or
+  // repay year. The call level is kept — it means nothing without a loan.
+  const marginFields = useMemo(() => ({
+    marginBalance: marginOn ? (marginBalance || "0") : "0",
+    marginInterestRate: marginOn ? (pctToDecimal(marginInterestRate) ?? "0") : "0",
+    marginCallPct: pctToDecimal(marginCallPct) ?? String(DEFAULT_MARGIN_CALL_PCT),
     marginBorrowEnabled: borrowOnMargin,
     marginBorrowStartYear: borrowOnMargin ? marginBorrowStartYear : null,
     marginBorrowStartYearRef: borrowOnMargin ? marginBorrowStartYearRef : null,
-    marginRepayYear: category === "taxable" && marginRepayEnabled
+    marginRepayYear: marginOn && marginRepayEnabled
       ? (marginRepayYear ?? defaultMarginRepayYear)
       : null,
-    marginRepayYearRef: category === "taxable" && marginRepayEnabled ? marginRepayYearRef : null,
-  }), [borrowOnMargin, marginBorrowStartYear, marginBorrowStartYearRef, category, marginRepayEnabled,
-    marginRepayYear, marginRepayYearRef, defaultMarginRepayYear]);
+    marginRepayYearRef: marginOn && marginRepayEnabled ? marginRepayYearRef : null,
+  }), [marginOn, marginBalance, marginInterestRate, marginCallPct, borrowOnMargin, marginBorrowStartYear,
+    marginBorrowStartYearRef, marginRepayEnabled, marginRepayYear, marginRepayYearRef, defaultMarginRepayYear]);
   // The server checks this only when "Borrow from" is set; an unset one means
   // plan start, which the form knows.
-  const borrowingStarts = marginBorrowFields.marginBorrowStartYear ?? milestones?.planStart;
+  const borrowingStarts = marginFields.marginBorrowStartYear ?? milestones?.planStart;
   const marginRepayError =
-    marginBorrowFields.marginBorrowEnabled && marginBorrowFields.marginRepayYear != null &&
-    borrowingStarts != null && marginBorrowFields.marginRepayYear <= borrowingStarts
+    marginFields.marginBorrowEnabled && marginFields.marginRepayYear != null &&
+    borrowingStarts != null && marginFields.marginRepayYear <= borrowingStarts
       ? MARGIN_REPAY_AFTER_BORROW_MESSAGE
       : null;
   const [custodian, setCustodian] = useState<string>(initial?.custodian ?? "");
@@ -868,6 +931,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     marginBalance,
     marginInterestRate,
     marginCallPct,
+    marginEnabled,
     marginBorrowEnabled,
     marginBorrowStartYear,
     marginBorrowStartYearRef,
@@ -898,7 +962,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     inheritedPayoutPlan, inheritedPayoutFromYear, inheritedPayoutThroughYear,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
-    turnoverPct, marginBalance, marginInterestRate, marginCallPct, customAllocations, custodian, accountNumberLast4,
+    turnoverPct, marginBalance, marginInterestRate, marginCallPct, marginEnabled, customAllocations, custodian, accountNumberLast4,
     marginBorrowEnabled, marginBorrowStartYear, marginBorrowStartYearRef, marginRepayEnabled, marginRepayYear, marginRepayYearRef,
     ticker, isPublic, pricePerShare, autoCreateDestination, sellToCover,
     withholdingRate, defaultExerciseTiming, defaultExerciseYear, defaultSellTiming,
@@ -1510,9 +1574,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       growthRate = usesGrowthDropdown ? null : String(Number(growthRatePct) / 100);
     }
 
-    const toPctOrNull = (val: string) =>
-      val !== "" && val != null ? String(Number(val) / 100) : null;
-
     const isMixedDeferral =
       category === "retirement" && (subType === "401k" || subType === "403b");
     const isEducationSavings = category === "education_savings";
@@ -1544,14 +1605,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       modelPortfolioId: growthSource === "model_portfolio" ? modelPortfolioId : null,
       tickerPortfolioId: growthSource === "ticker_portfolio" ? tickerPortfolioId : null,
       deriveFromHoldings,
-      turnoverPct: toPctOrNull(turnoverPct) ?? "0",
-      marginBalance: category === "taxable" ? (marginBalance || "0") : "0",
-      marginInterestRate: category === "taxable" ? (toPctOrNull(marginInterestRate) ?? "0") : "0",
-      marginCallPct: toPctOrNull(marginCallPct) ?? String(DEFAULT_MARGIN_CALL_PCT),
-      ...marginBorrowFields,
-      overridePctOi: toPctOrNull(overridePctOi),
-      overridePctLtCg: toPctOrNull(overridePctLtCg),
-      overridePctQdiv: toPctOrNull(overridePctQdiv),
+      turnoverPct: pctToDecimal(turnoverPct) ?? "0",
+      ...marginFields,
+      overridePctOi: pctToDecimal(overridePctOi),
+      overridePctLtCg: pctToDecimal(overridePctLtCg),
+      overridePctQdiv: pctToDecimal(overridePctQdiv),
       grantorFamilyMemberId:
         isEducationSavings && grantorMode === "household" ? (grantorFamilyMemberId || null) : null,
       grantorName:
@@ -1569,7 +1627,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
         isEducationSavings && rothRolloverEnabled && rothRolloverAccountId !== ""
           ? rothRolloverAccountId
           : null,
-      overridePctTaxExempt: toPctOrNull(overridePctTaxExempt),
+      overridePctTaxExempt: pctToDecimal(overridePctTaxExempt),
       annualPropertyTax: category === "real_estate" ? annualPropertyTax : undefined,
       propertyTaxGrowthRate:
         category === "real_estate"
@@ -1677,7 +1735,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     usesGrowthDropdown, name, owners, titlingType, parentBusinessId, accountValue, accountBasis, accountRothValue,
     rmdEnabled, countsTowardAum, priorYearEndValue, realEstateGrowthSource, modelPortfolioId, tickerPortfolioId, deriveFromHoldings,
     inheritedFields, inheritedActive,
-    turnoverPct, marginBalance, marginInterestRate, marginCallPct, marginBorrowFields, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
+    turnoverPct, marginFields, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     effectiveAccountId, clientId, writer, showAssetMixTab, customAllocations, drivenByHoldings,
     currentSerialized, onAutoSaved, custodian, accountNumberLast4, isHsa, hsaCoverage,
@@ -1791,12 +1849,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       modelPortfolioId: growthSource === "model_portfolio" ? modelPortfolioId : null,
       tickerPortfolioId: growthSource === "ticker_portfolio" ? tickerPortfolioId : null,
       turnoverPct: toPctOrNull("turnoverPct") ?? "0",
-      marginBalance:
-        (data.get("category") as string) === "taxable" ? ((data.get("marginBalance") as string) || "0") : "0",
-      marginInterestRate:
-        (data.get("category") as string) === "taxable" ? (toPctOrNull("marginInterestRate") ?? "0") : "0",
-      marginCallPct: toPctOrNull("marginCallPct") ?? String(DEFAULT_MARGIN_CALL_PCT),
-      ...marginBorrowFields,
+      ...marginFields,
       overridePctOi: toPctOrNull("overridePctOi"),
       overridePctLtCg: toPctOrNull("overridePctLtCg"),
       overridePctQdiv: toPctOrNull("overridePctQdiv"),
@@ -2004,6 +2057,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     saveAsync: saveAsyncImpl,
   });
 
+  const showAumFlag = isAumEligible(category);
+  const showActivation = !isSystemManagedCash && category !== "stock_options" && !!milestones;
+
   const handleTabClick = (next: typeof activeTab) => {
     // Holdings, Grants, and Beneficiaries are nested resources keyed by account
     // id, so the account must exist before those tabs are usable. When it
@@ -2158,27 +2214,28 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       {!lockTab && (
       <div className={activeTab !== "details" ? "hidden" : ""}>
         <div className="space-y-4">
-          <div>
-            <label className={fieldLabelClassName} htmlFor="name">
-              Account Name <span className="text-red-500">*</span>
-            </label>
-            <input
-              ref={nameInputRef}
-              id="name"
-              name="name"
-              type="text"
-              required
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                setUserEditedName(true);
-              }}
-              placeholder="e.g., Fidelity Brokerage"
-              className={inputClassName}
-            />
-          </div>
+          {/* Name takes half the row; Category and Account Type a quarter each. */}
+          <div className="grid grid-cols-4 gap-4">
+            <div className="col-span-2">
+              <label className={fieldLabelClassName} htmlFor="name">
+                Account Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                ref={nameInputRef}
+                id="name"
+                name="name"
+                type="text"
+                required
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setUserEditedName(true);
+                }}
+                placeholder="e.g., Fidelity Brokerage"
+                className={inputClassName}
+              />
+            </div>
 
-          <div className="grid grid-cols-2 gap-4">
             {!isSystemManagedCash && (
               <div>
                 <label className={fieldLabelClassName} htmlFor="category">
@@ -2223,6 +2280,12 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               <div>
                 <label className={fieldLabelClassName} htmlFor="subType">
                   Account Type
+                  {SUB_TYPE_HELP[category] && (
+                    <>
+                      {" "}
+                      <FieldTooltip text={SUB_TYPE_HELP[category]} />
+                    </>
+                  )}
                 </label>
                 <select
                   id="subType"
@@ -2253,7 +2316,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 </select>
               </div>
             )}
+          </div>
 
+          <div className="grid grid-cols-2 gap-4">
             {category === "education_savings" ? (
               <div className="col-span-2 space-y-4 rounded-[var(--radius-sm)] border border-hair p-4">
                 {/* Grantor */}
@@ -2262,32 +2327,15 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     <span className={fieldLabelClassName}>Grantor</span>
                     <FieldTooltip text="A household grantor funds contributions from plan cash flow and may earn a state tax deduction. An outside grantor funds the account without touching household cash flow." />
                   </div>
-                  <div role="radiogroup" aria-label="Grantor" className="flex gap-2">
+                  <div role="radiogroup" aria-label="Grantor" className="flex gap-1.5">
                     {(
                       [
                         ["household", "Household member"],
                         ["outside", "Someone outside the household"],
                       ] as const
-                    ).map(([val, label]) => {
-                      const active = grantorMode === val;
-                      return (
-                        <button
-                          key={val}
-                          type="button"
-                          role="radio"
-                          aria-checked={active}
-                          onClick={() => setGrantorMode(val)}
-                          className={
-                            "rounded-md border px-3 py-1 text-xs font-medium transition-colors " +
-                            (active
-                              ? "border-accent bg-accent/15 text-accent"
-                              : "border-hair bg-card text-ink-3 hover:border-hair-2 hover:text-ink-2")
-                          }
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
+                    ).map(([val, label]) => (
+                      <ChoiceChip key={val} radio label={label} active={grantorMode === val} onClick={() => setGrantorMode(val)} />
+                    ))}
                   </div>
                   {grantorMode === "household" ? (
                     <select
@@ -2320,32 +2368,15 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   <span className={fieldLabelClassName}>
                     Beneficiary <span className="text-red-500">*</span>
                   </span>
-                  <div role="radiogroup" aria-label="Beneficiary" className="flex gap-2">
+                  <div role="radiogroup" aria-label="Beneficiary" className="flex gap-1.5">
                     {(
                       [
                         ["family", "Family member"],
                         ["named", "Named person"],
                       ] as const
-                    ).map(([val, label]) => {
-                      const active = beneficiaryMode === val;
-                      return (
-                        <button
-                          key={val}
-                          type="button"
-                          role="radio"
-                          aria-checked={active}
-                          onClick={() => setBeneficiaryMode(val)}
-                          className={
-                            "rounded-md border px-3 py-1 text-xs font-medium transition-colors " +
-                            (active
-                              ? "border-accent bg-accent/15 text-accent"
-                              : "border-hair bg-card text-ink-3 hover:border-hair-2 hover:text-ink-2")
-                          }
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
+                    ).map(([val, label]) => (
+                      <ChoiceChip key={val} radio label={label} active={beneficiaryMode === val} onClick={() => setBeneficiaryMode(val)} />
+                    ))}
                   </div>
                   {beneficiaryMode === "family" ? (
                     <select
@@ -2436,7 +2467,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                       type="checkbox"
                       checked={isPublic}
                       onChange={(e) => setIsPublic(e.target.checked)}
-                      className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent"
+                      className={checkboxClassName}
                     />
                     <span className={fieldLabelClassName}>Publicly traded</span>
                   </label>
@@ -2487,7 +2518,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                       type="checkbox"
                       checked={sellToCover}
                       onChange={(e) => setSellToCover(e.target.checked)}
-                      className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent"
+                      className={checkboxClassName}
                     />
                     <span className={fieldLabelClassName}>Sell to cover taxes</span>
                   </label>
@@ -2606,7 +2637,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             )}
 
             {category !== "stock_options" && (
-            <div className={`col-span-2 grid gap-4 ${isAumEligible(category) ? "grid-cols-3" : "grid-cols-2"}`}>
+            <div className="col-span-2 grid grid-cols-4 gap-4">
               <div>
                 <label className={fieldLabelClassName} htmlFor="value">
                   Current Value ($)
@@ -2642,7 +2673,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               {category === "retirement" && (subType === "401k" || subType === "403b") ? (
                 <div>
                   <label className={fieldLabelClassName} htmlFor="rothValue">
-                    Roth Value ($)
+                    Roth Value ($){" "}
+                    <FieldTooltip text="Portion of the balance designated as Roth. Grows with the account and is excluded from tax on withdrawal." />
                   </label>
                   <CurrencyInput
                     id="rothValue"
@@ -2651,15 +2683,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     onChange={(raw) => setAccountRothValue(raw)}
                     className={inputClassName}
                   />
-                  <p className="mt-1 text-xs text-ink-3">
-                    Portion of the balance designated as Roth. Grows with the
-                    account and is excluded from tax on withdrawal.
-                  </p>
                 </div>
               ) : (
                 <div>
                   <label className={fieldLabelClassName} htmlFor="basis">
-                    {basisFieldLabel(category)} ($)
+                    {basisFieldLabel(category)} ($){" "}
                     <FieldTooltip text={basisFieldHelp(category)} />
                   </label>
                   <CurrencyInput
@@ -2679,84 +2707,53 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 </div>
               )}
 
-              {isAumEligible(category) && (
-                <div>
-                  {/* Stand-in for the label row, so the checkbox lines up with
-                      the sibling inputs rather than their labels. */}
-                  <span className={fieldLabelClassName} aria-hidden="true">
-                    &nbsp;
-                  </span>
-                  <label className="flex h-9 cursor-pointer items-center gap-2 text-sm text-ink-2">
-                    <input
-                      type="checkbox"
-                      checked={countsTowardAum}
-                      onChange={(e) => setCountsTowardAum(e.target.checked)}
-                      className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent"
-                    />
-                    <span className="whitespace-nowrap">Counts toward AUM</span>
-                    <FieldTooltip text="Include this balance in Total book value on the home screen." />
-                  </label>
-                </div>
-              )}
-            </div>
-            )}
-
-            {category !== "stock_options" && <div className={`col-span-2 grid gap-4 ${category === "real_estate" ? "grid-cols-3" : "grid-cols-2"}`}>
-              {usesGrowthDropdown ? (
-                <GrowthRateField
-                  category={category}
-                  growthSource={growthSource}
-                  modelPortfolioId={modelPortfolioId}
-                  tickerPortfolioId={tickerPortfolioId}
-                  growthRatePct={growthRatePct}
-                  modelPortfolios={modelPortfolios}
-                  fundPortfolios={fundPortfolios}
-                  defaultPctForCategory={defaultPctForCategory}
-                  catDefaultPortfolioName={catDefaultSource?.portfolioName ?? null}
-                  resolvedInflationRate={resolvedInflationRate}
-                  assetMixBlendedPct={assetMixBlendedPct}
-                  customPlaceholder={String(hasExplicitGrowth ? initialGrowthPct : 7)}
-                  onSourceChange={handleGrowthSourceChange}
-                  onCustomPctChange={(raw) => setGrowthRatePct(raw)}
-                />
-              ) : category === "real_estate" ? (
-                <div>
-                  <label className={fieldLabelClassName}>Growth Rate</label>
-                  <select
-                    value={realEstateGrowthSource}
-                    onChange={(e) => setRealEstateGrowthSource(e.target.value as "custom" | "inflation")}
-                    className={selectClassName}
-                  >
-                    <option value="custom">Custom %</option>
-                    <option value="inflation">
-                      {(resolvedInflationRate * 100).toFixed(2)}% — Inflation rate
-                    </option>
-                  </select>
-                  {realEstateGrowthSource === "custom" && (
-                    <div className="mt-2">
-                      <PercentInput
-                        id="growthRate"
-                        value={realEstateGrowthRatePct}
-                        onChange={(raw) => setRealEstateGrowthRatePct(raw)}
-                        className={inputClassName}
-                      />
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div>
-                  <label className={fieldLabelClassName} htmlFor="growthRate">
-                    Growth Rate (%)
-                  </label>
-                  <PercentInput
-                    id="growthRate"
-                    name="growthRate"
-                    value={growthRatePct}
-                    onChange={(raw) => setGrowthRatePct(raw)}
-                    className={inputClassName}
+              {/* Growth sits on the money row, two columns wide: the rate the
+                  account grows at, beside what drives it. */}
+              <div className="col-span-2">
+                {usesGrowthDropdown ? (
+                  <GrowthRateField
+                    category={category}
+                    growthSource={growthSource}
+                    modelPortfolioId={modelPortfolioId}
+                    tickerPortfolioId={tickerPortfolioId}
+                    growthRatePct={growthRatePct}
+                    modelPortfolios={modelPortfolios}
+                    fundPortfolios={fundPortfolios}
+                    defaultPctForCategory={defaultPctForCategory}
+                    catDefaultPortfolioName={catDefaultSource?.portfolioName ?? null}
+                    resolvedInflationRate={resolvedInflationRate}
+                    assetMixBlendedPct={assetMixBlendedPct}
+                    customPlaceholder={String(hasExplicitGrowth ? initialGrowthPct : 7)}
+                    onSourceChange={handleGrowthSourceChange}
+                    onCustomPctChange={(raw) => setGrowthRatePct(raw)}
                   />
-                </div>
-              )}
+                ) : category === "real_estate" ? (
+                  <CustomOrInflationField
+                    id="realEstateGrowthSource"
+                    label="Growth Rate"
+                    inputId="growthRate"
+                    inputLabel="Custom growth rate"
+                    source={realEstateGrowthSource}
+                    onSourceChange={setRealEstateGrowthSource}
+                    pct={realEstateGrowthRatePct}
+                    onPctChange={setRealEstateGrowthRatePct}
+                    inflationRate={resolvedInflationRate}
+                  />
+                ) : (
+                  <div>
+                    <label className={fieldLabelClassName} htmlFor="growthRate">
+                      Growth Rate (%)
+                    </label>
+                    <PercentInput
+                      id="growthRate"
+                      name="growthRate"
+                      value={growthRatePct}
+                      onChange={(raw) => setGrowthRatePct(raw)}
+                      className={inputClassName}
+                    />
+                  </div>
+                )}
+              </div>
 
               {category === "real_estate" && (
                 <>
@@ -2771,94 +2768,154 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                       className={inputClassName}
                     />
                   </div>
-                  <div>
-                    <label className={fieldLabelClassName}>Property Tax Growth</label>
-                    <select
-                      value={propertyTaxGrowthSource}
-                      onChange={(e) => setPropertyTaxGrowthSource(e.target.value as "custom" | "inflation")}
-                      className={selectClassName}
-                    >
-                      <option value="custom">Custom %</option>
-                      <option value="inflation">
-                        {(resolvedInflationRate * 100).toFixed(2)}% — Inflation rate
-                      </option>
-                    </select>
-                    {propertyTaxGrowthSource === "custom" && (
-                      <div className="mt-2">
-                        <PercentInput
-                          id="propertyTaxGrowthRate"
-                          value={propertyTaxGrowthRate}
-                          onChange={(raw) => setPropertyTaxGrowthRate(raw)}
-                          className={inputClassName}
-                        />
-                      </div>
-                    )}
+                  <div className="col-span-2 col-start-3">
+                    <CustomOrInflationField
+                      id="propertyTaxGrowthSource"
+                      label="Property Tax Growth"
+                      inputId="propertyTaxGrowthRate"
+                      inputLabel="Custom property tax growth rate"
+                      source={propertyTaxGrowthSource}
+                      onSourceChange={setPropertyTaxGrowthSource}
+                      pct={propertyTaxGrowthRate}
+                      onPctChange={setPropertyTaxGrowthRate}
+                      inflationRate={resolvedInflationRate}
+                    />
                   </div>
                 </>
               )}
-            </div>}
+            </div>
+            )}
 
+            {/* Account flags — one row, the same place on every account type. */}
+            {(showAumFlag || showActivation) && (
+              <div className="col-span-2">
+                <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
+                  {showAumFlag && (
+                    <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-2">
+                      <input
+                        type="checkbox"
+                        checked={countsTowardAum}
+                        onChange={(e) => setCountsTowardAum(e.target.checked)}
+                        className={checkboxClassName}
+                      />
+                      <span className="whitespace-nowrap">Counts toward AUM</span>
+                      <FieldTooltip text="Include this balance in Total book value on the home screen." />
+                    </label>
+                  )}
+                  {showActivation && (
+                    <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-2">
+                      <input
+                        type="checkbox"
+                        checked={activationEnabled}
+                        onChange={(e) => setActivationEnabled(e.target.checked)}
+                        className={checkboxClassName}
+                      />
+                      <span>Activates in a future year (inheritance, new account)</span>
+                    </label>
+                  )}
+                </div>
+                {showActivation && milestones && activationEnabled && (
+                  <div className="mt-2 max-w-xs">
+                    <MilestoneYearPicker
+                      id="activationYear"
+                      name="activationYear"
+                      label="Activates"
+                      value={activationYear}
+                      yearRef={activationYearRef}
+                      milestones={milestones}
+                      clientFirstName={clientFirstName}
+                      spouseFirstName={spouseFirstName}
+                      position="start"
+                      minYear={currentYear}
+                      onChange={(y, ref) => {
+                        setActivationYear(y);
+                        setActivationYearRef(ref);
+                      }}
+                    />
+                    <p className="mt-1 text-[11px] text-ink-4">
+                      The value above is the balance in this year; it grows from here.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Margin loan — off unless the account carries one. Off, its fields
+                hide and the save sends no balance, rate, borrowing or repay year. */}
             {category === "taxable" && (
-              <fieldset className="col-span-2 grid grid-cols-3 gap-4 rounded-md border border-hair p-3">
-                <legend className="px-1 text-sm font-medium text-ink-2">Margin loan</legend>
-                <div>
-                  <label className={fieldLabelClassName} htmlFor="margin-balance">Margin loan balance ($)</label>
-                  <CurrencyInput id="margin-balance" name="marginBalance" value={marginBalance}
-                    onChange={(raw) => setMarginBalance(raw)} className={inputClassName} />
+              <div className="col-span-2 rounded-[var(--radius-sm)] border border-hair">
+                <div className="flex items-center justify-between gap-3 px-3 py-2">
+                  <span className="text-sm font-medium text-ink-2">Margin loan</span>
+                  <SwitchControl
+                    checked={marginEnabled}
+                    onChange={setMarginEnabled}
+                    ariaLabel="Margin loan"
+                    stateLabel={marginEnabled ? "On" : "Off"}
+                  />
                 </div>
-                <div>
-                  <label className={fieldLabelClassName} htmlFor="margin-interest-rate">Margin interest rate (%)</label>
-                  <PercentInput id="margin-interest-rate" name="marginInterestRate" value={marginInterestRate}
-                    onChange={(raw) => setMarginInterestRate(raw)} className={inputClassName} />
-                </div>
-                <div>
-                  <label className={fieldLabelClassName} htmlFor="margin-call-pct">
-                    Margin call level (%) <FieldTooltip text="We flag any year the account's net value falls below this share of its securities. Brokerages typically require 25–30%." />
-                  </label>
-                  <PercentInput id="margin-call-pct" name="marginCallPct" value={marginCallPct}
-                    onChange={(raw) => setMarginCallPct(raw)} className={inputClassName} />
-                </div>
-                <div className="col-span-3 space-y-2">
-                  {canBorrowOnMargin ? (
-                    <label className="flex items-center gap-2 text-sm text-ink-2">
-                      <input type="checkbox" aria-label="Borrow to cover spending" checked={marginBorrowEnabled}
-                        onChange={(e) => setMarginBorrowEnabled(e.target.checked)} />
-                      <span>Borrow to cover spending</span>
-                      <FieldTooltip text="When spending runs short, the plan borrows against these securities instead of selling them: after cash, before any sale, up to half the securities' value." />
-                    </label>
-                  ) : (
-                    <p className="text-xs text-ink-3">Borrowing to cover spending is available when the household owns the whole account.</p>
-                  )}
-                  {canBorrowOnMargin && marginBorrowEnabled && milestones && (
-                    <div className="max-w-xs">
-                      <MilestoneYearPicker id="marginBorrowStartYear" name="marginBorrowStartYear" label="Borrow from"
-                        value={marginBorrowStartYear ?? milestones.planStart} yearRef={marginBorrowStartYearRef}
-                        milestones={milestones} clientFirstName={clientFirstName} spouseFirstName={spouseFirstName}
-                        position="start"
-                        onChange={(y, ref) => { setMarginBorrowStartYear(y); setMarginBorrowStartYearRef(ref); }} />
+                {marginEnabled && (
+                  <div className="grid grid-cols-3 gap-4 border-t border-hair p-3">
+                    <div>
+                      <label className={fieldLabelClassName} htmlFor="margin-balance">Margin loan balance ($)</label>
+                      <CurrencyInput id="margin-balance" name="marginBalance" value={marginBalance}
+                        onChange={(raw) => setMarginBalance(raw)} className={inputClassName} />
                     </div>
-                  )}
-                  {milestones && (
-                    <label className="flex items-center gap-2 text-sm text-ink-2">
-                      <input type="checkbox" aria-label="Repay the loan in a chosen year" checked={marginRepayEnabled}
-                        onChange={(e) => setMarginRepayEnabled(e.target.checked)} />
-                      <span>Repay the loan in a chosen year</span>
-                    </label>
-                  )}
-                  {marginRepayEnabled && milestones && (
-                    <div className="max-w-xs">
-                      <MilestoneYearPicker id="marginRepayYear" name="marginRepayYear" label="Repay in"
-                        value={marginRepayYear ?? defaultMarginRepayYear} yearRef={marginRepayYearRef}
-                        milestones={milestones} clientFirstName={clientFirstName} spouseFirstName={spouseFirstName}
-                        position="start"
-                        onChange={(y, ref) => { setMarginRepayYear(y); setMarginRepayYearRef(ref); }} />
-                      <p className="mt-1 text-[11px] text-ink-4">That year the plan sells enough securities to clear the loan.</p>
+                    <div>
+                      <label className={fieldLabelClassName} htmlFor="margin-interest-rate">
+                        Margin interest rate (%) <FieldTooltip text="Interest is added to the loan each year, as brokerages do." />
+                      </label>
+                      <PercentInput id="margin-interest-rate" name="marginInterestRate" value={marginInterestRate}
+                        onChange={(raw) => setMarginInterestRate(raw)} className={inputClassName} />
                     </div>
-                  )}
-                  {marginRepayError && <p role="alert" className="text-xs text-crit">{marginRepayError}</p>}
-                </div>
-                <p className="col-span-3 text-xs text-ink-3">Interest is added to the loan each year, as brokerages do.</p>
-              </fieldset>
+                    <div>
+                      <label className={fieldLabelClassName} htmlFor="margin-call-pct">
+                        Margin call level (%) <FieldTooltip text="We flag any year the account's net value falls below this share of its securities. Brokerages typically require 25–30%." />
+                      </label>
+                      <PercentInput id="margin-call-pct" name="marginCallPct" value={marginCallPct}
+                        onChange={(raw) => setMarginCallPct(raw)} className={inputClassName} />
+                    </div>
+                    <div className="col-span-3 space-y-2">
+                      {canBorrowOnMargin ? (
+                        <label className="flex items-center gap-2 text-sm text-ink-2">
+                          <input type="checkbox" aria-label="Borrow to cover spending" checked={marginBorrowEnabled}
+                            onChange={(e) => setMarginBorrowEnabled(e.target.checked)} className={checkboxClassName} />
+                          <span>Borrow to cover spending</span>
+                          <FieldTooltip text="When spending runs short, the plan borrows against these securities instead of selling them: after cash, before any sale, up to half the securities' value." />
+                        </label>
+                      ) : (
+                        <p className="text-xs text-ink-3">Borrowing to cover spending is available when the household owns the whole account.</p>
+                      )}
+                      {canBorrowOnMargin && marginBorrowEnabled && milestones && (
+                        <div className="max-w-xs">
+                          <MilestoneYearPicker id="marginBorrowStartYear" name="marginBorrowStartYear" label="Borrow from"
+                            value={marginBorrowStartYear ?? milestones.planStart} yearRef={marginBorrowStartYearRef}
+                            milestones={milestones} clientFirstName={clientFirstName} spouseFirstName={spouseFirstName}
+                            position="start"
+                            onChange={(y, ref) => { setMarginBorrowStartYear(y); setMarginBorrowStartYearRef(ref); }} />
+                        </div>
+                      )}
+                      {milestones && (
+                        <label className="flex items-center gap-2 text-sm text-ink-2">
+                          <input type="checkbox" aria-label="Repay the loan in a chosen year" checked={marginRepayEnabled}
+                            onChange={(e) => setMarginRepayEnabled(e.target.checked)} className={checkboxClassName} />
+                          <span>Repay the loan in a chosen year</span>
+                        </label>
+                      )}
+                      {marginRepayEnabled && milestones && (
+                        <div className="max-w-xs">
+                          <MilestoneYearPicker id="marginRepayYear" name="marginRepayYear" label="Repay in"
+                            value={marginRepayYear ?? defaultMarginRepayYear} yearRef={marginRepayYearRef}
+                            milestones={milestones} clientFirstName={clientFirstName} spouseFirstName={spouseFirstName}
+                            position="start"
+                            onChange={(y, ref) => { setMarginRepayYear(y); setMarginRepayYearRef(ref); }} />
+                          <p className="mt-1 text-[11px] text-ink-4">That year the plan sells enough securities to clear the loan.</p>
+                        </div>
+                      )}
+                      {marginRepayError && <p role="alert" className="text-xs text-crit">{marginRepayError}</p>}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Roth rollover (SECURE 2.0) */}
@@ -2869,6 +2926,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     type="checkbox"
                     checked={rothRolloverEnabled}
                     onChange={(e) => setRothRolloverEnabled(e.target.checked)}
+                    className={checkboxClassName}
                   />
                   <span>Roll leftover funds to a Roth IRA (SECURE 2.0)</span>
                   <FieldTooltip text="$35,000 lifetime cap; annual IRA limit per year." />
@@ -2908,46 +2966,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               </div>
             )}
 
-            {!isSystemManagedCash && category !== "stock_options" && milestones && (
-              <div className="col-span-2">
-                <label className="flex items-center gap-2 text-sm text-ink-2">
-                  <input
-                    type="checkbox"
-                    checked={activationEnabled}
-                    onChange={(e) => setActivationEnabled(e.target.checked)}
-                  />
-                  <span>Activates in a future year (inheritance, new account)</span>
-                </label>
-                {activationEnabled && (
-                  <div className="mt-2 max-w-xs">
-                    <MilestoneYearPicker
-                      id="activationYear"
-                      name="activationYear"
-                      label="Activates"
-                      value={activationYear}
-                      yearRef={activationYearRef}
-                      milestones={milestones}
-                      clientFirstName={clientFirstName}
-                      spouseFirstName={spouseFirstName}
-                      position="start"
-                      minYear={currentYear}
-                      onChange={(y, ref) => {
-                        setActivationYear(y);
-                        setActivationYearRef(ref);
-                      }}
-                    />
-                    <p className="mt-1 text-[11px] text-ink-4">
-                      The value above is the balance in this year; it grows from here.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
             {isHsa && (
-              <div className="col-span-2">
+              <div>
                 <label className={fieldLabelClassName} htmlFor="hsa-coverage">
-                  HSA Coverage
+                  HSA Coverage{" "}
+                  <FieldTooltip text="Sets the annual contribution limit. Catch-up (+$1,000) applies automatically at 55+." />
                 </label>
                 <select
                   id="hsa-coverage"
@@ -2958,9 +2981,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   <option value="self">Self-only</option>
                   <option value="family">Family</option>
                 </select>
-                <p className="mt-1 text-xs text-ink-3">
-                  Sets the annual contribution limit. Catch-up (+$1,000) applies automatically at 55+.
-                </p>
               </div>
             )}
 
@@ -3296,7 +3316,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     type="checkbox"
                     checked={rmdEnabled}
                     onChange={(e) => setRmdEnabled(e.target.checked)}
-                    className="h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent"
+                    className={checkboxClassName}
                   />
                   <span className="text-sm font-medium text-ink-3">Subject to RMDs</span>
                 </label>

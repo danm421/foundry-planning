@@ -5,7 +5,9 @@
  *   from `value` shape (any non-canonical shape returns "custom").
  * - Sum tolerance must stay aligned with the API at src/lib/ownership.ts (0.0001).
  * - In retirement mode, multi-owner presets are hidden and the picker is
- *   locked to a single owner (matches API constraint on retirement subTypes).
+ *   locked to a single owner (matches API constraint on retirement subTypes):
+ *   one chip per spouse, plus "Other" for anyone else (a child's custodial
+ *   Roth, an entity).
  */
 "use client";
 
@@ -14,6 +16,8 @@ import type { AccountOwner } from "@/engine/ownership";
 import { TrashIcon } from "@/components/icons";
 import { fieldLabelClassName, selectClassName } from "./input-styles";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
+import { ChoiceChip } from "./choice-chip";
+import { FieldTooltip } from "./field-tooltip";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -107,30 +111,6 @@ const rowSelectCls =
   " appearance-none pr-8 select-chevron";
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
-
-interface PresetButtonProps {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}
-
-function PresetButton({ label, active, onClick }: PresetButtonProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={
-        "px-3 py-1.5 text-[12px] font-medium rounded-[var(--radius-sm)] border transition-colors " +
-        (active
-          ? "bg-accent text-accent-on border-accent"
-          : "bg-card-2 text-ink-3 border-hair hover:border-hair-2 hover:text-ink")
-      }
-    >
-      {label}
-    </button>
-  );
-}
 
 // Owner value encoding for <select> options
 function ownerToSelectValue(o: AccountOwner): string {
@@ -368,6 +348,9 @@ export function OwnershipEditor({
   // forceCustom: true when the user explicitly clicked "Custom" while a preset
   // was active. Cleared whenever a preset button is clicked.
   const [forceCustom, setForceCustom] = useState(false);
+  // Single-owner mode: the "Other" chip opens a picker for anyone who isn't a
+  // spouse. Closed again by any pick.
+  const [otherOpen, setOtherOpen] = useState(false);
 
   // Stable row keys — prevent focus loss / value flash when a non-last row is removed.
   // Initialized once from the initial value length; mutated in add/remove handlers.
@@ -411,6 +394,7 @@ export function OwnershipEditor({
   function handlePresetClient() {
     if (!clientFm) return;
     setForceCustom(false);
+    setOtherOpen(false);
     clearBusinessParent();
     onChange([{ kind: "family_member", familyMemberId: clientFm.id, percent: 1 }]);
   }
@@ -418,6 +402,7 @@ export function OwnershipEditor({
   function handlePresetSpouse() {
     if (!spouseFm) return;
     setForceCustom(false);
+    setOtherOpen(false);
     clearBusinessParent();
     onChange([{ kind: "family_member", familyMemberId: spouseFm.id, percent: 1 }]);
   }
@@ -493,71 +478,90 @@ export function OwnershipEditor({
     onChange([owner]);
   }
 
-  // ── Render: retirement mode ────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
 
-  if (retirementMode) {
-    return (
-      <div>
-        <label className={fieldLabelClassName}>{label}</label>
-        <SingleOwnerPicker
-          value={value}
-          familyMembers={familyMembers}
-          entities={entities}
-          onChange={onChange}
-        />
-        <p className="mt-1.5 text-[11px] text-ink-3">
-          IRS rules require a single owner for retirement accounts.
-        </p>
-      </div>
-    );
-  }
-
-  // ── Render: normal mode ────────────────────────────────────────────────────
-
+  // Retirement accounts (and equity grants) take ONE owner: the spouse chips
+  // plus "Other" for anyone else, in place of the joint and custom presets.
+  const singleOwner = retirementMode;
   const showSpousePresets = !!spouseFm;
+  const presetActive = (mode: OwnershipMode) => derivedMode === mode && (singleOwner || !forceCustom);
+  const otherOwners = familyMembers.filter((fm) => fm.role !== "client" && fm.role !== "spouse");
+  const ownedByOther =
+    singleOwner && value.length > 0 && derivedMode !== "client" && derivedMode !== "spouse";
 
   return (
     <div>
-      <label className={fieldLabelClassName}>{label}</label>
+      <label className={fieldLabelClassName}>
+        {label}
+        {singleOwner && (
+          <>
+            {" "}
+            <FieldTooltip text="IRS rules require a single owner for retirement accounts." />
+          </>
+        )}
+      </label>
 
       {/* Preset bar */}
-      <div className="flex flex-wrap gap-1.5 mb-3">
-        <PresetButton
+      <div role="group" aria-label={label} className="flex flex-wrap items-center gap-1.5">
+        <ChoiceChip
           label={clientFm?.firstName ?? "Client"}
-          active={derivedMode === "client" && !forceCustom}
+          active={presetActive("client")}
           onClick={handlePresetClient}
         />
         {showSpousePresets && (
-          <PresetButton
+          <ChoiceChip
             label={spouseFm?.firstName ?? CO_CLIENT_LABEL}
-            active={derivedMode === "spouse" && !forceCustom}
+            active={presetActive("spouse")}
             onClick={handlePresetSpouse}
           />
         )}
-        {showSpousePresets && (
-          <PresetButton
+        {showSpousePresets && !singleOwner && (
+          <ChoiceChip
             label="Joint 50/50"
-            active={derivedMode === "joint" && !forceCustom}
+            active={presetActive("joint")}
             onClick={handlePresetJoint}
           />
         )}
-        {showSpousePresets && (
-          <PresetButton
+        {showSpousePresets && !singleOwner && (
+          <ChoiceChip
             label="Community Property"
-            active={derivedMode === "community_property" && !forceCustom}
+            active={presetActive("community_property")}
             onClick={handlePresetCommunityProperty}
           />
         )}
-        <PresetButton
-          label="Custom"
-          active={forceCustom || derivedMode === "custom"}
-          onClick={() => setForceCustom(true)}
-        />
+        {!singleOwner ? (
+          <ChoiceChip
+            label="Custom"
+            active={forceCustom || derivedMode === "custom"}
+            onClick={() => setForceCustom(true)}
+          />
+        ) : (
+          (otherOwners.length > 0 || entities.length > 0 || ownedByOther) && (
+            // Lit only once someone else IS the owner; clicking it just opens
+            // the picker, and the current owner's chip stays lit until a pick.
+            <ChoiceChip label="Other" active={ownedByOther} onClick={() => setOtherOpen(true)} />
+          )
+        )}
+        {singleOwner && (otherOpen || ownedByOther) && (
+          <div className="w-56">
+            <SingleOwnerPicker
+              value={value}
+              familyMembers={ownedByOther ? familyMembers : otherOwners}
+              entities={entities}
+              onChange={(next) => {
+                setOtherOpen(false);
+                // The placeholder closes the picker; it never leaves the
+                // account with no owner.
+                if (next.length > 0) onChange(next);
+              }}
+            />
+          </div>
+        )}
       </div>
 
-      {/* Custom rows — shown when effective mode is custom */}
-      {effectiveMode === "custom" && !businessParent && (
-        <div>
+      {/* Custom rows + total — shown when effective mode is custom */}
+      {!singleOwner && effectiveMode === "custom" && !businessParent && (
+        <div className="mt-3">
           <ul className="space-y-2">
             {value.map((owner, idx) => (
               <OwnerRow
@@ -585,12 +589,25 @@ export function OwnershipEditor({
               + Add owner
             </button>
           </div>
+          {value.length > 0 && (
+            <div className="mt-2 text-xs">
+              {sumOk ? (
+                <span className="text-ink-3">
+                  Total: {Math.round(sum * 1000) / 10}% ✓
+                </span>
+              ) : (
+                <span className="text-crit">
+                  Total: {Math.round(sum * 1000) / 10}% (must equal 100%)
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
 
       {/* Business sub-asset — one row, no percent (owners inherited). */}
-      {businessParent && (
-        <div>
+      {!singleOwner && businessParent && (
+        <div className="mt-3">
           <ul className="space-y-2">
             <li className="flex items-center gap-2">
               <select
@@ -631,20 +648,6 @@ export function OwnershipEditor({
         </div>
       )}
 
-      {/* Total indicator — hidden when business parent is active (no percents). */}
-      {value.length > 0 && !businessParent && (
-        <div className="mt-2 text-xs">
-          {sumOk ? (
-            <span className="text-ink-3">
-              Total: {Math.round(sum * 1000) / 10}% ✓
-            </span>
-          ) : (
-            <span className="text-crit">
-              Total: {Math.round(sum * 1000) / 10}% (must equal 100%)
-            </span>
-          )}
-        </div>
-      )}
     </div>
   );
 }

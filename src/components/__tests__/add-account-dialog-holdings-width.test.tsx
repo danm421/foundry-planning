@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 /** The Holdings grid needs ~832px before it scrolls sideways; the rest of the
- *  form is built for the 640px default. The surface follows the visible tab. */
+ *  form is built for 880px. The surface follows the visible tab. */
 describe("account dialog width", () => {
   it("opens wide on the Holdings tab", async () => {
     render(<AddAccountDialog clientId="client-1" open editing={EDITING} initialTab="holdings" />);
@@ -38,9 +38,9 @@ describe("account dialog width", () => {
     );
   });
 
-  it("stays at the default width on every other tab", async () => {
+  it("stays at the form width on every other tab", async () => {
     render(<AddAccountDialog clientId="client-1" open editing={EDITING} initialTab="details" />);
-    await waitFor(() => expect(screen.getByRole("dialog").className).toContain("max-w-[640px]"));
+    await waitFor(() => expect(screen.getByRole("dialog").className).toContain("max-w-[880px]"));
     expect(screen.getByRole("dialog").className).not.toContain("max-w-[1120px]");
   });
 });

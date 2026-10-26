@@ -66,3 +66,7 @@ export const textareaClassName = "w-full " + textareaCore;
 export const fieldLabelBaseClassName = "text-[13px] font-medium text-ink-2";
 
 export const fieldLabelClassName = "block mb-1.5 " + fieldLabelBaseClassName;
+
+// The form checkbox. One look for every on/off box in a dialog form, so a row
+// of them never mixes a styled box with the browser's default.
+export const checkboxClassName = "h-4 w-4 rounded border-hair-3 bg-card-2 text-accent focus:ring-accent";

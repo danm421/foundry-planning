@@ -37,21 +37,43 @@ describe("GrowthRateField — an account already on an asset mix", () => {
   // source is therefore always offered, whatever the category says.
   it("offers Asset mix for an annuity that is already on one", () => {
     render(<GrowthRateField {...base} category="annuity" growthSource="asset_mix" />);
-    expect(screen.getByText(/Asset mix/i)).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Asset mix/i })).toBeInTheDocument();
   });
 
   it("offers Asset mix for a cash account that is already on one", () => {
     render(<GrowthRateField {...base} category="cash" growthSource="asset_mix" />);
-    expect(screen.getByText(/Asset mix/i)).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Asset mix/i })).toBeInTheDocument();
   });
 
   it("still offers it when hideAssetMix would otherwise suppress it", () => {
     render(<GrowthRateField {...base} growthSource="asset_mix" hideAssetMix />);
-    expect(screen.getByText(/Asset mix/i)).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Asset mix/i })).toBeInTheDocument();
   });
 
   it("does NOT offer Asset mix to an annuity that is not on one", () => {
     render(<GrowthRateField {...base} category="annuity" />);
     expect(screen.queryByText(/Asset mix/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("GrowthRateField — the face shows the rate it resolves to", () => {
+  it("reads the plan default as a rate and its source", () => {
+    render(<GrowthRateField {...base} category="cash" defaultPctForCategory={2.4} catDefaultPortfolioName="Inflation" />);
+    expect(screen.getByText("2.40%")).toBeInTheDocument();
+    expect(screen.getByText("Plan default · Inflation")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "2.40% — Plan default · Inflation" })).toBeInTheDocument();
+  });
+
+  it("follows a model portfolio pick", () => {
+    render(<GrowthRateField {...base} growthSource="model_portfolio" modelPortfolioId="bal"
+      modelPortfolios={[{ id: "bal", name: "Balanced 60/40", blendedReturn: 0.062 }]} />);
+    expect(screen.getByText("6.20%")).toBeInTheDocument();
+    expect(screen.getByText("Balanced 60/40")).toBeInTheDocument();
+  });
+
+  it("puts the % box beside the dropdown for a custom rate", () => {
+    render(<GrowthRateField {...base} growthSource="custom" growthRatePct="5" />);
+    expect((screen.getByLabelText("Custom growth rate") as HTMLInputElement).value).toBe("5");
+    expect(screen.getByRole("combobox", { name: "Growth Rate" })).toBeInTheDocument();
   });
 });

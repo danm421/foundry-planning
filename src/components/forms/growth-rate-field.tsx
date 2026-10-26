@@ -1,7 +1,9 @@
 "use client";
 
+import { useId } from "react";
 import { PercentInput } from "@/components/percent-input";
-import { fieldLabelClassName, selectClassName, inputClassName } from "./input-styles";
+import { fieldLabelClassName } from "./input-styles";
+import { GrowthSourceSelect, type GrowthChoice } from "./growth-source-select";
 import type { GrowthSource } from "@/lib/investments/allocation";
 
 /** Categories whose growth can be driven by a custom asset mix (and that show the asset-mix tab). */
@@ -84,68 +86,55 @@ export function GrowthRateField({
   // whether it can be picked ANEW.
   const showAssetMix =
     growthSource === "asset_mix" || (ASSET_MIX_CATEGORIES.includes(category) && !hideAssetMix);
+  const selectId = useId();
+  const options: GrowthChoice[] = [
+    {
+      value: "default",
+      name: catDefaultPortfolioName ? `Plan default · ${catDefaultPortfolioName}` : "Plan default",
+      pct: defaultPctForCategory,
+    },
+    ...(modelPortfolios ?? []).map((mp) => ({ value: `mp:${mp.id}`, name: mp.name, pct: mp.blendedReturn * 100 })),
+    // The same "never hide the stored source" rule the asset-mix comment
+    // above states. Fund portfolios are no longer offered as a NEW choice,
+    // but the DB enum still accepts `ticker_portfolio` and an API, import
+    // or Forge write can land there — and a select whose value matches no
+    // option silently displays "Plan default" and saves that lie back.
+    ...(growthSource === "ticker_portfolio"
+      ? [{
+          value: `tp:${tickerPortfolioId}`,
+          name: `${fundPortfolios?.find((fp) => fp.id === tickerPortfolioId)?.name ?? "Fund portfolio"} (legacy — re-pick to change)`,
+          pct: null,
+        }]
+      : []),
+    ...(showAssetMix ? [{ value: "asset_mix", name: "Asset mix (custom)", pct: assetMixBlendedPct }] : []),
+    ...(INFLATION_CATEGORIES.includes(category)
+      ? [{ value: "inflation", name: "Inflation rate", pct: resolvedInflationRate * 100 }]
+      : []),
+    { value: "custom", name: "Custom %", pct: null },
+  ];
   return (
     <div>
-      <label className={fieldLabelClassName}>Growth Rate</label>
-      <select
+      <label className={fieldLabelClassName} htmlFor={selectId}>Growth Rate</label>
+      <GrowthSourceSelect
+        id={selectId}
         value={
           growthSource === "model_portfolio" ? `mp:${modelPortfolioId}`
           : growthSource === "ticker_portfolio" ? `tp:${tickerPortfolioId}`
           : growthSource
         }
-        onChange={(e) => onSourceChange(e.target.value)}
-        className={selectClassName}
-      >
-        <option value="default">
-          Plan default
-          {defaultPctForCategory !== null ? ` — ${defaultPctForCategory}%` : ""}
-          {catDefaultPortfolioName ? ` ${catDefaultPortfolioName}` : " (category default)"}
-        </option>
-        {modelPortfolios?.map((mp) => (
-          <option key={mp.id} value={`mp:${mp.id}`}>
-            {(mp.blendedReturn * 100).toFixed(2)}% — {mp.name}
-          </option>
-        ))}
-        {/* The same "never hide the stored source" rule the asset-mix comment
-            above states. Fund portfolios are no longer offered as a NEW choice,
-            but the DB enum still accepts `ticker_portfolio` and an API, import
-            or Forge write can land there — and a select whose value matches no
-            option silently displays "Plan default" and saves that lie back. */}
-        {growthSource === "ticker_portfolio" && (
-          <option value={`tp:${tickerPortfolioId}`}>
-            {fundPortfolios?.find((fp) => fp.id === tickerPortfolioId)?.name ?? "Fund portfolio"}{" "}
-            (legacy — re-pick to change)
-          </option>
-        )}
-        {showAssetMix && (
-          <option value="asset_mix">
-            {assetMixBlendedPct !== null ? `${assetMixBlendedPct.toFixed(2)}% — ` : ""}Asset mix (custom)
-          </option>
-        )}
-        {INFLATION_CATEGORIES.includes(category) && (
-          <option value="inflation">
-            {(resolvedInflationRate * 100).toFixed(2)}% — Inflation rate
-          </option>
-        )}
-        <option value="custom">Custom %</option>
-      </select>
-      {growthSource === "inflation" && (
-        <p className="mt-1 text-xs text-ink-3">
-          Growth tracks plan inflation rate: {(resolvedInflationRate * 100).toFixed(2)}%
-        </p>
-      )}
-      {growthSource === "custom" && (
-        <div className="mt-2">
+        options={options}
+        onChange={onSourceChange}
+        customInput={
           <PercentInput
             id="growthRate"
             name="growthRate"
+            aria-label="Custom growth rate"
             value={growthRatePct}
             onChange={onCustomPctChange}
             placeholder={customPlaceholder ?? "7"}
-            className={inputClassName}
           />
-        </div>
-      )}
+        }
+      />
     </div>
   );
 }

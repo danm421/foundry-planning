@@ -108,7 +108,8 @@ export default function AddAccountDialog({
   const isNoteCategory = category === "notes_receivable" || Boolean(editingNote);
 
   // Mirrors the form's visible tab so the surface can widen for the Holdings
-  // grid, which needs more room than the 640px the rest of the form is built for.
+  // grid, which needs more room than the 880px the rest of the form is built
+  // for (Name, Category and Account Type share one row at that width).
   const [activeTab, setActiveTab] = useState<string>(initialTab ?? "details");
 
   // Track whether any autosave occurred so we can refresh the balance sheet
@@ -155,7 +156,7 @@ export default function AddAccountDialog({
               ? "Edit Note Receivable"
               : "Edit Account"
           }
-          size={!isNoteCategory && activeTab === "holdings" ? "wide" : "md"}
+          size={isNoteCategory ? "md" : activeTab === "holdings" ? "wide" : "lg"}
           bodyTopFlush={!isNoteCategory}
           fixedHeight={!lockTab}
           primaryAction={{

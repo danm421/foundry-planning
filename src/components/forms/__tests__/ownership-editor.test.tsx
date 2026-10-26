@@ -49,6 +49,57 @@ describe("OwnershipEditor", () => {
     expect(screen.getByText(/IRS rules require a single owner/i)).toBeInTheDocument();
   });
 
+  it("Retirement mode picks one spouse at 100% from a chip", () => {
+    const onChange = vi.fn();
+    render(<OwnershipEditor familyMembers={familyMembers} entities={entities}
+      value={[{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }]}
+      onChange={onChange} titlingType="jtwros" onTitlingTypeChange={() => {}} retirementMode={true} />);
+    expect(screen.getByRole("button", { name: "Alice" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Bob" }));
+    expect(onChange).toHaveBeenCalledWith([{ kind: "family_member", familyMemberId: "fm-s", percent: 1 }]);
+  });
+
+  it("Retirement mode's Other chip opens a picker for anyone else", () => {
+    const onChange = vi.fn();
+    render(<OwnershipEditor familyMembers={familyMembers} entities={entities}
+      value={[{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }]}
+      onChange={onChange} titlingType="jtwros" onTitlingTypeChange={() => {}} retirementMode={true} />);
+    expect(screen.queryByRole("combobox", { name: "Owner" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Other" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Owner" }), { target: { value: "fm:fm-k" } });
+    expect(onChange).toHaveBeenCalledWith([{ kind: "family_member", familyMemberId: "fm-k", percent: 1 }]);
+  });
+
+  it("Retirement mode keeps the current owner lit until Other's picker is used", () => {
+    const onChange = vi.fn();
+    render(<OwnershipEditor familyMembers={familyMembers} entities={entities}
+      value={[{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }]}
+      onChange={onChange} titlingType="jtwros" onTitlingTypeChange={() => {}} retirementMode={true} />);
+    fireEvent.click(screen.getByRole("button", { name: "Other" }));
+    expect(screen.getByRole("button", { name: "Alice" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Other" })).toHaveAttribute("aria-pressed", "false");
+    // The placeholder closes the picker without leaving the account ownerless.
+    fireEvent.change(screen.getByRole("combobox", { name: "Owner" }), { target: { value: "" } });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole("combobox", { name: "Owner" })).not.toBeInTheDocument();
+  });
+
+  it("Retirement mode shows a child owner under Other", () => {
+    render(<OwnershipEditor familyMembers={familyMembers} entities={entities}
+      value={[{ kind: "family_member", familyMemberId: "fm-k", percent: 1 }]}
+      onChange={vi.fn()} titlingType="jtwros" onTitlingTypeChange={() => {}} retirementMode={true} />);
+    expect(screen.getByRole("button", { name: "Other" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Alice" })).toHaveAttribute("aria-pressed", "false");
+    expect((screen.getByRole("combobox", { name: "Owner" }) as HTMLSelectElement).value).toBe("fm:fm-k");
+  });
+
+  it("A preset hides the Total line — it is always 100%", () => {
+    render(<OwnershipEditor familyMembers={familyMembers} entities={entities}
+      value={[{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }]}
+      onChange={vi.fn()} titlingType="jtwros" onTitlingTypeChange={() => {}} />);
+    expect(screen.queryByText(/Total:/)).not.toBeInTheDocument();
+  });
+
   it("Custom shows total + flips to destructive color when sum != 100%", () => {
     const { rerender } = render(<OwnershipEditor familyMembers={familyMembers} entities={entities}
       value={[

@@ -88,8 +88,8 @@ describe("GrowthRateField", () => {
         onCustomPctChange={() => {}}
       />,
     );
-    // The inherit option now reads "Plan default — …", distinct from the pinned row.
-    expect(screen.getByRole("option", { name: /^Plan default — 7\.23% Aggressive \(100\/0\)$/ })).toBeInTheDocument();
+    // The inherit option reads "… — Plan default · …", distinct from the pinned row.
+    expect(screen.getByRole("option", { name: /^7\.23% — Plan default · Aggressive \(100\/0\)$/ })).toBeInTheDocument();
     // The pinned portfolio row still exists separately.
     expect(screen.getByRole("option", { name: /^7\.23% — Aggressive \(100\/0\)$/ })).toBeInTheDocument();
   });

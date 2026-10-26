@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { BENEFICIARY_REQUIRED_MESSAGE } from "@/lib/accounts/is-529";
 import { MARGIN_REPAY_AFTER_BORROW_MESSAGE } from "@/lib/accounts/margin-validation";
 import { createRef } from "react";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 
 import AddAccountForm, {
   type AccountFormInitial,
@@ -282,7 +282,7 @@ describe("AddAccountForm — Holdings tab on a new account", () => {
 // ── Test 5: Switching subType to traditional_ira triggers retirementMode ──────
 
 describe("AddAccountForm — retirement mode (retirementMode)", () => {
-  it("shows single-owner picker (retirementMode) when subType is traditional_ira", () => {
+  it("shows single-owner chips (retirementMode) when subType is traditional_ira", () => {
     render(
       <AddAccountForm
         clientId="client-123"
@@ -293,13 +293,16 @@ describe("AddAccountForm — retirement mode (retirementMode)", () => {
       />,
     );
 
-    // In retirement mode, the multi-owner preset bar should NOT be visible;
-    // instead a single <select> with aria-label="Owner" renders.
-    const ownerSelect = screen.getByRole("combobox", { name: "Owner" });
-    expect(ownerSelect).toBeDefined();
+    // The same chips every other account uses, one per spouse, with the
+    // client picked by default.
+    const owners = screen.getByRole("group", { name: "Owner(s)" });
+    expect(within(owners).getByRole("button", { name: "Alice" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(owners).getByRole("button", { name: "Bob" }).getAttribute("aria-pressed")).toBe("false");
 
-    // Preset buttons should NOT be present in retirement mode
+    // Multi-owner presets should NOT be present in retirement mode, and with
+    // no child or entity there is no one for "Other" to offer.
     expect(screen.queryByRole("button", { name: "Joint 50/50" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Other" })).toBeNull();
   });
 });
 
@@ -1288,7 +1291,7 @@ describe("AddAccountForm — the annuity Account Type states the tax treatment",
     mockAnnuityRoutes({ ok: true, row: null });
     renderAnnuity("create");
 
-    const select = screen.getByLabelText("Account Type") as HTMLSelectElement;
+    const select = screen.getByRole("combobox", { name: /^Account Type/ }) as HTMLSelectElement;
     expect(Array.from(select.options).map((o) => o.value)).toEqual([
       "non_qualified",
       "qualified",
@@ -1306,7 +1309,7 @@ describe("AddAccountForm — the annuity Account Type states the tax treatment",
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(ANNUITY_CONTRACT_URL));
 
-    fireEvent.change(screen.getByLabelText("Account Type"), {
+    fireEvent.change(screen.getByRole("combobox", { name: /^Account Type/ }), {
       target: { value: "qualified" },
     });
     await act(async () => {
@@ -1456,7 +1459,56 @@ describe("AddAccountForm — basis auto-mirror", () => {
 });
 
 
+function turnOnMargin() {
+  fireEvent.click(screen.getByRole("switch", { name: "Margin loan" }));
+}
+
 describe("AddAccountForm — margin loan group", () => {
+  it("keeps the margin fields hidden until the switch is on", () => {
+    render(
+      <AddAccountForm clientId="client-123" category="taxable" mode="create" familyMembers={FAMILY_MEMBERS} entities={[]} categoryDefaults={CATEGORY_DEFAULTS} />,
+    );
+    expect((screen.getByRole("switch", { name: "Margin loan" }) as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByLabelText(/Margin loan balance/)).toBeNull();
+    turnOnMargin();
+    expect(screen.getByLabelText(/Margin loan balance/)).toBeTruthy();
+  });
+
+  it("opens with the switch on for an account that already carries a loan", () => {
+    render(
+      <AddAccountForm clientId="client-123" category="taxable" mode="edit"
+        initial={{ ...BASE_INITIAL, marginBalance: "2000000", marginInterestRate: "0.02" }}
+        familyMembers={FAMILY_MEMBERS} entities={[]} categoryDefaults={CATEGORY_DEFAULTS} />,
+    );
+    expect((screen.getByRole("switch", { name: "Margin loan" }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByLabelText(/Margin loan balance/)).toBeTruthy();
+  });
+
+  it("saves no loan once the switch is turned off", async () => {
+    render(
+      <AddAccountForm clientId="client-123" category="taxable" mode="edit"
+        initial={{ ...BASE_INITIAL, marginBalance: "2000000", marginInterestRate: "0.02", marginCallPct: "0.35",
+          marginBorrowEnabled: true, marginRepayYear: 2036 }}
+        familyMembers={FAMILY_MEMBERS} entities={[]} categoryDefaults={CATEGORY_DEFAULTS}
+        milestones={{ planStart: 2026, planEnd: 2060, clientRetirement: 2032, clientEnd: 2060 }} />,
+    );
+    turnOnMargin(); // on → off
+    expect(screen.queryByLabelText(/Margin loan balance/)).toBeNull();
+    fireEvent.submit(document.getElementById("add-account-form")!);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/clients/client-123/accounts/acct-1", expect.objectContaining({ method: "PUT" })),
+    );
+    const body = JSON.parse(
+      fetchMock.mock.calls.find((a) => String(a[0]) === "/api/clients/client-123/accounts/acct-1")![1].body as string,
+    );
+    expect(body.marginBalance).toBe("0");
+    expect(body.marginInterestRate).toBe("0");
+    expect(body.marginBorrowEnabled).toBe(false);
+    expect(body.marginRepayYear).toBeNull();
+    // The call level is not a loan — it survives the switch.
+    expect(body.marginCallPct).toBe("0.35");
+  });
+
   it("shows the Margin loan group only for taxable accounts", () => {
     render(
       <AddAccountForm clientId="client-123" category="cash" mode="create" familyMembers={FAMILY_MEMBERS} entities={[]} categoryDefaults={CATEGORY_DEFAULTS} />,
@@ -1469,9 +1521,10 @@ describe("AddAccountForm — margin loan group", () => {
       <AddAccountForm clientId="client-123" category="taxable" mode="create" familyMembers={FAMILY_MEMBERS} entities={[]} categoryDefaults={CATEGORY_DEFAULTS} />,
     );
     expect(screen.getByText("Margin loan")).toBeTruthy();
+    turnOnMargin();
     fireEvent.change(screen.getByLabelText(/Current Value/), { target: { value: "10000000" } });
     fireEvent.change(screen.getByLabelText(/Margin loan balance/), { target: { value: "2000000" } });
-    fireEvent.change(screen.getByLabelText(/Margin interest rate/), { target: { value: "2" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /Margin interest rate/ }), { target: { value: "2" } });
     fireEvent.submit(document.getElementById("add-account-form")!);
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith("/api/clients/client-123/accounts", expect.objectContaining({ method: "POST" })),
@@ -1504,6 +1557,7 @@ describe("AddAccountForm — margin loan group", () => {
 
     it("offers the borrow switch on a household-owned taxable account", () => {
       render(<AddAccountForm clientId="client-123" category="taxable" mode="create" familyMembers={FAMILY_MEMBERS} entities={[]} categoryDefaults={CATEGORY_DEFAULTS} milestones={MILESTONES} />);
+      turnOnMargin();
       expect(screen.getByLabelText("Borrow to cover spending")).toBeTruthy();
     });
 
@@ -1511,6 +1565,7 @@ describe("AddAccountForm — margin loan group", () => {
       render(<AddAccountForm clientId="client-123" category="taxable" mode="edit"
         initial={{ ...BASE_INITIAL, owners: [{ kind: "family_member", familyMemberId: FAMILY_MEMBERS[0].id, percent: 0.5 }, { kind: "entity", entityId: "trust-1", percent: 0.5 }] }}
         familyMembers={FAMILY_MEMBERS} entities={[{ id: "trust-1", name: "Trust" }]} categoryDefaults={CATEGORY_DEFAULTS} milestones={MILESTONES} />);
+      turnOnMargin();
       expect(screen.queryByLabelText("Borrow to cover spending")).toBeNull();
       expect(screen.getByText("Borrowing to cover spending is available when the household owns the whole account.")).toBeTruthy();
     });
@@ -1518,6 +1573,7 @@ describe("AddAccountForm — margin loan group", () => {
     it("submits the switch, Borrow from and Repay in", async () => {
       render(<AddAccountForm clientId="client-123" category="taxable" mode="create" familyMembers={FAMILY_MEMBERS} entities={[]} categoryDefaults={CATEGORY_DEFAULTS} milestones={MILESTONES} />);
       fireEvent.change(screen.getByLabelText(/Current Value/), { target: { value: "1000000" } });
+      turnOnMargin();
       fireEvent.click(screen.getByLabelText("Borrow to cover spending"));
       fireEvent.click(screen.getByLabelText("Repay the loan in a chosen year"));
       fireEvent.submit(document.getElementById("add-account-form")!);
@@ -1549,6 +1605,7 @@ describe("AddAccountForm — margin loan group", () => {
       render(<AddAccountForm clientId="client-123" category="taxable" mode="create" familyMembers={FAMILY_MEMBERS} entities={[]}
         categoryDefaults={CATEGORY_DEFAULTS} milestones={{ ...MILESTONES, clientRetirement: 2020 }} />);
       fireEvent.change(screen.getByLabelText(/Current Value/), { target: { value: "1000000" } });
+      turnOnMargin();
       fireEvent.click(screen.getByLabelText("Borrow to cover spending"));
       fireEvent.click(screen.getByLabelText("Repay the loan in a chosen year"));
       expect(screen.queryByText(MARGIN_REPAY_AFTER_BORROW_MESSAGE)).toBeNull();
