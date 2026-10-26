@@ -2,6 +2,10 @@
 
 import type { ReactNode } from "react";
 
+/** The input/select recipe the options controls share. */
+export const optionsFieldClassName =
+  "rounded border border-hair bg-card-2 px-2 py-1 text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40";
+
 /** Horizontal container for a page's option groups. Groups wrap on narrow
  *  widths. Replaces the old vertical `space-y-3` root used in every control. */
 export function OptionsRow({ children }: { children: ReactNode }) {

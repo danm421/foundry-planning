@@ -29,6 +29,7 @@ import {
   type ClientMilestones,
   type YearRef,
 } from "@/lib/milestones";
+import { readYearOrAge } from "@/lib/year-or-age";
 
 export const CUSTOM_YEAR_VALUE = "__custom__";
 
@@ -88,7 +89,15 @@ export default function InlineYearCell({
           // ref null is a REAL value here — "manual year, not anchored". It
           // must reach the writer, which is why the flow patch does not strip
           // nulls the way the account patch strips growthRate.
-          const ok = await onSave(Math.round(next), null);
+          // Two or three digits are the client's age, as in every year box; a
+          // number that names no year in range (1999, or an age with no birth
+          // year on file) is not saved.
+          const read = readYearOrAge(String(Math.round(next)), milestones.clientBirthYear);
+          if (!read?.inRange) {
+            setCustomArmed(false);
+            return false;
+          }
+          const ok = await onSave(read.year, null);
           setCustomArmed(false);
           return ok;
         }}

@@ -53,6 +53,7 @@ import type { InvestmentOptionCatalog } from "@/lib/presentations/investment-opt
 import type { EntityPickerOption } from "@/lib/presentations/entity-picker-options";
 import type { ProposalOption } from "@/lib/presentations/investment-proposal-bundle";
 import type { LiabilityPickerOption } from "@/lib/presentations/liability-picker-options";
+import type { AgePerson } from "@/lib/year-or-age";
 import type { UnreviewedStoryPage } from "@/lib/presentations/story/export-gate";
 
 interface Props {
@@ -72,6 +73,8 @@ interface Props {
   entities?: EntityPickerOption[];
   proposals?: ProposalOption[];
   liabilities?: LiabilityPickerOption[];
+  /** Client and spouse, for year fields that take an age. */
+  agePeople?: AgePerson[];
   /** The brand picker, starting on the household's brand. Absent or with
    *  nothing to choose, the dropdown is hidden and requests carry no brand,
    *  so the server uses the household's. */
@@ -550,7 +553,7 @@ export function PresentationsLauncher(props: Props) {
   );
 
   return (
-    <PresentationOptionsProvider value={{ investmentCatalog: props.investmentCatalog, scenarios: props.scenarios, clientId: props.clientId, entities: props.entities ?? [], proposals: props.proposals ?? [], liabilities: props.liabilities ?? [] }}>
+    <PresentationOptionsProvider value={{ investmentCatalog: props.investmentCatalog, scenarios: props.scenarios, clientId: props.clientId, entities: props.entities ?? [], proposals: props.proposals ?? [], liabilities: props.liabilities ?? [], agePeople: props.agePeople ?? [] }}>
     <div className="p-6">
       <h1 className="text-2xl font-semibold text-ink mb-4">
         Presentations<span className="dot">.</span>

@@ -3,7 +3,9 @@
 
 import type { NamedRange, RangeOption } from "@/lib/presentations/shared/year-filter";
 import { summarizeRange } from "@/lib/presentations/shared/drill-options";
-import { OptionsGroup } from "./options-layout";
+import { OptionsGroup, optionsFieldClassName } from "./options-layout";
+import { useAgePeople } from "@/components/presentations/options-context";
+import YearOrAgeInput from "@/components/year-or-age-input";
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -18,6 +20,7 @@ interface Props {
 /** Full / Custom year-range picker shared by the cash-flow page and every
  *  cash-flow / estate drill. Renders as a single labeled options group. */
 export function YearRangeControl({ value, onChange, presets }: Props) {
+  const people = useAgePeople();
   const isCustom = typeof value === "object";
   const startYear = isCustom ? value.startYear : CURRENT_YEAR;
   const endYear = isCustom ? value.endYear : CURRENT_YEAR + 30;
@@ -57,25 +60,25 @@ export function YearRangeControl({ value, onChange, presets }: Props) {
         <span>Custom range</span>
       </label>
       {isCustom && (
-        <div className="flex items-center gap-3 pl-6 pt-1">
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">Start year</span>
-            <input
-              type="number"
+        <div className="flex flex-col gap-1.5 pl-6 pt-1">
+          <label className="flex items-center gap-2">
+            <span className="w-9 text-[11px] uppercase tracking-[0.1em] text-ink-3">From</span>
+            <YearOrAgeInput
               aria-label="Start year"
-              className="w-24 rounded border border-hair bg-card-2 px-2 py-1 text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
-              value={startYear}
-              onChange={(e) => onChange({ startYear: Number(e.target.value), endYear })}
+              year={startYear}
+              onChange={(y) => y != null && onChange({ startYear: y, endYear })}
+              people={people}
+              inputClassName={optionsFieldClassName}
             />
           </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">End year</span>
-            <input
-              type="number"
+          <label className="flex items-center gap-2">
+            <span className="w-9 text-[11px] uppercase tracking-[0.1em] text-ink-3">To</span>
+            <YearOrAgeInput
               aria-label="End year"
-              className="w-24 rounded border border-hair bg-card-2 px-2 py-1 text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
-              value={endYear}
-              onChange={(e) => onChange({ startYear, endYear: Number(e.target.value) })}
+              year={endYear}
+              onChange={(y) => y != null && onChange({ startYear, endYear: y })}
+              people={people}
+              inputClassName={optionsFieldClassName}
             />
           </label>
         </div>

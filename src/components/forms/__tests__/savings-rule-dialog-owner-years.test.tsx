@@ -113,7 +113,12 @@ function renderDialog() {
   );
 }
 
-const endYearInput = () => screen.getByLabelText(/^end year$/i) as HTMLInputElement;
+/** The end year the form submits — a milestone shows no year box of its own. */
+const endYearInput = () =>
+  document.querySelector('input[name="endYear"]') as HTMLInputElement;
+/** The end year's source: Manual, Duration, or a milestone ref. */
+const endYearSource = () =>
+  screen.getByLabelText(/^end year$/i).closest("div")!.querySelector("select") as HTMLSelectElement;
 const pickAccount = (id: string) =>
   fireEvent.change(screen.getByLabelText(/^account/i), { target: { value: id } });
 
@@ -128,7 +133,7 @@ describe("SavingsRuleDialog end year follows the destination account's owner", (
     renderDialog();
 
     expect(endYearInput().value).toBe(String(CLIENT_RET - 1));
-    expect(screen.getAllByTitle("Harold Retirement").length).toBeGreaterThan(0);
+    expect(endYearSource().value).toBe("client_retirement");
   });
 
   it("re-snaps to the co-client's retirement when the co-client's account is picked", () => {
@@ -136,7 +141,7 @@ describe("SavingsRuleDialog end year follows the destination account's owner", (
     pickAccount("acct-spouse");
 
     expect(endYearInput().value).toBe(String(SPOUSE_RET - 1));
-    expect(screen.getAllByTitle("Rhonda Retirement").length).toBeGreaterThan(0);
+    expect(endYearSource().value).toBe("spouse_retirement");
   });
 
   it("re-snaps back when the advisor switches accounts again", () => {
@@ -145,7 +150,7 @@ describe("SavingsRuleDialog end year follows the destination account's owner", (
     pickAccount("acct-client");
 
     expect(endYearInput().value).toBe(String(CLIENT_RET - 1));
-    expect(screen.getAllByTitle("Harold Retirement").length).toBeGreaterThan(0);
+    expect(endYearSource().value).toBe("client_retirement");
   });
 
   // A jointly-owned account has no single retirement to follow, so it keeps the
@@ -156,7 +161,7 @@ describe("SavingsRuleDialog end year follows the destination account's owner", (
     pickAccount("acct-joint");
 
     expect(endYearInput().value).toBe(String(CLIENT_RET - 1));
-    expect(screen.getAllByTitle("Harold Retirement").length).toBeGreaterThan(0);
+    expect(endYearSource().value).toBe("client_retirement");
   });
 
   // A 529's owner is a child, who has no retirement in the plan at all.
@@ -172,7 +177,8 @@ describe("SavingsRuleDialog end year follows the destination account's owner", (
   // not overwrite it — the guard the income dialog already carries.
   it("leaves an explicitly edited end year alone on a later account change", () => {
     renderDialog();
-    fireEvent.change(endYearInput(), { target: { value: String(NOW + 30) } });
+    fireEvent.change(endYearSource(), { target: { value: "manual" } });
+    fireEvent.change(screen.getByLabelText(/^end year$/i), { target: { value: String(NOW + 30) } });
     pickAccount("acct-spouse");
 
     expect(endYearInput().value).toBe(String(NOW + 30));

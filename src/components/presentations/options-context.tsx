@@ -8,6 +8,7 @@ import type { ScenarioOption } from "@/components/scenario/scenario-picker-dropd
 import type { EntityPickerOption } from "@/lib/presentations/entity-picker-options";
 import type { LiabilityPickerOption } from "@/lib/presentations/liability-picker-options";
 import type { ProposalOption } from "@/lib/presentations/investment-proposal-bundle";
+import type { AgePerson } from "@/lib/year-or-age";
 
 interface PresentationOptionsValue {
   investmentCatalog: InvestmentOptionCatalog;
@@ -16,6 +17,8 @@ interface PresentationOptionsValue {
   entities?: EntityPickerOption[];
   proposals?: ProposalOption[];
   liabilities?: LiabilityPickerOption[];
+  /** Client first, then spouse — for year fields that take an age. */
+  agePeople?: AgePerson[];
 }
 
 const Ctx = createContext<PresentationOptionsValue | null>(null);
@@ -52,4 +55,10 @@ export function useProposalOptions(): ProposalOption[] {
 
 export function useLiabilityOptions(): LiabilityPickerOption[] {
   return useContext(Ctx)?.liabilities ?? [];
+}
+
+const NO_PEOPLE: AgePerson[] = [];
+
+export function useAgePeople(): AgePerson[] {
+  return useContext(Ctx)?.agePeople ?? NO_PEOPLE;
 }

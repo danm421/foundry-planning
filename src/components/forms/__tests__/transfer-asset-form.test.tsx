@@ -194,8 +194,9 @@ describe("TransferAssetForm", () => {
     };
     render(<TransferAssetForm {...props} />);
 
-    // Change year to 2031 using the year input (manual mode in MilestoneYearPicker)
-    const yearInput = screen.getByDisplayValue("2031"); // default year is currentYear + 5
+    // The year input (manual mode in MilestoneYearPicker)
+    const yearInput = screen.getByLabelText("Transfer year") as HTMLInputElement;
+    expect(yearInput.value).toBe("2031"); // default year is currentYear + 5
     // Default year starts at currentYear + 5 = 2031, percent at 50%
     // estimated = 100000 * 1.1^5 * 0.5 = 80525.50...
     expect(screen.getByText(/Estimated value at transfer year/i)).toBeInTheDocument();

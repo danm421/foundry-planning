@@ -3,6 +3,8 @@
 import type { MonthlyCashFlowPageOptions } from "@/lib/presentations/pages/cash-flow-monthly/types";
 import { OptionsRow, OptionsGroup } from "@/components/presentations/shared/options-layout";
 import { YearRangeControl } from "@/components/presentations/shared/year-range-control";
+import { useAgePeople } from "@/components/presentations/options-context";
+import YearOrAgeInput from "@/components/year-or-age-input";
 
 interface Props {
   value: MonthlyCashFlowPageOptions;
@@ -13,6 +15,7 @@ const field =
   "rounded border border-hair bg-card-2 px-2 py-1 text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40";
 
 export function MonthlyCashFlowOptionsControl({ value, onChange }: Props) {
+  const people = useAgePeople();
   return (
     <OptionsRow>
       <OptionsGroup label="Show">
@@ -47,19 +50,18 @@ export function MonthlyCashFlowOptionsControl({ value, onChange }: Props) {
           would offer a range the month table ignores. */}
       {value.view === "months" ? (
         <OptionsGroup label="Year">
-          <input
-            type="number"
-            aria-label="Year"
-            placeholder="First shortfall year"
-            className={`${field} w-40`}
-            value={value.year ?? ""}
-            onChange={(e) => {
-              const raw = e.target.value.trim();
-              // Empty means "let the plan decide" — the same rule the solver
-              // screen opens on — not year zero.
-              onChange({ ...value, year: raw === "" ? null : Number(raw) });
-            }}
-          />
+          <div className="flex items-center gap-2">
+            {/* Empty means "let the plan decide" — the same rule the solver
+                screen opens on — not year zero. */}
+            <YearOrAgeInput
+              aria-label="Year"
+              year={value.year ?? null}
+              onChange={(year) => onChange({ ...value, year })}
+              people={people}
+              emptyLabel="First shortfall year"
+              inputClassName={field}
+            />
+          </div>
         </OptionsGroup>
       ) : (
         <YearRangeControl value={value.range} onChange={(range) => onChange({ ...value, range })} />

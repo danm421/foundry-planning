@@ -143,7 +143,7 @@ describe("ExpenseDialog education date auto-fill", () => {
 
     expect((screen.getByLabelText(/^start year$/i) as HTMLInputElement).value).toBe(String(NOW + 8));
     expect((screen.getByLabelText(/^end year$/i) as HTMLInputElement).value).toBe("4");
-    expect(screen.getByText(new RegExp(`years → ${NOW + 11}`))).toBeTruthy();
+    expect(screen.getByText(`→ ${NOW + 11}`)).toBeTruthy();
   });
 
   // Re-dating has to survive a change of mind — the second pick must not be
@@ -154,7 +154,7 @@ describe("ExpenseDialog education date auto-fill", () => {
 
     expect((screen.getByLabelText(/^start year$/i) as HTMLInputElement).value).toBe(String(NOW));
     expect((screen.getByLabelText(/^end year$/i) as HTMLInputElement).value).toBe("4");
-    expect(screen.getByText(new RegExp(`years → ${NOW + 3}`))).toBeTruthy();
+    expect(screen.getByText(`→ ${NOW + 3}`)).toBeTruthy();
   });
 
   // The point of the duration framing: moving the start carries the end with
@@ -163,7 +163,7 @@ describe("ExpenseDialog education date auto-fill", () => {
     pickEducationFor(FM_CHILD);
     fireEvent.change(screen.getByLabelText(/^start year$/i), { target: { value: String(NOW + 9) } });
 
-    expect(screen.getByText(new RegExp(`years → ${NOW + 12}`))).toBeTruthy();
+    expect(screen.getByText(`→ ${NOW + 12}`)).toBeTruthy();
     const body = await saveAndReadBody();
     expect(body.startYear).toBe(String(NOW + 9));
     expect(body.endYear).toBe(String(NOW + 12));
@@ -256,7 +256,7 @@ describe("ExpenseDialog end-year framing by type", () => {
 
     expect((screen.getByLabelText(/^type$/i) as HTMLSelectElement).value).toBe("education");
     expect((screen.getByLabelText(/^end year$/i) as HTMLInputElement).value).toBe("4");
-    expect(screen.getByText(new RegExp(`years → ${NOW + 3}`))).toBeTruthy();
+    expect(screen.getByText(`→ ${NOW + 3}`)).toBeTruthy();
   });
 
   // The four-year default is for NEW goals only. A saved goal keeps its own
@@ -283,7 +283,7 @@ describe("ExpenseDialog end-year framing by type", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Edit Kelly - Education$/ }));
 
     expect((screen.getByLabelText(/^end year$/i) as HTMLInputElement).value).toBe("6");
-    expect(screen.getByText(new RegExp(`years → ${NOW + 13}`))).toBeTruthy();
+    expect(screen.getByText(`→ ${NOW + 13}`)).toBeTruthy();
   });
 
   it("switches an in-progress expense to the four-year duration on type change", () => {
@@ -301,6 +301,6 @@ describe("ExpenseDialog end-year framing by type", () => {
     fireEvent.change(screen.getByLabelText(/^type$/i), { target: { value: "education" } });
 
     expect((screen.getByLabelText(/^end year$/i) as HTMLInputElement).value).toBe("4");
-    expect(screen.getByText(new RegExp(`years → ${NOW + 3}`))).toBeTruthy();
+    expect(screen.getByText(`→ ${NOW + 3}`)).toBeTruthy();
   });
 });

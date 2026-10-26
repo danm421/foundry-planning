@@ -78,9 +78,8 @@ describe("TransferSeriesForm", () => {
     // Find the year inputs. MilestoneYearPicker renders manual year inputs by default.
     // Start year defaults to currentYear (2026), end year defaults to currentYear + 10 (2036).
     // Set endYear < startYear by changing endYear to 2024 and startYear to 2026.
-    const yearInputs = screen.getAllByDisplayValue(/^20\d\d$/);
-    // First is startYear, second is endYear
-    const [startYearInput, endYearInput] = yearInputs;
+    const startYearInput = screen.getByLabelText("Start year");
+    const endYearInput = screen.getByLabelText("End year");
 
     // Change endYear to something less than startYear
     fireEvent.change(endYearInput, { target: { value: "2024" } });

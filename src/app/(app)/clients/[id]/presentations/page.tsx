@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
@@ -21,6 +21,9 @@ import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 import { loadBrandPicker } from "@/lib/branding/brand-options";
 import { householdBrand, normalizeBrand } from "@/lib/branding/brand-choice";
 import { requireClientPageAccess } from "@/lib/clients/page-access";
+import { householdAgePeople } from "@/lib/year-or-age";
+import { birthYearFromDob } from "@/lib/age-year";
+import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 
 export default async function PresentationsPage({
   params,
@@ -51,7 +54,7 @@ export default async function PresentationsPage({
     .limit(1);
   if (!clientRow) notFound();
 
-  const [scenarioRows, snapshotRows, templates, investmentCatalog, primaryContactRows, entityPickerOptions, dismissedSlugs, proposalOptions, liabilityOptions, brandPicker] = await Promise.all([
+  const [scenarioRows, snapshotRows, templates, investmentCatalog, peopleRows, entityPickerOptions, dismissedSlugs, proposalOptions, liabilityOptions, brandPicker] = await Promise.all([
     db
       .select({
         id: scenariosTable.id,
@@ -71,15 +74,19 @@ export default async function PresentationsPage({
     listTemplatesForUser(firmId, userId),
     listInvestmentOptionCatalog(clientId, firmId),
     db
-      .select({ lastName: crmHouseholdContacts.lastName })
+      .select({
+        role: crmHouseholdContacts.role,
+        firstName: crmHouseholdContacts.firstName,
+        lastName: crmHouseholdContacts.lastName,
+        dateOfBirth: crmHouseholdContacts.dateOfBirth,
+      })
       .from(crmHouseholdContacts)
       .where(
         and(
           eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId),
-          eq(crmHouseholdContacts.role, "primary"),
+          inArray(crmHouseholdContacts.role, ["primary", "spouse"]),
         ),
-      )
-      .limit(1),
+      ),
     loadEntityPickerOptions(clientId, firmId),
     listDismissedSlugs(firmId, userId),
     loadProposalPickerOptions(clientId),
@@ -87,7 +94,17 @@ export default async function PresentationsPage({
     loadBrandPicker(firmId),
   ]);
 
-  const clientLastName = primaryContactRows[0]?.lastName ?? "";
+  const primary = peopleRows.find((r) => r.role === "primary");
+  const spouse = peopleRows.find((r) => r.role === "spouse");
+  const clientLastName = primary?.lastName ?? "";
+  // Year fields in page options take an age and show both ages beside the year.
+  const agePeople = householdAgePeople(
+    {
+      clientBirthYear: birthYearFromDob(primary?.dateOfBirth) ?? undefined,
+      spouseBirthYear: birthYearFromDob(spouse?.dateOfBirth) ?? undefined,
+    },
+    { client: primary?.firstName || "Client", spouse: spouse?.firstName || CO_CLIENT_LABEL },
+  );
   const { builtIn, builtInHidden } = partitionBuiltInRows(dismissedSlugs);
 
   return (
@@ -104,6 +121,7 @@ export default async function PresentationsPage({
         entities={entityPickerOptions}
         proposals={proposalOptions}
         liabilities={liabilityOptions}
+        agePeople={agePeople}
         brand={{
           picker: brandPicker,
           defaultValue: normalizeBrand(householdBrand(clientRow), brandPicker.allBrands),

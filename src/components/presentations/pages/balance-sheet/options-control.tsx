@@ -1,11 +1,14 @@
 "use client";
 import type { BalanceSheetOptions } from "@/lib/presentations/pages/balance-sheet/options-schema";
-import { OptionsRow, OptionsGroup } from "@/components/presentations/shared/options-layout";
+import { OptionsRow, OptionsGroup, optionsFieldClassName } from "@/components/presentations/shared/options-layout";
+import { useAgePeople } from "@/components/presentations/options-context";
+import YearOrAgeInput from "@/components/year-or-age-input";
 
 type AsOf = Pick<BalanceSheetOptions, "asOf" | "year">;
 
 /** Today or a chosen year-end — shared by the Net Worth and Balance Sheet pages. */
 export function AsOfOptionsGroup<T extends AsOf>({ value, onChange }: { value: T; onChange: (next: T) => void }) {
+  const people = useAgePeople();
   return (
     <OptionsGroup label="As of">
       <label className="flex items-center gap-2 hover:text-ink">
@@ -27,15 +30,15 @@ export function AsOfOptionsGroup<T extends AsOf>({ value, onChange }: { value: T
         <span>End of year</span>
       </label>
       {value.asOf === "eoy" && (
-        <label className="flex flex-col gap-1 pt-1">
-          <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">Year</span>
-          <input
-            type="number"
-            className="w-24 rounded border border-hair bg-card-2 px-2 py-1 text-ink"
-            value={value.year}
-            onChange={(e) => onChange({ ...value, year: Number(e.target.value) })}
+        <div className="flex items-center gap-2 pl-6">
+          <YearOrAgeInput
+            aria-label="Year"
+            year={value.year}
+            onChange={(year) => year != null && onChange({ ...value, year })}
+            people={people}
+            inputClassName={optionsFieldClassName}
           />
-        </label>
+        </div>
       )}
     </OptionsGroup>
   );

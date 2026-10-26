@@ -4,7 +4,9 @@ import { useState, useEffect } from "react";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { availableRefs, resolveMilestone, YEAR_REF_LABELS } from "@/lib/milestones";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
-import { fieldLabelClassName, inputClassName, selectClassName } from "@/components/forms/input-styles";
+import { householdAgePeople } from "@/lib/year-or-age";
+import YearOrAgeInput, { YearReadout } from "@/components/year-or-age-input";
+import { fieldLabelClassName, inputBaseClassName, selectBaseClassName } from "@/components/forms/input-styles";
 
 interface MilestoneYearPickerProps {
   /** HTML name attribute for the year input (used by FormData) */
@@ -55,25 +57,22 @@ interface MilestoneYearPickerProps {
    */
   minYear?: number;
   /**
-   * One control per field: a milestone shows its select alone — the option
-   * already names the year — instead of repeating the year in a read-only box
-   * beneath it, and the label takes the dialog's field-label style and spacing
-   * (`fieldLabelClassName`), so it lines up with the fields beside it. Manual and
-   * Duration still show their input, since that is where the year is typed.
+   * The label takes the dialog's field-label style and spacing
+   * (`fieldLabelClassName`), so it lines up with the fields beside it.
    */
   compact?: boolean;
 }
 
-const INPUT_CLASS = `block ${inputClassName}`;
-const SELECT_CLASS = `block ${selectClassName}`;
+/** The names this picker shows — first names when provided. */
+function personNames(clientFirstName?: string, spouseFirstName?: string) {
+  return {
+    client: clientFirstName?.trim() || "Client",
+    spouse: spouseFirstName?.trim() || CO_CLIENT_LABEL,
+  };
+}
 
-/** Build display labels for this picker, personalized if names are provided. */
-function buildLabels(
-  clientFirstName?: string,
-  spouseFirstName?: string
-): Record<YearRef, string> {
-  const clientName = clientFirstName?.trim() || "Client";
-  const spouseName = spouseFirstName?.trim() || CO_CLIENT_LABEL;
+/** Build display labels for this picker, personalized by `personNames`. */
+function buildLabels({ client: clientName, spouse: spouseName }: ReturnType<typeof personNames>): Record<YearRef, string> {
   return {
     ...YEAR_REF_LABELS,
     plan_start: "First Year",
@@ -164,7 +163,8 @@ export default function MilestoneYearPicker({
     }
   }, [mode, duration, startYearForDuration]);
 
-  const labels = buildLabels(clientFirstName, spouseFirstName);
+  const names = personNames(clientFirstName, spouseFirstName);
+  const labels = buildLabels(names);
   const refs = availableRefs(milestones, showSSRefs, position).map((r) => ({
     ...r,
     label: labels[r.ref],
@@ -195,18 +195,20 @@ export default function MilestoneYearPicker({
     }
   }
 
-  function handleYearChange(year: number) {
+  function handleYearChange(year: number | null) {
+    if (year == null) return;
     setCurrentYear(year);
     setCurrentRef(null);
     setMode("manual");
     onChange(year, null);
   }
 
+  const people = householdAgePeople(milestones, names);
   const selectValue = mode === "milestone" && currentRef ? currentRef : mode;
-  // In compact milestone mode the select is the only visible control, so it
-  // takes the label; the year still rides along for FormData.
-  const selectOnly = compact && currentRef !== null;
 
+  // One row: the source on the left, the year (or span) right beside it, and
+  // everyone's age that year after it (on a second line when there's no room). A milestone shows no year box — its
+  // option already names the year — so the select takes the label there.
   return (
     <div>
       <label
@@ -216,63 +218,57 @@ export default function MilestoneYearPicker({
         {label}
       </label>
 
-      <select
-        id={selectOnly ? id : undefined}
-        value={selectValue}
-        onChange={(e) => handleModeChange(e.target.value)}
-        className={compact ? SELECT_CLASS : `mt-1 ${SELECT_CLASS}`}
-      >
-        <option value="manual">Manual</option>
-        {startYearForDuration != null && <option value="duration">Duration</option>}
-        {refs.map((r) => (
-          <option key={r.ref} value={r.ref}>
-            {r.label} ({r.year})
-          </option>
-        ))}
-      </select>
+      {/* The ages wrap under the row when a narrow dialog has no room beside it. */}
+      <div className={`flex flex-wrap items-center gap-x-2 gap-y-1${compact ? "" : " mt-1"}`}>
+        <select
+          id={mode === "milestone" ? id : undefined}
+          value={selectValue}
+          onChange={(e) => handleModeChange(e.target.value)}
+          className={`${selectBaseClassName} min-w-[7.5rem] flex-1`}
+        >
+          <option value="manual">Manual</option>
+          {startYearForDuration != null && <option value="duration">Duration</option>}
+          {refs.map((r) => (
+            <option key={r.ref} value={r.ref}>
+              {r.label} ({r.year})
+            </option>
+          ))}
+        </select>
 
-      {selectOnly ? (
-        <input type="hidden" name={name} value={currentYear} />
-      ) : mode === "duration" ? (
-        <div className="relative mt-1">
-          <input
+        {mode === "manual" && (
+          <YearOrAgeInput
             id={id}
-            type="number"
-            min={1}
-            max={100}
-            value={duration}
-            onChange={(e) => setDuration(Math.max(1, Number(e.target.value) || 1))}
-            className={INPUT_CLASS}
+            year={currentYear}
+            onChange={handleYearChange}
+            people={people}
+            min={minYear}
           />
-          <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-ink-3">
-            years → {currentYear}
-          </span>
-          {/* Hidden input carries the computed year for FormData */}
-          <input type="hidden" name={name} value={currentYear} />
-        </div>
-      ) : (
-        <div className="relative mt-1">
-          <input
-            id={id}
-            name={name}
-            type="number"
-            min={minYear != null ? Math.max(2000, minYear) : 2000}
-            max={2100}
-            value={currentYear}
-            readOnly={currentRef !== null}
-            onChange={(e) => handleYearChange(Number(e.target.value))}
-            className={`${INPUT_CLASS} ${currentRef ? "text-ink-3" : ""}`}
-          />
-          {currentRef && (
-            <span
-              title={labels[currentRef]}
-              className="pointer-events-none absolute right-2 top-1/2 max-w-[58%] -translate-y-1/2 truncate rounded bg-accent/15 px-1.5 py-0.5 text-xs text-accent"
-            >
-              {labels[currentRef]}
-            </span>
-          )}
-        </div>
-      )}
+        )}
+        {mode === "duration" && (
+          <>
+            {/* "yrs" sits inside the box so the readout keeps the room. */}
+            <div className="relative shrink-0">
+              <input
+                id={id}
+                type="number"
+                min={1}
+                max={100}
+                value={duration}
+                onChange={(e) => setDuration(Math.max(1, Number(e.target.value) || 1))}
+                className={`${inputBaseClassName} w-[4.5rem] pr-8 tabular`}
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-ink-3">
+                yrs
+              </span>
+            </div>
+            <YearReadout year={currentYear} people={people} showYear />
+          </>
+        )}
+        {mode === "milestone" && <YearReadout year={currentYear} people={people} />}
+      </div>
+
+      {/* The resolved year rides along for FormData in every mode. */}
+      <input type="hidden" name={name} value={currentYear} />
     </div>
   );
 }
