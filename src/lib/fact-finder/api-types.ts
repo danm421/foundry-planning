@@ -92,9 +92,15 @@ export interface ReviewRefusal {
 export interface SaveBody {
   changeSetVersion: number;
   ticks: ChangeTicks;
+  /** Save this round and keep the import open for the next (the chat's proposals); without it the save closes the import. */
+  keepOpen?: boolean;
 }
-/** 200 from save: the fact finder, closed. */
+/** 200 from save: the fact finder — closed, or with `keepOpen` still open. */
 export interface SaveResponse {
+  factFinder: FactFinderState;
+}
+/** 200 from POST …/fact-finder/finish: the fact finder, closed. Its refusals are an ErrorResponse. */
+export interface FinishResponse {
   factFinder: FactFinderState;
 }
 /**

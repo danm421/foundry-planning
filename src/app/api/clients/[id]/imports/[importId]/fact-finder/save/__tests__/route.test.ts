@@ -64,6 +64,7 @@ describe("POST /fact-finder/save", () => {
     ["null ticks", { changeSetVersion: 4, ticks: null }],
     ["ticks that are a list", { changeSetVersion: 4, ticks: [] }],
     ["ticks that are text", { changeSetVersion: 4, ticks: "all" }],
+    ["a keepOpen that isn't true or false", { changeSetVersion: 4, ticks: TICKS, keepOpen: "yes" }],
   ])("refuses %s with a 400, without saving", async (_name, body) => {
     const res = await POST(save(body), params);
     expect(res.status).toBe(400);
@@ -77,6 +78,14 @@ describe("POST /fact-finder/save", () => {
 
     expect(factFinderGate).toHaveBeenCalledWith(params.params, "commit");
     expect(saveChangeSet).toHaveBeenCalledExactlyOnceWith({ scope: SCOPE, actorId: "user_1", changeSetVersion: 4, ticks: TICKS });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ factFinder: FINDER });
+  });
+
+  it("save passes keepOpen", async () => {
+    vi.mocked(saveChangeSet).mockResolvedValueOnce({ ok: true, factFinder: FINDER });
+    const res = await POST(save({ changeSetVersion: 4, ticks: TICKS, keepOpen: true }), params);
+    expect(saveChangeSet).toHaveBeenCalledExactlyOnceWith({ scope: SCOPE, actorId: "user_1", changeSetVersion: 4, ticks: TICKS, keepOpen: true });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ factFinder: FINDER });
   });

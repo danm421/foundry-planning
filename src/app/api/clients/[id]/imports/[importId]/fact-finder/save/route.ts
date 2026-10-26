@@ -13,9 +13,10 @@ type Params = { params: Promise<{ id: string; importId: string }> };
 
 /**
  * Writes the ticked lines of the reviewed change list to the plan in one
- * transaction and closes the import (D11). Only the version and the ticks
- * come from the browser — the change list, its record ids and its values are
- * read from the stored fact finder. The save owns every refusal's wording.
+ * transaction and closes the import (D11) — or, with `keepOpen` (the chat's
+ * rounds), leaves it open for the next. Only the version, the ticks and that
+ * flag come from the browser — the change list, its record ids and its values
+ * are read from the stored fact finder. The save owns every refusal's wording.
  */
 export async function POST(request: Request, { params }: Params) {
   const gate = await factFinderGate(params, "commit");
@@ -23,14 +24,15 @@ export async function POST(request: Request, { params }: Params) {
   const { firmId, clientId, importId, userId } = gate;
 
   const body = (await request.json().catch(() => null)) as Partial<Record<keyof SaveBody, unknown>> | null;
-  const { changeSetVersion, ticks } = body ?? {};
+  const { changeSetVersion, ticks, keepOpen } = body ?? {};
   if (
     typeof changeSetVersion !== "number" ||
     !Number.isInteger(changeSetVersion) ||
     changeSetVersion < 0 ||
     typeof ticks !== "object" ||
     ticks === null ||
-    Array.isArray(ticks)
+    Array.isArray(ticks) ||
+    (keepOpen !== undefined && typeof keepOpen !== "boolean")
   ) {
     return jsonResponse(400, { error: "Send the change list's version and ticks." });
   }
@@ -43,7 +45,7 @@ export async function POST(request: Request, { params }: Params) {
 
   let outcome: SaveOutcome;
   try {
-    outcome = await saveChangeSet({ scope: { importId, clientId, firmId }, ...actorArgs, changeSetVersion, ticks });
+    outcome = await saveChangeSet({ scope: { importId, clientId, firmId }, ...actorArgs, changeSetVersion, ticks, ...(keepOpen !== undefined && { keepOpen }) });
   } catch (err) {
     // A read before the save's transaction failed (the save answers everything after it): nothing was written.
     console.error(`[fact-finder-save] import ${importId}: the save failed before writing:`, safeErrorFields(err));

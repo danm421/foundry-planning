@@ -276,6 +276,8 @@ export type AuditAction =
   // — metadata carries what was saved and left out, creates / updates, per-target
   // counts and the time it took.
   | "import.fact_finder_saved"
+  // A fact finder closed by Finish after its keep-open saves — nothing written to the plan; metadata counts what they saved.
+  | "import.fact_finder_finished"
   // One map-driven entity pass over ONE uploaded file (Task 14a) — several
   // billable Azure reads whose extracted rows land in the import's
   // `payloadJson`. Distinct from "import.extraction.*", which is the wizard's

@@ -130,6 +130,28 @@ export async function closeFactFinder(
 }
 
 /**
+ * A keep-open save's write on its transaction: `next` at version + 1, without
+ * its change list (the plan it was built against has moved on), the import
+ * left open. Compare-and-set on `baseVersion` and on "not closed yet"; null
+ * when either fails (nothing written).
+ */
+export async function writeFactFinderOnTx(
+  tx: Tx,
+  scope: FactFinderScope,
+  baseVersion: number,
+  next: FactFinderState,
+): Promise<FactFinderState | null> {
+  const written: FactFinderState = { ...next, version: baseVersion + 1 };
+  delete written.changeSet;
+  const rows = await tx
+    .update(clientImports)
+    .set({ payloadJson: mergePayloadJson({ factFinder: written }), updatedAt: new Date() })
+    .where(and(scoped(scope), sql`${storedVersion} = ${baseVersion}`, notClosed))
+    .returning({ id: clientImports.id });
+  return rows.length === 1 ? written : null;
+}
+
+/**
  * Compare-and-set: writes only if the stored version still equals `baseVersion`
  * and the import isn't closed (a saved import is never written again).
  * Keeps a carried `changeSet` when `keepChangeSet` (the review) or when the
