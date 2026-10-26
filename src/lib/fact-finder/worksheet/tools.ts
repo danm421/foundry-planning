@@ -511,11 +511,13 @@ function ownTextStagingOps(
   }
   if (values === undefined) {
     if (ownHeaders.length === 0) return [];
-    const which = ownHeaders.length === 1 ? `${ownHeaders[0]} is` : `${ownHeaders.join(", ")} are`;
+    const one = ownHeaders.length === 1;
+    const which = one ? `${ownHeaders[0]} is` : `${ownHeaders.join(", ")} are`;
+    const fields = ref.holdingId ? "; this is a holding row, so its holding's fields" : "";
     throw new Error(
       `${rowName(state, table, row)} is ready for the plan, and ${which} your own text, which the plan update doesn't read: ` +
         "call set_cells again with staging — the staging values this correction changes (staging column id → value, as " +
-        `set_cell takes it${ref.holdingId ? "; this is a holding row, so its holding's fields" : ""}) — or staging: {} when the plan doesn't read ${ownHeaders.length === 1 ? "it" : "them"}.`,
+        `set_cell takes it${fields}) — or staging: {} when the plan doesn't read ${one ? "it" : "them"}.`,
     );
   }
   const sectionId = stagingSectionOf(state, row);
