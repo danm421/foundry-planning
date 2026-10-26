@@ -96,8 +96,8 @@ export function parseOps(input: unknown): FFOp[] {
   return parsed.data;
 }
 
-/** How many ops of each kind a batch holds (audit metadata). */
-export function countOps(ops: readonly FFOp[]): Record<string, number> {
+/** How many ops of each kind a batch holds (audit metadata) — staging ops or worksheet ops. */
+export function countOps(ops: readonly { op: string }[]): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const op of ops) counts[op.op] = (counts[op.op] ?? 0) + 1;
   return counts;

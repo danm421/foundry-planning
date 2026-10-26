@@ -1,6 +1,6 @@
 // src/lib/fact-finder/chat/turn.ts
 import { randomUUID } from "node:crypto";
-import { AIMessage, HumanMessage, SystemMessage, ToolMessage, type BaseMessage } from "@langchain/core/messages";
+import { HumanMessage, SystemMessage, ToolMessage, type BaseMessage } from "@langchain/core/messages";
 import { chatModel } from "@/domain/forge/llm";
 import { recordMessageUsage } from "@/lib/ai/usage";
 import { redactSsns } from "@/lib/extraction/redact-ssn";
@@ -10,6 +10,7 @@ import { applyOps, countOps, diffSnapshots, locationOf, type ClientOp, type OpCo
 import { FactFinderNotFoundError, listLiveFiles, loadFactFinder, updateFactFinder, type FactFinderScope } from "../persist";
 import { loadBaseCaseRecords } from "../relink";
 import type { FactFinderState, FFChatTurn, FFSnapshot } from "../types";
+import { keepLastUndos, transcriptToMessages, type TurnModel } from "../worksheet/turn";
 import { readDocumentPages } from "./document-text";
 import { FENCE_CLOSE, FENCE_OPEN, fenceUntrusted } from "./fence";
 import { TOOL_DEFS, runTool, type ToolContext } from "./tools";
@@ -25,15 +26,10 @@ import { factFinderView } from "./view";
  */
 
 export const MAX_TOOL_CALLS_PER_TURN = 12;
-/** Replies that keep their Undo; older ones lose it. */
-const MAX_UNDO_REPLIES = 10;
 const OUT_OF_STEPS = "I ran out of steps for one reply — ask me to carry on.";
 const CHANGED_MEANWHILE = "The fact finder changed while I was working on that — ask me again.";
 
-/** `chatModel()`'s shape, narrow enough for a test double. */
-export interface TurnModel {
-  bindTools(defs: unknown[]): { invoke(messages: BaseMessage[]): Promise<AIMessage> };
-}
+export type { TurnModel };
 
 export interface FactFinderTurnResult {
   factFinder: FactFinderState;
@@ -72,21 +68,6 @@ function systemPrompt(state: FactFinderState, files: ToolContext["files"]): stri
   ].join("\n");
 }
 
-/**
- * Earlier turns as history, SSNs redacted again. Every assistant and tool turn
- * is fenced as data: a read summary is stored as an assistant turn and quotes
- * a document's row or file name. Only the advisor's own words stay unfenced.
- */
-function transcriptToMessages(transcript: readonly FFChatTurn[]): BaseMessage[] {
-  const clean = (text: string) => redactSsns(text).text;
-  return transcript.map((t) => {
-    if (t.role === "user") return new HumanMessage(clean(t.text));
-    if (t.role === "assistant") return new AIMessage(fenceUntrusted(clean(t.text)));
-    if (t.role === "proposal") return new AIMessage(fenceUntrusted("[proposed plan changes]"));
-    return new AIMessage(fenceUntrusted(`[used ${t.tool}] ${clean(t.summary)}`));
-  });
-}
-
 /** The import's live files, each read at most once per reply. */
 async function liveFilesContext(importId: string): Promise<ToolContext> {
   const rows = await listLiveFiles(importId);
@@ -104,12 +85,6 @@ async function liveFilesContext(importId: string): Promise<ToolContext> {
     },
     newId: randomUUID,
   };
-}
-
-/** The undo entries of the latest replies, by transcript order (a jsonb object keeps no key order). */
-function keepLastUndos(undo: Record<string, FFSnapshot[]>, transcript: readonly FFChatTurn[]): Record<string, FFSnapshot[]> {
-  const ids = transcript.filter((t) => t.role === "assistant" && Object.hasOwn(undo, t.id)).map((t) => t.id);
-  return Object.fromEntries(ids.slice(-MAX_UNDO_REPLIES).map((id) => [id, undo[id]]));
 }
 
 export async function runFactFinderTurn(args: {
