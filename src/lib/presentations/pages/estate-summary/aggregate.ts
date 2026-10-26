@@ -15,6 +15,26 @@ export function fmtPct(fraction: number): string {
   return `${Math.round(fraction * 100)}%`;
 }
 
+/** The Total to Heirs tile: Net to Heirs plus what reaches the heirs outside
+ *  the estate — lifetime gifts and money irrevocable trusts hold for them.
+ *  Null when there is neither, so the tile only shows when it differs from
+ *  Net to Heirs. */
+export function totalToHeirsTile(k: {
+  netToHeirsEol: number;
+  lifetimeGiftsEol: number;
+  heldInTrustEol: number;
+}): { value: number; note: string } | null {
+  const parts = [
+    k.lifetimeGiftsEol > 0 ? `${fmtUsd(k.lifetimeGiftsEol)} lifetime gifts` : null,
+    k.heldInTrustEol > 0 ? `${fmtUsd(k.heldInTrustEol)} held in trust` : null,
+  ].filter((p): p is string => p != null);
+  if (parts.length === 0) return null;
+  return {
+    value: k.netToHeirsEol + k.lifetimeGiftsEol + k.heldInTrustEol,
+    note: `Includes ${parts.join(" + ")}`,
+  };
+}
+
 // ── Household totals for one as-of selection ────────────────────────────────
 export interface EstateSummaryHousehold {
   federal: number;

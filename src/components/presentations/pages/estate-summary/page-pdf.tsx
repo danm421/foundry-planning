@@ -4,7 +4,7 @@ import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type { EstateSummaryPageData } from "@/lib/presentations/pages/estate-summary/view-model";
 import type { EstateSummaryDeathRow } from "@/lib/presentations/pages/estate-summary/aggregate";
-import { fmtUsd, fmtPct } from "@/lib/presentations/pages/estate-summary/aggregate";
+import { fmtUsd, fmtPct, totalToHeirsTile } from "@/lib/presentations/pages/estate-summary/aggregate";
 import { EstateSummaryChartPdf } from "./chart-pdf";
 
 const s = StyleSheet.create({
@@ -59,6 +59,7 @@ function DeathRow({ r }: { r: EstateSummaryDeathRow }) {
 }
 
 export function EstateSummaryPagePdf({ data, firmName, clientName, reportDate, pageIndex, totalPages }: RenderPdfInput<EstateSummaryPageData>) {
+  const totalTile = totalToHeirsTile(data.kpis);
   return (
     <PageFrame
       firmName={firmName}
@@ -81,8 +82,8 @@ export function EstateSummaryPagePdf({ data, firmName, clientName, reportDate, p
             <Kpi lbl="Total Tax & Costs · EOL" val={fmtUsd(data.kpis.taxAndCostsEol)} sub={`Today: ${fmtUsd(data.kpis.taxAndCostsToday)}`} />
             <Kpi lbl="Net to Heirs · EOL" val={fmtUsd(data.kpis.netToHeirsEol)} sub={`Today: ${fmtUsd(data.kpis.netToHeirsToday)}`} />
             <Kpi lbl="Estate Shrinkage · EOL" val={fmtPct(data.kpis.shrinkageEol)} sub={`Today: ${fmtPct(data.kpis.shrinkageToday)}`} />
-            {data.kpis.lifetimeGiftsEol > 0 && (
-              <Kpi lbl="Total to Heirs · EOL" val={fmtUsd(data.kpis.netToHeirsEol + data.kpis.lifetimeGiftsEol)} sub={`Includes ${fmtUsd(data.kpis.lifetimeGiftsEol)} lifetime gifts`} />
+            {totalTile && (
+              <Kpi lbl="Total to Heirs · EOL" val={fmtUsd(totalTile.value)} sub={totalTile.note} />
             )}
           </View>
 

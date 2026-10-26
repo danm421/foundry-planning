@@ -41,12 +41,14 @@ export interface YearlyEstateRow {
   /** Form 706 charitable deduction summed across both deaths in chosen ordering. */
   charitableBequests: number;
   /** `estateDistributionAtYear(...).toHeirs`: what heirs receive at the
-   *  year's deaths plus the lifetime gifts already made to them. */
+   *  year's deaths plus the lifetime gifts already made to them and what
+   *  irrevocable trusts hold for them. */
   netToHeirs: number;
   /** Combined household out-of-estate balance at year-end. */
   heirsAssets: number;
-  /** Equals `netToHeirs` — the transfer ledger already routes out-of-estate
-   *  value to heirs, so `heirsAssets` is not added again. */
+  /** Equals `netToHeirs`, which already counts the out-of-estate value that
+   *  reaches heirs (gifts, trust holdings), so `heirsAssets` is not added
+   *  again. */
   totalToHeirs: number;
   /** Cumulative lifetime gifts to charity (compounded forward at inflation
    *  rate) plus this year's charitable bequest. */
@@ -233,11 +235,12 @@ function buildYearlyRow(args: RowBuilderArgs): YearlyEstateRow {
   // Route the heirs/tax buckets through the single source of truth. Threading
   // `resolvedOrdering` (the same value used to pick `branch`) keeps years before
   // the first death consistent with the report; years at/after the first death
-  // are anchored and ignore ordering. The bottom-up transfer ledger already
-  // nets out-of-estate/OOE value into `toHeirs`, so `totalToHeirs === toHeirs`
-  // (no separate `+ heirsAssets`). The ledger also only diminishes heirs by the
-  // admin/tax that actually leaves the terminal recipient's pocket, whereas the
-  // old top-down `grossEstate − taxes` double-subtracted the first-death admin.
+  // are anchored and ignore ordering. `toHeirs` already adds the out-of-estate
+  // value that reaches heirs (lifetime gifts, irrevocable-trust holdings), so
+  // `totalToHeirs === toHeirs` (no separate `+ heirsAssets`). The ledger also
+  // only diminishes heirs by the admin/tax that actually leaves the terminal
+  // recipient's pocket, whereas the old top-down `grossEstate − taxes`
+  // double-subtracted the first-death admin.
   const dist = estateDistributionAtYear({
     projection: projection as ProjectionResult,
     year: yearRow.year,

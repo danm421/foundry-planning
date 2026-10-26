@@ -15,7 +15,11 @@ import type {
   EstateSummaryPageData,
   EstateSummaryChartBar,
 } from "@/lib/presentations/pages/estate-summary/view-model";
-import { fmtUsd, fmtPct } from "@/lib/presentations/pages/estate-summary/aggregate";
+import {
+  fmtUsd,
+  fmtPct,
+  totalToHeirsTile,
+} from "@/lib/presentations/pages/estate-summary/aggregate";
 import type { EstateSummaryDeathRow } from "@/lib/presentations/pages/estate-summary/aggregate";
 import { chartChrome, dataPalette, statusColors, useThemeName } from "@/lib/chart-colors";
 import {
@@ -153,6 +157,7 @@ export function EstateSummaryView({ data }: { data: EstateSummaryPageData }) {
   }
 
   const { kpis, chart, todayRows, eolRows, heirs } = data;
+  const totalTile = totalToHeirsTile(kpis);
 
   return (
     <SummaryLayout title={data.title} subtitle={data.subtitle}>
@@ -178,11 +183,11 @@ export function EstateSummaryView({ data }: { data: EstateSummaryPageData }) {
           value={fmtPct(kpis.shrinkageEol)}
           delta={`Today: ${fmtPct(kpis.shrinkageToday)}`}
         />
-        {kpis.lifetimeGiftsEol > 0 && (
+        {totalTile && (
           <SummaryKpiCard
             label="Total to Heirs · EOL"
-            value={fmtUsd(kpis.netToHeirsEol + kpis.lifetimeGiftsEol)}
-            delta={`Includes ${fmtUsd(kpis.lifetimeGiftsEol)} lifetime gifts`}
+            value={fmtUsd(totalTile.value)}
+            delta={totalTile.note}
           />
         )}
       </SummaryKpiRow>

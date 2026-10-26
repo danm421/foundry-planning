@@ -1,6 +1,9 @@
 import type { BuildDataContext } from "@/components/presentations/registry";
 import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
-import { lifetimeGiftsToHeirsAtEndOfLife } from "@/lib/estate/estate-distribution-at-year";
+import {
+  heldInTrustForHeirsAtEndOfLife,
+  lifetimeGiftsToHeirsAtEndOfLife,
+} from "@/lib/estate/estate-distribution-at-year";
 import type { EstateSummaryOptions } from "./options-schema";
 import {
   summarizeHousehold,
@@ -35,8 +38,12 @@ export interface EstateSummaryKpis {
   /** Gifts made to heirs during life, through the final death. Beside the
    *  estate breakdown, never inside it — the bars, shrinkage and Net to Heirs
    *  all describe what passes at death. (Today has none: no gift is modeled
-   *  before the plan starts.) Total to Heirs is `netToHeirsEol` plus this. */
+   *  before the plan starts.) Total to Heirs is `netToHeirsEol` plus this
+   *  and `heldInTrustEol`. */
   lifetimeGiftsEol: number;
+  /** What irrevocable trusts hold for the heirs at the final death — already
+   *  outside the estate, so beside the breakdown like the lifetime gifts. */
+  heldInTrustEol: number;
 }
 
 export interface EstateSummaryPageData {
@@ -125,6 +132,7 @@ export function buildEstateSummaryData(
       shrinkageToday: shrink(today),
       shrinkageEol: shrink(eol),
       lifetimeGiftsEol: lifetimeGiftsToHeirsAtEndOfLife(ctx.clientData, ctx.projection),
+      heldInTrustEol: heldInTrustForHeirsAtEndOfLife(ctx.clientData, ctx.projection),
     },
     chart: [estateChartBar("Today", today), estateChartBar("End of Life", eol)],
     todayRows,

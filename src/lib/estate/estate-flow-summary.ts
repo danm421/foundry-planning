@@ -634,7 +634,7 @@ function accountAmount(a: Account): number {
  * 0), else the static account values + authored ownership (the pre-projection
  * behavior, used by fixture tests).
  */
-function computeOutOfEstate(
+export function computeOutOfEstate(
   clientData: ClientData,
   asOfYear: number,
   giftsToPeople: LifetimeGiftsToPerson[],
@@ -940,7 +940,7 @@ function giftRecipientLabel(
  * another entity (`entityIdRef`) are skipped — chasing nested trusts is left
  * to a later rule.
  */
-function resolveTrustBeneficiaries(
+export function resolveTrustBeneficiaries(
   entityId: string,
   clientData: ClientData,
 ): TrustBeneficiarySplit[] {

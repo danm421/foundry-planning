@@ -19,6 +19,7 @@ const POPULATED: EstateSummaryPageData = {
     shrinkageToday: 0.11,
     shrinkageEol: 0.2,
     lifetimeGiftsEol: 0,
+    heldInTrustEol: 0,
   },
   chart: [
     {
@@ -141,6 +142,16 @@ describe("EstateSummaryView", () => {
     expect(getByText("Total to Heirs · EOL")).toBeTruthy();
     expect(getByText("$5.6M")).toBeTruthy();
     expect(getByText("Includes $190k lifetime gifts")).toBeTruthy();
+  });
+
+  it("names the money held in trust beside the gifts on the Total to Heirs tile", () => {
+    const data = {
+      ...POPULATED,
+      kpis: { ...POPULATED.kpis, lifetimeGiftsEol: 190_000, heldInTrustEol: 2_000_000 },
+    };
+    const { getByText } = render(<EstateSummaryView data={data} />);
+    expect(getByText("$7.6M")).toBeTruthy();
+    expect(getByText("Includes $190k lifetime gifts + $2.0M held in trust")).toBeTruthy();
   });
 
   it("shows no Total to Heirs tile for a plan without gifts", () => {
