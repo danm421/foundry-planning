@@ -35,6 +35,8 @@ const PANEL_TITLE = "Documents & chat";
 const FINISH_TITLE = "Finish import";
 const FINISH_QUESTION = "Finish this import? You can't add documents or save more changes to the plan from it afterwards.";
 const DISMISS_CLASS = "shrink-0 text-ink-3 underline underline-offset-2 hover:text-ink hover:no-underline";
+/** Composes a document gets per page load — the first, and one retry — so one that keeps failing can't loop. */
+const COMPOSE_TRIES = 2;
 
 type ProposalTurn = Extract<FFChatTurn, { role: "proposal" }>;
 
@@ -53,19 +55,7 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
   const state = store.state;
   const closed = state.closed;
   const chat = useWorksheetChat({ clientId, importId, adopt: store.adopt });
-  // Each finished read is owed a compose, which folds every document read since the last one into the worksheet.
-  // `composedReads` counts the finished reads covered by the last compose that started.
-  const [readsDone, setReadsDone] = useState(0);
-  const composedReads = useRef(0);
-  const docs = useDocuments({
-    clientId,
-    importId,
-    initialFiles,
-    state,
-    refresh: store.refresh,
-    adopt: store.adopt,
-    onReadDone: () => setReadsDone((n) => n + 1),
-  });
+  const docs = useDocuments({ clientId, importId, initialFiles, state, refresh: store.refresh, adopt: store.adopt });
   const reading = docs.read.running || filesReading(state, new Date()).length > 0;
   const busy = reading || chat.pending !== null || chat.undoing !== null;
   const narrow = useNarrowScreen();
@@ -104,13 +94,23 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
     if (isClosed && startedOpen) bannerRef.current?.focus();
   }, [isClosed, startedOpen]);
 
-  // The owed compose starts once nothing else runs (a reply, an Undo, a read), so reads that finish meanwhile share
-  // it. They stay owed until it actually starts: a request begun since this render keeps them owed until that one
-  // ends. One that starts and then fails isn't retried: the next read's compose folds its documents in too.
+  // A compose is owed while a document is read but not on the worksheet yet: after a read, or as the screen opens
+  // when one was left over (a compose that failed, a reload while one ran). It starts once nothing else runs (a reply,
+  // an Undo, a read), so reads that finish meanwhile share it, and it folds in every such document. Each document
+  // gets COMPOSE_TRIES per page load: what's still owed after that waits for the next read or a reload.
+  const owed = docs.files
+    .filter((file) => state.readings[file.id]?.status === "done" && !state.worksheet.composedFileIds.includes(file.id))
+    .map((file) => file.id)
+    .join(" ");
+  const composeTries = useRef(new Map<string, number>());
   useEffect(() => {
-    if (busy || isClosed || composedReads.current === readsDone) return;
-    if (chat.compose()) composedReads.current = readsDone;
-  }, [busy, isClosed, readsDone, chat]);
+    if (busy || isClosed || owed === "") return;
+    const tries = composeTries.current;
+    const fileIds = owed.split(" ");
+    if (fileIds.every((fileId) => (tries.get(fileId) ?? 0) >= COMPOSE_TRIES)) return;
+    if (!chat.compose()) return;
+    for (const fileId of fileIds) tries.set(fileId, (tries.get(fileId) ?? 0) + 1);
+  }, [busy, isClosed, owed, chat]);
 
   async function finish() {
     setFinishing(true);

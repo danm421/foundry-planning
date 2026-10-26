@@ -265,6 +265,30 @@ describe("the fact finder screen", () => {
     expect(net.posts("turn")).toHaveLength(1);
   });
 
+  it("a document read but not yet on the worksheet is composed as the screen opens", async () => {
+    // A compose that failed, or a reload while one ran, left f1 read but never folded in.
+    const owed = worked({ worksheet: { tables: [ACCOUNTS, FAMILY], composedFileIds: [] } });
+    const net = stubServer(owed, {
+      turn: (server) => ({ ...server, version: server.version + 1, worksheet: { ...server.worksheet, composedFileIds: ["f1"] } }),
+    });
+    renderScreen(owed);
+
+    await waitFor(() => expect(net.posts("turn")).toEqual([{ mode: "compose" }]));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Match all to plan" })).toBeEnabled());
+    expect(net.posts("turn")).toHaveLength(1);
+  });
+
+  it("a compose that keeps failing is tried twice per page load, then left alone", async () => {
+    const owed = worked({ worksheet: { tables: [ACCOUNTS, FAMILY], composedFileIds: [] } });
+    const net = stubServer(owed, { turn: () => sse([{ type: "error", message: "Could not process that message. Please try again." }]) });
+    renderScreen(owed);
+
+    await waitFor(() => expect(net.posts("turn")).toEqual([{ mode: "compose" }, { mode: "compose" }]));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Match all to plan" })).toBeEnabled());
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(net.posts("turn")).toHaveLength(2);
+  });
+
   it("a read that finishes while a reply runs is composed once the reply lands", async () => {
     // Both documents failed their last read, so the screen reads them only on Retry, and the advisor retries them mid-reply.
     const failed: FFFileReading = { status: "failed", startedAt: AT, reason: "Couldn't read this document — try again." };

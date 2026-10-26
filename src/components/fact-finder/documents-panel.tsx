@@ -2,9 +2,9 @@
 // src/components/fact-finder/documents-panel.tsx
 // The documents part of the side panel: one line per document saying how its
 // reading went, and the upload zone. `useDocuments` keeps the document list and
-// runs the reads, telling the screen as each finishes so it folds what was read
-// into the worksheet; the screen holds it, so a read carries on while the panel
-// is closed. Imports only client-safe leaf modules from src/lib/fact-finder.
+// runs the reads, fetching the fact finder as they finish — what they read is
+// then owed to the worksheet; the screen holds it, so a read carries on while
+// the panel is closed. Imports only client-safe leaf modules from src/lib/fact-finder.
 import { useCallback, useEffect, useRef, useState } from "react";
 import UploadZone, { type UploadedFileInfo } from "@/components/import/upload-zone";
 import { filesReading, isReadingNow, needsReading } from "@/lib/fact-finder/reading-status";
@@ -46,7 +46,6 @@ export function useDocuments({
   state,
   refresh,
   adopt,
-  onReadDone,
 }: {
   clientId: string;
   importId: string;
@@ -57,8 +56,6 @@ export function useDocuments({
   refresh: () => Promise<void>;
   /** `useFactFinder`'s `adopt`: a read refused because another tab saved the import carries the saved fact finder. */
   adopt: (fresh: FactFinderState) => void;
-  /** A read finished: what it found is owed to the worksheet. */
-  onReadDone: () => void;
 }): Documents {
   const [known, setKnown] = useState(initialFiles);
   const [removedIds, setRemovedIds] = useState<string[]>([]);
@@ -94,7 +91,6 @@ export function useDocuments({
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
       refreshTimer.current = null;
       void refresh();
-      onReadDone();
     },
   });
   const { start } = read;

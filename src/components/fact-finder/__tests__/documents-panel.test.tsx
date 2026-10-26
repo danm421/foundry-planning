@@ -103,7 +103,7 @@ const accountsTable = (rowId: string, fileId: string): WsTable => ({
 
 /**
  * POST …/read answers with the queued responses in turn; GET …/fact-finder with `fresh()`; POST …/turn (the
- * compose after each read) with a reply that changes nothing.
+ * compose after each read) with `fresh()`, every document it has read folded into the worksheet.
  */
 function stubFetch(
   reads: Response[],
@@ -117,7 +117,9 @@ function stubFetch(
     }
     if (url === FF_URL && !init?.method) return jsonResponse(200, { factFinder: await fresh() });
     if (url === TURN_URL && init?.method === "POST") {
-      const done = { type: "done", factFinder: emptyFactFinderState(), turnId: null };
+      const now = await fresh();
+      const composed = { ...now, version: now.version + 1, worksheet: { ...now.worksheet, composedFileIds: Object.keys(now.readings) } };
+      const done = { type: "done", factFinder: composed, turnId: null };
       return new Response(`data: ${JSON.stringify(done)}\n\n`, { status: 200, headers: { "content-type": "text/event-stream" } });
     }
     throw new Error(`unexpected ${init?.method ?? "GET"} ${url}`);
@@ -180,7 +182,7 @@ describe("reading on open", () => {
 
   it("doesn't read when every document has been read", () => {
     const net = stubFetch([]);
-    renderScreen(withReadings({ f1: DONE, f2: DONE }));
+    renderScreen({ ...withReadings({ f1: DONE, f2: DONE }), worksheet: { tables: [], composedFileIds: ["f1", "f2"] } });
 
     expect(net.reads()).toBe(0);
     expect(net.composes()).toBe(0);

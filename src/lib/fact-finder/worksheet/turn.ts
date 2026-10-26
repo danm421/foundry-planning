@@ -76,7 +76,7 @@ async function within<T>(work: Promise<T>, ms: number): Promise<T> {
 
 export interface WorksheetTurnArgs {
   scope: FactFinderScope;
-  /** "compose": fold the documents read since the last compose into the worksheet. */
+  /** "compose": fold the documents read but not yet composed into the worksheet. */
   mode: "advisor" | "compose";
   /** The advisor's words; required for "advisor". */
   message?: string;
@@ -265,6 +265,19 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
     }
   }
 
+  // Rows an advisor reply added from a free-form document fold that document in: it's marked composed, so the compose
+  // still owed for it (the screen derives that from what isn't composed) can't add its rows a second time.
+  if (mode === "advisor") {
+    const cited = new Set(
+      ops.flatMap((t) => (t.layer === "ws" && t.op.op === "addRows" ? t.op.rows.flatMap((r) => (r.source ? [r.source.fileId] : [])) : [])),
+    );
+    const fileIds = [...cited].filter((fileId) => {
+      const reading = start.readings[fileId];
+      return reading?.status === "done" && reading.reader === "freeform";
+    });
+    if (fileIds.length > 0) composed.push({ layer: "ws", op: { op: "markComposed", fileIds } });
+  }
+
   const at = iso();
   const reply = outOfTime ? OUT_OF_TIME : finalText.trim() || (toolCallCount >= MAX_WS_TOOL_CALLS ? OUT_OF_STEPS : "Okay.");
   const userTurns: FFChatTurn[] = mode === "advisor" ? [{ id: ctx.newId(), role: "user", text: human, at }] : [];
@@ -281,7 +294,10 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
     // no longer applies, none of them does: a value typed meanwhile is never overwritten.
     const afterOps = rebaseOps(stagingOps, start, fresh, opContext).kept.length === stagingOps.length ? replay(fresh, replayed, opContext) : null;
     committed = afterOps !== null;
-    if (!afterOps) return { ...fresh, transcript: [...fresh.transcript, ...userTurns, assistant(CHANGED_MEANWHILE)] };
+    // A compose nobody asked for leaves nothing behind: its documents stay owed, and the screen composes them again.
+    if (!afterOps) {
+      return mode === "compose" ? fresh : { ...fresh, transcript: [...fresh.transcript, ...userTurns, assistant(CHANGED_MEANWHILE)] };
+    }
     const next = applyLinkScores(afterOps, records);
     // The rows the reply's OPS changed, each as the re-score left it: a row the
     // re-score alone changed stays out of this reply's Undo and highlight, and

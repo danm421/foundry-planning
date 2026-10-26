@@ -244,6 +244,42 @@ describe("runWorksheetTurn — compose", () => {
     expect(store.state!.undo).toEqual({});
   });
 
+  it("an advisor reply that adds rows from a free-form document marks it composed, so the compose owed for it can't add them twice", async () => {
+    store.files = [file("f2", "paystub.pdf")];
+    store.state = fixture({ readings: { f2: done("freeform") } }); // read, but its compose never ran
+    const fake = scripted(
+      callTool("create_table", { title: "Paychecks", columns: [{ header: "Employer" }] }),
+      (messages) => {
+        const tableId = /Its id is ([\w-]+);/.exec(text(messages.at(-1)!))![1];
+        return callTool("add_rows", { table: tableId, rows: [{ cells: { Employer: "Acme Corp" }, document: "paystub.pdf", page: 1 }] }, "call-2");
+      },
+      new AIMessage("Added the Acme Corp paycheck."),
+    );
+    const result = await turn("Add the pay stub's employer", fake.model);
+
+    expect(store.state!.worksheet.composedFileIds).toEqual(["f2"]);
+    expect(result.ops).toEqual({ createTable: 1, addRows: 1 }); // the composed mark isn't one of the reply's ops
+    const never = scripted(new AIMessage("never"));
+    await compose(never.model);
+    expect(never.invoke).not.toHaveBeenCalled();
+  });
+
+  it("a compose that can't commit writes nothing — its documents stay owed, and no reply asks a question nobody asked", async () => {
+    store.files = [file("f2", "notes.docx")];
+    const started = fixture({ readings: { f2: done("freeform") } });
+    vi.mocked(loadFactFinder).mockResolvedValueOnce(started);
+    const typed: FFCell = { value: 13500, by: "advisor", pinned: true };
+    store.state = fixture({ version: 4, readings: { f2: done("freeform") } });
+    store.state.sections.cash[0].cells.currentValue = typed; // changed while the compose ran
+    const before = store.state;
+    const fake = scripted(callTool("set_cell", { rowId: "c1", columnId: "currentValue", value: 13000 }), new AIMessage("Folded in the notes."));
+    const result = await compose(fake.model);
+
+    expect(store.state).toBe(before);
+    expect(store.state!.worksheet.composedFileIds).toEqual([]);
+    expect(result).toMatchObject({ turnId: null, ops: {} });
+  });
+
   it("undoing a compose reply takes back its table and keeps its documents composed", async () => {
     // The first compose: the worksheet is still derived from staging.
     store.files = [file("f1", "schwab-june.pdf"), file("f2", "notes.docx")];

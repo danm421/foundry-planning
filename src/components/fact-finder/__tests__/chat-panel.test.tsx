@@ -19,6 +19,8 @@ const MESSAGE = "Add an IRA at Fidelity for Laura worth 40,000";
 const FILES: FFScreenFile[] = [{ id: "f1", name: "hendricks-fact-finder.pdf", documentType: "auto" }];
 /** f1 has been read, so the screen doesn't start a read as it opens. */
 const READ: FFFileReading = { status: "done", startedAt: AT, rows: 1 };
+/** …and folded into the worksheet, so it doesn't compose it either. */
+const COMPOSED: FactFinderState["worksheet"] = { tables: [], composedFileIds: ["f1"] };
 
 const said = (id: string, text: string): FFChatTurn => ({ id, role: "user", text, at: AT });
 const replied = (id: string, text: string): FFChatTurn => ({ id, role: "assistant", text, at: AT });
@@ -29,6 +31,7 @@ function chatted(): FactFinderState {
   return {
     ...emptyFactFinderState(),
     readings: { f1: READ },
+    worksheet: COMPOSED,
     transcript: [
       replied("a0", "Read 1 document.\n• 2 values to check."),
       said("u1", "Joint Checking is 13,000 now"),
@@ -162,7 +165,7 @@ describe("the conversation", () => {
   });
 
   it("invites a first message when there is no conversation yet", () => {
-    renderScreen({ ...emptyFactFinderState(), readings: { f1: READ } });
+    renderScreen({ ...emptyFactFinderState(), readings: { f1: READ }, worksheet: COMPOSED });
     expect(within(chat()).getByText("Ask a question about this fact finder, or say what to change.")).toBeInTheDocument();
     expect(composer()).toHaveAttribute("placeholder", "Ask for a table, a fix, or a plan update.");
     expect(composer()).toBeEnabled();
