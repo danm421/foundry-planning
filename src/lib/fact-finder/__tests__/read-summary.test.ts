@@ -26,19 +26,35 @@ describe("buildReadSummary", () => {
       caveats: ["This PDF had no text layer, so its text was read with OCR — check the figures."],
     });
     expect(out.summary).toBe(
-      "Read 3 documents. 1 couldn't be read — Retry it. 2 sections have values; 1 value to check; 1 link to confirm.",
+      "Read 3 documents. 1 couldn't be read — Retry it. 1 value to check; 1 link to confirm.",
     );
     expect(out.caveats).toEqual([
       'Left out "Total Accounts": It repeats 3 accounts above.',
-      "1 holding couldn't be matched to an account — pick one under Unassigned holdings.",
+      "1 holding couldn't be matched to an account — ask me which account they belong to.",
       "Couldn't read scan.pdf: Couldn't read any text from this file.",
       "This PDF had no text layer, so its text was read with OCR — check the figures.",
     ]);
   });
 
+  it("the summary names documents read, not sections", () => {
+    const s = emptyFactFinderState();
+    s.sections.external = [{ id: "x", cells: { name: { value: "Red Cross", by: "document", confidence: 0.9 } }, sourceFileIds: ["f1"] }];
+    expect(buildReadSummary({ state: s, decisions: [], filesRead: 3, failed: [], caveats: [] }).summary).not.toMatch(/section/);
+    expect(buildReadSummary({ state: s, decisions: [], filesRead: 3, failed: [], caveats: [] }).summary).toBe("Read 3 documents.");
+  });
+
+  it("unassigned holdings are explained in chat words", () => {
+    const s = emptyFactFinderState();
+    const h = { id: "h", ticker: "AAPL", name: null, shares: 1, price: null, marketValue: 100, costBasis: null, by: "document" as const, accountHint: "x9999" };
+    s.unassignedHoldings = [h, { ...h, id: "h2" }];
+    expect(buildReadSummary({ state: s, decisions: [], filesRead: 1, failed: [], caveats: [] }).caveats).toEqual([
+      "2 holdings couldn't be matched to an account — ask me which account they belong to.",
+    ]);
+  });
+
   it("keeps it short when there's nothing to check", () => {
     const out = buildReadSummary({ state: emptyFactFinderState(), decisions: [], filesRead: 1, failed: [], caveats: [] });
-    expect(out).toEqual({ summary: "Read 1 document. 0 sections have values.", caveats: [] });
+    expect(out).toEqual({ summary: "Read 1 document.", caveats: [] });
   });
 
   it("never counts a document it couldn't read as read", () => {
@@ -47,11 +63,11 @@ describe("buildReadSummary", () => {
       { fileName: "b.pdf", reason: "Couldn't read this document — try again." },
     ];
     expect(buildReadSummary({ state: emptyFactFinderState(), decisions: [], filesRead: 0, failed, caveats: [] })).toEqual({
-      summary: "Couldn't read 2 documents — Retry them. 0 sections have values.",
+      summary: "Couldn't read 2 documents — Retry them.",
       caveats: ["Couldn't read a.pdf: Stopped before this file was read.", "Couldn't read b.pdf: Couldn't read this document — try again."],
     });
     expect(buildReadSummary({ state: emptyFactFinderState(), decisions: [], filesRead: 2, failed: failed.slice(1), caveats: [] }).summary).toBe(
-      "Read 2 documents. 1 couldn't be read — Retry it. 0 sections have values.",
+      "Read 2 documents. 1 couldn't be read — Retry it.",
     );
   });
 });

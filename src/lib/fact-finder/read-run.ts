@@ -1,6 +1,7 @@
 // src/lib/fact-finder/read-run.ts
 import { randomUUID } from "node:crypto";
 import { recordAudit } from "@/lib/audit";
+import { redactSsns } from "@/lib/extraction/redact-ssn";
 import { mergeAcrossFiles } from "@/lib/imports/assemble/merge-across-files";
 import { downloadImportFile } from "@/lib/imports/blob";
 import { runImportExtraction } from "@/lib/imports/run-extraction";
@@ -22,10 +23,10 @@ import { buildReadSummary } from "./read-summary";
 import { readingsFromFormFields } from "./readers/form-reader";
 import { FileReadError } from "./readers/read-error";
 import { pagesForSectionReader, routeFile } from "./readers/route-file";
-import { readSections } from "./readers/section-reader";
 import { readingsFromStatements } from "./readers/statement-adapter";
 import { needsReading } from "./reading-status";
 import { loadBaseCaseRecords } from "./relink";
+import { savePageText } from "./worksheet/page-text";
 import type { ReadEvent } from "./api-types";
 import type { FFFileReading, FFMergeDecision, FFReader, FFReaderOutput } from "./types";
 
@@ -176,12 +177,13 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
     return buffer;
   };
 
-  const readAsSections = async (file: ImportFileRow, extraWarnings: string[] = []) => {
-    const buffer = await downloadOrThrow(file);
-    const { pages, warnings } = await pagesForSectionReader(buffer, file.detectedKind);
-    const output = await readSections({ fileId: file.id, pages });
-    output.warnings.unshift(...warnings, ...extraWarnings);
-    return output;
+  /**
+   * The free-form path: the file's page text is cached (SSN-redacted) for the chat to read, and no staging
+   * rows come from it.
+   */
+  const readAsFreeform = async (file: ImportFileRow, pages: string[], warnings: string[]): Promise<FFReaderOutput> => {
+    await savePageText(scope.importId, file.id, pages.map((page) => redactSsns(page).text));
+    return { readings: [], unassignedHoldings: [], warnings };
   };
 
   const statementFiles: ImportFileRow[] = [];
@@ -202,13 +204,13 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
           statementFiles.push(file);
           return;
         }
+        const reader: FFReader = route.reader === "form" ? "form" : "freeform";
         const output =
           route.reader === "form"
             ? readingsFromFormFields(file.id, route.fields)
-            : await readSections({ fileId: file.id, pages: route.pages });
-        if (route.reader === "section") output.warnings.unshift(...route.warnings);
-        await settle(file, route.reader, output);
-        await audit(file, true, { reader: route.reader, rows: output.readings.length });
+            : await readAsFreeform(file, route.pages, route.warnings);
+        await settle(file, reader, output);
+        await audit(file, true, { reader, rows: output.readings.length });
       } catch (err) {
         const reason = failureReason(err, file.id);
         await settle(file, undefined, null, reason);
@@ -249,7 +251,8 @@ export async function runFactFinderRead(args: RunReadArgs): Promise<RunReadResul
           if (signal?.aborted) continue;
           try {
             const note = `${f.originalFilename} had no accounts a statement reader could find, so it was read as a general document.`;
-            await settle(f, "section", await readAsSections(f, [note]));
+            const { pages, warnings } = await pagesForSectionReader(await downloadOrThrow(f), f.detectedKind);
+            await settle(f, "freeform", await readAsFreeform(f, pages, [...warnings, note]));
           } catch (err) {
             await settle(f, undefined, null, failureReason(err, f.id));
           }

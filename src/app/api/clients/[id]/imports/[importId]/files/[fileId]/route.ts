@@ -15,6 +15,7 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { toSafeDisplayFilename } from "@/lib/files/safe-filename";
 import { refuseSavedFactFinderWithState } from "@/lib/imports/saved-fact-finder";
+import { deletePageText } from "@/lib/fact-finder/worksheet/page-text";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -294,6 +295,9 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
           isNull(clientImportFiles.deletedAt),
         ),
       );
+
+    // The cached page text is derived data; the file itself stays (below).
+    await deletePageText(importId, fileId);
 
     // NOTE: deliberately do NOT call deleteImportFile() (the blob hard
     // delete). Soft-delete preserves the audit trail; a future sweeper
