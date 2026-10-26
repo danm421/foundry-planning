@@ -26,7 +26,7 @@ export const TARGET_ORDER: readonly TargetKind[] = [
   "will", "will_bequest", "will_residuary_recipient", "gift", "plan_observation",
 ];
 
-export type SavePlan =
+type SavePlan =
   | { ok: true; lines: PlannedLine[]; leftOut: LeftOutLine[] }
   | { ok: false; error: string };
 

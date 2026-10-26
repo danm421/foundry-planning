@@ -111,15 +111,11 @@ describe("useReview", () => {
     expect(result.current.reviewing).toBe(false);
   });
 
-  it("dismiss clears the message, and so does the next review", async () => {
+  it("the next review clears the message", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(reply(409, { error: REVIEW_READING_MESSAGE }));
     const { result } = renderReview();
     await act(() => result.current.review());
-    act(() => result.current.dismiss());
-    expect(result.current.error).toBeNull();
-
-    vi.mocked(fetch).mockResolvedValueOnce(reply(409, { error: REVIEW_READING_MESSAGE }));
-    await act(() => result.current.review());
+    expect(result.current.error).toBe(REVIEW_READING_MESSAGE);
     let release: (res: Response) => void = () => {};
     vi.mocked(fetch).mockImplementationOnce(() => new Promise<Response>((resolve) => (release = resolve)));
     let done = Promise.resolve();

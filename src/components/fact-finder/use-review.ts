@@ -18,7 +18,6 @@ export interface Review {
   error: string | null;
   /** `rowIds`: review only these staging rows (a chat proposal's); none = every row. */
   review(rowIds?: string[]): Promise<void>;
-  dismiss(): void;
 }
 
 export function useReview({
@@ -66,5 +65,5 @@ export function useReview({
     }
   }
 
-  return { reviewing, error, review, dismiss: () => setError(null) };
+  return { reviewing, error, review };
 }
