@@ -846,7 +846,6 @@ interface HeirSectionAccumulator {
   priorTransfers: { label: string; amount: number }[];
   firstDeath: { label: string; amount: number }[];
   secondDeath: { label: string; amount: number }[];
-  trustInterests: { label: string; amount: number }[];
 }
 
 function emptySectionAcc(): HeirSectionAccumulator {
@@ -854,7 +853,6 @@ function emptySectionAcc(): HeirSectionAccumulator {
     priorTransfers: [],
     firstDeath: [],
     secondDeath: [],
-    trustInterests: [],
   };
 }
 
@@ -884,6 +882,28 @@ interface TrustBeneficiarySplit {
   recipientLabel: string;
   /** 0..1 — weights sum to 1.0 across the splits returned for a given trust. */
   weight: number;
+}
+
+/**
+ * Credit a beneficiary's `inTrust` with their share of a trust. One trust can
+ * reach the same heir through several rules (a bequest to it, its balance, the
+ * gifts into it) — those merge into a single Trust Interests line per trust.
+ */
+function addTrustInterest(
+  acc: Map<string, HeirAccumulator>,
+  split: TrustBeneficiarySplit,
+  trustId: string,
+  label: string,
+  amount: number,
+): void {
+  const entry =
+    acc.get(split.recipientKey) ??
+    emptyHeirAcc(split.recipientKey, split.recipientLabel);
+  entry.inTrust += amount;
+  const line = entry.trustInterests.find((t) => t.trustId === trustId);
+  if (line) line.amount += amount;
+  else entry.trustInterests.push({ trustId, trustLabel: label, amount });
+  acc.set(split.recipientKey, entry);
 }
 
 /**
@@ -1021,7 +1041,6 @@ export function resolveTrustBeneficiaries(
  */
 function collectTrustBequestsInTrust(
   acc: Map<string, HeirAccumulator>,
-  sectionsByHeir: Map<string, HeirSectionAccumulator>,
   death: DeathSectionData | null,
   clientData: ClientData,
 ): void {
@@ -1038,22 +1057,7 @@ function collectTrustBequestsInTrust(
     if (splits.length === 0) continue;
     const label = trustLabel(g.recipientId, clientData);
     for (const s of splits) {
-      const entry =
-        acc.get(s.recipientKey) ?? emptyHeirAcc(s.recipientKey, s.recipientLabel);
-      const amount = g.netTotal * s.weight;
-      entry.inTrust += amount;
-      entry.trustInterests.push({
-        trustId: g.recipientId,
-        trustLabel: label,
-        amount,
-      });
-      acc.set(s.recipientKey, entry);
-
-      const sectionEntry = getSectionAcc(sectionsByHeir, s.recipientKey);
-      sectionEntry.trustInterests.push({
-        label,
-        amount,
-      });
+      addTrustInterest(acc, s, g.recipientId, label, g.netTotal * s.weight);
     }
   }
 }
@@ -1132,22 +1136,13 @@ function collectOoeAttribution(
     const splits = resolveTrustBeneficiaries(entity.entityId, clientData);
     if (splits.length === 0) continue;
     for (const s of splits) {
-      const entry =
-        acc.get(s.recipientKey) ?? emptyHeirAcc(s.recipientKey, s.recipientLabel);
-      const amount = entity.amount * s.weight;
-      entry.inTrust += amount;
-      entry.trustInterests.push({
-        trustId: entity.entityId,
-        trustLabel: entity.entityLabel,
-        amount,
-      });
-      acc.set(s.recipientKey, entry);
-
-      const sectionEntry = getSectionAcc(sectionsByHeir, s.recipientKey);
-      sectionEntry.trustInterests.push({
-        label: entity.entityLabel,
-        amount,
-      });
+      addTrustInterest(
+        acc,
+        s,
+        entity.entityId,
+        entity.entityLabel,
+        entity.amount * s.weight,
+      );
     }
   }
 }
@@ -1209,7 +1204,6 @@ function collectGiftsToPeople(
  */
 function collectTrustGifts(
   acc: Map<string, HeirAccumulator>,
-  sectionsByHeir: Map<string, HeirSectionAccumulator>,
   gifts: EstateFlowGift[],
   clientData: ClientData,
 ): void {
@@ -1227,23 +1221,7 @@ function collectTrustGifts(
     if (splits.length === 0) continue;
     const label = trustLabel(recipient.id, clientData);
     for (const s of splits) {
-      const entry =
-        acc.get(s.recipientKey) ??
-        emptyHeirAcc(s.recipientKey, s.recipientLabel);
-      const split = amount * s.weight;
-      entry.inTrust += split;
-      entry.trustInterests.push({
-        trustId: recipient.id,
-        trustLabel: label,
-        amount: split,
-      });
-      acc.set(s.recipientKey, entry);
-
-      const sectionEntry = getSectionAcc(sectionsByHeir, s.recipientKey);
-      sectionEntry.trustInterests.push({
-        label,
-        amount: split,
-      });
+      addTrustInterest(acc, s, recipient.id, label, amount * s.weight);
     }
   }
 }
@@ -1287,6 +1265,7 @@ function collectAtDeathOutright(
 
 function buildHeirSections(
   acc: HeirSectionAccumulator,
+  trustInterests: HeirAccumulator["trustInterests"],
   firstDecedentLabel: string | null,
   secondDecedentLabel: string | null,
 ): HeirSection[] {
@@ -1310,7 +1289,10 @@ function buildHeirSections(
   if (secondDecedentLabel != null) {
     pushIfAny(`At ${secondDecedentLabel}'s Death`, acc.secondDeath);
   }
-  pushIfAny("Trust Interests", acc.trustInterests);
+  pushIfAny(
+    "Trust Interests",
+    trustInterests.map((t) => ({ label: t.trustLabel, amount: t.amount })),
+  );
   return sections;
 }
 
@@ -1329,6 +1311,7 @@ function finalizeHeirBoxes(
       total: h.outright + h.inTrust,
       sections: buildHeirSections(
         sectionsByHeir.get(h.recipientKey) ?? emptySectionAcc(),
+        h.trustInterests,
         firstDecedentLabel,
         secondDecedentLabel,
       ),
@@ -1487,11 +1470,11 @@ export function buildEstateFlowSummary(
   const sectionsByHeir = new Map<string, HeirSectionAccumulator>();
   collectAtDeathOutright(heirAcc, sectionsByHeir, reportData.firstDeath, "firstDeath");
   collectAtDeathOutright(heirAcc, sectionsByHeir, reportData.secondDeath, "secondDeath");
-  collectTrustBequestsInTrust(heirAcc, sectionsByHeir, reportData.firstDeath, clientData);
-  collectTrustBequestsInTrust(heirAcc, sectionsByHeir, reportData.secondDeath, clientData);
+  collectTrustBequestsInTrust(heirAcc, reportData.firstDeath, clientData);
+  collectTrustBequestsInTrust(heirAcc, reportData.secondDeath, clientData);
   collectOoeAttribution(heirAcc, sectionsByHeir, ooeForAttribution, clientData);
   collectGiftsToPeople(heirAcc, sectionsByHeir, giftsToPeople, clientData);
-  collectTrustGifts(heirAcc, sectionsByHeir, gifts, clientData);
+  collectTrustGifts(heirAcc, gifts, clientData);
   const heirBoxes = finalizeHeirBoxes(
     heirAcc,
     sectionsByHeir,

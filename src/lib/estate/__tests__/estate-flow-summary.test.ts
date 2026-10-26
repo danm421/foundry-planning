@@ -2620,6 +2620,13 @@ describe("buildEstateFlowSummary — year-aware OOE (gifts + projection)", () =>
     const kevin = summary.heirBoxes.find((h) => h.recipientKey === "fm-kevin")!;
     expect(kevin.inTrust).toBe(550_000);
     expect(kevin.outright).toBe(0);
+    // The two rules land on ONE Trust Interests line for the trust, not two.
+    expect(kevin.trustInterests).toEqual([
+      { trustId: "slat", trustLabel: "SLAT", amount: 550_000 },
+    ]);
+    expect(kevin.sections.find((s) => s.title === "Trust Interests")?.lines).toEqual([
+      { label: "SLAT", amount: 550_000 },
+    ]);
   });
 
   it("trust statically owns real-estate-like account → year-aware balance reflects growth", () => {
