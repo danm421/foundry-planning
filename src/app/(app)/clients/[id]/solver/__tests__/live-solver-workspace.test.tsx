@@ -2102,4 +2102,53 @@ describe("LiveSolverWorkspace — held changes and switches", () => {
     await waitFor(() => expect(screen.queryByLabelText("Name")).toBeNull());
     expect(tabProps.current!.unsaved!.entries).toHaveLength(3);
   });
+
+  // Browser pass D1: a reload restored the draft but switched every row back on.
+  // `next dev` mounts under StrictMode, which re-runs the mount effects before the
+  // restored list renders.
+  it.each([true, false])("a switched-off change stays off after a reload (StrictMode: %s)", async (strict) => {
+    const SAVE_C = "cccccccc-0000-4000-8000-000000000003";
+    const heldEdit: SolverMutation = {
+      kind: "held-change",
+      op: "edit",
+      targetKind: "expense",
+      targetId: "exp-living",
+      payload: { annualAmount: { from: 0, to: 100 } },
+      saveId: SAVE_A,
+    };
+    const heldAdd: SolverMutation = {
+      kind: "held-change",
+      op: "add",
+      targetKind: "account",
+      targetId: "acct-new",
+      payload: { id: "acct-new", name: "New brokerage", category: "taxable", value: 0, owners: [] },
+      saveId: SAVE_B,
+    };
+    const control: SolverMutation = { kind: "retirement-age", person: "client", age: 66 };
+    const stillOn = held("e2", SAVE_C);
+    const OFF = [`save:${SAVE_A}`, `save:${SAVE_B}`, "key:retirement-age:client"].sort();
+    localStorage.setItem(
+      solverDraftKey("client-id", "user-id", "base"),
+      JSON.stringify({
+        v: 2,
+        draft: {
+          mutations: [heldEdit, heldAdd, control, stillOn],
+          // "save:gone" names no entry: a stale switch the restore still drops.
+          offGroups: [...OFF, "save:gone"],
+          solvedSeed: null,
+          savingsAccountMixes: [],
+        },
+      }),
+    );
+
+    render(<LiveSolverWorkspace {...baseProps} initialTab="changes" />, { reactStrictMode: strict });
+    await screen.findByText(/restored/i);
+
+    expect([...tabProps.current!.unsaved!.offGroups].sort()).toEqual(OFF);
+    const editRow = screen.getByTestId(`unsaved-row-save:${SAVE_A}`);
+    expect(within(editRow).getByRole("button", { name: /^Include / })).toHaveAttribute("aria-pressed", "false");
+    await waitFor(() => expect(projectBodies().length).toBeGreaterThan(0), { timeout: 2000 });
+    expect(projectBodies().at(-1)!.mutations).toEqual([stillOn]);
+    expect(draftOf()!.offGroups.sort()).toEqual(OFF);
+  });
 });

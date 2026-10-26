@@ -300,14 +300,18 @@ export function LiveSolverWorkspace({
   // A switch only means something while an entry belongs to its group. Once the
   // last entry goes (discard, a per-field reset, Reset…), the switch goes too, so
   // a leftover "off" can't swallow a later entry for the same control.
+  // Prune only the switches this render saw. A newer set (a draft restore, a
+  // toggle) waits for its own render, whose list matches it: a StrictMode
+  // replay of the mount run would otherwise prune the restored switches
+  // against the empty pre-restore list.
   useEffect(() => {
     setOffGroups((prev) => {
-      if (prev.size === 0) return prev;
+      if (prev !== offGroups || prev.size === 0) return prev;
       const live = new Set(allMutations.map((m) => switchGroupOf(m, allMutations, initialSourceClientData)));
       const next = new Set([...prev].filter((g) => live.has(g)));
       return next.size === prev.size ? prev : next;
     });
-  }, [allMutations, initialSourceClientData]);
+  }, [allMutations, offGroups, initialSourceClientData]);
   const mutations = useMemo(
     () => effectiveMutations(allMutations, offGroups, initialSourceClientData),
     [allMutations, offGroups, initialSourceClientData],
