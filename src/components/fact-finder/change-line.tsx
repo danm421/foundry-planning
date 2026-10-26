@@ -15,8 +15,8 @@ import { AlertIcon, SparklesIcon } from "./icons";
 export type LineProps = {
   onToggleField(lineId: string, key: string): void;
   onToggleLine(lineId: string): void;
-  /** Back to the fact finder at the cell to fix, else at the line's section. */
-  onFix(cell: CellRef | undefined, sectionId: string): void;
+  /** Back to the fact finder at the cell to fix, else at the line's section. Without it a blocked line has no Fix button (the chat's proposal cards). */
+  onFix?(cell: CellRef | undefined, sectionId: string): void;
   line: ChangeLine;
   lineTicks: Record<string, boolean> | undefined;
   leftOutReason: string | undefined;
@@ -169,13 +169,15 @@ export const LineItem = memo(function LineItem({ line, lineTicks: ownTicks, left
           <div className="flex flex-wrap items-start gap-x-3 gap-y-1 rounded-[var(--radius-sm)] border border-crit/30 bg-crit/15 px-3 py-2 text-sm text-crit">
             <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
             <span className="min-w-0 flex-1">{line.blocked.reason}</span>
-            <button
-              type="button"
-              onClick={() => onFix(line.blocked?.cell, line.sectionId)}
-              className="shrink-0 cursor-pointer font-medium text-ink-2 underline underline-offset-2 hover:text-ink hover:no-underline"
-            >
-              Fix in fact finder
-            </button>
+            {onFix && (
+              <button
+                type="button"
+                onClick={() => onFix(line.blocked?.cell, line.sectionId)}
+                className="shrink-0 cursor-pointer font-medium text-ink-2 underline underline-offset-2 hover:text-ink hover:no-underline"
+              >
+                Fix in fact finder
+              </button>
+            )}
           </div>
         )}
         {failure && (

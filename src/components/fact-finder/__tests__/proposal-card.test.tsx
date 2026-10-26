@@ -117,7 +117,7 @@ describe("ProposalCard", () => {
 
   it("stale proposal shows Propose again", async () => {
     const onReviewAgain = vi.fn();
-    const missing = { ...CHANGES, lines: [CHANGES.lines[0]] };
+    const missing = { ...CHANGES, lines: [CHANGES.lines[2]] };
     const { rerender } = render(<Harness state={stateOf({ changeSet: missing })} onReviewAgain={onReviewAgain} />);
     expect(screen.getByText("These changes are out of date — something changed since I proposed them.")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Propose again" }));
@@ -126,6 +126,20 @@ describe("ProposalCard", () => {
 
     rerender(<Harness state={stateOf({ changeSet: undefined })} onReviewAgain={onReviewAgain} />);
     expect(screen.getByRole("button", { name: "Propose again" })).toBeTruthy();
+  });
+
+  it("a row with no changes doesn't make the proposal stale", () => {
+    const oneRow = { ...CHANGES, lines: [CHANGES.lines[0], CHANGES.lines[2]] };
+    render(<Harness state={stateOf({ changeSet: oneRow })} />);
+    expect(screen.queryByText(/out of date/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Save 1 change to the plan" })).toBeTruthy();
+  });
+
+  it("a blocked line shows its reason and no Fix in fact finder button", () => {
+    const blocked = line("r1", "Joint Checking", { blocked: { reason: "Needs an owner." } });
+    render(<Harness state={stateOf({ changeSet: { ...CHANGES, lines: [blocked, CHANGES.lines[1]] } })} />);
+    expect(screen.getByText("Needs an owner.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Fix in fact finder" })).toBeNull();
   });
 
   it("an older proposal says it was replaced", () => {

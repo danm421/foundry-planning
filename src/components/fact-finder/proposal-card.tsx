@@ -33,8 +33,6 @@ export interface ProposalCardProps {
 }
 
 const TEXT_BUTTON = "shrink-0 cursor-pointer font-medium text-ink-2 underline underline-offset-2 hover:text-ink hover:no-underline";
-// Back at the cell to fix isn't on offer in the chat: the advisor edits the worksheet beside it.
-const NO_FIX = () => {};
 
 const isTickable = (line: ChangeLine) => !line.blocked && line.action !== "none";
 
@@ -48,7 +46,8 @@ export function ProposalCard({ state, turn, latest, ticks, onSave, saving, saveE
   const rows = useMemo(() => new Set(turn.rowIds), [turn.rowIds]);
   const lines = useMemo(() => (changeSet ? changeSet.lines.filter((l) => rows.has(l.rowId)) : []), [changeSet, rows]);
   const saved = (state.applied ?? []).some((a) => rows.has(a.rowId) && a.at >= turn.at);
-  const stale = !changeSet || turn.rowIds.some((id) => !lines.some((l) => l.rowId === id));
+  // A proposed row that produced no line has nothing to show; only a list with a line for none of them is out of date.
+  const stale = !changeSet || lines.length === 0;
 
   // The save's own plan on the ticks, for the reason each ticked line is left out; only this card's lines show theirs.
   const plan = useMemo(
@@ -91,7 +90,6 @@ export function ProposalCard({ state, turn, latest, ticks, onSave, saving, saveE
                 failure={failure?.lineId === line.id ? failure.message : undefined}
                 onToggleField={ticks.toggleField}
                 onToggleLine={ticks.toggleLine}
-                onFix={NO_FIX}
               />
               {isTickable(line) && (
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-[var(--pad-card)] pb-3 text-sm">
