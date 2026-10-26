@@ -1,11 +1,11 @@
 "use client";
 // src/components/fact-finder/change-line.tsx
 // One line of a change list — what saving would create or update on the plan,
-// field by field ("on record → new"), each field with a tick. Shared by the full
-// change list and the chat's proposal cards. Imports only client-safe leaf
+// field by field ("on record → new"), each field with a tick. The chat's
+// proposal cards show their lines with it. Imports only client-safe leaf
 // modules from src/lib/fact-finder.
 import { memo, useEffect, useId, useRef } from "react";
-import type { CellRef, ChangeField, ChangeLine } from "@/lib/fact-finder/change-set";
+import type { ChangeField, ChangeLine } from "@/lib/fact-finder/change-set";
 import { TARGETS, type ValueKind } from "@/lib/fact-finder/placement/targets";
 import { EMPTY } from "@/lib/fact-finder/placement/values";
 import { findSection } from "@/lib/fact-finder/schema";
@@ -15,8 +15,6 @@ import { AlertIcon, SparklesIcon } from "./icons";
 export type LineProps = {
   onToggleField(lineId: string, key: string): void;
   onToggleLine(lineId: string): void;
-  /** Back to the fact finder at the cell to fix, else at the line's section. Without it a blocked line has no Fix button (the chat's proposal cards). */
-  onFix?(cell: CellRef | undefined, sectionId: string): void;
   line: ChangeLine;
   lineTicks: Record<string, boolean> | undefined;
   leftOutReason: string | undefined;
@@ -26,10 +24,10 @@ export type LineProps = {
 const CHECKBOX = "h-4 w-4 cursor-pointer rounded accent-accent";
 const CHIP = "inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium";
 const HEAD = "pb-1 text-left text-xs font-medium text-ink-3";
-// Under 28rem (the list beside the open documents panel) each field stacks: its label, then on record → new.
+// Under 28rem (a card in the chat panel) each field stacks: its label, then on record → new.
 const CELL = "border-t border-hair py-1.5 align-top @max-md:border-t-0 @max-md:py-0";
 
-export const sectionLabel = (line: ChangeLine) => findSection(line.sectionId)?.label;
+const sectionLabel = (line: ChangeLine) => findSection(line.sectionId)?.label;
 
 const FIGURE_KINDS: ReadonlySet<ValueKind> = new Set<ValueKind>([
   "money", "number", "integer", "year", "month", "rate", "percent", "date", "monthYear",
@@ -118,7 +116,7 @@ function FieldRow({ line, field, tickable, ticked, muted, onToggle }: {
   );
 }
 
-export const LineItem = memo(function LineItem({ line, lineTicks: ownTicks, leftOutReason, failure, onToggleField, onToggleLine, onFix }: LineProps) {
+export const LineItem = memo(function LineItem({ line, lineTicks: ownTicks, leftOutReason, failure, onToggleField, onToggleLine }: LineProps) {
   const headingId = useId();
   const articleRef = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -169,15 +167,6 @@ export const LineItem = memo(function LineItem({ line, lineTicks: ownTicks, left
           <div className="flex flex-wrap items-start gap-x-3 gap-y-1 rounded-[var(--radius-sm)] border border-crit/30 bg-crit/15 px-3 py-2 text-sm text-crit">
             <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
             <span className="min-w-0 flex-1">{line.blocked.reason}</span>
-            {onFix && (
-              <button
-                type="button"
-                onClick={() => onFix(line.blocked?.cell, line.sectionId)}
-                className="shrink-0 cursor-pointer font-medium text-ink-2 underline underline-offset-2 hover:text-ink hover:no-underline"
-              >
-                Fix in fact finder
-              </button>
-            )}
           </div>
         )}
         {failure && (

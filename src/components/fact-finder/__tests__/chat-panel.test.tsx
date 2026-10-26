@@ -119,7 +119,7 @@ function stubFetch(
 
 function renderScreen(state: FactFinderState) {
   return render(
-    <FactFinderScreen clientId="c1" importId="i1" initialState={state} initialFiles={FILES} entities={[]} hasCoClient />,
+    <FactFinderScreen clientId="c1" importId="i1" initialState={state} initialFiles={FILES} hasCoClient />,
   );
 }
 
@@ -133,8 +133,6 @@ function stubScreenWidth(narrow: boolean) {
   }));
 }
 
-const openPanel = (user: ReturnType<typeof userEvent.setup>) =>
-  user.click(screen.getByRole("button", { name: "Documents & chat" }));
 const panel = () => screen.getByRole("complementary", { name: "Documents & chat" });
 const chat = () => screen.getByRole("region", { name: "Chat" });
 const composer = () => screen.getByRole("textbox", { name: "Chat message" });
@@ -146,10 +144,8 @@ afterEach(() => {
 });
 
 describe("the conversation", () => {
-  it("shows the messages, each change a reply made in plain words, and Undo only on replies that can be undone", async () => {
-    const user = userEvent.setup();
+  it("shows the messages, each change a reply made in plain words, and Undo only on replies that can be undone", () => {
     renderScreen(chatted());
-    await openPanel(user);
 
     expect(within(panel()).getByRole("heading", { level: 3, name: "Chat" })).toBeInTheDocument();
     const lines = within(chat()).getAllByRole("listitem").map((li) => li.textContent);
@@ -165,10 +161,8 @@ describe("the conversation", () => {
     expect(within(reply(/^Read 1 document/)).queryByRole("button")).toBeNull();
   });
 
-  it("invites a first message when there is no conversation yet", async () => {
-    const user = userEvent.setup();
+  it("invites a first message when there is no conversation yet", () => {
     renderScreen({ ...emptyFactFinderState(), readings: { f1: READ } });
-    await openPanel(user);
     expect(within(chat()).getByText("Ask a question about this fact finder, or say what to change.")).toBeInTheDocument();
     expect(composer()).toHaveAttribute("placeholder", "Ask for a table, a fix, or a plan update.");
     expect(composer()).toBeEnabled();
@@ -181,7 +175,6 @@ describe("sending a message", () => {
     const turn = held((server) => done(afterTurn(server), "a2"));
     const net = stubFetch(chatted(), { turn: [turn.reply] });
     renderScreen(chatted());
-    await openPanel(user);
 
     await user.type(composer(), `${MESSAGE}{Enter}`);
 
@@ -222,7 +215,6 @@ describe("sending a message", () => {
     const user = userEvent.setup();
     const net = stubFetch(chatted(), { turn: [() => response] });
     renderScreen(chatted());
-    await openPanel(user);
 
     await user.type(composer(), `${MESSAGE}{Enter}`);
 
@@ -233,24 +225,23 @@ describe("sending a message", () => {
     expect(net.log).toEqual([`POST ${TURN_URL}`]);
   });
 
-  it("a message refused because another tab saved the import switches the screen to the saved view", async () => {
+  it("a message refused because another tab finished the import switches the screen to the finished view", async () => {
     const user = userEvent.setup();
     const saved = (s: FactFinderState): FactFinderState => ({ ...s, version: s.version + 1, closed: { at: AT, by: "user_2", saved: [], leftOut: [] } });
     stubFetch(chatted(), { turn: [(server) => json(409, { error: SAVE_CLOSED_MESSAGE, factFinder: saved(server) })] });
     renderScreen(chatted());
-    await openPanel(user);
 
     await user.type(composer(), `${MESSAGE}{Enter}`);
 
-    expect(await screen.findByText(/^Saved to the plan on/)).toBeInTheDocument();
-    expect(screen.queryByRole("complementary", { name: "Documents & chat" })).toBeNull();
+    expect(await screen.findByText(/^Finished/)).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Chat message" })).toBeNull();
+    expect(within(chat()).getByText("Done — Joint Checking now shows $13,000.")).toBeInTheDocument();
   });
 
   it("when the server can't be reached, says so in plain words and keeps the message", async () => {
     const user = userEvent.setup();
     stubFetch(chatted(), { turn: ["offline"] });
     renderScreen(chatted());
-    await openPanel(user);
 
     await user.type(composer(), `${MESSAGE}{Enter}`);
 
@@ -284,7 +275,6 @@ describe("Undo", () => {
     const undo = held((server) => json(200, { factFinder: afterUndo(server) }));
     const net = stubFetch(chatted(), { undo: [undo.reply] });
     renderScreen(chatted());
-    await openPanel(user);
 
     await user.click(within(reply("Done — Joint Checking now shows $13,000.")).getByRole("button", { name: "Undo" }));
     await waitFor(() => expect(net.sent).toEqual([{ turnId: "a1" }]));
@@ -303,7 +293,6 @@ describe("Undo", () => {
     const refusal = 'Can\'t undo — "Joint Checking" has changed since that reply.';
     stubFetch(chatted(), { undo: [() => json(409, { error: refusal })] });
     renderScreen(chatted());
-    await openPanel(user);
 
     await user.click(within(chat()).getByRole("button", { name: "Undo" }));
 
@@ -317,11 +306,9 @@ describe("layout", () => {
   it.each([
     ["beside the page", false, "complementary"],
     ["in the drawer below 1100 px", true, "dialog"],
-  ] as const)("the composer stays under the part of the panel that scrolls, %s", async (_, narrow, role) => {
+  ] as const)("the composer stays under the part of the panel that scrolls, %s", (_, narrow, role) => {
     stubScreenWidth(narrow);
-    const user = userEvent.setup();
     renderScreen(chatted());
-    await openPanel(user);
 
     const surface = screen.getByRole(role, { name: "Documents & chat" });
     const box = within(surface).getByRole("textbox", { name: "Chat message" });
@@ -338,7 +325,9 @@ describe("layout", () => {
       const turn = held((server) => done(afterTurn(server), "a2"));
       stubFetch(chatted(), { turn: [turn.reply] });
       renderScreen(chatted());
-      await openPanel(user);
+      // Hidden and shown again from the header: the conversation stays where it was.
+      await user.click(screen.getByRole("button", { name: "Documents & chat" }));
+      await user.click(screen.getByRole("button", { name: "Documents & chat" }));
       expect(scrolled).not.toHaveBeenCalled();
 
       await user.type(composer(), `${MESSAGE}{Enter}`);

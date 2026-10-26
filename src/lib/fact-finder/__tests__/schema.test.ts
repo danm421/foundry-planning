@@ -2,22 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
   FACT_FINDER_SECTIONS,
   NOTES_ROW_LABEL,
-  PAGE_ORDER,
   PDF_HOLDINGS_TABLE,
   findColumn,
   findSection,
   fixedLabelsOf,
   pdfKeysOf,
   sectionsLinkingTo,
-  sectionsOnPage,
 } from "../schema";
 
 describe("fact finder schema", () => {
-  it("gives every section a unique id on a known page", () => {
+  it("gives every section a unique id", () => {
     const ids = FACT_FINDER_SECTIONS.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
-    const pages = new Set(PAGE_ORDER.map((p) => p.id));
-    for (const s of FACT_FINDER_SECTIONS) expect(pages.has(s.page)).toBe(true);
   });
 
   it("gives every column a unique id within its section", () => {
@@ -89,10 +85,7 @@ describe("fact finder schema", () => {
     expect(pdfKeysOf(findSection("cash")!)).toEqual(["cash"]);
   });
 
-  it("finds sections by page and by linked record kind", () => {
-    expect(sectionsOnPage("estate").map((s) => s.id)).toEqual([
-      "estate_docs", "trusts", "bequests", "gifts", "final_notes",
-    ]);
+  it("finds sections by linked record kind", () => {
     expect(sectionsLinkingTo("account").map((s) => s.id)).toEqual([
       "cash", "taxable", "retirement", "annuity", "edu", "realestate", "business",
     ]);

@@ -1,7 +1,7 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { db } from "@/db";
-import { clientImports, entities, familyMembers } from "@/db/schema";
+import { clientImports, familyMembers } from "@/db/schema";
 import { FactFinderScreen } from "@/components/fact-finder/fact-finder-screen";
 import { FinishedImportNotice } from "@/components/fact-finder/finished-import-notice";
 import { requireClientPageAccess } from "@/lib/clients/page-access";
@@ -18,7 +18,7 @@ interface PageProps {
 
 /**
  * The fact finder import screen. Loads the import's fact finder, its live
- * files, the client's entities and vault files, and hands them to
+ * files and the client's vault files, and hands them to
  * the client screen — each file's id, name and type, never its storage address.
  * A wizard import goes to the wizard; a statement-chat import finished before
  * the switch shows a notice and loads nothing more.
@@ -56,13 +56,8 @@ export default async function FactFinderPage({ params }: PageProps) {
   }
   const saved = isSavedFactFinder(payloadJson);
 
-  const [files, entityRows, coClient, clientDocuments] = await Promise.all([
+  const [files, coClient, clientDocuments] = await Promise.all([
     listLiveFiles(importId),
-    db
-      .select({ id: entities.id, name: entities.name })
-      .from(entities)
-      .where(eq(entities.clientId, clientId))
-      .orderBy(asc(entities.name)),
     // The save's own test for "the plan has a co-client": their family member exists (a person ref resolves to it).
     db
       .select({ id: familyMembers.id })
@@ -79,7 +74,6 @@ export default async function FactFinderPage({ params }: PageProps) {
       importId={importId}
       initialState={readFactFinderState(payloadJson)}
       initialFiles={files.map((f) => ({ id: f.id, name: f.originalFilename, documentType: f.documentType }))}
-      entities={entityRows}
       hasCoClient={coClient.length > 0}
       clientDocuments={clientDocuments}
     />

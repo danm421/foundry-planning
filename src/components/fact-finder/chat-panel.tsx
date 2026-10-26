@@ -6,28 +6,37 @@
 // Imports only client-safe leaf modules from src/lib/fact-finder.
 import { ChatComposer } from "@/components/fact-finder/chat-composer";
 import type { FactFinderState } from "@/lib/fact-finder/types";
-import { ChatTranscript } from "./chat-transcript";
+import { ChatTranscript, type ChatTranscriptProps } from "./chat-transcript";
 import { AlertIcon } from "./icons";
 import type { WorksheetChat } from "./use-worksheet-chat";
 
 const HEADING_ID = "fact-finder-chat";
 const READING_REASON = "Still reading your documents — you can ask once that finishes.";
 
-/** The conversation, under the documents in the panel's scrolling body. */
-export function ChatPanel({ chat, state }: { chat: WorksheetChat; state: FactFinderState }) {
+/** The conversation, under the documents in the panel's scrolling body (alone there on a finished import). */
+export function ChatPanel({
+  chat,
+  state,
+  renderProposal,
+}: {
+  chat: WorksheetChat;
+  state: FactFinderState;
+  renderProposal: ChatTranscriptProps["renderProposal"];
+}) {
   return (
-    <section aria-labelledby={HEADING_ID} className="flex flex-col gap-3 border-t border-hair p-4">
+    <section aria-labelledby={HEADING_ID} className="flex flex-col gap-3 border-t border-hair p-4 first:border-t-0">
       <h3 id={HEADING_ID} className="text-xs font-semibold uppercase tracking-wide text-ink-3">
         Chat
       </h3>
       <ChatTranscript
         transcript={state.transcript}
-        undoable={state.undo}
+        // A finished import takes no more changes, an Undo included.
+        undoable={state.closed ? {} : state.undo}
         pending={chat.pending}
         progress={chat.progress}
         undoing={chat.undoing}
         onUndo={(turnId) => void chat.undo(turnId)}
-        renderProposal={() => null}
+        renderProposal={renderProposal}
       />
     </section>
   );

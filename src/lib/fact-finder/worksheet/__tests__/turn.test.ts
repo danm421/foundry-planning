@@ -31,7 +31,6 @@ import { FactFinderNotFoundError, loadFactFinder, updateFactFinder } from "../..
 import { runLeftovers } from "../../placement/leftovers-run";
 import { loadExistingRecords, resolveBaseCaseScenarioId } from "../../records/load";
 import { emptyExistingRecords } from "../../records/types";
-import { changedCellsOf } from "../../screen-summary";
 import type { reviewFactFinder } from "../../review";
 import { cellValue, emptyFactFinderState, readFactFinderState } from "../../state";
 import { worksheetFromStaging } from "../from-staging";
@@ -477,7 +476,7 @@ describe("runWorksheetTurn — safety checks kept from the old turn", () => {
     expect(fake.invoke).not.toHaveBeenCalled();
   });
 
-  it("keeps a row that only the re-score changed out of the reply's Undo and highlight", async () => {
+  it("keeps a row that only the re-score changed out of the reply's Undo", async () => {
     // "Other" has values but no link yet (scored before its record existed); the reply edits only Joint Checking.
     store.state = fixture();
     store.state.sections.cash.push({ id: "c3", cells: { accountName: doc("Other") }, sourceFileIds: ["f1"] });
@@ -487,7 +486,6 @@ describe("runWorksheetTurn — safety checks kept from the old turn", () => {
     expect(store.state!.sections.cash[2].link).toEqual({ kind: "new", by: "auto" }); // the commit did re-score it...
     const entry = store.state!.undo[result.turnId!];
     expect(entry.map((snap) => (snap.kind === "row" ? snap.rowId : snap.kind))).toEqual(["c1"]); // ...but only the reply's row is in its Undo
-    expect([...changedCellsOf(store.state!)]).toEqual(["c1:currentValue"]);
   });
 
   it("stores each touched row as the re-score left it, so Undo doesn't refuse a row the re-score just linked", async () => {

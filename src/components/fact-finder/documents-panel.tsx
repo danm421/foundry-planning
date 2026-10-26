@@ -2,8 +2,9 @@
 // src/components/fact-finder/documents-panel.tsx
 // The documents part of the side panel: one line per document saying how its
 // reading went, and the upload zone. `useDocuments` keeps the document list and
-// runs the reads; the screen holds it, so a read carries on while the panel is
-// closed. Imports only client-safe leaf modules from src/lib/fact-finder.
+// runs the reads, each folded into the worksheet once it finishes; the screen
+// holds it, so a read carries on while the panel is closed. Imports only
+// client-safe leaf modules from src/lib/fact-finder.
 import { useCallback, useEffect, useRef, useState } from "react";
 import UploadZone, { type UploadedFileInfo } from "@/components/import/upload-zone";
 import { filesReading, isReadingNow, needsReading } from "@/lib/fact-finder/reading-status";
@@ -45,6 +46,7 @@ export function useDocuments({
   state,
   refresh,
   adopt,
+  compose,
 }: {
   clientId: string;
   importId: string;
@@ -55,16 +57,21 @@ export function useDocuments({
   refresh: () => Promise<void>;
   /** `useFactFinder`'s `adopt`: a read refused because another tab saved the import carries the saved fact finder. */
   adopt: (fresh: FactFinderState) => void;
+  /** `useWorksheetChat`'s `compose`: folds what a read found into the worksheet. */
+  compose: () => Promise<void>;
 }): Documents {
   const [known, setKnown] = useState(initialFiles);
   const [removedIds, setRemovedIds] = useState<string[]>([]);
   // Files never read, or abandoned mid-read. A failed file waits for Retry: reading it
   // on every open would fail it again, and add another chat message saying so.
-  const [readsOnOpen] = useState(() =>
-    initialFiles.some((file) => {
-      const reading = state.readings[file.id];
-      return reading?.status !== "failed" && needsReading(reading, new Date());
-    }),
+  // A finished import reads nothing.
+  const [readsOnOpen] = useState(
+    () =>
+      !state.closed &&
+      initialFiles.some((file) => {
+        const reading = state.readings[file.id];
+        return reading?.status !== "failed" && needsReading(reading, new Date());
+      }),
   );
   const [, setChecks] = useState(0);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -87,6 +94,8 @@ export function useDocuments({
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
       refreshTimer.current = null;
       void refresh();
+      // Once per finished read. One asked for while a reply runs is dropped; the next folds in every file not yet in.
+      void compose();
     },
   });
   const { start } = read;
