@@ -54,6 +54,17 @@ describe("useReview", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("sends rowIds", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(reply(200, { factFinder: reviewed }));
+    const { result } = renderReview();
+    await act(() => result.current.review(["r1", "r2"]));
+    expect(fetch).toHaveBeenCalledWith(URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rowIds: ["r1", "r2"] }),
+    });
+  });
+
   it("doesn't review while typed edits are still unsaved, and says why", async () => {
     const { result, adopt } = renderReview(false);
     await act(() => result.current.review());

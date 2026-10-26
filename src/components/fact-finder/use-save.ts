@@ -22,7 +22,8 @@ export interface SaveError {
 }
 
 export interface Save {
-  save(changeSet: ChangeSet, ticks: ChangeTicks): Promise<void>;
+  /** `keepOpen`: save this round and leave the import open (a chat proposal's save). */
+  save(changeSet: ChangeSet, ticks: ChangeTicks, opts?: { keepOpen?: boolean }): Promise<void>;
   saving: boolean;
   error: SaveError | null;
   dismiss(): void;
@@ -44,13 +45,13 @@ export function useSave({
   // A second press before the first answer must not post again (state lags a render).
   const running = useRef(false);
 
-  async function save(changeSet: ChangeSet, ticks: ChangeTicks): Promise<void> {
+  async function save(changeSet: ChangeSet, ticks: ChangeTicks, opts?: { keepOpen?: boolean }): Promise<void> {
     if (running.current) return;
     running.current = true;
     setError(null);
     setSaving(true);
     try {
-      const body: SaveBody = { changeSetVersion: changeSet.builtAtVersion, ticks };
+      const body: SaveBody = { changeSetVersion: changeSet.builtAtVersion, ticks, ...(opts?.keepOpen ? { keepOpen: true } : {}) };
       let res: Response;
       try {
         res = await fetch(`${factFinderUrl(clientId, importId)}/save`, {

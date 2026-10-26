@@ -8,7 +8,7 @@
 import { useState } from "react";
 import type { ReviewRefusal, ReviewResponse } from "@/lib/fact-finder/api-types";
 import type { FactFinderState } from "@/lib/fact-finder/types";
-import { OFFLINE_MESSAGE, factFinderUrl, refusalText } from "./http";
+import { JSON_HEADERS, OFFLINE_MESSAGE, factFinderUrl, refusalText } from "./http";
 
 const UNSAVED_MESSAGE = "Your latest edits haven't saved yet — try again once they're saved.";
 
@@ -16,7 +16,8 @@ export interface Review {
   reviewing: boolean;
   /** Why the last review didn't go through. */
   error: string | null;
-  review(): Promise<void>;
+  /** `rowIds`: review only these staging rows (a chat proposal's); none = every row. */
+  review(rowIds?: string[]): Promise<void>;
   dismiss(): void;
 }
 
@@ -35,7 +36,7 @@ export function useReview({
   const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function review(): Promise<void> {
+  async function review(rowIds?: string[]): Promise<void> {
     setError(null);
     setReviewing(true);
     try {
@@ -46,7 +47,8 @@ export function useReview({
       }
       let res: Response;
       try {
-        res = await fetch(`${factFinderUrl(clientId, importId)}/review`, { method: "POST" });
+        const url = `${factFinderUrl(clientId, importId)}/review`;
+        res = await fetch(url, rowIds ? { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ rowIds }) } : { method: "POST" });
       } catch {
         setError(OFFLINE_MESSAGE);
         return;
