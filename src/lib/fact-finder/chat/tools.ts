@@ -3,8 +3,8 @@ import { z } from "zod";
 import { redactSsns } from "@/lib/extraction/redact-ssn";
 import { applyOps, type ClientOp } from "../ops";
 import { FACT_FINDER_SECTIONS, findColumn, findSection, isListLike, type FFSection } from "../schema";
-import { isBlank, locateRow, rowLabel } from "../state";
-import { CLAUDE_FILE_ID, HOLDING_FIELDS, type FactFinderState, type FFCell, type FFHolding, type FFRow } from "../types";
+import { locateRow, rowLabel } from "../state";
+import { HOLDING_FIELDS, type FactFinderState, type FFHolding, type FFRow } from "../types";
 import { fenceUntrusted } from "./fence";
 import { formatValue, holdingName, quote, sectionView } from "./view";
 
@@ -12,15 +12,13 @@ import { formatValue, holdingName, quote, sectionView } from "./view";
  * The chat's tools (spec § 5). Each validates its arguments, turns them into
  * the same `ClientOp`s the screen sends, and checks them by applying them to
  * the state it was given — the turn loop applies them for real. Reading tools
- * (`read_section`, `explain`, `reread_document`) return no ops. There is no
+ * (`read_section`) return no ops. There is no
  * save tool: the chat can only edit the fact finder.
  */
 
 export interface ToolContext {
   /** The import's live files, for document names. */
   files: { id: string; name: string }[];
-  /** A file's page text, SSNs already redacted. */
-  readDocument: (fileId: string) => Promise<string[]>;
   newId: () => string;
 }
 
@@ -173,29 +171,6 @@ export const STAGING_TOOL_DEFS = [
   ),
 ];
 
-/** OpenAI-style function defs, bound with `bindTools`. Exported for the schema test. */
-export const TOOL_DEFS = [
-  ...STAGING_TOOL_DEFS,
-  fn(
-    "reread_document",
-    "Look in one uploaded document for something the fact finder doesn't show. Returns the document's " +
-      "pages most related to your question, best first. Name the document exactly as the fact finder's " +
-      "Documents list shows it.",
-    {
-      fileName: { type: "string", description: "The document's name, as the Documents list shows it." },
-      question: { type: "string", description: "What to look for." },
-    },
-    ["fileName", "question"],
-  ),
-  fn(
-    "explain",
-    "Say where a row's values came from: which document and page and how sure the reading was, or " +
-      "whether the advisor or this chat wrote them.",
-    { rowId: { type: "string", description: "The row's id, in the fact finder or the Removed tray." } },
-    ["rowId"],
-  ),
-];
-
 const id = z.string().min(1).max(100);
 const value = z.union([z.string(), z.number(), z.boolean()]);
 const amount = z.union([z.string(), z.number()]).nullish();
@@ -223,8 +198,6 @@ const ARGS = {
   move_holding: z.object({ holdingId: id, toRowId: id }),
   add_holding: z.object({ rowId: id, ...HOLDING_INPUT_FIELDS }).refine(hasTickerOrName, "give a ticker or a name"),
   read_section: z.object({ sectionId: z.enum(SECTION_IDS) }),
-  reread_document: z.object({ fileName: z.string().min(1), question: z.string().min(1).max(500) }),
-  explain: z.object({ rowId: id }),
 };
 type ToolName = keyof typeof ARGS;
 
@@ -276,34 +249,6 @@ function edit(state: FactFinderState, ops: ClientOp[], ctx: ToolContext, describ
   return { ops, summary, result: fenceUntrusted(`Done: ${summary}.`) };
 }
 
-const STOP_WORDS = new Set([
-  "the", "and", "for", "what", "which", "when", "where", "who", "how", "does", "did", "with", "from",
-  "this", "that", "are", "was", "her", "his", "their", "its", "about", "any", "all", "has", "have",
-  "there", "show", "find", "look",
-]);
-
-function keywords(question: string): string[] {
-  const words = question.toLowerCase().match(/[a-z0-9]+/g) ?? [];
-  return [...new Set(words)].filter((w) => w.length >= 3 && !STOP_WORDS.has(w));
-}
-
-/** Pages ranked by how many of the question's words they hold (page order on a tie), cut off at `budget` characters. */
-function rankedPages(pages: string[], question: string, budget: number): string {
-  const words = keywords(question);
-  const ranked = pages
-    .map((text, i) => ({ text: text.trim(), page: i + 1 }))
-    .filter((p) => p.text !== "")
-    .map((p) => ({ ...p, hits: words.filter((w) => p.text.toLowerCase().includes(w)).length }))
-    .sort((a, b) => b.hits - a.hits);
-  let out = "";
-  for (const p of ranked) {
-    const next = `${out === "" ? "" : "\n\n"}[page ${p.page}]\n${p.text}`;
-    if (out.length + next.length > budget) return out + next.slice(0, budget - out.length);
-    out += next;
-  }
-  return out;
-}
-
 const sameName = (a: string, b: string) => redactSsns(a).text.trim().toLowerCase() === redactSsns(b).text.trim().toLowerCase();
 
 /** The import's file named `name` (trimmed, any case); a miss throws naming the files there are. */
@@ -314,53 +259,6 @@ export function findDocument(files: ToolContext["files"], name: string): ToolCon
     throw new Error(`There's no document named ${quote(name)}. The documents are: ${names}.`);
   }
   return file;
-}
-
-async function rereadDocument(args: z.infer<typeof ARGS.reread_document>, ctx: ToolContext): Promise<ToolOutcome> {
-  const file = findDocument(ctx.files, args.fileName);
-  const pages = (await ctx.readDocument(file.id)).map((p) => redactSsns(p).text);
-  const header = `From ${quote(file.name)}, most relevant pages first:\n`;
-  const body = rankedPages(pages, args.question, REREAD_MAX_CHARS - header.length);
-  return {
-    ops: [],
-    summary: `Looked in ${quote(file.name)} for: ${quote(args.question)}`,
-    result: fenceUntrusted(header + (body || "(this document has no readable text)")),
-  };
-}
-
-function sourceText(cell: FFCell, fileName: (fileId: string) => string): string {
-  const claudeRead = cell.source?.fileId === CLAUDE_FILE_ID;
-  if (!claudeRead) {
-    if (cell.by === "advisor") return "typed by the advisor";
-    if (cell.by === "chat") return "set in this chat";
-  }
-  if (!cell.source) return "from a document";
-  const parts = [`from ${quote(claudeRead ? (cell.source.documentName ?? "a document Claude read") : fileName(cell.source.fileId))}`];
-  if (cell.source.page !== undefined) parts.push(`page ${cell.source.page}`);
-  if (cell.confidence !== undefined) parts.push(`${Math.round(cell.confidence * 100)}% sure`);
-  const snippet = cell.source.snippet ? ` — ${quote(cell.source.snippet.slice(0, 200))}` : "";
-  return parts.join(", ") + snippet;
-}
-
-function explainRow(state: FactFinderState, rowId: string, ctx: ToolContext): ToolOutcome {
-  const at = locateRow(state, rowId);
-  const entry = at ? undefined : state.removed.find((e) => e.row.id === rowId);
-  const sectionId = at?.sectionId ?? entry?.sectionId;
-  const section = sectionId ? findSection(sectionId) : undefined;
-  const row = at ? state.sections[at.sectionId][at.index] : entry?.row;
-  if (!section || !row) throw new Error(`There's no row "${rowId}" in the fact finder or the Removed tray.`);
-
-  const fileName = (fileId: string) => ctx.files.find((f) => f.id === fileId)?.name ?? "a document no longer in this import";
-  const label = quote(rowLabel(section, row));
-  const lines = [`${label} — row ${row.id} in ${section.label}${entry ? ` (in the Removed tray: ${quote(entry.reason)})` : ""}`];
-  for (const column of section.columns) {
-    const cell = row.cells[column.id];
-    if (!cell || isBlank(cell.value)) continue;
-    lines.push(`- ${column.id}=${formatValue(cell.value)}: ${sourceText(cell, fileName)}`);
-  }
-  if (row.sourceFileIds.length > 0) lines.push(`Documents: ${row.sourceFileIds.map((f) => quote(fileName(f))).join(", ")}`);
-  if (row.statementDate) lines.push(`Statement date: ${row.statementDate}`);
-  return { ops: [], summary: `Explained ${label}`, result: fenceUntrusted(lines.join("\n")) };
 }
 
 async function dispatch(name: string, raw: unknown, state: FactFinderState, ctx: ToolContext): Promise<ToolOutcome> {
@@ -488,10 +386,6 @@ async function dispatch(name: string, raw: unknown, state: FactFinderState, ctx:
       const a = argsOf(name, raw);
       return { ops: [], summary: `Read ${findSection(a.sectionId)!.label}`, result: fenceUntrusted(sectionView(state, a.sectionId)) };
     }
-    case "reread_document":
-      return rereadDocument(argsOf(name, raw), ctx);
-    case "explain":
-      return explainRow(state, argsOf(name, raw).rowId, ctx);
     default:
       throw new Error(`Unknown tool "${name}".`);
   }

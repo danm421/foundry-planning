@@ -695,7 +695,7 @@ async function dispatch(name: string, raw: unknown, state: FactFinderState, ctx:
  */
 export async function runWorksheetTool(name: string, args: unknown, state: FactFinderState, ctx: WsToolContext): Promise<WsToolOutcome> {
   if (STAGING_TOOLS.has(name)) {
-    const outcome = await runTool(name, args, state, { files: ctx.files, readDocument: (fileId) => ctx.documentPages(fileId), newId: ctx.newId });
+    const outcome = await runTool(name, args, state, { files: ctx.files, newId: ctx.newId });
     return { ...outcome, ops: outcome.ops.map(staging) };
   }
   try {

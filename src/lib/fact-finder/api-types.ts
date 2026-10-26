@@ -33,13 +33,21 @@ export interface ErrorResponse {
 
 /** POST …/fact-finder/turn */
 export interface TurnBody {
-  message: string;
+  /** Required in "advisor" mode (the default); "compose" folds newly read documents into the worksheet. */
+  message?: string;
+  mode?: "advisor" | "compose";
 }
 /** `turnId` is the reply's assistant turn id when it changed something (its Undo), else null. */
 export interface TurnResponse {
   factFinder: FactFinderState;
   turnId: string | null;
 }
+
+/** One SSE frame of the turn stream: a tool line, the finished reply, or the error that ended it. */
+export type TurnFrame =
+  | { type: "progress"; line: string }
+  | { type: "done"; factFinder: FactFinderState; turnId: string | null }
+  | { type: "error"; message: string; factFinder?: FactFinderState };
 
 /** POST …/fact-finder/undo */
 export interface UndoBody {
