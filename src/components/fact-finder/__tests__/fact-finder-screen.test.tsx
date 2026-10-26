@@ -106,11 +106,14 @@ type RouteName = "read" | "turn" | "review" | "save" | "finish";
 
 /**
  * The fact finder's routes, as the server keeps them. GET answers the saved
- * state; PATCH applies the ops (dropping the change set). Each POST route given
- * answers with a Response, or a fact finder it saves and sends back (a turn as
- * its done frame). Any other request fails the test.
+ * state; PATCH applies the ops (dropping the change set), unless `patch` answers
+ * it first. Each POST route given answers with a Response, or a fact finder it
+ * saves and sends back (a turn as its done frame). Any other request fails the test.
  */
-function stubServer(start: FactFinderState, routes: Partial<Record<RouteName, Route>> = {}) {
+function stubServer(
+  start: FactFinderState,
+  routes: Partial<Record<RouteName, Route>> & { patch?: (server: FactFinderState) => Response | undefined } = {},
+) {
   let server = start;
   const calls: { method: string; url: string; body: unknown }[] = [];
   vi.stubGlobal(
@@ -121,6 +124,8 @@ function stubServer(start: FactFinderState, routes: Partial<Record<RouteName, Ro
       calls.push({ method, url, body });
       if (url === FF_URL && method === "GET") return json(200, { factFinder: server });
       if (url === FF_URL && method === "PATCH") {
+        const answered = routes.patch?.(server);
+        if (answered) return answered;
         const { ops } = body as PatchFactFinderBody;
         server = { ...applyOps(server, ops, { by: "advisor", now: AT, newId: () => "n1" }), version: server.version + 1 };
         delete server.changeSet;
@@ -451,6 +456,31 @@ describe("the fact finder screen", () => {
     expect(await within(chat()).findByText("Saved.")).toBeInTheDocument();
     expect(within(chat()).getByText("Saved to the plan: Joint Checking (updated)")).toBeInTheDocument();
     expect(banner()).toBeNull();
+  });
+
+  it("an Add as new that loses a race says it wasn't kept, until the next one", async () => {
+    // The chat relinked Joint Checking while the click was on its way: the server refuses the edit with what it has now.
+    const relinked: FFRow = { ...checking, link: { kind: "existing", recordId: "acct-1", score: null, confirmed: true, by: "chat" } };
+    let races = 1;
+    const net = stubServer(proposed(), {
+      patch: (server) => {
+        if (races-- <= 0) return undefined;
+        const fresh = { ...server, version: server.version + 1, sections: { ...server.sections, cash: [relinked] } };
+        net.set(fresh);
+        return json(409, { error: "The fact finder changed.", factFinder: fresh });
+      },
+      review: (server) => ({ ...server, version: server.version + 1, changeSet: CHANGES }),
+    });
+    const user = userEvent.setup();
+    renderScreen(proposed());
+
+    await user.click(within(chat()).getByRole("button", { name: "Add as new instead" }));
+    await waitFor(() => expect(net.posts("review")).toHaveLength(1));
+    expect(await within(chat()).findByRole("alert")).toHaveTextContent("Some of your edits weren't kept");
+
+    await user.click(within(chat()).getByRole("button", { name: "Add as new instead" }));
+    await waitFor(() => expect(net.posts("review")).toHaveLength(2));
+    await waitFor(() => expect(within(chat()).queryByRole("alert")).toBeNull());
   });
 
   it("Add as new instead links the row as new, saves that, then proposes the row again", async () => {

@@ -143,14 +143,21 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
   }
 
   async function addAsNew(turn: ProposalTurn, line: ChangeLine) {
+    store.dismiss();
     if (!store.apply([{ op: "setLink", sectionId: line.sectionId, rowId: line.rowId, link: { kind: "new" } }])) return;
     await store.flushNow();
     await review.review(turn.rowIds);
   }
 
+  function proposeAgain(turn: ProposalTurn) {
+    store.dismiss();
+    void review.review(turn.rowIds);
+  }
+
   const latestProposal = state.transcript.findLast((turn) => turn.role === "proposal")?.id;
-  // Why the latest card's Propose again or Add as new didn't go through: the review's refusal, else the edit's.
-  const cardError = review.error ?? store.error;
+  // Why the latest card's Propose again or Add as new didn't go through: the review's refusal, else the edit's — or
+  // that the edit wasn't kept, because the chat changed the same row at the same time. Each card action clears them.
+  const cardError = review.error ?? store.error ?? store.notice;
 
   function renderProposal(turn: ProposalTurn) {
     if (closed) return null;
@@ -169,7 +176,7 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
           saving={save.saving}
           saveError={save.error}
           onAddAsNew={(line) => void addAsNew(turn, line)}
-          onReviewAgain={() => void review.review(turn.rowIds)}
+          onReviewAgain={() => proposeAgain(turn)}
         />
         {latest && review.reviewing && (
           <p role="status" className="flex items-center gap-2 text-xs text-ink-3">
