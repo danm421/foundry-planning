@@ -2,9 +2,11 @@
 // src/components/fact-finder/chat-transcript.tsx
 // The fact finder chat as saved: the advisor's messages, each change a reply
 // made (in the words the server wrote), and the replies, each with Undo while
-// the server still keeps what it changed. No height of its own: the side
+// the server still keeps what it changed. Replies read as markdown; a proposal
+// turn is a slot the screen fills. No height of its own: the side
 // panel's body is the one place that scrolls.
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+import { MarkdownMessage } from "@/components/forge/markdown-message";
 import type { FactFinderState, FFChatTurn } from "@/lib/fact-finder/types";
 import { LoaderIcon, UndoIcon } from "./icons";
 
@@ -17,14 +19,26 @@ export interface ChatTranscriptProps {
   transcript: FFChatTurn[];
   /** Undo snapshots by reply id: a reply listed here can be undone. */
   undoable: FactFinderState["undo"];
-  /** The message on its way, shown until its reply lands. */
+  /** The message on its way, shown until its reply lands ("" = a compose: no bubble, just its progress). */
   pending: string | null;
+  /** This reply's tool lines so far, shown under the pending message. */
+  progress: string[];
   /** The reply being undone. */
   undoing: string | null;
   onUndo: (turnId: string) => void;
+  /** What a proposal turn shows; null shows nothing. */
+  renderProposal: (turn: Extract<FFChatTurn, { role: "proposal" }>) => ReactNode;
 }
 
-export function ChatTranscript({ transcript, undoable, pending, undoing, onUndo }: ChatTranscriptProps) {
+export function ChatTranscript({
+  transcript,
+  undoable,
+  pending,
+  progress,
+  undoing,
+  onUndo,
+  renderProposal,
+}: ChatTranscriptProps) {
   const listRef = useRef<HTMLUListElement>(null);
   const shown = transcript.length + (pending === null ? 0 : 1);
   const lastShown = useRef(shown);
@@ -57,13 +71,20 @@ export function ChatTranscript({ transcript, undoable, pending, undoing, onUndo 
             </li>
           );
         }
-        if (turn.role === "proposal") return null;
+        if (turn.role === "proposal") {
+          const card = renderProposal(turn);
+          return card == null ? null : (
+            <li key={turn.id} className="flex flex-col items-stretch">
+              {card}
+            </li>
+          );
+        }
         const textId = `chat-turn-${turn.id}`;
         return (
           <li key={turn.id} className="flex flex-col items-start gap-1.5">
-            <p id={textId} className={`${BUBBLE} bg-card`}>
-              {turn.text}
-            </p>
+            <div id={textId} className={`${BUBBLE} bg-card`}>
+              <MarkdownMessage text={turn.text} />
+            </div>
             {Object.hasOwn(undoable, turn.id) && (
               <button
                 type="button"
@@ -81,11 +102,18 @@ export function ChatTranscript({ transcript, undoable, pending, undoing, onUndo 
       })}
       {pending !== null && (
         <li className="flex flex-col items-end gap-1.5">
-          <p className={`${BUBBLE} bg-card-2`}>{pending}</p>
-          <p className="flex items-center gap-2 self-start text-xs text-ink-3">
-            <LoaderIcon className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
-            Working on it…
-          </p>
+          {pending !== "" && <p className={`${BUBBLE} bg-card-2`}>{pending}</p>}
+          <div role="status" className="flex flex-col gap-1 self-start text-xs text-ink-3">
+            <p className="flex items-center gap-2">
+              <LoaderIcon className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
+              Working on it…
+            </p>
+            {progress.map((line, i) => (
+              <p key={i} className="break-words border-l-2 border-hair-2 pl-2.5">
+                {line}
+              </p>
+            ))}
+          </div>
         </li>
       )}
     </ul>

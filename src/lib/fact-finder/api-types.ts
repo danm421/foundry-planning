@@ -37,13 +37,10 @@ export interface TurnBody {
   message?: string;
   mode?: "advisor" | "compose";
 }
-/** `turnId` is the reply's assistant turn id when it changed something (its Undo), else null. */
-export interface TurnResponse {
-  factFinder: FactFinderState;
-  turnId: string | null;
-}
-
-/** One SSE frame of the turn stream: a tool line, the finished reply, or the error that ended it. */
+/**
+ * One SSE frame of the turn stream: a tool line, the finished reply, or the error that ended it.
+ * `turnId` is the reply's assistant turn id when it changed something (its Undo), else null.
+ */
 export type TurnFrame =
   | { type: "progress"; line: string }
   | { type: "done"; factFinder: FactFinderState; turnId: string | null }

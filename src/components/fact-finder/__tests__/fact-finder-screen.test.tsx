@@ -141,7 +141,8 @@ function stubServer(
       if (url === FF_URL && method === "GET") return json(200, { factFinder: server });
       if (url === `${FF_URL}/turn` && method === "POST") {
         const answered = { ...server, version: server.version + 1, transcript: [...server.transcript, REPLY] };
-        return json(200, { factFinder: keep(answered, turnEdits), turnId: null });
+        const frame = { type: "done", factFinder: keep(answered, turnEdits), turnId: null };
+        return new Response(`data: ${JSON.stringify(frame)}\n\n`, { status: 200, headers: { "content-type": "text/event-stream" } });
       }
       if (url === SAVE_URL && method === "POST" && save) return save(server, JSON.parse(String(init?.body)) as SaveBody);
       if (url === REVIEW_URL && method === "POST") {

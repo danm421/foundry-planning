@@ -63,6 +63,14 @@ function json(status: number, body: unknown, headers: Record<string, string> = {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 }
 
+/** A turn's stream: its finished frame. */
+function done(factFinder: FactFinderState, turnId: string | null): Response {
+  return new Response(`data: ${JSON.stringify({ type: "done", factFinder, turnId })}\n\n`, {
+    status: 200,
+    headers: { "content-type": "text/event-stream" },
+  });
+}
+
 /** Answers once, when the test lets it: shows what the screen does while a request is in flight. */
 function held(answer: (server: FactFinderState) => Response) {
   let release!: () => void;
@@ -75,14 +83,13 @@ function held(answer: (server: FactFinderState) => Response) {
 type Reply = "offline" | ((server: FactFinderState) => Response | Promise<Response>);
 
 /**
- * The fact finder's routes. PATCH saves the edits onto `start` (or can't be
- * reached, with `saves: "offline"`); GET answers `fresh`; each turn or undo
+ * The fact finder's routes. PATCH saves the edits onto `start`; GET answers `fresh`; each turn or undo
  * POST takes the next queued reply, given the saved state. `log` lists the
  * requests in order, `sent` the turn and undo bodies.
  */
 function stubFetch(
   start: FactFinderState,
-  routes: { turn?: Reply[]; undo?: Reply[]; saves?: "offline"; fresh?: FactFinderState } = {},
+  routes: { turn?: Reply[]; undo?: Reply[]; fresh?: FactFinderState } = {},
 ) {
   let server = start;
   const log: string[] = [];
@@ -93,7 +100,6 @@ function stubFetch(
       const method = init?.method ?? "GET";
       log.push(`${method} ${url}`);
       if (url === FF_URL && method === "PATCH") {
-        if (routes.saves === "offline") throw new TypeError("Failed to fetch");
         const { ops } = JSON.parse(String(init?.body)) as PatchFactFinderBody;
         server = { ...applyOps(server, ops, { by: "advisor", now: AT, newId: () => "n1" }), version: server.version + 1 };
         return json(200, { version: server.version, factFinder: server });
@@ -134,10 +140,6 @@ const chat = () => screen.getByRole("region", { name: "Chat" });
 const composer = () => screen.getByRole("textbox", { name: "Chat message" });
 /** The reply's list item, found by its text. */
 const reply = (text: string | RegExp) => within(chat()).getByText(text).closest("li")!;
-/** Saves a typed edit: the co-client's first name (it goes out with the next save). */
-const typeCoClientName = async (user: ReturnType<typeof userEvent.setup>) =>
-  user.type(screen.getAllByRole("textbox", { name: "First name" })[1], "Laura{Enter}");
-
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -168,24 +170,22 @@ describe("the conversation", () => {
     renderScreen({ ...emptyFactFinderState(), readings: { f1: READ } });
     await openPanel(user);
     expect(within(chat()).getByText("Ask a question about this fact finder, or say what to change.")).toBeInTheDocument();
-    // Short enough for one line of the composer in the 360 px panel and drawer (about 28 characters fit).
-    expect(composer()).toHaveAttribute("placeholder", "Ask, or say what to change…");
+    expect(composer()).toHaveAttribute("placeholder", "Ask for a table, a fix, or a plan update.");
     expect(composer()).toBeEnabled();
   });
 });
 
 describe("sending a message", () => {
-  it("saves the edits typed before it, shows it on its way, then shows the reply and its changes", async () => {
+  it("shows the message on its way, then the reply and its changes", async () => {
     const user = userEvent.setup();
-    const turn = held((server) => json(200, { factFinder: afterTurn(server), turnId: "a2" }));
+    const turn = held((server) => done(afterTurn(server), "a2"));
     const net = stubFetch(chatted(), { turn: [turn.reply] });
     renderScreen(chatted());
     await openPanel(user);
 
-    await typeCoClientName(user);
     await user.type(composer(), `${MESSAGE}{Enter}`);
 
-    await waitFor(() => expect(net.log).toEqual([`PATCH ${FF_URL}`, `POST ${TURN_URL}`]));
+    await waitFor(() => expect(net.log).toEqual([`POST ${TURN_URL}`]));
     expect(net.sent).toEqual([{ message: MESSAGE }]);
     expect(composer()).toHaveValue("");
     expect(within(chat()).getByText(MESSAGE)).toBeInTheDocument();
@@ -202,7 +202,6 @@ describe("sending a message", () => {
     expect(within(chat()).queryByText("Working on it…")).toBeNull();
     expect(within(chat()).getAllByText(MESSAGE)).toHaveLength(1);
     expect(within(reply("Added Laura's Fidelity IRA.")).getByRole("button", { name: "Undo" })).toBeEnabled();
-    expect(screen.getAllByRole("textbox", { name: "First name" })[1]).toHaveValue("Laura");
     expect(within(panel()).getByRole("button", { name: "Send" })).toBeDisabled(); // nothing typed
   });
 
@@ -257,23 +256,6 @@ describe("sending a message", () => {
 
     expect(await within(panel()).findByRole("alert")).toHaveTextContent("Couldn't reach the server. Check your connection.");
     expect(composer()).toHaveValue(MESSAGE);
-  });
-
-  it("sends nothing while typed edits can't be saved: the message stays, and Undo waits too", async () => {
-    const user = userEvent.setup();
-    const net = stubFetch(chatted(), { turn: [], undo: [], saves: "offline" });
-    renderScreen(chatted());
-    await openPanel(user);
-    await typeCoClientName(user);
-
-    await user.type(composer(), `${MESSAGE}{Enter}`);
-    const unsaved = "Your latest edits haven't saved yet — try again once they're saved.";
-    expect(await within(panel()).findByRole("alert")).toHaveTextContent(unsaved);
-    expect(composer()).toHaveValue(MESSAGE);
-
-    await user.click(within(chat()).getByRole("button", { name: "Undo" }));
-    await waitFor(() => expect(within(panel()).getByRole("alert")).toHaveTextContent(unsaved));
-    expect(net.log.filter((request) => request.startsWith("POST"))).toEqual([]);
   });
 });
 
@@ -353,7 +335,7 @@ describe("layout", () => {
     Element.prototype.scrollIntoView = scrolled; // jsdom has none
     try {
       const user = userEvent.setup();
-      const turn = held((server) => json(200, { factFinder: afterTurn(server), turnId: "a2" }));
+      const turn = held((server) => done(afterTurn(server), "a2"));
       stubFetch(chatted(), { turn: [turn.reply] });
       renderScreen(chatted());
       await openPanel(user);

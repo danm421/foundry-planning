@@ -18,7 +18,7 @@ import { countLinksNeedingClick } from "@/lib/fact-finder/state";
 import { BackToFactFinder, ChangeList, ChangesHeading, HEADING_FOCUS_TARGET } from "./change-list";
 import { ClosedView } from "./closed-view";
 import { ViewOnlyContext } from "./holdings-rows";
-import { ChatComposerBar, ChatPanel, useChat } from "./chat-panel";
+import { ChatComposerBar, ChatPanel } from "./chat-panel";
 import { DocumentsPanel, useDocuments } from "./documents-panel";
 import { AlertIcon, LoaderIcon, PanelIcon } from "./icons";
 import { PageRail } from "./page-rail";
@@ -30,6 +30,7 @@ import { useChangeTicks } from "./use-change-ticks";
 import { useFactFinder } from "./use-fact-finder";
 import { useReview } from "./use-review";
 import { useSave } from "./use-save";
+import { useWorksheetChat } from "./use-worksheet-chat";
 
 const PANEL_ID = "fact-finder-panel";
 const PANEL_TITLE = "Documents & chat";
@@ -150,7 +151,7 @@ function OpenScreen({
   const state = store.state;
   const docs = useDocuments({ clientId, importId, initialFiles, state, refresh: store.refresh, adopt: store.adopt });
   const reading = docs.read.running || filesReading(state, new Date()).length > 0;
-  const chat = useChat({ clientId, importId, flushNow: store.flushNow, adopt: store.adopt });
+  const chat = useWorksheetChat({ clientId, importId, adopt: store.adopt });
   const [page, setPage] = useState<FFPage>("household");
   // Open while a document is reading or about to, when one couldn't be read (so its Retry shows), and
   // on an import with no documents yet — the drop zone is where it starts.
