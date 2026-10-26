@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyWsOps, columnByHeader, emptyWorksheet, findTable, WorksheetOpError } from "../ops";
+import { applyWsOps, columnByHeader, emptyWorksheet, findTable, WorksheetOpError, type WsOp } from "../ops";
 import type { Worksheet, WsColumn } from "../types";
 
 const cols: WsColumn[] = [
@@ -94,6 +94,40 @@ describe("worksheet ops", () => {
     ws = applyWsOps(ws, [{ op: "removeTable", tableId: "t1" }]);
     expect(ws.tables).toEqual([]);
     expect(() => findTable(ws, "t1")).toThrow(WorksheetOpError);
+  });
+
+  it("applying ops leaves the ops array unchanged", () => {
+    const ops: WsOp[] = [
+      { op: "createTable", tableId: "t", title: "T", columns: [{ id: "a", header: "A" }, { id: "b", header: "B" }] },
+      { op: "addRows", tableId: "t", rows: [{ id: "r1", cells: { a: "1", b: "2" } }] },
+      { op: "setRowRef", tableId: "t", rowId: "r1", ref: { rowId: "s1" } },
+      { op: "setCells", tableId: "t", rowId: "r1", cells: { a: "9" } },
+      { op: "setColumns", tableId: "t", columns: [{ id: "a", header: "A" }] },
+      { op: "removeRows", tableId: "t", rowIds: ["r1"] },
+    ];
+    const copy = structuredClone(ops);
+    applyWsOps(emptyWorksheet(), ops);
+    expect(ops).toEqual(copy);
+  });
+
+  it("a duplicate column id throws", () => {
+    expect(() =>
+      applyWsOps(emptyWorksheet(), [
+        { op: "createTable", tableId: "t", title: "T", columns: [{ id: "a", header: "A" }, { id: "a", header: "B" }] },
+      ]),
+    ).toThrow(WorksheetOpError);
+  });
+
+  it("addRows with an existing row id throws", () => {
+    expect(() =>
+      applyWsOps(base(), [{ op: "addRows", tableId: "t1", rows: [{ id: "r1", cells: {} }] }]),
+    ).toThrow(WorksheetOpError);
+  });
+
+  it("setCells on an unknown column id throws", () => {
+    expect(() =>
+      applyWsOps(base(), [{ op: "setCells", tableId: "t1", rowId: "r1", cells: { nope: "1" } }]),
+    ).toThrow(WorksheetOpError);
   });
 
   it("columnByHeader trims and ignores case", () => {

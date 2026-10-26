@@ -71,7 +71,7 @@ export function applyWsOps(ws: Worksheet, ops: readonly WsOp[]): Worksheet {
           throw new WorksheetOpError(`There is already a table "${op.tableId}".`);
         }
         checkColumns(op.columns);
-        const table: WsTable = { id: op.tableId, title: op.title, columns: op.columns, rows: [] };
+        const table: WsTable = { id: op.tableId, title: op.title, columns: structuredClone(op.columns), rows: [] };
         if (op.note !== undefined) table.note = op.note;
         next.tables.push(table);
         break;
@@ -92,7 +92,7 @@ export function applyWsOps(ws: Worksheet, ops: readonly WsOp[]): Worksheet {
         const table = findTable(next, op.tableId);
         checkColumns(op.columns);
         const kept = new Set(op.columns.map((c) => c.id));
-        table.columns = op.columns;
+        table.columns = structuredClone(op.columns);
         for (const row of table.rows) {
           row.cells = Object.fromEntries(Object.entries(row.cells).filter(([k]) => kept.has(k)));
         }
@@ -105,7 +105,7 @@ export function applyWsOps(ws: Worksheet, ops: readonly WsOp[]): Worksheet {
             throw new WorksheetOpError(`"${table.title}" already has a row "${row.id}".`);
           }
           checkCellKeys(table, row.cells);
-          table.rows.push(row);
+          table.rows.push(structuredClone(row));
         }
         break;
       }
@@ -127,7 +127,7 @@ export function applyWsOps(ws: Worksheet, ops: readonly WsOp[]): Worksheet {
         break;
       }
       case "setRowRef": {
-        findRow(findTable(next, op.tableId), op.rowId).ref = op.ref;
+        findRow(findTable(next, op.tableId), op.rowId).ref = structuredClone(op.ref);
         break;
       }
       case "markComposed": {
