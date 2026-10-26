@@ -16,7 +16,7 @@ import { recordAudit } from "@/lib/audit";
 import { toSafeDisplayFilename } from "@/lib/files/safe-filename";
 import { refuseSavedFactFinderWithState } from "@/lib/imports/saved-fact-finder";
 import { safeErrorFields } from "@/lib/redaction/secrets";
-import { deletePageText } from "@/lib/fact-finder/worksheet/page-text";
+import { deletePageText } from "@/lib/fact-finder/worksheet/page-text-store";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;

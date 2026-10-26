@@ -24,9 +24,8 @@ vi.mock("@vercel/blob", () => ({
 }));
 vi.mock("../../chat/document-text", () => ({ readDocumentPages: vi.fn() }));
 
-import { put } from "@vercel/blob";
 import { readDocumentPages } from "../../chat/document-text";
-import { deletePageText, documentPages, pageTextPathname, savePageText } from "../page-text";
+import { documentPages } from "../page-text";
 
 const file: ImportFileRow = { id: "f1", blobUrl: "blob://f1", originalFilename: "f1.pdf", detectedKind: "pdf", documentType: "auto" };
 
@@ -35,13 +34,7 @@ beforeEach(() => {
   blob.store.clear();
 });
 
-describe("page text sidecar", () => {
-  it("lives at imports/<import>/<file>.pages.json, private, overwrite allowed", async () => {
-    expect(pageTextPathname("i1", "f1")).toBe("imports/i1/f1.pages.json");
-    await savePageText("i1", "f1", ["a"]);
-    expect(put).toHaveBeenCalledWith("imports/i1/f1.pages.json", '["a"]', expect.objectContaining({ access: "private", allowOverwrite: true }));
-  });
-
+describe("documentPages", () => {
   it("documentPages reads the sidecar the second time", async () => {
     vi.mocked(readDocumentPages).mockResolvedValue(["page one", "page two"]);
     expect(await documentPages("i1", file)).toEqual(["page one", "page two"]);
@@ -53,12 +46,5 @@ describe("page text sidecar", () => {
     vi.mocked(readDocumentPages).mockResolvedValue(["only page"]);
     await documentPages("i1", file);
     expect(blob.store.get("imports/i1/f1.pages.json")).toBe('["only page"]');
-  });
-
-  it("deletePageText removes the sidecar and ignores a missing blob", async () => {
-    await savePageText("i1", "f1", ["a"]);
-    await deletePageText("i1", "f1");
-    expect(blob.store.size).toBe(0);
-    await expect(deletePageText("i1", "f1")).resolves.toBeUndefined();
   });
 });

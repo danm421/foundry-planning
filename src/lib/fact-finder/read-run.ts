@@ -26,7 +26,7 @@ import { pagesForSectionReader, routeFile } from "./readers/route-file";
 import { readingsFromStatements } from "./readers/statement-adapter";
 import { needsReading } from "./reading-status";
 import { loadBaseCaseRecords } from "./relink";
-import { savePageText } from "./worksheet/page-text";
+import { savePageText } from "./worksheet/page-text-store";
 import type { ReadEvent } from "./api-types";
 import type { FFFileReading, FFMergeDecision, FFReader, FFReaderOutput } from "./types";
 

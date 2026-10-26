@@ -9,7 +9,7 @@ vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: vi.fn().mockResolved
 vi.mock("@/lib/imports/authz", async (orig) => ({ ...(await orig<typeof import("@/lib/imports/authz")>()), requireImportAccess: vi.fn() }));
 vi.mock("@/lib/rate-limit", () => ({ checkImportRateLimit: vi.fn().mockResolvedValue({ allowed: true }) }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
-vi.mock("@/lib/fact-finder/worksheet/page-text", () => ({ deletePageText: vi.fn() }));
+vi.mock("@/lib/fact-finder/worksheet/page-text-store", () => ({ deletePageText: vi.fn() }));
 
 const { mockUpdate } = vi.hoisted(() => ({ mockUpdate: vi.fn() }));
 vi.mock("@/db", () => ({
@@ -22,7 +22,7 @@ vi.mock("@/db", () => ({
 import { DELETE } from "../route";
 import { requireImportAccess } from "@/lib/imports/authz";
 import { recordAudit } from "@/lib/audit";
-import { deletePageText } from "@/lib/fact-finder/worksheet/page-text";
+import { deletePageText } from "@/lib/fact-finder/worksheet/page-text-store";
 
 const ctx = { params: Promise.resolve({ id: "c1", importId: "imp1", fileId: "f1" }) };
 const CLOSED = { at: "2026-10-15T12:00:00.000Z", by: "u1", saved: [], leftOut: [] };

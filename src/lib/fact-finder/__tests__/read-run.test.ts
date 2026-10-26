@@ -23,7 +23,7 @@ vi.mock("../persist", () => ({
 }));
 vi.mock("../records/load", () => ({ resolveBaseCaseScenarioId: vi.fn(), loadExistingRecords: vi.fn() }));
 vi.mock("../readers/route-file", () => ({ routeFile: vi.fn(), pagesForSectionReader: vi.fn() }));
-vi.mock("../worksheet/page-text", () => ({ savePageText: vi.fn() }));
+vi.mock("../worksheet/page-text-store", () => ({ savePageText: vi.fn() }));
 vi.mock("@/lib/imports/run-extraction", () => ({ runImportExtraction: vi.fn() }));
 vi.mock("@/lib/imports/blob", () => ({ downloadImportFile: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
@@ -41,7 +41,7 @@ import { pagesForSectionReader, routeFile } from "../readers/route-file";
 import { loadExistingRecords, resolveBaseCaseScenarioId } from "../records/load";
 import { emptyExistingRecords } from "../records/types";
 import { emptyFactFinderState } from "../state";
-import { savePageText } from "../worksheet/page-text";
+import { savePageText } from "../worksheet/page-text-store";
 
 const scope = { importId: "i1", clientId: "c1", firmId: "org_1" };
 const file = (id: string): ImportFileRow => ({
