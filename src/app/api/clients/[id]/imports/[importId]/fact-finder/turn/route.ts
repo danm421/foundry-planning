@@ -10,7 +10,9 @@ import { runWorksheetTurn } from "@/lib/fact-finder/worksheet/turn";
 
 export const dynamic = "force-dynamic";
 // Up to 40 tool calls plus a closing reply, each a model round trip — and a
-// document read can OCR a scanned file. The turn starts no new round after 240 s.
+// document read can OCR a scanned file. The turn keeps inside this
+// (`TURN_LIMIT_MS`): no new round after 240 s (150 s when a review follows), a
+// model or tool call cut off at 280 s, and the review run only with 110 s left.
 export const maxDuration = 300;
 
 type Params = { params: Promise<{ id: string; importId: string }> };

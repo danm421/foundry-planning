@@ -37,17 +37,41 @@ import { applyTurnOps, type TurnOp } from "./turn-ops";
  */
 
 export const MAX_WS_TOOL_CALLS = 40;
-/** No new model round starts after this long; the route's maxDuration is 300 s. */
+/** The route's maxDuration: the reply, its commit and a review it chains all end inside it. */
+export const TURN_LIMIT_MS = 300_000;
+/** No new model round starts after this long. */
 export const WS_TURN_BUDGET_MS = 240_000;
+/** …nor after this long on a turn that will chain a review (a Match, or once the model proposes), so the review fits. */
+export const WS_REVIEW_TURN_BUDGET_MS = 150_000;
+/** What a chained review needs: up to 90 s of leftovers AI (`runLeftovers`), the record book and the writes. */
+export const REVIEW_RESERVE_MS = 110_000;
+/** What the commit needs once the last model call or tool call ends; both are cut off to leave it. */
+const COMMIT_RESERVE_MS = 20_000;
 /** Replies that keep their Undo; older ones lose it. */
 const MAX_UNDO_REPLIES = 10;
 const OUT_OF_STEPS = "I ran out of steps for one reply — ask me to carry on.";
 const OUT_OF_TIME = "I ran out of time for one reply — ask me to carry on.";
+const NO_TIME_TO_PROPOSE = "I ran out of time to put the change list together — ask me to propose it again.";
 const CHANGED_MEANWHILE = "The worksheet changed while I was working on that — ask me again.";
 
 /** `chatModel()`'s shape, narrow enough for a test double. */
 export interface TurnModel {
-  bindTools(defs: unknown[]): { invoke(messages: BaseMessage[]): Promise<AIMessage> };
+  bindTools(defs: unknown[]): { invoke(messages: BaseMessage[], options?: { timeout?: number }): Promise<AIMessage> };
+}
+
+class OutOfTime extends Error {}
+
+/** `work`, or OutOfTime once `ms` pass. A tool call can't be aborted, so it runs on unawaited; its result is dropped. */
+async function within<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new OutOfTime()), Math.max(0, ms));
+  });
+  try {
+    return await Promise.race([work, late]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export interface WorksheetTurnArgs {
@@ -143,7 +167,10 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
   const { scope, mode } = args;
   const now = args.now ?? (() => new Date());
   const iso = () => now().toISOString();
-  const deadline = now().getTime() + WS_TURN_BUDGET_MS;
+  const startedAt = now().getTime();
+  /** Past this no model call or tool call runs on: the commit needs the rest of the route's time. */
+  const stopAt = startedAt + TURN_LIMIT_MS - COMMIT_RESERVE_MS;
+  const left = () => stopAt - now().getTime();
   const start = await loadFactFinder(scope);
   if (!start) throw new FactFinderNotFoundError();
   const ctx: WsToolContext = { ...(await liveFilesContext(scope)), ...args.toolContext };
@@ -184,14 +211,24 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
 
   // Up to MAX tool calls, then one closing round: once the cap is reached the
   // model is asked once more, and whatever it says ends the reply. Past the
-  // time budget no round starts at all.
-  for (let round = 0; round <= MAX_WS_TOOL_CALLS; round++) {
-    if (now().getTime() >= deadline) {
+  // time budget no round starts at all — sooner when a review will follow —
+  // and a model or tool call still running at `stopAt` is cut off, so the
+  // reply commits what it did so far.
+  for (let round = 0; round <= MAX_WS_TOOL_CALLS && !outOfTime; round++) {
+    const budget = args.match || propose.length > 0 ? WS_REVIEW_TURN_BUDGET_MS : WS_TURN_BUDGET_MS;
+    if (now().getTime() >= startedAt + budget) {
       outOfTime = true;
       break;
     }
     messages[0] = new SystemMessage(worksheetSystemPrompt(working, ctx.files)); // tools change the working copy
-    const response = await model.invoke(messages);
+    let response: AIMessage;
+    try {
+      response = await model.invoke(messages, { timeout: Math.max(1, left()) });
+    } catch (err) {
+      if (left() > 0) throw err;
+      outOfTime = true;
+      break;
+    }
     recordMessageUsage(response);
     messages.push(response);
     finalText = typeof response.content === "string" ? response.content : "";
@@ -208,7 +245,7 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
       toolCallCount++;
       let summary: string;
       try {
-        const outcome = await runWorksheetTool(call.name, call.args ?? {}, working, ctx);
+        const outcome = await within(runWorksheetTool(call.name, call.args ?? {}, working, ctx), left());
         working = applyTurnOps(working, outcome.ops, { by: "chat", now: iso(), newId: ctx.newId });
         ops.push(...outcome.ops);
         for (const rowId of outcome.propose ?? []) if (!propose.includes(rowId)) propose.push(rowId);
@@ -220,9 +257,11 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
         const msg = redactSsns(err instanceof Error ? err.message : "That tool call failed.").text;
         summary = refusedLine(call.name);
         messages.push(new ToolMessage({ tool_call_id: callId, content: fenceUntrusted(JSON.stringify({ error: msg })) }));
+        outOfTime = err instanceof OutOfTime;
       }
       toolTurns.push({ id: ctx.newId(), role: "tool", tool: call.name, summary, at: iso() });
       args.onProgress?.(summary);
+      if (outOfTime) break;
     }
   }
 
@@ -277,6 +316,11 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
     ops: turnId ? countOps(ops.map((t) => t.op)) : {}, // the reply's own ops: a composed mark isn't one
   });
   if (!committed || propose.length === 0) return result(written);
+  // Too little time left for the review to end inside the route's limit: the advisor asks again, in a request of its own.
+  if (startedAt + TURN_LIMIT_MS - now().getTime() < REVIEW_RESERVE_MS) {
+    const noTime: FFChatTurn = { id: ctx.newId(), role: "assistant", text: NO_TIME_TO_PROPOSE, at: iso() };
+    return result(await updateFactFinder(scope, (fresh) => ({ ...fresh, transcript: [...fresh.transcript, noTime] })));
+  }
 
   // The change list for the proposed rows, stored by the review. Appending a
   // turn leaves the rows alone, so the stored change list survives it (writeFactFinder).

@@ -41,7 +41,16 @@ import { cellValue, emptyFactFinderState, readFactFinderState } from "../../stat
 import { worksheetFromStaging } from "../from-staging";
 import { documentPages } from "../page-text";
 import { WS_TOOL_DEFS } from "../tools";
-import { MAX_WS_TOOL_CALLS, WS_TURN_BUDGET_MS, runWorksheetTurn, type TurnModel, type WorksheetTurnArgs } from "../turn";
+import {
+  MAX_WS_TOOL_CALLS,
+  REVIEW_RESERVE_MS,
+  TURN_LIMIT_MS,
+  WS_REVIEW_TURN_BUDGET_MS,
+  WS_TURN_BUDGET_MS,
+  runWorksheetTurn,
+  type TurnModel,
+  type WorksheetTurnArgs,
+} from "../turn";
 
 const scope = { importId: "i1", clientId: "c1", firmId: "org_1" };
 const AT = "2026-10-26T12:00:00.000Z";
@@ -294,6 +303,121 @@ describe("runWorksheetTurn — limits", () => {
     expect(fake.invoke).toHaveBeenCalledTimes(2); // a round starts just inside the budget, none once it's spent
     expect(store.state!.transcript.filter((t) => t.role === "tool")).toHaveLength(2);
     expect(store.state!.transcript.at(-1)).toMatchObject({ role: "assistant", text: "I ran out of time for one reply — ask me to carry on." });
+  });
+
+  describe("everything ends inside the route's 300 s", () => {
+    let clock = Date.parse(AT);
+    const at = () => new Date(clock);
+    const timed = (model: TurnModel, extra: Partial<WorksheetTurnArgs> = {}) => runWorksheetTurn({ ...args("Look through cash", model), now: at, ...extra });
+    const timeoutOf = (fake: ReturnType<typeof scripted>, call: number) => (fake.invoke.mock.calls[call] as unknown[])[1];
+    const OUT_OF_TIME = "I ran out of time for one reply — ask me to carry on.";
+    const NO_TIME_TO_PROPOSE = "I ran out of time to put the change list together — ask me to propose it again.";
+
+    beforeEach(() => {
+      clock = Date.parse(AT);
+      review.mockImplementation(async (_scope, state) => ({ ok: true, changeSet: { builtAtVersion: 1, builtAt: AT, lines: [], notices: [] }, factFinder: state }));
+    });
+
+    it("bounds each model call by the time left before the commit", async () => {
+      const fake = scripted(
+        () => {
+          clock += 100_000;
+          return callTool("read_section", { sectionId: "cash" });
+        },
+        new AIMessage("Done."),
+      );
+      await timed(fake.model);
+
+      expect(TURN_LIMIT_MS).toBe(300_000);
+      expect(timeoutOf(fake, 0)).toEqual({ timeout: 280_000 }); // 300 s less 20 s for the commit
+      expect(timeoutOf(fake, 1)).toEqual({ timeout: 180_000 });
+    });
+
+    it("a model call the budget cuts off ends the reply with what it did so far, committed", async () => {
+      const fake = scripted(callTool("create_table", { title: "Paychecks", columns: [{ header: "Employer" }] }), () => {
+        clock += 280_000;
+        throw new Error("Aborted");
+      });
+      const result = await timed(fake.model);
+
+      expect(result.ops).toEqual({ createTable: 1 });
+      expect(store.state!.worksheet.tables.map((t) => t.title)).toEqual(["Accounts", "Paychecks"]);
+      expect(store.state!.transcript.at(-1)).toMatchObject({ role: "assistant", text: OUT_OF_TIME });
+    });
+
+    it("a model call that fails with time left still fails the reply", async () => {
+      const fake = scripted(() => {
+        throw new Error("Azure is down");
+      });
+      await expect(timed(fake.model)).rejects.toThrow("Azure is down");
+    });
+
+    it("a tool call still running when the budget ends is cut off, and the reply commits", async () => {
+      store.files = [file("f1", "schwab-june.pdf")];
+      const lookAtPages = vi.fn(() => new Promise<string>(() => {})); // a vision call that never ends
+      const fake = scripted(() => {
+        clock += 279_990; // 10 ms left
+        return callTool("look_at_pages", { document: "schwab-june.pdf", pages: [1] });
+      });
+      await timed(fake.model, { toolContext: { newId, lookAtPages } });
+
+      expect(lookAtPages).toHaveBeenCalled();
+      expect(fake.invoke).toHaveBeenCalledTimes(1);
+      expect(store.state!.transcript.flatMap((t) => (t.role === "tool" ? [t.summary] : []))).toEqual(["Couldn't look at those pages."]);
+      expect(store.state!.transcript.at(-1)).toMatchObject({ role: "assistant", text: OUT_OF_TIME });
+    });
+
+    it("a turn that will chain a review starts no round after 150 s, so the review fits", async () => {
+      store.state = fixture({ applied: [{ lineId: "c1", rowId: "c1", target: "account", recordId: "acct-1", label: "Joint Checking", at: AT }] });
+      const fake = scripted(
+        () => {
+          clock += WS_REVIEW_TURN_BUDGET_MS;
+          return callTool("read_section", { sectionId: "cash" });
+        },
+        new AIMessage("never"),
+      );
+      await timed(fake.model, { match: { tableId: "t-accounts" } });
+
+      expect(WS_REVIEW_TURN_BUDGET_MS).toBe(150_000);
+      expect(fake.invoke).toHaveBeenCalledTimes(1);
+      expect(review).toHaveBeenCalledTimes(1); // 150 s left: enough for the review
+      expect(store.state!.transcript.at(-1)).toMatchObject({ role: "proposal", rowIds: ["c1"] });
+    });
+
+    it("a proposal stops new rounds at 150 s too", async () => {
+      const fake = scripted(
+        () => {
+          clock += 1_000;
+          return callTool("propose_plan_update", { rows: ["w1"] });
+        },
+        () => {
+          clock += WS_REVIEW_TURN_BUDGET_MS;
+          return callTool("read_section", { sectionId: "cash" }, "call-2");
+        },
+        new AIMessage("never"),
+      );
+      await timed(fake.model);
+      expect(fake.invoke).toHaveBeenCalledTimes(2);
+    });
+
+    it("skips the chained review when it can't finish in time, and says to propose again", async () => {
+      const fake = scripted(
+        () => {
+          clock += 120_000;
+          return callTool("propose_plan_update", { rows: ["w1"] });
+        },
+        () => {
+          clock += 80_000; // 100 s left: less than the review needs
+          return new AIMessage("Here are the changes.");
+        },
+      );
+      await timed(fake.model);
+
+      expect(REVIEW_RESERVE_MS).toBe(110_000);
+      expect(review).not.toHaveBeenCalled();
+      expect(lines().slice(-2)).toEqual(["assistant: Here are the changes.", `assistant: ${NO_TIME_TO_PROPOSE}`]);
+      expect(store.state!.transcript.some((t) => t.role === "proposal")).toBe(false);
+    });
   });
 });
 
