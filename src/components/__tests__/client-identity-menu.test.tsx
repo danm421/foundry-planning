@@ -49,6 +49,12 @@ describe("ClientIdentityMenu", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("shows both surnames when the spouse's differs", () => {
+    const people: PersonInfo[] = [couple[0], { ...couple[1], lastName: "Jackson" }];
+    render(<ClientIdentityMenu clientId="abc" people={people} />);
+    expect(screen.getByText("Cooper Sample & Susan Jackson")).toBeInTheDocument();
+  });
+
   it("opens the details dialog on click with primary contact info", () => {
     render(<ClientIdentityMenu clientId="abc" people={couple} />);
     fireEvent.click(screen.getByRole("button"));

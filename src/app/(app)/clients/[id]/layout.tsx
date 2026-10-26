@@ -16,6 +16,7 @@ import { ForgeMount } from "@/components/forge/forge-mount";
 import { isForgeEnabled } from "@/domain/forge/flag";
 import CrmHouseholdLink from "@/components/crm-household-link";
 import { ClientAccessProvider } from "@/components/client-access-provider";
+import { buildHouseholdName } from "@/lib/crm/household-name";
 
 interface Props {
   children: React.ReactNode;
@@ -85,11 +86,12 @@ export default async function ClientLayout({ children, params }: Props): Promise
     ...(spouse ? [toPerson(spouse, "spouse")] : []),
   ];
 
-  const spouseFirst = spouse?.firstName ?? null;
-  const spouseLast = spouse?.lastName ?? primary.lastName;
-  const householdTitle = spouseFirst
-    ? `${primary.firstName} & ${spouseFirst} ${spouseLast}`.trim()
-    : `${primary.firstName} ${primary.lastName}`.trim();
+  const householdTitle = buildHouseholdName({
+    firstName: primary.firstName,
+    lastName: primary.lastName,
+    spouseFirstName: spouse?.firstName,
+    spouseLastName: spouse?.lastName,
+  });
 
   return (
     <ClientAccessProvider value={{ permission: access.permission, access: access.access }}>

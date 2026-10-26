@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactElement } from "react";
+import { buildHouseholdName } from "@/lib/crm/household-name";
 
 export interface PersonInfo {
   role: "primary" | "spouse";
@@ -55,11 +56,12 @@ function fullName(p: PersonInfo): string {
 
 function householdTitle(people: PersonInfo[]): string {
   const [primary, spouse] = people;
-  if (spouse) {
-    const spouseLast = spouse.lastName || primary.lastName;
-    return `${primary.firstName} & ${spouse.firstName} ${spouseLast}`;
-  }
-  return fullName(primary);
+  return buildHouseholdName({
+    firstName: primary.firstName,
+    lastName: primary.lastName,
+    spouseFirstName: spouse?.firstName,
+    spouseLastName: spouse?.lastName,
+  });
 }
 
 function householdAges(people: PersonInfo[]): string {
