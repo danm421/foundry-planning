@@ -57,7 +57,15 @@ const populatedChart: EstateFlowChartData = {
       estateValue: 1_000_000,
       estateLines: [],
       subBoxes: [
-        { kind: "taxes", label: "Taxes & Expenses", total: -50_000, lines: [] },
+        {
+          kind: "taxes",
+          label: "Taxes & Expenses",
+          total: 50_000,
+          lines: [
+            { kind: "state_estate_tax", label: "State Estate Tax", amount: 30_000 },
+            { kind: "probate", label: "Probate Costs", amount: 20_000 },
+          ],
+        },
         {
           kind: "inheritance_spouse",
           label: "To Co-client",
@@ -100,7 +108,7 @@ const populatedChart: EstateFlowChartData = {
         trustInterests: [],
       },
     ],
-    totals: { totalTaxesAndExpenses: -50_000, totalToHeirs: 400_000 },
+    totals: { totalTaxesAndExpenses: 50_000, totalToHeirs: 400_000 },
   },
 };
 
@@ -264,6 +272,16 @@ describe("estate page PDFs render", () => {
       <Document>{EstateFlowChartPagePdf({ data: populatedChart, ...framing })}</Document>,
     );
     expect(buf.byteLength).toBeGreaterThan(0);
+  });
+
+  it("chart's taxes box breaks the total down by source", async () => {
+    const buf = await renderToBuffer(
+      <Document>{EstateFlowChartPagePdf({ data: populatedChart, ...framing })}</Document>,
+    );
+    const text = (await extractPdfText(Buffer.from(buf))).replace(/\s+/g, " ");
+
+    expect(text).toContain("State Estate Tax $30,000");
+    expect(text).toContain("Probate Costs $20,000");
   });
 
   it("report renders with empty columns", async () => {

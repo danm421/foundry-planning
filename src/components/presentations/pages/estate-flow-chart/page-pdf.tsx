@@ -63,7 +63,9 @@ const styles = StyleSheet.create({
   boxTitle: { fontSize: 6.5, fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.8, textAlign: "center", opacity: 0.85 },
   boxValue: { fontSize: 11.5, fontWeight: 600, marginTop: 1.5 },
   inset: { borderRadius: 7, borderWidth: 1, borderColor: T.hair, backgroundColor: ZEBRA_FILL, padding: 3.5, gap: 3 },
-  subBox: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderRadius: 4, paddingVertical: 4.5, paddingHorizontal: 8 },
+  subBox: { borderRadius: 4, paddingVertical: 4.5, paddingHorizontal: 8 },
+  subHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  subDivider: { borderTopWidth: 0.75, borderTopColor: T.card, opacity: 0.4, marginTop: 3, marginBottom: 1 },
   subLabel: { fontSize: 7.5, fontWeight: 500, color: T.card },
   subValue: { fontSize: 8.5, fontWeight: 600, color: T.card },
   arrow: { alignItems: "center", paddingVertical: 3 },
@@ -133,8 +135,23 @@ function DeathStep({ stage }: { stage: DeathStage }) {
           <View style={styles.inset}>
             {stage.subBoxes.map((box) => (
               <View key={box.kind} style={[styles.subBox, { backgroundColor: SUBBOX_COLOR[box.kind] }]}>
-                <Text style={styles.subLabel}>{box.label}</Text>
-                <Text style={styles.subValue}>{fmt.format(box.total)}</Text>
+                <View style={styles.subHead}>
+                  <Text style={styles.subLabel}>{box.label}</Text>
+                  <Text style={styles.subValue}>{fmt.format(box.total)}</Text>
+                </View>
+                {/* The taxes box says where its total comes from — estate
+                    tax, probate, admin, debts, IRD — like the screen's panel. */}
+                {box.kind === "taxes" && box.lines.length > 0 && (
+                  <>
+                    <View style={styles.subDivider} />
+                    {box.lines.map((l, li) => (
+                      <View key={li} style={styles.detailRow}>
+                        <Text style={[styles.detailText, styles.detailLabel]}>{l.label}</Text>
+                        <Text style={[styles.detailText, styles.detailAmount]}>{fmt.format(l.amount)}</Text>
+                      </View>
+                    ))}
+                  </>
+                )}
               </View>
             ))}
           </View>
