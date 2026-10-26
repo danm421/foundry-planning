@@ -107,6 +107,19 @@ describe("visionOcrPdf", () => {
     expect(renderPageAsImage).toHaveBeenCalledTimes(3);
   });
 
+  it("pages renders only the pages asked for", async () => {
+    // The chat's "look harder" names pages: only those that exist render, in the order given.
+    getDocumentProxy.mockResolvedValue({ numPages: 5 });
+    callAIVisionTranscription.mockResolvedValue("T");
+
+    const res = await visionOcrPdf(Buffer.from("pdf"), { pages: [4, 9, 2], maxPages: 3, model: "full" });
+
+    expect(renderPageAsImage.mock.calls.map((call) => call[1])).toEqual([4, 2]);
+    expect(res.pagesProcessed).toBe(2);
+    expect(res.truncated).toBe(false);
+    expect(callAIVisionTranscription).toHaveBeenCalledWith(expect.any(Array), "full");
+  });
+
   it("does NOT require Foundry Planning's own key — a firm runs in its own tenant", async () => {
     // The old guard here refused whenever OUR AZURE_API_KEY was absent, which
     // has nothing to do with whether the caller's tenant works. Whose tenant

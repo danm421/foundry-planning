@@ -95,6 +95,7 @@ describe("TOOL_DEFS", () => {
       set_holding: { args: ["holdingId", "field", "value"], required: ["holdingId", "field", "value"] },
       remove_holding: { args: ["holdingId"], required: ["holdingId"] },
       move_holding: { args: ["holdingId", "toRowId"], required: ["holdingId", "toRowId"] },
+      add_holding: { args: ["rowId", "ticker", "name", "shares", "price", "marketValue", "costBasis"], required: ["rowId"] },
       read_section: { args: ["sectionId"], required: ["sectionId"] },
       reread_document: { args: ["fileName", "question"], required: ["fileName", "question"] },
       explain: { args: ["rowId"], required: ["rowId"] },
@@ -245,6 +246,20 @@ describe("runTool — holdings", () => {
     expect(moved.ops).toEqual([
       { op: "assignHolding", holdingId: "h1", from: { sectionId: "taxable", rowId: "t1" }, to: { sectionId: "taxable", rowId: "t2" } },
     ]);
+  });
+
+  it("add_holding returns an addHolding op", async () => {
+    const out = await runTool("add_holding", { rowId: "t2", ticker: "aapl", shares: 5 }, fixture(), context());
+    expect(out.ops).toEqual([{ op: "addHolding", sectionId: "taxable", rowId: "t2", holdingId: "new-1", holding: { ticker: "aapl", shares: 5 } }]);
+    expect(out.summary).toBe('Added "AAPL" to "Trust Brokerage"');
+    expect(out.result).toContain("New holding id: new-1.");
+    expect(applyOps(fixture(), out.ops, chat).sections.taxable[1].holdings).toEqual([
+      { id: "new-1", ticker: "AAPL", name: null, shares: 5, price: null, marketValue: null, costBasis: null, by: "chat", pinned: true },
+    ]);
+    await expect(runTool("add_holding", { rowId: "c1", ticker: "VTI" }, fixture(), context())).rejects.toThrow(
+      "Cash Accounts rows don't carry holdings.",
+    );
+    await expect(runTool("add_holding", { rowId: "t2", shares: 5 }, fixture(), context())).rejects.toThrow("a ticker or a name");
   });
 
   it("refuses an unknown holding, an edit to a holding with no account, a move to a cash account or to its own account", async () => {

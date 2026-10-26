@@ -29,6 +29,12 @@ export interface VisionOcrResult {
 
 export interface VisionOcrOptions {
   maxPages: number;
+  /**
+   * 1-based pages to render instead of the first `maxPages`: those that exist
+   * render, in the order given (still at most `maxPages`). The chat's "look
+   * harder" names the pages it wants.
+   */
+  pages?: number[];
   model: "mini" | "full";
   batchSize?: number;
   concurrency?: number;
@@ -79,7 +85,10 @@ export async function visionOcrPdf(
 
   const pdf = await getDocumentProxy(new Uint8Array(buffer), { CanvasFactory });
   const pageCount = pdf.numPages;
-  const pagesToRender = Math.min(pageCount, opts.maxPages);
+  const wanted = opts.pages
+    ? opts.pages.filter((p) => Number.isInteger(p) && p >= 1 && p <= pageCount)
+    : Array.from({ length: pageCount }, (_, i) => i + 1);
+  const pagesToRender = wanted.slice(0, opts.maxPages);
 
   async function renderPage(p: number): Promise<VisionImage> {
     const raw = await renderPageAsImage(pdf, p, {
@@ -104,10 +113,9 @@ export async function visionOcrPdf(
   // can await the oldest (Promise.race) whenever the window is full.
   const inFlight = new Map<number, Promise<number>>();
 
-  for (let start = 1; start <= pagesToRender; start += batchSize) {
-    const end = Math.min(start + batchSize - 1, pagesToRender);
+  for (let start = 0; start < pagesToRender.length; start += batchSize) {
     const batch: VisionImage[] = [];
-    for (let p = start; p <= end; p++) batch.push(await renderPage(p));
+    for (const p of pagesToRender.slice(start, start + batchSize)) batch.push(await renderPage(p));
 
     const index = batchIndex++;
     const task = usageStage("ocr", () => callAIVisionTranscription(batch, opts.model)).then((text) => {
@@ -137,8 +145,8 @@ export async function visionOcrPdf(
     text: transcripts.join("\n\n"),
     segments,
     pageCount,
-    pagesProcessed: pagesToRender,
-    truncated: pageCount > opts.maxPages,
+    pagesProcessed: pagesToRender.length,
+    truncated: wanted.length > pagesToRender.length,
   };
 }
 

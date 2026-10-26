@@ -38,9 +38,17 @@ export const REREAD_MAX_CHARS = 20_000;
 const LIST_SECTION_IDS = FACT_FINDER_SECTIONS.filter(isListLike).map((s) => s.id);
 const SECTION_IDS = FACT_FINDER_SECTIONS.map((s) => s.id);
 
-type Param = { type?: string; description: string; enum?: readonly string[] };
+/** A JSON-schema property, as much of it as the tool defs use. */
+export type Param = {
+  type?: string;
+  description: string;
+  enum?: readonly string[];
+  items?: Param;
+  properties?: Record<string, Param>;
+  required?: string[];
+};
 
-function fn(name: string, description: string, properties: Record<string, Param>, required: string[]) {
+export function fn(name: string, description: string, properties: Record<string, Param>, required: string[]) {
   return { type: "function" as const, function: { name, description, parameters: { type: "object", properties, required } } };
 }
 
@@ -48,8 +56,8 @@ const rowIdParam: Param = { type: "string", description: "The row's id, as the f
 const columnIdParam: Param = { type: "string", description: "The column's id, as the fact finder or read_section shows it." };
 const holdingIdParam: Param = { type: "string", description: "The holding's id, as read_section shows it." };
 
-/** OpenAI-style function defs, bound with `bindTools`. Exported for the schema test. */
-export const TOOL_DEFS = [
+/** The tools that edit or read staging, shared with the worksheet chat (`worksheet/tools.ts`). */
+export const STAGING_TOOL_DEFS = [
   fn(
     "set_cell",
     "Write one value into one cell of a row. Write it as the advisor would type it: dollars as 12500, " +
@@ -137,12 +145,32 @@ export const TOOL_DEFS = [
     ["holdingId", "toRowId"],
   ),
   fn(
+    "add_holding",
+    "Add a holding (a position) to a taxable, retirement or education account row, with the values you " +
+      "know: a ticker or a name, and any of shares, price, market value and cost basis. Returns the new holding's id.",
+    {
+      rowId: { type: "string", description: "The account row to add it to." },
+      ticker: { type: "string", description: "The ticker, if it has one." },
+      name: { type: "string", description: "The security's name." },
+      shares: { type: "number", description: "How many shares." },
+      price: { type: "number", description: "The price per share, in dollars." },
+      marketValue: { type: "number", description: "The market value, in dollars." },
+      costBasis: { type: "number", description: "The cost basis, in dollars." },
+    },
+    ["rowId"],
+  ),
+  fn(
     "read_section",
     "Show one section in full: its columns with each choice column's options, every row, and every " +
       "holding with its id. The fact finder above shows only filled cells and a summary of holdings.",
     { sectionId: { type: "string", description: "The section to show.", enum: SECTION_IDS } },
     ["sectionId"],
   ),
+];
+
+/** OpenAI-style function defs, bound with `bindTools`. Exported for the schema test. */
+export const TOOL_DEFS = [
+  ...STAGING_TOOL_DEFS,
   fn(
     "reread_document",
     "Look in one uploaded document for something the fact finder doesn't show. Returns the document's " +
@@ -176,19 +204,35 @@ const ARGS = {
   set_holding: z.object({ holdingId: id, field: z.enum(HOLDING_FIELDS), value: z.union([z.string(), z.number()]) }),
   remove_holding: z.object({ holdingId: id }),
   move_holding: z.object({ holdingId: id, toRowId: id }),
+  add_holding: z
+    .object({
+      rowId: id,
+      ticker: z.string().max(100).nullish(),
+      name: z.string().max(300).nullish(),
+      shares: z.union([z.string(), z.number()]).nullish(),
+      price: z.union([z.string(), z.number()]).nullish(),
+      marketValue: z.union([z.string(), z.number()]).nullish(),
+      costBasis: z.union([z.string(), z.number()]).nullish(),
+    })
+    .refine((a) => !!a.ticker?.trim() || !!a.name?.trim(), "give a ticker or a name"),
   read_section: z.object({ sectionId: z.enum(SECTION_IDS) }),
   reread_document: z.object({ fileName: z.string().min(1), question: z.string().min(1).max(500) }),
   explain: z.object({ rowId: id }),
 };
 type ToolName = keyof typeof ARGS;
 
-function argsOf<N extends ToolName>(name: N, args: unknown): z.infer<(typeof ARGS)[N]> {
-  const parsed = ARGS[name].safeParse(args);
+/** Validates a tool's arguments; a failure throws a message naming the bad argument. */
+export function parseArgs<S extends z.ZodType>(name: string, schema: S, args: unknown): z.infer<S> {
+  const parsed = schema.safeParse(args);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     throw new Error(`${name} got bad arguments: ${issue?.path.join(".") || "arguments"} — ${issue?.message ?? "invalid"}.`);
   }
-  return parsed.data as z.infer<(typeof ARGS)[N]>;
+  return parsed.data;
+}
+
+function argsOf<N extends ToolName>(name: N, args: unknown): z.infer<(typeof ARGS)[N]> {
+  return parseArgs(name, ARGS[name], args) as z.infer<(typeof ARGS)[N]>;
 }
 
 function liveRow(state: FactFinderState, rowId: string): { section: FFSection; row: FFRow } {
@@ -255,12 +299,18 @@ function rankedPages(pages: string[], question: string, budget: number): string 
 
 const sameName = (a: string, b: string) => redactSsns(a).text.trim().toLowerCase() === redactSsns(b).text.trim().toLowerCase();
 
-async function rereadDocument(args: z.infer<typeof ARGS.reread_document>, ctx: ToolContext): Promise<ToolOutcome> {
-  const file = ctx.files.find((f) => sameName(f.name, args.fileName));
+/** The import's file named `name` (trimmed, any case); a miss throws naming the files there are. */
+export function findDocument(files: ToolContext["files"], name: string): ToolContext["files"][number] {
+  const file = files.find((f) => sameName(f.name, name));
   if (!file) {
-    const names = ctx.files.map((f) => quote(f.name)).join(", ") || "none";
-    throw new Error(`There's no document named ${quote(args.fileName)}. The documents are: ${names}.`);
+    const names = files.map((f) => quote(f.name)).join(", ") || "none";
+    throw new Error(`There's no document named ${quote(name)}. The documents are: ${names}.`);
   }
+  return file;
+}
+
+async function rereadDocument(args: z.infer<typeof ARGS.reread_document>, ctx: ToolContext): Promise<ToolOutcome> {
+  const file = findDocument(ctx.files, args.fileName);
   const pages = (await ctx.readDocument(file.id)).map((p) => redactSsns(p).text);
   const header = `From ${quote(file.name)}, most relevant pages first:\n`;
   const body = rankedPages(pages, args.question, REREAD_MAX_CHARS - header.length);
@@ -415,6 +465,17 @@ async function dispatch(name: string, raw: unknown, state: FactFinderState, ctx:
         { op: "assignHolding", holdingId: holding.id, from, to: { sectionId: to.section.id, rowId: to.row.id } },
       ];
       return edit(state, ops, ctx, () => `Moved ${holdingName(holding)} to ${quote(rowLabel(to.section, to.row))}`);
+    }
+    case "add_holding": {
+      const { rowId, ...holding } = argsOf(name, raw);
+      const { section, row } = liveRow(state, rowId);
+      const holdingId = ctx.newId();
+      const ops: ClientOp[] = [{ op: "addHolding", sectionId: section.id, rowId: row.id, holdingId, holding }];
+      const outcome = edit(state, ops, ctx, (next) => {
+        const added = next.sections[section.id].find((r) => r.id === row.id)!.holdings!.find((h) => h.id === holdingId)!;
+        return `Added ${holdingName(added)} to ${quote(rowLabel(section, row))}`;
+      });
+      return { ...outcome, result: fenceUntrusted(`Done: ${outcome.summary}. New holding id: ${holdingId}.`) };
     }
     case "read_section": {
       const a = argsOf(name, raw);
