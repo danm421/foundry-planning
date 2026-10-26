@@ -22,8 +22,16 @@ const ira: FFRow = {
 const valueCol: WsColumn = { id: "v", header: "Value", bind: { kind: "cell", columnId: "currentValue" } };
 
 describe("cellText", () => {
-  it('formats a bound money cell from staging as "$431,050"', () => {
-    expect(cellText(stateWith(ira), { id: "x", cells: {}, ref: { rowId: "r1" } }, valueCol)).toEqual({ text: "$431,050", bound: true, check: false });
+  it('formats a bound money cell from staging with its cents, "$431,050.00"', () => {
+    expect(cellText(stateWith(ira), { id: "x", cells: {}, ref: { rowId: "r1" } }, valueCol)).toEqual({ text: "$431,050.00", bound: true, check: false });
+  });
+
+  it("bound money keeps its trailing zero cents, as typed money does: $222,942.50, price $285.40", () => {
+    const s = stateWith({ ...ira, cells: { currentValue: { value: 222942.5, by: "document" } }, holdings: [{ ...ira.holdings![0], price: 285.4, marketValue: 117014 }] });
+    const row: WsRow = { id: "x", cells: {}, ref: { rowId: "r1", holdingId: "h1" } };
+    expect(cellText(s, row, valueCol).text).toBe("$222,942.50");
+    expect(cellText(s, row, { id: "p", header: "Price", bind: { kind: "holding", field: "price" } }).text).toBe("$285.40");
+    expect(cellText(s, row, { id: "m", header: "Market value", bind: { kind: "holding", field: "marketValue" } }).text).toBe("$117,014.00");
   });
 
   it("formats money cents, holdings and a missing cell", () => {

@@ -41,7 +41,7 @@ describe("worksheetView", () => {
     expect(out).toContain('## t1 "Accounts"');
     expect(out).toContain("Account [cell:accountName]");
     expect(out).toContain("Note");
-    expect(out).toContain("- w1 [ref r1/h1] [in plan] | Account: Joint IRA | Value: $431,050 | Note: hi");
+    expect(out).toContain("- w1 [ref r1/h1] [in plan] | Account: Joint IRA | Value: $431,050.00 | Note: hi");
     expect(out).toContain('(source: "schwab.pdf" p.3)');
   });
 

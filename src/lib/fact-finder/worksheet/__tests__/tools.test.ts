@@ -149,8 +149,8 @@ describe("runWorksheetTool", () => {
     const next = apply(state, out);
     expect(next.sections.retirement[0].cells.currentValue).toEqual({ value: 440000, by: "chat", pinned: true });
     const table = next.worksheet.tables[0];
-    expect(cellText(next, table.rows[0], table.columns[2]).text).toBe("$440,000");
-    expect(out.result).toContain("$440,000");
+    expect(cellText(next, table.rows[0], table.columns[2]).text).toBe("$440,000.00");
+    expect(out.result).toContain("$440,000.00");
   });
 
   it("set_cells on a row with no ref writes the worksheet's own text, bound column or not", async () => {
@@ -352,7 +352,7 @@ describe("runWorksheetTool", () => {
     ]);
     const table = apply(state, out).worksheet.tables[0];
     expect(table.rows[1].cells).toEqual({ "c-name": "Old 529", "c-note": "from the fact finder" });
-    expect(cellText(apply(state, out), table.rows[0], table.columns[2]).text).toBe("$431,050");
+    expect(cellText(apply(state, out), table.rows[0], table.columns[2]).text).toBe("$431,050.00");
     await expect(
       runWorksheetTool("set_columns", { table: "t-accounts", columns: [{ id: "Nope", header: "X" }] }, state, context()),
     ).rejects.toThrow('Accounts has no column "Nope" to rename.');

@@ -53,13 +53,13 @@ describe("WorksheetPane", () => {
     render(<WorksheetPane state={stateWith([accounts])} fileName={fileName} busy={false} />);
     expect(screen.getByText("Accounts")).toBeInTheDocument();
     expect(screen.getByText("From the Schwab statement")).toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: "$431,050" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "$431,050.00" })).toBeInTheDocument();
     expect(screen.getByText("schwab.pdf p.2")).toBeInTheDocument();
   });
 
   it("right-aligns a column only when every filled cell is a figure", () => {
     render(<WorksheetPane state={stateWith([accounts])} fileName={fileName} busy={false} />);
-    expect(screen.getByRole("cell", { name: "$431,050" }).className).toMatch(/text-right/);
+    expect(screen.getByRole("cell", { name: "$431,050.00" }).className).toMatch(/text-right/);
     expect(screen.getByRole("columnheader", { name: "Value" }).className).toMatch(/text-right/);
     expect(screen.getByRole("cell", { name: /Joint IRA/ }).className).not.toMatch(/text-right/);
   });
@@ -69,7 +69,7 @@ describe("WorksheetPane", () => {
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     render(<WorksheetPane state={stateWith([accounts])} fileName={fileName} busy={false} />);
     fireEvent.click(screen.getByRole("button", { name: "Copy" }));
-    expect(writeText).toHaveBeenCalledWith("| Account | Value |\n| --- | --- |\n| Joint IRA | $431,050 |");
+    expect(writeText).toHaveBeenCalledWith("| Account | Value |\n| --- | --- |\n| Joint IRA | $431,050.00 |");
     expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument();
   });
 

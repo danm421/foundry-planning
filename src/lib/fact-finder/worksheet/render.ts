@@ -22,7 +22,7 @@ function formatValue(value: FFCellValue | undefined, kind: ColumnKind): string {
   if (value === null || value === undefined || value === "") return "";
   if (kind === "check" && typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "number") {
-    if (kind === "money") return fmt(value, 0, 2, true);
+    if (kind === "money") return fmt(value, 2, 2, true); // always the cents, as typed money shows them: $6,250.00
     if (kind === "percent") return `${fmt(value, 0, 6)}%`;
     if (kind === "number") return fmt(value, 0, 6);
   }
@@ -34,7 +34,7 @@ function holdingText(h: FFHolding, field: string): string {
     case "shares":
       return formatValue(h.shares, "number");
     case "price":
-      return h.price === null ? "" : fmt(h.price, 0, 4, true);
+      return h.price === null ? "" : fmt(h.price, 2, 4, true);
     case "marketValue":
       return formatValue(h.marketValue, "money");
     case "costBasis":
