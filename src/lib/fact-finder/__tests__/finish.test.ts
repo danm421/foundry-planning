@@ -75,6 +75,28 @@ d("finishFactFinder (live DB)", () => {
     expect(await importOf(scope)).toEqual(imp);
   });
 
+  it("finish lists a record saved in two rounds once, as the later round left it", async () => {
+    // Round 1 adds Emma; the advisor corrects her name in the chat and round 2 updates the same record.
+    const scope = await openImport({
+      applied: [
+        ...APPLIED,
+        { lineId: "f1/family_member", rowId: "f1", target: "family_member", recordId: "fm-emma", label: "Emily Hendricks", at: "2026-10-15T11:45:00.000Z" },
+      ],
+    });
+    const outcome = await finishFactFinder(scope, SAVE_ACTOR, NOW);
+    expect(outcome.ok).toBe(true);
+
+    const imp = await importOf(scope);
+    expect(imp.factFinder?.closed?.saved).toEqual([
+      { lineId: "f1/family_member", rowId: "f1", target: "family_member", recordId: "fm-emma", label: "Emily Hendricks" },
+      { lineId: "tx1/account", rowId: "tx1", target: "account", recordId: "acct-ilit", label: "ILIT Brokerage" },
+    ]);
+    // Every round stays on the fact finder: the chat's proposal cards read each round's time.
+    expect(imp.factFinder?.applied).toHaveLength(3);
+    expect(imp.audit).toHaveLength(1);
+    expect(imp.audit[0].metadata).toMatchObject({ saved: 2 });
+  });
+
   it("finish refuses while a document is reading", async () => {
     // Started two minutes before the finish: still being read.
     const scope = await openImport({ applied: APPLIED, readings: { f1: { status: "reading", startedAt: "2026-10-15T11:58:00.000Z" } } });
