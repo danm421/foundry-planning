@@ -13,8 +13,13 @@ vi.mock("../../persist", () => ({
   loadFactFinder: vi.fn(async () => store.state),
   updateFactFinder: vi.fn(async (_scope: unknown, mutate: (s: FactFinderState) => FactFinderState) => {
     const next = mutate(store.state!);
-    if (next !== store.state) store.state = { ...next, version: store.state!.version + 1 };
-    return store.state!;
+    if (next === store.state) return store.state!;
+    // As writeFactFinder does: a write that changes the rows or unassigned holdings drops the stored change list.
+    const rowsOf = (s: FactFinderState) => JSON.stringify([s.sections, s.unassignedHoldings]);
+    const written: FactFinderState = { ...next, version: store.state!.version + 1 };
+    if (rowsOf(next) !== rowsOf(store.state!)) delete written.changeSet;
+    store.state = written;
+    return written;
   }),
   listLiveFiles: vi.fn(async () => store.files),
 }));
@@ -390,6 +395,48 @@ describe("runWorksheetTurn — proposals", () => {
     expect(store.state!.transcript.at(-1)).toEqual({ id: expect.any(String), role: "proposal", rowIds: ["c2", "c1"], at: AT });
     expect(store.state!.changeSet).toEqual(changeSet);
     expect(result.factFinder).toBe(store.state);
+  });
+
+  it("a chat correction to a free-form row already proposed reaches staging, so the proposal reads out of date and the next one saves the correction", async () => {
+    // A pay stub's salary row, staged by stage_rows and proposed: the card is live with $120,000.
+    const changeSet: ChangeSet = { builtAtVersion: 3, builtAt: AT, lines: [], notices: [] };
+    const salary: FFRow = {
+      id: "i1",
+      sourceFileIds: ["f2"],
+      cells: { incomeName: { value: "Acme salary", by: "chat", pinned: true }, annualAmount: { value: 120000, by: "chat", pinned: true } },
+    };
+    const pay: WsTable = {
+      id: "t-pay",
+      title: "Income",
+      columns: [
+        { id: "k-source", header: "Source" },
+        { id: "k-amount", header: "Annual amount" },
+      ],
+      rows: [{ id: "w-pay", cells: { "k-source": "Acme salary", "k-amount": "$120,000" }, ref: { rowId: "i1" } }],
+    };
+    const base = fixture();
+    store.state = fixture({
+      sections: { ...base.sections, income: [salary] },
+      worksheet: { tables: [structuredClone(accounts), pay], composedFileIds: [] },
+      transcript: [{ id: "p1", role: "proposal", rowIds: ["i1"], at: AT }],
+      changeSet,
+    });
+    const fake = scripted(
+      callTool("set_cells", { table: "t-pay", row: "w-pay", cells: { "Annual amount": "$125,000" } }),
+      callTool("set_cells", { table: "t-pay", row: "w-pay", cells: { "Annual amount": "$125,000" }, staging: { annualAmount: 125000 } }, "call-2"),
+      new AIMessage("The salary is now $125,000."),
+    );
+    await turn("The salary is really $125,000", fake.model);
+
+    // The first try is refused — the model is told to name the staging value — and nothing it would have changed lands.
+    expect(text(fake.seen[1].at(-1)!)).toContain("staging");
+    expect(cellValue(store.state!.sections.income[0], "annualAmount")).toBe(125000); // what the next review reads, so what saves
+    expect(store.state!.worksheet.tables[1].rows[0].cells["k-amount"]).toBe("$125,000");
+    expect(store.state!.changeSet).toBeUndefined(); // the live card reads out of date: Propose again
+    expect(store.state!.transcript.flatMap((t) => (t.role === "tool" ? [t.summary] : []))).toEqual([
+      "Couldn't change those values.",
+      'Changed Annual amount on "Acme salary" in Income',
+    ]);
   });
 
   it("a refused review is told to the advisor as an assistant turn", async () => {

@@ -176,8 +176,20 @@ const WORKSHEET_TOOL_DEFS = [
     'Change values in one row ("" empties a cell). In a bound column of a row that points at a staging row, ' +
       "the staging value itself changes — that is what goes to the plan — so write it as the staging column " +
       "expects: dollars as 12500, a percent as 6.5, a date as YYYY-MM-DD, a choice as one of its options. " +
-      'A "section" column can\'t be typed.',
-    { table: tableParam, row: rowParam, cells: cellsParam },
+      'A "section" column can\'t be typed. A column of your own text on a row that points at a staging row needs ' +
+      "staging too, so the plan update reads the correction.",
+    {
+      table: tableParam,
+      row: rowParam,
+      cells: cellsParam,
+      staging: {
+        type: "object",
+        description:
+          "Only for a row that points at a staging row, when you change a column of your own text: the staging values " +
+          "the correction changes — staging column id → value, written as set_cell expects (a holding row: holding " +
+          `field → value, the fields being ${HOLDING_FIELDS.join(", ")}). {} when the plan doesn't read the column.`,
+      },
+    },
     ["table", "row", "cells"],
   ),
   fn(
@@ -351,6 +363,7 @@ const ARGS = {
     table: id,
     row: rowId,
     cells: cells.refine((c) => Object.keys(c).length > 0, "give at least one cell"),
+    staging: z.record(z.string(), stagingValue).optional(),
   }),
   remove_rows: z.object({ table: id, rows: z.array(rowId).min(1), reason: z.string().trim().min(1).max(500) }),
   read_table: z.object({ table: id, fromRow: z.number().int().min(0).optional() }),
@@ -477,10 +490,48 @@ function setColumns(state: FactFinderState, a: z.infer<typeof ARGS.set_columns>,
   return done(ops, `Changed the columns of ${table.title}`, `They are now: ${columnList(columns)}.`);
 }
 
+/**
+ * A staged row's own-text columns aren't what the plan update reads — stage_rows copied their values into staging. So
+ * a correction to one names the staging values it changes (`staging`), or `{}` for a column the plan doesn't read:
+ * what saves is the correction, and a change list built before it goes out of date.
+ */
+function ownTextStagingOps(
+  state: FactFinderState,
+  table: WsTable,
+  row: WsRow,
+  ownHeaders: string[],
+  values: z.infer<typeof ARGS.set_cells>["staging"],
+): TurnOp[] {
+  const ref = row.ref;
+  if (!ref) {
+    if (values && Object.keys(values).length > 0) {
+      throw new Error(`Row ${row.id} isn't ready for the plan yet, so it has no staging values — leave staging out (stage_rows stages it).`);
+    }
+    return [];
+  }
+  if (values === undefined) {
+    if (ownHeaders.length === 0) return [];
+    const which = ownHeaders.length === 1 ? `${ownHeaders[0]} is` : `${ownHeaders.join(", ")} are`;
+    throw new Error(
+      `${rowName(state, table, row)} is ready for the plan, and ${which} your own text, which the plan update doesn't read: ` +
+        "call set_cells again with staging — the staging values this correction changes (staging column id → value, as " +
+        `set_cell takes it${ref.holdingId ? "; this is a holding row, so its holding's fields" : ""}) — or staging: {} when the plan doesn't read ${ownHeaders.length === 1 ? "it" : "them"}.`,
+    );
+  }
+  const sectionId = stagingSectionOf(state, row);
+  return Object.entries(values).map(([key, value]) => {
+    if (!ref.holdingId) return staging({ op: "setCell", sectionId, rowId: ref.rowId, columnId: key, value });
+    const field = HOLDING_FIELDS.find((f) => f === key);
+    if (!field) throw new Error(`A holding row's staging values are its fields: ${HOLDING_FIELDS.join(", ")}.`);
+    return staging({ op: "setHolding", sectionId, rowId: ref.rowId, holdingId: ref.holdingId, field, value });
+  });
+}
+
 function setCells(state: FactFinderState, a: z.infer<typeof ARGS.set_cells>, ctx: WsToolContext): WsToolOutcome {
   const table = tableOf(state, a.table);
   const row = rowOf(table, a.row);
   const own: Record<string, string> = {};
+  const ownHeaders: string[] = [];
   const ops: TurnOp[] = [];
   const changed: WsColumn[] = [];
   for (const [header, value] of Object.entries(a.cells)) {
@@ -489,6 +540,7 @@ function setCells(state: FactFinderState, a: z.infer<typeof ARGS.set_cells>, ctx
     const { bind } = col;
     if (!bind || !row.ref) {
       own[col.id] = value;
+      ownHeaders.push(col.header);
       continue;
     }
     if (bind.kind === "section") throw new Error("That column shows where the row sits — it can't be typed.");
@@ -502,6 +554,7 @@ function setCells(state: FactFinderState, a: z.infer<typeof ARGS.set_cells>, ctx
       throw new Error(`${col.header} shows a holding, and row ${row.id} isn't a holding row.`);
     }
   }
+  ops.push(...ownTextStagingOps(state, table, row, ownHeaders, a.staging));
   if (Object.keys(own).length > 0) ops.unshift(ws({ op: "setCells", tableId: table.id, rowId: row.id, cells: own }));
   const next = check(state, ops, ctx);
   const nextRow = findTable(next.worksheet, table.id).rows.find((r) => r.id === row.id) ?? row;

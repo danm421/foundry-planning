@@ -92,7 +92,7 @@ describe("WS_TOOL_DEFS", () => {
       set_columns: { args: ["table", "columns"], required: ["table", "columns"] },
       fill_from_staging: { args: ["table", "sections", "holdings"], required: ["table", "sections"] },
       add_rows: { args: ["table", "rows"], required: ["table", "rows"] },
-      set_cells: { args: ["table", "row", "cells"], required: ["table", "row", "cells"] },
+      set_cells: { args: ["table", "row", "cells", "staging"], required: ["table", "row", "cells"] },
       remove_rows: { args: ["table", "rows", "reason"], required: ["table", "rows", "reason"] },
       read_table: { args: ["table", "fromRow"], required: ["table"] },
       read_document: { args: ["document", "fromPage", "fromChar", "toPage"], required: ["document"] },
@@ -178,6 +178,97 @@ describe("runWorksheetTool", () => {
       { layer: "staging", op: { op: "setHolding", sectionId: "retirement", rowId: "r1", holdingId: "h1", field: "shares", value: "12" } },
     ]);
     expect(apply(state, out).sections.retirement[0].holdings?.[0]).toMatchObject({ shares: 12, by: "chat", pinned: true });
+  });
+
+  describe("set_cells on a staged row's own text (a free-form row stage_rows copied into staging)", () => {
+    /** Debts: a free-form table whose row stage_rows put in staging (liab l1); a Positions row shows holding h1. */
+    function staged(): FactFinderState {
+      const s = fixture();
+      s.sections.liab = [
+        { id: "l1", sourceFileIds: ["f2"], cells: { loanName: { value: "Home mortgage", by: "chat", pinned: true }, balance: { value: 310000, by: "chat", pinned: true } } },
+      ];
+      s.worksheet.tables.push(
+        {
+          id: "t-debts",
+          title: "Debts",
+          columns: [
+            { id: "d-loan", header: "Loan" },
+            { id: "d-balance", header: "Balance" },
+            { id: "d-note", header: "Note" },
+          ],
+          rows: [{ id: "wd1", cells: { "d-loan": "Home mortgage", "d-balance": "$310,000" }, ref: { rowId: "l1" } }],
+        },
+        {
+          id: "t-pos",
+          title: "Positions",
+          columns: [
+            { id: "p-name", header: "Position" },
+            { id: "p-shares", header: "Shares" },
+          ],
+          rows: [{ id: "wp1", cells: { "p-name": "VTI", "p-shares": "10" }, ref: { rowId: "r1", holdingId: "h1" } }],
+        },
+      );
+      return s;
+    }
+
+    it("refuses without staging, so a correction can't miss what goes to the plan", async () => {
+      const state = staged();
+      await expect(
+        runWorksheetTool("set_cells", { table: "t-debts", row: "wd1", cells: { Balance: "$325,000" } }, state, context()),
+      ).rejects.toThrow(/"Home mortgage" is ready for the plan, and Balance is your own text.*staging/);
+    });
+
+    it("with staging, writes the worksheet text and the staging value together: what saves is the correction", async () => {
+      const state = staged();
+      const out = await runWorksheetTool(
+        "set_cells",
+        { table: "t-debts", row: "wd1", cells: { Balance: "$325,000" }, staging: { balance: 325000 } },
+        state,
+        context(),
+      );
+      expect(out.ops).toEqual([
+        { layer: "ws", op: { op: "setCells", tableId: "t-debts", rowId: "wd1", cells: { "d-balance": "$325,000" } } },
+        { layer: "staging", op: { op: "setCell", sectionId: "liab", rowId: "l1", columnId: "balance", value: 325000 } },
+      ]);
+      const next = apply(state, out);
+      expect(next.sections.liab[0].cells.balance).toEqual({ value: 325000, by: "chat", pinned: true });
+      expect(next.worksheet.tables[2].rows[0].cells["d-balance"]).toBe("$325,000");
+      expect(out.summary).toBe('Changed Balance on "Home mortgage" in Debts');
+    });
+
+    it("staging: {} — a column the plan doesn't read — changes only the worksheet text", async () => {
+      const out = await runWorksheetTool(
+        "set_cells",
+        { table: "t-debts", row: "wd1", cells: { Note: "Refinanced in 2021" }, staging: {} },
+        staged(),
+        context(),
+      );
+      expect(out.ops).toEqual([{ layer: "ws", op: { op: "setCells", tableId: "t-debts", rowId: "wd1", cells: { "d-note": "Refinanced in 2021" } } }]);
+    });
+
+    it("a holding row's staging values are its holding's fields", async () => {
+      const state = staged();
+      const out = await runWorksheetTool(
+        "set_cells",
+        { table: "t-pos", row: "wp1", cells: { Shares: "12" }, staging: { shares: 12 } },
+        state,
+        context(),
+      );
+      expect(out.ops).toContainEqual({
+        layer: "staging",
+        op: { op: "setHolding", sectionId: "retirement", rowId: "r1", holdingId: "h1", field: "shares", value: 12 },
+      });
+      expect(apply(state, out).sections.retirement[0].holdings?.[0]).toMatchObject({ shares: 12, by: "chat", pinned: true });
+      await expect(
+        runWorksheetTool("set_cells", { table: "t-pos", row: "wp1", cells: { Shares: "12" }, staging: { balance: 12 } }, state, context()),
+      ).rejects.toThrow("A holding row's staging values are its fields: ticker, name, shares, price, marketValue, costBasis.");
+    });
+
+    it("refuses staging values on a row that isn't staged yet", async () => {
+      await expect(
+        runWorksheetTool("set_cells", { table: "t-accounts", row: "w2", cells: { Note: "x" }, staging: { currentValue: 1 } }, staged(), context()),
+      ).rejects.toThrow("isn't ready for the plan yet, so it has no staging values");
+    });
   });
 
   it("set_cells refuses a section column", async () => {
