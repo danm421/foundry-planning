@@ -324,6 +324,10 @@ async function dispatch(name: string, raw: unknown, state: FactFinderState, ctx:
       const { section, row } = liveRow(state, a.rowId);
       if (!section.links) throw new Error(`${section.label} rows don't link to records.`);
       const label = quote(rowLabel(section, row));
+      // A keep-open save linked the row to the record it wrote: relinking it would add that record again on the next save.
+      const link = row.link;
+      const saved = link?.kind === "existing" ? state.applied?.find((x) => x.rowId === row.id && x.recordId === link.recordId) : undefined;
+      if (saved) throw new Error(`${label} is already in the plan as ${quote(saved.label)} — leave its link as it is.`);
       if (a.kind === "new") {
         const ops: ClientOp[] = [{ op: "setLink", sectionId: section.id, rowId: row.id, link: { kind: "new" } }];
         return edit(state, ops, ctx, () => `${label} will be a new record`);

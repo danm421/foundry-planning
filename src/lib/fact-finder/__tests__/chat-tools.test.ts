@@ -221,6 +221,18 @@ describe("runTool — links", () => {
       "Client & Co-client rows don't link to records.",
     );
   });
+
+  it("set_link refuses a row already linked to the record it saved: it's in the plan, so leave it — never make it new", async () => {
+    const state = fixture();
+    state.sections.cash[1] = { ...state.sections.cash[1], link: { kind: "existing", recordId: "acct-7", score: null, confirmed: true, by: "advisor" } };
+    state.applied = [{ lineId: "c2", rowId: "c2", target: "account", recordId: "acct-7", label: "Joint Checking ··5678", at: AT }];
+    const refusal = (args: object) => runTool("set_link", { rowId: "c2", ...args }, state, context()).then(() => "", (err: Error) => err.message);
+    for (const args of [{ kind: "existing", recordId: "acct-1" }, { kind: "new" }]) {
+      const message = await refusal(args);
+      expect(message).toBe('"Joint Checking (copy)" is already in the plan as "Joint Checking ··5678" — leave its link as it is.');
+      expect(message).not.toContain("new");
+    }
+  });
 });
 
 describe("runTool — holdings", () => {
