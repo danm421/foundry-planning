@@ -17,12 +17,13 @@ const MAX_LENGTH = 60;
 const LAST4_MASK = "x";
 
 /**
- * Deterministic backstop for the account-statement prompt's "short name" rule.
+ * Deterministic backstop for the account-statement prompt's "name" rule.
  *
- * The prompt asks the model for the account type alone (e.g. "Rollover IRA"),
- * but prompt compliance is probabilistic, so this strips the two things that
- * make a non-compliant name unusable — embedded account numbers and unbounded
- * length — without attempting to restructure the name itself. Removing a
+ * The prompt asks the model for the account's own name, lightly cleaned (e.g.
+ * "Acme Corp 401(k) Plan"), but prompt compliance is probabilistic, so this
+ * strips the two things that make a non-compliant name unusable — embedded
+ * account numbers and unbounded length — without attempting to restructure the
+ * name itself. Removing a
  * custodian the model added anyway is `composeAccountName`'s job, because that
  * needs the extracted `custodian` field this function never sees.
  *
@@ -82,8 +83,8 @@ function wordSpans(s: string): Array<{ word: string; start: number; end: number 
  * Advisors don't want the institution in the name — it has its own `custodian`
  * field and its own column on the account — and on a fact finder the model was
  * inventing one to satisfy the old "custodian + account type" rule. The prompt
- * now asks for the type alone; this is the deterministic backstop, in the same
- * spirit as the number-stripping above.
+ * now asks for the name without it; this is the deterministic backstop, in the
+ * same spirit as the number-stripping above.
  *
  * Only words the extracted custodian itself contains are removed, and only from
  * the ends: "Schwab Joint Brokerage" -> "Joint Brokerage" and "Joint Brokerage
@@ -154,9 +155,9 @@ export function stripLast4Suffix(name: string, raw: string | null | undefined): 
 }
 
 /**
- * The account display name as extraction should emit it: the account type,
- * without the custodian, followed by the masked last 4 when the document showed
- * one — "Rollover IRA x1234".
+ * The account display name as extraction should emit it: the account's own
+ * name, without the custodian, followed by the masked last 4 when the document
+ * showed one — "Acme Corp 401(k) Plan x1234".
  *
  * Pure and idempotent: `condenseAccountName` strips the mask this appends, so
  * re-running over an already-composed name reproduces it. Total length stays

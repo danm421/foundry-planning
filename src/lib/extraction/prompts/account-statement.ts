@@ -1,4 +1,4 @@
-export const ACCOUNT_STATEMENT_VERSION = "2026-10-22.1-business-interests";
+export const ACCOUNT_STATEMENT_VERSION = "2026-10-26.1-names-as-printed";
 export const ACCOUNT_STATEMENT_HOLDINGS_VERSION = "2026-10-21.3-cash-line-not-total-holdings";
 
 const HOLDINGS_FIELD = `,
@@ -41,7 +41,7 @@ Return a JSON object with this exact structure:
 {
   "accounts": [
     {
-      "name": "SHORT display name: the ACCOUNT TYPE only, Title Case, max ~40 chars. e.g. 'Rollover IRA', 'Joint Brokerage', 'Checking'. Do NOT include the custodian/institution, account numbers, or the registration/owner names. A BUSINESS is the one exception: use the business's own name as printed.",
+      "name": "The account's OWN name, close to how the document prints it (its title, nickname or plan name), lightly cleaned — see the 'name' rule below. NOT just the account type. Do NOT include the custodian/institution, account numbers, or the registration line's owner names. A BUSINESS uses its own name as printed.",
       "category": "one of: taxable, cash, retirement, annuity, real_estate, business, notes_receivable, education_savings",
       "subType": "one of: brokerage, savings, checking, traditional_ira, roth_ira, 401k, 403b, 529, trust, primary_residence, rental_property, commercial_property, sole_proprietorship, partnership, s_corp, c_corp, llc, other",
       "owner": "one of: client, spouse, joint (infer from account title or registration)",
@@ -123,7 +123,15 @@ Extraction rules:
   document also prints the actual date; do not convert a label into a date on
   your own. If no date is legible for an account, OMIT "statementDate" entirely.
   Never guess it from the file name.
-- "name" must be SHORT and descriptive — the account type, nothing else (a business keeps its own name). Do NOT put the custodian in "name" even when the document names one: it has its own "custodian" field. Never copy the statement's registration header into "name". The account number belongs in "accountNumberLast4" and the registration line belongs in "ownerNameHint", so "name" needs neither. Good: "Rollover IRA", "Joint Brokerage". Bad: "Fidelity Rollover IRA", "JOHN A SMITH & JANE B SMITH JTWROS ROLLOVER IRA XXXX-1234".
+- "name" is the account's OWN name, kept close to how the document prints it — never boiled down to the bare account type. Keep every word that tells this account apart from a similar one: an employer or plan sponsor, a plan or program name, an investment strategy or model, a trust's name, a nickname, the original owner of an inherited account. Only clean it up:
+  - Do NOT put the custodian in "name" even when the document names one: it has its own "custodian" field.
+  - Leave out the account number: it belongs in "accountNumberLast4".
+  - Never copy the statement's registration header into "name": the owners' legal names belong in "ownerNameHint". A trust's own name is not an owner name — keep it.
+  - Drop filler that describes the document rather than the account: "Account Statement", "Summary", "Account Number", "Your".
+  - Title Case an ALL-CAPS name, keeping acronyms upper-case (IRA, 401(k), HSA, SEP, TOD).
+  - Keep it under ~50 characters. When it runs longer, cut filler first — never the distinguishing words.
+  - When the document gives the account no name beyond its type, use the type ("Rollover IRA", "Checking").
+  Good: "Acme Corp 401(k) Plan", "Smith Family Trust Brokerage", "Inherited IRA - Robert Smith", "Rollover IRA - Growth Model", "Emergency Savings". Bad: "401(k)" when the document says "Acme Corp 401(k) Plan"; "Fidelity Rollover IRA"; "JOHN A SMITH & JANE B SMITH JTWROS ROLLOVER IRA XXXX-1234".
 - "ownerNameHint": copy the registration/title line verbatim (all names + any 'JTWROS'/'Joint'/'TOD' wording). Still also fill the coarse "owner" enum.${withHoldings ? HOLDINGS_RULES : ""}
 
 Return ONLY valid JSON. No explanation, no markdown.`;

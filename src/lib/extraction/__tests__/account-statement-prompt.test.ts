@@ -65,14 +65,18 @@ describe("ACCOUNT_STATEMENT_PROMPT", () => {
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("annuity");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("lifePolicies");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("cashValue");
-    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-10-22.1-business-interests");
+    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-10-26.1-names-as-printed");
   });
 
-  it("instructs a short account-TYPE name with no custodian, not the registration header", () => {
-    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/SHORT/);
+  it("keeps the account's own name, not just its type, minus custodian and registration header", () => {
+    // A type-only name dropped the words that tell two accounts apart — the
+    // employer on a 401(k), a trust's name, an inherited IRA's original owner.
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/never boiled down to the bare account type/);
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/Bad: "401\(k\)" when the document says "Acme Corp 401\(k\) Plan"/);
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/cut filler first — never the distinguishing words/);
     expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/Do NOT put the custodian in "name"/);
     // "Fidelity Rollover IRA" survives only as the counter-example.
-    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/Bad: "Fidelity Rollover IRA"/);
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/; "Fidelity Rollover IRA";/);
     // The registration line and the account number have their own fields, so
     // neither belongs in "name".
     expect(ACCOUNT_STATEMENT_PROMPT).toMatch(
@@ -355,7 +359,7 @@ describe("business interests", () => {
   });
 
   it("keeps a business's own name and skips personal property", () => {
-    expect(ACCOUNT_STATEMENT_PROMPT).toContain("A BUSINESS is the one exception: use the business's own name as printed.");
+    expect(ACCOUNT_STATEMENT_PROMPT).toContain("A BUSINESS uses its own name as printed.");
     expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/Personal property — vehicles, motorcycles.*Skip it entirely/);
   });
 });
