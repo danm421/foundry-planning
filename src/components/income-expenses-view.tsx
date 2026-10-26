@@ -3,8 +3,10 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-close-once";
 import { useFocusDelete } from "@/hooks/use-focus-delete";
-import GrowthSourceRadio from "./forms/growth-source-radio";
 import { DedicatedFundingPicker } from "./forms/dedicated-funding-picker";
+import { ChoiceChip } from "./forms/choice-chip";
+import { CustomOrInflationField } from "./forms/custom-or-inflation-field";
+import DialogShell from "./dialog-shell";
 import { PaymentMonthSelect } from "./forms/payment-month-select";
 import { StateSelect } from "@/components/state-select";
 import SavingsRuleDialog from "./forms/savings-rule-dialog";
@@ -61,8 +63,9 @@ import { useClientAccess } from "./client-access-provider";
 import Row from "@/components/income-expenses/row";
 import Group from "@/components/income-expenses/group";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
+import { HelpLabel } from "@/components/forms/help-label";
 import {
-  fieldLabelBaseClassName,
+  checkboxClassName,
   inputClassName,
   selectBaseClassName,
   selectClassName,
@@ -305,24 +308,6 @@ const pctFromDecimal = (v: string | null | undefined, fallback: number): number 
   return Math.round(Number(v) * 10000) / 100;
 };
 
-function PillToggle({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={
-        "px-3 py-1.5 text-[12px] font-medium rounded-[var(--radius-sm)] border transition-colors " +
-        (active
-          ? "bg-accent text-accent-on border-accent"
-          : "bg-card-2 text-ink-3 border-hair hover:border-hair-2 hover:text-ink")
-      }
-    >
-      {label}
-    </button>
-  );
-}
-
 const INCOME_GROUPS: { label: string; types: IncomeType[] }[] = [
   { label: "Salaries", types: ["salary"] },
   { label: "Business", types: ["business"] },
@@ -398,6 +383,186 @@ function PlainYearCell({ year }: { year: number }) {
 
 // ── Shared atoms ──────────────────────────────────────────────────────────────
 
+/** One on/off box in a dialog's flags row. Help sits outside the <label>, as
+ *  in `HelpLabel`. */
+function FlagCheckbox({
+  label,
+  checked,
+  onChange,
+  disabled,
+  help,
+}: {
+  label: React.ReactNode;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  disabled?: boolean;
+  help?: string;
+}) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-2">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.checked)}
+          className={checkboxClassName}
+        />
+        {label}
+      </label>
+      {help && <FieldTooltip text={help} />}
+    </span>
+  );
+}
+
+/** "In today's dollars": the amount is entered at the plan's starting-year
+ *  value and inflated from there. */
+function TodaysDollarsFlag({
+  checked,
+  onChange,
+  planStartYear,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  planStartYear: number;
+}) {
+  return (
+    <FlagCheckbox
+      label="In today's dollars"
+      checked={checked}
+      onChange={onChange}
+      help={`Enter the amount in ${planStartYear} dollars — it grows from ${planStartYear}, not from the start year.`}
+    />
+  );
+}
+
+/** The Annual Amount slot while a custom schedule drives the row: the stored
+ *  amount rides along hidden (the API would null it otherwise) and the slot
+ *  links to the Schedule tab instead. */
+function ScheduleAmountSlot({ annualAmount, onView }: { annualAmount: string | number; onView: () => void }) {
+  return (
+    <div>
+      <input type="hidden" name="annualAmount" value={String(annualAmount)} />
+      <HelpLabel help="Set year by year on the Schedule tab, which replaces the annual amount and growth rate.">
+        Annual Amount
+      </HelpLabel>
+      <button
+        type="button"
+        onClick={onView}
+        className="flex h-9 w-full items-center justify-between rounded-[var(--radius-sm)] border border-accent/40 bg-accent/10 px-3 text-sm font-medium text-accent hover:bg-accent/15"
+      >
+        Using custom schedule
+        <span className="text-xs underline">View</span>
+      </button>
+    </div>
+  );
+}
+
+/** Start and End Year, half the row each: milestone pickers when the plan has
+ *  milestones to anchor to, plain year inputs when it doesn't. */
+function FlowYearFields({
+  idPrefix,
+  clientInfo,
+  ownerNames,
+  start,
+  end,
+  onStartChange,
+  onEndChange,
+  preferDuration,
+}: {
+  idPrefix: string;
+  clientInfo?: ClientInfo;
+  ownerNames: OwnerNames;
+  start: { year: number; ref: YearRef | null };
+  end: { year: number; ref: YearRef | null };
+  onStartChange: (year: number, ref: YearRef | null) => void;
+  onEndChange: (year: number, ref: YearRef | null) => void;
+  preferDuration?: boolean;
+}) {
+  const milestones = clientInfo?.milestones;
+  if (!milestones) {
+    return (
+      <>
+        <div className="col-span-2">
+          <HelpLabel htmlFor={`${idPrefix}-start`}>Start Year</HelpLabel>
+          <input
+            id={`${idPrefix}-start`}
+            name="startYear"
+            type="number"
+            required
+            value={start.year}
+            onChange={(e) => onStartChange(Number(e.target.value), null)}
+            className={inputClassName}
+          />
+        </div>
+        <div className="col-span-2">
+          <HelpLabel htmlFor={`${idPrefix}-end`}>End Year</HelpLabel>
+          <input
+            id={`${idPrefix}-end`}
+            name="endYear"
+            type="number"
+            required
+            value={end.year}
+            onChange={(e) => onEndChange(Number(e.target.value), null)}
+            className={inputClassName}
+          />
+        </div>
+      </>
+    );
+  }
+  const clientFirstName = ownerNames.clientName.split(" ")[0];
+  const spouseFirstName = ownerNames.spouseName?.split(" ")[0];
+  return (
+    <>
+      <div className="col-span-2">
+        <MilestoneYearPicker
+          name="startYear"
+          id={`${idPrefix}-start`}
+          value={start.year}
+          yearRef={start.ref}
+          milestones={milestones}
+          showSSRefs={false}
+          onChange={onStartChange}
+          label="Start Year"
+          clientFirstName={clientFirstName}
+          spouseFirstName={spouseFirstName}
+          position="start"
+          compact
+        />
+      </div>
+      <div className="col-span-2">
+        <MilestoneYearPicker
+          name="endYear"
+          id={`${idPrefix}-end`}
+          value={end.year}
+          yearRef={end.ref}
+          milestones={milestones}
+          showSSRefs={false}
+          onChange={onEndChange}
+          label="End Year"
+          clientFirstName={clientFirstName}
+          spouseFirstName={spouseFirstName}
+          startYearForDuration={start.year}
+          preferDuration={preferDuration}
+          position="end"
+          compact
+        />
+      </div>
+    </>
+  );
+}
+
+const FLOW_DIALOG_TABS = [
+  { id: "details", label: "Details" },
+  { id: "schedule", label: "Schedule" },
+];
+
+/** One row of a flow dialog's Details form: four columns, so a name takes
+ *  half the row and a short pick a quarter. Each row starts its own line. */
+function FormRow({ children }: { children: React.ReactNode }) {
+  return <div className="grid grid-cols-4 gap-x-4 gap-y-5">{children}</div>;
+}
+
 function SectionHeader({
   title,
   subtitle,
@@ -442,6 +607,7 @@ interface CashAccountPickerProps {
   ownerEntityId?: string | null;
   value: string;
   onChange: (v: string) => void;
+  className?: string;
 }
 
 /**
@@ -457,6 +623,7 @@ function CashAccountPicker({
   ownerEntityId,
   value,
   onChange,
+  className,
 }: CashAccountPickerProps) {
   const cashAccounts = accounts.filter((a) => a.category === "cash");
   if (cashAccounts.length === 0) return null;
@@ -476,15 +643,13 @@ function CashAccountPicker({
   const defaultLabel = defaultAcct ? defaultAcct.name : "Household Cash";
 
   return (
-    <div>
-      <label className={`block ${fieldLabelBaseClassName}`} htmlFor={id}>
-        {label}
-      </label>
+    <div className={className}>
+      <HelpLabel htmlFor={id}>{label}</HelpLabel>
       <select
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`mt-1 ${selectClassName}`}
+        className={selectClassName}
       >
         <option value="">Default ({defaultLabel})</option>
         {household.length > 0 && (
@@ -519,6 +684,7 @@ interface BusinessOwnerSelectProps {
   accounts: Account[];
   value: string | null;
   onChange: (v: string | null) => void;
+  className?: string;
 }
 
 /**
@@ -527,20 +693,18 @@ interface BusinessOwnerSelectProps {
  * with `ownerEntityId` (trust ownership) — but that path is not currently
  * editable from this dialog, so we only need to show businesses here.
  */
-function BusinessOwnerSelect({ id, accounts, value, onChange }: BusinessOwnerSelectProps) {
+function BusinessOwnerSelect({ id, accounts, value, onChange, className }: BusinessOwnerSelectProps) {
   const businessAccounts = accounts.filter((a) => a.category === "business");
   if (businessAccounts.length === 0) return null;
 
   return (
-    <div>
-      <label className={`block ${fieldLabelBaseClassName}`} htmlFor={id}>
-        Owned by business (optional)
-      </label>
+    <div className={className}>
+      <HelpLabel htmlFor={id}>Owned by business (optional)</HelpLabel>
       <select
         id={id}
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value || null)}
-        className={`mt-1 ${selectClassName}`}
+        className={selectClassName}
       >
         <option value="">— None —</option>
         {businessAccounts.map((a) => (
@@ -785,31 +949,53 @@ function IncomeDialog({
     }
   }
 
+  const deferredSingle = type === "deferred" && (owner === "client" || owner === "spouse");
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/70" onClick={() => onOpenChange(false)} />
-      <div className="relative z-10 flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-card shadow-xl">
-        <div className="flex shrink-0 items-center justify-between px-6 pt-6 pb-4">
-          <h2 className="text-lg font-semibold text-ink">{isEdit ? "Edit Income" : "Add Income"}</h2>
-          <button onClick={() => onOpenChange(false)} className="text-ink-3 hover:text-ink-2">
-            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="mx-6 flex shrink-0 border-b border-hair">
-          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-accent text-accent" : "border-transparent text-ink-3 hover:text-ink-2"}`}>Details</button>
-          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-accent text-accent" : "border-transparent text-ink-3 hover:text-ink-2"}`}>Schedule</button>
-        </div>
-
-        {activeTab === "details" && (<>
-          <form id="income-form-fields" onSubmit={handleSubmit} className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
+    <DialogShell
+      open={open}
+      onOpenChange={onOpenChange}
+      title={isEdit ? "Edit Income" : "Add Income"}
+      size="lg"
+      fixedHeight
+      tabs={FLOW_DIALOG_TABS}
+      activeTab={activeTab}
+      onTabChange={(id) => setActiveTab(id as TabId)}
+      // The form exists only on Details, so its Save and Delete do too.
+      primaryAction={
+        activeTab === "details"
+          ? { label: isEdit ? "Save Changes" : "Add Income", form: "income-form-fields", loading }
+          : undefined
+      }
+      destructiveAction={
+        activeTab === "details" && isEdit && onRequestDelete
+          ? { label: "Delete…", onClick: onRequestDelete }
+          : undefined
+      }
+    >
+      {activeTab === "details" && (
+        <form id="income-form-fields" onSubmit={handleSubmit} className="space-y-5">
           {error && <p className="rounded bg-crit/10 px-3 py-2 text-sm text-crit">{error}</p>}
 
-          <div className="grid grid-cols-2 gap-4">
+          {/* Name takes half the row; Type and Tax Treatment a quarter each. */}
+          <FormRow>
+            <div className="col-span-2">
+              <HelpLabel htmlFor="inc-name">
+                Name <span className="text-crit">*</span>
+              </HelpLabel>
+              <input
+                id="inc-name"
+                name="name"
+                type="text"
+                required
+                value={name}
+                onChange={(e) => { nameTouchedRef.current = true; setName(e.target.value); }}
+                placeholder="e.g., Base Salary"
+                className={inputClassName}
+              />
+            </div>
             <div>
-              <label className={`block ${fieldLabelBaseClassName}`} htmlFor="inc-type">Type</label>
+              <HelpLabel htmlFor="inc-type">Type</HelpLabel>
               <select
                 id="inc-type"
                 name="type"
@@ -820,366 +1006,207 @@ function IncomeDialog({
                   setType(next);
                   if (next !== "other") setLinkedPropertyId(null);
                 }}
-                className={`mt-1 ${selectClassName}`}
+                className={selectClassName}
               >
                 {Object.entries(INCOME_TYPE_LABELS).map(([v, l]) => (
                   <option key={v} value={v}>{l}</option>
                 ))}
               </select>
             </div>
-
             <div>
-              <label className={`block ${fieldLabelBaseClassName}`} htmlFor="inc-taxType">Tax Treatment</label>
+              <HelpLabel htmlFor="inc-taxType">Tax Treatment</HelpLabel>
               <select
                 id="inc-taxType"
                 name="taxType"
                 value={taxType}
                 onChange={(e) => setTaxType(e.target.value as IncomeTaxType)}
-                className={`mt-1 ${selectClassName}`}
+                className={selectClassName}
               >
                 {Object.entries(INCOME_TAX_TYPE_LABELS).map(([v, l]) => (
                   <option key={v} value={v}>{l}</option>
                 ))}
               </select>
             </div>
+          </FormRow>
 
-            <div className={type === "other" ? "col-span-2 grid grid-cols-2 gap-4" : undefined}>
-              <div>
-                <label className={`block ${fieldLabelBaseClassName}`}>Owner</label>
-                <input type="hidden" name="owner" value={owner} />
-                <div
-                  role="group"
-                  aria-label="Owner"
-                  className={`mt-1 flex flex-wrap gap-1.5${linkedProperty ? " pointer-events-none opacity-50" : ""}`}
-                  aria-disabled={linkedProperty ? true : undefined}
-                >
-                  <PillToggle
-                    label={ownerNames.clientName.split(" ")[0]}
-                    active={owner === "client"}
-                    onClick={() => setOwner("client")}
-                  />
-                  {ownerNames.spouseName && (
-                    <PillToggle
+          {/* Who it belongs to, beside what depends on the owner. */}
+          <FormRow>
+            <div className="col-span-2">
+              <HelpLabel>Owner</HelpLabel>
+              <input type="hidden" name="owner" value={owner} />
+              <div
+                role="group"
+                aria-label="Owner"
+                className={`flex flex-wrap gap-1.5${linkedProperty ? " pointer-events-none opacity-50" : ""}`}
+                aria-disabled={linkedProperty ? true : undefined}
+              >
+                <ChoiceChip
+                  label={ownerNames.clientName.split(" ")[0]}
+                  active={owner === "client"}
+                  onClick={() => setOwner("client")}
+                />
+                {ownerNames.spouseName && (
+                  <>
+                    <ChoiceChip
                       label={ownerNames.spouseName.split(" ")[0]}
                       active={owner === "spouse"}
                       onClick={() => setOwner("spouse")}
                     />
-                  )}
-                  {ownerNames.spouseName && (
-                    <PillToggle
-                      label="Joint 50/50"
-                      active={owner === "joint"}
-                      onClick={() => setOwner("joint")}
-                    />
-                  )}
-                </div>
-                {linkedProperty && (
-                  <p className="mt-1 text-xs text-ink-3">Owner follows {linkedProperty.name}.</p>
+                    <ChoiceChip label="Joint 50/50" active={owner === "joint"} onClick={() => setOwner("joint")} />
+                  </>
                 )}
               </div>
-              {type === "other" && (
-                <div>
-                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="inc-linked-property">
-                    Linked Property
-                  </label>
-                  <select
-                    id="inc-linked-property"
-                    value={linkedPropertyId ?? ""}
-                    onChange={(e) => setLinkedPropertyId(e.target.value || null)}
-                    className={`mt-1 ${selectClassName}`}
-                  >
-                    <option value="">None</option>
-                    {realEstateAccounts.map((a) => (
-                      <option key={a.id} value={a.id}>{a.name}</option>
-                    ))}
-                  </select>
-                </div>
+              {linkedProperty && (
+                <p className="mt-1 text-xs text-ink-3">Owner follows {linkedProperty.name}.</p>
               )}
             </div>
-          </div>
+            {type === "other" && (
+              <div className="col-span-2">
+                <HelpLabel htmlFor="inc-linked-property">Linked Property</HelpLabel>
+                <select
+                  id="inc-linked-property"
+                  value={linkedPropertyId ?? ""}
+                  onChange={(e) => setLinkedPropertyId(e.target.value || null)}
+                  className={selectClassName}
+                >
+                  <option value="">None</option>
+                  {realEstateAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {deferredSingle && (
+              <div>
+                <HelpLabel
+                  htmlFor="inc-survivorship-pct"
+                  help="Reduced % the surviving spouse keeps after the owner's death."
+                >
+                  Survivor benefit %
+                </HelpLabel>
+                <input
+                  id="inc-survivorship-pct"
+                  type="number"
+                  min={0}
+                  max={100}
+                  inputMode="numeric"
+                  value={survivorshipPctInput}
+                  onChange={(e) => setSurvivorshipPctInput(e.target.value)}
+                  placeholder="e.g. 50"
+                  className={inputClassName}
+                />
+              </div>
+            )}
+          </FormRow>
 
-          <div>
-            <label className={`block ${fieldLabelBaseClassName}`} htmlFor="inc-name">
-              Name <span className="text-crit">*</span>
-            </label>
-            <input
-              id="inc-name"
-              name="name"
-              type="text"
-              required
-              value={name}
-              onChange={(e) => { nameTouchedRef.current = true; setName(e.target.value); }}
-              placeholder="e.g., Base Salary"
-              className={`mt-1 ${inputClassName}`}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
+          {/* The money row: what it pays, when in the year, and how it grows. */}
+          <FormRow>
             {hasSchedule ? (
-              // When a custom schedule is active, the Annual Amount + Growth
-              // inputs aren't used by the projection engine — surface that
-              // state instead of showing fields the user can't influence.
-              // The hidden input preserves any prior annualAmount on the row
-              // so the API doesn't null it out on save (the form's FormData
-              // is what the submit handler reads).
-              <>
-                <input type="hidden" name="annualAmount" value={String(editing?.annualAmount ?? 0)} />
-                <div className="col-span-2 flex items-center justify-between rounded-md border border-accent/40 bg-accent/10 px-3 py-2.5">
-                  <div>
-                    <p className="text-sm font-medium text-accent">Using custom schedule</p>
-                    <p className="text-xs text-ink-3">Annual amount and growth rate are overridden by the schedule.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("schedule")}
-                    className="text-xs font-medium text-accent underline hover:text-accent-deep"
-                  >
-                    View schedule
-                  </button>
-                </div>
-              </>
+              <ScheduleAmountSlot annualAmount={editing?.annualAmount ?? 0} onView={() => setActiveTab("schedule")} />
             ) : (
-              <>
-                <div>
-                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="inc-amount">
-                    Annual Amount ($) <span className="text-crit">*</span>
-                  </label>
-                  <CurrencyInput
-                    id="inc-amount"
-                    name="annualAmount"
-                    required
-                    defaultValue={editing?.annualAmount ?? 0}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <label className={`block ${fieldLabelBaseClassName}`}>Growth Rate</label>
-                  <div className="mt-1">
-                    <GrowthSourceRadio
-                      value={growthSource}
-                      customRate={growthRateDisplay}
-                      resolvedInflationRate={resolvedInflationRate}
-                      onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
-                    />
-                  </div>
-                </div>
-                <label className="col-span-2 flex items-center gap-1.5 text-xs text-ink-2">
-                  <input
-                    type="checkbox"
-                    checked={todaysDollars}
-                    onChange={(e) => setTodaysDollars(e.target.checked)}
-                    className="h-3 w-3 rounded border-hair-3 bg-paper text-accent focus:ring-accent"
-                  />
-                  Amount in today&apos;s dollars (inflate from {planStartYear})
-                </label>
-              </>
+              <div>
+                <HelpLabel htmlFor="inc-amount">
+                  Annual Amount <span className="text-crit">*</span>
+                </HelpLabel>
+                <CurrencyInput id="inc-amount" name="annualAmount" required defaultValue={editing?.annualAmount ?? 0} />
+              </div>
             )}
-
-            {clientInfo?.milestones ? (
-              <>
-                <MilestoneYearPicker
-                  name="startYear"
-                  id="inc-start"
-                  value={startYear}
-                  yearRef={startYearRef}
-                  milestones={clientInfo.milestones}
-                  showSSRefs={false}
-                  onChange={(yr, ref) => { startYearTouchedRef.current = true; setStartYear(yr); setStartYearRef(ref); }}
-                  label="Start Year"
-                  clientFirstName={ownerNames.clientName.split(" ")[0]}
-                  spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
-                  position="start"
+            <PaymentMonthSelect id="inc-payment-month" value={paymentMonth} onChange={setPaymentMonth} />
+            {!hasSchedule && (
+              <div className="col-span-2">
+                <CustomOrInflationField
+                  id="inc-growth-source"
+                  label="Growth Rate"
+                  inputId="inc-growth-rate"
+                  inputLabel="Custom growth rate"
+                  source={growthSource}
+                  onSourceChange={setGrowthSource}
+                  pct={growthRateDisplay}
+                  onPctChange={setGrowthRateDisplay}
+                  inflationRate={resolvedInflationRate}
                 />
-                <MilestoneYearPicker
-                  name="endYear"
-                  id="inc-end"
-                  value={endYear}
-                  yearRef={endYearRef}
-                  milestones={clientInfo.milestones}
-                  showSSRefs={false}
-                  onChange={(yr, ref) => { endYearTouchedRef.current = true; setEndYear(yr); setEndYearRef(ref); }}
-                  label="End Year"
-                  clientFirstName={ownerNames.clientName.split(" ")[0]}
-                  spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
-                  startYearForDuration={startYear}
-                  position="end"
-                />
-              </>
-            ) : (
-              <>
-                <div>
-                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="inc-start">
-                    Start Year
-                  </label>
-                  <input
-                    id="inc-start"
-                    name="startYear"
-                    type="number"
-                    required
-                    value={startYear}
-                    onChange={(e) => { startYearTouchedRef.current = true; setStartYear(Number(e.target.value)); setStartYearRef(null); }}
-                    className={`mt-1 ${inputClassName}`}
-                  />
-                </div>
-                <div>
-                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="inc-end">
-                    End Year
-                  </label>
-                  <input
-                    id="inc-end"
-                    name="endYear"
-                    type="number"
-                    required
-                    value={endYear}
-                    onChange={(e) => { endYearTouchedRef.current = true; setEndYear(Number(e.target.value)); setEndYearRef(null); }}
-                    className={`mt-1 ${inputClassName}`}
-                  />
-                </div>
-              </>
+              </div>
             )}
-          </div>
+          </FormRow>
 
-          {/* Full width, outside the Start/End Year grid: this is a whole-row
-              setting, not a third cell of the two-column year block. */}
-          <PaymentMonthSelect id="inc-payment-month" value={paymentMonth} onChange={setPaymentMonth} />
-
-          {type === "deferred" && (owner === "client" || owner === "spouse") && (
-            <div>
-              <label className={`block ${fieldLabelBaseClassName}`} htmlFor="inc-survivorship-pct">
-                Survivor benefit %
-              </label>
-              <input
-                id="inc-survivorship-pct"
-                type="number"
-                min={0}
-                max={100}
-                inputMode="numeric"
-                value={survivorshipPctInput}
-                onChange={(e) => setSurvivorshipPctInput(e.target.value)}
-                placeholder="e.g. 50"
-                className={`mt-1 ${inputClassName}`}
-              />
-              <p className="mt-1 text-xs text-ink-3">
-                Reduced % the surviving spouse keeps after the owner&apos;s death.
-              </p>
+          {(!hasSchedule || deferredSingle) && (
+            <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
+              {!hasSchedule && (
+                <TodaysDollarsFlag checked={todaysDollars} onChange={setTodaysDollars} planStartYear={planStartYear} />
+              )}
+              {deferredSingle && (
+                <FlagCheckbox
+                  label="Elect out of survivor-annuity marital deduction"
+                  checked={qtipElectOut}
+                  onChange={setQtipElectOut}
+                  help="Unchecked, the annuity qualifies as deemed QTIP and is not taxed in the first estate. Check to tax its present value at the first death."
+                />
+              )}
             </div>
           )}
 
-          {type === "deferred" && (owner === "client" || owner === "spouse") && (
-            <div className="flex items-start gap-2">
-              <input
-                id="inc-qtip-elect-out"
-                type="checkbox"
-                checked={qtipElectOut}
-                onChange={(e) => setQtipElectOut(e.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-hair-3 bg-paper text-accent focus:ring-accent"
-              />
-              <label htmlFor="inc-qtip-elect-out" className="text-sm text-ink-2">
-                Elect out of survivor-annuity marital deduction
-                <span className="mt-0.5 block text-xs text-ink-3">
-                  Default (unchecked): the annuity qualifies as deemed QTIP and is not
-                  taxed in the first estate. Check to tax its present value at the first death.
-                </span>
-              </label>
-            </div>
-          )}
-
-          <CashAccountPicker
-            id="inc-cash"
-            label="Deposits to"
-            accounts={accounts}
-            value={cashAccountId}
-            onChange={setCashAccountId}
-          />
-
-          <BusinessOwnerSelect
-            id="inc-owner-account"
-            accounts={accounts}
-            value={ownerAccountId}
-            onChange={setOwnerAccountId}
-          />
-
-          </form>
-          <div className="flex shrink-0 items-center justify-between border-t border-hair bg-card-2 px-6 py-4">
-            {isEdit && onRequestDelete ? (
-              <button
-                type="button"
-                onClick={onRequestDelete}
-                className="rounded-md border border-crit/40 bg-crit/10 px-4 py-2 text-sm font-medium text-crit hover:bg-crit/20"
-              >
-                Delete…
-              </button>
-            ) : (
-              <span />
-            )}
-            <button
-              type="submit"
-              form="income-form-fields"
-              disabled={loading}
-              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
-            >
-              {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Income"}
-            </button>
-          </div>
-        </>)}
-
-        {activeTab === "schedule" && (
-          <div className="flex-1 overflow-y-auto px-6 py-4">
-            <ScheduleTab
-              startYear={startYear}
-              endYear={endYear}
-              initialOverrides={stagedSchedule}
-              scenarioActive={writer.scenarioActive}
-              onSave={async (overrides) => {
-                if (editing) {
-                  await fetch(`/api/clients/${clientId}/incomes/${editing.id}/schedule`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ overrides }),
-                  });
-                }
-                setStagedSchedule(overrides);
-                setHasSchedule(overrides.length > 0);
-              }}
-              onClear={async () => {
-                if (editing) {
-                  await fetch(`/api/clients/${clientId}/incomes/${editing.id}/schedule`, { method: "DELETE" });
-                }
-                setStagedSchedule([]);
-                setHasSchedule(false);
-              }}
+          {/* Start and End fill a line, so the account pickers start their own. */}
+          <FormRow>
+            <FlowYearFields
+              idPrefix="inc"
+              clientInfo={clientInfo}
+              ownerNames={ownerNames}
+              start={{ year: startYear, ref: startYearRef }}
+              end={{ year: endYear, ref: endYearRef }}
+              onStartChange={(yr, ref) => { startYearTouchedRef.current = true; setStartYear(yr); setStartYearRef(ref); }}
+              onEndChange={(yr, ref) => { endYearTouchedRef.current = true; setEndYear(yr); setEndYearRef(ref); }}
             />
-          </div>
-        )}
-      </div>
-    </div>
+
+            <CashAccountPicker
+              id="inc-cash"
+              label="Deposits to"
+              accounts={accounts}
+              value={cashAccountId}
+              onChange={setCashAccountId}
+              className="col-span-2"
+            />
+            <BusinessOwnerSelect
+              id="inc-owner-account"
+              accounts={accounts}
+              value={ownerAccountId}
+              onChange={setOwnerAccountId}
+              className="col-span-2"
+            />
+          </FormRow>
+        </form>
+      )}
+
+      {activeTab === "schedule" && (
+        <ScheduleTab
+          startYear={startYear}
+          endYear={endYear}
+          initialOverrides={stagedSchedule}
+          scenarioActive={writer.scenarioActive}
+          onSave={async (overrides) => {
+            if (editing) {
+              await fetch(`/api/clients/${clientId}/incomes/${editing.id}/schedule`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ overrides }),
+              });
+            }
+            setStagedSchedule(overrides);
+            setHasSchedule(overrides.length > 0);
+          }}
+          onClear={async () => {
+            if (editing) {
+              await fetch(`/api/clients/${clientId}/incomes/${editing.id}/schedule`, { method: "DELETE" });
+            }
+            setStagedSchedule([]);
+            setHasSchedule(false);
+          }}
+        />
+      )}
+    </DialogShell>
   );
 }
 
 // ── Expense Dialog ────────────────────────────────────────────────────────────
-
-/** A field label with an optional `?` help badge beside it. The badge sits
- *  outside the <label> so its copy never joins the control's accessible name. */
-function HelpLabel({
-  htmlFor,
-  help,
-  helpSide,
-  children,
-}: {
-  htmlFor?: string;
-  help?: string;
-  helpSide?: "top" | "bottom";
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <label className={fieldLabelBaseClassName} htmlFor={htmlFor}>
-        {children}
-      </label>
-      {help && <FieldTooltip text={help} side={helpSide} />}
-    </div>
-  );
-}
 
 interface ExpenseDialogProps {
   clientId: string;
@@ -1468,29 +1495,34 @@ function ExpenseDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/70" onClick={() => onOpenChange(false)} />
-      <div className="relative z-10 flex max-h-[90vh] w-full max-w-xl flex-col rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-card shadow-xl">
-        <div className="flex shrink-0 items-center justify-between px-6 pt-6 pb-4">
-          <h2 className="text-lg font-semibold text-ink">{isEdit ? "Edit Expense" : "Add Expense"}</h2>
-          <button onClick={() => onOpenChange(false)} className="text-ink-3 hover:text-ink-2">
-            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="mx-6 flex shrink-0 border-b border-hair">
-          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-accent text-accent" : "border-transparent text-ink-3 hover:text-ink-2"}`}>Details</button>
-          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-accent text-accent" : "border-transparent text-ink-3 hover:text-ink-2"}`}>Schedule</button>
-        </div>
-
-        {activeTab === "details" && (<>
-          <form id="expense-form-fields" onSubmit={handleSubmit} className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
+    <DialogShell
+      open={open}
+      onOpenChange={onOpenChange}
+      title={isEdit ? "Edit Expense" : "Add Expense"}
+      size="lg"
+      fixedHeight
+      tabs={FLOW_DIALOG_TABS}
+      activeTab={activeTab}
+      onTabChange={(id) => setActiveTab(id as ExpTabId)}
+      // The form exists only on Details, so its Save and Delete do too.
+      primaryAction={
+        activeTab === "details"
+          ? { label: isEdit ? "Save Changes" : "Add Expense", form: "expense-form-fields", loading }
+          : undefined
+      }
+      destructiveAction={
+        activeTab === "details" && isEdit && onRequestDelete
+          ? { label: "Delete…", onClick: onRequestDelete }
+          : undefined
+      }
+    >
+      {activeTab === "details" && (
+        <form id="expense-form-fields" onSubmit={handleSubmit} className="space-y-5">
           {error && <p className="rounded bg-crit/10 px-3 py-2 text-sm text-crit">{error}</p>}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
+          {/* Name takes half the row; Type and Tax Treatment a quarter each. */}
+          <FormRow>
+            <div className="col-span-2">
               <HelpLabel htmlFor="exp-name">
                 Name <span className="text-crit">*</span>
               </HelpLabel>
@@ -1502,7 +1534,7 @@ function ExpenseDialog({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Housing"
-                className={`mt-1 ${inputClassName}`}
+                className={inputClassName}
               />
             </div>
             <div>
@@ -1520,7 +1552,7 @@ function ExpenseDialog({
                 value={type}
                 onChange={(e) => handleTypeChange(e.target.value as ExpenseType)}
                 disabled={Boolean(editing?.isDefault)}
-                className={`mt-1 ${selectClassName} disabled:cursor-not-allowed`}
+                className={`${selectClassName} disabled:cursor-not-allowed`}
               >
                 <option value="living">Living Expense</option>
                 <option value="insurance">Insurance</option>
@@ -1528,53 +1560,36 @@ function ExpenseDialog({
                 <option value="other">Other</option>
               </select>
             </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-            <span className="flex items-center gap-1.5">
-              <label className="flex items-center gap-2 text-sm text-ink-2">
-                <input
-                  type="checkbox"
-                  checked={type === "education" ? true : isGoal}
-                  disabled={type === "education"}
-                  onChange={(e) => {
-                    setIsGoal(e.target.checked);
-                    resetPayShortfall({ type, isGoal: e.target.checked });
-                  }}
-                  className="accent-[color:var(--color-accent)]"
-                />
-                Show as a goal
-              </label>
-              {type === "education" && <FieldTooltip text="Education expenses are always goals." side="bottom" />}
-            </span>
-            {isLiving && (
-              <span className="flex items-center gap-1.5">
-                <label className="flex items-center gap-2 text-sm text-ink-2">
-                  <input
-                    type="checkbox"
-                    checked={absorbsRemaining}
-                    onChange={(e) => setAbsorbsRemaining(e.target.checked)}
-                    className="accent-[color:var(--color-accent)]"
-                  />
-                  Spend whatever&rsquo;s left each year
-                </label>
-                <FieldTooltip
-                  side="bottom"
-                  text="The plan spends this household's entire remaining cash flow — after tax, debt payments, other expenses and savings — on living costs. Set a minimum below only if they have a spending floor they'll never go under; leave it at $0 if they don't."
-                />
-              </span>
+            {/* Living expenses are pure cash outflows — never a tax deduction —
+                so the Tax Treatment selector only applies to the other types. */}
+            {type !== "living" && (
+              <div>
+                <HelpLabel htmlFor="exp-deductionType">Tax Treatment</HelpLabel>
+                <select
+                  id="exp-deductionType"
+                  value={deductionType}
+                  onChange={(e) => setDeductionType(e.target.value)}
+                  className={selectClassName}
+                >
+                  <option value="">Not a deduction</option>
+                  <option value="charitable">Charitable Gift</option>
+                  <option value="above_line">Above Line Deduction</option>
+                  <option value="below_line">Below Line Deduction</option>
+                  <option value="property_tax">Property Tax</option>
+                </select>
+              </div>
             )}
-          </div>
+          </FormRow>
 
           {type === "education" && (
-            <div className="space-y-3 rounded-md border border-hair bg-card-2/40 p-3">
-              <div>
-                <label className={`block ${fieldLabelBaseClassName}`} htmlFor="exp-for">For</label>
+            <FormRow>
+              <div className="col-span-2">
+                <HelpLabel htmlFor="exp-for">For</HelpLabel>
                 <select
                   id="exp-for"
                   value={forFamilyMemberId}
                   onChange={(e) => handleForChange(e.target.value)}
-                  className={`mt-1 ${selectClassName}`}
+                  className={selectClassName}
                 >
                   <option value="">— Select —</option>
                   {(familyMembers ?? []).map((fm) => (
@@ -1584,72 +1599,33 @@ function ExpenseDialog({
                   ))}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="exp-inst-state">Institution State</label>
-                  <StateSelect
-                    id="exp-inst-state"
-                    name="institutionState"
-                    value={institutionState}
-                    onChange={setInstitutionState}
-                    className={`mt-1 ${selectClassName}`}
-                  />
-                </div>
-                <div>
-                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="exp-inst-name">Institution Name</label>
-                  <input
-                    id="exp-inst-name"
-                    type="text"
-                    value={institutionName}
-                    onChange={(e) => setInstitutionName(e.target.value)}
-                    className={`mt-1 ${inputClassName}`}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {fundingEligible && (
-            <div className="space-y-3 rounded-md border border-hair bg-card-2/40 p-3">
-              <DedicatedFundingPicker
-                accounts={accounts}
-                value={dedicatedAccountIds}
-                onChange={setDedicatedAccountIds}
-                // Only education narrows by owner; an Other goal's picker drops
-                // just 529s and the main checking account (spec §2).
-                allowedOwnerFamilyMemberIds={type === "education" ? allowedFundingOwnerIds : undefined}
-                familyMemberNames={familyMemberNames}
-                goalType={type === "education" ? "education" : "other"}
-              />
-              {(type === "education" || fundingIdsForSave.length > 0) && (
-                <label className="flex items-center gap-2 text-sm text-ink">
-                  <input
-                    type="checkbox"
-                    checked={payOutOfPocket}
-                    onChange={(e) => setPayOutOfPocket(e.target.checked)}
-                  />
-                  Pay shortfall out of pocket
-                </label>
-              )}
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-4">
-            {hasSchedule ? (
               <div>
-                <input type="hidden" name="annualAmount" value={String(editing?.annualAmount ?? 0)} />
-                <HelpLabel help="Set year by year on the Schedule tab, which replaces the annual amount and growth rate.">
-                  Annual Amount
-                </HelpLabel>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("schedule")}
-                  className="mt-1 flex h-9 w-full items-center justify-between rounded-[var(--radius-sm)] border border-accent/40 bg-accent/10 px-3 text-sm font-medium text-accent hover:bg-accent/15"
-                >
-                  Using custom schedule
-                  <span className="text-xs underline">View</span>
-                </button>
+                <HelpLabel htmlFor="exp-inst-state">Institution State</HelpLabel>
+                <StateSelect
+                  id="exp-inst-state"
+                  name="institutionState"
+                  value={institutionState}
+                  onChange={setInstitutionState}
+                  className={selectClassName}
+                />
               </div>
+              <div>
+                <HelpLabel htmlFor="exp-inst-name">Institution Name</HelpLabel>
+                <input
+                  id="exp-inst-name"
+                  type="text"
+                  value={institutionName}
+                  onChange={(e) => setInstitutionName(e.target.value)}
+                  className={inputClassName}
+                />
+              </div>
+            </FormRow>
+          )}
+
+          {/* The money row: what it costs, when in the year, and how it grows. */}
+          <FormRow>
+            {hasSchedule ? (
+              <ScheduleAmountSlot annualAmount={editing?.annualAmount ?? 0} onView={() => setActiveTab("schedule")} />
             ) : (
               <div>
                 <HelpLabel
@@ -1661,233 +1637,154 @@ function ExpenseDialog({
                 {itemCount > 0 ? (
                   <>
                     <input type="hidden" name="annualAmount" value={String(editing?.annualAmount ?? 0)} />
-                    <p className="tabular mt-1 flex h-9 items-center rounded-[var(--radius-sm)] border border-hair px-3 text-[14px] text-ink-2">
+                    <p className="tabular flex h-9 items-center rounded-[var(--radius-sm)] border border-hair px-3 text-[14px] text-ink-2">
                       {fmt(editing?.annualAmount ?? 0)}
                     </p>
                   </>
                 ) : (
-                  <CurrencyInput
-                    id="exp-amount"
-                    name="annualAmount"
-                    required
-                    defaultValue={seed?.annualAmount ?? 0}
-                    className="mt-1"
-                  />
+                  <CurrencyInput id="exp-amount" name="annualAmount" required defaultValue={seed?.annualAmount ?? 0} />
                 )}
               </div>
             )}
             <PaymentMonthSelect id="exp-payment-month" value={paymentMonth} onChange={setPaymentMonth} />
-
             {!hasSchedule && (
               <div className="col-span-2">
-                <HelpLabel>Growth Rate</HelpLabel>
-                <div className="mt-1">
-                  <GrowthSourceRadio
-                    value={growthSource}
-                    customRate={growthRateDisplay}
-                    resolvedInflationRate={resolvedInflationRate}
-                    onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
-                  />
-                </div>
-                <span className="mt-2 flex items-center gap-1.5">
-                  <label className="flex items-center gap-2 text-sm text-ink-2">
-                    <input
-                      type="checkbox"
-                      checked={todaysDollars}
-                      onChange={(e) => setTodaysDollars(e.target.checked)}
-                      className="accent-[color:var(--color-accent)]"
-                    />
-                    In today&apos;s dollars
-                  </label>
-                  <FieldTooltip
-                    text={`Enter the amount in ${planStartYear} dollars — it grows from ${planStartYear}, not from the start year.`}
-                  />
-                </span>
+                <CustomOrInflationField
+                  id="exp-growth-source"
+                  label="Growth Rate"
+                  inputId="exp-growth-rate"
+                  inputLabel="Custom growth rate"
+                  source={growthSource}
+                  onSourceChange={setGrowthSource}
+                  pct={growthRateDisplay}
+                  onPctChange={setGrowthRateDisplay}
+                  inflationRate={resolvedInflationRate}
+                />
               </div>
             )}
+          </FormRow>
 
-            {clientInfo?.milestones ? (
-              <>
-                <MilestoneYearPicker
-                  name="startYear"
-                  id="exp-start"
-                  value={startYear}
-                  yearRef={startYearRef}
-                  milestones={clientInfo.milestones}
-                  showSSRefs={false}
-                  onChange={(yr, ref) => { setStartYear(yr); setStartYearRef(ref); }}
-                  label="Start Year"
-                  clientFirstName={ownerNames.clientName.split(" ")[0]}
-                  spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
-                  position="start"
-                  compact
-                />
-                <MilestoneYearPicker
-                  name="endYear"
-                  id="exp-end"
-                  value={endYear}
-                  yearRef={endYearRef}
-                  milestones={clientInfo.milestones}
-                  showSSRefs={false}
-                  onChange={(yr, ref) => { setEndYear(yr); setEndYearRef(ref); }}
-                  label="End Year"
-                  clientFirstName={ownerNames.clientName.split(" ")[0]}
-                  spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
-                  startYearForDuration={startYear}
-                  preferDuration={type === "education"}
-                  position="end"
-                  compact
-                />
-              </>
-            ) : (
-              <>
-                <div>
-                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="exp-start">
-                    Start Year
-                  </label>
-                  <input
-                    id="exp-start"
-                    name="startYear"
-                    type="number"
-                    required
-                    value={startYear}
-                    onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
-                    className={`mt-1 ${inputClassName}`}
-                  />
-                </div>
-                <div>
-                  <label className={`block ${fieldLabelBaseClassName}`} htmlFor="exp-end">
-                    End Year
-                  </label>
-                  <input
-                    id="exp-end"
-                    name="endYear"
-                    type="number"
-                    required
-                    value={endYear}
-                    onChange={(e) => { setEndYear(Number(e.target.value)); setEndYearRef(null); }}
-                    className={`mt-1 ${inputClassName}`}
-                  />
-                </div>
-              </>
+          {/* Expense flags — one row, the same place on every expense type. */}
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
+            {!hasSchedule && (
+              <TodaysDollarsFlag checked={todaysDollars} onChange={setTodaysDollars} planStartYear={planStartYear} />
             )}
-          </div>
-
-          {/* Living expenses are pure cash outflows — never a tax deduction —
-              so the Tax Treatment selector only applies to insurance/other. */}
-          {type !== "living" && (
-            <div>
-              <label className={`block ${fieldLabelBaseClassName}`} htmlFor="exp-deductionType">Tax Treatment</label>
-              <select
-                id="exp-deductionType"
-                value={deductionType}
-                onChange={(e) => setDeductionType(e.target.value)}
-                className={`mt-1 ${selectClassName}`}
-              >
-                <option value="">None (not a deduction)</option>
-                <option value="charitable">Charitable Gift</option>
-                <option value="above_line">Above Line Deduction</option>
-                <option value="below_line">Below Line Deduction</option>
-                <option value="property_tax">Property Tax</option>
-              </select>
-            </div>
-          )}
-
-          {showMedicareEnd && (
-            <div className="space-y-4 border-t border-hair pt-4">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <label className="flex items-center gap-2 text-sm text-ink-2">
-                  <input
-                    type="checkbox"
-                    checked={endsAtMedicareEligibilityOwner !== null}
-                    onChange={e =>
-                      setEndsAtMedicareEligibilityOwner(e.target.checked ? "client" : null)
-                    }
-                    className="accent-[color:var(--color-accent)]"
-                  />
-                  Ends at Medicare eligibility
-                </label>
+            <FlagCheckbox
+              label="Show as a goal"
+              checked={type === "education" ? true : isGoal}
+              disabled={type === "education"}
+              onChange={(next) => {
+                setIsGoal(next);
+                resetPayShortfall({ type, isGoal: next });
+              }}
+              help={type === "education" ? "Education expenses are always goals." : undefined}
+            />
+            {isLiving && (
+              <FlagCheckbox
+                label={<>Spend whatever&rsquo;s left each year</>}
+                checked={absorbsRemaining}
+                onChange={setAbsorbsRemaining}
+                help="The plan spends this household's entire remaining cash flow — after tax, debt payments, other expenses and savings — on living costs. Set a minimum above only if they have a spending floor they'll never go under; leave it at $0 if they don't."
+              />
+            )}
+            {/* A legacy living row already carrying a Medicare end keeps this
+                control, so the advisor can see and clear it — see `showMedicareEnd`. */}
+            {showMedicareEnd && (
+              <span className="flex items-center gap-3">
+                <FlagCheckbox
+                  label="Ends at Medicare eligibility"
+                  checked={endsAtMedicareEligibilityOwner !== null}
+                  onChange={(on) => setEndsAtMedicareEligibilityOwner(on ? "client" : null)}
+                />
                 {endsAtMedicareEligibilityOwner !== null && (
                   <select
                     aria-label="Whose Medicare eligibility"
                     value={endsAtMedicareEligibilityOwner}
-                    onChange={e =>
-                      setEndsAtMedicareEligibilityOwner(e.target.value as "client" | "spouse")
-                    }
+                    onChange={(e) => setEndsAtMedicareEligibilityOwner(e.target.value as "client" | "spouse")}
                     className={`w-40 ${selectBaseClassName}`}
                   >
                     <option value="client">Client</option>
                     {hasSpouse && <option value="spouse">{CO_CLIENT_LABEL}</option>}
                   </select>
                 )}
-              </div>
-              {!isLiving && (
-                <BusinessOwnerSelect
-                  id="exp-owner-account"
-                  accounts={accounts}
-                  value={ownerAccountId}
-                  onChange={setOwnerAccountId}
-                />
+              </span>
+            )}
+          </div>
+
+          {/* Start and End fill a line, so the business picker starts its own. */}
+          <FormRow>
+            <FlowYearFields
+              idPrefix="exp"
+              clientInfo={clientInfo}
+              ownerNames={ownerNames}
+              start={{ year: startYear, ref: startYearRef }}
+              end={{ year: endYear, ref: endYearRef }}
+              onStartChange={(yr, ref) => { setStartYear(yr); setStartYearRef(ref); }}
+              onEndChange={(yr, ref) => { setEndYear(yr); setEndYearRef(ref); }}
+              preferDuration={type === "education"}
+            />
+
+            {!isLiving && (
+              <BusinessOwnerSelect
+                id="exp-owner-account"
+                accounts={accounts}
+                value={ownerAccountId}
+                onChange={setOwnerAccountId}
+                className="col-span-2"
+              />
+            )}
+          </FormRow>
+
+          {fundingEligible && (
+            <div className="space-y-3 rounded-[var(--radius-sm)] border border-hair p-4">
+              <DedicatedFundingPicker
+                accounts={accounts}
+                value={dedicatedAccountIds}
+                onChange={setDedicatedAccountIds}
+                // Only education narrows by owner; an Other goal's picker drops
+                // just 529s and the main checking account (spec §2).
+                allowedOwnerFamilyMemberIds={type === "education" ? allowedFundingOwnerIds : undefined}
+                familyMemberNames={familyMemberNames}
+                goalType={type === "education" ? "education" : "other"}
+              />
+              {(type === "education" || fundingIdsForSave.length > 0) && (
+                <FlagCheckbox label="Pay shortfall out of pocket" checked={payOutOfPocket} onChange={setPayOutOfPocket} />
               )}
             </div>
           )}
+        </form>
+      )}
 
-          </form>
-          <div className="flex shrink-0 items-center justify-between border-t border-hair bg-card-2 px-6 py-4">
-            {isEdit && onRequestDelete ? (
-              <button
-                type="button"
-                onClick={onRequestDelete}
-                className="rounded-md border border-crit/40 bg-crit/10 px-4 py-2 text-sm font-medium text-crit hover:bg-crit/20"
-              >
-                Delete…
-              </button>
-            ) : (
-              <span />
-            )}
-            <button
-              type="submit"
-              form="expense-form-fields"
-              disabled={loading}
-              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
-            >
-              {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Expense"}
-            </button>
-          </div>
-        </>)}
-
-        {activeTab === "schedule" && (
-          <div className="flex-1 overflow-y-auto px-6 py-4">
-            <ScheduleTab
-              startYear={startYear}
-              endYear={endYear}
-              initialOverrides={stagedSchedule}
-              scenarioActive={writer.scenarioActive}
-              onSave={async (overrides) => {
-                if (editing) {
-                  await fetch(`/api/clients/${clientId}/expenses/${editing.id}/schedule`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ overrides }),
-                  });
-                }
-                setStagedSchedule(overrides);
-                setHasSchedule(overrides.length > 0);
-              }}
-              onClear={async () => {
-                if (editing) {
-                  await fetch(`/api/clients/${clientId}/expenses/${editing.id}/schedule`, { method: "DELETE" });
-                }
-                setStagedSchedule([]);
-                setHasSchedule(false);
-              }}
-            />
-          </div>
-        )}
-      </div>
-    </div>
+      {activeTab === "schedule" && (
+        <ScheduleTab
+          startYear={startYear}
+          endYear={endYear}
+          initialOverrides={stagedSchedule}
+          scenarioActive={writer.scenarioActive}
+          onSave={async (overrides) => {
+            if (editing) {
+              await fetch(`/api/clients/${clientId}/expenses/${editing.id}/schedule`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ overrides }),
+              });
+            }
+            setStagedSchedule(overrides);
+            setHasSchedule(overrides.length > 0);
+          }}
+          onClear={async () => {
+            if (editing) {
+              await fetch(`/api/clients/${clientId}/expenses/${editing.id}/schedule`, { method: "DELETE" });
+            }
+            setStagedSchedule([]);
+            setHasSchedule(false);
+          }}
+        />
+      )}
+    </DialogShell>
   );
 }
+
 
 
 

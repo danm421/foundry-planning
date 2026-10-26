@@ -56,7 +56,7 @@ import { growthEditModeFor } from "@/lib/inline-edit/growth-options";
 import type { FundPortfolioOption } from "@/lib/investments/load-fund-portfolio-options";
 import { OwnershipEditor } from "./ownership-editor";
 import { ChoiceChip } from "./choice-chip";
-import { GrowthSourceSelect } from "./growth-source-select";
+import { CustomOrInflationField } from "./custom-or-inflation-field";
 import { SwitchControl } from "./switch-control";
 import type { AccountOwner } from "@/engine/ownership";
 import type { BeneficiaryRef } from "@/engine/types";
@@ -356,37 +356,6 @@ const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
 /** A percent typed as 0–100 → the decimal string the API stores, or null when blank. */
 function pctToDecimal(v: string): string | null {
   return v !== "" && v != null ? String(Number(v) / 100) : null;
-}
-
-/** Real estate's growth and property-tax growth: a custom rate or plan inflation. */
-function CustomOrInflationField({
-  id, label, inputId, inputLabel, source, onSourceChange, pct, onPctChange, inflationRate,
-}: {
-  id: string;
-  label: string;
-  inputId: string;
-  inputLabel: string;
-  source: "custom" | "inflation";
-  onSourceChange: (next: "custom" | "inflation") => void;
-  pct: string;
-  onPctChange: (raw: string) => void;
-  inflationRate: number;
-}) {
-  return (
-    <div>
-      <label className={fieldLabelClassName} htmlFor={id}>{label}</label>
-      <GrowthSourceSelect
-        id={id}
-        value={source}
-        options={[
-          { value: "custom", name: "Custom %", pct: null },
-          { value: "inflation", name: "Inflation rate", pct: inflationRate * 100 },
-        ]}
-        onChange={(raw) => onSourceChange(raw as "custom" | "inflation")}
-        customInput={<PercentInput id={inputId} aria-label={inputLabel} value={pct} onChange={onPctChange} />}
-      />
-    </div>
-  );
 }
 
 function uniqueAccountName(base: string, existing: string[]): string {

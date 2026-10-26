@@ -86,7 +86,11 @@ function openAddIncome() {
   fireEvent.click(screen.getAllByRole("button", { name: /^\+ Add$/ })[0]);
 }
 
-const endYearInput = () => screen.getByLabelText(/^end year$/i) as HTMLInputElement;
+/** The End Year control. With a milestone picked it is one select whose
+ *  option names the milestone and its year; in Manual it is the year input. */
+const endYearControl = () => screen.getByLabelText(/^end year$/i) as HTMLSelectElement | HTMLInputElement;
+/** What the advisor reads in the End Year picker while a milestone drives it. */
+const shownEndYear = () => (endYearControl() as HTMLSelectElement).selectedOptions[0]?.textContent;
 
 describe("IncomeDialog salary end year follows the owner", () => {
   beforeEach(() => {
@@ -98,16 +102,14 @@ describe("IncomeDialog salary end year follows the owner", () => {
   it("ends a client salary at the client's retirement", () => {
     openAddIncome();
 
-    expect(endYearInput().value).toBe(String(CLIENT_RET - 1));
-    expect(screen.getAllByTitle("Harold Retirement").length).toBeGreaterThan(0);
+    expect(shownEndYear()).toBe(`Harold Retirement (${CLIENT_RET - 1})`);
   });
 
   it("moves the end year to the spouse's retirement when the owner switches", () => {
     openAddIncome();
     fireEvent.click(screen.getByRole("button", { name: "Rhonda" }));
 
-    expect(endYearInput().value).toBe(String(SPOUSE_RET - 1));
-    expect(screen.getAllByTitle("Rhonda Retirement").length).toBeGreaterThan(0);
+    expect(shownEndYear()).toBe(`Rhonda Retirement (${SPOUSE_RET - 1})`);
   });
 
   // Switching back has to move it back — the re-snap must not be a one-shot
@@ -117,17 +119,17 @@ describe("IncomeDialog salary end year follows the owner", () => {
     fireEvent.click(screen.getByRole("button", { name: "Rhonda" }));
     fireEvent.click(screen.getByRole("button", { name: "Harold" }));
 
-    expect(endYearInput().value).toBe(String(CLIENT_RET - 1));
-    expect(screen.getAllByTitle("Harold Retirement").length).toBeGreaterThan(0);
+    expect(shownEndYear()).toBe(`Harold Retirement (${CLIENT_RET - 1})`);
   });
 
   // An explicit edit is the advisor's, not the default's. Once they type a
   // year, a later owner change must leave it alone.
   it("leaves an explicitly edited end year alone on a later owner change", () => {
     openAddIncome();
-    fireEvent.change(endYearInput(), { target: { value: String(NOW + 30) } });
+    fireEvent.change(endYearControl(), { target: { value: "manual" } });
+    fireEvent.change(endYearControl(), { target: { value: String(NOW + 30) } });
     fireEvent.click(screen.getByRole("button", { name: "Rhonda" }));
 
-    expect(endYearInput().value).toBe(String(NOW + 30));
+    expect(endYearControl().value).toBe(String(NOW + 30));
   });
 });

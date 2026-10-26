@@ -1,7 +1,7 @@
 "use client";
 
-import { FieldTooltip } from "./field-tooltip";
-import { fieldLabelBaseClassName, selectClassName } from "./input-styles";
+import { HelpLabel } from "./help-label";
+import { selectClassName } from "./input-styles";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -29,17 +29,17 @@ export function PaymentMonthSelect({
 }) {
   return (
     <div>
-      <div className="flex items-center gap-1.5">
-        <label className={fieldLabelBaseClassName} htmlFor={id}>
-          Paid in
-        </label>
-        <FieldTooltip text="Monthly spreads the amount evenly. Pick a month to have the whole year's amount land there instead." />
-      </div>
+      <HelpLabel
+        htmlFor={id}
+        help="Monthly spreads the amount evenly. Pick a month to have the whole year's amount land there instead."
+      >
+        Paid in
+      </HelpLabel>
       <select
         id={id}
         value={value == null ? "" : String(value)}
         onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
-        className={`mt-1 ${selectClassName}`}
+        className={selectClassName}
       >
         <option value="">Monthly</option>
         {MONTHS.map((m, i) => (

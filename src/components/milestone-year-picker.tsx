@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { availableRefs, resolveMilestone, YEAR_REF_LABELS } from "@/lib/milestones";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
-import { fieldLabelBaseClassName, inputClassName, selectClassName } from "@/components/forms/input-styles";
+import { fieldLabelClassName, inputClassName, selectClassName } from "@/components/forms/input-styles";
 
 interface MilestoneYearPickerProps {
   /** HTML name attribute for the year input (used by FormData) */
@@ -57,7 +57,8 @@ interface MilestoneYearPickerProps {
   /**
    * One control per field: a milestone shows its select alone — the option
    * already names the year — instead of repeating the year in a read-only box
-   * beneath it, and the label takes the dialog's field-label style. Manual and
+   * beneath it, and the label takes the dialog's field-label style and spacing
+   * (`fieldLabelClassName`), so it lines up with the fields beside it. Manual and
    * Duration still show their input, since that is where the year is typed.
    */
   compact?: boolean;
@@ -209,7 +210,7 @@ export default function MilestoneYearPicker({
   return (
     <div>
       <label
-        className={`block ${compact ? fieldLabelBaseClassName : "text-xs font-medium text-ink-3"}`}
+        className={compact ? fieldLabelClassName : "block text-xs font-medium text-ink-3"}
         htmlFor={id}
       >
         {label}
@@ -219,7 +220,7 @@ export default function MilestoneYearPicker({
         id={selectOnly ? id : undefined}
         value={selectValue}
         onChange={(e) => handleModeChange(e.target.value)}
-        className={`mt-1 ${SELECT_CLASS}`}
+        className={compact ? SELECT_CLASS : `mt-1 ${SELECT_CLASS}`}
       >
         <option value="manual">Manual</option>
         {startYearForDuration != null && <option value="duration">Duration</option>}

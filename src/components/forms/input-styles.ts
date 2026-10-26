@@ -63,6 +63,8 @@ const textareaCore =
 export const textareaBaseClassName = textareaCore;
 export const textareaClassName = "w-full " + textareaCore;
 
+// A label carries the gap to its control (`mb-1.5`); the control carries none,
+// so fields in one row line up whatever sits between label and control.
 export const fieldLabelBaseClassName = "text-[13px] font-medium text-ink-2";
 
 export const fieldLabelClassName = "block mb-1.5 " + fieldLabelBaseClassName;
