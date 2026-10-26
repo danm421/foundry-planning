@@ -49,7 +49,11 @@ import { emptyExistingRecords } from "@/lib/fact-finder/records/types";
 
 const params = { params: Promise.resolve({ id: "c1", importId: "i1" }) };
 const SCOPE = { importId: "i1", clientId: "c1", firmId: "org_1" };
-const review = () => new Request("http://t/api/clients/c1/imports/i1/fact-finder/review", { method: "POST" });
+const review = (body?: unknown) =>
+  new Request("http://t/api/clients/c1/imports/i1/fact-finder/review", {
+    method: "POST",
+    ...(body !== undefined && { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+  });
 const patch = (body: unknown) =>
   new Request("http://t/api/clients/c1/imports/i1/fact-finder", {
     method: "PATCH",
@@ -297,4 +301,35 @@ describe("POST /fact-finder/review — links (D11)", () => {
     });
     expect(writeFactFinder).not.toHaveBeenCalled();
   });
+});
+
+describe("POST /fact-finder/review — rowIds", () => {
+  it("passes rowIds to the review: only those rows get lines, the stored fact finder keeps every row", async () => {
+    const res = await POST(review({ rowIds: ["c2"] }), params);
+    expect(res.status).toBe(200);
+    const { factFinder } = (await res.json()) as { factFinder: FactFinderState };
+    expect(factFinder.changeSet!.lines.map((l) => l.id)).toEqual(["c2/account"]);
+    expect(factFinder.sections.cash.map((r) => r.id)).toEqual(["c1", "c2"]);
+    expect(factFinder.sections.retirement.map((r) => r.id)).toEqual(["r1"]);
+  });
+
+  it("a body without rowIds reviews everything, like no body", async () => {
+    invoke.mockResolvedValue(placedNote());
+    for (const req of [review(), review({}), review({ rowIds: undefined })]) {
+      const res = await POST(req, params);
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { factFinder: FactFinderState }).factFinder.changeSet!.lines).toHaveLength(5);
+    }
+  });
+
+  it.each([["a string", "c1"], ["a number in the list", ["c1", 2]], ["null", null], ["an object", { 0: "c1" }]])(
+    "rejects a malformed rowIds (%s) before any work",
+    async (_label, rowIds) => {
+      const res = await POST(review({ rowIds }), params);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "rowIds must be a list of row ids." });
+      expect(loadRecordBook).not.toHaveBeenCalled();
+      expect(writeFactFinder).not.toHaveBeenCalled();
+    },
+  );
 });

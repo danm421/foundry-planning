@@ -65,6 +65,10 @@ export type ReadEvent =
 /** One SSE frame of the read stream: an event, or the error that ended it. */
 export type ReadFrame = ReadEvent | { type: "error"; message: string };
 
+/** POST …/fact-finder/review body (optional): review only these rows; none = every row. */
+export interface ReviewBody {
+  rowIds?: string[];
+}
 /** POST …/fact-finder/review: the fact finder with its new `changeSet`. */
 export interface ReviewResponse {
   factFinder: FactFinderState;
