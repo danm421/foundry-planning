@@ -14,27 +14,16 @@ import { checkExportPdfRateLimit, rateLimitErrorResponse } from "@/lib/rate-limi
 import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
 import React from "react";
+import { BalanceSheetPdfDocument } from "@/components/balance-sheet-report-pdf/balance-sheet-pdf-document";
 import {
-  BalanceSheetPdfDocument,
-  type BalanceSheetPdfView,
-} from "@/components/balance-sheet-report-pdf/balance-sheet-pdf-document";
-import {
-  agesLabel,
   BALANCE_SHEET_TABS,
-  buildEntityGroups,
-  buildHouseholdModels,
   resolveAsOf,
   type BalanceSheetTab,
 } from "@/components/balance-sheet-report/report-model";
 import type { AsOfSelection } from "@/components/balance-sheet-report/year-picker";
 import { loadBalanceSheetReport } from "@/lib/balance-sheet/load-report";
-import {
-  ENTITY_FILTERS,
-  entityFilterApplies,
-  filterEntityGroups,
-  prepareEntityGroups,
-  type EntityFilter,
-} from "@/lib/balance-sheet/entity-groups";
+import { ENTITY_FILTERS, type EntityFilter } from "@/lib/balance-sheet/entity-groups";
+import { buildBalanceSheetPdfView } from "@/lib/balance-sheet/pdf-view";
 import { householdBrand } from "@/lib/branding/brand-choice";
 import { resolveBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { slugForFilename } from "@/lib/filename-slug";
@@ -44,8 +33,6 @@ export const dynamic = "force-dynamic";
 // whole route well below Vercel's default (300 s) so a pathological
 // projection can't pin a function instance for minutes.
 export const maxDuration = 60;
-
-const FILTER_LABELS: Record<EntityFilter, string> = { all: "All", trusts: "Trusts", businesses: "Businesses" };
 
 function oneOf<T extends string>(valid: readonly T[], raw: string | null, fallback: T): T | null {
   if (raw == null) return fallback;
@@ -95,35 +82,7 @@ export async function POST(
     const asOf: AsOfSelection = asOfParam === "today" ? { mode: "today" } : { mode: "eoy", year };
     const { selectedYear, asOfMode } = resolveAsOf(report.selectableYears, asOf);
 
-    let view: BalanceSheetPdfView;
-    let viewLabel: string;
-    if (tab === "household") {
-      const { household, consolidated } = buildHouseholdModels(report, selectedYear, asOfMode);
-      view = {
-        kind: "household",
-        household,
-        donut: consolidated.donut,
-        outOfEstate: consolidated,
-        clientLabel: report.clientLabel,
-        spouseLabel: report.spouseLabel,
-      };
-      viewLabel = "Household";
-    } else {
-      const groups = prepareEntityGroups(buildEntityGroups(report, selectedYear, asOfMode));
-      const filtered = filter !== "all" && entityFilterApplies(groups);
-      view = { kind: "entities", groups: filterEntityGroups(groups, filter), trustDetails: report.trustDetails ?? [] };
-      viewLabel = filtered ? `By Entity · ${FILTER_LABELS[filter]}` : "By Entity";
-    }
-
-    // The year picker's "Today (2026)" and ages, spelled out for print.
-    const ages = report.agesByYear?.[selectedYear];
-    const subtitle = [
-      viewLabel,
-      asOfMode === "today" ? `Today (${new Date().getFullYear()})` : `End of ${selectedYear}`,
-      ages ? `${ages.spouse != null ? "Ages" : "Age"} ${agesLabel(ages)}` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
+    const { view, subtitle } = buildBalanceSheetPdfView(report, { tab, filter, selectedYear, asOfMode });
 
     const clientName = [primaryContact?.firstName, primaryContact?.lastName].filter(Boolean).join(" ") || "Client";
     const generatedAt = new Date().toLocaleString("en-US", {

@@ -45,6 +45,7 @@ describe("registry — Cash Flow page", () => {
         "assetAllocation",
         "assumptions",
         "balanceSheet",
+        "balanceSheetReport",
         "blank",
         "cashFlow",
         "cashFlowActivity",
@@ -115,5 +116,22 @@ describe("registry — Plan Story page", () => {
   // defaults say.
   it("registers an OptionsControl, the only route to the review panel", () => {
     expect(typeof PRESENTATION_PAGES.planStory.OptionsControl).toBe("function");
+  });
+});
+
+describe("registry — balance sheet pages", () => {
+  // Saved decks and templates store page ids, so the old page keeps its id and
+  // only its name moves; the report-style sheet takes "Balance Sheet".
+  it("names the Assets report's sheet Balance Sheet and the summary sheets Net Worth", () => {
+    expect(PRESENTATION_PAGES.balanceSheetReport.title).toBe("Balance Sheet");
+    expect(PRESENTATION_PAGES.balanceSheet.title).toBe("Net Worth");
+    expect(PRESENTATION_PAGES.entitiesBalanceSheet.title).toBe("Net Worth — Entities");
+  });
+
+  it("files Balance Sheet under Assets with a scenario picker and options", () => {
+    const page = PRESENTATION_PAGES.balanceSheetReport;
+    expect(page.category).toBe("Assets");
+    expect(page.supportsScenarioOverride).toBe(true);
+    expect(typeof page.OptionsControl).toBe("function");
   });
 });

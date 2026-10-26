@@ -3,7 +3,7 @@ import { z } from "zod";
 export const balanceSheetOptionsSchema = z.object({
   asOf: z.enum(["today", "eoy"]),
   year: z.number().int(),
-  // Opt-in Out of Estate table (consolidated Balance Sheet page only). The
+  // Opt-in Out of Estate table (consolidated Net Worth page only). The
   // entities page shares this schema but has no out-of-estate rows to show.
   includeOutOfEstate: z.boolean().default(false),
 });

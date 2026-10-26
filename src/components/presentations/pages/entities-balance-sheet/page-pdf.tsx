@@ -90,7 +90,7 @@ export function EntitiesBalanceSheetPagePdf({
       pageIndex={pageIndex}
       totalPages={totalPages}
     >
-      <SectionHead title="Balance Sheet — Entities" subtitle={data.asOfLabel} accent={accent} />
+      <SectionHead title="Net Worth — Entities" subtitle={data.asOfLabel} accent={accent} />
 
       {groups.length === 0 ? (
         <Text style={S.empty}>No entities for this household.</Text>

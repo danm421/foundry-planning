@@ -66,11 +66,14 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     marginBottom: 14,
   },
-  title: { fontSize: 18, fontFamily: "Helvetica-Bold" },
+  title: { fontSize: 18, fontWeight: 700 },
   subtitle: { color: PDF_THEME.text.secondary, fontSize: 10, marginTop: 3 },
   meta: { color: PDF_THEME.text.muted, fontSize: 8, marginTop: 2 },
   logo: { height: 28, maxWidth: 140, objectFit: "contain" },
   panel: {
+    // Set here, not only on the page: the presentation deck prints these panels
+    // on its own page, whose base size is not this one's.
+    fontSize: 9,
     borderWidth: 1,
     borderColor: PDF_THEME.surface.panelBorder,
     borderRadius: 4,
@@ -123,16 +126,17 @@ const styles = StyleSheet.create({
     backgroundColor: PDF_THEME.surface.panelHeader,
     paddingVertical: 5,
     paddingHorizontal: 8,
-    fontFamily: "Helvetica-Bold",
+    fontWeight: 700,
   },
   nameCell: { flex: 1, paddingRight: 6 },
   numCell: { width: NUM_COL, textAlign: "right" },
-  categoryLabel: { fontSize: 10, fontFamily: "Helvetica-Bold" },
+  categoryLabel: { fontSize: 10, fontWeight: 700 },
   badge: { fontSize: 7, color: colorsLight.ink2 },
   subLine: { fontSize: 7, color: PDF_THEME.text.muted, marginTop: 1 },
 
   // Entities
-  entityRow: { flexDirection: "row", alignItems: "flex-start", marginBottom: 12 },
+  // Spaced from the card above, never the one below — see HouseholdTable.
+  entityRow: { flexDirection: "row", alignItems: "flex-start" },
   entityCard: { width: 300, marginRight: 12 },
   cardHead: {
     flexDirection: "row",
@@ -234,7 +238,7 @@ function HouseholdSummary({ view }: { view: Extract<BalanceSheetPdfView, { kind:
               key={o.key}
               style={{ flexDirection: "row", borderTopWidth: 0.5, borderTopColor: PDF_THEME.surface.divider, paddingVertical: 3 }}
             >
-              <Text style={{ flex: 1, color: o.strong ? PDF_THEME.text.primary : PDF_THEME.text.secondary, fontFamily: o.strong ? "Helvetica-Bold" : "Helvetica" }}>
+              <Text style={{ flex: 1, color: o.strong ? PDF_THEME.text.primary : PDF_THEME.text.secondary, fontWeight: o.strong ? 700 : 400 }}>
                 {o.label}
               </Text>
               <Text style={{ width: 64, textAlign: "right" }}>{fmt(household.totalAssets[o.key])}</Text>
@@ -283,7 +287,10 @@ function HouseholdTable({
   );
 
   return (
-    <View style={[styles.panel, { marginBottom: 12 }]}>
+    // No margin below: a trailing gap that does not fit under a table that
+    // does sends the whole table to the next sheet. The gap sits on Out of
+    // Estate's top instead.
+    <View style={styles.panel}>
       <View style={styles.th} wrap={false}>
         <Text style={[styles.eyebrow, styles.nameCell]}>Category / Account</Text>
         {[clientLabel, ...(showSplit ? [spouseLabel!, "Joint"] : []), "Total"].map((h) => (
@@ -328,7 +335,7 @@ function HouseholdTable({
 function OutOfEstateTable({ vm }: { vm: Extract<BalanceSheetPdfView, { kind: "household" }>["outOfEstate"] }) {
   if (vm.outOfEstateOwnerRows.length === 0) return null;
   return (
-    <View style={styles.panel} wrap={false}>
+    <View style={[styles.panel, { marginTop: 12 }]} wrap={false}>
       <View style={styles.th}>
         <Text style={[styles.eyebrow, styles.nameCell]}>Out of Estate</Text>
         <Text style={[styles.eyebrow, styles.numCell]}>Net ({vm.selectedYear})</Text>
@@ -353,7 +360,7 @@ function TrustDetailsCard({ details }: { details: TrustDetails }) {
   return (
     <View style={[styles.panel, styles.detailsCard]}>
       <View style={styles.cardHead}>
-        <Text style={{ fontFamily: "Helvetica-Bold" }}>Trust Details</Text>
+        <Text style={{ fontWeight: 700 }}>Trust Details</Text>
         {details.subTypeLabel ? <Text style={styles.chip}>{details.subTypeLabel}</Text> : null}
       </View>
       <View style={{ paddingHorizontal: 10, paddingVertical: 8 }}>
@@ -393,22 +400,22 @@ function TrustDetailsCard({ details }: { details: TrustDetails }) {
 
 function EntityCards({ view }: { view: Extract<BalanceSheetPdfView, { kind: "entities" }> }) {
   if (view.groups.length === 0) {
-    return <Text style={[styles.muted, { marginTop: 8 }]}>No business or trust entities.</Text>;
+    return <Text style={[styles.muted, { fontSize: 9, marginTop: 8 }]}>No business or trust entities.</Text>;
   }
   const detailsById = new Map(view.trustDetails.map((d) => [d.entityId, d]));
   return (
     <>
-      {view.groups.map((g) => {
+      {view.groups.map((g, i) => {
         const details = isTrust(g) ? detailsById.get(g.entityId) : undefined;
         return (
-          <View key={g.entityId} style={styles.entityRow} wrap={false}>
+          <View key={g.entityId} style={[styles.entityRow, { marginTop: i > 0 ? 12 : 0 }]} wrap={false}>
             <View style={[styles.panel, styles.entityCard]}>
               <View style={styles.cardHead}>
                 <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                  <Text style={{ fontFamily: "Helvetica-Bold" }}>{g.entityName}</Text>
+                  <Text style={{ fontWeight: 700 }}>{g.entityName}</Text>
                   <Text style={styles.chip}>{ENTITY_TYPE_LABEL[g.entityType] ?? g.entityType}</Text>
                 </View>
-                <Text style={{ fontFamily: "Helvetica-Bold", color: g.netWorth < 0 ? CRIT : PDF_THEME.text.primary }}>
+                <Text style={{ fontWeight: 700, color: g.netWorth < 0 ? CRIT : PDF_THEME.text.primary }}>
                   {usd(g.netWorth)}
                 </Text>
               </View>
@@ -440,6 +447,21 @@ function EntityCards({ view }: { view: Extract<BalanceSheetPdfView, { kind: "ent
 
 // ── Document ────────────────────────────────────────────────────────────────
 
+/** The sheet under its header: what both this document and the presentation
+ *  deck's Balance Sheet page print. Sized and bolded here, never typefaced —
+ *  it reads in whatever family its page sets. */
+export function BalanceSheetPdfBody({ view, accentColor }: { view: BalanceSheetPdfView; accentColor: string }) {
+  return view.kind === "household" ? (
+    <>
+      <HouseholdSummary view={view} />
+      <HouseholdTable view={view} accentColor={accentColor} />
+      <OutOfEstateTable vm={view.outOfEstate} />
+    </>
+  ) : (
+    <EntityCards view={view} />
+  );
+}
+
 export function BalanceSheetPdfDocument(props: BalanceSheetPdfProps) {
   const { view } = props;
   const meta = [
@@ -460,15 +482,7 @@ export function BalanceSheetPdfDocument(props: BalanceSheetPdfProps) {
           {props.logoDataUrl ? <Image src={props.logoDataUrl} style={styles.logo} /> : null}
         </View>
 
-        {view.kind === "household" ? (
-          <>
-            <HouseholdSummary view={view} />
-            <HouseholdTable view={view} accentColor={props.accentColor} />
-            <OutOfEstateTable vm={view.outOfEstate} />
-          </>
-        ) : (
-          <EntityCards view={view} />
-        )}
+        <BalanceSheetPdfBody view={view} accentColor={props.accentColor} />
 
         <View style={styles.footer} fixed>
           <Text>{props.clientName} · Balance Sheet</Text>

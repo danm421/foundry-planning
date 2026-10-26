@@ -118,6 +118,8 @@ const DECK: PresentationPageId[] = [
   "cover",
   "toc",
   "clientProfile",
+  // A flowing page: its sheet count comes from its own layout estimate.
+  "balanceSheetReport",
   "balanceSheet",
   "retirementSummary",
   // A cash-flow drill: one row per projection year, so on any real plan it runs

@@ -108,7 +108,7 @@ export function BalanceSheetPagePdf({
       pageIndex={pageIndex}
       totalPages={totalPages}
     >
-      <SectionHead title="Balance Sheet" subtitle={data.asOfLabel} accent={accent} />
+      <SectionHead title="Net Worth" subtitle={data.asOfLabel} accent={accent} />
 
       <View style={S.kpiRow}>
         <Kpi label="Net Worth" value={vm.netWorth} yoy={vm.yoy.netWorth} />

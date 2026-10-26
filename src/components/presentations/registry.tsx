@@ -354,6 +354,19 @@ import { BalanceSheetOptionsControl } from "./pages/balance-sheet/options-contro
 import { BalanceSheetPagePdf } from "./pages/balance-sheet/page-pdf";
 import { EntitiesBalanceSheetPagePdf } from "./pages/entities-balance-sheet/page-pdf";
 import {
+  BALANCE_SHEET_REPORT_OPTIONS_DEFAULT,
+  balanceSheetReportOptionsSchema,
+  summarizeBalanceSheetReportOptions,
+  type BalanceSheetReportOptions,
+} from "@/lib/presentations/pages/balance-sheet-report/options-schema";
+import {
+  buildBalanceSheetReportPageData,
+  type BalanceSheetReportPageData,
+} from "@/lib/presentations/pages/balance-sheet-report/view-model";
+import { estimateBalanceSheetReportPageCount } from "@/lib/presentations/pages/balance-sheet-report/estimate-page-count";
+import { BalanceSheetReportOptionsControl } from "./pages/balance-sheet-report/options-control";
+import { BalanceSheetReportPagePdf } from "./pages/balance-sheet-report/page-pdf";
+import {
   blankOptionsSchema,
   BLANK_PAGE_OPTIONS_DEFAULT,
   type BlankPageOptions,
@@ -1394,9 +1407,27 @@ export const investmentProposalPage: PresentationPage<
   renderPdf: (input) => <InvestmentProposalPagePdf {...input} />,
 };
 
+export const balanceSheetReportPage: PresentationPage<BalanceSheetReportPageData, BalanceSheetReportOptions> = {
+  id: "balanceSheetReport",
+  title: "Balance Sheet",
+  description:
+    "The Balance Sheet report from Assets — assets by type, net worth by owner, and every account and debt by owner, or a sheet for each trust and business.",
+  category: "Assets",
+  defaultOptions: BALANCE_SHEET_REPORT_OPTIONS_DEFAULT,
+  optionsSchema: balanceSheetReportOptionsSchema,
+  summarizeOptions: summarizeBalanceSheetReportOptions,
+  estimatePageCount: estimateBalanceSheetReportPageCount,
+  OptionsControl: BalanceSheetReportOptionsControl,
+  supportsScenarioOverride: true,
+  buildData: buildBalanceSheetReportPageData,
+  renderPdf: (input) => <BalanceSheetReportPagePdf {...input} />,
+};
+
+// Id kept as `balanceSheet` so saved decks and templates still find it; the
+// report-style sheet above took the "Balance Sheet" name.
 export const balanceSheetPage: PresentationPage<BalanceSheetPageData, BalanceSheetOptions> = {
   id: "balanceSheet",
-  title: "Balance Sheet",
+  title: "Net Worth",
   description: "Net worth, total assets, liabilities, and liquid portfolio with asset & liability detail.",
   category: "Assets",
   defaultOptions: BALANCE_SHEET_OPTIONS_DEFAULT,
@@ -1411,7 +1442,7 @@ export const balanceSheetPage: PresentationPage<BalanceSheetPageData, BalanceShe
 
 export const entitiesBalanceSheetPage: PresentationPage<BalanceSheetPageData, BalanceSheetOptions> = {
   id: "entitiesBalanceSheet",
-  title: "Balance Sheet — Entities",
+  title: "Net Worth — Entities",
   description: "Per-entity balance sheets — assets, liabilities, and net worth for each trust and business.",
   category: "Assets",
   defaultOptions: BALANCE_SHEET_OPTIONS_DEFAULT,
@@ -2094,6 +2125,7 @@ export const PRESENTATION_PAGES = {
   portfolioAnalysis: portfolioAnalysisPage,
   investmentProposal: investmentProposalPage,
   holdings: holdingsPage,
+  balanceSheetReport: balanceSheetReportPage,
   balanceSheet: balanceSheetPage,
   entitiesBalanceSheet: entitiesBalanceSheetPage,
   liabilityAmortization: liabilityAmortizationPage,
