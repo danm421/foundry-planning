@@ -9,10 +9,8 @@ import {
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { refuseSavedFactFinderWithState } from "@/lib/imports/saved-fact-finder";
-import {
-  storeImportFile,
-  MAX_IMPORT_FILE_SIZE_BYTES as MAX_FILE_SIZE,
-} from "@/lib/imports/store-import-file";
+import { storeImportFile } from "@/lib/imports/store-import-file";
+import { StagedUploadError, stagingPrefix, takeStagedUpload } from "@/lib/uploads/staged-upload";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -94,31 +92,8 @@ export async function POST(
     const savedRefusal = refuseSavedFactFinderWithState(imp);
     if (savedRefusal) return savedRefusal;
 
-    // Cheap pre-buffer rejection for obviously oversized bodies. Real
-    // enforcement is the file.size check below — Content-Length is
-    // client-controlled and unsafe to trust on its own.
-    const contentLength = Number(request.headers.get("content-length") ?? "0");
-    if (Number.isFinite(contentLength) && contentLength > MAX_FILE_SIZE + 65536) {
-      return NextResponse.json(
-        { error: "File too large. Maximum size is 20MB." },
-        { status: 413 },
-      );
-    }
-
     const formData = await request.formData();
-    const file = formData.get("file") as File | null;
     const documentTypeRaw = (formData.get("documentType") as string | null) ?? "auto";
-
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
-    }
-
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json(
-        { error: "File too large. Maximum size is 20MB." },
-        { status: 413 },
-      );
-    }
 
     if (!(VALID_DOC_TYPES as readonly string[]).includes(documentTypeRaw)) {
       return NextResponse.json(
@@ -128,13 +103,20 @@ export async function POST(
     }
     const documentType = documentTypeRaw as DocumentType;
 
-    const buffer = Buffer.from(await file.arrayBuffer());
+    // Staged browser → Blob first (`@/lib/uploads/staged-upload`), so the
+    // request carries a pathname, not the file.
+    const buffer = await takeStagedUpload(
+      stagingPrefix("imports", clientId),
+      formData.get("stagedPathname"),
+    );
+    const name = formData.get("filename");
+    const filename = typeof name === "string" && name !== "" ? name : "upload";
 
     const stored = await storeImportFile({
       importId,
       clientId,
       firmId,
-      filename: file.name,
+      filename,
       buffer,
       documentType,
     });
@@ -151,6 +133,9 @@ export async function POST(
     }
     if (err instanceof ForbiddenError) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if (err instanceof StagedUploadError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
     }
     if (err instanceof NotFoundError) {
       return NextResponse.json({ error: err.message }, { status: 404 });

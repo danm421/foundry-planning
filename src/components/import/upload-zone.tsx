@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABELS } from "@/lib/extraction/types";
 import type { DocumentType } from "@/lib/extraction/types";
 import type { ClientDocumentSource, ClientDocumentView } from "@/lib/imports/client-documents";
+import { stageFile } from "@/lib/uploads/stage-file";
 import { formatBytes } from "@/components/portal/documents/vault-format";
 
 export type UploadState = "queued" | "uploading" | "uploaded" | "failed";
@@ -20,7 +21,7 @@ export interface UploadingFile {
   clientDocumentId?: string;
   documentType: DocumentType | "auto";
   state: UploadState;
-  /** 0–100. Browsers don't expose download progress for fetch, so XHR is used. */
+  /** 0–100, from the browser → Blob upload. */
   progress: number;
   errorMessage?: string;
   serverFileId?: string;
@@ -112,7 +113,7 @@ export default function UploadZone({
   );
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Pin the latest callbacks in refs so closures (upload XHR, file delete) can
+  // Pin the latest callbacks in refs so closures (upload, file delete) can
   // read them without re-running startUpload's identity (which would otherwise
   // restart in-flight uploads if the parent re-renders).
   const onUploadedRef = useRef(onUploaded);
@@ -175,52 +176,39 @@ export default function UploadZone({
       }
       // Only in-session rows carry a File; seeded server rows never upload.
       if (!target.file) return;
-      const xhr = new XMLHttpRequest();
-      const url = `/api/clients/${clientId}/imports/${importId}/files`;
-      xhr.open("POST", url);
-      xhr.upload.onprogress = (e) => {
-        if (!e.lengthComputable) return;
-        updateFile(target.id, {
-          progress: Math.round((e.loaded / e.total) * 100),
-        });
-      };
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const body = JSON.parse(xhr.responseText) as {
-              file: { id: string };
-              deduped: boolean;
-            };
-            markUploaded(target, body);
-          } catch {
+      updateFile(target.id, { state: "uploading", progress: 0 });
+      const file = target.file;
+      const filesUrl = `/api/clients/${clientId}/imports/${importId}/files`;
+      // Straight to Blob first: a function request body caps at 4.5 MB.
+      stageFile(`${filesUrl}/upload-token`, file, (progress) => updateFile(target.id, { progress }))
+        .then(async (stagedPathname) => {
+          const fd = new FormData();
+          fd.append("stagedPathname", stagedPathname);
+          fd.append("filename", file.name);
+          fd.append("documentType", target.documentType);
+          const res = await fetch(filesUrl, { method: "POST", body: fd });
+          const body = (await res.json().catch(() => null)) as {
+            file?: { id: string };
+            deduped?: boolean;
+            error?: string;
+          } | null;
+          if (res.ok && body?.file) {
+            markUploaded(target, { file: body.file, deduped: Boolean(body.deduped) });
+          } else {
             updateFile(target.id, {
               state: "failed",
-              errorMessage: "Bad response from server",
+              errorMessage: body?.error ?? `Upload failed (${res.status})`,
             });
           }
-          return;
-        }
-        let message = `Upload failed (${xhr.status})`;
-        try {
-          const body = JSON.parse(xhr.responseText) as { error?: string };
-          if (body.error) message = body.error;
-        } catch {
-          // keep the generic status-code message
-        }
-        updateFile(target.id, { state: "failed", errorMessage: message });
-      };
-      xhr.onerror = () => {
-        updateFile(target.id, {
-          state: "failed",
-          errorMessage: "Network error",
-        });
-      };
-
-      const fd = new FormData();
-      fd.append("file", target.file);
-      fd.append("documentType", target.documentType);
-      updateFile(target.id, { state: "uploading", progress: 0 });
-      xhr.send(fd);
+        })
+        .catch((err) =>
+          // fetch rejects with a TypeError only when the request never got
+          // out; stageFile's own failures carry a message fit to show.
+          updateFile(target.id, {
+            state: "failed",
+            errorMessage: err instanceof TypeError ? "Network error" : (err as Error).message,
+          }),
+        );
     },
     [clientId, importId, updateFile, markUploaded],
   );

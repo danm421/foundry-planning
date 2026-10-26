@@ -14,6 +14,7 @@
 
 import { useCallback, useState } from "react";
 import { resolveBaseScenarioId } from "./actions";
+import { stageFile } from "@/lib/uploads/stage-file";
 import { importScreenPath } from "@/lib/imports/import-kind";
 // The identify response shape lives with the prompt block that consumes it
 // (`domain/forge/fact-finder-turn.ts`), and is re-exported here so callers keep
@@ -97,15 +98,15 @@ export function useForgeImport(): UseForgeImportResult {
         const { import: imp } = (await createRes.json()) as { import: { id: string } };
         const importId = imp.id;
 
-        // 3. Upload each file (reuses 20MB limit, magic-byte validation, dedupe).
+        // 3. Upload each file (20MB limit, magic-byte validation, dedupe).
         setStatus("uploading");
         for (const file of files) {
+          const filesUrl = `/api/clients/${clientId}/imports/${importId}/files`;
+          // Straight to Blob first: a function request body caps at 4.5 MB.
           const fd = new FormData();
-          fd.append("file", file);
-          const upRes = await fetch(`/api/clients/${clientId}/imports/${importId}/files`, {
-            method: "POST",
-            body: fd,
-          });
+          fd.append("stagedPathname", await stageFile(`${filesUrl}/upload-token`, file));
+          fd.append("filename", file.name);
+          const upRes = await fetch(filesUrl, { method: "POST", body: fd });
           if (!upRes.ok) throw new Error(await errText(upRes, `Could not upload ${file.name}.`));
         }
 
@@ -159,12 +160,12 @@ export function useForgeImport(): UseForgeImportResult {
         // advisor opens it.
         setStatus("uploading");
         for (const file of files) {
+          const filesUrl = `/api/clients/${clientId}/imports/${importId}/files`;
+          // Straight to Blob first: a function request body caps at 4.5 MB.
           const fd = new FormData();
-          fd.append("file", file);
-          const upRes = await fetch(`/api/clients/${clientId}/imports/${importId}/files`, {
-            method: "POST",
-            body: fd,
-          });
+          fd.append("stagedPathname", await stageFile(`${filesUrl}/upload-token`, file));
+          fd.append("filename", file.name);
+          const upRes = await fetch(filesUrl, { method: "POST", body: fd });
           if (!upRes.ok) throw new Error(await errText(upRes, `Could not upload ${file.name}.`));
         }
 
