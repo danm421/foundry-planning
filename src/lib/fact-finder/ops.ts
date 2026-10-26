@@ -453,6 +453,13 @@ function applyOne(state: FactFinderState, op: FFOp, ctx: OpContext): FactFinderS
           next = { ...next, unassignedHoldings: snap.before };
           continue;
         }
+        if (snap.kind === "worksheet") {
+          if (!sameJson(next.worksheet, snap.after)) {
+            throw new FactFinderOpError("Can't undo — the worksheet has changed since that reply.");
+          }
+          next = { ...next, worksheet: snap.before };
+          continue;
+        }
         if (!sameLocation(locationOf(next, snap.rowId), snap.after)) {
           throw new FactFinderOpError(`Can't undo — ${describeLocation(snap)} has changed since that reply.`);
         }

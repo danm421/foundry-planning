@@ -57,6 +57,7 @@ export function ChatTranscript({ transcript, undoable, pending, undoing, onUndo 
             </li>
           );
         }
+        if (turn.role === "proposal") return null;
         const textId = `chat-turn-${turn.id}`;
         return (
           <li key={turn.id} className="flex flex-col items-start gap-1.5">

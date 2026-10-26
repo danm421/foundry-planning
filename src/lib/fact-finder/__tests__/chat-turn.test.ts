@@ -278,7 +278,7 @@ describe("runFactFinderTurn — the commit", () => {
     expect(store.state!.sections.cash[0].cells.currentValue).toEqual(typed);
     expect(cellValue(store.state!.sections.cash[0], "accountName")).toBe("Joint Checking");
     expect(store.state!.undo).toEqual({});
-    expect(store.state!.transcript.map((t) => (t.role === "tool" ? t.role : `${t.role}: ${t.text}`))).toEqual([
+    expect(store.state!.transcript.map((t) => (t.role === "user" || t.role === "assistant" ? `${t.role}: ${t.text}` : t.role))).toEqual([
       "user: Checking is $13,000 at Chase",
       "assistant: The fact finder changed while I was working on that — ask me again.",
     ]);
@@ -312,7 +312,7 @@ describe("runFactFinderTurn — the commit", () => {
     expect(result).toMatchObject({ turnId: null, ops: {} });
     expect(store.state!.removed[0].row.cells.currentValue.value).toBe(12500);
     expect(store.state!.undo).toEqual({});
-    expect(store.state!.transcript.map((t) => (t.role === "tool" ? t.role : `${t.role}: ${t.text}`))).toEqual([
+    expect(store.state!.transcript.map((t) => (t.role === "user" || t.role === "assistant" ? `${t.role}: ${t.text}` : t.role))).toEqual([
       "user: Checking is $13,000",
       "assistant: The fact finder changed while I was working on that — ask me again.",
     ]);

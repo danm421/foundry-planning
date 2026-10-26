@@ -82,6 +82,7 @@ function transcriptToMessages(transcript: readonly FFChatTurn[]): BaseMessage[] 
   return transcript.map((t) => {
     if (t.role === "user") return new HumanMessage(clean(t.text));
     if (t.role === "assistant") return new AIMessage(fenceUntrusted(clean(t.text)));
+    if (t.role === "proposal") return new AIMessage(fenceUntrusted("[proposed plan changes]"));
     return new AIMessage(fenceUntrusted(`[used ${t.tool}] ${clean(t.summary)}`));
   });
 }

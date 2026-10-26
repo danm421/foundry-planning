@@ -29,7 +29,7 @@ export function emptyFactFinderState(): FactFinderState {
   for (const s of FACT_FINDER_SECTIONS) {
     sections[s.id] = fixedLabelsOf(s).map((label) => emptyFixedRow(s.id, label));
   }
-  return { version: 0, sections, removed: [], unassignedHoldings: [], transcript: [], undo: {}, readings: {} };
+  return { version: 0, sections, removed: [], unassignedHoldings: [], transcript: [], undo: {}, readings: {}, worksheet: { tables: [], composedFileIds: [] } };
 }
 
 /** The insert values that make a new import a fact finder import: its slice marks it, and it reads positions because the fact finder reviews them. */
@@ -63,6 +63,8 @@ export function readFactFinderState(payloadJson: unknown): FactFinderState {
     readings: stored.readings ?? {},
     ...(stored.changeSet ? { changeSet: stored.changeSet } : {}),
     ...(stored.closed ? { closed: stored.closed } : {}),
+    worksheet: stored.worksheet ?? { tables: [], composedFileIds: [], derived: true },
+    ...(stored.applied ? { applied: stored.applied } : {}),
   };
 }
 

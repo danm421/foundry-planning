@@ -9,6 +9,7 @@
  * here could close a cycle.
  */
 import type { ChangeSet, TargetKind } from "./change-set";
+import type { Worksheet } from "./worksheet/types";
 
 export type FFCellValue = string | number | boolean | null;
 
@@ -107,7 +108,7 @@ export interface FFRemoved {
   mergedInto?: string;
 }
 
-export type FFReader = "form" | "statement" | "section";
+export type FFReader = "form" | "statement" | "section" | "freeform";
 
 export interface FFFileReading {
   status: "reading" | "done" | "failed";
@@ -122,7 +123,9 @@ export interface FFFileReading {
 export type FFChatTurn =
   | { id: string; role: "user"; text: string; at: string }
   | { id: string; role: "assistant"; text: string; at: string }
-  | { id: string; role: "tool"; tool: string; summary: string; at: string };
+  | { id: string; role: "tool"; tool: string; summary: string; at: string }
+  /** A proposed change list, by staging row id. */
+  | { id: string; role: "proposal"; rowIds: string[]; at: string };
 
 /** Where a row sits, for undo. `null` = the row doesn't exist. */
 export type FFRowLocation =
@@ -132,7 +135,8 @@ export type FFRowLocation =
 
 export type FFSnapshot =
   | { kind: "row"; rowId: string; before: FFRowLocation; after: FFRowLocation }
-  | { kind: "unassigned"; before: FFUnassignedHolding[]; after: FFUnassignedHolding[] };
+  | { kind: "unassigned"; before: FFUnassignedHolding[]; after: FFUnassignedHolding[] }
+  | { kind: "worksheet"; before: Worksheet; after: Worksheet };
 
 export interface FactFinderState {
   /** Bumped by every successful write (persist.ts owns it). */
@@ -151,6 +155,20 @@ export interface FactFinderState {
   changeSet?: ChangeSet;
   /** Set by the save, which writes the whole change list to the plan in one go: the import is read-only from then on. */
   closed?: FFClosed;
+  /** The AI-built tables beside the chat. */
+  worksheet: Worksheet;
+  /** Records a keep-open save wrote, so a second review of the row has no create line. */
+  applied?: FFApplied[];
+}
+
+/** One record a keep-open save wrote to the plan. */
+export interface FFApplied {
+  lineId: string;
+  rowId: string;
+  target: TargetKind;
+  recordId: string;
+  label: string;
+  at: string;
 }
 
 /** What the save recorded when it closed the import. */
