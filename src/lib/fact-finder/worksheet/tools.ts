@@ -17,7 +17,7 @@ import {
 import { quote } from "../chat/view";
 import type { ClientOp } from "../ops";
 import { FACT_FINDER_SECTIONS, findSection, isListLike } from "../schema";
-import { locateRow } from "../state";
+import { holdingKey, locateRow } from "../state";
 import { HOLDING_FIELDS, type FactFinderState } from "../types";
 import { parseBinding } from "./bindings";
 import { fillRows } from "./from-staging";
@@ -668,14 +668,38 @@ function stageRows(state: FactFinderState, a: z.infer<typeof ARGS.stage_rows>, c
       added++;
       lines.push(`${row.id} → new staging row ${stagingRowId} in ${sectionId}`);
     }
+    // A position the account already has — the one a holding row shows, or one with the same ticker (else name) — isn't
+    // added again: re-staging an account with its holdings would otherwise count them twice.
+    const at = row.ref ? locateRow(state, stagingRowId) : null;
+    const had = at ? (state.sections[at.sectionId][at.index].holdings ?? []) : [];
+    const ids = new Set(had.map((h) => h.id));
+    const byKey = new Map<string, string>();
+    for (const h of had) {
+      const key = holdingKey(h);
+      if (key) byKey.set(key, h.id);
+    }
     for (const { row: holdingRowId, ...holding } of item.holdings ?? []) {
+      const shownAt = holdingRowId === undefined ? null : rowAnywhere(state, holdingRowId);
+      const shown = shownAt?.row.ref;
+      const key = holdingKey(holding);
+      const own = shown?.holdingId && shown.rowId === stagingRowId && ids.has(shown.holdingId) ? shown.holdingId : undefined;
+      const existing = own ?? (key ? byKey.get(key) : undefined);
+      if (existing) {
+        if (shownAt && !shown) {
+          ops.push(ws({ op: "setRowRef", tableId: shownAt.table.id, rowId: shownAt.row.id, ref: { rowId: stagingRowId, holdingId: existing } }));
+        }
+        const label = holding.ticker?.trim().toUpperCase() || holding.name?.trim();
+        lines.push(`  ${label}: skipped — the account already has it (holding ${existing})`);
+        continue;
+      }
+      if (shown && !shown.holdingId) throw new Error(`Row ${holdingRowId} shows an account, not a holding — leave it out.`);
+      if (shown && shown.rowId !== stagingRowId) {
+        throw new Error(`Row ${holdingRowId} already shows a holding of another account — leave it out (move_holding moves a holding to another account).`);
+      }
       const holdingId = ctx.newId();
       ops.push(staging({ op: "addHolding", sectionId, rowId: stagingRowId, holdingId, holding }));
-      if (holdingRowId !== undefined) {
-        const at = rowAnywhere(state, holdingRowId);
-        if (at.row.ref) throw new Error(`Row ${holdingRowId} already points at a staging row.`);
-        ops.push(ws({ op: "setRowRef", tableId: at.table.id, rowId: holdingRowId, ref: { rowId: stagingRowId, holdingId } }));
-      }
+      if (shownAt) ops.push(ws({ op: "setRowRef", tableId: shownAt.table.id, rowId: shownAt.row.id, ref: { rowId: stagingRowId, holdingId } }));
+      if (key) byKey.set(key, holdingId);
       holdings++;
       lines.push(`  holding ${holdingId}${holdingRowId !== undefined ? ` ← ${holdingRowId}` : ""}`);
     }

@@ -406,6 +406,69 @@ describe("runWorksheetTool", () => {
     ]);
   });
 
+  it("stage_rows adds only holdings the account doesn't have yet — by ticker, else name — and says which it skipped", async () => {
+    const state = fixture();
+    const out = await runWorksheetTool(
+      "stage_rows",
+      { table: "t-accounts", rows: [{ row: "w1", section: "retirement", cells: {}, holdings: [{ ticker: " vti ", shares: 10 }, { ticker: "AAPL", shares: 5 }, { name: "Apple Inc", ticker: "aapl" }] }] },
+      state,
+      context(),
+    );
+    expect(out.ops).toEqual([
+      { layer: "staging", op: { op: "addHolding", sectionId: "retirement", rowId: "r1", holdingId: "id-1", holding: { ticker: "AAPL", shares: 5 } } },
+    ]);
+    expect(apply(state, out).sections.retirement[0].holdings?.map((h) => h.ticker)).toEqual(["VTI", "AAPL"]);
+    expect(out.summary).toBe("Got 1 row from Accounts ready for the plan (1 holding)");
+    expect(out.result).toContain("VTI: skipped — the account already has it");
+    expect(out.result).toContain("AAPL: skipped — the account already has it");
+  });
+
+  it("re-staging a row with its holdings — the retry a refusal used to invite — adds no holding twice", async () => {
+    const ctx = context();
+    let state = fixture();
+    const holdingsOf = (s: FactFinderState) => s.sections.taxable[0].holdings ?? [];
+    const first = await runWorksheetTool(
+      "stage_rows",
+      { table: "t-accounts", rows: [{ row: "w2", section: "taxable", cells: { accountName: "Old Brokerage" }, holdings: [{ row: "wh2", ticker: "AAPL", shares: 5 }] }] },
+      state,
+      ctx,
+    );
+    state = apply(state, first);
+    expect(holdingsOf(state)).toHaveLength(1);
+
+    // Again with the holding's row (it already shows that holding), then again without it: nothing new either time.
+    for (const holding of [{ row: "wh2", ticker: "AAPL", shares: 5 }, { ticker: "AAPL", shares: 5 }]) {
+      const again = await runWorksheetTool("stage_rows", { table: "t-accounts", rows: [{ row: "w2", section: "taxable", cells: {}, holdings: [holding] }] }, state, ctx);
+      expect(again.ops.filter((t) => t.op.op === "addHolding")).toEqual([]);
+      state = apply(state, again);
+      expect(holdingsOf(state)).toHaveLength(1);
+    }
+  });
+
+  it("stage_rows links an unstaged holding row to the position the account already has", async () => {
+    const state = fixture();
+    const out = await runWorksheetTool(
+      "stage_rows",
+      { table: "t-accounts", rows: [{ row: "w1", section: "retirement", cells: {}, holdings: [{ row: "wh2", ticker: "VTI" }] }] },
+      state,
+      context(),
+    );
+    expect(out.ops).toEqual([{ layer: "ws", op: { op: "setRowRef", tableId: "t-holdings", rowId: "wh2", ref: { rowId: "r1", holdingId: "h1" } } }]);
+  });
+
+  it("stage_rows refuses a holding row that shows another account's holding, without inviting a retry that would copy it", async () => {
+    const state = fixture();
+    state.sections.taxable = [{ id: "x1", sourceFileIds: ["f1"], cells: { accountName: doc("Joint Brokerage") } }];
+    state.worksheet.tables[0].rows.push({ id: "w3", cells: {}, ref: { rowId: "x1" } });
+    const refusal = runWorksheetTool(
+      "stage_rows",
+      { table: "t-accounts", rows: [{ row: "w3", section: "taxable", cells: {}, holdings: [{ row: "wh1", ticker: "IBM" }] }] },
+      state,
+      context(),
+    );
+    await expect(refusal).rejects.toThrow("Row wh1 already shows a holding of another account — leave it out (move_holding moves a holding to another account).");
+  });
+
   it("accepts the long row ids fill_from_staging makes from UUIDs", async () => {
     const uuid = (n: number) => `${String(n).repeat(8)}-1111-4111-8111-${String(n).repeat(12)}`;
     const [tableId, accountId, holdingId] = [uuid(1), uuid(2), uuid(3)];
