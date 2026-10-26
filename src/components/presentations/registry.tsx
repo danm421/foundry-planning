@@ -2,6 +2,7 @@ import type { z } from "zod";
 import type { ComponentType, ReactElement } from "react";
 import type { SectionAccent } from "@/lib/presentations/theme";
 import type { DerivedRefRequest, DerivedSource } from "@/lib/presentations/derived-refs";
+import type { MaxSpendResult } from "@/lib/solver/solve-max-spending";
 import type {
   CashFlowPageData,
   CashFlowPageOptions,
@@ -215,6 +216,7 @@ import { estimateMedicareSummaryPageCount } from "@/lib/presentations/pages/medi
 import { MedicareSummaryPagePdf } from "./pages/medicare-summary/page-pdf";
 import { buildRetirementSummaryData, type RetirementSummaryPageData } from "@/lib/presentations/pages/retirement-summary/view-model";
 import { type RetirementSummaryOptions, retirementSummaryOptionsSchema, RETIREMENT_SUMMARY_OPTIONS_DEFAULT } from "@/lib/presentations/pages/retirement-summary/options-schema";
+import { RetirementSummaryOptionsControl } from "./pages/retirement-summary/options-control";
 import { summarizeRetirementSummaryOptions } from "@/lib/presentations/pages/retirement-summary/summarize-options";
 import { estimateRetirementSummaryPageCount } from "@/lib/presentations/pages/retirement-summary/estimate-page-count";
 import { RetirementSummaryPagePdf } from "./pages/retirement-summary/page-pdf";
@@ -594,6 +596,9 @@ export interface BuildDataContext {
    *  keyed by `derivedKey(pageId, key)` — e.g. "derived:earlyYearsLadder:up3".
    *  Each entry is the fully-built bundle for that ref. */
   bundlesByRef?: Record<string, PageScenarioBundle>;
+  /** THIS entry's own-plan max-spend solve — see `ownPlanMaxSpendTarget`.
+   *  Null when the solve failed. */
+  maxSpend?: MaxSpendResult | null;
 }
 
 export interface RenderPdfInput<TData> {
@@ -712,6 +717,13 @@ export interface PresentationPage<TData, TOptions> {
    *  confidence target to solve at. Returning null means no solve. Declaring it
    *  here keeps the export route from carrying a per-page id list. */
   maxSpendRefs?: (options: TOptions) => { refs: string[]; targetPoS: number } | null;
+  /** Optional: a single-plan page that prints a maximum-spending figure for its
+   *  OWN plan — the one the row's override picks — returns the confidence
+   *  target to solve at; null means no solve. Solved per deck entry and handed
+   *  to `buildData` as `ctx.maxSpend`, never attached to the shared bundle: a
+   *  bundle holds one `maxSpend`, and a comparison page on the same plan may
+   *  fill it at a different target. */
+  ownPlanMaxSpendTarget?: (options: TOptions) => number | null;
   buildData: (ctx: BuildDataContext, options: TOptions) => TData;
   renderPdf: (input: RenderPdfInput<TData>) => ReactElement;
 }
@@ -1704,7 +1716,11 @@ export const retirementSummaryPage: PresentationPage<RetirementSummaryPageData, 
           { title: "Retirement Summary", offset: 0 },
           { title: "Income, Spending & Funding", offset: 1 },
         ],
+  OptionsControl: RetirementSummaryOptionsControl,
   supportsScenarioOverride: true,
+  // `?.`: the compliance re-export replays stored payloads unparsed, and one
+  // saved before this option existed carries `{}`.
+  ownPlanMaxSpendTarget: (o) => (o.maxSpend?.show ? o.maxSpend.targetConfidence : null),
   buildData: (ctx, options) => buildRetirementSummaryData(ctx, options),
   renderPdf: (input) => <RetirementSummaryPagePdf {...input} />,
 };

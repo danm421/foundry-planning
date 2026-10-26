@@ -6,14 +6,17 @@ import { dataLight } from "@/brand";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type { RetirementSummaryPageData } from "@/lib/presentations/pages/retirement-summary/view-model";
 import type { SsClient, SsLadderRow } from "@/lib/presentations/pages/retirement-summary/social-security";
-import { fmtUsd, fmtUsdMonthly, printsAsZero } from "@/lib/presentations/pages/retirement-summary/aggregate";
+import { fmtPct, fmtUsd, fmtUsdMonthly, printsAsZero } from "@/lib/presentations/pages/retirement-summary/aggregate";
 import { PortfolioBarsPdf, SplitBarPdf } from "./chart-pdf";
 import { CashflowChartPdf } from "../cash-flow/chart-pdf";
 
 const s = StyleSheet.create({
-  kpis: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 },
+  // Two explicit rows rather than one wrapping grid: the outlook row takes a
+  // fourth card when the max-spend KPI is on, and the liquid row stays three.
+  kpis: { gap: 6, marginBottom: 8 },
+  kpiRow: { flexDirection: "row", gap: 6 },
   // space-between pins the value to the card bottom so values align across 1- vs 2-line labels
-  kpi: { flexBasis: "31%", justifyContent: "space-between", backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 6 },
+  kpi: { flex: 1, justifyContent: "space-between", backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 6 },
   kpiLbl: { fontSize: 6.5, color: T.ink2, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 },
   kpiVal: { fontSize: 14, fontWeight: 700, marginTop: 2 },
   panel: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 10, marginBottom: 8 },
@@ -147,14 +150,24 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
         <SectionHead title={data.title} subtitle={data.subtitle} accent={accent} />
 
         <View style={s.kpis}>
-          {/* Row 1: outlook — Monte Carlo, retirement timing, lifetime spend */}
-          <Kpi lbl="Monte Carlo" val={data.kpis.monteCarlo} />
-          <Kpi lbl="Retire age" val={`${data.kpis.retirementAge} · ${data.kpis.retirementYear}`} />
-          <Kpi lbl="Total spend" val={fmtUsd(data.kpis.totalSpend)} />
+          {/* Row 1: outlook — Monte Carlo, retirement timing, lifetime spend, optional max spend */}
+          <View style={s.kpiRow}>
+            <Kpi lbl="Monte Carlo" val={data.kpis.monteCarlo} />
+            <Kpi lbl="Retire age" val={`${data.kpis.retirementAge} · ${data.kpis.retirementYear}`} />
+            <Kpi lbl="Total spend" val={fmtUsd(data.kpis.totalSpend)} />
+            {data.kpis.maxSpend ? (
+              <Kpi
+                lbl={`Max spend · ${fmtPct(data.kpis.maxSpend.targetConfidence)} confidence`}
+                val={`${fmtUsd(data.kpis.maxSpend.annualToday)}/yr`}
+              />
+            ) : null}
+          </View>
           {/* Row 2: liquid portfolio at the three checkpoints */}
-          <Kpi lbl="Liquid — Now" val={fmtUsd(data.kpis.liquidNow)} />
-          <Kpi lbl="Liquid — Retire" val={fmtUsd(data.kpis.liquidRetirement)} />
-          <Kpi lbl="Liquid — End" val={fmtUsd(data.kpis.liquidEndOfLife)} />
+          <View style={s.kpiRow}>
+            <Kpi lbl="Liquid — Now" val={fmtUsd(data.kpis.liquidNow)} />
+            <Kpi lbl="Liquid — Retire" val={fmtUsd(data.kpis.liquidRetirement)} />
+            <Kpi lbl="Liquid — End" val={fmtUsd(data.kpis.liquidEndOfLife)} />
+          </View>
         </View>
 
         <View style={s.panel}>

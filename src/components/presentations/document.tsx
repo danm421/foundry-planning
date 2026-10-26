@@ -46,6 +46,8 @@ export interface PresentationDocumentProps {
      *  different proposals. Absent → the page prints its empty state, which
      *  still occupies every sheet `estimatePageCount` reserved. */
     proposal?: InvestmentProposalBundle;
+    /** THIS entry's own-plan max-spend solve — see `ownPlanMaxSpendTarget`. */
+    maxSpend?: MaxSpendResult | null;
   }>;
   firmName: string;
   firmTagline: string | null;
@@ -182,6 +184,7 @@ export function buildPresentationEntries(props: PresentationDocumentProps) {
         planStory: p.planStory,
         proposal: p.proposal,
         bundlesByRef,
+        maxSpend: p.maxSpend,
       },
       options as never,
     );

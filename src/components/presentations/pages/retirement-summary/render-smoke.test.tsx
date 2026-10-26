@@ -153,6 +153,7 @@ const FULL: RetirementSummaryPageData = {
     retirementAge: 65,
     retirementYear: 2054,
     totalSpend: 13_500_000,
+    maxSpend: null,
   },
   liquid: { now: 165_442, retirement: 8_526_000, endOfLife: 20_180_000 },
   bars: YEARS.map((year, i) => ({
@@ -312,6 +313,18 @@ describe("RetirementSummaryPagePdf render", () => {
             .toContain(fmtUsdMonthly(r.monthly));
         }
       }
+    }
+  });
+
+  it("fits the max-spend card in sheet one's first row, on one line, without adding a sheet", async () => {
+    const maxSpend = { annualToday: 1_250_000, targetConfidence: 0.85 };
+    for (const [name, base] of [["representative", REPRESENTATIVE], ["wide", WIDE_LADDERS]] as const) {
+      const pdf = await pagesOf({ ...base, kpis: { ...base.kpis, maxSpend } });
+      expect(renderedPages(pdf), name).toBe(2);
+      // A wrapped label would split this string across two extracted lines and
+      // make the outlook row taller than the liquid row beneath it.
+      expect(bodyTextPerSheet(pdf)[0], name).toContain("MAX SPEND · 85% CONFIDENCE");
+      expect(bodyTextPerSheet(pdf)[0], name).toContain("$1.3M/yr");
     }
   });
 

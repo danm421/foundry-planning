@@ -69,6 +69,23 @@ describe("buildPresentationEntries", () => {
     expect(entry.data).toBeTruthy();
     expect(entry.pageCount).toBeGreaterThan(0);
   });
+
+  it("hands a page ITS entry's max-spend solve", () => {
+    // Per entry, not per bundle: the bundle's own slot is a decoy here.
+    const p = props("cashFlow");
+    p.bundles.retire62.maxSpend = { realAnnualSpend: 1, scaleFactor: 1, achievedPoS: 0.5, status: "converged" };
+    p.pages = [{
+      pageId: "retirementSummary",
+      options: { maxSpend: { show: true, targetConfidence: 0.9 } },
+      scenarioKey: "retire62",
+      maxSpend: { realAnnualSpend: 145_000, scaleFactor: 1.2, achievedPoS: 0.9, status: "converged" },
+    }];
+    const [entry] = buildPresentationEntries(p);
+    expect((entry.data as { kpis: { maxSpend: unknown } }).kpis.maxSpend).toEqual({
+      annualToday: 145_000,
+      targetConfidence: 0.9,
+    });
+  });
 });
 
 describe("buildReportPageData", () => {

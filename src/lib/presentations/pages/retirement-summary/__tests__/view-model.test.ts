@@ -200,3 +200,27 @@ describe("buildRetirementSummaryData — the funding bar and the narrative share
     expect(data.fundingSources.some((r) => r.label === "Unfunded" && r.value === 60_000)).toBe(true);
   });
 });
+
+describe("buildRetirementSummaryData — the max sustainable spend KPI", () => {
+  const years = [makeYear(2031)] as never;
+  const solved = { realAnnualSpend: 145_000, scaleFactor: 1.2, achievedPoS: 0.9, status: "converged" as const };
+  const on = { maxSpend: { show: true, targetConfidence: 0.9 } };
+
+  it("stays off by default, even when a solve is present", () => {
+    const data = buildRetirementSummaryData(ctx({ years, maxSpend: solved }), RETIREMENT_SUMMARY_OPTIONS_DEFAULT);
+    expect(data.kpis.maxSpend).toBeNull();
+  });
+
+  it("carries the solved spend and the confidence it was solved at when switched on", () => {
+    const data = buildRetirementSummaryData(ctx({ years, maxSpend: solved }), on);
+    expect(data.kpis.maxSpend).toEqual({ annualToday: 145_000, targetConfidence: 0.9 });
+  });
+
+  it("drops the KPI rather than print a blank when the solve did not run or failed", () => {
+    // Undefined: a snapshot plan (nothing solvable). Null: the solve threw.
+    for (const maxSpend of [undefined, null]) {
+      const data = buildRetirementSummaryData(ctx({ years, maxSpend }), on);
+      expect(data.kpis.maxSpend).toBeNull();
+    }
+  });
+});

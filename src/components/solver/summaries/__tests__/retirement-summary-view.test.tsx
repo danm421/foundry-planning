@@ -67,6 +67,7 @@ const POPULATED: RetirementSummaryPageData = {
     retirementAge: 65,
     retirementYear: 2030,
     totalSpend: 2_400_000,
+    maxSpend: null,
   },
   liquid: { now: 500_000, retirement: 1_200_000, endOfLife: 800_000 },
   bars: [

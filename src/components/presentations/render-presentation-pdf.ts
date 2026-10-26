@@ -26,6 +26,7 @@ import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { listInvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
 import { getOrComputeLifeInsuranceSolve } from "@/lib/compute-cache/life-insurance";
 import { getOrComputeMaxSpending } from "@/lib/compute-cache/max-spending";
+import type { MaxSpendResult } from "@/lib/solver/solve-max-spending";
 import type {
   LifeInsuranceSummaryOptions,
   LiSolved,
@@ -249,8 +250,25 @@ export async function preparePresentation(
   // injected into page.options), max-spend depends only on (scenario, target),
   // so it attaches to the shared bundle — one solve serves every page on it.
   // Cached (kind="max_spending") so repeated decks / the AI route are cheap.
-  const maxSpendDone = new Set<string>(); // `${key}:${target}`
-  await Promise.all(
+  //
+  // One solve per (plan, target) across the deck, shared by this pass and the
+  // own-plan pass below, and held IN FLIGHT: the compute cache only dedupes
+  // after a write lands, so two pages asking at once would otherwise both solve.
+  // A failed solve resolves to null, and the page drops the figure.
+  const maxSpendSolves = new Map<string, Promise<MaxSpendResult | null>>();
+  const solveMaxSpend = (scenarioId: string, targetPoS: number) => {
+    const k = `${scenarioId}:${targetPoS}`;
+    let solve = maxSpendSolves.get(k);
+    if (!solve) {
+      solve = getOrComputeMaxSpending({ clientId, firmId, scenarioId, targetPoS }).catch((msErr) => {
+        console.error("Max-spend solve failed for export", msErr);
+        return null;
+      });
+      maxSpendSolves.set(k, solve);
+    }
+    return solve;
+  };
+  const sharedBundleSolves = Promise.all(
     body.pages.flatMap((page) => {
       const def = PRESENTATION_PAGES[page.pageId];
       const req = def.maxSpendRefs?.(page.options as never) ?? null;
@@ -269,25 +287,25 @@ export async function preparePresentation(
         // raw, so this hole predates the refactor that made it visible.)
         if (ref.kind !== "scenario") return;
         const key = keyForRef(ref);
-        const dedupe = `${key}:${req.targetPoS}`;
-        if (maxSpendDone.has(dedupe) || !bundles[key]) return;
-        maxSpendDone.add(dedupe);
-        try {
-          bundles[key].maxSpend = await getOrComputeMaxSpending({
-            clientId,
-            firmId,
-            // Narrowed to the scenario arm by the guard above; `ref.id` is
-            // "base" for the base column, exactly as before.
-            scenarioId: ref.id,
-            targetPoS: req.targetPoS,
-          });
-        } catch (msErr) {
-          console.error("Max-spend solve failed for export", msErr);
-          bundles[key].maxSpend = null; // page degrades to a hidden row
-        }
+        if (!bundles[key]) return;
+        // Narrowed to the scenario arm by the guard above; `ref.id` is
+        // "base" for the base column, exactly as before.
+        bundles[key].maxSpend = await solveMaxSpend(ref.id, req.targetPoS);
       });
     }),
   );
+
+  // A single-plan page's OWN plan, at that page's target — one result per
+  // entry, see `ownPlanMaxSpendTarget`. Same snapshot rule as above.
+  const ownPlanSolves = Promise.all(
+    body.pages.map(async (page, idx) => {
+      const targetPoS = PRESENTATION_PAGES[page.pageId].ownPlanMaxSpendTarget?.(page.options as never) ?? null;
+      const ref = plan.distinct.get(plan.pageKeys[idx])?.ref;
+      if (targetPoS == null || ref?.kind !== "scenario") return undefined;
+      return solveMaxSpend(ref.id, targetPoS);
+    }),
+  );
+  const [, ownPlanMaxSpendByPage] = await Promise.all([sharedBundleSolves, ownPlanSolves]);
 
   // The cover/client-name fields come from the top-level bundle.
   const topBundle = bundles[plan.topKey];
@@ -490,6 +508,7 @@ export async function preparePresentation(
       scenarioKey: plan.pageKeys[idx],
       planStory: planStoryByPage[idx],
       proposal: proposalByPage[idx],
+      maxSpend: ownPlanMaxSpendByPage[idx],
     })),
     firmName,
     firmTagline: null,

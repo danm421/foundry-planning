@@ -50,6 +50,9 @@ export interface RetirementSummaryKpis {
   retirementAge: number;
   retirementYear: number;
   totalSpend: number;
+  /** The optional max-sustainable-spend card. Null when the option is off or
+   *  there is no solve to print (a snapshot plan, or the solve failed). */
+  maxSpend: { annualToday: number; targetConfidence: number } | null;
 }
 
 export interface RetirementSummaryPageData {
@@ -95,7 +98,7 @@ export const FUNDING_CHART_BOX = { width: 500, height: 194, marginTop: 8 } as co
 
 export function buildRetirementSummaryData(
   ctx: BuildDataContext,
-  _options: RetirementSummaryOptions,
+  options: RetirementSummaryOptions,
 ): RetirementSummaryPageData {
   const { years, clientData } = ctx;
   const retYear = retirementYearOf(clientData) ?? years[0]?.year ?? 0;
@@ -188,6 +191,10 @@ export function buildRetirementSummaryData(
       retirementAge: clientData.client.retirementAge,
       retirementYear: retYear,
       totalSpend: funding.totalSpending,
+      maxSpend:
+        options.maxSpend.show && ctx.maxSpend
+          ? { annualToday: ctx.maxSpend.realAnnualSpend, targetConfidence: options.maxSpend.targetConfidence }
+          : null,
     },
     liquid, bars, byType, byTaxType, funding, fundingSources, socialSecurity,
     living, otherExpenses, income, incomeEmptyCopy, transactions,
