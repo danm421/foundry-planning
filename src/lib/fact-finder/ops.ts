@@ -63,6 +63,13 @@ const clientOp = z.discriminatedUnion("op", [
     field: z.enum(HOLDING_FIELDS),
     value: z.unknown(),
   }),
+  z.object({
+    op: z.literal("addHolding"),
+    sectionId: id,
+    rowId: id,
+    holdingId: id,
+    holding: z.partialRecord(z.enum(HOLDING_FIELDS), z.union([z.string(), z.number(), z.null()])),
+  }),
   z.object({ op: z.literal("removeHolding"), sectionId: id, rowId: id, holdingId: id }),
   z.object({
     op: z.literal("assignHolding"),
@@ -382,6 +389,20 @@ function applyOne(state: FactFinderState, op: FFOp, ctx: OpContext): FactFinderS
       }
       const next = replaceRow(state, section.id, index, { ...row, link });
       return link.kind === "existing" ? releaseOtherClaims(next, section, row.id, link.recordId) : next;
+    }
+
+    case "addHolding": {
+      const section = sectionOrThrow(op.sectionId);
+      if (!section.holdings) throw new FactFinderOpError(`${section.label} rows don't carry holdings.`);
+      const index = rowIndexOrThrow(state, section, op.rowId);
+      const row = rowsOf(state, section.id)[index];
+      const holdings = row.holdings ?? [];
+      if (holdings.some((h) => h.id === op.holdingId)) throw new FactFinderOpError("That account already has a holding with that id.");
+      const holding: FFHolding = { id: op.holdingId, ticker: null, name: null, shares: null, price: null, marketValue: null, costBasis: null, by: ctx.by, pinned: true };
+      for (const field of HOLDING_FIELDS) {
+        if (op.holding[field] !== undefined) Object.assign(holding, { [field]: normalizeHoldingValue(field, op.holding[field]) });
+      }
+      return replaceRow(state, section.id, index, { ...row, holdings: [...holdings, holding] });
     }
 
     case "setHolding":
