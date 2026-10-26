@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { factFinderView, sectionView } from "../chat/view";
 import { FACT_FINDER_SECTIONS } from "../schema";
 import { emptyFactFinderState } from "../state";
-import type { FactFinderState, FFCell, FFCellValue, FFHolding, FFRow } from "../types";
+import type { FactFinderState, FFCell, FFCellValue, FFFileReading, FFHolding, FFRow } from "../types";
 
 const AT = "2026-10-12T12:00:00.000Z";
 const doc = (value: FFCellValue, confidence = 0.92): FFCell => ({
@@ -120,6 +120,14 @@ describe("factFinderView", () => {
         '- "new-scan.pdf": not read yet',
       ].join("\n"),
     );
+  });
+
+  it("says a free-form document was read for the AI to read itself — never that it found 0 rows", () => {
+    const paystub: FFFileReading = { status: "done", reader: "freeform", startedAt: "2026-10-26T12:00:00.000Z", rows: 0 };
+    const state = { ...fixture(), readings: { ...fixture().readings, f3: paystub } };
+    const view = factFinderView(state, [{ id: "f3", name: "paystub.pdf" }]);
+    expect(view).toContain('- "paystub.pdf": read — its text is yours to read with read_document (it fills no staging rows)');
+    expect(view).not.toContain("0 rows");
   });
 
   it("names every section, even an empty one", () => {
