@@ -1,3 +1,9 @@
+// src/app/api/integrations/[provider]/disconnect/route.ts
+//
+// Disconnects the firm's one Azure OpenAI connection (admin or owner only).
+// A syncing provider's connections are each advisor's own; they disconnect one
+// at a time through `connections/[connectionId]/disconnect`, so this 404s for
+// them rather than reaching every row the firm holds.
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
@@ -12,7 +18,7 @@ export async function POST(
 ): Promise<Response> {
   try {
     const provider = await resolveProvider(params);
-    if (!provider) return new Response("Not found", { status: 404 });
+    if (!provider || provider.id !== "azure_openai") return new Response("Not found", { status: 404 });
 
     // requireOrgAdminOrOwner() returns void — get ids from auth() separately
     await requireOrgAdminOrOwner();
@@ -22,7 +28,9 @@ export async function POST(
     }
 
     await disconnectConnection(firmId, provider.id);
-    if (provider.id === "azure_openai") clearAiCredentialCache(firmId);
+    // After the write, or a concurrent request could re-cache the credentials
+    // being revoked.
+    clearAiCredentialCache(firmId);
     await recordAudit({
       action: "integration.disconnect",
       resourceType: "integration_connection",

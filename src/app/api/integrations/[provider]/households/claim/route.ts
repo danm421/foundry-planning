@@ -1,13 +1,14 @@
-// Advisor-facing household linking. Unlike the admin's link-from-the-table
-// flow, the caller here has NO browsable list — they must already know the
-// household id. Every guard below exists to keep that id from becoming
-// guessable in practice; see the design doc's "Decision" section.
+// Client-page household linking. Unlike the link-from-the-table flow on a
+// connection's page, the caller here has NO browsable list — they must
+// already know the household id. Every guard below exists to keep that id
+// from becoming guessable in practice; see the design doc's "Decision" section.
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { checkIntegrationClaimLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
-import { makeCallContext } from "@/lib/integrations/auth";
+import { connectionCallContext } from "@/lib/integrations/auth";
+import { getOwnedConnection } from "@/lib/integrations/connection-access";
 import { claimHousehold } from "@/lib/integrations/households";
 import { ProviderNotConfigured } from "@/lib/integrations/errors";
 import { recordAudit } from "@/lib/audit";
@@ -36,9 +37,10 @@ export async function POST(
     const body = await req.json().catch(() => ({}));
     const clientId = typeof body?.clientId === "string" ? body.clientId : null;
     const raw = typeof body?.externalHouseholdId === "string" ? body.externalHouseholdId.trim() : "";
-    if (!clientId || !raw) {
+    const connectionId = typeof body?.connectionId === "string" ? body.connectionId : null;
+    if (!clientId || !raw || !connectionId) {
       return NextResponse.json(
-        { error: "clientId and externalHouseholdId are required" },
+        { error: "clientId, externalHouseholdId and connectionId are required" },
         { status: 400 },
       );
     }
@@ -55,16 +57,24 @@ export async function POST(
     const firmId = access.firmId;
     await requireActiveSubscriptionForFirm(firmId);
 
+    // The claim goes through one of the caller's OWN connections, never a
+    // colleague's. Anything else is a 404, like every connection-scoped route.
+    // Checked before the limiter: an unowned connection never reaches the
+    // provider, so it needn't spend the caller's attempts.
+    const connection = await getOwnedConnection({ connectionId, firmId, userId });
+    if (!connection || connection.providerId !== provider.id) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
     const rl = await checkIntegrationClaimLimit(`${provider.id}:${userId}`);
     if (!rl.allowed) {
       return rateLimitErrorResponse(rl, "Too many link attempts. Please try again later.");
     }
 
-    const ctx = await makeCallContext(firmId, provider.id);
+    const ctx = await connectionCallContext(connection.id);
     const activeProvider = provider;
     const result = await claimHousehold({
-      firmId,
-      providerId: activeProvider.id,
+      connection,
       clientId,
       externalHouseholdId: raw,
       userId,
@@ -91,6 +101,7 @@ export async function POST(
         provider: activeProvider.id,
         outcome: result.ok ? "ok" : result.reason,
         attemptedClientId: clientId,
+        connectionId: connection.id,
       },
     });
 

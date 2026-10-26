@@ -2,40 +2,38 @@
 import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { accounts, clientImports, integrationSyncRuns, scenarios } from "@/db/schema";
+import { accounts, integrationSyncRuns, scenarios } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 import { discardImport } from "@/lib/fact-finder/import-lifecycle";
-import { resolveHoldingsForCommit } from "@/lib/imports/commit/holdings";
-import { commitTabs } from "@/lib/imports/commit/orchestrator";
-import { emptyImportPayload, type ImportPayload } from "@/lib/imports/types";
-import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
 
-import { makeCallContext } from "./auth";
-import { getConnection, setConnectionStatus } from "./connections";
-import { getHouseholdLinks } from "./households";
+import { connectionCallContext } from "./auth";
+import { buildReviewAccounts, commitProviderAccounts, findOpenReviewId, upsertOpenReview } from "./commit";
+import { loadConnection, setConnectionStatusById } from "./connections";
+import { getLinksForConnection, recordLastPull } from "./households";
 import { mapToImportPayload } from "./map";
 import { reconcile } from "./reconcile";
 import { getProvider } from "./registry";
-import type { ProviderClient, ProviderId } from "./types";
+import type { ProviderClient } from "./types";
 
 /**
- * Provider → planning sync orchestrator. Reuses the document-import commit path
- * (`resolveHoldingsForCommit` → `commitTabs` → `syncAccountFromHoldings`) — it
- * never forks a second commit implementation.
+ * Provider → planning sync of ONE connection: it walks that connection's
+ * household links (or the one client's, with `clientId`).
  *
  * Per the product decision, accounts split into two buckets after reconciliation:
  *  - EXACT (already imported, matched by externalId): auto-commit / update in
- *    place via `commitTabs(['accounts'])`. An account is reviewed once, when
- *    it is first linked; after that the feed is trusted.
+ *    place via `commitProviderAccounts` (the document-import commit path).
+ *    An account is reviewed once, when it is first linked; after that the
+ *    feed is trusted.
  *  - NEW (never-seen): land in a single open `clientImports` review row
  *    (`origin:<syncing providerId>`, `status:'review'`) for the advisor to
  *    review — the provider's category/subType is GUESSED from
  *    registrationType, so it must not hit the plan unreviewed. Re-syncing
- *    DEDUPES into one open review import per client.
+ *    DEDUPES into one open review import per client, and a review left with
+ *    nothing new is discarded. The review always belongs to the connection's
+ *    owner.
  */
-export async function syncFirm(
-  firmId: string,
-  providerId: ProviderId,
+export async function syncConnection(
+  connectionId: string,
   opts: {
     trigger: "manual" | "cron";
     clientId?: string;
@@ -43,11 +41,13 @@ export async function syncFirm(
     userId?: string;
   },
 ): Promise<{ committed: number; queued: number; importId?: string }> {
-  const provider = getProvider(providerId);
-  const conn = await getConnection(firmId, providerId);
-  if (!conn || conn.status === "disconnected") {
-    throw new Error(`${provider.label} is not connected for firm ${firmId}`);
+  const connection = await loadConnection(connectionId);
+  if (!connection) throw new Error(`Integration connection ${connectionId} not found`);
+  if (connection.status === "disconnected") {
+    throw new Error(`Integration connection ${connectionId} is disconnected`);
   }
+  const { firmId, providerId, ownerUserId } = connection;
+  const provider = getProvider(providerId);
   if (providerId === "azure_openai" || !provider.syncs) {
     // A credentials-only provider (azure_openai) has no households to pull.
     // Reaching here means a caller routed a sync at the wrong provider.
@@ -56,17 +56,23 @@ export async function syncFirm(
     // `origin: providerId` write, without a cast.
     throw new Error("provider_does_not_sync");
   }
+  if (!ownerUserId) {
+    // Every review a sync files belongs to the connection's owner; with no
+    // owner it would sit where nobody can open it.
+    throw new Error(`Integration connection ${connectionId} has no owner`);
+  }
 
-  // One resolved identity for ctx.userId, createdByUserId, AND every audit
-  // actorId — guarantees recordAudit never falls back to Clerk auth() (works
-  // in cron + tests). The route passes the real advisor id for manual syncs.
+  // One resolved identity for ctx.userId, the auto-commit's createdByUserId,
+  // AND every audit actorId — guarantees recordAudit never falls back to
+  // Clerk auth() (works in cron + tests). The route passes the real advisor id
+  // for manual syncs. The REVIEW is filed under `ownerUserId` instead.
   const userId = opts.userId ?? `system:${providerId}-sync`;
   const client = opts.client ?? provider.client;
-  const ctx = await makeCallContext(firmId, providerId);
+  const ctx = await connectionCallContext(connectionId);
 
   const [run] = await db
     .insert(integrationSyncRuns)
-    .values({ firmId, provider: providerId, trigger: opts.trigger, status: "running" })
+    .values({ firmId, provider: providerId, connectionId, trigger: opts.trigger, status: "running" })
     .returning();
 
   let committed = 0;
@@ -75,7 +81,7 @@ export async function syncFirm(
   let importId: string | undefined;
 
   try {
-    let links = await getHouseholdLinks(firmId, providerId);
+    let links = await getLinksForConnection(connectionId);
     if (opts.clientId) links = links.filter((l) => l.clientId === opts.clientId);
 
     for (const link of links) {
@@ -93,7 +99,7 @@ export async function syncFirm(
             resourceId: link.id,
             clientId: link.clientId,
             firmId,
-            metadata: { error: "no base scenario", provider: providerId },
+            metadata: { error: "no base scenario", provider: providerId, connectionId },
             actorId: userId,
           });
           continue;
@@ -113,11 +119,13 @@ export async function syncFirm(
           providerAccounts,
           positionsByAccount,
         );
+        // Stored before reconciling, so the snapshot survives a failed commit.
+        await recordLastPull(link.id, mapped.accounts, new Date());
 
         // Scenario-scope to the same base scenario the EXACT update writes to
         // (commitAccounts' UPDATE filters on scenarioId). Without this, a stray
-        // orion account under another scenario would classify as `exact` yet the
-        // scenario-filtered update would touch 0 rows — a silent committed miscount.
+        // provider account under another scenario would classify as `exact` yet
+        // the scenario-filtered update would touch 0 rows — a silent committed miscount.
         const existing = await db
           .select({ id: accounts.id, externalId: accounts.externalId })
           .from(accounts)
@@ -129,12 +137,16 @@ export async function syncFirm(
             ),
           );
 
-        const { exact, new: fresh } = reconcile({ mapped: mapped.accounts, existing });
+        const { exact } = reconcile({ mapped: mapped.accounts, existing });
 
         // EXACT bucket → auto-commit / update in place via the commit path.
         if (exact.length > 0) {
-          const exactPayload: ImportPayload = {
-            ...emptyImportPayload(),
+          await commitProviderAccounts({
+            clientId: link.clientId,
+            scenarioId: scn.id,
+            firmId,
+            userId,
+            providerId,
             // The type was settled when the account was reviewed; the feed's
             // is only a guess from its registration, so it never overwrites it.
             accounts: exact.map((e) => ({
@@ -143,114 +155,40 @@ export async function syncFirm(
               subType: undefined,
               match: { kind: "exact", existingId: e.existingId } as const,
             })),
-          };
-          const [vehicle] = await db
-            .insert(clientImports)
-            .values({
-              clientId: link.clientId,
-              orgId: firmId,
-              scenarioId: scn.id,
-              mode: "updating",
-              status: "draft",
-              createdByUserId: userId,
-              origin: providerId,
-              payloadJson: { payload: exactPayload },
-            })
-            .returning();
-
-          const resolvedHoldings = await resolveHoldingsForCommit(exactPayload);
-          const holdingsAccountIds: string[] = [];
-          try {
-            await commitTabs({
-              importId: vehicle.id,
-              payload: exactPayload,
-              tabs: ["accounts"],
-              ctx: {
-                clientId: link.clientId,
-                scenarioId: scn.id,
-                orgId: firmId,
-                userId,
-                resolvedHoldings,
-                holdingsAccountIds,
-              },
-            });
-          } catch (err) {
-            // commitTabs rolls back its whole transaction on failure — drop the
-            // now-empty draft vehicle so it doesn't linger in the advisor's
-            // in-progress imports list, then surface to the per-household handler.
-            await db.delete(clientImports).where(eq(clientImports.id, vehicle.id));
-            throw err;
-          }
-          await Promise.all(holdingsAccountIds.map(syncAccountFromHoldings));
-
-          // Close out the vehicle import so it reads as a clean history row.
-          await db
-            .update(clientImports)
-            .set({ status: "committed", committedAt: new Date() })
-            .where(eq(clientImports.id, vehicle.id));
-
+          });
           committed += exact.length;
         }
 
         // NEW bucket → upsert ONE open review import per client (do NOT commit).
-        const reviewAccounts = fresh.map((a) => ({ ...a, match: { kind: "new" } as const }));
-        const [openReview] = await db
-          .select({ id: clientImports.id })
-          .from(clientImports)
-          .where(
-            and(
-              eq(clientImports.clientId, link.clientId),
-              eq(clientImports.origin, providerId),
-              eq(clientImports.status, "review"),
-            ),
-          )
-          .limit(1);
-
-        if (reviewAccounts.length === 0 && openReview) {
-          // Every account it held is linked now, so nothing is left to review.
-          await discardImport({ importId: openReview.id, clientId: link.clientId, firmId }, userId);
-        } else if (reviewAccounts.length > 0) {
-          const reviewPayload: ImportPayload = {
-            ...emptyImportPayload(),
+        const reviewAccounts = buildReviewAccounts({ pulled: mapped.accounts, ties: existing });
+        if (reviewAccounts.length > 0) {
+          importId = await upsertOpenReview({
+            clientId: link.clientId,
+            firmId,
+            scenarioId: scn.id,
+            providerId,
+            ownerUserId,
             accounts: reviewAccounts,
-          };
-
-          if (openReview) {
-            await db
-              .update(clientImports)
-              .set({ payloadJson: { payload: reviewPayload }, updatedAt: new Date() })
-              .where(eq(clientImports.id, openReview.id));
-            importId = openReview.id;
-          } else {
-            const [created] = await db
-              .insert(clientImports)
-              .values({
-                clientId: link.clientId,
-                orgId: firmId,
-                scenarioId: scn.id,
-                mode: "updating",
-                status: "review",
-                createdByUserId: userId,
-                origin: providerId,
-                payloadJson: { payload: reviewPayload },
-              })
-              .returning();
-            importId = created.id;
-          }
-
+          });
           queued += reviewAccounts.length;
+        } else {
+          const openReviewId = await findOpenReviewId(link.clientId, providerId);
+          // Every account it held is linked now, so nothing is left to review.
+          if (openReviewId) {
+            await discardImport({ importId: openReviewId, clientId: link.clientId, firmId }, userId);
+          }
         }
 
         households += 1;
       } catch (err) {
-        // Per-household isolation: one bad household can't abort the firm.
+        // Per-household isolation: one bad household can't abort the connection.
         await recordAudit({
           action: "integration.sync",
           resourceType: "integration_household_link",
           resourceId: link.id,
           clientId: link.clientId,
           firmId,
-          metadata: { error: String(err), provider: providerId },
+          metadata: { error: String(err), provider: providerId, connectionId },
           actorId: userId,
         });
         continue;
@@ -268,14 +206,14 @@ export async function syncFirm(
       })
       .where(eq(integrationSyncRuns.id, run.id));
 
-    await setConnectionStatus(firmId, providerId, "connected", null, { lastSyncedAt: new Date() });
+    await setConnectionStatusById(connectionId, "connected", null, { lastSyncedAt: new Date() });
 
     await recordAudit({
       action: "integration.sync",
       resourceType: "integration_connection",
-      resourceId: firmId,
+      resourceId: connectionId,
       firmId,
-      metadata: { trigger: opts.trigger, committed, queued, households, provider: providerId },
+      metadata: { trigger: opts.trigger, committed, queued, households, provider: providerId, connectionId },
       actorId: userId,
     });
 

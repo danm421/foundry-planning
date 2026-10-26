@@ -68,7 +68,8 @@ async function request(
   attempt = 0,
   forceRefresh = false,
 ): Promise<unknown> {
-  const rl = await checkIntegrationApiLimit(`${ctx.providerId}:${ctx.firmId}`);
+  // Per connection, so one advisor's syncing can't use up a colleague's budget.
+  const rl = await checkIntegrationApiLimit(`${ctx.providerId}:${ctx.connectionId ?? ctx.firmId}`);
   if (!rl.allowed) throw new Error("Orion rate limit exceeded");
 
   const token = await ctx.getToken({ forceRefresh });

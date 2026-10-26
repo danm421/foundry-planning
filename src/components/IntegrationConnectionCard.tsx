@@ -5,18 +5,26 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/components/toast";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { inputClassName, fieldLabelClassName } from "@/components/forms/input-styles";
-import type { ProviderId, ProviderAuthKind } from "@/lib/integrations/types";
+import DialogShell from "@/components/dialog-shell";
+import { defaultConnectionName } from "@/lib/integrations/providers/addepar/credentials";
+import type { ProviderAuthKind, SyncingProviderId } from "@/lib/integrations/types";
 
 type ConnectionStatus = "connected" | "disconnected" | "error";
 
 interface Props {
-  providerId: ProviderId;
+  providerId: SyncingProviderId;
+  connectionId: string;
+  /** The connection's name (the provider label when it was never named). */
+  name: string;
   label: string;
   authKind: ProviderAuthKind;
   status: ConnectionStatus;
   /** ISO string (serialized across the server boundary) or null. */
   lastSyncedAt: string | null;
   lastSyncError: string | null;
+  /** Addepar only: the saved (non-secret) address and firm ID, to prefill a reconnect. */
+  apiBase?: string;
+  addeparFirmId?: string;
 }
 
 /** Refresh / sync arrows — minimal outline, inherits text color. */
@@ -74,20 +82,26 @@ function formatSyncedAt(iso: string): string {
 
 export function IntegrationConnectionCard({
   providerId,
+  connectionId,
+  name,
   label,
   authKind,
   status,
   lastSyncedAt,
   lastSyncError,
+  apiBase,
+  addeparFirmId,
 }: Props) {
   const router = useRouter();
   const { showToast } = useToast();
-  const [busy, setBusy] = useState<"sync" | "disconnect" | null>(null);
+  const [busy, setBusy] = useState<"sync" | "disconnect" | "delete" | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const base = `/api/integrations/${providerId}/connections/${connectionId}`;
 
   async function handleSync() {
     setBusy("sync");
     try {
-      const res = await fetch(`/api/integrations/${providerId}/sync`, {
+      const res = await fetch(`${base}/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -109,7 +123,7 @@ export function IntegrationConnectionCard({
   async function handleDisconnect() {
     setBusy("disconnect");
     try {
-      const res = await fetch(`/api/integrations/${providerId}/disconnect`, { method: "POST" });
+      const res = await fetch(`${base}/disconnect`, { method: "POST" });
       if (!res.ok) throw new Error("disconnect failed");
       router.refresh();
     } catch {
@@ -118,6 +132,47 @@ export function IntegrationConnectionCard({
       setBusy(null);
     }
   }
+
+  async function handleDelete() {
+    setBusy("delete");
+    try {
+      const res = await fetch(base, { method: "DELETE" });
+      if (!res.ok) throw new Error("delete failed");
+      router.push(`/settings/integrations/${providerId}`);
+      router.refresh();
+    } catch {
+      showToast({ message: "Couldn't delete this connection. Please try again." });
+      setBusy(null);
+    }
+  }
+
+  // A connection that can't sync can still be removed.
+  const deleteButton = (
+    <div>
+      <button
+        type="button"
+        className="btn-ghost text-sm"
+        onClick={() => setConfirmingDelete(true)}
+        disabled={busy !== null}
+      >
+        Delete
+      </button>
+      <DialogShell
+        open={confirmingDelete}
+        onOpenChange={setConfirmingDelete}
+        title={`Delete ${name}?`}
+        size="sm"
+        destructiveAction={{ label: "Delete", onClick: handleDelete, loading: busy === "delete" }}
+      >
+        <p className="text-[14px] text-ink-2">
+          This removes the connection and unlinks the households linked through it. Connect again
+          later by adding it as a new connection.
+        </p>
+      </DialogShell>
+    </div>
+  );
+
+  const reconnect = { connectionId, name, apiBase, addeparFirmId };
 
   return (
     <section className="flex flex-col gap-4 rounded border border-hair bg-card p-4">
@@ -130,31 +185,15 @@ export function IntegrationConnectionCard({
         ) : null}
       </div>
 
-      {status === "disconnected" ? (
+      {status === "disconnected" || status === "error" ? (
         <>
           <p className="text-sm text-ink-3">
-            Connect your {label} account to sync household accounts and holdings into Foundry.
+            {status === "error"
+              ? `Foundry can no longer reach ${label}. Reconnect to resume syncing.${lastSyncError ? ` (${lastSyncError})` : ""}`
+              : `This connection is turned off. Reconnect to resume syncing, or delete it.`}
           </p>
           {authKind === "byok" ? (
-            <ByokConnectForm providerId={providerId} label={label} />
-          ) : (
-            <div>
-              <a className="btn-primary" href={`/api/integrations/${providerId}/connect`}>
-                Connect {label}
-              </a>
-            </div>
-          )}
-        </>
-      ) : null}
-
-      {status === "error" ? (
-        <>
-          <p className="text-sm text-ink-3">
-            Foundry can no longer reach {label}. Reconnect to resume syncing.
-            {lastSyncError ? ` (${lastSyncError})` : ""}
-          </p>
-          {authKind === "byok" ? (
-            <ByokConnectForm providerId={providerId} label={label} />
+            <ByokConnectForm providerId={providerId} label={label} reconnect={reconnect} />
           ) : (
             <div>
               <a className="btn-primary" href={`/api/integrations/${providerId}/connect`}>
@@ -162,6 +201,7 @@ export function IntegrationConnectionCard({
               </a>
             </div>
           )}
+          {deleteButton}
         </>
       ) : null}
 
@@ -191,10 +231,10 @@ export function IntegrationConnectionCard({
   );
 }
 
-type CredsPostOutcome = { ok: true } | { ok: false; error?: string };
+type CredsPostOutcome = { ok: true; connectionId?: string } | { ok: false; error?: string };
 
-/** Shared POST for the BYOK `test` and `connect` routes — both accept the
- * same credential JSON body and report `{ ok, error? }`. */
+/** Shared POST for the BYOK `test`, `connect` and reconnect routes — all take
+ * the credential JSON body and report `{ ok, error? }` (connect adds `connectionId`). */
 async function postAddeparCreds(url: string, body: Record<string, unknown>): Promise<CredsPostOutcome> {
   try {
     const res = await fetch(url, {
@@ -202,8 +242,8 @@ async function postAddeparCreds(url: string, body: Record<string, unknown>): Pro
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = (await res.json().catch(() => null)) as { error?: string } | null;
-    return res.ok ? { ok: true } : { ok: false, error: data?.error };
+    const data = (await res.json().catch(() => null)) as { error?: string; connectionId?: string } | null;
+    return res.ok ? { ok: true, connectionId: data?.connectionId } : { ok: false, error: data?.error };
   } catch {
     return { ok: false };
   }
@@ -258,22 +298,37 @@ function CredentialField({
 }
 
 /**
- * Credential form for BYOK providers (Addepar): API base, Addepar firm ID,
- * API key/secret, an attestation checkbox, and a "Test connection" step
+ * Credential form for BYOK providers (Addepar): a name, API base, Addepar firm
+ * ID, API key/secret, an attestation checkbox, and a "Test connection" step
  * that must pass before "Connect" is enabled. Any credential edit clears
  * the last test result so a stale pass can't authorize new credentials.
+ * Without `reconnect` it adds a new connection and opens its page; with it,
+ * it re-keys that connection in place so its household links carry on.
  */
-function ByokConnectForm({ providerId, label }: { providerId: ProviderId; label: string }) {
+export function ByokConnectForm({
+  providerId,
+  label,
+  reconnect,
+}: {
+  providerId: SyncingProviderId;
+  label: string;
+  reconnect?: { connectionId: string; name: string; apiBase?: string; addeparFirmId?: string };
+}) {
   const router = useRouter();
   const { showToast } = useToast();
-  const [apiBase, setApiBase] = useState("");
-  const [addeparFirmId, setAddeparFirmId] = useState("");
+  const [apiBase, setApiBase] = useState(reconnect?.apiBase ?? "");
+  const [addeparFirmId, setAddeparFirmId] = useState(reconnect?.addeparFirmId ?? "");
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
+  // Until the advisor types a name, it follows the address (https://ethos.addepar.com
+  // suggests "Ethos"); a reconnect starts from the connection's current name.
+  const [typedName, setTypedName] = useState<string | null>(null);
   const [attested, setAttested] = useState(false);
   const [busy, setBusy] = useState<"test" | "connect" | null>(null);
   const [testResult, setTestResult] = useState<"pass" | "fail" | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
+  const name =
+    typedName ?? (reconnect ? reconnect.name : apiBase.trim() ? defaultConnectionName(apiBase) : "");
 
   // A credential field changed — the last "Test connection" result no
   // longer speaks to the credentials currently in the form.
@@ -301,10 +356,16 @@ function ByokConnectForm({ providerId, label }: { providerId: ProviderId; label:
   async function handleConnect(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy("connect");
-    const creds = { apiBase, addeparFirmId, apiKey, apiSecret, attestation: true };
-    const result = await postAddeparCreds(`/api/integrations/${providerId}/connect`, creds);
+    const creds = { apiBase, addeparFirmId, apiKey, apiSecret, attestation: true, name: name.trim() };
+    const url = reconnect
+      ? `/api/integrations/${providerId}/connections/${reconnect.connectionId}/credentials`
+      : `/api/integrations/${providerId}/connect`;
+    const result = await postAddeparCreds(url, creds);
     if (result.ok) {
-      showToast({ message: `${label} connected.` });
+      showToast({ message: `${label} ${reconnect ? "reconnected" : "connected"}.` });
+      if (!reconnect && result.connectionId) {
+        router.push(`/settings/integrations/${providerId}/${result.connectionId}`);
+      }
       router.refresh();
     } else {
       showToast({ message: result.error ?? `Couldn't connect ${label}. Please try again.` });
@@ -314,11 +375,24 @@ function ByokConnectForm({ providerId, label }: { providerId: ProviderId; label:
 
   const credentialsIncomplete =
     !apiBase.trim() || !addeparFirmId.trim() || !apiKey.trim() || !apiSecret.trim();
-  const canConnect = attested && testResult === "pass" && busy === null;
+  const canConnect = attested && testResult === "pass" && !!name.trim() && busy === null;
 
   return (
     <form className="flex flex-col gap-3" onSubmit={handleConnect}>
       <div className="grid gap-3 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <label className={fieldLabelClassName} htmlFor={`${providerId}-name`}>
+            Name
+          </label>
+          <input
+            id={`${providerId}-name`}
+            className={inputClassName}
+            value={name}
+            onChange={(e) => setTypedName(e.target.value)}
+            maxLength={60}
+            required
+          />
+        </div>
         <CredentialField
           id={`${providerId}-api-base`}
           label="API base URL"
@@ -390,7 +464,7 @@ function ByokConnectForm({ providerId, label }: { providerId: ProviderId; label:
           className="btn-primary text-sm disabled:cursor-not-allowed disabled:opacity-50"
           disabled={!canConnect}
         >
-          {busy === "connect" ? "Connecting…" : "Connect"}
+          {busy === "connect" ? "Connecting…" : reconnect ? "Reconnect" : "Connect"}
         </button>
       </div>
     </form>

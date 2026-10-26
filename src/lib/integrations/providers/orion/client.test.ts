@@ -1,5 +1,6 @@
 // src/lib/integrations/providers/orion/client.test.ts
 import { describe, it, expect, vi } from "vitest";
+import { checkIntegrationApiLimit } from "@/lib/rate-limit";
 import { orionClient } from "./client";
 import type { ProviderCallContext } from "../../types";
 
@@ -57,5 +58,25 @@ describe("orionClient", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const retryHeaders = (fetchImpl.mock.calls[1][1] as any).headers;
     expect(retryHeaders.Authorization ?? retryHeaders.authorization).toBe("Bearer AT2");
+  });
+});
+
+describe("orionClient rate limit", () => {
+  it("counts calls per connection, so one advisor's syncing can't use up a colleague's", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonRes([]));
+    const getToken = vi.fn().mockResolvedValue("AT");
+
+    await orionClient.getAccounts({ ...makeCtx(fetchImpl, getToken), connectionId: "conn_1" }, "hh1");
+
+    expect(vi.mocked(checkIntegrationApiLimit)).toHaveBeenLastCalledWith("orion:conn_1");
+  });
+
+  it("falls back to the firm when the context names no connection", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonRes([]));
+    const getToken = vi.fn().mockResolvedValue("AT");
+
+    await orionClient.getAccounts(makeCtx(fetchImpl, getToken), "hh1");
+
+    expect(vi.mocked(checkIntegrationApiLimit)).toHaveBeenLastCalledWith("orion:firm_1");
   });
 });

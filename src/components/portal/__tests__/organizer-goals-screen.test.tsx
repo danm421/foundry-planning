@@ -81,13 +81,13 @@ describe("OrganizerGoalsScreen", () => {
     loadOrganizerMap.mockResolvedValue(null);
     const { container } = render(await OrganizerGoalsScreen({ clientId: "c1" }));
     expect(container.textContent).toContain("advisor");
-    expect(container.querySelector("[data-testid^='goal-row-']")).toBeNull();
+    expect(container.querySelector("[data-testid^='goal-year-']")).toBeNull();
   });
 
-  it("renders one row per goal", async () => {
+  it("renders a card per goal", async () => {
     const { getByTestId } = render(await OrganizerGoalsScreen({ clientId: "c1" }));
-    expect(getByTestId("goal-row-expense:e1").textContent).toContain("New roof");
-    expect(getByTestId("goal-row-milestone:client_life_expectancy").textContent).toContain(
+    expect(getByTestId("goal-card-joint-expense:e1").textContent).toContain("New roof");
+    expect(getByTestId("goal-card-left-milestone:client_life_expectancy").textContent).toContain(
       "age 90",
     );
   });

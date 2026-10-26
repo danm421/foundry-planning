@@ -443,11 +443,15 @@ export type AuditAction =
   // Integration providers (Orion, Schwab)
   | "integration.connect"
   | "integration.disconnect"
+  | "integration.connection.delete" // an advisor deleted their connection and its household links
   | "integration.recheck" // an admin re-verified stored credentials
   | "integration.sync"
   | "integration.household.claim" // an advisor claimed a household by id
-  | "integration.household.link" // an admin linked a household from the table
+  | "integration.household.link" // an advisor linked a household on their connection
   | "integration.household.unlink"
+  | "integration.account.connect" // an advisor fed an existing plan account from a provider account
+  | "integration.account.add" // an advisor added a provider account to the plan as a new account
+  | "integration.account.disconnect" // an advisor stopped a provider feeding a plan account
   // Client portal
   | "portal.invite.sent"
   | "portal.invite.revoked"

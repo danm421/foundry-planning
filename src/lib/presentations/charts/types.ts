@@ -42,6 +42,9 @@ export interface ChartSpec {
     values: number[];
   }>;
 
+  /** A year whose bar is outlined — the year the rest of the sheet is about. */
+  highlightX?: number;
+
   markers: Array<{
     atX: number;                             // year
     label: string;

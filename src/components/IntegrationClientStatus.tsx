@@ -7,7 +7,7 @@ import { FieldTooltip } from "@/components/forms/field-tooltip";
 import DialogShell from "@/components/dialog-shell";
 import { inputClassName, fieldLabelClassName } from "@/components/forms/input-styles";
 import { AlertCircleIcon } from "@/components/icons";
-import type { ProviderId } from "@/lib/integrations/types";
+import type { ProviderId, SyncingProviderId } from "@/lib/integrations/types";
 
 interface Props {
   providerId: ProviderId;
@@ -21,6 +21,13 @@ interface Props {
   linked: boolean;
   /** ISO string (serialized across the server boundary) or null. */
   lastSyncedAt: string | null;
+  /** The viewer's own usable connections — the claim dialog links through one. */
+  connections: Array<{
+    id: string;
+    providerId: SyncingProviderId;
+    providerLabel: string;
+    name: string;
+  }>;
 }
 
 const CLAIM_FORM_ID = "integration-claim-form";
@@ -65,6 +72,7 @@ export function IntegrationClientStatus({
   canEdit,
   linked,
   lastSyncedAt,
+  connections,
 }: Props) {
   const router = useRouter();
   const { showToast } = useToast();
@@ -72,11 +80,17 @@ export function IntegrationClientStatus({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [householdId, setHouseholdId] = useState("");
   const [claimError, setClaimError] = useState<string | null>(null);
+  const [connectionId, setConnectionId] = useState("");
 
-  async function handleSync() {
+  // One connection is used without asking; with several the advisor picks.
+  const chosen = connections.find((c) => c.id === connectionId) ?? connections[0];
+  const sameProvider = connections.every((c) => c.providerId === connections[0]?.providerId);
+  const linkLabel = sameProvider ? providerLabel : "a data source";
+
+  async function handleSync(syncProvider: ProviderId = providerId) {
     setBusy(true);
     try {
-      const res = await fetch(`/api/integrations/${providerId}/sync`, {
+      const res = await fetch(`/api/integrations/${syncProvider}/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientId }),
@@ -98,32 +112,35 @@ export function IntegrationClientStatus({
   function closeDialog() {
     setDialogOpen(false);
     setHouseholdId("");
+    setConnectionId("");
     setClaimError(null);
   }
 
   async function handleClaim(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!chosen) return;
     setBusy(true);
     setClaimError(null);
     try {
-      const res = await fetch(`/api/integrations/${providerId}/households/claim`, {
+      const res = await fetch(`/api/integrations/${chosen.providerId}/households/claim`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId, externalHouseholdId: householdId.trim() }),
+        body: JSON.stringify({ clientId, externalHouseholdId: householdId.trim(),
+          connectionId: chosen.id,
+        }),
       });
       const data = (await res.json().catch(() => null)) as
         | { ok?: boolean; name?: string; error?: string }
         | null;
       if (!res.ok) {
-        // The server deliberately returns one message for every failure mode
-        // (unknown id, already-linked id, lost race) so it can't be used as
-        // an oracle for which ids are real. Render it verbatim — never a
-        // more specific message, never branched on status code.
+        // The server deliberately gives one message for every failure mode
+        // (unknown id, already-linked, lost race) so it can't be used as an
+        // oracle for which ids are real. Show it as sent; never branch on status.
         setClaimError(data?.error ?? "Couldn't link that household.");
         return;
       }
       closeDialog();
-      showToast({ message: `Linked to ${data?.name ?? providerLabel}.` });
+      showToast({ message: `Linked to ${data?.name ?? chosen.providerLabel}.` });
       // The claim itself committed — reflect that regardless of whether the
       // follow-on sync below succeeds. Without this, a failed sync leaves
       // the server-rendered `linked` prop stuck at false; the row keeps
@@ -133,7 +150,7 @@ export function IntegrationClientStatus({
       router.refresh();
       // Claim only creates the link — pull the accounts as a separate
       // request so one click never holds an accounts+positions fetch open.
-      await handleSync();
+      await handleSync(chosen.providerId);
     } catch {
       setClaimError("Couldn't link that household.");
     } finally {
@@ -169,7 +186,7 @@ export function IntegrationClientStatus({
               <button
                 type="button"
                 className={BUTTON_CLASS}
-                onClick={handleSync}
+                onClick={() => handleSync()}
                 disabled={busy}
               >
                 <SyncIcon />
@@ -185,11 +202,12 @@ export function IntegrationClientStatus({
             onClick={() => {
               setClaimError(null);
               setHouseholdId("");
+              setConnectionId(connections[0]?.id ?? "");
               setDialogOpen(true);
             }}
             disabled={busy}
           >
-            Link to {providerLabel}
+            Link to {linkLabel}
           </button>
         ) : null}
       </span>
@@ -199,7 +217,7 @@ export function IntegrationClientStatus({
         onOpenChange={(o) => {
           if (!o) closeDialog();
         }}
-        title={`Link to ${providerLabel}`}
+        title={`Link to ${linkLabel}`}
         size="sm"
         primaryAction={{
           label: busy ? "Linking…" : "Link",
@@ -217,11 +235,30 @@ export function IntegrationClientStatus({
               <span>{claimError}</span>
             </div>
           ) : null}
-          <label className={fieldLabelClassName} htmlFor={`${providerId}-household-id`}>
-            {providerLabel} household ID
+          {connections.length > 1 ? (
+            <div className="mb-4">
+              <label className={fieldLabelClassName} htmlFor="integration-claim-connection">
+                Connection
+              </label>
+              <select
+                id="integration-claim-connection"
+                className={inputClassName}
+                value={chosen?.id ?? ""}
+                onChange={(e) => setConnectionId(e.target.value)}
+              >
+                {connections.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.providerLabel} · {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+          <label className={fieldLabelClassName} htmlFor="integration-claim-household-id">
+            {chosen?.providerLabel ?? providerLabel} household ID
           </label>
           <input
-            id={`${providerId}-household-id`}
+            id="integration-claim-household-id"
             className={inputClassName}
             value={householdId}
             onChange={(e) => {

@@ -379,6 +379,10 @@ const ALLOWLIST: Record<string, string> = {
   //     credentials, their records, or an access grant they cannot revoke.
   "src/app/api/integrations/[provider]/disconnect/route.ts":
     "revokes the firm's OWN stored provider credentials — a lapsed or departing firm must always be able to pull its API keys back out of us",
+  "src/app/api/integrations/[provider]/connections/[connectionId]/disconnect/route.ts":
+    "an advisor wipes their OWN connection's stored credentials — same reasoning as the provider-level disconnect above",
+  "src/app/api/integrations/[provider]/connections/[connectionId]/route.ts":
+    "DELETE only: an advisor removes their OWN connection (credentials + household links) — pulling their keys back out of us must never be billing's to block",
   "src/app/api/integrations/[provider]/recheck/route.ts":
     "re-verifies stored credentials and writes only that connection's own status row — the one button whose job is explaining why a feed is broken",
   "src/app/api/shares/[shareId]/route.ts":

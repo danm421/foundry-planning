@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { providerState, sortIntegrations } from "./catalog";
+import { providerState, providerStateFromConnections, sortIntegrations } from "./catalog";
 
 describe("providerState", () => {
   it("reads a switched-off provider as coming soon, even with a live connection", () => {
@@ -11,6 +11,19 @@ describe("providerState", () => {
     expect(providerState(true, { status: "error" })).toBe("attention");
     expect(providerState(true, { status: "disconnected" })).toBe("available");
     expect(providerState(true, null)).toBe("available");
+  });
+});
+
+describe("providerStateFromConnections", () => {
+  it("is attention if any connection is broken, else connected if any is live, else available", () => {
+    expect(providerStateFromConnections(true, [{ status: "connected" }, { status: "error" }])).toBe("attention");
+    expect(providerStateFromConnections(true, [{ status: "disconnected" }, { status: "connected" }])).toBe("connected");
+    expect(providerStateFromConnections(true, [{ status: "disconnected" }])).toBe("available");
+    expect(providerStateFromConnections(true, [])).toBe("available");
+  });
+
+  it("reads a switched-off provider as coming soon, even with a live connection", () => {
+    expect(providerStateFromConnections(false, [{ status: "connected" }])).toBe("coming_soon");
   });
 });
 

@@ -12,7 +12,8 @@ vi.mock("@/lib/rate-limit", async (orig) => ({
   ...(await orig<typeof import("@/lib/rate-limit")>()),
   checkIntegrationClaimLimit: vi.fn(),
 }));
-vi.mock("@/lib/integrations/auth", () => ({ makeCallContext: vi.fn() }));
+vi.mock("@/lib/integrations/auth", () => ({ connectionCallContext: vi.fn() }));
+vi.mock("@/lib/integrations/connection-access", () => ({ getOwnedConnection: vi.fn() }));
 vi.mock("@/lib/integrations/households", () => ({ claimHousehold: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 
@@ -20,12 +21,16 @@ import { POST } from "./route";
 import { auth } from "@clerk/nextjs/server";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { checkIntegrationClaimLimit } from "@/lib/rate-limit";
-import { makeCallContext } from "@/lib/integrations/auth";
+import { connectionCallContext } from "@/lib/integrations/auth";
+import { getOwnedConnection } from "@/lib/integrations/connection-access";
 import { claimHousehold } from "@/lib/integrations/households";
 import { recordAudit } from "@/lib/audit";
 import { ForbiddenError } from "@/lib/authz";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
+const CONN = "11111111-1111-4111-8111-111111111111";
+const connection = { id: CONN, firmId: "firm_1", providerId: "addepar", ownerUserId: "u1", scope: "{}" };
 
 const saved = process.env.ADDEPAR_ENABLED;
 beforeEach(() => {
@@ -36,7 +41,8 @@ beforeEach(() => {
     client: { id: "c1" }, firmId: "firm_1", access: "own",
   });
   (checkIntegrationClaimLimit as any).mockResolvedValue({ allowed: true });
-  (makeCallContext as any).mockResolvedValue({});
+  (getOwnedConnection as any).mockResolvedValue(connection);
+  (connectionCallContext as any).mockResolvedValue({ connectionId: CONN });
   (claimHousehold as any).mockResolvedValue({ ok: true, name: "Doe Family" });
 });
 afterEach(() => {
@@ -50,13 +56,51 @@ const post = (body: unknown) =>
     method: "POST",
     body: JSON.stringify(body),
   });
-const good = { clientId: "c1", externalHouseholdId: "1234567" };
+const good = { clientId: "c1", externalHouseholdId: "1234567", connectionId: CONN };
 
 describe("POST …/households/claim", () => {
   it("lets a NON-ADMIN advisor with edit access claim", async () => {
     const res = await POST(post(good), ctx);
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ ok: true, name: "Doe Family" });
+  });
+
+  it("claims through the caller's own connection and its call context", async () => {
+    await POST(post(good), ctx);
+    expect(getOwnedConnection).toHaveBeenCalledWith({ connectionId: CONN, firmId: "firm_1", userId: "u1" });
+    expect(connectionCallContext).toHaveBeenCalledWith(CONN);
+    expect(claimHousehold).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connection,
+        clientId: "c1",
+        externalHouseholdId: "1234567",
+        userId: "u1",
+      }),
+    );
+  });
+
+  it("404 for a connectionId the caller doesn't own", async () => {
+    (getOwnedConnection as any).mockResolvedValue(null);
+    const res = await POST(post(good), ctx);
+    expect(res.status).toBe(404);
+    expect(connectionCallContext).not.toHaveBeenCalled();
+    expect(claimHousehold).not.toHaveBeenCalled();
+    expect(checkIntegrationClaimLimit).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("404 when the connection belongs to another provider than the URL", async () => {
+    (getOwnedConnection as any).mockResolvedValue({ ...connection, providerId: "orion" });
+    const res = await POST(post(good), ctx);
+    expect(res.status).toBe(404);
+    expect(claimHousehold).not.toHaveBeenCalled();
+  });
+
+  it("400s a missing connectionId without spending the rate limit", async () => {
+    const res = await POST(post({ clientId: "c1", externalHouseholdId: "1234567" }), ctx);
+    expect(res.status).toBe(400);
+    expect(getOwnedConnection).not.toHaveBeenCalled();
+    expect(checkIntegrationClaimLimit).not.toHaveBeenCalled();
   });
 
   it("403s when the caller lacks edit access, without calling the provider", async () => {
@@ -130,6 +174,7 @@ describe("POST …/households/claim", () => {
         metadata: expect.objectContaining({
           outcome: "already_linked",
           attemptedClientId: "c1",
+          connectionId: CONN,
         }),
       }),
     );
@@ -157,13 +202,13 @@ describe("POST …/households/claim", () => {
         resourceType: "integration_household_link",
         resourceId: good.externalHouseholdId,
         clientId: "c1",
-        metadata: expect.objectContaining({ outcome: "ok" }),
+        metadata: expect.objectContaining({ outcome: "ok", connectionId: CONN }),
       }),
     );
   });
 
   it("400s a missing household id without spending the rate limit", async () => {
-    const res = await POST(post({ clientId: "c1" }), ctx);
+    const res = await POST(post({ clientId: "c1", connectionId: CONN }), ctx);
     expect(res.status).toBe(400);
     expect(checkIntegrationClaimLimit).not.toHaveBeenCalled();
   });

@@ -3,26 +3,20 @@ import { z } from "zod";
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgAdminOrOwner, requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { generatePkce, generateState } from "@/lib/integrations/pkce";
-import { createOauthState, upsertByokConnection } from "@/lib/integrations/connections";
-import { CredentialsRejected, ProviderNotConfigured } from "@/lib/integrations/errors";
+import { createByokConnection, createOauthState, upsertByokConnection } from "@/lib/integrations/connections";
+import { ProviderNotConfigured } from "@/lib/integrations/errors";
 import { checkIntegrationOauthLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
-import { encodeAddeparSecret, encodeAddeparConfig } from "@/lib/integrations/providers/addepar/credentials";
-import { testAddeparConnection } from "@/lib/integrations/providers/addepar/client";
 import { recordAudit } from "@/lib/audit";
 import { verifyAzureConnection } from "@/lib/ai/verify-connection";
 import { encodeAzureSecret, encodeAzureConfig } from "@/lib/ai/credentials";
 import { clearAiCredentialCache } from "@/lib/ai/resolve";
 import { resolveProvider } from "../_provider";
-import { addeparCredsSchema, buildAddeparTestContext } from "../_addepar";
+import { readTestedAddeparCredentials } from "../_addepar";
 import { azureCredsSchema, credsToAiCredentials, firstFailureMessage } from "../_azure";
 
 // 4 sequential verification calls at 45s each (see VERIFY_TIMEOUT_MS in
 // src/lib/ai/verify-connection.ts) = 180s worst case, inside this budget.
 export const maxDuration = 300;
-
-const byokBody = addeparCredsSchema.extend({
-  attestation: z.literal(true, "attestation required"),
-});
 
 const azureBody = azureCredsSchema.extend({
   attestation: z.literal(true, "attestation required"),
@@ -40,8 +34,7 @@ export async function GET(
       return new Response("Method Not Allowed", { status: 405 });
     }
 
-    // requireOrgAdminOrOwner() returns void — get ids from auth() separately
-    await requireOrgAdminOrOwner();
+    // Open to every advisor: the connection is their own.
     const { orgId: firmId, userId } = await auth();
     if (!firmId) {
       return NextResponse.json({ error: "No active organization" }, { status: 400 });
@@ -50,7 +43,8 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const rl = await checkIntegrationOauthLimit(`${provider.id}:${firmId}`);
+    // Per advisor, so one advisor's attempts can't 429 a colleague.
+    const rl = await checkIntegrationOauthLimit(`${provider.id}:${userId}`);
     if (!rl.allowed) {
       return rateLimitErrorResponse(rl, `Too many ${provider.label} connection attempts. Please try again shortly.`);
     }
@@ -73,8 +67,10 @@ export async function GET(
 
 /**
  * BYOK connect: accepts API credentials + attestation, validates them against
- * the live Addepar API via `testAddeparConnection` before persisting anything,
- * then stores them. Mirrors the OAuth callback's audit shape.
+ * the live provider before persisting anything, then stores them.
+ *  - Azure OpenAI: the firm's one connection, set by an admin or owner.
+ *  - Addepar: any advisor adds a connection of their own (they may hold
+ *    several), named by them; returns its id.
  */
 export async function POST(
   req: Request,
@@ -87,7 +83,10 @@ export async function POST(
       return new Response("Method Not Allowed", { status: 405 });
     }
 
-    await requireOrgAdminOrOwner();
+    const isAzure = provider.id === "azure_openai";
+    // Azure is the firm's one connection, so only an admin or owner sets it.
+    // requireOrgAdminOrOwner() returns void — get ids from auth() separately.
+    if (isAzure) await requireOrgAdminOrOwner();
     const { orgId: firmId, userId } = await auth();
     if (!firmId) {
       return NextResponse.json({ error: "No active organization" }, { status: 400 });
@@ -98,12 +97,14 @@ export async function POST(
 
     await requireActiveSubscriptionForFirm(firmId);
 
-    const rl = await checkIntegrationOauthLimit(`${provider.id}:${firmId}`);
+    // Azure's one connection buckets per firm; Addepar's per advisor, so one
+    // advisor's attempts can't 429 a colleague.
+    const rl = await checkIntegrationOauthLimit(`${provider.id}:${isAzure ? firmId : userId}`);
     if (!rl.allowed) {
       return rateLimitErrorResponse(rl, `Too many ${provider.label} connection attempts. Please try again shortly.`);
     }
 
-    if (provider.id === "azure_openai") {
+    if (isAzure) {
       const parsedAzure = azureBody.safeParse(await req.json());
       if (!parsedAzure.success) {
         return NextResponse.json(
@@ -127,7 +128,7 @@ export async function POST(
 
       await upsertByokConnection({
         firmId,
-        providerId: provider.id,
+        providerId: "azure_openai",
         secretBlob: encodeAzureSecret({ apiKey: creds.apiKey }),
         configBlob: encodeAzureConfig({
           endpoint: creds.endpoint,
@@ -151,39 +152,19 @@ export async function POST(
       return NextResponse.json({ ok: true });
     }
 
-    const parsed = byokBody.safeParse(await req.json());
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0]?.message ?? "Invalid input" },
-        { status: 400 },
-      );
-    }
-    const { apiBase, addeparFirmId, apiKey, apiSecret } = parsed.data;
-    const secretBlob = encodeAddeparSecret({ apiKey, apiSecret });
-    const configBlob = encodeAddeparConfig({ apiBase, addeparFirmId });
+    const tested = await readTestedAddeparCredentials(req, firmId);
+    if ("error" in tested) return NextResponse.json({ error: tested.error }, { status: 400 });
 
-    // Validate before persisting: build an ephemeral ctx and hit one read.
-    // Only a failed credential test is an expected 400 — everything else
-    // below (DB write, audit) falls through to the outer catch as a 500.
-    try {
-      await testAddeparConnection(
-        buildAddeparTestContext({ firmId, providerId: provider.id, apiBase, addeparFirmId, secretBlob }),
-      );
-    } catch (err) {
-      const error =
-        err instanceof CredentialsRejected ? err.message : "Could not connect to Addepar with those credentials.";
-      return NextResponse.json({ error }, { status: 400 });
-    }
-
-    await upsertByokConnection({ firmId, providerId: provider.id, secretBlob, configBlob, userId });
+    // Always a new row: an advisor may hold several Addepar connections.
+    const connectionId = await createByokConnection({ firmId, ownerUserId: userId, ...tested });
     await recordAudit({
       action: "integration.connect",
       resourceType: "integration_connection",
-      resourceId: firmId,
+      resourceId: connectionId,
       firmId,
-      metadata: { provider: provider.id },
+      metadata: { provider: provider.id, connectionId },
     });
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, connectionId });
   } catch (err) {
     const resp = authErrorResponse(err);
     if (resp) return NextResponse.json(resp.body, { status: resp.status });

@@ -1,8 +1,7 @@
 // src/lib/integrations/reviews.ts
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { clientImports, clients, crmHouseholds } from "@/db/schema";
-import type { ProviderId } from "./types";
+import { clientImports, clients, crmHouseholds, integrationHouseholdLinks } from "@/db/schema";
 
 export type OpenReview = {
   importId: string;
@@ -12,16 +11,14 @@ export type OpenReview = {
 };
 
 /**
- * The firm's synced accounts still waiting for an advisor — one row per client,
- * since syncFirm folds every pull into a single open `review` import per
- * client. The integration page lists these so the advisor can reach the review
- * without knowing it lives under the client's Details → Import.
+ * One connection's synced accounts still waiting for an advisor — one row per
+ * client, since a sync folds every pull into a single open `review` import per
+ * client. A client belongs to the connection that links it, so a colleague's
+ * reviews never show here. The connection page lists these so the advisor can
+ * reach the review without knowing it lives under the client's Details → Import.
+ * The caller has already established that the connection is theirs.
  */
-export async function listOpenReviews(firmId: string, providerId: ProviderId): Promise<OpenReview[]> {
-  // Credentials-only — never writes an import. Checking the id (not
-  // `provider.syncs`) narrows it to import_origin's enum, as in syncFirm.
-  if (providerId === "azure_openai") return [];
-
+export async function listOpenReviews(connectionId: string): Promise<OpenReview[]> {
   return db
     .select({
       importId: clientImports.id,
@@ -30,13 +27,19 @@ export async function listOpenReviews(firmId: string, providerId: ProviderId): P
       accountCount: sql<number>`coalesce(jsonb_array_length(${clientImports.payloadJson}->'payload'->'accounts'), 0)::int`,
     })
     .from(clientImports)
+    .innerJoin(
+      integrationHouseholdLinks,
+      eq(integrationHouseholdLinks.clientId, clientImports.clientId),
+    )
     .innerJoin(clients, eq(clients.id, clientImports.clientId))
     .innerJoin(crmHouseholds, eq(crmHouseholds.id, clients.crmHouseholdId))
     .where(
       and(
-        eq(clientImports.orgId, firmId),
-        eq(clients.firmId, firmId),
-        eq(clientImports.origin, providerId),
+        eq(integrationHouseholdLinks.connectionId, connectionId),
+        eq(clientImports.orgId, integrationHouseholdLinks.firmId),
+        eq(clients.firmId, integrationHouseholdLinks.firmId),
+        // Two different enums, so compare as text.
+        sql`${clientImports.origin}::text = ${integrationHouseholdLinks.provider}::text`,
         eq(clientImports.status, "review"),
         isNull(crmHouseholds.deletedAt),
       ),

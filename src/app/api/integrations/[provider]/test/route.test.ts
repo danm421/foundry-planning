@@ -2,10 +2,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
-vi.mock("@/lib/authz", () => ({
-  requireOrgAdminOrOwner: vi.fn(),       // no-op resolve = authorized
-  authErrorResponse: vi.fn(() => null),  // not an auth error
-}));
+// The real authErrorResponse/ForbiddenError, so a refused admin gate is a 403.
+vi.mock("@/lib/authz", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/authz")>();
+  return { ...actual, requireOrgAdminOrOwner: vi.fn() }; // no-op resolve = an admin
+});
 vi.mock("@/lib/integrations/providers/addepar/client", () => ({
   testAddeparConnection: vi.fn(),        // resolves = credentials valid
   addeparClient: {},                     // referenced at module scope by providers/addepar/index.ts
@@ -19,6 +20,8 @@ import { POST } from "./route";
 import { auth } from "@clerk/nextjs/server";
 import { testAddeparConnection } from "@/lib/integrations/providers/addepar/client";
 import { CredentialsRejected } from "@/lib/integrations/errors";
+import { ForbiddenError, requireOrgAdminOrOwner } from "@/lib/authz";
+import { checkIntegrationOauthLimit } from "@/lib/rate-limit";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockAuth = auth as any;
@@ -39,6 +42,8 @@ beforeEach(() => {
   saved = process.env.ADDEPAR_ENABLED;
   process.env.ADDEPAR_ENABLED = "true";
   mockAuth.mockResolvedValue({ orgId: "firm_1", userId: "u1" });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (requireOrgAdminOrOwner as any).mockResolvedValue(undefined);
 });
 afterEach(() => {
   if (saved === undefined) delete process.env.ADDEPAR_ENABLED;
@@ -82,5 +87,15 @@ describe("[provider] test", () => {
     delete process.env.ADDEPAR_ENABLED;
     const res = await POST(req(good), ctx);
     expect(res.status).toBe(404);
+  });
+
+  it("an advisor who isn't an admin can test an Addepar key, limited per advisor", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (requireOrgAdminOrOwner as any).mockRejectedValue(new ForbiddenError("Organization admin role required"));
+    const res = await POST(req(good), ctx);
+    expect(res.status).toBe(200);
+    expect(testAddeparConnection).toHaveBeenCalled();
+    // One advisor's tests can't 429 a colleague.
+    expect(checkIntegrationOauthLimit).toHaveBeenCalledWith("addepar:u1");
   });
 });

@@ -1,9 +1,10 @@
 // src/app/api/integrations/[provider]/test/route.ts
 //
 // Pre-save "Test connection" button: validates BYOK credentials against the
-// live Addepar API and reports ok/error. Stores nothing — no connections
+// live provider and reports ok/error. Stores nothing — no connections
 // table write, no audit entry. The connect route re-validates independently
-// before persisting.
+// before persisting. Any advisor may test an Addepar key (the connection will
+// be their own); Azure's test stays admin-only, like its connect.
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
@@ -32,18 +33,25 @@ export async function POST(
       return new Response("Not found", { status: 404 });
     }
 
-    await requireOrgAdminOrOwner();
-    const { orgId: firmId } = await auth();
+    const isAzure = provider.id === "azure_openai";
+    // Azure's test makes the server call whatever endpoint the body names.
+    if (isAzure) await requireOrgAdminOrOwner();
+    const { orgId: firmId, userId } = await auth();
     if (!firmId) {
       return NextResponse.json({ error: "No active organization" }, { status: 400 });
     }
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    const rl = await checkIntegrationOauthLimit(`${provider.id}:${firmId}`);
+    // Azure buckets per firm, Addepar per advisor (as connect does), so one
+    // advisor's tests can't 429 a colleague.
+    const rl = await checkIntegrationOauthLimit(`${provider.id}:${isAzure ? firmId : userId}`);
     if (!rl.allowed) {
       return rateLimitErrorResponse(rl, `Too many ${provider.label} connection attempts. Please try again shortly.`);
     }
 
-    if (provider.id === "azure_openai") {
+    if (isAzure) {
       const parsedAzure = azureCredsSchema.safeParse(await req.json());
       if (!parsedAzure.success) {
         return NextResponse.json(

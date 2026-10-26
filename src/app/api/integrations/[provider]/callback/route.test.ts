@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@/lib/integrations/connections", () => ({
   consumeOauthState: vi.fn(),
-  upsertConnection: vi.fn(),
+  upsertOauthConnection: vi.fn(),
 }));
 // Control the Orion oauth seam so `orionProvider.oauth.exchangeCodeForTokens`
 // (resolved through the REAL registry) is deterministic. The registry itself
@@ -21,14 +21,17 @@ vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 
 import { GET } from "./route";
-import { consumeOauthState, upsertConnection } from "@/lib/integrations/connections";
+import { consumeOauthState, upsertOauthConnection } from "@/lib/integrations/connections";
 import { orionOAuth } from "@/lib/integrations/providers/orion/oauth";
 import { auth } from "@clerk/nextjs/server";
+import { recordAudit } from "@/lib/audit";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockAuth = auth as any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockConsume = consumeOauthState as any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockUpsert = upsertOauthConnection as any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockExchange = orionOAuth.exchangeCodeForTokens as any;
 
@@ -61,7 +64,7 @@ describe("[provider] callback", () => {
     mockAuth.mockResolvedValue({ orgId: "firm_1", userId: "u1" });
     const res = await GET(req("code=c&state=bad"), ctx());
     expect(res.status).toBe(400);
-    expect(upsertConnection).not.toHaveBeenCalled();
+    expect(upsertOauthConnection).not.toHaveBeenCalled();
   });
 
   it("rejects when session firm != state firm", async () => {
@@ -69,19 +72,39 @@ describe("[provider] callback", () => {
     mockAuth.mockResolvedValue({ orgId: "firm_1", userId: "u1" });
     const res = await GET(req("code=c&state=s"), ctx());
     expect(res.status).toBe(403);
-    expect(upsertConnection).not.toHaveBeenCalled();
+    expect(upsertOauthConnection).not.toHaveBeenCalled();
   });
 
-  it("exchanges and stores on valid state", async () => {
+  it("exchanges and stores the advisor's own connection on valid state, audited with its id", async () => {
     mockConsume.mockResolvedValue({ firmId: "firm_1", providerId: "orion", userId: "u1", codeVerifier: "v" });
     mockAuth.mockResolvedValue({ orgId: "firm_1", userId: "u1" });
+    mockUpsert.mockResolvedValue("conn-1");
     const res = await GET(req("code=c&state=s"), ctx());
     expect([302, 307]).toContain(res.status);
-    // Back to the provider's own settings page, where the household links are.
+    // Back to the provider's own settings page, where the advisor's connections are.
     expect(new URL(res.headers.get("location")!).pathname).toBe("/settings/integrations/orion");
-    expect(upsertConnection).toHaveBeenCalledWith(
-      expect.objectContaining({ firmId: "firm_1", providerId: "orion", accessToken: "AT" }),
+    expect(upsertOauthConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        firmId: "firm_1", providerId: "orion", ownerUserId: "u1", accessToken: "AT", refreshToken: "RT",
+      }),
     );
+    expect(recordAudit).toHaveBeenCalledWith({
+      action: "integration.connect",
+      resourceType: "integration_connection",
+      resourceId: "conn-1",
+      firmId: "firm_1",
+      metadata: { provider: "orion", connectionId: "conn-1" },
+    });
+  });
+
+  it("refuses, and writes nothing, when another advisor finishes the flow", async () => {
+    mockConsume.mockResolvedValue({ firmId: "firm_1", providerId: "orion", userId: "u_started", codeVerifier: "v" });
+    mockAuth.mockResolvedValue({ orgId: "firm_1", userId: "u_other" });
+    const res = await GET(req("code=c&state=s"), ctx());
+    expect(res.status).toBe(403);
+    expect(orionOAuth.exchangeCodeForTokens).not.toHaveBeenCalled();
+    expect(upsertOauthConnection).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 
   it("redirects with error marker when token exchange fails", async () => {
@@ -93,7 +116,7 @@ describe("[provider] callback", () => {
     const location = new URL(res.headers.get("location")!);
     expect(location.pathname).toBe("/settings/integrations/orion");
     expect(location.searchParams.get("error")).toBe("orion_exchange_failed");
-    expect(upsertConnection).not.toHaveBeenCalled();
+    expect(upsertOauthConnection).not.toHaveBeenCalled();
   });
 
   it("rejects a callback whose route provider differs from the state's provider", async () => {
@@ -105,7 +128,7 @@ describe("[provider] callback", () => {
       { params: Promise.resolve({ provider: "schwab" }) },
     );
     expect(res.status).toBe(400);
-    expect(upsertConnection).not.toHaveBeenCalled();
+    expect(upsertOauthConnection).not.toHaveBeenCalled();
   });
 
   it("404s for an unknown provider", async () => {

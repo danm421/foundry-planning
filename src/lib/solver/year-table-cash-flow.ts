@@ -84,8 +84,7 @@ export interface CashFlowColumn {
   alwaysShow?: boolean;
 }
 
-// The money columns of the Solver's Cash Flow table, shared by the screen and
-// its printed sheet so the two can't disagree on what a column holds.
+// The money columns of the Solver's Cash Flow table.
 // Every row ties out: Total In − Total Out = Surplus / (Shortfall).
 const CASH_FLOW_COLUMNS: CashFlowColumn[] = [
   { key: "socialSecurity", header: "Social Security", group: "Cash In", value: (cf) => cf.socialSecurity },

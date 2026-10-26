@@ -45,7 +45,7 @@ export function SolverKpiStrip({
   solveActive,
 }: Props) {
   return (
-    <div className="flex flex-wrap items-start gap-x-6 gap-y-3 rounded-lg border border-hair bg-card-2/50 px-5 py-4">
+    <div className="flex flex-wrap items-start justify-center gap-x-12 gap-y-4 rounded-lg border border-hair bg-card px-5 py-4 text-center">
       <SolverPosGauge
         state={posState}
         successPct={workingSuccess}

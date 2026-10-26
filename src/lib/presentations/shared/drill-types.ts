@@ -16,7 +16,6 @@ export interface DrillColumn {
                       // Middle columns share remaining space equally via flex.
   strong?: boolean;   // bolds the header + cells (totals)
   signColor?: boolean; // green/red on +/- (Net Cash Flow style)
-  critWhenNegative?: boolean; // red on a negative only (a shortfall); no green
   format?: "currency" | "percent"; // default = currency. percent expects 0..1 fractions.
 }
 

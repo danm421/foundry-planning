@@ -1,5 +1,7 @@
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
+import type { Style } from "@react-pdf/types";
 import { PRESENTATION_THEME, type SectionAccent } from "@/lib/presentations/theme";
+import { groupGoalsByYear } from "@/lib/household-map/goals";
 import type { MapGoalRow, MapGoalsPageData } from "@/lib/presentations/pages/household-map/types";
 import { PageFrame } from "../../shared/page-frame";
 import { SectionHead } from "../../shared/section-head";
@@ -13,8 +15,10 @@ import { SectionHead } from "../../shared/section-head";
  * typical household — and a landscape page would fit half as many before
  * breaking. The other two are wide grids; this one is tall.
  *
- * Rows print in the order `buildMapGoals` returns them (ascending year), so the
- * page reads top-to-bottom as time.
+ * One row per YEAR, in the order `buildMapGoals` returns them (ascending), so
+ * the page reads top-to-bottom as time. Everything in a year shares its one
+ * year label: same-side cards stack in their column, and joint cards split a
+ * centred band side by side.
  */
 const YEAR_COLUMN = 74;
 
@@ -32,8 +36,13 @@ const styles = StyleSheet.create({
   },
   headSpine: { width: YEAR_COLUMN },
 
-  row: { flexDirection: "row", alignItems: "center", marginBottom: 5 },
-  side: { flex: 1 },
+  yearGroup: { alignItems: "center", marginBottom: 7, gap: 4 },
+  row: { flexDirection: "row", alignItems: "center", alignSelf: "stretch" },
+  side: { flex: 1, gap: 4 },
+  // Solo: the one column is the whole page wide, so a year's cards share it
+  // side by side, the same way joint cards share their band.
+  soloCards: { flex: 1, flexDirection: "row", flexWrap: "wrap", gap: 4 },
+  soloCard: { flexGrow: 1, flexBasis: 0, minWidth: 140 },
   spine: { width: YEAR_COLUMN, alignItems: "center" },
   year: { fontFamily: "JetBrains Mono", fontSize: 9, fontWeight: 700, color: PRESENTATION_THEME.ink },
   ages: { fontFamily: "Inter", fontSize: 6.5, color: PRESENTATION_THEME.ink3 },
@@ -55,8 +64,10 @@ const styles = StyleSheet.create({
   title: { fontFamily: "Inter", fontSize: 8, fontWeight: 500, color: PRESENTATION_THEME.ink },
   detail: { fontFamily: "Inter", fontSize: 6.5, color: PRESENTATION_THEME.ink3, marginTop: 1 },
 
-  jointRow: { alignItems: "center", marginBottom: 5 },
-  jointCard: { width: "58%" },
+  // Several joint cards in one year split the band rather than each spanning
+  // it; past three they wrap to a second line instead of shrinking illegibly.
+  jointBand: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", width: "58%", gap: 4 },
+  jointCard: { flexGrow: 1, flexBasis: 0, minWidth: 90 },
 
   note: {
     fontFamily: "Inter",
@@ -73,7 +84,15 @@ const styles = StyleSheet.create({
  * spouse-side card reads away from it — the same mirroring the board does with
  * its border-r / border-l pair.
  */
-function GoalCard({ row, solo = false }: { row: MapGoalRow; solo?: boolean }) {
+function GoalCard({
+  row,
+  solo = false,
+  style,
+}: {
+  row: MapGoalRow;
+  solo?: boolean;
+  style?: Style;
+}) {
   // Solo: there is no second side to mirror against, so every card hangs to the
   // right of the spine and reads left-to-right like any other list.
   const left = !solo && row.side === "client";
@@ -85,7 +104,7 @@ function GoalCard({ row, solo = false }: { row: MapGoalRow; solo?: boolean }) {
         : { borderLeftWidth: 2.5, borderLeftColor: row.accentHex };
   const align = solo ? "left" : row.side === "joint" ? "center" : left ? "right" : "left";
   return (
-    <View style={[styles.card, edge]} wrap={false}>
+    <View style={[styles.card, edge, style ?? {}]} wrap={false}>
       <Text style={[styles.kind, { textAlign: align }]}>{row.kindLabel.toUpperCase()}</Text>
       <Text style={[styles.title, { textAlign: align }]}>{row.title}</Text>
       {row.forLabel ? (
@@ -98,6 +117,8 @@ function GoalCard({ row, solo = false }: { row: MapGoalRow; solo?: boolean }) {
   );
 }
 
+/** The year and the ages in it — the same for every row in that year, so the
+ *  first row of the group supplies them. */
 function SpineLabel({ row }: { row: MapGoalRow }) {
   return (
     <View style={styles.spine}>
@@ -154,32 +175,54 @@ export function MapGoalsPagePdf({
         </Text>
       </View>
 
-      {data.rows.map((row) =>
-        solo ? (
-          <View key={row.id} style={styles.row} wrap={false}>
-            <SpineLabel row={row} />
-            <View style={styles.side}>
-              <GoalCard row={row} solo />
+      {groupGoalsByYear(data.rows).map((group) => {
+        const all = [...group.client, ...group.spouse, ...group.joint];
+        const label = <SpineLabel row={all[0]} />;
+        if (solo) {
+          return (
+            <View key={group.year} style={[styles.row, { marginBottom: 7 }]} wrap={false}>
+              {label}
+              <View style={styles.soloCards}>
+                {all.map((row) => (
+                  <GoalCard key={row.id} row={row} solo style={styles.soloCard} />
+                ))}
+              </View>
             </View>
+          );
+        }
+        const hasSides = group.client.length > 0 || group.spouse.length > 0;
+        return (
+          <View key={group.year} style={styles.yearGroup} wrap={false}>
+            {hasSides ? (
+              <View style={styles.row}>
+                <View style={styles.side}>
+                  {group.client.map((row) => (
+                    <GoalCard key={row.id} row={row} />
+                  ))}
+                </View>
+                {label}
+                <View style={styles.side}>
+                  {group.spouse.map((row) => (
+                    <GoalCard key={row.id} row={row} />
+                  ))}
+                </View>
+              </View>
+            ) : (
+              label
+            )}
+            {/* A joint goal belongs to neither side, so it sits in a centred
+                band that visibly straddles the spine rather than being pushed
+                onto one principal's column. */}
+            {group.joint.length > 0 ? (
+              <View style={styles.jointBand}>
+                {group.joint.map((row) => (
+                  <GoalCard key={row.id} row={row} style={styles.jointCard} />
+                ))}
+              </View>
+            ) : null}
           </View>
-        ) : row.side === "joint" ? (
-          // A joint goal belongs to neither side, so it gets its own centred
-          // row that visibly straddles the spine rather than being pushed onto
-          // one principal's column.
-          <View key={row.id} style={styles.jointRow} wrap={false}>
-            <SpineLabel row={row} />
-            <View style={styles.jointCard}>
-              <GoalCard row={row} />
-            </View>
-          </View>
-        ) : (
-          <View key={row.id} style={styles.row} wrap={false}>
-            <View style={styles.side}>{row.side === "client" ? <GoalCard row={row} /> : null}</View>
-            <SpineLabel row={row} />
-            <View style={styles.side}>{row.side === "spouse" ? <GoalCard row={row} /> : null}</View>
-          </View>
-        ),
-      )}
+        );
+      })}
     </PageFrame>
   );
 }

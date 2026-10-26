@@ -197,7 +197,7 @@ export async function commitAccounts(
           category,
           subType,
           value: row.value != null ? String(row.value) : "0",
-          basis: row.basis != null ? String(row.basis) : "0",
+          basis: row.basis != null && !feedBasisBarred(row, category) ? String(row.basis) : "0",
           accountNumberLast4: row.accountNumberLast4 ?? null,
           custodian: row.custodian ?? null,
           growthRate: row.growthRate != null ? String(row.growthRate) : null,
@@ -314,18 +314,23 @@ export async function commitAccounts(
       }
     }
     if (row.subType !== undefined && !keptTaxable) updates.subType = row.subType;
+    // The category the row will END with: its own, else the stored one
+    // (taxable whenever it was kept so).
+    const endCategory = async () => (updates.category as string | undefined) ?? (await storedMargin())?.category;
     if (row.value !== undefined) updates.value = String(row.value);
     // The statement's loan replaces the stored one; a statement that shows none
-    // leaves it alone, like every other replace-if-non-null field. The category
-    // the row will END with decides — its own, else the stored one (taxable
-    // whenever it was kept so). After `value`, which this may net down.
+    // leaves it alone, like every other replace-if-non-null field. The end
+    // category decides. After `value`, which this may net down.
     if (Number(row.marginBalance) > 0) {
-      const category = (updates.category as string | undefined) ?? (await storedMargin())?.category;
-      const margin = importedMarginColumns(row, category);
+      const margin = importedMarginColumns(row, await endCategory());
       Object.assign(updates, margin.columns);
       result.warnings.push(...margin.warnings);
     }
-    if (row.basis !== undefined) updates.basis = String(row.basis);
+    if (row.basis !== undefined) {
+      // Only a feed row needs the end category (`feedBasisBarred`).
+      const category = row.externalProvider ? await endCategory() : undefined;
+      if (!feedBasisBarred(row, category)) updates.basis = String(row.basis);
+    }
     if (row.accountNumberLast4 !== undefined) updates.accountNumberLast4 = row.accountNumberLast4;
     if (row.custodian !== undefined) updates.custodian = row.custodian;
     if (row.growthRate != null) updates.growthRate = String(row.growthRate);
@@ -469,6 +474,17 @@ export async function commitAccounts(
   }
 
   return result;
+}
+
+/**
+ * A feed's (Addepar, Orion, Schwab) cost basis is what an account's positions
+ * cost. On a retirement account `basis` is post-tax (Form 8606) basis, which
+ * the engine pays out untaxed (`src/engine/ira-basis.ts`), so a feed row never
+ * writes it there: a new retirement account starts at 0, and an existing one
+ * keeps the basis it has. A statement's basis is left to the review step.
+ */
+function feedBasisBarred(row: Pick<ExtractedAccount, "externalProvider">, category: string | undefined): boolean {
+  return Boolean(row.externalProvider) && category === "retirement";
 }
 
 /**

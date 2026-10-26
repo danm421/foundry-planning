@@ -1,5 +1,11 @@
 "use client";
 
+// Shared by every KPI in the strip. Matches the Cash Flow year breakdown's
+// summary row; the vs-Base line is sized to read on a shared screen.
+export const KPI_LABEL = "whitespace-nowrap text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-3";
+export const KPI_VALUE = "tabular mt-1 text-[20px] font-semibold leading-6";
+export const KPI_DELTA = "tabular mt-1 text-[14px] font-semibold";
+
 interface Props {
   value: number | null;
   delta?: number | null;
@@ -9,15 +15,15 @@ interface Props {
 export function SolverEndingAssetsKpi({ value, delta, dimmed }: Props) {
   return (
     <div className={dimmed ? "opacity-70" : ""}>
-      <div className="whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-ink-3">
+      <div className={KPI_LABEL}>
         Ending Portfolio Assets
       </div>
-      <div className="mt-0.5 text-[16px] font-semibold leading-none tabular tracking-tight text-ink">
+      <div className={`${KPI_VALUE} text-ink`}>
         {value == null ? "—" : formatCurrency(value)}
       </div>
       {delta != null && Math.abs(delta) >= 1 ? (
         <div
-          className={`mt-1 text-[11px] tabular ${
+          className={`${KPI_DELTA} ${
             delta > 0 ? "text-good" : "text-crit"
           }`}
         >

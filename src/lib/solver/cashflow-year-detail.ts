@@ -1,7 +1,7 @@
 import type { ClientData, Income, ProjectionYear } from "@/engine";
 import { controllingFamilyMember } from "@/engine/ownership";
 import { applyLtcEvent } from "@/engine/ltc-event";
-import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
+import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-data";
 import type { DataColorKey } from "@/brand";
 
 export interface CashFlowLineItem {

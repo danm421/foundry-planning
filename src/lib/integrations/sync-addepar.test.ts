@@ -1,16 +1,27 @@
 // src/lib/integrations/sync-addepar.test.ts
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomBytes } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, clientImports, clients, crmHouseholds, integrationConnections } from "@/db/schema";
+import {
+  accounts,
+  auditLog,
+  clientImports,
+  clients,
+  crmHouseholds,
+  integrationConnections,
+  integrationHouseholdLinks,
+  integrationSyncRuns,
+} from "@/db/schema";
 import { createTestClientWithScenario } from "@/test/factories";
 import type { ImportPayload } from "@/lib/imports/types";
 import type { ProviderClient } from "./types";
-import { upsertByokConnection } from "./connections";
+import { createByokConnection } from "./connections";
 import { encodeAddeparSecret, encodeAddeparConfig } from "./providers/addepar/credentials";
-import { linkHousehold } from "./households";
-import { syncFirm } from "./sync";
+import { syncConnection } from "./sync";
+
+/** The connection's owner; the syncs below run as a different user ("u1"). */
+const OWNER = "owner";
 
 // Track every firmId we touch so afterAll can clean up deterministically.
 const firmIds: string[] = [];
@@ -25,16 +36,14 @@ beforeAll(() => {
 });
 
 afterAll(async () => {
-  for (const firmId of firmIds) {
-    // clientImports has no cascade from clients (clientId cascade DOES exist),
-    // but delete clients first → cascades integrationHouseholdLinks + accounts + clientImports.
-    const clientRows = await db.select({ id: clients.id }).from(clients).where(eq(clients.firmId, firmId));
-    for (const c of clientRows) {
-      await db.delete(clients).where(eq(clients.id, c.id));
-    }
-    await db.delete(crmHouseholds).where(eq(crmHouseholds.firmId, firmId));
-    await db.delete(integrationConnections).where(eq(integrationConnections.firmId, firmId));
-  }
+  if (firmIds.length === 0) return;
+  await db.delete(integrationSyncRuns).where(inArray(integrationSyncRuns.firmId, firmIds));
+  // Connections next: their household links cascade with them.
+  await db.delete(integrationConnections).where(inArray(integrationConnections.firmId, firmIds));
+  // Clients cascade their accounts and imports.
+  await db.delete(clients).where(inArray(clients.firmId, firmIds));
+  await db.delete(crmHouseholds).where(inArray(crmHouseholds.firmId, firmIds));
+  await db.delete(auditLog).where(inArray(auditLog.firmId, firmIds));
 });
 
 /**
@@ -55,20 +64,28 @@ function fakeAddeparClient(
 const JOINT = { id: "addepar-acct-1", name: "Joint", registrationType: "Joint", value: 1000 };
 const BROKERAGE = { id: "addepar-acct-2", name: "Brokerage", registrationType: "Individual", value: 2000 };
 
-/** A connected, linked Addepar household; `linked` are accounts already in the plan. */
+/** A connected Addepar household linked on its owner's connection; `linked` are accounts already in the plan. */
 async function setUp(linked: { externalId: string; subType: "brokerage" | "trust" }[]) {
   const firmId = freshFirmId();
   const { clientId, scenarioId } = await createTestClientWithScenario(firmId);
-  await upsertByokConnection({
+  const connectionId = await createByokConnection({
     firmId,
-    providerId: "addepar",
+    ownerUserId: OWNER,
+    name: "Addepar",
     secretBlob: encodeAddeparSecret({ apiKey: "k", apiSecret: "s" }),
     configBlob: encodeAddeparConfig({ apiBase: "https://api.addepar.com", addeparFirmId: "42" }),
-    userId: "u1",
   });
   for (const a of linked) await linkAccount(clientId, scenarioId, a.externalId, a.subType);
-  await linkHousehold({ firmId, providerId: "addepar", clientId, externalHouseholdId: "hh1", userId: "u1" });
-  return { firmId, clientId, scenarioId };
+  await db.insert(integrationHouseholdLinks).values({
+    firmId,
+    provider: "addepar",
+    connectionId,
+    clientId,
+    externalHouseholdId: "hh1",
+    externalFirmId: "42",
+    linkedByUserId: OWNER,
+  });
+  return { connectionId, clientId, scenarioId };
 }
 
 /** The plan account an advisor's review creates for an Addepar account. */
@@ -89,7 +106,11 @@ async function linkAccount(clientId: string, scenarioId: string, externalId: str
 
 const openReviews = (clientId: string) =>
   db
-    .select({ id: clientImports.id, payloadJson: clientImports.payloadJson })
+    .select({
+      id: clientImports.id,
+      createdByUserId: clientImports.createdByUserId,
+      payloadJson: clientImports.payloadJson,
+    })
     .from(clientImports)
     .where(
       and(
@@ -99,12 +120,12 @@ const openReviews = (clientId: string) =>
       ),
     );
 
-describe("syncFirm — Addepar", () => {
+describe("syncConnection — Addepar", () => {
   it("updates a linked account in place and queues only the new one for review", async () => {
-    const { firmId, clientId } = await setUp([{ externalId: JOINT.id, subType: "brokerage" }]);
+    const { connectionId, clientId } = await setUp([{ externalId: JOINT.id, subType: "brokerage" }]);
     const client = fakeAddeparClient([JOINT, BROKERAGE]);
 
-    const res = await syncFirm(firmId, "addepar", { trigger: "manual", clientId, client, userId: "u1" });
+    const res = await syncConnection(connectionId, { trigger: "manual", clientId, client, userId: "u1" });
 
     expect(res.committed).toBe(1);
     expect(res.queued).toBe(1);
@@ -119,14 +140,16 @@ describe("syncFirm — Addepar", () => {
     const payload = (reviews[0].payloadJson as { payload?: ImportPayload }).payload;
     expect(payload?.accounts.map((a) => a.externalId)).toEqual([BROKERAGE.id]);
     expect(payload?.accounts[0].match?.kind).toBe("new");
+    // Held by the connection's owner, whoever ran the sync, so the owner can open it.
+    expect(reviews[0].createdByUserId).toBe(OWNER);
   });
 
   it("keeps the account type the advisor chose when the feed's guess differs", async () => {
     // "Joint" maps to a brokerage account; the advisor made this one a trust.
-    const { firmId, clientId } = await setUp([{ externalId: JOINT.id, subType: "trust" }]);
+    const { connectionId, clientId } = await setUp([{ externalId: JOINT.id, subType: "trust" }]);
     const client = fakeAddeparClient([JOINT]);
 
-    await syncFirm(firmId, "addepar", { trigger: "manual", clientId, client, userId: "u1" });
+    await syncConnection(connectionId, { trigger: "manual", clientId, client, userId: "u1" });
 
     const [linked] = await db
       .select({ subType: accounts.subType, value: accounts.value })
@@ -136,13 +159,13 @@ describe("syncFirm — Addepar", () => {
   });
 
   it("closes the open review once every account in it has been linked", async () => {
-    const { firmId, clientId, scenarioId } = await setUp([]);
+    const { connectionId, clientId, scenarioId } = await setUp([]);
     const client = fakeAddeparClient([BROKERAGE]);
-    await syncFirm(firmId, "addepar", { trigger: "manual", clientId, client, userId: "u1" });
+    await syncConnection(connectionId, { trigger: "manual", clientId, client, userId: "u1" });
     expect(await openReviews(clientId)).toHaveLength(1);
 
     await linkAccount(clientId, scenarioId, BROKERAGE.id, "brokerage");
-    const res = await syncFirm(firmId, "addepar", { trigger: "manual", clientId, client, userId: "u1" });
+    const res = await syncConnection(connectionId, { trigger: "manual", clientId, client, userId: "u1" });
 
     expect(res.queued).toBe(0);
     expect(await openReviews(clientId)).toHaveLength(0);

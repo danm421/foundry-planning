@@ -311,6 +311,40 @@ export function buildMapGoals(input: BuildMapGoalsInput): MapGoal[] {
   return goals.sort((a, b) => a.year - b.year || a.id.localeCompare(b.id));
 }
 
+/** One year on the Goals spine: every goal that lands in it, by the side of the
+ *  spine it hangs off. */
+export interface GoalYearGroup<T> {
+  year: number;
+  client: T[];
+  spouse: T[];
+  joint: T[];
+}
+
+/**
+ * Buckets goals by year so each year is ONE row on the spine — two spouses
+ * retiring the same year face each other across a single year label, and three
+ * joint purchases in one year sit side by side, instead of each taking its own
+ * line with the year repeated.
+ *
+ * Keeps the input's order, within a year and across years (`buildMapGoals`
+ * returns ascending year). Generic so the on-screen board (`MapGoal`) and the
+ * PDF page (`MapGoalRow`) group by the same rule.
+ */
+export function groupGoalsByYear<T extends { year: number; side: GoalSide }>(
+  goals: T[],
+): GoalYearGroup<T>[] {
+  const byYear = new Map<number, GoalYearGroup<T>>();
+  for (const g of goals) {
+    let group = byYear.get(g.year);
+    if (!group) {
+      group = { year: g.year, client: [], spouse: [], joint: [] };
+      byYear.set(g.year, group);
+    }
+    group[g.side].push(g);
+  }
+  return [...byYear.values()];
+}
+
 /**
  * One life-expectancy card per living principal. A person is skipped only when
  * their birth year is unknown — there is then no year to place the card at, and
