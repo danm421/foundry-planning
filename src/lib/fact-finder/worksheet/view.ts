@@ -37,15 +37,18 @@ function tableBlock(state: FactFinderState, table: WsTable, files: FileNames, fr
   ].join("\n");
 }
 
+/** `- <rowId> [<sectionId>] <label>` — one staging row, as the model addresses it. */
+export function stagingRowLine(state: FactFinderState, sectionId: string, rowId: string): string {
+  const section = findSection(sectionId);
+  const row = state.sections[sectionId]?.find((r) => r.id === rowId);
+  const label = section && row ? rowLabel(section, row) : (section?.label ?? sectionId);
+  return `- ${rowId} [${sectionId}] ${label}`;
+}
+
 /** For the model: ids exact, values as the advisor sees them. */
 export function worksheetView(state: FactFinderState, files: FileNames): string {
   const blocks = state.worksheet.tables.map((t) => tableBlock(state, t, files));
-  const loose = stagingRowsNotShown(state).map(({ sectionId, rowId }) => {
-    const section = findSection(sectionId);
-    const row = state.sections[sectionId]?.find((r) => r.id === rowId);
-    const label = section && row ? rowLabel(section, row) : (section?.label ?? sectionId);
-    return `- ${rowId} [${sectionId}] ${label}`;
-  });
+  const loose = stagingRowsNotShown(state).map(({ sectionId, rowId }) => stagingRowLine(state, sectionId, rowId));
   blocks.push(["## Staging rows not on the worksheet", ...(loose.length ? loose : ["(none)"])].join("\n"));
   return blocks.join("\n\n");
 }
