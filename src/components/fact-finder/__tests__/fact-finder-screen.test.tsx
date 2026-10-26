@@ -400,6 +400,34 @@ describe("the fact finder screen", () => {
     expect(net.calls).toEqual([]);
   });
 
+  it("a closed import keeps its summary: what went to the plan, each with its Details page, and what was left out and why", () => {
+    // Closed by the Claude connector's save: no chat turn says what saved.
+    const summary: FFClosed = {
+      ...CLOSED,
+      saved: [...CLOSED.saved, { lineId: "i1/income", rowId: "i1", target: "income", recordId: "inc-1", label: "Acme salary" }],
+      leftOut: [{ lineId: "l1/liability", rowId: "l1", label: "Car loan", reason: "Needs an owner" }],
+    };
+    const closed = worked({ closed: summary, transcript: [] });
+    stubServer(closed);
+    renderScreen(closed);
+
+    expect(banner()).toHaveTextContent("Finished October 26, 2026 — 2 item(s) saved to the plan.");
+    const saved = screen.getByRole("list", { name: "Saved to the plan" });
+    expect(within(saved).getByRole("link", { name: "Joint Checking" })).toHaveAttribute("href", "/clients/c1/details/net-worth");
+    expect(within(saved).getByRole("link", { name: "Acme salary" })).toHaveAttribute("href", "/clients/c1/details/income-expenses");
+    const leftOut = screen.getByRole("list", { name: "Left out" });
+    expect(within(leftOut).getByRole("listitem")).toHaveTextContent(/Car loan\s*Needs an owner/);
+  });
+
+  it("a closed import with nothing left out lists no Left out group", () => {
+    const closed = worked({ closed: CLOSED });
+    stubServer(closed);
+    renderScreen(closed);
+
+    expect(within(screen.getByRole("list", { name: "Saved to the plan" })).getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.queryByRole("list", { name: "Left out" })).toBeNull();
+  });
+
   it("a proposal turn renders a proposal card", async () => {
     const net = stubServer(proposed(), {
       save: (server) => ({

@@ -4,7 +4,8 @@
 // the worksheet of AI-built tables on the left, and the documents & chat panel
 // on the right, where each plan update is confirmed on a proposal card and
 // saved as a round of its own. Finish import closes the import; a finished one
-// shows the same worksheet and conversation, read-only, under a banner.
+// shows the same worksheet and conversation, read-only, under a banner and the
+// list of what went to the plan.
 // Imports only client-safe leaf modules from src/lib/fact-finder.
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -16,6 +17,7 @@ import { filesReading } from "@/lib/fact-finder/reading-status";
 import type { FFChatTurn } from "@/lib/fact-finder/types";
 import { GHOST_BUTTON } from "./button-styles";
 import { ChatComposerBar, ChatPanel } from "./chat-panel";
+import { ClosedSummary } from "./closed-summary";
 import { DocumentsPanel, useDocuments } from "./documents-panel";
 import { OFFLINE_MESSAGE, factFinderUrl, refusalText } from "./http";
 import { AlertIcon, CircleCheckIcon, LoaderIcon, PanelIcon } from "./icons";
@@ -217,18 +219,21 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
       </header>
 
       {closed && (
-        <Card className="flex items-start gap-2 px-[var(--pad-card)] py-4">
-          <CircleCheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-good" />
-          <p
-            ref={bannerRef}
-            role="status"
-            tabIndex={-1}
-            className="rounded-[var(--radius-sm)] text-sm text-ink focus:outline-2 focus:outline-offset-2 focus:outline-accent"
-          >
-            Finished <LocalDate iso={closed.at} /> — <span className="tabular">{closed.saved.length}</span> item(s) saved
-            to the plan.
-          </p>
-        </Card>
+        <div className="flex flex-col gap-4">
+          <Card className="flex items-start gap-2 px-[var(--pad-card)] py-4">
+            <CircleCheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-good" />
+            <p
+              ref={bannerRef}
+              role="status"
+              tabIndex={-1}
+              className="rounded-[var(--radius-sm)] text-sm text-ink focus:outline-2 focus:outline-offset-2 focus:outline-accent"
+            >
+              Finished <LocalDate iso={closed.at} /> — <span className="tabular">{closed.saved.length}</span> item(s)
+              saved to the plan.
+            </p>
+          </Card>
+          <ClosedSummary clientId={clientId} closed={closed} />
+        </div>
       )}
 
       <div
