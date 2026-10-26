@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABELS } from "@/lib/extraction/types";
 import type { DocumentType } from "@/lib/extraction/types";
 import type { ClientDocumentSource, ClientDocumentView } from "@/lib/imports/client-documents";
+import { MAX_IMPORT_FILE_SIZE_BYTES } from "@/lib/imports/import-file-limit";
 import { stageFile } from "@/lib/uploads/stage-file";
 import { formatBytes } from "@/components/portal/documents/vault-format";
 
@@ -63,6 +64,7 @@ interface UploadZoneProps {
 }
 
 const OFFLINE = "Couldn't reach the server — try again.";
+const TOO_LARGE_MESSAGE = `File too large. Maximum size is ${MAX_IMPORT_FILE_SIZE_BYTES / (1024 * 1024)}MB.`;
 
 /** A refused request's own words (the routes write them for the advisor), else `fallback`. */
 async function refusalOf(res: Response, fallback: string): Promise<string> {
@@ -176,6 +178,11 @@ export default function UploadZone({
       }
       // Only in-session rows carry a File; seeded server rows never upload.
       if (!target.file) return;
+      // The upload token caps a file at this size, and Blob's refusal past it reads as a generic failure.
+      if (target.file.size > MAX_IMPORT_FILE_SIZE_BYTES) {
+        updateFile(target.id, { state: "failed", errorMessage: TOO_LARGE_MESSAGE });
+        return;
+      }
       updateFile(target.id, { state: "uploading", progress: 0 });
       const file = target.file;
       const filesUrl = `/api/clients/${clientId}/imports/${importId}/files`;

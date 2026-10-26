@@ -127,6 +127,20 @@ describe("uploading a file", () => {
     expect(form.get("file")).toBeNull();
   });
 
+  it("refuses a file over the 20 MB import cap before uploading anything", async () => {
+    mockStageFile.mockClear();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    renderZone({ initialFiles: [] });
+    const big = new File(["%PDF"], "scan.pdf", { type: "application/pdf" });
+    Object.defineProperty(big, "size", { value: 20 * 1024 * 1024 + 1 });
+    fireEvent.change(document.querySelector<HTMLInputElement>('input[type="file"]')!, { target: { files: [big] } });
+
+    expect(await screen.findByText("File too large. Maximum size is 20MB.")).toBeInTheDocument();
+    expect(mockStageFile).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("shows a failed staging step's message on the row and registers nothing", async () => {
     mockStageFile.mockRejectedValue(new Error("Upload failed. Please try again."));
     const fetchMock = vi.fn();

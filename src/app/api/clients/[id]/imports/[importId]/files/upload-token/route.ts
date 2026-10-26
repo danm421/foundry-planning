@@ -11,7 +11,7 @@ import {
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { refuseSavedFactFinderWithState } from "@/lib/imports/saved-fact-finder";
-import { MAX_IMPORT_FILE_SIZE_BYTES } from "@/lib/imports/store-import-file";
+import { MAX_IMPORT_FILE_SIZE_BYTES } from "@/lib/imports/import-file-limit";
 import { parseBody } from "@/lib/schemas/common";
 import { issueStagedUpload, stagingPrefix } from "@/lib/uploads/staged-upload";
 
