@@ -475,10 +475,11 @@ function applyOne(state: FactFinderState, op: FFOp, ctx: OpContext): FactFinderS
           continue;
         }
         if (snap.kind === "worksheet") {
-          if (!sameJson(next.worksheet, snap.after)) {
+          // Only the tables: a document composed since (an upload) doesn't block the Undo, and stays composed.
+          if (!sameJson(next.worksheet.tables, snap.after.tables)) {
             throw new FactFinderOpError("Can't undo — the worksheet has changed since that reply.");
           }
-          next = { ...next, worksheet: snap.before };
+          next = { ...next, worksheet: { ...snap.before, composedFileIds: next.worksheet.composedFileIds } };
           continue;
         }
         if (!sameLocation(locationOf(next, snap.rowId), snap.after)) {

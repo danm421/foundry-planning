@@ -360,12 +360,21 @@ describe("undo snapshots", () => {
     expect(undone.worksheet).toEqual(before.worksheet);
   });
 
-  it("restoreSnapshots refuses a worksheet changed since that reply", () => {
+  it("restoreSnapshots refuses a worksheet whose tables changed since that reply", () => {
     const before = emptyFactFinderState();
     const after = { ...before, worksheet: { tables: [{ id: "t", title: "T", columns: [], rows: [] }], composedFileIds: [] } };
-    const edited = { ...after, worksheet: { ...after.worksheet, composedFileIds: ["f"] } };
+    const edited = { ...after, worksheet: { ...after.worksheet, tables: [{ id: "t", title: "Renamed", columns: [], rows: [] }] } };
     expect(() => applyOps(edited, [{ op: "restoreSnapshots", snapshots: [{ kind: "worksheet", before: before.worksheet, after: after.worksheet }] }], ctx))
       .toThrow("Can't undo — the worksheet has changed since that reply.");
+  });
+
+  it("a document composed since the reply doesn't block its Undo, and stays composed", () => {
+    // An upload after the reply composed f2 without touching the tables (nothing new to show).
+    const before = { ...emptyFactFinderState(), worksheet: { tables: [], composedFileIds: ["f1"] } };
+    const after = { ...before, worksheet: { tables: [{ id: "t", title: "T", columns: [], rows: [] }], composedFileIds: ["f1"] } };
+    const composed = { ...after, worksheet: { ...after.worksheet, composedFileIds: ["f1", "f2"] } };
+    const undone = applyOps(composed, [{ op: "restoreSnapshots", snapshots: [{ kind: "worksheet", before: before.worksheet, after: after.worksheet }] }], ctx);
+    expect(undone.worksheet).toEqual({ tables: [], composedFileIds: ["f1", "f2"] });
   });
 
   it("snapshots changed rows and restores them", () => {
