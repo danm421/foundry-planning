@@ -82,4 +82,20 @@ describe("income dialog layout", () => {
     const growthBlock = growthLabel.closest("div");
     expect(growthBlock?.className).not.toContain("col-span-2");
   });
+
+  it.each([
+    ["income", 0, "Add Income"],
+    ["expense", 1, "Add Expense"],
+  ])("a new %s's growth starts on Inflation", (_kind, addIndex, dialogTitle) => {
+    render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <IncomeExpensesView {...BASE_PROPS} />
+      </ClientAccessProvider>,
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: /^\+ Add$/ })[addIndex]);
+    expect(screen.getByRole("dialog", { name: dialogTitle })).toBeInTheDocument();
+
+    expect(screen.getByRole("button", { name: "Inflation (2.40%)" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Custom %" })).toHaveAttribute("aria-pressed", "false");
+  });
 });

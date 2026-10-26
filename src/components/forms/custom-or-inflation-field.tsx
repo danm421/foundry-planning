@@ -7,8 +7,7 @@ import { GrowthSourceSelect } from "./growth-source-select";
 /**
  * A growth rate that is either the plan's inflation rate or a custom %: the
  * two-choice form of `GrowthSourceSelect`, showing the rate the pick resolves
- * to. Real estate and property tax on the account form, and every income and
- * expense, grow this way.
+ * to. Real estate and property tax on the account form grow this way.
  */
 export function CustomOrInflationField({
   id, label, inputId, inputLabel, source, onSourceChange, pct, onPctChange, inflationRate,

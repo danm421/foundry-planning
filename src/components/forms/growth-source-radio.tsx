@@ -26,6 +26,7 @@ export default function GrowthSourceRadio({
         <button
           type="button"
           disabled={disabled}
+          aria-pressed={value === "inflation"}
           onClick={() => onChange({ value: "inflation", customRate })}
           className={
             "rounded-md border px-2 py-0.5 text-xs font-medium transition-colors " +
@@ -40,6 +41,7 @@ export default function GrowthSourceRadio({
         <button
           type="button"
           disabled={disabled}
+          aria-pressed={value === "custom"}
           onClick={() => onChange({ value: "custom", customRate })}
           className={
             "rounded-md border px-2 py-0.5 text-xs font-medium transition-colors " +

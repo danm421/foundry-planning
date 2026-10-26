@@ -5,7 +5,7 @@ import { useFocusCloseOnce, type FocusCloseOutcome } from "@/hooks/use-focus-clo
 import { useFocusDelete } from "@/hooks/use-focus-delete";
 import { DedicatedFundingPicker } from "./forms/dedicated-funding-picker";
 import { ChoiceChip } from "./forms/choice-chip";
-import { CustomOrInflationField } from "./forms/custom-or-inflation-field";
+import GrowthSourceRadio from "./forms/growth-source-radio";
 import DialogShell from "./dialog-shell";
 import { PaymentMonthSelect } from "./forms/payment-month-select";
 import { StateSelect } from "@/components/state-select";
@@ -1113,17 +1113,15 @@ function IncomeDialog({
             )}
             {!hasSchedule && (
               <div className="col-span-2">
-                <CustomOrInflationField
-                  id="inc-growth-source"
-                  label="Growth Rate"
-                  inputId="inc-growth-rate"
-                  inputLabel="Custom growth rate"
-                  source={growthSource}
-                  onSourceChange={setGrowthSource}
-                  pct={growthRateDisplay}
-                  onPctChange={setGrowthRateDisplay}
-                  inflationRate={resolvedInflationRate}
-                />
+                <HelpLabel>Growth Rate</HelpLabel>
+                <div className="flex h-9 items-center">
+                  <GrowthSourceRadio
+                    value={growthSource}
+                    customRate={growthRateDisplay}
+                    resolvedInflationRate={resolvedInflationRate}
+                    onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
+                  />
+                </div>
               </div>
             )}
             <PaymentMonthSelect id="inc-payment-month" value={paymentMonth} onChange={setPaymentMonth} />
@@ -1648,17 +1646,15 @@ function ExpenseDialog({
             )}
             {!hasSchedule && (
               <div className="col-span-2">
-                <CustomOrInflationField
-                  id="exp-growth-source"
-                  label="Growth Rate"
-                  inputId="exp-growth-rate"
-                  inputLabel="Custom growth rate"
-                  source={growthSource}
-                  onSourceChange={setGrowthSource}
-                  pct={growthRateDisplay}
-                  onPctChange={setGrowthRateDisplay}
-                  inflationRate={resolvedInflationRate}
-                />
+                <HelpLabel>Growth Rate</HelpLabel>
+                <div className="flex h-9 items-center">
+                  <GrowthSourceRadio
+                    value={growthSource}
+                    customRate={growthRateDisplay}
+                    resolvedInflationRate={resolvedInflationRate}
+                    onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
+                  />
+                </div>
               </div>
             )}
             <PaymentMonthSelect id="exp-payment-month" value={paymentMonth} onChange={setPaymentMonth} />
