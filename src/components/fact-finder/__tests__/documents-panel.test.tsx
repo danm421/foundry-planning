@@ -279,6 +279,18 @@ describe("progress lines", () => {
     expect(props.read.start).toHaveBeenCalledTimes(2);
   });
 
+  it("says only \"Read\" for a document the AI reads itself: it puts no rows in staging, so a count would say nothing was found", () => {
+    const state = withReadings({ g: { status: "done", reader: "freeform", startedAt: AT, rows: 0 } });
+    const files = ["g", "h"].map((id) => ({ id, name: `${id}.pdf`, documentType: "auto" }));
+    const props = docs(files, { h: fileFrame("h", "done", { reader: "freeform", rows: 0 }) as Documents["read"]["lines"][string] });
+    render(<DocumentsPanel clientId="c1" importId="i1" docs={props} state={state} />);
+
+    for (const name of ["g.pdf", "h.pdf"]) {
+      expect(line(name)).toHaveTextContent(/Read$/);
+      expect(line(name)).not.toHaveTextContent("nothing found");
+    }
+  });
+
   it("hides the upload zone's document-type picker: a file is read once, so a later type would do nothing", () => {
     render(<DocumentsPanel clientId="c1" importId="i1" docs={docs(FILES)} state={emptyFactFinderState()} />);
     expect(screen.getByText(/^Type picker:/)).toHaveTextContent("Type picker: hidden");

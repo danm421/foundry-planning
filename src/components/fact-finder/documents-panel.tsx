@@ -166,15 +166,18 @@ type LineState =
   | { kind: "failed"; reason: string | undefined }
   | { kind: "waiting" };
 
+/** A free-form read puts no rows in staging (the AI reads it in the chat), so its count says nothing: no count. */
+const rowsRead = (read: { reader?: FFFileReading["reader"]; rows?: number }) => (read.reader === "freeform" ? undefined : read.rows);
+
 /** The live read's word on a file wins; otherwise what the fact finder last said. */
 function lineState(line: ReadLine | undefined, reading: FFFileReading | undefined, now: Date): LineState {
   if (line) {
     if (line.status === "reading") return { kind: "reading" };
-    if (line.status === "done") return { kind: "read", rows: line.rows };
+    if (line.status === "done") return { kind: "read", rows: rowsRead(line) };
     return { kind: "failed", reason: line.error };
   }
   if (isReadingNow(reading, now)) return { kind: "reading" };
-  if (reading?.status === "done") return { kind: "read", rows: reading.rows };
+  if (reading?.status === "done") return { kind: "read", rows: rowsRead(reading) };
   if (reading?.status === "failed") return { kind: "failed", reason: reading.reason };
   // Never read, or a reading abandoned long ago.
   return { kind: "waiting" };
