@@ -3,7 +3,7 @@ import { findSection } from "../schema";
 import { rowLabel } from "../state";
 import type { FactFinderState } from "../types";
 import { bindingText } from "./bindings";
-import { stagingRowsNotShown } from "./from-staging";
+import { stagingRowsNotShown, type StagingNotShown } from "./from-staging";
 import { findTable } from "./ops";
 import { cellText, rowInPlan } from "./render";
 import type { WsRow, WsTable } from "./types";
@@ -37,18 +37,22 @@ function tableBlock(state: FactFinderState, table: WsTable, files: FileNames, fr
   ].join("\n");
 }
 
-/** `- <rowId> [<sectionId>] <label>` — one staging row, as the model addresses it. */
-export function stagingRowLine(state: FactFinderState, sectionId: string, rowId: string): string {
+/** `- <rowId> [<sectionId>] <label>`, and its holdings the worksheet doesn't show — one staging row, as the model addresses it. */
+export function stagingRowLine(state: FactFinderState, { sectionId, rowId, shown, holdingIds = [] }: StagingNotShown): string {
   const section = findSection(sectionId);
   const row = state.sections[sectionId]?.find((r) => r.id === rowId);
   const label = section && row ? rowLabel(section, row) : (section?.label ?? sectionId);
-  return `- ${rowId} [${sectionId}] ${label}`;
+  const n = holdingIds.length;
+  let holdings = "";
+  if (shown) holdings = ` (its row is shown; ${n} of its holdings ${n === 1 ? "isn't" : "aren't"})`;
+  else if (n > 0) holdings = ` (and its ${n === 1 ? "holding" : `${n} holdings`})`;
+  return `- ${rowId} [${sectionId}] ${label}${holdings}`;
 }
 
 /** For the model: ids exact, values as the advisor sees them. */
 export function worksheetView(state: FactFinderState, files: FileNames): string {
   const blocks = state.worksheet.tables.map((t) => tableBlock(state, t, files));
-  const loose = stagingRowsNotShown(state).map(({ sectionId, rowId }) => stagingRowLine(state, sectionId, rowId));
+  const loose = stagingRowsNotShown(state).map((entry) => stagingRowLine(state, entry));
   blocks.push(["## Staging rows not on the worksheet", ...(loose.length ? loose : ["(none)"])].join("\n"));
   return blocks.join("\n\n");
 }

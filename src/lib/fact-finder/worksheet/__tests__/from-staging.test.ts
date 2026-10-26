@@ -83,4 +83,22 @@ describe("stagingRowsNotShown", () => {
       { sectionId: "taxable", rowId: "b2" },
     ]);
   });
+
+  it("flags holdings no worksheet row shows: a shown account's new ones, and an unshown account's", () => {
+    const s = emptyFactFinderState();
+    const h = { ticker: "VTI", name: null, shares: 1, price: null, marketValue: null, costBasis: null, by: "document" as const };
+    s.sections.taxable = [row("b1", { accountName: "Joint" }, { holdings: [{ id: "h1", ...h }, { id: "h2", ...h }] })];
+    s.sections.retirement = [row("r9", { accountName: "Roth" }, { holdings: [{ id: "h3", ...h }] })];
+    s.worksheet = {
+      tables: [
+        { id: "t-accounts", title: "Accounts", columns: [], rows: [{ id: "a", cells: {}, ref: { rowId: "b1" } }] },
+        { id: "t-holdings", title: "Holdings", columns: [], rows: [{ id: "x", cells: {}, ref: { rowId: "b1", holdingId: "h1" } }] },
+      ],
+      composedFileIds: [],
+    };
+    expect(stagingRowsNotShown(s)).toEqual([
+      { sectionId: "taxable", rowId: "b1", shown: true, holdingIds: ["h2"] },
+      { sectionId: "retirement", rowId: "r9", holdingIds: ["h3"] },
+    ]);
+  });
 });

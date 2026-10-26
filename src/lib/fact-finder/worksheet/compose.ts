@@ -14,7 +14,8 @@ export interface ComposeRequest {
 
 /**
  * What the model is asked to do for files that finished reading since the last compose. A free-form file is read by
- * the model (read_document); every other reading already filled staging, so only its rows no table shows are listed.
+ * the model (read_document); every other reading already filled staging, so only its rows and holdings no table shows
+ * are listed.
  * The instructions stay outside the fence; file names and row lines are document text, so they are redacted and fenced.
  */
 export function composeRequest(state: FactFinderState, files: { id: string; name: string }[]): ComposeRequest {
@@ -30,7 +31,7 @@ export function composeRequest(state: FactFinderState, files: { id: string; name
       continue;
     }
     const rows = unshown.filter(({ sectionId, rowId }) => state.sections[sectionId]?.find((r) => r.id === rowId)?.sourceFileIds.includes(f.id));
-    if (rows.length) staged.push(`"${f.name}":`, ...rows.map(({ sectionId, rowId }) => stagingRowLine(state, sectionId, rowId)));
+    if (rows.length) staged.push(`"${f.name}":`, ...rows.map((entry) => stagingRowLine(state, entry)));
   }
 
   const parts: string[] = [];
@@ -42,7 +43,8 @@ export function composeRequest(state: FactFinderState, files: { id: string; name
   }
   if (staged.length) {
     parts.push(
-      "These documents were read into staging, but these rows are not on the worksheet yet — add them to the right topic tables with fill_from_staging:",
+      "These documents were read into staging, but what's listed here is not on the worksheet yet — add the rows to the " +
+        "right topic tables with fill_from_staging, and the holdings to the holdings table with fill_from_staging and holdings: true:",
       fenceUntrusted(redactSsns(staged.join("\n")).text),
     );
   }

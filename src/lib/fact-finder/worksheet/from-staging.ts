@@ -131,16 +131,40 @@ export function worksheetFromStaging(state: Omit<FactFinderState, "worksheet">):
   return { tables, composedFileIds: [], derived: true };
 }
 
-/** Staging rows with values, not in the Removed tray, that no worksheet row references (holding rows count for their account). */
-export function stagingRowsNotShown(state: FactFinderState): { sectionId: string; rowId: string }[] {
+/** A staging row the worksheet doesn't show, or a shown one (`shown`) some of whose holdings it doesn't. */
+export interface StagingNotShown {
+  sectionId: string;
+  rowId: string;
+  shown?: true;
+  /** Its holdings no worksheet row shows. */
+  holdingIds?: string[];
+}
+
+/**
+ * Staging rows with values, not in the Removed tray, that no worksheet row references (holding rows count for their
+ * account), and holdings no worksheet row references — so a later statement's holdings are owed to the worksheet
+ * like its accounts, under an account already shown too.
+ */
+export function stagingRowsNotShown(state: FactFinderState): StagingNotShown[] {
   const referenced = new Set<string>();
-  for (const t of state.worksheet.tables) for (const r of t.rows) if (r.ref) referenced.add(r.ref.rowId);
+  const holdingsShown = new Set<string>();
+  for (const t of state.worksheet.tables) {
+    for (const { ref } of t.rows) {
+      if (!ref) continue;
+      referenced.add(ref.rowId);
+      if (ref.holdingId) holdingsShown.add(`${ref.rowId}/${ref.holdingId}`);
+    }
+  }
   const removedIds = new Set(state.removed.map((r) => r.row.id));
-  const out: { sectionId: string; rowId: string }[] = [];
+  const out: StagingNotShown[] = [];
   for (const [sectionId, rows] of Object.entries(state.sections)) {
     if (!findSection(sectionId)) continue;
     for (const row of rows) {
-      if (rowHasValues(row) && !removedIds.has(row.id) && !referenced.has(row.id)) out.push({ sectionId, rowId: row.id });
+      if (!rowHasValues(row) || removedIds.has(row.id)) continue;
+      const holdingIds = (row.holdings ?? []).filter((h) => !holdingsShown.has(`${row.id}/${h.id}`)).map((h) => h.id);
+      const shown = referenced.has(row.id);
+      if (shown && holdingIds.length === 0) continue;
+      out.push({ sectionId, rowId: row.id, ...(shown ? { shown: true as const } : {}), ...(holdingIds.length ? { holdingIds } : {}) });
     }
   }
   return out;
