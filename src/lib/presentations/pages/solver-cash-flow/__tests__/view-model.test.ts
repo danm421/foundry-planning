@@ -40,7 +40,7 @@ describe("solverCashFlowOptionsSchema", () => {
 describe("buildSolverCashFlowData", () => {
   it("prints the year panel's breakdown: inflows before withdrawals, withdrawals on their own", () => {
     const data = build();
-    expect(data.title).toBe("Solver - Cash Flow");
+    expect(data.title).toBe("One-Year Cash Flow");
     expect(data.subtitle).toBe("Base Case");
     expect(data.year).toBe(2026);
     expect(data.ageLabel).toBe("Age 59 / 62");

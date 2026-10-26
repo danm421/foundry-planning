@@ -23,7 +23,7 @@ import { buildMarkers } from "../../shared/markers";
 import { buildDrillChartSpec } from "../../shared/build-chart-spec";
 import type { SolverCashFlowOptions } from "./options-schema";
 
-export const SOLVER_CASH_FLOW_TITLE = "Solver - Cash Flow";
+export const SOLVER_CASH_FLOW_TITLE = "One-Year Cash Flow";
 
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
