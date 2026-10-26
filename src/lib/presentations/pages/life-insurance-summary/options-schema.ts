@@ -34,9 +34,9 @@ export const liSolvedSchema = z.object({
 
 export const lifeInsuranceSummaryOptionsSchema = z.object({
   // Solve inputs (mirror LiAssumptions; surfaced by the OptionsControl).
-  deathYear: z.number().int().min(1900).max(2200).default(2045),
+  deathYear: z.number().int().min(1900).max(2200).default(() => new Date().getFullYear()),
   modelPortfolioId: z.string().uuid().nullable().default(null),
-  mcTargetScore: z.number().min(0.01).max(0.99).default(0.9),
+  mcTargetScore: z.number().min(0.01).max(0.99).default(0.85),
   leaveToHeirsAmount: z.number().min(0).default(0),
   livingExpenseAtDeath: z.number().min(0).nullable().default(null),
   payoffLiabilityIds: z.array(z.string()).default([]),
@@ -50,12 +50,12 @@ export type LifeInsuranceSummaryOptions = z.infer<
 >;
 export type LiSolved = z.infer<typeof liSolvedSchema>;
 
-// `deathYear` default (2045) is a static placeholder; the launcher OptionsControl
-// seeds it from the client's saved life_insurance_solver_settings on mount.
+// A new page solves for death in the current calendar year at an 85% Monte Carlo
+// target; the advisor can change either in the page's OptionsControl.
 export const LIFE_INSURANCE_SUMMARY_OPTIONS_DEFAULT: LifeInsuranceSummaryOptions = {
-  deathYear: 2045,
+  deathYear: new Date().getFullYear(),
   modelPortfolioId: null,
-  mcTargetScore: 0.9,
+  mcTargetScore: 0.85,
   leaveToHeirsAmount: 0,
   livingExpenseAtDeath: null,
   payoffLiabilityIds: [],

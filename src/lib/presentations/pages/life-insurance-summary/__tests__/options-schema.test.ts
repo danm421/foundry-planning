@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { liSolvedSchema } from "../options-schema";
+import {
+  liSolvedSchema,
+  lifeInsuranceSummaryOptionsSchema,
+  LIFE_INSURANCE_SUMMARY_OPTIONS_DEFAULT,
+} from "../options-schema";
 
 const LEGACY_PAYLOAD = {
   curveRows: [{ year: 2048, clientNeed: 2_000_000, spouseNeed: 1_300_000 }],
@@ -23,5 +27,16 @@ describe("liSolvedSchema", () => {
     });
     expect(parsed.estateTaxAddendClient).toBe(350_000);
     expect(parsed.estateTaxAddendSpouse).toBe(120_000);
+  });
+});
+
+describe("lifeInsuranceSummaryOptionsSchema defaults", () => {
+  it("solves for death in the current year at an 85% Monte Carlo target", () => {
+    const year = new Date().getFullYear();
+    const parsed = lifeInsuranceSummaryOptionsSchema.parse({});
+    expect(parsed.deathYear).toBe(year);
+    expect(parsed.mcTargetScore).toBe(0.85);
+    expect(LIFE_INSURANCE_SUMMARY_OPTIONS_DEFAULT.deathYear).toBe(year);
+    expect(LIFE_INSURANCE_SUMMARY_OPTIONS_DEFAULT.mcTargetScore).toBe(0.85);
   });
 });
