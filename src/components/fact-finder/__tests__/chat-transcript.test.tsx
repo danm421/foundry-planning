@@ -49,4 +49,13 @@ describe("ChatTranscript", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Folding in the new documents…");
     expect(screen.queryByText("Ask a question about this fact finder, or say what to change.")).toBeNull();
   });
+
+  it("keeps pre-wrap on the advisor's bubble but not the markdown reply's", () => {
+    renderTranscript([
+      { id: "u1", role: "user", text: "line one\nline two", at: AT },
+      { id: "a1", role: "assistant", text: "Done.", at: AT },
+    ]);
+    expect(screen.getByText(/line one/)).toHaveClass("whitespace-pre-wrap");
+    expect(document.getElementById("chat-turn-a1")).not.toHaveClass("whitespace-pre-wrap");
+  });
 });
