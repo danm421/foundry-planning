@@ -1,7 +1,8 @@
 "use client";
 // src/components/fact-finder/use-save.ts
-// "Save to plan": POST …/fact-finder/save with the advisor's ticks on the change
-// list as it was built. A 200 hands the closed fact finder to the screen; a 422
+// A proposal card's "Save N changes to the plan": POST …/fact-finder/save with the
+// advisor's ticks on the change list as it was built. A 200 hands the saved fact
+// finder to the screen (a keep-open round leaves the import open); a 422
 // names the line the save couldn't write; a 409 means the list or a record moved
 // on, so the screen gets the fresher fact finder (when the route sends one) and
 // the reason. Nothing is written unless the answer is a 200.

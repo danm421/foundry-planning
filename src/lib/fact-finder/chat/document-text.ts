@@ -5,7 +5,7 @@ import type { ImportFileRow } from "../persist";
 import { pagesForSectionReader } from "../readers/route-file";
 
 /**
- * A document's page text for the chat's `reread_document` (server-only: blob
+ * A document's page text for the worksheet chat's `read_document` (server-only: blob
  * download, OCR for scans and images). SSNs are redacted on every page before
  * anything else sees it.
  */

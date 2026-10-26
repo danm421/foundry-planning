@@ -380,7 +380,7 @@ describe("uploads", () => {
     expect(within(screen.getByRole("list", { name: "Reading progress" })).queryByText("schwab-june.pdf")).toBeNull();
     expect(line("hendricks-fact-finder.pdf")).toBeInTheDocument();
     // Its rows stay on the fact finder, and the panel says so.
-    expect(screen.getByText("Values read from it stay — remove those rows if you don't want them.")).toHaveAttribute("role", "status");
+    expect(screen.getByText("Values read from it stay — ask the chat to remove them if you don't want them.")).toHaveAttribute("role", "status");
   });
 });
 

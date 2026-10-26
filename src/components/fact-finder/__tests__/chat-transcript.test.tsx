@@ -47,7 +47,7 @@ describe("ChatTranscript", () => {
   it("shows no bubble for a compose run, only its progress", () => {
     renderTranscript([], { pending: "", progress: ["Folding in the new documents…"] });
     expect(screen.getByRole("status")).toHaveTextContent("Folding in the new documents…");
-    expect(screen.queryByText("Ask a question about this fact finder, or say what to change.")).toBeNull();
+    expect(screen.queryByText("Ask about the documents or the worksheet, or say what to change.")).toBeNull();
   });
 
   it("keeps pre-wrap on the advisor's bubble but not the markdown reply's", () => {

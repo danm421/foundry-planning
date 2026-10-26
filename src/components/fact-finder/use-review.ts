@@ -1,8 +1,8 @@
 "use client";
 // src/components/fact-finder/use-review.ts
-// "Review changes →": saves the advisor's typed edits, then POST …/fact-finder/review
-// builds the change list and stores it on the fact finder, which the screen
-// adopts. A refusal is shown in the route's words; when the route changed the
+// A proposal card's Propose again (and Add as new): saves the screen's pending
+// edit, then POST …/fact-finder/review builds the change list for the card's rows
+// and stores it on the fact finder, which the screen adopts. A refusal is shown in the route's words; when the route changed the
 // fact finder (links it dropped) or it moved on meanwhile, that is adopted too.
 // Imports only client-safe leaf modules from src/lib/fact-finder.
 import { useState } from "react";

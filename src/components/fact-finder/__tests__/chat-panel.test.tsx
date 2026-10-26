@@ -166,7 +166,7 @@ describe("the conversation", () => {
 
   it("invites a first message when there is no conversation yet", () => {
     renderScreen({ ...emptyFactFinderState(), readings: { f1: READ }, worksheet: COMPOSED });
-    expect(within(chat()).getByText("Ask a question about this fact finder, or say what to change.")).toBeInTheDocument();
+    expect(within(chat()).getByText("Ask about the documents or the worksheet, or say what to change.")).toBeInTheDocument();
     expect(composer()).toHaveAttribute("placeholder", "Ask for a table, a fix, or a plan update.");
     expect(composer()).toBeEnabled();
   });

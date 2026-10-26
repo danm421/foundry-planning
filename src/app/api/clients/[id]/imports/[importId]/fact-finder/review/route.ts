@@ -19,7 +19,7 @@ type Params = { params: Promise<{ id: string; importId: string }> };
 export async function POST(request: Request, { params }: Params) {
   const gate = await factFinderGate(params, "match");
   if (!gate.ok) return gate.response;
-  // The body is optional: none, or none with `rowIds`, reviews every row.
+  // The body is optional: none, or one without `rowIds`, reviews every row; `rowIds: []` reviews none.
   const body = (await request.json().catch(() => null)) as Partial<Record<keyof ReviewBody, unknown>> | null;
   const rowIds = body?.rowIds;
   if (rowIds !== undefined && !(Array.isArray(rowIds) && rowIds.every((id) => typeof id === "string"))) {

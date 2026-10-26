@@ -35,7 +35,7 @@ export async function routeFile(args: {
   return { reader: "section", pages, warnings };
 }
 
-/** Page text for the section reader: PDF text, OCR for scans and images, docx text. */
+/** A document's page text, for the free-form read and the chat: PDF text, OCR for scans and images, docx text. */
 export async function pagesForSectionReader(
   buffer: Buffer,
   detectedKind: string,

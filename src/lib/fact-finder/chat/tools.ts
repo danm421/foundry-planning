@@ -31,7 +31,7 @@ export interface ToolOutcome {
   result: string;
 }
 
-/** The most document text `reread_document` hands the model at once. */
+/** The most document text the worksheet chat's `read_document` hands the model at once. */
 export const REREAD_MAX_CHARS = 20_000;
 
 const LIST_SECTION_IDS = FACT_FINDER_SECTIONS.filter(isListLike).map((s) => s.id);

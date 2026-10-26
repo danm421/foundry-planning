@@ -53,7 +53,7 @@ export function ChatTranscript({
   }, [shown]);
 
   if (shown === 0) {
-    return <p className="text-sm text-ink-3">Ask a question about this fact finder, or say what to change.</p>;
+    return <p className="text-sm text-ink-3">Ask about the documents or the worksheet, or say what to change.</p>;
   }
 
   return (

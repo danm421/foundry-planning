@@ -31,7 +31,7 @@ export type RecordRef =
 /** A value in app terms: enum values, fractions, ISO dates, refs. */
 export type PlacedValue = string | number | boolean | null | RecordRef | PlacedValue[] | { [key: string]: PlacedValue };
 
-/** A fact finder cell — where a value came from, and where "Fix in fact finder" goes. */
+/** A fact finder cell — where a value came from, or the cell a blocked line's missing value goes in. */
 export interface CellRef {
   sectionId: string;
   rowId: string;

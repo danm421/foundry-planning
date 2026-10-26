@@ -278,7 +278,7 @@ export function DocumentsPanel({ clientId, importId, docs, state, clientDocument
       />
       {docs.removedAny && (
         <p role="status" className="text-xs text-ink-3">
-          Values read from it stay — remove those rows if you don&apos;t want them.
+          Values read from it stay — ask the chat to remove them if you don&apos;t want them.
         </p>
       )}
     </section>
