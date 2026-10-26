@@ -9,6 +9,7 @@ vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: vi.fn().mockResolved
 vi.mock("@/lib/imports/authz", async (orig) => ({ ...(await orig<typeof import("@/lib/imports/authz")>()), requireImportAccess: vi.fn() }));
 vi.mock("@/lib/rate-limit", () => ({ checkImportRateLimit: vi.fn().mockResolvedValue({ allowed: true }) }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
+vi.mock("@/lib/fact-finder/worksheet/page-text", () => ({ deletePageText: vi.fn() }));
 
 const { mockUpdate } = vi.hoisted(() => ({ mockUpdate: vi.fn() }));
 vi.mock("@/db", () => ({
@@ -20,6 +21,8 @@ vi.mock("@/db", () => ({
 
 import { DELETE } from "../route";
 import { requireImportAccess } from "@/lib/imports/authz";
+import { recordAudit } from "@/lib/audit";
+import { deletePageText } from "@/lib/fact-finder/worksheet/page-text";
 
 const ctx = { params: Promise.resolve({ id: "c1", importId: "imp1", fileId: "f1" }) };
 const CLOSED = { at: "2026-10-15T12:00:00.000Z", by: "u1", saved: [], leftOut: [] };
@@ -53,5 +56,25 @@ describe("DELETE /imports/[importId]/files/[fileId]", () => {
     const res = await DELETE(new NextRequest("http://x", { method: "DELETE" }), ctx);
     expect(res.status).toBe(200);
     expect(mockUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes the file's cached page text", async () => {
+    vi.mocked(requireImportAccess).mockResolvedValueOnce(importWith(null));
+    await DELETE(new NextRequest("http://x", { method: "DELETE" }), ctx);
+    expect(deletePageText).toHaveBeenCalledWith("imp1", "f1");
+  });
+
+  it("still returns ok and still audits the delete when removing the page text fails", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      vi.mocked(requireImportAccess).mockResolvedValueOnce(importWith(null));
+      vi.mocked(deletePageText).mockRejectedValueOnce(new Error("blob down"));
+      const res = await DELETE(new NextRequest("http://x", { method: "DELETE" }), ctx);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true });
+      expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "import.file.deleted", resourceId: "f1" }));
+    } finally {
+      logged.mockRestore();
+    }
   });
 });
