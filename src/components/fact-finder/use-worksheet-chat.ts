@@ -32,8 +32,12 @@ export interface WorksheetChat {
   error: string | null;
   /** True = sent and its reply adopted; false = not sent or it failed (`error` says why) and the composer keeps the text. */
   send(message: string): Promise<boolean>;
-  /** Folds newly read documents into the worksheet; nothing shows when nothing comes back changed. */
-  compose(): Promise<void>;
+  /**
+   * Starts folding every document read but not yet composed into the worksheet; nothing shows when nothing comes
+   * back changed. False = it didn't start, because a reply or an Undo is running; true = it started, and how it ends
+   * shows like any reply's.
+   */
+  compose(): boolean;
   undo(turnId: string): Promise<void>;
 }
 
@@ -121,8 +125,10 @@ export function useWorksheetChat({
 
   const send = (message: string) => turn({ message }, message);
 
-  async function compose(): Promise<void> {
-    await turn({ mode: "compose" }, "");
+  function compose(): boolean {
+    if (busy.current) return false;
+    void turn({ mode: "compose" }, "");
+    return true;
   }
 
   async function undo(turnId: string): Promise<void> {

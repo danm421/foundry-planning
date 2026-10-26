@@ -53,6 +53,10 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
   const state = store.state;
   const closed = state.closed;
   const chat = useWorksheetChat({ clientId, importId, adopt: store.adopt });
+  // Each finished read is owed a compose, which folds every document read since the last one into the worksheet.
+  // `composedReads` counts the finished reads covered by the last compose that started.
+  const [readsDone, setReadsDone] = useState(0);
+  const composedReads = useRef(0);
   const docs = useDocuments({
     clientId,
     importId,
@@ -60,7 +64,7 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
     state,
     refresh: store.refresh,
     adopt: store.adopt,
-    compose: chat.compose,
+    onReadDone: () => setReadsDone((n) => n + 1),
   });
   const reading = docs.read.running || filesReading(state, new Date()).length > 0;
   const busy = reading || chat.pending !== null || chat.undoing !== null;
@@ -99,6 +103,14 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
   useEffect(() => {
     if (isClosed && startedOpen) bannerRef.current?.focus();
   }, [isClosed, startedOpen]);
+
+  // The owed compose starts once nothing else runs (a reply, an Undo, a read), so reads that finish meanwhile share
+  // it. They stay owed until it actually starts: a request begun since this render keeps them owed until that one
+  // ends. One that starts and then fails isn't retried: the next read's compose folds its documents in too.
+  useEffect(() => {
+    if (busy || isClosed || composedReads.current === readsDone) return;
+    if (chat.compose()) composedReads.current = readsDone;
+  }, [busy, isClosed, readsDone, chat]);
 
   async function finish() {
     setFinishing(true);

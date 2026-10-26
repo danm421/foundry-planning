@@ -154,7 +154,7 @@ function held(answer: Route) {
 }
 
 function renderScreen(state: FactFinderState) {
-  return render(<FactFinderScreen clientId="c1" importId="i1" initialState={state} initialFiles={FILES} hasCoClient />);
+  return render(<FactFinderScreen clientId="c1" importId="i1" initialState={state} initialFiles={FILES} />);
 }
 
 /** Narrow = the screen is below 1100 px, as `(max-width: 1099px)` reports it. */
@@ -260,6 +260,50 @@ describe("the fact finder screen", () => {
     expect(within(chat()).getByText("Built Accounts and Family from schwab-june.pdf.")).toBeInTheDocument();
     expect(net.posts("read")).toHaveLength(1);
     expect(net.posts("turn")).toHaveLength(1);
+  });
+
+  it("a read that finishes while a reply runs is composed once the reply lands", async () => {
+    // Both documents failed their last read, so the screen reads them only on Retry, and the advisor retries them mid-reply.
+    const failed: FFFileReading = { status: "failed", startedAt: AT, reason: "Couldn't read this document — try again." };
+    let latest = worked({ readings: { f1: failed, f2: failed }, worksheet: { tables: [ACCOUNTS, FAMILY], composedFileIds: [] } });
+    const reads = ["f1", "f2"];
+    const reply = held(() => ({ ...latest, version: latest.version + 1, transcript: [...latest.transcript, replied("a1", "Matched.")] }));
+    const net = stubServer(latest, {
+      read: () => {
+        const fileId = reads.shift()!;
+        latest = { ...latest, version: latest.version + 1, readings: { ...latest.readings, [fileId]: READ } };
+        net.set(latest);
+        const frames: ReadFrame[] = [
+          { type: "file", fileId, fileName: `${fileId}.pdf`, status: "done", rows: 1 },
+          { type: "done", summary: "Read 1 document.", caveats: [], version: latest.version },
+        ];
+        return sse(frames);
+      },
+      turn: (server, body) =>
+        (body as { mode?: string }).mode === "compose"
+          ? { ...server, version: server.version + 1, worksheet: { ...server.worksheet, composedFileIds: ["f1", "f2"] } }
+          : reply.route(server, body),
+    });
+    const user = userEvent.setup();
+    const files: FFScreenFile[] = [...FILES, { id: "f2", name: "fidelity-401k.pdf", documentType: "auto" }];
+    render(<FactFinderScreen clientId="c1" importId="i1" initialState={latest} initialFiles={files} />);
+
+    await user.click(screen.getByRole("button", { name: "Match all to plan" }));
+    await waitFor(() => expect(net.posts("turn")).toEqual([{ message: "Match every table to the plan." }]));
+    // Two reads finish while the reply runs: nothing can fold them in yet.
+    await user.click(screen.getByRole("button", { name: "Retry reading schwab-june.pdf" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Retry reading schwab-june.pdf" })).toBeNull());
+    await user.click(screen.getByRole("button", { name: "Retry reading fidelity-401k.pdf" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Retry reading fidelity-401k.pdf" })).toBeNull());
+    expect(net.posts("read")).toHaveLength(2);
+    expect(net.posts("turn")).toHaveLength(1);
+
+    // The reply lands: one compose folds both documents in, and nothing runs after it.
+    act(() => reply.release());
+    await waitFor(() => expect(net.posts("turn")).toEqual([{ message: "Match every table to the plan." }, { mode: "compose" }]));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Match all to plan" })).toBeEnabled());
+    await waitFor(() => expect(within(chat()).getByText("Matched.")).toBeInTheDocument());
+    expect(net.posts("turn")).toHaveLength(2);
   });
 
   it("Finish import asks first, then shows the closed banner", async () => {

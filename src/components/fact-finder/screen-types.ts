@@ -15,8 +15,6 @@ export interface FactFinderScreenProps {
   importId: string;
   initialState: FactFinderState;
   initialFiles: FFScreenFile[];
-  /** Whether the plan already has a co-client (their family member exists) — the save leaves out lines that name one the import isn't adding. */
-  hasCoClient: boolean;
   /** Files in the client's vault, offered in the upload box. */
   clientDocuments?: ClientDocumentView[];
 }

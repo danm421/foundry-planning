@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { db } from "@/db";
-import { clientImports, familyMembers } from "@/db/schema";
+import { clientImports } from "@/db/schema";
 import { FactFinderScreen } from "@/components/fact-finder/fact-finder-screen";
 import { FinishedImportNotice } from "@/components/fact-finder/finished-import-notice";
 import { requireClientPageAccess } from "@/lib/clients/page-access";
@@ -56,14 +56,8 @@ export default async function FactFinderPage({ params }: PageProps) {
   }
   const saved = isSavedFactFinder(payloadJson);
 
-  const [files, coClient, clientDocuments] = await Promise.all([
+  const [files, clientDocuments] = await Promise.all([
     listLiveFiles(importId),
-    // The save's own test for "the plan has a co-client": their family member exists (a person ref resolves to it).
-    db
-      .select({ id: familyMembers.id })
-      .from(familyMembers)
-      .where(and(eq(familyMembers.clientId, clientId), eq(familyMembers.role, "spouse")))
-      .limit(1),
     // A saved import has no upload box to offer them in.
     saved ? [] : listClientDocuments(clientId, firmId),
   ]);
@@ -74,7 +68,6 @@ export default async function FactFinderPage({ params }: PageProps) {
       importId={importId}
       initialState={readFactFinderState(payloadJson)}
       initialFiles={files.map((f) => ({ id: f.id, name: f.originalFilename, documentType: f.documentType }))}
-      hasCoClient={coClient.length > 0}
       clientDocuments={clientDocuments}
     />
   );

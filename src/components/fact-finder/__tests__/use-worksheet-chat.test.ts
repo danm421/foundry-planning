@@ -91,12 +91,16 @@ describe("useWorksheetChat", () => {
     const fresh = withReply(emptyFactFinderState());
     const { result, adopt, fetchMock } = renderChat(streamOf({ type: "done", factFinder: fresh, turnId: "a1" }));
 
-    await act(() => result.current.compose());
+    let started = false;
+    act(() => {
+      started = result.current.compose();
+    });
 
+    expect(started).toBe(true);
     const init = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(init[0]).toBe(TURN_URL);
     expect(JSON.parse(String(init[1].body))).toEqual({ mode: "compose" });
-    expect(adopt).toHaveBeenCalledWith(fresh);
+    await waitFor(() => expect(adopt).toHaveBeenCalledWith(fresh));
   });
 
   it("compose is silent when nothing comes back changed", async () => {
@@ -104,21 +108,42 @@ describe("useWorksheetChat", () => {
     const same = emptyFactFinderState();
     const { result, adopt } = renderChat(live.response);
 
-    let run!: Promise<void>;
     act(() => {
-      run = result.current.compose();
+      result.current.compose();
     });
     // Running, but with no message of the advisor's to show.
     expect(result.current.pending).toBe("");
 
-    await act(async () => {
+    act(() => {
       live.write(sse({ type: "done", factFinder: same, turnId: null }));
       live.close();
-      await run;
     });
+    await waitFor(() => expect(result.current.pending).toBeNull());
     expect(adopt).toHaveBeenCalledWith(same);
     expect(result.current.error).toBeNull();
-    expect(result.current.pending).toBeNull();
+  });
+
+  it("compose while a reply is running doesn't start, and says so", async () => {
+    const live = liveStream();
+    const { result, fetchMock } = renderChat(live.response);
+
+    let sent!: Promise<boolean>;
+    act(() => {
+      sent = result.current.send("one");
+    });
+    let started = true;
+    act(() => {
+      started = result.current.compose();
+    });
+    expect(started).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.current.pending).toBe("one");
+
+    act(() => {
+      live.write(sse({ type: "done", factFinder: emptyFactFinderState(), turnId: null }));
+      live.close();
+    });
+    expect(await sent).toBe(true);
   });
 
   it("an error frame shows its message", async () => {

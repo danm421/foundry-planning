@@ -135,7 +135,6 @@ function renderScreen(state: FactFinderState, files: FFScreenFile[] = FILES, cli
       importId="i1"
       initialState={state}
       initialFiles={files}
-      hasCoClient
       clientDocuments={clientDocuments}
     />,
   );

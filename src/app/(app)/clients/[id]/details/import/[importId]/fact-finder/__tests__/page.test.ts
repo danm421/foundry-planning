@@ -44,10 +44,9 @@ function selectReturning(result: unknown[]) {
   query.from = query.where = query.orderBy = query.limit = () => query;
   return query;
 }
-/** The page's selects in order: the import row, then (only when it gets that far) the co-client's family member. */
-function selects(imp: unknown[], coClient?: unknown[]) {
+/** The page's one select: the import row. */
+function selects(imp: unknown[]) {
   vi.mocked(db.select).mockReturnValueOnce(selectReturning(imp) as never);
-  if (coClient) vi.mocked(db.select).mockReturnValueOnce(selectReturning(coClient) as never);
 }
 const run = () => FactFinderPage({ params: Promise.resolve({ id: "c1", importId: "i1" }) });
 
@@ -72,7 +71,7 @@ beforeEach(() => {
 
 describe("fact finder page", () => {
   it("hands the screen the fact finder and the files without their storage address", async () => {
-    selects([{ status: "draft", payloadJson: PAYLOAD }], [{ id: "fm2" }]);
+    selects([{ status: "draft", payloadJson: PAYLOAD }]);
     const el = (await run()) as ReactElement<FactFinderScreenProps>;
 
     expect(requireClientPageAccess).toHaveBeenCalledWith("c1");
@@ -84,22 +83,15 @@ describe("fact finder page", () => {
       importId: "i1",
       initialState: readFactFinderState(PAYLOAD),
       initialFiles: [{ id: "f1", name: "hendricks-fact-finder.pdf", documentType: "auto" }],
-      hasCoClient: true,
       clientDocuments: [DOCUMENT],
     });
     expect(el.props.initialState.version).toBe(4);
     expect(JSON.stringify(el.props)).not.toContain("blob.example");
   });
 
-  it("tells the screen the plan has no co-client when there is no co-client family member", async () => {
-    selects([{ status: "draft", payloadJson: PAYLOAD }], []);
-    const el = (await run()) as ReactElement<FactFinderScreenProps>;
-    expect(el.props.hasCoClient).toBe(false);
-  });
-
   it("opens a statement-chat draft from before the switch as a fact finder import, its old chat ignored", async () => {
     const legacy = { chat: { surface: "chat", turns: [{ role: "user", text: "Add the Schwab IRA" }] } };
-    selects([{ status: "review", payloadJson: legacy }], []);
+    selects([{ status: "review", payloadJson: legacy }]);
     const el = (await run()) as ReactElement<FactFinderScreenProps>;
     expect(el.type).toBe(FactFinderScreen);
     expect(el.props.initialState).toEqual(emptyFactFinderState());
@@ -108,7 +100,7 @@ describe("fact finder page", () => {
 
   it("offers none of the client's documents on a saved import", async () => {
     const saved = { factFinder: { ...emptyFactFinderState(), version: 6, closed: CLOSED } };
-    selects([{ status: "committed", payloadJson: saved }], []);
+    selects([{ status: "committed", payloadJson: saved }]);
     const el = (await run()) as ReactElement<FactFinderScreenProps>;
     expect(el.type).toBe(FactFinderScreen);
     expect(el.props.clientDocuments).toEqual([]);
@@ -147,7 +139,7 @@ describe("fact finder page", () => {
     vi.mocked(requireClientPageAccess).mockResolvedValueOnce({
       client: {}, firmId: "org_1", permission: "edit", access: "shared",
     } as never);
-    selects([{ status: "draft", payloadJson: PAYLOAD }], []);
+    selects([{ status: "draft", payloadJson: PAYLOAD }]);
     expect(((await run()) as ReactElement).type).toBe(FactFinderScreen);
   });
 
