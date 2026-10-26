@@ -18,6 +18,7 @@ import { BENEFICIARY_REQUIRED_MESSAGE, is529Account } from "@/lib/accounts/is-52
 import { CATEGORY_OPTIONS, SUB_TYPE_OPTIONS } from "@/lib/accounts/category-labels";
 import type { GrowthSource } from "@/lib/investments/allocation";
 import type { AccountOwner } from "@/engine/ownership";
+import { defaultRmdEnabled } from "@/engine/rmd";
 import MatchColumn from "./match-column";
 import { accountPickerOption, type PickerAccount } from "./account-picker-option";
 import DiffPreview from "./diff-preview";
@@ -566,7 +567,11 @@ export default function ReviewStepAccounts({
                     <label className="flex h-9 cursor-pointer items-center gap-2 text-[13px] text-ink-2">
                       <input
                         type="checkbox"
-                        checked={account.rmdEnabled ?? false}
+                        checked={
+                          account.rmdEnabled ??
+                          // Unset on a new row = what the commit will write.
+                          (!existingId && defaultRmdEnabled(resolveAccountCategory(account), account.subType ?? "other"))
+                        }
                         onChange={(e) => updateField(i, "rmdEnabled", e.target.checked)}
                         className="h-4 w-4 rounded border-hair bg-card-2 text-accent focus:ring-2 focus:ring-accent/25"
                       />

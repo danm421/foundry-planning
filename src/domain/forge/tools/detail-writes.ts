@@ -346,7 +346,10 @@ const accountFields = {
     .optional()
     .describe("annual growth rate, e.g. 0.05; null inherits the category default"),
   growthSource: z.string().optional().describe("'default' to inherit, else 'custom' uses growthRate"),
-  rmdEnabled: z.boolean().optional().describe("whether required minimum distributions apply"),
+  rmdEnabled: z
+    .boolean()
+    .optional()
+    .describe("whether required minimum distributions apply; omit on create to default ON for every retirement account except a Roth IRA or HSA"),
   titlingType: z.string().optional().describe("legal titling, e.g. 'jtwros' or 'individual'"),
   modelPortfolioId: z.string().optional().describe("firm model-portfolio id driving the asset mix"),
   tickerPortfolioId: z.string().optional().describe("firm fund (ticker) portfolio id driving the asset mix"),

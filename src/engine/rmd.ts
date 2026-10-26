@@ -69,3 +69,18 @@ export const RMD_ELIGIBLE_SUB_TYPES = new Set([
 export function isRmdEligibleSubType(subType: string): boolean {
   return RMD_ELIGIBLE_SUB_TYPES.has(subType);
 }
+
+/** Retirement sub-types that never take lifetime RMDs. */
+const NO_RMD_RETIREMENT_SUB_TYPES = new Set(["roth_ira", "hsa"]);
+
+/**
+ * RMD default for an account that arrives without the account form — a
+ * statement import or a Forge/fact-finder write. Wider than
+ * `isRmdEligibleSubType`: every retirement account except a Roth IRA or an HSA
+ * starts with RMDs on, so a pension, 457(b), cash-balance or deferred-comp plan
+ * the reader filed under `other` no longer lands with them silently off.
+ */
+export function defaultRmdEnabled(category: string | null | undefined, subType: string): boolean {
+  if (isRmdEligibleSubType(subType)) return true;
+  return category === "retirement" && !NO_RMD_RETIREMENT_SUB_TYPES.has(subType);
+}

@@ -112,6 +112,22 @@ d("accounts-writes core", () => {
     // Empty-string custodian / last4 collapse to null (the `|| null` Task 13 deferred).
     expect(res.data.custodian).toBeNull();
     expect(res.data.accountNumberLast4).toBeNull();
+    expect(res.data.rmdEnabled).toBe(false);
+  });
+
+  // The Forge and fact finder omit the flag; a pension filed under "other"
+  // must still land with RMDs on.
+  it("create retirement with rmdEnabled omitted → RMDs on", async () => {
+    const res = await createAccountForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: { name: "Core test pension", category: "retirement", owner: "client" },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    createdIds.push(res.data.id);
+    expect(res.data.rmdEnabled).toBe(true);
   });
 
   it("create business → {ok:true} and a child default-checking cash account is auto-provisioned", async () => {

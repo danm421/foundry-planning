@@ -21,6 +21,7 @@ import {
 import { validateTrustOnlyEntityOwners } from "@/lib/portal/validate-trust-owners";
 import { recordCreate } from "@/lib/audit/record-helpers";
 import { isPortalVisibleCategory } from "@/lib/portal/account-visibility";
+import { defaultRmdEnabled } from "@/engine/rmd";
 
 export const dynamic = "force-dynamic";
 
@@ -135,6 +136,7 @@ export async function POST(req: Request): Promise<Response> {
           subType: (body.subType ?? "other") as typeof accounts.$inferInsert.subType,
           value: body.value ?? "0",
           accountNumberLast4: body.last4 ?? null,
+          rmdEnabled: defaultRmdEnabled(body.category, body.subType ?? "other"),
         })
         .returning();
       insertedId = row.id;

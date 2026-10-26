@@ -31,6 +31,7 @@ import { findImportTargetName } from "@/lib/imports/plan-builder-core";
 import { scenarioChangesToBaseWrites } from "@/lib/scenario/scenario-changes-to-base-writes";
 import { applyScenarioChanges } from "@/engine/scenario/applyChanges";
 import { runProjection } from "@/engine";
+import { defaultRmdEnabled } from "@/engine/rmd";
 import {
   assertEntitiesInClient,
   assertAccountsInClient,
@@ -969,7 +970,9 @@ async function enrichAddAccount(
   const fkError = await assertAccountFks(ctx.clientId, ctx.firmId, parsed.data);
   if (fkError) return { ...base, summary: fkError };
 
-  const details = newRowLines("account", parsed.data);
+  // The approval card shows the RMD default the core will write.
+  const rmdEnabled = parsed.data.rmdEnabled ?? defaultRmdEnabled(parsed.data.category, parsed.data.subType);
+  const details = newRowLines("account", { ...parsed.data, rmdEnabled });
   // deriveFromHoldings is NOT a column on accountCreateSchema (the core mass-
   // assigns it on update / it drives the post-write sync), so the schema strips
   // it — read the flag off the RAW args for the cascade line.

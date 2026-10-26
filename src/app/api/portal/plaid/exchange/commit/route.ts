@@ -28,6 +28,7 @@ import {
 } from "@/lib/plaid/transactions-sync";
 import { redactPlaidError } from "@/lib/plaid/errors";
 import { isFirmSynced } from "@/lib/accounts/linked-source";
+import { defaultRmdEnabled } from "@/engine/rmd";
 
 export const dynamic = "force-dynamic";
 
@@ -332,6 +333,7 @@ export async function POST(req: Request): Promise<Response> {
             subType: d.subType as (typeof accountSubTypeEnum.enumValues)[number],
             value: (d.balance ?? 0).toFixed(2),
             accountNumberLast4: d.mask ?? null,
+            rmdEnabled: defaultRmdEnabled(d.category, d.subType),
             plaidItemId: body.itemId,
             plaidAccountId: d.plaidAccountId,
           })

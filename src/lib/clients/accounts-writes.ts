@@ -80,6 +80,7 @@ import {
   synthesizeLegacyAccountOwners,
 } from "@/lib/ownership";
 import { accountCreateSchema } from "@/lib/schemas/accounts";
+import { defaultRmdEnabled } from "@/engine/rmd";
 import { validateInheritedIraFields } from "@/lib/accounts/inherited-ira";
 import { businessCashChild } from "@/lib/accounts/business-cash-child";
 import { AddBusinessInputSchema, mapBusinessTypeToSubType } from "@/lib/schemas/accounts-business";
@@ -311,7 +312,10 @@ export async function createAccountForClient(args: {
         rothValue: p.rothValue,
         // null = inherit the default growth rate for this category from plan_settings.
         growthRate: p.growthRate == null ? null : String(p.growthRate),
-        rmdEnabled: p.rmdEnabled,
+        // The account form always sends the flag; a Forge, fact-finder or API
+        // write that omits it gets RMDs on for any retirement account but a
+        // Roth IRA or HSA.
+        rmdEnabled: p.rmdEnabled ?? defaultRmdEnabled(category, p.subType),
         countsTowardAum: p.countsTowardAum,
         priorYearEndValue: p.priorYearEndValue == null ? null : String(p.priorYearEndValue),
         inheritedDeathYear: p.inheritedDeathYear ?? null,

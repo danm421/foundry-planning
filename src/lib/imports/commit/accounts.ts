@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 
 import { accountOwners, accounts, lifeInsurancePolicies, sourceEnum } from "@/db/schema";
-import { isRmdEligibleSubType } from "@/engine/rmd";
+import { defaultRmdEnabled } from "@/engine/rmd";
 import { is529Account } from "@/lib/accounts/is-529";
 import { businessCashChild } from "@/lib/accounts/business-cash-child";
 import { MAX_MARGIN_INTEREST_RATE } from "@/lib/accounts/margin-validation";
@@ -204,12 +204,11 @@ export async function commitAccounts(
           growthSource: row.growthSource ?? "default",
           modelPortfolioId: row.modelPortfolioId ?? null,
           tickerPortfolioId: row.tickerPortfolioId ?? null,
-          // RMDs default ON for pre-tax retirement sub-types when the
-          // extraction didn't capture an explicit flag — matches the
-          // add-account form and quick-start wizard. Roth/non-retirement off.
+          // RMDs default ON for every retirement account but a Roth IRA or HSA
+          // when the review step left the flag unset (`defaultRmdEnabled`).
           // A 529 never takes one, whatever an older payload claims: the review
           // step hides the control, so an inherited `true` would be invisible.
-          rmdEnabled: is529 ? false : row.rmdEnabled ?? isRmdEligibleSubType(subType),
+          rmdEnabled: is529 ? false : row.rmdEnabled ?? defaultRmdEnabled(category, subType),
           ...(edu529 ?? {}),
           deriveFromHoldings: guard.deriveFromHoldings,
           notes: guard.note,

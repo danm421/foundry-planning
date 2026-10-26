@@ -18,7 +18,7 @@ describe("accountCreateSchema parity with inline route coercion", () => {
       expect(r.data.basis).toBe("0");
       expect(r.data.rothValue).toBe("0");
       expect(r.data.growthRate).toBeNull();
-      expect(r.data.rmdEnabled).toBe(false);
+      expect(r.data.rmdEnabled).toBeUndefined();
       expect(r.data.priorYearEndValue).toBeNull();
       expect(r.data.growthSource).toBe("default");
       expect(r.data.modelPortfolioId).toBeNull();
@@ -204,9 +204,11 @@ describe("accountCreateSchema parity with inline route coercion", () => {
 
   // ── boolean / passthrough business fields ───────────────────────────────────
 
-  it("rmdEnabled coerces / defaults false", () => {
+  // Unset stays unset: createAccountForClient fills the RMD default, which
+  // needs the category.
+  it("rmdEnabled coerces / stays unset when omitted", () => {
     expect(accountCreateSchema.parse({ ...base, rmdEnabled: true }).rmdEnabled).toBe(true);
-    expect(accountCreateSchema.parse(base).rmdEnabled).toBe(false);
+    expect(accountCreateSchema.parse(base).rmdEnabled).toBeUndefined();
   });
 
   it("countsTowardAum defaults false on create", () => {

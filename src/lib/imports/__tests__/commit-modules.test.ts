@@ -477,15 +477,16 @@ describe("commitAccounts", () => {
       accounts: [
         { name: "Trad IRA", category: "retirement", subType: "traditional_ira", owner: "client", match: { kind: "new" } },
         { name: "Roth IRA", category: "retirement", subType: "roth_ira", owner: "client", match: { kind: "new" } },
+        { name: "Cash Balance Plan", category: "retirement", subType: "other", owner: "client", match: { kind: "new" } },
       ],
     };
     await commitAccounts(tx, payload, ctx);
     const accountInserts = callsForTable(calls, "accounts").filter((c) => c.op === "insert");
-    expect(accountInserts).toHaveLength(2);
-    const trad = (accountInserts[0] as { values: Record<string, unknown> }).values;
-    const roth = (accountInserts[1] as { values: Record<string, unknown> }).values;
+    expect(accountInserts).toHaveLength(3);
+    const [trad, roth, pension] = accountInserts.map((c) => (c as { values: Record<string, unknown> }).values);
     expect(trad.rmdEnabled).toBe(true);
     expect(roth.rmdEnabled).toBe(false);
+    expect(pension.rmdEnabled).toBe(true);
   });
 
   describe("529 / education_savings", () => {

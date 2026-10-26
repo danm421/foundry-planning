@@ -66,6 +66,7 @@ import {
   goalYearWindow,
 } from "@/lib/intake/goal-rows";
 import { intakeFallbackSubType } from "@/lib/intake/account-types";
+import { defaultRmdEnabled } from "@/engine/rmd";
 import { intakeNoteBody } from "@/lib/intake/note-body";
 import { readFormForFirm } from "@/lib/intake/queries";
 import { prospectHouseholdOwner } from "@/lib/intake/prospect-owner";
@@ -571,6 +572,7 @@ async function applySectionsToClient(
   // is both the column default and the pre-picker behaviour.
   if (sections.includes("accounts")) {
     for (const account of payload.accounts) {
+      const subType = account.subType ?? intakeFallbackSubType(account.category);
       const [row] = await tx
         .insert(accounts)
         .values({
@@ -578,10 +580,11 @@ async function applySectionsToClient(
           scenarioId,
           name: account.name,
           category: account.category,
-          subType: account.subType ?? intakeFallbackSubType(account.category),
+          subType,
           value: String(account.value),
           basis: String(account.basis ?? 0),
           custodian: account.custodian ?? null,
+          rmdEnabled: defaultRmdEnabled(account.category, subType),
           source: "manual",
         })
         .returning({ id: accounts.id });

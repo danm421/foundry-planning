@@ -144,7 +144,8 @@ export const accountCreateSchema = z
     value: decOrZeroOptional.default("0"),
     basis: decOrZeroOptional.default("0"),
     rothValue: decOrZeroOptional.default("0"),
-    rmdEnabled: z.boolean().optional().default(false),
+    // Unset → `defaultRmdEnabled(category, subType)` in createAccountForClient.
+    rmdEnabled: z.boolean().optional(),
     inheritedHeirDisabled: z.boolean().optional().default(false),
     countsTowardAum: z.boolean().optional().default(false),
     growthSource: z.string().optional().default("default"),

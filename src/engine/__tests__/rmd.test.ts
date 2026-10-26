@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateRMD, getRmdStartAge, isRmdEligibleSubType } from "../rmd";
+import { calculateRMD, defaultRmdEnabled, getRmdStartAge, isRmdEligibleSubType } from "../rmd";
 
 describe("getRmdStartAge", () => {
   it("returns 73 for birth year 1951-1959", () => {
@@ -101,5 +101,23 @@ describe("isRmdEligibleSubType", () => {
   it("returns false for hsa and the retirement catch-all", () => {
     expect(isRmdEligibleSubType("hsa")).toBe(false);
     expect(isRmdEligibleSubType("other")).toBe(false);
+  });
+});
+
+describe("defaultRmdEnabled", () => {
+  // Imports file pensions, 457(b)s and cash-balance plans under `other`.
+  it("is on for every retirement account but a Roth IRA or HSA", () => {
+    expect(defaultRmdEnabled("retirement", "traditional_ira")).toBe(true);
+    expect(defaultRmdEnabled("retirement", "401k")).toBe(true);
+    expect(defaultRmdEnabled("retirement", "other")).toBe(true);
+    expect(defaultRmdEnabled("retirement", "roth_ira")).toBe(false);
+    expect(defaultRmdEnabled("retirement", "hsa")).toBe(false);
+  });
+
+  it("keeps the sub-type rule when the category is missing, and is off outside retirement", () => {
+    expect(defaultRmdEnabled(undefined, "401k")).toBe(true);
+    expect(defaultRmdEnabled("taxable", "brokerage")).toBe(false);
+    expect(defaultRmdEnabled("taxable", "other")).toBe(false);
+    expect(defaultRmdEnabled("education_savings", "529")).toBe(false);
   });
 });
