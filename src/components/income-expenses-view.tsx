@@ -1099,7 +1099,7 @@ function IncomeDialog({
             )}
           </FormRow>
 
-          {/* The money row: what it pays, when in the year, and how it grows. */}
+          {/* The money row: what it pays, how it grows, and when in the year. */}
           <FormRow>
             {hasSchedule ? (
               <ScheduleAmountSlot annualAmount={editing?.annualAmount ?? 0} onView={() => setActiveTab("schedule")} />
@@ -1111,7 +1111,6 @@ function IncomeDialog({
                 <CurrencyInput id="inc-amount" name="annualAmount" required defaultValue={editing?.annualAmount ?? 0} />
               </div>
             )}
-            <PaymentMonthSelect id="inc-payment-month" value={paymentMonth} onChange={setPaymentMonth} />
             {!hasSchedule && (
               <div className="col-span-2">
                 <CustomOrInflationField
@@ -1127,6 +1126,7 @@ function IncomeDialog({
                 />
               </div>
             )}
+            <PaymentMonthSelect id="inc-payment-month" value={paymentMonth} onChange={setPaymentMonth} />
           </FormRow>
 
           {(!hasSchedule || deferredSingle) && (
@@ -1622,7 +1622,7 @@ function ExpenseDialog({
             </FormRow>
           )}
 
-          {/* The money row: what it costs, when in the year, and how it grows. */}
+          {/* The money row: what it costs, how it grows, and when in the year. */}
           <FormRow>
             {hasSchedule ? (
               <ScheduleAmountSlot annualAmount={editing?.annualAmount ?? 0} onView={() => setActiveTab("schedule")} />
@@ -1646,7 +1646,6 @@ function ExpenseDialog({
                 )}
               </div>
             )}
-            <PaymentMonthSelect id="exp-payment-month" value={paymentMonth} onChange={setPaymentMonth} />
             {!hasSchedule && (
               <div className="col-span-2">
                 <CustomOrInflationField
@@ -1662,6 +1661,7 @@ function ExpenseDialog({
                 />
               </div>
             )}
+            <PaymentMonthSelect id="exp-payment-month" value={paymentMonth} onChange={setPaymentMonth} />
           </FormRow>
 
           {/* Expense flags — one row, the same place on every expense type. */}
