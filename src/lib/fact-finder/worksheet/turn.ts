@@ -179,6 +179,8 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
   // A compose turn's request is the model's message, but no advisor turn is
   // stored; its files are marked composed when it commits.
   let human: string;
+  /** What the model is asked: the advisor's words, plus the table a Match names — by id, as its title is document text. */
+  let asked: string;
   const composed: TurnOp[] = [];
   if (mode === "compose") {
     const request = composeRequest(start, ctx.files);
@@ -189,9 +191,13 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
       return noReply(await updateFactFinder(scope, (fresh) => applyTurnOps(fresh, composed, { by: "chat", now: iso(), newId: ctx.newId })));
     }
     human = request.message;
+    asked = human;
   } else {
     if (!args.message) throw new Error("A message is required.");
     human = redactSsns(args.message).text;
+    const tableId = args.match?.tableId;
+    const named = tableId !== undefined && start.worksheet.tables.some((t) => t.id === tableId);
+    asked = named ? `${human}\n\nThe table: ${tableId}.` : human;
   }
 
   const model = (args.model ?? (await chatModel("full"))).bindTools(WS_TOOL_DEFS);
@@ -206,7 +212,7 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
   const messages: BaseMessage[] = [
     new SystemMessage(worksheetSystemPrompt(working, ctx.files)),
     ...transcriptToMessages(start.transcript),
-    new HumanMessage(human),
+    new HumanMessage(asked),
   ];
 
   // Up to MAX tool calls, then one closing round: once the cap is reached the

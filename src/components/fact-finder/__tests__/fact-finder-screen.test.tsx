@@ -218,7 +218,7 @@ describe("the fact finder screen", () => {
     expect(screen.getByRole("dialog", { name: "Documents & chat" })).toBeInTheDocument();
   });
 
-  it("Match to plan sends the table's message", async () => {
+  it("Match to plan sends a fixed message naming the table by id — its AI-written title never goes to the model as the advisor's words", async () => {
     const answer = (server: FactFinderState, body: unknown): FactFinderState => {
       const { message } = body as { message: string };
       return { ...server, version: server.version + 1, transcript: [...server.transcript, said(`u${server.version}`, message)] };
@@ -230,7 +230,7 @@ describe("the fact finder screen", () => {
     renderScreen(worked());
 
     await user.click(within(tableCard("Accounts")).getByRole("button", { name: "Match to plan" }));
-    await waitFor(() => expect(net.posts("turn")).toEqual([{ message: 'Match the "Accounts" table to the plan.', match: { tableId: "t1" } }]));
+    await waitFor(() => expect(net.posts("turn")).toEqual([{ message: "Match this table to the plan.", match: { tableId: "t1" } }]));
     // While the reply runs, nothing else can be matched.
     expect(within(tableCard("Family")).getByRole("button", { name: "Match to plan" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Match all to plan" })).toBeDisabled();
@@ -240,7 +240,7 @@ describe("the fact finder screen", () => {
     await user.click(screen.getByRole("button", { name: "Match all to plan" }));
     await waitFor(() =>
       expect(net.posts("turn")).toEqual([
-        { message: 'Match the "Accounts" table to the plan.', match: { tableId: "t1" } },
+        { message: "Match this table to the plan.", match: { tableId: "t1" } },
         { message: "Match every table to the plan.", match: {} },
       ]),
     );
