@@ -8,6 +8,7 @@ vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn().mockResolvedValue({ userI
 vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: vi.fn().mockResolvedValue({ ok: true, access: "own", permission: "edit", firmId: "firm1" }) }));
 vi.mock("@/lib/imports/authz", async (orig) => ({ ...(await orig<typeof import("@/lib/imports/authz")>()), requireImportAccess: vi.fn() }));
 vi.mock("@/lib/rate-limit", () => ({ checkImportRateLimit: vi.fn().mockResolvedValue({ allowed: true }) }));
+vi.mock("@/lib/authz", async (orig) => ({ ...(await orig<typeof import("@/lib/authz")>()), requireActiveSubscription: vi.fn() }));
 
 const mockGenerateClientToken = vi.fn();
 vi.mock("@vercel/blob/client", () => ({
@@ -17,6 +18,7 @@ vi.mock("@vercel/blob/client", () => ({
 import { POST } from "../route";
 import { requireImportAccess } from "@/lib/imports/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
+import { ForbiddenError as SubscriptionForbiddenError, requireActiveSubscription } from "@/lib/authz";
 
 const ctx = { params: Promise.resolve({ id: "c1", importId: "imp1" }) };
 const CLOSED = { at: "2026-10-15T12:00:00.000Z", by: "u1", saved: [], leftOut: [] };
@@ -32,6 +34,7 @@ const importWith = (payloadJson: unknown) => ({ id: "imp1", payloadJson }) as Aw
 beforeEach(() => {
   vi.clearAllMocks();
   mockGenerateClientToken.mockResolvedValue("client-token");
+  vi.mocked(requireActiveSubscription).mockResolvedValue(undefined);
 });
 
 describe("POST /imports/[importId]/files/upload-token", () => {
@@ -52,6 +55,13 @@ describe("POST /imports/[importId]/files/upload-token", () => {
     const res = await POST(ask({ filename: "stmt.pdf" }), ctx);
     expect(res.status).toBe(409);
     expect((await res.json()).error).toBe(SAVE_CLOSED_MESSAGE);
+    expect(mockGenerateClientToken).not.toHaveBeenCalled();
+  });
+
+  it("refuses a lapsed subscription with 403 and issues nothing", async () => {
+    vi.mocked(requireActiveSubscription).mockRejectedValueOnce(new SubscriptionForbiddenError("Active subscription required"));
+    const res = await POST(ask({ filename: "stmt.pdf" }), ctx);
+    expect(res.status).toBe(403);
     expect(mockGenerateClientToken).not.toHaveBeenCalled();
   });
 

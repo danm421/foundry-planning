@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import { requireActiveSubscription, ForbiddenError as SubscriptionForbiddenError } from "@/lib/authz";
 import {
   requireImportAccess,
   ForbiddenError,
@@ -20,13 +21,15 @@ const BodySchema = z.object({ filename: z.string().trim().min(1).max(255) });
 
 /** Step 1 of every import upload (`@/lib/uploads/staged-upload`): a one-file
  *  Blob token, capped at the import size limit, for the files route to read
- *  back. It runs the files route's checks so a refused import never stages. */
+ *  back. It runs the files route's checks so a refused import never stages,
+ *  plus the subscription check every new write route takes. */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; importId: string }> },
 ) {
   try {
     const firmId = await requireOrgId();
+    await requireActiveSubscription();
     const { userId } = await auth();
     if (!userId) throw new UnauthorizedError();
     const { id: clientId, importId } = await params;
@@ -91,6 +94,11 @@ export async function POST(
     }
     if (err instanceof ForbiddenError) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    // `@/lib/authz`'s ForbiddenError (subscription) is a different class from
+    // `@/lib/imports/authz`'s — a lapsed subscription is a 403, never a 500.
+    if (err instanceof SubscriptionForbiddenError) {
+      return NextResponse.json({ error: err.message }, { status: 403 });
     }
     if (err instanceof NotFoundError) {
       return NextResponse.json({ error: err.message }, { status: 404 });
