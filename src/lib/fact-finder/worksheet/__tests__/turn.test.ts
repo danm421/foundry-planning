@@ -32,7 +32,8 @@ import { runLeftovers } from "../../placement/leftovers-run";
 import { loadExistingRecords, resolveBaseCaseScenarioId } from "../../records/load";
 import { emptyExistingRecords } from "../../records/types";
 import type { reviewFactFinder } from "../../review";
-import { cellValue, emptyFactFinderState } from "../../state";
+import { cellValue, emptyFactFinderState, readFactFinderState } from "../../state";
+import { worksheetFromStaging } from "../from-staging";
 import { documentPages } from "../page-text";
 import { WS_TOOL_DEFS } from "../tools";
 import { MAX_WS_TOOL_CALLS, WS_TURN_BUDGET_MS, runWorksheetTurn, type TurnModel, type WorksheetTurnArgs } from "../turn";
@@ -215,7 +216,7 @@ describe("runWorksheetTurn — compose", () => {
     store.state = fixture({ readings: { f2: done("freeform") } });
     vi.mocked(documentPages).mockResolvedValue(["Acme Corp pays her $4,200 a month."]);
     const fake = scripted(callTool("read_document", { document: "notes.docx" }), new AIMessage("The notes show an Acme Corp paycheck."));
-    await compose(fake.model);
+    const result = await compose(fake.model);
 
     const asked = fake.seen[0].at(-1)!;
     expect(asked).toBeInstanceOf(HumanMessage);
@@ -225,6 +226,29 @@ describe("runWorksheetTurn — compose", () => {
     expect(text(fake.seen[1].at(-1)!)).toContain("Acme Corp pays her $4,200 a month.");
     expect(store.state!.worksheet.composedFileIds).toEqual(["f2"]);
     expect(lines()).toEqual(["tool", "assistant: The notes show an Acme Corp paycheck."]); // compose adds no user turn
+    expect(result).toMatchObject({ turnId: null, ops: {} }); // no table changed, so no Undo: the composed mark isn't one
+    expect(store.state!.undo).toEqual({});
+  });
+
+  it("undoing a compose reply takes back its table and keeps its documents composed", async () => {
+    // The first compose: the worksheet is still derived from staging.
+    store.files = [file("f1", "schwab-june.pdf"), file("f2", "notes.docx")];
+    const s = fixture({ readings: { f1: done("statement"), f2: done("freeform") } });
+    store.state = { ...s, worksheet: worksheetFromStaging(s) };
+    const started = store.state;
+    const fake = scripted(callTool("create_table", { title: "Paychecks", columns: [{ header: "Employer" }] }), new AIMessage("Added a Paychecks table."));
+    const result = await compose(fake.model);
+
+    expect(store.state!.worksheet.composedFileIds).toEqual(["f1", "f2"]);
+    expect(result.ops).toEqual({ createTable: 1 }); // the composed mark isn't counted
+    const undone = applyOps(store.state!, [{ op: "restoreSnapshots", snapshots: store.state!.undo[result.turnId!] }], {
+      by: "advisor",
+      now: AT,
+      newId,
+    });
+    const reread = readFactFinderState({ factFinder: undone }).worksheet; // as the next read sees it
+    expect(reread.tables).toEqual(started.worksheet.tables);
+    expect(reread.composedFileIds).toEqual(["f1", "f2"]); // so the next compose doesn't redo them
   });
 });
 

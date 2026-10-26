@@ -240,7 +240,13 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
     const snapshots = diffSnapshots(fresh, afterOps).map(
       (snap): FFSnapshot => (snap.kind === "row" ? { ...snap, after: locationOf(next, snap.rowId) } : snap),
     );
-    if (!sameJson(fresh.worksheet, next.worksheet)) snapshots.push({ kind: "worksheet", before: fresh.worksheet, after: next.worksheet });
+    // Composed marks stay out of Undo: undoing a compose reply takes back its tables but keeps its
+    // documents composed, so the next compose doesn't redo them. `before` is never `derived` — a
+    // derived worksheet is rebuilt on read with no composed marks.
+    if (!sameJson(fresh.worksheet.tables, next.worksheet.tables)) {
+      const before = { tables: fresh.worksheet.tables, composedFileIds: next.worksheet.composedFileIds };
+      snapshots.push({ kind: "worksheet", before, after: next.worksheet });
+    }
     const transcript = [...next.transcript, ...userTurns, ...toolTurns, assistant(reply)];
     const undo = snapshots.length > 0 ? keepLastUndos({ ...next.undo, [assistantId]: snapshots }, transcript) : next.undo;
     return { ...next, transcript, undo };
@@ -251,7 +257,7 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
     factFinder,
     turnId,
     toolCallCount,
-    ops: turnId ? countOps(replayed.map((t) => t.op)) : {},
+    ops: turnId ? countOps(ops.map((t) => t.op)) : {}, // the reply's own ops: a composed mark isn't one
   });
   if (!committed || propose.length === 0) return result(written);
 
