@@ -2,6 +2,7 @@
 import { REVIEW_THRESHOLD } from "@/lib/entity-extraction/confidence";
 import { FACT_FINDER_SECTIONS, fixedLabelsOf, type FFSection } from "./schema";
 import type { FactFinderState, FFCell, FFCellValue, FFRow } from "./types";
+import { worksheetFromStaging } from "./worksheet/from-staging";
 
 export { REVIEW_THRESHOLD };
 
@@ -29,7 +30,8 @@ export function emptyFactFinderState(): FactFinderState {
   for (const s of FACT_FINDER_SECTIONS) {
     sections[s.id] = fixedLabelsOf(s).map((label) => emptyFixedRow(s.id, label));
   }
-  return { version: 0, sections, removed: [], unassignedHoldings: [], transcript: [], undo: {}, readings: {}, worksheet: { tables: [], composedFileIds: [] } };
+  const rest = { version: 0, sections, removed: [], unassignedHoldings: [], transcript: [], undo: {}, readings: {} };
+  return { ...rest, worksheet: worksheetFromStaging(rest) };
 }
 
 /** The insert values that make a new import a fact finder import: its slice marks it, and it reads positions because the fact finder reviews them. */
@@ -53,7 +55,7 @@ export function readFactFinderState(payloadJson: unknown): FactFinderState {
       .map((label) => emptyFixedRow(s.id, label));
     sections[s.id] = missing.length > 0 ? [...rows, ...missing] : rows;
   }
-  return {
+  const rest: Omit<FactFinderState, "worksheet"> = {
     version: stored.version ?? 0,
     sections,
     removed: stored.removed ?? [],
@@ -63,9 +65,9 @@ export function readFactFinderState(payloadJson: unknown): FactFinderState {
     readings: stored.readings ?? {},
     ...(stored.changeSet ? { changeSet: stored.changeSet } : {}),
     ...(stored.closed ? { closed: stored.closed } : {}),
-    worksheet: stored.worksheet ?? { tables: [], composedFileIds: [], derived: true },
     ...(stored.applied ? { applied: stored.applied } : {}),
   };
+  return { ...rest, worksheet: stored.worksheet && !stored.worksheet.derived ? stored.worksheet : worksheetFromStaging(rest) };
 }
 
 export function isBlank(value: FFCellValue | undefined): boolean {

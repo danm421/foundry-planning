@@ -183,9 +183,19 @@ describe("worksheet in the stored state", () => {
     expect(s.applied).toEqual(applied);
   });
 
-  it("gives a slice stored before the worksheet a derived, empty worksheet", () => {
+  it("an import stored without a worksheet shows its staging rows as default tables", () => {
     const old: Partial<ReturnType<typeof emptyFactFinderState>> = emptyFactFinderState();
     delete old.worksheet;
-    expect(readFactFinderState({ factFinder: old }).worksheet).toEqual({ tables: [], composedFileIds: [], derived: true });
+    old.sections = { ...old.sections, cash: [{ id: "c1", sourceFileIds: ["f1"], cells: { accountName: { value: "Checking", by: "document" } } }] };
+    const ws = readFactFinderState({ factFinder: old }).worksheet;
+    expect(ws.derived).toBe(true);
+    expect(ws.tables.map((t) => [t.id, t.rows.length])).toEqual([["t-accounts", 1]]);
+  });
+
+  it("a derived worksheet stored by an earlier write is rebuilt from staging on read", () => {
+    const stored = emptyFactFinderState();
+    stored.worksheet = { tables: [], composedFileIds: [], derived: true };
+    stored.sections.cash = [{ id: "c1", sourceFileIds: [], cells: { accountName: { value: "Checking", by: "advisor" } } }];
+    expect(readFactFinderState({ factFinder: stored }).worksheet.tables.map((t) => t.id)).toEqual(["t-accounts"]);
   });
 });
