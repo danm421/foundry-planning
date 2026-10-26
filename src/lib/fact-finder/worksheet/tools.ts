@@ -281,6 +281,44 @@ const WORKSHEET_TOOL_DEFS = [
 /** OpenAI-style function defs for the worksheet chat, bound with `bindTools`. */
 export const WS_TOOL_DEFS = [...WORKSHEET_TOOL_DEFS, ...STAGING_TOOL_DEFS];
 
+/** What each tool does, for the advisor's line when a call is refused. */
+const REFUSED: Record<string, string> = {
+  create_table: "create that table",
+  update_table: "change that table",
+  remove_table: "remove that table",
+  set_columns: "change those columns",
+  fill_from_staging: "fill in that table",
+  add_rows: "add those rows",
+  set_cells: "change those values",
+  remove_rows: "remove those rows",
+  read_table: "read that table",
+  read_document: "read that document",
+  look_at_pages: "look at those pages",
+  read_plan: "read the plan",
+  stage_rows: "get those rows ready for the plan",
+  propose_plan_update: "propose those plan changes",
+  set_cell: "change that value",
+  clear_cell: "clear that value",
+  add_row: "add that row",
+  remove_row: "remove that row",
+  restore_row: "restore that row",
+  merge_rows: "merge those rows",
+  set_link: "link that row to the plan",
+  set_holding: "change that holding",
+  remove_holding: "remove that holding",
+  move_holding: "move that holding",
+  add_holding: "add that holding",
+  read_section: "read that section",
+};
+
+/**
+ * The advisor's line for a refused call, in plain words. The reason itself goes to the model only: it's written
+ * for the model, with row ids and tool words the advisor never sees.
+ */
+export function refusedLine(tool: string): string {
+  return `Couldn't ${Object.hasOwn(REFUSED, tool) ? REFUSED[tool] : "do that"}.`;
+}
+
 const id = z.string().min(1).max(100);
 /** A worksheet row id: fill_from_staging's holding rows join three ids (`table/row/holding`). */
 const rowId = z.string().min(1).max(400);
@@ -415,13 +453,13 @@ function bindingOf(text: string | undefined): WsBinding | undefined {
 const column = (columnId: string, header: string, bind: WsBinding | undefined): WsColumn => ({ id: columnId, header, ...(bind ? { bind } : {}) });
 const columnList = (columns: readonly WsColumn[]) => columns.map((c) => c.header).join(", ");
 
-/** What a summary calls a row: its first non-empty value, or its id. */
+/** What a summary calls a row: its first non-empty value — never its id, which the advisor never sees. */
 function rowName(state: FactFinderState, table: WsTable, row: WsRow): string {
   for (const c of table.columns) {
     const text = cellText(state, row, c).text;
     if (text) return quote(text);
   }
-  return `row ${row.id}`;
+  return "a row";
 }
 
 function setColumns(state: FactFinderState, a: z.infer<typeof ARGS.set_columns>, ctx: WsToolContext): WsToolOutcome {
@@ -590,8 +628,8 @@ function stageRows(state: FactFinderState, a: z.infer<typeof ARGS.stage_rows>, c
     }
   }
   check(state, ops, ctx);
-  const parts = [`${plural(a.rows.length, "row")} from ${table.title}`, ...(added > 0 ? [`${added} new`] : []), ...(holdings > 0 ? [plural(holdings, "holding")] : [])];
-  const summary = `Staged ${parts.join(", ")}`;
+  const extras = [...(added > 0 ? [`${added} new`] : []), ...(holdings > 0 ? [plural(holdings, "holding")] : [])];
+  const summary = `Got ${plural(a.rows.length, "row")} from ${table.title} ready for the plan${extras.length > 0 ? ` (${extras.join(", ")})` : ""}`;
   return { ops, summary, result: fenceUntrusted(`Done: ${summary}.\n${lines.join("\n")}`) };
 }
 

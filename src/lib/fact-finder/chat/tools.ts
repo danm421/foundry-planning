@@ -4,9 +4,10 @@ import { redactSsns } from "@/lib/extraction/redact-ssn";
 import { applyOps, type ClientOp } from "../ops";
 import { FACT_FINDER_SECTIONS, findColumn, findSection, isListLike, type FFSection } from "../schema";
 import { locateRow, rowLabel } from "../state";
-import { HOLDING_FIELDS, type FactFinderState, type FFHolding, type FFRow } from "../types";
+import { HOLDING_FIELDS, type FactFinderState, type FFHolding, type FFHoldingField, type FFRow } from "../types";
+import { holdingText, valueText } from "../worksheet/render";
 import { fenceUntrusted } from "./fence";
-import { formatValue, holdingName, quote, sectionView } from "./view";
+import { holdingName, quote, sectionView } from "./view";
 
 /**
  * The chat's tools (spec § 5). Each validates its arguments, turns them into
@@ -249,6 +250,19 @@ function edit(state: FactFinderState, ops: ClientOp[], ctx: ToolContext, describ
   return { ops, summary, result: fenceUntrusted(`Done: ${summary}.`) };
 }
 
+/** A holding field as the worksheet's Holdings table heads it. */
+const HOLDING_FIELD_LABELS: Record<FFHoldingField, string> = {
+  ticker: "Ticker",
+  name: "Name",
+  shares: "Shares",
+  price: "Price",
+  marketValue: "Market value",
+  costBasis: "Cost basis",
+};
+
+/** A value for a tool line, as the worksheet shows it ($95,000.00): text in quotes, nothing as "(empty)". */
+const shownValue = (text: string, isText: boolean) => (text === "" ? "(empty)" : isText ? quote(text) : text);
+
 const sameName = (a: string, b: string) => redactSsns(a).text.trim().toLowerCase() === redactSsns(b).text.trim().toLowerCase();
 
 /** The import's file named `name` (trimmed, any case); a miss throws naming the files there are. */
@@ -269,7 +283,9 @@ async function dispatch(name: string, raw: unknown, state: FactFinderState, ctx:
       const ops: ClientOp[] = [{ op: "setCell", sectionId: section.id, rowId: row.id, columnId: a.columnId, value: a.value }];
       return edit(state, ops, ctx, (next) => {
         const stored = next.sections[section.id].find((r) => r.id === row.id)?.cells[a.columnId]?.value ?? null;
-        return `Set ${findColumn(section.id, a.columnId)?.label} on ${quote(rowLabel(section, row))} to ${formatValue(stored)}`;
+        const column = findColumn(section.id, a.columnId);
+        const value = shownValue(valueText(stored, column?.kind ?? "text"), typeof stored === "string");
+        return `Set ${column?.label} on ${quote(rowLabel(section, row))} to ${value}`;
       });
     }
     case "clear_cell": {
@@ -355,7 +371,8 @@ async function dispatch(name: string, raw: unknown, state: FactFinderState, ctx:
       return edit(state, ops, ctx, (next) => {
         const stored = next.sections[section.id].find((r) => r.id === row.id)?.holdings?.find((h) => h.id === holding.id);
         const where = quote(rowLabel(section, row));
-        return `Set ${a.field} of ${holdingName(holding)} in ${where} to ${formatValue(stored?.[a.field] ?? null)}`;
+        const value = shownValue(stored ? holdingText(stored, a.field) : "", a.field === "ticker" || a.field === "name");
+        return `Set ${HOLDING_FIELD_LABELS[a.field]} of ${holdingName(holding)} in ${where} to ${value}`;
       });
     }
     case "remove_holding": {

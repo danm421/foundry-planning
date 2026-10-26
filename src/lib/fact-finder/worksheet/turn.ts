@@ -20,7 +20,7 @@ import { WorksheetOpError } from "./ops";
 import { documentPages } from "./page-text";
 import { planView } from "./plan-view";
 import { worksheetSystemPrompt } from "./prompt";
-import { WS_TOOL_DEFS, runWorksheetTool, type WsToolContext } from "./tools";
+import { WS_TOOL_DEFS, refusedLine, runWorksheetTool, type WsToolContext } from "./tools";
 import { applyTurnOps, type TurnOp } from "./turn-ops";
 
 /**
@@ -205,9 +205,10 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
         summary = outcome.summary;
         messages.push(new ToolMessage({ tool_call_id: callId, content: outcome.result }));
       } catch (err) {
-        // It can quote document text (a row's label, a file name), so it's fenced like every tool result.
+        // It can quote document text (a row's label, a file name), so it's fenced like every tool result. It's
+        // written for the model (row ids, tool words): the advisor's line says only what didn't go through.
         const msg = redactSsns(err instanceof Error ? err.message : "That tool call failed.").text;
-        summary = `Couldn't do that: ${msg}`;
+        summary = refusedLine(call.name);
         messages.push(new ToolMessage({ tool_call_id: callId, content: fenceUntrusted(JSON.stringify({ error: msg })) }));
       }
       toolTurns.push({ id: ctx.newId(), role: "tool", tool: call.name, summary, at: iso() });

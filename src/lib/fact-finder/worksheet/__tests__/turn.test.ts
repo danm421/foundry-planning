@@ -182,7 +182,7 @@ describe("runWorksheetTurn — an advisor turn", () => {
 
     expect(heardBeforeRound2).toEqual(["Created the table Paychecks"]); // as it happens, not at the commit
     expect(heard).toEqual(store.state!.transcript.flatMap((t) => (t.role === "tool" ? [t.summary] : [])));
-    expect(heard).toEqual(["Created the table Paychecks", expect.stringMatching(/^Couldn't do that: There's no table "no-such-table"/)]);
+    expect(heard).toEqual(["Created the table Paychecks", "Couldn't read that table."]);
   });
 });
 
@@ -421,8 +421,23 @@ describe("runWorksheetTurn — safety checks kept from the old turn", () => {
     expect(store.state!.transcript[1]).toMatchObject({
       role: "tool",
       tool: "set_cell",
-      summary: 'Couldn\'t do that: "abc" isn\'t a valid Current value (a dollar amount).',
+      summary: "Couldn't change that value.",
     });
+  });
+
+  it("a refused call's line is plain words — no ids, no tool words — while the model still gets the whole reason", async () => {
+    const fake = scripted(
+      callTool("set_link", { rowId: "c1", kind: "existing", recordId: "acct-9" }),
+      callTool("stage_rows", { table: "t-accounts", rows: [{ row: "w9", section: "cash", cells: {} }] }, "call-2"),
+      new AIMessage("Joint Checking has no plan record to link to."),
+    );
+    await turn("Match the Accounts table to the plan.", fake.model);
+
+    const toolLines = store.state!.transcript.flatMap((t) => (t.role === "tool" ? [t.summary] : []));
+    expect(toolLines).toEqual(["Couldn't link that row to the plan.", "Couldn't get those rows ready for the plan."]);
+    const results = fake.seen[2].filter((m) => m instanceof ToolMessage).map(text);
+    expect(results[0]).toContain('has no candidates to link to — use kind \\"new\\"');
+    expect(results[1]).toContain('Accounts has no row \\"w9\\".');
   });
 
   it("a tool error that quotes a document's name reaches the model fenced, its SSN and fence markers scrubbed", async () => {

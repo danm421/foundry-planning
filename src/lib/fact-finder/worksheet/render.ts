@@ -18,7 +18,8 @@ function fmt(value: number, minimumFractionDigits: number, maximumFractionDigits
   }).format(value);
 }
 
-function formatValue(value: FFCellValue | undefined, kind: ColumnKind): string {
+/** A staging value as the worksheet shows it: money as $12,500.00, a percent as 4.5%, a check box as Yes / No. */
+export function valueText(value: FFCellValue | undefined, kind: ColumnKind): string {
   if (value === null || value === undefined || value === "") return "";
   if (kind === "check" && typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "number") {
@@ -29,16 +30,17 @@ function formatValue(value: FFCellValue | undefined, kind: ColumnKind): string {
   return String(value);
 }
 
-function holdingText(h: FFHolding, field: string): string {
+/** One field of a holding as the worksheet shows it. */
+export function holdingText(h: FFHolding, field: string): string {
   switch (field) {
     case "shares":
-      return formatValue(h.shares, "number");
+      return valueText(h.shares, "number");
     case "price":
       return h.price === null ? "" : fmt(h.price, 2, 4, true);
     case "marketValue":
-      return formatValue(h.marketValue, "money");
+      return valueText(h.marketValue, "money");
     case "costBasis":
-      return formatValue(h.costBasis, "money");
+      return valueText(h.costBasis, "money");
     default: {
       const v = field === "ticker" ? h.ticker : field === "name" ? h.name : null;
       return v ?? "";
@@ -63,7 +65,7 @@ export function cellText(state: FactFinderState, row: WsRow, column: WsColumn): 
   }
   const cell = stagingRow.cells[bind.columnId];
   const kind = section?.columns.find((c) => c.id === bind.columnId)?.kind ?? "text";
-  return bound(formatValue(cell?.value, kind), cellNeedsCheck(cell));
+  return bound(valueText(cell?.value, kind), cellNeedsCheck(cell));
 }
 
 function escapeMd(text: string): string {

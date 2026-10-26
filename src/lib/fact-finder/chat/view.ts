@@ -17,7 +17,7 @@ export function quote(text: string): string {
   return JSON.stringify(redactSsns(text).text);
 }
 
-export function formatValue(value: FFCellValue): string {
+function formatValue(value: FFCellValue): string {
   return typeof value === "string" ? quote(value) : String(value);
 }
 

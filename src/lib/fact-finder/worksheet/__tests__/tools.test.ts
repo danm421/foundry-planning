@@ -5,7 +5,7 @@ import type { OpContext } from "../../ops";
 import { emptyFactFinderState } from "../../state";
 import type { FactFinderState, FFCell, FFCellValue, FFRow } from "../../types";
 import { cellText } from "../render";
-import { MAX_LOOK_PAGES, WS_TOOL_DEFS, runWorksheetTool, type WsToolContext, type WsToolOutcome } from "../tools";
+import { MAX_LOOK_PAGES, WS_TOOL_DEFS, refusedLine, runWorksheetTool, type WsToolContext, type WsToolOutcome } from "../tools";
 import { applyTurnOps } from "../turn-ops";
 import type { WsTable } from "../types";
 
@@ -106,6 +106,12 @@ describe("WS_TOOL_DEFS", () => {
     expect(Object.keys(shape)).toHaveLength(14 + staging.length);
     expect(Object.keys(shape)).not.toContain("reread_document");
   });
+
+  it("gives every tool a plain line for when a call is refused", () => {
+    for (const d of WS_TOOL_DEFS) expect(refusedLine(d.function.name)).toMatch(/^Couldn't [a-z ]+\.$/);
+    for (const d of WS_TOOL_DEFS) expect(refusedLine(d.function.name)).not.toBe("Couldn't do that.");
+    expect(refusedLine("no_such_tool")).toBe("Couldn't do that.");
+  });
 });
 
 describe("runWorksheetTool", () => {
@@ -158,6 +164,11 @@ describe("runWorksheetTool", () => {
     const out = await runWorksheetTool("set_cells", { table: "t-holdings", row: "wh2", cells: { Shares: "6", ticker: "" } }, state, context());
     expect(out.ops).toEqual([{ layer: "ws", op: { op: "setCells", tableId: "t-holdings", rowId: "wh2", cells: { "h-shares": "6", "h-ticker": "" } } }]);
     expect(apply(state, out).worksheet.tables[1].rows[1].cells).toEqual({ "h-shares": "6" });
+  });
+
+  it("set_cells names a row left with no values in plain words, never by its id", async () => {
+    const out = await runWorksheetTool("set_cells", { table: "t-accounts", row: "w2", cells: { Account: "", Note: "" } }, fixture(), context());
+    expect(out.summary).toBe("Changed Account, Note on a row in Accounts");
   });
 
   it("set_cells on a bound holding field sets the staging holding", async () => {
@@ -288,6 +299,7 @@ describe("runWorksheetTool", () => {
     expect(next.sections.taxable[0]).toMatchObject({ id: "id-1", cells: { accountName: { value: "Old Brokerage", by: "chat" }, currentValue: { value: 1200 } } });
     expect(next.sections.taxable[0].holdings).toEqual([expect.objectContaining({ id: "id-2", ticker: "AAPL", shares: 5, by: "chat" })]);
     expect(next.worksheet.tables[1].rows[1].ref).toEqual({ rowId: "id-1", holdingId: "id-2" });
+    expect(out.summary).toBe("Got 1 row from Accounts ready for the plan (1 new, 1 holding)");
   });
 
   it("stage_rows on a referenced row sets cells instead of adding", async () => {

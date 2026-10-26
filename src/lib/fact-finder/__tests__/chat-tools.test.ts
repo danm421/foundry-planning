@@ -116,9 +116,9 @@ describe("runTool — cells and rows", () => {
   it("set_cell writes one cell through the schema and reports the stored value", async () => {
     const out = await runTool("set_cell", { rowId: "c1", columnId: "currentValue", value: "$13,000" }, fixture(), context());
     expect(out.ops).toEqual([{ op: "setCell", sectionId: "cash", rowId: "c1", columnId: "currentValue", value: "$13,000" }]);
-    expect(out.summary).toBe('Set Current value on "Joint Checking" to 13000');
+    expect(out.summary).toBe('Set Current value on "Joint Checking" to $13,000.00');
     expect(fenced(out.result)).toBe(true);
-    expect(out.result).toContain('Done: Set Current value on "Joint Checking" to 13000');
+    expect(out.result).toContain('Done: Set Current value on "Joint Checking" to $13,000.00');
     expect(applyOps(fixture(), out.ops, chat).sections.cash[0].cells.currentValue).toEqual({ value: 13000, by: "chat", pinned: true });
   });
 
@@ -239,11 +239,20 @@ describe("runTool — holdings", () => {
   it("set_holding and remove_holding find the holding's account by its id", async () => {
     const set = await runTool("set_holding", { holdingId: "h2", field: "shares", value: "12.5" }, fixture(), context());
     expect(set.ops).toEqual([{ op: "setHolding", sectionId: "taxable", rowId: "t1", holdingId: "h2", field: "shares", value: "12.5" }]);
-    expect(set.summary).toBe('Set shares of "BND" in "Joint Brokerage" to 12.5');
+    expect(set.summary).toBe('Set Shares of "BND" in "Joint Brokerage" to 12.5');
 
     const removed = await runTool("remove_holding", { holdingId: "h1" }, fixture(), context());
     expect(removed.ops).toEqual([{ op: "removeHolding", sectionId: "taxable", rowId: "t1", holdingId: "h1" }]);
     expect(removed.summary).toBe('Removed "VTI" from "Joint Brokerage"');
+  });
+
+  it("a holding's line names the field as the advisor reads it and shows money formatted, never a field id or a bare number", async () => {
+    const basis = await runTool("set_holding", { holdingId: "h1", field: "costBasis", value: 95000 }, fixture(), context());
+    expect(basis.summary).toBe('Set Cost basis of "VTI" in "Joint Brokerage" to $95,000.00');
+    const ticker = await runTool("set_holding", { holdingId: "h1", field: "ticker", value: "vtsax" }, fixture(), context());
+    expect(ticker.summary).toBe('Set Ticker of "VTI" in "Joint Brokerage" to "VTSAX"');
+    const owner = await runTool("set_cell", { rowId: "c1", columnId: "owner", value: "Joint" }, fixture(), context());
+    expect(owner.summary).toBe('Set Owner on "Joint Checking" to "Joint"');
   });
 
   it("move_holding gives an unassigned holding an account, or moves one between accounts", async () => {
