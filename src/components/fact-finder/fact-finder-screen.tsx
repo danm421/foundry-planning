@@ -134,7 +134,10 @@ export function FactFinderScreen({ clientId, importId, initialState, initialFile
     const table = state.worksheet.tables.find((t) => t.id === tableId);
     // The reply and its proposal land in the chat: show it.
     setPanelOpen(true);
-    void chat.send(table ? `Match the "${table.title}" table to the plan.` : "Match every table to the plan.");
+    void chat.send(
+      table ? `Match the "${table.title}" table to the plan.` : "Match every table to the plan.",
+      table ? { tableId: table.id } : {},
+    );
   }
 
   async function addAsNew(turn: ProposalTurn, line: ChangeLine) {

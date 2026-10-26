@@ -225,7 +225,7 @@ describe("the fact finder screen", () => {
     renderScreen(worked());
 
     await user.click(within(tableCard("Accounts")).getByRole("button", { name: "Match to plan" }));
-    await waitFor(() => expect(net.posts("turn")).toEqual([{ message: 'Match the "Accounts" table to the plan.' }]));
+    await waitFor(() => expect(net.posts("turn")).toEqual([{ message: 'Match the "Accounts" table to the plan.', match: { tableId: "t1" } }]));
     // While the reply runs, nothing else can be matched.
     expect(within(tableCard("Family")).getByRole("button", { name: "Match to plan" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Match all to plan" })).toBeDisabled();
@@ -234,7 +234,10 @@ describe("the fact finder screen", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Match all to plan" })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: "Match all to plan" }));
     await waitFor(() =>
-      expect(net.posts("turn")).toEqual([{ message: 'Match the "Accounts" table to the plan.' }, { message: "Match every table to the plan." }]),
+      expect(net.posts("turn")).toEqual([
+        { message: 'Match the "Accounts" table to the plan.', match: { tableId: "t1" } },
+        { message: "Match every table to the plan.", match: {} },
+      ]),
     );
   });
 
@@ -289,7 +292,7 @@ describe("the fact finder screen", () => {
     render(<FactFinderScreen clientId="c1" importId="i1" initialState={latest} initialFiles={files} />);
 
     await user.click(screen.getByRole("button", { name: "Match all to plan" }));
-    await waitFor(() => expect(net.posts("turn")).toEqual([{ message: "Match every table to the plan." }]));
+    await waitFor(() => expect(net.posts("turn")).toEqual([{ message: "Match every table to the plan.", match: {} }]));
     // Two reads finish while the reply runs: nothing can fold them in yet.
     await user.click(screen.getByRole("button", { name: "Retry reading schwab-june.pdf" }));
     await waitFor(() => expect(screen.queryByRole("button", { name: "Retry reading schwab-june.pdf" })).toBeNull());
@@ -300,7 +303,7 @@ describe("the fact finder screen", () => {
 
     // The reply lands: one compose folds both documents in, and nothing runs after it.
     act(() => reply.release());
-    await waitFor(() => expect(net.posts("turn")).toEqual([{ message: "Match every table to the plan." }, { mode: "compose" }]));
+    await waitFor(() => expect(net.posts("turn")).toEqual([{ message: "Match every table to the plan.", match: {} }, { mode: "compose" }]));
     await waitFor(() => expect(screen.getByRole("button", { name: "Match all to plan" })).toBeEnabled());
     await waitFor(() => expect(within(chat()).getByText("Matched.")).toBeInTheDocument());
     expect(net.posts("turn")).toHaveLength(2);

@@ -12,7 +12,7 @@ import { FactFinderNotFoundError, listLiveFiles, loadFactFinder, updateFactFinde
 import { runLeftovers } from "../placement/leftovers-run";
 import { loadBaseCaseRecords } from "../relink";
 import { reviewFactFinder } from "../review";
-import { sameJson } from "../state";
+import { locateRow, sameJson } from "../state";
 import type { FactFinderState, FFChatTurn, FFSnapshot } from "../types";
 import { composeRequest } from "./compose";
 import { lookAtPages } from "./look";
@@ -20,6 +20,7 @@ import { WorksheetOpError } from "./ops";
 import { documentPages } from "./page-text";
 import { planView } from "./plan-view";
 import { worksheetSystemPrompt } from "./prompt";
+import { rowInPlan } from "./render";
 import { WS_TOOL_DEFS, refusedLine, runWorksheetTool, type WsToolContext } from "./tools";
 import { applyTurnOps, type TurnOp } from "./turn-ops";
 
@@ -55,6 +56,8 @@ export interface WorksheetTurnArgs {
   mode: "advisor" | "compose";
   /** The advisor's words; required for "advisor". */
   message?: string;
+  /** "Match to plan" on a table (or, with no id, every table): its rows already in the plan are always proposed. */
+  match?: { tableId?: string };
   model?: TurnModel;
   toolContext?: Partial<WsToolContext>;
   /** A test seam. */
@@ -117,6 +120,13 @@ async function liveFilesContext(scope: FactFinderScope): Promise<WsToolContext> 
     planText: async () => planView(await loadBaseCaseRecords(scope.clientId)),
     newId: randomUUID,
   };
+}
+
+/** The live staging rows that rows of table `tableId` (every table when absent) show and the plan already has. */
+function rowsInPlan(state: FactFinderState, tableId: string | undefined): string[] {
+  return state.worksheet.tables
+    .filter((t) => tableId === undefined || t.id === tableId)
+    .flatMap((t) => t.rows.flatMap((r) => (r.ref && rowInPlan(state, r) && locateRow(state, r.ref.rowId) ? [r.ref.rowId] : [])));
 }
 
 /** `ops` applied to `state`, or null when one of them no longer applies. */
@@ -252,6 +262,12 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
     const undo = snapshots.length > 0 ? keepLastUndos({ ...next.undo, [assistantId]: snapshots }, transcript) : next.undo;
     return { ...next, transcript, undo };
   });
+
+  // A Match proposes its tables' rows already in the plan whatever the model chose, so the review says whether
+  // the plan still matches them ("Already up to date") or shows how it drifted.
+  if (committed && args.match) {
+    for (const rowId of rowsInPlan(written, args.match.tableId)) if (!propose.includes(rowId)) propose.push(rowId);
+  }
 
   const turnId = Object.hasOwn(written.undo, assistantId) ? assistantId : null;
   const result = (factFinder: FactFinderState): WorksheetTurnResult => ({

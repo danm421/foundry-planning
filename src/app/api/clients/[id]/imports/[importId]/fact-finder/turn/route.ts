@@ -1,7 +1,7 @@
 // src/app/api/clients/[id]/imports/[importId]/fact-finder/turn/route.ts
 import { formatUsage, inUsageScope, newUsageReport, totalTokensOf } from "@/lib/ai/usage";
 import { recordAudit } from "@/lib/audit";
-import { TURN_BUSY_MESSAGE, type TurnFrame } from "@/lib/fact-finder/api-types";
+import { TURN_BUSY_MESSAGE, type TurnBody, type TurnFrame } from "@/lib/fact-finder/api-types";
 import { factFinderGate, jsonResponse } from "@/lib/fact-finder/gate";
 import { FactFinderBusyError, FactFinderClosedError, FactFinderNotFoundError, loadFactFinder } from "@/lib/fact-finder/persist";
 import { filesReading } from "@/lib/fact-finder/reading-status";
@@ -29,9 +29,10 @@ export async function POST(request: Request, { params }: Params) {
   const { firmId, clientId, importId } = gate;
   const scope = { importId, clientId, firmId };
 
-  const body = (await request.json().catch(() => null)) as { message?: unknown; mode?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { message?: unknown; mode?: unknown; match?: unknown } | null;
   const mode = body?.mode === "compose" ? "compose" : "advisor";
   const message = typeof body?.message === "string" ? body.message.trim() : "";
+  const match = mode === "advisor" ? matchOf(body?.match) : undefined;
   if (mode === "advisor" && !message) return jsonResponse(400, { error: "A message is required." });
   if (message.length > MAX_MESSAGE_LENGTH) return jsonResponse(400, { error: "Message is too long." });
   if (filesReading(readFactFinderState(gate.payloadJson), new Date()).length > 0) {
@@ -55,7 +56,13 @@ export async function POST(request: Request, { params }: Params) {
       const usage = newUsageReport();
       try {
         const result = await inUsageScope(usage, () =>
-          runWorksheetTurn({ scope, mode, ...(mode === "advisor" && { message }), onProgress: (line) => send({ type: "progress", line }) }),
+          runWorksheetTurn({
+            scope,
+            mode,
+            ...(mode === "advisor" && { message }),
+            ...(match && { match }),
+            onProgress: (line) => send({ type: "progress", line }),
+          }),
         );
         console.log(`[fact-finder-turn] import ${importId}: ${formatUsage(usage)}`);
         await recordAudit({
@@ -90,6 +97,13 @@ export async function POST(request: Request, { params }: Params) {
       "x-accel-buffering": "no",
     },
   });
+}
+
+/** A Match to plan's `match` (`TurnBody`): the table it names, or `{}` for every table; anything else isn't one. */
+function matchOf(raw: unknown): TurnBody["match"] {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const { tableId } = raw as { tableId?: unknown };
+  return typeof tableId === "string" ? { tableId } : {};
 }
 
 async function errorFrame(err: unknown, scope: { importId: string; clientId: string; firmId: string }): Promise<TurnFrame> {

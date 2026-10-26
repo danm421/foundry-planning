@@ -30,8 +30,11 @@ export interface WorksheetChat {
   undoing: string | null;
   /** Why the last message or Undo didn't go through. */
   error: string | null;
-  /** True = sent and its reply adopted; false = not sent or it failed (`error` says why) and the composer keeps the text. */
-  send(message: string): Promise<boolean>;
+  /**
+   * True = sent and its reply adopted; false = not sent or it failed (`error` says why) and the composer keeps the text.
+   * `match`: the message is a "Match to plan" (`TurnBody`).
+   */
+  send(message: string, match?: TurnBody["match"]): Promise<boolean>;
   /**
    * Starts folding every document read but not yet composed into the worksheet; nothing shows when nothing comes
    * back changed. False = it didn't start, because a reply or an Undo is running; true = it started, and how it ends
@@ -123,7 +126,7 @@ export function useWorksheetChat({
     }
   }
 
-  const send = (message: string) => turn({ message }, message);
+  const send = (message: string, match?: TurnBody["match"]) => turn({ message, ...(match && { match }) }, message);
 
   function compose(): boolean {
     if (busy.current) return false;

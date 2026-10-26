@@ -36,6 +36,8 @@ export interface TurnBody {
   /** Required in "advisor" mode (the default); "compose" folds newly read documents into the worksheet. */
   message?: string;
   mode?: "advisor" | "compose";
+  /** Sent by "Match to plan": the table it names, or every table. Its rows already in the plan are always proposed. */
+  match?: { tableId?: string };
 }
 /**
  * One SSE frame of the turn stream: a tool line, the finished reply, or the error that ended it.

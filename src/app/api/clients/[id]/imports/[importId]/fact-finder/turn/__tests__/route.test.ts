@@ -109,6 +109,21 @@ describe("POST /fact-finder/turn", () => {
     expect(vi.mocked(recordAudit).mock.calls[0][0].metadata).toMatchObject({ mode: "compose" });
   });
 
+  it("passes a Match to plan's table through, and drops one that isn't a Match's shape", async () => {
+    for (const [match, expected] of [
+      [{ tableId: "t-accounts" }, { tableId: "t-accounts" }],
+      [{}, {}],
+      ["t-accounts", undefined],
+      [{ tableId: 7 }, {}],
+    ] as const) {
+      vi.mocked(runWorksheetTurn).mockClear();
+      await (await POST(post({ message: 'Match the "Accounts" table to the plan.', match }), params)).text();
+      expect(vi.mocked(runWorksheetTurn).mock.calls[0][0].match).toEqual(expected);
+    }
+    await (await POST(post({ mode: "compose", match: {} }), params)).text();
+    expect(vi.mocked(runWorksheetTurn).mock.calls.at(-1)![0].match).toBeUndefined();
+  });
+
   it("advisor mode without a message is a 400 before the stream", async () => {
     for (const body of [{ message: "   " }, {}, { mode: "advisor" }]) {
       const res = await POST(post(body), params);

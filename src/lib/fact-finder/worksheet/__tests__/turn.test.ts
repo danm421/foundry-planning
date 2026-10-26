@@ -406,6 +406,39 @@ describe("runWorksheetTurn — proposals", () => {
   });
 });
 
+describe("runWorksheetTurn — Match to plan", () => {
+  const changeSet: ChangeSet = { builtAtVersion: 5, builtAt: AT, lines: [], notices: [] };
+  const inPlan = { lineId: "c1", rowId: "c1", target: "account" as const, recordId: "acct-1", label: "Joint Checking", at: AT };
+  const match = (message: string, model: TurnModel, tableId?: string) =>
+    runWorksheetTurn({ ...args(message, model), match: tableId === undefined ? {} : { tableId } });
+
+  beforeEach(() => {
+    store.state = fixture({ applied: [inPlan] });
+    review.mockImplementation(async (_scope, state) => {
+      store.state = { ...state, version: state.version + 1, changeSet };
+      return { ok: true, changeSet, factFinder: store.state };
+    });
+  });
+
+  it("proposes the table's rows already in the plan though the model proposed nothing, so the review says whether the plan still matches", async () => {
+    await match('Match the "Accounts" table to the plan.', scripted(new AIMessage("Joint Checking is already in the plan.")).model, "t-accounts");
+
+    expect(review).toHaveBeenCalledTimes(1);
+    expect(review.mock.calls[0][2]).toMatchObject({ onlyRows: ["c1"] });
+    expect(store.state!.transcript.at(-1)).toEqual({ id: expect.any(String), role: "proposal", rowIds: ["c1"], at: AT });
+  });
+
+  it("adds them after the rows the model proposed; Match every table covers every table", async () => {
+    await match("Match every table to the plan.", scripted(callTool("propose_plan_update", { rows: ["w2"] }), new AIMessage("Here you go.")).model);
+    expect(review.mock.calls[0][2]).toMatchObject({ onlyRows: ["c2", "c1"] });
+  });
+
+  it("a message that isn't a Match adds none", async () => {
+    await turn("Is Joint Checking in the plan?", scripted(new AIMessage("Yes, it's already in the plan.")).model);
+    expect(review).not.toHaveBeenCalled();
+  });
+});
+
 describe("runWorksheetTurn — safety checks kept from the old turn", () => {
   it("shows a tool's error to the model inside the untrusted-data fence and applies nothing", async () => {
     const fake = scripted(callTool("set_cell", { rowId: "c1", columnId: "currentValue", value: "abc" }), new AIMessage("That isn't a dollar amount."));
