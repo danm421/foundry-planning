@@ -7,24 +7,25 @@ import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { addGift, removeGift, updateGift } from "@/lib/estate/estate-flow-gifts";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import {
-  isRevocableTagEligible,
-  buildRevocableTagMutations,
-} from "@/lib/solver/estate-levers";
-import {
   buildDissolveTrustMutations,
   buildRevertFundingMutation,
 } from "@/lib/solver/trust-levers";
 import { buildRemoveCharityMutations } from "@/lib/solver/charity-levers";
-import type { SolverTrustDraft } from "@/lib/solver/guided-trust";
+import { trustTypeLabel, type SolverTrustDraft } from "@/lib/solver/guided-trust";
+import type { GuidedTrustBatch } from "@/lib/solver/guided-trust-batch";
+import {
+  buildRevocableMembershipMutations,
+  buildRevocableRenameMutations,
+  revocableTrustRows,
+  type RevocableTrustRow,
+} from "@/lib/solver/revocable-trust-rows";
 import { currentTrustEntities, currentCharities } from "@/lib/solver/estate-current";
 import type { EstatePane, RailCharity, RailTrust } from "./solver-estate-rail";
 
 export interface EstateSummary {
-  rltEnabled: boolean;
-  taggedCount: number;
   /** Count of gifts that are active (not toggled off). */
   giftCount: number;
-  /** Existing (base) + scenario-added trusts. */
+  /** Existing (base) + scenario-added trusts, revocable living trusts included. */
   trustCount: number;
   /** Base + scenario-added charities. */
   charityCount: number;
@@ -40,20 +41,14 @@ interface Args {
 }
 
 export interface EstateEditor {
-  // Working tree, needed by the gift dialog, the trust form and the panes.
+  // Working tree, needed by the gift dialog, the wizard and the panes.
   clientData: ClientData;
   // ── Which pane the rail is showing ──
   selection: EstatePane;
+  /** Also drops `notice`: it is shown once, on the pane it was set for. */
   setSelection: (p: EstatePane) => void;
-  // ── RLT ──
-  enabled: boolean;
-  trustName: string;
-  eligible: Account[];
-  taggedIds: Set<string>;
-  toggleEnabled: (on: boolean) => void;
-  changeName: (name: string) => void;
-  toggleAccount: (id: string) => void;
-  selectAll: () => void;
+  /** One-time confirmation above a trust's editor after Add trust / Add funding. */
+  notice: { trustId: string; text: string } | null;
   // ── Gifts ──
   gifts: EstateFlowGift[];
   baseGiftIds: Set<string>;
@@ -67,17 +62,29 @@ export interface EstateEditor {
   taxInflationRate: number;
   annualExclusionByYear: ReturnType<typeof buildAnnualExclusionMap>;
   // ── Trusts ──
-  /** Every trust the working tree holds — base plan and scenario-added alike. */
+  /** Every trust entity the working tree holds — base plan and scenario-added alike. */
   railTrusts: RailTrust[];
-  addTrust: (mutations: SolverMutation[], draft: SolverTrustDraft) => void;
+  /** Every revocable living trust: base names plus names added in the working tree. */
+  railRevocableTrusts: RevocableTrustRow[];
+  /** Emits the wizard's batch and opens what it made. `fundingLabels` feed the
+   *  one-time "Added. Funding: …" notice. */
+  addTrust: (batch: GuidedTrustBatch, fundingLabels: string[]) => void;
+  /** Emits an existing trust's new funding and returns to its editor. */
+  addFunding: (
+    trustId: string,
+    mutations: SolverMutation[],
+    fundedOriginals: Account[],
+    labels: string[],
+  ) => void;
   removeTrust: (trust: EntitySummary) => void;
-  isMarried: boolean;
+  setRevocableMembership: (name: string, accountIds: ReadonlySet<string>) => void;
+  renameRevocableTrust: (from: string, to: string) => void;
+  removeRevocableTrust: (name: string) => void;
   // ── Charities ──
   railCharities: RailCharity[];
   addCharity: (name: string, charityType: "public" | "private") => void;
   updateCharity: (c: RailCharity) => void;
   removeCharity: (id: string) => void;
-  createCharity: (name: string, type: "public" | "private") => string;
   // ── Derived ──
   summary: EstateSummary;
 }
@@ -88,17 +95,13 @@ export function useSolverEstateEditor({
   baseGifts,
   onChange,
 }: Args): EstateEditor {
-  const accounts = baseClientData.accounts;
-  const eligible = useMemo(
-    () => accounts.filter(isRevocableTagEligible),
-    [accounts],
-  );
+  const [selection, setSelectionState] = useState<EstatePane>({ kind: "overview" });
+  const [notice, setNotice] = useState<EstateEditor["notice"]>(null);
 
-  const [selection, setSelection] = useState<EstatePane>({ kind: "overview" });
-
-  const [enabled, setEnabled] = useState(false);
-  const [trustName, setTrustName] = useState("Revocable Living Trust");
-  const [taggedIds, setTaggedIds] = useState<Set<string>>(new Set());
+  function setSelection(p: EstatePane) {
+    setNotice(null);
+    setSelectionState(p);
+  }
 
   // ── Planned gifts ──────────────────────────────────────────────────────────
   const [gifts, setGifts] = useState<EstateFlowGift[]>(() => baseGifts);
@@ -106,18 +109,66 @@ export function useSolverEstateEditor({
   const [editing, setEditing] = useState<EstateFlowGift | null>(null);
   const [adding, setAdding] = useState(false);
 
-  // ── Trusts ──────────────────────────────────────────────────────────────────
-  // `trusts` holds one draft per trust CREATED in this browser session. Its only
-  // job is `fundedOriginals` — the exact prior owners of each account the add
-  // form retitled — so a removal can hand them back untouched. The rail reads
-  // the working tree instead, which is why a base-plan trust needs no draft.
-  const [trusts, setTrusts] = useState<SolverTrustDraft[]>([]);
-  const isMarried = clientData.client.spouseDob != null;
+  /** Emit in order, and keep Planned gifts in step with every gift among them. */
+  function emit(mutations: SolverMutation[]) {
+    const upserts = new Map<string, EstateFlowGift | null>();
+    for (const m of mutations) {
+      onChange(m);
+      if (m.kind === "gift-upsert") upserts.set(m.id, m.value);
+    }
+    if (upserts.size === 0) return;
+    setGifts((gs) => {
+      let next = gs;
+      for (const [id, value] of upserts) {
+        if (!value) next = removeGift(next, id);
+        else next = next.some((g) => g.id === id) ? updateGift(next, value) : addGift(next, value);
+      }
+      return next;
+    });
+  }
 
-  function addTrust(mutations: SolverMutation[], draft: SolverTrustDraft) {
-    for (const m of mutations) onChange(m);
-    setTrusts((ts) => [...ts, draft]);
-    setSelection({ kind: "trust", id: draft.entity.id });
+  // ── Trusts ──────────────────────────────────────────────────────────────────
+  // `trusts` holds one draft per trust funded in this browser session — created
+  // by the wizard, or given more funding through Add funding. Its only job is
+  // `fundedOriginals`: the exact prior owners of each account retitled into the
+  // trust here, so a removal can hand them back untouched. The rail reads the
+  // working tree instead, which is why an unfunded base-plan trust needs no draft.
+  const [trusts, setTrusts] = useState<SolverTrustDraft[]>([]);
+
+  function addTrust(batch: GuidedTrustBatch, fundingLabels: string[]) {
+    emit(batch.mutations);
+    const { draft } = batch;
+    if (draft) setTrusts((ts) => [...ts, draft]);
+    if (batch.select.kind === "trust") {
+      setSelection({ kind: "trust", id: batch.select.id });
+      setNotice({
+        trustId: batch.select.id,
+        text: fundingLabels.length > 0 ? `Added. Funding: ${fundingLabels.join("; ")}` : "Added. Not funded yet.",
+      });
+    } else {
+      setSelection({ kind: "revocable", name: batch.select.name });
+    }
+  }
+
+  function addFunding(
+    trustId: string,
+    mutations: SolverMutation[],
+    fundedOriginals: Account[],
+    labels: string[],
+  ) {
+    emit(mutations);
+    const entity = (clientData.entities ?? []).find((e) => e.id === trustId);
+    if (fundedOriginals.length > 0 && entity) {
+      setTrusts((ts) =>
+        ts.some((t) => t.entity.id === trustId)
+          ? ts.map((t) =>
+              t.entity.id === trustId ? { ...t, fundedOriginals: [...t.fundedOriginals, ...fundedOriginals] } : t,
+            )
+          : [...ts, { entity, fundedOriginals }],
+      );
+    }
+    setSelection({ kind: "trust", id: trustId });
+    setNotice({ trustId, text: `Added funding: ${labels.join("; ")}` });
   }
 
   /**
@@ -127,15 +178,20 @@ export function useSolverEstateEditor({
    * trust's beneficiary list naming it, and a CLT's auto-emitted
    * remainder-interest gift.
    *
-   * A base-plan trust has no draft, which is the same thing as having funded
-   * nothing here: every account falls through to the lever's "return it to the
-   * grantor" rule, and `setTrusts` is a harmless no-op.
+   * A base-plan trust never funded here has no draft, which is the same thing
+   * as having funded nothing: every account falls through to the lever's
+   * "return it to the grantor" rule, and `setTrusts` is a harmless no-op.
+   *
+   * Planned gifts drops every gift the lever clears, so the list never shows a
+   * gift into a trust that is gone.
    */
   function removeTrust(trust: EntitySummary) {
     const entity = (clientData.entities ?? []).find((e) => e.id === trust.id) ?? trust;
     const draft = trusts.find((t) => t.entity.id === trust.id);
     const originals = new Map((draft?.fundedOriginals ?? []).map((a) => [a.id, a]));
+    const clearedGiftIds = new Set<string>();
     for (const m of buildDissolveTrustMutations(clientData, entity)) {
+      if (m.kind === "gift-upsert" && m.value === null) clearedGiftIds.add(m.id);
       // A trust funded in THIS session knows each account's exact prior owners.
       // Restoring them beats the lever's "return it to the grantor" rule, which
       // would hand a 50/50 joint account entirely to one spouse. Swapped in
@@ -150,7 +206,31 @@ export function useSolverEstateEditor({
       const original = m.kind === "account-upsert" ? originals.get(m.id) : undefined;
       onChange(original ? buildRevertFundingMutation(original, entity.id) : m);
     }
+    if (clearedGiftIds.size > 0) setGifts((gs) => gs.filter((g) => !clearedGiftIds.has(g.id)));
     setTrusts((ts) => ts.filter((t) => t.entity.id !== trust.id));
+    setSelection({ kind: "overview" });
+  }
+
+  // ── Revocable living trusts ─────────────────────────────────────────────────
+  // Not entities: an account joins one by carrying its name, so every write is
+  // an `account-upsert` on the WORKING tree's accounts.
+  const railRevocableTrusts = useMemo(
+    () => revocableTrustRows(baseClientData.accounts, clientData.accounts),
+    [baseClientData.accounts, clientData.accounts],
+  );
+
+  function setRevocableMembership(name: string, accountIds: ReadonlySet<string>) {
+    for (const m of buildRevocableMembershipMutations(clientData.accounts, name, accountIds)) onChange(m);
+  }
+
+  /** The pane validates `to` (non-blank, not another trust's name) before calling. */
+  function renameRevocableTrust(from: string, to: string) {
+    for (const m of buildRevocableRenameMutations(clientData.accounts, from, to)) onChange(m);
+    setSelection({ kind: "revocable", name: to.trim() });
+  }
+
+  function removeRevocableTrust(name: string) {
+    setRevocableMembership(name, new Set());
     setSelection({ kind: "overview" });
   }
 
@@ -184,7 +264,7 @@ export function useSolverEstateEditor({
       currentTrustEntities(clientData.entities).map((t) => ({
         id: t.id,
         name: t.name?.trim() || "Trust",
-        subType: t.trustSubType ? t.trustSubType.toUpperCase() : null,
+        label: trustTypeLabel(t),
         isBase: baseTrustIds.has(t.id),
       })),
     [clientData.entities, baseTrustIds],
@@ -224,21 +304,16 @@ export function useSolverEstateEditor({
     setEditing(null);
   }
 
-  /** Mint a charity external-beneficiary, emit its upsert, and return its id. */
-  function createCharity(name: string, type: "public" | "private"): string {
+  function addCharity(name: string, charityType: "public" | "private") {
+    const trimmed = name.trim();
+    if (!trimmed) return;
     const id = crypto.randomUUID();
     onChange({
       kind: "external-beneficiary-upsert",
       id,
-      value: { id, name, kind: "charity", charityType: type },
+      value: { id, name: trimmed, kind: "charity", charityType },
     });
-    return id;
-  }
-
-  function addCharity(name: string, charityType: "public" | "private") {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    setSelection({ kind: "charity", id: createCharity(trimmed, charityType) });
+    setSelection({ kind: "charity", id });
   }
 
   function updateCharity(c: RailCharity) {
@@ -262,64 +337,27 @@ export function useSolverEstateEditor({
     setSelection({ kind: "overview" });
   }
 
-  function apply(nextTagged: Set<string>, nextName: string) {
-    for (const m of buildRevocableTagMutations(accounts, nextTagged, nextName)) {
-      onChange(m);
-    }
-  }
-
-  function toggleEnabled(on: boolean) {
-    setEnabled(on);
-    // On enable: preserve the previous selection (user can refine before re-dispatch).
-    // On disable: clear the selection so every eligible account gets a null-clearing upsert.
-    const next = on ? taggedIds : new Set<string>();
-    if (!on) setTaggedIds(next);
-    apply(next, trustName);
-  }
-
-  function toggleAccount(id: string) {
-    const next = new Set(taggedIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setTaggedIds(next);
-    apply(next, trustName);
-  }
-
-  function selectAll() {
-    const next = new Set(eligible.map((a) => a.id));
-    setTaggedIds(next);
-    apply(next, trustName);
-  }
-
-  function changeName(name: string) {
-    setTrustName(name);
-    if (enabled) apply(taggedIds, name);
-  }
-
   const summary: EstateSummary = useMemo(() => {
     const giftCount = gifts.filter((g) => g.enabled !== false).length;
-    const trustCount = railTrusts.length;
+    const trustCount = railTrusts.length + railRevocableTrusts.length;
     const charityCount = railCharities.length;
     return {
-      rltEnabled: enabled,
-      taggedCount: taggedIds.size,
       giftCount,
       trustCount,
       charityCount,
-      isEmpty: !enabled && giftCount === 0 && trustCount === 0 && charityCount === 0,
+      isEmpty: giftCount === 0 && trustCount === 0 && charityCount === 0,
     };
-  }, [enabled, taggedIds, gifts, railTrusts, railCharities]);
+  }, [gifts, railTrusts, railRevocableTrusts, railCharities]);
 
   return {
     clientData,
-    selection, setSelection,
-    enabled, trustName, eligible, taggedIds,
-    toggleEnabled, changeName, toggleAccount, selectAll,
+    selection, setSelection, notice,
     gifts, baseGiftIds, toggleGift, upsertGift, deleteGift,
     editing, setEditing, adding, setAdding,
     taxInflationRate, annualExclusionByYear,
-    railTrusts, addTrust, removeTrust, isMarried,
-    railCharities, addCharity, updateCharity, removeCharity, createCharity,
+    railTrusts, railRevocableTrusts, addTrust, addFunding, removeTrust,
+    setRevocableMembership, renameRevocableTrust, removeRevocableTrust,
+    railCharities, addCharity, updateCharity, removeCharity,
     summary,
   };
 }

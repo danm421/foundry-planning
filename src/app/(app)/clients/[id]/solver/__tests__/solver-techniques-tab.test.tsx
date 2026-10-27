@@ -538,13 +538,13 @@ describe("SolverTechniquesTab", () => {
         onEstateOpen={onEstateOpen}
       />,
     );
-    // The editor body is closed to start with. (The dialog lands on Overview,
-    // which is where the revocable-living-trust switch lives.)
-    expect(screen.queryByText("Create a revocable living trust")).toBeNull();
+    // The editor body is closed to start with. (The dialog's rail carries the
+    // New trust button.)
+    expect(screen.queryByRole("button", { name: "New trust" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /add estate planning/i }));
 
-    expect(screen.getByText("Create a revocable living trust")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New trust" })).toBeInTheDocument();
     // The workspace swings the right pane to the Estate report alongside it.
     expect(onEstateOpen).toHaveBeenCalled();
   });

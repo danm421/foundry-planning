@@ -73,7 +73,7 @@ export interface GuidedTrustContext {
   planStartYear: number;
 }
 
-/** Moved here from solver-trust-form.tsx (deleted in Task 15). */
+/** A trust funded in this Solver session, kept so removing it can undo that funding. */
 export interface SolverTrustDraft {
   entity: EntitySummary;
   /** Accounts retitled into the trust, captured BEFORE retitle (for revert). */

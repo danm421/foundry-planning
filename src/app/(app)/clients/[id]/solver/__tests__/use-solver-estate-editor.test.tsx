@@ -4,6 +4,7 @@ import { renderHook, act } from "@testing-library/react";
 import type { Account, ClientData, EntitySummary } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
 import type { SolverTrustDraft } from "@/lib/solver/guided-trust";
+import type { GuidedTrustBatch } from "@/lib/solver/guided-trust-batch";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { useSolverEstateEditor } from "../use-solver-estate-editor";
 import { partitionBaseSavableMutations } from "@/lib/solver/mutations-to-base-updates";
@@ -40,9 +41,11 @@ const gift: EstateFlowGift = {
   recipient: { kind: "family_member", id: "f1" }, crummey: false,
 };
 
-function setup(over: { baseGifts?: EstateFlowGift[]; working?: ClientData } = {}) {
+function setup(
+  over: { baseGifts?: EstateFlowGift[]; working?: ClientData; base?: ClientData } = {},
+) {
   const onChange = vi.fn<(m: SolverMutation) => void>();
-  const base = clientData();
+  const base = over.base ?? clientData();
   const view = renderHook(() =>
     useSolverEstateEditor({
       baseClientData: base,
@@ -85,8 +88,8 @@ describe("useSolverEstateEditor", () => {
 // prior owners, or the lever's return-to-grantor rule.
 //
 // A draft exists only for a trust `addTrust` created here, which is why these
-// scopes seed one through `addTrust` (with no mutations of its own) rather than
-// handing it to `removeTrust`.
+// scopes seed one through `addTrust` (a batch with no mutations of its own)
+// rather than handing it to `removeTrust`.
 
 const ilit: EntitySummary = {
   id: "ent-ilit",
@@ -126,6 +129,13 @@ const inTrust = (a: Account): Account => ({
   owners: [{ kind: "entity", entityId: "ent-ilit", percent: 1 }],
 });
 
+/** A batch that only records a draft — no mutations of its own. */
+const draftOnly = (draft: SolverTrustDraft): GuidedTrustBatch => ({
+  mutations: [],
+  draft,
+  select: { kind: "trust", id: draft.entity.id },
+});
+
 const accountUpserts = (onChange: ReturnType<typeof vi.fn>) =>
   onChange.mock.calls
     .map(([m]) => m as SolverMutation)
@@ -141,12 +151,7 @@ describe("useSolverEstateEditor — removeTrust", () => {
     } as unknown as Partial<ClientData>);
     const { view, onChange } = setup({ working });
 
-    act(() =>
-      view.result.current.addTrust([], {
-        entity: ilit,
-        fundedOriginals: [fundedOriginal],
-      } as SolverTrustDraft),
-    );
+    act(() => view.result.current.addTrust(draftOnly({ entity: ilit, fundedOriginals: [fundedOriginal] }), []));
     act(() => view.result.current.removeTrust(ilit));
 
     const upsert = accountUpserts(onChange).find((m) => m.id === "acct-funded");
@@ -169,12 +174,7 @@ describe("useSolverEstateEditor — removeTrust", () => {
     } as unknown as Partial<ClientData>);
     const { view, onChange } = setup({ working });
 
-    act(() =>
-      view.result.current.addTrust([], {
-        entity: ilit,
-        fundedOriginals: [fundedOriginal],
-      } as SolverTrustDraft),
-    );
+    act(() => view.result.current.addTrust(draftOnly({ entity: ilit, fundedOriginals: [fundedOriginal] }), []));
     act(() => view.result.current.removeTrust(ilit));
 
     const emitted = onChange.mock.calls.map(([m]) => m as SolverMutation);
@@ -194,9 +194,7 @@ describe("useSolverEstateEditor — removeTrust", () => {
     } as unknown as Partial<ClientData>);
     const { view, onChange } = setup({ working });
 
-    act(() =>
-      view.result.current.addTrust([], { entity: ilit, fundedOriginals: [] } as SolverTrustDraft),
-    );
+    act(() => view.result.current.addTrust(draftOnly({ entity: ilit, fundedOriginals: [] }), []));
     act(() => view.result.current.removeTrust(ilit));
 
     const upsert = accountUpserts(onChange).find((m) => m.id === "acct-base");
@@ -213,12 +211,7 @@ describe("useSolverEstateEditor — removeTrust", () => {
     } as unknown as Partial<ClientData>);
     const { view, onChange } = setup({ working });
 
-    act(() =>
-      view.result.current.addTrust([], {
-        entity: ilit,
-        fundedOriginals: [fundedOriginal],
-      } as SolverTrustDraft),
-    );
+    act(() => view.result.current.addTrust(draftOnly({ entity: ilit, fundedOriginals: [fundedOriginal] }), []));
     act(() => view.result.current.removeTrust(ilit));
 
     const emitted = onChange.mock.calls.map(([m]) => m as SolverMutation);
@@ -271,17 +264,165 @@ describe("useSolverEstateEditor — removeTrust", () => {
     } as unknown as Partial<ClientData>);
     const { view, onChange } = setup({ working });
 
-    act(() =>
-      view.result.current.addTrust([], {
-        entity: ilit,
-        fundedOriginals: [fundedOriginal],
-      } as SolverTrustDraft),
-    );
+    act(() => view.result.current.addTrust(draftOnly({ entity: ilit, fundedOriginals: [fundedOriginal] }), []));
     act(() => view.result.current.removeTrust(ilit));
 
     expect(accountUpserts(onChange)).toHaveLength(0);
     expect(onChange.mock.calls.map(([m]) => m as SolverMutation)).toEqual([
       { kind: "entity-upsert", id: "ent-ilit", value: null },
     ]);
+  });
+});
+
+// ── addTrust / addFunding ───────────────────────────────────────────────────
+
+const trustGift: EstateFlowGift = {
+  kind: "cash-once", id: "g-trust", year: 2026, amount: 1_000_000, grantor: "client",
+  recipient: { kind: "entity", id: "ent-ilit" }, crummey: false,
+};
+
+describe("useSolverEstateEditor — addTrust", () => {
+  const batch: GuidedTrustBatch = {
+    mutations: [
+      { kind: "entity-upsert", id: "ent-ilit", value: ilit },
+      { kind: "gift-upsert", id: "g-trust", value: trustGift },
+    ],
+    draft: { entity: ilit, fundedOriginals: [] },
+    select: { kind: "trust", id: "ent-ilit" },
+  };
+
+  it("emits the batch in order, lists its gifts, and opens the new trust with a notice", () => {
+    const { view, onChange } = setup();
+    act(() => view.result.current.addTrust(batch, ["Gift $1,000,000 · 2026", "Bequest · everything · Dan's will"]));
+
+    expect(onChange.mock.calls.map(([m]) => m)).toEqual(batch.mutations);
+    expect(view.result.current.gifts).toEqual([trustGift]);
+    expect(view.result.current.selection).toEqual({ kind: "trust", id: "ent-ilit" });
+    expect(view.result.current.notice).toEqual({
+      trustId: "ent-ilit",
+      text: "Added. Funding: Gift $1,000,000 · 2026; Bequest · everything · Dan's will",
+    });
+  });
+
+  it("says a trust added with no funding isn't funded yet, and drops the notice on the next move", () => {
+    const { view } = setup();
+    act(() => view.result.current.addTrust(draftOnly({ entity: ilit, fundedOriginals: [] }), []));
+    expect(view.result.current.notice?.text).toBe("Added. Not funded yet.");
+    act(() => view.result.current.setSelection({ kind: "overview" }));
+    expect(view.result.current.notice).toBeNull();
+  });
+
+  it("opens a revocable trust's pane when the batch selects one", () => {
+    const { view } = setup();
+    act(() =>
+      view.result.current.addTrust(
+        { mutations: [], draft: null, select: { kind: "revocable", name: "Family Trust" } },
+        [],
+      ),
+    );
+    expect(view.result.current.selection).toEqual({ kind: "revocable", name: "Family Trust" });
+    expect(view.result.current.notice).toBeNull();
+  });
+});
+
+describe("useSolverEstateEditor — removeTrust and the gift list", () => {
+  it("drops from Planned gifts every gift the dissolve clears", () => {
+    // The lever finds the gift on the working tree's cash-gift rows.
+    const working = clientData({
+      entities: [ilit],
+      familyMembers,
+      gifts: [{ id: "g-trust", year: 2026, amount: 1_000_000, grantor: "client", recipientEntityId: "ent-ilit" }],
+    } as unknown as Partial<ClientData>);
+    const { view, onChange } = setup({ working, baseGifts: [trustGift, gift] });
+    act(() => view.result.current.removeTrust(ilit));
+
+    expect(onChange).toHaveBeenCalledWith({ kind: "gift-upsert", id: "g-trust", value: null });
+    expect(view.result.current.gifts.map((g) => g.id)).toEqual(["g1"]);
+  });
+});
+
+describe("useSolverEstateEditor — addFunding", () => {
+  it("emits the funding, lists its gifts, and returns to the trust with a notice", () => {
+    const working = clientData({ entities: [ilit], familyMembers } as unknown as Partial<ClientData>);
+    const { view, onChange } = setup({ working });
+    act(() => view.result.current.setSelection({ kind: "trust", id: "ent-ilit", addingFunding: true }));
+    act(() =>
+      view.result.current.addFunding(
+        "ent-ilit",
+        [{ kind: "gift-upsert", id: "g-trust", value: trustGift }],
+        [],
+        ["Gift $1,000,000 · 2026"],
+      ),
+    );
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(view.result.current.gifts).toEqual([trustGift]);
+    expect(view.result.current.selection).toEqual({ kind: "trust", id: "ent-ilit" });
+    expect(view.result.current.notice).toEqual({
+      trustId: "ent-ilit",
+      text: "Added funding: Gift $1,000,000 · 2026",
+    });
+  });
+
+  it("remembers an account moved in here, so removing the trust restores its owners exactly", () => {
+    const working = clientData({
+      entities: [ilit],
+      accounts: [inTrust(fundedOriginal)],
+      familyMembers,
+    } as unknown as Partial<ClientData>);
+    const { view, onChange } = setup({ working });
+    act(() => view.result.current.addFunding("ent-ilit", [], [fundedOriginal], []));
+    act(() => view.result.current.removeTrust(ilit));
+
+    const upsert = accountUpserts(onChange).find((m) => m.id === "acct-funded");
+    expect(upsert?.value?.owners).toEqual(fundedOriginal.owners);
+  });
+});
+
+// ── Revocable trusts ────────────────────────────────────────────────────────
+
+const tagged = (id: string, name: string | null): Account =>
+  ({
+    id, name: id, category: "taxable", value: 1, owners: [], revocableTrustName: name,
+  }) as unknown as Account;
+
+describe("useSolverEstateEditor — revocable trusts", () => {
+  const base = clientData({ accounts: [tagged("a1", "Family Trust"), tagged("a2", null)] });
+
+  it("lists base revocable trusts and counts them as trusts", () => {
+    const { view } = setup({ base, working: base });
+    expect(view.result.current.railRevocableTrusts).toEqual([
+      { name: "Family Trust", isBase: true, accountIds: ["a1"] },
+    ]);
+    expect(view.result.current.summary.trustCount).toBe(1);
+    expect(view.result.current.summary.isEmpty).toBe(false);
+  });
+
+  it("ticking an account emits only the account whose tag changes", () => {
+    const { view, onChange } = setup({ base, working: base });
+    act(() => view.result.current.setRevocableMembership("Family Trust", new Set(["a1", "a2"])));
+    expect(onChange.mock.calls.map(([m]) => m)).toEqual([
+      { kind: "account-upsert", id: "a2", value: expect.objectContaining({ revocableTrustName: "Family Trust" }) },
+    ]);
+  });
+
+  it("renaming retags every member and follows the trust to its new name", () => {
+    const working = clientData({ accounts: [tagged("a1", "Draft Trust"), tagged("a2", "Draft Trust")] });
+    const { view, onChange } = setup({ working });
+    act(() => view.result.current.setSelection({ kind: "revocable", name: "Draft Trust" }));
+    act(() => view.result.current.renameRevocableTrust("Draft Trust", "Lake Trust"));
+    expect(onChange.mock.calls.map(([m]) => (m as Extract<SolverMutation, { kind: "account-upsert" }>).value?.revocableTrustName))
+      .toEqual(["Lake Trust", "Lake Trust"]);
+    expect(view.result.current.selection).toEqual({ kind: "revocable", name: "Lake Trust" });
+  });
+
+  it("removing a revocable trust unticks every account and returns to the overview", () => {
+    const { view, onChange } = setup({ base, working: base });
+    act(() => view.result.current.setSelection({ kind: "revocable", name: "Family Trust" }));
+    act(() => view.result.current.removeRevocableTrust("Family Trust"));
+    expect(onChange.mock.calls.map(([m]) => m)).toEqual([
+      { kind: "account-upsert", id: "a1", value: expect.objectContaining({ revocableTrustName: null }) },
+    ]);
+    expect(view.result.current.selection).toEqual({ kind: "overview" });
   });
 });

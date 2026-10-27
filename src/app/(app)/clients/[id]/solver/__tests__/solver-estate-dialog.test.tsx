@@ -3,12 +3,14 @@
 // The estate dialog, reorganized around a rail and a detail pane. Every scope
 // asserts its control RENDERS before asserting behaviour — a scope that passes
 // without the control on screen is a false negative.
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+import { useMemo, useState } from "react";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Account, ClientData, EntitySummary } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import type { SolverMutation } from "@/lib/solver/types";
+import { applyMutations } from "@/lib/solver/apply-mutations";
 import { buildDissolveTrustMutations } from "@/lib/solver/trust-levers";
 import { SolverEstateTechnique } from "../solver-estate-technique";
 
@@ -76,6 +78,21 @@ const brokerage = {
     { kind: "family_member", familyMemberId: "fm-client", percent: 0.5 },
     { kind: "family_member", familyMemberId: "fm-spouse", percent: 0.5 },
   ],
+} as unknown as Account;
+
+/** A base-plan revocable living trust is not an entity: it is the name this
+ *  account carries. The old dialog never listed it. */
+const rltChecking = {
+  id: "a-rlt-checking",
+  name: "Smith Checking",
+  category: "cash",
+  subType: "checking",
+  value: 40_000,
+  basis: 40_000,
+  growthRate: 0,
+  rmdEnabled: false,
+  revocableTrustName: "Smith Family Revocable Trust",
+  owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
 } as unknown as Account;
 
 /** A rollover IRA the household owns that names the IDGT as its primary
@@ -200,7 +217,7 @@ function tree(over: Partial<ClientData> = {}): ClientData {
       spouseName: "Lee",
       spouseDob: "1967-06-11",
     },
-    accounts: [policy, brokerage],
+    accounts: [policy, brokerage, rltChecking],
     incomes: [],
     expenses: [],
     liabilities: [],
@@ -233,6 +250,14 @@ function tree(over: Partial<ClientData> = {}): ClientData {
         lastName: "Smith",
         dateOfBirth: "1967-06-11",
       },
+      {
+        id: "fm-child",
+        role: "child",
+        relationship: "child",
+        firstName: "Casey",
+        lastName: "Smith",
+        dateOfBirth: "1995-02-20",
+      },
     ],
     externalBeneficiaries: [
       { id: "x-red-cross", name: "Red Cross", kind: "charity", charityType: "public" },
@@ -253,6 +278,8 @@ function renderDialog(
   render(
     <SolverEstateTechnique
       clientId="c1"
+      source="base"
+      mutations={[]}
       baseClientData={base}
       clientData={over.clientData ?? base}
       baseGifts={over.baseGifts ?? []}
@@ -263,22 +290,86 @@ function renderDialog(
   return { onChange };
 }
 
-const railButton = (name: RegExp) => screen.getByRole("button", { name });
+/** The dialog with the Solver's working tree kept live: every emitted mutation
+ *  is applied, the way the workspace applies them. Uncontrolled open, so Done
+ *  really closes it. */
+function LiveDialog({ onChange }: { onChange: (m: SolverMutation) => void }) {
+  const base = useMemo(() => tree(), []);
+  const [mutations, setMutations] = useState<SolverMutation[]>([]);
+  const working = useMemo(() => applyMutations(base, mutations), [base, mutations]);
+  return (
+    <SolverEstateTechnique
+      clientId="c1"
+      source="base"
+      mutations={mutations}
+      baseClientData={base}
+      clientData={working}
+      baseGifts={[]}
+      onChange={(m) => {
+        onChange(m);
+        setMutations((ms) => [...ms, m]);
+      }}
+    />
+  );
+}
+
+function renderLive() {
+  const onChange = vi.fn<(m: SolverMutation) => void>();
+  render(<LiveDialog onChange={onChange} />);
+  return { onChange };
+}
+
+const rail = () => screen.getByRole("navigation", { name: /estate plan/i });
+const railButton = (name: RegExp) => within(rail()).getByRole("button", { name });
+const click = (name: RegExp | string) => userEvent.click(screen.getByRole("button", { name }));
+
+// The Review step projects the estate impact; these scopes never need it, so
+// the request just stays pending.
+beforeEach(() => {
+  global.fetch = vi.fn(() => new Promise(() => {})) as unknown as typeof fetch;
+});
 
 // ── Rail ──────────────────────────────────────────────────────────────────────
 
 describe("Estate planning dialog — rail", () => {
   it("lists every existing trust and charity, not just session-added ones", () => {
     renderDialog();
-    expect(screen.getByRole("navigation", { name: /estate plan/i })).toBeInTheDocument();
+    expect(rail()).toBeInTheDocument();
     expect(railButton(/Smith Family ILIT/)).toBeInTheDocument();
     expect(railButton(/2019 IDGT/)).toBeInTheDocument();
     expect(railButton(/Red Cross/)).toBeInTheDocument();
   });
 
-  it("badges a base-plan trust so the advisor can tell it from a scenario addition", () => {
+  it("badges a base-plan trust Base, with its type", () => {
     renderDialog();
-    expect(railButton(/Smith Family ILIT/)).toHaveTextContent(/Base plan/i);
+    const row = railButton(/Smith Family ILIT/);
+    expect(row).toHaveTextContent(/ILIT/);
+    expect(within(row).getByText("Base")).toBeInTheDocument();
+  });
+
+  it("lists a base revocable trust once, in the rail and on the overview", () => {
+    renderDialog();
+    const rows = within(rail()).getAllByRole("button", { name: /Smith Family Revocable Trust/ });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent(/Revocable/);
+    expect(within(rows[0]).getByText("Base")).toBeInTheDocument();
+
+    const overview = screen.getByRole("list", { name: "Every trust" });
+    const listed = within(overview).getAllByRole("button", { name: /Smith Family Revocable Trust/ });
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toHaveTextContent(/1 account/);
+    // No leftover revocable-trust section repeats it.
+    expect(screen.queryByText("Create a revocable living trust")).toBeNull();
+  });
+
+  it("lists every trust on the overview with who gets what's left and its funding", async () => {
+    renderDialog();
+    const overview = screen.getByRole("list", { name: "Every trust" });
+    const ilitRow = within(overview).getByRole("button", { name: /Smith Family ILIT/ });
+    expect(ilitRow).toHaveTextContent(/Not funded yet/);
+    // Clicking a row opens that trust.
+    await userEvent.click(ilitRow);
+    expect(screen.getByLabelText("Trustee")).toHaveValue("Linda");
   });
 
   it("opens the full editor for an EXISTING trust — the old dialog showed dead text", async () => {
@@ -294,21 +385,150 @@ describe("Estate planning dialog — rail", () => {
     expect(screen.getByRole("button", { name: "Remove trust" })).toBeInTheDocument();
   });
 
-  it("keeps the revocable-living-trust switch on Overview and nowhere else", async () => {
-    renderDialog();
-    // Overview is the landing pane…
-    expect(screen.getByText("Create a revocable living trust")).toBeInTheDocument();
-    // …and the panes swap by RENDER, not by a Tailwind `hidden` class jsdom
-    // cannot see, so a null query here is a real assertion.
-    await userEvent.click(railButton(/2019 IDGT/));
-    expect(screen.queryByText("Create a revocable living trust")).toBeNull();
-  });
-
   it("shows the planned-gift list on its own rail destination", async () => {
     renderDialog({ baseGifts: [gift] });
     await userEvent.click(railButton(/Planned gifts/i));
     const dialog = screen.getByRole("dialog", { name: /estate planning/i });
     expect(within(dialog).getByText(/Cash gift 2030/)).toBeInTheDocument();
+  });
+});
+
+// ── Revocable trusts ──────────────────────────────────────────────────────────
+
+describe("Estate planning dialog — revocable trusts", () => {
+  it("unticking a base revocable trust's account moves it out of the trust", async () => {
+    const { onChange } = renderDialog();
+    await userEvent.click(railButton(/Smith Family Revocable Trust/));
+    const box = screen.getByRole("checkbox", { name: /Smith Checking/ });
+    expect(box).toBeChecked();
+    await userEvent.click(box);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith({
+      kind: "account-upsert",
+      id: "a-rlt-checking",
+      value: expect.objectContaining({ revocableTrustName: null }),
+    });
+  });
+});
+
+// ── Adding a trust ────────────────────────────────────────────────────────────
+
+describe("Estate planning dialog — adding a trust", () => {
+  it("＋ New trust opens the wizard and a Draft row in the rail", async () => {
+    renderDialog();
+    await userEvent.click(railButton(/New trust/));
+    expect(screen.getByRole("radiogroup", { name: /kind of trust/i })).toBeInTheDocument();
+    const draft = railButton(/New trust…/);
+    expect(draft).toHaveAttribute("aria-current", "true");
+    expect(within(draft).getByText("Draft")).toBeInTheDocument();
+  });
+
+  it("leaving the wizard discards the draft: reopening starts fresh, nothing emitted", async () => {
+    const { onChange } = renderDialog();
+    await userEvent.click(railButton(/New trust/));
+    await click(/Next: Who it's for/);
+    expect(screen.queryByRole("radiogroup", { name: /kind of trust/i })).toBeNull();
+
+    await userEvent.click(railButton(/2019 IDGT/));
+    expect(screen.queryByRole("button", { name: /New trust…/ })).toBeNull();
+
+    await userEvent.click(railButton(/New trust/));
+    expect(screen.getByRole("radiogroup", { name: /kind of trust/i })).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("Add trust selects the new trust, opens its editor and shows what funded it", async () => {
+    const { onChange } = renderLive();
+    await click(/edit estate planning/i);
+    await userEvent.click(railButton(/New trust/));
+    await click(/Next: Who it's for/);
+    const benefits = screen.getByRole("group", { name: /benefits now/i });
+    await userEvent.click(within(benefits).getByRole("button", { name: /Casey/ }));
+    await click(/Next: Powers/);
+    await click(/Next: Funding/);
+    await click(/Next: Review/);
+    expect(onChange).not.toHaveBeenCalled();
+    await click("Add trust");
+
+    expect(onChange.mock.calls[0][0]).toMatchObject({ kind: "entity-upsert" });
+    const row = railButton(/Casey Smith Irrevocable Trust/);
+    expect(row).toHaveAttribute("aria-current", "true");
+    expect(within(row).getByText("Added")).toBeInTheDocument();
+    expect(screen.getByLabelText("Trustee")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Added. Not funded yet.");
+
+    // The confirmation is one-time: it goes once the advisor moves on.
+    await userEvent.click(railButton(/^Overview/));
+    await userEvent.click(railButton(/Casey Smith Irrevocable Trust/));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("closing and reopening the dialog lands on the overview with nothing emitted", async () => {
+    const { onChange } = renderLive();
+    await click(/edit estate planning/i);
+    await userEvent.click(railButton(/New trust/));
+    await click(/Next: Who it's for/);
+    await click(/^Done$/);
+    await click(/edit estate planning/i);
+    expect(screen.getByRole("list", { name: "Every trust" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /New trust…/ })).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+// ── Funding an existing trust ─────────────────────────────────────────────────
+
+describe("Estate planning dialog — ＋ Add funding", () => {
+  it("adds a gift to a base ILIT and returns to its editor", async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderLive();
+    await user.click(screen.getByRole("button", { name: /edit estate planning/i }));
+    await user.click(railButton(/Smith Family ILIT/));
+    await user.click(screen.getByRole("button", { name: "Add funding" }));
+
+    // Nothing to add yet, so the footer's Add funding waits.
+    const add = screen.getByRole("button", { name: "Add funding" });
+    expect(add).toBeDisabled();
+    await user.click(screen.getByRole("radio", { name: "During life" }));
+    await user.type(screen.getByLabelText(/amount/i, { selector: "input" }), "50000");
+    // By its text: the rail's Gifts "+" is also named "Add gift".
+    await user.click(screen.getByText("Add gift", { selector: "button" }));
+    expect(onChange).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Add funding" }));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0]).toMatchObject({
+      kind: "gift-upsert",
+      value: { kind: "cash-once", amount: 50_000, recipient: { kind: "entity", id: "e-ilit" } },
+    });
+    expect(screen.getByLabelText("Trustee")).toHaveValue("Linda");
+    expect(screen.getByRole("status")).toHaveTextContent(/Added funding: Gift \$50,000/);
+    // Planned gifts shows it.
+    await user.click(railButton(/Planned gifts/));
+    const dialog = screen.getByRole("dialog", { name: /estate planning/i });
+    expect(within(dialog).getByText(/Cash gift \d{4}: \$50,000/)).toBeInTheDocument();
+  });
+
+  it("Cancel goes back to the trust's editor and emits nothing", async () => {
+    const { onChange } = renderDialog();
+    await userEvent.click(railButton(/Smith Family ILIT/));
+    await click("Add funding");
+    await click("Cancel");
+    expect(screen.getByLabelText("Trustee")).toHaveValue("Linda");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("is not offered on a charitable trust", async () => {
+    const crt = {
+      ...idgt,
+      id: "e-crt",
+      name: "Smith CRT",
+      trustSubType: "crt",
+      isGrantor: false,
+    } as EntitySummary;
+    renderDialog({ clientData: tree({ entities: [ilit, idgt, crt] }) });
+    await userEvent.click(railButton(/Smith CRT/));
+    expect(screen.queryByRole("button", { name: "Add funding" })).toBeNull();
   });
 });
 
@@ -622,10 +842,10 @@ const workingWithAdditions = () =>
 describe("Estate planning dialog — base plan vs this scenario", () => {
   it("badges a scenario addition apart from a base-plan row", () => {
     renderDialog({ clientData: workingWithAdditions() });
-    expect(railButton(/2026 Solver IDGT/)).toHaveTextContent(/Added/i);
-    expect(railButton(/Smith Family ILIT/)).toHaveTextContent(/Base plan/i);
-    expect(railButton(/City Food Bank/)).toHaveTextContent(/Added/i);
-    expect(railButton(/Red Cross/)).toHaveTextContent(/Base plan/i);
+    expect(within(railButton(/2026 Solver IDGT/)).getByText("Added")).toBeInTheDocument();
+    expect(within(railButton(/Smith Family ILIT/)).getByText("Base")).toBeInTheDocument();
+    expect(within(railButton(/City Food Bank/)).getByText("Added")).toBeInTheDocument();
+    expect(within(railButton(/Red Cross/)).getByText("Base")).toBeInTheDocument();
   });
 
   it("gates the promissory-note surface on the BASE tree, not the working one", async () => {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import type { ClientData } from "@/engine/types";
+import type { Account, ClientData } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import type { SolverMutation } from "@/lib/solver/types";
 import { SolverEstateTechnique } from "../solver-estate-technique";
@@ -31,13 +31,16 @@ function renderTech(
     baseGifts?: EstateFlowGift[];
     onOpenChange?: (open: boolean) => void;
     onChange?: (m: SolverMutation) => void;
+    base?: ClientData;
   } = {},
 ) {
-  const base = tree();
+  const base = over.base ?? tree();
   const onChange = over.onChange ?? vi.fn();
   render(
     <SolverEstateTechnique
       clientId="c1"
+      source="base"
+      mutations={[]}
       baseClientData={base}
       clientData={base}
       baseGifts={over.baseGifts ?? []}
@@ -100,6 +103,15 @@ describe("SolverEstateTechnique", () => {
       expect.objectContaining({ kind: "gift-upsert", id: "g1" }),
     );
     expect(onChange.mock.calls[0][0].value).toMatchObject({ enabled: false });
+  });
+
+  it("counts a base revocable living trust as a trust", () => {
+    const rlt = {
+      id: "a1", name: "Checking", category: "cash", value: 1000, owners: [],
+      revocableTrustName: "Family Revocable Trust",
+    } as unknown as Account;
+    renderTech({ base: tree({ accounts: [rlt] }) });
+    expect(screen.getByText("1 trust")).toBeInTheDocument();
   });
 
   it("renders no inline gift toggles when there are no planned gifts", () => {

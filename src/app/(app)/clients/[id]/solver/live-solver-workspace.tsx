@@ -1873,6 +1873,7 @@ export function LiveSolverWorkspace({
             baseClientData={baseClientData}
             baseGifts={baseGifts}
             onEstateOpen={() => setActiveReport("estate")}
+            source={initialSource}
           />
         )}
 
