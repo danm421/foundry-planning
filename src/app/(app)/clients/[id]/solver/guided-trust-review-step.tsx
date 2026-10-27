@@ -199,7 +199,7 @@ export function GuidedTrustReviewStep({ answers, ctx, onChange, onEdit, impact }
         ) : (
           <>
             {ctx.isMarried ? (
-              <Line label="Grantor" value={grantorName} step="type" onEdit={onEdit} />
+              <Line label="Grantor" value={grantorName} step={split ? "setup" : "people"} onEdit={onEdit} />
             ) : null}
             {split ? (
               <>

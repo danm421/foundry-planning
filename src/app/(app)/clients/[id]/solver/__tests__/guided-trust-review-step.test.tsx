@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ClientData } from "@/engine/types";
 import {
   guidedTrustContext,
@@ -99,6 +99,16 @@ describe("GuidedTrustReviewStep", () => {
       <GuidedTrustReviewStep answers={base} ctx={guidedTrustContext(single, {})} onChange={vi.fn()} onEdit={vi.fn()} impact={idle} />,
     );
     expect(screen.queryByRole("button", { name: "Edit Grantor" })).toBeNull();
+  });
+
+  it("Edit Grantor opens the step that asks it", () => {
+    const std = setup();
+    fireEvent.click(screen.getByRole("button", { name: "Edit Grantor" }));
+    expect(std.onEdit).toHaveBeenCalledWith("people");
+    cleanup();
+    const split = setup({ kind: "crt" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit Grantor" }));
+    expect(split.onEdit).toHaveBeenCalledWith("setup");
   });
 
   it("revocable lists accounts", () => {
