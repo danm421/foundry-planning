@@ -33,13 +33,20 @@ export interface ErrorResponse {
 
 /** POST …/fact-finder/turn */
 export interface TurnBody {
-  message: string;
+  /** Required in "advisor" mode (the default); "compose" folds newly read documents into the worksheet. */
+  message?: string;
+  mode?: "advisor" | "compose";
+  /** Sent by "Match to plan": the table it names, or every table. Its rows already in the plan are always proposed. */
+  match?: { tableId?: string };
 }
-/** `turnId` is the reply's assistant turn id when it changed something (its Undo), else null. */
-export interface TurnResponse {
-  factFinder: FactFinderState;
-  turnId: string | null;
-}
+/**
+ * One SSE frame of the turn stream: a tool line, the finished reply, or the error that ended it.
+ * `turnId` is the reply's assistant turn id when it changed something (its Undo), else null.
+ */
+export type TurnFrame =
+  | { type: "progress"; line: string }
+  | { type: "done"; factFinder: FactFinderState; turnId: string | null }
+  | { type: "error"; message: string; factFinder?: FactFinderState };
 
 /** POST …/fact-finder/undo */
 export interface UndoBody {
@@ -65,6 +72,10 @@ export type ReadEvent =
 /** One SSE frame of the read stream: an event, or the error that ended it. */
 export type ReadFrame = ReadEvent | { type: "error"; message: string };
 
+/** POST …/fact-finder/review body (optional): review only these rows; none = every row. */
+export interface ReviewBody {
+  rowIds?: string[];
+}
 /** POST …/fact-finder/review: the fact finder with its new `changeSet`. */
 export interface ReviewResponse {
   factFinder: FactFinderState;
@@ -80,9 +91,15 @@ export interface ReviewRefusal {
 export interface SaveBody {
   changeSetVersion: number;
   ticks: ChangeTicks;
+  /** Save this round and keep the import open for the next (the chat's proposals); without it the save closes the import. */
+  keepOpen?: boolean;
 }
-/** 200 from save: the fact finder, closed. */
+/** 200 from save: the fact finder — closed, or with `keepOpen` still open. */
 export interface SaveResponse {
+  factFinder: FactFinderState;
+}
+/** 200 from POST …/fact-finder/finish: the fact finder, closed. Its refusals are an ErrorResponse. */
+export interface FinishResponse {
   factFinder: FactFinderState;
 }
 /**

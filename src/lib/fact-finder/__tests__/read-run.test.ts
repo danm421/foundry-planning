@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtractedAccount, ExtractionResult } from "@/lib/extraction/types";
 import type { ImportFileRow } from "../persist";
-import type { FactFinderState, FFReaderOutput } from "../types";
+import type { FactFinderState } from "../types";
 
 const store = vi.hoisted(() => ({
   state: null as FactFinderState | null,
@@ -23,7 +23,7 @@ vi.mock("../persist", () => ({
 }));
 vi.mock("../records/load", () => ({ resolveBaseCaseScenarioId: vi.fn(), loadExistingRecords: vi.fn() }));
 vi.mock("../readers/route-file", () => ({ routeFile: vi.fn(), pagesForSectionReader: vi.fn() }));
-vi.mock("../readers/section-reader", () => ({ readSections: vi.fn() }));
+vi.mock("../worksheet/page-text-store", () => ({ savePageText: vi.fn() }));
 vi.mock("@/lib/imports/run-extraction", () => ({ runImportExtraction: vi.fn() }));
 vi.mock("@/lib/imports/blob", () => ({ downloadImportFile: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
@@ -38,10 +38,10 @@ import { READ_BUDGET_MS, runFactFinderRead } from "../read-run";
 import { needsReading } from "../reading-status";
 import { FileReadError } from "../readers/read-error";
 import { pagesForSectionReader, routeFile } from "../readers/route-file";
-import { readSections } from "../readers/section-reader";
 import { loadExistingRecords, resolveBaseCaseScenarioId } from "../records/load";
 import { emptyExistingRecords } from "../records/types";
 import { emptyFactFinderState } from "../state";
+import { savePageText } from "../worksheet/page-text-store";
 
 const scope = { importId: "i1", clientId: "c1", firmId: "org_1" };
 const file = (id: string): ImportFileRow => ({
@@ -50,11 +50,6 @@ const file = (id: string): ImportFileRow => ({
   originalFilename: `${id}.pdf`,
   detectedKind: "pdf",
   documentType: "auto",
-});
-const charity = (fileId: string, name: string): FFReaderOutput => ({
-  readings: [{ sectionId: "external", fileId, cells: { name: { value: name, confidence: 0.9, source: { fileId } } } }],
-  unassignedHoldings: [],
-  warnings: [],
 });
 const account = (row: Partial<ExtractedAccount>): ExtractedAccount => ({ name: "Account", category: "retirement", ...row });
 function statement(fileId: string, accounts: ExtractedAccount[]): ExtractionResult {
@@ -109,6 +104,7 @@ beforeEach(() => {
   vi.mocked(resolveBaseCaseScenarioId).mockResolvedValue("s1");
   vi.mocked(loadExistingRecords).mockResolvedValue(emptyExistingRecords());
   vi.mocked(downloadImportFile).mockResolvedValue(Buffer.from("pdf"));
+  vi.mocked(savePageText).mockReset().mockResolvedValue(undefined);
 });
 
 describe("runFactFinderRead", () => {
@@ -119,19 +115,40 @@ describe("runFactFinderRead", () => {
         ? { reader: "form", fields: [{ name: "external_r1_c1", type: "text", value: "Red Cross", page: 1 }] }
         : { reader: "section", pages: ["p"], warnings: ["This is an image, so its text was read with OCR — check the figures."] },
     );
-    vi.mocked(readSections).mockResolvedValue(charity("f2", "Food Bank"));
 
     const { result, events, state } = await run();
 
-    expect(state.sections.external.map((r) => r.cells.name.value).sort()).toEqual(["Food Bank", "Red Cross"]);
+    expect(state.sections.external.map((r) => r.cells.name.value)).toEqual(["Red Cross"]);
     expect(state.readings.f1).toMatchObject({ status: "done", reader: "form", rows: 1 });
-    expect(state.readings.f2).toMatchObject({ status: "done", reader: "section", rows: 1 });
+    expect(state.readings.f2).toMatchObject({ status: "done", reader: "freeform", rows: 0 });
     expect(events.filter((e) => e.type === "file" && e.status === "reading")).toHaveLength(2);
     expect(events.filter((e) => e.type === "file" && e.status === "done")).toHaveLength(2);
-    expect(result.summary).toBe("Read 2 documents. 1 section has values.");
+    expect(result.summary).toBe("Read 2 documents.");
     expect(result.caveats).toContain("This is an image, so its text was read with OCR — check the figures.");
     expect(state.transcript.at(-1)).toMatchObject({ role: "assistant", text: expect.stringMatching(/^Read 2 documents\./) });
     expect(state.sections.external.every((r) => r.link?.kind === "new")).toBe(true);
+  });
+
+  it("a general document is read as free-form: page text saved, no staging rows, reader \"freeform\"", async () => {
+    store.files = [file("f1")];
+    vi.mocked(routeFile).mockResolvedValue({
+      reader: "section",
+      pages: ["Trust for 123-45-6789", "page two"],
+      warnings: ["This is an image, so its text was read with OCR — check the figures."],
+    });
+
+    const { result, events, state } = await run();
+
+    expect(savePageText).toHaveBeenCalledWith("i1", "f1", ["Trust for [REDACTED-SSN]", "page two"]);
+    expect(state.sections).toEqual(emptyFactFinderState().sections);
+    expect(state.readings.f1).toMatchObject({
+      status: "done",
+      reader: "freeform",
+      rows: 0,
+      warnings: ["This is an image, so its text was read with OCR — check the figures."],
+    });
+    expect(events).toContainEqual(expect.objectContaining({ fileId: "f1", status: "done", reader: "freeform", rows: 0 }));
+    expect(result.summary).toBe("Read 1 document.");
   });
 
   it("marks a failing file failed and carries on with the rest", async () => {
@@ -140,14 +157,13 @@ describe("runFactFinderRead", () => {
       if (fileName === "f1.pdf") throw new FileReadError("Couldn't read any text from this file.");
       return { reader: "section", pages: ["p"], warnings: [] };
     });
-    vi.mocked(readSections).mockResolvedValue(charity("f2", "Food Bank"));
 
     const { result, events, state } = await run();
 
     expect(state.readings.f1).toMatchObject({ status: "failed", reason: "Couldn't read any text from this file." });
     expect(state.readings.f2).toMatchObject({ status: "done" });
     expect(events).toContainEqual(expect.objectContaining({ fileId: "f1", status: "failed" }));
-    expect(result.summary).toBe("Read 1 document. 1 couldn't be read — Retry it. 1 section has values.");
+    expect(result.summary).toBe("Read 1 document. 1 couldn't be read — Retry it.");
     expect(result.filesRead).toBe(1);
     expect(result.caveats).toContain("Couldn't read f1.pdf: Couldn't read any text from this file.");
   });
@@ -155,7 +171,7 @@ describe("runFactFinderRead", () => {
   it("marks a file failed when its reader throws, so the next read retries it", async () => {
     store.files = [file("f1")];
     vi.mocked(routeFile).mockResolvedValue({ reader: "section", pages: ["p"], warnings: [] });
-    vi.mocked(readSections).mockRejectedValue(new FileReadError("Couldn't read this document — try again."));
+    vi.mocked(savePageText).mockRejectedValue(new FileReadError("Couldn't read this document — try again."));
 
     const { state } = await run({ now: () => NOW });
 
@@ -276,23 +292,24 @@ describe("runFactFinderRead", () => {
 
     const { state } = await run();
 
-    expect(readSections).not.toHaveBeenCalled();
+    expect(savePageText).not.toHaveBeenCalled();
     expect(state.sections.life).toHaveLength(1);
     expect(state.sections.life[0].cells.policyNumber.value).toBe("7781");
     expect(state.readings.f1).toMatchObject({ status: "done", reader: "statement", rows: 1 });
   });
 
-  it("re-reads a statement the statement reader found nothing in with the section reader", async () => {
+  it("a statement with no accounts falls back to free-form with its note as a warning", async () => {
     store.files = [file("f1")];
     vi.mocked(routeFile).mockResolvedValue({ reader: "statement" });
     extractionWrites({ f1: statement("f1", []) });
-    vi.mocked(pagesForSectionReader).mockResolvedValue({ pages: ["Social Security Statement"], warnings: [] });
-    vi.mocked(readSections).mockResolvedValue(charity("f1", "Unexpected"));
+    vi.mocked(pagesForSectionReader).mockResolvedValue({ pages: ["Social Security Statement"], warnings: ["OCR note."] });
 
-    const { state } = await run();
+    const { result, state } = await run();
 
-    expect(readSections).toHaveBeenCalledWith({ fileId: "f1", pages: ["Social Security Statement"] });
-    expect(state.readings.f1).toMatchObject({ status: "done", reader: "section" });
+    const note = "f1.pdf had no accounts a statement reader could find, so it was read as a general document.";
+    expect(savePageText).toHaveBeenCalledWith("i1", "f1", ["Social Security Statement"]);
+    expect(state.readings.f1).toMatchObject({ status: "done", reader: "freeform", rows: 0, warnings: ["OCR note.", note] });
+    expect(result.caveats).toContain(note);
   });
 
   it("reads only unread files: new, failed, or stuck reading for over six minutes", async () => {
@@ -308,11 +325,10 @@ describe("runFactFinderRead", () => {
       },
     };
     vi.mocked(routeFile).mockResolvedValue({ reader: "section", pages: ["p"], warnings: [] });
-    vi.mocked(readSections).mockImplementation(async ({ fileId }) => charity(fileId, fileId));
 
     await run({ now: () => now });
 
-    expect(vi.mocked(readSections).mock.calls.map(([a]) => a.fileId).sort()).toEqual(["failed", "new", "stuck"]);
+    expect(vi.mocked(savePageText).mock.calls.map(([, id]) => id).sort()).toEqual(["failed", "new", "stuck"]);
     expect(needsReading({ status: "reading", startedAt: "2026-10-12T11:58:00Z" }, now)).toBe(false);
   });
 
@@ -357,10 +373,10 @@ describe("runFactFinderRead", () => {
 
     const { result, state } = await run({ signal: budget.signal, now: () => NOW });
 
-    expect(readSections).not.toHaveBeenCalled();
+    expect(savePageText).not.toHaveBeenCalled();
     expect(state.readings.f1).toMatchObject({ status: "failed", reason: "Stopped before this file was read." });
     expect(needsReading(state.readings.f1, NOW)).toBe(true);
-    expect(result.summary).toBe("Couldn't read 1 document — Retry it. 0 sections have values.");
+    expect(result.summary).toBe("Couldn't read 1 document — Retry it.");
     expect(result.caveats).toContain("Couldn't read f1.pdf: Stopped before this file was read.");
     expect(state.transcript.at(-1)).toMatchObject({ role: "assistant", text: expect.stringMatching(/^Couldn't read 1 document — Retry it\./) });
   });
@@ -381,10 +397,10 @@ describe("runFactFinderRead", () => {
 
     expect(runImportExtraction).toHaveBeenCalled();
     expect(pagesForSectionReader).not.toHaveBeenCalled();
-    expect(readSections).not.toHaveBeenCalled();
+    expect(savePageText).not.toHaveBeenCalled();
     expect(state.readings.f1).toMatchObject({ status: "failed", reason: "Stopped before this file was read." });
     expect(needsReading(state.readings.f1, NOW)).toBe(true);
-    expect(result.summary).toBe("Couldn't read 1 document — Retry it. 0 sections have values.");
+    expect(result.summary).toBe("Couldn't read 1 document — Retry it.");
     expect(result.caveats).toContain("Couldn't read f1.pdf: Stopped before this file was read.");
   });
 
@@ -402,11 +418,10 @@ describe("runFactFinderRead", () => {
     store.files = [file("f1"), file("f2")];
     anotherReadClaimsFirst(["f1"]);
     vi.mocked(routeFile).mockResolvedValue({ reader: "section", pages: ["p"], warnings: [] });
-    vi.mocked(readSections).mockImplementation(async ({ fileId }) => charity(fileId, fileId));
 
     const { result, events, state } = await run({ now: () => NOW });
 
-    expect(vi.mocked(readSections).mock.calls.map(([a]) => a.fileId)).toEqual(["f2"]);
+    expect(vi.mocked(savePageText).mock.calls.map(([, id]) => id)).toEqual(["f2"]);
     expect(events.flatMap((e) => (e.type === "file" ? [e.fileId] : []))).toEqual(["f2", "f2"]);
     expect(state.readings.f1).toEqual(THEIR_CLAIM);
     expect(result).toMatchObject({ filesRead: 1, summary: expect.stringMatching(/^Read 1 document\./) });

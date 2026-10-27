@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { READ_BUSY_MESSAGE, SAVE_CLOSED_MESSAGE, type ReadFrame } from "@/lib/fact-finder/api-types";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
-import { parseReadSse, useReadStream } from "../use-read-stream";
+import { parseSse } from "../sse";
+import { useReadStream } from "../use-read-stream";
 
 const READ_URL = "/api/clients/c1/imports/i1/fact-finder/read";
 
@@ -65,9 +66,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("parseReadSse", () => {
+describe("parseSse", () => {
   it("yields every complete frame in the buffer and returns the unfinished tail", () => {
-    const frames = parseReadSse(sse(reading("f1")) + sse(read("f1")) + 'data: {"type":"fi');
+    const frames = parseSse<ReadFrame>(sse(reading("f1")) + sse(read("f1")) + 'data: {"type":"fi');
     const seen: ReadFrame[] = [];
     let next = frames.next();
     while (!next.done) {
@@ -79,7 +80,7 @@ describe("parseReadSse", () => {
   });
 
   it("skips a malformed frame and keeps going", () => {
-    const frames = [...parseReadSse(`data: {not json\n\n${sse(finished)}`)];
+    const frames = [...parseSse<ReadFrame>(`data: {not json\n\n${sse(finished)}`)];
     expect(frames).toEqual([finished]);
   });
 });

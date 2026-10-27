@@ -42,6 +42,7 @@ import { POST } from "../route";
 import { recordAudit } from "@/lib/audit";
 import { factFinderGate } from "@/lib/fact-finder/gate";
 import { writeFactFinder } from "@/lib/fact-finder/persist";
+import { readFactFinderState } from "@/lib/fact-finder/state";
 import { hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "@/lib/fact-finder/placement/__tests__/fixtures";
 import { loadRecordBook } from "@/lib/fact-finder/records/book";
 import { loadExistingRecords, resolveBaseCaseScenarioId } from "@/lib/fact-finder/records/load";
@@ -49,7 +50,11 @@ import { emptyExistingRecords } from "@/lib/fact-finder/records/types";
 
 const params = { params: Promise.resolve({ id: "c1", importId: "i1" }) };
 const SCOPE = { importId: "i1", clientId: "c1", firmId: "org_1" };
-const review = () => new Request("http://t/api/clients/c1/imports/i1/fact-finder/review", { method: "POST" });
+const review = (body?: unknown) =>
+  new Request("http://t/api/clients/c1/imports/i1/fact-finder/review", {
+    method: "POST",
+    ...(body !== undefined && { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+  });
 const patch = (body: unknown) =>
   new Request("http://t/api/clients/c1/imports/i1/fact-finder", {
     method: "PATCH",
@@ -72,6 +77,9 @@ const stored = (sections: Record<string, FFRow[]>, more: Partial<FactFinderState
   version: 3,
   ...more,
 });
+
+/** The fact finder as the gate hands it over: the stored slice, with its worksheet derived from staging. */
+const asRead = (factFinder: FactFinderState) => readFactFinderState({ factFinder });
 
 const facts = (category: string) => ({ category, subType: null, parentAccountId: null, isDefaultChecking: false });
 const BOOK = hendricksBook({
@@ -158,7 +166,7 @@ describe("POST /fact-finder/review — the change list", () => {
       ["r1/account", "create", true, false],
       ["final_notes:Notes/plan_observation/0", "create", false, true],
     ]);
-    expect(writeFactFinder).toHaveBeenCalledExactlyOnceWith(SCOPE, 3, { ...FULL, changeSet }, { keepChangeSet: true });
+    expect(writeFactFinder).toHaveBeenCalledExactlyOnceWith(SCOPE, 3, { ...asRead(FULL), changeSet }, { keepChangeSet: true });
     expect(recordAudit).toHaveBeenCalledExactlyOnceWith({
       action: "import.fact_finder_reviewed",
       resourceType: "client_import",
@@ -195,12 +203,12 @@ describe("POST /fact-finder/review — the change list", () => {
     store.fresh = { ...FULL, version: 4 };
     const res = await POST(review(), params);
     expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: REVIEW_STALE_MESSAGE, factFinder: { ...FULL, version: 4 } });
+    expect(await res.json()).toEqual({ error: REVIEW_STALE_MESSAGE, factFinder: asRead({ ...FULL, version: 4 }) });
     expect(recordAudit).not.toHaveBeenCalled();
 
     // Dropping a vanished link loses the same way, and a write that didn't land isn't audited.
     vi.mocked(factFinderGate).mockResolvedValueOnce(gateWith(stored({ cash: [{ ...JOINT, link: linkedTo("a-deleted") }] })));
-    expect(await (await POST(review(), params)).json()).toEqual({ error: REVIEW_STALE_MESSAGE, factFinder: { ...FULL, version: 4 } });
+    expect(await (await POST(review(), params)).json()).toEqual({ error: REVIEW_STALE_MESSAGE, factFinder: asRead({ ...FULL, version: 4 }) });
     expect(recordAudit).not.toHaveBeenCalled();
   });
 
@@ -297,4 +305,35 @@ describe("POST /fact-finder/review — links (D11)", () => {
     });
     expect(writeFactFinder).not.toHaveBeenCalled();
   });
+});
+
+describe("POST /fact-finder/review — rowIds", () => {
+  it("passes rowIds to the review: only those rows get lines, the stored fact finder keeps every row", async () => {
+    const res = await POST(review({ rowIds: ["c2"] }), params);
+    expect(res.status).toBe(200);
+    const { factFinder } = (await res.json()) as { factFinder: FactFinderState };
+    expect(factFinder.changeSet!.lines.map((l) => l.id)).toEqual(["c2/account"]);
+    expect(factFinder.sections.cash.map((r) => r.id)).toEqual(["c1", "c2"]);
+    expect(factFinder.sections.retirement.map((r) => r.id)).toEqual(["r1"]);
+  });
+
+  it("a body without rowIds reviews everything, like no body", async () => {
+    invoke.mockResolvedValue(placedNote());
+    for (const req of [review(), review({}), review({ rowIds: undefined })]) {
+      const res = await POST(req, params);
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { factFinder: FactFinderState }).factFinder.changeSet!.lines).toHaveLength(5);
+    }
+  });
+
+  it.each([["a string", "c1"], ["a number in the list", ["c1", 2]], ["null", null], ["an object", { 0: "c1" }]])(
+    "rejects a malformed rowIds (%s) before any work",
+    async (_label, rowIds) => {
+      const res = await POST(review({ rowIds }), params);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "rowIds must be a list of row ids." });
+      expect(loadRecordBook).not.toHaveBeenCalled();
+      expect(writeFactFinder).not.toHaveBeenCalled();
+    },
+  );
 });

@@ -291,6 +291,17 @@ describe("applyLinkScores — one record, one live row", () => {
     expect(applyLinkScores(once, r)).toBe(once);
   });
 
+  it("a link settled before its row was ever scored keeps its link and gets the candidates it never had", () => {
+    // The chat's set_link in the reply that filled the row, replayed at the commit before any scoring.
+    const settled = { kind: "existing" as const, recordId: "i-sal", score: null, confirmed: true, by: "chat" as const };
+    const start = emptyFactFinderState();
+    start.sections.salary[0] = row(start.sections.salary[0].id, { annualSalary: 165000 }, { link: settled });
+    const s = applyLinkScores(start, records());
+    expect(linkOf(s, "salary", 0)).toEqual(settled);
+    expect(s.sections.salary[0].linkCandidates).toEqual([{ recordId: "i-sal", label: "Mark salary", score: 1 }]);
+    expect(applyLinkScores(s, records())).toBe(s);
+  });
+
   it("a fixed row whose record another live row already confirms needs a click", () => {
     const start = emptyFactFinderState();
     start.sections.salary[0] = row(start.sections.salary[0].id, { annualSalary: 165000 });

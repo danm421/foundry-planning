@@ -5,7 +5,6 @@
 // batch, one request at a time; the server's state is adopted on every reply.
 // Imports only client-safe leaf modules from src/lib/fact-finder.
 import { useEffect, useState } from "react";
-import type { AutosaveState } from "@/components/forms/use-plan-settings-autosave";
 import type {
   ConflictResponse,
   ErrorResponse,
@@ -29,9 +28,6 @@ const DROPPED_NOTICE =
 export interface FactFinderStore {
   /** What the screen shows: the server's state plus every edit not yet saved. */
   state: FactFinderState;
-  status: AutosaveState;
-  /** True while any edit isn't saved yet: waiting to send, on its way, or after a failed save. */
-  pending: boolean;
   /** Why the last edit was refused, or why saving failed. */
   error: string | null;
   /** Set when edits were dropped because the same values changed underneath them. */
@@ -44,7 +40,6 @@ export interface FactFinderStore {
   flushNow(): Promise<boolean>;
   /** Fetches the saved fact finder and adopts it; a failed fetch changes nothing. */
   refresh(): Promise<void>;
-  retry(): void;
   /** Clears a refusal and the notice. */
   dismiss(): void;
 }
@@ -55,8 +50,6 @@ function advisorContext(): OpContext {
 
 interface Display {
   setState(state: FactFinderState): void;
-  setStatus(status: AutosaveState): void;
-  setPending(pending: boolean): void;
   setFailure(message: string | null): void;
   setRefusal(message: string | null): void;
   setNotice(message: string | null): void;
@@ -79,24 +72,18 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
     show.setState(view);
   }
 
-  function setQueue(next: ClientOp[]) {
-    queue = next;
-    show.setPending(next.length > 0);
-  }
-
   /** A failed save is moot once nothing is left to save (a newer state already holds it all). */
   function clearMootFailure() {
     if (!failed || sending || queue.length > 0) return;
     failed = false;
     show.setFailure(null);
-    show.setStatus("saved");
   }
 
   /** Moves to a newer server state and re-applies the queue on it; edits whose ground moved are dropped. */
   function moveTo(next: FactFinderState, madeAgainst: FactFinderState) {
     const { kept, dropped } = rebaseOps(queue, madeAgainst, next, advisorContext());
     server = next;
-    setQueue(kept);
+    queue = kept;
     if (dropped.length > 0) show.setNotice(DROPPED_NOTICE);
     render();
     clearMootFailure();
@@ -104,13 +91,13 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
 
   function adopt(fresh: FactFinderState) {
     // A saved import takes no more edits: what's unsent can't land, and resending it would be refused for ever.
-    if (fresh.closed) setQueue([]);
+    if (fresh.closed) queue = [];
     if (fresh.version > server.version) moveTo(fresh, server);
   }
 
   function forget(batch: readonly ClientOp[]) {
     const sent = new Set(batch);
-    setQueue(queue.filter((op) => !sent.has(op)));
+    queue = queue.filter((op) => !sent.has(op));
   }
 
   async function resync() {
@@ -148,7 +135,7 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
         return "ok";
       }
       // A refusal with no fact finder to move to (an import finished in statement chat): these edits can never land.
-      setQueue([]);
+      queue = [];
       show.setRefusal(message ?? "That edit wasn't accepted.");
       return "refused";
     }
@@ -171,7 +158,6 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
     }
     failed = false;
     show.setFailure(null);
-    show.setStatus("saving");
     // The oldest edits first, as many as the route takes; the rest follow below.
     sending = attempt(queue.slice(0, MAX_OPS_PER_SAVE), server)
       .catch((err: unknown): Outcome => {
@@ -182,11 +168,8 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
       .then((outcome) => {
         sending = null;
         failed = outcome === "failed";
-        if (failed) show.setStatus("error");
-        else if (queue.length > 0) {
-          // The rest of a long queue, or edits made while this was in flight; a pending debounce sends them itself.
-          if (!timer) void send();
-        } else show.setStatus(outcome === "ok" ? "saved" : "idle");
+        // The rest of a long queue, or edits made while this was in flight; a pending debounce sends them itself.
+        if (!failed && queue.length > 0 && !timer) void send();
       });
     return sending;
   }
@@ -206,7 +189,7 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
       return false;
     }
     // Copies, so each queued edit is its own object: a reply removes exactly the edits it carried.
-    setQueue([...queue, ...ops.map((op) => ({ ...op }))]);
+    queue = [...queue, ...ops.map((op) => ({ ...op }))];
     view = next;
     show.setState(next);
     show.setRefusal(null);
@@ -244,10 +227,6 @@ function createSync(url: string, initialState: FactFinderState, show: Display) {
     adopt,
     flushNow,
     refresh: resync,
-    retry() {
-      cancelTimer();
-      void send();
-    },
     dismiss() {
       show.setRefusal(null);
       show.setNotice(null);
@@ -270,16 +249,12 @@ export function useFactFinder({
   initialState: FactFinderState;
 }): FactFinderStore {
   const [state, setState] = useState(initialState);
-  const [status, setStatus] = useState<AutosaveState>("idle");
-  const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sync] = useState(() =>
     createSync(factFinderUrl(clientId, importId), initialState, {
       setState,
-      setStatus,
-      setPending,
       setFailure,
       setRefusal,
       setNotice,
@@ -297,15 +272,12 @@ export function useFactFinder({
 
   return {
     state,
-    status,
-    pending,
     error: failure ?? refusal,
     notice,
     apply: sync.apply,
     adopt: sync.adopt,
     flushNow: sync.flushNow,
     refresh: sync.refresh,
-    retry: sync.retry,
     dismiss: sync.dismiss,
   };
 }

@@ -58,7 +58,7 @@ export interface RunExtractionArgs {
     /**
      * Read only these files. The fact finder import routes each upload to one
      * reader and sends only account statements (and spreadsheets) here; the
-     * rest go to its form and section readers.
+     * rest go to its form reader or are read free-form.
      */
     fileIds?: readonly string[];
     /**

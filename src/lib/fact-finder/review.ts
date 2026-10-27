@@ -37,6 +37,13 @@ function vanishedMessage(rows: readonly LinkedRow[]): string {
     : `${rows.length} links pointed at records that are no longer on the plan — ${namesOf(rows)}. Check them and review again.`;
 }
 
+/** `state` with only these rows in its sections (fixed rows too); ids that match no row are ignored. */
+function onlyRowsOf(state: FactFinderState, rowIds: readonly string[]): FactFinderState {
+  const keep = new Set(rowIds);
+  const sections = Object.fromEntries(Object.entries(state.sections).map(([id, rows]) => [id, rows.filter((r) => keep.has(r.id))]));
+  return { ...state, sections };
+}
+
 /** Another write landed first: the caller gets the fact finder as it is now. */
 async function stale(scope: FactFinderScope, state: FactFinderState): Promise<ReviewOutcome> {
   return refuse({ error: REVIEW_STALE_MESSAGE, factFinder: (await loadFactFinder(scope)) ?? state });
@@ -47,7 +54,8 @@ async function stale(scope: FactFinderScope, state: FactFinderState): Promise<Re
  * a link to a record that's gone is dropped and re-scored first, so the fact
  * finder the caller goes back to shows which rows to check. `runLeftovers` is
  * the AI step for what nothing else places — it fails soft, and `null` builds
- * the list without it. Without `actorId`, audit rows name the session's actor.
+ * the list without it. `onlyRows` scopes the checks and the list to those row
+ * ids; what's written (dropped links, the stored fact finder) is every row. Without `actorId`, audit rows name the session's actor.
  */
 export async function reviewFactFinder(
   scope: FactFinderScope,
@@ -56,6 +64,7 @@ export async function reviewFactFinder(
     now: Date;
     actorId?: string;
     runLeftovers: Parameters<typeof buildChangeSet>[0]["runLeftovers"] | null;
+    onlyRows?: readonly string[];
   },
 ): Promise<ReviewOutcome> {
   const { importId, clientId, firmId } = scope;
@@ -65,7 +74,8 @@ export async function reviewFactFinder(
   if (filesReading(state, now).length > 0) return refuse({ error: REVIEW_READING_MESSAGE });
 
   const book = await loadRecordBook(clientId, firmId, await resolveBaseCaseScenarioId(clientId));
-  const links = checkLinks(state, book);
+  const scoped = opts.onlyRows ? onlyRowsOf(state, opts.onlyRows) : state;
+  const links = checkLinks(scoped, book);
   if (links.vanished.length > 0) {
     const relinked = await relinkBaseCase(dropLinks(state, new Set(links.vanished.map((r) => r.rowId))), clientId);
     const written = await writeFactFinder(scope, state.version, relinked);
@@ -102,7 +112,7 @@ export async function reviewFactFinder(
   const leftovers = { items: 0, failed: false };
   const built = await inUsageScope(usage, () =>
     buildChangeSet({
-      state,
+      state: scoped,
       book,
       now,
       runLeftovers: async (items, drafts) => {

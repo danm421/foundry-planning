@@ -139,7 +139,10 @@ vi.mock("@clerk/nextjs/server", () => ({
   clerkClient: async () => ({ organizations: { deleteOrganization: mocks.clerkDeleteOrg } }),
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit: mocks.recordAudit }));
-vi.mock("@vercel/blob", () => ({ del: mocks.vercelDel }));
+vi.mock("@vercel/blob", () => ({
+  del: mocks.vercelDel,
+  BlobNotFoundError: class BlobNotFoundError extends Error {},
+}));
 vi.mock("@/lib/imports/blob", () => ({ deleteImportFile: mocks.deleteImportFile }));
 vi.mock("@/lib/branding/blob", () => ({ deleteBrandingAsset: mocks.deleteBrandingAsset }));
 
@@ -172,7 +175,8 @@ beforeEach(() => {
     { storageKey: "households/h1/doc1.pdf", sourceKind: "upload" },
   ]);
   mocks.selectImportFiles.mockResolvedValue([
-    { blobPathname: "imports/imp1/f1/file.csv" },
+    { blobPathname: "imports/imp1/f1/file.csv", importId: "imp1", id: "f1" },
+    { blobPathname: null, importId: "imp1", id: "f2" },
   ]);
   mocks.selectTaskFiles.mockResolvedValue([
     { storageKey: "crm-tasks/firm1/task1/abc-task-file.pdf" },
@@ -264,6 +268,13 @@ describe("purgeFirmById", () => {
   it("deletes import-file blobs via deleteImportFile", async () => {
     await purgeFirmById("org_1");
     expect(mocks.deleteImportFile).toHaveBeenCalledWith("imports/imp1/f1/file.csv");
+  });
+
+  it("deletes each import file's page-text sidecar, which no row names", async () => {
+    await purgeFirmById("org_1");
+    // The fact finder's saved page text (SSN-redacted, but names, balances, addresses): private `del` by pathname.
+    expect(mocks.vercelDel).toHaveBeenCalledWith("imports/imp1/f1.pages.json");
+    expect(mocks.vercelDel).toHaveBeenCalledWith("imports/imp1/f2.pages.json");
   });
 
   it("deletes task-file blobs via the private (no-token) del", async () => {

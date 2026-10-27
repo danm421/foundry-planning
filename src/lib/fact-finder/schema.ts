@@ -682,16 +682,6 @@ export const PDF_HOLDINGS_TABLE = {
   ],
 } as const;
 
-export const PAGE_ORDER: readonly { id: FFPage; label: string }[] = [
-  { id: "household", label: "Household" },
-  { id: "accounts", label: "Accounts" },
-  { id: "realEstateDebts", label: "Real estate & debts" },
-  { id: "income", label: "Income" },
-  { id: "expensesSavings", label: "Expenses & savings" },
-  { id: "insurance", label: "Insurance" },
-  { id: "estate", label: "Estate" },
-];
-
 const BY_ID = new Map(FACT_FINDER_SECTIONS.map((s) => [s.id, s]));
 
 export function findSection(id: string): FFSection | undefined {
@@ -700,10 +690,6 @@ export function findSection(id: string): FFSection | undefined {
 
 export function findColumn(sectionId: string, columnId: string): FFColumn | undefined {
   return BY_ID.get(sectionId)?.columns.find((col) => col.id === columnId);
-}
-
-export function sectionsOnPage(page: FFPage): FFSection[] {
-  return FACT_FINDER_SECTIONS.filter((s) => s.page === page);
 }
 
 /** The single row label a `notes` section stores its text under. */

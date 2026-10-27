@@ -59,6 +59,17 @@ describe("useSave", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("sends keepOpen", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(reply(200, { factFinder: closed }));
+    const { result } = renderSave();
+    await act(() => result.current.save(CHANGES, TICKS, { keepOpen: true }));
+    expect(fetch).toHaveBeenCalledWith(URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ changeSetVersion: 5, ticks: TICKS, keepOpen: true }),
+    });
+  });
+
   it("ignores a second press while a save is running", async () => {
     vi.mocked(fetch).mockImplementationOnce(() => new Promise<Response>(() => {}));
     const { result } = renderSave();

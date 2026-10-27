@@ -17,7 +17,7 @@ export function quote(text: string): string {
   return JSON.stringify(redactSsns(text).text);
 }
 
-export function formatValue(value: FFCellValue): string {
+function formatValue(value: FFCellValue): string {
   return typeof value === "string" ? quote(value) : String(value);
 }
 
@@ -92,6 +92,8 @@ function readingText(state: FactFinderState, fileId: string): string {
   if (!reading) return "not read yet";
   if (reading.status === "reading") return "reading now";
   if (reading.status === "failed") return `couldn't be read — ${quote(reading.reason ?? "no reason given")}`;
+  // A free-form read only saves the page text: the AI reads it, so its row count (always 0) says nothing.
+  if (reading.reader === "freeform") return "read — its text is yours to read with read_document (it fills no staging rows)";
   return `read (${reading.rows ?? 0} rows)`;
 }
 

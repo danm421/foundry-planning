@@ -32,11 +32,13 @@ import {
   SAVE_CLOSED_MESSAGE, SAVE_FAILED_MESSAGE, SAVE_HOUSEHOLD_MESSAGE, SAVE_NOTHING_MESSAGE, SAVE_RACE_MESSAGE, SAVE_READING_MESSAGE, SAVE_STALE_MESSAGE,
 } from "../../api-types";
 import { defaultTicks, TARGET_KINDS, type ChangeSet, type ChangeTicks } from "../../change-set";
-import { loadFactFinder, type FactFinderScope } from "../../persist";
+import { finishFactFinder } from "../../finish";
+import { loadFactFinder, updateFactFinder, type FactFinderScope } from "../../persist";
 import { buildChangeSet } from "../../placement/build";
 import { linkedTo, rowOf, stateWith } from "../../placement/__tests__/fixtures";
 import { loadRecordBook } from "../../records/book";
-import type { FactFinderState } from "../../types";
+import { reviewFactFinder } from "../../review";
+import type { FactFinderState, FFCell } from "../../types";
 import { saveChangeSet, type SaveDeps, type SaveRequest } from "../save";
 import { SaveLineError, type SaveContext, type SaveInput, type SaveWriter } from "../types";
 import { HOUSEHOLD_WRITERS } from "../writers/household";
@@ -575,5 +577,165 @@ d("saveChangeSet (live DB)", () => {
     expect(reached).toEqual([]);
     expect(second).toEqual([]);
     expect((await planOf(r.seed)).notes).toBe(first.length - 2);
+  });
+
+  it("keepOpen save writes the plan, leaves the import open, records applied and links the saved row", async () => {
+    const r = await reviewed();
+    const lines = new Map((await loadFactFinder(r.scope))!.changeSet!.lines.map((l) => [l.id, l]));
+    const calls: Call[] = [];
+    const ticks = { ...r.ticks, "c1/account": { value: false } };
+    const outcome = await saveChangeSet({ ...request(r, ticks), keepOpen: true }, deps(writers(calls)));
+    expect(outcome.ok).toBe(true);
+    expect(await planOf(r.seed)).toMatchObject({ notes: 7, retirementAge: 62 });
+
+    const imp = await importOf(r.scope);
+    expect(imp).toMatchObject({ status: "draft", committedAt: null });
+    const factFinder = imp.factFinder!;
+    expect(outcome).toEqual({ ok: true, factFinder });
+    expect(factFinder.closed).toBeUndefined();
+    expect(factFinder.version).toBe(2);
+    // What the next round proposes needs a review of its own.
+    expect(factFinder.changeSet).toBeUndefined();
+    expect(factFinder.applied).toEqual(
+      calls.map((c) => {
+        const line = lines.get(c.lineId)!;
+        return { lineId: c.lineId, rowId: line.rowId, target: line.target, recordId: c.id, label: line.label, at: NOW.toISOString() };
+      }),
+    );
+
+    // Each saved row links to the record its line wrote; the household's rows link to nothing, and the rows left out keep theirs.
+    const linkOf = (rowId: string) => Object.values(factFinder.sections).flat().find((row) => row.id === rowId)!.link ?? null;
+    const savedTo = (lineId: string) => ({ kind: "existing", recordId: calls.find((c) => c.lineId === lineId)!.id, score: null, confirmed: true, by: "advisor" });
+    expect(Object.fromEntries(["people:Client", "people:Co-client", "f1", "c1", "tx1", "re1", "l1", "l2", "salary:Client", "salary:Co-client", "t1"].map((id) => [id, linkOf(id)]))).toEqual({
+      "people:Client": null,
+      "people:Co-client": null,
+      f1: savedTo("f1/family_member"),
+      c1: linkedTo(r.cashId),
+      tx1: savedTo("tx1/account"),
+      re1: savedTo("re1/account"),
+      l1: savedTo("l1/liability"),
+      l2: null,
+      "salary:Client": savedTo("salary:Client/income"),
+      "salary:Co-client": savedTo("salary:Co-client/income"),
+      t1: savedTo("t1/entity"),
+    });
+
+    // The chat says what reached the plan, in save order, and what was left out.
+    expect(factFinder.transcript).toEqual([
+      {
+        id: expect.any(String),
+        role: "assistant",
+        at: NOW.toISOString(),
+        text: [
+          "Saved to the plan: Client — Mark Hendricks (updated), Co-client — Laura Hendricks (updated), Emma Hendricks (added), Hendricks Family ILIT (added), ILIT Brokerage (added), Main home (added), Home mortgage (added), Salary — Mark Hendricks (added), Salary — Laura Hendricks (added)",
+          "Left out: Household Cash — Nothing ticked.",
+          "Left out: Car loan — Needs Loan start.",
+        ].join("\n"),
+      },
+    ]);
+
+    const [audit] = await db.select().from(auditLog).where(and(eq(auditLog.resourceId, r.scope.importId), eq(auditLog.action, "import.fact_finder_saved")));
+    expect(audit.metadata).toMatchObject({ saved: 9, leftOut: 2, creates: 7, updates: 2, keepOpen: true });
+
+    // The same ticks again find no change list to save: nothing is written twice.
+    expect(await saveChangeSet({ ...request(r, ticks), keepOpen: true }, deps(writers(calls)))).toEqual({ ok: false, status: 409, error: SAVE_STALE_MESSAGE, factFinder });
+    expect(calls).toHaveLength(9);
+  });
+
+  it("Finish lists each line a keep-open round left out that no later round saved, once, with its latest reason", async () => {
+    const r = await reviewed();
+    // Round 1 leaves out Household Cash (unticked) and the car loan (no loan start yet), and saves the rest.
+    const round1 = await saveChangeSet({ ...request(r, { ...r.ticks, "c1/account": { value: false } }), keepOpen: true }, deps(writers([])));
+    if (!round1.ok) throw new Error(`Round 1 refused: ${round1.error}`);
+    expect(round1.factFinder.leftOut).toEqual([
+      { lineId: "c1/account", rowId: "c1", label: "Household Cash", reason: "Nothing ticked." },
+      { lineId: "l2/liability", rowId: "l2", label: "Car loan", reason: "Needs Loan start." },
+    ]);
+
+    // The advisor fills in the car loan's terms. Round 2 saves Household Cash and leaves the car loan out, unticked.
+    const typed = (value: string | number): FFCell => ({ value, by: "advisor", pinned: true });
+    const terms = { loanStart: typed("2022-03"), termYears: typed(5), interestRate: typed(6) };
+    const filled = await updateFactFinder(r.scope, (s) => ({
+      ...s,
+      sections: { ...s.sections, liab: s.sections.liab.map((row) => (row.id === "l2" ? { ...row, cells: { ...row.cells, ...terms } } : row)) },
+    }));
+    const again = await reviewFactFinder(r.scope, filled, { now: NOW, actorId: SAVE_ACTOR, runLeftovers: null, onlyRows: ["c1", "l2"] });
+    if (!again.ok) throw new Error(`The second review refused: ${again.body.error}`);
+    const ticks = defaultTicks(again.changeSet);
+    ticks["l2/liability"] = Object.fromEntries(Object.keys(ticks["l2/liability"]).map((key) => [key, false]));
+    const round2 = await saveChangeSet(
+      { scope: r.scope, actorId: SAVE_ACTOR, changeSetVersion: again.changeSet.builtAtVersion, ticks, keepOpen: true },
+      deps(writers([])),
+    );
+    if (!round2.ok) throw new Error(`Round 2 refused: ${round2.error}`);
+
+    const finished = await finishFactFinder(r.scope, SAVE_ACTOR, NOW);
+    if (!finished.ok) throw new Error(`Finish refused: ${finished.error}`);
+    expect(finished.factFinder.closed?.saved.map((s) => s.lineId)).toContain("c1/account");
+    expect(finished.factFinder.closed?.leftOut).toEqual([{ lineId: "l2/liability", rowId: "l2", label: "Car loan", reason: "Nothing ticked." }]);
+  });
+
+  it("after a keepOpen save, a review of the same row has no create line", async () => {
+    const r = await reviewed({
+      state: () => stateWith({ family: [rowOf("f1", { firstName: "Emma", lastName: "Hendricks", relationship: "Child", dateOfBirth: "2004-05-01" })] }),
+    });
+    // The real writers: the second review must find the family member the save wrote.
+    const outcome = await saveChangeSet({ ...request(r), keepOpen: true }, { resolveHoldings: async () => new Map(), now: () => NOW });
+    expect(outcome.ok).toBe(true);
+    const state = (await loadFactFinder(r.scope))!;
+    expect(state.applied).toEqual([expect.objectContaining({ lineId: "f1/family_member", rowId: "f1", target: "family_member" })]);
+    const emma = state.applied![0].recordId;
+
+    const again = await reviewFactFinder(r.scope, state, { now: NOW, actorId: SAVE_ACTOR, runLeftovers: null, onlyRows: ["f1"] });
+    if (!again.ok) throw new Error(`The second review refused: ${again.body.error}`);
+    expect(again.changeSet.lines.map((l) => ({ id: l.id, action: l.action, recordId: l.recordId }))).toEqual([{ id: "f1/family_member", action: "none", recordId: emma }]);
+    const emmas = await db.select({ id: familyMembers.id }).from(familyMembers).where(and(eq(familyMembers.clientId, r.seed.clientId), eq(familyMembers.firstName, "Emma")));
+    expect(emmas).toEqual([{ id: emma }]);
+  });
+
+  it("keep-open save refuses a stale change list and writes nothing", async () => {
+    const r = await reviewed();
+    const calls: Call[] = [];
+    // The advisor retypes Emma's name after the review — landing after the save's first read, so the check inside its transaction is the one that refuses.
+    const retype = () =>
+      updateFactFinder(r.scope, (s) => ({
+        ...s,
+        sections: { ...s.sections, family: s.sections.family.map((row) => (row.id === "f1" ? { ...row, cells: { ...row.cells, firstName: { value: "Emily", by: "advisor", pinned: true } } } : row)) },
+      }));
+    const outcome = await saveChangeSet(
+      { ...request(r), keepOpen: true },
+      deps(writers(calls), {
+        resolveHoldings: async () => {
+          await retype();
+          return new Map();
+        },
+      }),
+    );
+    const edited = (await loadFactFinder(r.scope))!;
+    expect(outcome).toEqual({ ok: false, status: 409, error: SAVE_STALE_MESSAGE, factFinder: edited });
+    expect(calls).toEqual([]);
+    expect(await planOf(r.seed)).toEqual({ notes: 0, audit: [], retirementAge: 65, spouseId: null });
+    expect(await importOf(r.scope)).toMatchObject({ status: "draft", committedAt: null });
+    // As the edit left it: no change list, nothing applied, no reply.
+    expect(edited).toMatchObject({ version: 2, transcript: [] });
+    expect(edited.changeSet).toBeUndefined();
+    expect(edited.applied).toBeUndefined();
+  });
+
+  it("without keepOpen the import still closes", async () => {
+    const r = await reviewed();
+    const calls: Call[] = [];
+    const outcome = await saveChangeSet(request(r), deps(writers(calls)));
+    expect(outcome.ok).toBe(true);
+    const imp = await importOf(r.scope);
+    expect(imp).toMatchObject({ status: "committed", committedAt: NOW });
+    expect(imp.factFinder?.closed?.saved).toHaveLength(calls.length);
+    // None of a keep-open save's bookkeeping: the change list kept, no applied list, no links, no reply.
+    expect(imp.factFinder?.changeSet?.builtAtVersion).toBe(1);
+    expect(imp.factFinder?.applied).toBeUndefined();
+    expect(imp.factFinder?.sections.family.find((row) => row.id === "f1")?.link).toBeUndefined();
+    expect(imp.factFinder?.transcript).toEqual([]);
+    const [audit] = await db.select().from(auditLog).where(and(eq(auditLog.resourceId, r.scope.importId), eq(auditLog.action, "import.fact_finder_saved")));
+    expect(audit.metadata).not.toHaveProperty("keepOpen");
   });
 });

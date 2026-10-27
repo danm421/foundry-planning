@@ -5,7 +5,7 @@ import {
 } from "../../change-set";
 import { buildChangeSet } from "../../placement/build";
 import { bookWith, recordOf, rowOf, stateWith } from "../../placement/__tests__/fixtures";
-import { planSave, TARGET_ORDER, type SavePlan } from "../plan";
+import { planSave, TARGET_ORDER } from "../plan";
 
 const NOW = new Date("2026-03-15T12:00:00Z");
 const MISMATCH = { ok: false, error: "The ticks don't match this change list — review again." };
@@ -36,6 +36,7 @@ function ticksOf(changeSet: ChangeSet, off: Record<string, string[]> = {}): Chan
   for (const [lineId, keys] of Object.entries(off)) for (const key of keys) ticks[lineId][key] = false;
   return ticks;
 }
+type SavePlan = ReturnType<typeof planSave>;
 const savedIds = (plan: SavePlan) => (plan.ok ? plan.lines.map((p) => p.line.id) : plan);
 const leftOutOf = (plan: SavePlan) => (plan.ok ? plan.leftOut.map((l) => [l.lineId, l.reason]) : plan);
 

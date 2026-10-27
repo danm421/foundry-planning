@@ -54,6 +54,17 @@ describe("useReview", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("sends rowIds", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(reply(200, { factFinder: reviewed }));
+    const { result } = renderReview();
+    await act(() => result.current.review(["r1", "r2"]));
+    expect(fetch).toHaveBeenCalledWith(URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rowIds: ["r1", "r2"] }),
+    });
+  });
+
   it("doesn't review while typed edits are still unsaved, and says why", async () => {
     const { result, adopt } = renderReview(false);
     await act(() => result.current.review());
@@ -100,15 +111,11 @@ describe("useReview", () => {
     expect(result.current.reviewing).toBe(false);
   });
 
-  it("dismiss clears the message, and so does the next review", async () => {
+  it("the next review clears the message", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(reply(409, { error: REVIEW_READING_MESSAGE }));
     const { result } = renderReview();
     await act(() => result.current.review());
-    act(() => result.current.dismiss());
-    expect(result.current.error).toBeNull();
-
-    vi.mocked(fetch).mockResolvedValueOnce(reply(409, { error: REVIEW_READING_MESSAGE }));
-    await act(() => result.current.review());
+    expect(result.current.error).toBe(REVIEW_READING_MESSAGE);
     let release: (res: Response) => void = () => {};
     vi.mocked(fetch).mockImplementationOnce(() => new Promise<Response>((resolve) => (release = resolve)));
     let done = Promise.resolve();

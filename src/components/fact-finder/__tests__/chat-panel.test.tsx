@@ -19,6 +19,8 @@ const MESSAGE = "Add an IRA at Fidelity for Laura worth 40,000";
 const FILES: FFScreenFile[] = [{ id: "f1", name: "hendricks-fact-finder.pdf", documentType: "auto" }];
 /** f1 has been read, so the screen doesn't start a read as it opens. */
 const READ: FFFileReading = { status: "done", startedAt: AT, rows: 1 };
+/** …and folded into the worksheet, so it doesn't compose it either. */
+const COMPOSED: FactFinderState["worksheet"] = { tables: [], composedFileIds: ["f1"] };
 
 const said = (id: string, text: string): FFChatTurn => ({ id, role: "user", text, at: AT });
 const replied = (id: string, text: string): FFChatTurn => ({ id, role: "assistant", text, at: AT });
@@ -29,6 +31,7 @@ function chatted(): FactFinderState {
   return {
     ...emptyFactFinderState(),
     readings: { f1: READ },
+    worksheet: COMPOSED,
     transcript: [
       replied("a0", "Read 1 document.\n• 2 values to check."),
       said("u1", "Joint Checking is 13,000 now"),
@@ -63,6 +66,14 @@ function json(status: number, body: unknown, headers: Record<string, string> = {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 }
 
+/** A turn's stream: its finished frame. */
+function done(factFinder: FactFinderState, turnId: string | null): Response {
+  return new Response(`data: ${JSON.stringify({ type: "done", factFinder, turnId })}\n\n`, {
+    status: 200,
+    headers: { "content-type": "text/event-stream" },
+  });
+}
+
 /** Answers once, when the test lets it: shows what the screen does while a request is in flight. */
 function held(answer: (server: FactFinderState) => Response) {
   let release!: () => void;
@@ -75,14 +86,13 @@ function held(answer: (server: FactFinderState) => Response) {
 type Reply = "offline" | ((server: FactFinderState) => Response | Promise<Response>);
 
 /**
- * The fact finder's routes. PATCH saves the edits onto `start` (or can't be
- * reached, with `saves: "offline"`); GET answers `fresh`; each turn or undo
+ * The fact finder's routes. PATCH saves the edits onto `start`; GET answers `fresh`; each turn or undo
  * POST takes the next queued reply, given the saved state. `log` lists the
  * requests in order, `sent` the turn and undo bodies.
  */
 function stubFetch(
   start: FactFinderState,
-  routes: { turn?: Reply[]; undo?: Reply[]; saves?: "offline"; fresh?: FactFinderState } = {},
+  routes: { turn?: Reply[]; undo?: Reply[]; fresh?: FactFinderState } = {},
 ) {
   let server = start;
   const log: string[] = [];
@@ -93,7 +103,6 @@ function stubFetch(
       const method = init?.method ?? "GET";
       log.push(`${method} ${url}`);
       if (url === FF_URL && method === "PATCH") {
-        if (routes.saves === "offline") throw new TypeError("Failed to fetch");
         const { ops } = JSON.parse(String(init?.body)) as PatchFactFinderBody;
         server = { ...applyOps(server, ops, { by: "advisor", now: AT, newId: () => "n1" }), version: server.version + 1 };
         return json(200, { version: server.version, factFinder: server });
@@ -113,7 +122,7 @@ function stubFetch(
 
 function renderScreen(state: FactFinderState) {
   return render(
-    <FactFinderScreen clientId="c1" importId="i1" initialState={state} initialFiles={FILES} entities={[]} hasCoClient />,
+    <FactFinderScreen clientId="c1" importId="i1" initialState={state} initialFiles={FILES} />,
   );
 }
 
@@ -127,27 +136,19 @@ function stubScreenWidth(narrow: boolean) {
   }));
 }
 
-const openPanel = (user: ReturnType<typeof userEvent.setup>) =>
-  user.click(screen.getByRole("button", { name: "Documents & chat" }));
 const panel = () => screen.getByRole("complementary", { name: "Documents & chat" });
 const chat = () => screen.getByRole("region", { name: "Chat" });
 const composer = () => screen.getByRole("textbox", { name: "Chat message" });
 /** The reply's list item, found by its text. */
 const reply = (text: string | RegExp) => within(chat()).getByText(text).closest("li")!;
-/** Saves a typed edit: the co-client's first name (it goes out with the next save). */
-const typeCoClientName = async (user: ReturnType<typeof userEvent.setup>) =>
-  user.type(screen.getAllByRole("textbox", { name: "First name" })[1], "Laura{Enter}");
-
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
 describe("the conversation", () => {
-  it("shows the messages, each change a reply made in plain words, and Undo only on replies that can be undone", async () => {
-    const user = userEvent.setup();
+  it("shows the messages, each change a reply made in plain words, and Undo only on replies that can be undone", () => {
     renderScreen(chatted());
-    await openPanel(user);
 
     expect(within(panel()).getByRole("heading", { level: 3, name: "Chat" })).toBeInTheDocument();
     const lines = within(chat()).getAllByRole("listitem").map((li) => li.textContent);
@@ -163,29 +164,24 @@ describe("the conversation", () => {
     expect(within(reply(/^Read 1 document/)).queryByRole("button")).toBeNull();
   });
 
-  it("invites a first message when there is no conversation yet", async () => {
-    const user = userEvent.setup();
-    renderScreen({ ...emptyFactFinderState(), readings: { f1: READ } });
-    await openPanel(user);
-    expect(within(chat()).getByText("Ask a question about this fact finder, or say what to change.")).toBeInTheDocument();
-    // Short enough for one line of the composer in the 360 px panel and drawer (about 28 characters fit).
-    expect(composer()).toHaveAttribute("placeholder", "Ask, or say what to change…");
+  it("invites a first message when there is no conversation yet", () => {
+    renderScreen({ ...emptyFactFinderState(), readings: { f1: READ }, worksheet: COMPOSED });
+    expect(within(chat()).getByText("Ask about the documents or the worksheet, or say what to change.")).toBeInTheDocument();
+    expect(composer()).toHaveAttribute("placeholder", "Ask for a table, a fix, or a plan update.");
     expect(composer()).toBeEnabled();
   });
 });
 
 describe("sending a message", () => {
-  it("saves the edits typed before it, shows it on its way, then shows the reply and its changes", async () => {
+  it("shows the message on its way, then the reply and its changes", async () => {
     const user = userEvent.setup();
-    const turn = held((server) => json(200, { factFinder: afterTurn(server), turnId: "a2" }));
+    const turn = held((server) => done(afterTurn(server), "a2"));
     const net = stubFetch(chatted(), { turn: [turn.reply] });
     renderScreen(chatted());
-    await openPanel(user);
 
-    await typeCoClientName(user);
     await user.type(composer(), `${MESSAGE}{Enter}`);
 
-    await waitFor(() => expect(net.log).toEqual([`PATCH ${FF_URL}`, `POST ${TURN_URL}`]));
+    await waitFor(() => expect(net.log).toEqual([`POST ${TURN_URL}`]));
     expect(net.sent).toEqual([{ message: MESSAGE }]);
     expect(composer()).toHaveValue("");
     expect(within(chat()).getByText(MESSAGE)).toBeInTheDocument();
@@ -202,7 +198,6 @@ describe("sending a message", () => {
     expect(within(chat()).queryByText("Working on it…")).toBeNull();
     expect(within(chat()).getAllByText(MESSAGE)).toHaveLength(1);
     expect(within(reply("Added Laura's Fidelity IRA.")).getByRole("button", { name: "Undo" })).toBeEnabled();
-    expect(screen.getAllByRole("textbox", { name: "First name" })[1]).toHaveValue("Laura");
     expect(within(panel()).getByRole("button", { name: "Send" })).toBeDisabled(); // nothing typed
   });
 
@@ -223,7 +218,6 @@ describe("sending a message", () => {
     const user = userEvent.setup();
     const net = stubFetch(chatted(), { turn: [() => response] });
     renderScreen(chatted());
-    await openPanel(user);
 
     await user.type(composer(), `${MESSAGE}{Enter}`);
 
@@ -234,46 +228,28 @@ describe("sending a message", () => {
     expect(net.log).toEqual([`POST ${TURN_URL}`]);
   });
 
-  it("a message refused because another tab saved the import switches the screen to the saved view", async () => {
+  it("a message refused because another tab finished the import switches the screen to the finished view", async () => {
     const user = userEvent.setup();
     const saved = (s: FactFinderState): FactFinderState => ({ ...s, version: s.version + 1, closed: { at: AT, by: "user_2", saved: [], leftOut: [] } });
     stubFetch(chatted(), { turn: [(server) => json(409, { error: SAVE_CLOSED_MESSAGE, factFinder: saved(server) })] });
     renderScreen(chatted());
-    await openPanel(user);
 
     await user.type(composer(), `${MESSAGE}{Enter}`);
 
-    expect(await screen.findByText(/^Saved to the plan on/)).toBeInTheDocument();
-    expect(screen.queryByRole("complementary", { name: "Documents & chat" })).toBeNull();
+    expect(await screen.findByText(/^Finished/)).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Chat message" })).toBeNull();
+    expect(within(chat()).getByText("Done — Joint Checking now shows $13,000.")).toBeInTheDocument();
   });
 
   it("when the server can't be reached, says so in plain words and keeps the message", async () => {
     const user = userEvent.setup();
     stubFetch(chatted(), { turn: ["offline"] });
     renderScreen(chatted());
-    await openPanel(user);
 
     await user.type(composer(), `${MESSAGE}{Enter}`);
 
     expect(await within(panel()).findByRole("alert")).toHaveTextContent("Couldn't reach the server. Check your connection.");
     expect(composer()).toHaveValue(MESSAGE);
-  });
-
-  it("sends nothing while typed edits can't be saved: the message stays, and Undo waits too", async () => {
-    const user = userEvent.setup();
-    const net = stubFetch(chatted(), { turn: [], undo: [], saves: "offline" });
-    renderScreen(chatted());
-    await openPanel(user);
-    await typeCoClientName(user);
-
-    await user.type(composer(), `${MESSAGE}{Enter}`);
-    const unsaved = "Your latest edits haven't saved yet — try again once they're saved.";
-    expect(await within(panel()).findByRole("alert")).toHaveTextContent(unsaved);
-    expect(composer()).toHaveValue(MESSAGE);
-
-    await user.click(within(chat()).getByRole("button", { name: "Undo" }));
-    await waitFor(() => expect(within(panel()).getByRole("alert")).toHaveTextContent(unsaved));
-    expect(net.log.filter((request) => request.startsWith("POST"))).toEqual([]);
   });
 });
 
@@ -302,7 +278,6 @@ describe("Undo", () => {
     const undo = held((server) => json(200, { factFinder: afterUndo(server) }));
     const net = stubFetch(chatted(), { undo: [undo.reply] });
     renderScreen(chatted());
-    await openPanel(user);
 
     await user.click(within(reply("Done — Joint Checking now shows $13,000.")).getByRole("button", { name: "Undo" }));
     await waitFor(() => expect(net.sent).toEqual([{ turnId: "a1" }]));
@@ -321,7 +296,6 @@ describe("Undo", () => {
     const refusal = 'Can\'t undo — "Joint Checking" has changed since that reply.';
     stubFetch(chatted(), { undo: [() => json(409, { error: refusal })] });
     renderScreen(chatted());
-    await openPanel(user);
 
     await user.click(within(chat()).getByRole("button", { name: "Undo" }));
 
@@ -335,11 +309,9 @@ describe("layout", () => {
   it.each([
     ["beside the page", false, "complementary"],
     ["in the drawer below 1100 px", true, "dialog"],
-  ] as const)("the composer stays under the part of the panel that scrolls, %s", async (_, narrow, role) => {
+  ] as const)("the composer stays under the part of the panel that scrolls, %s", (_, narrow, role) => {
     stubScreenWidth(narrow);
-    const user = userEvent.setup();
     renderScreen(chatted());
-    await openPanel(user);
 
     const surface = screen.getByRole(role, { name: "Documents & chat" });
     const box = within(surface).getByRole("textbox", { name: "Chat message" });
@@ -353,10 +325,12 @@ describe("layout", () => {
     Element.prototype.scrollIntoView = scrolled; // jsdom has none
     try {
       const user = userEvent.setup();
-      const turn = held((server) => json(200, { factFinder: afterTurn(server), turnId: "a2" }));
+      const turn = held((server) => done(afterTurn(server), "a2"));
       stubFetch(chatted(), { turn: [turn.reply] });
       renderScreen(chatted());
-      await openPanel(user);
+      // Hidden and shown again from the header: the conversation stays where it was.
+      await user.click(screen.getByRole("button", { name: "Documents & chat" }));
+      await user.click(screen.getByRole("button", { name: "Documents & chat" }));
       expect(scrolled).not.toHaveBeenCalled();
 
       await user.type(composer(), `${MESSAGE}{Enter}`);

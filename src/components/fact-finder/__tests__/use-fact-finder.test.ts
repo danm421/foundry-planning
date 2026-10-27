@@ -116,7 +116,7 @@ describe("useFactFinder — saving", () => {
       { baseVersion: 4, ops: [setCell("c1", "currentValue", "12,000"), setCell("c1", "last4", "0042")] },
     ]);
     expect(vi.mocked(fetch).mock.calls[0][0]).toBe(URL);
-    expect(result.current.status).toBe("saved");
+    expect(result.current.error).toBeNull();
     expect(result.current.state).toEqual(server.state);
   });
 
@@ -129,7 +129,7 @@ describe("useFactFinder — saving", () => {
       result.current.apply([setCell("c1", "currentValue", 100)]);
     });
     await settle();
-    expect(result.current.status).toBe("saving");
+    expect(fetch).toHaveBeenCalledTimes(1);
     act(() => {
       result.current.apply([setCell("c2", "currentValue", 200)]);
     });
@@ -146,7 +146,7 @@ describe("useFactFinder — saving", () => {
       baseVersion: 5,
       ops: [setCell("c2", "currentValue", 200)],
     });
-    expect(result.current.status).toBe("saved");
+    expect(result.current.error).toBeNull();
   });
 
   it("flushNow sends what's queued at once and resolves true once nothing is left to save", async () => {
@@ -163,10 +163,10 @@ describe("useFactFinder — saving", () => {
 
     expect(drained).toBe(true);
     expect(server.applied).toEqual([setCell("c1", "currentValue", 100)]);
-    expect(result.current.status).toBe("saved");
+    expect(result.current.error).toBeNull();
   });
 
-  it("keeps the edits after a network error or a 429, says so (with Retry-After), and Retry sends them again", async () => {
+  it("keeps the edits after a network error or a 429, says so (with Retry-After), and the next flush sends them again", async () => {
     const server = fakeServer(start());
     server.faults.push("network");
     const { result } = renderStore();
@@ -179,43 +179,25 @@ describe("useFactFinder — saving", () => {
       drained = await result.current.flushNow();
     });
     expect(drained).toBe(false);
-    expect(result.current.status).toBe("error");
     expect(result.current.error).toBe("Couldn't reach the server. Check your connection.");
     expect(cell(result.current.state, "c1", "currentValue")).toBe(100);
 
     vi.mocked(fetch).mockResolvedValueOnce(
       reply(429, { error: "Too many edits at once." }, { "retry-after": "12" }),
     );
-    await act(async () => result.current.retry());
-    await settle(0);
+    await act(async () => {
+      drained = await result.current.flushNow();
+    });
+    expect(drained).toBe(false);
     expect(result.current.error).toBe("Too many edits at once. Retry in 12s.");
 
-    await act(async () => result.current.retry());
-    await settle(0);
-    expect(result.current.status).toBe("saved");
+    await act(async () => {
+      drained = await result.current.flushNow();
+    });
+    expect(drained).toBe(true);
     expect(result.current.error).toBeNull();
     expect(server.applied).toEqual([setCell("c1", "currentValue", 100)]);
   });
-  it("says an edit is pending from the moment it shows until the server holds it, through a failed save", async () => {
-    const server = fakeServer(start());
-    server.faults.push("network");
-    const { result } = renderStore();
-    expect(result.current.pending).toBe(false);
-
-    act(() => {
-      result.current.apply([setCell("c1", "currentValue", 100)]);
-    });
-    expect(result.current.pending).toBe(true);
-    await settle();
-    expect(result.current.status).toBe("error");
-    expect(result.current.pending).toBe(true);
-
-    await act(async () => result.current.retry());
-    await settle(0);
-    expect(result.current.status).toBe("saved");
-    expect(result.current.pending).toBe(false);
-  });
-
   it("edits queued while offline all save once it's back, in order, at most 200 to a request (I1)", async () => {
     const server = fakeServer(start());
     server.offline = true;
@@ -231,22 +213,22 @@ describe("useFactFinder — saving", () => {
       for (const op of edits.slice(125)) result.current.apply([op]);
     });
     await settle();
-    expect(result.current.status).toBe("error");
+    expect(result.current.error).toBe("Couldn't reach the server. Check your connection.");
 
     server.offline = false;
-    await act(async () => result.current.retry());
-    await settle(0);
+    await act(async () => {
+      await result.current.flushNow();
+    });
 
     expect(server.requests.map((r) => r.ops.length)).toEqual([125, 200, 200, 50]);
     expect(server.requests.slice(2).map((r) => r.baseVersion)).toEqual([4, 5]);
     expect(server.applied).toEqual(edits);
-    expect(result.current.status).toBe("saved");
     expect(result.current.error).toBeNull();
     expect(result.current.state).toEqual(server.state);
     expect(MAX_OPS_PER_SAVE).toBe(200); // the route's cap, shared
   });
 
-  it("a save that throws unexpectedly shows Not saved, and Retry, later saves and flushNow still work", async () => {
+  it("a save that throws unexpectedly says so, and a flush, later saves and flushNow still work", async () => {
     const server = fakeServer(start());
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     // A 409 whose fact finder is malformed: adopting it throws.
@@ -256,14 +238,14 @@ describe("useFactFinder — saving", () => {
       result.current.apply([setCell("c1", "currentValue", 100)]);
     });
     await settle();
-    expect(result.current.status).toBe("error");
     expect(result.current.error).toBe("Something went wrong while saving.");
     expect(logged).toHaveBeenCalledWith("Fact finder save failed unexpectedly:", expect.any(TypeError));
     logged.mockRestore();
 
-    await act(async () => result.current.retry());
-    await settle(0);
-    expect(result.current.status).toBe("saved");
+    await act(async () => {
+      await result.current.flushNow();
+    });
+    expect(result.current.error).toBeNull();
     expect(server.applied).toEqual([setCell("c1", "currentValue", 100)]);
 
     act(() => {
@@ -283,7 +265,7 @@ describe("useFactFinder — saving", () => {
       setCell("c2", "currentValue", 200),
       setCell("c3", "currentValue", 300),
     ]);
-    expect(result.current.status).toBe("saved");
+    expect(result.current.error).toBeNull();
   });
 });
 
@@ -321,8 +303,13 @@ describe("useFactFinder — refusals and conflicts", () => {
     await settle(5_000);
     expect(fetch).toHaveBeenCalledOnce();
     expect(result.current.state.closed).toEqual(closed.closed);
-    expect(result.current.pending).toBe(false);
     expect(cell(result.current.state, "c1", "custodian")).toBeUndefined();
+    let drained: boolean | undefined;
+    await act(async () => {
+      drained = await result.current.flushNow();
+    });
+    expect(drained).toBe(true); // nothing left to send
+    expect(fetch).toHaveBeenCalledOnce();
   });
 
   it("a 409 with no fact finder to take (finished in statement chat) shows the refusal and stops — the edits are never sent again", async () => {
@@ -337,8 +324,12 @@ describe("useFactFinder — refusals and conflicts", () => {
     await settle(5_000);
     expect(fetch).toHaveBeenCalledOnce();
     expect(result.current.error).toBe(SAVE_CLOSED_MESSAGE);
-    expect(result.current.pending).toBe(false);
-    expect(result.current.status).not.toBe("error");
+    let drained: boolean | undefined;
+    await act(async () => {
+      drained = await result.current.flushNow();
+    });
+    expect(drained).toBe(true); // nothing left to send
+    expect(fetch).toHaveBeenCalledOnce();
   });
 
   it("on a 409 keeps the edit to a cell nobody else changed and drops the one whose cell changed, with a notice (RF1)", async () => {
@@ -357,7 +348,7 @@ describe("useFactFinder — refusals and conflicts", () => {
     expect(cell(result.current.state, "c1", "currentValue")).toBe(12500);
     expect(cell(result.current.state, "c1", "last4")).toBe("0042");
     expect(result.current.notice).toMatch(/weren't kept/);
-    expect(result.current.status).toBe("saved");
+    expect(result.current.error).toBeNull();
 
     act(() => result.current.dismiss());
     expect(result.current.notice).toBeNull();
@@ -380,7 +371,7 @@ describe("useFactFinder — refusals and conflicts", () => {
     server.write([setCell("c1", "custodian", "Chase")], "chat"); // → the first batch gets a 409
     server.faults.push(undefined, "network"); // → its resend fails
     await settle();
-    expect(result.current.status).toBe("error");
+    expect(result.current.error).toBe("Couldn't reach the server. Check your connection.");
 
     typeRound(2);
     await settle();
@@ -395,7 +386,7 @@ describe("useFactFinder — refusals and conflicts", () => {
     });
     expect(cell(result.current.state, "c1", "custodian")).toBe("Chase");
     expect(result.current.notice).toBeNull();
-    expect(result.current.status).toBe("saved");
+    expect(result.current.error).toBeNull();
   });
 
   it("a batch the server took but whose reply was lost is not applied twice and raises no notice", async () => {
@@ -406,9 +397,9 @@ describe("useFactFinder — refusals and conflicts", () => {
       result.current.apply([setCell("c1", "currentValue", 100), setCell("c2", "currentValue", 200)]);
     });
     await settle();
-    expect(result.current.status).toBe("error");
+    expect(result.current.error).toBe("Couldn't reach the server. Check your connection.");
 
-    // Typed while the screen says "Not saved": the same cell again, and a new one.
+    // Typed after that failed save: the same cell again, and a new one.
     act(() => {
       result.current.apply([setCell("c1", "currentValue", 150), setCell("c3", "currentValue", 300)]);
     });
@@ -423,7 +414,7 @@ describe("useFactFinder — refusals and conflicts", () => {
       setCell("c3", "currentValue", 300),
     ]);
     expect(result.current.notice).toBeNull();
-    expect(result.current.status).toBe("saved");
+    expect(result.current.error).toBeNull();
     expect(result.current.state).toEqual(server.state);
   });
 
@@ -445,8 +436,6 @@ describe("useFactFinder — refusals and conflicts", () => {
     ]);
     expect(result.current.error).toBe("That row isn't in Cash Accounts any more.");
     expect(result.current.state).toBe(fresh);
-    expect(result.current.status).toBe("idle");
-    expect(result.current.pending).toBe(false);
     let drained: boolean | undefined;
     await act(async () => {
       drained = await result.current.flushNow();
@@ -479,7 +468,7 @@ describe("useFactFinder — refusals and conflicts", () => {
       ops: [setCell("c1", "currentValue", 100)],
     });
   });
-  it("once a newer fact finder already holds every unsaved edit, Not saved gives way to Saved and Retry sends nothing", async () => {
+  it("once a newer fact finder already holds every unsaved edit, the failure clears and a flush sends nothing", async () => {
     const server = fakeServer(start());
     server.faults.push("lostReply");
     const { result } = renderStore();
@@ -487,20 +476,21 @@ describe("useFactFinder — refusals and conflicts", () => {
       result.current.apply([setCell("c1", "currentValue", 100)]);
     });
     await settle();
-    expect(result.current.status).toBe("error");
+    expect(result.current.error).toBe("Couldn't reach the server. Check your connection.");
     expect(fetch).toHaveBeenCalledTimes(1);
 
     // A chat reply's fact finder: the server took the edit, so nothing is left to save.
     act(() => result.current.adopt(server.state));
-    expect(result.current.status).toBe("saved");
     expect(result.current.error).toBeNull();
     expect(result.current.notice).toBeNull();
     expect(cell(result.current.state, "c1", "currentValue")).toBe(100);
 
-    await act(async () => result.current.retry());
+    await act(async () => {
+      await result.current.flushNow();
+    });
     await settle();
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(result.current.status).toBe("saved");
+    expect(result.current.error).toBeNull();
   });
 });
 

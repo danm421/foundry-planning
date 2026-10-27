@@ -5,6 +5,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SAVE_CLOSED_MESSAGE } from "@/lib/fact-finder/api-types";
 import UploadZone from "../upload-zone";
 
+const { mockStageFile } = vi.hoisted(() => ({ mockStageFile: vi.fn() }));
+vi.mock("@/lib/uploads/stage-file", () => ({ stageFile: mockStageFile }));
+
 const NAME = "hendricks-fact-finder.pdf";
 
 function renderZone(props: Partial<Parameters<typeof UploadZone>[0]> = {}) {
@@ -93,5 +96,66 @@ describe("the drop zone", () => {
     const zone = screen.getByRole("button", { name: /Drag & drop files here/ });
     expect(zone).toHaveAttribute("tabIndex", "-1");
     expect(zone).toHaveAttribute("aria-disabled", "true");
+  });
+});
+
+describe("uploading a file", () => {
+  const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  const pick = () => {
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    fireEvent.change(input, { target: { files: [new File(["%PDF"], "stmt.pdf", { type: "application/pdf" })] } });
+  };
+
+  it("uploads through stageFile and registers the pathname", async () => {
+    mockStageFile.mockImplementation(async (_url: string, _file: File, onProgress?: (p: number) => void) => {
+      onProgress?.(40);
+      return "staging/imports/c1/1-x-stmt.pdf";
+    });
+    const fetchMock = vi.fn(async () => json(200, { file: { id: "srv1" }, deduped: false }));
+    vi.stubGlobal("fetch", fetchMock);
+    const onUploaded = vi.fn();
+    renderZone({ initialFiles: [], onUploaded });
+    pick();
+    await waitFor(() => expect(onUploaded).toHaveBeenCalledWith({ serverFileId: "srv1", name: "stmt.pdf", deduped: false }));
+    expect(mockStageFile).toHaveBeenCalledWith("/api/clients/c1/imports/i1/files/upload-token", expect.any(File), expect.any(Function));
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/clients/c1/imports/i1/files");
+    const form = init.body as FormData;
+    expect(form.get("stagedPathname")).toBe("staging/imports/c1/1-x-stmt.pdf");
+    expect(form.get("filename")).toBe("stmt.pdf");
+    expect(form.get("documentType")).toBe("auto");
+    expect(form.get("file")).toBeNull();
+  });
+
+  it("refuses a file over the 20 MB import cap before uploading anything", async () => {
+    mockStageFile.mockClear();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    renderZone({ initialFiles: [] });
+    const big = new File(["%PDF"], "scan.pdf", { type: "application/pdf" });
+    Object.defineProperty(big, "size", { value: 20 * 1024 * 1024 + 1 });
+    fireEvent.change(document.querySelector<HTMLInputElement>('input[type="file"]')!, { target: { files: [big] } });
+
+    expect(await screen.findByText("File too large. Maximum size is 20MB.")).toBeInTheDocument();
+    expect(mockStageFile).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("shows a failed staging step's message on the row and registers nothing", async () => {
+    mockStageFile.mockRejectedValue(new Error("Upload failed. Please try again."));
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    renderZone({ initialFiles: [] });
+    pick();
+    expect(await screen.findByText("Upload failed. Please try again.")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the files route's refusal on the row", async () => {
+    mockStageFile.mockResolvedValue("staging/imports/c1/1-x-stmt.pdf");
+    vi.stubGlobal("fetch", vi.fn(async () => json(409, { error: SAVE_CLOSED_MESSAGE })));
+    renderZone({ initialFiles: [] });
+    pick();
+    expect(await screen.findByText(SAVE_CLOSED_MESSAGE)).toBeInTheDocument();
   });
 });

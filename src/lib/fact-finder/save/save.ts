@@ -9,11 +9,15 @@
  * what the review relied on, every line through its writer in order — its
  * references resolved to records the save already wrote, and to the household
  * as the lines before it left it — then the import closed and the save audited.
+ * A keep-open save (the chat's rounds) leaves the import open instead: the
+ * records it wrote are kept on the fact finder, each row linked to its record,
+ * and the chat says what was saved; Finish (`finish.ts`) closes it.
  * Work the writers queue runs once the transaction has committed.
  *
  * SERVER-SIDE ONLY.
  */
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { familyMembers } from "@/db/schema";
@@ -28,13 +32,16 @@ import { safeErrorFields } from "@/lib/redaction/secrets";
 import {
   SAVE_CLOSED_MESSAGE, SAVE_FAILED_MESSAGE, SAVE_HOUSEHOLD_MESSAGE, SAVE_NOTHING_MESSAGE, SAVE_RACE_MESSAGE, SAVE_READING_MESSAGE, SAVE_STALE_MESSAGE,
 } from "../api-types";
-import { countLines, type ChangeSet, type TargetKind } from "../change-set";
-import { closeFactFinder, loadFactFinder, lockFactFinder, type FactFinderScope } from "../persist";
+import { countLines, lineIdOf, type ChangeLine, type ChangeSet, type TargetKind } from "../change-set";
+import { closeFactFinder, loadFactFinder, lockFactFinder, writeFactFinderOnTx, type FactFinderScope } from "../persist";
 import { payloadFor, type Resolve } from "../placement/payload";
+import { LINK_TARGETS } from "../placement/place";
 import { validateLines } from "../placement/validate";
 import { filesReading } from "../reading-status";
 import { loadRecordBook } from "../records/book";
 import { resolveBaseCaseScenarioId } from "../records/load";
+import { findSection } from "../schema";
+import { locateRow } from "../state";
 import type { FactFinderState, FFClosed } from "../types";
 import { planSave } from "./plan";
 import { staleProblem } from "./stale";
@@ -53,6 +60,8 @@ export interface SaveRequest {
   changeSetVersion: number;
   /** As the request sent them: planSave checks them against the change list. */
   ticks: unknown;
+  /** Save this round and leave the import open for the next (the chat's proposals); false closes it, as the Claude connector's save does. */
+  keepOpen?: boolean;
 }
 
 export type SaveOutcome =
@@ -175,6 +184,37 @@ function notSaved(changeSet: ChangeSet, leftOut: readonly LeftOutLine[]): LeftOu
 }
 
 /**
+ * A keep-open save's fact finder: what it wrote added to `applied`; each row a record came from — by its own line
+ * (no `/n`) of a target its "Links to" names — linked to that record, so the row's next review updates it rather
+ * than adding it again; what it left out kept for Finish, in place of what an earlier round left out of the same
+ * lines; and a reply saying what reached the plan and what was left out.
+ */
+function keptOpen(state: FactFinderState, lines: readonly ChangeLine[], saved: FFClosed["saved"], leftOut: readonly LeftOutLine[], at: string): FactFinderState {
+  const sections = { ...state.sections };
+  for (const s of saved) {
+    const found = locateRow(state, s.rowId);
+    const kind = found ? findSection(found.sectionId)?.links : undefined;
+    if (!found || !kind || !LINK_TARGETS[kind].includes(s.target) || s.lineId !== lineIdOf(s.rowId, s.target)) continue;
+    const rows = [...sections[found.sectionId]];
+    rows[found.index] = { ...rows[found.index], link: { kind: "existing", recordId: s.recordId, score: null, confirmed: true, by: "advisor" } };
+    sections[found.sectionId] = rows;
+  }
+  const settled = new Set([...saved, ...leftOut].map((l) => l.lineId));
+  const actions = new Map(lines.map((l) => [l.id, l.action]));
+  const text = [
+    `Saved to the plan: ${saved.map((s) => `${s.label} (${actions.get(s.lineId) === "create" ? "added" : "updated"})`).join(", ")}`,
+    ...leftOut.map((l) => `Left out: ${l.label} — ${l.reason}`),
+  ].join("\n");
+  return {
+    ...state,
+    sections,
+    applied: [...(state.applied ?? []), ...saved.map((s) => ({ ...s, at }))],
+    leftOut: [...(state.leftOut ?? []).filter((l) => !settled.has(l.lineId)), ...leftOut],
+    transcript: [...state.transcript, { id: randomUUID(), role: "assistant", text, at }],
+  };
+}
+
+/**
  * Postgres aborted the save over another transaction's write: a serialization failure (a row the save writes
  * changed after its snapshot) or a deadlock. Drizzle wraps driver errors — the code is on `cause`.
  */
@@ -184,14 +224,15 @@ function isConflict(err: unknown): boolean {
 }
 
 /**
- * Saves the change list the advisor reviewed at `changeSetVersion`, with their ticks, to the client's base case.
+ * Saves the change list the advisor reviewed at `changeSetVersion`, with their ticks, to the client's base case,
+ * and closes the import — or, with `keepOpen`, leaves it open for the next round (no change list: it reviews again).
  * 409: saved already, reviewed again since, a document still reading, ticks that don't match or leave nothing to
  * save, the household or a record changed since the review or while saving; 422: a line the write path refuses
  * (`lineId`); 500: anything else (`lineId` when a line was being written). Every refusal writes nothing.
  */
 export async function saveChangeSet(request: SaveRequest, deps: Partial<SaveDeps> = {}): Promise<SaveOutcome> {
   const { writers, resolveHoldings, now } = { writers: SAVE_WRITERS, resolveHoldings: resolveSaveHoldings, now: () => new Date(), ...deps };
-  const { scope, actorId, actingAsAdvisor, principal, changeSetVersion } = request;
+  const { scope, actorId, actingAsAdvisor, principal, changeSetVersion, keepOpen = false } = request;
   const started = Date.now();
   const at = now();
 
@@ -247,8 +288,10 @@ export async function saveChangeSet(request: SaveRequest, deps: Partial<SaveDeps
         writing = undefined;
 
         const leftOut = notSaved(changeSet, plan.leftOut);
-        const closed = await closeFactFinder(tx, scope, locked.state.version, { at: at.toISOString(), by: actorId, saved, leftOut });
-        if (!closed) throw new Refusal(refuse(409, SAVE_RACE_MESSAGE));
+        const written = keepOpen
+          ? await writeFactFinderOnTx(tx, scope, locked.state.version, keptOpen(locked.state, lines, saved, leftOut, at.toISOString()))
+          : await closeFactFinder(tx, scope, locked.state.version, { at: at.toISOString(), by: actorId, saved, leftOut });
+        if (!written) throw new Refusal(refuse(409, SAVE_RACE_MESSAGE));
         const targets: Partial<Record<TargetKind, number>> = {};
         for (const s of saved) targets[s.target] = (targets[s.target] ?? 0) + 1;
         const { creates, updates } = countLines(lines);
@@ -263,11 +306,12 @@ export async function saveChangeSet(request: SaveRequest, deps: Partial<SaveDeps
             saved: saved.length, leftOut: leftOut.length, creates, updates, targets, ms: Date.now() - started,
             // Each line by its record: the writers' own follow-up writes (positions, employer, address…) have no audit row.
             records: saved.map(({ lineId, target, recordId }) => ({ lineId, target, recordId })),
+            ...(keepOpen ? { keepOpen: true } : {}),
             ...(actingAsAdvisor ? { actingAsAdvisor } : {}),
           },
           tx,
         });
-        return closed;
+        return written;
       },
       { isolationLevel: "repeatable read" },
     );

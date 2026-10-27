@@ -63,6 +63,13 @@ const clientOp = z.discriminatedUnion("op", [
     field: z.enum(HOLDING_FIELDS),
     value: z.unknown(),
   }),
+  z.object({
+    op: z.literal("addHolding"),
+    sectionId: id,
+    rowId: id,
+    holdingId: id,
+    holding: z.partialRecord(z.enum(HOLDING_FIELDS), z.union([z.string(), z.number(), z.null()])),
+  }),
   z.object({ op: z.literal("removeHolding"), sectionId: id, rowId: id, holdingId: id }),
   z.object({
     op: z.literal("assignHolding"),
@@ -89,8 +96,8 @@ export function parseOps(input: unknown): FFOp[] {
   return parsed.data;
 }
 
-/** How many ops of each kind a batch holds (audit metadata). */
-export function countOps(ops: readonly FFOp[]): Record<string, number> {
+/** How many ops of each kind a batch holds (audit metadata) — staging ops or worksheet ops. */
+export function countOps(ops: readonly { op: string }[]): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const op of ops) counts[op.op] = (counts[op.op] ?? 0) + 1;
   return counts;
@@ -384,6 +391,20 @@ function applyOne(state: FactFinderState, op: FFOp, ctx: OpContext): FactFinderS
       return link.kind === "existing" ? releaseOtherClaims(next, section, row.id, link.recordId) : next;
     }
 
+    case "addHolding": {
+      const section = sectionOrThrow(op.sectionId);
+      if (!section.holdings) throw new FactFinderOpError(`${section.label} rows don't carry holdings.`);
+      const index = rowIndexOrThrow(state, section, op.rowId);
+      const row = rowsOf(state, section.id)[index];
+      const holdings = row.holdings ?? [];
+      if (holdings.some((h) => h.id === op.holdingId)) throw new FactFinderOpError("That account already has a holding with that id.");
+      const holding: FFHolding = { id: op.holdingId, ticker: null, name: null, shares: null, price: null, marketValue: null, costBasis: null, by: ctx.by, pinned: true };
+      for (const field of HOLDING_FIELDS) {
+        if (op.holding[field] !== undefined) Object.assign(holding, { [field]: normalizeHoldingValue(field, op.holding[field]) });
+      }
+      return replaceRow(state, section.id, index, { ...row, holdings: [...holdings, holding] });
+    }
+
     case "setHolding":
     case "removeHolding": {
       const section = sectionOrThrow(op.sectionId);
@@ -451,6 +472,14 @@ function applyOne(state: FactFinderState, op: FFOp, ctx: OpContext): FactFinderS
             throw new FactFinderOpError("Can't undo — the unassigned holdings have changed since that reply.");
           }
           next = { ...next, unassignedHoldings: snap.before };
+          continue;
+        }
+        if (snap.kind === "worksheet") {
+          // Only the tables: a document composed since (an upload) doesn't block the Undo, and stays composed.
+          if (!sameJson(next.worksheet.tables, snap.after.tables)) {
+            throw new FactFinderOpError("Can't undo — the worksheet has changed since that reply.");
+          }
+          next = { ...next, worksheet: { ...snap.before, composedFileIds: next.worksheet.composedFileIds } };
           continue;
         }
         if (!sameLocation(locationOf(next, snap.rowId), snap.after)) {

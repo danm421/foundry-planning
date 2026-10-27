@@ -331,7 +331,52 @@ describe("applyOps", () => {
   });
 });
 
+describe("addHolding", () => {
+  it("addHolding appends a pinned holding", () => {
+    const start = withRows({ retirement: [ira()] });
+    const s = applyOps(start, [
+      { op: "addHolding", sectionId: "retirement", rowId: "r1", holdingId: "h-new", holding: { ticker: "vti", shares: "10.5", marketValue: "$1,000" } },
+    ], ctx);
+    const h = s.sections.retirement[0].holdings?.find((x) => x.id === "h-new");
+    expect(h).toMatchObject({ ticker: "VTI", shares: 10.5, marketValue: 1000, name: null, price: null, by: "advisor", pinned: true });
+    expect(() => applyOps(start, [
+      { op: "addHolding", sectionId: "retirement", rowId: "r1", holdingId: "h2", holding: { shares: "lots" } },
+    ], ctx)).toThrow(FactFinderOpError);
+  });
+
+  it("addHolding refuses a cash row", () => {
+    const start = withRows({ cash: [row("c1", { accountName: doc("Checking") })] });
+    expect(() => applyOps(start, [
+      { op: "addHolding", sectionId: "cash", rowId: "c1", holdingId: "h1", holding: { ticker: "VTI" } },
+    ], ctx)).toThrow(/don't carry holdings/);
+  });
+});
+
 describe("undo snapshots", () => {
+  it("restoreSnapshots puts the worksheet back", () => {
+    const before = emptyFactFinderState();
+    const after = { ...before, worksheet: { tables: [{ id: "t", title: "T", columns: [], rows: [] }], composedFileIds: [] } };
+    const undone = applyOps(after, [{ op: "restoreSnapshots", snapshots: [{ kind: "worksheet", before: before.worksheet, after: after.worksheet }] }], ctx);
+    expect(undone.worksheet).toEqual(before.worksheet);
+  });
+
+  it("restoreSnapshots refuses a worksheet whose tables changed since that reply", () => {
+    const before = emptyFactFinderState();
+    const after = { ...before, worksheet: { tables: [{ id: "t", title: "T", columns: [], rows: [] }], composedFileIds: [] } };
+    const edited = { ...after, worksheet: { ...after.worksheet, tables: [{ id: "t", title: "Renamed", columns: [], rows: [] }] } };
+    expect(() => applyOps(edited, [{ op: "restoreSnapshots", snapshots: [{ kind: "worksheet", before: before.worksheet, after: after.worksheet }] }], ctx))
+      .toThrow("Can't undo — the worksheet has changed since that reply.");
+  });
+
+  it("a document composed since the reply doesn't block its Undo, and stays composed", () => {
+    // An upload after the reply composed f2 without touching the tables (nothing new to show).
+    const before = { ...emptyFactFinderState(), worksheet: { tables: [], composedFileIds: ["f1"] } };
+    const after = { ...before, worksheet: { tables: [{ id: "t", title: "T", columns: [], rows: [] }], composedFileIds: ["f1"] } };
+    const composed = { ...after, worksheet: { ...after.worksheet, composedFileIds: ["f1", "f2"] } };
+    const undone = applyOps(composed, [{ op: "restoreSnapshots", snapshots: [{ kind: "worksheet", before: before.worksheet, after: after.worksheet }] }], ctx);
+    expect(undone.worksheet).toEqual({ tables: [], composedFileIds: ["f1", "f2"] });
+  });
+
   it("snapshots changed rows and restores them", () => {
     const start = withRows({ retirement: [ira(), row("r2", { accountName: doc("Roth") })] });
     const after = applyOps(start, [

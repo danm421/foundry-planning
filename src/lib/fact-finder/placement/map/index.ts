@@ -1,7 +1,7 @@
 // src/lib/fact-finder/placement/map/index.ts
 /**
  * Every section's map, in schema order (D4), and the column that feeds a
- * target's field — where a missing required value's "Fix in fact finder" goes
+ * target's field — the cell a blocked line's missing required value goes in
  * (Task 17). Pure.
  */
 import type { TargetKind } from "../../change-set";

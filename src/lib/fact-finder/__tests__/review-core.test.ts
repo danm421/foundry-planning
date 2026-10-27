@@ -155,3 +155,34 @@ describe("reviewFactFinder — the change list", () => {
     expect(console.log).toHaveBeenCalledWith(expect.stringMatching(/^\[fact-finder-review\] import i1: 3 lines in \d+ ms — 1500 tokens/));
   });
 });
+
+describe("reviewFactFinder — onlyRows", () => {
+  it("onlyRows builds lines for those rows only", async () => {
+    const outcome = await reviewFactFinder(SCOPE, FULL, { now: NOW, runLeftovers: null, onlyRows: ["c2"] });
+    if (!outcome.ok) throw new Error(`refused: ${outcome.body.error}`);
+    expect(outcome.changeSet.lines.map((l) => [l.id, l.action])).toEqual([["c2/account", "create"]]);
+  });
+
+  it("a link needing a click outside onlyRows doesn't refuse the review", async () => {
+    const suggested = { kind: "existing" as const, recordId: "a-1", score: 0.74, confirmed: false, by: "auto" as const };
+    const state = stored({ cash: [{ ...CHECKING, link: suggested }, SAVINGS] });
+    const outside = await reviewFactFinder(SCOPE, state, { now: NOW, runLeftovers: null, onlyRows: ["c2"] });
+    expect(outside.ok).toBe(true);
+    const inside = await reviewFactFinder(SCOPE, state, { now: NOW, runLeftovers: null, onlyRows: ["c1", "c2"] });
+    expect(inside).toEqual({ ok: false, status: 409, body: { error: "1 link needs a click first." } });
+  });
+
+  it("the stored state keeps rows outside onlyRows", async () => {
+    const outcome = await reviewFactFinder(SCOPE, FULL, { now: NOW, runLeftovers: null, onlyRows: ["c2", "no-such-row"] });
+    if (!outcome.ok) throw new Error(`refused: ${outcome.body.error}`);
+    expect(writeFactFinder).toHaveBeenCalledExactlyOnceWith(SCOPE, 3, { ...FULL, changeSet: outcome.changeSet }, { keepChangeSet: true });
+    expect(outcome.factFinder.sections.cash.map((r) => r.id)).toEqual(["c1", "c2"]);
+  });
+
+  it("a vanished in-scope link drops against the full state", async () => {
+    const state = stored({ cash: [{ ...CHECKING, link: linkedTo("a-deleted") }, SAVINGS] });
+    await reviewFactFinder(SCOPE, state, { now: NOW, runLeftovers: null, onlyRows: ["c1"] });
+    const relinked = vi.mocked(relinkBaseCase).mock.calls[0][0];
+    expect(relinked.sections.cash.map((r) => r.id)).toEqual(["c1", "c2"]);
+  });
+});

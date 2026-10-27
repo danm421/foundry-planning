@@ -9,9 +9,6 @@ import { recordAudit } from "@/lib/audit";
 
 export type ImportFileRow = typeof clientImportFiles.$inferSelect;
 
-/** Per-file cap for an import, whichever door the file comes in by. */
-export const MAX_IMPORT_FILE_SIZE_BYTES = 20 * 1024 * 1024;
-
 export type StoreImportFileResult =
   | { ok: true; file: ImportFileRow; deduped: boolean }
   | { ok: false; reason: "unsupported_type" };

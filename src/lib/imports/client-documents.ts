@@ -5,11 +5,8 @@ import { canReadVault, findVisibleCrmHousehold } from "@/lib/crm/authz";
 import { downloadImportFile } from "@/lib/imports/blob";
 import { UPLOADED_SOURCE_KINDS, portalUploadPrefix } from "@/lib/crm/document-constants";
 import { intakeDocTypeLabel } from "@/lib/intake/document-types";
-import {
-  storeImportFile,
-  MAX_IMPORT_FILE_SIZE_BYTES,
-  type ImportFileRow,
-} from "@/lib/imports/store-import-file";
+import { MAX_IMPORT_FILE_SIZE_BYTES } from "@/lib/imports/import-file-limit";
+import { storeImportFile, type ImportFileRow } from "@/lib/imports/store-import-file";
 
 /**
  * Files in the client's vault, offered to the AI import so the advisor doesn't

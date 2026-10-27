@@ -35,7 +35,7 @@ export async function routeFile(args: {
   return { reader: "section", pages, warnings };
 }
 
-/** Page text for the section reader: PDF text, OCR for scans and images, docx text. */
+/** A document's page text, for the free-form read and the chat: PDF text, OCR for scans and images, docx text. */
 export async function pagesForSectionReader(
   buffer: Buffer,
   detectedKind: string,
@@ -50,9 +50,12 @@ export async function pagesForSectionReader(
   } else {
     pages = await extractPdfPages(buffer);
     if (pages.length > 0 && pages.every((p) => p.trim().length === 0)) {
+      // One page per transcription, blanks kept: pages[i] is real page i + 1, as look_at_pages numbers them.
       const ocr = await visionOcrPdf(buffer, {
         maxPages: Number(process.env.EXTRACTION_OCR_MAX_PAGES ?? "30") || 30,
         model: "mini",
+        batchSize: 1,
+        keepEmptySegments: true,
       });
       pages = ocr.segments;
       warnings.push("This PDF had no text layer, so its text was read with OCR — check the figures.");

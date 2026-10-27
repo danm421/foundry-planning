@@ -30,6 +30,7 @@ export function opTargets(op: ClientOp): OpTarget[] {
       ];
     case "setLink":
       return [{ kind: "link", rowId: op.rowId }];
+    case "addHolding":
     case "setHolding":
     case "removeHolding":
       return [{ kind: "holding", rowId: op.rowId, holdingId: op.holdingId }];

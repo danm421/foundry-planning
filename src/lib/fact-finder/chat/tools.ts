@@ -3,24 +3,23 @@ import { z } from "zod";
 import { redactSsns } from "@/lib/extraction/redact-ssn";
 import { applyOps, type ClientOp } from "../ops";
 import { FACT_FINDER_SECTIONS, findColumn, findSection, isListLike, type FFSection } from "../schema";
-import { isBlank, locateRow, rowLabel } from "../state";
-import { CLAUDE_FILE_ID, HOLDING_FIELDS, type FactFinderState, type FFCell, type FFHolding, type FFRow } from "../types";
+import { locateRow, rowLabel } from "../state";
+import { HOLDING_FIELDS, type FactFinderState, type FFHolding, type FFHoldingField, type FFRow } from "../types";
+import { holdingText, valueText } from "../worksheet/render";
 import { fenceUntrusted } from "./fence";
-import { formatValue, holdingName, quote, sectionView } from "./view";
+import { holdingName, quote, sectionView } from "./view";
 
 /**
  * The chat's tools (spec § 5). Each validates its arguments, turns them into
  * the same `ClientOp`s the screen sends, and checks them by applying them to
  * the state it was given — the turn loop applies them for real. Reading tools
- * (`read_section`, `explain`, `reread_document`) return no ops. There is no
+ * (`read_section`) return no ops. There is no
  * save tool: the chat can only edit the fact finder.
  */
 
 export interface ToolContext {
   /** The import's live files, for document names. */
   files: { id: string; name: string }[];
-  /** A file's page text, SSNs already redacted. */
-  readDocument: (fileId: string) => Promise<string[]>;
   newId: () => string;
 }
 
@@ -32,15 +31,23 @@ export interface ToolOutcome {
   result: string;
 }
 
-/** The most document text `reread_document` hands the model at once. */
+/** The most document text the worksheet chat's `read_document` hands the model at once. */
 export const REREAD_MAX_CHARS = 20_000;
 
 const LIST_SECTION_IDS = FACT_FINDER_SECTIONS.filter(isListLike).map((s) => s.id);
 const SECTION_IDS = FACT_FINDER_SECTIONS.map((s) => s.id);
 
-type Param = { type?: string; description: string; enum?: readonly string[] };
+/** A JSON-schema property, as much of it as the tool defs use. */
+export type Param = {
+  type?: string;
+  description: string;
+  enum?: readonly string[];
+  items?: Param;
+  properties?: Record<string, Param>;
+  required?: string[];
+};
 
-function fn(name: string, description: string, properties: Record<string, Param>, required: string[]) {
+export function fn(name: string, description: string, properties: Record<string, Param>, required: string[]) {
   return { type: "function" as const, function: { name, description, parameters: { type: "object", properties, required } } };
 }
 
@@ -48,8 +55,18 @@ const rowIdParam: Param = { type: "string", description: "The row's id, as the f
 const columnIdParam: Param = { type: "string", description: "The column's id, as the fact finder or read_section shows it." };
 const holdingIdParam: Param = { type: "string", description: "The holding's id, as read_section shows it." };
 
-/** OpenAI-style function defs, bound with `bindTools`. Exported for the schema test. */
-export const TOOL_DEFS = [
+/** A new holding's values as a tool takes them (add_holding, the worksheet's stage_rows). */
+export const HOLDING_INPUT_PARAMS: Record<string, Param> = {
+  ticker: { type: "string", description: "The ticker, if it has one." },
+  name: { type: "string", description: "The security's name." },
+  shares: { type: "number", description: "How many shares." },
+  price: { type: "number", description: "The price per share, in dollars." },
+  marketValue: { type: "number", description: "The market value, in dollars." },
+  costBasis: { type: "number", description: "The cost basis, in dollars." },
+};
+
+/** The tools that edit or read staging, shared with the worksheet chat (`worksheet/tools.ts`). */
+export const STAGING_TOOL_DEFS = [
   fn(
     "set_cell",
     "Write one value into one cell of a row. Write it as the advisor would type it: dollars as 12500, " +
@@ -137,34 +154,38 @@ export const TOOL_DEFS = [
     ["holdingId", "toRowId"],
   ),
   fn(
+    "add_holding",
+    "Add a holding (a position) to a taxable, retirement or education account row, with the values you " +
+      "know: a ticker or a name, and any of shares, price, market value and cost basis. Returns the new holding's id.",
+    {
+      rowId: { type: "string", description: "The account row to add it to." },
+      ...HOLDING_INPUT_PARAMS,
+    },
+    ["rowId"],
+  ),
+  fn(
     "read_section",
     "Show one section in full: its columns with each choice column's options, every row, and every " +
       "holding with its id. The fact finder above shows only filled cells and a summary of holdings.",
     { sectionId: { type: "string", description: "The section to show.", enum: SECTION_IDS } },
     ["sectionId"],
   ),
-  fn(
-    "reread_document",
-    "Look in one uploaded document for something the fact finder doesn't show. Returns the document's " +
-      "pages most related to your question, best first. Name the document exactly as the fact finder's " +
-      "Documents list shows it.",
-    {
-      fileName: { type: "string", description: "The document's name, as the Documents list shows it." },
-      question: { type: "string", description: "What to look for." },
-    },
-    ["fileName", "question"],
-  ),
-  fn(
-    "explain",
-    "Say where a row's values came from: which document and page and how sure the reading was, or " +
-      "whether the advisor or this chat wrote them.",
-    { rowId: { type: "string", description: "The row's id, in the fact finder or the Removed tray." } },
-    ["rowId"],
-  ),
 ];
 
 const id = z.string().min(1).max(100);
 const value = z.union([z.string(), z.number(), z.boolean()]);
+const amount = z.union([z.string(), z.number()]).nullish();
+
+/** HOLDING_INPUT_PARAMS' zod shape; refine the object with `hasTickerOrName`. */
+export const HOLDING_INPUT_FIELDS = {
+  ticker: z.string().max(100).nullish(),
+  name: z.string().max(300).nullish(),
+  shares: amount,
+  price: amount,
+  marketValue: amount,
+  costBasis: amount,
+};
+export const hasTickerOrName = (h: { ticker?: string | null; name?: string | null }) => !!h.ticker?.trim() || !!h.name?.trim();
 const ARGS = {
   set_cell: z.object({ rowId: id, columnId: id, value }),
   clear_cell: z.object({ rowId: id, columnId: id }),
@@ -176,19 +197,23 @@ const ARGS = {
   set_holding: z.object({ holdingId: id, field: z.enum(HOLDING_FIELDS), value: z.union([z.string(), z.number()]) }),
   remove_holding: z.object({ holdingId: id }),
   move_holding: z.object({ holdingId: id, toRowId: id }),
+  add_holding: z.object({ rowId: id, ...HOLDING_INPUT_FIELDS }).refine(hasTickerOrName, "give a ticker or a name"),
   read_section: z.object({ sectionId: z.enum(SECTION_IDS) }),
-  reread_document: z.object({ fileName: z.string().min(1), question: z.string().min(1).max(500) }),
-  explain: z.object({ rowId: id }),
 };
 type ToolName = keyof typeof ARGS;
 
-function argsOf<N extends ToolName>(name: N, args: unknown): z.infer<(typeof ARGS)[N]> {
-  const parsed = ARGS[name].safeParse(args);
+/** Validates a tool's arguments; a failure throws a message naming the bad argument. */
+export function parseArgs<S extends z.ZodType>(name: string, schema: S, args: unknown): z.infer<S> {
+  const parsed = schema.safeParse(args);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     throw new Error(`${name} got bad arguments: ${issue?.path.join(".") || "arguments"} — ${issue?.message ?? "invalid"}.`);
   }
-  return parsed.data as z.infer<(typeof ARGS)[N]>;
+  return parsed.data;
+}
+
+function argsOf<N extends ToolName>(name: N, args: unknown): z.infer<(typeof ARGS)[N]> {
+  return parseArgs(name, ARGS[name], args) as z.infer<(typeof ARGS)[N]>;
 }
 
 function liveRow(state: FactFinderState, rowId: string): { section: FFSection; row: FFRow } {
@@ -225,85 +250,29 @@ function edit(state: FactFinderState, ops: ClientOp[], ctx: ToolContext, describ
   return { ops, summary, result: fenceUntrusted(`Done: ${summary}.`) };
 }
 
-const STOP_WORDS = new Set([
-  "the", "and", "for", "what", "which", "when", "where", "who", "how", "does", "did", "with", "from",
-  "this", "that", "are", "was", "her", "his", "their", "its", "about", "any", "all", "has", "have",
-  "there", "show", "find", "look",
-]);
+/** A holding field as the worksheet's Holdings table heads it. */
+const HOLDING_FIELD_LABELS: Record<FFHoldingField, string> = {
+  ticker: "Ticker",
+  name: "Name",
+  shares: "Shares",
+  price: "Price",
+  marketValue: "Market value",
+  costBasis: "Cost basis",
+};
 
-function keywords(question: string): string[] {
-  const words = question.toLowerCase().match(/[a-z0-9]+/g) ?? [];
-  return [...new Set(words)].filter((w) => w.length >= 3 && !STOP_WORDS.has(w));
-}
-
-/** Pages ranked by how many of the question's words they hold (page order on a tie), cut off at `budget` characters. */
-function rankedPages(pages: string[], question: string, budget: number): string {
-  const words = keywords(question);
-  const ranked = pages
-    .map((text, i) => ({ text: text.trim(), page: i + 1 }))
-    .filter((p) => p.text !== "")
-    .map((p) => ({ ...p, hits: words.filter((w) => p.text.toLowerCase().includes(w)).length }))
-    .sort((a, b) => b.hits - a.hits);
-  let out = "";
-  for (const p of ranked) {
-    const next = `${out === "" ? "" : "\n\n"}[page ${p.page}]\n${p.text}`;
-    if (out.length + next.length > budget) return out + next.slice(0, budget - out.length);
-    out += next;
-  }
-  return out;
-}
+/** A value for a tool line, as the worksheet shows it ($95,000.00): text in quotes, nothing as "(empty)". */
+const shownValue = (text: string, isText: boolean) => (text === "" ? "(empty)" : isText ? quote(text) : text);
 
 const sameName = (a: string, b: string) => redactSsns(a).text.trim().toLowerCase() === redactSsns(b).text.trim().toLowerCase();
 
-async function rereadDocument(args: z.infer<typeof ARGS.reread_document>, ctx: ToolContext): Promise<ToolOutcome> {
-  const file = ctx.files.find((f) => sameName(f.name, args.fileName));
+/** The import's file named `name` (trimmed, any case); a miss throws naming the files there are. */
+export function findDocument(files: ToolContext["files"], name: string): ToolContext["files"][number] {
+  const file = files.find((f) => sameName(f.name, name));
   if (!file) {
-    const names = ctx.files.map((f) => quote(f.name)).join(", ") || "none";
-    throw new Error(`There's no document named ${quote(args.fileName)}. The documents are: ${names}.`);
+    const names = files.map((f) => quote(f.name)).join(", ") || "none";
+    throw new Error(`There's no document named ${quote(name)}. The documents are: ${names}.`);
   }
-  const pages = (await ctx.readDocument(file.id)).map((p) => redactSsns(p).text);
-  const header = `From ${quote(file.name)}, most relevant pages first:\n`;
-  const body = rankedPages(pages, args.question, REREAD_MAX_CHARS - header.length);
-  return {
-    ops: [],
-    summary: `Looked in ${quote(file.name)} for: ${quote(args.question)}`,
-    result: fenceUntrusted(header + (body || "(this document has no readable text)")),
-  };
-}
-
-function sourceText(cell: FFCell, fileName: (fileId: string) => string): string {
-  const claudeRead = cell.source?.fileId === CLAUDE_FILE_ID;
-  if (!claudeRead) {
-    if (cell.by === "advisor") return "typed by the advisor";
-    if (cell.by === "chat") return "set in this chat";
-  }
-  if (!cell.source) return "from a document";
-  const parts = [`from ${quote(claudeRead ? (cell.source.documentName ?? "a document Claude read") : fileName(cell.source.fileId))}`];
-  if (cell.source.page !== undefined) parts.push(`page ${cell.source.page}`);
-  if (cell.confidence !== undefined) parts.push(`${Math.round(cell.confidence * 100)}% sure`);
-  const snippet = cell.source.snippet ? ` — ${quote(cell.source.snippet.slice(0, 200))}` : "";
-  return parts.join(", ") + snippet;
-}
-
-function explainRow(state: FactFinderState, rowId: string, ctx: ToolContext): ToolOutcome {
-  const at = locateRow(state, rowId);
-  const entry = at ? undefined : state.removed.find((e) => e.row.id === rowId);
-  const sectionId = at?.sectionId ?? entry?.sectionId;
-  const section = sectionId ? findSection(sectionId) : undefined;
-  const row = at ? state.sections[at.sectionId][at.index] : entry?.row;
-  if (!section || !row) throw new Error(`There's no row "${rowId}" in the fact finder or the Removed tray.`);
-
-  const fileName = (fileId: string) => ctx.files.find((f) => f.id === fileId)?.name ?? "a document no longer in this import";
-  const label = quote(rowLabel(section, row));
-  const lines = [`${label} — row ${row.id} in ${section.label}${entry ? ` (in the Removed tray: ${quote(entry.reason)})` : ""}`];
-  for (const column of section.columns) {
-    const cell = row.cells[column.id];
-    if (!cell || isBlank(cell.value)) continue;
-    lines.push(`- ${column.id}=${formatValue(cell.value)}: ${sourceText(cell, fileName)}`);
-  }
-  if (row.sourceFileIds.length > 0) lines.push(`Documents: ${row.sourceFileIds.map((f) => quote(fileName(f))).join(", ")}`);
-  if (row.statementDate) lines.push(`Statement date: ${row.statementDate}`);
-  return { ops: [], summary: `Explained ${label}`, result: fenceUntrusted(lines.join("\n")) };
+  return file;
 }
 
 async function dispatch(name: string, raw: unknown, state: FactFinderState, ctx: ToolContext): Promise<ToolOutcome> {
@@ -314,7 +283,9 @@ async function dispatch(name: string, raw: unknown, state: FactFinderState, ctx:
       const ops: ClientOp[] = [{ op: "setCell", sectionId: section.id, rowId: row.id, columnId: a.columnId, value: a.value }];
       return edit(state, ops, ctx, (next) => {
         const stored = next.sections[section.id].find((r) => r.id === row.id)?.cells[a.columnId]?.value ?? null;
-        return `Set ${findColumn(section.id, a.columnId)?.label} on ${quote(rowLabel(section, row))} to ${formatValue(stored)}`;
+        const column = findColumn(section.id, a.columnId);
+        const value = shownValue(valueText(stored, column?.kind ?? "text"), typeof stored === "string");
+        return `Set ${column?.label} on ${quote(rowLabel(section, row))} to ${value}`;
       });
     }
     case "clear_cell": {
@@ -369,6 +340,10 @@ async function dispatch(name: string, raw: unknown, state: FactFinderState, ctx:
       const { section, row } = liveRow(state, a.rowId);
       if (!section.links) throw new Error(`${section.label} rows don't link to records.`);
       const label = quote(rowLabel(section, row));
+      // A keep-open save linked the row to the record it wrote: relinking it would add that record again on the next save.
+      const link = row.link;
+      const saved = link?.kind === "existing" ? state.applied?.find((x) => x.rowId === row.id && x.recordId === link.recordId) : undefined;
+      if (saved) throw new Error(`${label} is already in the plan as ${quote(saved.label)} — leave its link as it is.`);
       if (a.kind === "new") {
         const ops: ClientOp[] = [{ op: "setLink", sectionId: section.id, rowId: row.id, link: { kind: "new" } }];
         return edit(state, ops, ctx, () => `${label} will be a new record`);
@@ -376,6 +351,10 @@ async function dispatch(name: string, raw: unknown, state: FactFinderState, ctx:
       if (!a.recordId) throw new Error('set_link needs a recordId when kind is "existing".');
       const candidates = row.linkCandidates ?? [];
       const candidate = candidates.find((c) => c.recordId === a.recordId);
+      if (link?.kind === "existing" && link.confirmed && link.recordId === a.recordId) {
+        const summary = `${label} is already linked to ${candidate ? quote(candidate.label) : "that plan record"}`;
+        return { ops: [], summary, result: fenceUntrusted(`Done: ${summary}.`) };
+      }
       if (!candidate) {
         if (candidates.length === 0) {
           throw new Error(`${label} has no candidates to link to — use kind "new", or leave the link to the advisor.`);
@@ -396,7 +375,8 @@ async function dispatch(name: string, raw: unknown, state: FactFinderState, ctx:
       return edit(state, ops, ctx, (next) => {
         const stored = next.sections[section.id].find((r) => r.id === row.id)?.holdings?.find((h) => h.id === holding.id);
         const where = quote(rowLabel(section, row));
-        return `Set ${a.field} of ${holdingName(holding)} in ${where} to ${formatValue(stored?.[a.field] ?? null)}`;
+        const value = shownValue(stored ? holdingText(stored, a.field) : "", a.field === "ticker" || a.field === "name");
+        return `Set ${HOLDING_FIELD_LABELS[a.field]} of ${holdingName(holding)} in ${where} to ${value}`;
       });
     }
     case "remove_holding": {
@@ -416,14 +396,21 @@ async function dispatch(name: string, raw: unknown, state: FactFinderState, ctx:
       ];
       return edit(state, ops, ctx, () => `Moved ${holdingName(holding)} to ${quote(rowLabel(to.section, to.row))}`);
     }
+    case "add_holding": {
+      const { rowId, ...holding } = argsOf(name, raw);
+      const { section, row } = liveRow(state, rowId);
+      const holdingId = ctx.newId();
+      const ops: ClientOp[] = [{ op: "addHolding", sectionId: section.id, rowId: row.id, holdingId, holding }];
+      const outcome = edit(state, ops, ctx, (next) => {
+        const added = next.sections[section.id].find((r) => r.id === row.id)!.holdings!.find((h) => h.id === holdingId)!;
+        return `Added ${holdingName(added)} to ${quote(rowLabel(section, row))}`;
+      });
+      return { ...outcome, result: fenceUntrusted(`Done: ${outcome.summary}. New holding id: ${holdingId}.`) };
+    }
     case "read_section": {
       const a = argsOf(name, raw);
       return { ops: [], summary: `Read ${findSection(a.sectionId)!.label}`, result: fenceUntrusted(sectionView(state, a.sectionId)) };
     }
-    case "reread_document":
-      return rereadDocument(argsOf(name, raw), ctx);
-    case "explain":
-      return explainRow(state, argsOf(name, raw).rowId, ctx);
     default:
       throw new Error(`Unknown tool "${name}".`);
   }

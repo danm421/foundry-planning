@@ -2,8 +2,9 @@
 // src/components/fact-finder/documents-panel.tsx
 // The documents part of the side panel: one line per document saying how its
 // reading went, and the upload zone. `useDocuments` keeps the document list and
-// runs the reads; the screen holds it, so a read carries on while the panel is
-// closed. Imports only client-safe leaf modules from src/lib/fact-finder.
+// runs the reads, fetching the fact finder as they finish — what they read is
+// then owed to the worksheet; the screen holds it, so a read carries on while
+// the panel is closed. Imports only client-safe leaf modules from src/lib/fact-finder.
 import { useCallback, useEffect, useRef, useState } from "react";
 import UploadZone, { type UploadedFileInfo } from "@/components/import/upload-zone";
 import { filesReading, isReadingNow, needsReading } from "@/lib/fact-finder/reading-status";
@@ -60,11 +61,14 @@ export function useDocuments({
   const [removedIds, setRemovedIds] = useState<string[]>([]);
   // Files never read, or abandoned mid-read. A failed file waits for Retry: reading it
   // on every open would fail it again, and add another chat message saying so.
-  const [readsOnOpen] = useState(() =>
-    initialFiles.some((file) => {
-      const reading = state.readings[file.id];
-      return reading?.status !== "failed" && needsReading(reading, new Date());
-    }),
+  // A finished import reads nothing.
+  const [readsOnOpen] = useState(
+    () =>
+      !state.closed &&
+      initialFiles.some((file) => {
+        const reading = state.readings[file.id];
+        return reading?.status !== "failed" && needsReading(reading, new Date());
+      }),
   );
   const [, setChecks] = useState(0);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -158,15 +162,18 @@ type LineState =
   | { kind: "failed"; reason: string | undefined }
   | { kind: "waiting" };
 
+/** A free-form read puts no rows in staging (the AI reads it in the chat), so its count says nothing: no count. */
+const rowsRead = (read: { reader?: FFFileReading["reader"]; rows?: number }) => (read.reader === "freeform" ? undefined : read.rows);
+
 /** The live read's word on a file wins; otherwise what the fact finder last said. */
 function lineState(line: ReadLine | undefined, reading: FFFileReading | undefined, now: Date): LineState {
   if (line) {
     if (line.status === "reading") return { kind: "reading" };
-    if (line.status === "done") return { kind: "read", rows: line.rows };
+    if (line.status === "done") return { kind: "read", rows: rowsRead(line) };
     return { kind: "failed", reason: line.error };
   }
   if (isReadingNow(reading, now)) return { kind: "reading" };
-  if (reading?.status === "done") return { kind: "read", rows: reading.rows };
+  if (reading?.status === "done") return { kind: "read", rows: rowsRead(reading) };
   if (reading?.status === "failed") return { kind: "failed", reason: reading.reason };
   // Never read, or a reading abandoned long ago.
   return { kind: "waiting" };
@@ -271,7 +278,7 @@ export function DocumentsPanel({ clientId, importId, docs, state, clientDocument
       />
       {docs.removedAny && (
         <p role="status" className="text-xs text-ink-3">
-          Values read from it stay — remove those rows if you don&apos;t want them.
+          Values read from it stay — ask the chat to remove them if you don&apos;t want them.
         </p>
       )}
     </section>

@@ -45,6 +45,7 @@ import {
 import { purgeCrmHouseholdById } from "@/lib/crm/households";
 import { purgeForgeHistory } from "@/domain/forge/purge-history";
 import { deleteImportFile } from "@/lib/imports/blob";
+import { deletePageText } from "@/lib/fact-finder/worksheet/page-text-store";
 import { deleteBrandingAsset } from "@/lib/branding/blob";
 import { getStripe } from "@/lib/billing/stripe-client";
 import { recordAudit } from "@/lib/audit";
@@ -167,9 +168,15 @@ export async function purgeFirmById(firmId: string): Promise<void> {
     .filter((k): k is string => !!k);
 
   // Import-file blobs (PRIVATE store). The firm's clients own imports; the
-  // shared import file is keyed by blobPathname.
+  // shared import file is keyed by blobPathname. Each file may also have a
+  // fact-finder page-text sidecar, which no row names: it's found by the
+  // import and file ids.
   const importFileRows = await db
-    .select({ blobPathname: clientImportFiles.blobPathname })
+    .select({
+      blobPathname: clientImportFiles.blobPathname,
+      importId: clientImportFiles.importId,
+      id: clientImportFiles.id,
+    })
     .from(clientImportFiles)
     .where(
       inArray(
@@ -355,6 +362,13 @@ export async function purgeFirmById(firmId: string): Promise<void> {
       await deleteImportFile(pathname);
     } catch (err) {
       console.error(`[purge-firm] import-file blob del failed (${firmId}):`, err);
+    }
+  }
+  for (const { importId, id } of importFileRows) {
+    try {
+      await deletePageText(importId, id);
+    } catch (err) {
+      console.error(`[purge-firm] page-text blob del failed (${firmId}):`, err);
     }
   }
   for (const key of taskFileKeys) {

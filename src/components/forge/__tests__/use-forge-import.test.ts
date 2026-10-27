@@ -6,6 +6,9 @@ vi.mock("../actions", () => ({ resolveBaseScenarioId: vi.fn() }));
 import { resolveBaseScenarioId } from "../actions";
 import { useForgeImport } from "../use-forge-import";
 
+const { mockStageFile } = vi.hoisted(() => ({ mockStageFile: vi.fn() }));
+vi.mock("@/lib/uploads/stage-file", () => ({ stageFile: mockStageFile }));
+
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
     ok,
@@ -15,7 +18,10 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
 }
 
 describe("useForgeImport", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStageFile.mockImplementation(async (_url: string, file: File) => `staging/imports/client_1/1-x-${file.name}`);
+  });
 
   it("runs create → upload → extract → match in order and returns a summary", async () => {
     vi.mocked(resolveBaseScenarioId).mockResolvedValue("scn_base");
@@ -84,7 +90,45 @@ describe("useForgeImport", () => {
 });
 
 describe("useForgeImport — runPlanBuild", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStageFile.mockImplementation(async (_url: string, file: File) => `staging/imports/client_1/1-x-${file.name}`);
+  });
+
+  it("stages each file before registering it", async () => {
+    const registered: { pathname: unknown; filename: unknown; file: unknown }[] = [];
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/files")) {
+        const form = init!.body as FormData;
+        registered.push({ pathname: form.get("stagedPathname"), filename: form.get("filename"), file: form.get("file") });
+        return jsonResponse({ file: { id: "f1" }, deduped: false });
+      }
+      throw new Error(`unexpected ${u}`);
+    }) as unknown as typeof fetch;
+
+    const { result } = renderHook(() => useForgeImport());
+    await act(async () => {
+      await result.current.runPlanBuild({ clientId: "client_1", importId: "imp_1", files: [new File(["x"], "stmt.pdf"), new File(["y"], "ff.pdf")] });
+    });
+
+    expect(mockStageFile).toHaveBeenCalledWith("/api/clients/client_1/imports/imp_1/files/upload-token", expect.any(File));
+    expect(registered).toEqual([
+      { pathname: "staging/imports/client_1/1-x-stmt.pdf", filename: "stmt.pdf", file: null },
+      { pathname: "staging/imports/client_1/1-x-ff.pdf", filename: "ff.pdf", file: null },
+    ]);
+  });
+
+  it("shows a staging failure's message and registers nothing", async () => {
+    mockStageFile.mockRejectedValue(new Error("Upload failed. Please try again."));
+    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+    const { result } = renderHook(() => useForgeImport());
+    await act(async () => {
+      await result.current.runPlanBuild({ clientId: "client_1", importId: "imp_1", files: [new File(["x"], "stmt.pdf")] });
+    });
+    expect(result.current.errorMessage).toBe("Upload failed. Please try again.");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 
   it("uploads each file to the import, then stops — no extract, match or assemble — and returns the fact finder screen", async () => {
     const calls: { url: string; method: string | undefined }[] = [];
@@ -130,6 +174,8 @@ describe("useForgeImport — runPlanBuild", () => {
     expect(result.current.status).toBe("uploading");
 
     await act(async () => {
+      // The file is staged first, so the register request goes out a tick later.
+      await vi.waitFor(() => expect(release).toBeTypeOf("function"));
       release(jsonResponse({ file: { id: "f1" } }));
       await run;
     });

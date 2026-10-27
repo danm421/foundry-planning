@@ -171,3 +171,31 @@ describe("holdingKey and JSON comparison", () => {
     expect(sameJson([1, 2], [2, 1])).toBe(false);
   });
 });
+
+describe("worksheet in the stored state", () => {
+  const AT = "2026-10-26T12:00:00.000Z";
+
+  it("carries a stored worksheet and the applied list", () => {
+    const ws = { tables: [{ id: "t1", title: "Accounts", columns: [], rows: [] }], composedFileIds: ["f1"] };
+    const applied = [{ lineId: "r1/account", rowId: "r1", target: "account" as const, recordId: "a1", label: "Joint", at: AT }];
+    const s = readFactFinderState({ factFinder: { ...emptyFactFinderState(), worksheet: ws, applied } });
+    expect(s.worksheet).toEqual(ws);
+    expect(s.applied).toEqual(applied);
+  });
+
+  it("an import stored without a worksheet shows its staging rows as default tables", () => {
+    const old: Partial<ReturnType<typeof emptyFactFinderState>> = emptyFactFinderState();
+    delete old.worksheet;
+    old.sections = { ...old.sections, cash: [{ id: "c1", sourceFileIds: ["f1"], cells: { accountName: { value: "Checking", by: "document" } } }] };
+    const ws = readFactFinderState({ factFinder: old }).worksheet;
+    expect(ws.derived).toBe(true);
+    expect(ws.tables.map((t) => [t.id, t.rows.length])).toEqual([["t-accounts", 1]]);
+  });
+
+  it("a derived worksheet stored by an earlier write is rebuilt from staging on read", () => {
+    const stored = emptyFactFinderState();
+    stored.worksheet = { tables: [], composedFileIds: [], derived: true };
+    stored.sections.cash = [{ id: "c1", sourceFileIds: [], cells: { accountName: { value: "Checking", by: "advisor" } } }];
+    expect(readFactFinderState({ factFinder: stored }).worksheet.tables.map((t) => t.id)).toEqual(["t-accounts"]);
+  });
+});

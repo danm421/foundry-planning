@@ -7,6 +7,7 @@ import { READ_BUSY_MESSAGE, type ReadFrame } from "@/lib/fact-finder/api-types";
 import { STALE_READING_MS } from "@/lib/fact-finder/reading-status";
 import { emptyFactFinderState } from "@/lib/fact-finder/state";
 import type { FactFinderState, FFFileReading, FFRow } from "@/lib/fact-finder/types";
+import type { WsTable } from "@/lib/fact-finder/worksheet/types";
 import type { ClientDocumentView } from "@/lib/imports/client-documents";
 import { DocumentsPanel, type Documents } from "../documents-panel";
 import { FactFinderScreen } from "../fact-finder-screen";
@@ -48,6 +49,7 @@ vi.mock("@/components/import/upload-zone", () => ({
 
 const READ_URL = "/api/clients/c1/imports/i1/fact-finder/read";
 const FF_URL = "/api/clients/c1/imports/i1/fact-finder";
+const TURN_URL = `${FF_URL}/turn`;
 const AT = "2026-10-13T09:00:00.000Z";
 
 const FILES: FFScreenFile[] = [
@@ -91,7 +93,18 @@ function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-/** POST …/read answers with the queued responses in turn; GET …/fact-finder with `fresh()`. */
+/** A worksheet table of cash row `rowId`, its row read from `fileId`. */
+const accountsTable = (rowId: string, fileId: string): WsTable => ({
+  id: "t1",
+  title: "Accounts",
+  columns: [{ id: "name", header: "Account", bind: { kind: "cell", columnId: "accountName" } }],
+  rows: [{ id: "w1", cells: {}, ref: { rowId }, source: { fileId } }],
+});
+
+/**
+ * POST …/read answers with the queued responses in turn; GET …/fact-finder with `fresh()`; POST …/turn (the
+ * compose after each read) with `fresh()`, every document it has read folded into the worksheet.
+ */
 function stubFetch(
   reads: Response[],
   fresh: () => FactFinderState | Promise<FactFinderState> = () => emptyFactFinderState(),
@@ -103,12 +116,18 @@ function stubFetch(
       return next;
     }
     if (url === FF_URL && !init?.method) return jsonResponse(200, { factFinder: await fresh() });
+    if (url === TURN_URL && init?.method === "POST") {
+      const now = await fresh();
+      const composed = { ...now, version: now.version + 1, worksheet: { ...now.worksheet, composedFileIds: Object.keys(now.readings) } };
+      const done = { type: "done", factFinder: composed, turnId: null };
+      return new Response(`data: ${JSON.stringify(done)}\n\n`, { status: 200, headers: { "content-type": "text/event-stream" } });
+    }
     throw new Error(`unexpected ${init?.method ?? "GET"} ${url}`);
   });
   vi.stubGlobal("fetch", fetchMock);
   const count = (url: string, method?: string) =>
     fetchMock.mock.calls.filter(([u, init]) => u === url && init?.method === method).length;
-  return { reads: () => count(READ_URL, "POST"), gets: () => count(FF_URL) };
+  return { reads: () => count(READ_URL, "POST"), gets: () => count(FF_URL), composes: () => count(TURN_URL, "POST") };
 }
 
 function renderScreen(state: FactFinderState, files: FFScreenFile[] = FILES, clientDocuments?: ClientDocumentView[]) {
@@ -118,15 +137,14 @@ function renderScreen(state: FactFinderState, files: FFScreenFile[] = FILES, cli
       importId="i1"
       initialState={state}
       initialFiles={files}
-      entities={[]}
-      hasCoClient
       clientDocuments={clientDocuments}
     />,
   );
 }
 
 const panel = () => screen.getByRole("complementary", { name: "Documents & chat" });
-const review = () => screen.getByRole("button", { name: "Review changes →" });
+/** Disabled while a document reads. */
+const composer = () => screen.getByRole("textbox", { name: "Chat message" });
 /** The progress line naming this document. */
 const line = (name: string) => within(screen.getByRole("list", { name: "Reading progress" })).getByText(name).closest("li");
 /** Lets the stream's chunks and the replies they trigger land, advancing fake time by `ms`. */
@@ -138,14 +156,14 @@ afterEach(() => {
 });
 
 describe("reading on open", () => {
-  it("reads when a document still needs it: the panel opens, the lines follow the read, and Review waits", async () => {
+  it("reads when a document still needs it: the lines follow the read, the chat waits, and the read is folded into the worksheet", async () => {
     const stream = liveStream();
     const net = stubFetch([stream.response], () => withReadings({ f1: DONE, f2: { ...DONE, rows: 5 } }, 2));
     renderScreen(withReadings({ f1: DONE }));
 
     expect(panel()).toBeInTheDocument();
     expect(net.reads()).toBe(1);
-    expect(review()).toHaveAccessibleDescription("Wait for the documents to finish reading.");
+    expect(composer()).toBeDisabled();
     expect(line("hendricks-fact-finder.pdf")).toHaveTextContent("Read · 3 rows");
     expect(line("schwab-june.pdf")).toHaveTextContent("Waiting to read");
 
@@ -156,17 +174,18 @@ describe("reading on open", () => {
       stream.write(fileFrame("f2", "done", { reader: "statement", rows: 5 }), finished());
       stream.close();
     });
-    await waitFor(() => expect(review()).toBeEnabled());
+    await waitFor(() => expect(composer()).toBeEnabled());
     expect(line("schwab-june.pdf")).toHaveTextContent("Read · 5 rows");
     expect(net.gets()).toBe(1);
+    expect(net.composes()).toBe(1);
   });
 
   it("doesn't read when every document has been read", () => {
     const net = stubFetch([]);
-    renderScreen(withReadings({ f1: DONE, f2: DONE }));
+    renderScreen({ ...withReadings({ f1: DONE, f2: DONE }), worksheet: { tables: [], composedFileIds: ["f1", "f2"] } });
 
-    expect(screen.getByRole("button", { name: "Documents & chat" })).toHaveAttribute("aria-expanded", "false");
     expect(net.reads()).toBe(0);
+    expect(net.composes()).toBe(0);
   });
 
   it("reads a document abandoned mid-read", () => {
@@ -177,7 +196,7 @@ describe("reading on open", () => {
     expect(net.reads()).toBe(1);
   });
 
-  it("a failed document opens the panel without reading: it waits for its Retry, so opening the screen doesn't fail it again", async () => {
+  it("a failed document isn't read as the screen opens: it waits for its Retry, so opening the screen doesn't fail it again", async () => {
     const net = stubFetch([liveStream().response]);
     renderScreen(withReadings({ f1: DONE, f2: { status: "failed", startedAt: AT, reason: "Couldn't read this document — try again." } }));
 
@@ -262,6 +281,18 @@ describe("progress lines", () => {
     expect(props.read.start).toHaveBeenCalledTimes(2);
   });
 
+  it("says only \"Read\" for a document the AI reads itself: it puts no rows in staging, so a count would say nothing was found", () => {
+    const state = withReadings({ g: { status: "done", reader: "freeform", startedAt: AT, rows: 0 } });
+    const files = ["g", "h"].map((id) => ({ id, name: `${id}.pdf`, documentType: "auto" }));
+    const props = docs(files, { h: fileFrame("h", "done", { reader: "freeform", rows: 0 }) as Documents["read"]["lines"][string] });
+    render(<DocumentsPanel clientId="c1" importId="i1" docs={props} state={state} />);
+
+    for (const name of ["g.pdf", "h.pdf"]) {
+      expect(line(name)).toHaveTextContent(/Read$/);
+      expect(line(name)).not.toHaveTextContent("nothing found");
+    }
+  });
+
   it("hides the upload zone's document-type picker: a file is read once, so a later type would do nothing", () => {
     render(<DocumentsPanel clientId="c1" importId="i1" docs={docs(FILES)} state={emptyFactFinderState()} />);
     expect(screen.getByText(/^Type picker:/)).toHaveTextContent("Type picker: hidden");
@@ -281,7 +312,6 @@ describe("uploads", () => {
     const stream = liveStream();
     const net = stubFetch([stream.response]);
     renderScreen(withReadings({ f1: DONE, f2: DONE }));
-    fireEvent.click(screen.getByRole("button", { name: "Documents & chat" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Upload fidelity-401k.pdf" }));
     expect(line("fidelity-401k.pdf")).toHaveTextContent("Waiting to read");
@@ -293,7 +323,7 @@ describe("uploads", () => {
 
     await elapse(1);
     expect(net.reads()).toBe(1);
-    expect(review()).toHaveAccessibleDescription("Wait for the documents to finish reading.");
+    expect(composer()).toBeDisabled();
   });
 
   it("names an uploaded document as the source of the values read from it", async () => {
@@ -305,9 +335,12 @@ describe("uploads", () => {
       sourceFileIds: ["f3"],
     };
     const fresh = withReadings({ f1: DONE, f2: DONE, f3: DONE }, 2);
-    stubFetch([stream.response], () => ({ ...fresh, sections: { ...fresh.sections, cash: [cash] } }));
+    stubFetch([stream.response], () => ({
+      ...fresh,
+      sections: { ...fresh.sections, cash: [cash] },
+      worksheet: { tables: [accountsTable("c1", "f3")], composedFileIds: ["f3"] },
+    }));
     renderScreen(withReadings({ f1: DONE, f2: DONE }));
-    fireEvent.click(screen.getByRole("button", { name: "Documents & chat" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Upload fidelity-401k.pdf" }));
     await elapse(1500);
@@ -317,9 +350,7 @@ describe("uploads", () => {
     });
     await elapse(0);
 
-    fireEvent.click(screen.getByRole("button", { name: /^Accounts/ }));
-    const table = screen.getByRole("table", { name: "Cash Accounts" });
-    expect(within(table).getByRole("tooltip")).toHaveTextContent("From fidelity-401k.pdf");
+    expect(within(screen.getByRole("table")).getByText("fidelity-401k.pdf")).toBeInTheDocument();
   });
 
   it("offers the client's vault files, and reads one the advisor adds like any upload", async () => {
@@ -333,7 +364,6 @@ describe("uploads", () => {
       typeLabel: null,
     };
     renderScreen(withReadings({ f1: DONE, f2: DONE }), FILES, [statement]);
-    fireEvent.click(screen.getByRole("button", { name: "Documents & chat" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Add brokerage-statement.pdf" }));
     expect(line("brokerage-statement.pdf")).toHaveTextContent("Waiting to read");
@@ -344,14 +374,13 @@ describe("uploads", () => {
   it("drops a removed document's line", () => {
     stubFetch([]);
     renderScreen(withReadings({ f1: DONE, f2: DONE }));
-    fireEvent.click(screen.getByRole("button", { name: "Documents & chat" }));
 
     expect(screen.queryByText(/^Values read from it stay/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Remove schwab-june.pdf" }));
     expect(within(screen.getByRole("list", { name: "Reading progress" })).queryByText("schwab-june.pdf")).toBeNull();
     expect(line("hendricks-fact-finder.pdf")).toBeInTheDocument();
     // Its rows stay on the fact finder, and the panel says so.
-    expect(screen.getByText("Values read from it stay — remove those rows if you don't want them.")).toHaveAttribute("role", "status");
+    expect(screen.getByText("Values read from it stay — ask the chat to remove them if you don't want them.")).toHaveAttribute("role", "status");
   });
 });
 
@@ -365,10 +394,14 @@ describe("refreshing the screen as documents finish", () => {
       sourceFileIds: ["f1"],
     };
     const fresh = withReadings({ f1: DONE }, 1);
-    const net = stubFetch([stream.response], () => ({ ...fresh, sections: { ...fresh.sections, cash: [cash] } }));
+    const net = stubFetch([stream.response], () => ({
+      ...fresh,
+      sections: { ...fresh.sections, cash: [cash] },
+      worksheet: { tables: [accountsTable("c1", "f1")], composedFileIds: [] },
+    }));
     renderScreen(emptyFactFinderState());
-    const accounts = () => screen.getByRole("button", { name: /^Accounts/ });
-    expect(accounts()).toHaveAccessibleName("Accounts");
+    const tables = () => screen.queryAllByRole("table");
+    expect(tables()).toHaveLength(0);
 
     act(() => stream.write(fileFrame("f1", "reading"), fileFrame("f2", "reading"), fileFrame("f1", "done")));
     await elapse(1000);
@@ -379,7 +412,7 @@ describe("refreshing the screen as documents finish", () => {
     expect(net.gets()).toBe(0);
     await elapse(1);
     expect(net.gets()).toBe(1);
-    expect(accounts()).toHaveAccessibleName("Accounts, has values");
+    expect(tables()).toHaveLength(1);
 
     act(() => {
       stream.write(finished());
@@ -414,12 +447,12 @@ describe("a read started elsewhere", () => {
     expect(net.gets()).toBe(0);
     await elapse(1);
     expect(net.gets()).toBe(1);
-    expect(review()).toHaveAccessibleDescription("Wait for the documents to finish reading.");
+    expect(composer()).toBeDisabled();
 
     await elapse(5000);
     expect(net.gets()).toBe(2);
     expect(line("schwab-june.pdf")).toHaveTextContent("Read · 5 rows");
-    expect(review()).toBeEnabled();
+    expect(composer()).toBeEnabled();
 
     await elapse(20000);
     expect(net.gets()).toBe(2);
@@ -503,7 +536,7 @@ describe("a read started elsewhere", () => {
     await elapse(5000);
     expect(net.gets()).toBe(2);
     expect(line("schwab-june.pdf")).toHaveTextContent("Waiting to read");
-    expect(review()).toBeEnabled();
+    expect(composer()).toBeEnabled();
 
     await elapse(20000);
     expect(net.gets()).toBe(2);

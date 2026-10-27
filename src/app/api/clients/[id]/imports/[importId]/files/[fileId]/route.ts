@@ -15,6 +15,8 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { toSafeDisplayFilename } from "@/lib/files/safe-filename";
 import { refuseSavedFactFinderWithState } from "@/lib/imports/saved-fact-finder";
+import { safeErrorFields } from "@/lib/redaction/secrets";
+import { deletePageText } from "@/lib/fact-finder/worksheet/page-text-store";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -306,6 +308,14 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
       firmId,
       metadata: { importId },
     });
+
+    // The cached page text is derived data (the file itself stays, above). A leftover sidecar is
+    // harmless, so a Blob error here must not fail a delete that is already recorded.
+    try {
+      await deletePageText(importId, fileId);
+    } catch (err) {
+      console.error("DELETE page-text sidecar cleanup failed:", safeErrorFields(err));
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {

@@ -1,7 +1,7 @@
 // src/lib/fact-finder/__tests__/chat-tools.test.ts
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { FENCE_CLOSE, FENCE_OPEN } from "../chat/fence";
-import { REREAD_MAX_CHARS, TOOL_DEFS, runTool, type ToolContext } from "../chat/tools";
+import { STAGING_TOOL_DEFS, runTool, type ToolContext } from "../chat/tools";
 import { applyOps } from "../ops";
 import { FACT_FINDER_SECTIONS } from "../schema";
 import { emptyFactFinderState } from "../state";
@@ -64,7 +64,6 @@ function context(overrides: Partial<ToolContext> = {}): ToolContext {
       { id: "f1", name: "hendricks-fact-finder.pdf" },
       { id: "f2", name: "schwab-june.pdf" },
     ],
-    readDocument: vi.fn(async () => []),
     newId: () => "new-1",
     ...overrides,
   };
@@ -74,12 +73,12 @@ const chat = { by: "chat" as const, now: AT, newId: () => "unused" };
 const fenced = (text: string) => text.startsWith(`${FENCE_OPEN}\n`) && text.endsWith(`\n${FENCE_CLOSE}`);
 
 type ParamSchema = { properties: Record<string, { enum?: readonly string[] }>; required: string[] };
-const paramsOf = (name: string) => TOOL_DEFS.find((d) => d.function.name === name)!.function.parameters as ParamSchema;
+const paramsOf = (name: string) => STAGING_TOOL_DEFS.find((d) => d.function.name === name)!.function.parameters as ParamSchema;
 
-describe("TOOL_DEFS", () => {
+describe("STAGING_TOOL_DEFS", () => {
   it("pins every tool's name, arguments and required arguments, so a renamed argument fails here", () => {
     const shape = Object.fromEntries(
-      TOOL_DEFS.map((d) => {
+      STAGING_TOOL_DEFS.map((d) => {
         const p = d.function.parameters as ParamSchema;
         return [d.function.name, { args: Object.keys(p.properties), required: p.required }];
       }),
@@ -95,11 +94,10 @@ describe("TOOL_DEFS", () => {
       set_holding: { args: ["holdingId", "field", "value"], required: ["holdingId", "field", "value"] },
       remove_holding: { args: ["holdingId"], required: ["holdingId"] },
       move_holding: { args: ["holdingId", "toRowId"], required: ["holdingId", "toRowId"] },
+      add_holding: { args: ["rowId", "ticker", "name", "shares", "price", "marketValue", "costBasis"], required: ["rowId"] },
       read_section: { args: ["sectionId"], required: ["sectionId"] },
-      reread_document: { args: ["fileName", "question"], required: ["fileName", "question"] },
-      explain: { args: ["rowId"], required: ["rowId"] },
     });
-    for (const d of TOOL_DEFS) expect(d.type).toBe("function");
+    for (const d of STAGING_TOOL_DEFS) expect(d.type).toBe("function");
   });
 
   it("pins the enums: list sections for add_row, every section for read_section, holding fields, link kinds", () => {
@@ -118,9 +116,9 @@ describe("runTool — cells and rows", () => {
   it("set_cell writes one cell through the schema and reports the stored value", async () => {
     const out = await runTool("set_cell", { rowId: "c1", columnId: "currentValue", value: "$13,000" }, fixture(), context());
     expect(out.ops).toEqual([{ op: "setCell", sectionId: "cash", rowId: "c1", columnId: "currentValue", value: "$13,000" }]);
-    expect(out.summary).toBe('Set Current value on "Joint Checking" to 13000');
+    expect(out.summary).toBe('Set Current value on "Joint Checking" to $13,000.00');
     expect(fenced(out.result)).toBe(true);
-    expect(out.result).toContain('Done: Set Current value on "Joint Checking" to 13000');
+    expect(out.result).toContain('Done: Set Current value on "Joint Checking" to $13,000.00');
     expect(applyOps(fixture(), out.ops, chat).sections.cash[0].cells.currentValue).toEqual({ value: 13000, by: "chat", pinned: true });
   });
 
@@ -223,17 +221,53 @@ describe("runTool — links", () => {
       "Client & Co-client rows don't link to records.",
     );
   });
+
+  it("set_link to the record a row is already linked to changes nothing and refuses nothing, candidates or not", async () => {
+    const state = fixture();
+    state.sections.cash[0] = { ...state.sections.cash[0], link: { kind: "existing", recordId: "acct-1", score: 0.74, confirmed: true, by: "advisor" } };
+    // Linked by the chat in the reply that filled it: no candidates stored.
+    state.sections.cash[1] = { ...state.sections.cash[1], link: { kind: "existing", recordId: "acct-7", score: null, confirmed: true, by: "chat" } };
+    const again = (rowId: string, recordId: string) => runTool("set_link", { rowId, kind: "existing", recordId }, state, context());
+
+    const known = await again("c1", "acct-1");
+    expect(known.ops).toEqual([]);
+    expect(known.summary).toBe('"Joint Checking" is already linked to "Joint Checking ··1234"');
+    const bare = await again("c2", "acct-7");
+    expect(bare.ops).toEqual([]);
+    expect(bare.summary).toBe('"Joint Checking (copy)" is already linked to that plan record');
+  });
+
+  it("set_link refuses a row already linked to the record it saved: it's in the plan, so leave it — never make it new", async () => {
+    const state = fixture();
+    state.sections.cash[1] = { ...state.sections.cash[1], link: { kind: "existing", recordId: "acct-7", score: null, confirmed: true, by: "advisor" } };
+    state.applied = [{ lineId: "c2", rowId: "c2", target: "account", recordId: "acct-7", label: "Joint Checking ··5678", at: AT }];
+    const refusal = (args: object) => runTool("set_link", { rowId: "c2", ...args }, state, context()).then(() => "", (err: Error) => err.message);
+    for (const args of [{ kind: "existing", recordId: "acct-1" }, { kind: "new" }]) {
+      const message = await refusal(args);
+      expect(message).toBe('"Joint Checking (copy)" is already in the plan as "Joint Checking ··5678" — leave its link as it is.');
+      expect(message).not.toContain("new");
+    }
+  });
 });
 
 describe("runTool — holdings", () => {
   it("set_holding and remove_holding find the holding's account by its id", async () => {
     const set = await runTool("set_holding", { holdingId: "h2", field: "shares", value: "12.5" }, fixture(), context());
     expect(set.ops).toEqual([{ op: "setHolding", sectionId: "taxable", rowId: "t1", holdingId: "h2", field: "shares", value: "12.5" }]);
-    expect(set.summary).toBe('Set shares of "BND" in "Joint Brokerage" to 12.5');
+    expect(set.summary).toBe('Set Shares of "BND" in "Joint Brokerage" to 12.5');
 
     const removed = await runTool("remove_holding", { holdingId: "h1" }, fixture(), context());
     expect(removed.ops).toEqual([{ op: "removeHolding", sectionId: "taxable", rowId: "t1", holdingId: "h1" }]);
     expect(removed.summary).toBe('Removed "VTI" from "Joint Brokerage"');
+  });
+
+  it("a holding's line names the field as the advisor reads it and shows money formatted, never a field id or a bare number", async () => {
+    const basis = await runTool("set_holding", { holdingId: "h1", field: "costBasis", value: 95000 }, fixture(), context());
+    expect(basis.summary).toBe('Set Cost basis of "VTI" in "Joint Brokerage" to $95,000.00');
+    const ticker = await runTool("set_holding", { holdingId: "h1", field: "ticker", value: "vtsax" }, fixture(), context());
+    expect(ticker.summary).toBe('Set Ticker of "VTI" in "Joint Brokerage" to "VTSAX"');
+    const owner = await runTool("set_cell", { rowId: "c1", columnId: "owner", value: "Joint" }, fixture(), context());
+    expect(owner.summary).toBe('Set Owner on "Joint Checking" to "Joint"');
   });
 
   it("move_holding gives an unassigned holding an account, or moves one between accounts", async () => {
@@ -245,6 +279,20 @@ describe("runTool — holdings", () => {
     expect(moved.ops).toEqual([
       { op: "assignHolding", holdingId: "h1", from: { sectionId: "taxable", rowId: "t1" }, to: { sectionId: "taxable", rowId: "t2" } },
     ]);
+  });
+
+  it("add_holding returns an addHolding op", async () => {
+    const out = await runTool("add_holding", { rowId: "t2", ticker: "aapl", shares: 5 }, fixture(), context());
+    expect(out.ops).toEqual([{ op: "addHolding", sectionId: "taxable", rowId: "t2", holdingId: "new-1", holding: { ticker: "aapl", shares: 5 } }]);
+    expect(out.summary).toBe('Added "AAPL" to "Trust Brokerage"');
+    expect(out.result).toContain("New holding id: new-1.");
+    expect(applyOps(fixture(), out.ops, chat).sections.taxable[1].holdings).toEqual([
+      { id: "new-1", ticker: "AAPL", name: null, shares: 5, price: null, marketValue: null, costBasis: null, by: "chat", pinned: true },
+    ]);
+    await expect(runTool("add_holding", { rowId: "c1", ticker: "VTI" }, fixture(), context())).rejects.toThrow(
+      "Cash Accounts rows don't carry holdings.",
+    );
+    await expect(runTool("add_holding", { rowId: "t2", shares: 5 }, fixture(), context())).rejects.toThrow("a ticker or a name");
   });
 
   it("refuses an unknown holding, an edit to a holding with no account, a move to a cash account or to its own account", async () => {
@@ -263,89 +311,13 @@ describe("runTool — holdings", () => {
   });
 });
 
-describe("runTool — reading tools change nothing", () => {
+describe("runTool — read_section changes nothing", () => {
   it("read_section returns the whole section, fenced", async () => {
     const out = await runTool("read_section", { sectionId: "taxable" }, fixture(), context());
     expect(out.ops).toEqual([]);
     expect(out.summary).toBe("Read Taxable Investment Accounts");
     expect(fenced(out.result)).toBe(true);
     expect(out.result).toContain("  - holding h2:");
-  });
-
-  it("explain says where each value came from", async () => {
-    const state = fixture();
-    state.sections.cash[0].cells.owner = { value: "Joint", by: "advisor", pinned: true };
-    const out = await runTool("explain", { rowId: "c1" }, state, context());
-    expect(out.ops).toEqual([]);
-    expect(out.summary).toBe('Explained "Joint Checking"');
-    expect(fenced(out.result)).toBe(true);
-    expect(out.result).toContain('"Joint Checking" — row c1 in Cash Accounts');
-    expect(out.result).toContain(
-      '- accountName="Joint Checking": from "hendricks-fact-finder.pdf", page 2, 92% sure — "Joint Checking ending 1234"',
-    );
-    expect(out.result).toContain('- owner="Joint": typed by the advisor');
-    expect(out.result).toContain('Documents: "hendricks-fact-finder.pdf"');
-
-    const tray = await runTool("explain", { rowId: "c9" }, state, context());
-    expect(tray.result).toContain('"Old Savings" — row c9 in Cash Accounts (in the Removed tray: "Closed in 2025")');
-    await expect(runTool("explain", { rowId: "zz" }, state, context())).rejects.toThrow(
-      'There\'s no row "zz" in the fact finder or the Removed tray.',
-    );
-  });
-
-  it("explain names the document Claude read, ahead of 'set in this chat'", async () => {
-    const state = fixture();
-    state.sections.cash[0].cells.currentValue = {
-      value: 12500,
-      by: "chat",
-      pinned: true,
-      source: { fileId: "claude", documentName: "Schwab statement March 2026.pdf", page: 4, snippet: "Ending value $12,500.00" },
-    };
-    state.sections.cash[0].cells.owner = { value: "Joint", by: "chat", pinned: true };
-    const out = await runTool("explain", { rowId: "c1" }, state, context());
-    expect(out.result).toContain(
-      '- currentValue=12500: from "Schwab statement March 2026.pdf", page 4 — "Ending value $12,500.00"',
-    );
-    expect(out.result).toContain('- owner="Joint": set in this chat');
-  });
-
-  it("reread_document reads the named document once and returns its most relevant pages first, fenced", async () => {
-    const readDocument = vi.fn(async () => [
-      "Cover page. Hendricks household.",
-      "Pension estimate: Duke Energy pension pays $2,600 a month.",
-      "Investment summary.",
-      "Duke Energy pension starts 2027 at age 65; survivor pension 50%.",
-    ]);
-    const out = await runTool(
-      "reread_document",
-      { fileName: "Schwab-June.pdf", question: "When does the Duke pension start?" },
-      fixture(),
-      context({ readDocument }),
-    );
-    expect(readDocument).toHaveBeenCalledTimes(1);
-    expect(readDocument).toHaveBeenCalledWith("f2");
-    expect(out.ops).toEqual([]);
-    expect(out.summary).toBe('Looked in "schwab-june.pdf" for: "When does the Duke pension start?"');
-    expect(fenced(out.result)).toBe(true);
-    const order = ["[page 4]", "[page 2]", "[page 1]", "[page 3]"].map((p) => out.result.indexOf(p));
-    expect(order.every((at) => at >= 0)).toBe(true);
-    expect([...order].sort((a, b) => a - b)).toEqual(order);
-  });
-
-  it("reread_document caps what it returns", async () => {
-    const page = (n: number) => `pension ${n} `.repeat(2_000);
-    const readDocument = vi.fn(async () => [page(1), page(2), page(3)]);
-    const out = await runTool("reread_document", { fileName: "schwab-june.pdf", question: "pension" }, fixture(), context({ readDocument }));
-    expect(out.result.length).toBeLessThanOrEqual(REREAD_MAX_CHARS + FENCE_OPEN.length + FENCE_CLOSE.length + 2);
-    expect(out.result.length).toBeGreaterThan(REREAD_MAX_CHARS);
-    expect(out.result).toContain("[page 1]");
-    expect(out.result).not.toContain("[page 3]");
-  });
-
-  it("reread_document names the documents it has when the name doesn't match", async () => {
-    await expect(
-      runTool("reread_document", { fileName: "fidelity.pdf", question: "balance" }, fixture(), context()),
-    ).rejects.toThrow('There\'s no document named "fidelity.pdf". The documents are: "hendricks-fact-finder.pdf", "schwab-june.pdf".');
   });
 
   it("refuses a tool it doesn't have", async () => {
@@ -356,27 +328,8 @@ describe("runTool — reading tools change nothing", () => {
 describe("an SSN never reaches the model through a tool (Review Focus 5)", () => {
   const SSN = "123-45-6789";
 
-  it("is redacted in explain, in a document's pages and in a refusal", async () => {
+  it("is redacted in a refusal", async () => {
     const state = fixture();
-    state.sections.family = [row("k1", { notes: doc(`SSN ${SSN}`, { source: { fileId: "f1", page: 1, snippet: `SSN: ${SSN}` } }) })];
-    const explained = await runTool("explain", { rowId: "k1" }, state, context());
-    expect(explained.result).not.toContain(SSN);
-    expect(explained.summary).not.toContain(SSN);
-    expect(explained.result).toContain("[REDACTED-SSN]");
-
-    const tray = fixture();
-    tray.removed[0] = { ...tray.removed[0], reason: `Belongs to ${SSN}`, row: row("c9", { accountName: doc(`Savings ${SSN}`) }) };
-    const trayExplained = await runTool("explain", { rowId: "c9" }, tray, context());
-    expect(trayExplained.result).not.toContain(SSN);
-
-    const reread = await runTool(
-      "reread_document",
-      { fileName: "schwab-june.pdf", question: "member id" },
-      state,
-      context({ readDocument: async () => [`Member id ${SSN}`] }),
-    );
-    expect(reread.result).not.toContain(SSN);
-
     await expect(
       runTool("set_cell", { rowId: "c1", columnId: "currentValue", value: SSN }, state, context()),
     ).rejects.toThrow('"[REDACTED-SSN]" isn\'t a valid Current value (a dollar amount).');

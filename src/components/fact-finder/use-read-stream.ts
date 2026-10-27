@@ -7,37 +7,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConflictResponse, ErrorResponse, ReadEvent, ReadFrame } from "@/lib/fact-finder/api-types";
 import type { FactFinderState } from "@/lib/fact-finder/types";
 import { OFFLINE_MESSAGE, factFinderUrl, refusalText } from "./http";
+import { parseSse } from "./sse";
 
 /** A file's latest progress. */
 export type ReadLine = Extract<ReadEvent, { type: "file" }>;
 export type ReadDone = Extract<ReadEvent, { type: "done" }>;
 
 const ENDED_EARLY_MESSAGE = "Reading stopped before it finished. Retry to read the rest.";
-
-/**
- * Yields each complete `data: <json>\n\n` frame in the buffer and returns the
- * unfinished tail, which the caller carries into the next chunk.
- */
-export function* parseReadSse(buffer: string): Generator<ReadFrame, string> {
-  let cursor = 0;
-  for (;;) {
-    const boundary = buffer.indexOf("\n\n", cursor);
-    if (boundary === -1) return buffer.slice(cursor);
-    const block = buffer.slice(cursor, boundary);
-    cursor = boundary + 2;
-    let data = "";
-    for (const line of block.split("\n")) {
-      if (line.startsWith("data: ")) data += line.slice("data: ".length);
-    }
-    if (data) {
-      try {
-        yield JSON.parse(data) as ReadFrame;
-      } catch {
-        // A malformed frame shouldn't end the read; skip it.
-      }
-    }
-  }
-}
 
 /** Files still "reading" when a read ends without its summary go back to what the fact finder says. */
 function withoutReading(lines: Record<string, ReadLine>): Record<string, ReadLine> {
@@ -105,7 +81,7 @@ export function useReadStream({
         const { value, done } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        const frames = parseReadSse(buffer);
+        const frames = parseSse<ReadFrame>(buffer);
         let next = frames.next();
         while (!next.done) {
           const frame = next.value;

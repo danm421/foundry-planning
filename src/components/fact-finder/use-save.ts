@@ -1,7 +1,8 @@
 "use client";
 // src/components/fact-finder/use-save.ts
-// "Save to plan": POST …/fact-finder/save with the advisor's ticks on the change
-// list as it was built. A 200 hands the closed fact finder to the screen; a 422
+// A proposal card's "Save N changes to the plan": POST …/fact-finder/save with the
+// advisor's ticks on the change list as it was built. A 200 hands the saved fact
+// finder to the screen (a keep-open round leaves the import open); a 422
 // names the line the save couldn't write; a 409 means the list or a record moved
 // on, so the screen gets the fresher fact finder (when the route sends one) and
 // the reason. Nothing is written unless the answer is a 200.
@@ -22,7 +23,8 @@ export interface SaveError {
 }
 
 export interface Save {
-  save(changeSet: ChangeSet, ticks: ChangeTicks): Promise<void>;
+  /** `keepOpen`: save this round and leave the import open (a chat proposal's save). */
+  save(changeSet: ChangeSet, ticks: ChangeTicks, opts?: { keepOpen?: boolean }): Promise<void>;
   saving: boolean;
   error: SaveError | null;
   dismiss(): void;
@@ -44,13 +46,13 @@ export function useSave({
   // A second press before the first answer must not post again (state lags a render).
   const running = useRef(false);
 
-  async function save(changeSet: ChangeSet, ticks: ChangeTicks): Promise<void> {
+  async function save(changeSet: ChangeSet, ticks: ChangeTicks, opts?: { keepOpen?: boolean }): Promise<void> {
     if (running.current) return;
     running.current = true;
     setError(null);
     setSaving(true);
     try {
-      const body: SaveBody = { changeSetVersion: changeSet.builtAtVersion, ticks };
+      const body: SaveBody = { changeSetVersion: changeSet.builtAtVersion, ticks, ...(opts?.keepOpen ? { keepOpen: true } : {}) };
       let res: Response;
       try {
         res = await fetch(`${factFinderUrl(clientId, importId)}/save`, {
