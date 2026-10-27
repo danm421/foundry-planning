@@ -47,8 +47,10 @@ const cashGift: EstateFlowGift = {
   valuationDiscount: 0,
 };
 
-function batchDrafts(funding: FundingItem[]): SolverScenarioChangeDraft[] {
-  const t = tree();
+function batchDrafts(
+  funding: FundingItem[],
+  t: ClientData = tree(),
+): SolverScenarioChangeDraft[] {
   const a = applyKindPreset(
     { ...initialAnswers(E), lifetime: [kid], remainder: [kid], name: NAME, funding },
     "irrevocable",
@@ -70,7 +72,31 @@ const draft = (
 const trustAdd = (extra: Record<string, unknown> = {}) =>
   draft("add", "entity", E, { id: E, name: NAME, entityType: "trust", ...extra });
 
+const bequest: FundingItem = {
+  kind: "bequest", from: "client", what: { mode: "all_assets" }, condition: "always",
+};
+
 describe("trustSetupGroups", () => {
+  it.each([
+    ["edits the client's existing will", [{ id: "will-client", grantor: "client", bequests: [] }], "edit"],
+    ["adds a will when the client has none", [], "add"],
+  ])("a wizard batch with a bequest %s: one switch for everything", (_l, wills, opType) => {
+    const t = { ...tree(), wills } as unknown as ClientData;
+    const drafts = batchDrafts(
+      [{ kind: "gift", gift: cashGift }, { kind: "retitle", accountId: "acct-brk" }, bequest],
+      t,
+    );
+    const willDraft = drafts.find((d) => d.targetKind === "will");
+    expect(willDraft?.opType).toBe(opType);
+
+    const groups = trustSetupGroups(drafts);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].name).toBe(`Set up ${NAME}`);
+    expect([...groups[0].targetIds].sort()).toEqual(
+      [E, "g-cash", "acct-brk", willDraft!.targetId].sort(),
+    );
+  });
+
   it("groups a wizard batch's trust, gift and retitled account under one switch", () => {
     const drafts = batchDrafts([
       { kind: "gift", gift: cashGift },
