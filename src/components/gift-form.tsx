@@ -15,6 +15,8 @@ import type { AccountValueAtYear } from "@/lib/estate/account-value-at-year";
 import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import type { QcdSourceOption } from "@/lib/gifts/qcd-sources";
 import { currentPlanningYear } from "@/lib/plan-year";
+import type { AgePerson } from "@/lib/year-or-age";
+import YearOrAgeInput from "@/components/year-or-age-input";
 
 export interface GiftFormRecipients {
   /** Irrevocable trusts only. */
@@ -82,6 +84,14 @@ export interface GiftFormProps {
    *  back — null whenever `draft` is non-null. Callers that refuse the save
    *  should show it instead of a generic "complete the gift" message. */
   onChange: (draft: EstateFlowGift | null, blockedReason: string | null) => void;
+  /** Fixes the recipient to one trust — for a trust that does not exist yet
+   *  (the Solver's guided setup), so it is not in `recipients.trusts`. The
+   *  Recipient, Grantor and Crummey fields are hidden: they were answered
+   *  before the form opened. */
+  fixedTrust?: { id: string; name: string; grantor: "client" | "spouse"; crummeyPowers: boolean };
+  /** Year, Start year and End year take an age as well as a year, and show
+   *  everyone's age. Client first. */
+  agePeople?: AgePerson[];
 }
 
 type RecipientOption = {
@@ -128,13 +138,18 @@ export default function GiftForm(props: GiftFormProps) {
     }
     for (const x of props.recipients.externals)
       opts.push({ value: `external_beneficiary:${x.id}`, label: x.kindLabel ? `${x.name} (${x.kindLabel})` : x.name, ref: { kind: "external_beneficiary", id: x.id }, isTrust: false, charityType: x.charityType });
+    const ft = props.fixedTrust;
+    if (ft && !opts.some((o) => o.value === `entity:${ft.id}`))
+      opts.push({ value: `entity:${ft.id}`, label: `${ft.name} (irrevocable trust)`, ref: { kind: "entity", id: ft.id }, isTrust: true });
     return opts;
-  }, [props.recipients]);
+  }, [props.recipients, props.fixedTrust]);
 
   const newGiftId = useState(() => crypto.randomUUID())[0];
   const editingKind = editing?.kind ?? null;
 
-  const [recipientValue, setRecipientValue] = useState(() => (editing ? recipientKey(editing.recipient) : ""));
+  const [recipientValue, setRecipientValue] = useState(() =>
+    props.fixedTrust ? `entity:${props.fixedTrust.id}` : editing ? recipientKey(editing.recipient) : "",
+  );
   const [isRecurring, setIsRecurring] = useState(() => editingKind === "series");
   const [isInKind, setIsInKind] = useState(() => editingKind === "asset-once");
   const [amountMode, setAmountMode] = useState<"fixed" | "annual_exclusion">(() =>
@@ -178,8 +193,10 @@ export default function GiftForm(props: GiftFormProps) {
     editing?.kind === "asset-once" ? editing.accountId : "",
   );
   const [inflationAdjust, setInflationAdjust] = useState(() => (editing?.kind === "series" ? editing.inflationAdjust : false));
-  const [grantor, setGrantor] = useState<GiftGrantor>(() => editing?.grantor ?? "client");
-  const [crummey, setCrummey] = useState(() => (editing && editing.kind !== "asset-once" ? editing.crummey : false));
+  const [grantor, setGrantor] = useState<GiftGrantor>(() => editing?.grantor ?? props.fixedTrust?.grantor ?? "client");
+  const [crummey, setCrummey] = useState(() =>
+    editing && editing.kind !== "asset-once" ? editing.crummey : (props.fixedTrust?.crummeyPowers ?? false),
+  );
 
   // ── QCD (paid from an IRA straight to a public charity) ───────────────────
   const savedQcd = editing != null && editing.kind !== "asset-once" ? editing.qcd : undefined;
@@ -546,6 +563,21 @@ export default function GiftForm(props: GiftFormProps) {
     return out;
   }, [ledger, draft, assetValueAtYear, props.taxInflationRate]);
 
+  // Year, Start year and End year share one window; with `agePeople` they also
+  // take an age and show everyone's age.
+  const yearField = (value: number, onChange: (n: number) => void) =>
+    props.agePeople ? (
+      <YearOrAgeInput
+        year={value}
+        onChange={(y) => { if (y != null) onChange(y); }}
+        people={props.agePeople}
+        min={planMinYear}
+        max={planMaxYear}
+      />
+    ) : (
+      <NumberInput value={value} onChange={onChange} min={planMinYear} max={planMaxYear} />
+    );
+
   return (
     <div className="space-y-4 text-sm">
       {/* Frequency */}
@@ -561,24 +593,20 @@ export default function GiftForm(props: GiftFormProps) {
       {effectiveRecurring ? (
         <div className="grid grid-cols-2 gap-3">
           <Field label="Start year">
-            <NumberInput
-              value={startYear}
-              onChange={(n) => { startYearTouched.current = true; setStartYear(n); }}
-              min={planMinYear}
-              max={planMaxYear}
-            />
+            {yearField(startYear, (n) => { startYearTouched.current = true; setStartYear(n); })}
           </Field>
           <Field label="End year">
-            <NumberInput value={endYear} onChange={setEndYear} min={planMinYear} max={planMaxYear} />
+            {yearField(endYear, setEndYear)}
           </Field>
         </div>
       ) : (
         <Field label="Year">
-          <NumberInput value={year} onChange={setYear} min={planMinYear} max={planMaxYear} />
+          {yearField(year, setYear)}
         </Field>
       )}
 
       {/* Grantor */}
+      {!props.fixedTrust && (
       <Field label="Grantor">
         <select
           data-testid="grantor"
@@ -597,6 +625,7 @@ export default function GiftForm(props: GiftFormProps) {
           </p>
         )}
       </Field>
+      )}
 
       {/* Funding: a specific asset is one-time only; From an IRA is a QCD to a
           public charity, one-time or recurring. */}
@@ -807,6 +836,7 @@ export default function GiftForm(props: GiftFormProps) {
       )}
 
       {/* Recipient */}
+      {!props.fixedTrust && (
       <Field label="Recipient">
         <select
           data-testid="recipient"
@@ -820,9 +850,10 @@ export default function GiftForm(props: GiftFormProps) {
           ))}
         </select>
       </Field>
+      )}
 
       {/* Crummey (trust recipients only, not for in-kind asset gifts) */}
-      {recipientIsTrust && !effectiveInKind && (
+      {recipientIsTrust && !effectiveInKind && !props.fixedTrust && (
         <label className="flex items-center gap-2 text-sm text-ink-2">
           <input type="checkbox" checked={crummey} onChange={(e) => setCrummey(e.target.checked)} />
           Use Crummey powers (annual-exclusion gift)

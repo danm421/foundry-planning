@@ -150,3 +150,45 @@ describe("GiftForm — a plan that starts next year", () => {
     }
   });
 });
+
+describe("GiftForm fixed trust and ages", () => {
+  const fixedTrust = { id: "new-trust", name: "Legacy Trust", grantor: "spouse" as const, crummeyPowers: true };
+  const agePeople = [{ name: "Dan", birthYear: 1976 }, { name: "Jane", birthYear: 1978 }];
+
+  it("hides recipient, grantor and Crummey and drafts to the trust that is not in the list", () => {
+    const onChange = vi.fn();
+    render(<GiftForm {...base({ onChange, fixedTrust })} />);
+    expect(screen.queryByTestId("recipient")).toBeNull();
+    expect(screen.queryByTestId("grantor")).toBeNull();
+    expect(screen.queryByText(/Crummey/i)).toBeNull();
+    fireEvent.change(screen.getByLabelText(/amount/i, { selector: "input" }), { target: { value: "50000" } });
+    expect(lastDraft(onChange)).toMatchObject({
+      kind: "cash-once", amount: 50_000, recipient: { kind: "entity", id: "new-trust" }, grantor: "spouse", crummey: true,
+    });
+  });
+
+  it("seeds Crummey off when the trust has no Crummey powers", () => {
+    const onChange = vi.fn();
+    render(<GiftForm {...base({ onChange, fixedTrust: { ...fixedTrust, crummeyPowers: false } })} />);
+    fireEvent.change(screen.getByLabelText(/amount/i, { selector: "input" }), { target: { value: "50000" } });
+    expect(lastDraft(onChange)).toMatchObject({ crummey: false, grantor: "spouse" });
+  });
+
+  it("takes an age in Year and shows both ages", () => {
+    const onChange = vi.fn();
+    render(<GiftForm {...base({ onChange, fixedTrust, agePeople })} />);
+    fireEvent.change(screen.getByLabelText(/amount/i, { selector: "input" }), { target: { value: "50000" } });
+    const year = screen.getByLabelText(/^year/i, { selector: "input" });
+    fireEvent.focus(year);
+    fireEvent.change(year, { target: { value: "65" } });
+    expect(screen.getByText(/Dan/)).toBeTruthy();
+    expect(screen.getByText(/Jane/)).toBeTruthy();
+    fireEvent.blur(year);
+    expect(lastDraft(onChange)).toMatchObject({ kind: "cash-once", year: 2041 });
+  });
+
+  it("leaves Year a plain number box without agePeople", () => {
+    render(<GiftForm {...base()} />);
+    expect(screen.getByLabelText(/^year/i, { selector: "input" }).getAttribute("type")).toBe("number");
+  });
+});
