@@ -22,12 +22,15 @@ export interface EducationGoalFormAccount {
   beneficiaryFamilyMemberId?: string | null;
   beneficiaryName?: string | null;
   isDefaultChecking?: boolean | null;
+  isInherited?: boolean;
 }
 
 interface Props {
   mode: "add" | "edit";
   initial?: Expense;
   accounts: EducationGoalFormAccount[];
+  /** Family member id → date of birth, for the picker's under-59½ note. */
+  birthDates?: Record<string, string | null | undefined>;
   /** Household family members the goal can be "for" (and the new 529's beneficiary). */
   beneficiaries?: { familyMemberId: string; label: string }[];
   /** CMA-resolved growth for a new 529 (follows the retirement category). */
@@ -38,7 +41,7 @@ interface Props {
 }
 
 export function SolverEducationGoalForm({
-  mode, initial, accounts, beneficiaries = [], growth529 = DEFAULT_529_GROWTH, currentYear, onSubmit, onCancel,
+  mode, initial, accounts, birthDates, beneficiaries = [], growth529 = DEFAULT_529_GROWTH, currentYear, onSubmit, onCancel,
 }: Props) {
   const [name, setName] = useState(initial?.name ?? "");
   const [annualAmount, setAnnualAmount] = useState(String(initial?.annualAmount ?? ""));
@@ -192,6 +195,8 @@ export function SolverEducationGoalForm({
             value={dedicatedAccountIds}
             onChange={setDedicatedAccountIds}
             familyMemberNames={familyMemberNames}
+            birthDates={birthDates}
+            firstDrawYear={Number(startYear) || undefined}
           />
         </div>
 

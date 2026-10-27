@@ -18,6 +18,8 @@ interface Props {
   mode: "add" | "edit";
   initial?: Expense;
   accounts: EducationGoalFormAccount[];
+  /** Family member id → date of birth, for the picker's under-59½ note. */
+  birthDates?: Record<string, string | null | undefined>;
   owners: OtherGoalOwnerOption[];
   /** CMA-resolved growth for a new taxable savings account. */
   growthTaxable: number;
@@ -40,7 +42,7 @@ const JOINT = "joint";
  * backstop when "Pay shortfall out of pocket" is on.
  */
 export function SolverOtherGoalForm({
-  mode, initial, accounts, owners, growthTaxable, inflationRate, currentYear, onSubmit, onCancel,
+  mode, initial, accounts, birthDates, owners, growthTaxable, inflationRate, currentYear, onSubmit, onCancel,
 }: Props) {
   const [name, setName] = useState(initial?.name ?? "");
   const [annualAmount, setAnnualAmount] = useState(String(initial?.annualAmount ?? ""));
@@ -190,6 +192,8 @@ export function SolverOtherGoalForm({
             value={dedicatedAccountIds}
             onChange={setDedicatedAccountIds}
             goalType="other"
+            birthDates={birthDates}
+            firstDrawYear={Number(startYear) || undefined}
           />
         </div>
 

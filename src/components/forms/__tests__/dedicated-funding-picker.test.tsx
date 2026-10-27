@@ -26,13 +26,17 @@ describe("DedicatedFundingPicker", () => {
     expect(onChange).toHaveBeenCalledWith(["a2", "a1"]);
   });
 
-  it("excludes non-529 retirement accounts (cash / taxable / 529 only)", () => {
+  it("lists retirement accounts but not an HSA, whose draws the projection treats as medical", () => {
     const withRetirement = [
       { id: "r1", name: "401k", category: "retirement", subType: "401k" },
+      { id: "r2", name: "Roth IRA", category: "retirement", subType: "roth_ira" },
+      { id: "s1", name: "HSA", category: "retirement", subType: "hsa" },
       { id: "c1", name: "Checking", category: "cash", subType: "checking" },
     ];
-    render(<DedicatedFundingPicker accounts={withRetirement as never} value={[]} onChange={vi.fn()} />);
-    expect(screen.queryByText("401k")).toBeNull();
+    render(<DedicatedFundingPicker accounts={withRetirement as never} value={[]} onChange={vi.fn()} goalType="other" />);
+    expect(screen.getByText("401k")).toBeTruthy();
+    expect(screen.getByText("Roth IRA")).toBeTruthy();
+    expect(screen.queryByText("HSA")).toBeNull();
     expect(screen.getByText("Checking")).toBeTruthy();
   });
 
@@ -154,6 +158,46 @@ describe("DedicatedFundingPicker — an Other goal", () => {
         goalType="other"
       />,
     );
-    expect(screen.getByText("No eligible funding accounts (cash / taxable).")).toBeTruthy();
+    expect(screen.getByText("No eligible funding accounts (cash / taxable / retirement).")).toBeTruthy();
+  });
+});
+
+describe("DedicatedFundingPicker — the under-59½ note", () => {
+  const ira = { id: "r1", name: "IRA", category: "retirement", subType: "traditional_ira", ownerFamilyMemberIds: ["client"] };
+  const birthDates = { client: "1970-03-01" };
+  const renderWith = (accounts: unknown[], firstDrawYear: number) =>
+    render(
+      <DedicatedFundingPicker
+        accounts={accounts as never}
+        value={[]}
+        onChange={vi.fn()}
+        goalType="other"
+        birthDates={birthDates}
+        firstDrawYear={firstDrawYear}
+      />,
+    );
+
+  it("warns through the year the owner turns 59 when the goal starts before then", () => {
+    renderWith([ira], 2026);
+    expect(screen.getByText(/owner under 59½ through 2029 — draws may owe a 10% penalty/)).toBeTruthy();
+  });
+
+  it("warns in the year the owner turns 59, and not once they turn 60", () => {
+    const { unmount } = renderWith([ira], 2029);
+    expect(screen.getByText(/under 59½ through 2029/)).toBeTruthy();
+    unmount();
+    renderWith([ira], 2030);
+    expect(screen.queryByText(/59½/)).toBeNull();
+  });
+
+  it("never warns on an inherited IRA or a taxable account", () => {
+    renderWith(
+      [
+        { ...ira, isInherited: true },
+        { id: "b1", name: "Brokerage", category: "taxable", subType: "brokerage", ownerFamilyMemberIds: ["client"] },
+      ],
+      2026,
+    );
+    expect(screen.queryByText(/59½/)).toBeNull();
   });
 });

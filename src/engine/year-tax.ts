@@ -45,7 +45,7 @@ export interface YearTaxInput {
    *  one-shot snapshot of a fixed set of terms, while `taxDetail` is mutated by
    *  later passes that never touch the scalar (the non-grantor trust take-back,
    *  the §664(c) CRT netting, note-receivable principal LTCG, prior-year
-   *  entity gap-fill carry-in, education-goal draws). Measured across the
+   *  entity gap-fill carry-in). Measured across the
    *  engine suite, 35 of 103 projection-years with capital activity diverge, by
    *  up to $4,000,000. Flat mode must back out what it actually folded in.
    *

@@ -5,6 +5,7 @@ import type { ClientData, Expense } from "@/engine/types";
 import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
 import { findGoalContributionRule, goalContributionRule } from "@/lib/solver/solve-goal-dedicated-savings";
 import { canHaveGoalFunding, goalDrawAccountIds } from "@/engine/goals/goal-funding";
+import { isInheritedIra } from "@/engine/inherited-ira";
 import { SolverSection } from "./solver-section";
 import { SolverFieldStepper } from "./solver-field-stepper";
 import { SolverViewReportButton } from "./solver-view-report-button";
@@ -100,8 +101,13 @@ export function SolverGoalsSection({
         beneficiaryFamilyMemberId: a.education529?.beneficiaryFamilyMemberId ?? null,
         beneficiaryName: a.education529?.beneficiaryName ?? null,
         isDefaultChecking: a.isDefaultChecking ?? false,
+        isInherited: isInheritedIra(a),
       })),
     [workingTree.accounts],
+  );
+  const birthDates = useMemo(
+    () => Object.fromEntries((workingTree.familyMembers ?? []).map((fm) => [fm.id, fm.dateOfBirth])),
+    [workingTree.familyMembers],
   );
   const beneficiaries = useMemo(
     () =>
@@ -321,6 +327,7 @@ export function SolverGoalsSection({
                       mode="edit"
                       initial={goal}
                       accounts={pickerAccounts}
+                      birthDates={birthDates}
                       beneficiaries={beneficiaries}
                       growth529={growth529}
                       currentYear={currentYear}
@@ -332,6 +339,7 @@ export function SolverGoalsSection({
                       mode="edit"
                       initial={goal}
                       accounts={pickerAccounts}
+                      birthDates={birthDates}
                       owners={owners}
                       growthTaxable={growthTaxable}
                       inflationRate={inflationRate}
@@ -351,6 +359,7 @@ export function SolverGoalsSection({
         <SolverEducationGoalForm
           mode="add"
           accounts={pickerAccounts}
+          birthDates={birthDates}
           beneficiaries={beneficiaries}
           growth529={growth529}
           currentYear={currentYear}
@@ -361,6 +370,7 @@ export function SolverGoalsSection({
         <SolverOtherGoalForm
           mode="add"
           accounts={pickerAccounts}
+          birthDates={birthDates}
           owners={owners}
           growthTaxable={growthTaxable}
           inflationRate={inflationRate}

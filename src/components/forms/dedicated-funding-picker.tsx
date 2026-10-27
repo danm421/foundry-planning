@@ -1,5 +1,6 @@
 "use client";
 
+import { birthYearFromDob } from "@/lib/age-year";
 import { fieldLabelClassName } from "./input-styles";
 
 interface PickerAccount {
@@ -15,6 +16,8 @@ interface PickerAccount {
    *  no family-member record, e.g. a grandchild). */
   beneficiaryName?: string | null;
   isDefaultChecking?: boolean | null;
+  /** An inherited IRA: its draws are never penalized, whatever the heir's age. */
+  isInherited?: boolean;
 }
 
 interface Props {
@@ -35,18 +38,43 @@ interface Props {
    *  every 529 draw as a tax-free education withdrawal) or the household's
    *  main checking account, which is the cash flow itself. */
   goalType?: "education" | "other";
+  /** Family member id → date of birth, and the goal's first year: together they
+   *  flag a retirement account whose owner is still under 59½ when it draws. */
+  birthDates?: Record<string, string | null | undefined>;
+  firstDrawYear?: number;
 }
 
-// Accounts eligible to fund an education goal: cash, taxable, dedicated
+// Accounts eligible to fund a goal: cash, taxable, retirement, dedicated
 // education_savings (529) accounts, and any account whose sub-type is 529
 // even when categorized elsewhere (legacy import paths file 529s as taxable).
+// Not an HSA: the projection draws every HSA dollar tax-free, as if it paid a
+// medical bill, which a goal's cost is not.
 function isEligibleType(a: PickerAccount): boolean {
   return (
     a.category === "cash" ||
     a.category === "taxable" ||
+    (a.category === "retirement" && a.subType !== "hsa") ||
     a.category === "education_savings" ||
     a.subType === "529"
   );
+}
+
+/** The last year a retirement account's draws may owe the 10% early-withdrawal
+ *  penalty, when the goal starts on or before it; null otherwise. Mirrors the
+ *  projection, which takes age as year minus birth year and penalizes under
+ *  59½ — so through the year the owner turns 59. "May": a Roth's contributions
+ *  and any after-tax basis come out penalty-free. */
+function lastPenaltyYear(
+  a: PickerAccount,
+  birthDates: Record<string, string | null | undefined> | undefined,
+  firstDrawYear: number | undefined,
+): number | null {
+  if (a.category !== "retirement" || a.isInherited || firstDrawYear == null) return null;
+  const dob = (a.ownerFamilyMemberIds ?? []).map((id) => birthDates?.[id]).find((d) => d);
+  const birthYear = birthYearFromDob(dob);
+  if (birthYear == null) return null;
+  const last = birthYear + 59;
+  return firstDrawYear <= last ? last : null;
 }
 
 function is529(a: PickerAccount): boolean {
@@ -86,6 +114,8 @@ export function DedicatedFundingPicker({
   allowedOwnerFamilyMemberIds,
   familyMemberNames,
   goalType = "education",
+  birthDates,
+  firstDrawYear,
 }: Props) {
   const allowed = allowedOwnerFamilyMemberIds ? new Set(allowedOwnerFamilyMemberIds) : null;
   const eligible = accounts.filter((a) => isEligible(a, allowed, goalType));
@@ -95,7 +125,7 @@ export function DedicatedFundingPicker({
     // what made a hidden 529 look like an unsupported account type. An Other
     // goal's excluded 529s and main checking never count as "narrowed".
     const narrowed = accounts.some((a) => isEligible(a, null, goalType));
-    const kinds = goalType === "other" ? "cash / taxable" : "cash / taxable / 529";
+    const kinds = goalType === "other" ? "cash / taxable / retirement" : "cash / taxable / retirement / 529";
     return (
       <p className="text-xs text-ink-3">
         {narrowed
@@ -122,6 +152,7 @@ export function DedicatedFundingPicker({
             allowed !== null &&
             !!a.beneficiaryFamilyMemberId &&
             !allowed.has(a.beneficiaryFamilyMemberId);
+          const penaltyThrough = lastPenaltyYear(a, birthDates, firstDrawYear);
           return (
             <label key={a.id} className="flex items-center gap-2 text-sm text-ink">
               <input type="checkbox" checked={idx >= 0} onChange={() => toggle(a.id)} aria-label={a.name} />
@@ -134,6 +165,11 @@ export function DedicatedFundingPicker({
                 ) : (
                   <span className="text-xs text-ink-3">· no beneficiary on file</span>
                 ))}
+              {penaltyThrough != null && (
+                <span className="text-xs text-warn">
+                  · owner under 59½ through {penaltyThrough} — draws may owe a 10% penalty
+                </span>
+              )}
               {idx >= 0 && <span className="text-xs text-ink-3">· #{idx + 1}</span>}
             </label>
           );

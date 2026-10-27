@@ -304,3 +304,69 @@ describe("goal funding: who owns the account decides what Cash Flow shows", () =
     expect(y0.withdrawals.byAccount["brk"]).toBeCloseTo(100000, 2); // 60k goal draw + 40k gap-fill
   });
 });
+
+describe("goal funding: a goal's draw is taxed the year it happens", () => {
+  // Client born 1970: 56 in 2026 (under 59½), 62 in 2032.
+  const ira: Account = {
+    ...fund(200000),
+    id: "ira",
+    name: "IRA",
+    category: "retirement",
+    subType: "traditional_ira",
+    basis: 0,
+  };
+  const inYear = (year: number, accounts: Account[], ids: string[], extra: Partial<ClientData> = {}) =>
+    makeData(accounts, [car({ startYear: year, endYear: year, dedicatedAccountIds: ids })], {
+      planSettings: { ...basePlanSettings, planStartYear: year, planEndYear: year },
+      ...extra,
+    });
+
+  it("taxes an IRA draw before 59½ and charges the 10% penalty, paid from checking", () => {
+    const y0 = runProjection(inYear(2026, [checking, ira], ["ira"]))[0];
+    expect(y0.accountLedgers["ira"].endingValue).toBeCloseTo(140000, 6);
+    expect(y0.taxResult!.flow.earlyWithdrawalPenalty).toBeCloseTo(6000, 6);
+    expect(y0.expenses.bySource["withdrawal_penalty:ira"]).toBeCloseTo(6000, 6);
+    // Flat 22% + 5% on $60k, plus the $6k penalty.
+    expect(y0.expenses.taxes).toBeCloseTo(60000 * 0.27 + 6000, 2);
+    expect(y0.accountLedgers["chk"].endingValue).toBeCloseTo(100000 - y0.expenses.taxes, 2);
+  });
+
+  it("taxes an IRA draw after 59½ with no penalty", () => {
+    const y0 = runProjection(inYear(2032, [checking, ira], ["ira"]))[0];
+    expect(y0.taxResult!.flow.earlyWithdrawalPenalty).toBe(0);
+    expect(y0.expenses.taxes).toBeCloseTo(60000 * 0.27, 2);
+  });
+
+  it("taxes the gain on a brokerage draw in a year with no other withdrawal", () => {
+    const brk: Account = { ...fund(100000), id: "brk", name: "Brokerage", category: "taxable", subType: "brokerage", basis: 40000 };
+    const none = runProjection(inYear(2026, [checking, brk], []))[0];
+    const drawn = runProjection(inYear(2026, [checking, brk], ["brk"]))[0];
+    expect(none.expenses.taxes).toBe(0);
+    expect(drawn.expenses.taxes).toBeGreaterThan(0);
+  });
+
+  it("taxes an IRA draw even when a brokerage loss in the same goal nets it to zero", () => {
+    // $20k ordinary income + a $20k capital loss: only $3k of the loss offsets
+    // ordinary income (§1211(b)), so $17k stays taxable at the flat 27%.
+    const smallIra: Account = { ...ira, value: 20000 };
+    const underwater: Account = { ...fund(20000), id: "brk", name: "Brokerage", category: "taxable", subType: "brokerage", basis: 40000 };
+    const data = makeData([checking, smallIra, underwater], [car({ annualAmount: 40000, startYear: 2032, endYear: 2032, dedicatedAccountIds: ["ira", "brk"] })], {
+      planSettings: { ...basePlanSettings, planStartYear: 2032, planEndYear: 2032 },
+    });
+    const y0 = runProjection(data)[0];
+    expect(y0.expenses.taxes).toBeCloseTo(17000 * 0.27, 2);
+  });
+
+  it("still charges the penalty in a year that also needs a gap-fill withdrawal", () => {
+    const living: Expense = { id: "liv", type: "living", name: "Living", annualAmount: 80000, startYear: 2026, endYear: 2026, growthRate: 0 };
+    const brk: Account = { ...fund(500000), id: "brk", name: "Brokerage", category: "taxable", subType: "brokerage" };
+    const data = makeData(
+      [{ ...checking, value: 0, basis: 0 }, ira, brk],
+      [living, car({ dedicatedAccountIds: ["ira"] })],
+      { withdrawalStrategy: [{ accountId: "brk", priorityOrder: 1, startYear: 2026, endYear: 2027 }] },
+    );
+    const y0 = runProjection(data)[0];
+    expect(y0.taxResult!.flow.earlyWithdrawalPenalty).toBeCloseTo(6000, 6);
+    expect(y0.expenses.taxes).toBeGreaterThanOrEqual(60000 * 0.27 + 6000 - 0.01);
+  });
+});

@@ -298,10 +298,11 @@ function categoryWithdrawalPriority(acct: Account): number | null {
  * "traditional_ira" or "401k" — so a subType-first test would silently drop
  * every annuity distribution out of the breakdown.
  *
- * One home for the rule. It is consulted from four places (the RMD and
- * withdrawal arms of the tax-detail walk, and the two supplemental-draw loops
- * in the convergence branches), which sit thousands of lines apart; written out
- * four times, the ordering invariant was stated three times and assumed once.
+ * One home for the rule. It is consulted from five places (the RMD and
+ * withdrawal arms of the tax-detail walk, the goal funding pass, and the two
+ * supplemental-draw loops in the convergence branches), which sit thousands of
+ * lines apart; written out four times, the ordering invariant was stated three
+ * times and assumed once.
  */
 function retirementBucket(
   acct: Account | undefined,
@@ -2943,8 +2944,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // supplemental-withdrawal loop runs — year-tax.ts folds it straight into
     // `flow.earlyWithdrawalPenalty` — so the annuity's belongs there for exactly
     // the reason a transfer's does. Dropping it would let a pre-59½ annuity
-    // distribution book a penalty the projection silently discards.
-    const preSupplementalEarlyPenalty =
+    // distribution book a penalty the projection silently discards. `let`: the
+    // goal funding pass adds a pre-59½ goal draw's penalty for the same reason.
+    let preSupplementalEarlyPenalty =
       transferResult.earlyWithdrawalPenalty + annuityEarlyWithdrawalPenalty;
 
     // ── Roth Conversions (technique) — deferred application ────────────────
@@ -6011,9 +6013,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // bySource keys: "<accountId>:rmd", "withdrawal:<accountId>",
     // "annuity:<accountId>", or "<incomeId>".
     // NOTE: this captures RMDs (+ any scheduled draws already in bySource) but NOT
-    // the spending-driven supplemental IRA/401(k) draws — those are planned later
-    // in the convergence loop and folded into `supplementalRetirementBreakdown`
-    // there, so state exclusions apply to them too.
+    // the goal funding pass's IRA/401(k) draws, which it adds in place later, or
+    // the spending-driven supplemental draws — those are planned later in the
+    // convergence loop and folded into `supplementalRetirementBreakdown` there,
+    // so state exclusions apply to them too.
     const retirementBreakdown = { db: 0, ira: 0, k401: 0, annuity: 0 };
     {
       const incomeById = new Map(currentIncomes.map((inc) => [inc.id, inc]));
@@ -6757,6 +6760,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // across goals and folded into taxFreeRetirementIncome (same as supplemental).
     let goalTaxFreeIncome = 0;
 
+    // Pre-59½ goal-draw penalties, keyed as the expense drill-down keys them.
+    const goalPenaltyBySource: Record<string, number> = {};
+
     // Goal cost paid by the household — the out-of-pocket slice, plus (below)
     // any draw from a household-owned dedicated account — accumulated across
     // household-owned goals and folded into `expenses.other` below. A shortfall
@@ -6905,6 +6911,25 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           type: "capital_gains",
           amount: drawResult.capitalGains,
         };
+      }
+      // The year's tax was first computed (`taxOut`) BEFORE this pass. Bracket
+      // mode reads the draws off `taxDetail`; flat mode reads the `taxableIncome`
+      // scalar, so it — and, in lockstep, the capital gains it carries — takes
+      // them too. The recompute below and every convergence-loop rebuild are
+      // built from these, so the draw is taxed and its pre-59½ penalty charged
+      // whether or not the year needs a gap-fill.
+      taxableIncome += drawResult.ordinaryIncome + drawResult.capitalGains;
+      capGainsInTaxableIncome.longTerm += drawResult.capitalGains;
+      preSupplementalEarlyPenalty += drawResult.earlyWithdrawalPenalty;
+      for (const d of drawResult.draws) {
+        if (d.earlyWithdrawalPenalty > 0) {
+          const key = `withdrawal_penalty:${d.accountId}`;
+          goalPenaltyBySource[key] = (goalPenaltyBySource[key] ?? 0) + d.earlyWithdrawalPenalty;
+        }
+        // An IRA/401(k) goal draw is a retirement distribution for the state
+        // exclusions, the same as a supplemental one.
+        const bucket = d.ordinaryIncome > 0 ? retirementBucket(accountById.get(d.accountId)) : null;
+        if (bucket) retirementBreakdown[bucket] += d.ordinaryIncome;
       }
 
       // R4: a Roth/HSA dedicated account surfaces its untaxed slice as non-taxable
@@ -7460,14 +7485,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Tracks the EXACT input that produced the latest taxOutForIter, so the
     // equity tax counterfactual (below) re-runs from the same baseline.
     let finalTaxInput: YearTaxInput = baseTaxInput;
-    // R4: fold Roth/HSA goal draws' non-taxable slice into the base result so a
-    // surplus year (no supplemental draw → the convergence loops below never rebuild
-    // the tax input) still reports it. taxFreeRetirementIncome only affects display
-    // totals (nonTaxableIncome / grossTotalIncome), never taxes / AGI / MAGI — so the
-    // pre-supplemental `taxes` and Medicare MAGI already computed above are unchanged.
-    if (goalTaxFreeIncome > 0) {
+    // Fold the goal draws into the base result so a surplus year (no supplemental
+    // draw → the convergence loops below never rebuild the tax input) still taxes
+    // them: their taxable income and pre-59½ penalty, and (R4) the Roth/HSA
+    // non-taxable slice, which is display-only. `taxes` stays the pre-goal figure
+    // the legacy path's outflows already carry; that path funds the difference.
+    // Medicare's cold-start MAGI (above) reads the pre-goal AGI, as it does the
+    // pre-supplemental one. `capGainsInTaxableIncome` and `retirementBreakdown`
+    // were updated in place, so `baseTaxInput` already carries them.
+    if (fundedGoalsThisYear.length > 0) {
       finalTaxInput = {
         ...baseTaxInput,
+        taxableIncome,
+        transferEarlyWithdrawalPenalty: preSupplementalEarlyPenalty,
         taxFreeRetirementIncome: householdRmdTaxFreeCashIn + goalTaxFreeIncome,
       };
       taxOutForIter = computeTaxForYear(finalTaxInput);
@@ -8727,10 +8757,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     // Audit F5: surface withdrawal penalties so expenses.bySource drill-down
     // reconciles with the converged tax line.
-    const penaltyBySource: Record<string, number> = {};
+    // Goal draws' penalties are keyed the same way, summed with a gap-fill draw
+    // from the same account.
+    const penaltyBySource: Record<string, number> = { ...goalPenaltyBySource };
     for (const draw of supplementalPlan.draws) {
       if (draw.earlyWithdrawalPenalty > 0) {
-        penaltyBySource[`withdrawal_penalty:${draw.accountId}`] = draw.earlyWithdrawalPenalty;
+        const key = `withdrawal_penalty:${draw.accountId}`;
+        penaltyBySource[key] = (penaltyBySource[key] ?? 0) + draw.earlyWithdrawalPenalty;
       }
     }
 

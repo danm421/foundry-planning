@@ -22,6 +22,7 @@ import { loadEffectiveTree } from "@/lib/scenario/loader";
 import type { ScenarioChange } from "@/engine/scenario/types";
 import { buildFlowScenarioFields } from "@/lib/inline-edit/flow-write";
 import { controllingEntity } from "@/engine/ownership";
+import { isInheritedIra } from "@/engine/inherited-ira";
 import {
   expenseEngineToView,
   incomeEngineToView,
@@ -194,6 +195,7 @@ export async function loadIncomeExpensesViewProps(
     // ownership filter would read it as a claim about who owns the account.
     beneficiaryFamilyMemberId: a.education529?.beneficiaryFamilyMemberId ?? null,
     beneficiaryName: a.education529?.beneficiaryName ?? null,
+    isInherited: isInheritedIra(a),
   }));
 
   return {

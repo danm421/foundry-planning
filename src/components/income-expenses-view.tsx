@@ -201,6 +201,7 @@ interface Account {
    *  because a 529's owners are deliberately empty (out of estate). */
   beneficiaryFamilyMemberId?: string | null;
   beneficiaryName?: string | null;
+  isInherited?: boolean;
 }
 
 interface Entity {
@@ -1356,6 +1357,7 @@ function ExpenseDialog({
   const familyMemberNames = Object.fromEntries(
     (familyMembers ?? []).map((fm) => [fm.id, `${fm.firstName}${fm.lastName ? ` ${fm.lastName}` : ""}`]),
   );
+  const familyMemberBirthDates = Object.fromEntries((familyMembers ?? []).map((fm) => [fm.id, fm.dateOfBirth]));
   // Who may carry savings accounts: education, or an Other expense marked as a
   // goal (spec 2026-10-05-solver-goals-design, §2).
   const fundingEligible = canHaveGoalFunding({ type, isGoal });
@@ -1742,6 +1744,8 @@ function ExpenseDialog({
                 allowedOwnerFamilyMemberIds={type === "education" ? allowedFundingOwnerIds : undefined}
                 familyMemberNames={familyMemberNames}
                 goalType={type === "education" ? "education" : "other"}
+                birthDates={familyMemberBirthDates}
+                firstDrawYear={startYear}
               />
               {(type === "education" || fundingIdsForSave.length > 0) && (
                 <FlagCheckbox label="Pay shortfall out of pocket" checked={payOutOfPocket} onChange={setPayOutOfPocket} />
