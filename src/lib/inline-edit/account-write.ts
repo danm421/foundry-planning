@@ -22,8 +22,9 @@
 //       `activationYear`, `activationYearRef`, `revocableTrustName`,
 //       `businessType`, `distributionPolicyPercent`, `businessTaxTreatment`,
 //       `custodian`, `accountNumberLast4`, `deriveFromHoldings`.
-//   None of those fields exist on `AccountRow`, so `buildScenarioDesiredFields`
-//   cannot emit them. Because edits merge, a Map inline VALUE edit leaves
+//   `buildScenarioDesiredFields` emits none of them: most are not on
+//   `AccountRow`, and custodian / last 4 are but sit in `NON_WRITABLE_KEYS`.
+//   Because edits merge, a Map inline VALUE edit leaves
 //   those overrides as they were stored.
 //
 // `applyEntityEdit` merges a save's fields into whatever the scenario already
@@ -76,6 +77,10 @@ const NON_WRITABLE_KEYS = new Set<keyof AccountRow>([
   // has no `notes`, so an echoed one diffs as `{from: undefined, to: …}` — a
   // change nobody made, which also blocks the idempotent revert.
   "notes",
+  // Same as `notes`: only the account dialog writes these, and the engine tree
+  // has neither.
+  "custodian",
+  "accountNumberLast4",
 ]);
 
 export function buildBasePayload(patch: AccountPatch): Record<string, unknown> {

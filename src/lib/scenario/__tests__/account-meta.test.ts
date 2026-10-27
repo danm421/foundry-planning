@@ -17,6 +17,8 @@ const baseRow = (over: Partial<AccountMeta> = {}): AccountMeta => ({
   notes: null,
   growthRate: null,
   countsTowardAum: false,
+  custodian: null,
+  accountNumberLast4: null,
   ...over,
 });
 
@@ -166,6 +168,18 @@ describe("overlayAccountMeta (F11)", () => {
       },
     ]);
     expect(map.get("a1")!.notes).toBe("new");
+  });
+
+  it("overlays a scenario edit of custodian and last 4", () => {
+    const map = overlayAccountMeta([baseRow({ custodian: "Schwab", accountNumberLast4: "1111" })], [
+      {
+        targetKind: "account",
+        opType: "edit",
+        targetId: "a1",
+        payload: { custodian: { from: "Schwab", to: "Fidelity" }, accountNumberLast4: { from: "1111", to: "2222" } },
+      },
+    ]);
+    expect(map.get("a1")).toMatchObject({ custodian: "Fidelity", accountNumberLast4: "2222" });
   });
 
   it("carries a scenario-added account's notes", () => {

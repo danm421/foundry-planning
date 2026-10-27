@@ -42,6 +42,8 @@ export async function loadAccountMetaRows(clientId: string, baseScenarioId: stri
       notes: accounts.notes,
       growthRate: accounts.growthRate,
       countsTowardAum: accounts.countsTowardAum,
+      custodian: accounts.custodian,
+      accountNumberLast4: accounts.accountNumberLast4,
       source: accounts.source,
       plaidItemId: accounts.plaidItemId,
       externalProvider: accounts.externalProvider,
@@ -230,6 +232,8 @@ export function buildAccountRows({
       notes: meta?.notes ?? null,
       // The stored rate, beside the resolved `growthRate` above.
       storedGrowthRate: meta?.growthRate ?? null,
+      custodian: meta?.custodian ?? null,
+      accountNumberLast4: meta?.accountNumberLast4 ?? null,
       grantorFamilyMemberId: a.education529?.grantorFamilyMemberId ?? null,
       grantorName: a.education529?.grantorName ?? null,
       beneficiaryFamilyMemberId: a.education529?.beneficiaryFamilyMemberId ?? null,

@@ -18,6 +18,8 @@ function meta(overrides: Partial<AccountMeta> & { id: string }): AccountMeta {
     notes: null,
     growthRate: null,
     countsTowardAum: false,
+    custodian: null,
+    accountNumberLast4: null,
     ...overrides,
   };
 }

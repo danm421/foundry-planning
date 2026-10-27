@@ -45,6 +45,10 @@ export interface AccountMeta {
   /** Advisor-set AUM flag. Boolean, not string|null — it must not go through
    *  the String() coercion the other meta keys use. */
   countsTowardAum: boolean;
+  /** Not on the engine tree; the edit dialog must open on them or its next
+   *  save writes them back as null. Last 4 is the import dedupe key. */
+  custodian: string | null;
+  accountNumberLast4: string | null;
 }
 
 /** The string-valued meta keys. `countsTowardAum` is excluded deliberately —
@@ -65,6 +69,8 @@ const META_KEYS: ReadonlyArray<StringMetaKey> = [
   "propertyTaxGrowthSource",
   "notes",
   "growthRate",
+  "custodian",
+  "accountNumberLast4",
 ];
 
 /** Boolean meta keys — coerced separately from META_KEYS, whose String()
@@ -109,6 +115,8 @@ function emptyMeta(): Omit<AccountMeta, "id"> {
     notes: null,
     growthRate: null,
     countsTowardAum: false,
+    custodian: null,
+    accountNumberLast4: null,
   };
 }
 

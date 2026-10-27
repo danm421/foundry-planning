@@ -19,6 +19,8 @@ function meta(overrides: Partial<AccountMeta> & { id: string }): AccountMeta {
     notes: null,
     growthRate: null,
     countsTowardAum: false,
+    custodian: null,
+    accountNumberLast4: null,
     ...overrides,
   };
 }
@@ -60,6 +62,22 @@ describe("buildAccountRows", () => {
     expect(rows[0].modelPortfolioId).toBe("mp-7");
   });
 
+  it("takes custodian and last 4 from meta — the edit dialog round-trips them", () => {
+    const rows = buildAccountRows({
+      accounts: [engineAccount()],
+      familyMembers: [],
+      accountMetaById: new Map([
+        ["acct-1", meta({ id: "acct-1", custodian: "Brightwater Securities", accountNumberLast4: "3157" })],
+      ]),
+      linkedById: new Map(),
+      stockOptionPlans: [],
+      planStartYear: 2026,
+    });
+
+    expect(rows[0].custodian).toBe("Brightwater Securities");
+    expect(rows[0].accountNumberLast4).toBe("3157");
+  });
+
   it("defaults growthSource to 'default' when the account has no meta row", () => {
     const rows = buildAccountRows({
       accounts: [engineAccount()],
@@ -72,6 +90,8 @@ describe("buildAccountRows", () => {
 
     expect(rows[0].growthSource).toBe("default");
     expect(rows[0].countsTowardAum).toBe(false);
+    expect(rows[0].custodian).toBeNull();
+    expect(rows[0].accountNumberLast4).toBeNull();
   });
 
   it("stringifies the resolved engine growthRate", () => {

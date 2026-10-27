@@ -255,6 +255,17 @@ describe("buildScenarioDesiredFields", () => {
     expect(fields).not.toHaveProperty("notes");
   });
 
+  it("an inline value edit sends no custodian or last 4 — the engine tree has neither", () => {
+    // Same trap as `notes`: echoed back they diff as `{from: undefined, to: …}`.
+    const fields = buildScenarioDesiredFields(
+      row({ custodian: "Brightwater Securities", accountNumberLast4: "3157" }),
+      { value: "500000" },
+    );
+    expect(fields.value).toBe("500000");
+    expect(fields).not.toHaveProperty("custodian");
+    expect(fields).not.toHaveProperty("accountNumberLast4");
+  });
+
   // The subtlest judgement call in this module: `owner` (singular) is the
   // DERIVED display string (client/spouse/joint) and must be stripped, while
   // `owners` (plural) is the PERSISTED ownership relation and must survive

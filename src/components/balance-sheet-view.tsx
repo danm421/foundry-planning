@@ -138,6 +138,10 @@ export interface AccountRow {
   flowMode?: BusinessAccount["flowMode"];
   /** Free-text notes (the business dialog's Notes tab). */
   notes?: string | null;
+  /** Hydrated from AccountMeta so the edit form round-trips them — unmapped,
+   *  every save (even a tab-switch autosave) nulled both. */
+  custodian?: string | null;
+  accountNumberLast4?: string | null;
   /** 529 / education_savings only — grantor/beneficiary/Roth-rollover fields.
    *  Null/undefined for every other category. No account_owners rows are
    *  written for this category; these fields are authoritative instead. */
@@ -409,6 +413,8 @@ export function accountToInitial(a: AccountRow): AccountFormInitial {
     rothRolloverStartYear: a.rothRolloverStartYear ?? null,
     rothRolloverAccountId: a.rothRolloverAccountId ?? null,
     beneficiaries: a.beneficiaries ?? [],
+    custodian: a.custodian ?? null,
+    accountNumberLast4: a.accountNumberLast4 ?? null,
   };
 }
 
