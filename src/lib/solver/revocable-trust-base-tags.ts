@@ -4,8 +4,7 @@
 // to resolve names to ids. Blank names read as "no trust".
 import type { Account } from "@/engine/types";
 
-const nameOf = (a: Pick<Account, "revocableTrustName">): string | null =>
-  a.revocableTrustName?.trim() || null;
+import { revocableTagOf as nameOf } from "./revocable-trust-rows";
 
 /** accountId → trust name to tag into (null = untag). Inserts appear only when
  *  named; updates only when the trimmed name differs from the base account's. */

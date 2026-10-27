@@ -73,14 +73,13 @@ describe("guidedTrustContext / initialAnswers", () => {
 });
 
 describe("applyKindPreset", () => {
-  const c = ctx();
   it("irrevocable", () => {
-    expect(applyKindPreset(base(), "irrevocable", c)).toMatchObject({
+    expect(applyKindPreset(base(), "irrevocable")).toMatchObject({
       kind: "irrevocable", isGrantor: true, crummeyPowers: true, accessibleToClient: false,
     });
   });
   it("slat adds the spouse to lifetime and re-splits evenly", () => {
-    const a = applyKindPreset(base({ lifetime: [kid] }), "slat", c);
+    const a = applyKindPreset(base({ lifetime: [kid] }), "slat");
     expect(a).toMatchObject({ isGrantor: true, crummeyPowers: true, accessibleToClient: true });
     expect(a.lifetime).toEqual([
       { person: { kind: "family_member", id: "fm-1" }, percentage: 50 },
@@ -88,26 +87,26 @@ describe("applyKindPreset", () => {
     ]);
   });
   it("slat does not duplicate an existing spouse", () => {
-    const a = applyKindPreset(base({ lifetime: [share("spouse", 60), { ...kid, percentage: 40 }] }), "slat", c);
+    const a = applyKindPreset(base({ lifetime: [share("spouse", 60), { ...kid, percentage: 40 }] }), "slat");
     expect(a.lifetime).toHaveLength(2);
     expect(a.lifetime[0].percentage).toBe(60);
   });
   it("slat with spouse grantor adds the client", () => {
-    const a = applyKindPreset(base({ grantor: "spouse" }), "slat", c);
+    const a = applyKindPreset(base({ grantor: "spouse" }), "slat");
     expect(a.lifetime).toEqual([share("client")]);
   });
   it("ilit / idgt / crt / clt / revocable", () => {
-    expect(applyKindPreset(base(), "ilit", c)).toMatchObject({ crummeyPowers: true, isGrantor: false });
-    expect(applyKindPreset(base(), "idgt", c)).toMatchObject({ isGrantor: true, crummeyPowers: false });
-    expect(applyKindPreset(base(), "crt", c).isGrantor).toBe(false);
-    expect(applyKindPreset(base(), "clt", c).isGrantor).toBe(true);
+    expect(applyKindPreset(base(), "ilit")).toMatchObject({ crummeyPowers: true, isGrantor: false });
+    expect(applyKindPreset(base(), "idgt")).toMatchObject({ isGrantor: true, crummeyPowers: false });
+    expect(applyKindPreset(base(), "crt").isGrantor).toBe(false);
+    expect(applyKindPreset(base(), "clt").isGrantor).toBe(true);
     const r = base({ isGrantor: false, crummeyPowers: false, accessibleToClient: true });
-    expect(applyKindPreset(r, "revocable", c)).toMatchObject({
+    expect(applyKindPreset(r, "revocable")).toMatchObject({
       kind: "revocable", isGrantor: false, crummeyPowers: false, accessibleToClient: true,
     });
   });
   it("never clears picked people", () => {
-    const a = applyKindPreset(base({ lifetime: [kid], remainder: [kid] }), "ilit", c);
+    const a = applyKindPreset(base({ lifetime: [kid], remainder: [kid] }), "ilit");
     expect(a.lifetime).toEqual([kid]);
     expect(a.remainder).toEqual([kid]);
   });
@@ -175,8 +174,7 @@ describe("trustPeopleOptions", () => {
   it("married lifetime: spouse first, then family, individuals, other heirs", () => {
     const o = trustPeopleOptions(tree(), "client", "lifetime");
     expect(o.map((x) => x.label)).toEqual(["Jane (spouse)", "Kid (child)", "Pat Friend", "Other heirs"]);
-    expect(o[0]).toMatchObject({ ref: { kind: "household", role: "spouse" }, isGrantorSpouse: true });
-    expect(o.slice(1).every((x) => !x.isGrantorSpouse)).toBe(true);
+    expect(o[0]).toMatchObject({ ref: { kind: "household", role: "spouse" } });
   });
   it("spouse grantor offers the client", () => {
     const o = trustPeopleOptions(tree(), "spouse", "lifetime");
@@ -192,7 +190,7 @@ describe("trustPeopleOptions", () => {
     const bare = tree({ married: false, familyMembers: [], externalBeneficiaries: [] });
     for (const g of ["lifetime", "remainder"] as const) {
       expect(trustPeopleOptions(bare, "client", g)).toEqual([
-        { ref: { kind: "other_heirs" }, label: "Other heirs", isGrantorSpouse: false },
+        { ref: { kind: "other_heirs" }, label: "Other heirs" },
       ]);
     }
   });

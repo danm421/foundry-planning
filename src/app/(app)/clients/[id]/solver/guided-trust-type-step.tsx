@@ -110,7 +110,7 @@ export function GuidedTrustTypeStep({ answers, ctx, onChange }: Props) {
                   tag={r.tag}
                   description={r.note}
                   checked={answers.kind === r.kind}
-                  onSelect={() => onChange(applyKindPreset(answers, r.kind, ctx))}
+                  onSelect={() => onChange(applyKindPreset(answers, r.kind))}
                 />
               ))}
           </div>

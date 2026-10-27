@@ -8,7 +8,6 @@ import type {
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import {
   applyKindPreset,
-  guidedTrustContext,
   initialAnswers,
   type FundingItem,
   type GuidedTrustAnswers,
@@ -82,7 +81,7 @@ function answers(kind: GuidedTrustKind, over: Partial<GuidedTrustAnswers> = {}):
     name: "Sam Rivera Irrevocable Trust",
     ...over,
   };
-  return applyKindPreset(start, kind, guidedTrustContext(tree(), {}));
+  return applyKindPreset(start, kind);
 }
 
 function cashGift(over: Partial<Extract<EstateFlowGift, { kind: "cash-once" }>> = {}): EstateFlowGift {

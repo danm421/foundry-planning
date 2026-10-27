@@ -29,7 +29,7 @@ import { GuidedTrustPowersStep } from "./guided-trust-powers-step";
 import { GuidedTrustReviewStep } from "./guided-trust-review-step";
 import { GuidedTrustSetupStep } from "./guided-trust-setup-step";
 import { GuidedTrustTypeStep } from "./guided-trust-type-step";
-import { StepBar } from "./guided-trust-ui";
+import { StepBar, focusRing } from "./guided-trust-ui";
 import { useGuidedTrustImpact } from "./use-guided-trust-impact";
 
 const STEP_NAME: Record<GuidedStep, string> = {
@@ -41,9 +41,6 @@ const STEP_NAME: Record<GuidedStep, string> = {
   setup: "Setup",
   review: "Review",
 };
-
-const focusRing =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 
 interface Props {
   clientId: string;

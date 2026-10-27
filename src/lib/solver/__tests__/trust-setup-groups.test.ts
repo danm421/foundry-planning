@@ -3,7 +3,6 @@ import type { Account, ClientData } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import {
   applyKindPreset,
-  guidedTrustContext,
   initialAnswers,
   type FundingItem,
 } from "../guided-trust";
@@ -54,7 +53,6 @@ function batchDrafts(
   const a = applyKindPreset(
     { ...initialAnswers(E), lifetime: [kid], remainder: [kid], name: NAME, funding },
     "irrevocable",
-    guidedTrustContext(t, {}),
   );
   let n = 0;
   const batch = buildGuidedTrustBatch(a, t, () => `id-${++n}`);

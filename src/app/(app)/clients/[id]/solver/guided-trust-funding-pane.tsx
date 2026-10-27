@@ -11,9 +11,7 @@ import { guidedKindOf, guidedTrustContext, type FundingItem } from "@/lib/solver
 import { buildFundingMutations, fundingItemLabel } from "@/lib/solver/guided-trust-batch";
 import type { SolverMutation } from "@/lib/solver/types";
 import { GuidedTrustFundingStep, type FundingTrust } from "./guided-trust-funding-step";
-
-const focusRing =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
+import { focusRing } from "./guided-trust-ui";
 
 interface Props {
   trust: EntitySummary;

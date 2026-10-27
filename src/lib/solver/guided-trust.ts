@@ -8,6 +8,7 @@ import type {
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import type { SplitInterestFundingPick } from "@/lib/forms/split-interest-funding-diff";
 import { householdAgePeople, type AgePerson } from "@/lib/year-or-age";
+import { revocableTagOf } from "./revocable-trust-rows";
 import { roleFirstName } from "./trust-labels";
 
 // The answers behind the Solver's step-by-step "add a trust" wizard, plus the
@@ -26,7 +27,7 @@ export type PersonRef =
   | { kind: "other_heirs" };
 
 export interface PersonShare { person: PersonRef; percentage: number }
-export interface PersonOption { ref: PersonRef; label: string; isGrantorSpouse: boolean }
+export interface PersonOption { ref: PersonRef; label: string }
 
 export type FundingItem =
   | { kind: "gift"; gift: EstateFlowGift }
@@ -139,12 +140,28 @@ export function evenShares(people: PersonRef[]): PersonShare[] {
   }));
 }
 
-function sameRef(a: PersonRef, b: PersonRef): boolean {
-  if (a.kind !== b.kind) return false;
-  if (a.kind === "household" && b.kind === "household") return a.role === b.role;
-  if (a.kind === "family_member" && b.kind === "family_member") return a.id === b.id;
-  if (a.kind === "external" && b.kind === "external") return a.id === b.id;
-  return true;
+/** A stable identity for a person ref: equal keys mean the same person. */
+export function personKey(r: PersonRef): string {
+  switch (r.kind) {
+    case "household":
+      return `household:${r.role}`;
+    case "family_member":
+    case "external":
+      return `${r.kind}:${r.id}`;
+    case "other_heirs":
+      return "other_heirs";
+  }
+}
+
+export function isHouseholdShare(s: PersonShare, role: "client" | "spouse"): boolean {
+  return s.person.kind === "household" && s.person.role === role;
+}
+
+/** `shares` without `role`'s household entry, re-split evenly. Returns the same
+ *  array when `role` wasn't in it, so untouched splits keep their percentages. */
+export function withoutHousehold(shares: PersonShare[], role: "client" | "spouse"): PersonShare[] {
+  const kept = shares.filter((s) => !isHouseholdShare(s, role));
+  return kept.length === shares.length ? shares : evenShares(kept.map((s) => s.person));
 }
 
 /** Set the powers a trust type implies. Never clears people already picked;
@@ -152,7 +169,6 @@ function sameRef(a: PersonRef, b: PersonRef): boolean {
 export function applyKindPreset(
   a: GuidedTrustAnswers,
   kind: GuidedTrustKind,
-  _ctx: GuidedTrustContext,
 ): GuidedTrustAnswers {
   const next: GuidedTrustAnswers = { ...a, kind };
   switch (kind) {
@@ -160,7 +176,7 @@ export function applyKindPreset(
       return { ...next, isGrantor: true, crummeyPowers: true, accessibleToClient: false };
     case "slat": {
       const spouse: PersonRef = { kind: "household", role: spouseOf(a.grantor) };
-      const has = a.lifetime.some((s) => sameRef(s.person, spouse));
+      const has = a.lifetime.some((s) => personKey(s.person) === personKey(spouse));
       return {
         ...next,
         isGrantor: true,
@@ -208,7 +224,7 @@ export function stepBlocker(
     case "accounts": {
       if (a.revocableAccountIds.length === 0) return "Pick at least one account to move in.";
       const name = a.name.trim();
-      if (name && ctx.tree.accounts.some((x) => x.revocableTrustName?.trim() === name)) {
+      if (name && ctx.tree.accounts.some((x) => revocableTagOf(x) === name)) {
         return `A trust named ${name} already exists. Open it from the list to add accounts.`;
       }
       return null;
@@ -237,7 +253,6 @@ export function trustPeopleOptions(
     options.push({
       ref: { kind: "household", role },
       label: `${roleFirstName(role, tree)} (spouse)`,
-      isGrantorSpouse: true,
     });
   }
   for (const fm of tree.familyMembers ?? []) {
@@ -245,14 +260,13 @@ export function trustPeopleOptions(
     options.push({
       ref: { kind: "family_member", id: fm.id },
       label: `${fm.firstName} (${fm.relationship.replace(/_/g, " ")})`,
-      isGrantorSpouse: false,
     });
   }
   for (const eb of tree.externalBeneficiaries ?? []) {
     if (eb.kind !== "individual") continue;
-    options.push({ ref: { kind: "external", id: eb.id }, label: eb.name, isGrantorSpouse: false });
+    options.push({ ref: { kind: "external", id: eb.id }, label: eb.name });
   }
-  options.push({ ref: { kind: "other_heirs" }, label: "Other heirs", isGrantorSpouse: false });
+  options.push({ ref: { kind: "other_heirs" }, label: "Other heirs" });
   return options;
 }
 

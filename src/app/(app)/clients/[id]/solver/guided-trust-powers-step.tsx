@@ -9,6 +9,7 @@ import {
   type GuidedTrustContext,
   type GuidedTrustKind,
 } from "@/lib/solver/guided-trust";
+import { usd } from "@/lib/solver/technique-summaries";
 import { selectBaseClassName } from "@/components/forms/input-styles";
 import { StepHeader, SwitchRow } from "./guided-trust-ui";
 
@@ -28,14 +29,12 @@ const KIND_LABEL: Record<GuidedTrustKind, string> = {
   clt: "a CLT",
 };
 
-const dollars = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
-
 export function GuidedTrustPowersStep({ answers, ctx, onChange }: Props) {
   const { client } = ctx.tree;
   const grantorName =
     (answers.grantor === "spouse" ? client.spouseName : client.firstName) ?? "The grantor";
   const exclusion = ctx.annualExclusionByYear[ctx.planStartYear];
-  const preset = applyKindPreset(answers, answers.kind, ctx);
+  const preset = applyKindPreset(answers, answers.kind);
   const why = (key: "isGrantor" | "crummeyPowers" | "accessibleToClient") =>
     answers[key] && preset[key] ? `On by default for ${KIND_LABEL[answers.kind]}` : null;
 
@@ -82,7 +81,7 @@ export function GuidedTrustPowersStep({ answers, ctx, onChange }: Props) {
         name="Crummey powers"
         note={
           exclusion != null
-            ? `Beneficiaries get a short window to withdraw each gift, so up to ${dollars(exclusion)} a year per beneficiary counts against the annual exclusion instead of lifetime exemption.`
+            ? `Beneficiaries get a short window to withdraw each gift, so up to ${usd(exclusion)} a year per beneficiary counts against the annual exclusion instead of lifetime exemption.`
             : "Beneficiaries get a short window to withdraw each gift, so up to the annual exclusion a year per beneficiary counts against it instead of lifetime exemption."
         }
         why={why("crummeyPowers")}

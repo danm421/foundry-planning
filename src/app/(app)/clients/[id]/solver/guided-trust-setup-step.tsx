@@ -7,12 +7,11 @@
 
 import { useCallback } from "react";
 import {
-  evenShares,
+  withoutHousehold,
   stepBlocker,
   trustPeopleOptions,
   type GuidedTrustAnswers,
   type GuidedTrustContext,
-  type PersonShare,
   type SplitInterestAnswers,
 } from "@/lib/solver/guided-trust";
 import { GuidedTrustPeoplePicker } from "./guided-trust-people-picker";
@@ -24,9 +23,6 @@ interface Props {
   ctx: GuidedTrustContext;
   onChange: (next: GuidedTrustAnswers) => void;
 }
-
-const isHousehold = (s: PersonShare, role: "client" | "spouse") =>
-  s.person.kind === "household" && s.person.role === role;
 
 export function GuidedTrustSetupStep({ answers, ctx, onChange }: Props) {
   const subType = answers.kind === "clt" ? "clt" : "crt";
@@ -42,12 +38,7 @@ export function GuidedTrustSetupStep({ answers, ctx, onChange }: Props) {
   function setGrantor(grantor: "client" | "spouse") {
     if (grantor === answers.grantor) return;
     // The new grantor can't also receive what's left.
-    const kept = answers.remainder.filter((s) => !isHousehold(s, grantor));
-    onChange({
-      ...answers,
-      grantor,
-      remainder: kept.length === answers.remainder.length ? answers.remainder : evenShares(kept.map((s) => s.person)),
-    });
+    onChange({ ...answers, grantor, remainder: withoutHousehold(answers.remainder, grantor) });
   }
 
   const blocked = stepBlocker("setup", answers, ctx);

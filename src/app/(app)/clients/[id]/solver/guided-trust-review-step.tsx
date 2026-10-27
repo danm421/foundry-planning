@@ -8,15 +8,15 @@ import type {
   GuidedStep,
   GuidedTrustAnswers,
   GuidedTrustContext,
-  PersonRef,
   PersonShare,
 } from "@/lib/solver/guided-trust";
-import { trustPeopleOptions } from "@/lib/solver/guided-trust";
+import { personKey, trustPeopleOptions } from "@/lib/solver/guided-trust";
+import { usd } from "@/lib/solver/technique-summaries";
 import { roleFirstName } from "@/lib/solver/trust-labels";
 import { fundingItemLabel } from "@/lib/solver/guided-trust-batch";
 import { formatCompact } from "@/lib/format-compact";
 import { kindName } from "./guided-trust-type-step";
-import { StepHeader } from "./guided-trust-ui";
+import { StepHeader, focusRing } from "./guided-trust-ui";
 import type { useGuidedTrustImpact } from "./use-guided-trust-impact";
 
 interface Props {
@@ -27,12 +27,6 @@ interface Props {
   impact: ReturnType<typeof useGuidedTrustImpact>;
 }
 
-const focusRing =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
-
-const refKey = (r: PersonRef) =>
-  r.kind === "household" ? `h:${r.role}` : r.kind === "other_heirs" ? "o" : `${r.kind}:${r.id}`;
-
 function peopleLine(
   shares: PersonShare[],
   group: "lifetime" | "remainder",
@@ -40,10 +34,10 @@ function peopleLine(
   ctx: GuidedTrustContext,
 ): string {
   const labels = new Map(
-    trustPeopleOptions(ctx.tree, answers.grantor, group).map((o) => [refKey(o.ref), o.label]),
+    trustPeopleOptions(ctx.tree, answers.grantor, group).map((o) => [personKey(o.ref), o.label]),
   );
   const parts = shares.map((s) => ({
-    label: labels.get(refKey(s.person)) ?? "Someone",
+    label: labels.get(personKey(s.person)) ?? "Someone",
     pct: s.percentage,
   }));
   if (parts.length === 1) return parts[0].label;
@@ -66,7 +60,7 @@ function setupLine(a: GuidedTrustAnswers, ctx: GuidedTrustContext): string {
   const payout =
     snap.payoutType === "unitrust"
       ? `${snap.payoutPercent ?? 0}% unitrust`
-      : `$${Math.round(snap.payoutAmount ?? 0).toLocaleString("en-US")} annuity`;
+      : `${usd(snap.payoutAmount ?? 0)} annuity`;
   const term = {
     years: `${snap.termYears} years`,
     single_life: "Life",

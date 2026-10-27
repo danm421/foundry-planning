@@ -8,6 +8,7 @@
 
 import type { ReactNode } from "react";
 import type { RevocableTrustRow } from "@/lib/solver/revocable-trust-rows";
+import { focusRing } from "./guided-trust-ui";
 
 /**
  * Which pane the detail side is showing. `{ kind: "trust", id: null }` is the
@@ -85,8 +86,6 @@ function paneKey(p: EstatePane): string {
       return p.kind;
   }
 }
-
-const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 
 const ROW = `flex w-full items-center gap-2 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-left text-[13px] transition-colors ${focusRing}`;
 

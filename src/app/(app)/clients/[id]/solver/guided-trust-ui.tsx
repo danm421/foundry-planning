@@ -6,7 +6,7 @@
 
 import { useId, type ReactNode } from "react";
 
-const focusRing =
+export const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 
 /** The numbered progress strip. `current` is an index into `steps`. */

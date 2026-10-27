@@ -11,7 +11,7 @@ import { applyMutations } from "@/lib/solver/apply-mutations";
 import type { FundingItem } from "@/lib/solver/guided-trust";
 import { buildBequestMutations, willConflictNote } from "@/lib/solver/guided-trust-bequests";
 import type { GuidedTrustContext } from "@/lib/solver/guided-trust";
-import { Callout } from "./guided-trust-ui";
+import { Callout, focusRing } from "./guided-trust-ui";
 
 type BequestItem = Extract<FundingItem, { kind: "bequest" }>;
 type From = BequestItem["from"];
@@ -24,9 +24,6 @@ interface Props {
   existing: BequestItem[];
   onAdd: (item: BequestItem) => void;
 }
-
-const focusRing =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 
 function Pills<T extends string>({
   label,

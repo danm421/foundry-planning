@@ -14,9 +14,8 @@ export interface RevocableTrustRow {
 }
 
 /** Trimmed tag; blank or whitespace means "no trust". */
-function tagOf(a: Account): string | null {
-  const t = a.revocableTrustName?.trim();
-  return t ? t : null;
+export function revocableTagOf(a: Pick<Account, "revocableTrustName">): string | null {
+  return a.revocableTrustName?.trim() || null;
 }
 
 /** One row per distinct trimmed name. A base trust whose accounts were all
@@ -28,13 +27,13 @@ export function revocableTrustRows(
 ): RevocableTrustRow[] {
   const baseNames = new Set<string>();
   for (const a of baseAccounts) {
-    const t = tagOf(a);
+    const t = revocableTagOf(a);
     if (t) baseNames.add(t);
   }
   const members = new Map<string, string[]>();
   for (const name of baseNames) members.set(name, []);
   for (const a of workingAccounts) {
-    const t = tagOf(a);
+    const t = revocableTagOf(a);
     if (!t) continue;
     const ids = members.get(t);
     if (ids) ids.push(a.id);
@@ -64,7 +63,7 @@ export function revocableEligibleAccounts(
   return accounts.filter((a) => {
     if (!REVOCABLE_TRUST_ELIGIBLE_CATEGORIES.includes(a.category)) return false;
     if (isTrustHeld(a)) return false;
-    const t = tagOf(a);
+    const t = revocableTagOf(a);
     return t == null || t === name;
   });
 }
@@ -83,7 +82,7 @@ export function buildRevocableMembershipMutations(
   const name = trustName.trim();
   const muts: SolverMutation[] = [];
   for (const a of accounts) {
-    const current = tagOf(a);
+    const current = revocableTagOf(a);
     if (taggedIds.has(a.id)) {
       if (current !== name) muts.push(retag(a, name));
     } else if (current === name) {
@@ -101,5 +100,5 @@ export function buildRevocableRenameMutations(
 ): SolverMutation[] {
   const f = from.trim();
   const t = to.trim();
-  return accounts.filter((a) => tagOf(a) === f).map((a) => retag(a, t));
+  return accounts.filter((a) => revocableTagOf(a) === f).map((a) => retag(a, t));
 }

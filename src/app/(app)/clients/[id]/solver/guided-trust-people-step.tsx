@@ -7,8 +7,10 @@
 import {
   applyKindPreset,
   evenShares,
+  isHouseholdShare,
   spouseOf,
   trustPeopleOptions,
+  withoutHousehold,
   type GuidedTrustAnswers,
   type GuidedTrustContext,
   type PersonShare,
@@ -25,9 +27,6 @@ interface Props {
   onRemainderTouched: () => void;
 }
 
-const isHousehold = (s: PersonShare, role: "client" | "spouse") =>
-  s.person.kind === "household" && s.person.role === role;
-
 export function GuidedTrustPeopleStep({
   answers,
   ctx,
@@ -41,7 +40,7 @@ export function GuidedTrustPeopleStep({
   function setLifetime(lifetime: PersonShare[]) {
     if (remainderTouched) return onChange({ ...answers, lifetime });
     const remainder = evenShares(
-      lifetime.filter((s) => !isHousehold(s, spouseRole)).map((s) => s.person),
+      lifetime.filter((s) => !isHouseholdShare(s, spouseRole)).map((s) => s.person),
     );
     onChange({ ...answers, lifetime, remainder });
   }
@@ -49,16 +48,17 @@ export function GuidedTrustPeopleStep({
   function setGrantor(grantor: "client" | "spouse") {
     if (grantor === answers.grantor) return;
     // The new grantor can't also be a beneficiary; a SLAT re-picks the new spouse.
-    const without = (list: PersonShare[]) => {
-      const kept = list.filter((s) => !isHousehold(s, grantor));
-      return kept.length === list.length ? list : evenShares(kept.map((s) => s.person));
+    const next = {
+      ...answers,
+      grantor,
+      lifetime: withoutHousehold(answers.lifetime, grantor),
+      remainder: withoutHousehold(answers.remainder, grantor),
     };
-    const next = { ...answers, grantor, lifetime: without(answers.lifetime), remainder: without(answers.remainder) };
-    onChange(answers.kind === "slat" ? applyKindPreset(next, "slat", ctx) : next);
+    onChange(answers.kind === "slat" ? applyKindPreset(next, "slat") : next);
   }
 
   const showSlatCallout =
-    answers.kind !== "slat" && answers.lifetime.some((s) => isHousehold(s, spouseRole));
+    answers.kind !== "slat" && answers.lifetime.some((s) => isHouseholdShare(s, spouseRole));
 
   return (
     <div>

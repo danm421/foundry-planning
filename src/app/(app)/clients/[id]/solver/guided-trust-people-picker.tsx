@@ -5,7 +5,7 @@
 // step uses it twice, and the CLT setup reuses it for "Gets what's left".
 
 import { useState } from "react";
-import { evenShares, type PersonOption, type PersonRef, type PersonShare } from "@/lib/solver/guided-trust";
+import { evenShares, personKey, type PersonOption, type PersonRef, type PersonShare } from "@/lib/solver/guided-trust";
 
 interface Props {
   label: string;
@@ -15,31 +15,19 @@ interface Props {
   onChange: (next: PersonShare[]) => void;
 }
 
-function refKey(r: PersonRef): string {
-  switch (r.kind) {
-    case "household":
-      return `household:${r.role}`;
-    case "family_member":
-    case "external":
-      return `${r.kind}:${r.id}`;
-    case "other_heirs":
-      return "other_heirs";
-  }
-}
-
 export function GuidedTrustPeoplePicker({ label, note, options, value, onChange }: Props) {
-  const picked = new Map(value.map((s) => [refKey(s.person), s]));
+  const picked = new Map(value.map((s) => [personKey(s.person), s]));
 
   function toggle(ref: PersonRef) {
-    const key = refKey(ref);
+    const key = personKey(ref);
     const people = value.map((s) => s.person);
     onChange(
-      evenShares(picked.has(key) ? people.filter((p) => refKey(p) !== key) : [...people, ref]),
+      evenShares(picked.has(key) ? people.filter((p) => personKey(p) !== key) : [...people, ref]),
     );
   }
 
   function setPercent(key: string, percentage: number) {
-    onChange(value.map((s) => (refKey(s.person) === key ? { ...s, percentage } : s)));
+    onChange(value.map((s) => (personKey(s.person) === key ? { ...s, percentage } : s)));
   }
 
   return (
@@ -48,7 +36,7 @@ export function GuidedTrustPeoplePicker({ label, note, options, value, onChange 
       {note ? <div className="mb-1.5 text-[11.5px] leading-snug text-ink-3">{note}</div> : null}
       <div className="flex flex-wrap gap-1.5">
         {options.map((o) => {
-          const key = refKey(o.ref);
+          const key = personKey(o.ref);
           const share = picked.get(key);
           return (
             <span

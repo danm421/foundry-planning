@@ -15,7 +15,7 @@ import { roleFirstName } from "@/lib/solver/trust-labels";
 import { usd } from "@/lib/solver/technique-summaries";
 import { isRetitleFundingEligible } from "@/lib/solver/trust-levers";
 import { GuidedTrustBequestFields } from "./guided-trust-bequest-fields";
-import { Callout, StepHeader } from "./guided-trust-ui";
+import { Callout, StepHeader, focusRing } from "./guided-trust-ui";
 
 export interface FundingTrust {
   id: string;
@@ -36,8 +36,6 @@ interface Props {
 
 type Tile = "gift" | "bequest" | "policy" | "retitle" | "sale";
 
-const focusRing =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 const addBtn = `rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-[12.5px] font-medium text-accent-on disabled:opacity-40 ${focusRing}`;
 
 const TILES: Record<Tile, { name: string; note: string }> = {

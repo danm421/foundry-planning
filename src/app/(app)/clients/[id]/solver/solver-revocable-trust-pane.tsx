@@ -8,11 +8,9 @@
 
 import { useState } from "react";
 import type { Account, ClientData } from "@/engine/types";
-import { revocableEligibleAccounts, type RevocableTrustRow } from "@/lib/solver/revocable-trust-rows";
+import { revocableEligibleAccounts, revocableTagOf, type RevocableTrustRow } from "@/lib/solver/revocable-trust-rows";
 import { usd } from "@/lib/solver/technique-summaries";
-
-const focusRing =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
+import { focusRing } from "./guided-trust-ui";
 
 /** Tick-list of accounts, scrolling inside a bounded box for large households. */
 export function RevocableAccountChecklist({
@@ -83,8 +81,8 @@ export function SolverRevocableTrustPane({ row, tree, onSetMembership, onRename,
       return;
     }
     const taken = tree.accounts.some((a) => {
-      const t = a.revocableTrustName?.trim();
-      return t != null && t !== "" && t !== row.name && norm(t) === norm(name);
+      const t = revocableTagOf(a);
+      return t !== null && t !== row.name && norm(t) === norm(name);
     });
     const problem = !name ? "Name the trust." : taken ? "Another trust already uses that name." : null;
     if (problem) {
