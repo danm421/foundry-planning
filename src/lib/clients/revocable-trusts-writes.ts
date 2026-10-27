@@ -12,7 +12,7 @@ import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { db } from "@/db";
 import { accounts, revocableTrusts } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
-import { handleOf, type DbOrTx, type WriteOptions } from "@/lib/db-tx";
+import { handleOf, type DbOrTx, type Tx, type WriteOptions } from "@/lib/db-tx";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { revocableTrustUpsertSchema } from "@/lib/schemas/revocable-trusts";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
@@ -182,4 +182,28 @@ export async function updateRevocableTrustForClient(
   });
 
   return { ok: true, data: { ...updated, accountIds: finalAccountIds }, resourceId: trustId };
+}
+
+/** Resolve revocable-trust names to this client's trust ids by exact name,
+ *  creating (through the audited create path) any that don't exist yet. Runs on
+ *  `tx` so a Save to base creates the trust and tags the account together. */
+export async function findOrCreateRevocableTrustIds(
+  tx: Tx,
+  args: { clientId: string; firmId: string },
+  names: readonly string[],
+): Promise<Map<string, string>> {
+  const ids = new Map<string, string>();
+  if (names.length === 0) return ids;
+  const rows = await tx
+    .select({ id: revocableTrusts.id, name: revocableTrusts.name })
+    .from(revocableTrusts)
+    .where(and(eq(revocableTrusts.clientId, args.clientId), inArray(revocableTrusts.name, [...names])));
+  for (const r of rows) ids.set(r.name, r.id);
+  for (const name of names) {
+    if (ids.has(name)) continue;
+    const created = await createRevocableTrustForClient({ ...args, input: { name, accountIds: [] }, tx });
+    if (!created.ok) throw new Error(`Could not create revocable trust "${name}"`);
+    ids.set(name, created.data.id);
+  }
+  return ids;
 }

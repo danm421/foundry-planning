@@ -71,6 +71,8 @@ import {
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { inheritedIraRowFields } from "@/lib/accounts/inherited-ira";
+import { findOrCreateRevocableTrustIds } from "@/lib/clients/revocable-trusts-writes";
+import { revocableTrustTagChanges } from "@/lib/solver/revocable-trust-base-tags";
 import { deleteFamilyMemberInTx } from "@/lib/clients/family-members-writes";
 import { recordAudit } from "@/lib/audit";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
@@ -198,10 +200,12 @@ function accountInsertValues(
   a: Account,
   clientId: string,
   scenarioId: string,
+  revocableTrustId?: string,
 ): typeof accounts.$inferInsert {
   return {
     clientId,
     scenarioId,
+    ...(revocableTrustId ? { revocableTrustId } : {}),
     name: a.name,
     category: a.category,
     // Engine `subType` is a plain string; the DB column is an enum. Casting
@@ -522,8 +526,25 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       return NextResponse.json({ error: ebCheck.reason }, { status: 400 });
     }
 
+    // The revocable-trust lever tags accounts by trust NAME; the base column is
+    // the trust's id, resolved (and created when new) inside the transaction.
+    const trustTagChanges = revocableTrustTagChanges(
+      baseTree.accounts ?? [],
+      accountInserts,
+      accountUpdates,
+    );
+
     let heldCounts: Record<string, number> = {};
     await db.transaction(async (tx) => {
+      const trustIdByName = await findOrCreateRevocableTrustIds(
+        tx,
+        { clientId, firmId },
+        [...new Set([...trustTagChanges.values()].filter((n): n is string => n !== null))],
+      );
+      const trustIdFor = (accountId: string) => {
+        const name = trustTagChanges.get(accountId);
+        return name ? trustIdByName.get(name) : undefined;
+      };
       // Held editor changes first, so a control moved after a dialog save wins.
       // A family member's removal goes through its DELETE route's own helper
       // after the rest of the plan, which also clears the will recipients and
@@ -554,7 +575,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       for (const a of accountInserts) {
         const [inserted] = await tx
           .insert(accounts)
-          .values(accountInsertValues(a, clientId, baseScenarioId))
+          .values(accountInsertValues(a, clientId, baseScenarioId, trustIdFor(a.id)))
           .returning({ id: accounts.id });
         idRemap.set(a.id, inserted.id);
 
@@ -579,6 +600,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
               a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,
             ...inheritedIraRowFields(a),
             titlingType: a.titlingType ?? "jtwros",
+            // Only when the Solver changed the tag; null untags.
+            ...(trustTagChanges.has(a.id) ? { revocableTrustId: trustIdFor(a.id) ?? null } : {}),
             updatedAt: new Date(),
           })
           .where(

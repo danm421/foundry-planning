@@ -46,6 +46,8 @@ const inserts: Insert[] = [];
 const updates: Update[] = [];
 const deletes: Delete[] = [];
 let updateMatched: unknown[] = [];
+// Rows the transaction's revocable_trusts lookup returns ({ id, name }).
+let revocableTrustRows: unknown[] = [];
 
 vi.mock("@/db", () => {
   // db.select(...).from(...).where(...) resolves to the base-scenario lookup.
@@ -57,12 +59,15 @@ vi.mock("@/db", () => {
       select,
       transaction: vi.fn(async (fn) => {
         const tx = {
+          select: () => ({
+            from: () => ({ where: async () => revocableTrustRows }),
+          }),
           insert: (table: unknown) => ({
             values: (values: unknown) => {
               inserts.push({ table, values });
               // A row inserted under its own id comes back with it, as in Postgres.
               const id = (values as { id?: string }).id ?? "generated-account-id";
-              return { returning: async () => [{ id }] };
+              return { returning: async () => [{ ...(values as object), id }] };
             },
           }),
           update: (table: unknown) => ({
@@ -99,6 +104,7 @@ import {
   familyMembers,
   gifts,
   giftSeries,
+  revocableTrusts,
   savingsRules,
 } from "@/db/schema";
 import { applyScenarioChanges } from "@/engine/scenario/applyChanges";
@@ -156,6 +162,7 @@ beforeEach(() => {
   updates.length = 0;
   deletes.length = 0;
   updateMatched = [{ id: "matched" }];
+  revocableTrustRows = [];
   vi.mocked(requireOrgId).mockResolvedValue(FIRM_ID);
   vi.mocked(findClientInFirm).mockResolvedValue({ id: CLIENT_ID } as never);
   vi.mocked(assertAccountsInClient).mockResolvedValue({ ok: true } as never);
@@ -1302,5 +1309,78 @@ describe("save-to-base — held editor changes", () => {
     ]);
     expect(res.status).toBe(200);
     expect(updates.find((u) => u.table === expenses)?.set).toMatchObject({ livingItems: items, annualAmount: "36000" });
+  });
+
+  describe("revocable-trust tag", () => {
+    const BASE_ACCT = { ...ACCT, id: "acct-1", revocableTrustName: null };
+    const withBase = (revocableTrustName?: string | null) =>
+      vi.mocked(loadEffectiveTree).mockResolvedValue({
+        effectiveTree: {
+          accounts: revocableTrustName === undefined ? [BASE_ACCT] : [{ ...BASE_ACCT, revocableTrustName }],
+          savingsRules: [],
+        },
+        warnings: [],
+      } as never);
+    const save = (revocableTrustName: string | null) =>
+      POST(
+        makeRequest({
+          source: "base",
+          mutations: [
+            { kind: "account-upsert", id: "acct-1", value: { ...BASE_ACCT, revocableTrustName } },
+          ],
+        }),
+        ctx as never,
+      );
+    const trustInserts = () => inserts.filter((i) => i.table === revocableTrusts);
+    const accountUpdate = () => updates.find((u) => u.table === accounts)!;
+
+    it("tags an updated account into an existing revocable trust by name", async () => {
+      withBase();
+      revocableTrustRows = [{ id: "rt-1", name: "Rivera Family Trust" }];
+      const res = await save("Rivera Family Trust");
+      expect(res.status).toBe(200);
+      expect(accountUpdate().set).toMatchObject({ revocableTrustId: "rt-1" });
+      expect(trustInserts()).toHaveLength(0);
+    });
+
+    it("creates the revocable trust row when none has that name", async () => {
+      withBase();
+      revocableTrustRows = [];
+      const res = await save("Rivera Family Trust");
+      expect(res.status).toBe(200);
+      expect(trustInserts()).toHaveLength(1);
+      expect(trustInserts()[0].values).toMatchObject({ clientId: CLIENT_ID, name: "Rivera Family Trust" });
+      // The mock echoes the inserted row with a generated id.
+      expect(accountUpdate().set).toMatchObject({ revocableTrustId: "generated-account-id" });
+    });
+
+    it("clears the trust link when the tag is removed", async () => {
+      withBase("Rivera Family Trust");
+      const res = await save(null);
+      expect(res.status).toBe(200);
+      expect(accountUpdate().set).toHaveProperty("revocableTrustId", null);
+    });
+
+    it("leaves the trust link alone when the tag did not change", async () => {
+      withBase("Rivera Family Trust");
+      const res = await save("Rivera Family Trust");
+      expect(res.status).toBe(200);
+      expect(accountUpdate().set).not.toHaveProperty("revocableTrustId");
+    });
+
+    it("tags an inserted account", async () => {
+      revocableTrustRows = [{ id: "rt-1", name: "Rivera Family Trust" }];
+      const res = await POST(
+        makeRequest({
+          source: "base",
+          mutations: [
+            { kind: "account-upsert", id: "synthetic-new", value: { ...ACCT, revocableTrustName: "Rivera Family Trust" } },
+          ],
+        }),
+        ctx as never,
+      );
+      expect(res.status).toBe(200);
+      expect(inserts.find((i) => i.table === accounts)!.values).toMatchObject({ revocableTrustId: "rt-1" });
+    });
   });
 });
