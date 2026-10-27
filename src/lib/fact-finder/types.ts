@@ -159,6 +159,8 @@ export interface FactFinderState {
   worksheet: Worksheet;
   /** Records a keep-open save wrote, so a second review of the row has no create line. */
   applied?: FFApplied[];
+  /** Lines a keep-open save left out that no later round saved, each with its latest reason: Finish lists them. */
+  leftOut?: FFClosed["leftOut"];
 }
 
 /** One record a keep-open save wrote to the plan. */

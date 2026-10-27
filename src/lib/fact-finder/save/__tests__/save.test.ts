@@ -32,12 +32,13 @@ import {
   SAVE_CLOSED_MESSAGE, SAVE_FAILED_MESSAGE, SAVE_HOUSEHOLD_MESSAGE, SAVE_NOTHING_MESSAGE, SAVE_RACE_MESSAGE, SAVE_READING_MESSAGE, SAVE_STALE_MESSAGE,
 } from "../../api-types";
 import { defaultTicks, TARGET_KINDS, type ChangeSet, type ChangeTicks } from "../../change-set";
+import { finishFactFinder } from "../../finish";
 import { loadFactFinder, updateFactFinder, type FactFinderScope } from "../../persist";
 import { buildChangeSet } from "../../placement/build";
 import { linkedTo, rowOf, stateWith } from "../../placement/__tests__/fixtures";
 import { loadRecordBook } from "../../records/book";
 import { reviewFactFinder } from "../../review";
-import type { FactFinderState } from "../../types";
+import type { FactFinderState, FFCell } from "../../types";
 import { saveChangeSet, type SaveDeps, type SaveRequest } from "../save";
 import { SaveLineError, type SaveContext, type SaveInput, type SaveWriter } from "../types";
 import { HOUSEHOLD_WRITERS } from "../writers/household";
@@ -639,6 +640,39 @@ d("saveChangeSet (live DB)", () => {
     // The same ticks again find no change list to save: nothing is written twice.
     expect(await saveChangeSet({ ...request(r, ticks), keepOpen: true }, deps(writers(calls)))).toEqual({ ok: false, status: 409, error: SAVE_STALE_MESSAGE, factFinder });
     expect(calls).toHaveLength(9);
+  });
+
+  it("Finish lists each line a keep-open round left out that no later round saved, once, with its latest reason", async () => {
+    const r = await reviewed();
+    // Round 1 leaves out Household Cash (unticked) and the car loan (no loan start yet), and saves the rest.
+    const round1 = await saveChangeSet({ ...request(r, { ...r.ticks, "c1/account": { value: false } }), keepOpen: true }, deps(writers([])));
+    if (!round1.ok) throw new Error(`Round 1 refused: ${round1.error}`);
+    expect(round1.factFinder.leftOut).toEqual([
+      { lineId: "c1/account", rowId: "c1", label: "Household Cash", reason: "Nothing ticked." },
+      { lineId: "l2/liability", rowId: "l2", label: "Car loan", reason: "Needs Loan start." },
+    ]);
+
+    // The advisor fills in the car loan's terms. Round 2 saves Household Cash and leaves the car loan out, unticked.
+    const typed = (value: string | number): FFCell => ({ value, by: "advisor", pinned: true });
+    const terms = { loanStart: typed("2022-03"), termYears: typed(5), interestRate: typed(6) };
+    const filled = await updateFactFinder(r.scope, (s) => ({
+      ...s,
+      sections: { ...s.sections, liab: s.sections.liab.map((row) => (row.id === "l2" ? { ...row, cells: { ...row.cells, ...terms } } : row)) },
+    }));
+    const again = await reviewFactFinder(r.scope, filled, { now: NOW, actorId: SAVE_ACTOR, runLeftovers: null, onlyRows: ["c1", "l2"] });
+    if (!again.ok) throw new Error(`The second review refused: ${again.body.error}`);
+    const ticks = defaultTicks(again.changeSet);
+    ticks["l2/liability"] = Object.fromEntries(Object.keys(ticks["l2/liability"]).map((key) => [key, false]));
+    const round2 = await saveChangeSet(
+      { scope: r.scope, actorId: SAVE_ACTOR, changeSetVersion: again.changeSet.builtAtVersion, ticks, keepOpen: true },
+      deps(writers([])),
+    );
+    if (!round2.ok) throw new Error(`Round 2 refused: ${round2.error}`);
+
+    const finished = await finishFactFinder(r.scope, SAVE_ACTOR, NOW);
+    if (!finished.ok) throw new Error(`Finish refused: ${finished.error}`);
+    expect(finished.factFinder.closed?.saved.map((s) => s.lineId)).toContain("c1/account");
+    expect(finished.factFinder.closed?.leftOut).toEqual([{ lineId: "l2/liability", rowId: "l2", label: "Car loan", reason: "Nothing ticked." }]);
   });
 
   it("after a keepOpen save, a review of the same row has no create line", async () => {

@@ -3,7 +3,8 @@
  * Finish: closes a fact finder import whose rounds the keep-open saves wrote to
  * the plan — nothing more reaches the plan here. One transaction: the import
  * locked, refused while a document is reading, closed with what the saves
- * wrote as its saved list (each line once), and audited.
+ * wrote as its saved list (each line once) and what they left out that no
+ * later round saved, and audited.
  *
  * SERVER-SIDE ONLY.
  */
@@ -38,7 +39,7 @@ export async function finishFactFinder(
     // A record saved in two rounds (added, then updated) is one saved line, as the later round left it.
     const latest = new Map((state.applied ?? []).map((a) => [a.lineId, a]));
     const saved = [...latest.values()].map(({ lineId, rowId, target, recordId, label }) => ({ lineId, rowId, target, recordId, label }));
-    const closed = await closeFactFinder(tx, scope, state.version, { at: now.toISOString(), by: actorId, saved, leftOut: [] });
+    const closed = await closeFactFinder(tx, scope, state.version, { at: now.toISOString(), by: actorId, saved, leftOut: state.leftOut ?? [] });
     if (!closed) return refuse(SAVE_RACE_MESSAGE);
     await recordAudit({
       action: "import.fact_finder_finished",

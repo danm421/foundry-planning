@@ -66,6 +66,7 @@ export function readFactFinderState(payloadJson: unknown): FactFinderState {
     ...(stored.changeSet ? { changeSet: stored.changeSet } : {}),
     ...(stored.closed ? { closed: stored.closed } : {}),
     ...(stored.applied ? { applied: stored.applied } : {}),
+    ...(stored.leftOut ? { leftOut: stored.leftOut } : {}),
   };
   return { ...rest, worksheet: stored.worksheet && !stored.worksheet.derived ? stored.worksheet : worksheetFromStaging(rest) };
 }

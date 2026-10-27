@@ -186,7 +186,8 @@ function notSaved(changeSet: ChangeSet, leftOut: readonly LeftOutLine[]): LeftOu
 /**
  * A keep-open save's fact finder: what it wrote added to `applied`; each row a record came from — by its own line
  * (no `/n`) of a target its "Links to" names — linked to that record, so the row's next review updates it rather
- * than adding it again; and a reply saying what reached the plan and what was left out.
+ * than adding it again; what it left out kept for Finish, in place of what an earlier round left out of the same
+ * lines; and a reply saying what reached the plan and what was left out.
  */
 function keptOpen(state: FactFinderState, lines: readonly ChangeLine[], saved: FFClosed["saved"], leftOut: readonly LeftOutLine[], at: string): FactFinderState {
   const sections = { ...state.sections };
@@ -198,6 +199,7 @@ function keptOpen(state: FactFinderState, lines: readonly ChangeLine[], saved: F
     rows[found.index] = { ...rows[found.index], link: { kind: "existing", recordId: s.recordId, score: null, confirmed: true, by: "advisor" } };
     sections[found.sectionId] = rows;
   }
+  const settled = new Set([...saved, ...leftOut].map((l) => l.lineId));
   const actions = new Map(lines.map((l) => [l.id, l.action]));
   const text = [
     `Saved to the plan: ${saved.map((s) => `${s.label} (${actions.get(s.lineId) === "create" ? "added" : "updated"})`).join(", ")}`,
@@ -207,6 +209,7 @@ function keptOpen(state: FactFinderState, lines: readonly ChangeLine[], saved: F
     ...state,
     sections,
     applied: [...(state.applied ?? []), ...saved.map((s) => ({ ...s, at }))],
+    leftOut: [...(state.leftOut ?? []).filter((l) => !settled.has(l.lineId)), ...leftOut],
     transcript: [...state.transcript, { id: randomUUID(), role: "assistant", text, at }],
   };
 }
