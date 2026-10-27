@@ -84,6 +84,15 @@ const GROUPS: { label: string; rows: Row[] }[] = [
   },
 ];
 
+/** The display name of a trust kind, as the type step shows it. */
+export function kindName(kind: GuidedTrustKind): string {
+  for (const g of GROUPS) {
+    const row = g.rows.find((r) => r.kind === kind);
+    if (row) return row.name;
+  }
+  return kind;
+}
+
 export function GuidedTrustTypeStep({ answers, ctx, onChange }: Props) {
   return (
     <div>
