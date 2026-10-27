@@ -406,6 +406,34 @@ describe("runWorksheetTool", () => {
     ]);
   });
 
+  it("stage_rows on a section with fixed rows points the worksheet row at the one it fills", async () => {
+    // A pay stub's salary, typed by the AI: Salary & Wages has its Client and Co-client rows already.
+    const state = fixture();
+    const out = await runWorksheetTool(
+      "stage_rows",
+      { table: "t-accounts", rows: [{ row: "w2", section: "salary", fixedRow: "client", cells: { employer: "Larkspur Engineering LLC", annualSalary: 162500 } }] },
+      state,
+      context(),
+    );
+    expect(out.ops).toEqual([
+      { layer: "staging", op: { op: "setCell", sectionId: "salary", rowId: "salary:Client", columnId: "employer", value: "Larkspur Engineering LLC" } },
+      { layer: "staging", op: { op: "setCell", sectionId: "salary", rowId: "salary:Client", columnId: "annualSalary", value: 162500 } },
+      { layer: "ws", op: { op: "setRowRef", tableId: "t-accounts", rowId: "w2", ref: { rowId: "salary:Client" } } },
+    ]);
+    const next = apply(state, out);
+    expect(next.sections.salary.find((r) => r.id === "salary:Client")?.cells).toMatchObject({ employer: { value: "Larkspur Engineering LLC", by: "chat" }, annualSalary: { value: 162500 } });
+    expect(next.worksheet.tables[0].rows[1]).toEqual({ ...accounts.rows[1], ref: { rowId: "salary:Client" } }); // its own text kept
+    expect(out.summary).toBe("Got 1 row from Accounts ready for the plan");
+  });
+
+  it("stage_rows on a section with fixed rows refuses without the row it fills, naming them", async () => {
+    const stage = (fixedRow?: string) =>
+      runWorksheetTool("stage_rows", { table: "t-accounts", rows: [{ row: "w2", section: "salary", ...(fixedRow ? { fixedRow } : {}), cells: { annualSalary: 1 } }] }, fixture(), context());
+    const why = 'Salary & Wages has fixed rows — give fixedRow, the one this row fills: "Client" or "Co-client".';
+    await expect(stage()).rejects.toThrow(why);
+    await expect(stage("Spouse")).rejects.toThrow(why);
+  });
+
   it("stage_rows adds only holdings the account doesn't have yet — by ticker, else name — and says which it skipped", async () => {
     const state = fixture();
     const out = await runWorksheetTool(

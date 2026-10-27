@@ -688,6 +688,92 @@ describe("runWorksheetTurn — Match to plan", () => {
   });
 });
 
+describe("runWorksheetTurn — a document's row the plan already has", () => {
+  const changeSet: ChangeSet = { builtAtVersion: 5, builtAt: AT, lines: [], notices: [] };
+  const LARKSPUR = { id: "inc-1", type: "salary" as const, name: "Salary — Larkspur Engineering LLC", owner: "client" as const };
+  /** The pay stub's salary as its compose added it: the AI's own text, cited, not ready for the plan yet. */
+  const wages: WsTable = {
+    id: "t-wages",
+    title: "Salary & Wages",
+    columns: [
+      { id: "k-who", header: "Employee" },
+      { id: "k-employer", header: "Employer" },
+      { id: "k-salary", header: "Annual salary" },
+    ],
+    rows: [{ id: "w-sal", cells: { "k-who": "Nathan R. Whitfield", "k-employer": "Larkspur Engineering LLC", "k-salary": "$162,500.00" }, source: { fileId: "f2", page: 1 } }],
+  };
+  const stageSalary = (id = "call-stage") =>
+    callTool(
+      "stage_rows",
+      { table: "t-wages", rows: [{ row: "w-sal", section: "salary", fixedRow: "Client", cells: { employer: "Larkspur Engineering LLC", annualSalary: 162500 } }] },
+      id,
+    );
+  const match = (model: TurnModel) => runWorksheetTurn({ ...args("Match this table to the plan.", model), match: { tableId: "t-wages" } });
+  const toolLines = () => store.state!.transcript.flatMap((t) => (t.role === "tool" ? [t.summary] : []));
+  const salaryRecords = (...incomes: (typeof LARKSPUR)[]) => {
+    const records = emptyExistingRecords();
+    records.candidates.incomes = incomes;
+    return records;
+  };
+
+  beforeEach(() => {
+    // The plan already has Nathan's salary from Larkspur.
+    vi.mocked(loadExistingRecords).mockResolvedValue(salaryRecords(LARKSPUR));
+    store.state = fixture({ worksheet: { tables: [structuredClone(accounts), structuredClone(wages)], composedFileIds: ["f2"] } });
+    review.mockImplementation(async (_scope, state) => {
+      store.state = { ...state, version: state.version + 1, changeSet };
+      return { ok: true, changeSet, factFinder: store.state };
+    });
+  });
+
+  it("Match stages the row and links it in the same reply, which ends with its card — no refusal, no question", async () => {
+    const fake = scripted(
+      stageSalary(),
+      callTool("set_link", { rowId: "salary:Client", kind: "existing", recordId: "inc-1" }, "call-link"),
+      new AIMessage("Nathan's salary is ready for the plan."),
+    );
+    await match(fake.model);
+
+    expect(toolLines()).toEqual(["Got 1 row from Salary & Wages ready for the plan", 'Linked "Salary & Wages — Client" to "Salary — Larkspur Engineering LLC"']);
+    expect(fake.seen.flat().map(text).join("\n")).not.toContain("no candidates");
+    expect(review.mock.calls[0][2]).toMatchObject({ onlyRows: ["salary:Client"] });
+    expect(store.state!.transcript.at(-1)).toMatchObject({ role: "proposal", rowIds: ["salary:Client"] });
+    // The row the document gave is the one that's ready for the plan: it keeps its source.
+    expect(store.state!.worksheet.tables[1].rows).toEqual([{ ...wages.rows[0], ref: { rowId: "salary:Client" } }]);
+  });
+
+  it("a Match proposes a row linked for certain to a plan record, not saved yet, though the model proposed nothing", async () => {
+    await match(scripted(stageSalary(), new AIMessage("Nathan's salary is ready for the plan.")).model);
+
+    expect(store.state!.sections.salary.find((r) => r.id === "salary:Client")?.link).toMatchObject({ kind: "existing", recordId: "inc-1", confirmed: true });
+    expect(store.state!.transcript.at(-1)).toMatchObject({ role: "proposal", rowIds: ["salary:Client"] });
+  });
+
+  it("set_link sees the plan record the commit links a row this reply filled — never no candidates", async () => {
+    // The browser pass's chain: the AI filled the client's salary row, then linked it.
+    const fake = scripted(
+      callTool("set_cell", { rowId: "salary:Client", columnId: "annualSalary", value: 162500 }),
+      callTool("set_link", { rowId: "salary:Client", kind: "existing", recordId: "inc-1" }, "call-2"),
+      new AIMessage("Linked."),
+    );
+    await turn("Use the pay stub's salary for Nathan.", fake.model);
+
+    expect(text(fake.seen[1][0])).toContain('links to "Salary — Larkspur Engineering LLC" (inc-1) 100% — confirmed'); // as the commit will leave it
+    expect(toolLines()).toEqual(['Set Annual salary on "Salary & Wages — Client" to $162,500.00', 'Linked "Salary & Wages — Client" to "Salary — Larkspur Engineering LLC"']);
+    expect(store.state!.sections.salary.find((r) => r.id === "salary:Client")?.link).toMatchObject({ kind: "existing", recordId: "inc-1", confirmed: true });
+  });
+
+  it("leaves a row whose match is unclear to the advisor: no card for it", async () => {
+    // Two salary records for the client: which one the pay stub updates is the advisor's call.
+    vi.mocked(loadExistingRecords).mockResolvedValue(salaryRecords(LARKSPUR, { ...LARKSPUR, id: "inc-2", name: "Salary — Old Employer" }));
+    await match(scripted(stageSalary(), new AIMessage("Is this the Larkspur salary or the old employer's?")).model);
+
+    expect(store.state!.sections.salary.find((r) => r.id === "salary:Client")?.link).toMatchObject({ kind: "existing", confirmed: false });
+    expect(review).not.toHaveBeenCalled();
+    expect(store.state!.transcript.at(-1)).toMatchObject({ role: "assistant", text: "Is this the Larkspur salary or the old employer's?" });
+  });
+});
+
 describe("runWorksheetTurn — safety checks kept from the old turn", () => {
   it("shows a tool's error to the model inside the untrusted-data fence and applies nothing", async () => {
     const fake = scripted(callTool("set_cell", { rowId: "c1", columnId: "currentValue", value: "abc" }), new AIMessage("That isn't a dollar amount."));

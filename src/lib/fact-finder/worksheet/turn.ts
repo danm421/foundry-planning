@@ -146,11 +146,21 @@ async function liveFilesContext(scope: FactFinderScope): Promise<WsToolContext> 
   };
 }
 
-/** The live staging rows that rows of table `tableId` (every table when absent) show and the plan already has. */
+/**
+ * The live staging rows that rows of table `tableId` (every table when absent) show and the plan already has: saved by
+ * a round of this import, or linked for certain to a plan record. A link that needs the advisor's click isn't one.
+ */
 function rowsInPlan(state: FactFinderState, tableId: string | undefined): string[] {
   return state.worksheet.tables
     .filter((t) => tableId === undefined || t.id === tableId)
-    .flatMap((t) => t.rows.flatMap((r) => (r.ref && rowInPlan(state, r) && locateRow(state, r.ref.rowId) ? [r.ref.rowId] : [])));
+    .flatMap((t) =>
+      t.rows.flatMap((r) => {
+        const at = r.ref && locateRow(state, r.ref.rowId);
+        if (!at) return [];
+        const { id, link } = state.sections[at.sectionId][at.index];
+        return rowInPlan(state, r) || (link?.kind === "existing" && link.confirmed) ? [id] : [];
+      }),
+    );
 }
 
 /** `ops` applied to `state`, or null when one of them no longer applies. */
@@ -202,7 +212,10 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
   const asked = named ? `${human}\n\nThe table: ${tableId}.` : human;
 
   const model = (args.model ?? (await chatModel("full"))).bindTools(WS_TOOL_DEFS);
-  let working = start;
+  // Links are scored on the working copy as each tool call lands, as the commit scores them: a row the reply fills
+  // shows — and set_link offers — the plan record it will link to, not "no candidates".
+  const records = await loadBaseCaseRecords(scope.clientId);
+  let working = applyLinkScores(start, records);
   const ops: TurnOp[] = [];
   const toolTurns: FFChatTurn[] = [];
   /** Every staging row a propose_plan_update named, first seen first: one review after the commit covers them all. */
@@ -253,7 +266,7 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
       let summary: string;
       try {
         const outcome = await within(runWorksheetTool(call.name, call.args ?? {}, working, ctx), left());
-        working = applyTurnOps(working, outcome.ops, { by: "chat", now: iso(), newId: ctx.newId });
+        working = applyLinkScores(applyTurnOps(working, outcome.ops, { by: "chat", now: iso(), newId: ctx.newId }), records);
         ops.push(...outcome.ops);
         for (const rowId of outcome.propose ?? []) if (!propose.includes(rowId)) propose.push(rowId);
         summary = outcome.summary;
@@ -290,7 +303,6 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
   const userTurns: FFChatTurn[] = mode === "advisor" ? [{ id: ctx.newId(), role: "user", text: human, at }] : [];
   const assistantId = ctx.newId();
   const assistant = (text: string): FFChatTurn => ({ id: assistantId, role: "assistant", text, at });
-  const records = await loadBaseCaseRecords(scope.clientId);
 
   const opContext: OpContext = { by: "chat", now: at, newId: ctx.newId };
   const replayed = [...ops, ...composed];

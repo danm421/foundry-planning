@@ -16,8 +16,8 @@ import {
 } from "../chat/tools";
 import { quote } from "../chat/view";
 import type { ClientOp } from "../ops";
-import { FACT_FINDER_SECTIONS, findSection, isListLike } from "../schema";
-import { holdingKey, locateRow } from "../state";
+import { FACT_FINDER_SECTIONS, findSection, fixedLabelsOf, isListLike, type FFSection } from "../schema";
+import { fixedRowId, holdingKey, locateRow } from "../state";
 import { HOLDING_FIELDS, type FactFinderState } from "../types";
 import { parseBinding } from "./bindings";
 import { fillRows } from "./from-staging";
@@ -243,7 +243,8 @@ const WORKSHEET_TOOL_DEFS = [
     "stage_rows",
     "Get worksheet rows ready for a plan update by putting their values in staging, the form the plan update " +
       "reads. A row that isn't staged yet becomes a new staging row in section, and the worksheet row points at " +
-      "it; a row already staged gets these cells set instead. cells is staging column id → value, written as " +
+      "it — in a section with fixed rows (Salary & Wages, Social Security, Living Expenses …) it points at the " +
+      "fixed row fixedRow names; a row already staged gets these cells set instead. cells is staging column id → value, written as " +
       "set_cell expects (read_section lists a section's columns and options). holdings adds positions to the " +
       "account; give each holding's worksheet row (in any table) so it points at the new holding.",
     {
@@ -257,6 +258,10 @@ const WORKSHEET_TOOL_DEFS = [
           properties: {
             row: rowParam,
             section: { type: "string", description: "The staging section it belongs in.", enum: SECTION_IDS },
+            fixedRow: {
+              type: "string",
+              description: "Only for a section with fixed rows: the one this row fills (Client or Co-client; Current or In retirement).",
+            },
             cells: { type: "object", description: "Staging column id → value." },
             holdings: {
               type: "array",
@@ -385,6 +390,7 @@ const ARGS = {
         z.object({
           row: rowId,
           section: z.enum(SECTION_IDS),
+          fixedRow: z.string().trim().min(1).max(100).optional(),
           cells: z.record(z.string(), stagingValue),
           holdings: z
             .array(z.object({ row: rowId.optional(), ...HOLDING_INPUT_FIELDS }).refine(hasTickerOrName, "give each holding a ticker or a name"))
@@ -639,6 +645,14 @@ async function lookAtPages(a: z.infer<typeof ARGS.look_at_pages>, ctx: WsToolCon
   };
 }
 
+/** The fixed row (`salary:Client` …) a row staged into a section with fixed rows fills: the one `label` names, any case. */
+function fixedRowOf(section: FFSection, label: string | undefined): string {
+  const labels = fixedLabelsOf(section);
+  const named = labels.length === 1 && label === undefined ? labels[0] : labels.find((l) => l.toLowerCase() === label?.toLowerCase());
+  if (!named) throw new Error(`${section.label} has fixed rows — give fixedRow, the one this row fills: ${labels.map((l) => `"${l}"`).join(" or ")}.`);
+  return fixedRowId(section.id, named);
+}
+
 function stageRows(state: FactFinderState, a: z.infer<typeof ARGS.stage_rows>, ctx: WsToolContext): WsToolOutcome {
   const table = tableOf(state, a.table);
   const ops: TurnOp[] = [];
@@ -652,14 +666,17 @@ function stageRows(state: FactFinderState, a: z.infer<typeof ARGS.stage_rows>, c
     seen.add(row.id);
     let stagingRowId: string;
     let sectionId: string;
-    if (row.ref) {
-      stagingRowId = row.ref.rowId;
-      sectionId = stagingSectionOf(state, row);
+    const section = findSection(item.section)!;
+    if (row.ref || !isListLike(section)) {
+      // A section with fixed rows has them already: the row fills the one it names, as a staged row is updated.
+      stagingRowId = row.ref ? row.ref.rowId : fixedRowOf(section, item.fixedRow);
+      sectionId = row.ref ? stagingSectionOf(state, row) : section.id;
       if (sectionId !== item.section) throw new Error(`Row ${row.id} is already staged in ${sectionId}, not ${item.section}.`);
       for (const [columnId, value] of Object.entries(item.cells)) {
         ops.push(staging({ op: "setCell", sectionId, rowId: stagingRowId, columnId, value }));
       }
-      lines.push(`${row.id} → staging row ${stagingRowId} (updated)`);
+      if (!row.ref) ops.push(ws({ op: "setRowRef", tableId: table.id, rowId: row.id, ref: { rowId: stagingRowId } }));
+      lines.push(`${row.id} → staging row ${stagingRowId}${row.ref ? " (updated)" : ""}`);
     } else {
       stagingRowId = ctx.newId();
       sectionId = item.section;
