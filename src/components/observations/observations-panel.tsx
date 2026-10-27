@@ -11,6 +11,7 @@ import ObservationEditDialog, {
   type ObservationSection,
   type ObservationSource,
 } from "./observation-edit-dialog";
+import { placeInOrder, SortableRow, SortableRows } from "./sortable-rows";
 
 type ObservationStatus = "open" | "in_progress" | "done";
 
@@ -265,28 +266,19 @@ export default function ObservationsPanel({ clientId, initialItems }: Props) {
     refetch();
   }
 
-  async function moveObservation(id: string, dir: "up" | "down") {
+  /** Saves a dragged order. Only the dragged list moves (one topic group, or
+   *  the open/completed steps — the other keeps its places), but the PUT sends
+   *  the whole section: the reorder route checks the list is complete. */
+  async function reorder(section: ObservationSection, movedIds: string[]) {
     setDraftError(null);
-    const byTopic = new Map<ObservationTopic, ObservationItem[]>();
-    for (const t of OBSERVATION_TOPICS) byTopic.set(t, []);
-    for (const it of items) if (it.section === "observation") byTopic.get(it.topic)!.push(it);
-
-    const topic = OBSERVATION_TOPICS.find((t) => byTopic.get(t)!.some((i) => i.id === id));
-    if (!topic) return;
-    const arr = byTopic.get(topic)!;
-    const idx = arr.findIndex((i) => i.id === id);
-    const swap = dir === "up" ? idx - 1 : idx + 1;
-    if (swap < 0 || swap >= arr.length) return;
-    [arr[idx], arr[swap]] = [arr[swap], arr[idx]];
-
-    const newObs = OBSERVATION_TOPICS.flatMap((t) => byTopic.get(t)!);
-    const orderedIds = newObs.map((i) => i.id);
-    setItems([...newObs, ...items.filter((i) => i.section === "next_step")]);
+    const next = placeInOrder(items, movedIds);
+    setItems(next);
+    const orderedIds = next.filter((i) => i.section === section).map((i) => i.id);
     try {
       const res = await fetch(`${base}/reorder`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ section: "observation", orderedIds }),
+        body: JSON.stringify({ section, orderedIds }),
       });
       if (!res.ok) throw new Error("reorder failed");
     } catch {
@@ -298,9 +290,7 @@ export default function ObservationsPanel({ clientId, initialItems }: Props) {
           ? "Couldn't save the new order — it's been reset to match the server."
           : "Couldn't save the new order, and the screen may be out of date. Please refresh.",
       );
-      return;
     }
-    refetch();
   }
 
   async function acceptSuggestion(s: Suggestion, idx: number) {
@@ -479,22 +469,25 @@ export default function ObservationsPanel({ clientId, initialItems }: Props) {
                 <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-3">
                   {TOPIC_LABELS[topic]}
                 </h3>
-                <ul className="flex flex-col divide-y divide-hair">
-                  {group.map((item, i) => (
-                    <li key={item.id} className="group flex items-start gap-2 py-2 first:pt-0 last:pb-0">
-                      <span aria-hidden className="mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-ink-4" />
-                      <div className="min-w-0 flex-1">
-                        <MarkdownMessage text={renderBody(item.body, tokenValues)} />
-                      </div>
-                      <RowActions
-                        onEdit={() => setEditTarget(toEditInitial(item))}
-                        onDelete={() => deleteItem(item)}
-                        onUp={i > 0 ? () => moveObservation(item.id, "up") : undefined}
-                        onDown={i < group.length - 1 ? () => moveObservation(item.id, "down") : undefined}
-                      />
-                    </li>
-                  ))}
-                </ul>
+                <SortableRows ids={group.map((i) => i.id)} onReorder={(ids) => reorder("observation", ids)}>
+                  <ul className="flex flex-col divide-y divide-hair">
+                    {group.map((item) => (
+                      <SortableRow
+                        key={item.id}
+                        id={item.id}
+                        className="group flex items-start gap-2 py-2 first:pt-0 last:pb-0"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <MarkdownMessage text={renderBody(item.body, tokenValues)} />
+                        </div>
+                        <RowActions
+                          onEdit={() => setEditTarget(toEditInitial(item))}
+                          onDelete={() => deleteItem(item)}
+                        />
+                      </SortableRow>
+                    ))}
+                  </ul>
+                </SortableRows>
               </div>
             );
           })}
@@ -508,18 +501,20 @@ export default function ObservationsPanel({ clientId, initialItems }: Props) {
       <section className="flex flex-col gap-3">
         <SectionHeading>Next Steps</SectionHeading>
         {activeNextSteps.length > 0 && (
-          <ul className="flex flex-col gap-2">
-            {activeNextSteps.map((item) => (
-              <NextStepRow
-                key={item.id}
-                item={item}
-                tokenValues={tokenValues}
-                onCycle={() => cycleStatus(item)}
-                onEdit={() => setEditTarget(toEditInitial(item))}
-                onDelete={() => deleteItem(item)}
-              />
-            ))}
-          </ul>
+          <SortableRows ids={activeNextSteps.map((i) => i.id)} onReorder={(ids) => reorder("next_step", ids)}>
+            <ul className="flex flex-col gap-2">
+              {activeNextSteps.map((item) => (
+                <NextStepRow
+                  key={item.id}
+                  item={item}
+                  tokenValues={tokenValues}
+                  onCycle={() => cycleStatus(item)}
+                  onEdit={() => setEditTarget(toEditInitial(item))}
+                  onDelete={() => deleteItem(item)}
+                />
+              ))}
+            </ul>
+          </SortableRows>
         )}
         <QuickAdd placeholder="Add a next step…" onSubmit={(text) => quickAdd("next_step", text)} />
 
@@ -536,18 +531,23 @@ export default function ObservationsPanel({ clientId, initialItems }: Props) {
               Completed ({completedNextSteps.length})
             </button>
             {showCompleted && (
-              <ul className="mt-2 flex flex-col gap-2">
-                {completedNextSteps.map((item) => (
-                  <NextStepRow
-                    key={item.id}
-                    item={item}
-                    tokenValues={tokenValues}
-                    onCycle={() => cycleStatus(item)}
-                    onEdit={() => setEditTarget(toEditInitial(item))}
-                    onDelete={() => deleteItem(item)}
-                  />
-                ))}
-              </ul>
+              <SortableRows
+                ids={completedNextSteps.map((i) => i.id)}
+                onReorder={(ids) => reorder("next_step", ids)}
+              >
+                <ul className="mt-2 flex flex-col gap-2">
+                  {completedNextSteps.map((item) => (
+                    <NextStepRow
+                      key={item.id}
+                      item={item}
+                      tokenValues={tokenValues}
+                      onCycle={() => cycleStatus(item)}
+                      onEdit={() => setEditTarget(toEditInitial(item))}
+                      onDelete={() => deleteItem(item)}
+                    />
+                  ))}
+                </ul>
+              </SortableRows>
             )}
           </div>
         )}
@@ -595,29 +595,9 @@ function MetaBadge({ children }: { children: React.ReactNode }) {
   );
 }
 
-function RowActions({
-  onEdit,
-  onDelete,
-  onUp,
-  onDown,
-}: {
-  onEdit: () => void;
-  onDelete: () => void;
-  onUp?: () => void;
-  onDown?: () => void;
-}) {
+function RowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
   return (
     <div className="flex flex-shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-      {onUp !== undefined && (
-        <IconButton label="Move up" onClick={onUp}>
-          <path d="M6 15l6-6 6 6" />
-        </IconButton>
-      )}
-      {onDown !== undefined && (
-        <IconButton label="Move down" onClick={onDown}>
-          <path d="M6 9l6 6 6-6" />
-        </IconButton>
-      )}
       <IconButton label="Edit" onClick={onEdit}>
         <path d="M12 20h9" />
         <path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" />
@@ -674,7 +654,7 @@ function NextStepRow({
 }) {
   const done = item.status === "done";
   return (
-    <li className="group flex items-start gap-3 rounded-xl border border-hair bg-card p-3">
+    <SortableRow id={item.id} className="group flex items-start gap-3 rounded-xl border border-hair bg-card p-3">
       <StatusButton status={item.status} onClick={onCycle} />
       <div className="min-w-0 flex-1">
         {item.title && (
@@ -708,7 +688,7 @@ function NextStepRow({
           <path d="M19 6l-1 14a1 1 0 01-1 1H7a1 1 0 01-1-1L5 6" />
         </IconButton>
       </div>
-    </li>
+    </SortableRow>
   );
 }
 

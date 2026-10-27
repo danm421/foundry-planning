@@ -187,4 +187,22 @@ describe("buildObservationsPageData", () => {
     expect(data.topicGroups.map((g) => g.topic)).toEqual(["cash-flow", "estate"]);
     expect(data.topicGroups.map((g) => g.label)).toEqual(["Cash Flow", "Estate"]);
   });
+
+  // The order an advisor drags rows into is stored as `sortOrder`, and only
+  // `sortOrder` — the rows arrive here in any order, so the page must sort.
+  it("prints next steps and a topic's observations in their saved order, not arrival order", () => {
+    const base = { topic: "tax", status: "open", owner: null, priority: null, targetDate: null } as const;
+    const data = buildObservationsPageData({
+      rows: [
+        { ...base, section: "next_step", title: "Second", body: "", sortOrder: 1 },
+        { ...base, section: "observation", title: null, body: "Later.", sortOrder: 5 },
+        { ...base, section: "next_step", title: "First", body: "", sortOrder: 0 },
+        { ...base, section: "observation", title: null, body: "Sooner.", sortOrder: 2 },
+      ],
+      ctx,
+      options: OBSERVATIONS_PAGE_OPTIONS_DEFAULT,
+    });
+    expect(data.nextSteps.map((s) => s.title)).toEqual(["First", "Second"]);
+    expect(data.topicGroups[0].items.map(flattenText)).toEqual(["Sooner.", "Later."]);
+  });
 });

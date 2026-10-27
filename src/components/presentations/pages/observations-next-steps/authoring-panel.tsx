@@ -13,13 +13,14 @@ import ObservationEditDialog, {
   type EditInitial,
 } from "@/components/observations/observation-edit-dialog";
 import type { ObservationItem } from "@/components/observations/observations-panel";
+import { placeInOrder, SortableRow, SortableRows } from "@/components/observations/sortable-rows";
 import { useScenarioOptions } from "@/components/presentations/options-context";
 import { renderTokens } from "@/lib/plan-text/tokens";
 import {
   visibleLibraryEntries,
   type ObservationLibraryEntry,
 } from "@/lib/plan-text/observation-library";
-import { OBSERVATION_TOPICS, TOPIC_LABELS, type ObservationTopic } from "@/lib/schemas/observations";
+import { OBSERVATION_TOPICS, TOPIC_LABELS } from "@/lib/schemas/observations";
 import { InsertFactMenu } from "./insert-fact-menu";
 import { SuggestionCards } from "./suggestion-cards";
 import { useDraftRun, type DraftSuggestion } from "./use-draft-run";
@@ -199,33 +200,26 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
     await refetch();
   }
 
-  /** Reorders within the topic group, then sends the whole client-audience
-   *  observation order — the reorder route checks the list is complete. */
-  async function moveObservation(id: string, dir: "up" | "down") {
+  /** Saves a dragged order. Only the dragged list moves, but the PUT sends the
+   *  whole client-audience section — the reorder route checks the list is
+   *  complete. The page prints in this order. */
+  async function reorder(section: AuthoringRow["section"], movedIds: string[]) {
     if (!rows) return;
     setSaveError(null);
-    const byTopic = new Map<ObservationTopic, AuthoringRow[]>();
-    for (const t of OBSERVATION_TOPICS) byTopic.set(t, []);
-    for (const r of rows) if (r.section === "observation") byTopic.get(r.topic)!.push(r);
-    const topic = OBSERVATION_TOPICS.find((t) => byTopic.get(t)!.some((r) => r.id === id));
-    if (!topic) return;
-    const group = byTopic.get(topic)!;
-    const idx = group.findIndex((r) => r.id === id);
-    const swap = dir === "up" ? idx - 1 : idx + 1;
-    if (swap < 0 || swap >= group.length) return;
-    [group[idx], group[swap]] = [group[swap], group[idx]];
-    const orderedIds = OBSERVATION_TOPICS.flatMap((t) => byTopic.get(t)!).map((r) => r.id);
+    const next = placeInOrder(rows, movedIds);
+    setRows(next);
+    const orderedIds = next.filter((r) => r.section === section).map((r) => r.id);
     try {
       const res = await fetch(`${base}/reorder`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ section: "observation", audience: "client", orderedIds }),
+        body: JSON.stringify({ section, audience: "client", orderedIds }),
       });
       if (!res.ok) throw new Error();
     } catch {
       setSaveError("Couldn't save the new order.");
+      await refetch();
     }
-    await refetch();
   }
 
   function openEdit(initial: EditInitial, onSaved?: () => void) {
@@ -390,21 +384,18 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-3">
                   {TOPIC_LABELS[topic]}
                 </div>
-                <ul className="divide-y divide-hair">
-                  {group.map((row, i) => (
-                    <li key={row.id} className="group flex items-start gap-2 py-1.5">
-                      <div className="min-w-0 flex-1">
-                        <MarkdownMessage text={renderBody(row.body, tokenValues)} />
-                      </div>
-                      <RowActions
-                        onEdit={() => openEdit(toEditInitial(row))}
-                        onDelete={() => deleteRow(row)}
-                        onUp={i > 0 ? () => moveObservation(row.id, "up") : undefined}
-                        onDown={i < group.length - 1 ? () => moveObservation(row.id, "down") : undefined}
-                      />
-                    </li>
-                  ))}
-                </ul>
+                <SortableRows ids={group.map((r) => r.id)} onReorder={(ids) => reorder("observation", ids)}>
+                  <ul className="divide-y divide-hair">
+                    {group.map((row) => (
+                      <SortableRow key={row.id} id={row.id} className="group flex items-start gap-2 py-1.5">
+                        <div className="min-w-0 flex-1">
+                          <MarkdownMessage text={renderBody(row.body, tokenValues)} />
+                        </div>
+                        <RowActions onEdit={() => openEdit(toEditInitial(row))} onDelete={() => deleteRow(row)} />
+                      </SortableRow>
+                    ))}
+                  </ul>
+                </SortableRows>
               </div>
             );
           })}
@@ -507,29 +498,31 @@ export function ObservationsAuthoringPanel({ clientId, showObservations, showNex
           {rows !== null && nextStepRows.length === 0 && (
             <p className="text-[12px] text-ink-3">No next steps yet — generate them from a scenario or add your own on Details.</p>
           )}
-          <ul className="flex flex-col gap-2">
-            {nextStepRows.map((row) => (
-              <li key={row.id} className="group flex items-start gap-2 rounded-lg border border-hair bg-card p-3">
-                <span
-                  aria-label={`Status: ${row.status}`}
-                  className={`mt-1 h-3 w-3 flex-shrink-0 rounded-full border ${
-                    row.status === "done" ? "border-accent bg-accent" : row.status === "in_progress" ? "border-accent" : "border-hair"
-                  }`}
-                />
-                <div className="min-w-0 flex-1">
-                  {row.title && <p className="text-[13px] font-semibold text-ink">{row.title}</p>}
-                  <MarkdownMessage text={renderBody(row.body, tokenValues)} />
-                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wider text-ink-3">
-                    {row.owner && <span>{row.owner}</span>}
-                    {row.priority && <span>{row.priority} priority</span>}
-                    {row.targetDate && <span>Due {row.targetDate}</span>}
+          <SortableRows ids={nextStepRows.map((r) => r.id)} onReorder={(ids) => reorder("next_step", ids)}>
+            <ul className="flex flex-col gap-2">
+              {nextStepRows.map((row) => (
+                <SortableRow key={row.id} id={row.id} className="group flex items-start gap-2 rounded-lg border border-hair bg-card p-3">
+                  <span
+                    aria-label={`Status: ${row.status}`}
+                    className={`mt-1 h-3 w-3 flex-shrink-0 rounded-full border ${
+                      row.status === "done" ? "border-accent bg-accent" : row.status === "in_progress" ? "border-accent" : "border-hair"
+                    }`}
+                  />
+                  <div className="min-w-0 flex-1">
+                    {row.title && <p className="text-[13px] font-semibold text-ink">{row.title}</p>}
+                    <MarkdownMessage text={renderBody(row.body, tokenValues)} />
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wider text-ink-3">
+                      {row.owner && <span>{row.owner}</span>}
+                      {row.priority && <span>{row.priority} priority</span>}
+                      {row.targetDate && <span>Due {row.targetDate}</span>}
+                    </div>
+                    {provenance(row) && <p className="mt-1 text-[11px] normal-case text-ink-3">{provenance(row)}</p>}
                   </div>
-                  {provenance(row) && <p className="mt-1 text-[11px] normal-case text-ink-3">{provenance(row)}</p>}
-                </div>
-                <RowActions onEdit={() => openEdit(toEditInitial(row))} onDelete={() => deleteRow(row)} />
-              </li>
-            ))}
-          </ul>
+                  <RowActions onEdit={() => openEdit(toEditInitial(row))} onDelete={() => deleteRow(row)} />
+                </SortableRow>
+              ))}
+            </ul>
+          </SortableRows>
         </section>
       )}
 
@@ -631,22 +624,10 @@ function NotesField({
   );
 }
 
-function RowActions({
-  onEdit,
-  onDelete,
-  onUp,
-  onDown,
-}: {
-  onEdit: () => void;
-  onDelete: () => void;
-  onUp?: () => void;
-  onDown?: () => void;
-}) {
+function RowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
   const btn = "rounded px-1.5 py-0.5 text-[11px] text-ink-3 hover:bg-card-2 hover:text-accent";
   return (
     <div className="flex flex-shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-      {onUp && <button type="button" aria-label="Move up" className={btn} onClick={onUp}>↑</button>}
-      {onDown && <button type="button" aria-label="Move down" className={btn} onClick={onDown}>↓</button>}
       <button type="button" aria-label="Edit" className={btn} onClick={onEdit}>Edit</button>
       <button type="button" aria-label="Delete" className={`${btn} hover:text-crit`} onClick={onDelete}>Delete</button>
     </div>

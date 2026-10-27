@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { PresentationOptionsProvider } from "@/components/presentations/options-context";
 import { EMPTY_INVESTMENT_OPTION_CATALOG } from "@/lib/presentations/investment-option-catalog";
 import { PLAN_TOKENS } from "@/lib/plan-text/tokens";
+import { stackRowsVertically } from "@/components/observations/__tests__/stack-rows";
 import { ObservationsAuthoringPanel } from "../authoring-panel";
 
 const CLIENT_ID = "11111111-1111-4111-8111-111111111111";
@@ -166,21 +167,49 @@ describe("ObservationsAuthoringPanel — observations", () => {
   // The reorder route only scopes its completeness check to the client
   // audience when the body says so. Drop `audience: "client"` and a household
   // that also holds advisor-only rows makes this PUT a silent "Stale order".
-  it("reordering an observation sends the swapped order scoped to the client audience", async () => {
+  it("dragging an observation sends the new order scoped to the client audience", async () => {
+    stackRowsVertically();
     const calls = installFetch(defaults({
       rows: [
         { ...ROW, id: "o1", body: "First." },
         { ...ROW, id: "o2", body: "Second.", sortOrder: 1 },
       ],
     }));
-    renderPanel();
+    renderPanel({ showNextSteps: false });
     await screen.findByText("First.");
-    await userEvent.click(screen.getByRole("button", { name: /move down/i }));
+    screen.getAllByRole("button", { name: /drag to reorder/i })[0].focus();
+    await userEvent.keyboard("[Space][ArrowDown][Space]");
     await waitFor(() => {
       expect(calls.find((c) => c.method === "PUT" && c.url.endsWith("/reorder"))?.body).toEqual({
         section: "observation",
         audience: "client",
         orderedIds: ["o2", "o1"],
+      });
+    });
+    // Moved on screen before the save answers — no snap back to the old order.
+    const texts = screen.getAllByText(/^(First|Second)\.$/).map((el) => el.textContent);
+    expect(texts).toEqual(["Second.", "First."]);
+  });
+
+  it("dragging a next step sends the whole next-step order, which is the order the page prints", async () => {
+    stackRowsVertically();
+    const step = { ...ROW, section: "next_step", topic: "tax" };
+    const calls = installFetch(defaults({
+      rows: [
+        { ...step, id: "s1", title: "Open a Roth", body: "" },
+        { ...step, id: "s2", title: "Update the will", body: "", sortOrder: 1 },
+        { ...step, id: "s3", title: "Rebalance", body: "", sortOrder: 2 },
+      ],
+    }));
+    renderPanel({ showObservations: false });
+    await screen.findByText("Open a Roth");
+    screen.getAllByRole("button", { name: /drag to reorder/i })[2].focus();
+    await userEvent.keyboard("[Space][ArrowUp][ArrowUp][Space]");
+    await waitFor(() => {
+      expect(calls.find((c) => c.method === "PUT" && c.url.endsWith("/reorder"))?.body).toEqual({
+        section: "next_step",
+        audience: "client",
+        orderedIds: ["s3", "s1", "s2"],
       });
     });
   });

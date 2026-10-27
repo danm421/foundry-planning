@@ -4,6 +4,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import ObservationsPanel, { type ObservationItem } from "../observations-panel";
+import { stackRowsVertically } from "./stack-rows";
 
 const CLIENT_ID = "11111111-1111-1111-1111-111111111111";
 
@@ -109,5 +110,35 @@ describe("ObservationsPanel", () => {
     );
     const postedBody = JSON.parse((postCall?.[1] as RequestInit).body as string);
     expect(postedBody).toEqual({ section: "observation", body: "Quick note" });
+  });
+
+  // The completed step sits between the two open ones. Dragging the open
+  // steps must leave it in its slot, and the PUT must still name it — the
+  // reorder route rejects a list that leaves any row out.
+  it("dragging an open next step keeps a completed one in place and sends the whole section", async () => {
+    stackRowsVertically();
+    const fetchFn = makeFetchMock();
+    global.fetch = fetchFn as unknown as typeof fetch;
+    const step = (id: string, title: string, status: ObservationItem["status"]) => ({
+      ...NEXT_STEP, id, title, status,
+    });
+
+    render(
+      <ObservationsPanel
+        clientId={CLIENT_ID}
+        initialItems={[step("s1", "First", "open"), step("s2", "Done one", "done"), step("s3", "Second", "open")]}
+      />,
+    );
+
+    screen.getAllByRole("button", { name: /drag to reorder/i })[0].focus();
+    await userEvent.keyboard("[Space][ArrowDown][Space]");
+
+    await waitFor(() => {
+      const put = fetchFn.mock.calls.find(([url]) => String(url).endsWith("/reorder"));
+      expect(JSON.parse((put?.[1] as RequestInit).body as string)).toEqual({
+        section: "next_step",
+        orderedIds: ["s3", "s2", "s1"],
+      });
+    });
   });
 });
